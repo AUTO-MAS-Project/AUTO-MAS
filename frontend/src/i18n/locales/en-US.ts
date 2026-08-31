@@ -976,7 +976,7 @@ export default {
       'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Hooks run before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
     masTakesOverStarting: 'MAS takes over starting and stopping the game',
     collectsKeyMomentsFrom:
-      "Collects key moments from this user's run log (daily tasks, mail, sanity farming) and shows them in the task report; when off those moments are skipped and the report keeps only the usual statistics",
+      'Choose how this user\'s key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status',
     beforeLaunchingGameRun:
       'Before launching the game for a run, MAS checks the official version and updates it; when off the game is launched directly',
     overridesCurrentScriptConfiguration:
@@ -1069,6 +1069,9 @@ export default {
     enableQuickConfiguration: 'Enable quick configuration',
     whetherAutoMasManages: 'Whether AUTO-MAS manages the game / emulator process',
     collectNodeDetails: 'Collect node details',
+    pushLogModeOff: 'Off',
+    pushLogModeList: 'List',
+    pushLogModeSummary: 'Summary',
     noPresetTemplates: 'No preset templates',
     replace: 'Replace with',
     maximumLines: 'Maximum lines',

@@ -23,7 +23,7 @@ working/logs/ok-script.log 实际输出吻合，无需前置翻译——日志�
   - "⏭ 跳过: 节点" = 跳过（如互斥组未选中项）
   - "❌ 失败: 节点" = 失败
 状态优先级 失败 > 跳过 > 成功；节点顺序按最后一次出现排列。体力相关行
-（CUR/TGT 标记）不进入节点聚合，resolve 据此追加一行「⚡️ 剩余体力」。
+（CUR/TGT 标记）不进入节点聚合，resolve 据此追加一行「⚡ 剩余体力」。
 """
 
 import ast
@@ -60,44 +60,51 @@ def _oknte_parse_skip_list(payload: str) -> list[str]:
 
 
 def oknte_resolve(
-    results: list[tuple[str, str]]
-) -> list[tuple[str, str]]:
+    results: list[tuple[str, str, float]]
+) -> list[tuple[str, str, float]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
-    输入/输出均为 ``(log_type, text)`` 元组（与 log_box `_PostProcessor` 契约
-    一致），日志类型随元组一并保留。规则产出三类标记：「状态: 节点」、SKIP
-    列表（拆成逐个「⏭ 跳过: 节点」）与体力 CUR/TGT（不参与节点聚合）。每次
-    耗体任务开始时都会重读「当前体力」，故取最后一次 CUR 与 TGT 之差作为刷完
-    剩余体力，追加在报告末尾。
+    输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
+    契约一致），日志类型与采集时间戳随元组一并保留。规则产出三类标记：「状态:
+    节点」、SKIP 列表（拆成逐个「⏭ 跳过: 节点」）与体力 CUR/TGT（不参与节点
+    聚合）。每次耗体任务开始时都会重读「当前体力」，故取最后一次 CUR 与 TGT
+    之差作为刷完剩余体力，追加在报告末尾；无 TGT（如体力不足被中止，当前体力
+    未被消耗）则直接展示最后一次 CUR 作为剩余体力。
     """
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
+    ts_of: dict[str, float] = {}
     cur_stamina: int | None = None
     target_stamina: int | None = None
+    cur_ts: float = 0.0
+    target_ts: float = 0.0
 
-    def _mark(status: str, node: str) -> None:
+    def _mark(status: str, node: str, ts: float) -> None:
         rank = _OKNTE_STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
         order.append(node)
-        if rank > states.get(node, (0, ""))[0]:
+        if rank >= states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
+            ts_of[node] = ts
 
-    for _, text in results:
+    for _, text, ts in results:
         m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
         if m:
-            _mark(m.group(1), m.group(2))
+            _mark(m.group(1), m.group(2), ts)
         elif text.startswith("SKIP:"):
             for node in _oknte_parse_skip_list(text[len("SKIP:"):]):
-                _mark("⏭ 跳过", node)
+                _mark("⏭ 跳过", node, ts)
         elif text.startswith("CUR:"):
             try:
                 cur_stamina = int(text[len("CUR:"):])
+                cur_ts = ts
             except ValueError:
                 pass
         elif text.startswith("TGT:"):
             try:
                 target_stamina = int(text[len("TGT:"):])
+                target_ts = ts
             except ValueError:
                 pass
         else:
@@ -106,12 +113,18 @@ def oknte_resolve(
             continue
 
     result = [
-        (LogType.NORMAL, f"{states[node][1]}: {node}")
+        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
         for node in order
     ]
-    # 规则均产出普通类型，节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤
-    if cur_stamina is not None and target_stamina is not None:
-        result.append(
-            (LogType.NORMAL, f"⚡️ 剩余体力: {max(cur_stamina - target_stamina, 0)}")
-        )
+    # 规则均产出普通类型，节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤。
+    # 有消耗目标时按「当前体力 − 目标」给出刷完剩余；无目标（如体力不足被中止，
+    # 当前体力未被消耗）则直接展示当前体力。
+    if cur_stamina is not None:
+        if target_stamina is not None:
+            remaining = max(cur_stamina - target_stamina, 0)
+            stamina_ts = target_ts
+        else:
+            remaining = cur_stamina
+            stamina_ts = cur_ts
+        result.append((LogType.NORMAL, f"⚡ 剩余体力: {remaining}", stamina_ts))
     return result

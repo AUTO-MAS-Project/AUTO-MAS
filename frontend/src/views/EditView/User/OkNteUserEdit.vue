@@ -169,20 +169,21 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      是否采集节点详情
+                      节点详情推送
                       <a-tooltip
-                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
+                        mouse-enter-delay="0.5"
+                        title="选择该用户关键节点在任务报告中的呈现方式：关闭 = 不采集；逐条 = 每条带上采集时间，一行一条；汇总 = 按成功/失败/跳过各合并为一行"
                       >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
-                    v-model:value="formData.Notify.PushLogEnabled"
+                    v-model:value="formData.Notify.PushLogMode"
                     size="large"
                     class="modern-select"
-                    :options="quickConfigOptions"
-                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                    :options="pushLogModeOptions"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
@@ -331,9 +332,11 @@ let oknteConfigTimeout: number | null = null
 const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
-const quickConfigOptions = [
-  { label: '启用', value: true },
-  { label: '关闭', value: false },
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const oknteTaskOptions = [
@@ -360,11 +363,13 @@ const oknteTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
+type OkNteNotifyForm = FormSection<NonNullable<OkNteUserConfig['Notify']>>
+
 type OkNteUserFormData = {
   userName: string
   Info: FormSection<NonNullable<OkNteUserConfig['Info']>>
   Task: FormSection<NonNullable<OkNteUserConfig['Task']>>
-  Notify: FormSection<NonNullable<OkNteUserConfig['Notify']>>
+  Notify: OkNteNotifyForm
   Data: FormSection<NonNullable<OkNteUserConfig['Data']>>
 }
 
@@ -391,7 +396,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
-    PushLogEnabled: true,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

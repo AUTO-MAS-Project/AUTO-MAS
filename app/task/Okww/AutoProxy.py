@@ -279,10 +279,13 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         # ── log_box：日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
-        # 受用户级「是否采集节点详情」开关控制：关闭时不创建（不读日志、不翻译、
+        # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不翻译、
         # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
-        # 为空，报告聚合时自然不含其节点详情
-        if self.cur_user_config.get("Notify", "PushLogEnabled"):
+        # 为空，报告聚合时自然不含其节点详情。
+        self.cur_user_item.push_log_mode = self.cur_user_config.get(
+            "Notify", "PushLogMode"
+        )
+        if self.cur_user_config.get("Notify", "PushLogMode") != "关闭":
             self.log_collect = log_box.get_collect(
                 paths=[self.script_log_path],
                 sink=self._append_push_log,
@@ -364,9 +367,9 @@ class AutoProxyTask(TaskExecuteBase):
         self._apply_mas_overrides()
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 
-    def _append_push_log(self, log_type: str, text: str) -> None:
+    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
         """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text))
+        self.cur_user_item.push_log.append((log_type, text, ts))
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -724,7 +727,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning("OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）")
             # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
             self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败")
+                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
             )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）

@@ -977,7 +977,7 @@ export default {
       'オンにすると、以下のルールでスクリプトのログを 1 行ずつ前処理します：一致したノイズ行を破棄し、伏せ字や正規化が必要な内容を書き換えます。フックはタスクログ・送信ログの収集・成功／失敗の判定より先に実行され、破棄された行はそのいずれにも渡りません。成功／失敗の目印が含まれる行は破棄しないでください。',
     masTakesOverStarting: 'オンにすると MAS がゲームの起動と終了を引き継ぎます',
     collectsKeyMomentsFrom:
-      'オンにすると、このユーザーの実行ログから要所（日課・メール・理性周回など）を収集してタスクレポートに表示します。オフにすると収集せず、レポートには通常の統計のみが残ります',
+      'このユーザーの要所をタスクレポートでどう表示するかを選択します：オフ = 収集しない；リスト = 各行に収集時刻を付けて 1 行ずつ表示；要約 = 成功・失敗・スキップごとに 1 行にまとめる',
     beforeLaunchingGameRun:
       'オンにすると、代行でゲームを起動する前に MAS が公式のバージョンを確認して更新します。オフの場合はそのままゲームを起動します',
     overridesCurrentScriptConfiguration:
@@ -1069,6 +1069,9 @@ export default {
     enableQuickConfiguration: 'クイック設定を有効にする',
     whetherAutoMasManages: 'ゲーム／エミュレータのプロセスを AUTO-MAS が管理するかどうか',
     collectNodeDetails: 'ノードの詳細を収集する',
+    pushLogModeOff: 'オフ',
+    pushLogModeList: 'リスト',
+    pushLogModeSummary: '要約',
     noPresetTemplates: 'プリセットテンプレートがありません',
     replace: '置換後の文字列',
     maximumLines: '最大行数',
