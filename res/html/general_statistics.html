@@ -197,6 +197,37 @@
 
         </div>
 
+        {% if one_dragon_steps %}
+        <div class="content">
+            <p class="result-label">一条龙分步执行</p>
+            <table>
+                <tr>
+                    <th>步骤</th>
+                    <th>任务</th>
+                    <th>结果</th>
+                    <th>经过</th>
+                </tr>
+                {% for s in one_dragon_steps %}
+                <tr>
+                    <td>{{ s.index }}/{{ s.total }}</td>
+                    <td>{{ s.task }}</td>
+                    <td>
+                        {% if s.ok and not s.issue_count %}
+                        <span class="greenhighlight">✓ 成功</span>
+                        {% elif s.ok %}
+                        <span class="redhighlight">✓ 成功（含{{ s.issue_count }}处异常）</span>
+                        {% else %}
+                        <span class="redhighlight">✗ 未完成</span>
+                        {% endif %}
+                        {% if s.issue_text %}<br><small>{{ s.issue_text }}</small>{% endif %}
+                    </td>
+                    <td>{{ s.start }} → {{ s.end }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endif %}
+
         <p class="signature">AUTO-MAS 敬上</p>
 
         <div class="footer">

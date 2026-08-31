@@ -1,5 +1,6 @@
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
+import bettergiIcon from '@/assets/bettergi.ico'
 import maafwIcon from '@/assets/maafw.png'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
@@ -19,6 +20,7 @@ const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
   M9A: m9aIcon,
   MaaFW: maafwIcon,
   HSR: hsrIcon,
+  BetterGI: bettergiIcon,
 }
 
 /** Return the host-owned icon for current and legacy persisted script types. */

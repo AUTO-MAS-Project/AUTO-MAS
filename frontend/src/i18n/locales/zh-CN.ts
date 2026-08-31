@@ -2151,6 +2151,7 @@ export default {
       Okww: 'ok-ww脚本',
       OkNte: 'ok-nte脚本',
       HSR: 'HSR脚本',
+      BetterGI: 'BetterGI脚本',
       General: '通用脚本',
     },
     typeDesc: {
@@ -2161,6 +2162,7 @@ export default {
       Okww: 'ok-script 线专项：通过 -t/-e 启动参数运行任务',
       OkNte: '异环 OK-NTE 自动化脚本，支持 -t/-e 任务启动',
       HSR: '崩坏：星穹铁道 三月七 / SRA 双脚本适配',
+      BetterGI: '更好的原神 · 自动拾取/剧情/钓鱼等全自动化',
       General: '通用自动化脚本，适用于所有具备日志文件的脚本',
     },
     mask: {
@@ -2258,6 +2260,7 @@ export default {
         Okww: 'ok-script 专项任务脚本',
         OkNte: '异环 OK-NTE 自动化脚本',
         HSR: '三月七 / SRA 双脚本适配',
+        BetterGI: '更好的原神 · 自动拾取/剧情/钓鱼等全自动化',
       },
     },
     toast: {

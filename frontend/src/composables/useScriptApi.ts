@@ -11,6 +11,7 @@ import {
   type OkNteConfig,
   type SrcConfig,
   type HSRConfig,
+  type BetterGIConfig,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
@@ -36,6 +37,7 @@ type ScriptListConfig =
   | M9AConfig
   | MaaFWConfig
   | HSRConfig
+  | BetterGIConfig
 
 type HSRStageEngine = 'M7A' | 'SRA'
 
@@ -48,6 +50,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   Okww: ScriptCreateIn.type.OKWW,
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
+  BetterGI: ScriptCreateIn.type.BETTER_GI,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -60,6 +63,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   M9AConfig: 'M9A',
   MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
+  BetterGIConfig: 'BetterGI',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -1116,6 +1120,212 @@ export function useScriptApi() {
                           hsrUserData.Data?.ProxyTimes !== undefined
                             ? hsrUserData.Data.ProxyTimes
                             : 0,
+                      },
+                    }
+                  } else if (userIndex.type === 'BetterGIUserConfig' && userData) {
+                    const bettergiUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: bettergiUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          bettergiUserData.Info?.Name !== undefined
+                            ? bettergiUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          bettergiUserData.Info?.Status !== undefined
+                            ? bettergiUserData.Info.Status
+                            : true,
+                        Id: bettergiUserData.Info?.Id !== undefined ? bettergiUserData.Info.Id : '',
+                        Password:
+                          bettergiUserData.Info?.Password !== undefined
+                            ? bettergiUserData.Info.Password
+                            : '',
+                        RemainedDay:
+                          bettergiUserData.Info?.RemainedDay !== undefined
+                            ? bettergiUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          bettergiUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          bettergiUserData.Info?.ScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          bettergiUserData.Info?.IfScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          bettergiUserData.Info?.ScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          bettergiUserData.Info?.Notes !== undefined
+                            ? bettergiUserData.Info.Notes
+                            : '',
+                        Tag:
+                          bettergiUserData.Info?.Tag !== undefined
+                            ? bettergiUserData.Info.Tag
+                            : null,
+                      },
+                      Task: {
+                        OneDragonConfigName:
+                          bettergiUserData.Task?.OneDragonConfigName !== undefined
+                            ? bettergiUserData.Task.OneDragonConfigName
+                            : '',
+                      },
+                      Notify: {
+                        Enabled:
+                          bettergiUserData.Notify?.Enabled !== undefined
+                            ? bettergiUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          bettergiUserData.Notify?.IfSendStatistic !== undefined
+                            ? bettergiUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          bettergiUserData.Notify?.IfSendMail !== undefined
+                            ? bettergiUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          bettergiUserData.Notify?.ToAddress !== undefined
+                            ? bettergiUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          bettergiUserData.Notify?.IfServerChan !== undefined
+                            ? bettergiUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          bettergiUserData.Notify?.ServerChanKey !== undefined
+                            ? bettergiUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          bettergiUserData.Notify?.CustomWebhooks !== undefined
+                            ? bettergiUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          bettergiUserData.Data?.LastProxyDate !== undefined
+                            ? bettergiUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          bettergiUserData.Data?.ProxyTimes !== undefined
+                            ? bettergiUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          bettergiUserData.Data?.LastProxyStatus !== undefined
+                            ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                        LastOneDragonConfig:
+                          bettergiUserData.Data?.LastOneDragonConfig !== undefined
+                            ? bettergiUserData.Data.LastOneDragonConfig
+                            : '',
+                      },
+                    }
+                  } else if (userIndex.type === 'BetterGIUserConfig' && userData) {
+                    const bettergiUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: bettergiUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          bettergiUserData.Info?.Name !== undefined
+                            ? bettergiUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          bettergiUserData.Info?.Status !== undefined
+                            ? bettergiUserData.Info.Status
+                            : true,
+                        Id: bettergiUserData.Info?.Id !== undefined ? bettergiUserData.Info.Id : '',
+                        Password:
+                          bettergiUserData.Info?.Password !== undefined
+                            ? bettergiUserData.Info.Password
+                            : '',
+                        RemainedDay:
+                          bettergiUserData.Info?.RemainedDay !== undefined
+                            ? bettergiUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          bettergiUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          bettergiUserData.Info?.ScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          bettergiUserData.Info?.IfScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          bettergiUserData.Info?.ScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          bettergiUserData.Info?.Notes !== undefined
+                            ? bettergiUserData.Info.Notes
+                            : '',
+                        Tag:
+                          bettergiUserData.Info?.Tag !== undefined
+                            ? bettergiUserData.Info.Tag
+                            : null,
+                      },
+                      Task: {
+                        OneDragonConfigName:
+                          bettergiUserData.Task?.OneDragonConfigName !== undefined
+                            ? bettergiUserData.Task.OneDragonConfigName
+                            : '',
+                      },
+                      Notify: {
+                        Enabled:
+                          bettergiUserData.Notify?.Enabled !== undefined
+                            ? bettergiUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          bettergiUserData.Notify?.IfSendStatistic !== undefined
+                            ? bettergiUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          bettergiUserData.Notify?.IfSendMail !== undefined
+                            ? bettergiUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          bettergiUserData.Notify?.ToAddress !== undefined
+                            ? bettergiUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          bettergiUserData.Notify?.IfServerChan !== undefined
+                            ? bettergiUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          bettergiUserData.Notify?.ServerChanKey !== undefined
+                            ? bettergiUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          bettergiUserData.Notify?.CustomWebhooks !== undefined
+                            ? bettergiUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          bettergiUserData.Data?.LastProxyDate !== undefined
+                            ? bettergiUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          bettergiUserData.Data?.ProxyTimes !== undefined
+                            ? bettergiUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          bettergiUserData.Data?.LastProxyStatus !== undefined
+                            ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                        LastOneDragonConfig:
+                          bettergiUserData.Data?.LastOneDragonConfig !== undefined
+                            ? bettergiUserData.Data.LastOneDragonConfig
+                            : '',
                       },
                     }
                   }
