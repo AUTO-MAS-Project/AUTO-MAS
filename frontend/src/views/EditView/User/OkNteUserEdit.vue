@@ -363,11 +363,7 @@ const oknteTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
-// PushLogMode 为本页所用的节点详情推送模式；待后端 schema 重新生成前端 API 后，
-// 该字段会并入 OkNteUserConfig['Notify']，届时可移除本地扩展
-type OkNteNotifyForm = FormSection<NonNullable<OkNteUserConfig['Notify']>> & {
-  PushLogMode: '关闭' | '逐条' | '汇总'
-}
+type OkNteNotifyForm = FormSection<NonNullable<OkNteUserConfig['Notify']>>
 
 type OkNteUserFormData = {
   userName: string

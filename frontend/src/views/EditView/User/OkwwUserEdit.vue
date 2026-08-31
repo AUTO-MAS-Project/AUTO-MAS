@@ -472,11 +472,7 @@ const additionalTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
-// PushLogMode 为本页新增推送模式；待后端 schema 重新生成前端 API 后，
-// 该字段会并入 OkwwUserConfig['Notify']，届时可移除本地扩展
-type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>> & {
-  PushLogMode: '关闭' | '逐条' | '汇总'
-}
+type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>>
 
 type OkwwUserFormData = {
   userName: string

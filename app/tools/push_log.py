@@ -1,14 +1,13 @@
 """推送日志通用工具
 
-供各专项（General / OK-WW / OK-NTE 等）统一聚合与追加推送日志，避免每个适配器
-重复实现相同逻辑；未来接入 log_box 的适配器直接复用本模块即可。
+供各专项（General / OK-WW / OK-NTE 等）统一聚合推送日志，避免每个适配器
+重复实现相同逻辑；接入 log_box 的适配器直接复用本模块即可。
 
 - ``build_user_result_text``：按用户交错组装「用户结果行 + 该用户节点详情」
   报告文本，多账号任务时各用户节点归属清晰；「失败」类型条目仅在任务存在
   未完成用户时纳入（与 MAS 原生推送策略一致）。节点详情按用户级推送模式
   （``user.push_log_mode``）呈现：关闭 = 不输出；逐条 = 逐条带时间戳；
   汇总 = 按状态聚合为一行。未设置模式的用户（如通用脚本）保持逐条原样输出。
-- ``append_push_log``：把推送日志追加到通知正文（默认以单个换行分隔）。
 """
 
 from __future__ import annotations
@@ -101,19 +100,3 @@ def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:
             node_lines = _render_scatter(entries)
         blocks.append("\n".join([f"{user.name}: {user.result}"] + node_lines))
     return "\n\n".join(blocks)
-
-
-def append_push_log(message_text: str, push_log: str, separator: str = "\n") -> str:
-    """把推送日志追加到通知正文
-
-    Args:
-        message_text: 已有通知正文。
-        push_log: 推送日志文本（聚合后）。
-        separator: 正文与推送日志之间的分隔符（默认单个换行）。
-
-    Returns:
-        追加后的通知正文（push_log 为空时原样返回）
-    """
-    if not push_log:
-        return message_text
-    return f"{message_text}{separator}{push_log}"
