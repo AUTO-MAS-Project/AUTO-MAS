@@ -30,6 +30,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.core import Config
+from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
@@ -59,6 +60,15 @@ def _hsr_script_config(script_id: str):
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeHSRConfig):
         raise TypeError("脚本配置类型错误, 不是 HSR 类型")
+    return script_config
+
+
+def _bettergi_script_config(script_id: str):
+    """Resolve a BetterGI script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeBetterGIConfig):
+        raise TypeError("脚本配置类型错误, 不是 BetterGI 类型")
     return script_config
 
 
@@ -145,6 +155,7 @@ SCRIPT_BOOK = {
     "OkwwConfig": OkwwConfig,
     "OkNteConfig": OkNteConfig,
     "HSRConfig": HSRConfig,
+    "BetterGIConfig": BetterGIConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -156,6 +167,7 @@ USER_BOOK = {
     "OkwwConfig": OkwwUserConfig,
     "OkNteConfig": OkNteUserConfig,
     "HSRConfig": HSRUserConfig,
+    "BetterGIConfig": BetterGIUserConfig,
 }
 
 
@@ -1130,6 +1142,117 @@ async def get_hsr_stage_options_api(
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/strategies",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 自动战斗策略选项",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt`` 文件名。"""
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_auto_boss_strategies(root)
+        data = [ComboBoxItem(label=n, value=n) for n in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个自动战斗策略选项",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/bettergi/one-dragon/custom-groups",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 一条龙自定义配置组",
+    response_model=BetterGICustomGroupsOut,
+    status_code=200,
+)
+async def get_bettergi_custom_groups_api(
+    scriptId: str, configName: str = "", useMasConfig: bool = False
+) -> BetterGICustomGroupsOut:
+    """返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
+
+    ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
+    per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
+    独立配置添加的自定义组。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        read_name = (
+            one_dragon.launch_slot_name()
+            if useMasConfig
+            else one_dragon.resolve_config_name(configName)
+        )
+        items = one_dragon.list_custom_groups(root, read_name)
+        data = [BetterGICustomGroupOut(**item) for item in items]
+        return BetterGICustomGroupsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个自定义配置组",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGICustomGroupsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/bettergi/one-dragon/configs",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 一条龙配置名列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 可选一条龙配置名：{RootPath}/User/OneDragon/*.json 文件名（默认配置置顶）。"""
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_one_dragon_configs(root)
+        data = [ComboBoxItem(label=n, value=n) for n in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个一条龙配置",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
         )
 
 

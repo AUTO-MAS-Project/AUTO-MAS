@@ -25,11 +25,22 @@ UV_CACHE_RELATIVE_PATH = Path("cache") / "uv"
 UV_PYTHON_RELATIVE_PATH = Path("python")
 UV_LINK_MODE = "hardlink"
 AUTO_MAS_UV_INDEX_URL_ENV = "AUTO_MAS_UV_INDEX_URL"
+# 解释器下载镜像。包索引早就有 AUTO_MAS_UV_INDEX_URL，但 uv 下载 CPython 走的是
+# 另一条路（python-build-standalone 的 GitHub Release），此前没有任何镜像开关——
+# 受限网络下这一步要么慢到超时，要么拿到不完整的解释器。UV_* 不在
+# _clean_process_environment 的剔除名单里，所以显式设置的 UV_PYTHON_INSTALL_MIRROR
+# 优先，本变量只作兜底。
+AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV = "AUTO_MAS_UV_PYTHON_INSTALL_MIRROR"
 RUNTIME_POOL_STAGING_DIRECTORY_NAME = ".staging"
 SUPPORTED_CPYTHON_MINORS = ((3, 12), (3, 13))
 
+# 探针里必须真的 import ctypes：MaaFW 的 Python 绑定第一行就是 ``import ctypes``，
+# 而 ABI 那几项（version/soabi/platform）全部来自解释器二进制，标准库那一半坏了
+# 照样报得一模一样。真机上就这么漏过去过——探测全绿，worker 起来才在
+# ``maa/library.py`` 第 1 行炸掉，抛出的还是 ctypes 内部的天书。放在同一个子进程
+# 里做，零额外开销。
 _IDENTITY_PROBE_SCRIPT = (
-    "import json,platform,sys,sysconfig;"
+    "import ctypes,json,platform,sys,sysconfig;"
     "print(json.dumps({"
     "'implementation': getattr(sys.implementation, 'name', 'python'),"
     "'cacheTag': getattr(sys.implementation, 'cache_tag', None) or 'unknown',"
@@ -530,6 +541,12 @@ def _pool_python_environment(
 ) -> dict[str, str]:
     env = _uv_environment(cache_dir, UV_LINK_MODE)
     env["UV_PYTHON_INSTALL_DIR"] = str(python_root)
+    if not str(env.get("UV_PYTHON_INSTALL_MIRROR") or "").strip():
+        mirror = str(
+            os.environ.get(AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV) or ""
+        ).strip()
+        if mirror:
+            env["UV_PYTHON_INSTALL_MIRROR"] = mirror
     return env
 
 
@@ -890,6 +907,15 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
         ) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
+        if "ctypes" in detail:
+            # 重建 venv 救不了：ctypes 来自 base 解释器，坏的是那份 Python 本身。
+            # 所以这里只快速失败并说清楚，不触发静默重建（否则会原地打转）。
+            raise RuntimeError(
+                "MaaFW runtime Python 自检失败：标准库 ctypes 不可用。"
+                "MaaFW 绑定完全依赖 ctypes，这通常意味着这份 Python 的标准库与"
+                "扩展模块来自不同构建——例如运行时被升级或替换过，而已有的运行池"
+                f"仍指向它。请修复或重装该 Python 运行时。原始错误：{detail[-400:]}"
+            )
         raise RuntimeError(
             f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {detail[:400]}"
         )

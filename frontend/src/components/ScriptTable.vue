@@ -75,6 +75,12 @@
                     alt="MFW"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'BetterGI'"
+                    src="@/assets/bettergi.ico"
+                    alt="BetterGI"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -372,7 +378,8 @@
                           v-if="
                             script.type === 'General' ||
                             script.type === 'Okww' ||
-                            script.type === 'OkNte'
+                            script.type === 'OkNte' ||
+                            script.type === 'BetterGI'
                           "
                           class="user-info-tags"
                         >
@@ -753,6 +760,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   Okww: 'blue',
   OkNte: 'blue',
   HSR: 'purple',
+  BetterGI: 'gold',
   General: 'green',
 }
 

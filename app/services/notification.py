@@ -38,7 +38,7 @@ import httpx
 from plyer import notification
 
 from app.models.config import Webhook
-from app.utils import LazyProxy, get_logger
+from app.utils import LazyProxy, get_logger, ImageUtils
 from app.utils.constants import UTC4
 
 logger = get_logger("通知服务")

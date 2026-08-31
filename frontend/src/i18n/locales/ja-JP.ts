@@ -2261,6 +2261,7 @@ export default {
       Okww: 'ok-ww',
       OkNte: 'ok-nte',
       HSR: 'HSR',
+      BetterGI: 'BetterGI',
       General: '汎用',
     },
     typeDesc: {
@@ -2272,6 +2273,7 @@ export default {
       Okww: 'ok-script 系列専用：-t/-e 起動引数でタスクを実行します',
       OkNte: 'Neverness to Everness（OK-NTE）の自動化。-t/-e でタスクを起動',
       HSR: '崩壊：スターレイル — 三月なのか / SRA の 2 種類に対応',
+      BetterGI: 'より良い原神 · 自動拾取/ストーリー/釣りなどの完全自動化',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
     },
     mask: {
@@ -2379,6 +2381,7 @@ export default {
         Okww: 'ok-script 専用のタスクランナー',
         OkNte: 'Neverness to Everness（OK-NTE）の自動化',
         HSR: '三月なのか / SRA の 2 種類に対応',
+        BetterGI: 'より良い原神 · 自動拾取/ストーリー/釣りなどの完全自動化',
       },
     },
     toast: {

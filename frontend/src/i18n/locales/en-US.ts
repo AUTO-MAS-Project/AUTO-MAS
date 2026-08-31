@@ -2237,6 +2237,7 @@ export default {
       Okww: 'ok-ww',
       OkNte: 'ok-nte',
       HSR: 'HSR',
+      BetterGI: 'BetterGI',
       General: 'General',
     },
     typeDesc: {
@@ -2247,6 +2248,7 @@ export default {
       Okww: 'ok-script line: runs tasks through the -t/-e launch arguments',
       OkNte: 'Neverness to Everness OK-NTE automation, -t/-e task launch',
       HSR: 'Honkai: Star Rail — March7th / SRA dual-script support',
+      BetterGI: 'BetterGI · auto-pickup/story/fishing and more for Genshin',
       General: 'Generic automation for any script that writes a log file',
     },
     mask: {
@@ -2345,6 +2347,7 @@ export default {
         Okww: 'Dedicated ok-script task runner',
         OkNte: 'Neverness to Everness OK-NTE automation',
         HSR: 'March7th / SRA dual-script support',
+        BetterGI: 'BetterGI · auto-pickup/story/fishing and more for Genshin',
       },
     },
     toast: {
