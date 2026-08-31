@@ -287,8 +287,8 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            self.task_info.game_sign_results = await MainTimer.try_game_sign_for_task(
-                source=sign_source
+            self.task_info.community_results = (
+                await MainTimer.try_community_for_task(source=sign_source)
             )
 
         await self.prepare()

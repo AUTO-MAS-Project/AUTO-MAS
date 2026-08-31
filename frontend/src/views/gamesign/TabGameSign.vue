@@ -42,7 +42,7 @@ const {
   onRefreshConfig?: () => Promise<void>
 }>()
 
-const logger = window.electronAPI.getLogger('游戏签到')
+const logger = window.electronAPI.getLogger('游戏社区')
 const signLoading = ref(false)
 const notifySaving = ref(false)
 const credentialToolDescription = computed(() => t('gamesign.section.toolDesc'))
@@ -334,6 +334,10 @@ const {
     }
     await loadAccounts()
     if (!isStillCurrent()) return
+    const savedAccount = accounts.value.find(account => account.uid === accountId)
+    if (savedAccount && editingAccount.value?.uid === accountId) {
+      editingAccount.value = { ...savedAccount }
+    }
     if (onRefreshConfig) {
       await onRefreshConfig()
     }
@@ -402,7 +406,7 @@ const handleManualSign = async () => {
     if (response.code !== 200 && response.code !== 0) {
       throw new Error(response.message || t('gamesign.toast.signFailed'))
     }
-    logger.info('游戏签到完成')
+    logger.info('游戏社区签到完成')
     if (response.status === 'warning') {
       message.warning(response.message || t('gamesign.toast.signPartialNotify'))
     } else {

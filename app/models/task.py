@@ -135,6 +135,26 @@ class TaskItem(ABC):
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
 
+    @property
+    def community_results(self) -> list[dict]:
+        """读取社区签到结果，底层继续使用历史任务字段。"""
+
+        return self.game_sign_results
+
+    @community_results.setter
+    def community_results(self, value: list[dict]) -> None:
+        self.game_sign_results = value
+
+    @property
+    def community_summary_consumed(self) -> bool:
+        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
+
+        return self.game_sign_summary_consumed
+
+    @community_summary_consumed.setter
+    def community_summary_consumed(self, value: bool) -> None:
+        self.game_sign_summary_consumed = value
+
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
 

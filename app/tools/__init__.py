@@ -21,9 +21,17 @@
 
 from .skland import login_skland_with_password, skland_sign_in
 from .game_sign import run_all_sign_in, format_sign_results
+from .community import (
+    format_community_sign_results,
+    has_community_credentials,
+    run_community_sign_in,
+)
 
 __all__ = [
+    "format_community_sign_results",
+    "has_community_credentials",
     "login_skland_with_password",
+    "run_community_sign_in",
     "skland_sign_in",
     "run_all_sign_in",
     "format_sign_results",

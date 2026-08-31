@@ -65,7 +65,7 @@ PASSPORT_COOKIE_URL = (
 )
 
 # DS 签名 Salt（对齐 MihoyoBBSTools）
-SALT_WEB = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"  # web 端 salt（游戏签到 GET 请求）
+SALT_WEB = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"  # web 端 salt（游戏社区 GET 请求）
 SALT_DATA = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"  # 有 body/query 的请求（x6）
 
 # 验证码重试配置
@@ -160,7 +160,7 @@ GAME_CONFIG = {
     },
 }
 
-# 通用请求头（对齐 MihoyoBBSTools 游戏签到 headers）
+# 通用请求头（对齐 MihoyoBBSTools 游戏社区 headers）
 BASE_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Origin": "https://webstatic.mihoyo.com",
@@ -258,10 +258,26 @@ def _build_cookie_str(cookies: Dict[str, str]) -> str:
     return "; ".join(f"{k}={v}" for k, v in cookies.items())
 
 
+def merge_miyoushe_cookie_update(cookie: str, updated_cookie: str) -> str:
+    """合并刷新结果，避免新增 Cookie 字段时丢失原始认证字段。"""
+    current = _parse_cookie(cookie)
+    refreshed = _parse_cookie(updated_cookie)
+    if not refreshed:
+        return cookie
+    if not current:
+        return updated_cookie
+
+    merged = current.copy()
+    for key, value in refreshed.items():
+        if value:
+            merged[key] = value
+    return _build_cookie_str(merged)
+
+
 def _generate_ds(body: str = "", query: str = "") -> str:
     """生成 DS (Dynamic Secret) 签名
 
-    对齐 MihoyoBBSTools：游戏签到 GET 请求使用 SALT_WEB，
+    对齐 MihoyoBBSTools：游戏社区 GET 请求使用 SALT_WEB，
     POST 请求（有 body）使用 SALT_DATA。
 
     Args:
@@ -434,7 +450,7 @@ async def miyoushe_sign_in(
     *,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
 ) -> list[dict]:
-    """米游社游戏签到
+    """米游社社区签到
 
     支持多种 cookie 认证策略：
     1. cookie_token + UID → 直接使用
@@ -583,7 +599,7 @@ async def miyoushe_sign_in(
         await report_credential_update()
         return results
 
-    # 逐游戏签到
+    # 逐游戏执行社区签到
     for index, role in enumerate(roles):
         game_biz = role.get("game_biz", "")
         region = role.get("region", "")

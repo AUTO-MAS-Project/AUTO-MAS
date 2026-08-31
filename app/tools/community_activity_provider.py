@@ -1,0 +1,899 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file incorporates request knowledge from the following acknowledged
+#   community projects:
+#
+#       nonebot-plugin-mystool Copyright © 2023-2025 Ljzd-PRO
+#       https://github.com/Ljzd-PRO/nonebot-plugin-mystool
+#
+#       gxy12345/arknights-plugin
+#       https://github.com/gxy12345/arknights-plugin
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+"""森空岛和米游社的只读活动请求适配器。
+
+该模块只负责把凭据暂存于本次查询的内存、完成 provider 请求和返回 JSON。
+活动解析仍由 ``game_sign_activity`` 负责，签到编排和配置保存不在本模块内。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+import random
+import string
+import time
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+
+from .community_activity_transport import (
+    CommunityActivityRequest,
+    CommunityActivityTarget,
+    CommunityActivityTransportError,
+)
+from .community_activity_roles import (
+    CommunityActivityRoleDiscovery,
+    normalize_miyoushe_roles,
+    normalize_skland_roles,
+)
+
+__all__ = [
+    "CommunityActivityProvider",
+    "build_community_activity_requester",
+]
+
+
+CredentialUpdate = Callable[[str], Awaitable[None]]
+
+_ACTIVITY_REQUEST_TIMEOUT = 12.0
+_MIYOUSHE_RECORD_SALT = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs"
+_MIYOUSHE_WIDGET_SALT = "9ttJY72HxbjwWRNHJvn0n2AYue47nYsK"
+_MIYOUSHE_DEVICE_FP_URL = (
+    "https://public-data-api.mihoyo.com/device-fp/api/getFp"
+)
+_MIYOUSHE_DEVICE_LOGIN_URL = (
+    "https://bbs-api.mihoyo.com/apihub/api/deviceLogin"
+)
+_MIYOUSHE_DEVICE_SAVE_URL = "https://bbs-api.mihoyo.com/apihub/api/saveDevice"
+_MIYOUSHE_DEVICE_MODEL = "MI 8 SE"
+_MIYOUSHE_DEVICE_NAME = "Xiaomi MI 8 SE"
+_MIYOUSHE_DEVICE_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 "
+    "miHoYoBBS/2.99.1"
+)
+_MIYOUSHE_RISK_CODES = frozenset({1034, 5003, 10035, 10041})
+
+
+def _response_code(payload: Mapping[str, Any]) -> int | None:
+    for key in ("retcode", "code", "status"):
+        value = payload.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _response_json(
+    response: httpx.Response,
+    *,
+    platform: str,
+    game: str,
+) -> Mapping[str, Any]:
+    """读取安全的 JSON 响应，不把 HTML 或请求正文带到错误文案。"""
+
+    if response.status_code == 404:
+        raise CommunityActivityTransportError(
+            f"{platform}{game}角色数据不存在（HTTP 404）",
+            status="unavailable",
+        )
+    if response.status_code in (401, 403, 429):
+        raise CommunityActivityTransportError(
+            f"{platform}{game}接口受到上游限制（HTTP {response.status_code}）",
+            status="limited",
+        )
+    if response.status_code >= 500:
+        raise CommunityActivityTransportError(
+            f"{platform}{game}接口暂时不可用（HTTP {response.status_code}）",
+            status="unavailable",
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise CommunityActivityTransportError(
+            f"{platform}{game}接口返回非 JSON，可能触发风控",
+            status="limited",
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise CommunityActivityTransportError(
+            f"{platform}{game}接口返回的数据结构无法识别",
+            status="unavailable",
+        )
+    return payload
+
+
+def _raise_business_error(
+    payload: Mapping[str, Any],
+    *,
+    platform: str,
+    game: str,
+) -> None:
+    code = _response_code(payload)
+    if code is None or code == 0:
+        return
+    limited = abs(code) in _MIYOUSHE_RISK_CODES or code in {
+        -100,
+        10000,
+        10001,
+    }
+    status = "limited" if limited else "unavailable"
+    raise CommunityActivityTransportError(
+        f"{platform}{game}接口返回业务失败（业务码 {code}）",
+        status=status,
+    )
+
+
+def _skland_signature(
+    sign_token: str,
+    *,
+    path: str,
+    query: str,
+    device_id: str,
+    platform: str,
+    version: str,
+) -> dict[str, str]:
+    """复用森空岛既有签名公式，但不调用签到模块的流程函数。"""
+
+    timestamp = str(int(time.time() * 1000 - 2000))[:-3]
+    sign_header = {
+        "platform": platform,
+        "timestamp": timestamp,
+        "dId": device_id,
+        "vName": version,
+    }
+    sign_text = path + query + timestamp + json.dumps(
+        sign_header, separators=(",", ":")
+    )
+    digest = hashlib.md5(
+        hmac.new(
+            sign_token.encode("utf-8"),
+            sign_text.encode("utf-8"),
+            hashlib.sha256,
+        )
+        .hexdigest()
+        .encode("utf-8")
+    ).hexdigest()
+    return {**sign_header, "sign": digest}
+
+
+def _miyoushe_ds(*, query: str = "", widget: bool = False) -> str:
+    timestamp = str(int(time.time()))
+    nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    if widget:
+        raw = f"salt={_MIYOUSHE_WIDGET_SALT}&t={timestamp}&r={nonce}"
+    else:
+        raw = (
+            f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
+            f"&b=&q={query}"
+        )
+    return f"{timestamp},{nonce},{hashlib.md5(raw.encode()).hexdigest()}"
+
+
+def _device_ds(body: str) -> str:
+    from .miyoushe import SALT_DATA
+
+    timestamp = str(int(time.time()))
+    nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    raw = f"salt={SALT_DATA}&t={timestamp}&r={nonce}&b={body}&q="
+    return f"{timestamp},{nonce},{hashlib.md5(raw.encode()).hexdigest()}"
+
+
+def _device_fp_body(device_id: str) -> dict[str, str]:
+    return {
+        "seed_id": "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=16)
+        ),
+        "device_id": device_id.lower(),
+        "platform": "5",
+        "seed_time": str(int(time.time() * 1000)),
+        "ext_fields": json.dumps(
+            {
+                "userAgent": _MIYOUSHE_DEVICE_USER_AGENT,
+                "browserScreenSize": 243750,
+                "maxTouchPoints": 5,
+                "isTouchSupported": True,
+                "browserLanguage": "zh-CN",
+                "browserPlat": "Linux armv8l",
+                "browserTimeZone": "Asia/Shanghai",
+                "webGlRender": "Adreno (TM) 640",
+                "webGlVendor": "Qualcomm",
+                "numOfPlugins": 0,
+                "listOfPlugins": "unknown",
+                "screenRatio": 3,
+                "deviceMemory": "4",
+                "hardwareConcurrency": "8",
+                "cpuClass": "unknown",
+                "ifNotTrack": "unknown",
+                "ifAdBlock": 0,
+                "hasLiedResolution": 1,
+                "hasLiedOs": 0,
+                "hasLiedBrowser": 0,
+            },
+            ensure_ascii=False,
+        ),
+        "app_name": "account_cn",
+        # getFp 需要一个本次申请用的种子；官方返回值才会用于后续请求。
+        "device_fp": "".join(random.choices("0123456789abcdef", k=13)),
+    }
+
+
+@dataclass
+class CommunityActivityProvider:
+    """为一个账号组执行只读活动请求。
+
+    一个 provider 实例应覆盖一个账号组的全部游戏，以便在同一轮查询内共享
+    森空岛刷新结果、米游社官方设备指纹和请求间隔。凭据默认只保留在内存中；
+    ``on_credential_update`` 只有由调用方显式提供时才会收到刷新后的森空岛值。
+    """
+
+    platform: str
+    raw_credential: str = field(repr=False)
+    proxy: str | httpx.Proxy | None = None
+    on_credential_update: CredentialUpdate | None = field(
+        default=None, repr=False
+    )
+    miyoushe_request_interval: float = 1.2
+    _credential: dict[str, str] | None = field(
+        default=None, init=False, repr=False
+    )
+    _device_id: str = field(default="", init=False, repr=False)
+    _device_fp: str = field(default="", init=False, repr=False)
+    _credential_ready: bool = field(default=False, init=False, repr=False)
+    _credential_update_sent: bool = field(default=False, init=False, repr=False)
+    _miyoushe_cookies: dict[str, str] | None = field(
+        default=None, init=False, repr=False
+    )
+    _state_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock, init=False, repr=False
+    )
+    _miyoushe_rate_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock, init=False, repr=False
+    )
+    _last_miyoushe_request: float | None = field(
+        default=None, init=False, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        self.raw_credential = str(self.raw_credential or "").strip()
+
+    async def request(self, request: CommunityActivityRequest) -> object:
+        """执行一个已登记的请求规格并返回未解析的 JSON 对象。"""
+
+        if request.target.platform != self.platform:
+            raise ValueError(
+                f"活动 provider 与目标平台不匹配：{request.target.platform}"
+            )
+        if self.platform == "森空岛":
+            return await self._request_skland(request)
+        if self.platform == "米游社":
+            return await self._request_miyoushe(request)
+        raise ValueError(f"{self.platform}活动 provider 尚未登记")
+
+    async def discover_roles(
+        self,
+        *,
+        account_uid: str,
+        account_name: str,
+    ) -> CommunityActivityRoleDiscovery:
+        """在同一 provider 会话内读取账号组的游戏角色。"""
+
+        if self.platform == "森空岛":
+            return await self._discover_skland_roles(
+                account_uid=account_uid,
+                account_name=account_name,
+            )
+        if self.platform == "米游社":
+            return await self._discover_miyoushe_roles(
+                account_uid=account_uid,
+                account_name=account_name,
+            )
+        raise ValueError(f"{self.platform}活动 provider 尚未登记")
+
+    async def _discover_skland_roles(
+        self,
+        *,
+        account_uid: str,
+        account_name: str,
+    ) -> CommunityActivityRoleDiscovery:
+        from .skland import (
+            SKLAND_BINDING_URL,
+            _get_cred_by_code,
+            _get_grant_code,
+            get_cached_device_id,
+            parse_skland_credential,
+            serialize_skland_credential,
+            validate_skland_credential,
+        )
+
+        target = CommunityActivityTarget(
+            account_uid=account_uid,
+            account_name=account_name,
+            platform="森空岛",
+            game="角色绑定",
+            role_uid="",
+        )
+        request = CommunityActivityRequest(
+            target=target,
+            source=SKLAND_BINDING_URL,
+            method="GET",
+            auth_scope="skland",
+            signature_profile="skland_widget",
+        )
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, trust_env=False
+            ) as client:
+                credential, device_id = await self._prepare_skland(
+                    None,
+                    client,
+                    get_cached_device_id=get_cached_device_id,
+                    parse_credential=parse_skland_credential,
+                    validate_credential=validate_skland_credential,
+                    get_grant_code=_get_grant_code,
+                    get_cred_by_code=_get_cred_by_code,
+                    serialize_credential=serialize_skland_credential,
+                )
+                response = await client.get(
+                    SKLAND_BINDING_URL,
+                    headers=self._skland_request_headers(
+                        request,
+                        credential=credential,
+                        device_id=device_id,
+                    ),
+                    timeout=_ACTIVITY_REQUEST_TIMEOUT,
+                )
+        except httpx.TimeoutException as exc:
+            raise CommunityActivityTransportError(
+                "森空岛角色列表请求超时", status="failed"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise CommunityActivityTransportError(
+                "森空岛角色列表网络请求失败", status="failed"
+            ) from exc
+
+        payload = _response_json(
+            response,
+            platform="森空岛",
+            game="角色列表",
+        )
+        _raise_business_error(payload, platform="森空岛", game="角色列表")
+        return normalize_skland_roles(payload)
+
+    async def _discover_miyoushe_roles(
+        self,
+        *,
+        account_uid: str,
+        account_name: str,
+    ) -> CommunityActivityRoleDiscovery:
+        from .miyoushe import (
+            BASE_HEADERS,
+            ROLES_URL,
+            _ensure_auth_aliases,
+            _generate_device_id,
+            _parse_cookie,
+            validate_miyoushe_cookie,
+        )
+
+        target = CommunityActivityTarget(
+            account_uid=account_uid,
+            account_name=account_name,
+            platform="米游社",
+            game="角色绑定",
+            role_uid="",
+        )
+        request = CommunityActivityRequest(
+            target=target,
+            source=ROLES_URL,
+            method="GET",
+            auth_scope="miyoushe",
+            signature_profile="miyoushe_params",
+        )
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, trust_env=False
+            ) as client:
+                cookies, device_id, _ = await self._prepare_miyoushe(
+                    request,
+                    client,
+                    ensure_auth_aliases=_ensure_auth_aliases,
+                    generate_device_id=_generate_device_id,
+                    parse_cookie=_parse_cookie,
+                    validate_cookie=validate_miyoushe_cookie,
+                    require_stoken_v2=False,
+                )
+                await self._wait_miyoushe_request()
+                headers = BASE_HEADERS.copy()
+                headers.update(self._miyoushe_request_headers(
+                    request,
+                    device_id=device_id,
+                    device_fp="",
+                ))
+                response = await client.get(
+                    ROLES_URL,
+                    headers=headers,
+                    cookies=cookies,
+                    timeout=_ACTIVITY_REQUEST_TIMEOUT,
+                )
+        except httpx.TimeoutException as exc:
+            raise CommunityActivityTransportError(
+                "米游社角色列表请求超时", status="failed"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise CommunityActivityTransportError(
+                "米游社角色列表网络请求失败", status="failed"
+            ) from exc
+
+        payload = _response_json(
+            response,
+            platform="米游社",
+            game="角色列表",
+        )
+        _raise_business_error(payload, platform="米游社", game="角色列表")
+        return normalize_miyoushe_roles(payload)
+
+    async def _request_skland(
+        self, request: CommunityActivityRequest
+    ) -> Mapping[str, Any]:
+        from .skland import (
+            _get_cred_by_code,
+            _get_grant_code,
+            get_cached_device_id,
+            parse_skland_credential,
+            serialize_skland_credential,
+            validate_skland_credential,
+        )
+
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, trust_env=False
+            ) as client:
+                credential, device_id = await self._prepare_skland(
+                    request.target,
+                    client,
+                    get_cached_device_id=get_cached_device_id,
+                    parse_credential=parse_skland_credential,
+                    validate_credential=validate_skland_credential,
+                    get_grant_code=_get_grant_code,
+                    get_cred_by_code=_get_cred_by_code,
+                    serialize_credential=serialize_skland_credential,
+                )
+                headers = self._skland_request_headers(
+                    request,
+                    credential=credential,
+                    device_id=device_id,
+                )
+                response = await client.get(
+                    request.source,
+                    params=request.query,
+                    headers=headers,
+                    timeout=request.timeout,
+                )
+        except httpx.TimeoutException as exc:
+            raise CommunityActivityTransportError(
+                f"森空岛{request.target.game}接口请求超时", status="failed"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise CommunityActivityTransportError(
+                f"森空岛{request.target.game}接口网络请求失败", status="failed"
+            ) from exc
+
+        payload = _response_json(
+            response,
+            platform="森空岛",
+            game=request.target.game,
+        )
+        _raise_business_error(
+            payload,
+            platform="森空岛",
+            game=request.target.game,
+        )
+        return payload
+
+    async def _prepare_skland(
+        self,
+        target: CommunityActivityTarget | None,
+        client: httpx.AsyncClient,
+        *,
+        get_cached_device_id: Callable[..., Awaitable[str]],
+        parse_credential: Callable[[str | dict[str, Any]], dict[str, str]],
+        validate_credential: Callable[
+            [str | dict[str, Any]], dict[str, str]
+        ],
+        get_grant_code: Callable[..., Awaitable[str]],
+        get_cred_by_code: Callable[..., Awaitable[dict[str, Any]]],
+        serialize_credential: Callable[[dict[str, Any]], str],
+    ) -> tuple[dict[str, str], str]:
+        async with self._state_lock:
+            if self._credential is None:
+                self._credential = validate_credential(self.raw_credential)
+            if not self._device_id:
+                cached_device_id = target.device_id if target else ""
+                self._device_id = cached_device_id or await get_cached_device_id(
+                    self.proxy, client=client
+                )
+            if not self._credential_ready:
+                credential = self._credential
+                if not credential["cred"] or not credential["token"]:
+                    if not credential["oauthToken"]:
+                        raise ValueError("森空岛凭据缺少可用认证字段")
+                    grant_code = await get_grant_code(
+                        client, credential["oauthToken"], self._device_id
+                    )
+                    cred_data = await get_cred_by_code(
+                        client, grant_code, self._device_id
+                    )
+                    self._credential = parse_credential(
+                        {
+                            "oauthToken": credential["oauthToken"],
+                            "token": cred_data.get("token"),
+                            "cred": cred_data.get("cred"),
+                            "userId": cred_data.get("userId"),
+                        }
+                    )
+                else:
+                    try:
+                        self._credential = await self._refresh_skland(
+                            client,
+                            self._credential,
+                            self._device_id,
+                        )
+                    except (
+                        CommunityActivityTransportError,
+                        httpx.HTTPError,
+                        OSError,
+                        ValueError,
+                    ):
+                        # 刷新失败不覆盖原凭据；本次查询继续用旧值，让活动接口
+                        # 自己返回可见的失效或风控状态。
+                        pass
+                self._credential_ready = True
+                if self.on_credential_update is not None:
+                    serialized = serialize_credential(self._credential)
+                    if serialized != self.raw_credential:
+                        await self._publish_credential_update(serialized)
+            return dict(self._credential), self._device_id
+
+    async def _refresh_skland(
+        self,
+        client: httpx.AsyncClient,
+        credential: dict[str, str],
+        device_id: str,
+    ) -> dict[str, str]:
+        from .skland import SKLAND_REFRESH_URL, parse_skland_credential
+
+        path = "/web/v1/auth/refresh"
+        headers = _skland_signature(
+            credential["token"],
+            path=path,
+            query="",
+            device_id=device_id,
+            platform="1",
+            version="1.21.0",
+        )
+        headers["cred"] = credential["cred"]
+        response = await client.get(
+            SKLAND_REFRESH_URL,
+            headers=headers,
+            timeout=_ACTIVITY_REQUEST_TIMEOUT,
+        )
+        payload = _response_json(response, platform="森空岛", game="凭据刷新")
+        _raise_business_error(payload, platform="森空岛", game="凭据刷新")
+        data = payload.get("data")
+        if not isinstance(data, Mapping) or not data.get("token"):
+            raise ValueError("森空岛凭据刷新响应缺少 token")
+        return parse_skland_credential(
+            {**credential, "token": str(data["token"])}
+        )
+
+    async def _publish_credential_update(self, serialized: str) -> None:
+        if self._credential_update_sent or self.on_credential_update is None:
+            return
+        self._credential_update_sent = True
+        try:
+            await self.on_credential_update(serialized)
+        except Exception:
+            # 回写是调用方的可选持久化动作，不能改变只读查询结果。
+            return
+
+    @staticmethod
+    def _skland_request_headers(
+        request: CommunityActivityRequest,
+        *,
+        credential: Mapping[str, str],
+        device_id: str,
+    ) -> dict[str, str]:
+        profile = request.signature_profile
+        platform = "3" if profile == "skland_endfield_web" else "1"
+        version = "1.0.0" if profile == "skland_endfield_web" else "1.21.0"
+        parsed = urlparse(request.source)
+        signed = _skland_signature(
+            credential["token"],
+            path=parsed.path,
+            query=request.query_string,
+            device_id=device_id,
+            platform=platform,
+            version=version,
+        )
+        headers = request.header_map
+        headers.update(signed)
+        headers["cred"] = credential["cred"]
+        return headers
+
+    async def _request_miyoushe(
+        self, request: CommunityActivityRequest
+    ) -> Mapping[str, Any]:
+        from .miyoushe import (
+            _ensure_auth_aliases,
+            _generate_device_id,
+            _parse_cookie,
+            validate_miyoushe_cookie,
+        )
+
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, trust_env=False
+            ) as client:
+                cookies, device_id, device_fp = await self._prepare_miyoushe(
+                    request,
+                    client,
+                    ensure_auth_aliases=_ensure_auth_aliases,
+                    generate_device_id=_generate_device_id,
+                    parse_cookie=_parse_cookie,
+                    validate_cookie=validate_miyoushe_cookie,
+                )
+                await self._wait_miyoushe_request()
+                headers = self._miyoushe_request_headers(
+                    request,
+                    device_id=device_id,
+                    device_fp=device_fp,
+                )
+                response = await client.get(
+                    request.source,
+                    params=request.query,
+                    headers=headers,
+                    cookies=cookies,
+                    timeout=request.timeout,
+                )
+        except httpx.TimeoutException as exc:
+            raise CommunityActivityTransportError(
+                f"米游社{request.target.game}接口请求超时", status="failed"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise CommunityActivityTransportError(
+                f"米游社{request.target.game}接口网络请求失败", status="failed"
+            ) from exc
+
+        payload = _response_json(
+            response,
+            platform="米游社",
+            game=request.target.game,
+        )
+        _raise_business_error(
+            payload,
+            platform="米游社",
+            game=request.target.game,
+        )
+        return payload
+
+    async def _prepare_miyoushe(
+        self,
+        request: CommunityActivityRequest,
+        client: httpx.AsyncClient,
+        *,
+        ensure_auth_aliases: Callable[[dict[str, str]], None],
+        generate_device_id: Callable[[str], str],
+        parse_cookie: Callable[[str], dict[str, str]],
+        validate_cookie: Callable[[str], None],
+        require_stoken_v2: bool = True,
+    ) -> tuple[dict[str, str], str, str]:
+        async with self._state_lock:
+            if self._miyoushe_cookies is None:
+                validate_cookie(self.raw_credential)
+                self._miyoushe_cookies = parse_cookie(self.raw_credential)
+                ensure_auth_aliases(self._miyoushe_cookies)
+            cookies = dict(self._miyoushe_cookies)
+            if not self._device_id:
+                self._device_id = request.target.device_id or generate_device_id(
+                    self.raw_credential
+                )
+            if request.target.device_fp and not self._device_fp:
+                self._device_fp = request.target.device_fp
+            if request.requires_device_fingerprint and not self._device_fp:
+                self._device_fp = await self._acquire_device_fp(
+                    client, self._device_id
+                )
+                await self._register_device(
+                    client,
+                    device_id=self._device_id,
+                    device_fp=self._device_fp,
+                    cookies=cookies,
+                )
+            if require_stoken_v2 and request.signature_profile in {
+                "miyoushe_ios",
+                "miyoushe_data",
+            } and not cookies.get("stoken_v2"):
+                raise CommunityActivityTransportError(
+                    "米游社小组件需要 stoken_v2，当前凭据不完整",
+                    status="limited",
+                )
+            return cookies, self._device_id, self._device_fp
+
+    async def _acquire_device_fp(
+        self, client: httpx.AsyncClient, device_id: str
+    ) -> str:
+        response = await client.post(
+            _MIYOUSHE_DEVICE_FP_URL,
+            json=_device_fp_body(device_id),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": _MIYOUSHE_DEVICE_USER_AGENT,
+            },
+            timeout=_ACTIVITY_REQUEST_TIMEOUT,
+        )
+        payload = _response_json(response, platform="米游社", game="设备指纹")
+        _raise_business_error(payload, platform="米游社", game="设备指纹")
+        data = payload.get("data")
+        device_fp = data.get("device_fp") if isinstance(data, Mapping) else None
+        if not isinstance(device_fp, str) or not device_fp.strip():
+            raise CommunityActivityTransportError(
+                "米游社官方设备指纹响应无效，无法确认设备状态",
+                status="limited",
+            )
+        return device_fp.strip()
+
+    async def _register_device(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        device_id: str,
+        device_fp: str,
+        cookies: Mapping[str, str],
+    ) -> None:
+        data = {
+            "app_version": "2.99.1",
+            "device_id": device_id,
+            "device_name": _MIYOUSHE_DEVICE_NAME,
+            "os_version": "30",
+            "platform": "Android",
+            "registration_id": "1a0018970a5c00e814d",
+        }
+        body = json.dumps(data, separators=(",", ":"))
+        headers = {
+            "DS": _device_ds(body),
+            "x-rpc-client_type": "2",
+            "x-rpc-app_version": "2.99.1",
+            "x-rpc-sys_version": "12",
+            "x-rpc-channel": "miyousheluodi",
+            "x-rpc-device_id": device_id,
+            "x-rpc-device_name": _MIYOUSHE_DEVICE_NAME,
+            "x-rpc-device_model": _MIYOUSHE_DEVICE_MODEL,
+            "x-rpc-device_fp": device_fp,
+            "Referer": "https://app.mihoyo.com",
+            "Content-Type": "application/json; charset=UTF-8",
+            "User-Agent": "okhttp/4.9.3",
+        }
+        # 登记是降低风控概率的辅助步骤；失败时保留官方 getFp 值继续查询，
+        # 由真正的实时便笺响应决定最终是成功还是受限。
+        for url in (_MIYOUSHE_DEVICE_LOGIN_URL, _MIYOUSHE_DEVICE_SAVE_URL):
+            try:
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    content=body,
+                    cookies=cookies,
+                    timeout=_ACTIVITY_REQUEST_TIMEOUT,
+                )
+                payload = _response_json(response, platform="米游社", game="设备登记")
+                _raise_business_error(
+                    payload,
+                    platform="米游社",
+                    game="设备登记",
+                )
+            except (
+                CommunityActivityTransportError,
+                httpx.HTTPError,
+                OSError,
+                ValueError,
+            ):
+                continue
+
+    async def _wait_miyoushe_request(self) -> None:
+        if self.miyoushe_request_interval <= 0:
+            return
+        async with self._miyoushe_rate_lock:
+            now = time.monotonic()
+            if self._last_miyoushe_request is not None:
+                delay = self.miyoushe_request_interval - (
+                    now - self._last_miyoushe_request
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
+            self._last_miyoushe_request = time.monotonic()
+
+    @staticmethod
+    def _miyoushe_request_headers(
+        request: CommunityActivityRequest,
+        *,
+        device_id: str,
+        device_fp: str,
+    ) -> dict[str, str]:
+        profile = request.signature_profile
+        headers = request.header_map
+        if profile == "miyoushe_params":
+            headers["DS"] = _miyoushe_ds(query=request.query_string)
+        elif profile in {"miyoushe_ios", "miyoushe_data"}:
+            headers["DS"] = _miyoushe_ds(widget=True)
+        else:
+            raise CommunityActivityTransportError(
+                "米游社当前请求规格未确认，不发起请求",
+                status="limited",
+            )
+        headers.setdefault("x-rpc-app_version", "2.99.1")
+        headers.setdefault("x-rpc-device_model", _MIYOUSHE_DEVICE_MODEL)
+        headers.setdefault("x-rpc-device_name", _MIYOUSHE_DEVICE_NAME)
+        headers.setdefault("User-Agent", _MIYOUSHE_DEVICE_USER_AGENT)
+        headers["x-rpc-device_id"] = device_id
+        if device_fp:
+            headers["x-rpc-device_fp"] = device_fp
+        return headers
+
+
+def build_community_activity_requester(
+    platform: str,
+    raw_credential: str,
+    *,
+    proxy: str | httpx.Proxy | None = None,
+    on_credential_update: CredentialUpdate | None = None,
+    miyoushe_request_interval: float = 1.2,
+) -> Callable[[CommunityActivityRequest], Awaitable[object]]:
+    """构造一个账号级 provider 请求函数，供活动 collector 注入。"""
+
+    if platform not in {"森空岛", "米游社"}:
+        raise ValueError(f"{platform}活动 provider 尚未登记")
+    provider = CommunityActivityProvider(
+        platform=platform,
+        raw_credential=raw_credential,
+        proxy=proxy,
+        on_credential_update=on_credential_update,
+        miyoushe_request_interval=miyoushe_request_interval,
+    )
+    return provider.request

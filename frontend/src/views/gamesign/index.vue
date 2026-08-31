@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted, reactive } from 'vue'
+import { computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useEventListener } from '@vueuse/core'
+import { useRoute } from 'vue-router'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
@@ -11,13 +12,16 @@ import {
   WS_ID_GAME_SIGN,
   type WSGameSignResultData,
 } from '@/services/websocket/types'
+import CommunityActivityView from './CommunityActivityView.vue'
 import TabGameSign from './TabGameSign.vue'
 
 const { t } = useI18n()
 
 defineOptions({ name: 'GameSignPage' })
 
-const logger = window.electronAPI.getLogger('游戏签到')
+const logger = window.electronAPI.getLogger('游戏社区')
+const route = useRoute()
+const isActivityView = computed(() => route.params.section === 'activity')
 
 const { loading, getTools, updateTools } = useToolsApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -136,10 +140,10 @@ const loadTools = async () => {
     }
     Object.assign(toolsConfig, data)
     Object.assign(editingConfig, JSON.parse(JSON.stringify(data)))
-    logger.info('游戏签到配置加载完成')
+    logger.info('游戏社区配置加载完成')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载游戏签到配置失败: ${errorMsg}`)
+    logger.error(`加载游戏社区配置失败: ${errorMsg}`)
   }
 }
 
@@ -169,14 +173,17 @@ const handleGameSignFieldChange = async (key: string, value: any) => {
   }
 }
 
-useEventListener(window, 'focus', () => void updateStatus())
+useEventListener(window, 'focus', () => {
+  if (!isActivityView.value) void updateStatus()
+})
 useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
+  if (document.visibilityState === 'visible' && !isActivityView.value) {
     void updateStatus()
   }
 })
 
 onMounted(async () => {
+  if (isActivityView.value) return
   gameSignSubscriptionId = subscribe(
     { id: WS_ID_GAME_SIGN, type: WS_GAMESIGN_RESULT_UPDATED },
     wsMessage => {
@@ -204,8 +211,9 @@ onUnmounted(() => {
       <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
+      <CommunityActivityView v-if="isActivityView" />
       <TabGameSign
-        v-if="editingConfig.GameSign"
+        v-else-if="editingConfig.GameSign"
         :config="editingConfig.GameSign"
         :disabled="loading"
         :on-field-change="handleGameSignFieldChange"

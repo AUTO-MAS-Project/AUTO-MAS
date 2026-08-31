@@ -28,6 +28,7 @@
         />
         <a-menu
           v-model:selected-keys="selectedKeys"
+          v-model:open-keys="bottomOpenKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="bottom-menu"
@@ -55,16 +56,18 @@ import {
   BugOutlined,
   CalendarOutlined,
   CarryOutOutlined,
+  CheckCircleOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
+  ProfileOutlined,
   SettingOutlined,
   ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
@@ -114,11 +117,45 @@ const devMenuItems = computed(() => [
 ])
 
 const bottomMenuItems = computed(() => [
-  { key: '/gamesign', label: t('comp.checkIns'), icon: icon(CarryOutOutlined) },
+  {
+    key: '/gamesign',
+    label: t('comp.checkIns'),
+    icon: icon(CarryOutOutlined),
+    children: [
+      {
+        key: '/gamesign/sign',
+        label: t('gamesign.nav.sign'),
+        icon: icon(CheckCircleOutlined),
+      },
+      {
+        key: '/gamesign/activity',
+        label: t('gamesign.nav.activity'),
+        icon: icon(ProfileOutlined),
+      },
+    ],
+  },
   { key: '/history', label: t('comp.history'), icon: icon(HistoryOutlined) },
   { key: '/tools', label: t('comp.tools'), icon: icon(ToolOutlined) },
   { key: '/settings', label: t('comp.settings'), icon: icon(SettingOutlined) },
 ])
+
+type MenuEntry = NonNullable<MenuProps['items']>[number]
+type KeyedMenuEntry = Exclude<MenuEntry, null> & { key: string | number }
+
+const hasMenuKey = (item: MenuEntry): item is KeyedMenuEntry =>
+  item !== null && 'key' in item && item.key !== undefined
+
+const flattenMenuItems = (items: readonly MenuEntry[]): MenuEntry[] => {
+  const flattened: MenuEntry[] = []
+  for (const item of items) {
+    if (!item) continue
+    flattened.push(item)
+    if ('children' in item && item.children) {
+      flattened.push(...flattenMenuItems(item.children))
+    }
+  }
+  return flattened
+}
 
 const allItems = computed(() => [
   ...mainMenuItems.value,
@@ -126,12 +163,34 @@ const allItems = computed(() => [
   ...bottomMenuItems.value,
 ])
 
-// 选中项：根据当前路径前缀匹配
+const flatItems = computed(() => flattenMenuItems(allItems.value))
+
+// 选中项：优先精确匹配子菜单，再按路径边界匹配父菜单。
 const selectedKeys = computed(() => {
   const path = route.path
-  const matched = allItems.value.find(i => path.startsWith(String(i.key)))
+  const matched = flatItems.value
+    .filter(hasMenuKey)
+    .filter(item => {
+      const key = String(item.key)
+      return path === key || path.startsWith(`${key}/`)
+    })
+    .sort((left, right) => String(right.key).length - String(left.key).length)[0]
   return [matched?.key || '/home']
 })
+
+const bottomOpenKeys = ref<string[]>([])
+watch(
+  () => route.path,
+  path => {
+    if (
+      (path === '/gamesign' || path.startsWith('/gamesign/')) &&
+      !bottomOpenKeys.value.includes('/gamesign')
+    ) {
+      bottomOpenKeys.value = [...bottomOpenKeys.value, '/gamesign']
+    }
+  },
+  { immediate: true }
+)
 
 const onMenuClick: MenuProps['onClick'] = info => {
   const target = String(info.key)
@@ -156,7 +215,8 @@ const onMenuClick: MenuProps['onClick'] = info => {
     })
   }
 
-  if (route.path !== target) router.push(target)
+  const destination = target === '/gamesign' ? '/gamesign/sign' : target
+  if (route.path !== destination) router.push(destination)
 }
 </script>
 
@@ -194,6 +254,49 @@ const onMenuClick: MenuProps['onClick'] = info => {
     background 0.16s ease,
     color 0.16s ease;
   text-align: left;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu) {
+  width: calc(100% - 16px);
+  margin: 2px auto;
+  border-radius: 6px;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu-title) {
+  height: 40px;
+  margin: 0;
+  padding: 5px 16px !important;
+  line-height: 30px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ant-color-text);
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu-title .anticon) {
+  color: var(--ant-color-text-secondary);
+  font-size: 18px;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu-title:hover) {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-text);
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu > .ant-menu) {
+  background: transparent !important;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu .ant-menu-item) {
+  width: calc(100% - 8px);
+  margin: 2px 4px;
+  padding-left: 40px !important;
+  height: 36px;
+  line-height: 32px;
 }
 
 .sider-content :deep(.ant-menu .ant-menu-item .anticon) {

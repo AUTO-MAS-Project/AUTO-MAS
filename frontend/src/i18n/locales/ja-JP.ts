@@ -71,7 +71,7 @@ export default {
     moduleName: 'モジュール名',
     emulators: 'エミュレータ',
     testRoute: 'テストルート',
-    checkIns: 'ログインボーナス',
+    checkIns: 'ゲームコミュニティ',
     port: 'ポート',
     portNumber: 'ポート番号',
     warning: '警告',
@@ -1421,7 +1421,11 @@ export default {
     },
   },
   gamesign: {
-    title: 'ゲームログインボーナス',
+    title: 'ゲームコミュニティ',
+    nav: {
+      sign: 'チェックイン',
+      activity: 'デイリーノート',
+    },
     statusInvalid: 'ログインボーナスの状態レスポンスが不正です',
     resultInvalid: 'ログインボーナスの結果レスポンスが不正です',
     signStatus: {
@@ -1434,16 +1438,17 @@ export default {
     defaultUserName: 'ユーザー',
     newUserName: 'ユーザー {n}',
     section: {
-      settings: 'ログインボーナス設定',
+      settings: 'コミュニティ設定',
       doc: 'Skland のログインボーナス設定ドキュメントを開く',
       signAll: 'すべて受け取る',
       noticeTitle: '機能の説明とプライバシーについて',
-      toolDesc: 'このツールは各コミュニティの認証情報を管理し',
+      toolDesc:
+        'ゲームコミュニティツールは各コミュニティの認証情報を管理し、起動時・スケジュール実行時・手動実行時にチェックインします。',
       privacyNotice:
         'アカウントとパスワードによるトークン取得では、どちらも保存されません。入力した情報はそのログイン要求のあいだメモリ上にのみ存在し、完了または失敗した時点で破棄されます。設定・ログ・通知のいずれにも書き込まれません。',
-      enable: 'ログインボーナス機能を有効にする',
+      enable: 'コミュニティツールを有効にする',
       enableDesc:
-        'MAS のスケジュールに従って受け取ります。手動実行は 1 日 1 回の制限を受けません。',
+        'MAS のタスクスケジュールに従ってコミュニティのチェックインを実行します。手動実行は 1 日 1 回の制限を受けません。',
       notify: '結果を通知する',
       notifyDesc: '設定済みの通知チャンネルに結果を送信します',
       runOnStartup: '起動時に受け取る',
@@ -1457,7 +1462,7 @@ export default {
       add: 'ユーザーを追加',
       colName: 'ユーザー名',
       colEnabled: '有効',
-      colTags: 'コミュニティ別の受取状況',
+      colTags: '各コミュニティの状態',
       colActions: '操作',
       drag: 'ドラッグして並び替え',
       tooltipTitle: '{platform} — 受取の詳細',

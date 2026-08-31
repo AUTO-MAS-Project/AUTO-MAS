@@ -41,7 +41,8 @@ import json
 import secrets
 import string
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -51,7 +52,7 @@ from Crypto.Util.Padding import pad
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
-logger = get_logger("塔吉多签到")
+logger = get_logger("塔吉多社区")
 
 TAYGEDO_BASE_URL = "https://bbs-api.tajiduo.com"
 LAOHU_BASE_URL = "https://user.laohu.com"
@@ -68,11 +69,11 @@ DEFAULT_GAME_ID = "1289"
 TAYGEDO_GAME_IDS = ("1256", "1257", "1289")
 TAYGEDO_GAME_NAMES = {
     "1256": "幻塔",
-    "1257": "异环",
     "1289": "异环",
 }
+# 1257 的中文名称未在已核对的角色卡响应中确认；未知名称必须显式保留 ID。
 APP_VERSION = "1.1.0"
-# 用户中心刷新接口仍使用 1.1.0；角色卡、角色列表和社区接口使用当前原生协议版本。
+# 用户中心刷新、角色列表和社区接口使用 1.1.0；角色卡接口保留 1.2.5。
 TAYGEDO_NATIVE_APP_VERSION = "1.2.5"
 TAYGEDO_COMMUNITY_IDS = ("1", "2")
 TAYGEDO_COMMUNITY_NAMES = {
@@ -102,6 +103,44 @@ CLOUD_CHANNEL_ID = "9"
 CLOUD_BID = "com.pwrd.cloud.yh.laohu"
 CLOUD_SDK_VERSION = "1.34.0"
 CLOUD_APP_VERSION = "1.1.0"
+
+
+@dataclass
+class _TaygedoRuntimeCredential:
+    """跟踪一次调用内产生的凭据对象，确保运行期临时数据可清理。"""
+
+    values: list[dict[str, Any]] = field(default_factory=list)
+    refresh_attempted: bool = False
+    refresh_succeeded: bool = False
+    credential_update_delivered: bool = False
+
+    def track(self, credential: dict[str, Any]) -> dict[str, Any]:
+        if not any(item is credential for item in self.values):
+            self.values.append(credential)
+        return credential
+
+    def persistable(
+        self,
+        credential: dict[str, Any],
+        *,
+        drop_access_token: bool = True,
+    ) -> dict[str, Any]:
+        """复制可持久化快照，按调用方需要保留或移除 accessToken。"""
+
+        self.track(credential)
+        persisted = dict(credential)
+        if drop_access_token:
+            persisted.pop("accessToken", None)
+        persisted.pop("_gameRoles", None)
+        persisted.pop("_gameRolesComplete", None)
+        return persisted
+
+    def clear(self) -> None:
+        """清理本次调用持有的可变凭据对象。"""
+
+        for credential in self.values:
+            credential.clear()
+        self.values.clear()
 
 
 def _is_expected_taygedo_exception(error: Exception) -> bool:
@@ -189,6 +228,27 @@ def parse_taygedo_credential(raw: str) -> dict[str, Any]:
         credential.pop("roleName", None)
         credential.pop("roleIds", None)
 
+    return credential
+
+
+def validate_taygedo_credential(raw: str) -> dict[str, Any]:
+    """校验塔吉多及云异环凭据的本地字段完整性。"""
+
+    credential = parse_taygedo_credential(raw)
+    if not credential:
+        raise ValueError("塔吉多凭据不能为空")
+
+    has_community = bool(
+        credential.get("refreshToken") or credential.get("accessToken")
+    )
+    has_cloud_token = bool(credential.get("cloudToken"))
+    has_cloud_user = bool(credential.get("cloudUserId"))
+    if has_cloud_token != has_cloud_user:
+        raise ValueError("云异环凭据必须同时包含 cloudToken 和 cloudUserId")
+    if not has_community and not has_cloud_token:
+        raise ValueError(
+            "塔吉多凭据缺少 refreshToken/accessToken 或 cloudToken/cloudUserId"
+        )
     return credential
 
 
@@ -497,15 +557,18 @@ async def refresh_taygedo_credential(
     refresh_token = str(credential.get("refreshToken") or "").strip()
     if not refresh_token:
         raise ValueError("塔吉多凭据缺少 refreshToken")
+    request_device_id = str(credential.get("deviceId") or "").strip()
+    if not request_device_id:
+        # 参考客户端会复用设备标识；旧的纯 refreshToken 凭据没有该字段时，
+        # 用 refreshToken 派生稳定值，避免每天以不同设备发起刷新。
+        request_device_id = _stable_device_id(refresh_token)
 
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
         response = await client.post(
             REFRESH_TOKEN_URL,
             headers={
                 "authorization": refresh_token,
-                "deviceid": str(
-                    credential.get("deviceId") or _stable_device_id(refresh_token)
-                ),
+                "deviceid": request_device_id,
                 "appversion": APP_VERSION,
                 "content-type": "application/x-www-form-urlencoded",
                 "user-agent": APP_USER_AGENT,
@@ -517,35 +580,113 @@ async def refresh_taygedo_credential(
         raise _api_error("塔吉多刷新 Token", response, data)
 
     refreshed = data["data"]
-    if not refreshed.get("accessToken") or not refreshed.get("refreshToken"):
-        raise ValueError("塔吉多刷新接口未返回完整 token")
-    credential["accessToken"] = str(refreshed["accessToken"])
-    credential["refreshToken"] = str(refreshed["refreshToken"])
+    access_token = str(refreshed.get("accessToken") or "").strip()
+    if not access_token:
+        raise ValueError("塔吉多刷新接口未返回 accessToken")
+    credential["accessToken"] = access_token
+    # 已核对的刷新协议会成对返回 accessToken/refreshToken；缺少轮换后的
+    # refreshToken 时不能继续保存旧值，否则下一次续期可能再次使用已消费令牌。
+    refresh_token_value = str(
+        refreshed.get("refreshToken") or refreshed.get("refresh_token") or ""
+    ).strip()
+    if not refresh_token_value:
+        raise ValueError("塔吉多刷新接口未返回 refreshToken")
+    credential["refreshToken"] = refresh_token_value
     if refreshed.get("uid") is not None:
         credential["uid"] = str(refreshed["uid"])
     credential.setdefault("gameId", DEFAULT_GAME_ID)
-    credential.setdefault("deviceId", _stable_device_id(credential["refreshToken"]))
-
-    try:
-        return await _attach_role_name(credential, proxy=proxy)
-    except Exception as exc:
-        # 角色名只用于通知展示，不能阻断有效 refreshToken 的社区签到。
-        logger.debug(f"塔吉多角色信息获取跳过: {exc}")
-        return credential
+    if not str(credential.get("deviceId") or "").strip():
+        credential["deviceId"] = request_device_id
+    # 刷新只负责认证字段；角色发现由后续社区游戏任务链路统一完成，
+    # 避免刷新阶段重复请求角色接口并污染持久化元数据。
+    return credential
 
 
 async def sign_taygedo(
     raw: str,
     *,
     proxy: str | None = None,
+    on_credential_update: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    """执行塔吉多社区、应用内游戏签到和云异环时长查询。"""
+    """执行一次塔吉多社区调用，并按刷新结果处理运行期访问 Token。"""
 
-    credential = parse_taygedo_credential(raw)
+    runtime = _TaygedoRuntimeCredential()
+    credential = runtime.track(parse_taygedo_credential(raw))
+    try:
+        results, effective_credential = await _run_taygedo(
+            raw,
+            credential,
+            runtime=runtime,
+            proxy=proxy,
+            on_credential_update=on_credential_update,
+        )
+        persisted = runtime.persistable(
+            effective_credential,
+            # 刷新后的 accessToken 与轮换后的 refreshToken 成对保存；后续调用
+            # 先复用当前会话，只有明确鉴权失败才再次触碰 refreshToken。
+            drop_access_token=False,
+        )
+        if (
+            runtime.refresh_succeeded
+            and on_credential_update is not None
+            and not runtime.credential_update_delivered
+        ):
+            try:
+                await on_credential_update(serialize_taygedo_credential(persisted))
+                runtime.credential_update_delivered = True
+            except Exception as exc:
+                _log_taygedo_exception("塔吉多凭据回写失败", exc)
+        return results, persisted
+    finally:
+        runtime.clear()
+
+
+async def _run_taygedo(
+    raw: str,
+    credential: dict[str, Any],
+    *,
+    runtime: _TaygedoRuntimeCredential,
+    proxy: str | None = None,
+    on_credential_update: Callable[[str], Awaitable[None]] | None = None,
+) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    """执行塔吉多社区签到、应用内游戏日常任务和云异环时长查询。"""
+
     refresh_error_reason: str | None = None
-    if credential.get("refreshToken"):
+
+    async def publish_refreshed_credential(
+        refreshed_credential: dict[str, Any],
+    ) -> None:
+        """在刷新返回后立即写穿认证快照，避免取消窗口丢失轮换 Token。"""
+
+        if on_credential_update is None:
+            return
+        serialized = serialize_taygedo_credential(
+            runtime.persistable(
+                refreshed_credential,
+                drop_access_token=False,
+            )
+        )
+        update_task = asyncio.ensure_future(on_credential_update(serialized))
         try:
-            credential = await refresh_taygedo_credential(raw, proxy=proxy)
+            # 刷新 Token 的回写必须完成后才能允许外层取消；否则一次性
+            # refreshToken 可能已被消费但新值尚未落盘。
+            await asyncio.shield(update_task)
+        except asyncio.CancelledError:
+            await asyncio.gather(update_task, return_exceptions=True)
+            raise
+        except Exception as exc:
+            _log_taygedo_exception("塔吉多凭据即时回写失败", exc)
+            return
+        runtime.credential_update_delivered = True
+
+    if not _has_usable_taygedo_session(credential) and credential.get("refreshToken"):
+        runtime.refresh_attempted = True
+        try:
+            credential = runtime.track(
+                await refresh_taygedo_credential(raw, proxy=proxy)
+            )
+            runtime.refresh_succeeded = True
+            await publish_refreshed_credential(credential)
         except Exception as exc:
             # 塔吉多 refreshToken 失效时仍继续查询同一凭据中的云异环时长。
             refresh_error_reason = _log_taygedo_exception(
@@ -557,26 +698,25 @@ async def sign_taygedo(
     access_token = str(credential.get("accessToken") or "").strip()
     uid = str(credential.get("uid") or "").strip()
     device_id = str(credential.get("deviceId") or "").strip()
+    if not device_id and uid:
+        # 旧凭据可能只含 accessToken/uid；在本次运行内保持设备值稳定，
+        # 后续有 refreshToken 时由 refresh_taygedo_credential 继续复用它。
+        device_id = _stable_device_id(
+            str(credential.get("refreshToken") or uid or access_token)
+        )
+        credential["deviceId"] = device_id
     account = str(credential.get("roleName") or uid or "未知用户")
 
-    community_task: asyncio.Task[list[tuple[str, str, str, str]]] | None = None
-    game_task: asyncio.Task[list[dict[str, str]]] | None = None
     cloud_task: asyncio.Task[dict[str, int | None]] | None = None
     cloud_token = str(credential.get("cloudToken") or "").strip()
     cloud_user_id = str(credential.get("cloudUserId") or "").strip()
     cloud_account = account if account != "未知用户" else cloud_user_id
     cloud_before = _to_optional_int(credential.get("cloudRemainingDuration"))
 
-    async def cancel_pending_tasks() -> None:
-        pending_tasks = [
-            task
-            for task in (community_task, game_task, cloud_task)
-            if task is not None and not task.done()
-        ]
-        for task in pending_tasks:
-            task.cancel()
-        if pending_tasks:
-            await asyncio.gather(*pending_tasks, return_exceptions=True)
+    async def cancel_cloud_task() -> None:
+        if cloud_task is not None and not cloud_task.done():
+            cloud_task.cancel()
+            await asyncio.gather(cloud_task, return_exceptions=True)
 
     # 云异环每日首次登录时长与两个签到接口互不依赖，并发发起以缩短等待时间。
     if cloud_token and cloud_user_id:
@@ -594,26 +734,26 @@ async def sign_taygedo(
             )
         )
 
-    if access_token and uid:
-        request_device_id = device_id or _stable_device_id(access_token)
-        cached_roles = credential.pop("_gameRoles", None)
-        cached_lookup_complete = credential.pop("_gameRolesComplete", None)
-        if not isinstance(cached_roles, list):
-            cached_roles = None
-        # 社区签到和应用内游戏签到互不依赖，同时发起以减少整体等待时间。
+    async def run_taygedo_actions(
+        action_access_token: str,
+        action_uid: str,
+        action_device_id: str,
+    ) -> tuple[list[tuple[str, str, str, str]], list[dict[str, str]]]:
+        """并发执行一次社区和游戏日常动作，供鉴权恢复复用。"""
+
         community_task = asyncio.create_task(
             _community_sign(
-                access_token,
-                uid,
-                request_device_id,
+                action_access_token,
+                action_uid,
+                action_device_id,
                 proxy=proxy,
             )
         )
         game_task = asyncio.create_task(
             _sign_taygedo_games(
-                access_token,
-                uid,
-                request_device_id,
+                action_access_token,
+                action_uid,
+                action_device_id,
                 account,
                 proxy=proxy,
                 roles=cached_roles,
@@ -623,10 +763,21 @@ async def sign_taygedo(
             )
         )
 
+        async def cancel_action_tasks() -> None:
+            pending_tasks = [
+                task
+                for task in (community_task, game_task)
+                if not task.done()
+            ]
+            for task in pending_tasks:
+                task.cancel()
+            if pending_tasks:
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
+
         try:
             community_results = await community_task
         except asyncio.CancelledError:
-            await cancel_pending_tasks()
+            await cancel_action_tasks()
             raise
         except Exception as exc:
             failure_reason = _log_taygedo_exception("塔吉多社区签到异常", exc)
@@ -641,6 +792,73 @@ async def sign_taygedo(
                 )
                 for community_id in TAYGEDO_COMMUNITY_IDS
             ]
+
+        try:
+            game_results = await game_task
+        except asyncio.CancelledError:
+            await cancel_action_tasks()
+            raise
+        except Exception as exc:
+            reason = _log_taygedo_exception("塔吉多应用内游戏日常任务异常", exc)
+            game_results = [
+                {
+                    "account": account,
+                    "game": "应用内游戏",
+                    "platform": "塔吉多",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": reason,
+                }
+            ]
+        return community_results, game_results
+
+    if _has_usable_taygedo_session(credential):
+        request_device_id = device_id or _stable_device_id(access_token)
+        cached_roles = credential.pop("_gameRoles", None)
+        cached_lookup_complete = credential.pop("_gameRolesComplete", None)
+        if not isinstance(cached_roles, list):
+            cached_roles = None
+
+        # 社区签到和应用内游戏日常任务互不依赖，同时发起以减少整体等待时间。
+        community_results, game_results = await run_taygedo_actions(
+            access_token,
+            uid,
+            request_device_id,
+        )
+
+        # accessToken 过期时只恢复一次；只有明确鉴权失败才触碰 refreshToken。
+        if (
+            credential.get("refreshToken")
+            and not runtime.refresh_attempted
+            and _taygedo_actions_need_refresh(
+                community_results,
+                game_results,
+            )
+        ):
+            runtime.refresh_attempted = True
+            try:
+                refreshed_credential = await refresh_taygedo_credential(
+                    raw,
+                    proxy=proxy,
+                )
+                credential = runtime.track(refreshed_credential)
+                runtime.refresh_succeeded = True
+                await publish_refreshed_credential(credential)
+                access_token = str(credential.get("accessToken") or "").strip()
+                uid = str(credential.get("uid") or "").strip()
+                request_device_id = str(credential.get("deviceId") or "").strip()
+                if _has_usable_taygedo_session(credential):
+                    community_results, game_results = await run_taygedo_actions(
+                        access_token,
+                        uid,
+                        request_device_id or _stable_device_id(access_token),
+                    )
+            except Exception as exc:
+                refresh_error_reason = _log_taygedo_exception(
+                    "塔吉多鉴权恢复失败",
+                    exc,
+                )
+
         for community_name, status, reason, reward in community_results:
             results.append(
                 {
@@ -652,24 +870,7 @@ async def sign_taygedo(
                     "reason": reason,
                 }
             )
-
-        try:
-            results.extend(await game_task)
-        except asyncio.CancelledError:
-            await cancel_pending_tasks()
-            raise
-        except Exception as exc:
-            reason = _log_taygedo_exception("塔吉多应用内游戏签到异常", exc)
-            results.append(
-                {
-                    "account": account,
-                    "game": "应用内游戏",
-                    "platform": "塔吉多",
-                    "status": "失败",
-                    "reward": "",
-                    "reason": reason,
-                }
-            )
+        results.extend(game_results)
     elif refresh_error_reason is not None:
         results.extend(
             {
@@ -730,7 +931,7 @@ async def sign_taygedo(
                 }
             )
         except asyncio.CancelledError:
-            await cancel_pending_tasks()
+            await cancel_cloud_task()
             raise
         except Exception as exc:
             reason = _log_taygedo_exception("云异环时长查询异常", exc)
@@ -748,6 +949,68 @@ async def sign_taygedo(
     return results, credential
 
 
+def _has_usable_taygedo_session(credential: Mapping[str, Any]) -> bool:
+    """判断本次调用是否已有可直接使用的访问会话。"""
+
+    return bool(
+        str(credential.get("accessToken") or "").strip()
+        and str(credential.get("uid") or "").strip()
+    )
+
+
+def _taygedo_reason_is_auth_failure(reason: str) -> bool:
+    """只识别明确的会话失效提示，避免普通业务失败触发刷新。"""
+
+    text = str(reason or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "http 401",
+            "http 402",
+            "http 403",
+            "code=401",
+            "code=402",
+            "code=4011",
+            "code=403",
+            "auth_expired",
+            "access token",
+            "access_token",
+            "业务码 4011",
+            "token失效",
+            "token 已失效",
+            "令牌失效",
+            "授权失效",
+            "登录失效",
+            "登录已过期",
+            "未登录",
+            "未授权",
+            "invalid token",
+            "unauthorized",
+            "invalid_token",
+        )
+    )
+
+
+def _taygedo_actions_need_refresh(
+    community_results: list[tuple[str, str, str, str]],
+    game_results: list[dict[str, str]],
+) -> bool:
+    """判断动作结果是否需要一次受控的 refreshToken 恢复。"""
+
+    entries = [
+        (status, reason)
+        for _name, status, reason, _reward in community_results
+    ]
+    entries.extend(
+        (str(result.get("status", "")), str(result.get("reason", "")))
+        for result in game_results
+    )
+    if not entries:
+        return False
+    # 社区与游戏请求并发执行；一项成功不能掩盖另一项已经明确失效的会话。
+    return any(_taygedo_reason_is_auth_failure(reason) for _status, reason in entries)
+
+
 async def _sign_taygedo_games(
     access_token: str,
     uid: str,
@@ -758,7 +1021,7 @@ async def _sign_taygedo_games(
     roles: list[dict[str, str]] | None = None,
     lookup_complete: bool | None = None,
 ) -> list[dict[str, str]]:
-    """遍历塔吉多绑定游戏并执行每日游戏签到。"""
+    """遍历塔吉多绑定游戏并执行每日游戏日常任务。"""
 
     if roles is None:
         roles, lookup_complete = await _get_taygedo_game_roles_with_status(
@@ -772,9 +1035,11 @@ async def _sign_taygedo_games(
     assert lookup_complete is not None
     if not roles:
         if lookup_complete:
-            logger.info("塔吉多未绑定应用内游戏，跳过游戏签到")
+            logger.info("塔吉多未绑定应用内游戏，跳过游戏日常任务")
             return []
-        logger.warning("塔吉多游戏角色接口未完成，应用内游戏签到跳过")
+        logger.warning(
+            "塔吉多游戏角色接口未完成，应用内游戏日常任务跳过"
+        )
         return [
             {
                 "account": f"{account}/应用内游戏",
@@ -782,7 +1047,7 @@ async def _sign_taygedo_games(
                 "platform": "塔吉多",
                 "status": "失败",
                 "reward": "",
-                "reason": "游戏角色接口获取失败，无法确认应用内游戏签到",
+                "reason": "游戏角色接口获取失败，无法确认应用内游戏日常任务",
             }
         ]
 
@@ -792,7 +1057,7 @@ async def _sign_taygedo_games(
         game_id = role["gameId"]
         role_id = role["roleId"]
         role_name = role.get("roleName") or role_id
-        game_name = role.get("gameName") or TAYGEDO_GAME_NAMES.get(game_id, game_id)
+        game_name = _taygedo_game_name(game_id, role.get("gameName"))
         # 角色卡是本次结果的权威名称，不能继续沿用旧凭据中的异环别名。
         role_account = f"{role_name}/{role_name}({role_id})"
         try:
@@ -821,7 +1086,7 @@ async def _sign_taygedo_games(
                 "reason": "",
             }
         except Exception as exc:
-            reason = _log_taygedo_exception("塔吉多应用内游戏签到异常", exc)
+            reason = _log_taygedo_exception("塔吉多应用内游戏日常任务异常", exc)
             return {
                 "account": role_account,
                 "game": game_name,
@@ -844,7 +1109,7 @@ async def _sign_taygedo_games(
                 "platform": "塔吉多",
                 "status": "失败",
                 "reward": "",
-                "reason": "部分游戏角色接口获取失败，无法确认全部应用内游戏签到",
+                "reason": "部分游戏角色接口获取失败，无法确认全部应用内游戏日常任务",
             }
         )
     return results
@@ -883,14 +1148,21 @@ async def _get_taygedo_game_roles_with_status(
             response = await client.get(
                 GAME_RECORD_CARDS_URL,
                 params={"uid": uid},
-                headers=_native_headers(access_token, uid, device_id),
+                headers=_native_headers(
+                    access_token,
+                    uid,
+                    device_id,
+                ),
                 timeout=30.0,
             )
             data = _read_json(response, "塔吉多游戏角色卡")
             raw_cards = data.get("data")
-            if not _is_code(data.get("code"), 0) or not _is_game_record_cards_payload(
-                raw_cards
-            ):
+            if not _is_code(data.get("code"), 0):
+                error = _api_error("塔吉多游戏角色卡", response, data)
+                if _taygedo_reason_is_auth_failure(str(error)):
+                    raise error
+                raise ValueError("角色卡响应格式无效")
+            if not _is_game_record_cards_payload(raw_cards):
                 raise ValueError("角色卡响应格式无效")
             roles = [
                 role
@@ -901,6 +1173,9 @@ async def _get_taygedo_game_roles_with_status(
                 return _deduplicate_game_roles(roles), True
             # 角色卡可能只返回未绑定的空卡，继续查询角色列表获取已绑定角色。
         except Exception as exc:
+            # 角色卡的明确鉴权失败不能被静默降级，否则社区签到成功时不会触发恢复。
+            if _taygedo_reason_is_auth_failure(str(exc)):
+                raise
             logger.debug(f"获取塔吉多游戏角色卡跳过: {type(exc).__name__}")
 
         roles: list[dict[str, str]] = []
@@ -913,11 +1188,19 @@ async def _get_taygedo_game_roles_with_status(
                 response = await client.get(
                     GAME_ROLES_URL,
                     params={"gameId": game_id},
-                    headers=_native_headers(access_token, uid, device_id),
+                    headers=_native_headers(
+                        access_token,
+                        uid,
+                        device_id,
+                        app_version=APP_VERSION,
+                    ),
                     timeout=30.0,
                 )
                 data = _read_json(response, f"塔吉多角色({game_id})")
                 if not _is_code(data.get("code"), 0):
+                    error = _api_error(f"塔吉多角色({game_id})", response, data)
+                    if _taygedo_reason_is_auth_failure(str(error)):
+                        raise error
                     return [], False
                 # getGameRoles 的响应只返回 roleId/roleName，游戏归属由本次查询参数决定。
                 roles = [
@@ -932,10 +1215,13 @@ async def _get_taygedo_game_roles_with_status(
                 ]
                 return roles, True
             except Exception as exc:
+                # 保留明确的鉴权失败给上层的一次受控 refresh；普通单游戏失败继续部分回退。
+                if _taygedo_reason_is_auth_failure(str(exc)):
+                    raise
                 logger.debug(f"获取塔吉多游戏角色 {game_id} 跳过: {type(exc).__name__}")
                 return [], False
 
-        # 旧接口按请求参数返回角色；最终按角色 ID 去重，避免重复映射到多个游戏。
+        # 旧接口按请求参数返回角色；最终按游戏 ID 和角色 ID 去重，避免重复映射。
         role_batches = await asyncio.gather(
             *(load_roles(game_id) for game_id in TAYGEDO_GAME_IDS)
         )
@@ -1063,26 +1349,34 @@ def _normalise_game_role(
     )
     return {
         "gameId": game_id,
-        # 服务端偶尔会沿用上一个子社区的 gameName，gameId 才是角色归属依据。
-        "gameName": TAYGEDO_GAME_NAMES.get(
-            game_id,
-            str(raw_role.get("gameName") or game_id).strip(),
-        ),
+        # 角色卡的 gameName 是已确认响应中的展示来源；缺失时才使用安全回退。
+        "gameName": _taygedo_game_name(game_id, raw_role.get("gameName")),
         "roleId": role_id,
         "roleName": role_name,
     }
 
 
+def _taygedo_game_name(game_id: str, reported_name: Any = "") -> str:
+    """按已确认游戏 ID 返回稳定名称，未知 ID 才采用服务端名称。"""
+
+    known_name = TAYGEDO_GAME_NAMES.get(game_id)
+    if known_name:
+        return known_name
+    name = str(reported_name or "").strip()
+    return name or f"游戏({game_id})"
+
+
 def _deduplicate_game_roles(roles: list[dict[str, str]]) -> list[dict[str, str]]:
-    # 角色 ID 在塔吉多账号下是全局唯一的，避免旧接口在多个 gameId 查询中
-    # 重复返回同一角色时，把一个角色错误展示为多个游戏角色。
-    seen: set[str] = set()
+    # 只在同一 gameId 内去重；不同游戏即使角色 ID 相同也必须分别展示。
+    seen: set[tuple[str, str]] = set()
     unique: list[dict[str, str]] = []
     for role in roles:
+        game_id = role.get("gameId", "")
         role_id = role.get("roleId", "")
-        if not role_id or role_id in seen:
+        key = (game_id, role_id)
+        if not role_id or key in seen:
             continue
-        seen.add(role_id)
+        seen.add(key)
         unique.append(role)
     return unique
 
@@ -1109,9 +1403,9 @@ async def _get_game_sign_state(
         headers=_h5_headers(access_token),
         timeout=30.0,
     )
-    data = _read_json(response, f"塔吉多游戏签到状态({game_id})")
+    data = _read_json(response, f"塔吉多游戏日常任务状态({game_id})")
     if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
-        raise _api_error(f"塔吉多游戏签到状态({game_id})", response, data)
+        raise _api_error(f"塔吉多游戏日常任务状态({game_id})", response, data)
     return data["data"]
 
 
@@ -1169,26 +1463,35 @@ async def _submit_game_sign(
         data={"gameId": game_id, "roleId": role_id},
         timeout=30.0,
     )
-    data = _read_json(response, f"塔吉多游戏签到({game_id})")
+    data = _read_json(response, f"塔吉多游戏日常任务({game_id})")
     message = str(data.get("msg") or data.get("message") or "").strip()
     if _is_code(data.get("code"), 0):
         return "成功"
     if str(data.get("code")) == "5052" or _is_already_signed(message):
         return "已签到"
-    raise _api_error(f"塔吉多游戏签到({game_id})", response, data)
+    raise _api_error(f"塔吉多游戏日常任务({game_id})", response, data)
 
 
-def _native_headers(access_token: str, uid: str, device_id: str) -> dict[str, str]:
-    return {
+def _native_headers(
+    access_token: str,
+    uid: str,
+    device_id: str,
+    *,
+    app_version: str = TAYGEDO_NATIVE_APP_VERSION,
+) -> dict[str, str]:
+    headers = {
         "accept": "application/json, text/plain, */*",
         "authorization": access_token,
         "uid": uid,
         "deviceid": device_id,
-        "appversion": TAYGEDO_NATIVE_APP_VERSION,
+        "appversion": app_version,
         "platform": "android",
-        "ds": _make_login_ds(),
         "user-agent": APP_USER_AGENT,
     }
+    # 已核对的旧版角色列表/社区接口不携带 DS；角色卡的 1.2.5 原生协议才需要它。
+    if app_version == TAYGEDO_NATIVE_APP_VERSION:
+        headers["ds"] = _make_login_ds()
+    return headers
 
 
 def _h5_headers(access_token: str) -> dict[str, str]:
@@ -1293,10 +1596,6 @@ async def _attach_role_name(
     if not access_token or not uid:
         return credential
 
-    # 角色查询失败或返回空列表时不能继续使用旧凭据中的游戏名。
-    credential.pop("gameId", None)
-    credential.pop("roleName", None)
-    credential.pop("roleIds", None)
     device_id = str(credential.get("deviceId") or _stable_device_id(access_token))
     roles, lookup_complete = await _get_taygedo_game_roles_with_status(
         access_token,
@@ -1306,6 +1605,10 @@ async def _attach_role_name(
     )
     credential["_gameRoles"] = roles
     credential["_gameRolesComplete"] = lookup_complete
+    # 角色查询失败或只返回部分结果时保留旧元数据，避免一次异常请求
+    # 破坏下次调用仍可用的游戏映射。
+    if not lookup_complete:
+        return credential
     if not roles:
         if lookup_complete:
             credential.pop("gameId", None)
@@ -1313,6 +1616,9 @@ async def _attach_role_name(
             credential.pop("roleIds", None)
         return credential
     first = next((role for role in roles if role.get("roleName")), roles[0])
+    credential.pop("gameId", None)
+    credential.pop("roleName", None)
+    credential.pop("roleIds", None)
     credential["gameId"] = first["gameId"]
     if first.get("roleName"):
         credential["roleName"] = first["roleName"]
@@ -1338,7 +1644,12 @@ async def _community_sign(
                 response = await client.post(
                     APP_SIGNIN_URL,
                     headers={
-                        **_native_headers(access_token, uid, device_id),
+                        **_native_headers(
+                            access_token,
+                            uid,
+                            device_id,
+                            app_version=APP_VERSION,
+                        ),
                         "content-type": "application/x-www-form-urlencoded",
                     },
                     data={"communityId": community_id},
@@ -1390,7 +1701,8 @@ def _api_error(
     endpoint: str, response: httpx.Response, data: Mapping[str, Any]
 ) -> ValueError:
     message = str(data.get("msg") or data.get("message") or "请求失败").strip()
-    return ValueError(f"{endpoint}失败（HTTP {response.status_code}）：{message}")
+    code = data.get("code", "unknown")
+    return ValueError(f"{endpoint}失败（HTTP {response.status_code}，code={code}）：{message}")
 
 
 def _is_already_signed(message: str) -> bool:

@@ -36,9 +36,9 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+from app.tools.community_notify import (
+    append_task_community_summary,
+    mark_task_community_summary_consumed,
 )
 from .AutoProxy import HSRAutoProxyTask
 from .tools.run_model import CompletionWriteback, HSRRuntimeState
@@ -834,10 +834,10 @@ class HSRManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{task_mode}任务报告"
         )
-        task_result = append_task_game_sign_summary(
+        task_result = append_task_community_summary(
             self.task_info, self.script_info.result
         )
-        has_game_sign_summary = task_result != self.script_info.result
+        has_community_summary = task_result != self.script_info.result
         result = {
             "title": f"{task_mode}任务报告",
             "script_name": self.script_info.name or "空白",
@@ -846,7 +846,7 @@ class HSRManager(TaskExecuteBase):
             "completed_count": len(over_user),
             "uncompleted_count": uncompleted_count,
             "result": task_result,
-            "game_sign_summary": has_game_sign_summary,
+            "game_sign_summary": has_community_summary,
         }
 
         try:
@@ -862,8 +862,8 @@ class HSRManager(TaskExecuteBase):
 
         try:
             await push_notification("代理结果", title, result, None)
-            if has_game_sign_summary:
-                mark_task_game_sign_summary_consumed(self.task_info)
+            if has_community_summary:
+                mark_task_community_summary_consumed(self.task_info)
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")
             await self._send_notification_error(f"推送 HSR 代理结果时出现异常: {e}")

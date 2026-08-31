@@ -1,6 +1,6 @@
 import { Service } from '@/api'
 
-/** 新版游戏签到页使用的业务 API。 */
+/** 新版游戏社区页使用的业务 API。 */
 export function useGameSignApi() {
   const listAccounts = () => Service.listGameSignAccountsApiToolsSignAccountListPost()
 

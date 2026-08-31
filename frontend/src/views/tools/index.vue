@@ -120,7 +120,7 @@ const loadTools = async () => {
         Status: '-',
       }
     }
-    // 游戏签到由侧边栏独立页面单独维护，工具页只接管明日方舟 PC 配置。
+    // 游戏社区由侧边栏独立页面单独维护，工具页只接管明日方舟 PC 配置。
     Object.assign(toolsConfig, { ArknightsPC: data.ArknightsPC })
     Object.assign(editingConfig, {
       ArknightsPC: JSON.parse(JSON.stringify(data.ArknightsPC)),

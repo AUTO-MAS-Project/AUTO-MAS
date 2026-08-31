@@ -28,7 +28,7 @@ from app.core import Config
 from app.services import Notify
 from app.utils.logger import get_logger
 
-logger = get_logger("游戏签到通知")
+logger = get_logger("游戏社区通知")
 
 NOTIFICATION_SEND_ATTEMPTS = 2
 NOTIFICATION_RETRY_DELAY_SECONDS = 1
@@ -221,7 +221,7 @@ async def _send_notification_channel(
 
 
 async def push_game_sign_notification(results: list[dict]) -> list[str]:
-    """推送手动或启动时触发的游戏签到结果通知。"""
+    """推送手动或启动时触发的游戏社区结果通知。"""
     results = _notification_results(results)
     if not results:
         return []

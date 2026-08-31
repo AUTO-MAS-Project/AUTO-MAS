@@ -30,9 +30,9 @@ from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.services import Notify
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+from app.tools.community_notify import (
+    append_task_community_summary,
+    mark_task_community_summary_consumed,
 )
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
@@ -373,10 +373,10 @@ class OkwwManager(TaskExecuteBase):
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
-                task_result = append_task_game_sign_summary(
+                task_result = append_task_community_summary(
                     self.task_info, user_result_text
                 )
-                has_game_sign_summary = task_result != user_result_text
+                has_community_summary = task_result != user_result_text
                 result = {
                     "title": f"{task_mode}任务报告",
                     "script_name": self.script_info.name or "空白",
@@ -385,7 +385,7 @@ class OkwwManager(TaskExecuteBase):
                     "completed_count": len(over_user),
                     "uncompleted_count": len(error_user) + len(wait_user),
                     "result": task_result,
-                    "game_sign_summary": has_game_sign_summary,
+                    "game_sign_summary": has_community_summary,
                     "push_log": "",  # 节点已并入 result，不再单独推送
                 }
 
@@ -403,8 +403,8 @@ class OkwwManager(TaskExecuteBase):
                 )
                 try:
                     await push_notification("代理结果", title, result)
-                    if has_game_sign_summary:
-                        mark_task_game_sign_summary_consumed(self.task_info)
+                    if has_community_summary:
+                        mark_task_community_summary_consumed(self.task_info)
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Publisher.send(
