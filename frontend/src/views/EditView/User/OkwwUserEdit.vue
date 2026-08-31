@@ -117,17 +117,20 @@
                   <template #label>
                     <span class="form-label">
                       {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip :title="t('edit.collectsKeyMomentsFrom')">
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        :title="t('edit.collectsKeyMomentsFrom')"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
-                    v-model:value="formData.Notify.PushLogEnabled"
+                    v-model:value="formData.Notify.PushLogMode"
                     size="large"
                     class="modern-select"
-                    :options="quickConfigOptions"
-                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                    :options="pushLogModeOptions"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
@@ -476,6 +479,13 @@ const quickConfigOptions = [
   { label: t('edit.off'), value: false },
 ]
 
+// 节点详情推送模式（取值与后端 Notify.PushLogMode 一致，驱动逻辑需保持原样）
+const pushLogModeOptions = [
+  { label: '关闭', value: '关闭' },
+  { label: '逐条', value: '逐条' },
+  { label: '汇总', value: '汇总' },
+]
+
 const okwwConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
@@ -532,10 +542,10 @@ const additionalTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
-// PushLogEnabled 为本页新增开关；待后端 schema 重新生成前端 API 后，
+// PushLogMode 为本页新增推送模式；待后端 schema 重新生成前端 API 后，
 // 该字段会并入 OkwwUserConfig['Notify']，届时可移除本地扩展
 type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>> & {
-  PushLogEnabled: boolean
+  PushLogMode: '关闭' | '逐条' | '汇总'
 }
 
 type OkwwUserFormData = {
@@ -574,7 +584,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
-    PushLogEnabled: true,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

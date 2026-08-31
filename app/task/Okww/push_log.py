@@ -96,29 +96,34 @@ OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 
-def okww_resolve(results: list[tuple[str, str]]) -> list[tuple[str, str]]:
+def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
-    输入/输出均为 ``(log_type, text)`` 元组（与 log_box `_PostProcessor` 契约
-    一致），日志类型随元组一并保留。规则产出两类标记：裸节点名（开始/动作标记，
-    默认成功）与 "状态: 节点" 标记。同一节点多次出现保留最高优先级状态，且节点
-    顺序按最后一次出现排列（多会话日志时取最后会话的流程顺序）。
+    输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
+    契约一致），日志类型与采集时间戳随元组一并保留。规则产出两类标记：裸节点
+    名（开始/动作标记，默认成功）与 "状态: 节点" 标记。同一节点多次出现保留
+    最高优先级状态，且节点顺序按最后一次出现排列（多会话日志时取最后会话的
+    流程顺序）；时间戳取该节点最终状态（最高优先级）对应的采集时刻。
     """
-    lines = [text for _, text in results]
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
-    for line in lines:
-        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", line)
+    ts_of: dict[str, float] = {}
+    for _, text, ts in results:
+        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
         if m:
             status, node = m.group(1), m.group(2)
         else:
-            status, node = "✅ 成功", line
+            status, node = "✅ 成功", text
         rank = _STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
         order.append(node)
         if rank > states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
+            ts_of[node] = ts
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
-    return [(LogType.NORMAL, f"{states[node][1]}: {node}") for node in order]
+    return [
+        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
+        for node in order
+    ]
