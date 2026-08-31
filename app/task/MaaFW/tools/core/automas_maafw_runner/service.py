@@ -11,10 +11,18 @@ from typing import Any, Callable
 
 import psutil
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import prepare_agent_envs, write_agent_compat_shims
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.service import MaaFWAgentEnvService
+from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
+    prepare_agent_envs,
+    write_agent_compat_shims,
+)
+from app.task.MaaFW.tools.core.automas_maafw_agent_env.service import (
+    MaaFWAgentEnvService,
+)
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWInterface
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import MaaFWRuntimePool, RuntimeInstaller
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    MaaFWRuntimePool,
+    RuntimeInstaller,
+)
 
 from .environment import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
@@ -22,7 +30,12 @@ from .environment import (
     prepare_runner_environment,
     release_runner_environment,
 )
-from .models import MaaFWDeviceConfig, MaaFWRunnerJobPayload, MaaFWRunPlan, MaaFWRunResult
+from .models import (
+    MaaFWDeviceConfig,
+    MaaFWRunnerJobPayload,
+    MaaFWRunPlan,
+    MaaFWRunResult,
+)
 from .run_plan import build_maafw_run_plan
 from .shared_agent import route_managed_python_agents_to_shared_runtime
 from .worker_registry import (
@@ -149,7 +162,9 @@ class MaaFWRunnerService:
         except psutil.Error:
             owner_create_time = None
         return MaaFWRunnerJobPayload(
-            plan=plan if isinstance(plan, MaaFWRunPlan) else MaaFWRunPlan.model_validate(plan),
+            plan=plan
+            if isinstance(plan, MaaFWRunPlan)
+            else MaaFWRunPlan.model_validate(plan),
             deviceConfig=(
                 device_config
                 if isinstance(device_config, MaaFWDeviceConfig)
@@ -272,9 +287,7 @@ class MaaFWRunnerService:
                     agent_percent = min(100.0, max(0.0, float(raw_percent)))
                     overall_percent = 75.0 + agent_percent * 0.2
                 details = {
-                    key: event[key]
-                    for key in ("completed", "total")
-                    if key in event
+                    key: event[key] for key in ("completed", "total") if key in event
                 }
                 if agent_percent is not None:
                     details["agent_percent"] = agent_percent
@@ -298,9 +311,7 @@ class MaaFWRunnerService:
                 project_path,
                 agent_plans,
                 python_executable=environment.python_executable,
-                dependencies_complete=(
-                    managed_shared_agent_dependencies_complete
-                ),
+                dependencies_complete=(managed_shared_agent_dependencies_complete),
                 managed_python_agent_indexes=managed_python_agent_indexes,
             )
             if shared_agents:
@@ -443,5 +454,7 @@ class MaaFWRunnerService:
         if isinstance(interface, MaaFWInterface):
             return interface
         if hasattr(interface, "model_dump"):
-            return MaaFWInterface.model_validate(interface.model_dump(mode="json", by_alias=True))
+            return MaaFWInterface.model_validate(
+                interface.model_dump(mode="json", by_alias=True)
+            )
         return MaaFWInterface.model_validate(interface)

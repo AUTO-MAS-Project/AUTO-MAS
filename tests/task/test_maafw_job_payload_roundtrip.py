@@ -140,9 +140,7 @@ class SyntheticPlanRoundTripTest(unittest.TestCase):
                 for index, child in enumerate(value):
                     walk(child, f"{path}[{index}]")
             else:
-                self.assertIsInstance(
-                    value, (str, int, float, bool, type(None)), path
-                )
+                self.assertIsInstance(value, (str, int, float, bool, type(None)), path)
 
         walk(dumped)
         json.dumps(dumped, ensure_ascii=False)  # 不得抛

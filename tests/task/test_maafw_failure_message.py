@@ -93,9 +93,7 @@ class RunnerReasonTest(unittest.TestCase):
         ids = tuple(range(300000001, 300000009))
         runner = self._runner({i: f"N{i - 300000000}" for i in ids})
         message = runner._build_job_failure_message(detail(node_ids=ids))
-        self.assertEqual(
-            message.count("→"), self.module.FAILURE_NODE_NAME_LIMIT - 1
-        )
+        self.assertEqual(message.count("→"), self.module.FAILURE_NODE_NAME_LIMIT - 1)
         self.assertIn("N8", message)
         self.assertNotIn("N1 ", message)
 
@@ -185,9 +183,7 @@ class DeadFormattersRemovedTest(unittest.TestCase):
     """产出那串内部标识的两个格式化函数已随本次改动删除。"""
 
     def test_they_are_gone(self) -> None:
-        module, patcher = load(
-            "app.task.MaaFW.tools.core.automas_maafw_runner.runner"
-        )
+        module, patcher = load("app.task.MaaFW.tools.core.automas_maafw_runner.runner")
         self.addCleanup(patcher.stop)
         for name in ("_format_maafw_task_detail", "_format_maafw_status"):
             with self.subTest(symbol=name):

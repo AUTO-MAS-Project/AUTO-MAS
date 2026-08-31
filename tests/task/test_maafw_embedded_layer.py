@@ -74,7 +74,10 @@ def plugin_framework_imports(path: Path) -> list[str]:
             )
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if module.startswith("app.plugins") or module.split(".")[0] == "auto_mas_core":
+            if (
+                module.startswith("app.plugins")
+                or module.split(".")[0] == "auto_mas_core"
+            ):
                 found.append(module)
         elif isinstance(node, ast.Attribute) and node.attr == "get_service":
             found.append("ctx.get_service")

@@ -117,9 +117,7 @@ class ShellHintDetectionTest(unittest.TestCase):
         self.assertEqual(detect_maafw_project_shell_hint(root), "")
 
     def test_missing_directory_is_unknown(self) -> None:
-        self.assertEqual(
-            detect_maafw_project_shell_hint(self.base / "nope"), ""
-        )
+        self.assertEqual(detect_maafw_project_shell_hint(self.base / "nope"), "")
 
 
 class MirrorchyanRidIsTheAuthoritativeSignalTest(unittest.TestCase):

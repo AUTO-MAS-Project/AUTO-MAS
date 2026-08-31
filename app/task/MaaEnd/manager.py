@@ -49,6 +49,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "ScriptConfig": ScriptConfigTask,
 }
 
+
 class MaaEndManager(TaskExecuteBase):
     """MaaEnd 控制器"""
 
@@ -88,18 +89,22 @@ class MaaEndManager(TaskExecuteBase):
             or script_config.get("Game", "EmulatorIndex") in ["", "-"]
         ):
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-        elif self.controller_protocol == "Win32" and not Path(
-            script_config.get("Game", "Path")
-        ).exists():
+        elif (
+            self.controller_protocol == "Win32"
+            and not Path(script_config.get("Game", "Path")).exists()
+        ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
-        if self.task_info.mode == "AutoProxy" and not (
-            Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Info", "Path"
+        if (
+            self.task_info.mode == "AutoProxy"
+            and not (
+                Path(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                        "Info", "Path"
+                    )
                 )
-            )
-            / "config/mxu-MaaEnd.json"
-        ).exists():
+                / "config/mxu-MaaEnd.json"
+            ).exists()
+        ):
             return "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成！"
 
         return "Pass"
@@ -188,7 +193,6 @@ class MaaEndManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-
             if self.emulator_manager is not None:
                 await self.emulator_manager.close(
                     self.script_config.get("Game", "EmulatorIndex")
@@ -239,7 +243,9 @@ class MaaEndManager(TaskExecuteBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"推送代理结果时出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         # 还原配置

@@ -152,9 +152,7 @@ class _SystemHandler:
             timeout=self.frontend_close_timeout
         )
         if not disconnected:
-            raise TimeoutError(
-                "前端未在规定时间内完成关闭，已取消系统电源操作"
-            )
+            raise TimeoutError("前端未在规定时间内完成关闭，已取消系统电源操作")
 
         # 主连接断开是 renderer 退出的可观测边界；给 Electron 窗口销毁留出短暂调度时间。
         await asyncio.sleep(0.2)
@@ -205,9 +203,7 @@ class _SystemHandler:
             self._power_cancelled_event_task = None
             power_task = asyncio.create_task(self._power_task(power_sign))
             self.power_task = power_task
-            logger.info(
-                f"电源任务已启动, {self.countdown}秒后执行: {power_sign}"
-            )
+            logger.info(f"电源任务已启动, {self.countdown}秒后执行: {power_sign}")
             Config.power_sign = "NoAction"
         else:
             logger.warning("已有电源任务在运行, 请勿重复启动")
@@ -267,9 +263,7 @@ class _SystemHandler:
 
         return await startup.is_enabled()
 
-    async def kill_process(
-        self, path: Path | str, *, kill_tree: bool = True
-    ) -> bool:
+    async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
         """根据路径中止进程。
 
         Args:

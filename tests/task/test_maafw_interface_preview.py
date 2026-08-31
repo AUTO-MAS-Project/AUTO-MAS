@@ -87,9 +87,7 @@ class MaaFWInterfacePreviewTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             missing_root = Path(temp_dir) / "missing"
             result = asyncio.run(
-                preview_maafw_interface(
-                    MaaFWInterfacePreviewIn(path=str(missing_root))
-                )
+                preview_maafw_interface(MaaFWInterfacePreviewIn(path=str(missing_root)))
             )
 
             self.assertEqual(result.code, 400)

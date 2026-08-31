@@ -239,7 +239,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                         "Controller": "桌面端",
                         "Resource": "简中",
                     },
-                                    }
+                }
             )
             for name in user_names:
                 _, user_cfg = await config.UserData.add(MaaFWUserConfig)
@@ -277,9 +277,12 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                 built.append(task)
                 return task
 
-            with mock.patch.object(
-                app.core.Config, "ScriptConfig", {script_uid: config}
-            ), mock.patch.object(manager, "_build_inner_task", fake_build):
+            with (
+                mock.patch.object(
+                    app.core.Config, "ScriptConfig", {script_uid: config}
+                ),
+                mock.patch.object(manager, "_build_inner_task", fake_build),
+            ):
                 await manager.main_task()
             return manager
 
@@ -319,7 +322,7 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                         "Controller": "桌面端",
                         "Resource": "简中",
                     },
-                                    }
+                }
             )
             for name in ("用户A", "用户B"):
                 _, user_cfg = await config.UserData.add(MaaFWUserConfig)
@@ -334,7 +337,10 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                 user_id=None,
             )
             item = ScriptItem(
-                script_id=str(script_uid), name="测试 MaaFW", status="运行", user_list=[]
+                script_id=str(script_uid),
+                name="测试 MaaFW",
+                status="运行",
+                user_list=[],
             )
             task_info.script_list = [item]
             manager = MaaFWEmbeddedManager(item)
@@ -349,9 +355,12 @@ class EmbeddedManagerUserLoopTest(unittest.TestCase):
                 built.append(task)
                 return task
 
-            with mock.patch.object(
-                app.core.Config, "ScriptConfig", {script_uid: config}
-            ), mock.patch.object(manager, "_build_inner_task", fake_build):
+            with (
+                mock.patch.object(
+                    app.core.Config, "ScriptConfig", {script_uid: config}
+                ),
+                mock.patch.object(manager, "_build_inner_task", fake_build),
+            ):
                 await manager.main_task()
 
         asyncio.run(go())
@@ -448,10 +457,9 @@ class RuntimePoolRouteInjectionTest(unittest.TestCase):
     def test_run_maafw_guard_still_reads_both_fields(self) -> None:
         """守卫还在，说明这条注入是必需的而不是可选的。"""
 
-        source = (
-            REPO_ROOT
-            / "app/task/MaaFW/tools/embedded/runner_task.py"
-        ).read_text(encoding="utf-8")
+        source = (REPO_ROOT / "app/task/MaaFW/tools/embedded/runner_task.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("runtime_pool_root = self.maafw_runtime_pool_root", source)
         self.assertIn("maafw.runtime_pool.v1", source)
 
@@ -477,7 +485,7 @@ class EmbeddedManagerAgainstRealProjectTest(unittest.TestCase):
                         "Controller": "PC",
                         "Resource": "官服",
                     },
-                                    }
+                }
             )
             _, user_cfg = await config.UserData.add(MaaFWUserConfig)
             tasks = ["收取荒原"]

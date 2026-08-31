@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWAgent, MaaFWInterface
+from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
+    MaaFWAgent,
+    MaaFWInterface,
+)
 
 from .env import prepare_agent_envs
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
@@ -20,7 +23,11 @@ class MaaFWAgentEnvService:
     def build_command_plans(
         self,
         project_path: str | Path,
-        interface_or_agent: MaaFWInterface | MaaFWAgent | dict[str, Any] | list[dict[str, Any]] | None,
+        interface_or_agent: MaaFWInterface
+        | MaaFWAgent
+        | dict[str, Any]
+        | list[dict[str, Any]]
+        | None,
         *,
         managed_env_root: str | Path | None = None,
     ) -> list[MaaFWAgentCommandPlan]:
@@ -34,7 +41,11 @@ class MaaFWAgentEnvService:
     def prepare_env(
         self,
         project_path: str | Path,
-        interface_or_agent: MaaFWInterface | MaaFWAgent | dict[str, Any] | list[dict[str, Any]] | None,
+        interface_or_agent: MaaFWInterface
+        | MaaFWAgent
+        | dict[str, Any]
+        | list[dict[str, Any]]
+        | None,
         *,
         managed_env_root: str | Path | None = None,
         send_log: Any = None,
@@ -58,7 +69,11 @@ class MaaFWAgentEnvService:
 
     @staticmethod
     def _extract_agent(
-        value: MaaFWInterface | MaaFWAgent | dict[str, Any] | list[dict[str, Any]] | None,
+        value: MaaFWInterface
+        | MaaFWAgent
+        | dict[str, Any]
+        | list[dict[str, Any]]
+        | None,
     ) -> Any:
         if isinstance(value, MaaFWInterface):
             return value.agent

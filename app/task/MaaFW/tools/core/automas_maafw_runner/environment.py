@@ -146,7 +146,9 @@ def prepare_runner_environment(
     )
     # Explicit Managed DTOs are authoritative. Never let a writable checkout
     # sidecar override or corrupt their route.
-    route = {"managed": True} if explicit_route else _load_project_runtime_route(project)
+    route = (
+        {"managed": True} if explicit_route else _load_project_runtime_route(project)
+    )
     managed_project = (
         bool(route.get("managed"))
         or runtime_requirement is not None
@@ -253,9 +255,7 @@ def prepare_runner_environment(
         )
     if explicit_requirements is not None and bound_runtime_id:
         if bound_runtime is None:
-            raise RuntimeError(
-                f"MaaFW Managed runtime 不存在: {bound_runtime_id}"
-            )
+            raise RuntimeError(f"MaaFW Managed runtime 不存在: {bound_runtime_id}")
         try:
             bound_selector = canonicalize_requirements(
                 bound_runtime.get("selectorRequirements")
@@ -264,13 +264,9 @@ def prepare_runner_environment(
             )
             requested_selector = canonicalize_requirements(packages)
         except Exception as exc:
-            raise RuntimeError(
-                "MaaFW Managed runtime selector 无法验证"
-            ) from exc
+            raise RuntimeError("MaaFW Managed runtime selector 无法验证") from exc
         if bound_selector != requested_selector:
-            raise RuntimeError(
-                "MaaFW Managed runtime 的完整 selector 与可信路由不一致"
-            )
+            raise RuntimeError("MaaFW Managed runtime 的完整 selector 与可信路由不一致")
         _validate_runtime_python_constraint(
             bound_runtime,
             normalized_python_constraint,
@@ -373,13 +369,10 @@ def prepare_runner_environment(
         maafw_version = str(runtime.get("maafwVersion") or "").strip() or None
         if maafw_version is None:
             maafw_version = _installed_maafw_version(python_executable, env)
-        maafw_requirement = (
-            str(runtime.get("maafwRequirement") or "").strip() or None
-        )
+        maafw_requirement = str(runtime.get("maafwRequirement") or "").strip() or None
         _send_log(
             send_log,
-            "[MaaFW Runner] 复用共享 runtime: "
-            f"{resolved_runtime_id} ({venv_path})",
+            f"[MaaFW Runner] 复用共享 runtime: {resolved_runtime_id} ({venv_path})",
         )
         if maafw_version:
             _send_log(send_log, f"[MaaFW Runner] 使用 MaaFW: v{maafw_version}")
@@ -454,11 +447,7 @@ def _collect_stale_runtimes_once(
         return
 
     deleted = [str(item) for item in result.get("deleted", [])]
-    errors = [
-        item
-        for item in result.get("errors", [])
-        if isinstance(item, Mapping)
-    ]
+    errors = [item for item in result.get("errors", []) if isinstance(item, Mapping)]
     if deleted:
         _send_log(
             send_log,
@@ -561,9 +550,7 @@ def _runtime_constraint_text(value: Any) -> str:
         return requirement.strip()
     version = value.get("version")
     return (
-        f"=={version.strip()}"
-        if isinstance(version, str) and version.strip()
-        else ""
+        f"=={version.strip()}" if isinstance(version, str) and version.strip() else ""
     )
 
 
@@ -817,9 +804,7 @@ def _validate_runtime_python_constraint(
     identity_data = dict(identity) if isinstance(identity, Mapping) else {}
     python_abi = str(identity_data.get("pythonAbi") or "").strip().casefold()
     if not python_abi.startswith("cpython:"):
-        raise RuntimeError(
-            "MaaFW Managed runtime 缺少可信 CPython identity.pythonAbi"
-        )
+        raise RuntimeError("MaaFW Managed runtime 缺少可信 CPython identity.pythonAbi")
     python_version = str(identity_data.get("pythonVersion") or "").strip()
     try:
         compatible = Version(python_version) in SpecifierSet(constraint)
@@ -861,8 +846,7 @@ def _normalize_maafw_requirement(
         and not list(requirement.specifier)
     ):
         raise RuntimeError(
-            "MaaFW runtime requirement 不能是未约束的 'maafw'；"
-            "请显式声明版本或版本范围"
+            "MaaFW runtime requirement 不能是未约束的 'maafw'；请显式声明版本或版本范围"
         )
     return str(requirement)
 
@@ -932,9 +916,7 @@ def build_runner_environment(
     venv = Path(venv_path).resolve()
     scripts_dir = venv / ("Scripts" if os.name == "nt" else "bin")
     resolved_import_paths = [
-        str(Path(path).resolve())
-        for path in import_paths
-        if Path(path).exists()
+        str(Path(path).resolve()) for path in import_paths if Path(path).exists()
     ]
     existing_python_path = env.get("PYTHONPATH", "")
     if existing_python_path:
@@ -963,9 +945,7 @@ def prefer_active_venv_site_packages(
     active_site_packages = Path(raw_path).resolve()
     normalized_path = str(active_site_packages)
     sys.path[:] = [
-        item
-        for item in sys.path
-        if _normalized_sys_path(item) != normalized_path
+        item for item in sys.path if _normalized_sys_path(item) != normalized_path
     ]
     sys.path.insert(0, normalized_path)
     return active_site_packages

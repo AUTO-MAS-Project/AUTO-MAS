@@ -53,7 +53,10 @@ def normalize_maaend_config(
         for instance in instances:
             if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
                 return instance
-            if isinstance(instance, dict) and instance.get("id") == last_active_instance_id:
+            if (
+                isinstance(instance, dict)
+                and instance.get("id") == last_active_instance_id
+            ):
                 return instance
 
         for instance in instances:
@@ -150,9 +153,7 @@ class ScriptConfigTask(TaskExecuteBase):
             Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
         )
         template_config = (
-            read_file(maaend_template_path)
-            if maaend_template_path.exists()
-            else None
+            read_file(maaend_template_path) if maaend_template_path.exists() else None
         )
         maaend_set = normalize_maaend_config(
             maaend_set,

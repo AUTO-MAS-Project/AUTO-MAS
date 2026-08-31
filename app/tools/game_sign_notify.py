@@ -90,11 +90,7 @@ def _ordered_platforms(grouped: dict[str, list[dict]]) -> list[str]:
     """按通知模板固定社区顺序，并保留未知平台结果。"""
 
     return [
-        *[
-            platform
-            for platform in _PLATFORM_ORDER
-            if platform in grouped
-        ],
+        *[platform for platform in _PLATFORM_ORDER if platform in grouped],
         *[platform for platform in grouped if platform not in _PLATFORM_ORDER],
     ]
 
@@ -250,12 +246,10 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
         html_lines.append(
             f"<p><strong>{marker}{escape(platform)}({success_count}/{total}):</strong></p>"
         )
-        html_lines.append('<ul>')
+        html_lines.append("<ul>")
         for item in items:
-            html_lines.append(
-                f"<li>{escape(_format_notification_item(item))}</li>"
-            )
-        html_lines.append('</ul>')
+            html_lines.append(f"<li>{escape(_format_notification_item(item))}</li>")
+        html_lines.append("</ul>")
     html_lines.append("<p>AUTO-MAS 敬上</p>")
     html_content = "".join(html_lines)
     failed_channels: list[str] = []
@@ -324,9 +318,7 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
         failed_channels.append("Webhook")
 
     # Koishi 通知
-    if Config.get(
-        "Notify", "IfKoishiSupport"
-    ) and not await _send_notification_channel(
+    if Config.get("Notify", "IfKoishiSupport") and not await _send_notification_channel(
         "Koishi", lambda: Notify.send_koishi(f"{title}\n{plain_text}")
     ):
         failed_channels.append("Koishi")

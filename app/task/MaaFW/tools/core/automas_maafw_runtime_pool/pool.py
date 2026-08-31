@@ -309,9 +309,7 @@ class MaaFWRuntimePool:
                 )
             except Exception as install_error:
                 cleanup_error: Exception | None = None
-                if stage_created and (
-                    stage_dir.exists() or stage_dir.is_symlink()
-                ):
+                if stage_created and (stage_dir.exists() or stage_dir.is_symlink()):
                     try:
                         self._remove_staging_dir(stage_dir, runtime_id)
                         if stage_dir.exists() or stage_dir.is_symlink():
@@ -434,10 +432,7 @@ class MaaFWRuntimePool:
         else:
             raw_references = references
         normalized = sorted(
-            {
-                _required_token(reference, "reference")
-                for reference in raw_references
-            }
+            {_required_token(reference, "reference") for reference in raw_references}
         )
         with self._lock:
             manifest = self._read_manifest(runtime_id)
@@ -545,10 +540,7 @@ class MaaFWRuntimePool:
                     },
                 }
             runtimes = self.list()
-            keep_ids = {
-                str(item["runtimeId"])
-                for item in runtimes[:keep_latest]
-            }
+            keep_ids = {str(item["runtimeId"]) for item in runtimes[:keep_latest]}
             candidates: list[dict[str, Any]] = []
             kept: list[dict[str, Any]] = []
             deleted: list[str] = []
@@ -563,7 +555,9 @@ class MaaFWRuntimePool:
                 if last_used > cutoff:
                     reasons.append("grace_period")
                 if reasons:
-                    kept.append({"runtimeId": runtime_id, "reasons": sorted(set(reasons))})
+                    kept.append(
+                        {"runtimeId": runtime_id, "reasons": sorted(set(reasons))}
+                    )
                     continue
 
                 candidate = {
@@ -637,7 +631,9 @@ class MaaFWRuntimePool:
             try:
                 marker = json.loads(marker_path.read_text(encoding="utf-8"))
             except Exception as exc:
-                raise MaaFWRuntimePoolError(f"runtime pool marker is invalid: {exc}") from exc
+                raise MaaFWRuntimePoolError(
+                    f"runtime pool marker is invalid: {exc}"
+                ) from exc
             if (
                 isinstance(marker, dict)
                 and marker.get("schemaVersion") == LEGACY_POOL_SCHEMA_VERSION
@@ -695,9 +691,7 @@ class MaaFWRuntimePool:
                             f"managed runtime path must be a directory: {path}"
                         )
                     manifest = self._read_manifest(path.name)
-                    items.append(
-                        self._augment_manifest(manifest, verify_python=True)
-                    )
+                    items.append(self._augment_manifest(manifest, verify_python=True))
                 except Exception as exc:
                     errors.append(
                         {
@@ -729,7 +723,9 @@ class MaaFWRuntimePool:
     ) -> dict[str, Any]:
         self._initialize()
         runtime_dir = self._runtime_dir(runtime_id)
-        self._validate_managed_runtime_dir(runtime_dir, runtime_id, require_manifest=False)
+        self._validate_managed_runtime_dir(
+            runtime_dir, runtime_id, require_manifest=False
+        )
         manifest_path = runtime_dir / RUNTIME_MANIFEST_NAME
         _assert_not_reparse(manifest_path)
         try:
@@ -785,9 +781,10 @@ class MaaFWRuntimePool:
                 "platform",
                 "architecture",
             ):
-                if not isinstance(identity.get(field_name), str) or not str(
-                    identity[field_name]
-                ).strip():
+                if (
+                    not isinstance(identity.get(field_name), str)
+                    or not str(identity[field_name]).strip()
+                ):
                     raise MaaFWRuntimePoolError(
                         f"runtime manifest selector identity is incomplete: {runtime_id}"
                     )
@@ -796,8 +793,7 @@ class MaaFWRuntimePool:
                     f"runtime manifest selector ABI is invalid: {runtime_id}"
                 )
             if any(
-                not part.strip()
-                for part in str(identity["pythonAbi"]).split(":", 2)
+                not part.strip() for part in str(identity["pythonAbi"]).split(":", 2)
             ):
                 raise MaaFWRuntimePoolError(
                     f"runtime manifest selector ABI is incomplete: {runtime_id}"
@@ -842,12 +838,16 @@ class MaaFWRuntimePool:
             raise _MaaFWRuntimeEntryStaleError(
                 f"runtime manifest selector is stale: {runtime_id}: {exc}"
             ) from exc
-        self._validate_managed_runtime_dir(runtime_dir, runtime_id, require_manifest=True)
+        self._validate_managed_runtime_dir(
+            runtime_dir, runtime_id, require_manifest=True
+        )
         return manifest
 
     def _write_manifest(self, runtime_id: str, manifest: dict[str, Any]) -> None:
         runtime_dir = self._runtime_dir(runtime_id)
-        self._validate_managed_runtime_dir(runtime_dir, runtime_id, require_manifest=True)
+        self._validate_managed_runtime_dir(
+            runtime_dir, runtime_id, require_manifest=True
+        )
         _write_json_atomic(runtime_dir / RUNTIME_MANIFEST_NAME, manifest)
 
     def _augment_manifest(
@@ -878,7 +878,9 @@ class MaaFWRuntimePool:
             python_executable,
             runtime_dir,
         ):
-            raise MaaFWRuntimePoolError(f"runtime manifest contains unsafe paths: {runtime_id}")
+            raise MaaFWRuntimePoolError(
+                f"runtime manifest contains unsafe paths: {runtime_id}"
+            )
         if not environment_path.is_dir() or not python_executable.is_file():
             raise _MaaFWRuntimeEntryStaleError(
                 f"runtime environment is incomplete: {runtime_id}"
@@ -901,9 +903,7 @@ class MaaFWRuntimePool:
         payload["venvPath"] = str(environment_path)
         payload["pythonExecutable"] = str(python_executable)
         selector_requirements = list(
-            payload.get("selectorRequirements")
-            or payload.get("requirements")
-            or []
+            payload.get("selectorRequirements") or payload.get("requirements") or []
         )
         payload["selectorRequirements"] = selector_requirements
         payload["resolvedRequirements"] = list(
@@ -920,9 +920,8 @@ class MaaFWRuntimePool:
         environment_path: Path,
         install_result: dict[str, Any],
     ) -> Path:
-        raw_value = (
-            install_result.pop("pythonExecutable", None)
-            or install_result.pop("python_executable", None)
+        raw_value = install_result.pop("pythonExecutable", None) or install_result.pop(
+            "python_executable", None
         )
         if raw_value:
             candidate = Path(str(raw_value))
@@ -1048,7 +1047,9 @@ class MaaFWRuntimePool:
 
     def _remove_runtime_dir(self, runtime_id: str) -> None:
         runtime_dir = self._runtime_dir(runtime_id)
-        self._validate_managed_runtime_dir(runtime_dir, runtime_id, require_manifest=True)
+        self._validate_managed_runtime_dir(
+            runtime_dir, runtime_id, require_manifest=True
+        )
         shutil.rmtree(runtime_dir)
 
     def _remove_staging_dir(self, path: Path, runtime_id: str) -> None:
@@ -1076,16 +1077,19 @@ class MaaFWRuntimePool:
         _validate_runtime_id(runtime_id)
         _assert_not_reparse(path)
         if not path.is_dir():
-            raise MaaFWRuntimePoolError(
-                f"managed runtime must be a directory: {path}"
-            )
+            raise MaaFWRuntimePoolError(f"managed runtime must be a directory: {path}")
         resolved = path.resolve()
-        if resolved.parent != self.runtime_root.resolve() or resolved.name != runtime_id:
+        if (
+            resolved.parent != self.runtime_root.resolve()
+            or resolved.name != runtime_id
+        ):
             raise MaaFWRuntimePoolError(f"runtime path escapes managed pool: {path}")
         manifest_path = resolved / RUNTIME_MANIFEST_NAME
         _assert_not_reparse(manifest_path)
         if require_manifest and not manifest_path.is_file():
-            raise MaaFWRuntimePoolError(f"managed runtime has no manifest: {runtime_id}")
+            raise MaaFWRuntimePoolError(
+                f"managed runtime has no manifest: {runtime_id}"
+            )
 
 
 def _pool_lock(root: Path) -> threading.RLock:
@@ -1246,13 +1250,10 @@ def _verify_installed_python_identity(
     ]
     if missing:
         raise MaaFWRuntimePoolError(
-            "installed runtime Python identity is incomplete: "
-            + ", ".join(missing)
+            "installed runtime Python identity is incomplete: " + ", ".join(missing)
         )
 
-    expected_python_version = str(
-        expected_identity.get("pythonVersion") or ""
-    ).strip()
+    expected_python_version = str(expected_identity.get("pythonVersion") or "").strip()
     try:
         expected_release = Version(expected_python_version).release
     except InvalidVersion as exc:
@@ -1264,16 +1265,13 @@ def _verify_installed_python_identity(
             f"{actual['implementation']}:{actual['cacheTag']}:{actual['soabi']}"
         ),
         "pythonVersion": str(
-            actual["version"]
-            if len(expected_release) >= 3
-            else actual["shortVersion"]
+            actual["version"] if len(expected_release) >= 3 else actual["shortVersion"]
         ),
         "platform": str(actual["platform"]),
         "architecture": str(actual["architecture"]),
     }
     mismatches = [
-        f"{field}: expected={expected_identity.get(field)!r}, "
-        f"actual={actual_value!r}"
+        f"{field}: expected={expected_identity.get(field)!r}, actual={actual_value!r}"
         for field, actual_value in actual_values.items()
         if str(expected_identity.get(field) or "") != actual_value
     ]
@@ -1352,9 +1350,13 @@ def _parse_time(value: Any) -> datetime:
 
 
 def _format_time(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00",
-        "Z",
+    return (
+        value.astimezone(timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace(
+            "+00:00",
+            "Z",
+        )
     )
 
 
@@ -1377,9 +1379,7 @@ def _directory_size(path: Path) -> int:
     for directory, directory_names, file_names in os.walk(path):
         directory_path = Path(directory)
         directory_names[:] = [
-            name
-            for name in directory_names
-            if not (directory_path / name).is_symlink()
+            name for name in directory_names if not (directory_path / name).is_symlink()
         ]
         for name in file_names:
             file_path = directory_path / name

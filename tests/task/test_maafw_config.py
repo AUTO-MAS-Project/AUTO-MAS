@@ -26,8 +26,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
         script = MaaFWConfig()
         script_groups = {
-            group: len(names)
-            for group, names in script._config_item_index.items()
+            group: len(names) for group, names in script._config_item_index.items()
         }
         self.assertEqual(
             script_groups,
@@ -136,9 +135,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
             self.assertIsInstance(restored_script, MaaFWConfig)
             self.assertEqual(restored_script.get("Info", "Name"), "本地 MFW 项目")
-            self.assertEqual(
-                Path(restored_script.get("Info", "Path")), project_root
-            )
+            self.assertEqual(Path(restored_script.get("Info", "Path")), project_root)
             self.assertEqual(restored_script.get("Run", "RunTimeLimit"), 42)
             self.assertEqual(restored_script.get("Game", "LaunchMode"), "DirectExe")
             self.assertEqual(restored_script.get("Update", "Source"), "MirrorChyan")

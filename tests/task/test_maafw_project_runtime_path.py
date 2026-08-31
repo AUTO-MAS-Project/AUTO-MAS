@@ -83,9 +83,7 @@ class ProjectRuntimePathTest(unittest.TestCase):
 
     def test_bundled_maafw_directory_wins(self) -> None:
         root = self._project("maafw")
-        self.assertEqual(
-            self.module.project_maafw_runtime_path(root), root / "maafw"
-        )
+        self.assertEqual(self.module.project_maafw_runtime_path(root), root / "maafw")
 
     def test_dotnet_native_layout_is_found(self) -> None:
         """MFAAvalonia 的布局，此前落空。"""
@@ -107,9 +105,7 @@ class ProjectRuntimePathTest(unittest.TestCase):
         root = self._project("maafw")
         (root / "runtimes" / "win-x64" / "native").mkdir(parents=True)
         (root / "runtimes" / "win-x64" / "native" / "MaaFramework.dll").write_bytes(b"")
-        self.assertEqual(
-            self.module.project_maafw_runtime_path(root), root / "maafw"
-        )
+        self.assertEqual(self.module.project_maafw_runtime_path(root), root / "maafw")
 
     def test_project_without_a_bundled_runtime_falls_back(self) -> None:
         """没有自带 DLL 时回落 venv —— 返回 None，由调用方走默认路径。"""

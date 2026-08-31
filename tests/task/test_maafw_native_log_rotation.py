@@ -17,6 +17,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import app.core  # noqa: F401  # 初始化宿主配置
+
 NL = chr(10)
 
 

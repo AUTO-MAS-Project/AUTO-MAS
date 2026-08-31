@@ -38,9 +38,7 @@ async def push_notification(mode: str, title: str, message: dict) -> None:
         f"未完成数: {message['uncompleted_count']}\n\n"
         f"{message['result']}"
     )
-    message_html = Config.notify_env.get_template("general_result.html").render(
-        message
-    )
+    message_html = Config.notify_env.get_template("general_result.html").render(message)
 
     # ServerChan的换行是两个换行符。故而将\n替换为\n\n
     serverchan_message = message_text.replace("\n", "\n\n")

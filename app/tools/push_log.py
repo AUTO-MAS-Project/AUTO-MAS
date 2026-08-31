@@ -38,9 +38,7 @@ def build_push_log_text(users: Iterable, has_uncompleted: bool) -> str:
     )
 
 
-def append_push_log(
-    message_text: str, push_log: str, separator: str = "\n"
-) -> str:
+def append_push_log(message_text: str, push_log: str, separator: str = "\n") -> str:
     """把推送日志追加到通知正文
 
     Args:

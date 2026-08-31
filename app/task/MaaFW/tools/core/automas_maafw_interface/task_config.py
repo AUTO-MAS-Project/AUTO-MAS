@@ -114,15 +114,11 @@ def normalize_snapshot(
     raw_snapshot = _normalize_raw_snapshot(snapshot)
 
     raw_task_order = [
-        task_id
-        for task_id in raw_snapshot["taskOrder"]
-        if task_id in valid_task_ids
+        task_id for task_id in raw_snapshot["taskOrder"] if task_id in valid_task_ids
     ]
     partitioned_task_order = [
         task_id for task_id in raw_task_order if is_pretask_task_name(task_id)
-    ] + [
-        task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)
-    ]
+    ] + [task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)]
     for task_id in partitioned_task_order:
         if task_id in valid_task_ids and task_id not in seen_task_ids:
             normalized_order.append(task_id)
@@ -323,7 +319,9 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
     }
 
 
-def _normalize_raw_task_options(value: Any) -> dict[str, dict[str, MaaFWTaskOptionValue]]:
+def _normalize_raw_task_options(
+    value: Any,
+) -> dict[str, dict[str, MaaFWTaskOptionValue]]:
     normalized: dict[str, dict[str, MaaFWTaskOptionValue]] = {}
     if not isinstance(value, dict):
         return normalized
@@ -470,9 +468,7 @@ def _build_option_defaults(
                 else set()
             )
             defaults[option_name] = [
-                case.name
-                for case in option.cases or []
-                if case.name in selected_values
+                case.name for case in option.cases or [] if case.name in selected_values
             ]
             value_types[option_name] = "string_list"
             continue

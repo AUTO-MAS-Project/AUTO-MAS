@@ -17,7 +17,11 @@ class MaaFWAgentEnvError(RuntimeError):
 
 def build_maafw_agent_command_plans(
     base_dir: str | Path,
-    raw_agent: MaaFWAgent | list[MaaFWAgent] | dict[str, Any] | list[dict[str, Any]] | None,
+    raw_agent: MaaFWAgent
+    | list[MaaFWAgent]
+    | dict[str, Any]
+    | list[dict[str, Any]]
+    | None,
     *,
     managed_env_root: str | Path | None = None,
 ) -> list[MaaFWAgentCommandPlan]:
@@ -43,7 +47,11 @@ def compute_isolated_venv_path(
     if os.name == "nt":
         key = key.lower()
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
-    root = Path(managed_env_root) if managed_env_root is not None else Path.cwd() / "config" / "maafw_agent_venvs"
+    root = (
+        Path(managed_env_root)
+        if managed_env_root is not None
+        else Path.cwd() / "config" / "maafw_agent_venvs"
+    )
     return root.resolve() / f"maafw_venv_{digest}"
 
 
@@ -92,7 +100,11 @@ def venv_python_exe(venv_path: str | Path) -> Path:
 
 
 def _coerce_agent_configs(
-    raw_agent: MaaFWAgent | list[MaaFWAgent] | dict[str, Any] | list[dict[str, Any]] | None,
+    raw_agent: MaaFWAgent
+    | list[MaaFWAgent]
+    | dict[str, Any]
+    | list[dict[str, Any]]
+    | None,
 ) -> list[MaaFWAgent]:
     if raw_agent is None:
         return []
@@ -122,8 +134,7 @@ def _build_agent_command_plan(
     managed_env_root: str | Path | None,
 ) -> MaaFWAgentCommandPlan:
     child_args = [
-        _replace_project_dir(arg, base_dir)
-        for arg in agent_config.child_args or []
+        _replace_project_dir(arg, base_dir) for arg in agent_config.child_args or []
     ]
     embedded_requested = agent_config.embedded is True
     executable = _resolve_executable(
@@ -225,7 +236,10 @@ def _resolve_project_executable_path(base_dir: Path, raw_path: str) -> Path:
         return resolved_path
 
     exe_candidate = resolved_path.with_suffix(".exe")
-    if _is_within_base_dir(exe_candidate.resolve(), base_dir) and exe_candidate.is_file():
+    if (
+        _is_within_base_dir(exe_candidate.resolve(), base_dir)
+        and exe_candidate.is_file()
+    ):
         return exe_candidate.resolve()
     return resolved_path
 
@@ -246,14 +260,11 @@ def _is_bundled_python_pattern(
         return False
 
     python_entries = [
-        str(arg)
-        for arg in child_args
-        if str(arg).lower().endswith(".py")
+        str(arg) for arg in child_args if str(arg).lower().endswith(".py")
     ]
     if python_entries:
         return any(
-            _is_safe_existing_python_entry(base_dir, entry)
-            for entry in python_entries
+            _is_safe_existing_python_entry(base_dir, entry) for entry in python_entries
         )
     return (base_dir / "agent" / "main.py").is_file()
 
@@ -289,7 +300,9 @@ def _resolve_project_path(base_dir: Path, raw_path: str) -> Path:
         candidate = base_dir / candidate
     resolved_path = candidate.resolve()
     if not _is_within_base_dir(resolved_path, base_dir):
-        raise MaaFWAgentEnvError(f"路径越界，禁止访问项目目录之外的 agent 文件: {raw_path}")
+        raise MaaFWAgentEnvError(
+            f"路径越界，禁止访问项目目录之外的 agent 文件: {raw_path}"
+        )
     return resolved_path
 
 

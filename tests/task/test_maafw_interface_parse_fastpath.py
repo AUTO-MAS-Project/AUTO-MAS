@@ -21,7 +21,9 @@ class ParseJsonTextTest(unittest.TestCase):
 
     def test_strict_json_takes_the_fast_path(self) -> None:
         with patch.object(loader_module.json5, "loads") as json5_loads:
-            self.assertEqual(parse_json_text('{"a": [1, 2], "b": null}'), {"a": [1, 2], "b": None})
+            self.assertEqual(
+                parse_json_text('{"a": [1, 2], "b": null}'), {"a": [1, 2], "b": None}
+            )
         # 严格 JSON 不得落到 json5——那正是要绕开的慢路径。
         json5_loads.assert_not_called()
 
@@ -34,7 +36,9 @@ class ParseJsonTextTest(unittest.TestCase):
         self.assertEqual(parse_json_text(text), {"a": 1, "b": 2})
 
     def test_trailing_comma_and_unquoted_key_still_parse(self) -> None:
-        self.assertEqual(parse_json_text("{ a: 1, b: [2, 3,], }"), {"a": 1, "b": [2, 3]})
+        self.assertEqual(
+            parse_json_text("{ a: 1, b: [2, 3,], }"), {"a": 1, "b": [2, 3]}
+        )
 
     def test_single_quotes_still_parse(self) -> None:
         self.assertEqual(parse_json_text("{'a': 'x'}"), {"a": "x"})

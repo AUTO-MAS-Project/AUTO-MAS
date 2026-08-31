@@ -175,7 +175,9 @@ def _existing_complete_path(
             expected_sha256 or str(metadata.get("sha256") or "").strip().lower(),
         )
     )
-    if not candidate.is_absolute() or not candidate.is_relative_to(directory.resolve(strict=False)):
+    if not candidate.is_absolute() or not candidate.is_relative_to(
+        directory.resolve(strict=False)
+    ):
         return None
     if not candidate.is_file() or candidate.stat().st_size <= 0:
         return None
@@ -235,7 +237,9 @@ async def download_resumable(
         )
         existing = partial_path.stat().st_size if partial_path.is_file() else 0
         expected_total = _optional_int(metadata.get("totalBytes"))
-        if existing > max_bytes or (expected_total is not None and expected_total > max_bytes):
+        if existing > max_bytes or (
+            expected_total is not None and expected_total > max_bytes
+        ):
             partial_path.unlink(missing_ok=True)
             existing = 0
             expected_total = None
@@ -339,7 +343,9 @@ async def download_resumable(
                     supportsResume=outcome.range_supported,
                     attempt=attempt,
                 )
-                send_update_log(f"MaaFW update package downloaded: {outcome.size} bytes")
+                send_update_log(
+                    f"MaaFW update package downloaded: {outcome.size} bytes"
+                )
                 return outcome
             except (DownloadPaused, DownloadCancelled):
                 raise
@@ -371,7 +377,13 @@ async def download_resumable(
                     break
                 await asyncio.sleep(RETRY_DELAY)
         message = redact_text(last_error or "download failed")
-        store.update("failed", downloadedBytes=partial_path.stat().st_size if partial_path.is_file() else 0, error=message[:500])
+        store.update(
+            "failed",
+            downloadedBytes=partial_path.stat().st_size
+            if partial_path.is_file()
+            else 0,
+            error=message[:500],
+        )
         raise RuntimeError(f"MaaFW update package download failed: {message}")
 
 
@@ -402,7 +414,9 @@ async def _download_attempt(
             headers["If-Range"] = saved_modified
 
     current_url = download_url
-    async with httpx.AsyncClient(proxy=proxy, follow_redirects=False, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        proxy=proxy, follow_redirects=False, timeout=30.0
+    ) as client:
         for redirect_count in range(MAX_REDIRECTS + 1):
             async with client.stream("GET", current_url, headers=headers) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
@@ -413,13 +427,30 @@ async def _download_attempt(
                     continue
 
                 if response.status_code == 416:
-                    response_etag = str(response.headers.get("etag") or "").strip() or None
-                    response_modified = str(response.headers.get("last-modified") or "").strip() or None
-                    if existing and saved_etag and response_etag and response_etag != saved_etag:
+                    response_etag = (
+                        str(response.headers.get("etag") or "").strip() or None
+                    )
+                    response_modified = (
+                        str(response.headers.get("last-modified") or "").strip() or None
+                    )
+                    if (
+                        existing
+                        and saved_etag
+                        and response_etag
+                        and response_etag != saved_etag
+                    ):
                         raise _RestartFromZero("update package ETag changed")
-                    if existing and not saved_etag and saved_modified and response_modified and response_modified != saved_modified:
+                    if (
+                        existing
+                        and not saved_etag
+                        and saved_modified
+                        and response_modified
+                        and response_modified != saved_modified
+                    ):
                         raise _RestartFromZero("update package Last-Modified changed")
-                    total = _parse_unsatisfied_range(str(response.headers.get("content-range") or ""))
+                    total = _parse_unsatisfied_range(
+                        str(response.headers.get("content-range") or "")
+                    )
                     if existing and total is not None and existing == total:
                         return await _finalize_partial(
                             partial_path=partial_path,
@@ -439,10 +470,17 @@ async def _download_attempt(
                     raise RuntimeError(f"HTTP {response.status_code}: {hint[:300]}")
 
                 response_etag = str(response.headers.get("etag") or "").strip() or None
-                response_modified = str(response.headers.get("last-modified") or "").strip() or None
+                response_modified = (
+                    str(response.headers.get("last-modified") or "").strip() or None
+                )
                 if existing and saved_etag and response_etag != saved_etag:
                     raise _RestartFromZero("update package ETag changed")
-                if existing and not saved_etag and saved_modified and response_modified != saved_modified:
+                if (
+                    existing
+                    and not saved_etag
+                    and saved_modified
+                    and response_modified != saved_modified
+                ):
                     raise _RestartFromZero("update package Last-Modified changed")
 
                 if response.status_code == 206:
@@ -450,7 +488,9 @@ async def _download_attempt(
                         str(response.headers.get("content-range") or "")
                     )
                     if content_range is None or content_range[0] != existing:
-                        raise _RestartFromZero("server returned an invalid Content-Range")
+                        raise _RestartFromZero(
+                            "server returned an invalid Content-Range"
+                        )
                     _start, end, total = content_range
                     if total is None:
                         total = existing + (end - _start + 1)
@@ -469,7 +509,9 @@ async def _download_attempt(
                     transfer_resume_start = 0
 
                 if total is not None and total > max_bytes:
-                    raise RuntimeError(f"update package exceeds size limit: {total} > {max_bytes}")
+                    raise RuntimeError(
+                        f"update package exceeds size limit: {total} > {max_bytes}"
+                    )
                 metadata.update(
                     {
                         "etag": response_etag or saved_etag,
@@ -483,16 +525,18 @@ async def _download_attempt(
                 )
                 _atomic_json_write(metadata_path, metadata)
                 downloaded = existing
-                progress({
-                    "stage": "downloading",
-                    "status": "running",
-                    "downloaded_bytes": downloaded,
-                    "total_bytes": total,
-                    "resumed_from_bytes": transfer_resume_start,
-                    "supports_resume": range_supported,
-                    "attempt": operation.read().get("attempt", 1),
-                    "operation_id": operation.operation_id,
-                })
+                progress(
+                    {
+                        "stage": "downloading",
+                        "status": "running",
+                        "downloaded_bytes": downloaded,
+                        "total_bytes": total,
+                        "resumed_from_bytes": transfer_resume_start,
+                        "supports_resume": range_supported,
+                        "attempt": operation.read().get("attempt", 1),
+                        "operation_id": operation.operation_id,
+                    }
+                )
                 async with aiofiles.open(partial_path, mode) as handle:
                     async for chunk in response.aiter_bytes(chunk_size=CHUNK_SIZE):
                         if not chunk:
@@ -506,26 +550,38 @@ async def _download_attempt(
                             await handle.flush()
                             _sync_file(partial_path)
                             operation.update("cancelled", downloadedBytes=downloaded)
-                            raise DownloadCancelled("MaaFW update download cancelled; partial retained")
+                            raise DownloadCancelled(
+                                "MaaFW update download cancelled; partial retained"
+                            )
                         if control.get("pauseRequested"):
                             await handle.flush()
                             _sync_file(partial_path)
-                            _atomic_json_write(metadata_path, {**metadata, "downloadedBytes": downloaded})
+                            _atomic_json_write(
+                                metadata_path,
+                                {**metadata, "downloadedBytes": downloaded},
+                            )
                             operation.update("paused", downloadedBytes=downloaded)
-                            raise DownloadPaused("MaaFW update download paused; partial retained")
+                            raise DownloadPaused(
+                                "MaaFW update download paused; partial retained"
+                            )
                         if downloaded % (CHUNK_SIZE * 16) < len(chunk):
                             await handle.flush()
                             _sync_file(partial_path)
-                            _atomic_json_write(metadata_path, {**metadata, "downloadedBytes": downloaded})
-                        progress({
-                            "stage": "downloading",
-                            "status": "running",
-                            "downloaded_bytes": downloaded,
-                            "total_bytes": total,
-                            "resumed_from_bytes": transfer_resume_start,
-                            "supports_resume": range_supported,
-                            "operation_id": operation.operation_id,
-                        })
+                            _atomic_json_write(
+                                metadata_path,
+                                {**metadata, "downloadedBytes": downloaded},
+                            )
+                        progress(
+                            {
+                                "stage": "downloading",
+                                "status": "running",
+                                "downloaded_bytes": downloaded,
+                                "total_bytes": total,
+                                "resumed_from_bytes": transfer_resume_start,
+                                "supports_resume": range_supported,
+                                "operation_id": operation.operation_id,
+                            }
+                        )
                 _sync_file(partial_path)
                 metadata["downloadedBytes"] = downloaded
                 _atomic_json_write(metadata_path, metadata)

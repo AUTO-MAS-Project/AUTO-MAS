@@ -134,7 +134,9 @@ class MaaEndUserConfigTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(MaaEndUserConfig.related_config.clear)
         return str(plan_uid)
 
-    async def test_effective_sanity_task_key_plan_mode_returns_current_key(self) -> None:
+    async def test_effective_sanity_task_key_plan_mode_returns_current_key(
+        self,
+    ) -> None:
         config = MaaEndUserConfig()
         plan = MaaEndPlanConfig()
         await plan.load(
@@ -156,7 +158,9 @@ class MaaEndUserConfigTest(unittest.IsolatedAsyncioTestCase):
             {"SanityTaskType": "Essence", "AutoEssenceSpecifiedLocation": "VFPine"},
         )
 
-    async def test_effective_sanity_task_key_weekly_plan_returns_today_slot(self) -> None:
+    async def test_effective_sanity_task_key_weekly_plan_returns_today_slot(
+        self,
+    ) -> None:
         config = MaaEndUserConfig()
         plan = MaaEndPlanConfig()
         await plan.load(

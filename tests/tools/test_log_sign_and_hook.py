@@ -72,11 +72,15 @@ def test_drop_rule_discards_matched_line():
     hooks = load_hooks('[{"type":"drop","match":"heartbeat"}]')
 
     assert apply_hooks("2026-08-29 heartbeat\n", hooks) is None
-    assert apply_hooks("2026-08-29 任务执行完成\n", hooks) == "2026-08-29 任务执行完成\n"
+    assert (
+        apply_hooks("2026-08-29 任务执行完成\n", hooks) == "2026-08-29 任务执行完成\n"
+    )
 
 
 def test_replace_rule_rewrites_line_and_keeps_newline():
-    hooks = load_hooks(r'[{"type":"replace","match":"token=\\w+","replace":"token=***"}]')
+    hooks = load_hooks(
+        r'[{"type":"replace","match":"token=\\w+","replace":"token=***"}]'
+    )
 
     assert apply_hooks("login token=abc123\n", hooks) == "login token=***\n"
 
@@ -122,7 +126,9 @@ def test_non_string_fields_are_skipped_instead_of_raising():
     assert load_hooks('[{"type":123,"match":"a"}]') == []
     assert load_hooks('[{"type":"drop","match":{"a":1}}]') == []
     # 非法条目不影响同一份配置中的其余规则
-    hooks = load_hooks('[{"type":"drop","match":123},{"type":"drop","match":"progress"}]')
+    hooks = load_hooks(
+        '[{"type":"drop","match":123},{"type":"drop","match":"progress"}]'
+    )
     assert len(hooks) == 1
     assert apply_hooks("progress 50%\n", hooks) is None
 

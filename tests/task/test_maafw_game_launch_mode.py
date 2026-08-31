@@ -78,7 +78,9 @@ class GameLaunchResolutionTest(unittest.TestCase):
     def test_attach_only_is_the_default_and_does_not_manage_launch(self) -> None:
         self.assertFalse(self._task({})._mas_manages_game_launch())
         self.assertFalse(
-            self._task({("Game", "LaunchMode"): "AttachOnly"})._mas_manages_game_launch()
+            self._task(
+                {("Game", "LaunchMode"): "AttachOnly"}
+            )._mas_manages_game_launch()
         )
 
     def test_retired_modes_do_not_count_as_mas_managed(self) -> None:
@@ -129,12 +131,11 @@ class ProcessFieldsAreGoneTest(unittest.TestCase):
     def setUp(self) -> None:
         root = Path(__file__).resolve().parents[2] / "frontend/src"
         self.section = (
-            root
-            / "views/EditView/Script/MaaFWScriptEdit/ControlConfigSection.vue"
+            root / "views/EditView/Script/MaaFWScriptEdit/ControlConfigSection.vue"
         ).read_text(encoding="utf-8")
-        self.composable = (
-            root / "composables/useMaaFWScriptConfig.ts"
-        ).read_text(encoding="utf-8")
+        self.composable = (root / "composables/useMaaFWScriptConfig.ts").read_text(
+            encoding="utf-8"
+        )
 
     def test_frontend_no_longer_mentions_them(self) -> None:
         for gone in ("ProcessPath", "ProcessName", "targetProcessMissing"):

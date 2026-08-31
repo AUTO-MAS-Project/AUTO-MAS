@@ -586,8 +586,7 @@ class AutoProxyTask(TaskExecuteBase):
         elif _has_structured_src_log(log_content, "CRITICAL"):
             self.cur_user_log.status = "SRC 发生严重错误"
         elif self.is_log_stalled(
-            latest_time,
-            minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "SRC 进程超时"
         else:
@@ -685,7 +684,9 @@ class AutoProxyTask(TaskExecuteBase):
                     Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
+                        data=WSTaskNoticeData(
+                            level="error", message=f"推送通知时出现异常: {e}"
+                        ),
                     ),
                     timeout=_FINAL_REPORT_TIMEOUT_SECONDS,
                 )
@@ -765,7 +766,9 @@ class AutoProxyTask(TaskExecuteBase):
                 Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"自动代理任务出现异常: {e}"
+                    ),
                 ),
                 timeout=5,
             )

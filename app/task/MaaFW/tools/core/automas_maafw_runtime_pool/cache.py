@@ -71,9 +71,7 @@ def prune_uv_cache(
         result.update(
             {
                 "status": "unavailable",
-                "error": (
-                    "uv executable was not found; cache prune was not attempted"
-                ),
+                "error": ("uv executable was not found; cache prune was not attempted"),
                 "uv": {"available": False, "executable": None, "version": None},
             }
         )
@@ -216,7 +214,5 @@ def _cache_environment(cache_path: Path) -> dict[str, str]:
 
 def _format_time() -> str:
     return (
-        datetime.now(timezone.utc)
-        .isoformat(timespec="seconds")
-        .replace("+00:00", "Z")
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     )

@@ -100,9 +100,7 @@ class AccountSwitchGateTest(unittest.TestCase):
         return asyncio.run(go())
 
     def test_two_credentialed_users_without_sra_are_blocked(self) -> None:
-        result, _ = self._run(
-            users=[("甲", True), ("乙", True)], with_sra=False
-        )
+        result, _ = self._run(users=[("甲", True), ("乙", True)], with_sra=False)
         self.assertNotEqual(result, "Pass")
         self.assertIn("SRA", result)
         self.assertIn("同一个已登录账号", result)
@@ -114,18 +112,14 @@ class AccountSwitchGateTest(unittest.TestCase):
     def test_mixed_users_are_blocked_too(self) -> None:
         """一个配了账密一个没配，切号照样被静默跳过。"""
 
-        result, _ = self._run(
-            users=[("甲", True), ("乙", False)], with_sra=False
-        )
+        result, _ = self._run(users=[("甲", True), ("乙", False)], with_sra=False)
         self.assertNotEqual(result, "Pass")
         self.assertIn("SRA", result)
 
     def test_users_without_credentials_are_not_blocked(self) -> None:
         """都没配账密时有没有 SRA 都是同一个账号，不该被这条拦住。"""
 
-        result, _ = self._run(
-            users=[("甲", False), ("乙", False)], with_sra=False
-        )
+        result, _ = self._run(users=[("甲", False), ("乙", False)], with_sra=False)
         self.assertEqual(result, "Pass", result)
 
     def test_single_credentialed_user_passes_with_a_warning(self) -> None:

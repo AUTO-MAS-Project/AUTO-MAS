@@ -129,9 +129,7 @@ def _required_python_identity_value(
         value = identity.get(fallback_key)
     normalized = str(value or "").strip()
     if not normalized:
-        raise MaaFWRuntimeIdentityError(
-            f"probed python identity is missing {key}"
-        )
+        raise MaaFWRuntimeIdentityError(f"probed python identity is missing {key}")
     return normalized
 
 

@@ -176,7 +176,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
 
-        self.cur_user_item: UserItem = self.script_info.user_list[self.script_info.current_index]
+        self.cur_user_item: UserItem = self.script_info.user_list[
+            self.script_info.current_index
+        ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkwwUserConfig = self.user_config[self.cur_user_uid]
         self.cur_user_log: LogRecord | None = None
@@ -434,9 +436,7 @@ class AutoProxyTask(TaskExecuteBase):
                 except RuntimeError:
                     logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
                 else:
-                    logger.info(
-                        "检测到已配置的鸣潮客户端进程正在运行，跳过重复启动"
-                    )
+                    logger.info("检测到已配置的鸣潮客户端进程正在运行，跳过重复启动")
                     return
 
             await self.game_manager.open_process(
@@ -496,7 +496,9 @@ class AutoProxyTask(TaskExecuteBase):
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="error", message=f"游戏启动失败: {e}"),
+                        data=WSTaskNoticeData(
+                            level="error", message=f"游戏启动失败: {e}"
+                        ),
                     )
                     await self.kill_managed_process(
                         kill_game=self._game_management_enabled()
@@ -520,9 +522,7 @@ class AutoProxyTask(TaskExecuteBase):
                     continue
 
             await self.set_okww()
-            await self._push_dispatch_log(
-                f"启动 OK-WW: -t {self.task_index} -e"
-            )
+            await self._push_dispatch_log(f"启动 OK-WW: -t {self.task_index} -e")
             logger.info(
                 f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
             )
@@ -561,12 +561,8 @@ class AutoProxyTask(TaskExecuteBase):
             logger.warning(
                 f"用户 {self.cur_user_item.name} - OK-WW 代理异常: {self.cur_user_log.status}"
             )
-            self.script_info.log = (
-                f"{self.cur_user_log.status}\n正在中止相关程序"
-            )
-            await self.kill_managed_process(
-                kill_game=self._game_management_enabled()
-            )
+            self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+            await self.kill_managed_process(kill_game=self._game_management_enabled())
             try:
                 await Notify.push_plyer(
                     "OK-WW 自动代理出现异常！",
@@ -582,9 +578,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本后任务",
                 )
             if i + 1 < run_limit:
-                self.script_info.log += (
-                    f"\n将在稍后重试 ({i + 1}/{run_limit})"
-                )
+                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
 
     def _game_management_enabled(self) -> bool:
@@ -612,8 +606,7 @@ class AutoProxyTask(TaskExecuteBase):
                 log_status = "OK-WW 在完成任务前退出"
                 user_item_status = "异常"
             elif self.is_log_stalled(
-                latest_time,
-                minutes=self.script_config.get("Run", "RunTimeLimit")
+                latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
                 log_status = "OK-WW 运行超时"
                 user_item_status = "异常"
@@ -643,7 +636,9 @@ class AutoProxyTask(TaskExecuteBase):
             if self.log_translator is not None:
                 self.log_translator.clear()
         except Exception:
-            logger.opt(exception=True).warning("OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）")
+            logger.opt(exception=True).warning(
+                "OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）"
+            )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         statistic_paths: list[Path] = []
@@ -693,7 +688,9 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config is None:
             return
 
-        await self.cur_user_config.set("Data", "LastTaskIndex", getattr(self, "task_index", 0))
+        await self.cur_user_config.set(
+            "Data", "LastTaskIndex", getattr(self, "task_index", 0)
+        )
         if self.run_book:
             if (
                 self.cur_user_config.get("Data", "ProxyTimes") == 0
@@ -728,12 +725,12 @@ class AutoProxyTask(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"OK-WW 自动代理任务出现异常: {e}"),
+                data=WSTaskNoticeData(
+                    level="error", message=f"OK-WW 自动代理任务出现异常: {e}"
+                ),
             )
         with suppress(Exception):
-            await self.kill_managed_process(
-                kill_game=self._game_management_enabled()
-            )
+            await self.kill_managed_process(kill_game=self._game_management_enabled())
         with suppress(Exception):
             await self._persist_user_run_result()
 
@@ -769,7 +766,9 @@ class AutoProxyTask(TaskExecuteBase):
             try:
                 await self.okww_process_manager.kill()
             except Exception as e:
-                logger.opt(exception=True).warning(f"通过进程管理器中止 OK-WW 进程失败: {e}")
+                logger.opt(exception=True).warning(
+                    f"通过进程管理器中止 OK-WW 进程失败: {e}"
+                )
         if self.script_exe_path is not None:
             try:
                 await System.kill_process(self.script_exe_path)
@@ -799,7 +798,9 @@ class AutoProxyTask(TaskExecuteBase):
             try:
                 await self.game_manager.kill()
             except Exception as e:
-                logger.opt(exception=True).warning(f"通过进程管理器关闭鸣潮客户端失败: {e}")
+                logger.opt(exception=True).warning(
+                    f"通过进程管理器关闭鸣潮客户端失败: {e}"
+                )
         if self.game_process_path is not None:
             try:
                 await System.kill_process(self.game_process_path)

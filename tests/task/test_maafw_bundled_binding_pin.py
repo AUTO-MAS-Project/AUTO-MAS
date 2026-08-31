@@ -47,9 +47,7 @@ class VersionProbeTest(unittest.TestCase):
     def test_release_version_is_normalized(self) -> None:
         root = self._project(b"\x00\x01padding v5.12.3 more\x00")
         self.assertEqual(probe_bundled_maafw_version(root), "5.12.3")
-        self.assertEqual(
-            _bundled_project_maafw_requirement(root), "maafw==5.12.3"
-        )
+        self.assertEqual(_bundled_project_maafw_requirement(root), "maafw==5.12.3")
 
     def test_prerelease_maps_to_pep440(self) -> None:
         """v5.13.0-beta.2 -> 5.13.0b2，PyPI 上正是这个号。"""
@@ -163,12 +161,8 @@ class ResolutionOrderTest(unittest.TestCase):
                 chr(10).join(["maafw==5.12.2", "requests==2.34.2", ""]),
                 encoding="utf-8",
             )
-            self.assertEqual(
-                _declared_project_maafw_requirement(root), "maafw==5.12.2"
-            )
-            self.assertEqual(
-                _bundled_project_maafw_requirement(root), "maafw==5.12.3"
-            )
+            self.assertEqual(_declared_project_maafw_requirement(root), "maafw==5.12.2")
+            self.assertEqual(_bundled_project_maafw_requirement(root), "maafw==5.12.3")
 
 
 if __name__ == "__main__":

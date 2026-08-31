@@ -140,8 +140,8 @@ class MaaFWRuntimePoolService:
                 )
                 if existing is not None:
                     if _request_contains_selector(request):
-                        requirements, _, _, python_request = (
-                            _normalize_runtime_request(request)
+                        requirements, _, _, python_request = _normalize_runtime_request(
+                            request
                         )
                         if not _runtime_matches_request(
                             existing,
@@ -162,9 +162,7 @@ class MaaFWRuntimePoolService:
                     raise MaaFWRuntimePoolError(
                         "cannot ensure an unknown runtimeId without requirements"
                     )
-        requirements, metadata, _, python_request = _normalize_runtime_request(
-            request
-        )
+        requirements, metadata, _, python_request = _normalize_runtime_request(request)
         if python_request is None:
             python_identity = None
             bootstrap_python = None

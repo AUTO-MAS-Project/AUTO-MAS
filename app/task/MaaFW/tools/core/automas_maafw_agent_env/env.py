@@ -113,8 +113,7 @@ def prepare_agent_envs(
         if runtime_kind == "shared_runtime":
             if not Path(resolved_python).is_file():
                 raise MaaFWAgentEnvError(
-                    "共享 MaaFW runtime Python 不存在或不可用："
-                    f"{python_exe}"
+                    f"共享 MaaFW runtime Python 不存在或不可用：{python_exe}"
                 )
             checked_python.add(resolved_python)
             log(f"[Python环境] 共享 MaaFW runtime Python 已就绪: {python_exe}")
@@ -181,9 +180,7 @@ def write_agent_compat_shims(venv_path: str | Path) -> Path:
     except (FileNotFoundError, OSError, UnicodeError):
         pass
 
-    temporary_path = shim_path.with_name(
-        f"{shim_path.name}.tmp-{uuid.uuid4().hex}"
-    )
+    temporary_path = shim_path.with_name(f"{shim_path.name}.tmp-{uuid.uuid4().hex}")
     try:
         temporary_path.write_text(content, encoding="utf-8")
         temporary_path.replace(shim_path)
@@ -262,7 +259,9 @@ def _prepare_isolated_venv_env(
         raise MaaFWAgentEnvError("隔离 venv 路径未提供，无法创建隔离环境")
 
     venv_path = Path(agent_plan.isolatedVenvPath).resolve()
-    python_exe = agent_plan.command[0] if agent_plan.command else str(venv_python_exe(venv_path))
+    python_exe = (
+        agent_plan.command[0] if agent_plan.command else str(venv_python_exe(venv_path))
+    )
 
     log(f"[Python环境] 准备隔离 venv: {venv_path}")
     had_valid_venv = _is_valid_venv_path(venv_path)
@@ -287,7 +286,9 @@ def _prepare_isolated_venv_env(
     if install_dependencies:
         packages = _load_project_agent_requirements(project_path)
         log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
-        if not _pip_install(python_exe, packages, cwd=str(project_path), env=test_env, log=log):
+        if not _pip_install(
+            python_exe, packages, cwd=str(project_path), env=test_env, log=log
+        ):
             raise MaaFWAgentEnvError(f"隔离 venv 依赖安装失败: {python_exe}")
     else:
         log("[Python环境] 当前调用禁用依赖安装，仅写入隔离 venv manifest")
@@ -414,7 +415,9 @@ def _should_rebuild_isolated_venv(
 
 
 def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
-    if venv_path.parent.name != "maafw_agent_venvs" or not venv_path.name.startswith("maafw_venv_"):
+    if venv_path.parent.name != "maafw_agent_venvs" or not venv_path.name.startswith(
+        "maafw_venv_"
+    ):
         raise MaaFWAgentEnvError(f"拒绝重建非托管隔离 venv: {venv_path}")
     shutil.rmtree(venv_path, ignore_errors=True)
     log(f"[Python环境] 已清理旧隔离 venv: {venv_path}")
@@ -437,7 +440,9 @@ def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> b
 def _write_isolated_venv_manifest(venv_path: Path, project_path: Path) -> None:
     manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
     manifest_path.write_text(
-        json.dumps(build_agent_env_manifest(project_path), ensure_ascii=False, indent=2),
+        json.dumps(
+            build_agent_env_manifest(project_path), ensure_ascii=False, indent=2
+        ),
         encoding="utf-8",
     )
 
@@ -510,7 +515,9 @@ def _check_pip_health(
         )
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
-            log(f"[Python环境] pip --version 失败 (exit={result.returncode}): {detail[:500]}")
+            log(
+                f"[Python环境] pip --version 失败 (exit={result.returncode}): {detail[:500]}"
+            )
             return False
 
         install_check = subprocess.run(
@@ -535,7 +542,9 @@ def _check_pip_health(
         if "backports.zstd" in detail or "ZstdError" in detail:
             log("[Python环境] pip install 子命令加载失败（backports.zstd 冲突）")
         else:
-            log(f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {detail[:500]}")
+            log(
+                f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {detail[:500]}"
+            )
         return False
     except subprocess.TimeoutExpired:
         log(f"[Python环境] pip 检测超时 ({PIP_HEALTH_CHECK_TIMEOUT}s)")
@@ -612,7 +621,9 @@ def _try_ensurepip(
             cwd=cwd,
             env=env,
         )
-        if result.returncode == 0 and _check_pip_health(python_exe, cwd=cwd, env=env, log=log):
+        if result.returncode == 0 and _check_pip_health(
+            python_exe, cwd=cwd, env=env, log=log
+        ):
             log("[Python环境] ensurepip 修复成功")
             return True
         detail = (result.stderr or result.stdout or "").strip()

@@ -79,9 +79,7 @@ class ManagedServiceGateway:
             None,
         )
         if not callable(transaction):
-            raise ManagedServiceError(
-                "maafw.project_store.v1 未提供资源生命周期事务"
-            )
+            raise ManagedServiceError("maafw.project_store.v1 未提供资源生命周期事务")
         try:
             async with transaction():
                 yield
@@ -201,9 +199,7 @@ class ManagedServiceGateway:
         runtime = await self.resolve_runtime(runtime_request)
         recovered_binding = False
         if runtime is None:
-            bound_maafw_version = _optional_text(
-                manifest_binding.get("maafwVersion")
-            )
+            bound_maafw_version = _optional_text(manifest_binding.get("maafwVersion"))
             if bound_runtime_id and bound_maafw_version:
                 runtime_request = dict(runtime_request)
                 runtime_request.pop("runtimeId", None)
@@ -1087,9 +1083,7 @@ class ManagedServiceGateway:
             {"runtimeId": runtime_id, "touch": False}
         )
         if target_runtime is None:
-            raise ManagedServiceError(
-                f"绑定 MaaFW 项目前无法解析运行时 {runtime_id}"
-            )
+            raise ManagedServiceError(f"绑定 MaaFW 项目前无法解析运行时 {runtime_id}")
         target_references = target_runtime.get("references")
         if not isinstance(target_references, Sequence) or isinstance(
             target_references,
@@ -1220,9 +1214,7 @@ class ManagedServiceGateway:
             {"runtimeId": runtime_id, "touch": False}
         )
         if target_runtime is None:
-            raise ManagedServiceError(
-                f"绑定 MaaFW 项目前无法解析运行时 {runtime_id}"
-            )
+            raise ManagedServiceError(f"绑定 MaaFW 项目前无法解析运行时 {runtime_id}")
         target_references = _runtime_references(
             target_runtime,
             f"运行时 {runtime_id}",
@@ -1283,9 +1275,7 @@ class ManagedServiceGateway:
         partial rollback raises a fail-closed ``ManagedServiceError``.
         """
 
-        if receipt.get("apiVersion") != (
-            "maafw-managed-runtime-binding-rollback.v1"
-        ):
+        if receipt.get("apiVersion") != ("maafw-managed-runtime-binding-rollback.v1"):
             raise ManagedServiceError("未知的 MaaFW runtime binding 回滚凭据")
         project_id = _required_text(receipt, "projectId", "项目 ID")
         version = _required_text(receipt, "version", "项目版本")
@@ -1340,10 +1330,7 @@ class ManagedServiceGateway:
                 )
             except BaseException as exc:
                 previous_reference_ready = False
-                errors.append(
-                    "恢复旧运行时引用失败："
-                    f"{type(exc).__name__}: {exc}"
-                )
+                errors.append(f"恢复旧运行时引用失败：{type(exc).__name__}: {exc}")
 
         store_restored = False
         if previous_reference_ready:
@@ -1399,8 +1386,7 @@ class ManagedServiceGateway:
                 store_restored = True
             except BaseException as exc:
                 errors.append(
-                    "恢复 Project Store 运行时绑定失败："
-                    f"{type(exc).__name__}: {exc}"
+                    f"恢复 Project Store 运行时绑定失败：{type(exc).__name__}: {exc}"
                 )
 
         if (
@@ -1432,8 +1418,7 @@ class ManagedServiceGateway:
                 )
             except BaseException as exc:
                 errors.append(
-                    "回滚 Project Store 脚本引用失败："
-                    f"{type(exc).__name__}: {exc}"
+                    f"回滚 Project Store 脚本引用失败：{type(exc).__name__}: {exc}"
                 )
 
         if (
@@ -1448,10 +1433,7 @@ class ManagedServiceGateway:
                     operation="回滚目标 MaaFW 项目运行时引用",
                 )
             except BaseException as exc:
-                errors.append(
-                    "回滚目标运行时引用失败："
-                    f"{type(exc).__name__}: {exc}"
-                )
+                errors.append(f"回滚目标运行时引用失败：{type(exc).__name__}: {exc}")
 
         if errors:
             raise ManagedServiceError(
@@ -1631,10 +1613,7 @@ class ManagedServiceGateway:
                 "Runtime Pool",
                 self.list_runtimes,
             )
-            if (
-                not project_inventory["complete"]
-                or not runtime_inventory["complete"]
-            ):
+            if not project_inventory["complete"] or not runtime_inventory["complete"]:
                 raise ManagedServiceError(
                     "资源盘点不完整，拒绝执行真实 GC；"
                     "请先在统一资源页处理损坏或无法识别的项目、checkout、运行时。"
@@ -1736,26 +1715,18 @@ class ManagedServiceGateway:
             pending_data = dict(pending) if isinstance(pending, Mapping) else {}
             pending_project = pending_data.get("project")
             pending_project_data = (
-                dict(pending_project)
-                if isinstance(pending_project, Mapping)
-                else {}
+                dict(pending_project) if isinstance(pending_project, Mapping) else {}
             )
-            pending_version = _optional_text(
-                pending_project_data.get("toVersion")
-            )
+            pending_version = _optional_text(pending_project_data.get("toVersion"))
             pending_reference = _optional_text(
                 pending_project_data.get("pendingReference")
             )
-            pending_project_id = _optional_text(
-                pending_project_data.get("projectId")
-            )
+            pending_project_id = _optional_text(pending_project_data.get("projectId"))
             if (
                 pending_project_id == project_id
                 and pending_version
                 and pending_reference
-                and pending_reference.startswith(
-                    f"maafw-upgrade:{script_id}:"
-                )
+                and pending_reference.startswith(f"maafw-upgrade:{script_id}:")
             ):
                 expected.setdefault((project_id, pending_version), set()).add(
                     pending_reference
@@ -1795,9 +1766,7 @@ class ManagedServiceGateway:
                 external_references = {
                     item
                     for item in current_references
-                    if not item.startswith(
-                        ("maafw-script:", "maafw-upgrade:")
-                    )
+                    if not item.startswith(("maafw-script:", "maafw-upgrade:"))
                 }
                 references = sorted(
                     external_references | expected.get((project_id, version), set())
@@ -1880,9 +1849,7 @@ class ManagedServiceGateway:
                 for item in current_references
                 if not item.startswith("maafw-project:")
             }
-            references = sorted(
-                external_references | expected.get(runtime_id, set())
-            )
+            references = sorted(external_references | expected.get(runtime_id, set()))
             value = await _call_variants(
                 self.runtime_pool,
                 ("reconcile_references", "set_references"),
@@ -1912,9 +1879,7 @@ def _runner_requirements(project_path: str, constraint: str | None) -> list[str]
     if not constraint:
         return requirements
     requirements = [
-        item
-        for item in requirements
-        if requirement_distribution_name(item) != "maafw"
+        item for item in requirements if requirement_distribution_name(item) != "maafw"
     ]
     requirements.insert(0, _maafw_requirement(constraint))
     return requirements
@@ -1938,9 +1903,7 @@ def _project_path(project: Mapping[str, Any]) -> str:
         value = _optional_text(project.get(key))
         if value:
             return value
-    raise ManagedServiceError(
-        "项目存储服务返回值缺少 dataPath/projectPath/path"
-    )
+    raise ManagedServiceError("项目存储服务返回值缺少 dataPath/projectPath/path")
 
 
 def _validate_project_store_binding(
@@ -2050,10 +2013,8 @@ def _annotate_checkout_inventory(
         binding = bindings.get(script_id)
         binding_current = bool(
             binding is not None
-            and binding.get("projectId")
-            == _optional_text(checkout.get("projectId"))
-            and binding.get("version")
-            == _optional_text(checkout.get("version"))
+            and binding.get("projectId") == _optional_text(checkout.get("projectId"))
+            and binding.get("version") == _optional_text(checkout.get("version"))
         )
         orphan_reason = None
         if binding is None:
@@ -2158,7 +2119,7 @@ def _project_script_reference(value: str | None) -> str | None:
         (item for item in prefixes if reference.startswith(item)),
         None,
     )
-    if prefix is None or not reference[len(prefix):].strip():
+    if prefix is None or not reference[len(prefix) :].strip():
         raise ManagedServiceError(
             "项目引用必须使用稳定格式 maafw-script:<scriptId> "
             "或 maafw-upgrade:<scriptId>"
@@ -2242,9 +2203,7 @@ def _project_python_runtime_request(
             "Project Store manifest runtime.python 必须是 JSON object"
         )
     implementation = str(python.get("implementation") or "").strip().casefold()
-    constraint = str(
-        python.get("constraint") or python.get("requires") or ""
-    ).strip()
+    constraint = str(python.get("constraint") or python.get("requires") or "").strip()
     if implementation != "cpython" or not constraint:
         raise ManagedServiceError(
             "Project Store manifest runtime.python 缺少受支持的 "
@@ -2275,9 +2234,7 @@ def _validate_python_constraint(
     identity_data = dict(identity) if isinstance(identity, Mapping) else {}
     runtime_abi = str(identity_data.get("pythonAbi") or "").strip().casefold()
     if not runtime_abi.startswith("cpython:"):
-        raise ManagedServiceError(
-            "共享运行时不是 Project Store 要求的 CPython 解释器"
-        )
+        raise ManagedServiceError("共享运行时不是 Project Store 要求的 CPython 解释器")
     runtime_version = str(identity_data.get("pythonVersion") or "").strip()
     try:
         compatible = Version(runtime_version) in SpecifierSet(request["constraint"])
@@ -2310,10 +2267,7 @@ def _validate_python_abi(
         or ""
     ).strip()
     normalized_runtime = runtime_abi.casefold().replace("_", "-")
-    compatible = any(
-        _abi_tag_matches(tag, normalized_runtime)
-        for tag in required
-    )
+    compatible = any(_abi_tag_matches(tag, normalized_runtime) for tag in required)
     if compatible:
         return
     raise ManagedServiceError(
@@ -2411,7 +2365,9 @@ def _required_python_abi_tags(manifest: Any) -> set[str]:
     for value in values:
         if isinstance(value, str) and value.strip():
             result.add(value.strip().casefold().replace("_", "-"))
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        elif isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
             result.update(
                 str(item).strip().casefold().replace("_", "-")
                 for item in value
@@ -2432,10 +2388,7 @@ def _abi_tag_matches(required: str, runtime_abi: str) -> bool:
     compact = re.fullmatch(r"cp(?P<digits>\d{2,3})(?:-.+)?", required)
     if compact is not None:
         digits = compact.group("digits")
-        return (
-            f"cpython-{digits}" in runtime_abi
-            or f"cp{digits}" in runtime_abi
-        )
+        return f"cpython-{digits}" in runtime_abi or f"cp{digits}" in runtime_abi
     if required.startswith("cpython-"):
         parts = required.split("-", 2)
         if len(parts) >= 2 and parts[1].isdigit():
@@ -2463,9 +2416,7 @@ async def _call_variants(
                 continue
             return await _invoke(method, args, kwargs, operation)
     if not found:
-        raise ManagedServiceError(
-            f"{operation}失败：服务未实现 {', '.join(names)}"
-        )
+        raise ManagedServiceError(f"{operation}失败：服务未实现 {', '.join(names)}")
     raise ManagedServiceError(f"{operation}失败：服务方法签名不兼容")
 
 
@@ -2497,9 +2448,7 @@ async def _invoke(
         if _is_async_callable(method):
             value = method(*args, **kwargs)
         else:
-            worker = asyncio.create_task(
-                asyncio.to_thread(method, *args, **kwargs)
-            )
+            worker = asyncio.create_task(asyncio.to_thread(method, *args, **kwargs))
             cancellation_requested = False
             while not worker.done():
                 try:
@@ -2574,17 +2523,13 @@ def _json_value(value: Any) -> Any:
             return _json_value(model_dump(mode="json", by_alias=True))
         except TypeError:
             return _json_value(model_dump())
-    raise ManagedServiceError(
-        f"服务返回了非 JSON/DTO 值：{type(value).__name__}"
-    )
+    raise ManagedServiceError(f"服务返回了非 JSON/DTO 值：{type(value).__name__}")
 
 
 def managed_project_identity(managed: Mapping[str, Any]) -> tuple[str, str]:
     """Return the immutable Project Store identity when a manifest is bound."""
     manifest_value = managed.get("ProjectManifest")
-    manifest = (
-        dict(manifest_value) if isinstance(manifest_value, Mapping) else {}
-    )
+    manifest = dict(manifest_value) if isinstance(manifest_value, Mapping) else {}
     manifest_project_id = _optional_text(manifest.get("projectId"))
     manifest_version = _optional_text(manifest.get("version"))
     if manifest_project_id and manifest_version:

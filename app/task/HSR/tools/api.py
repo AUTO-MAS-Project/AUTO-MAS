@@ -96,7 +96,9 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         adapters.append(
             {
                 "engine": engine,
-                "display_name": "三月七助手" if engine == "M7A" else "StarRailAssistant",
+                "display_name": "三月七助手"
+                if engine == "M7A"
+                else "StarRailAssistant",
                 "version": None,
                 "supported_modes": ["managed", "direct"],
                 "capabilities": {
@@ -112,9 +114,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     tasks: list[dict[str, Any]] = []
     for module in HSR_TASK_MODULES:
         task_engines = [
-            engine
-            for engine in module.supported_scripts
-            if engine in effective_set
+            engine for engine in module.supported_scripts if engine in effective_set
         ]
         if not task_engines:
             continue
@@ -171,9 +171,7 @@ def build_managed_config(
     task_mapping: dict[str, HSREngine] = {}
     for module in HSR_TASK_MODULES:
         task_engines = [
-            engine
-            for engine in module.supported_scripts
-            if engine in effective_set
+            engine for engine in module.supported_scripts if engine in effective_set
         ]
         if not task_engines:
             continue
@@ -187,9 +185,7 @@ def build_managed_config(
     tasks: list[dict[str, Any]] = []
     for module in HSR_TASK_MODULES:
         task_engines = [
-            engine
-            for engine in module.supported_scripts
-            if engine in effective_set
+            engine for engine in module.supported_scripts if engine in effective_set
         ]
         if not task_engines:
             continue

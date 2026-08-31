@@ -354,7 +354,10 @@ class QueueConfig(ConfigBase):
         )
         ## 是否在启动时自动运行
         self.Info_StartUpMode = ConfigItem(
-            "Info", "StartUpMode", "Never", OptionsValidator(["Never", "Always", "DailyFirst"])
+            "Info",
+            "StartUpMode",
+            "Never",
+            OptionsValidator(["Never", "Always", "DailyFirst"]),
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -403,9 +406,7 @@ class QueueConfig(ConfigBase):
         if isinstance(info_data, dict) and "StartUpMode" not in info_data:
             StartUpEnabled = info_data.get("StartUpEnabled")
             if isinstance(StartUpEnabled, bool):
-                info_data["StartUpMode"] = (
-                    "Always" if StartUpEnabled else "Never"
-                )
+                info_data["StartUpMode"] = "Always" if StartUpEnabled else "Never"
 
         return await super().load(data)
 
@@ -669,7 +670,6 @@ class MaaUserConfig(ConfigBase):
             return "-1"
 
         for i, plan in enumerate(infrast_data.get("plans", [])):
-
             for t in plan.get("period", []):
                 if (
                     datetime.strptime(t[0], "%H:%M").time()
@@ -1018,10 +1018,7 @@ class MaaEndUserConfig(ConfigBase):
         mode = self.get("Info", "SanityMode")
         if mode == "Fixed":
             return normalize_maaend_plan_key(
-                {
-                    field: self.get("Task", field)
-                    for field in MAAEND_SANITY_TASK_FIELDS
-                }
+                {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS}
             ), mode
 
         try:
@@ -2487,9 +2484,7 @@ class MaaFWConfig(ConfigBase):
         ## GitHub release tag 覆盖
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
         ## GitHub release asset 文件名匹配模式
-        self.Update_GitHubAssetPattern = ConfigItem(
-            "Update", "GitHubAssetPattern", ""
-        )
+        self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
         ## Managed --------------------------------------------------------
         ## 是否由 Project Store 和 Runtime Pool 托管项目资源
@@ -2636,7 +2631,6 @@ class MaaPlanConfig(ConfigBase):
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-
             today = datetime.now(tz=UTC4).strftime("%A")
 
             if today in self.config_item_dict:
@@ -2697,9 +2691,7 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
         for group in ["ALL", *calendar.day_name]:
             group_data = normalized_data.get(group)
             if isinstance(group_data, dict):
-                normalized_data[group] = {
-                    "Key": normalize_maaend_plan_key(group_data)
-                }
+                normalized_data[group] = {"Key": normalize_maaend_plan_key(group_data)}
         return await super().load(normalized_data)
 
 
@@ -2879,9 +2871,7 @@ class OkwwUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", OkwwConfigModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         # 是否启用 MAS 快速配置覆盖高频任务字段
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
@@ -3353,7 +3343,9 @@ class OkwwConfig(ConfigBase):
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 任务前是否由 MAS 检查并接管更新游戏
-        self.Game_IfAutoUpdate = ConfigItem("Game", "IfAutoUpdate", True, BoolValidator())
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", True, BoolValidator()
+        )
         ## 整文件同步体积上限（GB），超过则中止并提示手动处理
         self.Game_UpdateFullSyncLimit = ConfigItem(
             "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
@@ -3919,7 +3911,6 @@ class GlobalConfig(ConfigBase):
                             )
 
                             if "SSReopen" not in stage["Display"]:
-
                                 if stage["Drop"] in MATERIALS_MAP:
                                     drop_id = stage["Drop"]
                                 elif "玉" in stage["Drop"]:

@@ -145,9 +145,7 @@ class MumuManager(DeviceBase):
                 ):
                     return True
                 if result.returncode != 0:
-                    logger.debug(
-                        f"检查 MuMu 应用前台状态失败: {result.stdout.strip()}"
-                    )
+                    logger.debug(f"检查 MuMu 应用前台状态失败: {result.stdout.strip()}")
 
             if attempt < 5:
                 await asyncio.sleep(1)
@@ -252,9 +250,7 @@ class MumuManager(DeviceBase):
         if result.returncode == 0:
             logger.success("已停止 MuMu 应用商店广告进程")
         else:
-            logger.warning(
-                f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}"
-            )
+            logger.warning(f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}")
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
@@ -328,9 +324,7 @@ class MumuManager(DeviceBase):
                             f"{idx} - {package_name} - {e}"
                         )
                     await asyncio.sleep(
-                        30
-                        if self.config.get("Info", "MaxWaitTime") > 60
-                        else 3
+                        30 if self.config.get("Info", "MaxWaitTime") > 60 else 3
                     )
                 else:
                     await asyncio.sleep(3)
@@ -483,13 +477,17 @@ class MumuManager(DeviceBase):
             adb_data = await self.get_adb_info(index)
             adb_json = json.loads(adb_data)
         except Exception as e:
-            logger.debug(f"获取 MuMu 模拟器 {index} ADB 信息失败，使用默认端口兜底: {e}")
+            logger.debug(
+                f"获取 MuMu 模拟器 {index} ADB 信息失败，使用默认端口兜底: {e}"
+            )
         else:
             if isinstance(adb_json, dict):
                 adb_address = self._resolve_adb_address(adb_json)
                 if adb_address is not None:
                     return adb_address
-            logger.debug(f"MuMu 模拟器 {index} ADB 信息缺少 host/port，使用默认端口兜底")
+            logger.debug(
+                f"MuMu 模拟器 {index} ADB 信息缺少 host/port，使用默认端口兜底"
+            )
 
         return self._get_default_adb_address(index)
 

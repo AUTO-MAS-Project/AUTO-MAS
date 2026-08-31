@@ -201,9 +201,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         last_drop_stats: dict[str, int] = {}
 
         for line in logs[start_index : end_index + 1]:
-            drop_match = re.search(
-                r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line
-            )
+            drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
             if drop_match:
                 current_stage = drop_match.group(1)
                 last_drop_stats = {}
@@ -715,9 +713,7 @@ class AppConfig(GlobalConfig):
                 # 获取远程分支的最新 commit
                 origin = repo.remotes.origin
                 origin.fetch()  # 拉取最新信息
-                remote_commit = repo.commit(
-                    f"origin/{repo.active_branch.name}"
-                )
+                remote_commit = repo.commit(f"origin/{repo.active_branch.name}")
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
                 logger.warning(f"无法获取远程分支信息: {e}")
@@ -1014,11 +1010,8 @@ class AppConfig(GlobalConfig):
                         Path(config["Info"]["RootPath"])
                     )
                 )
-            if (
-                IS_WINDOWS
-                and Path(config["Script"][path]).is_relative_to(
-                    Path(os.environ["APPDATA"])
-                )
+            if IS_WINDOWS and Path(config["Script"][path]).is_relative_to(
+                Path(os.environ["APPDATA"])
             ):
                 config["Script"][path] = (
                     f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
@@ -1322,7 +1315,9 @@ class AppConfig(GlobalConfig):
         logger.info(f"添加计划表: {script}")
 
         plan_class = next(
-            item["config_class"] for item in PLAN_BOOK.values() if item["create_type"] == script
+            item["config_class"]
+            for item in PLAN_BOOK.values()
+            if item["create_type"] == script
         )
         return await self.PlanConfig.add(plan_class)
 

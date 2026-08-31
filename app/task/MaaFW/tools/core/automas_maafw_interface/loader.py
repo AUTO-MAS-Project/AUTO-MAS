@@ -54,7 +54,9 @@ logger = logging.getLogger("automas.maafw.interface.loader")
 DISK_CACHE_VERSION = 3
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
-_interface_cache: dict[Path, tuple[tuple, MaaFWInterface, set[Path], set[tuple[Path, str]]]] = {}
+_interface_cache: dict[
+    Path, tuple[tuple, MaaFWInterface, set[Path], set[tuple[Path, str]]]
+] = {}
 _cache_lock = RLock()
 _last_disk_cache_cleanup_at = 0.0
 
@@ -104,7 +106,9 @@ def _read_json_dict(path: Path, context: _LoadContext | None = None) -> dict[str
     except FileNotFoundError as exc:
         raise MaaFWInterfaceLoadError(f"找不到 interface 配置文件: {path}") from exc
     except Exception as exc:
-        raise MaaFWInterfaceLoadError(f"解析 interface 配置失败: {path}: {exc}") from exc
+        raise MaaFWInterfaceLoadError(
+            f"解析 interface 配置失败: {path}: {exc}"
+        ) from exc
 
     if not isinstance(data, dict):
         raise MaaFWInterfaceLoadError(f"interface 配置文件必须是 JSON 对象: {path}")
@@ -135,7 +139,9 @@ def _normalize_project_relative_path(raw_path: str, *, field_name: str) -> str:
         if part in {"", "."}:
             continue
         if part == "..":
-            raise MaaFWInterfaceLoadError(f"{field_name} 不允许包含 .. 路径段: {raw_path}")
+            raise MaaFWInterfaceLoadError(
+                f"{field_name} 不允许包含 .. 路径段: {raw_path}"
+            )
         parts.append(part)
 
     if not parts:
@@ -599,7 +605,9 @@ def _validate_option_name_list(
 ) -> None:
     for option_name in option_names or []:
         if option_name not in option_map:
-            raise MaaFWInterfaceLoadError(f"{location} 引用了不存在的选项: {option_name}")
+            raise MaaFWInterfaceLoadError(
+                f"{location} 引用了不存在的选项: {option_name}"
+            )
 
 
 def _validate_option_case_values(
@@ -676,6 +684,7 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                     f"任务 {task_ref} 引用了不存在的 resource: {resource_name}"
                 )
 
+
 def _validate_option_references(interface_model: MaaFWInterface) -> None:
     option_map = interface_model.option
     _validate_option_name_list(
@@ -711,7 +720,6 @@ def _validate_option_references(interface_model: MaaFWInterface) -> None:
             option_map,
             location=f"task {task.name}",
         )
-
 
 
 def _sanitize_pretasks(interface_model: MaaFWInterface) -> None:
@@ -832,7 +840,9 @@ def rescan_scan_select_option(
     return scanned_cases
 
 
-def _load_interface_model_with_context(base_dir: str | Path) -> tuple[MaaFWInterface, _LoadContext]:
+def _load_interface_model_with_context(
+    base_dir: str | Path,
+) -> tuple[MaaFWInterface, _LoadContext]:
     resolved_base_dir = Path(base_dir).resolve()
     if not resolved_base_dir.exists() or not resolved_base_dir.is_dir():
         raise MaaFWInterfaceLoadError("请设置 MaaFW 项目目录")
@@ -902,7 +912,9 @@ def load_interface_model_cached(
         if not force_reload:
             disk_cached = _load_from_disk_cache(resolved_base_dir)
             if disk_cached is not None:
-                signature, interface_model, dependency_paths, scan_select_specs = disk_cached
+                signature, interface_model, dependency_paths, scan_select_specs = (
+                    disk_cached
+                )
                 _interface_cache[resolved_base_dir] = (
                     signature,
                     interface_model,
@@ -983,7 +995,10 @@ def _file_signature(path: Path) -> tuple:
 
 
 def _interface_candidates(root_path: Path) -> list[Path]:
-    return [(root_path / file_name).resolve() for file_name in ("interface.json", "interface.jsonc")]
+    return [
+        (root_path / file_name).resolve()
+        for file_name in ("interface.json", "interface.jsonc")
+    ]
 
 
 def _build_signature(
@@ -1001,13 +1016,23 @@ def _build_signature(
         if path.resolve() not in candidate_paths:
             signature_parts.append(_file_signature(path))
 
-    for scan_path, scan_filter in sorted(scan_select_specs, key=lambda item: (str(item[0]), item[1])):
+    for scan_path, scan_filter in sorted(
+        scan_select_specs, key=lambda item: (str(item[0]), item[1])
+    ):
         signature_parts.append(("scan", str(scan_path), scan_filter))
         signature_parts.append(_file_signature(scan_path))
         try:
             scan_files = sorted(scan_path.glob(scan_filter))
         except Exception as exc:
-            signature_parts.append(("scan-error", str(scan_path), scan_filter, type(exc).__name__, str(exc)))
+            signature_parts.append(
+                (
+                    "scan-error",
+                    str(scan_path),
+                    scan_filter,
+                    type(exc).__name__,
+                    str(exc),
+                )
+            )
             continue
 
         for file in scan_files:
@@ -1044,7 +1069,10 @@ def _load_from_disk_cache(
         if payload.get("version") != DISK_CACHE_VERSION:
             return None
         cached_root = payload.get("root_path")
-        if not isinstance(cached_root, str) or Path(cached_root).resolve() != root_path.resolve():
+        if (
+            not isinstance(cached_root, str)
+            or Path(cached_root).resolve() != root_path.resolve()
+        ):
             logger.info(f"MaaFW interface 缓存路径不匹配，重新加载：{root_path}")
             return None
         if not _is_valid_disk_cache_payload(payload):
@@ -1098,7 +1126,9 @@ def _save_disk_cache(
         ],
         "scan_select_specs": [
             [str(path), scan_filter]
-            for path, scan_filter in sorted(scan_select_specs, key=lambda item: (str(item[0]), item[1]))
+            for path, scan_filter in sorted(
+                scan_select_specs, key=lambda item: (str(item[0]), item[1])
+            )
         ],
         "signature": _signature_to_json(signature),
         "interface": interface_model.model_dump(mode="json", by_alias=True),

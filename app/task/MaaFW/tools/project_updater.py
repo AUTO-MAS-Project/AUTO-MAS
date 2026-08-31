@@ -171,8 +171,10 @@ async def update_maafw_project_if_needed(
         f"发现 MaaFW 项目更新: {current_version} -> {candidate.version} ({candidate.source})"
     )
     download_url = candidate.download_url
-    if not download_url and candidate.source == "MirrorChyan" and (
-        github_repo or interface_model.github
+    if (
+        not download_url
+        and candidate.source == "MirrorChyan"
+        and (github_repo or interface_model.github)
     ):
         send_update_log("MirrorChyan 未返回下载链接，尝试从 GitHub release 下载")
         download_url = await _find_github_release_asset(
@@ -233,7 +235,9 @@ async def _check_mirrorchyan_update(
         params["arch"] = "x64"
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
-    async with httpx.AsyncClient(proxy=proxy, follow_redirects=False, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        proxy=proxy, follow_redirects=False, timeout=30.0
+    ) as client:
         response = await client.get(url, params=params)
 
     result = _load_response_json(response)
@@ -241,7 +245,9 @@ async def _check_mirrorchyan_update(
         error_code = result.get("code")
         if error_code in MIRROR_ERROR_INFO:
             raise MaaFWProjectUpdateError(MIRROR_ERROR_INFO[error_code])
-        raise MaaFWProjectUpdateError(f"MirrorChyan 返回异常: HTTP {response.status_code}")
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan 返回异常: HTTP {response.status_code}"
+        )
 
     data = result.get("data")
     if not isinstance(data, dict):
@@ -314,7 +320,9 @@ async def _fetch_github_releases(
     owner, name = repo
     url = f"https://api.github.com/repos/{owner}/{name}/releases"
     headers = {"User-Agent": "AutoMasGui"}
-    async with httpx.AsyncClient(proxy=proxy, follow_redirects=False, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        proxy=proxy, follow_redirects=False, timeout=30.0
+    ) as client:
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
@@ -405,19 +413,30 @@ async def _download_update_package(
     digest = hashlib.sha256()
     downloaded = 0
     try:
-        async with httpx.AsyncClient(proxy=proxy, follow_redirects=False, timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            proxy=proxy, follow_redirects=False, timeout=30.0
+        ) as client:
             for redirect_count in range(DOWNLOAD_REDIRECT_LIMIT + 1):
                 async with client.stream("GET", current_url) as response:
                     if response.status_code in (301, 302, 303, 307, 308):
                         location = str(response.headers.get("location") or "").strip()
                         if not location or redirect_count >= DOWNLOAD_REDIRECT_LIMIT:
-                            raise MaaFWProjectUpdateError("下载更新包重定向无效或次数过多")
-                        current_url = _validate_download_url(urljoin(current_url, location))
+                            raise MaaFWProjectUpdateError(
+                                "下载更新包重定向无效或次数过多"
+                            )
+                        current_url = _validate_download_url(
+                            urljoin(current_url, location)
+                        )
                         continue
                     if response.status_code not in (200, 206):
-                        raise MaaFWProjectUpdateError(f"下载更新包失败: HTTP {response.status_code}")
+                        raise MaaFWProjectUpdateError(
+                            f"下载更新包失败: HTTP {response.status_code}"
+                        )
                     content_length = _content_length(response)
-                    if content_length is not None and content_length > DOWNLOAD_MAX_BYTES:
+                    if (
+                        content_length is not None
+                        and content_length > DOWNLOAD_MAX_BYTES
+                    ):
                         raise MaaFWProjectUpdateError("MaaFW 更新包超过下载大小限制")
                     async with aiofiles.open(temp_path, "wb") as file:
                         async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
@@ -425,7 +444,9 @@ async def _download_update_package(
                                 continue
                             downloaded += len(chunk)
                             if downloaded > DOWNLOAD_MAX_BYTES:
-                                raise MaaFWProjectUpdateError("MaaFW 更新包超过下载大小限制")
+                                raise MaaFWProjectUpdateError(
+                                    "MaaFW 更新包超过下载大小限制"
+                                )
                             digest.update(chunk)
                             await file.write(chunk)
                     break
@@ -438,7 +459,10 @@ async def _download_update_package(
     try:
         if not downloaded:
             raise MaaFWProjectUpdateError("MaaFW 更新包为空")
-        if expected_sha256 and digest.hexdigest().casefold() != expected_sha256.casefold():
+        if (
+            expected_sha256
+            and digest.hexdigest().casefold() != expected_sha256.casefold()
+        ):
             raise MaaFWProjectUpdateError("MaaFW 更新包 SHA256 校验失败")
         temp_path.replace(package_path)
     except BaseException:
@@ -482,7 +506,9 @@ def _apply_update_package(
         _remove_path(package_path)
 
 
-def _apply_full_package(project_path: Path, package_root: Path, backup_dir: Path) -> None:
+def _apply_full_package(
+    project_path: Path, package_root: Path, backup_dir: Path
+) -> None:
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -542,7 +568,9 @@ def _apply_incremental_package(
                 continue
 
             relative_path = source.relative_to(payload_root)
-            target = _resolve_project_relative_path(project_path, relative_path.as_posix())
+            target = _resolve_project_relative_path(
+                project_path, relative_path.as_posix()
+            )
             touched_paths.add(target)
             _backup_target(project_path, target, backup_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -690,7 +718,9 @@ def _safe_extract_zip(package_path: Path, extract_dir: Path) -> None:
             for member in members:
                 target = (extract_dir / member.filename).resolve()
                 if not _is_within_path(target, extract_dir):
-                    raise MaaFWProjectUpdateError(f"更新包包含越界路径: {member.filename}")
+                    raise MaaFWProjectUpdateError(
+                        f"更新包包含越界路径: {member.filename}"
+                    )
             zip_ref.extractall(extract_dir)
     except zipfile.BadZipFile as exc:
         raise MaaFWProjectUpdateError("更新包不是有效 zip 文件") from exc
@@ -1057,7 +1087,8 @@ async def update_maafw_project_if_needed(
         operation_id=str(result.get("operationId") or "") or None,
         plan_id=str(result.get("planId") or candidate.plan_id or "") or None,
         project_fingerprint=str(result.get("finalFingerprint") or "") or None,
-        package_type=str(result.get("packageType") or candidate.package_type or "") or None,
+        package_type=str(result.get("packageType") or candidate.package_type or "")
+        or None,
         resumed_from=int(result.get("resumedFrom") or 0),
     )
 

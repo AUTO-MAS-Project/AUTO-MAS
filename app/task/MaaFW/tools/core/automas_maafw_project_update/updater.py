@@ -326,9 +326,7 @@ async def update_maafw_project_if_needed(
 
     merged_source_config = dict(source_config or {})
     configured_cdk = str(
-        merged_source_config.get("mirror_cdk")
-        or merged_source_config.get("cdk")
-        or ""
+        merged_source_config.get("mirror_cdk") or merged_source_config.get("cdk") or ""
     ).strip()
     inherited_cdk = str(mirror_cdk or "").strip()
     if not configured_cdk and inherited_cdk:
@@ -507,7 +505,10 @@ async def update_maafw_project_if_needed(
         operation_id=str(apply_result.get("operationId") or "") or None,
         plan_id=str(apply_result.get("planId") or candidate.plan_id or "") or None,
         project_fingerprint=str(apply_result.get("finalFingerprint") or "") or None,
-        package_type=str(apply_result.get("packageType") or candidate.package_type or "") or None,
+        package_type=str(
+            apply_result.get("packageType") or candidate.package_type or ""
+        )
+        or None,
         resumed_from=int(apply_result.get("resumedFrom") or 0),
     )
 
@@ -527,7 +528,11 @@ async def discover_maafw_project_update(
         or config.get("packageSource")
         or config.get("source")
     )
-    current = current_version if current_version is not None else (interface_model.version or "")
+    current = (
+        current_version
+        if current_version is not None
+        else (interface_model.version or "")
+    )
     send_update_log = send_log or (lambda _: None)
 
     # MirrorChyan is the single version/channel authority.  The selected
@@ -560,8 +565,7 @@ async def discover_maafw_project_update(
         return None
 
     send_update_log(
-        "version metadata source: MirrorChyan; "
-        f"latest={mirror_discovery.version}"
+        f"version metadata source: MirrorChyan; latest={mirror_discovery.version}"
     )
     if package_source == "mirrorchyan":
         if not mirror_cdk and mirror_discovery.installable:
@@ -636,7 +640,9 @@ def persist_maafw_update_plan(
 
     candidate = discovery.candidate
     if candidate is None or not candidate.installable:
-        raise MaaFWProjectUpdateError("cannot create a plan without an installable candidate")
+        raise MaaFWProjectUpdateError(
+            "cannot create a plan without an installable candidate"
+        )
     plan_id = uuid.uuid4().hex
     artifact_id = candidate.artifact_id or artifact_id_for(
         candidate.source,
@@ -721,7 +727,9 @@ async def resolve_maafw_update_plan_candidate(
             dict(state.get("interfaceDescriptor") or {})
         )
     except Exception as exc:
-        raise MaaFWProjectUpdateError("update plan interface/provider descriptor is invalid") from exc
+        raise MaaFWProjectUpdateError(
+            "update plan interface/provider descriptor is invalid"
+        ) from exc
     source = str(state.get("source") or descriptor.get("source") or "").strip().lower()
     target = str(state.get("targetVersion") or state.get("toVersion") or "").strip()
     if not target:
@@ -768,13 +776,21 @@ async def resolve_maafw_update_plan_candidate(
             "planned package artifact changed; create a new update plan"
         )
     planned_type = str(state.get("packageType") or "").strip().lower()
-    if planned_type and candidate.package_type and candidate.package_type != planned_type:
+    if (
+        planned_type
+        and candidate.package_type
+        and candidate.package_type != planned_type
+    ):
         raise MaaFWProjectUpdateError("planned package type changed")
     candidate.artifact_id = planned_artifact or actual_artifact
     candidate.plan_id = plan_id
-    candidate.project_fingerprint = str(state.get("projectFingerprint") or "").strip() or None
+    candidate.project_fingerprint = (
+        str(state.get("projectFingerprint") or "").strip() or None
+    )
     candidate.package_type = planned_type or candidate.package_type
-    candidate.from_version = str(state.get("fromVersion") or candidate.from_version or "").strip() or None
+    candidate.from_version = (
+        str(state.get("fromVersion") or candidate.from_version or "").strip() or None
+    )
     candidate.to_version = str(state.get("toVersion") or target).strip() or target
     return candidate
 
@@ -933,9 +949,7 @@ async def download_maafw_project_package(
     project_version = str(candidate.version or "").strip()
     download_url = str(candidate.download_url or "").strip()
     if not source or not project_version:
-        raise MaaFWProjectUpdateError(
-            "update candidate is missing source or version"
-        )
+        raise MaaFWProjectUpdateError("update candidate is missing source or version")
     if not download_url:
         raise MaaFWProjectUpdateError("update candidate is missing download URL")
     if max_download_bytes <= 0:
@@ -949,7 +963,9 @@ async def download_maafw_project_package(
             targetVersion=candidate.to_version or project_version,
             artifactId=candidate.artifact_id or "",
             planId=str(plan_id or candidate.plan_id or ""),
-            expectedFingerprint=str(expected_fingerprint or candidate.project_fingerprint or ""),
+            expectedFingerprint=str(
+                expected_fingerprint or candidate.project_fingerprint or ""
+            ),
             scriptId=str(script_id or "").strip(),
         )
         outcome = await download_resumable(
@@ -1053,7 +1069,9 @@ async def _check_mirrorchyan_update(
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:
-        async with httpx.AsyncClient(proxy=proxy, follow_redirects=True, timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            proxy=proxy, follow_redirects=True, timeout=30.0
+        ) as client:
             response = await client.get(url, params=params, headers=HTTP_HEADERS)
     except httpx.HTTPError as exc:
         raise MaaFWProjectUpdateError(
@@ -1076,7 +1094,9 @@ async def _check_mirrorchyan_update(
                 f"MirrorChyan [{error_code}]: {error_message}",
                 provider_error_code=error_code,
             )
-        raise MaaFWProjectUpdateError(f"MirrorChyan returned HTTP {response.status_code}")
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan returned HTTP {response.status_code}"
+        )
 
     data = result.get("data")
     if not isinstance(data, dict):
@@ -1095,14 +1115,24 @@ async def _check_mirrorchyan_update(
         version=latest_version,
         download_url=str(data.get("url") or "").strip() or None,
         sha256=str(data.get("sha256") or "").strip() or None,
-        artifact_id=str(data.get("artifact_id") or data.get("artifactId") or "").strip() or None,
+        artifact_id=str(data.get("artifact_id") or data.get("artifactId") or "").strip()
+        or None,
         package_type=_package_type_from_metadata(data),
-        from_version=_metadata_text(data, "base_version", "baseVersion", "from_version", "fromVersion"),
-        to_version=_metadata_text(data, "target_version", "targetVersion", "to_version", "toVersion") or latest_version,
+        from_version=_metadata_text(
+            data, "base_version", "baseVersion", "from_version", "fromVersion"
+        ),
+        to_version=_metadata_text(
+            data, "target_version", "targetVersion", "to_version", "toVersion"
+        )
+        or latest_version,
         size=_metadata_int(data, "size", "file_size", "fileSize"),
         etag=_metadata_text(data, "etag", "ETag"),
-        last_modified=_metadata_text(data, "last_modified", "lastModified", "Last-Modified"),
-        range_supported=_metadata_bool(data, "range", "range_supported", "rangeSupported"),
+        last_modified=_metadata_text(
+            data, "last_modified", "lastModified", "Last-Modified"
+        ),
+        range_supported=_metadata_bool(
+            data, "range", "range_supported", "rangeSupported"
+        ),
         unavailable_reason=(
             "MirrorChyan returned newer version metadata without a download URL"
         ),
@@ -1128,9 +1158,7 @@ async def _check_github_release_update(
     if not repo:
         return None
 
-    tag = str(
-        source_config.get("tag") or source_config.get("github_tag") or ""
-    ).strip()
+    tag = str(source_config.get("tag") or source_config.get("github_tag") or "").strip()
     if target_version:
         # MirrorChyan remains the version/channel authority in automatic mode.
         # Resolve that exact release instead of GitHub's stable-only ``latest``
@@ -1159,7 +1187,9 @@ async def _check_github_release_update(
         headers["Authorization"] = f"Bearer {token}"
 
     response: httpx.Response | None = None
-    async with httpx.AsyncClient(proxy=proxy, follow_redirects=True, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        proxy=proxy, follow_redirects=True, timeout=30.0
+    ) as client:
         for api_url in api_urls:
             candidate_response = await client.get(api_url, headers=headers)
             if candidate_response.status_code == 404:
@@ -1226,18 +1256,23 @@ async def _check_github_release_update(
         version=latest_version,
         download_url=download_url,
         sha256=configured_sha256 or asset_digest or None,
-        artifact_id=(
-            str(asset.get("id") or "").strip() or None
-            if asset
-            else None
-        ),
+        artifact_id=(str(asset.get("id") or "").strip() or None if asset else None),
         package_type=_package_type_from_metadata(data),
-        from_version=_metadata_text(data, "base_version", "baseVersion", "from_version", "fromVersion"),
-        to_version=_metadata_text(data, "target_version", "targetVersion", "to_version", "toVersion") or latest_version,
+        from_version=_metadata_text(
+            data, "base_version", "baseVersion", "from_version", "fromVersion"
+        ),
+        to_version=_metadata_text(
+            data, "target_version", "targetVersion", "to_version", "toVersion"
+        )
+        or latest_version,
         size=_metadata_int(asset or {}, "size"),
         etag=_metadata_text(asset or {}, "etag", "ETag"),
-        last_modified=_metadata_text(asset or {}, "last_modified", "lastModified", "Last-Modified"),
-        range_supported=_metadata_bool(asset or {}, "range", "range_supported", "rangeSupported"),
+        last_modified=_metadata_text(
+            asset or {}, "last_modified", "lastModified", "Last-Modified"
+        ),
+        range_supported=_metadata_bool(
+            asset or {}, "range", "range_supported", "rangeSupported"
+        ),
         unavailable_reason=(
             selection_reason
             or "GitHub release has no unambiguous matching package asset"
@@ -1320,20 +1355,29 @@ def _metadata_bool(data: Mapping[str, Any], *keys: str) -> bool | None:
 
 
 def _package_type_from_metadata(data: Mapping[str, Any]) -> str | None:
-    value = str(
-        data.get("package_type")
-        or data.get("packageType")
-        or data.get("type")
-        or ""
-    ).strip().lower()
+    value = (
+        str(
+            data.get("package_type")
+            or data.get("packageType")
+            or data.get("type")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     return value if value in {"full", "delta"} else None
 
 
-def _github_asset_for_url(data: Mapping[str, Any], url: str | None) -> dict[str, Any] | None:
+def _github_asset_for_url(
+    data: Mapping[str, Any], url: str | None
+) -> dict[str, Any] | None:
     if not url or not isinstance(data.get("assets"), list):
         return None
     for asset in data["assets"]:
-        if isinstance(asset, dict) and str(asset.get("browser_download_url") or "").strip() == url:
+        if (
+            isinstance(asset, dict)
+            and str(asset.get("browser_download_url") or "").strip() == url
+        ):
             return asset
     return None
 
@@ -1531,9 +1575,7 @@ async def _stream_update_package(
                         raise MaaFWProjectUpdateError(
                             "download update package exceeded redirect limit"
                         )
-                    current_url = _validate_download_url(
-                        urljoin(current_url, location)
-                    )
+                    current_url = _validate_download_url(urljoin(current_url, location))
                     continue
 
                 if response.status_code not in (200, 206):
@@ -1547,16 +1589,12 @@ async def _stream_update_package(
                             provider_error_code=provider_error_code,
                         )
                     raise MaaFWProjectUpdateError(
-                        "download update package failed: "
-                        f"HTTP {response.status_code}"
+                        f"download update package failed: HTTP {response.status_code}"
                     )
 
                 _validate_download_url(str(response.url))
                 content_length = _content_length(response)
-                if (
-                    content_length is not None
-                    and content_length > max_download_bytes
-                ):
+                if content_length is not None and content_length > max_download_bytes:
                     raise MaaFWProjectUpdateError(
                         "download update package exceeds size limit: "
                         f"{content_length} > {max_download_bytes}"
@@ -1593,9 +1631,7 @@ def _validate_download_url(raw_url: str | None) -> str:
     url = str(raw_url or "").strip()
     parsed = urlsplit(url)
     if parsed.scheme.lower() != "https":
-        raise MaaFWProjectUpdateError(
-            "MaaFW remote package URL must use HTTPS"
-        )
+        raise MaaFWProjectUpdateError("MaaFW remote package URL must use HTTPS")
     if not parsed.hostname or parsed.username or parsed.password:
         raise MaaFWProjectUpdateError("MaaFW remote package URL is invalid")
 
@@ -1626,9 +1662,7 @@ async def _read_download_error_hint(
 ) -> tuple[str, int | None]:
     try:
         content = bytearray()
-        async for chunk in response.aiter_bytes(
-            chunk_size=DOWNLOAD_ERROR_HINT_BYTES
-        ):
+        async for chunk in response.aiter_bytes(chunk_size=DOWNLOAD_ERROR_HINT_BYTES):
             remaining = DOWNLOAD_ERROR_HINT_BYTES - len(content)
             if remaining <= 0:
                 break
@@ -1761,9 +1795,7 @@ def _release_content_addressed_download(
             "download package release directory cannot be a reparse point"
         )
     if archive_dir.exists() and not archive_dir.is_dir():
-        raise MaaFWProjectUpdateError(
-            "download package release directory is invalid"
-        )
+        raise MaaFWProjectUpdateError("download package release directory is invalid")
     if _is_reparse_path(lexical_package):
         raise MaaFWProjectUpdateError(
             "download package release target cannot be a reparse point"
@@ -2017,9 +2049,7 @@ async def _apply_update_package(
         loop.call_soon_threadsafe(send_log, message)
 
     def send_thread_progress(stage: str, **payload: Any) -> None:
-        loop.call_soon_threadsafe(
-            partial(_report_progress, progress, stage, **payload)
-        )
+        loop.call_soon_threadsafe(partial(_report_progress, progress, stage, **payload))
 
     try:
         await _run_worker_to_completion(
@@ -2076,7 +2106,9 @@ def _apply_update_package_sync(
         _remove_path(package_path)
 
 
-def _apply_full_package(project_path: Path, package_root: Path, backup_dir: Path) -> None:
+def _apply_full_package(
+    project_path: Path, package_root: Path, backup_dir: Path
+) -> None:
     backup_dir.mkdir(parents=True, exist_ok=True)
     touched_paths: set[Path] = set()
 
@@ -2129,7 +2161,9 @@ def _apply_incremental_package(
                 continue
 
             relative_path = source.relative_to(payload_root)
-            target = _resolve_project_relative_path(project_path, relative_path.as_posix())
+            target = _resolve_project_relative_path(
+                project_path, relative_path.as_posix()
+            )
             touched_paths.add(target)
             _backup_target(project_path, target, backup_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -2236,7 +2270,9 @@ def _resolve_payload_root(
         if not candidate.exists() or not candidate.is_dir():
             continue
         if not _is_within_path(candidate, extract_dir):
-            raise MaaFWProjectUpdateError(f"changes.json {key} path is unsafe: {raw_path}")
+            raise MaaFWProjectUpdateError(
+                f"changes.json {key} path is unsafe: {raw_path}"
+            )
         return candidate
 
     for folder_name in ("payload", "files"):
@@ -2285,12 +2321,16 @@ def _restore_incremental_backup(
     touched_paths: set[Path],
 ) -> None:
     try:
-        for target in sorted(touched_paths, key=lambda item: len(item.parts), reverse=True):
+        for target in sorted(
+            touched_paths, key=lambda item: len(item.parts), reverse=True
+        ):
             _remove_path(target)
 
         if not backup_dir.exists():
             return
-        for backup_child in sorted(backup_dir.rglob("*"), key=lambda item: len(item.parts)):
+        for backup_child in sorted(
+            backup_dir.rglob("*"), key=lambda item: len(item.parts)
+        ):
             if backup_child.is_dir():
                 continue
             relative_path = backup_child.relative_to(backup_dir)
@@ -2308,15 +2348,23 @@ def _resolve_project_relative_path(project_path: Path, raw_path: str) -> Path:
 
     candidate = Path(normalized)
     if candidate.is_absolute() or candidate.drive or candidate.root:
-        raise MaaFWProjectUpdateError(f"update package contains absolute path: {raw_path}")
+        raise MaaFWProjectUpdateError(
+            f"update package contains absolute path: {raw_path}"
+        )
     if any(part in {"", ".", ".."} for part in candidate.parts):
-        raise MaaFWProjectUpdateError(f"update package contains invalid path: {raw_path}")
+        raise MaaFWProjectUpdateError(
+            f"update package contains invalid path: {raw_path}"
+        )
     if candidate.parts[0] == UPDATE_WORK_DIR:
-        raise MaaFWProjectUpdateError(f"update package cannot write to {UPDATE_WORK_DIR}: {raw_path}")
+        raise MaaFWProjectUpdateError(
+            f"update package cannot write to {UPDATE_WORK_DIR}: {raw_path}"
+        )
 
     target = (project_path / candidate).resolve()
     if not _is_within_path(target, project_path):
-        raise MaaFWProjectUpdateError(f"update package path escapes project root: {raw_path}")
+        raise MaaFWProjectUpdateError(
+            f"update package path escapes project root: {raw_path}"
+        )
     return target
 
 
@@ -2352,7 +2400,7 @@ def _normalize_github_repo(raw_value: str) -> str:
     value = value.removesuffix(".git")
     for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
         if value.startswith(prefix):
-            value = value[len(prefix):]
+            value = value[len(prefix) :]
             break
     value = value.strip("/")
     parts = value.split("/")

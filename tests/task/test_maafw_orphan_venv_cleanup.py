@@ -144,9 +144,9 @@ class UnreachableProjectAbstainsTest(unittest.TestCase):
     """
 
     def _body(self) -> str:
-        source = (
-            Path(__file__).resolve().parents[2] / "app/core/config.py"
-        ).read_text(encoding="utf-8")
+        source = (Path(__file__).resolve().parents[2] / "app/core/config.py").read_text(
+            encoding="utf-8"
+        )
         body = source[source.index("async def clean_maafw_agent_venvs") :]
         return body[: body.index(chr(10) + "    async def ", 10)]
 
@@ -162,7 +162,9 @@ class UnreachableProjectAbstainsTest(unittest.TestCase):
         """不能只把不可达的项目剔出存活集合——那等于确认它们是孤儿。"""
 
         body = self._body()
-        guard = body[body.index("unreachable") : body.index("collect_orphan_agent_venvs(root")]
+        guard = body[
+            body.index("unreachable") : body.index("collect_orphan_agent_venvs(root")
+        ]
         self.assertIn("return", guard)
 
     def test_resolve_does_not_expand_missing_paths(self) -> None:
@@ -170,7 +172,9 @@ class UnreachableProjectAbstainsTest(unittest.TestCase):
 
         ghost = Path("Z:/definitely-not-mounted/project")
         self.assertFalse(ghost.exists())
-        self.assertEqual(str(ghost.resolve()).casefold(), str(ghost).replace("/", os.sep).casefold())
+        self.assertEqual(
+            str(ghost.resolve()).casefold(), str(ghost).replace("/", os.sep).casefold()
+        )
 
 
 class TestsMustNotTouchRealVenvsTest(unittest.TestCase):
@@ -190,9 +194,9 @@ class TestsMustNotTouchRealVenvsTest(unittest.TestCase):
         try:
             from app.task.MaaFW import embedded_manager
 
-            self.assertNotIn("rmtree", Path(embedded_manager.__file__).read_text(
-                encoding="utf-8"
-            ))
+            self.assertNotIn(
+                "rmtree", Path(embedded_manager.__file__).read_text(encoding="utf-8")
+            )
             if created:
                 self.assertTrue(sentinel.is_dir())
         finally:

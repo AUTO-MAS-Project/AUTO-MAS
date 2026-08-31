@@ -21,8 +21,7 @@ from pathlib import Path
 import app.core  # noqa: F401  # 初始化宿主配置
 
 SOURCE_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "app/task/MaaFW/tools/embedded/runner_task.py"
+    Path(__file__).resolve().parents[2] / "app/task/MaaFW/tools/embedded/runner_task.py"
 )
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
 

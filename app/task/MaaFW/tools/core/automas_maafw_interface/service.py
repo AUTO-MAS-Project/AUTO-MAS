@@ -38,7 +38,9 @@ class MaaFWInterfaceService:
         interface = self.load(root_path, force_reload=force_reload)
         return build_interface_preview_data(root_path, interface)
 
-    def validate(self, interface: MaaFWInterface | dict[str, Any]) -> MaaFWInterfaceValidationReport:
+    def validate(
+        self, interface: MaaFWInterface | dict[str, Any]
+    ) -> MaaFWInterfaceValidationReport:
         try:
             self._coerce_interface(interface)
         except Exception as exc:
@@ -54,7 +56,9 @@ class MaaFWInterfaceService:
         interface_model = self._coerce_interface(interface)
         preset_model = None
         if preset is not None:
-            preset_model = next((item for item in interface_model.preset if item.name == preset), None)
+            preset_model = next(
+                (item for item in interface_model.preset if item.name == preset), None
+            )
             if preset_model is None:
                 raise MaaFWInterfaceLoadError(f"preset not found: {preset}")
         elif interface_model.preset:

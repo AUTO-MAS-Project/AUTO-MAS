@@ -131,9 +131,7 @@ class InitLoggingTest(unittest.TestCase):
                 lambda: (loaded, binding),
             ),
             mock.patch.object(self.module, "_MAAFW_INITIALIZED", False),
-            mock.patch(
-                "pathlib.Path.write_text", lambda *a, **k: None
-            ),
+            mock.patch("pathlib.Path.write_text", lambda *a, **k: None),
             mock.patch("pathlib.Path.mkdir", lambda *a, **k: None),
         ):
             try:
@@ -167,16 +165,20 @@ class InitLoggingTest(unittest.TestCase):
         logs = self._run("v5.13.0-beta.2", "5.13.0b2")
         self.assertFalse([line for line in logs if line.startswith("⚠")], logs)
         self.assertTrue(
-            any("vv" not in line for line in logs) and
-            not any("vv" in line for line in logs),
+            any("vv" not in line for line in logs)
+            and not any("vv" in line for line in logs),
             logs,
         )
 
     def test_unknown_version_does_not_warn(self) -> None:
         """取不到版本时不能瞎报，也不能因此挡住运行。"""
 
-        self.assertFalse([line for line in self._run("", "5.12.3") if line.startswith("⚠")])
-        self.assertFalse([line for line in self._run("v5.12.3", "") if line.startswith("⚠")])
+        self.assertFalse(
+            [line for line in self._run("", "5.12.3") if line.startswith("⚠")]
+        )
+        self.assertFalse(
+            [line for line in self._run("v5.12.3", "") if line.startswith("⚠")]
+        )
 
 
 if __name__ == "__main__":

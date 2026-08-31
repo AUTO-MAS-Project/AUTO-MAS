@@ -65,7 +65,9 @@ class MaaFWPipelineOverrideBuilder:
         merged = copy.deepcopy(task_definition.pipeline_override) or {}
         option_groups = [
             self.interface_model.global_option or [],
-            resource_definition.option if resource_definition and resource_definition.option else [],
+            resource_definition.option
+            if resource_definition and resource_definition.option
+            else [],
             controller_option_names,
             task_definition.option or [],
         ]
@@ -77,13 +79,19 @@ class MaaFWPipelineOverrideBuilder:
         return merged
 
     def _get_task_definition(self, task_name: str) -> MaaFWTask | None:
-        return next((task for task in self.interface_model.task if task.name == task_name), None)
+        return next(
+            (task for task in self.interface_model.task if task.name == task_name), None
+        )
 
     def _get_resource_definition(self) -> MaaFWResource | None:
         if self.resource_name is None:
             return None
         return next(
-            (resource for resource in self.interface_model.resource if resource.name == self.resource_name),
+            (
+                resource
+                for resource in self.interface_model.resource
+                if resource.name == self.resource_name
+            ),
             None,
         )
 
@@ -99,15 +107,17 @@ class MaaFWPipelineOverrideBuilder:
             controller.type for controller in self._get_active_controller_definitions()
         }
         if len(controller_types) != 1:
-            raise MaaFWHotkeyError(
-                "hotkey 键码映射需要且只能选择一个 controller"
-            )
+            raise MaaFWHotkeyError("hotkey 键码映射需要且只能选择一个 controller")
         return next(iter(controller_types))
 
     def _is_option_active_for_context(self, option: MaaFWOption) -> bool:
-        if option.controller and not self.controller_names.intersection(option.controller):
+        if option.controller and not self.controller_names.intersection(
+            option.controller
+        ):
             return False
-        if option.resource and (self.resource_name is None or self.resource_name not in option.resource):
+        if option.resource and (
+            self.resource_name is None or self.resource_name not in option.resource
+        ):
             return False
         return True
 
@@ -118,7 +128,9 @@ class MaaFWPipelineOverrideBuilder:
         options: dict[str, MaaFWTaskOptionValue],
     ) -> str:
         case_names = [case.name for case in option.cases or []]
-        default_value = option.default_case if isinstance(option.default_case, str) else ""
+        default_value = (
+            option.default_case if isinstance(option.default_case, str) else ""
+        )
         if default_value not in case_names:
             default_value = case_names[0] if case_names else ""
 
@@ -134,11 +146,15 @@ class MaaFWPipelineOverrideBuilder:
         options: dict[str, MaaFWTaskOptionValue],
     ) -> list[str]:
         case_order = [case.name for case in option.cases or []]
-        default_values = option.default_case if isinstance(option.default_case, list) else []
+        default_values = (
+            option.default_case if isinstance(option.default_case, list) else []
+        )
         raw_value = options.get(option_name)
 
         if raw_value is None:
-            selected_values = [value for value in default_values if isinstance(value, str)]
+            selected_values = [
+                value for value in default_values if isinstance(value, str)
+            ]
         elif isinstance(raw_value, list):
             selected_values = [value for value in raw_value if isinstance(value, str)]
         elif isinstance(raw_value, str):
@@ -199,12 +215,16 @@ class MaaFWPipelineOverrideBuilder:
     ) -> Any:
         if isinstance(value, dict):
             return {
-                key: self._substitute_placeholders(nested_value, typed_replacements, text_replacements)
+                key: self._substitute_placeholders(
+                    nested_value, typed_replacements, text_replacements
+                )
                 for key, nested_value in value.items()
             }
         if isinstance(value, list):
             return [
-                self._substitute_placeholders(item, typed_replacements, text_replacements)
+                self._substitute_placeholders(
+                    item, typed_replacements, text_replacements
+                )
                 for item in value
             ]
         if isinstance(value, str):
@@ -224,7 +244,9 @@ class MaaFWPipelineOverrideBuilder:
     ) -> Any:
         if isinstance(value, dict):
             copied = {
-                key: self._assign_scan_select_attach_value(nested_value, option_name, selected_value)
+                key: self._assign_scan_select_attach_value(
+                    nested_value, option_name, selected_value
+                )
                 for key, nested_value in value.items()
             }
             attach_value = copied.get("attach")
@@ -373,7 +395,9 @@ class MaaFWPipelineOverrideBuilder:
         selected_value = self._normalize_choice_value(option_name, option, options)
         return cast(
             MaaFWPipelineOverride,
-            self._assign_scan_select_attach_value(option.pipeline_override, option_name, selected_value),
+            self._assign_scan_select_attach_value(
+                option.pipeline_override, option_name, selected_value
+            ),
         )
 
     def _build_option_override(
@@ -416,28 +440,42 @@ class MaaFWPipelineOverrideBuilder:
             merged = deep_merge_pipeline_override(merged, option.pipeline_override)
 
         if option.type in {"select", "switch"} and option.cases:
-            active_case_name = self._normalize_choice_value(option_name, option, options)
-            active_case = next((case for case in option.cases if case.name == active_case_name), None)
+            active_case_name = self._normalize_choice_value(
+                option_name, option, options
+            )
+            active_case = next(
+                (case for case in option.cases if case.name == active_case_name), None
+            )
             if active_case and active_case.pipeline_override:
-                merged = deep_merge_pipeline_override(merged, active_case.pipeline_override)
+                merged = deep_merge_pipeline_override(
+                    merged, active_case.pipeline_override
+                )
             if active_case and active_case.option:
                 merged = deep_merge_pipeline_override(
                     merged,
-                    self._build_option_group_override(active_case.option, options, next_lineage),
+                    self._build_option_group_override(
+                        active_case.option, options, next_lineage
+                    ),
                 )
             return merged
 
         if option.type == "checkbox" and option.cases:
-            selected_case_names = set(self._normalize_checkbox_values(option_name, option, options))
+            selected_case_names = set(
+                self._normalize_checkbox_values(option_name, option, options)
+            )
             for case in option.cases:
                 if case.name not in selected_case_names:
                     continue
                 if case.pipeline_override:
-                    merged = deep_merge_pipeline_override(merged, case.pipeline_override)
+                    merged = deep_merge_pipeline_override(
+                        merged, case.pipeline_override
+                    )
                 if case.option:
                     merged = deep_merge_pipeline_override(
                         merged,
-                        self._build_option_group_override(case.option, options, next_lineage),
+                        self._build_option_group_override(
+                            case.option, options, next_lineage
+                        ),
                     )
         return merged
 

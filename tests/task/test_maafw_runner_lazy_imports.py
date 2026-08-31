@@ -56,8 +56,7 @@ class NoPluginFormImportsTest(unittest.TestCase):
         self.assertEqual(
             offenders,
             [],
-            "插件形态的顶层包导入在树内不存在，运行期才会炸：\n"
-            + "\n".join(offenders),
+            "插件形态的顶层包导入在树内不存在，运行期才会炸：\n" + "\n".join(offenders),
         )
 
     def test_scan_actually_reaches_nested_imports(self) -> None:
@@ -107,9 +106,7 @@ class FailureReasonReachesUserTest(unittest.TestCase):
 
     @staticmethod
     def _result(error: str, failed_task: str = "启动游戏"):
-        return type(
-            "R", (), {"errorMessage": error, "failedTask": failed_task}
-        )()
+        return type("R", (), {"errorMessage": error, "failedTask": failed_task})()
 
     @staticmethod
     def _plan():
@@ -124,9 +121,7 @@ class FailureReasonReachesUserTest(unittest.TestCase):
         self.assertIn("automas_maafw_agent_env", summary)
 
     def test_missing_error_message_keeps_the_plain_summary(self) -> None:
-        summary = self.module._failed_task_user_summary(
-            self._result(""), self._plan()
-        )
+        summary = self.module._failed_task_user_summary(self._result(""), self._plan())
         self.assertEqual(summary, "启动游戏：任务执行失败")
 
     def test_only_the_first_line_is_used(self) -> None:

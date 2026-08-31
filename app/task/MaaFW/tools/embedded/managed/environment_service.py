@@ -49,9 +49,7 @@ class MaaFWManagedEnvironmentService:
         | None = None,
         garbage_collector_provider: Callable[[], Awaitable[Mapping[str, Any]]]
         | None = None,
-        operation_runner: Callable[
-            [Callable[[], Awaitable[Any]]], Awaitable[Any]
-        ]
+        operation_runner: Callable[[Callable[[], Awaitable[Any]]], Awaitable[Any]]
         | None = None,
     ) -> None:
         self._config = config
@@ -194,9 +192,7 @@ class MaaFWManagedEnvironmentService:
                         "projectReference": project_reference,
                         "scriptId": script_id,
                         "expectedStoreId": managed.get("StoreId"),
-                        "expectedProjectManifest": managed.get(
-                            "ProjectManifest"
-                        ),
+                        "expectedProjectManifest": managed.get("ProjectManifest"),
                         # Prewarming is a two-phase operation: resolve/ensure
                         # the runtime first, but do not publish Store/Pool
                         # references until Runner preparation succeeds.
@@ -305,9 +301,7 @@ class MaaFWManagedEnvironmentService:
             "runRootId",
             "checkout RunRoot 身份",
         )
-        storage = _required_runtime_storage(
-            await gateway.runtime_storage_info()
-        )
+        storage = _required_runtime_storage(await gateway.runtime_storage_info())
         # Load the authoritative checkout interface before any binding write.
         # A missing/stale interface service therefore fails closed without
         # mutating Project Store references or the script record.
@@ -323,9 +317,7 @@ class MaaFWManagedEnvironmentService:
         except MaaFWRuntimeRouteError as exc:
             raise ManagedServiceError(str(exc)) from exc
         if route is None:
-            raise ManagedServiceError(
-                "MaaFW Managed 环境未生成可信 runtime route"
-            )
+            raise ManagedServiceError("MaaFW Managed 环境未生成可信 runtime route")
 
         _log_requested_path_mismatch(
             requested_path,
@@ -353,17 +345,13 @@ class MaaFWManagedEnvironmentService:
                 "managed_shared_agent_dependencies_complete": (
                     route.shared_agent_dependencies_complete
                 ),
-                "managed_python_agent_indexes": (
-                    route.managed_python_agent_indexes
-                ),
+                "managed_python_agent_indexes": (route.managed_python_agent_indexes),
                 "progress": progress,
             },
             "准备 MaaFW 项目环境",
         )
         if not isinstance(prepare_result, Mapping):
-            raise ManagedServiceError(
-                "maafw.runner.v1 环境准备结果必须是 JSON object"
-            )
+            raise ManagedServiceError("maafw.runner.v1 环境准备结果必须是 JSON object")
         # Runner preparation is the long-running part of this transaction.
         # Re-read the script binding before touching Project Store so a stale
         # result can never bind or persist after a version/runtime switch.
@@ -484,9 +472,7 @@ class MaaFWManagedEnvironmentService:
         try:
             records = await self._config.get_script_records(script_id)
         except Exception as exc:
-            raise ManagedServiceError(
-                f"无法读取脚本 {script_id}：{exc}"
-            ) from exc
+            raise ManagedServiceError(f"无法读取脚本 {script_id}：{exc}") from exc
         if not isinstance(records, Sequence) or isinstance(
             records,
             (str, bytes, bytearray),
@@ -512,9 +498,7 @@ class MaaFWManagedEnvironmentService:
             "load_interface",
         ):
             if not callable(getattr(gateway, name, None)):
-                raise ManagedServiceError(
-                    f"MaaFW Managed Gateway 缺少 {name}()"
-                )
+                raise ManagedServiceError(f"MaaFW Managed Gateway 缺少 {name}()")
         return gateway
 
     def _require_runner(self) -> Any:
@@ -539,9 +523,7 @@ class MaaFWManagedEnvironmentService:
         """Finish compensation despite caller cancellation and preserve cause."""
 
         try:
-            rollback = gateway.rollback_project_runtime_binding(
-                rollback_receipt
-            )
+            rollback = gateway.rollback_project_runtime_binding(rollback_receipt)
             if not inspect.isawaitable(rollback):
                 raise ManagedServiceError(
                     "rollback_project_runtime_binding() 必须返回 awaitable"
@@ -617,9 +599,7 @@ class MaaFWManagedEnvironmentService:
                     "checkout RunRoot 身份",
                 ),
                 "Version": version,
-                "RuntimeConstraint": str(
-                    resolution.get("runtimeConstraint") or ""
-                ),
+                "RuntimeConstraint": str(resolution.get("runtimeConstraint") or ""),
                 "Status": f"共享运行时已就绪 · {runtime_id}",
                 "ProjectManifest": dict(
                     _required_mapping(
@@ -737,22 +717,16 @@ def _required_runtime_storage(value: Any) -> dict[str, str]:
                 )
             identity_pool_id = identity_pool_id.strip()
         else:
-            raise ManagedServiceError(
-                "Runtime Pool rootIdentity 缺少 poolId"
-            )
+            raise ManagedServiceError("Runtime Pool rootIdentity 缺少 poolId")
         if not identity_pool_id:
-            raise ManagedServiceError(
-                "Runtime Pool rootIdentity.poolId不能为空"
-            )
+            raise ManagedServiceError("Runtime Pool rootIdentity.poolId不能为空")
         if identity_pool_id != pool_id:
             raise ManagedServiceError(
                 "Runtime Pool storage_info 的 poolId 与 rootIdentity 不一致"
             )
     root_path = Path(root)
     if not root_path.is_absolute():
-        raise ManagedServiceError(
-            "Runtime Pool storage_info 的 root 必须是绝对路径"
-        )
+        raise ManagedServiceError("Runtime Pool storage_info 的 root 必须是绝对路径")
     return {"root": str(root_path.resolve()), "poolId": pool_id}
 
 
@@ -784,9 +758,7 @@ def _validate_runtime_selector(runtime: Mapping[str, Any]) -> None:
             )
         normalized.append(item.strip())
     if not normalized:
-        raise ManagedServiceError(
-            "MaaFW Managed runtime requirements 不能为空"
-        )
+        raise ManagedServiceError("MaaFW Managed runtime requirements 不能为空")
     if maafw_requirement not in normalized:
         raise ManagedServiceError(
             "MaaFW Managed runtime DTO 的 selectorRequirements 与 "
@@ -810,9 +782,7 @@ def _project_with_runtime_binding(
         manifest_runtime_value,
         Mapping,
     ):
-        raise ManagedServiceError(
-            "Project Store manifest runtime 必须是 JSON object"
-        )
+        raise ManagedServiceError("Project Store manifest runtime 必须是 JSON object")
     manifest_runtime = (
         dict(manifest_runtime_value)
         if isinstance(manifest_runtime_value, Mapping)

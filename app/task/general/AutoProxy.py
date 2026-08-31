@@ -68,14 +68,25 @@ _PREFIX_SENTINEL = "******"
 _PROCESS_START_GRACE_SECONDS = 90
 
 _STRPTIME_DIRECTIVES: dict[str, str] = {
-    "%Y": r"\d{4}", "%y": r"\d{2}",
-    "%m": r"\d{1,2}", "%d": r"\d{1,2}",
-    "%H": r"\d{1,2}", "%I": r"\d{1,2}",
-    "%M": r"\d{1,2}", "%S": r"\d{1,2}",
-    "%f": r"\d+", "%j": r"\d{1,3}",
-    "%U": r"\d{1,2}", "%W": r"\d{1,2}", "%w": r"\d",
-    "%A": r"\w+", "%a": r"\w+", "%B": r"\w+", "%b": r"\w+",
-    "%p": r"[APap][Mm]", "%%": r"%",
+    "%Y": r"\d{4}",
+    "%y": r"\d{2}",
+    "%m": r"\d{1,2}",
+    "%d": r"\d{1,2}",
+    "%H": r"\d{1,2}",
+    "%I": r"\d{1,2}",
+    "%M": r"\d{1,2}",
+    "%S": r"\d{1,2}",
+    "%f": r"\d+",
+    "%j": r"\d{1,3}",
+    "%U": r"\d{1,2}",
+    "%W": r"\d{1,2}",
+    "%w": r"\d",
+    "%A": r"\w+",
+    "%a": r"\w+",
+    "%B": r"\w+",
+    "%b": r"\w+",
+    "%p": r"[APap][Mm]",
+    "%%": r"%",
 }
 
 
@@ -118,9 +129,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.use_mas_config = bool(
-            self.cur_user_config.get("Info", "IfUseMasConfig")
-        )
+        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -135,10 +144,13 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if self.use_mas_config and not (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-        ).exists():
+        if (
+            self.use_mas_config
+            and not (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+            ).exists()
+        ):
             self.cur_user_item.status = "异常"
             return (
                 "未找到用户的通用脚本配置文件，请先在用户配置页完成 「通用配置」 步骤"
@@ -198,9 +210,13 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
         self.log_format = self.script_config.get("Script", "LogPathFormat")
-        self.log_use_prefix = bool(self.log_format) and self.log_format.endswith(_PREFIX_SENTINEL)
+        self.log_use_prefix = bool(self.log_format) and self.log_format.endswith(
+            _PREFIX_SENTINEL
+        )
         if self.log_use_prefix:
-            prefix_re = _format_to_prefix_regex(self.log_format[: -len(_PREFIX_SENTINEL)])
+            prefix_re = _format_to_prefix_regex(
+                self.log_format[: -len(_PREFIX_SENTINEL)]
+            )
             if not prefix_re.match(self.script_log_path.stem):
                 logger.warning(
                     f"LogPathFormat 与 LogPath 不匹配: {self.log_format} vs {self.script_log_path}"
@@ -240,9 +256,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
         # 推送日志采集：受 PushLogEnabled 总开关控制，关闭时保留配置但不采集；
         # 仅使用高级模式（PushLogPatterns，JSON）进行采集，供任务结束后追加到推送报告
-        self.push_log_enabled = bool(
-            self.script_config.get("Script", "PushLogEnabled")
-        )
+        self.push_log_enabled = bool(self.script_config.get("Script", "PushLogEnabled"))
         self.push_log_patterns_compiled = (
             load_patterns(self.script_config.get("Script", "PushLogPatterns"))
             if self.push_log_enabled
@@ -322,7 +336,6 @@ class AutoProxyTask(TaskExecuteBase):
             if self.game_manager is not None:
                 try:
                     if isinstance(self.game_manager, ProcessManager):
-
                         if self.script_config.get("Game", "Type") == "URL":
                             if self.game_process_name and is_process_running(
                                 self.game_process_name
@@ -353,7 +366,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 )
                             else:
                                 logger.info(
-                                    f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                                    f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game', 'Arguments')}"
                                 )
                                 await self.game_manager.open_process(
                                     self.game_path,
@@ -523,7 +536,9 @@ class AutoProxyTask(TaskExecuteBase):
                 data=WSTaskNoticeData(level="error", message=error_message),
             )
         else:
-            logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -660,9 +675,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             # 剥离 OneDragon 风格的日志元数据前缀（如 `[] [operation.py 429] [INFO]: `），
             # 仅保留指令、节点与返回状态等有效信息
-            content = re.sub(
-                r"^(?:\[\]\s*)?\[[^\]]+\]\s*\[\w+\]:\s*", "", content
-            )
+            content = re.sub(r"^(?:\[\]\s*)?\[[^\]]+\]\s*\[\w+\]:\s*", "", content)
 
         return f"{time_text} - {content}" if time_text else content
 
@@ -716,8 +729,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.success_log.search(log) is not None:
             self.cur_user_log.status = "Success!"
         elif self.is_log_stalled(
-            latest_time,
-            minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "脚本进程超时"
         else:
@@ -761,7 +773,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
@@ -819,7 +830,9 @@ class AutoProxyTask(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
+                data=WSTaskNoticeData(
+                    level="error", message=f"推送通知时出现异常: {e}"
+                ),
             )
 
         if self.run_book:

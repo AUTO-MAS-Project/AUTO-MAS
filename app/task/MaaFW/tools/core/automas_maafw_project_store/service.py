@@ -266,11 +266,11 @@ class MaaFWProjectStoreService:
         self._is_default_root = _same_path(self.root, default_root)
         self._lock = _store_lock(self.root)
         self._resource_lifecycle_lock = asyncio.Lock()
-        self._resource_lifecycle_task: ContextVar[
-            asyncio.Task[Any] | None
-        ] = ContextVar(
-            f"maafw_project_resource_lifecycle_{id(self)}",
-            default=None,
+        self._resource_lifecycle_task: ContextVar[asyncio.Task[Any] | None] = (
+            ContextVar(
+                f"maafw_project_resource_lifecycle_{id(self)}",
+                default=None,
+            )
         )
         with self._lock:
             self._root_identity = self._initialize_root_identity()
@@ -513,7 +513,9 @@ class MaaFWProjectStoreService:
         source_root = imported_source.root
         interface_base, source_interface_path = _discover_project_interface(source_root)
         interface_data = _read_json_object(source_interface_path)
-        plan = _build_projection_plan(source_root, source_interface_path, interface_data)
+        plan = _build_projection_plan(
+            source_root, source_interface_path, interface_data
+        )
         normalized_project_id = _resolve_import_project_id(
             project_id,
             plan.interface_data,
@@ -536,7 +538,9 @@ class MaaFWProjectStoreService:
         with self._lock:
             final_dir = self._version_dir(normalized_project_id, normalized_version)
             if final_dir.exists():
-                existing = self._load_manifest(normalized_project_id, normalized_version)
+                existing = self._load_manifest(
+                    normalized_project_id, normalized_version
+                )
                 if (
                     normalized_remote_source is not None
                     and existing.get("remote") != normalized_remote_source
@@ -651,7 +655,9 @@ class MaaFWProjectStoreService:
                             if interface_base != source_root
                             else "."
                         ),
-                        "interfacePath": source_interface_path.relative_to(source_root).as_posix(),
+                        "interfacePath": source_interface_path.relative_to(
+                            source_root
+                        ).as_posix(),
                         "interfaceVersion": interface_version,
                         # Compatibility alias retained for existing readers.
                         "version": interface_version,
@@ -691,7 +697,9 @@ class MaaFWProjectStoreService:
                     "runtime": {
                         "constraint": constraint,
                         "platform": _optional_string(platform) or sys.platform,
-                        "arch": _optional_string(arch) or host_platform.machine() or "unknown",
+                        "arch": _optional_string(arch)
+                        or host_platform.machine()
+                        or "unknown",
                         "python": _json_clone(plan.python_runtime),
                         "agent": agents,
                         "requiredPythonAbi": plan.required_python_abi,
@@ -699,7 +707,9 @@ class MaaFWProjectStoreService:
                             plan.shared_agent_dependencies_complete
                         ),
                         "binding": _json_clone(runtime_binding),
-                        "references": [reference.strip()] if reference and reference.strip() else [],
+                        "references": [reference.strip()]
+                        if reference and reference.strip()
+                        else [],
                         "leases": [],
                         "pinned": bool(pinned),
                         "lastUsedAt": imported_at if activate else None,
@@ -844,10 +854,13 @@ class MaaFWProjectStoreService:
                 resolved_version,
             )
             source_hash = _manifest_source_hash(manifest)
-            source_dir = self._version_dir(
-                normalized_project_id,
-                resolved_version,
-            ) / "data"
+            source_dir = (
+                self._version_dir(
+                    normalized_project_id,
+                    resolved_version,
+                )
+                / "data"
+            )
             payload_hash = _manifest_payload_hash(manifest)
             identity = {
                 "storeId": self._root_identity["storeId"],
@@ -976,7 +989,9 @@ class MaaFWProjectStoreService:
         normalized_owner = str(owner or "").strip()
         normalized_lease_id = str(lease_id or "").strip()
         if not normalized_owner or not normalized_lease_id:
-            raise MaaFWProjectStoreError("checkout lease owner and lease_id are required")
+            raise MaaFWProjectStoreError(
+                "checkout lease owner and lease_id are required"
+            )
         with self._run_lock:
             marker_path, marker = self._load_checkout_marker_by_id(
                 checkout_id,
@@ -997,9 +1012,7 @@ class MaaFWProjectStoreService:
                     "leaseId": normalized_lease_id,
                     "owner": normalized_owner,
                     "acquiredAt": _format_timestamp(now_value),
-                    "expiresAt": _format_timestamp(
-                        now_value + float(ttl_seconds)
-                    ),
+                    "expiresAt": _format_timestamp(now_value + float(ttl_seconds)),
                 }
             )
             marker["leases"] = leases
@@ -1023,9 +1036,7 @@ class MaaFWProjectStoreService:
             )
             leases = marker.get("leases")
             if not isinstance(leases, list):
-                raise MaaFWProjectStoreError(
-                    "checkout marker does not support leases"
-                )
+                raise MaaFWProjectStoreError("checkout marker does not support leases")
             marker["leases"] = [
                 item
                 for item in _active_leases(leases, time.time())
@@ -1057,9 +1068,7 @@ class MaaFWProjectStoreService:
                 json.loads(marker_path.read_text(encoding="utf-8"))
             )
         except Exception as exc:
-            raise MaaFWProjectStoreError(
-                f"cannot read checkout marker: {exc}"
-            ) from exc
+            raise MaaFWProjectStoreError(f"cannot read checkout marker: {exc}") from exc
         if (
             marker["checkoutId"] != normalized_checkout_id
             or marker["identity"]["scriptId"] != normalized_script_id
@@ -1084,8 +1093,7 @@ class MaaFWProjectStoreService:
             "lastUsedAt": marker.get("lastUsedAt"),
             "leaseProtectionAvailable": isinstance(leases, list),
             "activeLeaseIds": [
-                str(item["leaseId"])
-                for item in _active_leases(leases, time.time())
+                str(item["leaseId"]) for item in _active_leases(leases, time.time())
             ],
         }
 
@@ -1273,8 +1281,7 @@ class MaaFWProjectStoreService:
                 ]
                 if unknown:
                     raise MaaFWProjectStoreError(
-                        "project directory contains unknown entries: "
-                        f"{project_root}"
+                        f"project directory contains unknown entries: {project_root}"
                     )
                 current_path = project_root / "current.json"
                 if current_path.exists() or current_path.is_symlink():
@@ -1708,9 +1715,7 @@ class MaaFWProjectStoreService:
             kept: list[dict[str, Any]] = []
             for candidate_project_id in project_ids:
                 versions = self.list_versions(candidate_project_id)
-                latest_versions = {
-                    item["version"] for item in versions[:keep_latest]
-                }
+                latest_versions = {item["version"] for item in versions[:keep_latest]}
                 for item in versions:
                     manifest = item["manifest"]
                     version_value = str(item["version"])
@@ -1735,10 +1740,9 @@ class MaaFWProjectStoreService:
                             )
                     if version_value in latest_versions:
                         reasons.append("keep-latest")
-                    age_anchor = (
-                        manifest.get("runtime", {}).get("lastUsedAt")
-                        or manifest.get("createdAt")
-                    )
+                    age_anchor = manifest.get("runtime", {}).get(
+                        "lastUsedAt"
+                    ) or manifest.get("createdAt")
                     age_seconds = max(
                         0.0,
                         current_time - _parse_timestamp(age_anchor),
@@ -1829,9 +1833,7 @@ class MaaFWProjectStoreService:
             checkout_id = str(checkout.get("checkoutId") or "")
             binding_value = bindings.get(script_id)
             binding = (
-                dict(binding_value)
-                if isinstance(binding_value, Mapping)
-                else None
+                dict(binding_value) if isinstance(binding_value, Mapping) else None
             )
             binding_matches = bool(
                 binding
@@ -1910,7 +1912,10 @@ class MaaFWProjectStoreService:
                     f"checkout became active during garbage collection: {checkout_id}"
                 )
             refreshed_age_anchor = marker.get("lastUsedAt") or marker.get("createdAt")
-            if max(0.0, time.time() - _parse_timestamp(refreshed_age_anchor)) < grace_seconds:
+            if (
+                max(0.0, time.time() - _parse_timestamp(refreshed_age_anchor))
+                < grace_seconds
+            ):
                 raise MaaFWProjectStoreError(
                     f"checkout was reused during garbage collection: {checkout_id}"
                 )
@@ -1960,7 +1965,11 @@ class MaaFWProjectStoreService:
         return self._projects_root / _validate_component(project_id, "project_id")
 
     def _version_dir(self, project_id: str, version: str) -> Path:
-        path = self._project_dir(project_id) / "versions" / _validate_component(version, "version")
+        path = (
+            self._project_dir(project_id)
+            / "versions"
+            / _validate_component(version, "version")
+        )
         _assert_path_chain_within_root(path, self.root)
         return path
 
@@ -2180,7 +2189,9 @@ class MaaFWProjectStoreService:
             reasons.append("pinned")
         if runtime.get("references"):
             reasons.append("referenced")
-        if _active_leases(runtime.get("leases"), now if now is not None else time.time()):
+        if _active_leases(
+            runtime.get("leases"), now if now is not None else time.time()
+        ):
             reasons.append("leased")
         return reasons
 
@@ -2190,7 +2201,11 @@ class MaaFWProjectStoreService:
         if versions_dir.is_dir() and not any(versions_dir.iterdir()):
             versions_dir.rmdir()
         current_path = project_dir / "current.json"
-        if project_dir.is_dir() and not current_path.exists() and not any(project_dir.iterdir()):
+        if (
+            project_dir.is_dir()
+            and not current_path.exists()
+            and not any(project_dir.iterdir())
+        ):
             project_dir.rmdir()
 
 
@@ -2262,8 +2277,12 @@ def _build_projection_plan(
                 )
                 return
             if required:
-                raise MaaFWProjectStoreError(f"required {label} path does not exist: {relative_path}")
-            warnings.append(f"optional {label} path was not found and was not copied: {relative_path}")
+                raise MaaFWProjectStoreError(
+                    f"required {label} path does not exist: {relative_path}"
+                )
+            warnings.append(
+                f"optional {label} path was not found and was not copied: {relative_path}"
+            )
             return
         previous = target_modes.get(
             normalized,
@@ -2358,12 +2377,15 @@ def _build_projection_plan(
     for target, mode in target_modes.items():
         target_absolute = source_root / target
         if target_absolute.is_file():
-            if _target_exclusion_reason(
-                target,
-                target=target,
-                mode=mode,
-                target_is_directory=False,
-            ) is None:
+            if (
+                _target_exclusion_reason(
+                    target,
+                    target=target,
+                    mode=mode,
+                    target_is_directory=False,
+                )
+                is None
+            ):
                 copied_files.add(target)
                 copied_directories.update(_relative_parents(target))
             continue
@@ -2371,24 +2393,30 @@ def _build_projection_plan(
         for directory in all_directories:
             if not _is_relative_to(directory, target):
                 continue
-            if _target_exclusion_reason(
-                directory,
-                target=target,
-                mode=mode,
-                target_is_directory=True,
-                is_directory=True,
-            ) is None:
+            if (
+                _target_exclusion_reason(
+                    directory,
+                    target=target,
+                    mode=mode,
+                    target_is_directory=True,
+                    is_directory=True,
+                )
+                is None
+            ):
                 copied_directories.add(directory)
                 copied_directories.update(_relative_parents(directory))
         for file_path in all_files:
             if not _is_relative_to(file_path, target):
                 continue
-            if _target_exclusion_reason(
-                file_path,
-                target=target,
-                mode=mode,
-                target_is_directory=True,
-            ) is None:
+            if (
+                _target_exclusion_reason(
+                    file_path,
+                    target=target,
+                    mode=mode,
+                    target_is_directory=True,
+                )
+                is None
+            ):
                 copied_files.add(file_path)
                 copied_directories.update(_relative_parents(file_path))
 
@@ -2415,7 +2443,8 @@ def _build_projection_plan(
             path,
             source_root,
             interface_base,
-        ).name == MANIFEST_FILE_NAME
+        ).name
+        == MANIFEST_FILE_NAME
     }
     for reserved in reserved_files:
         copied_files.remove(reserved)
@@ -2443,9 +2472,7 @@ def _build_projection_plan(
     )
     for agent in agent_runtime:
         agent["abiTags"] = (
-            list(required_python_abi)
-            if agent.get("classification") == "python"
-            else []
+            list(required_python_abi) if agent.get("classification") == "python" else []
         )
     shared_agent_dependencies_complete = _shared_agent_dependencies_complete(
         source_root,
@@ -2467,9 +2494,7 @@ def _build_projection_plan(
         python_runtime=python_runtime,
     )
     python_agents = [
-        agent
-        for agent in agent_runtime
-        if agent.get("classification") == "python"
+        agent for agent in agent_runtime if agent.get("classification") == "python"
     ]
     if python_agents and python_runtime is None:
         indexes = ", ".join(str(agent.get("index")) for agent in python_agents)
@@ -2479,9 +2504,7 @@ def _build_projection_plan(
             "unambiguous bundled python3XY._pth/python3XY.dll marker"
         )
     if python_agents and not shared_agent_dependencies_complete:
-        indexes = ", ".join(
-            str(agent.get("index")) for agent in python_agents
-        )
+        indexes = ", ".join(str(agent.get("index")) for agent in python_agents)
         raise MaaFWProjectStoreError(
             "managed Python Agent dependencies are incomplete for indexes "
             f"{indexes}; declare one complete root requirements.txt without "
@@ -2525,11 +2548,7 @@ def _target_exclusion_reason(
     remove known MaaFramework, Python and UI payloads.
     """
 
-    if (
-        not mode.complete
-        or not mode.allow_excluded_root
-        or target == Path(".")
-    ):
+    if not mode.complete or not mode.allow_excluded_root or target == Path("."):
         return _exclusion_reason(path, is_directory=is_directory)
     if target_is_directory:
         scoped_path = path.relative_to(target)
@@ -2595,8 +2614,7 @@ def _validate_required_projection_paths(
             == "python"
         ):
             entrypoints = sorted(
-                path.as_posix()
-                for path in python_entrypoints[requirement.agent_key]
+                path.as_posix() for path in python_entrypoints[requirement.agent_key]
             )
             agent = runtime_agents[requirement.agent_key]
             agent["strippedInterpreter"] = {
@@ -2725,9 +2743,7 @@ def _mark_declared_managed_python_agents(
             )
         source_agent = agents[index]
         if not isinstance(source_agent, Mapping):
-            raise MaaFWProjectStoreError(
-                f"agent[{index}] must be a JSON object"
-            )
+            raise MaaFWProjectStoreError(f"agent[{index}] must be a JSON object")
         child_exec = (
             _optional_string(source_agent.get("child_exec"))
             or _optional_string(source_agent.get("childExec"))
@@ -2911,7 +2927,9 @@ def _rewrite_resource_paths(
 ) -> None:
     source_resources = source.get("resource")
     projected_resources = projected.get("resource")
-    if not isinstance(source_resources, list) or not isinstance(projected_resources, list):
+    if not isinstance(source_resources, list) or not isinstance(
+        projected_resources, list
+    ):
         return
     for index, source_resource in enumerate(source_resources):
         if not isinstance(source_resource, dict) or index >= len(projected_resources):
@@ -2919,7 +2937,9 @@ def _rewrite_resource_paths(
         projected_resource = projected_resources[index]
         if not isinstance(projected_resource, dict):
             continue
-        resource_name = _optional_string(source_resource.get("name")) or f"resource[{index}]"
+        resource_name = (
+            _optional_string(source_resource.get("name")) or f"resource[{index}]"
+        )
         raw_paths = source_resource.get("path")
         if isinstance(raw_paths, str):
             source_values = [raw_paths]
@@ -2965,10 +2985,14 @@ def _rewrite_controller_paths(
 ) -> None:
     source_controllers = source.get("controller")
     projected_controllers = projected.get("controller")
-    if not isinstance(source_controllers, list) or not isinstance(projected_controllers, list):
+    if not isinstance(source_controllers, list) or not isinstance(
+        projected_controllers, list
+    ):
         return
     for index, source_controller in enumerate(source_controllers):
-        if not isinstance(source_controller, dict) or index >= len(projected_controllers):
+        if not isinstance(source_controller, dict) or index >= len(
+            projected_controllers
+        ):
             continue
         projected_controller = projected_controllers[index]
         if not isinstance(projected_controller, dict):
@@ -3063,10 +3087,14 @@ def _rewrite_agent_paths(
     projected_agents = projected.get("agent")
     if isinstance(source_agents, dict):
         source_values = [source_agents]
-        projected_values = [projected_agents] if isinstance(projected_agents, dict) else []
+        projected_values = (
+            [projected_agents] if isinstance(projected_agents, dict) else []
+        )
     elif isinstance(source_agents, list):
         source_values = source_agents
-        projected_values = projected_agents if isinstance(projected_agents, list) else []
+        projected_values = (
+            projected_agents if isinstance(projected_agents, list) else []
+        )
     else:
         return
     for index, source_agent in enumerate(source_values):
@@ -3111,8 +3139,7 @@ def _rewrite_agent_paths(
                 required=False,
             )
             managed_python_interpreter = (
-                classification == "python"
-                and _is_python_interpreter_path(source_path)
+                classification == "python" and _is_python_interpreter_path(source_path)
             )
             if not source_path.exists() and not managed_python_interpreter:
                 raise MaaFWProjectStoreError(
@@ -3131,9 +3158,7 @@ def _rewrite_agent_paths(
                     classification == "python"
                     and source_path.suffix.casefold() in {".py", ".pyw"}
                 ),
-                allow_stripped_python_interpreter=(
-                    managed_python_interpreter
-                ),
+                allow_stripped_python_interpreter=(managed_python_interpreter),
                 allow_missing_python_interpreter=managed_python_interpreter,
             )
             projected_agent[key] = (
@@ -3188,10 +3213,14 @@ def _rewrite_pretask_paths(
     projected_pretasks = projected.get("pretask")
     if isinstance(source_pretasks, dict):
         source_values = [source_pretasks]
-        projected_values = [projected_pretasks] if isinstance(projected_pretasks, dict) else []
+        projected_values = (
+            [projected_pretasks] if isinstance(projected_pretasks, dict) else []
+        )
     elif isinstance(source_pretasks, list):
         source_values = source_pretasks
-        projected_values = projected_pretasks if isinstance(projected_pretasks, list) else []
+        projected_values = (
+            projected_pretasks if isinstance(projected_pretasks, list) else []
+        )
     else:
         return
     for index, source_pretask in enumerate(source_values):
@@ -3228,17 +3257,29 @@ def _inspect_agents(
     source_root: Path,
     agent_scope: str,
 ) -> tuple[list[dict[str, Any]], set[Path], bool]:
-    agents = raw_agents if isinstance(raw_agents, list) else ([raw_agents] if isinstance(raw_agents, dict) else [])
+    agents = (
+        raw_agents
+        if isinstance(raw_agents, list)
+        else ([raw_agents] if isinstance(raw_agents, dict) else [])
+    )
     runtime: list[dict[str, Any]] = []
     targets: set[Path] = set()
     opaque_found = False
 
     for index, agent in enumerate(agents):
-        child_exec = _optional_string(agent.get("child_exec")) or _optional_string(agent.get("childExec")) or ""
+        child_exec = (
+            _optional_string(agent.get("child_exec"))
+            or _optional_string(agent.get("childExec"))
+            or ""
+        )
         child_args = agent.get("child_args")
         if child_args is None:
             child_args = agent.get("childArgs")
-        args = [item for item in child_args or [] if isinstance(item, str)] if isinstance(child_args, list) else []
+        args = (
+            [item for item in child_args or [] if isinstance(item, str)]
+            if isinstance(child_args, list)
+            else []
+        )
         declared_type = (
             _optional_string(agent.get("type"))
             or _optional_string(agent.get("kind"))
@@ -3265,7 +3306,10 @@ def _inspect_agents(
             targets.add(_agent_retention_root(candidate, source_root))
             if candidate.is_file():
                 parent = relative.parent
-                if parent == Path(".") and candidate.suffix.casefold() in {".py", ".pyw"}:
+                if parent == Path(".") and candidate.suffix.casefold() in {
+                    ".py",
+                    ".pyw",
+                }:
                     for sibling in source_root.glob("*.py*"):
                         if sibling.is_file():
                             targets.add(sibling.relative_to(source_root))
@@ -3300,13 +3344,32 @@ def _classify_agent(
     suffixes = {Path(item.replace("\\", "/")).suffix.casefold() for item in child_args}
     if kind in {"custom", "command", "shell", "opaque"}:
         return kind or "opaque", True
-    if _is_python_interpreter_path(Path(executable)) or ".py" in suffixes or ".pyw" in suffixes:
+    if (
+        _is_python_interpreter_path(Path(executable))
+        or ".py" in suffixes
+        or ".pyw" in suffixes
+    ):
         return "python", False
-    if executable in {"node", "node.exe", "deno", "deno.exe", "bun", "bun.exe"} or ".js" in suffixes or ".mjs" in suffixes:
+    if (
+        executable in {"node", "node.exe", "deno", "deno.exe", "bun", "bun.exe"}
+        or ".js" in suffixes
+        or ".mjs" in suffixes
+    ):
         return "javascript", False
-    if executable in {"cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "sh", "bash"}:
+    if executable in {
+        "cmd",
+        "cmd.exe",
+        "powershell",
+        "powershell.exe",
+        "pwsh",
+        "pwsh.exe",
+        "sh",
+        "bash",
+    }:
         return "command", True
-    if child_exec and ("/" in child_exec or "\\" in child_exec or Path(child_exec).suffix):
+    if child_exec and (
+        "/" in child_exec or "\\" in child_exec or Path(child_exec).suffix
+    ):
         return "native", False
     if child_exec:
         return "external", True
@@ -3383,8 +3446,7 @@ def _clear_native_resource_hashes(
                 {
                     "file": output_file,
                     "resource": (
-                        _optional_string(resource.get("name"))
-                        or f"resource[{index}]"
+                        _optional_string(resource.get("name")) or f"resource[{index}]"
                     ),
                 }
             )
@@ -3402,7 +3464,9 @@ def _discover_project_interface(source_root: Path) -> tuple[Path, Path]:
         if interface_path.is_file():
             _assert_not_reparse(interface_path)
             _assert_within(interface_path.resolve(strict=True), source_root)
-            return project_root.resolve(strict=True), interface_path.resolve(strict=True)
+            return project_root.resolve(strict=True), interface_path.resolve(
+                strict=True
+            )
     raise MaaFWProjectStoreError(
         "interface.json or interface.jsonc was not found at the release root or assets/"
     )
@@ -3626,19 +3690,14 @@ def _detect_bundled_python_version_evidence(
                 _assert_not_reparse(marker)
                 if not marker.is_file():
                     continue
-                versions.add(
-                    (int(match.group("major")), int(match.group("minor")))
-                )
+                versions.add((int(match.group("major")), int(match.group("minor"))))
                 sources.add(source)
                 break
 
     if len(versions) > 1:
-        rendered = ", ".join(
-            f"{major}.{minor}" for major, minor in sorted(versions)
-        )
+        rendered = ", ".join(f"{major}.{minor}" for major, minor in sorted(versions))
         raise MaaFWProjectStoreError(
-            "bundled Python metadata declares multiple interpreter minors: "
-            f"{rendered}"
+            f"bundled Python metadata declares multiple interpreter minors: {rendered}"
         )
     return versions, sources
 
@@ -3854,12 +3913,11 @@ def _read_bundled_maafw_binary_version(source_root: Path) -> str | None:
             path
             for path in source_root.rglob("*")
             if path.name.casefold() == "maaframework.dll"
-            and not _is_stale_maafw_binary_candidate(
-                path.relative_to(source_root)
-            )
+            and not _is_stale_maafw_binary_candidate(path.relative_to(source_root))
         ),
         key=lambda path: path.as_posix().casefold(),
     )
+
     # Windows releases may carry a Python MaaFW runtime plus a separate
     # Node/PiCLI bundle under ``runtimes/win-*``. Only exclude the latter when
     # both consumers are positively identified; unrelated duplicate DLLs
@@ -4140,7 +4198,9 @@ def _looks_like_local_path(value: str) -> bool:
     normalized = value.strip().strip('"').strip("'")
     if not normalized or normalized.startswith(("-", "http://", "https://")):
         return False
-    if normalized.startswith(("{PROJECT_DIR}", "${PROJECT_DIR}", "./", "../", ".\\", "..\\")):
+    if normalized.startswith(
+        ("{PROJECT_DIR}", "${PROJECT_DIR}", "./", "../", ".\\", "..\\")
+    ):
         return True
     if "/" in normalized or "\\" in normalized:
         return True
@@ -4171,9 +4231,13 @@ def _read_json_object(path: Path) -> dict[str, Any]:
         with path.open("r", encoding="utf-8") as file:
             payload = json5.load(file)
     except Exception as exc:
-        raise MaaFWProjectStoreError(f"cannot parse ProjectInterface file {path}: {exc}") from exc
+        raise MaaFWProjectStoreError(
+            f"cannot parse ProjectInterface file {path}: {exc}"
+        ) from exc
     if not isinstance(payload, dict):
-        raise MaaFWProjectStoreError(f"ProjectInterface file must contain a JSON object: {path}")
+        raise MaaFWProjectStoreError(
+            f"ProjectInterface file must contain a JSON object: {path}"
+        )
     return payload
 
 
@@ -4209,7 +4273,9 @@ def _materialize_import_source(
     try:
         source = raw_path.resolve(strict=True)
     except OSError as exc:
-        raise MaaFWProjectStoreError(f"source path does not exist: {source_path}") from exc
+        raise MaaFWProjectStoreError(
+            f"source path does not exist: {source_path}"
+        ) from exc
     _assert_not_reparse(source)
 
     if source.is_dir():
@@ -4247,7 +4313,9 @@ def _materialize_import_source(
     if _is_within(source, store_root):
         raise MaaFWProjectStoreError("source ZIP must be outside the project store")
     if source.suffix.casefold() != ".zip" or not zipfile.is_zipfile(source):
-        raise MaaFWProjectStoreError(f"source file is not a valid ZIP archive: {source_path}")
+        raise MaaFWProjectStoreError(
+            f"source file is not a valid ZIP archive: {source_path}"
+        )
 
     stage_dir = staging_root / f"import-{uuid.uuid4().hex}"
     extract_root = stage_dir / "extract"
@@ -4257,8 +4325,13 @@ def _materialize_import_source(
         archive_size = source.stat().st_size
         archive_sha256 = _sha256_file(source)
         _safe_extract_import_zip(source, extract_root)
-        if source.stat().st_size != archive_size or _sha256_file(source) != archive_sha256:
-            raise MaaFWProjectStoreError("source ZIP changed while it was being imported")
+        if (
+            source.stat().st_size != archive_size
+            or _sha256_file(source) != archive_sha256
+        ):
+            raise MaaFWProjectStoreError(
+                "source ZIP changed while it was being imported"
+            )
         _scan_safe_tree(extract_root)
         release_root = _select_zip_release_root(extract_root)
         return _ImportSource(
@@ -4394,7 +4467,9 @@ def _safe_extract_import_zip(source: Path, extract_root: Path) -> None:
     try:
         archive = zipfile.ZipFile(source)
     except (OSError, zipfile.BadZipFile) as exc:
-        raise MaaFWProjectStoreError(f"cannot open ZIP archive {source}: {exc}") from exc
+        raise MaaFWProjectStoreError(
+            f"cannot open ZIP archive {source}: {exc}"
+        ) from exc
 
     with archive:
         members = archive.infolist()
@@ -4471,7 +4546,10 @@ def _safe_extract_import_zip(source: Path, extract_root: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             member_actual = 0
             try:
-                with archive.open(member, "r") as source_file, target.open("xb") as output:
+                with (
+                    archive.open(member, "r") as source_file,
+                    target.open("xb") as output,
+                ):
                     while True:
                         chunk = source_file.read(_ZIP_COPY_CHUNK_SIZE)
                         if not chunk:
@@ -4510,7 +4588,9 @@ def _validate_zip_member_name(raw_name: str) -> tuple[str, tuple[str, ...]]:
         raise MaaFWProjectStoreError(f"ZIP entry uses an absolute path: {raw_name}")
     parts = tuple(part for part in normalized.split("/") if part)
     if not parts or any(part in {".", ".."} for part in parts):
-        raise MaaFWProjectStoreError(f"ZIP entry escapes the extraction root: {raw_name}")
+        raise MaaFWProjectStoreError(
+            f"ZIP entry escapes the extraction root: {raw_name}"
+        )
     for part in parts:
         if ":" in part or part.endswith((".", " ")):
             raise MaaFWProjectStoreError(
@@ -4537,12 +4617,16 @@ def _canonical_source_directory(source_path: str | Path, store_root: Path) -> Pa
     try:
         source = raw_path.resolve(strict=True)
     except OSError as exc:
-        raise MaaFWProjectStoreError(f"source directory does not exist: {source_path}") from exc
+        raise MaaFWProjectStoreError(
+            f"source directory does not exist: {source_path}"
+        ) from exc
     if not source.is_dir():
         raise MaaFWProjectStoreError(f"source path is not a directory: {source_path}")
     _assert_not_reparse(source)
     if _is_within(source, store_root) or _is_within(store_root, source):
-        raise MaaFWProjectStoreError("source directory and project store must not contain each other")
+        raise MaaFWProjectStoreError(
+            "source directory and project store must not contain each other"
+        )
     return source
 
 
@@ -4558,10 +4642,14 @@ def _normalize_relative_path(
         value = value[len("{PROJECT_DIR}") :].lstrip("/")
     candidate = Path(value)
     if candidate.is_absolute() or candidate.drive or candidate.root:
-        raise MaaFWProjectStoreError(f"{field_name} must be project-relative: {raw_path}")
+        raise MaaFWProjectStoreError(
+            f"{field_name} must be project-relative: {raw_path}"
+        )
     parts = [part for part in value.split("/") if part not in {"", "."}]
     if any(part == ".." for part in parts):
-        raise MaaFWProjectStoreError(f"{field_name} escapes the project root: {raw_path}")
+        raise MaaFWProjectStoreError(
+            f"{field_name} escapes the project root: {raw_path}"
+        )
     if not parts:
         if allow_root:
             return Path(".")
@@ -4655,7 +4743,11 @@ def _resolve_import_version(
 def _versions_equivalent(left: str, right: str) -> bool:
     def normalize(value: str) -> str:
         normalized = value.strip().casefold()
-        if len(normalized) > 1 and normalized.startswith("v") and normalized[1].isdigit():
+        if (
+            len(normalized) > 1
+            and normalized.startswith("v")
+            and normalized[1].isdigit()
+        ):
             normalized = normalized[1:]
         return normalized
 
@@ -4781,9 +4873,7 @@ def _validate_checkout_marker(value: Any) -> dict[str, Any]:
     if set(identity) != set(normalized_identity):
         raise MaaFWProjectStoreError("project checkout marker identity is invalid")
     try:
-        normalized_identity["storeId"] = str(
-            uuid.UUID(normalized_identity["storeId"])
-        )
+        normalized_identity["storeId"] = str(uuid.UUID(normalized_identity["storeId"]))
     except ValueError as exc:
         raise MaaFWProjectStoreError(
             "project checkout marker storeId is invalid"
@@ -4792,13 +4882,9 @@ def _validate_checkout_marker(value: Any) -> dict[str, Any]:
     _validate_component(normalized_identity["version"], "version")
     _validate_component(normalized_identity["scriptId"], "script_id")
     if not re.fullmatch(r"[0-9a-f]{64}", normalized_identity["sourceHash"]):
-        raise MaaFWProjectStoreError(
-            "project checkout marker sourceHash is invalid"
-        )
+        raise MaaFWProjectStoreError("project checkout marker sourceHash is invalid")
     if not re.fullmatch(r"[0-9a-f]{64}", normalized_identity["payloadHash"]):
-        raise MaaFWProjectStoreError(
-            "project checkout marker payloadHash is invalid"
-        )
+        raise MaaFWProjectStoreError("project checkout marker payloadHash is invalid")
     if value.get("dataRelativePath") != "data":
         raise MaaFWProjectStoreError(
             "project checkout marker dataRelativePath is invalid"
@@ -4978,7 +5064,8 @@ def _validate_project_manifest(
         ) from exc
     if (
         interface_relative != expected_interface_relative
-        or interface_relative.name.casefold() not in {"interface.json", "interface.jsonc"}
+        or interface_relative.name.casefold()
+        not in {"interface.json", "interface.jsonc"}
     ):
         raise MaaFWProjectStoreError(
             "project manifest ProjectInterface identity is inconsistent"
@@ -5180,9 +5267,7 @@ def _validate_project_manifest(
     payload_size = int(projection["payloadSizeBytes"])
     expected_saved_bytes = max(0, source_size - payload_size)
     expected_saved_percent = (
-        round(expected_saved_bytes * 100 / source_size, 2)
-        if source_size
-        else 0.0
+        round(expected_saved_bytes * 100 / source_size, 2) if source_size else 0.0
     )
     if (
         source_size != source.get("treeSizeBytes")
@@ -5203,9 +5288,7 @@ def _validate_project_manifest(
     if not isinstance(warnings, list) or any(
         not isinstance(item, str) for item in warnings
     ):
-        raise MaaFWProjectStoreError(
-            "project manifest warnings must be a string array"
-        )
+        raise MaaFWProjectStoreError("project manifest warnings must be a string array")
     return value
 
 
@@ -5353,9 +5436,7 @@ def _require_manifest_text_list(
             f"project manifest {field_name} must be a string array"
         )
     if not allow_empty and not value:
-        raise MaaFWProjectStoreError(
-            f"project manifest {field_name} cannot be empty"
-        )
+        raise MaaFWProjectStoreError(f"project manifest {field_name} cannot be empty")
     if require_unique and len(value) != len(set(value)):
         raise MaaFWProjectStoreError(
             f"project manifest {field_name} contains duplicate values"
@@ -5378,9 +5459,7 @@ def _validate_manifest_agents(value: list[Any]) -> None:
     for item in value:
         index = item.get("index")
         if type(index) is not int or index < 0:
-            raise MaaFWProjectStoreError(
-                "project manifest agent index is invalid"
-            )
+            raise MaaFWProjectStoreError("project manifest agent index is invalid")
         indexes.append(index)
         _require_manifest_text(item.get("classification"), "agent.classification")
         if type(item.get("opaque")) is not bool:
@@ -5509,9 +5588,8 @@ def _validate_manifest_summaries(
                 f"project manifest size.{field_name} is inconsistent"
             )
     size_percent = size.get("savedPercent")
-    if (
-        type(size_percent) not in {int, float}
-        or float(size_percent) != float(projection.get("savedPercent"))
+    if type(size_percent) not in {int, float} or float(size_percent) != float(
+        projection.get("savedPercent")
     ):
         raise MaaFWProjectStoreError(
             "project manifest size.savedPercent is inconsistent"
@@ -5564,9 +5642,7 @@ def _manifest_hash_schema_version(
     manifest: Mapping[str, Any],
     section_name: str,
 ) -> int:
-    expected_scope = (
-        "projected-source" if section_name == "source" else "store-payload"
-    )
+    expected_scope = "projected-source" if section_name == "source" else "store-payload"
     return int(
         _manifest_hash_descriptor(
             manifest,
@@ -5609,9 +5685,7 @@ def _checkout_id(identity: Mapping[str, str]) -> str:
 def _copy_checkout_tree(source_root: Path, target_root: Path) -> None:
     _assert_not_reparse(source_root)
     if not source_root.is_dir():
-        raise MaaFWProjectStoreError(
-            f"project-store payload is missing: {source_root}"
-        )
+        raise MaaFWProjectStoreError(f"project-store payload is missing: {source_root}")
     target_root.mkdir(parents=True, exist_ok=False)
     for current_raw, directory_names, file_names in os.walk(
         source_root,
@@ -5807,7 +5881,10 @@ def _build_capability_summary(plan: _ProjectionPlan) -> dict[str, Any]:
             if value not in (None, [], {}):
                 features.add(feature)
 
-    if any(path.parts and path.parts[0].casefold() == "plugins" for path in plan.copied_files):
+    if any(
+        path.parts and path.parts[0].casefold() == "plugins"
+        for path in plan.copied_files
+    ):
         features.add("native-plugins")
     if plan.required_python_abi:
         features.add("native-python-abi")
@@ -5831,7 +5908,12 @@ def _build_capability_summary(plan: _ProjectionPlan) -> dict[str, Any]:
 
 
 def _build_shell_summary(excluded_reasons: dict[str, str]) -> dict[str, Any]:
-    relevant_reasons = {"ui-shell", "ui-runtime", "ui-or-updater-shell", "updater-shell"}
+    relevant_reasons = {
+        "ui-shell",
+        "ui-runtime",
+        "ui-or-updater-shell",
+        "updater-shell",
+    }
     family_names = {
         "mfaavalonia": "MFAAvalonia",
         "mxu": "MXU",
@@ -5870,9 +5952,7 @@ def _build_size_summary(
 ) -> dict[str, Any]:
     saved_bytes = max(0, source_tree_bytes - projected_payload_bytes)
     saved_percent = (
-        round(saved_bytes * 100 / source_tree_bytes, 2)
-        if source_tree_bytes
-        else 0.0
+        round(saved_bytes * 100 / source_tree_bytes, 2) if source_tree_bytes else 0.0
     )
     return {
         "inputBytes": int(input_size_bytes),
@@ -5911,9 +5991,7 @@ def _build_inventory_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         projection = manifest.get("projection")
         projection = projection if isinstance(projection, dict) else {}
         source_tree_bytes = int(
-            source.get("treeSizeBytes")
-            or projection.get("sourceSizeBytes")
-            or 0
+            source.get("treeSizeBytes") or projection.get("sourceSizeBytes") or 0
         )
         projected_bytes = int(projection.get("payloadSizeBytes") or 0)
         size = _build_size_summary(
@@ -6016,7 +6094,11 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 
 
 def _object_list(value: Any) -> list[dict[str, Any]]:
-    return [item for item in value or [] if isinstance(item, dict)] if isinstance(value, list) else []
+    return (
+        [item for item in value or [] if isinstance(item, dict)]
+        if isinstance(value, list)
+        else []
+    )
 
 
 def _string_or_list(value: Any) -> list[str]:
@@ -6033,9 +6115,7 @@ def _normalize_remote_source_metadata(
     if value is None:
         return None
     if not isinstance(value, Mapping):
-        raise MaaFWProjectStoreError(
-            "remote source identity must be a JSON object"
-        )
+        raise MaaFWProjectStoreError("remote source identity must be a JSON object")
     source = str(value.get("source") or "").strip().casefold()
     if source in {"github", "github_release"}:
         allowed = {
@@ -6086,9 +6166,7 @@ def _normalize_remote_source_metadata(
             "mirrorchyan_rid": rid,
             "mirrorchyan_multiplatform": multiplatform,
         }
-    raise MaaFWProjectStoreError(
-        "remote source identity must be MirrorChyan or GitHub"
-    )
+    raise MaaFWProjectStoreError("remote source identity must be MirrorChyan or GitHub")
 
 
 def _merge_remote_source_metadata(

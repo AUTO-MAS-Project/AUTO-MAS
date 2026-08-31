@@ -25,8 +25,7 @@ import psutil
 import app.core  # noqa: F401  # 初始化宿主配置
 
 SOURCE_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "app/task/MaaFW/tools/embedded/runner_task.py"
+    Path(__file__).resolve().parents[2] / "app/task/MaaFW/tools/embedded/runner_task.py"
 )
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
 
@@ -81,7 +80,9 @@ class SnapshotBeforeTerminateTest(unittest.TestCase):
 
     def test_survivors_are_cleaned_after_the_worker_exits(self) -> None:
         body = self._body()
-        self.assertLess(body.index("process.terminate()"), body.index("_terminate_snapshot"))
+        self.assertLess(
+            body.index("process.terminate()"), body.index("_terminate_snapshot")
+        )
 
     def test_cleanup_runs_off_the_event_loop(self) -> None:
         """psutil 的遍历与等待是阻塞调用，不能占着事件循环。"""
@@ -101,9 +102,9 @@ class SnapshotTest(unittest.TestCase):
         child = mock.Mock(pid=4242)
         child.create_time.return_value = 1000.0
         with mock.patch.object(
-            self.module.psutil, "Process", return_value=mock.Mock(
-                children=mock.Mock(return_value=[child])
-            )
+            self.module.psutil,
+            "Process",
+            return_value=mock.Mock(children=mock.Mock(return_value=[child])),
         ):
             self.assertEqual(self.module._snapshot_descendants(1), [(4242, 1000.0)])
 
