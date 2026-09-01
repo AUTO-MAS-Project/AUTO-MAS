@@ -104,3 +104,38 @@ export const recordMainStartup = () => {
     component: 'electron-main',
   })
 }
+
+/**
+ * 上报渲染进程崩溃。
+ *
+ * Minidump 集成在上面被整体过滤掉了（Windows minidump 含完整命令行与环境变量块，
+ * 且附件拼进 envelope 的时机在 beforeSend 之后，脱敏钩子够不到），所以渲染进程
+ * 崩溃不会自动进 Sentry。这里补一条只带 reason/exitCode 的结构化事件。
+ */
+export const captureMainRendererCrash = (details: {
+  reason: string
+  exitCode: number
+  crashCount: number
+  action: string
+  detail: string
+}) => {
+  if (!isSentryEnabled()) return
+
+  try {
+    Sentry.captureMessage(`渲染进程退出: ${details.reason}`, {
+      level: 'fatal',
+      tags: {
+        component: 'electron-main',
+        renderer_gone_reason: details.reason,
+        renderer_recovery_action: details.action,
+      },
+      extra: {
+        exitCode: details.exitCode,
+        crashCount: details.crashCount,
+        detail: details.detail,
+      },
+    })
+  } catch {
+    // 遥测失败不能影响恢复流程。
+  }
+}

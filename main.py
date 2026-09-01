@@ -225,7 +225,6 @@ def main():
                 if IS_WINDOWS:
                     for adapter in (
                         "app.MaaFW.ArknightWin32",
-                        "app.MaaFW.EndFieldPCWin32",
                     ):
                         await asyncio.to_thread(importlib.import_module, adapter)
 

@@ -36,8 +36,7 @@ export interface BettergiCustomGroupOptions {
  */
 export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const { t } = useI18n()
-  const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } =
-    options
+  const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } = options
   const oneDragon = () => getOneDragon()
 
   const table = ref<BettergiCustomGroupRow[]>([])
@@ -52,7 +51,12 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
 
   const columns = computed<TableColumnsType>(() => [
     { title: t('edit.bettergiGroupNameColumn'), dataIndex: 'name', key: 'name' },
-    { title: t('edit.bettergiGroupEnabledColumn'), dataIndex: 'enabled', key: 'enabled', width: 120 },
+    {
+      title: t('edit.bettergiGroupEnabledColumn'),
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 120,
+    },
   ])
 
   const rowSelection = computed(() => ({

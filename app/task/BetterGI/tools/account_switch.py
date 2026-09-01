@@ -38,19 +38,19 @@ MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，�
 下拉列表模式下由 MAS 负责把完整手机号/邮箱转换为游戏下拉列表显示的打码形式。
 """
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger
 from app.utils.io import read_file, write_file
 
-from .one_dragon import _GLOBAL_CONFIG_LOCK
+from .one_dragon import GLOBAL_CONFIG_LOCK
 
 logger = get_logger("BetterGI 切换账号")
 
 # 生成并执行的配置组名称（同时作为文件名与 --startGroups 的组名）
-_GROUP_NAME = "MAS切换账号"
+GROUP_NAME = "MAS切换账号"
 
 # 与 BetterGI 项目结构固定的相对路径（从 RootPath 派生）
 _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
@@ -197,7 +197,7 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
       这里显式钉死，避免切号脚本又从 GitHub 下载。
     """
     config_path = root_path / _BGI_CONFIG_REL_PATH
-    with _GLOBAL_CONFIG_LOCK:
+    with GLOBAL_CONFIG_LOCK:
         config = read_file(config_path)
         if not isinstance(config, dict):
             config = {}
@@ -268,7 +268,7 @@ def write_switch_group(
     Returns:
         写入的配置组 JSON 文件路径。
     """
-    template_path = _RES_TEMPLATE_DIR / f"{_GROUP_NAME}.json"
+    template_path = _RES_TEMPLATE_DIR / f"{GROUP_NAME}.json"
     template = read_file(template_path)
     if not isinstance(template, dict) or not isinstance(template.get("projects"), list):
         raise RuntimeError(f"切换账号配置组模板无效: {template_path}")
@@ -281,7 +281,7 @@ def write_switch_group(
         account, password, mode, global_account, servers, uid
     )
 
-    out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{_GROUP_NAME}.json"
+    out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{GROUP_NAME}.json"
     write_file(out_path, template)
     logger.info(f"已生成切换账号配置组: {out_path} (账号 {mask_account(account)})")
     return out_path
@@ -294,7 +294,7 @@ def scrub_switch_group(root_path: Path) -> None:
     凭据残留磁盘。本函数把 ``jsScriptSettingsObject`` 的 ``password`` 清空、
     ``username`` 还原为打码（下拉列表模式本已是打码，OCR 模式的完整账号被抹掉）。
     """
-    out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{_GROUP_NAME}.json"
+    out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{GROUP_NAME}.json"
     data = read_file(out_path)
     if not isinstance(data, dict):
         return

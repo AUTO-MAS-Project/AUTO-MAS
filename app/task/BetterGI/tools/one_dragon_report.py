@@ -63,7 +63,7 @@ def _clean_step_task(line: str) -> str:
     return s.strip() or "未知任务"
 
 
-def _parse_one_dragon_report(log: str) -> list[dict] | None:
+def parse_one_dragon_report(log: str) -> list[dict] | None:
     """解析「一条龙」分步执行报告，按执行顺序返回步骤字典列表。
 
     每步字段：``index``/``total``（第几条/共几条）、``task``（任务名）、``start``/``end``
