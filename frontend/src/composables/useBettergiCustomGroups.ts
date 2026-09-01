@@ -1,6 +1,7 @@
 // BetterGI 自定义配置组管理（名称 + 启用开关，表格化管理）
 import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { useI18n } from 'vue-i18n'
 import type { TableColumnsType } from 'ant-design-vue'
 import { BettergiService } from '@/api'
 
@@ -34,6 +35,7 @@ export interface BettergiCustomGroupOptions {
  * 又经 `saveField` 落库；首次开启总开关且表格为空时，从 BetterGI 现有配置自动加载。
  */
 export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
+  const { t } = useI18n()
   const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } =
     options
   const oneDragon = () => getOneDragon()
@@ -48,10 +50,10 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     addOptions: [] as Array<{ value: string; label: string }>,
   })
 
-  const columns: TableColumnsType = [
-    { title: '配置组名称', dataIndex: 'name', key: 'name' },
-    { title: '是否启用', dataIndex: 'enabled', key: 'enabled', width: 120 },
-  ]
+  const columns = computed<TableColumnsType>(() => [
+    { title: t('edit.bettergiGroupNameColumn'), dataIndex: 'name', key: 'name' },
+    { title: t('edit.bettergiGroupEnabledColumn'), dataIndex: 'enabled', key: 'enabled', width: 120 },
+  ])
 
   const rowSelection = computed(() => ({
     selectedRowKeys: selectedKeys.value,
@@ -143,11 +145,11 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const confirmAdd = async () => {
     const name = modal.name.trim()
     if (!name) {
-      message.warning('请输入配置组名称')
+      message.warning(t('edit.bettergiEnterGroupName'))
       return
     }
     if (table.value.some(r => r.name === name)) {
-      message.warning('该配置组已存在')
+      message.warning(t('edit.bettergiGroupExists'))
       return
     }
     modal.saving = true

@@ -3,12 +3,12 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="@/assets/bettergi.ico" alt="BetterGI" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -19,13 +19,13 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
   <div class="script-edit-content">
-    <a-card title="BetterGI 脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="t('edit.bettergiScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">BetterGI</a-tag>
       </template>
@@ -33,22 +33,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    脚本名称
-                    <a-tooltip title="用于区分不同的 BetterGI 脚本实例">
+                    {{ t('edit.scriptName') }}
+                    <a-tooltip :title="t('edit.bettergiInstanceNameHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -59,8 +59,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    BetterGI 路径
-                    <a-tooltip title="选择 BetterGI.exe 所在目录">
+                    {{ t('edit.bettergiPath') }}
+                    <a-tooltip :title="t('edit.bettergiPickExeDir')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -68,7 +68,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="请选择 BetterGI.exe 所在目录"
+                    :placeholder="t('edit.bettergiPickExeDirPlaceholder')"
                     size="large"
                     class="path-input"
                     readonly
@@ -82,7 +82,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -92,15 +92,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>游戏配置</h3>
+            <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    控制器
-                    <a-tooltip title="控制游戏的方式；云原神、桌面分身暂未开发，当前仅支持电脑端-前台">
+                    {{ t('edit.controller') }}
+                    <a-tooltip :title="t('edit.bettergiControllerHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -111,9 +111,15 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
                 >
-                  <a-select-option value="电脑端-前台">电脑端-前台</a-select-option>
-                  <a-select-option value="电脑端-云原神" disabled>电脑端-云原神（暂未开发）</a-select-option>
-                  <a-select-option value="电脑端-桌面分身" disabled>电脑端-桌面分身（暂未开发）</a-select-option>
+                  <a-select-option value="电脑端-前台">
+                    {{ t('edit.bettergiControllerForeground') }}
+                  </a-select-option>
+                  <a-select-option value="电脑端-云原神" disabled>
+                    {{ t('edit.bettergiControllerCloud') }}
+                  </a-select-option>
+                  <a-select-option value="电脑端-桌面分身" disabled>
+                    {{ t('edit.bettergiControllerDesktopClone') }}
+                  </a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -121,8 +127,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    任务结束后关闭游戏
-                    <a-tooltip title="任务执行完毕后是否关闭游戏">
+                    {{ t('edit.bettergiCloseGameOnFinish') }}
+                    <a-tooltip :title="t('edit.bettergiCloseGameOnFinishHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -133,8 +139,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -143,15 +149,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    单日代理次数上限
-                    <a-tooltip title="阈值为 0 时表示不限制">
+                    {{ t('edit.runsPerDay') }}
+                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -170,8 +176,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    重试次数限制
-                    <a-tooltip title="超过该次数仍失败则终止">
+                    {{ t('edit.retryLimit2') }}
+                    <a-tooltip :title="t('edit.bettergiRetryLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -190,8 +196,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    代理超时限制（分钟）
-                    <a-tooltip title="日志长期无变化将判定超时">
+                    {{ t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="t('edit.bettergiRunTimeoutHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -215,8 +221,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
@@ -225,6 +232,7 @@ import {
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI脚本编辑')
 const route = useRoute()
 const router = useRouter()
@@ -276,10 +284,10 @@ const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Game: { Controller: '电脑端-前台', CloseOnFinish: true },
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请选择 BetterGI 路径', trigger: 'blur' }],
-}
+const rules = computed(() => ({
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('edit.bettergiPathRequired'), trigger: 'blur' }],
+}))
 
 const handleCancel = () => router.push('/scripts')
 
@@ -302,7 +310,7 @@ const handleChange = async (category: string, key: string, value: unknown) => {
 
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
-    message.warning('请先选择脚本根目录')
+    message.warning(t('edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -315,7 +323,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
       Info: { RootPath: norm },
     })
     if (success) {
-      message.success('BetterGI 根目录已保存')
+      message.success(t('edit.bettergiRootPathSaved'))
       return true
     }
     bettergiConfig.Info.RootPath = previousPath
@@ -334,12 +342,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'BetterGI') {
-      message.error('脚本类型不是 BetterGI')
+      message.error(t('edit.bettergiNotBettergiScript'))
       handleCancel()
       return
     }
@@ -349,7 +357,7 @@ const loadScript = async () => {
     Object.assign(bettergiConfig.Run, config.Run || {})
     Object.assign(bettergiConfig.Game, config.Game || {})
   } catch {
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -364,9 +372,9 @@ const selectRootPath = async () => {
   const exists = await window.electronAPI.fileExists(exePath)
   if (!exists) {
     Modal.error({
-      title: '所选目录无效',
-      content: `所选目录下未找到 ${BGI_EXE_NAME}，请选择完整的 BetterGI 脚本根目录。`,
-      okText: '我知道了',
+      title: t('edit.bettergiInvalidDirectory'),
+      content: t('edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
+      okText: t('edit.gotIt'),
     })
     return
   }
