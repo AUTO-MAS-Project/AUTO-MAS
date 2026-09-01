@@ -70,9 +70,26 @@ _FRAME_HEIGHT = 1080
 # 首次找到按钮的等待；点击「开始游戏」后等游戏起窗；点「更新」后等更新完成
 _FIND_BUTTON_TIMEOUT = 120
 _START_GAME_TIMEOUT = 300
-_UPDATE_TIMEOUT = 1800
+# 更新类等待上限：异环更新频繁且包体大，慢网下 30 分钟不够；对齐 ok-ww「MAS 下载
+# 不设总时限」的思路放宽到 2 小时。下载进行中时由下方下载状态检测持续动态续延，
+# 该值仅为点击「更新」后尚未出现下载 UI 的兜底等待。
+_UPDATE_TIMEOUT = 7200
 # 启动器拉起后等其窗口创建的时限（对齐 ok-nte 上游 _wait_for_process 默认值）
 _LAUNCHER_WINDOW_TIMEOUT = 120
+# 启动器点「确定」自重启后，等旧进程退出再找新窗口的缓冲
+_LAUNCHER_RESTART_QUIET_SECONDS = 3.0
+
+# ── 启动器下载状态动态识别（基于 OCR，样本为真实下载界面）────────────────
+# 下载进行中的判定文本：底部状态行「... 下载中 0% (x/x) 当前速度 xx MB/s」
+# 与右下角「暂停下载」按钮（该按钮仅在下载进行中存在）
+_DOWNLOAD_STATE_TEXTS = ("下载中", "暂停下载")
+# 下载进度相关文本特征：用于构造「下载进度签名」，只看下载相关行，
+# 避免首页横幅轮播等无关界面变化干扰卡死判定
+_DOWNLOAD_PROGRESS_TOKENS = ("%", "MB/s", "剩余时间")
+# 检测到下载态时每次顺延的等待宽限（下载 UI 持续存在就持续等，等效不设总时限）
+_UPDATE_ACTIVE_GRACE_SECONDS = 600.0
+# 下载进度签名持续无变化的时长上限：百分比/速度/剩余时间长时间不动视为下载卡死
+_DOWNLOAD_STALL_SECONDS = 300.0
 
 
 @lru_cache(maxsize=1)
@@ -297,6 +314,14 @@ def start_game_via_launcher(
     启动器按钮有概率是「更新」而非「开始游戏」（游戏有新版本时）：点「更新」
     后不再重复点击，等更新完成、按钮变回「开始游戏」后再点。
 
+    启动器自身更新按弹窗分两级处理：「全新启动器现已推出」弹窗点「立即体验」
+    升级；更新完成后「更新已完成，请重新启动游戏」弹窗点「确定」重启启动器，
+    并重新等待启动器窗口后继续走「开始游戏」流程。
+
+    游戏下载进行中（「下载中」状态行 /「暂停下载」按钮）基于下载状态动态续延等待，
+    下载多久等多久；同时以百分比/速度/剩余时间构造下载进度签名，长时间无变化
+    判定下载卡死提前失败。
+
     Args:
         launcher_path: 启动器 exe 路径（NTELauncher 下的启动器程序）。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
@@ -322,6 +347,9 @@ def start_game_via_launcher(
 
         start_clicks = 0
         update_clicked = False
+        launcher_upgrade_clicked = False
+        last_download_sig: int | None = None
+        last_download_progress = time.monotonic()
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
             if _find_game_hwnd() is not None:
@@ -337,9 +365,61 @@ def start_game_via_launcher(
                     continue
                 raise
 
+            now = time.monotonic()
+
+            # 弹窗一：全新启动器推送 → 点「立即体验」升级启动器
+            upgrade_box = _find_text(items, ("立即体验",))
+            if upgrade_box is not None and not launcher_upgrade_clicked:
+                on_log("检测到「全新启动器现已推出」弹窗，点击「立即体验」升级启动器...")
+                _click_box(hwnd, upgrade_box, after_sleep=3)
+                launcher_upgrade_clicked = True
+                deadline = max(deadline, now + _UPDATE_TIMEOUT)
+                time.sleep(2)
+                continue
+
+            # 弹窗二：启动器更新完成 → 点「确定」重启启动器，重新等窗口
+            if _find_text(items, ("更新已完成", "重新启动游戏")) is not None:
+                confirm_box = _find_text(items, ("确定",))
+                if confirm_box is not None:
+                    on_log("启动器更新完成，点击「确定」重启启动器...")
+                    _click_box(hwnd, confirm_box, after_sleep=3)
+                    time.sleep(_LAUNCHER_RESTART_QUIET_SECONDS)
+                    new_hwnd = _wait_launcher_hwnd(launcher_path)
+                    if new_hwnd is None:
+                        raise RuntimeError(
+                            "启动器重启后未找到启动器窗口，请人工确认启动器状态"
+                        )
+                    hwnd = new_hwnd
+                    _activate_window(hwnd)
+                    start_clicks = 0
+                    update_clicked = False
+                    launcher_upgrade_clicked = False
+                time.sleep(2)
+                continue
+
+            # 游戏下载进行中：基于下载状态动态续延等待，并以下载进度签名检测卡死
+            if _find_text(items, _DOWNLOAD_STATE_TEXTS) is not None:
+                deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
+                progress_sig = hash(
+                    tuple(
+                        text
+                        for text, _ in items
+                        if any(token in text for token in _DOWNLOAD_PROGRESS_TOKENS)
+                    )
+                )
+                if progress_sig != last_download_sig:
+                    last_download_sig = progress_sig
+                    last_download_progress = now
+                elif now - last_download_progress >= _DOWNLOAD_STALL_SECONDS:
+                    raise RuntimeError(
+                        f"启动器下载长时间无进展（{_DOWNLOAD_STALL_SECONDS:g}s 内"
+                        "百分比/速度无变化，疑似卡住），请人工确认下载状态"
+                    )
+                time.sleep(2)
+                continue
+
             start_box = _find_text(items, ("开始游戏",))
             update_box = None if start_box else _find_text(items, ("更新",))
-            now = time.monotonic()
             if start_box is not None and start_clicks < 3:
                 on_log("点击启动器「开始游戏」")
                 _click_box(hwnd, start_box, after_sleep=3)
