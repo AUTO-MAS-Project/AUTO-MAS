@@ -96,35 +96,62 @@ class OkNteResolveTest(unittest.TestCase):
         )
 
     def test_cur_only_shows_current_as_remaining(self) -> None:
-        # 仅 CUR（如体力不足被中止、未设消耗目标）：直接展示当前体力
+        # 仅 CUR 且无任何刷本消耗（体力不足直接退出）：剩余即最后一次当前体力
         self.assertEqual(
             oknte_resolve([(LogType.NORMAL, "CUR:30", T)]),
             [(LogType.NORMAL, "⚡ 剩余体力: 30", T)],
         )
 
-    def test_tgt_only_yields_no_stamina_line(self) -> None:
-        # 仅 TGT：没有当前体力作基数，不追加剩余体力行
-        self.assertEqual(oknte_resolve([(LogType.NORMAL, "TGT:60", T)]), [])
-
-    def test_stamina_uses_last_cur_and_tgt(self) -> None:
-        results = [
-            (LogType.NORMAL, "CUR:120", T),
-            (LogType.NORMAL, "CUR:90", T),
-            (LogType.NORMAL, "TGT:60", T),
-        ]
+    def test_no_cur_yields_no_stamina_line(self) -> None:
+        # 没有当前体力作基数（含未知/非法标记），不追加剩余体力行
         self.assertEqual(
-            oknte_resolve(results),
-            [(LogType.NORMAL, "⚡ 剩余体力: 30", T)],
+            oknte_resolve([(LogType.NORMAL, "CONSUME:60", T)]), []
         )
 
-    def test_stamina_clamps_to_zero(self) -> None:
+    def test_stamina_anomaly_single_run(self) -> None:
+        # 异象界域刷 1 把单倍（40 体）：76 − 40 = 36（今晚真实场景）
         results = [
-            (LogType.NORMAL, "CUR:40", T),
-            (LogType.NORMAL, "TGT:60", T),
+            (LogType.NORMAL, "CUR:76", T),
+            (LogType.NORMAL, "UNITS:0\n1", T),
         ]
         self.assertEqual(
             oknte_resolve(results),
-            [(LogType.NORMAL, "⚡ 剩余体力: 0", T)],
+            [(LogType.NORMAL, "⚡ 剩余体力: 36", T)],
+        )
+
+    def test_stamina_anomaly_double_run(self) -> None:
+        # 异象界域刷 1 把双倍（=2 把单倍，80 体）：120 − 80 = 40
+        results = [
+            (LogType.NORMAL, "CUR:120", T),
+            (LogType.NORMAL, "UNITS:1\n0", T),
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [(LogType.NORMAL, "⚡ 剩余体力: 40", T)],
+        )
+
+    def test_stamina_hunter_consume(self) -> None:
+        # 异象追猎直接给实际消耗：70 − 60 = 10
+        results = [
+            (LogType.NORMAL, "CUR:70", T),
+            (LogType.NORMAL, "CONSUME:60", T),
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [(LogType.NORMAL, "⚡ 剩余体力: 10", T)],
+        )
+
+    def test_stamina_reset_on_last_cur(self) -> None:
+        # 每个耗体任务重读当前体力：后面的 CUR 已含此前消耗，只减去其后消耗
+        results = [
+            (LogType.NORMAL, "CUR:120", T),
+            (LogType.NORMAL, "UNITS:1\n0", T),  # 异象界域耗 80
+            (LogType.NORMAL, "CUR:40", T),  # 异象追猎重读 40
+            (LogType.NORMAL, "CONSUME:0", T),  # 未成功不耗体
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [(LogType.NORMAL, "⚡ 剩余体力: 40", T)],
         )
 
     def test_unknown_text_and_bad_stamina_are_dropped(self) -> None:

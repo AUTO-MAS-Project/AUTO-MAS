@@ -20,70 +20,74 @@
 
 #   Contact: DLmaster_361@163.com
 
+import asyncio
+import json
 import os
 import re
-import sys
-import httpx
 import shutil
-import time
-import asyncio
-import uvicorn
 import sqlite3
-import truststore
-from pathlib import Path
-from collections import defaultdict
-from jinja2 import Environment, FileSystemLoader
-from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Dict, Any, List
+import sys
+import time
 import uuid
-import json
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
-from app.utils.platform import IS_WINDOWS
+import httpx
+import truststore
+
+# 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
+if TYPE_CHECKING:
+    import uvicorn
+from jinja2 import Environment, FileSystemLoader
+
 from app.models.config import (
-    GeneralConfig,
-    MaaConfig,
-    SrcConfig,
-    M9AConfig,
-    MaaFWConfig,
-    MaaEndConfig,
-    OkwwConfig,
-    OkNteConfig,
-    HSRConfig,
     BetterGIConfig,
-    HSRUserConfig,
-    MaaPlanConfig,
-    MaaEndPlanConfig,
-    QueueConfig,
-    QueueItem,
-    MaaUserConfig,
-    SrcUserConfig,
-    M9AUserConfig,
-    MaaFWUserConfig,
-    MaaEndUserConfig,
-    GeneralUserConfig,
-    OkwwUserConfig,
-    OkNteUserConfig,
     BetterGIUserConfig,
-    GlobalConfig,
     CLASS_BOOK,
     PLAN_BOOK,
-    Webhook,
-    TimeSet,
     EmulatorConfig,
     GameSignAccountGroup,
+    GeneralConfig,
+    GeneralUserConfig,
+    GlobalConfig,
+    HSRConfig,
+    HSRUserConfig,
+    M9AConfig,
+    M9AUserConfig,
+    MaaConfig,
+    MaaEndConfig,
+    MaaEndPlanConfig,
+    MaaEndUserConfig,
+    MaaFWConfig,
+    MaaFWUserConfig,
+    MaaPlanConfig,
+    MaaUserConfig,
+    OkNteConfig,
+    OkNteUserConfig,
+    OkwwConfig,
+    OkwwUserConfig,
+    QueueConfig,
+    QueueItem,
+    SrcConfig,
+    SrcUserConfig,
+    TimeSet,
+    Webhook,
 )
 from app.models.schema import PlanComboxConsumer
+from app.utils import get_logger
 from app.utils.constants import (
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
+    RESOURCE_STAGE_DATE_TEXT,
+    RESOURCE_STAGE_DROP_INFO,
+    RESOURCE_STAGE_INFO,
+    TYPE_BOOK,
     UTC4,
     UTC8,
-    RESOURCE_STAGE_INFO,
-    RESOURCE_STAGE_DROP_INFO,
-    TYPE_BOOK,
-    RESOURCE_STAGE_DATE_TEXT,
-    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
-from app.utils import get_logger
 from app.utils.io import write_file
+from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
@@ -268,11 +272,7 @@ class AppConfig(GlobalConfig):
         self._repo: Any = None
         self._repo_initialized = False
 
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
-        )
-
-        self.server: Optional[uvicorn.Server] = None
+        self.server: Optional["uvicorn.Server"] = None
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -288,6 +288,10 @@ class AppConfig(GlobalConfig):
         self._game_sign_result_date = ""
 
         self._inject_truststore()
+
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+        )
 
     @staticmethod
     def _inject_truststore() -> None:
@@ -314,6 +318,23 @@ class AppConfig(GlobalConfig):
                 "_preloaded_ssl_context",
                 truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
             )
+
+        # 缓存 SSL 上下文：httpx 为每个 AsyncClient 都调用 create_default_context()，
+        # truststore 场景下会全量加载 Windows 证书库（实测一次 5~15s，且发生在
+        # 事件循环上时冻结全部请求）。按参数缓存后全程只加载一次，
+        # 首次加载由启动预热线程完成，见 main.py。
+        _original_create_default_context = ssl.create_default_context
+        _ssl_context_cache: dict[tuple, ssl.SSLContext] = {}
+
+        def _cached_create_default_context(*args: object, **kwargs: object) -> ssl.SSLContext:
+            key = (args, tuple(sorted(kwargs.items())))
+            context = _ssl_context_cache.get(key)
+            if context is None:
+                context = _original_create_default_context(*args, **kwargs)
+                _ssl_context_cache[key] = context
+            return context
+
+        ssl.create_default_context = _cached_create_default_context
 
     def _get_repo(self) -> Any:
         """惰性初始化 Git 仓库，避免启动时导入 GitPython。"""
@@ -712,9 +733,10 @@ class AppConfig(GlobalConfig):
 
             # 检查是否为最新 commit
             try:
-                # 获取远程分支的最新 commit
-                origin = repo.remotes.origin
-                origin.fetch()  # 拉取最新信息
+                # 仅比对本地已缓存的远程引用，不在请求路径上调用 origin.fetch()。
+                # fetch 是联网操作（弱网/VPN 下耗时 5~15s），以同步 GitPython 子进程
+                # 形式执行会阻塞事件循环，期间所有请求排队无响应；远程引用由
+                # 版本更新等流程自行维护，此处只读本地。
                 remote_commit = repo.commit(f"origin/{repo.active_branch.name}")
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
@@ -2895,10 +2917,10 @@ class AppConfig(GlobalConfig):
         即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
         """
 
+        from app.models.config import MaaFWConfig
         from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
             collect_orphan_agent_venvs,
         )
-        from app.models.config import MaaFWConfig
 
         root = Path.cwd() / "config" / "maafw_agent_venvs"
         if not root.is_dir():
