@@ -79,12 +79,31 @@ export {
   InitializationStageStatus,
   RuntimeDoctorCheck,
   RuntimeInitializationService,
+  RuntimeRetryMode,
   RuntimeStageOutcome,
   mapDoctorChecksToCriticalFiles,
   mapMirrorSelection,
   mapRuntimeStage,
   toRuntimeVersion,
 } from './runtimeInitializationService'
+
+// Runtime 后端更新链路（停机 → bootstrap → 重新监督）
+export {
+  BackendUpdateController,
+  RuntimeUpdateDependencies,
+  RuntimeUpdateOutcome,
+  RuntimeUpdatePhase,
+  RuntimeUpdateProgress,
+  RuntimeUpdateRetryAction,
+  RuntimeUpdateStage,
+  cancelBackendUpdate,
+  describeRetryAction,
+  normalizeRuntimeUpdateVersion,
+  resetRuntimeUpdateSession,
+  resolveRetryActions,
+  retryBackendUpdate,
+  updateBackendViaRuntime,
+} from './runtimeUpdateService'
 
 // 后端服务
 export {
