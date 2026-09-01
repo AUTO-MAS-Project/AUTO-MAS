@@ -26,7 +26,6 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
-from app.services.endfield_activity import endfield_activity_service
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
@@ -259,7 +258,6 @@ async def get_web_config() -> InfoOut:
     status_code=200,
 )
 async def get_overview() -> InfoOut:
-    endfield_overview = await endfield_activity_service.get_overview()
     try:
         stage_by_server = {
             server: await Config.get_stage_info("Info", server=server)
@@ -281,7 +279,6 @@ async def get_overview() -> InfoOut:
             data={
                 "Stage": [],
                 "Proxy": [],
-                "Endfield": endfield_overview,
             },
         )
     return InfoOut(
@@ -289,6 +286,5 @@ async def get_overview() -> InfoOut:
             "Stage": stage_by_server["Official"],
             "StageByServer": stage_by_server,
             "Proxy": proxy,
-            "Endfield": endfield_overview,
         }
     )

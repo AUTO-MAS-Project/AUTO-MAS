@@ -76,9 +76,9 @@
 
           <HomeEndfieldOverview
             v-else-if="moduleKey === 'endfield'"
-            :loading="loading"
-            :overview="endfieldData"
-            @refresh="fetchOverviewData"
+            :loading="endfieldSource.loading.value"
+            :overview="endfieldSource.overview.value"
+            @refresh="endfieldSource.refresh"
           />
 
           <HomeArknightsOverview
@@ -177,6 +177,7 @@ import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useSraActivitySource } from '@/views/home/useSraActivitySource'
 import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
+import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 
@@ -218,7 +219,6 @@ const {
   activityData,
   resourceData,
   proxyData,
-  endfieldData,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()
@@ -232,6 +232,7 @@ const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
 const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
 const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
 const reverse1999Source = useReverse1999ActivitySource()
+const endfieldSource = useEndfieldActivitySource()
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
