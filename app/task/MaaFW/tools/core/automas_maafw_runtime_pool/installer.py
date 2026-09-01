@@ -53,21 +53,24 @@ def _resolve_injected_pool_directory(
     env_name: str,
     relative_default: Path,
     label: str,
-) -> Path:
+) -> tuple[Path, bool]:
     """解析一个可能被 Runtime 注入覆盖的池托管目录。
 
-    非空且为绝对路径、父目录存在时采用注入值；未设置该变量时按池本地默认
-    目录静默回退（未受监督的今天没有变化）；设置了但无效（相对路径、父目录
-    不存在）时同样回退，但记一条 warning——这属于配置错误，不应该被默默吞掉。
+    非空且为绝对路径、父目录存在时采用注入值（返回的 ``injected`` 为
+    ``True``）；未设置该变量时按池本地默认目录静默回退（未受监督的今天没有
+    变化）；设置了但无效（相对路径、父目录不存在）时同样回退，但记一条
+    warning——这属于配置错误，不应该被默默吞掉。两种回退情形 ``injected``
+    都是 ``False``：调用方（尤其是 ``_canonicalize_pool_paths``）需要这个
+    事实来判断是否可以放行「路径落在 pool_root 之外」。
     """
 
     default_dir = (Path(pool_root).resolve() / relative_default).resolve()
     raw_value = os.environ.get(env_name)
     if raw_value is None:
-        return default_dir
+        return default_dir, False
     candidate_text = raw_value.strip()
     if not candidate_text:
-        return default_dir
+        return default_dir, False
     candidate = Path(candidate_text)
     if not candidate.is_absolute():
         logger.warning(
@@ -76,7 +79,7 @@ def _resolve_injected_pool_directory(
             env_name,
             candidate_text,
         )
-        return default_dir
+        return default_dir, False
     if not candidate.parent.exists():
         logger.warning(
             "%s环境变量 %s 的父目录不存在，已忽略注入值并回退到池本地目录：%s",
@@ -84,18 +87,11 @@ def _resolve_injected_pool_directory(
             env_name,
             candidate_text,
         )
-        return default_dir
-    return candidate.resolve()
+        return default_dir, False
+    return candidate.resolve(), True
 
 
-def resolve_uv_cache_dir(pool_root: str | Path) -> Path:
-    """解析 MaaFW 运行池实际使用的 uv 缓存目录。
-
-    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_CACHE_DIR`` 注入的受管缓存目录，
-    与 Runtime 主项目共用一份 wheel 缓存；未设置、相对路径或父目录不存在时
-    视为无效注入，回退到池本地目录 ``<pool_root>/cache/uv``。
-    """
-
+def _resolve_uv_cache_dir_with_source(pool_root: str | Path) -> tuple[Path, bool]:
     return _resolve_injected_pool_directory(
         pool_root,
         env_name=AUTO_MAS_UV_CACHE_DIR_ENV,
@@ -104,20 +100,44 @@ def resolve_uv_cache_dir(pool_root: str | Path) -> Path:
     )
 
 
-def resolve_python_install_dir(pool_root: str | Path) -> Path:
-    """解析 MaaFW 运行池实际使用的 Python 安装目录。
-
-    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` 注入的受管
-    Python 安装目录，与 Runtime 主项目共用同一份解释器；未设置、相对路径或
-    父目录不存在时视为无效注入，回退到池本地目录 ``<pool_root>/python``。
-    """
-
+def _resolve_python_install_dir_with_source(pool_root: str | Path) -> tuple[Path, bool]:
     return _resolve_injected_pool_directory(
         pool_root,
         env_name=AUTO_MAS_UV_PYTHON_INSTALL_DIR_ENV,
         relative_default=UV_PYTHON_RELATIVE_PATH,
         label="Python 安装目录",
     )
+
+
+def resolve_uv_cache_dir(pool_root: str | Path) -> Path:
+    """解析 MaaFW 运行池实际使用的 uv 缓存目录。
+
+    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_CACHE_DIR`` 注入的受管缓存目录，
+    与 Runtime 主项目共用一份 wheel 缓存；未设置、相对路径或父目录不存在时
+    视为无效注入，回退到池本地目录 ``<pool_root>/cache/uv``。
+
+    只要路径，不关心是否命中注入；需要一并知道「是否注入」时改用
+    ``_resolve_uv_cache_dir_with_source``（例如 ``_canonicalize_pool_paths``
+    据此判断能否放行「落在 pool_root 之外」）。
+    """
+
+    path, _injected = _resolve_uv_cache_dir_with_source(pool_root)
+    return path
+
+
+def resolve_python_install_dir(pool_root: str | Path) -> Path:
+    """解析 MaaFW 运行池实际使用的 Python 安装目录。
+
+    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` 注入的受管
+    Python 安装目录，与 Runtime 主项目共用同一份解释器；未设置、相对路径或
+    父目录不存在时视为无效注入，回退到池本地目录 ``<pool_root>/python``。
+
+    只要路径，不关心是否命中注入；需要一并知道「是否注入」时改用
+    ``_resolve_python_install_dir_with_source``。
+    """
+
+    path, _injected = _resolve_python_install_dir_with_source(pool_root)
+    return path
 
 
 def _split_semicolon_list(raw: str | None) -> list[str]:
@@ -261,11 +281,22 @@ def resolve_python_interpreter(
         }
 
     root = Path(pool_root).resolve()
+    python_root, python_root_injected = _resolve_python_install_dir_with_source(root)
+    cache_dir, cache_dir_injected = _resolve_uv_cache_dir_with_source(root)
     root, python_root, cache_dir = _canonicalize_pool_paths(
         root,
-        resolve_python_install_dir(root),
-        resolve_uv_cache_dir(root),
+        python_root,
+        cache_dir,
+        python_injected=python_root_injected,
+        cache_injected=cache_dir_injected,
     )
+    # 下面每个下游调用内部都会用同一对 pool_root/python_root/cache_dir 再次
+    # 调用 _canonicalize_pool_paths 做防御性复核；不带上这两个标记，复核会用
+    # 默认值 False，把受监督时合法的「路径落在 pool_root 之外」当成 bug 拒掉。
+    path_injected_kwargs = {
+        "python_injected": python_root_injected,
+        "cache_injected": cache_dir_injected,
+    }
     uv_executable = _find_uv_executable(sys.executable)
     if uv_executable is None:
         if allow_install:
@@ -281,6 +312,7 @@ def resolve_python_interpreter(
             pool_root=root,
             python_root=python_root,
             cache_dir=cache_dir,
+            **path_injected_kwargs,
         )
         if executable is None:
             continue
@@ -307,6 +339,7 @@ def resolve_python_interpreter(
             python_root=python_root,
             cache_dir=cache_dir,
             only_installed=True,
+            **path_injected_kwargs,
         )
         if installed_target is None:
             return None
@@ -316,6 +349,7 @@ def resolve_python_interpreter(
             pool_root=root,
             python_root=python_root,
             cache_dir=cache_dir,
+            **path_injected_kwargs,
         )
         if executable is None:
             return None
@@ -341,6 +375,7 @@ def resolve_python_interpreter(
             python_root=python_root,
             cache_dir=cache_dir,
             only_installed=False,
+            **path_injected_kwargs,
         )
         if selected_download is None:
             raise RuntimeError(
@@ -356,6 +391,7 @@ def resolve_python_interpreter(
         pool_root=root,
         python_root=python_root,
         cache_dir=cache_dir,
+        **path_injected_kwargs,
     )
     executable = _find_pool_managed_python(
         uv_executable,
@@ -363,6 +399,7 @@ def resolve_python_interpreter(
         pool_root=root,
         python_root=python_root,
         cache_dir=cache_dir,
+        **path_injected_kwargs,
     )
     if executable is None:
         raise RuntimeError(
@@ -708,11 +745,15 @@ def _find_pool_managed_python(
     pool_root: Path,
     python_root: Path,
     cache_dir: Path,
+    python_injected: bool = False,
+    cache_injected: bool = False,
 ) -> Path | None:
     pool_root, python_root, cache_dir = _canonicalize_pool_paths(
         pool_root,
         python_root,
         cache_dir,
+        python_injected=python_injected,
+        cache_injected=cache_injected,
     )
     try:
         result = subprocess.run(
@@ -769,6 +810,8 @@ def _install_pool_managed_python(
     pool_root: Path,
     python_root: Path,
     cache_dir: Path,
+    python_injected: bool = False,
+    cache_injected: bool = False,
 ) -> None:
     """按 ``_resolve_python_mirror_candidates`` 的顺序重试同一条安装命令。
 
@@ -780,6 +823,8 @@ def _install_pool_managed_python(
         pool_root,
         python_root,
         cache_dir,
+        python_injected=python_injected,
+        cache_injected=cache_injected,
     )
     base_env = _uv_environment(cache_dir, UV_LINK_MODE)
     base_env["UV_PYTHON_INSTALL_DIR"] = str(python_root)
@@ -827,6 +872,8 @@ def _select_uv_python_version(
     python_root: Path,
     cache_dir: Path,
     only_installed: bool,
+    python_injected: bool = False,
+    cache_injected: bool = False,
 ) -> str | None:
     """Select the newest real uv catalog version satisfying a patch range."""
 
@@ -834,6 +881,8 @@ def _select_uv_python_version(
         pool_root,
         python_root,
         cache_dir,
+        python_injected=python_injected,
+        cache_injected=cache_injected,
     )
 
     scope_flag = "--only-installed" if only_installed else "--only-downloads"
@@ -921,26 +970,54 @@ def _canonicalize_pool_paths(
     pool_root: Path,
     python_root: Path,
     cache_dir: Path,
+    *,
+    python_injected: bool = False,
+    cache_injected: bool = False,
 ) -> tuple[Path, Path, Path]:
-    """Normalize the three uv-managed paths to absolute paths.
+    """Normalize uv-managed paths and keep non-injected ones inside the owning pool.
 
-    ``python_root``/``cache_dir`` used to always be a subdirectory of
-    ``pool_root`` (derived from it via ``UV_PYTHON_RELATIVE_PATH`` /
-    ``UV_CACHE_RELATIVE_PATH``), so this function used to also assert
-    containment as a defensive sanity check. Under supervision they may now
-    legitimately resolve outside ``pool_root`` — ``resolve_python_install_dir``
-    / ``resolve_uv_cache_dir`` return a Runtime-injected shared directory
-    instead (``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` / ``AUTO_MAS_UV_CACHE_DIR``),
-    which is by design (C11). Those two resolvers already validate the
-    injected value (absolute path, existing parent) before returning it, so
-    no containment check is repeated here — same trust level as
-    ``AUTO_MAS_UV_EXE`` / ``AUTO_MAS_PYTHON_*_EXE`` elsewhere in this module.
+    ``python_root``/``cache_dir`` normally derive from ``pool_root`` (via
+    ``UV_PYTHON_RELATIVE_PATH`` / ``UV_CACHE_RELATIVE_PATH``) and must stay
+    inside it; this containment check is a defensive sanity net against that
+    invariant ever breaking, and it still applies unconditionally when the
+    caller does not say otherwise — this is the ``False`` default for both
+    flags, i.e. the strict/pre-C11 behaviour.
+
+    Under supervision, ``resolve_python_install_dir``/``resolve_uv_cache_dir``
+    (via their ``_with_source`` variants) may legitimately return a
+    Runtime-injected shared directory outside ``pool_root`` instead
+    (``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` / ``AUTO_MAS_UV_CACHE_DIR``, C11).
+    Callers that resolved a path this way must say so via
+    ``python_injected``/``cache_injected`` so *that* path's containment check
+    is skipped — every path that was not resolved from an injected env var
+    (including a caller that simply omits these flags) is still asserted
+    exactly as before.
     """
 
     resolved_pool = Path(pool_root).resolve()
     resolved_python = Path(python_root).resolve()
     resolved_cache = Path(cache_dir).resolve()
+    for label, candidate, injected in (
+        ("python", resolved_python, python_injected),
+        ("cache", resolved_cache, cache_injected),
+    ):
+        if injected:
+            continue
+        if not _path_is_within(candidate, resolved_pool):
+            raise RuntimeError(
+                f"runtime pool {label} path escapes the pool: {candidate}"
+            )
     return resolved_pool, resolved_python, resolved_cache
+
+
+def _path_is_within(path: Path, base: Path) -> bool:
+    try:
+        common = os.path.commonpath(
+            [os.path.normcase(str(path)), os.path.normcase(str(base))]
+        )
+    except ValueError:
+        return False
+    return common == os.path.normcase(str(base))
 
 
 def _python_supports_venv(python: str) -> bool:

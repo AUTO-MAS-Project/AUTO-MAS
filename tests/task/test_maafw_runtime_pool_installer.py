@@ -22,6 +22,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV,
     UV_CACHE_RELATIVE_PATH,
     UV_PYTHON_RELATIVE_PATH,
+    _canonicalize_pool_paths,
     _install_pool_managed_python,
     _install_requirements_with_uv,
     _resolve_python_mirror_candidates,
@@ -374,4 +375,88 @@ def test_python_distribution_mirror_rotation_raises_after_every_candidate_fails(
             pool_root=tmp_path,
             python_root=tmp_path / "python",
             cache_dir=tmp_path / "cache" / "uv",
+        )
+
+
+# ---------------------------------------------------------------------------
+# _canonicalize_pool_paths：非注入路径仍受「不得逃出 pool_root」断言保护，
+# 只有明确标了 *_injected=True 的那一侧才放行落在 pool_root 之外。
+# ---------------------------------------------------------------------------
+
+
+def test_canonicalize_pool_paths_rejects_escaping_cache_dir_when_not_injected(
+    tmp_path,
+) -> None:
+    pool_root = tmp_path / "pool"
+    pool_root.mkdir()
+    escaped_cache = tmp_path / "outside" / "cache"
+
+    with pytest.raises(RuntimeError, match="cache path escapes the pool"):
+        _canonicalize_pool_paths(pool_root, pool_root / "python", escaped_cache)
+
+
+def test_canonicalize_pool_paths_rejects_escaping_python_root_when_not_injected(
+    tmp_path,
+) -> None:
+    pool_root = tmp_path / "pool"
+    pool_root.mkdir()
+    escaped_python = tmp_path / "outside" / "python"
+
+    with pytest.raises(RuntimeError, match="python path escapes the pool"):
+        _canonicalize_pool_paths(pool_root, escaped_python, pool_root / "cache" / "uv")
+
+
+def test_canonicalize_pool_paths_allows_escaping_cache_dir_when_injected(
+    tmp_path,
+) -> None:
+    pool_root = tmp_path / "pool"
+    pool_root.mkdir()
+    escaped_cache = tmp_path / "outside" / "cache"
+
+    _, resolved_python, resolved_cache = _canonicalize_pool_paths(
+        pool_root,
+        pool_root / "python",
+        escaped_cache,
+        cache_injected=True,
+    )
+
+    assert resolved_cache == escaped_cache.resolve()
+    assert resolved_python == (pool_root / "python").resolve()
+
+
+def test_canonicalize_pool_paths_allows_escaping_python_root_when_injected(
+    tmp_path,
+) -> None:
+    pool_root = tmp_path / "pool"
+    pool_root.mkdir()
+    escaped_python = tmp_path / "outside" / "python"
+
+    _, resolved_python, resolved_cache = _canonicalize_pool_paths(
+        pool_root,
+        escaped_python,
+        pool_root / "cache" / "uv",
+        python_injected=True,
+    )
+
+    assert resolved_python == escaped_python.resolve()
+    assert resolved_cache == (pool_root / "cache" / "uv").resolve()
+
+
+def test_canonicalize_pool_paths_still_rejects_the_non_injected_side(
+    tmp_path,
+) -> None:
+    # cache_dir 一侧确实是合法注入、放行；但 python_root 一侧没有声明注入却也
+    # 逃出了 pool_root——这不该被 cache_injected=True 顺带放过，两侧的断言必须
+    # 相互独立。
+    pool_root = tmp_path / "pool"
+    pool_root.mkdir()
+    escaped_cache = tmp_path / "outside" / "cache"
+    escaped_python = tmp_path / "outside" / "python"
+
+    with pytest.raises(RuntimeError, match="python path escapes the pool"):
+        _canonicalize_pool_paths(
+            pool_root,
+            escaped_python,
+            escaped_cache,
+            cache_injected=True,
         )
