@@ -10,6 +10,7 @@
                 "MaaEnd专项 清理不再需要的MFW资源 by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "开发流程": [
+                "新增 Electron 侧 AUTO-MAS Runtime 客户端模块，封装 NDJSON 协议 v1 的类型、解析、握手、stdin 控制与错误分类，暂未接入现有初始化与后端启动流程",
                 "新增 GitHub Issue 模板：Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，另设需求建议、AI 提交与其他议题模板，并挂上常见问题、文档站与官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
                 "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
