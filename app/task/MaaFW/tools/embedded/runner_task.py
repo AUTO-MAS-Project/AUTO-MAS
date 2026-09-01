@@ -26,6 +26,7 @@ from app.services import Notify
 from app.task.general.tools import execute_script_task
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
+from app.utils.io import migrate_legacy_dir
 from app.task.MaaFW.tools.core.automas_maafw_controller_win32.service import (
     MaaFWWin32ControllerService,
 )
@@ -1069,7 +1070,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"v{runner_environment.maafw_version.lstrip('v')}"
                 )
             payload = service.create_job_payload(runner_plan, device_config)
-            work_dir = Path.cwd() / "runtime" / "maafw_runner_jobs"
+            work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
                 service.write_job_file, payload, work_dir
             )
@@ -1861,6 +1862,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_info.log = "".join(self.cur_user_log.content[-80:])
         else:
             self.script_info.log = str(message)
+
+
+def _maafw_runner_jobs_dir() -> Path:
+    """MaaFW 任务 job 文件的落盘目录。
+
+    落在受保护的 ``data/`` 下，避免与 AUTO-MAS-Runtime 监督器接管的
+    ``runtime/`` 撞名；首次访问时把用户机器上已有的旧
+    ``runtime/maafw_runner_jobs`` 整体迁移过来。
+    """
+
+    new_dir = Path.cwd() / "data" / "maafw_runner_jobs"
+    migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", new_dir)
+    return new_dir
 
 
 def _find_controller(

@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import json5
 import os
+import shutil
 import threading
 import tomllib
 from contextlib import suppress
@@ -33,7 +34,10 @@ from typing import Any
 import tomli_w
 import yaml
 
+from .logger import get_logger
 from .tools import decode_bytes
+
+logger = get_logger("路径迁移")
 
 # 格式后缀 -> (dump: (dict, encoding)->bytes, load: bytes->dict)
 # 若要扩展格式, 直接改此表
@@ -158,3 +162,31 @@ def write_file(
     if not isinstance(payload, str):
         raise ValueError(f"不支持的配置文件格式 `{_suffix}`，且内容非字符串")
     atomic_write(path, payload.encode(encoding))
+
+
+def migrate_legacy_dir(old_path: Path, new_path: Path) -> bool:
+    """
+    首次访问时把整个旧目录搬迁到新路径, 用于落盘目录改名/搬家场景
+
+    仅在新路径不存在且旧路径存在时执行, 天然只做一次: 一旦新路径落地
+    (搬迁成功, 或调用方在此之后自行创建), 后续调用即判定新路径已存在而跳过。
+    迁移失败 (如跨设备移动出错) 只记 warning, 不向上抛出, 不阻塞调用方
+    继续在新路径上创建目录、写入文件。
+
+    Args:
+        old_path: 旧目录路径
+        new_path: 新目录路径
+
+    Returns:
+        bool: 是否实际执行了搬迁
+    """
+    if new_path.exists() or not old_path.exists():
+        return False
+    try:
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old_path), str(new_path))
+    except Exception as exc:  # noqa: BLE001 - 迁移失败不应阻塞调用方后续访问
+        logger.warning(f"旧目录迁移失败，将继续使用新路径：{old_path} -> {new_path}：{exc}")
+        return False
+    logger.info(f"旧目录已迁移：{old_path} -> {new_path}")
+    return True
