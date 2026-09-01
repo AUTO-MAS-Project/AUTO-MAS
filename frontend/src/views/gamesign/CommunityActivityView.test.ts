@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('./CommunityActivityView.vue', import.meta.url), 'utf8')
+const pageSource = readFileSync(new URL('./index.vue', import.meta.url), 'utf8')
+const signSource = readFileSync(new URL('./TabGameSign.vue', import.meta.url), 'utf8')
+const toolsSource = readFileSync(new URL('../tools/index.vue', import.meta.url), 'utf8')
 
 describe('CommunityActivityView structure', () => {
   it('keeps independent game cards in a half-width draggable grid', () => {
@@ -22,5 +25,20 @@ describe('CommunityActivityView structure', () => {
     for (const game of ['明日方舟', '终末地', '原神', '星穹铁道', '绝区零']) {
       expect(source).toContain(`${game}:`)
     }
+  })
+
+  it('keeps one vertical page scroll owner and removes page-level gradients', () => {
+    expect(pageSource).toContain('overflow: visible;')
+    expect(pageSource).not.toContain('::-webkit-scrollbar')
+    expect(toolsSource).toContain('overflow: visible;')
+    expect(toolsSource).not.toContain('::-webkit-scrollbar')
+    expect(toolsSource).not.toContain('linear-gradient')
+  })
+
+  it('stacks narrow account rows while preserving centered tag width', () => {
+    expect(signSource).toContain('@media (max-width: 860px)')
+    expect(signSource).toContain('grid-template-columns: 32px minmax(0, 1fr) auto;')
+    expect(signSource).toContain('min-width: 76px;')
+    expect(signSource).toContain('justify-content: center;')
   })
 })

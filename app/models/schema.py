@@ -189,6 +189,7 @@ class GameSignAccountGroupConfig(BaseModel):
     KuroToken: str | None = Field(default=None, description="库街区登录凭证")
     SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
     TaygedoToken: str | None = Field(default=None, description="塔吉多及云异环登录凭证")
+    LastSignDate: str | None = Field(default=None, description="账号组上次签到日期")
 
 
 class GameSignAccountCreateOut(OutBase):
@@ -206,10 +207,28 @@ class GameSignAccountGetIn(BaseModel):
     accountId: str = Field(..., description="账号组 UUID")
 
 
+class GameSignAccountInstanceOut(BaseModel):
+    """游戏社区账号组顺序项。"""
+
+    uid: str = Field(..., description="账号组 UUID")
+    type: str = Field(..., description="账号组配置类型")
+
+
+class GameSignAccountDataOut(BaseModel):
+    """动态 UUID 键对应的游戏社区账号组数据。"""
+
+    GameSignAccount: GameSignAccountGroupConfig = Field(
+        ..., description="账号组配置"
+    )
+
+
 class GameSignAccountsListOut(OutBase):
     """游戏社区账号组列表响应"""
 
-    data: Dict[str, Any] = Field(default_factory=dict, description="账号组列表")
+    data: Dict[
+        str,
+        list[GameSignAccountInstanceOut] | GameSignAccountDataOut,
+    ] = Field(default_factory=dict, description="账号组列表")
 
 
 class GameSignAccountUpdateIn(BaseModel):

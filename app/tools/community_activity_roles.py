@@ -34,14 +34,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Literal
+from dataclasses import dataclass, field
+from typing import Literal
 
 from .community_activity_transport import CommunityActivityTarget
 
 __all__ = [
     "ACTIVITY_COMMUNITY_DEFINITIONS",
     "CommunityActivityProviderDefinition",
+    "CommunityActivityCapability",
     "CommunityActivityRole",
     "CommunityActivityRoleDiscovery",
     "normalize_miyoushe_roles",
@@ -70,6 +71,14 @@ ACTIVITY_COMMUNITY_DEFINITIONS = (
         games=("原神", "星穹铁道", "绝区零"),
     ),
 )
+
+
+@dataclass(frozen=True)
+class CommunityActivityCapability:
+    """角色发现后可公开的脱敏活动能力。"""
+
+    status: Literal["ready", "limited"] = "ready"
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -113,6 +122,9 @@ class CommunityActivityRoleDiscovery:
 
     platform: ActivityCommunity
     roles: tuple[CommunityActivityRole, ...] = ()
+    activity_capability: CommunityActivityCapability = field(
+        default_factory=CommunityActivityCapability
+    )
 
     def roles_for_game(self, game: str) -> tuple[CommunityActivityRole, ...]:
         """按游戏筛选角色并保持上游顺序。"""
@@ -120,7 +132,7 @@ class CommunityActivityRoleDiscovery:
         return tuple(role for role in self.roles if role.game == game)
 
 
-def _text(item: Mapping[str, Any], *names: str) -> str:
+def _text(item: Mapping[str, object], *names: str) -> str:
     for name in names:
         value = item.get(name)
         if value is not None and str(value).strip():
@@ -129,8 +141,8 @@ def _text(item: Mapping[str, Any], *names: str) -> str:
 
 
 def _binding_entries(
-    payload: Mapping[str, Any], *, app_code: str
-) -> tuple[Mapping[str, Any], ...]:
+    payload: Mapping[str, object], *, app_code: str
+) -> tuple[Mapping[str, object], ...]:
     data = payload.get("data")
     if isinstance(data, list):
         groups: object = data
@@ -172,7 +184,7 @@ def _binding_entries(
     if not isinstance(groups, list):
         raise ValueError("森空岛角色列表响应缺少绑定列表")
 
-    entries: list[Mapping[str, Any]] = []
+    entries: list[Mapping[str, object]] = []
     for group in groups:
         if not isinstance(group, Mapping):
             continue
@@ -207,7 +219,7 @@ def _deduplicate_roles(
 
 
 def normalize_skland_roles(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
 ) -> CommunityActivityRoleDiscovery:
     """归一化森空岛明日方舟和终末地绑定响应。"""
 
@@ -259,7 +271,7 @@ _MIYOUSHE_GAME_NAMES = {
 
 
 def normalize_miyoushe_roles(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
 ) -> CommunityActivityRoleDiscovery:
     """归一化米游社角色接口的扁平和按游戏嵌套响应。"""
 
@@ -268,7 +280,7 @@ def normalize_miyoushe_roles(
     if not isinstance(data_list, list):
         return CommunityActivityRoleDiscovery("米游社")
 
-    role_entries: list[Mapping[str, Any]] = []
+    role_entries: list[Mapping[str, object]] = []
     for item in data_list:
         if not isinstance(item, Mapping):
             continue

@@ -31,6 +31,7 @@ const hasLoaded = ref(false)
 const errorMessage = ref('')
 const lastUpdated = ref('')
 let requestId = 0
+let activityRequest: Promise<void> | null = null
 
 const { queryActivity } = useCommunityActivityApi()
 
@@ -144,29 +145,44 @@ const snapshotKey = (snapshot: ActivitySnapshot) =>
     .map(value => value || '-')
     .join(':')
 
-const loadActivity = async () => {
+const loadActivity = () => {
+  if (activityRequest) return activityRequest
+
   const currentRequestId = ++requestId
   loading.value = true
   errorMessage.value = ''
-  try {
-    const data = await queryActivity()
-    if (currentRequestId !== requestId) return
+  const request = (async () => {
+    try {
+      const data = await queryActivity()
+      if (currentRequestId !== requestId) return
 
-    snapshots.value = data
-    const updatedValues = data
-      .map(snapshot => snapshot.updatedAt)
-      .filter(Boolean)
-      .sort()
-    lastUpdated.value = updatedValues.at(-1) || new Date().toISOString()
-  } catch (error) {
-    if (currentRequestId !== requestId) return
-    errorMessage.value = error instanceof Error ? error.message : t('gamesign.activity.queryFailed')
-  } finally {
-    if (currentRequestId === requestId) {
-      hasLoaded.value = true
-      loading.value = false
+      snapshots.value = data
+      const updatedValues = data
+        .map(snapshot => snapshot.updatedAt)
+        .filter(Boolean)
+        .sort()
+      lastUpdated.value = updatedValues.at(-1) || new Date().toISOString()
+    } catch (error) {
+      if (currentRequestId !== requestId) return
+      errorMessage.value =
+        error instanceof Error ? error.message : t('gamesign.activity.queryFailed')
+    } finally {
+      if (currentRequestId === requestId) {
+        hasLoaded.value = true
+        loading.value = false
+      }
     }
-  }
+  })()
+  activityRequest = request
+  void request.then(
+    () => {
+      if (activityRequest === request) activityRequest = null
+    },
+    () => {
+      if (activityRequest === request) activityRequest = null
+    }
+  )
+  return request
 }
 
 const isEmpty = computed(() => hasLoaded.value && snapshots.value.length === 0)
@@ -439,6 +455,13 @@ onMounted(() => {
   min-width: 0;
 }
 
+.activity-card-header :deep(.ant-tag) {
+  flex: 0 0 auto;
+  min-width: 64px;
+  margin-inline-end: 0;
+  text-align: center;
+}
+
 .activity-drag-handle {
   display: inline-flex;
   flex: 0 0 auto;
@@ -578,6 +601,7 @@ onMounted(() => {
 
 .activity-card-footer {
   flex: 0 0 auto;
+  flex-wrap: wrap;
   margin-top: auto;
   padding-top: 12px;
   color: var(--ant-color-text-tertiary);
@@ -598,7 +622,7 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .activity-view {
     padding: 16px;
   }

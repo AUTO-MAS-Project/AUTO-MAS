@@ -8,6 +8,7 @@ import httpx
 
 from app.core.community_activity import (
     build_configured_community_activity_failures,
+    collect_configured_community_activity,
 )
 from app.tools.community import (
     CommunityActivityTarget,
@@ -20,9 +21,15 @@ from app.tools.community_activity_provider import (
     _miyoushe_request_cookies,
 )
 from app.tools.community_activity_roles import normalize_skland_roles
+from app.tools.community_activity_roles import (
+    CommunityActivityCapability,
+    CommunityActivityRole,
+    CommunityActivityRoleDiscovery,
+)
 from app.tools.community_activity_transport import (
     CommunityActivityTransportError,
 )
+from app.tools.miyoushe import prepare_miyoushe_session
 
 
 class _FakeAccount:
@@ -96,6 +103,64 @@ class CommunityActivityFailureTest(unittest.TestCase):
         )
         self.assertTrue(
             all(snapshot.status == "failed" for snapshot in snapshots)
+        )
+
+    def test_limited_miyoushe_capability_skips_detail_requests(self) -> None:
+        account = _FakeAccount(
+            {
+                "Enabled": True,
+                "Name": "用户 1",
+                "MiyousheToken": "configured",
+            }
+        )
+
+        class LimitedProvider:
+            request_count = 0
+
+            async def discover_roles(self, **_kwargs):
+                return CommunityActivityRoleDiscovery(
+                    platform="米游社",
+                    roles=tuple(
+                        CommunityActivityRole(
+                            platform="米游社",
+                            game=game,
+                            role_uid=f"role-{index}",
+                            server="server",
+                        )
+                        for index, game in enumerate(
+                            ("原神", "星穹铁道", "绝区零"),
+                            start=1,
+                        )
+                    ),
+                    activity_capability=CommunityActivityCapability(
+                        status="limited",
+                        reason="米游社实时便笺需要完整的 stoken_v2 和 mid，当前凭据能力受限",
+                    ),
+                )
+
+            async def request(self, _request):
+                self.request_count += 1
+                raise AssertionError("受限能力不应发送详细便笺请求")
+
+        provider = LimitedProvider()
+        with patch(
+            "app.core.community_activity._selected_accounts",
+            return_value=(("account", account),),
+        ), patch(
+            "app.core.community_activity.CommunityActivityProvider",
+            return_value=provider,
+        ):
+            snapshots = asyncio.run(
+                collect_configured_community_activity(proxy="")
+            )
+
+        self.assertEqual(provider.request_count, 0)
+        self.assertEqual(
+            [(snapshot.game, snapshot.status) for snapshot in snapshots],
+            [("原神", "limited"), ("星穹铁道", "limited"), ("绝区零", "limited")],
+        )
+        self.assertTrue(
+            all("stoken_v2" in snapshot.reason for snapshot in snapshots)
         )
 
 
@@ -322,26 +387,39 @@ class CommunityActivityRequestTest(unittest.TestCase):
             server="prod_official_usa",
         )
         request = build_community_activity_requests(target)[0]
-        provider = CommunityActivityProvider("米游社", "placeholder")
+        provider = CommunityActivityProvider(
+            "米游社",
+            "stuid=10000001; cookie_token=cookie-token; stoken_v2=v2-token",
+        )
 
         async def run_prepare() -> None:
             await provider._prepare_miyoushe(
                 request,
-                object(),
-                ensure_auth_aliases=lambda cookies: None,
-                generate_device_id=lambda cookie: "device-id",
-                parse_cookie=lambda cookie: {
-                    "stuid": "10000001",
-                    "stoken_v2": "v2-token",
-                },
-                validate_cookie=lambda cookie: None,
+                AsyncMock(),
             )
 
         with self.assertRaises(CommunityActivityTransportError) as context:
             asyncio.run(run_prepare())
         self.assertEqual(context.exception.status, "limited")
-        self.assertIn("stoken_v2", context.exception.reason)
+        self.assertNotIn("stoken_v2", context.exception.reason)
         self.assertIn("mid", context.exception.reason)
+
+    def test_miyoushe_session_exposes_activity_capability(self) -> None:
+        limited = prepare_miyoushe_session(
+            "stuid=10000001; cookie_token=cookie-token"
+        )
+        ready = prepare_miyoushe_session(
+            "stuid=10000001; cookie_token=cookie-token; "
+            "stoken_v2=v2-token; mid=mid-value"
+        )
+
+        self.assertFalse(limited.capabilities.activity_ready)
+        self.assertEqual(
+            limited.capabilities.activity_missing_fields,
+            ("stoken_v2", "mid"),
+        )
+        self.assertTrue(ready.capabilities.activity_ready)
+        self.assertEqual(ready.capabilities.activity_missing_fields, ())
 
     def test_zzz_uses_separate_bbs_device_fp_contract(self) -> None:
         account_device = "DEVICE-ID"
@@ -539,6 +617,23 @@ class CommunityActivityParserTest(unittest.TestCase):
         self.assertEqual(snapshot.status, "limited")
         self.assertNotIn("JSONDecodeError", snapshot.reason)
         self.assertIn("非 JSON", snapshot.reason)
+
+    def test_generic_numeric_fields_do_not_impersonate_daily_progress(self) -> None:
+        snapshot = self.parse(
+            "原神",
+            {
+                "retcode": 0,
+                "data": {
+                    "count": 4,
+                    "limit": 4,
+                    "score": 100,
+                },
+            },
+            platform="米游社",
+        )
+
+        self.assertEqual(snapshot.status, "unavailable")
+        self.assertIn("未返回可识别", snapshot.reason)
 
 
 if __name__ == "__main__":

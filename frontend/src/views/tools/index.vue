@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import type { ToolsConfig } from '@/api'
+import type { ToolsConfig, ToolsConfig_ArknightsPC } from '@/api'
 import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
@@ -55,34 +55,49 @@ const arknightsPCStatusTag = useStatusTag(
 
 // 轮询定时器
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let statusRequest: Promise<void> | null = null
 let statusPollFailed = false
 
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
 
 // 仅更新状态（不影响编辑状态，不触发 loading）
-const updateStatus = async () => {
-  try {
-    // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
-    const response = await Service.getToolsApiToolsGetPost()
-    if (!isMounted) return
-    if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || t('tools.statusInvalid'))
+const updateStatus = () => {
+  if (statusRequest) return statusRequest
+
+  const request = (async () => {
+    try {
+      // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
+      const response = await Service.getToolsApiToolsGetPost()
+      if (!isMounted) return
+      if (response.code !== 200 || !response.data) {
+        throw new Error(response.message || t('tools.statusInvalid'))
+      }
+      const data = response.data
+      statusPollFailed = false
+      if (data.ArknightsPC?.Status) {
+        // 只更新 toolsConfig 的状态，不更新 editingConfig
+        // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
+        toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
+      }
+    } catch (error) {
+      if (!statusPollFailed) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`更新工具状态失败，将继续重试: ${errorMsg}`)
+        statusPollFailed = true
+      }
     }
-    const data = response.data
-    statusPollFailed = false
-    if (data.ArknightsPC?.Status) {
-      // 只更新 toolsConfig 的状态，不更新 editingConfig
-      // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
-      toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
+  })()
+  statusRequest = request
+  void request.then(
+    () => {
+      if (statusRequest === request) statusRequest = null
+    },
+    () => {
+      if (statusRequest === request) statusRequest = null
     }
-  } catch (error) {
-    if (!statusPollFailed) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.warn(`更新工具状态失败，将继续重试: ${errorMsg}`)
-      statusPollFailed = true
-    }
-  }
+  )
+  return request
 }
 
 // 启动状态轮询
@@ -91,7 +106,7 @@ const startStatusPolling = () => {
     clearInterval(pollTimer)
   }
   pollTimer = setInterval(() => {
-    updateStatus()
+    void updateStatus()
   }, 1000) // 每秒更新一次
 }
 
@@ -133,13 +148,20 @@ const loadTools = async () => {
 }
 
 // 保存单个字段的变更（实时保存）
-const handleFieldChange = async (key: string, value: any) => {
-  if (!editingConfig.ArknightsPC) return
+type ArknightsPCFieldKey = keyof ToolsConfig_ArknightsPC
+type ArknightsPCKeyField = Exclude<ArknightsPCFieldKey, 'Enabled' | 'Status'>
 
-  const previousValue = (editingConfig.ArknightsPC as any)[key]
+const handleFieldChange = async <K extends ArknightsPCFieldKey>(
+  key: K,
+  value: ToolsConfig_ArknightsPC[K]
+) => {
+  const editingArknightsPC = editingConfig.ArknightsPC
+  if (!editingArknightsPC) return
+
+  const previousValue = editingArknightsPC[key]
   try {
     // 更新编辑状态
-    ;(editingConfig.ArknightsPC as any)[key] = value
+    editingArknightsPC[key] = value
 
     // 只提交当前字段，避免旧状态覆盖运行中的工具配置。
     await updateTools({
@@ -148,14 +170,14 @@ const handleFieldChange = async (key: string, value: any) => {
 
     // 保存成功后只同步修改的字段到 toolsConfig，不触碰 Status
     if (toolsConfig.ArknightsPC && key !== 'Status') {
-      ;(toolsConfig.ArknightsPC as any)[key] = value
+      toolsConfig.ArknightsPC[key] = value
     }
 
     logger.info(`${key} 已保存`)
   } catch (error) {
     // 并发保存时只回滚仍保持本次值的字段，避免覆盖用户后续输入。
-    if ((editingConfig.ArknightsPC as any)[key] === value) {
-      ;(editingConfig.ArknightsPC as any)[key] = previousValue
+    if (editingArknightsPC[key] === value) {
+      editingArknightsPC[key] = previousValue
     }
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ${key} 失败: ${errorMsg}`)
@@ -163,10 +185,10 @@ const handleFieldChange = async (key: string, value: any) => {
 }
 
 // 键位录制状态
-const recordingKeyField = ref<string | null>(null)
+const recordingKeyField = ref<ArknightsPCKeyField | null>(null)
 
 // 开始录制键位
-const startRecordKey = (fieldName: string) => {
+const startRecordKey = (fieldName: ArknightsPCKeyField) => {
   recordingKeyField.value = fieldName
   logger.info(`开始录制键位: ${fieldName}`)
 }
@@ -203,7 +225,7 @@ const handleKeyDown = async (event: KeyboardEvent) => {
   stopRecordKey()
 
   // 立即保存
-  await handleFieldChange(fieldName, keyName)
+  if (fieldName) await handleFieldChange(fieldName, keyName)
 }
 
 // 使用 VueUse 的 useEventListener 管理键盘事件
@@ -274,7 +296,7 @@ onUnmounted(() => {
   /* Use full viewport min-height so the page can grow and scroll */
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
 }
 
 .settings-header {
@@ -287,34 +309,18 @@ onUnmounted(() => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .settings-content {
   background: var(--ant-color-bg-container);
-  /* Rounded on all corners for a consistent card look */
-  border-radius: 12px;
+  border-radius: 8px;
   width: 100%;
   flex: 1;
-  /* allow inner scrolling and cooperate with flexbox
-     min-height:0 prevents flex children from overflowing the container */
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
 }
 
 .settings-tabs {
   margin: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   padding: 12px;
-  /* ensure children with overflow:auto can scroll inside this flex item */
-  min-height: 0;
 }
 
 .settings-tabs :deep(.ant-tabs-nav) {
@@ -323,8 +329,7 @@ onUnmounted(() => {
 }
 
 .settings-tabs :deep(.ant-tabs-content-holder) {
-  flex: 1;
-  overflow: auto;
+  overflow: visible;
 }
 
 .settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
@@ -375,7 +380,7 @@ onUnmounted(() => {
   content: '';
   width: 4px;
   height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(--ant-color-primary);
   border-radius: 2px;
 }
 
@@ -420,38 +425,19 @@ onUnmounted(() => {
   }
 }
 
-/* Tab 内容区域滚动条样式 */
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
-}
+@media (max-width: 860px) {
+  .settings-tabs {
+    padding: 8px;
+  }
 
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-container);
-  border-radius: 4px;
-}
+  :deep(.tab-content) {
+    padding: 16px;
+  }
 
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
-/* 深色模式下的滚动条样式 */
-:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-elevated);
-}
-
-:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  :deep(.section-header) {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
 }
 </style>

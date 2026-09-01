@@ -1653,7 +1653,7 @@ class AppConfig(GlobalConfig):
             replace: 是否按账号 UID 替换已有结果。
         """
 
-        from app.tools.game_sign import merge_community_sign_results
+        from app.tools.community_sign_provider import merge_community_sign_results
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         existing = (
@@ -1783,7 +1783,7 @@ class AppConfig(GlobalConfig):
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        from app.tools.game_sign import COMMUNITY_TOKEN_FIELDS
+        from app.tools.community_sign_provider import COMMUNITY_TOKEN_FIELDS
 
         credential_fields = set(COMMUNITY_TOKEN_FIELDS)
         credential_changed = False

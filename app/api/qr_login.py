@@ -35,9 +35,20 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 from app.core import Config
 from app.models.schema import OutBase
+from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
+logger = get_logger("米游社扫码登录 API")
+
+
+def _log_qr_error(stage: str, error: Exception) -> None:
+    """记录脱敏诊断，二维码接口不向前端透传异常细节。"""
+
+    logger.warning(
+        format_exception_reason(error, stage=stage, include_message=False)
+    )
 
 
 # ---- 请求/响应模型 ----
@@ -76,7 +87,12 @@ async def qr_create() -> QrCreateOut:
 
         result = await create_qr_login()
     except Exception as e:
-        return QrCreateOut(code=500, status="error", message=str(e))
+        _log_qr_error("创建米游社二维码失败", e)
+        return QrCreateOut(
+            code=500,
+            status="error",
+            message="二维码创建失败，请稍后重试",
+        )
     if not isinstance(result, dict):
         return QrCreateOut(code=500, status="error", message="二维码服务返回格式无效")
     error = result.get("error")
@@ -84,7 +100,7 @@ async def qr_create() -> QrCreateOut:
         return QrCreateOut(
             code=500,
             status="error",
-            message=error if isinstance(error, str) else "创建二维码失败",
+            message="二维码创建失败，请稍后重试",
         )
     if not all(
         isinstance(result.get(key), str) and result[key]
@@ -104,7 +120,12 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
 
         result = await check_qr_status(body.ticket, body.device)
     except Exception as e:
-        return QrCheckOut(code=500, status="error", message=str(e))
+        _log_qr_error("查询米游社二维码状态失败", e)
+        return QrCheckOut(
+            code=500,
+            status="error",
+            message="二维码状态查询失败，请稍后重试",
+        )
     if not isinstance(result, dict):
         return QrCheckOut(code=500, status="error", message="二维码状态响应格式无效")
     error = result.get("error")
@@ -115,7 +136,11 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
         return QrCheckOut(
             code=500,
             status=error_status,
-            message=error if isinstance(error, str) else "查询二维码状态失败",
+            message=(
+                "二维码已失效，请重新获取"
+                if error_status == "expired"
+                else "二维码状态查询失败，请稍后重试"
+            ),
         )
     status = result.get("status")
     if not isinstance(status, str):
@@ -144,7 +169,17 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
         data = {"GameSignAccount": {"MiyousheToken": cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
     except ValueError as e:
-        return OutBase(code=400, status="error", message=f"米游社 Token 无效：{e}")
+        _log_qr_error("保存米游社 Token 校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="米游社 Token 格式无效，请检查后重试",
+        )
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        _log_qr_error("保存米游社 Token 失败", e)
+        return OutBase(
+            code=500,
+            status="error",
+            message="米游社 Token 保存失败，请稍后重试",
+        )
     return OutBase(message="米游社 Token 已保存")

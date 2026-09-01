@@ -25,7 +25,7 @@
 import asyncio
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Literal
 
 
 CommunityTriggerSource = Literal[
@@ -64,7 +64,7 @@ def has_pending_community_account(
 
 
 def all_community_accounts_signed(
-    accounts: Mapping[Any, object],
+    accounts: Mapping[object, object],
     today: str,
     *,
     has_credentials: AccountCredentialChecker | None = None,

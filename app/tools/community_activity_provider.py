@@ -39,15 +39,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import hmac
 import json
 import random
 import string
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
@@ -58,10 +57,14 @@ from .community_activity_transport import (
     CommunityActivityTransportError,
 )
 from .community_activity_roles import (
+    CommunityActivityCapability,
     CommunityActivityRoleDiscovery,
     normalize_miyoushe_roles,
     normalize_skland_roles,
 )
+
+if TYPE_CHECKING:
+    from .miyoushe import MiyousheSessionCapabilities
 
 __all__ = [
     "CommunityActivityProvider",
@@ -99,7 +102,7 @@ _MIYOUSHE_ZZZ_USER_AGENT = (
 _MIYOUSHE_RISK_CODES = frozenset({1034, 5003, 10035, 10041})
 
 
-def _response_code(payload: Mapping[str, Any]) -> int | None:
+def _response_code(payload: Mapping[str, object]) -> int | None:
     for key in ("retcode", "code", "status"):
         value = payload.get(key)
         if isinstance(value, bool) or value is None:
@@ -116,7 +119,7 @@ def _response_json(
     *,
     platform: str,
     game: str,
-) -> Mapping[str, Any]:
+) -> Mapping[str, object]:
     """读取安全的 JSON 响应，不把 HTML 或请求正文带到错误文案。"""
 
     if response.status_code == 404:
@@ -150,7 +153,7 @@ def _response_json(
 
 
 def _raise_business_error(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     *,
     platform: str,
     game: str,
@@ -168,39 +171,6 @@ def _raise_business_error(
         f"{platform}{game}接口返回业务失败（业务码 {code}）",
         status=status,
     )
-
-
-def _skland_signature(
-    sign_token: str,
-    *,
-    path: str,
-    query: str,
-    device_id: str,
-    platform: str,
-    version: str,
-) -> dict[str, str]:
-    """复用森空岛既有签名公式，但不调用签到模块的流程函数。"""
-
-    timestamp = str(int(time.time() * 1000 - 2000))[:-3]
-    sign_header = {
-        "platform": platform,
-        "timestamp": timestamp,
-        "dId": device_id,
-        "vName": version,
-    }
-    sign_text = path + query + timestamp + json.dumps(
-        sign_header, separators=(",", ":")
-    )
-    digest = hashlib.md5(
-        hmac.new(
-            sign_token.encode("utf-8"),
-            sign_text.encode("utf-8"),
-            hashlib.sha256,
-        )
-        .hexdigest()
-        .encode("utf-8")
-    ).hexdigest()
-    return {**sign_header, "sign": digest}
 
 
 def _miyoushe_ds(
@@ -447,6 +417,9 @@ class CommunityActivityProvider:
     _miyoushe_cookies: dict[str, str] | None = field(
         default=None, init=False, repr=False
     )
+    _miyoushe_capabilities: MiyousheSessionCapabilities | None = field(
+        default=None, init=False, repr=False
+    )
     _state_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
@@ -501,12 +474,6 @@ class CommunityActivityProvider:
     ) -> CommunityActivityRoleDiscovery:
         from .skland import (
             SKLAND_BINDING_URL,
-            _get_cred_by_code,
-            _get_grant_code,
-            get_cached_device_id,
-            parse_skland_credential,
-            serialize_skland_credential,
-            validate_skland_credential,
         )
 
         target = CommunityActivityTarget(
@@ -530,12 +497,6 @@ class CommunityActivityProvider:
                 credential, device_id = await self._prepare_skland(
                     None,
                     client,
-                    get_cached_device_id=get_cached_device_id,
-                    parse_credential=parse_skland_credential,
-                    validate_credential=validate_skland_credential,
-                    get_grant_code=_get_grant_code,
-                    get_cred_by_code=_get_cred_by_code,
-                    serialize_credential=serialize_skland_credential,
                 )
                 response = await client.get(
                     SKLAND_BINDING_URL,
@@ -572,10 +533,6 @@ class CommunityActivityProvider:
         from .miyoushe import (
             BASE_HEADERS,
             ROLES_URL,
-            _ensure_auth_aliases,
-            _generate_device_id,
-            _parse_cookie,
-            validate_miyoushe_cookie,
         )
 
         target = CommunityActivityTarget(
@@ -599,11 +556,7 @@ class CommunityActivityProvider:
                 cookies, device_id, _ = await self._prepare_miyoushe(
                     request,
                     client,
-                    ensure_auth_aliases=_ensure_auth_aliases,
-                    generate_device_id=_generate_device_id,
-                    parse_cookie=_parse_cookie,
-                    validate_cookie=validate_miyoushe_cookie,
-                    require_stoken_v2=False,
+                    require_activity=False,
                 )
                 await self._wait_miyoushe_request()
                 headers = BASE_HEADERS.copy()
@@ -636,20 +589,21 @@ class CommunityActivityProvider:
             game="角色列表",
         )
         _raise_business_error(payload, platform="米游社", game="角色列表")
-        return normalize_miyoushe_roles(payload)
+        discovery = normalize_miyoushe_roles(payload)
+        capabilities = self._miyoushe_capabilities
+        if capabilities is None or capabilities.activity_ready:
+            return discovery
+        return replace(
+            discovery,
+            activity_capability=CommunityActivityCapability(
+                status="limited",
+                reason=capabilities.activity_reason,
+            ),
+        )
 
     async def _request_skland(
         self, request: CommunityActivityRequest
-    ) -> Mapping[str, Any]:
-        from .skland import (
-            _get_cred_by_code,
-            _get_grant_code,
-            get_cached_device_id,
-            parse_skland_credential,
-            serialize_skland_credential,
-            validate_skland_credential,
-        )
-
+    ) -> Mapping[str, object]:
         try:
             async with httpx.AsyncClient(
                 proxy=self.proxy, trust_env=False
@@ -657,12 +611,6 @@ class CommunityActivityProvider:
                 credential, device_id = await self._prepare_skland(
                     request.target,
                     client,
-                    get_cached_device_id=get_cached_device_id,
-                    parse_credential=parse_skland_credential,
-                    validate_credential=validate_skland_credential,
-                    get_grant_code=_get_grant_code,
-                    get_cred_by_code=_get_cred_by_code,
-                    serialize_credential=serialize_skland_credential,
                 )
                 headers = self._skland_request_headers(
                     request,
@@ -700,19 +648,20 @@ class CommunityActivityProvider:
         self,
         target: CommunityActivityTarget | None,
         client: httpx.AsyncClient,
-        *,
-        get_cached_device_id: Callable[..., Awaitable[str]],
-        parse_credential: Callable[[str | dict[str, Any]], dict[str, str]],
-        validate_credential: Callable[
-            [str | dict[str, Any]], dict[str, str]
-        ],
-        get_grant_code: Callable[..., Awaitable[str]],
-        get_cred_by_code: Callable[..., Awaitable[dict[str, Any]]],
-        serialize_credential: Callable[[dict[str, Any]], str],
     ) -> tuple[dict[str, str], str]:
+        from .skland import (
+            get_cached_device_id,
+            prepare_skland_session_credential,
+            refresh_skland_session_credential,
+            serialize_skland_credential,
+            validate_skland_credential,
+        )
+
         async with self._state_lock:
             if self._credential is None:
-                self._credential = validate_credential(self.raw_credential)
+                self._credential = validate_skland_credential(
+                    self.raw_credential
+                )
             if not self._device_id:
                 cached_device_id = target.device_id if target else ""
                 self._device_id = cached_device_id or await get_cached_device_id(
@@ -721,28 +670,18 @@ class CommunityActivityProvider:
             if not self._credential_ready:
                 credential = self._credential
                 if not credential["cred"] or not credential["token"]:
-                    if not credential["oauthToken"]:
-                        raise ValueError("森空岛凭据缺少可用认证字段")
-                    grant_code = await get_grant_code(
-                        client, credential["oauthToken"], self._device_id
-                    )
-                    cred_data = await get_cred_by_code(
-                        client, grant_code, self._device_id
-                    )
-                    self._credential = parse_credential(
-                        {
-                            "oauthToken": credential["oauthToken"],
-                            "token": cred_data.get("token"),
-                            "cred": cred_data.get("cred"),
-                            "userId": cred_data.get("userId"),
-                        }
+                    self._credential = await prepare_skland_session_credential(
+                        client,
+                        credential,
+                        self._device_id,
                     )
                 else:
                     try:
-                        self._credential = await self._refresh_skland(
+                        self._credential = await refresh_skland_session_credential(
                             client,
                             self._credential,
                             self._device_id,
+                            timeout=_ACTIVITY_REQUEST_TIMEOUT,
                         )
                     except (
                         CommunityActivityTransportError,
@@ -755,42 +694,10 @@ class CommunityActivityProvider:
                         pass
                 self._credential_ready = True
                 if self.on_credential_update is not None:
-                    serialized = serialize_credential(self._credential)
+                    serialized = serialize_skland_credential(self._credential)
                     if serialized != self.raw_credential:
                         await self._publish_credential_update(serialized)
             return dict(self._credential), self._device_id
-
-    async def _refresh_skland(
-        self,
-        client: httpx.AsyncClient,
-        credential: dict[str, str],
-        device_id: str,
-    ) -> dict[str, str]:
-        from .skland import SKLAND_REFRESH_URL, parse_skland_credential
-
-        path = "/web/v1/auth/refresh"
-        headers = _skland_signature(
-            credential["token"],
-            path=path,
-            query="",
-            device_id=device_id,
-            platform="1",
-            version="1.21.0",
-        )
-        headers["cred"] = credential["cred"]
-        response = await client.get(
-            SKLAND_REFRESH_URL,
-            headers=headers,
-            timeout=_ACTIVITY_REQUEST_TIMEOUT,
-        )
-        payload = _response_json(response, platform="森空岛", game="凭据刷新")
-        _raise_business_error(payload, platform="森空岛", game="凭据刷新")
-        data = payload.get("data")
-        if not isinstance(data, Mapping) or not data.get("token"):
-            raise ValueError("森空岛凭据刷新响应缺少 token")
-        return parse_skland_credential(
-            {**credential, "token": str(data["token"])}
-        )
 
     async def _publish_credential_update(self, serialized: str) -> None:
         if self._credential_update_sent or self.on_credential_update is None:
@@ -809,33 +716,27 @@ class CommunityActivityProvider:
         credential: Mapping[str, str],
         device_id: str,
     ) -> dict[str, str]:
+        from .skland import build_skland_signed_headers
+
         profile = request.signature_profile
         platform = "3" if profile == "skland_endfield_web" else "1"
         version = "1.0.0" if profile == "skland_endfield_web" else "1.21.0"
         parsed = urlparse(request.source)
-        signed = _skland_signature(
+        headers = build_skland_signed_headers(
             credential["token"],
             path=parsed.path,
-            query=request.query_string,
+            body_or_query=request.query_string,
             device_id=device_id,
+            headers=request.header_map,
             platform=platform,
             version=version,
         )
-        headers = request.header_map
-        headers.update(signed)
         headers["cred"] = credential["cred"]
         return headers
 
     async def _request_miyoushe(
         self, request: CommunityActivityRequest
-    ) -> Mapping[str, Any]:
-        from .miyoushe import (
-            _ensure_auth_aliases,
-            _generate_device_id,
-            _parse_cookie,
-            validate_miyoushe_cookie,
-        )
-
+    ) -> Mapping[str, object]:
         try:
             async with httpx.AsyncClient(
                 proxy=self.proxy, trust_env=False
@@ -843,10 +744,6 @@ class CommunityActivityProvider:
                 cookies, device_id, device_fp = await self._prepare_miyoushe(
                     request,
                     client,
-                    ensure_auth_aliases=_ensure_auth_aliases,
-                    generate_device_id=_generate_device_id,
-                    parse_cookie=_parse_cookie,
-                    validate_cookie=validate_miyoushe_cookie,
                 )
                 request_cookies = _miyoushe_request_cookies(
                     cookies,
@@ -891,36 +788,30 @@ class CommunityActivityProvider:
         request: CommunityActivityRequest,
         client: httpx.AsyncClient,
         *,
-        ensure_auth_aliases: Callable[[dict[str, str]], None],
-        generate_device_id: Callable[[str], str],
-        parse_cookie: Callable[[str], dict[str, str]],
-        validate_cookie: Callable[[str], None],
-        require_stoken_v2: bool = True,
+        require_activity: bool = True,
     ) -> tuple[dict[str, str], str, str]:
+        from .miyoushe import (
+            prepare_miyoushe_session,
+            validate_miyoushe_cookie,
+        )
+
         async with self._state_lock:
             if self._miyoushe_cookies is None:
-                validate_cookie(self.raw_credential)
-                self._miyoushe_cookies = parse_cookie(self.raw_credential)
-                ensure_auth_aliases(self._miyoushe_cookies)
+                validate_miyoushe_cookie(self.raw_credential)
+                session = prepare_miyoushe_session(self.raw_credential)
+                self._miyoushe_cookies = dict(session.cookies)
+                self._miyoushe_capabilities = session.capabilities
+                self._device_id = request.target.device_id or session.device_id
             cookies = dict(self._miyoushe_cookies)
-            requires_v2_widget = (
-                require_stoken_v2
-                and request.signature_profile in {
-                    "miyoushe_ios",
-                    "miyoushe_data",
-                }
-            )
-            if requires_v2_widget and (
-                not _miyoushe_v2_stoken(cookies)
-                or not str(cookies.get("mid") or "").strip()
+            capabilities = self._miyoushe_capabilities
+            if (
+                require_activity
+                and capabilities is not None
+                and not capabilities.activity_ready
             ):
                 raise CommunityActivityTransportError(
-                    "米游社小组件需要配套的 stoken_v2 和 mid，当前凭据不完整",
+                    capabilities.activity_reason,
                     status="limited",
-                )
-            if not self._device_id:
-                self._device_id = request.target.device_id or generate_device_id(
-                    self.raw_credential
                 )
             game = request.target.game
             if game == "绝区零" and not self._miyoushe_zzz_seed_id:

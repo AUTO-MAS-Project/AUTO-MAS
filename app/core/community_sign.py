@@ -27,13 +27,13 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 
-from app.tools.game_sign import (
+from app.tools.community_sign_provider import (
     check_community_system_time,
     get_community_sign_providers,
     read_community_token,
     run_community_provider,
 )
-from app.tools.community_contract import CommunitySignInProgressError
+from app.tools.community_contract import CommunitySignInProgressError, CommunitySignResult
 from app.tools.community_credentials import is_community_credential_configured
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
@@ -94,7 +94,7 @@ def _exit_community_sign_lock(acquired: bool) -> None:
 
 
 def all_enabled_community_platforms_signed(
-    results: list[dict],
+    results: list[dict[str, object]],
     *,
     account_uid: str,
     enabled_platforms: list[str],
@@ -121,7 +121,7 @@ def all_enabled_community_platforms_signed(
     return True
 
 
-async def run_community_sign_in(force: bool = False) -> list[dict]:
+async def run_community_sign_in(force: bool = False) -> list[dict[str, object]]:
     """协调执行游戏社区签到，避免重复签到和重复通知。"""
 
     # 时间检查只提供告警，不应阻塞真实签到或占用签到锁。
@@ -137,14 +137,16 @@ async def run_community_sign_in(force: bool = False) -> list[dict]:
         await asyncio.gather(time_check_task, return_exceptions=True)
 
 
-async def _run_configured_community_sign_in(force: bool = False) -> list[dict]:
+async def _run_configured_community_sign_in(
+    force: bool = False,
+) -> list[dict[str, object]]:
     """执行所有已配置平台的签到。
 
     平台由凭据字段注册表驱动。同一账号的独立社区并发执行，适配器内部
     仍自行控制请求间隔和风控策略；凭据刷新结果优先即时回写，收尾阶段再统一兜底。
     """
 
-    results: list[dict] = []
+    results: list[dict[str, object]] = []
     today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
     providers = get_community_sign_providers()
@@ -182,25 +184,54 @@ async def _run_configured_community_sign_in(force: bool = False) -> list[dict]:
             continue
 
         credential_update_lock = asyncio.Lock()
+        credential_update_failures: dict[str, str] = {}
+        credential_update_platforms: dict[str, tuple[str, ...]] = {}
 
-        async def persist_credential_update(field: str, value: str) -> None:
-            """在社区运行期间写穿轮换凭据，失败时交给收尾兜底。"""
+        async def save_credential_update(
+            field: str,
+            value: str,
+            *,
+            retry: bool,
+        ) -> bool:
+            """保存轮换凭据；失败时保留旧值并返回可展示的稳定状态。"""
 
             updated_token = str(value or "").strip()
-            if not updated_token:
-                return
-            async with credential_update_lock:
-                if updated_token == tokens.get(field, ""):
-                    return
+            if not updated_token or updated_token == tokens.get(field, ""):
+                return True
+
+            attempts = 2 if retry else 1
+            for attempt in range(attempts):
                 try:
                     # 直接 set 不重置 LastSignDate；刷新凭据不应改变签到去重语义。
                     await account.set("GameSignAccount", field, updated_token)
                 except Exception as error:
+                    if attempt + 1 < attempts:
+                        logger.warning(
+                            f"[{account_name}] 保存{field}失败，将重试: {type(error).__name__}"
+                        )
+                        continue
+                    reason = "刷新凭据已生成，但保存失败，请稍后重试或重新登录"
+                    credential_update_failures[field] = reason
                     logger.warning(
                         f"[{account_name}] 保存{field}失败: {type(error).__name__}"
                     )
-                    raise
-                tokens[field] = updated_token
+                    return False
+                else:
+                    tokens[field] = updated_token
+                    credential_update_failures.pop(field, None)
+                    return True
+            return False
+
+        async def persist_credential_update(field: str, value: str) -> None:
+            """在社区运行期间写穿轮换凭据，失败时交给收尾兜底。"""
+
+            if not str(value or "").strip():
+                return
+            async with credential_update_lock:
+                saved = await save_credential_update(field, value, retry=False)
+                if not saved:
+                    # 让内置 provider 保留其既有收尾兜底，同时由本层记录失败状态。
+                    raise RuntimeError(f"{field}凭据保存失败")
 
         # 不同社区互不依赖，按注册顺序并发执行，完成后仍按固定顺序合并结果。
         provider_runs = await asyncio.gather(
@@ -222,15 +253,30 @@ async def _run_configured_community_sign_in(force: bool = False) -> list[dict]:
                     enabled_platforms.append(platform)
             results.extend(run.results)
             for field, updated_token in run.credential_updates.items():
+                credential_update_platforms[field] = run.platforms or (provider.log_name,)
                 if not updated_token or updated_token == tokens.get(field, ""):
                     continue
-                try:
-                    await account.set("GameSignAccount", field, updated_token)
-                    tokens[field] = updated_token
-                except Exception as error:
-                    logger.warning(
-                        f"[{account_name}] 保存{field}失败: {type(error).__name__}"
-                    )
+                async with credential_update_lock:
+                    await save_credential_update(field, updated_token, retry=True)
+
+        for field, reason in credential_update_failures.items():
+            platforms = credential_update_platforms.get(field, (field,))
+            provider = next(
+                (item for item in configured if item.token_field == field),
+                None,
+            )
+            provider_name = provider.log_name if provider is not None else field
+            results.extend(
+                CommunitySignResult(
+                    account=f"{account_name}/{platform}",
+                    account_uid=account_uid,
+                    game=f"{provider_name}凭据",
+                    platform=platform,
+                    status="失败",
+                    reason=reason,
+                ).to_legacy()
+                for platform in platforms
+            )
 
         # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
         # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。

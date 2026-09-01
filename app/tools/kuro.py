@@ -33,7 +33,6 @@ import uuid
 import asyncio
 import httpx
 from datetime import datetime
-from typing import Any
 
 
 from app.core import Config
@@ -63,7 +62,7 @@ def _log_kuro_exception(stage: str, error: Exception) -> str:
     return reason
 
 
-def _safe_json(response: httpx.Response) -> dict:
+def _safe_json(response: httpx.Response) -> dict[str, object]:
     """解析库街区响应；非 JSON（通常是风控/维护页）时给出可读错误。"""
 
     try:
@@ -88,7 +87,7 @@ def _safe_json(response: httpx.Response) -> dict:
     return data
 
 
-def _is_kuro_code(value: Any, expected: int) -> bool:
+def _is_kuro_code(value: object, expected: int) -> bool:
     """兼容库街区接口以数字或字符串返回业务码。"""
 
     return str(value).strip() == str(expected)
@@ -140,7 +139,7 @@ def _kuro_request_headers(
 
 def _raise_kuro_response_error(
     response: httpx.Response,
-    data: dict,
+    data: dict[str, object],
     stage: str,
     *,
     allow_already_signed: bool = False,
@@ -191,20 +190,20 @@ def _kuro_result_status(error: Exception) -> str:
     return "风控" if isinstance(error, _KuroRiskError) else "失败"
 
 
-def _kuro_response_message(data: dict, fallback: str) -> str:
+def _kuro_response_message(data: dict[str, object], fallback: str) -> str:
     """读取接口给出的短错误信息，不回显完整响应正文。"""
 
     message = data.get("msg", data.get("message", fallback))
     return str(message or "").strip() or fallback
 
 
-def _extract_kuro_role_records(value: Any) -> list[dict]:
+def _extract_kuro_role_records(value: object) -> list[dict[str, object]]:
     """兼容角色列表的数组及已确认的常见包装字段。"""
 
     if value is None:
         return []
     if isinstance(value, list):
-        records: list[dict] = []
+        records: list[dict[str, object]] = []
         for item in value:
             if isinstance(item, (dict, list)):
                 records.extend(_extract_kuro_role_records(item))
@@ -225,9 +224,9 @@ def _extract_kuro_role_records(value: Any) -> list[dict]:
 
 
 def _normalise_kuro_role(
-    raw_role: dict,
+    raw_role: dict[str, object],
     requested_game_id: str,
-) -> dict | None:
+) -> dict[str, object] | None:
     """按本次请求的游戏 ID 归一化角色，拒绝跨游戏猜测。"""
 
     reported_game_id = str(
@@ -274,7 +273,7 @@ def _kuro_game_failure_results(
     reason: str,
     game_ids: tuple[str, ...] | None = None,
     status: str = "失败",
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """为有明确游戏范围的失败生成逐游戏结果。"""
 
     selected_game_ids = game_ids or tuple(GAME_CONFIG)
@@ -298,7 +297,7 @@ def _kuro_role_failure_result(
     reason: str,
     *,
     status: str = "失败",
-) -> dict:
+) -> dict[str, object]:
     """构造单个库街区游戏的失败结果。"""
 
     return {
@@ -371,7 +370,9 @@ def validate_kuro_credential(token: str) -> str:
 # ==================== 签到主流程 ====================
 
 
-async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
+async def kuro_sign_in(
+    token: str, proxy: str | None = None
+) -> list[dict[str, object]]:
     """库街区社区签到
 
     Args:
@@ -529,7 +530,7 @@ async def _get_user_info(
     dev_code: str,
     distinct_id: str,
     client: httpx.AsyncClient,
-) -> dict:
+) -> dict[str, object]:
     """获取用户信息"""
     headers = _kuro_request_headers(BBS_HEADERS, token, dev_code, distinct_id)
 
@@ -568,7 +569,7 @@ async def _get_role_list(
     distinct_id: str,
     user_id: str,
     client: httpx.AsyncClient,
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """获取游戏角色列表"""
     headers = _kuro_request_headers(BBS_HEADERS, token, dev_code, distinct_id)
 
@@ -609,11 +610,11 @@ async def _do_sign(
     role_id: str,
     user_id: str,
     account: str,
-    game_cfg: dict,
+    game_cfg: dict[str, object],
     client: httpx.AsyncClient,
     *,
     distinct_id: str = "",
-) -> dict:
+) -> dict[str, object]:
     """执行库街区签到"""
 
     headers = _kuro_request_headers(GAME_HEADERS, token, dev_code, distinct_id)

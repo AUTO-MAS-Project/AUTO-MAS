@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
 
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
@@ -53,7 +52,7 @@ __all__ = [
 logger = get_logger("游戏社区活动")
 
 
-def _account_value(account: object, name: str, default: Any = "") -> Any:
+def _account_value(account: object, name: str, default: object = "") -> object:
     try:
         return account.get("GameSignAccount", name)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
@@ -79,6 +78,7 @@ def _empty_game_snapshot(
     game: str,
     status: ActivityState = "empty",
     reason: str = "未发现已绑定角色",
+    role: CommunityActivityRole | None = None,
 ) -> CommunityActivitySnapshot:
     return CommunityActivitySnapshot(
         account=account_name,
@@ -88,6 +88,9 @@ def _empty_game_snapshot(
         status=status,
         reason=reason,
         updated_at=datetime.now(tz=UTC8).isoformat(),
+        role_name=role.role_name if role is not None else "",
+        role_uid=role.role_uid if role is not None else "",
+        server=role.server if role is not None else "",
     )
 
 
@@ -133,7 +136,7 @@ def build_configured_community_activity_failures(
 ) -> tuple[CommunityActivitySnapshot, ...]:
     """为已配置社区构造分游戏失败结果，不执行任何上游请求。"""
 
-    from app.tools.game_sign import (
+    from app.tools.community_sign_provider import (
         get_community_token_field,
         read_community_token,
     )
@@ -174,7 +177,7 @@ async def collect_configured_community_activity(
     """读取已配置账号组并查询已登记社区的日常活动。"""
 
     from app.core import Config
-    from app.tools.game_sign import (
+    from app.tools.community_sign_provider import (
         get_community_token_field,
         read_community_token,
     )
@@ -231,6 +234,34 @@ async def collect_configured_community_activity(
                     )
                     for game in definition.games
                 )
+                continue
+
+            capability = discovered.activity_capability
+            if capability.status == "limited":
+                for game in definition.games:
+                    game_roles = discovered.roles_for_game(game)
+                    if game_roles:
+                        snapshots.extend(
+                            _empty_game_snapshot(
+                                account_uid=account_uid,
+                                account_name=account_name,
+                                definition=definition,
+                                game=game,
+                                status="limited",
+                                reason=capability.reason,
+                                role=role,
+                            )
+                            for role in game_roles
+                        )
+                    else:
+                        snapshots.append(
+                            _empty_game_snapshot(
+                                account_uid=account_uid,
+                                account_name=account_name,
+                                definition=definition,
+                                game=game,
+                            )
+                        )
                 continue
 
             targets = _targets_for_roles(

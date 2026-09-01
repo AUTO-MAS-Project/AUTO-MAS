@@ -29,7 +29,6 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from app.utils.constants import UTC8
 
@@ -46,9 +45,9 @@ class ActivityResponseUnavailableError(ValueError):
     """上游响应可达但没有当前版本可识别的数据。"""
 
 
-ActivityRole = Mapping[str, Any] | None
+ActivityRole = Mapping[str, object] | None
 ActivityParser = Callable[
-    [Mapping[str, Any], str, str, ActivityRole], CommunityActivitySnapshot
+    [Mapping[str, object], str, str, ActivityRole], CommunityActivitySnapshot
 ]
 
 _RISK_CODES = frozenset({1034, 5003, 10035, 10041})
@@ -87,7 +86,7 @@ def _as_code(value: object) -> int | None:
     return None
 
 
-def _first_int(item: Mapping[str, Any], names: tuple[str, ...]) -> int | None:
+def _first_int(item: Mapping[str, object], names: tuple[str, ...]) -> int | None:
     for name in names:
         value = _as_int(item.get(name))
         if value is not None:
@@ -117,22 +116,8 @@ def _progress_pair(value: object) -> tuple[int, int] | None:
             "finished",
             "finish",
             "done",
-            "progress",
-            "dailyActivation",
-            "daily_activation",
-            "curStamina",
-            "currentStamina",
-            "finished_task_num",
-            "current_train_score",
-            "current_training_score",
-            "current_rogue_score",
-            "accepted_expedition_num",
-            "curLevel",
             "currentValue",
             "current_value",
-            "count",
-            "num",
-            "score",
         ),
     )
     target = _first_int(
@@ -142,18 +127,7 @@ def _progress_pair(value: object) -> tuple[int, int] | None:
             "target",
             "max",
             "maxProgress",
-            "maxStamina",
-            "max_stamina",
             "totalCount",
-            "total_task_num",
-            "max_train_score",
-            "max_training_score",
-            "max_rogue_score",
-            "total_expedition_num",
-            "maxDailyActivation",
-            "max_daily_activation",
-            "maxLevel",
-            "limit",
             "maxValue",
             "max_value",
         ),
@@ -161,7 +135,7 @@ def _progress_pair(value: object) -> tuple[int, int] | None:
     if current is not None and target is not None:
         return current, target
 
-    for name in ("progress", "data", "detail", "stat", "value", "daily"):
+    for name in ("progress", "value"):
         nested = value.get(name)
         if nested is not value:
             pair = _progress_pair(nested)
@@ -170,8 +144,30 @@ def _progress_pair(value: object) -> tuple[int, int] | None:
     return None
 
 
-def _activity_item(name: str, value: object) -> dict[str, Any] | None:
-    pair = _progress_pair(value)
+def _named_progress(
+    value: object,
+    *,
+    current_names: tuple[str, ...],
+    target_names: tuple[str, ...],
+) -> tuple[int, int] | None:
+    """只从调用方确认的同一字段对象读取进度，不递归扫描通用数字。"""
+
+    if not isinstance(value, Mapping):
+        return None
+    current = _first_int(value, current_names)
+    target = _first_int(value, target_names)
+    if current is None or target is None:
+        return None
+    return current, target
+
+
+def _activity_item(
+    name: str,
+    value: object,
+    *,
+    pair: tuple[int, int] | None = None,
+) -> dict[str, object] | None:
+    pair = pair or _progress_pair(value)
     if pair is None:
         return None
     completed, target = pair
@@ -183,7 +179,7 @@ def _activity_item(name: str, value: object) -> dict[str, Any] | None:
     }
 
 
-def _task_items(value: object, *, default_name: str) -> list[dict[str, Any]]:
+def _task_items(value: object, *, default_name: str) -> list[dict[str, object]]:
     item = _activity_item(default_name, value)
     if item is not None:
         return [item]
@@ -194,7 +190,7 @@ def _task_items(value: object, *, default_name: str) -> list[dict[str, Any]]:
         entries = value.get(key)
         if not isinstance(entries, list):
             continue
-        items: list[dict[str, Any]] = []
+        items: list[dict[str, object]] = []
         for index, entry in enumerate(entries):
             if not isinstance(entry, Mapping):
                 continue
@@ -212,8 +208,13 @@ def _task_items(value: object, *, default_name: str) -> list[dict[str, Any]]:
     return []
 
 
-def _resource_item(name: str, value: object) -> dict[str, Any] | None:
-    pair = _progress_pair(value)
+def _resource_item(
+    name: str,
+    value: object,
+    *,
+    pair: tuple[int, int] | None = None,
+) -> dict[str, object] | None:
+    pair = pair or _progress_pair(value)
     if pair is None:
         return None
     current, target = pair
@@ -226,12 +227,12 @@ def _resource_item(name: str, value: object) -> dict[str, Any] | None:
 
 
 def _mark_period(
-    items: list[dict[str, Any]], period: str
-) -> list[dict[str, Any]]:
+    items: list[dict[str, object]], period: str
+) -> list[dict[str, object]]:
     return [dict(item, period=period) for item in items]
 
 
-def _unwrap_data(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+def _unwrap_data(payload: Mapping[str, object]) -> Mapping[str, object]:
     data = payload.get("data")
     return data if isinstance(data, Mapping) else payload
 
@@ -252,8 +253,8 @@ def _build_snapshot(
     account_name: str,
     platform: str,
     game: str,
-    items: list[dict[str, Any]],
-    resources: list[dict[str, Any]],
+    items: list[dict[str, object]],
+    resources: list[dict[str, object]],
     role: ActivityRole,
     source: str,
     progress: tuple[int, int] | None = None,
@@ -329,7 +330,7 @@ def _failed_snapshot(
 
 def _coerce_payload(
     payload: object, *, platform: str, game: str
-) -> Mapping[str, Any]:
+) -> Mapping[str, object]:
     if isinstance(payload, Mapping):
         root = payload
     else:
@@ -370,7 +371,7 @@ def _coerce_payload(
 
 
 def _parse_skland_arknights(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     account_uid: str,
     account_name: str,
     role: ActivityRole,
@@ -427,13 +428,13 @@ def _parse_skland_arknights(
 
 
 def _parse_skland_endfield(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     account_uid: str,
     account_name: str,
     role: ActivityRole,
 ) -> CommunityActivitySnapshot:
     data_root = _unwrap_data(payload)
-    sources: list[Mapping[str, Any]] = [data_root]
+    sources: list[Mapping[str, object]] = [data_root]
     pending = [data_root]
     seen = {id(data_root)}
     while pending:
@@ -500,7 +501,15 @@ def _parse_skland_endfield(
     )
     resources = []
     for name, value in resource_values:
-        item = _resource_item(name, value)
+        item = _resource_item(
+            name,
+            value,
+            pair=_named_progress(
+                value,
+                current_names=("curStamina", "currentStamina", "current", "cur"),
+                target_names=("maxStamina", "max_stamina", "max", "total"),
+            ),
+        )
         if item is not None:
             resources.append(item)
     return _build_snapshot(
@@ -516,7 +525,7 @@ def _parse_skland_endfield(
 
 
 def _parse_miyoushe_genshin(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     account_uid: str,
     account_name: str,
     role: ActivityRole,
@@ -525,7 +534,15 @@ def _parse_miyoushe_genshin(
     daily_value = root.get("daily") or root.get("daily_task")
     daily = _activity_item("每日委托", daily_value)
     if daily is None:
-        daily = _activity_item("每日委托", root)
+        daily = _activity_item(
+            "每日委托",
+            root,
+            pair=_named_progress(
+                root,
+                current_names=("finished_task_num",),
+                target_names=("total_task_num",),
+            ),
+        )
     items = [daily] if daily is not None else []
     resources = []
     resource_values = (
@@ -550,7 +567,7 @@ def _parse_miyoushe_genshin(
 
 
 def _parse_miyoushe_hsr(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     account_uid: str,
     account_name: str,
     role: ActivityRole,
@@ -607,7 +624,7 @@ def _parse_miyoushe_hsr(
     )
 
 
-def _state_task(name: str, value: object, *, complete: str) -> dict[str, Any]:
+def _state_task(name: str, value: object, *, complete: str) -> dict[str, object]:
     state = str(value or "")
     completed = int(complete in state)
     return {
@@ -619,7 +636,7 @@ def _state_task(name: str, value: object, *, complete: str) -> dict[str, Any]:
 
 
 def _parse_miyoushe_zzz(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     account_uid: str,
     account_name: str,
     role: ActivityRole,

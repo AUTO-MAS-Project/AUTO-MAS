@@ -48,7 +48,7 @@
                 "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)",
-                "游戏社区 重构凭据、角色发现、五款游戏日常便笺、独立签到调度与结构化通知链路，补齐米游社 Passport App 完整扫码凭据、星穹铁道 Widget 数据签名与请求头、绝区零设备指纹及设备登记请求、塔吉多 1.2.5 签名刷新与短效 Token 续期及逐游戏错误状态，同时保留 GameSign 历史兼容协议"
+                "游戏社区 统一五款游戏的凭据、平台会话、角色发现、签到、日常便笺与通知链路，补齐受限凭据状态并修复凭据保存、重复请求、字段误判、异常透传和窄窗口展示问题"
             ],
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",

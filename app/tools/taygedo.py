@@ -43,7 +43,6 @@ import string
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 from Crypto.Cipher import AES
@@ -109,22 +108,22 @@ CLOUD_APP_VERSION = "1.1.0"
 class _TaygedoRuntimeCredential:
     """跟踪一次调用内产生的凭据对象，确保运行期临时数据可清理。"""
 
-    values: list[dict[str, Any]] = field(default_factory=list)
+    values: list[dict[str, object]] = field(default_factory=list)
     refresh_attempted: bool = False
     refresh_succeeded: bool = False
     credential_update_delivered: bool = False
 
-    def track(self, credential: dict[str, Any]) -> dict[str, Any]:
+    def track(self, credential: dict[str, object]) -> dict[str, object]:
         if not any(item is credential for item in self.values):
             self.values.append(credential)
         return credential
 
     def persistable(
         self,
-        credential: dict[str, Any],
+        credential: dict[str, object],
         *,
         drop_access_token: bool = True,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """复制可持久化快照，按调用方需要保留或移除 accessToken。"""
 
         self.track(credential)
@@ -168,7 +167,7 @@ def _log_taygedo_exception(stage: str, error: Exception) -> str:
     return reason
 
 
-def parse_taygedo_credential(raw: str) -> dict[str, Any]:
+def parse_taygedo_credential(raw: str) -> dict[str, object]:
     """解析纯 refreshToken 或参考项目兼容的 JSON 凭据。"""
 
     text = str(raw or "").strip()
@@ -231,7 +230,7 @@ def parse_taygedo_credential(raw: str) -> dict[str, Any]:
     return credential
 
 
-def validate_taygedo_credential(raw: str) -> dict[str, Any]:
+def validate_taygedo_credential(raw: str) -> dict[str, object]:
     """校验塔吉多及云异环凭据的本地字段完整性。"""
 
     credential = parse_taygedo_credential(raw)
@@ -252,10 +251,10 @@ def validate_taygedo_credential(raw: str) -> dict[str, Any]:
     return credential
 
 
-def serialize_taygedo_credential(credential: Mapping[str, Any]) -> str:
+def serialize_taygedo_credential(credential: Mapping[str, object]) -> str:
     """以稳定、可再次导入的 JSON 保存凭据，不写入日志。"""
 
-    persisted: dict[str, Any] = {}
+    persisted: dict[str, object] = {}
     for key in (
         "refreshToken",
         "accessToken",
@@ -284,7 +283,7 @@ async def login_taygedo_with_password(
     existing_raw: str = "",
     device_id: str | None = None,
     proxy: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """一次性使用账号密码换取塔吉多访问凭据，不保存密码。"""
 
     phone_value = str(phone or "").strip()
@@ -433,7 +432,7 @@ async def _request_user_center_login(
     device_id: str,
     *,
     compat: bool,
-) -> tuple[httpx.Response, dict[str, Any]]:
+) -> tuple[httpx.Response, dict[str, object]]:
     if compat:
         headers = {
             "authorization": "",
@@ -515,7 +514,7 @@ def _make_login_ds() -> str:
     return f"{timestamp},{nonce},{signature}"
 
 
-def _read_login_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
+def _read_login_json(response: httpx.Response, endpoint: str) -> dict[str, object]:
     try:
         data = response.json()
     except (ValueError, json.JSONDecodeError) as exc:
@@ -527,7 +526,7 @@ def _read_login_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
     return data
 
 
-def _is_code(value: Any, expected: int) -> bool:
+def _is_code(value: object, expected: int) -> bool:
     """兼容上游以数字或字符串返回状态码。"""
 
     return str(value).strip() == str(expected)
@@ -536,7 +535,7 @@ def _is_code(value: Any, expected: int) -> bool:
 def _login_api_error(
     endpoint: str,
     response: httpx.Response,
-    data: Mapping[str, Any],
+    data: Mapping[str, object],
 ) -> ValueError:
     # 不带响应正文，防止上游错误内容回显用户身份或认证数据。
     message = str(data.get("msg") or data.get("message") or "请求失败").strip()
@@ -550,7 +549,7 @@ async def refresh_taygedo_credential(
     raw: str,
     *,
     proxy: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """用已有 refreshToken 获取最新 accessToken，并返回可保存凭据。"""
 
     credential = parse_taygedo_credential(raw)
@@ -584,7 +583,7 @@ async def refresh_taygedo_credential(
             },
             timeout=30.0,
         )
-        data: dict[str, Any] | None = None
+        data: dict[str, object] | None = None
         try:
             data = _read_json(response, "塔吉多刷新 Token")
         except ValueError:
@@ -645,7 +644,7 @@ async def sign_taygedo(
     *,
     proxy: str | None = None,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, Any]]:
+) -> tuple[list[dict[str, str]], dict[str, object]]:
     """执行一次塔吉多社区调用，并按刷新结果处理运行期访问 Token。"""
 
     runtime = _TaygedoRuntimeCredential()
@@ -681,18 +680,18 @@ async def sign_taygedo(
 
 async def _run_taygedo(
     raw: str,
-    credential: dict[str, Any],
+    credential: dict[str, object],
     *,
     runtime: _TaygedoRuntimeCredential,
     proxy: str | None = None,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, Any]]:
+) -> tuple[list[dict[str, str]], dict[str, object]]:
     """执行塔吉多社区签到、应用内游戏日常任务和云异环时长查询。"""
 
     refresh_error_reason: str | None = None
 
     async def publish_refreshed_credential(
-        refreshed_credential: dict[str, Any],
+        refreshed_credential: dict[str, object],
     ) -> None:
         """在刷新返回后立即写穿认证快照，避免取消窗口丢失轮换 Token。"""
 
@@ -987,7 +986,7 @@ async def _run_taygedo(
     return results, credential
 
 
-def _has_usable_taygedo_session(credential: Mapping[str, Any]) -> bool:
+def _has_usable_taygedo_session(credential: Mapping[str, object]) -> bool:
     """判断本次调用是否已有可直接使用的访问会话。"""
 
     return bool(
@@ -1271,7 +1270,7 @@ async def _get_taygedo_game_roles_with_status(
     return _deduplicate_game_roles(roles), not failed_game_ids
 
 
-def _is_game_record_cards_payload(value: Any) -> bool:
+def _is_game_record_cards_payload(value: object) -> bool:
     """判断角色卡响应是否是可解析的列表或包装对象。"""
 
     if isinstance(value, list):
@@ -1296,12 +1295,12 @@ def _is_game_record_cards_payload(value: Any) -> bool:
 
 
 def _extract_role_records(
-    value: Any, fallback_game_id: str = ""
-) -> list[dict[str, Any]]:
+    value: object, fallback_game_id: str = ""
+) -> list[dict[str, object]]:
     """兼容角色卡、roles、cards、list 和 bindRoleInfo 的返回结构。"""
 
     if isinstance(value, list):
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for item in value:
             records.extend(_extract_role_records(item, fallback_game_id))
         return records
@@ -1314,7 +1313,7 @@ def _extract_role_records(
         or value.get("gameID")
         or fallback_game_id
     ).strip()
-    records: list[dict[str, Any]] = []
+    records: list[dict[str, object]] = []
     bind_role = value.get("bindRoleInfo")
     if isinstance(bind_role, str):
         try:
@@ -1352,7 +1351,7 @@ def _extract_role_records(
 
 
 def _normalise_game_role(
-    raw_role: Mapping[str, Any],
+    raw_role: Mapping[str, object],
     fallback_game_id: str = "",
     *,
     expected_game_id: str | None = None,
@@ -1394,7 +1393,7 @@ def _normalise_game_role(
     }
 
 
-def _taygedo_game_name(game_id: str, reported_name: Any = "") -> str:
+def _taygedo_game_name(game_id: str, reported_name: object = "") -> str:
     """按已确认游戏 ID 返回稳定名称，未知 ID 才采用服务端名称。"""
 
     known_name = TAYGEDO_GAME_NAMES.get(game_id)
@@ -1425,7 +1424,7 @@ async def _get_game_sign_state(
     *,
     client: httpx.AsyncClient | None = None,
     proxy: str | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     if client is None:
         async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
             return await _get_game_sign_state(
@@ -1447,7 +1446,7 @@ async def _get_game_sign_state(
     return data["data"]
 
 
-def _is_game_signed(state: Mapping[str, Any]) -> bool:
+def _is_game_signed(state: Mapping[str, object]) -> bool:
     """读取不同版本接口返回的“今日已签到”字段。"""
 
     for key in (
@@ -1625,10 +1624,10 @@ def _verify_cloud_duration(
 
 
 async def _attach_role_name(
-    credential: dict[str, Any],
+    credential: dict[str, object],
     *,
     proxy: str | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     access_token = str(credential.get("accessToken") or "").strip()
     uid = str(credential.get("uid") or "").strip()
     if not access_token or not uid:
@@ -1723,7 +1722,7 @@ async def _community_sign(
         )
 
 
-def _read_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
+def _read_json(response: httpx.Response, endpoint: str) -> dict[str, object]:
     try:
         data = response.json()
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1736,7 +1735,7 @@ def _read_json(response: httpx.Response, endpoint: str) -> dict[str, Any]:
 
 
 def _api_error(
-    endpoint: str, response: httpx.Response, data: Mapping[str, Any]
+    endpoint: str, response: httpx.Response, data: Mapping[str, object]
 ) -> ValueError:
     message = str(data.get("msg") or data.get("message") or "请求失败").strip()
     code = data.get("code", "unknown")
@@ -1760,14 +1759,14 @@ def _format_duration(duration: Mapping[str, int | None]) -> str:
     return ",".join(parts) or "时长查询成功"
 
 
-def _to_int(value: Any) -> int:
+def _to_int(value: object) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
 
 
-def _to_optional_int(value: Any) -> int | None:
+def _to_optional_int(value: object) -> int | None:
     if value in (None, ""):
         return None
     try:

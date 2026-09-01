@@ -19,8 +19,15 @@
 from datetime import datetime
 
 from app.core import Config
+from app.core.notify import (
+    DispatchResult,
+    NotifyPayload,
+    global_target,
+    should_send_result,
+)
 from app.models.config import BetterGIUserConfig
 from app.services import Notify
+from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
 from app.utils import get_logger
 
 logger = get_logger("BetterGI 通知工具")
@@ -74,7 +81,8 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: BetterGIUserConfig | None = None,
-) -> None:
+    task_info: object | None = None,
+) -> DispatchResult:
     """通过全局或用户配置的渠道推送 BetterGI 任务报告。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
@@ -84,7 +92,7 @@ async def push_notification(
             user_config.get("Notify", "Enabled")
             and user_config.get("Notify", "IfSendStatistic")
         ):
-            return
+            return DispatchResult()
 
         # 简略版（所有渠道的兜底）：仅 4 字段汇总，旧版格式
         message_text = (
@@ -139,20 +147,13 @@ async def push_notification(
             await Notify.WebhookPush(
                 title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
             )
-        return
+        return DispatchResult()
 
     if mode != "代理结果":
-        return
+        return DispatchResult()
 
-    result_time_setting = Config.get("Notify", "SendTaskResultTime")
-    if not message.get("game_sign_summary", False) and (
-        result_time_setting != "任何时刻"
-        and (
-            result_time_setting != "仅失败时"
-            or message["uncompleted_count"] == 0
-        )
-    ):
-        return
+    if not should_send_result(message):
+        return DispatchResult()
 
     message_text = (
         f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
@@ -163,26 +164,26 @@ async def push_notification(
     message_html = Config.notify_env.get_template("general_result.html").render(
         message
     )
-    serverchan_message = message_text.replace("\n", "\n\n")
-
-    if Config.get("Notify", "IfSendMail"):
-        await Notify.send_mail(
-            "网页", title, message_html, Config.get("Notify", "ToAddress")
-        )
-
-    if Config.get("Notify", "IfServerChan"):
-        await Notify.ServerChanPush(
-            title,
-            f"{serverchan_message}\n\nAUTO-MAS 敬上",
-            Config.get("Notify", "ServerChanKey"),
-        )
-
-    for webhook in Config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(
-            title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-        )
-
-    if Config.get("Notify", "IfKoishiSupport"):
-        await Notify.send_koishi(
-            f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
-        )
+    counts = (
+        f"已完成用户数: {message['completed_count']}, "
+        f"未完成用户数: {message['uncompleted_count']}"
+    )
+    summary_text = (
+        get_task_game_sign_summary(task_info)
+        if task_info is not None and message.get("game_sign_summary")
+        else ""
+    )
+    return await dispatch_task_report(
+        NotifyPayload(
+            title=title,
+            text=message_text,
+            html=message_html,
+            system_title=message.get("system_title") or title.replace("报告", "已完成！"),
+            system_message=counts,
+            system_ticker=counts,
+            system_timeout=10,
+        ),
+        [global_target(include_system=True)],
+        task_info,
+        summary_text=summary_text,
+    )

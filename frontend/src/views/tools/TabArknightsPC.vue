@@ -5,18 +5,24 @@ import type { ToolsConfig_ArknightsPC } from '@/api'
 
 const { t } = useI18n()
 
+type ArknightsPCFieldKey = keyof ToolsConfig_ArknightsPC
+type ArknightsPCKeyField = Exclude<ArknightsPCFieldKey, 'Enabled' | 'Status'>
+
 const { config, disabled, onFieldChange, recordingKeyField, startRecordKey, stopRecordKey } =
   defineProps<{
     config: ToolsConfig_ArknightsPC
     disabled?: boolean
-    onFieldChange: (key: string, value: any) => void
-    recordingKeyField: string | null
-    startRecordKey: (fieldName: string) => void
+    onFieldChange: <K extends ArknightsPCFieldKey>(
+      key: K,
+      value: ToolsConfig_ArknightsPC[K]
+    ) => void
+    recordingKeyField: ArknightsPCKeyField | null
+    startRecordKey: (fieldName: ArknightsPCKeyField) => void
     stopRecordKey: () => void
   }>()
 
 // 处理字段变更
-const handleChange = (key: string, value: any) => {
+const handleChange = <K extends ArknightsPCFieldKey>(key: K, value: ToolsConfig_ArknightsPC[K]) => {
   if (onFieldChange) {
     onFieldChange(key, value)
   }

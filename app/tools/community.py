@@ -32,7 +32,7 @@ from .community_plugins import (
     get_confirmed_community_capabilities,
     supports_community_capability,
 )
-from .game_sign import (
+from .community_sign_provider import (
     format_community_sign_results,
     has_community_credentials,
 )

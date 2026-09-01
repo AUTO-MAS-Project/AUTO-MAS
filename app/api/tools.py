@@ -59,10 +59,19 @@ from app.models.schema import (
 )
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
 _PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task] = set()
+
+
+def _log_community_api_error(stage: str, error: Exception) -> None:
+    """记录脱敏诊断，社区 API 不把异常细节直接返回给前端。"""
+
+    logger.warning(
+        format_exception_reason(error, stage=stage, include_message=False)
+    )
 
 
 def _track_community_notification(task: asyncio.Task) -> None:
@@ -74,7 +83,7 @@ def _track_community_notification(task: asyncio.Task) -> None:
     try:
         failed_channels = task.result()
     except Exception as exc:
-        logger.warning(f"后台游戏社区通知发送失败: {exc}")
+        _log_community_api_error("后台游戏社区通知发送失败", exc)
         return
     if failed_channels:
         logger.warning(
@@ -96,7 +105,7 @@ async def _dispatch_community_notification(results: list[dict]) -> list[str] | N
         logger.info("签到结果已落盘，通知渠道仍在后台发送")
         return None
     except Exception as exc:
-        logger.warning(f"签到完成，但通知服务异常: {exc}")
+        _log_community_api_error("游戏社区通知服务异常", exc)
         return ["通知服务"]
 
 
@@ -125,10 +134,11 @@ async def get_tools() -> ToolsGetOut:
     try:
         data = await Config.get_tools()
     except Exception as e:
+        _log_community_api_error("读取工具配置失败", e)
         return ToolsGetOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="读取工具配置失败，请稍后重试",
             data=ToolsConfig(**{}),
         )
     return ToolsGetOut(data=ToolsConfig(**data))
@@ -149,8 +159,11 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
         await Config.update_tools(data)
 
     except Exception as e:
+        _log_community_api_error("更新工具配置失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="更新工具配置失败，请稍后重试",
         )
     return OutBase()
 
@@ -217,10 +230,18 @@ async def manual_game_sign() -> OutBase:
             return OutBase(status="warning", message="；".join(warning_messages))
 
     except CommunitySignInProgressError as e:
-        return OutBase(code=409, status="error", message=str(e))
-    except Exception as e:
+        _log_community_api_error("游戏社区签到并发冲突", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=409,
+            status="error",
+            message="游戏社区签到正在执行，请稍后重试",
+        )
+    except Exception as e:
+        _log_community_api_error("游戏社区签到失败", e)
+        return OutBase(
+            code=500,
+            status="error",
+            message="游戏社区签到失败，请稍后重试",
         )
     return OutBase(message="签到完成")
 
@@ -250,10 +271,21 @@ async def query_community_activity(
                 proxy=Config.proxy,
             )
     except CommunityActivityInProgressError as exc:
-        return CommunityActivityOut(code=409, status="error", message=str(exc))
+        _log_community_api_error("游戏社区日常查询并发冲突", exc)
+        return CommunityActivityOut(
+            code=409,
+            status="error",
+            message="游戏社区日常查询正在执行，请稍后重试",
+        )
     except ValueError as exc:
-        return CommunityActivityOut(code=400, status="error", message=str(exc))
-    except Exception:
+        _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
+        return CommunityActivityOut(
+            code=400,
+            status="error",
+            message="游戏社区日常查询参数或凭据无效",
+        )
+    except Exception as exc:
+        _log_community_api_error("游戏社区日常查询失败", exc)
         snapshots = build_configured_community_activity_failures(
             query.accountIds,
         )
@@ -261,7 +293,7 @@ async def query_community_activity(
             return CommunityActivityOut(
                 code=500,
                 status="error",
-                message="游戏社区日常查询失败",
+                message="游戏社区日常查询失败，请稍后重试",
             )
 
     return CommunityActivityOut(
@@ -313,10 +345,11 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
     try:
         data = await Config.get_game_sign_accounts()
     except Exception as e:
+        _log_community_api_error("获取游戏社区账号组失败", e)
         return GameSignAccountsListOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="获取游戏社区账号组失败，请稍后重试",
             data={},
         )
     return GameSignAccountsListOut(data=data)
@@ -340,10 +373,11 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
         data = GameSignAccountGroupConfig(**flat)
         # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
+        _log_community_api_error("添加游戏社区账号组失败", e)
         return GameSignAccountCreateOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="添加游戏社区账号组失败，请稍后重试",
             accountId="",
             data=GameSignAccountGroupConfig(**{}),
         )
@@ -368,10 +402,11 @@ async def get_game_sign_account(
         flat = raw.get("GameSignAccount", raw)
         account_data = GameSignAccountGroupConfig(**flat)
     except Exception as e:
+        _log_community_api_error("获取游戏社区账号组详情失败", e)
         return GameSignAccountCreateOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="获取游戏社区账号组详情失败，请稍后重试",
             accountId=account.accountId,
             data=GameSignAccountGroupConfig(**{}),
         )
@@ -400,16 +435,20 @@ async def update_game_sign_account(
             try:
                 validate_skland_credential(skland_token)
             except ValueError as exc:
+                _log_community_api_error("森空岛凭据校验失败", exc)
                 return OutBase(
                     code=400,
                     status="error",
-                    message=f"森空岛凭据无效：{exc}",
+                    message="森空岛凭据格式无效，请检查后重试",
                 )
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:
+        _log_community_api_error("更新游戏社区账号组失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="更新游戏社区账号组失败，请稍后重试",
         )
     return OutBase()
 
@@ -429,8 +468,11 @@ async def delete_game_sign_account(
     try:
         await Config.delete_game_sign_account(account.accountId)
     except Exception as e:
+        _log_community_api_error("删除游戏社区账号组失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="删除游戏社区账号组失败，请稍后重试",
         )
     return OutBase()
 
@@ -450,8 +492,11 @@ async def reorder_game_sign_accounts(
     try:
         await Config.reorder_game_sign_accounts(account.order)
     except Exception as e:
+        _log_community_api_error("调整游戏社区账号组顺序失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="调整游戏社区账号组顺序失败，请稍后重试",
         )
     return OutBase()
 
@@ -501,9 +546,14 @@ async def login_taygedo(
             },
         )
     except ValueError as e:
-        return OutBase(code=400, status="error", message=f"塔吉多登录失败：{e}")
-    except Exception:
-        # 不把请求对象、异常堆栈或上游响应内容写入日志，避免泄露密码。
+        _log_community_api_error("塔吉多登录校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="塔吉多登录失败，请检查账号、密码或凭据格式",
+        )
+    except Exception as e:
+        _log_community_api_error("塔吉多登录失败", e)
         return OutBase(
             code=500,
             status="error",
@@ -548,9 +598,14 @@ async def login_skland(
             {"GameSignAccount": {"SklandToken": serialized}},
         )
     except ValueError as e:
-        return OutBase(code=400, status="error", message=f"森空岛登录失败：{e}")
-    except Exception:
-        # 不把请求对象、异常堆栈或上游响应内容写入日志，避免泄露密码。
+        _log_community_api_error("森空岛登录校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="森空岛登录失败，请检查手机号、密码或凭据格式",
+        )
+    except Exception as e:
+        _log_community_api_error("森空岛登录失败", e)
         return OutBase(
             code=500,
             status="error",

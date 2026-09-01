@@ -38,7 +38,10 @@ const {
 } = defineProps<{
   config: ToolsConfig_GameSign
   disabled?: boolean
-  onFieldChange?: (key: string, value: any) => void | Promise<void>
+  onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
+    key: K,
+    value: ToolsConfig_GameSign[K]
+  ) => void | Promise<void>
   onRefreshConfig?: () => Promise<void>
 }>()
 
@@ -61,6 +64,21 @@ interface AccountInstance {
   TaygedoToken: string
 }
 
+interface AccountListInstance {
+  uid?: unknown
+  type?: unknown
+}
+
+interface AccountListData {
+  instances?: AccountListInstance[]
+  [key: string]: unknown
+}
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+
+const asString = (value: unknown) => (typeof value === 'string' ? value : '')
+
 const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
   useGameSignAccountApi()
 const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
@@ -73,21 +91,22 @@ const loadAccounts = async () => {
   try {
     const response = await listAccounts()
     if (response.code !== 200) return
-    const data = response.data as any
+    const data = response.data as unknown as AccountListData | undefined
     const instances: AccountInstance[] = []
-    const instanceList = data?.instances || []
+    const instanceList = Array.isArray(data?.instances) ? data.instances : []
     for (const inst of instanceList) {
-      const uid = inst.uid as string
-      const accountData = data?.[uid]?.GameSignAccount || {}
+      const uid = asString(inst.uid)
+      if (!uid) continue
+      const accountData = asRecord(asRecord(data?.[uid]).GameSignAccount)
       instances.push({
         uid,
-        type: inst.type || 'GameSignAccountGroup',
-        Name: accountData.Name || t('gamesign.defaultUserName'),
-        Enabled: accountData.Enabled ?? true,
-        MiyousheToken: accountData.MiyousheToken || '',
-        KuroToken: accountData.KuroToken || '',
-        SklandToken: accountData.SklandToken || '',
-        TaygedoToken: accountData.TaygedoToken || '',
+        type: asString(inst.type) || 'GameSignAccountGroup',
+        Name: asString(accountData.Name) || t('gamesign.defaultUserName'),
+        Enabled: typeof accountData.Enabled === 'boolean' ? accountData.Enabled : true,
+        MiyousheToken: asString(accountData.MiyousheToken),
+        KuroToken: asString(accountData.KuroToken),
+        SklandToken: asString(accountData.SklandToken),
+        TaygedoToken: asString(accountData.TaygedoToken),
       })
     }
     accounts.value = instances
@@ -159,7 +178,12 @@ const handleAccountEnabledChange = async (account: AccountInstance, enabled: boo
 
 // ==================== 拖拽排序 ====================
 
-const onDragEnd = async (evt: any) => {
+interface DragEndEvent {
+  oldIndex?: number | null
+  newIndex?: number | null
+}
+
+const onDragEnd = async (evt: DragEndEvent) => {
   if (evt.oldIndex === evt.newIndex) return
   isDragging.value = true
   try {
@@ -370,7 +394,10 @@ const getAccountGroupsForPlatformReactive = (
 
 // ==================== 通用变更处理 ====================
 
-const handleChange = async (key: string, value: any) => {
+const handleChange = async <K extends keyof ToolsConfig_GameSign>(
+  key: K,
+  value: ToolsConfig_GameSign[K]
+) => {
   if (!onFieldChange) return
 
   try {
@@ -683,7 +710,6 @@ onMounted(() => {
           <a-button
             size="small"
             class="credential-helper-btn"
-            danger
             style="margin-top: 6px"
             :loading="qrLoading"
             @click="startQrLogin"
@@ -716,7 +742,6 @@ onMounted(() => {
           <a-button
             size="small"
             class="credential-helper-btn"
-            danger
             style="margin-top: 6px"
             :loading="credentialAction === 'skland-login'"
             :disabled="credentialAction !== null"
@@ -738,7 +763,6 @@ onMounted(() => {
           <a-button
             size="small"
             class="credential-helper-btn"
-            danger
             style="margin-top: 6px"
             :loading="credentialAction === 'taygedo-login'"
             :disabled="credentialAction !== null"
@@ -790,7 +814,6 @@ onMounted(() => {
           <a-button
             type="primary"
             class="credential-helper-btn"
-            danger
             :loading="credentialAction === 'taygedo-login'"
             :disabled="credentialAction !== null"
             @click="handleTaygedoLogin"
@@ -841,7 +864,6 @@ onMounted(() => {
           <a-button
             type="primary"
             class="credential-helper-btn"
-            danger
             :loading="credentialAction === 'skland-login'"
             :disabled="credentialAction !== null"
             @click="handleSklandLogin"
@@ -890,13 +912,9 @@ onMounted(() => {
 }
 
 .section-header-actions .section-update-button.primary-style {
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-primary),
-    var(--ant-color-primary-hover)
-  ) !important;
-  border: 1px solid var(--ant-color-primary) !important;
-  color: #fff !important;
+  background: var(--ant-color-primary);
+  border: 1px solid var(--ant-color-primary);
+  color: #fff;
   box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
   transition:
     transform 0.16s ease,
@@ -914,7 +932,7 @@ onMounted(() => {
 }
 
 .section-doc-link {
-  color: var(--ant-color-primary) !important;
+  color: var(--ant-color-primary);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
@@ -928,7 +946,7 @@ onMounted(() => {
 }
 
 .section-doc-link:hover {
-  color: var(--ant-color-primary-hover) !important;
+  color: var(--ant-color-primary-hover);
   background-color: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-hover);
   text-decoration: none;
@@ -1138,7 +1156,9 @@ onMounted(() => {
 .platform-tag {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 3px;
+  min-width: 76px;
   padding: 2px 8px;
   border-radius: 3px;
   font-size: 12px;
@@ -1146,6 +1166,8 @@ onMounted(() => {
   border: 1px solid transparent;
   cursor: default;
   white-space: nowrap;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 /* 绿色：签到成功 */
@@ -1343,6 +1365,105 @@ onMounted(() => {
 .community-divider {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .section-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .setting-row {
+    align-items: flex-start;
+    padding: 12px 16px;
+  }
+
+  .setting-row-static {
+    flex-wrap: wrap;
+  }
+
+  .user-table-container {
+    overflow: visible;
+    border: none;
+    background: transparent;
+  }
+
+  .user-table-header {
+    display: none;
+  }
+
+  .user-draggable {
+    min-height: 0;
+  }
+
+  .user-row {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    margin-bottom: 8px;
+    border: 1px solid var(--ant-color-border);
+    border-radius: 8px;
+  }
+
+  .user-row:last-child {
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--ant-color-border);
+  }
+
+  .row-cell {
+    width: auto;
+    min-width: 0;
+    padding: 12px;
+    border-right: none;
+  }
+
+  .row-cell.drag-cell {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 12px 4px;
+  }
+
+  .row-cell.name-cell {
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .row-cell.status-cell {
+    grid-column: 3;
+    grid-row: 1;
+    padding-left: 4px;
+  }
+
+  .row-cell.tags-cell {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    min-width: 0;
+    padding: 0 12px 12px;
+  }
+
+  .row-cell.tags-cell :deep(.ant-space) {
+    display: flex;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .row-cell.actions-cell {
+    grid-column: 2 / 4;
+    grid-row: 3;
+    width: auto;
+    min-width: 0;
+    justify-content: flex-start;
+    padding: 0 12px 12px;
+  }
+
+  .empty-state {
+    padding: 32px 16px;
+    border: 1px solid var(--ant-color-border);
+    border-radius: 8px;
+    background: var(--ant-color-bg-container);
+  }
 }
 
 /* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */

@@ -24,8 +24,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping
+from typing import Literal
 
 
 CredentialState = Literal["empty", "valid", "incomplete", "invalid"]
@@ -81,7 +82,7 @@ class CommunitySignResult:
     @classmethod
     def from_legacy(
         cls,
-        item: Mapping[str, Any],
+        item: Mapping[str, object],
         *,
         fallback_account: str = "未知用户",
         fallback_uid: str = "",
@@ -103,10 +104,10 @@ class CommunitySignResult:
             notification_only=bool(item.get("_notification_only")),
         )
 
-    def to_legacy(self) -> dict[str, Any]:
+    def to_legacy(self) -> dict[str, object]:
         """转换回旧版签到结果字典，供现有 API 与通知继续消费。"""
 
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "account": self.account,
             "account_uid": self.account_uid,
             "game": self.game,
@@ -133,8 +134,8 @@ class CommunityActivitySnapshot:
     status: ActivityState
     completed: int | None = None
     target: int | None = None
-    tasks: tuple[Mapping[str, Any], ...] = ()
-    resources: tuple[Mapping[str, Any], ...] = ()
+    tasks: tuple[Mapping[str, object], ...] = ()
+    resources: tuple[Mapping[str, object], ...] = ()
     reason: str = ""
     updated_at: str = ""
     role_name: str = ""
@@ -142,7 +143,7 @@ class CommunityActivitySnapshot:
     server: str = ""
     source: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """转换为与 API 无关的普通字典。"""
 
         return {
