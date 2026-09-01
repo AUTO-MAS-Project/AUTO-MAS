@@ -50,6 +50,10 @@ jobs:
         working-directory: frontend
         run: yarn install --immutable --mode=skip-build
 
+      - name: 检查前端 Lint
+        working-directory: frontend
+        run: yarn lint
+
       - name: 检查前端格式
         working-directory: frontend
         run: yarn oxfmt . --check
