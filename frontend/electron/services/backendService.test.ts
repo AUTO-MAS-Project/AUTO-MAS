@@ -9,6 +9,9 @@ import { BackendService } from './backendService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV, RuntimeClient } from './runtime'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
+// resolveRuntimeLaunchMode 的构建默认值这一级要读 app.isPackaged；本文件全部用例都显式
+// 设置 RUNTIME_MODE_ENV 走环境变量这一级，isPackaged 固定 false 即可，不需要逐用例切换。
+vi.mock('electron', () => ({ app: { isPackaged: false } }))
 vi.mock('../utils/processManager', () => ({
   killAllRelatedProcesses: vi.fn(async () => undefined),
 }))

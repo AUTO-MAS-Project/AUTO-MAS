@@ -510,7 +510,7 @@ export class BackendService {
    * scoped taskkill 清理。
    */
   isRuntimeSupervised(): boolean {
-    return this.runtimeHandle !== null || resolveRuntimeLaunchMode() !== 'off'
+    return this.runtimeHandle !== null || resolveRuntimeLaunchMode(this.appRoot) !== 'off'
   }
 
   /** Runtime 就绪后下发的后端地址；旧链路或尚未就绪时返回 null，由调用方回退原有端点。 */

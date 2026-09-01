@@ -50,13 +50,18 @@ export {
   RUNTIME_EXECUTABLE_NAME,
   RUNTIME_EXE_ENV,
   RUNTIME_MODE_ENV,
+  PersistedRuntimeLaunchMode,
   RuntimeDisabledLaunchConfig,
   RuntimeLaunchConfig,
   RuntimeLaunchMode,
+  RuntimeLaunchModeResolution,
+  RuntimeLaunchModeSource,
   RuntimeSupervisedLaunchConfig,
+  isPersistedRuntimeLaunchMode,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
+  resolveRuntimeLaunchModeDetail,
 } from './launchConfig'
 
 export { NdjsonEventStream, NdjsonItem, parseRuntimeEventLine } from './ndjson'

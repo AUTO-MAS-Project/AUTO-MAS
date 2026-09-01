@@ -42,6 +42,19 @@ export interface ElectronMirrorSource {
 export type ElectronMirrorType = 'python' | 'get_pip' | 'git' | 'repo' | 'pip_mirror'
 export type ElectronApiEndpointKey = 'local' | 'websocket'
 
+/** Runtime 灰度开关的持久化设置取值；`auto` 表示跟随构建默认值。 */
+export type RuntimeLaunchModeSetting = 'auto' | 'off' | 'development' | 'managed'
+/** 最终生效值来自哪一级。 */
+export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
+
+export interface RuntimeLaunchModeState {
+  /** 持久化设置里存的原始值，用于回填选择控件。 */
+  persisted: RuntimeLaunchModeSetting
+  /** 本次实际生效的模式（`auto` 已被解析成具体值）。 */
+  mode: 'off' | 'development' | 'managed'
+  source: RuntimeLaunchModeSource
+}
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
@@ -128,6 +141,10 @@ export interface ElectronAPI {
   // 应用初始化版本（保存前端版本号用于比对）
   getInitializedVersion: () => Promise<string | null>
   setInitializedVersion: (version: string) => Promise<boolean>
+
+  // Runtime 灰度开关：持久化设置 + 当前生效值与来源，重启后生效
+  getRuntimeLaunchMode: () => Promise<RuntimeLaunchModeState>
+  setRuntimeLaunchMode: (mode: RuntimeLaunchModeSetting) => Promise<RuntimeLaunchModeState>
 
   // 托盘设置
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>

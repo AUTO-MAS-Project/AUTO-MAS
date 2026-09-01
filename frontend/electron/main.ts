@@ -46,6 +46,11 @@ import {
   setMainTelemetryEnabled,
 } from './services/sentry'
 import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
+import {
+  PersistedRuntimeLaunchMode,
+  isPersistedRuntimeLaunchMode,
+  resolveRuntimeLaunchModeDetail,
+} from './services/runtime'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
@@ -241,6 +246,10 @@ interface AppConfig {
   Function: {
     IfEnableTelemetry: boolean
   }
+  // Runtime 灰度开关的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
+  Runtime: {
+    LaunchMode: PersistedRuntimeLaunchMode
+  }
 
   [key: string]: unknown
 }
@@ -264,6 +273,9 @@ const defaultConfig: AppConfig = {
   },
   Function: {
     IfEnableTelemetry: true,
+  },
+  Runtime: {
+    LaunchMode: 'auto',
   },
 }
 
@@ -1821,6 +1833,40 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   } catch (error) {
     logger.error('保存初始化版本失败', error)
     return false
+  }
+})
+
+// Runtime 灰度开关：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
+ipcMain.handle('get-runtime-launch-mode', async () => {
+  try {
+    const config = loadConfig()
+    const persisted = isPersistedRuntimeLaunchMode(config.Runtime?.LaunchMode)
+      ? config.Runtime.LaunchMode
+      : 'auto'
+    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
+    return { persisted, mode: resolution.mode, source: resolution.source }
+  } catch (error) {
+    logger.error('读取 Runtime 启动方式失败', error)
+    return { persisted: 'auto', mode: 'off', source: 'default' }
+  }
+})
+
+ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
+  if (!isPersistedRuntimeLaunchMode(mode)) {
+    throw new TypeError(`不支持的 Runtime 启动方式: ${String(mode)}`)
+  }
+
+  try {
+    const config = loadConfig()
+    config.Runtime = { ...config.Runtime, LaunchMode: mode }
+    saveConfig(config)
+    logger.info(`Runtime 启动方式已设置为: ${mode}`)
+
+    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
+    return { persisted: mode, mode: resolution.mode, source: resolution.source }
+  } catch (error) {
+    logger.error('保存 Runtime 启动方式失败', error)
+    throw error
   }
 })
 

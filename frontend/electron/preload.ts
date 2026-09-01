@@ -90,6 +90,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitializedVersion: (version: string) =>
     ipcRenderer.invoke('set-initialized-version', version),
 
+  // Runtime 灰度开关：持久化设置 + 当前生效值与来源
+  getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
+  setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
+
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: unknown) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
