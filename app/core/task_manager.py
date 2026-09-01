@@ -504,6 +504,8 @@ class Task(TaskExecuteBase):
                 self.task_info.current_index = entry.index
                 script_item.status = "运行"
                 logger.info(f"循环任务开始: {script_uid}")
+                # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
+                await self._publish_cycle_preview(entries, running=entry)
 
                 await self._spawn_with_preview(task_item, entry, entries)
 
