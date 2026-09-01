@@ -8,6 +8,24 @@ Welcome to contribute to the AUTO-MAS project! Before participating in developme
 
 - [AUTO-MAS Developer Documentation](https://doc.auto-mas.top/developer/).
 
+# 开发环境 / Development Environment
+
+后端依赖由 `pyproject.toml` + `uv.lock` 管理：
+
+1. 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)。
+2. 在仓库根目录执行 `uv sync`，会按 `uv.lock` 在 `.venv` 中创建与锁定版本一致的环境。
+3. 执行 `uv run main.py` 启动。
+
+`requirements.txt` 目前与 `pyproject.toml` 并存，修改依赖时请同步更新两者。**修改 `pyproject.toml` 后必须重新执行 `uv lock`，并将更新后的 `uv.lock` 一并提交**，否则 CI 的锁文件检查会失败。`dev` 及各开发分支负责更新 `uv.lock`；发布分支只消费锁文件，不在其上重新解析依赖。
+
+Backend dependencies are managed via `pyproject.toml` + `uv.lock`:
+
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+2. Run `uv sync` in the repository root; it creates a `.venv` matching the locked versions in `uv.lock`.
+3. Start the app with `uv run main.py`.
+
+`requirements.txt` currently coexists with `pyproject.toml` — update both when changing dependencies. **After editing `pyproject.toml`, you must re-run `uv lock` and commit the updated `uv.lock`**, or the CI lockfile check will fail. `dev` and other development branches keep `uv.lock` up to date; release branches only consume the lockfile and never re-resolve it.
+
 # 重要事项 / Important Terms
 
 您通过任意方式提交代码到 **AUTO-MAS-Project** 下属任意仓库，即代表您理解并同意以下条款：
