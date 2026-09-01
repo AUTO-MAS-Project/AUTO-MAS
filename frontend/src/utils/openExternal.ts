@@ -4,6 +4,15 @@ export const MAS_DOC_URLS = {
   plans: 'https://doc.auto-mas.top/docs/task-scheduler.html',
   emulator: 'https://doc.auto-mas.top/docs/advanced-features/emulator.html',
   scripts: 'https://doc.auto-mas.top/docs/script-guide/',
+  scriptTypes: {
+    MAA: 'https://doc.auto-mas.top/docs/script-guide/maa.html',
+    SRC: 'https://doc.auto-mas.top/docs/script-guide/general.html',
+    MaaEnd: 'https://doc.auto-mas.top/docs/script-guide/maaend.html',
+    M9A: 'https://doc.auto-mas.top/docs/script-guide/m9a.html',
+    HSR: 'https://doc.auto-mas.top/docs/script-guide/hsr.html',
+    General: 'https://doc.auto-mas.top/docs/script-guide/general.html',
+    Okww: 'https://doc.auto-mas.top/docs/script-guide/okww.html',
+  },
 } as const
 
 /**

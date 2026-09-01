@@ -16,6 +16,19 @@
 
     <a-space size="middle" wrap>
       <slot name="extra-actions" />
+      <a
+        v-if="docUrl"
+        class="doc-link"
+        :href="docUrl"
+        target="_blank"
+        rel="noreferrer"
+        :aria-label="t('common.viewPageDocs')"
+        @click="handleExternalLink"
+      >
+        <BookOutlined />
+        {{ t('common.viewPageDocs') }}
+        <ExportOutlined />
+      </a>
 
       <a-button size="large" class="cancel-button" @click="emit('cancel')">
         <template #icon>
@@ -30,9 +43,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, BookOutlined, ExportOutlined } from '@ant-design/icons-vue'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { MAS_DOC_URLS, handleExternalLink } from '@/utils/openExternal'
 
 const { t } = useI18n()
 
@@ -51,6 +65,7 @@ const emit = defineEmits<{ cancel: [] }>()
 
 const logoSrc = computed(() => SCRIPT_LOGOS[props.scriptType])
 const logoAlt = computed(() => SCRIPT_LABELS[props.scriptType])
+const docUrl = computed(() => MAS_DOC_URLS.scriptTypes[props.scriptType as keyof typeof MAS_DOC_URLS.scriptTypes])
 </script>
 
 <style scoped>
@@ -90,6 +105,14 @@ const logoAlt = computed(() => SCRIPT_LABELS[props.scriptType])
   width: 20px;
   height: 20px;
   object-fit: contain;
+}
+
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
