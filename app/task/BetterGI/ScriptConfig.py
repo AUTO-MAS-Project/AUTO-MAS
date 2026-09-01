@@ -22,8 +22,8 @@ from contextlib import suppress
 from pathlib import Path
 
 from app.core import Config
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import BetterGIConfig, BetterGIUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
@@ -87,9 +87,7 @@ class ScriptConfigTask(TaskExecuteBase):
             custom_groups=one_dragon.parse_custom_groups(
                 target.get("OneDragon", "CustomGroups") or ""
             ),
-            manage_custom_groups=bool(
-                target.get("OneDragon", "IfUseCustomGroups")
-            ),
+            manage_custom_groups=bool(target.get("OneDragon", "IfUseCustomGroups")),
         )
 
     def _snapshot_one_dragon_config(self) -> None:
@@ -106,7 +104,8 @@ class ScriptConfigTask(TaskExecuteBase):
         config_name = str(target.get("Task", "OneDragonConfigName") or "")
         read_name = (
             one_dragon.launch_slot_name()
-            if one_dragon.launch_slot_name() != one_dragon.resolve_config_name(config_name)
+            if one_dragon.launch_slot_name()
+            != one_dragon.resolve_config_name(config_name)
             else config_name
         )
         one_dragon.snapshot_user_one_dragon(

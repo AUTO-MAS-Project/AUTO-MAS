@@ -25,7 +25,11 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card :title="t('edit.bettergiScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('edit.bettergiScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="blue" class="type-tag">BetterGI</a-tag>
       </template>
@@ -214,7 +218,6 @@
             </a-col>
           </a-row>
         </div>
-
       </a-form>
     </a-card>
   </div>
