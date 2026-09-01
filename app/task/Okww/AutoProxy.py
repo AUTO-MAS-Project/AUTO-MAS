@@ -38,7 +38,13 @@ from app.services.wuthering_waves import (
     resolve_wuthering_waves_process_path,
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
-from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
+from app.utils import (
+    get_logger,
+    ProcessManager,
+    ProcessInfo,
+    is_process_alive,
+    is_process_running,
+)
 from app.utils.io import write_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
@@ -923,7 +929,8 @@ class AutoProxyTask(TaskExecuteBase):
             return
         deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:
-            if not is_process_running(_WUWA_CLIENT_PROCESS):
+            # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻
+            if not is_process_alive(_WUWA_CLIENT_PROCESS):
                 logger.info("鸣潮客户端进程已完全退出，继续下一用户")
                 return
             await asyncio.sleep(1)
