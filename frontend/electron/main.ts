@@ -22,6 +22,7 @@ import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  checkCriticalFilesViaRuntime,
   getBackendService,
   getLocalApiEndpoint,
 } from './ipc/initializationHandlers'
@@ -1493,6 +1494,10 @@ ipcMain.handle('check-environment', async () => {
 // 关键文件检查 - 每次都重新检查exe文件是否存在
 ipcMain.handle('check-critical-files', async () => {
   try {
+    // Runtime 链路不再有 environment/python 这套目录，改问 Runtime doctor 要受管布局。
+    const runtimeCheck = await checkCriticalFilesViaRuntime()
+    if (runtimeCheck) return runtimeCheck
+
     const appRoot = getAppRoot()
 
     // 检查Python可执行文件
