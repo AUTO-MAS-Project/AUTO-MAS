@@ -114,6 +114,9 @@ _LIST_SCROLL_POINT = (960, 600)
 _TITLE_TEXTS = ("进入游戏",)
 # 仅登录面板出现的文本，用于判定「登录面板已打开 / 登录成功后面板消失」
 _PANEL_TEXTS = ("使用其他方式登录",)
+# 加载完成后常驻左上角的适龄提示徽标（16+/CADPA），标题界面与登录面板均有：
+# 作为就绪判定的附加信号，防止「进入游戏」按钮被特效遮挡或 OCR 瞬时失败漏判
+_LOADED_BADGE_TEXTS = ("适龄提示",)
 
 # 掩码账号形如 130*****6220
 _MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
@@ -383,7 +386,7 @@ def _wait_for_actionable_state(
     游戏」后游戏内可能出现体积大、耗时长更新的界面（此时标题界面与登录面板都不命中）。
     若立即按标题界面退出图标分流，会落在不匹配的画面上。故采用「进展续延」语义等待：
 
-    - 命中标题界面/登录面板 → 返回有效句柄，由调用方按对应态执行；
+    - 命中标题界面/登录面板/左上角适龄提示徽标 → 返回有效句柄，由调用方按对应态执行；
     - 界面仍在变化（有更新/加载进展）→ 持续顺延等待，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
     - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非标题/登录 → 判卡死提前失败。
     - 等待期间窗口句柄失效（客户端更新重启）→ 重新定位新窗口后继续等待。
@@ -409,6 +412,7 @@ def _wait_for_actionable_state(
         if (
             _find_text(items, _PANEL_TEXTS) is not None
             or _find_text(items, _TITLE_TEXTS) is not None
+            or _find_text(items, _LOADED_BADGE_TEXTS) is not None
         ):
             return hwnd
         sig = _frame_signature(frame)
