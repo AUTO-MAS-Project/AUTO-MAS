@@ -8,7 +8,8 @@
                 "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与两个配置组件接入词表，切到英文/日文后即时生效；参与后端判定的中文（控制器与游戏服务器取值、一条龙内置配置组名、默认配置名与内置战斗策略名）保持原样 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "开发流程": [
-                "新增 GitHub Issue 模板：Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，另设需求建议、AI 提交与其他议题模板，并挂上常见问题、文档站与官方群链接 by [@qiyinxi](https://github.com/qiyinxi)"
+                "新增 GitHub Issue 模板：Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，另设需求建议、AI 提交与其他议题模板，并挂上常见问题、文档站与官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
+                "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源"
             ],
             "修复BUG": [
                 "修复 MaaFW 运行池解释器自检不覆盖标准库、导致 Python 运行时损坏时直到任务中途才报出难以理解的错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",

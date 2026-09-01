@@ -225,10 +225,18 @@
                     @change="saveField('Switch.Resource', formData.Switch.Resource)"
                   >
                     <a-select-option value="官服">{{ t('edit.bettergiServerCn') }}</a-select-option>
-                    <a-select-option value="B服">{{ t('edit.bettergiServerBili') }}</a-select-option>
-                    <a-select-option value="亚服">{{ t('edit.bettergiServerAsia') }}</a-select-option>
-                    <a-select-option value="欧服">{{ t('edit.bettergiServerEurope') }}</a-select-option>
-                    <a-select-option value="美服">{{ t('edit.bettergiServerAmerica') }}</a-select-option>
+                    <a-select-option value="B服">{{
+                      t('edit.bettergiServerBili')
+                    }}</a-select-option>
+                    <a-select-option value="亚服">{{
+                      t('edit.bettergiServerAsia')
+                    }}</a-select-option>
+                    <a-select-option value="欧服">{{
+                      t('edit.bettergiServerEurope')
+                    }}</a-select-option>
+                    <a-select-option value="美服">{{
+                      t('edit.bettergiServerAmerica')
+                    }}</a-select-option>
                     <a-select-option value="港澳台服">
                       {{ t('edit.bettergiServerTwHkMo') }}
                     </a-select-option>
