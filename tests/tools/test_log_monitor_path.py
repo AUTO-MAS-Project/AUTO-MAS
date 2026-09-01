@@ -15,7 +15,8 @@ class LogMonitorPathTest(unittest.IsolatedAsyncioTestCase):
             new_path = root / "new.log"
             now = datetime.now()
             old_line = now.strftime("%Y-%m-%d %H:%M:%S.%f") + " old"
-            old_path.write_text(old_line + "\n")
+            # 关闭换行转换：监控按二进制读取，Windows 下文本模式会写成 \r\n
+            old_path.write_text(old_line + "\n", newline="")
 
             old_seen = asyncio.Event()
             new_seen = asyncio.Event()
@@ -40,7 +41,7 @@ class LogMonitorPathTest(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(old_seen.wait(), timeout=3)
 
                 new_line = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f") + " new"
-                new_path.write_text(new_line + "\n")
+                new_path.write_text(new_line + "\n", newline="")
                 target = new_path
                 await asyncio.wait_for(new_seen.wait(), timeout=3)
 
