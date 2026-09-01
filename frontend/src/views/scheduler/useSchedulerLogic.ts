@@ -546,7 +546,33 @@ export function useSchedulerLogic() {
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
-    await loadResumeScriptOptions(tab)
+    await Promise.all([loadResumeScriptOptions(tab), loadCycleQueueFlag(tab)])
+  }
+
+  // 只有循环队列能选「循环运行」，先问后端拿队列类型再决定给不给这个模式
+  const loadCycleQueueFlag = async (tab: SchedulerTab) => {
+    if (!tab.selectedTaskId || !isQueueTask(tab)) {
+      tab.isCycleQueue = false
+      if (tab.selectedMode === TaskCreateIn.mode.CYCLE_RUN) {
+        tab.selectedMode = TaskCreateIn.mode.AUTO_PROXY
+      }
+      return
+    }
+
+    try {
+      const response = await Service.getQueuesApiQueueGetPost({ queueId: tab.selectedTaskId })
+      tab.isCycleQueue =
+        response.code === 200 &&
+        Boolean(response.data?.[tab.selectedTaskId]?.Info?.CycleEnabled)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取队列类型失败，按定时队列处理: ${errorMsg}`)
+      tab.isCycleQueue = false
+    }
+
+    if (!tab.isCycleQueue && tab.selectedMode === TaskCreateIn.mode.CYCLE_RUN) {
+      tab.selectedMode = TaskCreateIn.mode.AUTO_PROXY
+    }
   }
 
   const startTask = async (tab: SchedulerTab) => {
@@ -579,6 +605,7 @@ export function useSchedulerLogic() {
         tab.logs.splice(0)
         tab.isLogAtBottom = true
         tab.lastLogContent = ''
+        tab.cycleNextList = []
         tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
         subscribeToTask(tab)
@@ -752,6 +779,7 @@ export function useSchedulerLogic() {
   }
 
   const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
+    tab.cycleNextList = data.cycleNextList ?? []
     if (!data.task_info || !Array.isArray(data.task_info)) {
       logger.debug('没有task_info数据，保持现有overviewData')
       return false
@@ -942,6 +970,7 @@ export function useSchedulerLogic() {
 
     // 使用Vue的响应式更新方式
     tab.status = data.outcome === 'error' ? '异常' : '结束'
+    tab.cycleNextList = []
     logger.info(`已更新tab.status，当前tab状态: ${JSON.stringify(tab.status)}`)
 
     logger.info(`任务完成，清理订阅与任务ID: key=${tab.key}, taskId=${tab.taskId}`)
@@ -1167,11 +1196,19 @@ export function useSchedulerLogic() {
 
     tab.status = '运行'
     if (state.mode) tab.selectedMode = taskModeFromRuntime(state.mode)
+    // 快照里的 mode 是脚本执行模式，循环与否只看 isCycle
+    if (state.isCycle) {
+      tab.selectedMode = TaskCreateIn.mode.CYCLE_RUN
+      tab.isCycleQueue = true
+    }
     tab.runningModeLabel = state.taskType ?? state.mode ?? tab.runningModeLabel
     if (state.taskName) tab.runningTaskLabel = state.taskName
     const selectedTaskId = getRuntimeSelectedTaskId(state)
     if (selectedTaskId) tab.selectedTaskId = selectedTaskId
-    applyTaskInfoSnapshot(tab, { task_info: state.taskInfo })
+    applyTaskInfoSnapshot(tab, {
+      task_info: state.taskInfo,
+      cycleNextList: state.cycleNextList,
+    })
     subscribeToTask(tab)
   }
 
