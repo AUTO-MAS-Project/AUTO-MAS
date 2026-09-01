@@ -37,7 +37,13 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
 from app.task.general.tools import execute_script_task
-from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
+from app.utils import (
+    ProcessInfo,
+    ProcessManager,
+    get_logger,
+    is_process_alive,
+    is_process_running,
+)
 from app.utils.constants import UTC4
 from app.utils.io import read_file
 from app.utils.LogMonitor import LogMonitor
@@ -59,6 +65,11 @@ logger = get_logger("OK-NTE 自动代理")
 # 异环 PC 客户端进程名固定，MAS 接管启动前据此避免重复拉起
 _NTE_CLIENT_PROCESS = "HTGame.exe"
 _NTE_LAUNCHER_RELATIVE_PATH = Path("Neverness To Everness/NTELauncher/NTEGame.exe")
+
+# 多用户切换时等待旧游戏完全退出的上限（秒）：
+# 异环客户端「自退」不是瞬时的（ok-nte `-e` 退出约 70 秒），若不等待完全退出，
+# 下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
+_GAME_EXIT_WAIT_SECONDS = 90
 
 
 def _load_nte_launcher_path(config_path: Path) -> Path | None:
@@ -846,6 +857,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self._persist_user_run_result()
 
+        # 多用户切换：等上一用户游戏完全退出（见 _wait_game_exit_before_next_user）
+        await self._wait_game_exit_before_next_user()
+
     async def _persist_user_run_result(self) -> None:
         if self.user_run_result_persisted:
             return
@@ -963,3 +977,41 @@ class AutoProxyTask(TaskExecuteBase):
         await self._kill_oknte_process()
         if kill_game:
             await self._kill_game_process()
+
+    async def _wait_game_exit_before_next_user(self) -> None:
+        """多用户切换：等上一用户的游戏完全退出后再进下个用户。
+
+        异环客户端进程退出不是瞬时的（ok-nte `-e` 自退约 70 秒）。若不等其完全
+        退出，下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致
+        PostMessage 无效句柄后任务被中止。仅在还有下一个用户、且本次运行预期会
+        关闭游戏（`-e` 自退，或按 final_task 的实际 kill 决策结束游戏）时等待；
+        最后一个用户与单用户任务不等待。
+        """
+        if self.script_info.current_index >= len(self.script_info.user_list) - 1:
+            return
+        # 与 final_task 的 kill_game 决策保持一致：失败/重试路径按
+        # _mas_should_close_game_on_retry 结束游戏，也要纳入等待
+        kill_game = (
+            self._mas_should_close_game_after_success()
+            if self.run_book
+            else self._mas_should_close_game_on_retry()
+        )
+        if not (getattr(self, "exit_on_finish", False) or kill_game):
+            return
+        process_name = (
+            _NTE_CLIENT_PROCESS
+            if self.script_config.get("Game", "Type") == "Client"
+            else str(self.script_config.get("Game", "ProcessName") or "").strip()
+        )
+        if not process_name:
+            return
+        deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻
+            if not is_process_alive(process_name):
+                logger.info(f"游戏进程已完全退出，继续下一用户: {process_name}")
+                return
+            await asyncio.sleep(1)
+        logger.warning(
+            f"等待游戏进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一用户: {process_name}"
+        )
