@@ -186,6 +186,26 @@ export default {
     updateHasFinishedDownloading: '更新のダウンロードが完了しました。今すぐインストールしますか？',
     minimize: '最小化',
     backendUpdateAvailableClick: 'バックエンドの更新があります。クリックして更新してください',
+    backendUpdateDevUnsupported:
+      'バックエンドの更新があります。開発モードでは自動更新に対応していません',
+    backendUpdateTitle: 'バックエンドを {version} に更新します',
+    backendUpdateSucceeded: 'バックエンドを更新して再起動しました',
+    backendUpdateCancelled: '更新をキャンセルしました。バックエンドは元のままです',
+    backendUpdateFailedShutdown:
+      '実行中のバックエンドを停止できず、更新は開始されていません。現在のバージョンはそのまま使用できます',
+    backendUpdateFailedBootstrap:
+      'ソースまたは依存関係の同期に失敗しました。以下のいずれかの方法で再試行してください',
+    backendUpdateFailedRestart:
+      'ソースと依存関係は揃いましたが、新しいバックエンドを起動できませんでした',
+    backendUpdateUnsupportedMode: '現在のモードではバックエンドの自動更新に対応していません',
+    backendUpdateRetryWorkspaceSync: 'ソースを同期し直す',
+    backendUpdateRetryDependenciesSync: '依存関係の同期を再試行',
+    backendUpdateRetryDependenciesRebuild: '依存環境を再構築',
+    backendUpdateRetryRepair: '実行環境をまとめて修復',
+    backendUpdateRestartBackend: 'バックエンドを起動し直す',
+    backendUpdateCancelAction: '更新をキャンセル',
+    backendUpdateErrorCode: 'エラーコード',
+    backendUpdateLogPath: 'ログファイル',
     closingBackend: 'バックエンドを終了しています...',
     startingBackend: 'バックエンドを起動しています...',
     lightTheme: 'ライトテーマ',

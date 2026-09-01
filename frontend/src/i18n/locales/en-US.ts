@@ -183,6 +183,26 @@ export default {
     updateHasFinishedDownloading: 'The update has finished downloading. Install it now?',
     minimize: 'Minimize',
     backendUpdateAvailableClick: 'A backend update is available — click to update',
+    backendUpdateDevUnsupported:
+      'A backend update is available — automatic updates are off in development mode',
+    backendUpdateTitle: 'Updating the backend to {version}',
+    backendUpdateSucceeded: 'The backend has been updated and restarted',
+    backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
+    backendUpdateFailedShutdown:
+      'The running backend could not be stopped, so the update never started. The current version still works.',
+    backendUpdateFailedBootstrap:
+      'Syncing the source or the dependencies failed. Retry with one of the options below.',
+    backendUpdateFailedRestart:
+      'The source and the dependencies are in place, but the new backend did not start',
+    backendUpdateUnsupportedMode: 'This mode does not support updating the backend automatically',
+    backendUpdateRetryWorkspaceSync: 'Sync the source again',
+    backendUpdateRetryDependenciesSync: 'Retry the dependency sync',
+    backendUpdateRetryDependenciesRebuild: 'Rebuild the dependency environment',
+    backendUpdateRetryRepair: 'Repair the whole runtime environment',
+    backendUpdateRestartBackend: 'Start the backend again',
+    backendUpdateCancelAction: 'Cancel the update',
+    backendUpdateErrorCode: 'Error code',
+    backendUpdateLogPath: 'Log file',
     closingBackend: 'Closing the backend...',
     startingBackend: 'Starting the backend...',
     lightTheme: 'Light theme',

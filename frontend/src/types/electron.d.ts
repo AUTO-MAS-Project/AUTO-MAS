@@ -42,6 +42,52 @@ export interface ElectronMirrorSource {
 export type ElectronMirrorType = 'python' | 'get_pip' | 'git' | 'repo' | 'pip_mirror'
 export type ElectronApiEndpointKey = 'local' | 'websocket'
 
+// ==================== Runtime 后端更新 ====================
+
+/** 后端启动链路：`off` 走原有的自行启动 python.exe，其余两种由 Runtime 监督。 */
+export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+
+/** 更新失败的三类结局，界面据此决定给什么按钮。 */
+export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
+
+export type RuntimeUpdateRetryAction =
+  | 'workspace-sync'
+  | 'dependencies-sync'
+  | 'dependencies-rebuild'
+  | 'repair'
+
+export type RuntimeUpdateStage =
+  | 'shutdown'
+  | 'mirror'
+  | 'python'
+  | 'pip'
+  | 'git'
+  | 'repository'
+  | 'dependency'
+  | 'backend'
+  | 'restart'
+
+export interface RuntimeUpdateProgress {
+  stage: RuntimeUpdateStage
+  status: 'started' | 'running' | 'completed' | 'failed'
+  progress: number
+  message: string
+}
+
+export interface RuntimeUpdateOutcome {
+  success: boolean
+  phase?: RuntimeUpdatePhase
+  error?: string
+  code?: string
+  retryable?: boolean
+  remediation?: string[]
+  logs?: string
+  logPath?: string
+  retryActions?: RuntimeUpdateRetryAction[]
+  cancelled?: boolean
+  unsupported?: boolean
+}
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
@@ -252,6 +298,14 @@ export interface ElectronAPI {
     lastPingTime?: Date
     error?: string
   }>
+
+  // Runtime 链路的后端更新
+  getRuntimeLaunchMode: () => Promise<RuntimeLaunchMode>
+  updateBackendViaRuntime: (targetVersion: string) => Promise<RuntimeUpdateOutcome>
+  retryBackendUpdate: (action: RuntimeUpdateRetryAction) => Promise<RuntimeUpdateOutcome>
+  cancelBackendUpdate: () => Promise<{ accepted: boolean; forwarded: boolean }>
+  onBackendUpdateProgress: (callback: (progress: RuntimeUpdateProgress) => void) => void
+  removeBackendUpdateProgressListener?: () => void
 
   // 清理资源
   cleanup: () => Promise<{ success: boolean }>
