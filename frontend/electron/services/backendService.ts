@@ -14,11 +14,11 @@ import { isDevelopmentEnvironment } from './environmentService'
 import { resolveHttpPort } from './instanceConfig'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
-  RuntimeClient,
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeSuperviseHandle,
   RuntimeSupervisedLaunchConfig,
+  createRuntimeClient,
   formatStartupLogs,
   isRuntimeClientError,
   readRuntimeBaseUrl,
@@ -323,7 +323,8 @@ export class BackendService {
       resolveReady = baseUrl => resolve({ baseUrl })
     })
 
-    const client = new RuntimeClient({ runtimePath, appRoot: config.appRoot })
+    // 遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient 统一注入，见 runtimeEnv.ts。
+    const client = createRuntimeClient({ runtimePath, appRoot: config.appRoot })
     let handle: RuntimeSuperviseHandle
     try {
       handle = await client.supervise({
