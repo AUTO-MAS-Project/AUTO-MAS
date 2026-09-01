@@ -364,18 +364,28 @@ def _frame_signature(frame: np.ndarray) -> int:
     return hash(small.tobytes())
 
 
+def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
+    """窗口句柄在等待期间失效（如游戏内更新触发客户端重启）时重新定位异环窗口。
+
+    重定位成功返回新句柄；等待宽限期内仍找不到则抛出，交由调用方失败处理。
+    """
+    on_log("游戏窗口句柄已失效，重新定位异环游戏窗口...")
+    return _find_game_hwnd(wait=True)
+
+
 def _wait_for_actionable_state(
     hwnd: int, on_log: Callable[[str], None]
-) -> None:
-    """等待进入可执行的切号态（标题界面或登录面板）。
+) -> int:
+    """等待进入可执行的切号态（标题界面或登录面板），返回当前有效的游戏窗口句柄。
 
     游戏窗口刚出现时可能仍停在启动过渡帧（splash/加载），而异环更新频繁，点「开始
     游戏」后游戏内可能出现体积大、耗时长更新的界面（此时标题界面与登录面板都不命中）。
     若立即按标题界面退出图标分流，会落在不匹配的画面上。故采用「进展续延」语义等待：
 
-    - 命中标题界面/登录面板 → 返回，由调用方按对应态执行；
+    - 命中标题界面/登录面板 → 返回有效句柄，由调用方按对应态执行；
     - 界面仍在变化（有更新/加载进展）→ 持续顺延等待，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
     - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非标题/登录 → 判卡死提前失败。
+    - 等待期间窗口句柄失效（客户端更新重启）→ 重新定位新窗口后继续等待。
 
     进度日志按约 5 条/轮询节流，避免向调度台频繁刷屏。
     """
@@ -384,15 +394,22 @@ def _wait_for_actionable_state(
     last_sig: int | None = None
     iter_count = 0
     while time.monotonic() < deadline:
-        frame = _capture_window(hwnd, activate=False)
-        items = ocr_image(frame)
+        try:
+            frame = _capture_window(hwnd, activate=False)
+            items = ocr_image(frame)
+        except RuntimeError:
+            # 窗口句柄失效：可能是游戏内更新触发客户端重启，重找新窗口继续而非中止。
+            hwnd = _reacquire_game_hwnd(on_log)
+            last_progress = time.monotonic()
+            last_sig = None
+            continue
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
             _dump_ocr_items(items)
         if (
             _find_text(items, _PANEL_TEXTS) is not None
             or _find_text(items, _TITLE_TEXTS) is not None
         ):
-            return
+            return hwnd
         sig = _frame_signature(frame)
         if sig != last_sig:
             last_sig = sig
@@ -670,8 +687,8 @@ def account_switch(
         hwnd = _find_game_hwnd()
         _activate_window(hwnd)
         # 启动稳定化：等界面进入「标题界面」或「登录面板」之一，再按各自流程分流，
-        # 避免在窗口已现但仍在加载过渡帧时立即误判失败。
-        _wait_for_actionable_state(hwnd, _on_log)
+        # 避免在窗口已现但仍在加载过渡帧时立即误判失败；等待期间窗口重启会返回新句柄。
+        hwnd = _wait_for_actionable_state(hwnd, _on_log)
         if _on_login_panel(hwnd):
             on_log("登录面板已打开，直接选择账号")
         else:

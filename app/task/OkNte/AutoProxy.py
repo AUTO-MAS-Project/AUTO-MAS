@@ -712,11 +712,12 @@ class AutoProxyTask(TaskExecuteBase):
                     continue
 
             # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
-            # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
-            # 用户未填写手机号时跳过不切换。
+            # 开关在游戏配置区，依赖 Game.Enabled 且需开启「任务前启动游戏」（否则游戏非
+            # MAS 拉起、无窗口可切）；用户未填写手机号时跳过不切换。
             if (
                 self.script_config.get("Game", "AccountSwitch")
                 and self.script_config.get("Game", "Enabled")
+                and self.script_config.get("Game", "LaunchBeforeTask")
                 and self.game_manager is not None
             ):
                 account_id = (self.cur_user_config.get("Info", "Id") or "").strip()
