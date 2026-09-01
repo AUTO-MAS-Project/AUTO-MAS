@@ -18,6 +18,9 @@
         <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
         <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
+        <div v-if="showCycleConfig" class="header-cell cycle-cell">
+          {{ t('queue.cycle.colConfig') }}
+        </div>
         <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
       </div>
 
@@ -59,6 +62,110 @@
                 @change="updateQueueItemScript(record)"
               />
             </div>
+            <div v-if="showCycleConfig" class="row-cell cycle-cell">
+              <div class="cycle-panel">
+                <div class="cycle-line">
+                  <a-switch
+                    v-model:checked="record.schedule.Enabled"
+                    size="small"
+                    @change="saveSchedule(record, { Enabled: record.schedule.Enabled })"
+                  />
+                  <a-select
+                    v-model:value="record.schedule.Mode"
+                    size="small"
+                    style="width: 104px"
+                    :disabled="!record.schedule.Enabled"
+                    @change="saveSchedule(record, { Mode: record.schedule.Mode })"
+                  >
+                    <a-select-option value="fixed_time">
+                      {{ t('queue.cycle.modeFixed') }}
+                    </a-select-option>
+                    <a-select-option value="interval">
+                      {{ t('queue.cycle.modeInterval') }}
+                    </a-select-option>
+                  </a-select>
+
+                  <template v-if="record.schedule.Mode === 'interval'">
+                    <a-input-number
+                      v-model:value="record.schedule.IntervalMinutes"
+                      size="small"
+                      style="width: 104px"
+                      :min="1"
+                      :max="10080"
+                      :disabled="!record.schedule.Enabled"
+                      :addon-after="t('queue.cycle.minuteUnit')"
+                      @change="saveInterval(record)"
+                    />
+                    <a-select
+                      v-model:value="record.schedule.IntervalAnchor"
+                      size="small"
+                      style="width: 128px"
+                      :disabled="!record.schedule.Enabled"
+                      @change="saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })"
+                    >
+                      <a-select-option value="start">
+                        {{ t('queue.cycle.anchorStart') }}
+                      </a-select-option>
+                      <a-select-option value="finish">
+                        {{ t('queue.cycle.anchorFinish') }}
+                      </a-select-option>
+                    </a-select>
+                  </template>
+                  <template v-else>
+                    <a-time-picker
+                      v-model:value="record.scheduleTimeValue"
+                      format="HH:mm"
+                      size="small"
+                      style="width: 104px"
+                      :placeholder="t('queue.time.selectTime')"
+                      :disabled="!record.schedule.Enabled"
+                      @change="saveScheduleTime(record)"
+                    />
+                    <a-select
+                      v-model:value="record.schedule.Days"
+                      mode="multiple"
+                      size="small"
+                      style="min-width: 168px"
+                      :placeholder="t('queue.time.selectDays')"
+                      :disabled="!record.schedule.Enabled"
+                      :max-tag-count="3"
+                      @change="saveSchedule(record, { Days: record.schedule.Days })"
+                    >
+                      <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                      <a-select-option value="Tuesday">
+                        {{ t('queue.time.Tuesday') }}
+                      </a-select-option>
+                      <a-select-option value="Wednesday">
+                        {{ t('queue.time.Wednesday') }}
+                      </a-select-option>
+                      <a-select-option value="Thursday">
+                        {{ t('queue.time.Thursday') }}
+                      </a-select-option>
+                      <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                      <a-select-option value="Saturday">
+                        {{ t('queue.time.Saturday') }}
+                      </a-select-option>
+                      <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+                    </a-select>
+                  </template>
+                </div>
+
+                <div class="cycle-line cycle-next-line">
+                  <span class="cycle-next-text">
+                    {{ t('queue.cycle.nextRun') }}
+                    {{ formatNextRun(record.schedule.NextRunAt) }}
+                  </span>
+                  <a-button
+                    type="link"
+                    size="small"
+                    :disabled="!record.schedule.Enabled"
+                    @click="runOnce(record)"
+                  >
+                    {{ t('queue.cycle.runOnce') }}
+                  </a-button>
+                </div>
+              </div>
+            </div>
             <div class="row-cell actions-cell">
               <a-space>
                 <a-popconfirm
@@ -94,6 +201,7 @@ import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
+import dayjs from 'dayjs'
 import { Service } from '@/api'
 
 const { t } = useI18n()
@@ -103,9 +211,12 @@ const logger = window.electronAPI.getLogger('队列项管理')
 interface Props {
   queueId: string
   queueItems: any[]
+  showCycleConfig?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  showCycleConfig: false,
+})
 
 // Emits
 const emit = defineEmits<{
@@ -141,19 +252,103 @@ const _queueColumns = [
   },
 ]
 
+// 后端 NextRunAt 的空值哨兵，表示「尚未推算」；见 app/utils/constants.py
+const CYCLE_EMPTY_TIME = '2000-01-01 00:00:00'
+
+// 循环调度的默认值，与后端 QueueItem 的配置项保持一致
+const CYCLE_SCHEDULE_DEFAULTS = {
+  Enabled: true,
+  Mode: 'fixed_time',
+  Days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  Time: '00:00',
+  IntervalMinutes: 480,
+  IntervalAnchor: 'start',
+  NextRunAt: CYCLE_EMPTY_TIME,
+}
+
+// 补齐循环配置并派生时间选择器需要的 dayjs 值
+const withCycleSchedule = (items: any[]) =>
+  items.map(item => {
+    const schedule = { ...CYCLE_SCHEDULE_DEFAULTS, ...(item.schedule || {}) }
+    return { ...item, schedule, scheduleTimeValue: parseTimeString(schedule.Time) }
+  })
+
 // 计算属性 - 使用props传入的数据
-const queueItems = ref(props.queueItems)
+const queueItems = ref(withCycleSchedule(props.queueItems))
 
 // 监听props变化
 watch(
   () => props.queueItems,
   newQueueItems => {
     if (!isDraggingQueueItem.value) {
-      queueItems.value = newQueueItems
+      queueItems.value = withCycleSchedule(newQueueItems)
     }
   },
   { deep: true }
 )
+
+// 时间字符串 "HH:mm" 与时间选择器的 dayjs 值互转
+const parseTimeString = (timeString: string) => {
+  const [hours = 0, minutes = 0] = String(timeString || '00:00').split(':').map(Number)
+  return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
+}
+
+const formatTimeValue = (timeValue: any) => {
+  if (!timeValue) return '00:00'
+  return dayjs.isDayjs(timeValue) ? timeValue.format('HH:mm') : dayjs(timeValue).format('HH:mm')
+}
+
+// 空值哨兵表示还没推算过，展示成「待排期」而不是 2000 年
+const formatNextRun = (nextRunAt: string) =>
+  !nextRunAt || nextRunAt === CYCLE_EMPTY_TIME ? t('queue.cycle.notScheduled') : nextRunAt
+
+// 保存循环调度配置。这里不 emit refresh：本地 record 已是最新值，
+// 整表刷新反而会把用户正在编辑的输入顶掉。
+const saveSchedule = async (record: any, data: Record<string, any>) => {
+  try {
+    const response = await Service.updateItemApiQueueItemUpdatePost({
+      queueId: props.queueId,
+      queueItemId: record.id,
+      data: { Schedule: data },
+    })
+
+    if (response.code !== 200) {
+      message.error(
+        t('queue.toast.scheduleUpdateFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
+      emit('refresh')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新循环调度失败: ${errorMsg}`)
+    message.error(t('queue.toast.scheduleUpdateFailed', { error: errorMsg }))
+    emit('refresh')
+  }
+}
+
+const saveInterval = async (record: any) => {
+  const minutes = Number(record.schedule.IntervalMinutes)
+  if (!Number.isFinite(minutes) || minutes < 1) {
+    record.schedule.IntervalMinutes = CYCLE_SCHEDULE_DEFAULTS.IntervalMinutes
+    return
+  }
+  await saveSchedule(record, { IntervalMinutes: minutes })
+}
+
+const saveScheduleTime = async (record: any) => {
+  const timeString = formatTimeValue(record.scheduleTimeValue)
+  record.schedule.Time = timeString
+  await saveSchedule(record, { Time: timeString })
+}
+
+// 把下次运行时间提到当前，循环下一轮就会挑中它
+const runOnce = async (record: any) => {
+  const nextRunAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  record.schedule.NextRunAt = nextRunAt
+  await saveSchedule(record, { NextRunAt: nextRunAt })
+}
 
 // 加载脚本选项
 const loadOptions = async () => {
@@ -667,6 +862,35 @@ onMounted(() => {
   width: 36px;
   min-width: 36px;
   max-width: 36px;
+}
+
+.header-cell.cycle-cell,
+.row-cell.cycle-cell {
+  flex: 1 1 520px;
+  min-width: 0;
+}
+
+.cycle-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.cycle-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cycle-next-line {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.cycle-next-text {
+  font-variant-numeric: tabular-nums;
 }
 
 .row-cell.script-cell {

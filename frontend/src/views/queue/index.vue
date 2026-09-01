@@ -115,6 +115,25 @@
             <a-col :span="6">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
+                  <span class="form-label">{{ t('queue.cycleType') }}</span>
+                  <a-tooltip :title="t('queue.cycleTypeTip')">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </div>
+                <a-select
+                  v-model:value="currentCycleEnabled"
+                  style="width: 100%"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('CycleEnabled', value)"
+                >
+                  <a-select-option :value="false">{{ t('queue.typeTimed') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('queue.typeCycle') }}</a-select-option>
+                </a-select>
+              </div>
+            </a-col>
+            <a-col :span="6">
+              <div class="form-item-vertical">
+                <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.runOnStart') }}</span>
                   <a-tooltip :title="t('queue.runOnStartTip')">
                     <QuestionCircleOutlined class="help-icon" />
@@ -146,6 +165,7 @@
                   v-model:value="currentTimeEnabled"
                   style="width: 100%"
                   size="large"
+                  :disabled="currentCycleEnabled"
                   @change="(value: any) => handleConfigChange('TimeEnabled', value)"
                 >
                   <a-select-option :value="true">{{ t('queue.yes') }}</a-select-option>
@@ -153,7 +173,7 @@
                 </a-select>
               </div>
             </a-col>
-            <a-col :span="12">
+            <a-col :span="6">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.afterDone') }}</span>
@@ -178,7 +198,7 @@
         <!-- 定时项管理 -->
         <a-col :span="24" class="manager-col">
           <TimeSetManager
-            v-if="activeQueueId && currentQueueData"
+            v-if="activeQueueId && currentQueueData && !currentCycleEnabled"
             :queue-id="activeQueueId"
             :time-sets="currentTimeSets"
             style="font-size: 14px"
@@ -192,6 +212,7 @@
             v-if="activeQueueId && currentQueueData"
             :queue-id="activeQueueId"
             :queue-items="currentQueueItems"
+            :show-cycle-config="currentCycleEnabled"
             style="font-size: 14px"
             @refresh="refreshQueueItems"
           />
@@ -235,6 +256,8 @@ const currentQueueEnabled = ref<boolean>(true)
 const currentStartUpMode = ref<'Never' | 'Always' | 'DailyFirst'>('Never')
 // 定时运行的开关状态
 const currentTimeEnabled = ref<boolean>(false)
+// 队列类型：true 为循环队列，与定时互斥
+const currentCycleEnabled = ref<boolean>(false)
 // 新增：完成后操作状态
 const currentAfterAccomplish = ref<string>('NoAction')
 // 队列名称编辑状态
@@ -348,6 +371,7 @@ const loadQueueData = async (queueId: string) => {
       // 更新开关状态 - 从API响应中获取
       currentStartUpMode.value = queueData.Info?.StartUpMode ?? 'Never'
       currentTimeEnabled.value = queueData.Info?.TimeEnabled ?? false
+      currentCycleEnabled.value = queueData.Info?.CycleEnabled ?? false
       // 更新完成后操作状态 - 从API响应中获取
       currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
       await new Promise(resolve => setTimeout(resolve, 50))
@@ -474,6 +498,7 @@ const refreshQueueItems = async () => {
             queueItems.push({
               id: queueItemId,
               script: queueItemData.Info.ScriptId || '',
+              schedule: { ...(queueItemData.Schedule || {}) },
             })
           }
         } catch (itemError) {
