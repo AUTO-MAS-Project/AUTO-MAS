@@ -37,15 +37,24 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v7.0.1
 
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
       - name: 检查 version.json 语法
         run: python -m json.tool res/version.json > /dev/null
 
       - name: 检查版本号一致性
         run: |
+          python -m pip install --quiet packaging==25.0
           python - <<'PY'
           import ast
           import json
+          import tomllib
           from pathlib import Path
+
+          from packaging.version import Version
 
           with Path("res/version.json").open(encoding="utf-8") as file:
               version_json = json.load(file)
@@ -78,17 +87,34 @@ jobs:
           if app_config_version is None:
               raise SystemExit("未在 app/core/config.py 的 AppConfig 中找到 VERSION")
 
+          with Path("pyproject.toml").open("rb") as file:
+              pyproject_toml = tomllib.load(file)
+          pyproject_version = pyproject_toml["project"]["version"]
+
           versions = {
               "res/version.json": version_json["version"],
               "frontend/package.json": package_json["version"],
               "app/core/config.py": app_config_version,
+              "pyproject.toml": pyproject_version,
           }
 
-          if len(set(versions.values())) != 1:
+          # 前三处要求逐字相同；pyproject.toml 走 PEP 440（如 5.5.0b3），
+          # 去掉前导 v 后按 packaging 规范化比较（5.5.0-beta.3 与 5.5.0b3 规范化后相等）。
+          literal_versions = {
+              path: value for path, value in versions.items() if path != "pyproject.toml"
+          }
+          is_consistent = len(set(literal_versions.values())) == 1
+          if is_consistent:
+              shared_version = next(iter(literal_versions.values()))
+              is_consistent = Version(shared_version.removeprefix("v")) == Version(
+                  pyproject_version
+              )
+
+          if not is_consistent:
               details = "\n".join(
                   f"- {path}: {version}" for path, version in versions.items()
               )
-              raise SystemExit(f"三处版本号不一致：\n{details}")
+              raise SystemExit(f"版本号不一致：\n{details}")
 
           print(f"版本号一致: {app_config_version}")
           PY
