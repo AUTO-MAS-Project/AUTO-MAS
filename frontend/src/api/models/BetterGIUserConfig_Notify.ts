@@ -31,3 +31,4 @@ export type BetterGIUserConfig_Notify = {
      */
     ServerChanKey?: (string | null);
 };
+

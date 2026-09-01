@@ -11,7 +11,8 @@
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板：Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，另设需求建议、AI 提交与其他议题模板，并挂上常见问题、文档站与官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码"
             ],
             "修复BUG": [
                 "修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题",

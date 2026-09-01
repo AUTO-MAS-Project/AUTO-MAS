@@ -55,3 +55,4 @@ export type BetterGIUserConfig_Info = {
      */
     IfUseMasConfig?: (boolean | null);
 };
+

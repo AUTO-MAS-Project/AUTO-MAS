@@ -15,3 +15,4 @@ export type BetterGIConfig_Info = {
      */
     RootPath?: (string | null);
 };
+
