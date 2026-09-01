@@ -449,9 +449,11 @@ def _wait_for_actionable_state(
     iter_count = 0
     while time.monotonic() < deadline:
         frame = _capture_window(hwnd, activate=False)
+        items_full = ocr_image(frame)
+        _dump_ocr_items(items_full)
         if (
             _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
-            or _find_text(ocr_image(frame), _LOGGED_IN_MENU_TEXTS) is not None
+            or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None
         ):
             return
         sig = _frame_signature(frame)
