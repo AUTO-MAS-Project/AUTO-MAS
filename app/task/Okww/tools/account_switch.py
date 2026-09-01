@@ -84,10 +84,15 @@ _WUWA_PROCESS = "Client-Win64-Shipping.exe"
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
-# 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载过渡帧）时，
-# 在宽限期内轮询等待「登录页」或「已登录主菜单」出现；超时说明可能已直接进入游戏
-# 主场景，交由返回登录流程兜底，避免在过渡帧上盲目按 ESC。
-_SWITCH_STABILIZE_SECONDS = 45.0
+# 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载/游戏内更新
+# 过渡帧）时，在硬上限内轮询等待「登录页」或「已登录主菜单」出现。鸣潮更新由 MAS
+# 启动前预更新，游戏内更新概率较低，但仍以「进展续延」应答长加载：界面仍在变化时
+# 持续顺延，长时间无进展才判失败并交由返回登录流程兜底。
+_IN_GAME_UPDATE_TIMEOUT = 1800.0
+# 长时间无进展判定：界面静止达到该时长仍未进入登录态则视为卡死，提前交还兜底流程。
+_IN_GAME_STALL_SECONDS = 60.0
+# 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
+_IN_GAME_POLL_INTERVAL = 3.0
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
@@ -416,32 +421,52 @@ def _logout_from_menu(hwnd: int, on_log: Callable[[str], None]) -> None:
     raise RuntimeError("未找到「确认登出」入口，请人工确认主菜单登出按钮位置")
 
 
+def _frame_signature(frame: np.ndarray) -> int:
+    """对下采样的帧做哈希，用于判断界面是否仍在变化（有更新/加载进展）。"""
+    small = frame[::40, ::40]
+    return hash(small.tobytes())
+
+
 def _wait_for_actionable_state(
     hwnd: int, on_log: Callable[[str], None]
 ) -> None:
     """等待进入可执行的登录态（登录页或已登录主菜单）。
 
-    游戏窗口刚出现时可能仍停在启动过渡帧（警告弹窗、加载条、自动登录等），此时登录页
-    与主菜单两态都不命中。若立即按 ESC 走返回登录，可能落在不匹配的画面上。故在宽限期
-    ``_SWITCH_STABILIZE_SECONDS`` 内轮询等待两态之一出现：
+    游戏窗口刚出现时可能仍停在启动过渡帧（警告弹窗、加载条、游戏内更新、自动登录等），
+    此时登录页与主菜单两态都不命中。若立即按 ESC 走返回登录，可能落在不匹配的画面上。
+    故采用「进展续延」语义等待两态之一出现：
 
     - 命中任意态 → 返回，由调用方按对应态执行（登录页→选择登录，主菜单→登出）；
-    - 超时仍未命中 → 可能已直接进入游戏主场景（无法用登录/菜单特征识别），交由调用方
-      走「ESC→终端→返回登录」兜底。
+    - 界面仍在变化（有更新/加载进展）→ 持续顺延，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
+    - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非登录态 → 判卡死，交还调用方
+      走「ESC→终端→返回登录」兜底（覆盖已直接进入游戏主场景的情形）。
 
-    进度日志按约 5 条/轮询节流，避免每秒向调度台刷屏。
+    进度日志按约 5 条/轮询节流，避免向调度台频繁刷屏。
     """
-    deadline = time.monotonic() + _SWITCH_STABILIZE_SECONDS
+    deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
+    last_progress = time.monotonic()
+    last_sig: int | None = None
     iter_count = 0
     while time.monotonic() < deadline:
-        if _on_login_page(hwnd) or _on_logged_in_menu(hwnd):
+        frame = _capture_window(hwnd, activate=False)
+        if (
+            _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
+            or _find_text(ocr_image(frame), _LOGGED_IN_MENU_TEXTS) is not None
+        ):
             return
+        sig = _frame_signature(frame)
+        if sig != last_sig:
+            last_sig = sig
+            last_progress = time.monotonic()
+        if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
+            break
         if iter_count % 5 == 0:
-            on_log("窗口已出现但尚未进入登录态，等待启动过渡帧稳定...")
+            on_log("鸣潮仍在启动/游戏内更新或加载过渡帧中，等待进入登录页或已登录主菜单...")
         iter_count += 1
-        time.sleep(1)
+        time.sleep(_IN_GAME_POLL_INTERVAL)
     on_log(
-        f"等待登录界面稳定超时（{_SWITCH_STABILIZE_SECONDS:g}s），按未知状态走返回登录流程"
+        "等待进入可执行登录态超时或长时间无进展"
+        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），按未知状态走返回登录流程"
     )
 
 
