@@ -48,12 +48,23 @@ from .config import (
 # LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
 from .ws import MainConnection, Publisher, protocol
 from app.models.config import CLASS_BOOK
+from .queue_cycle import (
+    CycleEntry,
+    collect_cycle_entries,
+    due_entries,
+    format_cycle_time,
+    is_script_success,
+    next_after_finish,
+    next_after_start,
+    sort_for_preview,
+)
 from app.models.schema import (
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     WSPowerSignData,
     WSTaskCompletedData,
     WSTaskCreatedData,
+    WSTaskCyclePreviewData,
     WSTaskInfoUpdatedData,
     WSTaskLogUpdatedData,
     WSTaskNoticeData,
@@ -75,6 +86,20 @@ System = LazyProxy("app.services", "System")
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 
 logger = get_logger("业务调度")
+
+# 循环队列没有条目可跑时的空转间隔
+CYCLE_IDLE_SLEEP_SECONDS = 60
+# 单次等待上限。墙钟跳变（夏令时、NTP 校时）最多让一轮迟到这么久，
+# 而不会因为一次超长 sleep 无限期挂起，详见 app/core/queue_cycle.py 的说明。
+CYCLE_MAX_SLEEP_SECONDS = 300
+# 全部到点条目都被别的任务占用时的重试间隔
+CYCLE_RETRY_SLEEP_SECONDS = 30
+# 运行期间刷新预览的间隔
+CYCLE_PREVIEW_REFRESH_SECONDS = 5
+# 预览展示的条目数
+CYCLE_PREVIEW_SIZE = 4
+# 循环会一直跑下去，每个用户只保留最近这么多条历史日志，避免内存无限增长
+CYCLE_LOG_RECORD_KEEP_COUNT = 50
 
 
 class _ScriptTaskReservations:
@@ -178,7 +203,12 @@ class TaskInfo(TaskItem):
         await Publisher.send(
             id=self.task_id,
             type=protocol.TASK_INFO_UPDATED,
-            data=WSTaskInfoUpdatedData(task_info=self.asdict),
+            data=WSTaskInfoUpdatedData(
+                task_info=self.asdict,
+                cycleNextList=[
+                    WSTaskCyclePreviewData(**item) for item in self.cycle_next_list
+                ],
+            ),
         )
         if self.current_index != -1:
             await Publisher.send(
@@ -286,7 +316,10 @@ class Task(TaskExecuteBase):
         reservation_owner: str,
         src_root_path: Path | None,
     ):
-        """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。"""
+        """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
+
+        顺序执行与循环运行共用这一份分派，新增脚本类型只需改这里。
+        """
 
         if isinstance(script_config, MaaConfig):
             return task.MaaManager(script_item)
@@ -322,7 +355,249 @@ class Task(TaskExecuteBase):
             return task.MaaFWEmbeddedManager(script_item)
         return None
 
+    async def _run_cycle_task(self) -> None:
+        """循环运行：按各队列项自己的周期，持续调度整个队列。
+
+        与顺序执行的区别只在「什么时候跑哪一项」，真正跑脚本的那一步共用
+        ``_build_task_item``；每一轮对脚本适配器而言就是一次普通的自动代理。
+        """
+
+        if self.task_info.queue_id is None:
+            raise RuntimeError("循环运行必须指定队列")
+
+        queue_uid = uuid.UUID(self.task_info.queue_id)
+        Config.running_cycle_queue_ids.add(queue_uid)
+        logger.info(f"循环队列开始运行: {queue_uid}")
+        try:
+            while True:
+                await self._run_cycle_round(queue_uid)
+        finally:
+            Config.running_cycle_queue_ids.discard(queue_uid)
+            self.task_info.cycle_next_list = []
+            logger.info(f"循环队列停止运行: {queue_uid}")
+
+    async def _run_cycle_round(self, queue_uid: uuid.UUID) -> None:
+        """跑一轮：推算 → 落盘首次推算结果 → 等待或执行。"""
+
+        queue = Config.QueueConfig[queue_uid]
+        now = datetime.now()
+        entries = collect_cycle_entries(queue, Config.ScriptConfig, now)
+
+        # 首次推算的结果要落盘，重启后才不会当成「立刻可跑」重来一遍。
+        for entry in entries:
+            queue_item = queue.QueueItem[uuid.UUID(entry.queue_item_id)]
+            if entry.next_run_at > now:
+                await queue_item.set(
+                    "Schedule", "NextRunAt", format_cycle_time(entry.next_run_at)
+                )
+
+        await self._publish_cycle_preview(entries)
+
+        if not entries:
+            await asyncio.sleep(CYCLE_IDLE_SLEEP_SECONDS)
+            return
+
+        pending = due_entries(entries)
+        if not pending:
+            await self._sleep_until(min(entry.next_run_at for entry in entries))
+            return
+
+        await self._run_due_entries(queue_uid, entries, pending)
+
+    async def _sleep_until(self, target: datetime) -> None:
+        """睡到目标时刻，单次不超过上限。
+
+        上限是防时钟跳变的：睡醒后调用方会用当前时间重新推算，跳变最多让这一轮
+        迟到一个上限的时间。
+        """
+
+        delay = (target - datetime.now()).total_seconds()
+        await asyncio.sleep(max(1.0, min(delay, CYCLE_MAX_SLEEP_SECONDS)))
+
+    async def _run_due_entries(
+        self,
+        queue_uid: uuid.UUID,
+        entries: list[CycleEntry],
+        pending: list[CycleEntry],
+    ) -> None:
+        """按队列顺序跑完这一轮所有到点的条目。
+
+        被别的任务占用的条目留到下一轮重试：本轮结束后外层会用新时间重新推算，
+        预览也跟着刷新，比在本轮里原地打转更不容易卡住。
+        """
+
+        blocked = False
+        for entry in pending:
+            if await self._run_cycle_entry(queue_uid, entry, entries) == "blocked":
+                blocked = True
+
+        if blocked:
+            await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
+
+    async def _run_cycle_entry(
+        self,
+        queue_uid: uuid.UUID,
+        entry: CycleEntry,
+        entries: list[CycleEntry],
+    ) -> Literal["success", "failed", "blocked"]:
+        """跑一个队列项。
+
+        Returns:
+            ``blocked`` 表示脚本被别的任务占用、本轮没跑；``failed`` 表示跑了但没成功。
+        """
+
+        queue = Config.QueueConfig[queue_uid]
+        queue_item = queue.QueueItem[uuid.UUID(entry.queue_item_id)]
+        script_uid = uuid.UUID(entry.script_id)
+        script_item = self.task_info.script_list[entry.index]
+
+        if script_uid not in Config.ScriptConfig:
+            script_item.status = "异常"
+            self._record_error(f"脚本 {script_uid} 已被删除")
+            logger.warning(f"循环跳过: {script_uid} 对应脚本已被删除")
+            return "failed"
+
+        script_config = Config.ScriptConfig[script_uid]
+        src_root_path = _get_src_root_path(script_config)
+        reservation_owner = self.task_info.task_id
+
+        # 与顺序执行同一套原子占用，不再自己判 is_locked 轮询。
+        if script_config.is_locked or not self.script_reservations.try_acquire(
+            script_uid, reservation_owner, src_root_path=src_root_path
+        ):
+            script_item.status = "等待"
+            logger.info(f"循环等待: {entry.script_name} 已被其他任务占用")
+            return "blocked"
+
+        try:
+            started_at = datetime.now()
+            await queue_item.set(
+                "Data", "LastCycleStartedAt", format_cycle_time(started_at)
+            )
+            # 先按开始时间排下一轮：万一这轮崩了，下次运行时间也不会停在过去。
+            if queue_item.get("Schedule", "IntervalAnchor") == "start":
+                await queue_item.set(
+                    "Schedule",
+                    "NextRunAt",
+                    format_cycle_time(next_after_start(queue_item, started_at)),
+                )
+
+            task_item = self._build_task_item(
+                script_item,
+                script_config,
+                script_uid=script_uid,
+                reservation_owner=reservation_owner,
+                src_root_path=src_root_path,
+            )
+            if task_item is None:
+                script_item.status = "异常"
+                self._record_error(f"不支持的脚本类型: {type(script_config).__name__}")
+                logger.error(f"不支持的脚本类型: {type(script_config).__name__}")
+                return "failed"
+
+            self.task_info.current_index = entry.index
+            script_item.status = "运行"
+            logger.info(f"循环任务开始: {script_uid}")
+
+            await self._spawn_with_preview(task_item, entry, entries)
+
+            finished_at = datetime.now()
+            await queue_item.set(
+                "Data", "LastCycleFinishedAt", format_cycle_time(finished_at)
+            )
+            if queue_item.get("Schedule", "IntervalAnchor") == "start":
+                # 跑得比间隔还久时往后顺延，别一结束就立刻再来一轮。
+                await queue_item.set(
+                    "Schedule",
+                    "NextRunAt",
+                    format_cycle_time(
+                        next_after_start(queue_item, started_at, after=finished_at)
+                    ),
+                )
+            else:
+                await queue_item.set(
+                    "Schedule",
+                    "NextRunAt",
+                    format_cycle_time(next_after_finish(queue_item, finished_at)),
+                )
+
+            self._trim_cycle_log_records(script_item)
+
+            success = is_script_success(
+                script_item.status, (user.status for user in script_item.user_list)
+            )
+            if not success:
+                logger.warning(f"循环任务未成功: {entry.script_name}")
+            return "success" if success else "failed"
+        finally:
+            self.script_reservations.release(script_uid, reservation_owner)
+
+    async def _spawn_with_preview(
+        self,
+        task_item: TaskExecuteBase,
+        entry: CycleEntry,
+        entries: list[CycleEntry],
+    ) -> None:
+        """跑子任务，期间定期刷新预览，让「还有多久轮到下一个」保持准确。"""
+
+        child = self.spawn(task_item)
+        while True:
+            done, _ = await asyncio.wait(
+                {child}, timeout=CYCLE_PREVIEW_REFRESH_SECONDS
+            )
+            if done:
+                break
+            await self._publish_cycle_preview(entries, running=entry)
+        await child
+
+    async def _publish_cycle_preview(
+        self, entries: list[CycleEntry], running: CycleEntry | None = None
+    ) -> None:
+        """把待运行条目写进任务快照，由 on_change 随任务信息一起下发。"""
+
+        preview: list[dict] = []
+        for entry in sort_for_preview(entries):
+            preview.append(
+                {
+                    "queueItemId": entry.queue_item_id,
+                    "scriptId": entry.script_id,
+                    "scriptName": entry.script_name,
+                    "nextRunAt": format_cycle_time(entry.next_run_at),
+                    "isDue": entry.is_due,
+                    "isRunning": running is not None
+                    and entry.queue_item_id == running.queue_item_id,
+                }
+            )
+
+        # 正在跑的那个排到最前，用户第一眼看到的是当前进度。
+        preview.sort(key=lambda item: not item["isRunning"])
+        self.task_info.cycle_next_list = preview[:CYCLE_PREVIEW_SIZE]
+
+    def _trim_cycle_log_records(self, script_item: ScriptItem) -> None:
+        """裁剪用户历史日志，循环跑上几天也不会把内存撑爆。"""
+
+        trimmed = 0
+        for user_item in script_item.user_list:
+            excess = len(user_item.log_record) - CYCLE_LOG_RECORD_KEEP_COUNT
+            if excess <= 0:
+                continue
+            for log_time in sorted(user_item.log_record)[:excess]:
+                user_item.log_record.pop(log_time, None)
+                trimmed += 1
+
+        if trimmed:
+            logger.debug(
+                f"循环清理历史日志: {script_item.name} 清理 {trimmed} 条, "
+                f"保留最近 {CYCLE_LOG_RECORD_KEEP_COUNT} 条"
+            )
+
     async def _run_main_task(self):
+
+        # 循环运行不参与签到与顺序执行那套流程，单独走自己的调度。
+        if self.task_info.is_cycle:
+            await self.prepare()
+            await self._run_cycle_task()
+            return
 
         # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
         if self.task_info.mode == "AutoProxy":
@@ -465,8 +740,11 @@ class Task(TaskExecuteBase):
             ),
         )
 
+        # 循环任务只会被用户主动停止，此时不该再执行队列的「完成后操作」——
+        # 那会把关机之类的动作接在一次手动停止后面。
         if (
             not self.is_closing
+            and not self.task_info.is_cycle
             and self.task_info.mode == "AutoProxy"
             and self.task_info.queue_id is not None
         ):
@@ -566,12 +844,17 @@ class _TaskManager:
                 TaskRuntimeSnapshotItem(
                     taskId=str(task_uid),
                     mode=task_info.mode,
+                    isCycle=task_info.is_cycle,
                     queueId=task_info.queue_id,
                     scriptId=task_info.script_id,
                     userId=task_info.user_id,
                     stopping=bool(handler and handler.is_closing),
                     scripts=handler.script_identities if handler else [],
                     task_info=task_info.asdict,
+                    cycleNextList=[
+                        WSTaskCyclePreviewData(**item)
+                        for item in task_info.cycle_next_list
+                    ],
                     log=log,
                 )
             )
@@ -598,7 +881,7 @@ class _TaskManager:
 
     async def add_task(
         self,
-        mode: Literal["AutoProxy", "ScriptConfig", "Update"],
+        mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
         id: str,
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
@@ -608,7 +891,7 @@ class _TaskManager:
         添加任务, 根据 id 值搜索实际指向的任务配置
 
         Args:
-            mode (str): 任务模式
+            mode (str): 任务模式; CycleRun 只接受循环队列
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
@@ -618,6 +901,25 @@ class _TaskManager:
         """
 
         uid = uuid.UUID(id)
+
+        # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
+        # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
+        is_cycle = mode == "CycleRun"
+        exec_mode: Literal["AutoProxy", "ScriptConfig", "Update"] = (
+            "AutoProxy" if is_cycle else mode
+        )
+
+        if is_cycle:
+            if uid not in Config.QueueConfig:
+                raise ValueError(f"循环运行的任务 {uid} 必须是调度队列")
+            if not Config.QueueConfig[uid].get("Info", "CycleEnabled"):
+                raise ValueError(
+                    f"队列 {Config.QueueConfig[uid].get('Info', 'Name')} 不是循环队列"
+                )
+            if uid in Config.running_cycle_queue_ids:
+                raise RuntimeError(
+                    f"循环队列 {Config.QueueConfig[uid].get('Info', 'Name')} 已在运行"
+                )
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -679,13 +981,14 @@ class _TaskManager:
                 f"创建任务: {task_uid}, 模式: {mode}, 触发来源: {trigger_source}"
             )
             self.task_info[task_uid] = TaskInfo(
-                mode=mode,
+                mode=exec_mode,
                 task_id=str(task_uid),
                 queue_id=str(queue_id) if queue_id else None,
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
+                is_cycle=is_cycle,
             )
             self.task_handler[task_uid] = Task(
                 self.task_info[task_uid],
@@ -818,6 +1121,11 @@ class _TaskManager:
             self._startup_queue_started = True
             logger.info("开始运行启动时任务")
             for uid, queue in Config.QueueConfig.items():
+                # 循环队列启动后会一直跑下去，任务模式与文案都要跟着换
+                is_cycle = bool(queue.get("Info", "CycleEnabled"))
+                start_mode = "CycleRun" if is_cycle else "AutoProxy"
+                task_type = "启动时循环" if is_cycle else "启动时代理"
+
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
                     logger.info(f"启动时需要运行的队列：{uid}")
@@ -825,12 +1133,12 @@ class _TaskManager:
                     # 失败时不写 LastStartupTime，下次启动仍可重试。
                     try:
                         await TaskManager.add_task(
-                            "AutoProxy",
+                            start_mode,
                             str(uid),
                             new_task_info={
                                 "queueId": str(uid),
                                 "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                                "taskType": "启动时代理",
+                                "taskType": task_type,
                             },
                             trigger_source="startup_task",
                         )
@@ -848,12 +1156,12 @@ class _TaskManager:
                     logger.info(f"启动时需要运行的队列：{uid}")
                     try:
                         await TaskManager.add_task(
-                            "AutoProxy",
+                            start_mode,
                             str(uid),
                             new_task_info={
                                 "queueId": str(uid),
                                 "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                                "taskType": "启动时代理",
+                                "taskType": task_type,
                             },
                             trigger_source="startup_task",
                         )

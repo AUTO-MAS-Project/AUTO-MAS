@@ -165,6 +165,10 @@ class _MainTimer:
         curday = datetime.now().strftime("%A")
 
         for uid, queue in Config.QueueConfig.items():
+            # 循环队列由队列项各自的周期驱动，定时设置对它不生效
+            if queue.get("Info", "CycleEnabled"):
+                continue
+
             if not queue.get("Info", "TimeEnabled"):
                 continue
 
