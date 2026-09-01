@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
-from .planner import MaaFWAgentEnvError, venv_python_exe
+from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
 
 AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
@@ -298,7 +298,13 @@ def _prepare_isolated_venv_env(
 
 
 def _is_valid_venv_path(venv_path: Path) -> bool:
-    return venv_python_exe(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    if not (
+        venv_python_exe(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    ):
+        return False
+    # 文件都在不代表能用：引导用的基解释器（受管模式下常是 sys.executable
+    # 所在的监督器管理 venv）事后被删掉重建过的话，这个 venv 也已经失效。
+    return not venv_base_python_missing(venv_path)
 
 
 def _ensure_isolated_venv(
@@ -385,6 +391,12 @@ def _should_rebuild_isolated_venv(
     project_path: Path,
     log: Callable[[str], None],
 ) -> bool:
+    if venv_path.exists() and venv_base_python_missing(venv_path):
+        log(
+            f"[Python环境] 隔离 venv 的基解释器已不存在（pyvenv.cfg 的 home 已"
+            f"失效），将重建: {venv_path}"
+        )
+        return True
     if venv_path.exists() and not _is_valid_venv_path(venv_path):
         log("[Python环境] 隔离 venv 不完整，将重建")
         return True
