@@ -42,7 +42,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 from app.utils.io import read_file, write_file
 
 from .one_dragon import GLOBAL_CONFIG_LOCK
@@ -57,7 +57,7 @@ _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
 _SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
 
 # 内置资源目录（随 MAS 版本同步；含配置组模板，脚本本体不再内置）
-_RES_TEMPLATE_DIR = Path.cwd() / "res" / "templates" / "BetterGI"
+_RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
 
 # 切换账号脚本在 BetterGI 脚本仓库中的相对路径（repo 下），"js" 前缀映射到 User/JsScript
 _SCRIPT_REPO_PATH = "js/SwitchAccountMultipleMode"

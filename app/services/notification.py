@@ -30,7 +30,6 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -38,7 +37,7 @@ import httpx
 from plyer import notification
 
 from app.models.config import Webhook
-from app.utils import LazyProxy, get_logger
+from app.utils import LazyProxy, get_logger, resource_path
 from app.utils.constants import UTC4
 
 logger = get_logger("通知服务")
@@ -127,7 +126,7 @@ class Notification:
                 title=clip_notify_text(title, PLYER_TITLE_LIMIT),
                 message=clip_notify_text(message, PLYER_MESSAGE_LIMIT),
                 app_name="AUTO-MAS",
-                app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
+                app_icon=resource_path("icons", "AUTO-MAS.ico").as_posix(),
                 timeout=t,
                 ticker=ticker,
                 toast=True,

@@ -30,11 +30,14 @@ from pathlib import Path
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
-if __name__ == "__main__":
+if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
+    # 受监督时由监督器决定工作目录（app-root），源码在 repo/ 子目录，不能 chdir 进去；
+    # 判据与 app.utils.is_supervised() 相同，此处不能先导入 app.utils（见下方
+    # app.utils.logger 会在导入时以 Path.cwd() 建 debug/ 目录，导入必须留在 chdir 之后）
     os.chdir(current_dir)
 
 from app.utils.platform import IS_WINDOWS
-from app.utils import get_logger, sanitize_log_message, is_supervised
+from app.utils import get_logger, resource_path, sanitize_log_message, is_supervised
 
 logger = get_logger("主程序")
 
@@ -203,7 +206,7 @@ def main():
     init_sentry(
         release=Config.VERSION,
         development=development_environment,
-        enabled=is_telemetry_enabled(current_dir / "config" / "Config.json"),
+        enabled=is_telemetry_enabled(Path.cwd() / "config" / "Config.json"),
         dist=resolve_sentry_dist(current_dir),
     )
 
@@ -401,12 +404,12 @@ def main():
 
     app.mount(
         "/api/res/materials",
-        StaticFiles(directory=str(Path.cwd() / "res/images/materials")),
+        StaticFiles(directory=str(resource_path("images", "materials"))),
         name="materials",
     )
     app.mount(
         "/api/res/sounds",
-        StaticFiles(directory=str(Path.cwd() / "res/sounds")),
+        StaticFiles(directory=str(resource_path("sounds"))),
         name="sounds",
     )
 
