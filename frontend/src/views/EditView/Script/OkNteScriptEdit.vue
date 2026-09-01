@@ -15,7 +15,6 @@
     </div>
 
     <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scriptTypes.Okww" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -310,8 +309,6 @@
 </template>
 
 <script setup lang="ts">
-import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
