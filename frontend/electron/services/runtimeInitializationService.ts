@@ -138,6 +138,21 @@ export function mapMirrorSelection(
   return MIRROR_KEY_MAP[stage]?.[key] ?? null
 }
 
+/**
+ * 各段在 Runtime 链路下映射得到的旧镜像键，供界面过滤「换镜像重试」的候选列表。
+ *
+ * 界面不该把 Runtime 根本收不下的镜像源摆出来（选了也只会被忽略），也不该自己抄一份
+ * 键名，所以这里把上面那张映射表的键原样导出，映射表是唯一真相源。列表为空的段
+ * （`dependency` 等）在 Runtime 模式下不展示镜像选择。
+ */
+export function listRuntimeMappableMirrorKeys(): Record<InitializationRunStage, string[]> {
+  const result = {} as Record<InitializationRunStage, string[]>
+  for (const stage of Object.keys(INITIALIZATION_STAGE_INDEX) as InitializationRunStage[]) {
+    result[stage] = Object.keys(MIRROR_KEY_MAP[stage] ?? {})
+  }
+  return result
+}
+
 // ==================== 目标版本 ====================
 
 /**
@@ -291,13 +306,21 @@ export interface RuntimeStageOutcome {
   remediation?: RuntimeRemediation[]
   /** `[stdout]…\n\n[stderr]…` 整块文本，与旧链路失败界面的展示格式一致。 */
   logs?: string
-  /** Runtime 按命令与日期轮转的日志文件路径（`result.details.logPath`），可能没有。 */
+  /**
+   * Runtime 按命令与日期轮转的日志文件路径（`result.details.logPath`），供界面
+   * 「打开日志」使用；不是每条命令都写日志文件，所以可能没有。
+   */
   logPath?: string
   /** 映射后的失败段名。 */
   failedStage?: InitializationRunStage
 }
 
-/** 从事件 details 里读 Runtime 自己的轮转日志路径。 */
+/**
+ * 从事件 details 里读 Runtime 自己的轮转日志路径。
+ *
+ * `details` 是裸 `Record<string, unknown>`，Runtime 只在写了日志文件的命令上放 `logPath`，
+ * 所以拿不到就返回 undefined，由界面退回自己的日志文件。
+ */
 export function readRuntimeLogPath(details: Record<string, unknown>): string | undefined {
   const logPath = details.logPath
   return typeof logPath === 'string' && logPath.length > 0 ? logPath : undefined
@@ -401,6 +424,9 @@ export class RuntimeInitializationService {
    * - 没选镜像源：走该段对应的下层命令，处置强度按 `mode` 决定。
    *
    * `mirror` / `pip` / `git` 三段在新链路没有对应物，直接按成功返回。
+   *
+   * `mode` 显式覆盖上一次失败留下的判断：初始化界面的「重建环境」按钮传 `rebuild`，
+   * 普通「重试」按钮走默认的 `auto`，两个按钮才不会做同一件事。
    */
   async retryStage(
     stage: InitializationRunStage,
@@ -449,6 +475,10 @@ export class RuntimeInitializationService {
    * `python` 段的下层命令是 `environment ensure`，它只准备并校验固定版本 uv；本段还覆盖
    * 由 bootstrap 内部完成的 `uv python install`，所以要重建环境时直接用整体 `repair`，
    * 而不是只重跑 uv 那半截。
+   *
+   * `sync` / `rebuild` 由调用方显式给出时以它为准（界面上「重试」与「重建环境」是两个
+   * 按钮）；`auto` 沿用上一次失败的 remediation。更新流程要拿本次会话实际会跑的命令给
+   * 界面看，所以这个方法是公开的。
    */
   resolveRetryCommand(
     stage: InitializationRunStage,
@@ -655,6 +685,13 @@ export interface CriticalFilesCheck {
   pipExists: boolean
   gitExists: boolean
   mainPyExists: boolean
+  /**
+   * doctor 的逐项检查原文，只有 Runtime 链路产生。
+   *
+   * 四个布尔量只回答「要不要初始化」，界面的「运行诊断」要展示的是每一项到底怎么了，
+   * 所以原样带上而不是再压缩一次。
+   */
+  runtimeChecks?: RuntimeDoctorCheck[]
 }
 
 /**
@@ -674,6 +711,7 @@ export function mapDoctorChecksToCriticalFiles(checks: RuntimeDoctorCheck[]): Cr
     pipExists: true,
     gitExists: true,
     mainPyExists: repoPresent,
+    runtimeChecks: checks,
   }
 }
 

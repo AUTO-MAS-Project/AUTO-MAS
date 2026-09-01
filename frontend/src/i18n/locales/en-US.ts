@@ -1855,6 +1855,24 @@ export default {
   },
   init: {
     unknownStepP0: 'Unknown step: {p0}',
+    runtime: {
+      takenOver: 'Handled by the runtime',
+      preparingEnv: 'Preparing the runtime environment',
+    },
+    failure: {
+      retryOtherMirror: 'Retry with another mirror',
+      rebuildEnvironment: 'Rebuild the environment',
+      openLog: 'Open the log',
+      runDoctor: 'Run diagnostics',
+      internalErrorNotice: 'This is an internal runtime error. Please report it with the log.',
+      contactSupportNotice: 'Please report this problem to the developers with the log.',
+      logTitle: 'Failure log',
+      openLogFailed: 'Could not open the log: {error}',
+      doctorTitle: 'Environment diagnostics',
+      doctorEmpty: 'Diagnostics returned no checks',
+      doctorFailed: 'Diagnostics failed: {error}',
+      doctorRunning: 'Running diagnostics...',
+    },
     common: {
       currentMirror: 'Currently using: {mirror}',
     },

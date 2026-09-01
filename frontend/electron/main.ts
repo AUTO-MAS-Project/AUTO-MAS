@@ -25,6 +25,7 @@ import {
   checkCriticalFilesViaRuntime,
   getBackendService,
   getLocalApiEndpoint,
+  resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
@@ -1490,6 +1491,9 @@ ipcMain.handle('check-environment', async () => {
   const appRoot = getAppRoot()
   return checkEnvironment(appRoot)
 })
+
+// Runtime 上下文 - 初始化界面开局问一次：走没走 Runtime、回退日志文件、可用镜像键
+ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext())
 
 // 关键文件检查 - 每次都重新检查exe文件是否存在
 ipcMain.handle('check-critical-files', async () => {

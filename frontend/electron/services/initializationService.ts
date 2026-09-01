@@ -8,7 +8,7 @@ import { PythonInstaller, PipInstaller, GitInstaller } from './environmentServic
 import { RepositoryService } from './repositoryService'
 import { DependencyService } from './dependencyService'
 import { BackendService } from './backendService'
-import { RuntimeRemediation, resolveRuntimeLaunchConfig } from './runtime'
+import { RuntimeLaunchMode, RuntimeRemediation, resolveRuntimeLaunchConfig } from './runtime'
 import {
   BootstrapProgressUpdate,
   INITIALIZATION_STAGE_INDEX,
@@ -16,6 +16,7 @@ import {
   InitializationStage,
   InitializationStageStatus,
   RuntimeInitializationService,
+  RuntimeRetryMode,
   RuntimeStageOutcome,
   emitDevelopmentSkipProgress,
 } from './runtimeInitializationService'
@@ -34,6 +35,8 @@ export interface InitializationProgress {
   message: string
   /** Runtime 链路给出的机器可读段状态；旧链路不产生，界面按缺省处理。 */
   status?: InitializationStageStatus
+  /** 本次进度来自哪条链路；旧链路不产生，界面按 `off` 处理。 */
+  runtimeMode?: RuntimeLaunchMode
   details?: {
     checkInfo?: unknown // 可以是 EnvironmentCheckResult, RepositoryCheckResult, 或 DependencyCheckResult
     currentMirror?: string
@@ -51,11 +54,12 @@ export interface InitializationResult {
   error?: string
   completedStages: string[]
   failedStage?: string
-  /** 以下四项只有 Runtime 链路产生，旧链路保持 undefined；界面（W9d）按需消费。 */
+  /** 以下五项只有 Runtime 链路产生，旧链路保持 undefined；界面（W9d）按需消费。 */
   code?: string
   retryable?: boolean
   remediation?: RuntimeRemediation[]
   logs?: string
+  logPath?: string
 }
 
 // ==================== 初始化服务类 ====================
@@ -364,6 +368,7 @@ export class InitializationService {
     onProgress: InitializationProgressCallback | undefined,
     totalStages: number
   ): (update: BootstrapProgressUpdate) => void {
+    const runtimeMode = resolveRuntimeLaunchConfig(this.appRoot).mode
     return update =>
       onProgress?.({
         stage: update.stage,
@@ -372,6 +377,7 @@ export class InitializationService {
         progress: update.progress,
         message: update.message,
         status: update.status,
+        runtimeMode,
       })
   }
 
@@ -516,6 +522,7 @@ export class InitializationService {
       retryable: outcome.retryable,
       remediation: outcome.remediation,
       logs: outcome.logs,
+      logPath: outcome.logPath,
     }
   }
 
@@ -528,12 +535,18 @@ export class InitializationService {
   async retryStageViaRuntime(
     stage: InitializationRunStage,
     onProgress?: InitializationProgressCallback,
-    mirrorKey?: string
+    mirrorKey?: string,
+    mode: RuntimeRetryMode = 'auto'
   ): Promise<RuntimeStageOutcome | null> {
     const runtimeService = this.getRuntimeService()
     if (!runtimeService) return null
 
-    return runtimeService.retryStage(stage, this.forwardRuntimeProgress(onProgress, 7), mirrorKey)
+    return runtimeService.retryStage(
+      stage,
+      this.forwardRuntimeProgress(onProgress, 7),
+      mirrorKey,
+      mode
+    )
   }
 
   /**

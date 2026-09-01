@@ -1871,6 +1871,24 @@ export default {
   },
   init: {
     unknownStepP0: '不明なステップ: {p0}',
+    runtime: {
+      takenOver: 'ランタイムが担当',
+      preparingEnv: '実行環境を準備',
+    },
+    failure: {
+      retryOtherMirror: '別のミラーで再試行',
+      rebuildEnvironment: '環境を再構築',
+      openLog: 'ログを開く',
+      runDoctor: '診断を実行',
+      internalErrorNotice: 'ランタイム内部のエラーです。ログを添えて報告してください',
+      contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      logTitle: '失敗ログ',
+      openLogFailed: 'ログを開けませんでした: {error}',
+      doctorTitle: '実行環境の診断',
+      doctorEmpty: '診断結果に項目がありません',
+      doctorFailed: '診断の実行に失敗しました: {error}',
+      doctorRunning: '実行環境を診断しています...',
+    },
     common: {
       currentMirror: '使用中: {mirror}',
     },

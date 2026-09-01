@@ -1773,6 +1773,24 @@ export default {
   },
   init: {
     unknownStepP0: '未知步骤: {p0}',
+    runtime: {
+      takenOver: '由运行时接管',
+      preparingEnv: '准备运行环境',
+    },
+    failure: {
+      retryOtherMirror: '换镜像重试',
+      rebuildEnvironment: '重建环境',
+      openLog: '打开日志',
+      runDoctor: '运行诊断',
+      internalErrorNotice: '这是运行时内部错误，请携带日志反馈',
+      contactSupportNotice: '这个问题需要携带日志反馈给开发者',
+      logTitle: '失败日志',
+      openLogFailed: '打开日志失败: {error}',
+      doctorTitle: '运行环境诊断',
+      doctorEmpty: '诊断没有给出任何检查项',
+      doctorFailed: '运行诊断失败: {error}',
+      doctorRunning: '正在诊断运行环境...',
+    },
     common: {
       currentMirror: '当前使用: {mirror}',
     },
