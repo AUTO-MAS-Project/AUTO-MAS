@@ -960,7 +960,7 @@ export default {
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
     importedFromCurrentSra: '現在の SRA / 三月なのかアシスタントの設定からインポートしました',
     scriptLevelMaaendConfiguration: 'スクリプト単位の MaaEnd 設定を開始しました',
-    gamePathMatchedHtgame: 'ゲームのパスを HTGame.exe に自動で合わせました',
+    gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
     turnThisOffWhen:
       'スクリプト直接制御でクラウドゲームを使う場合は、このスイッチをオフにすることをおすすめします',
@@ -1255,6 +1255,8 @@ export default {
     pickGameExecutable: 'ゲームの実行ファイルを選択してください',
     pickGameRootDirectory:
       'ゲームのルートフォルダを選択してください（HTGame.exe は自動で照合されます）',
+    pickGameLauncherDirectory:
+      'ゲームのルートフォルダを選択してください（NTEGame.exe は自動で照合されます）',
     pickGameExecutable2: 'ゲームの実行ファイルを選択してください',
     pickScriptSMain: 'スクリプトのメインプログラムを選択してください',
     pickScriptRootDirectory2: 'スクリプトのルートフォルダを選択してください',

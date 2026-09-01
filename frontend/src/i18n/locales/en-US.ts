@@ -960,7 +960,7 @@ export default {
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
     importedFromCurrentSra: 'Imported from the current SRA / March7th Assistant configuration',
     scriptLevelMaaendConfiguration: 'Script-level MaaEnd configuration started',
-    gamePathMatchedHtgame: 'Game path matched to HTGame.exe automatically',
+    gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
     turnThisOffWhen:
       'Turn this off when the script controls the game directly and you use cloud gaming',
@@ -1251,6 +1251,8 @@ export default {
     pickStarRailInstall: 'Pick the Star Rail install directory (contains StarRail.exe)',
     pickGameExecutable: 'Pick the game executable',
     pickGameRootDirectory: 'Pick the game root directory (HTGame.exe is matched automatically)',
+    pickGameLauncherDirectory:
+      'Pick the game root directory (NTEGame.exe is matched automatically)',
     pickGameExecutable2: 'Pick the game executable',
     pickScriptSMain: "Pick the script's main program file",
     pickScriptRootDirectory2: 'Pick the script root directory',

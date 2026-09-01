@@ -3689,6 +3689,8 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
+        # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
+        # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
@@ -3699,6 +3701,10 @@ class OkNteConfig(ConfigBase):
         )
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
         )
 
         ## Run -------------------------------------------------------------
