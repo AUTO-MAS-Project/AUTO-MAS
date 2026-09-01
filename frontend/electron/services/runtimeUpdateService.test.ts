@@ -102,6 +102,17 @@ function failResult(options: {
   ]
 }
 
+function progressEvent(stage: string, message: string): RuntimeEvent {
+  return {
+    ...base,
+    type: 'progress',
+    sequence: 20,
+    stage,
+    status: 'running',
+    message,
+  } as unknown as RuntimeEvent
+}
+
 function logEvent(stream: 'stdout' | 'stderr', message: string): RuntimeEvent {
   return {
     ...base,
@@ -485,6 +496,40 @@ describe('取消更新', () => {
 
     expect(outcome).toMatchObject({ success: false, phase: 'shutdown', cancelled: true })
     expect(callLog).toEqual(['stopBackend', 'startBackend'])
+  })
+
+  it('bootstrap 进行中取消：走 stdin cancel，结局仍按 Runtime 给的 result 算', async () => {
+    FakeRuntimeClient.scripts = [
+      [
+        helloEvent,
+        progressEvent('workspace.clone', '正在克隆 release/v5.6.0'),
+        ...failResult({
+          stage: 'workspace.clone',
+          code: 'OPERATION_CANCELLED',
+          message: '操作已取消',
+          remediation: ['retry'],
+        }),
+      ],
+    ]
+
+    const outcome = await updateBackendViaRuntime(
+      '5.6.0',
+      update => {
+        collect(update)
+        // 克隆刚开始时按下取消，等价于用户在进度弹窗上点「取消更新」。
+        if (update.stage === 'repository' && update.status === 'started') cancelBackendUpdate()
+      },
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(callLog).toEqual(['stopBackend', `run:bootstrap --version ${TARGET}`, 'stdin:cancel'])
+    expect(outcome).toMatchObject({
+      success: false,
+      phase: 'bootstrap',
+      cancelled: true,
+      code: 'OPERATION_CANCELLED',
+      retryActions: ['workspace-sync'],
+    })
   })
 
   it('没有进行中的会话时取消不受理', () => {
