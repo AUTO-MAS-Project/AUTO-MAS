@@ -777,6 +777,21 @@ def _declared_project_maafw_requirement(project_path: Path) -> str | None:
     return matches[0] if matches else None
 
 
+
+def resolve_project_maafw_requirement(project_path: Path) -> str | None:
+    """普通项目（非 Managed）会用到的 MaaFW requirement。
+
+    与 ``prepare_runner_environment`` 内的解析顺序一致：项目自带原生库的实测
+    版本优先于 requirements.txt 的声明（实测 46 个发行包里有 3 个声明是陈旧的）。
+
+    供运行前自检复用——它只需要知道「这个项目会用哪个 runtime」，不需要真的去
+    准备环境，因此不联网、不建 venv。
+    """
+
+    project = Path(project_path)
+    return _bundled_project_maafw_requirement(
+        project
+    ) or _declared_project_maafw_requirement(project)
 def _normalize_python_constraint(value: str | None) -> str | None:
     if value is None:
         return None

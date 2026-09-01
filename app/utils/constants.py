@@ -43,6 +43,7 @@ TYPE_BOOK = {
     "M9AUserConfig": "M9A",
     "MaaFWConfig": "MFW",
     "HSRConfig": "HSR",
+    "BetterGIConfig": "BetterGI",
 }
 """配置类型映射表"""
 

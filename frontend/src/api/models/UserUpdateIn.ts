@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BetterGIUserConfig } from './BetterGIUserConfig';
 import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { HSRUserConfig } from './HSRUserConfig';
 import type { M9AUserConfig } from './M9AUserConfig';
@@ -23,6 +24,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig);
 };
 
