@@ -48,8 +48,12 @@ logger = get_logger("米游社扫码登录")
 
 # ---- Passport QR 登录 API（对齐 genshin.py） ----
 
-CREATE_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
-CHECK_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+CREATE_QRCODE_URL = (
+    "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
+)
+CHECK_QRCODE_URL = (
+    "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+)
 
 # ---- 请求头（对齐 genshin.py QRCODE_HEADERS） ----
 
@@ -104,7 +108,14 @@ def _is_expired_message(message: object) -> bool:
     message = message.lower()
     return any(
         hint in message
-        for hint in ("expired", "expire", "invalid qr", "二维码已过期", "二维码失效", "二维码无效")
+        for hint in (
+            "expired",
+            "expire",
+            "invalid qr",
+            "二维码已过期",
+            "二维码失效",
+            "二维码无效",
+        )
     )
 
 
@@ -153,6 +164,7 @@ async def create_qr_login(proxy: str | None = None) -> dict:
         {ticket, qr_url, device} 或 {error}
     """
     from uuid import uuid4
+
     device = str(uuid4())
 
     try:
@@ -176,7 +188,11 @@ async def create_qr_login(proxy: str | None = None) -> dict:
 
         if data.get("retcode") != 0:
             message = data.get("message")
-            return {"error": message if isinstance(message, str) and message else "创建二维码失败"}
+            return {
+                "error": message
+                if isinstance(message, str) and message
+                else "创建二维码失败"
+            }
 
         if not isinstance(qr_data, dict):
             logger.error("创建二维码数据格式无效")
@@ -191,9 +207,7 @@ async def create_qr_login(proxy: str | None = None) -> dict:
         logger.info("QR 创建成功")
         return {"ticket": ticket, "qr_url": qr_url, "device": device}
     except (httpx.HTTPError, OSError) as e:
-        logger.warning(
-            format_exception_reason(e, stage="创建扫码登录网络请求失败")
-        )
+        logger.warning(format_exception_reason(e, stage="创建扫码登录网络请求失败"))
         return {"error": "创建二维码网络请求失败，请检查网络或代理设置"}
     except ValueError:
         logger.exception("创建扫码登录响应解析异常")
@@ -204,7 +218,9 @@ async def create_qr_login(proxy: str | None = None) -> dict:
 
 
 async def check_qr_status(
-    ticket: str, device: str, proxy: str | None = None,
+    ticket: str,
+    device: str,
+    proxy: str | None = None,
 ) -> dict:
     """轮询扫码登录状态
 
@@ -290,9 +306,7 @@ async def check_qr_status(
             "error": f"未知扫码状态: {status}",
         }
     except (httpx.HTTPError, OSError) as e:
-        logger.warning(
-            format_exception_reason(e, stage="查询扫码状态网络请求失败")
-        )
+        logger.warning(format_exception_reason(e, stage="查询扫码状态网络请求失败"))
         return {
             "status": "Error",
             "error": "查询二维码状态网络请求失败，请检查网络或代理设置",
@@ -329,7 +343,8 @@ def _extract_cookie_payload(payload: object) -> dict[str, str]:
 
 
 def _extract_cookies_from_headers(
-    resp: httpx.Response, payload: object = None,
+    resp: httpx.Response,
+    payload: object = None,
 ) -> str:
     """从响应头的 Set-Cookie 中提取 stoken 等 cookies
 
@@ -387,7 +402,9 @@ def _parse_cookie_string(cookie_str: str) -> dict[str, str]:
 
 
 async def exchange_stoken(
-    game_token: str, uid: str, proxy: str | None = None,
+    game_token: str,
+    uid: str,
+    proxy: str | None = None,
 ) -> dict:
     """兼容接口：Passport 模式下此函数不被调用，cookies 直接从响应头获取。
 

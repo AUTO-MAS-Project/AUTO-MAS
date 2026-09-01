@@ -1,8 +1,10 @@
 <template>
   <div class="managed-task-section">
     <div class="section-header section-header-with-action">
-      <h3>MAS 管控任务</h3>
-      <a-button :loading="loading" @click="emit('importSource')">一键从源配置导入</a-button>
+      <h3>{{ t('edit.tasksManagedByMas') }}</h3>
+      <a-button :loading="loading" @click="emit('importSource')">{{
+        t('edit.importFromSourceConfiguration2')
+      }}</a-button>
     </div>
     <a-alert
       v-for="warning in snapshot?.warnings || []"
@@ -14,11 +16,11 @@
     />
 
     <a-spin :spinning="loading">
-      <a-empty v-if="!snapshot && !loading" description="尚未读取到原生任务配置" />
+      <a-empty v-if="!snapshot && !loading" :description="t('edit.nativeTaskConfigurationHas')" />
       <a-row v-else-if="snapshot" :gutter="[24, 16]" class="task-editor-layout">
         <a-col :xs="24" :lg="12" class="task-list-column">
           <div class="column-header">
-            <span>任务模块</span>
+            <span>{{ t('edit.taskModule') }}</span>
             <a-typography-text type="secondary"
               >动态 {{ snapshot.tasks.length }} 项</a-typography-text
             >
@@ -40,13 +42,14 @@
                 <div class="task-row-summary">{{ taskSummary(task) }}</div>
               </div>
               <div class="task-row-actions">
-                <a-switch
-                  :checked="Boolean(taskSwitch[task.key])"
-                  :disabled="saving"
-                  size="small"
-                  @click.stop
-                  @change="emit('taskToggle', task.key, Boolean($event))"
-                />
+                <span @click.stop>
+                  <a-switch
+                    :checked="Boolean(taskSwitch[task.key])"
+                    :disabled="saving"
+                    size="small"
+                    @change="emit('taskToggle', task.key, Boolean($event))"
+                  />
+                </span>
                 <a-tag :color="engineColor(mappedEngine(task))">
                   {{ engineLabel(mappedEngine(task)) }}
                 </a-tag>
@@ -58,7 +61,7 @@
 
         <a-col :xs="24" :lg="12" class="task-option-column">
           <div class="column-header">
-            <span>详细配置</span>
+            <span>{{ t('edit.details') }}</span>
             <a-typography-text type="secondary">
               {{ selectedTask ? phaseLabel(selectedTask.phase) : '' }}
             </a-typography-text>
@@ -72,7 +75,7 @@
               <a-tag :color="engineColor(selectedEngine)">{{ engineLabel(selectedEngine) }}</a-tag>
             </div>
 
-            <a-form-item v-if="engineOptions.length > 1" label="执行引擎">
+            <a-form-item v-if="engineOptions.length > 1" :label="t('edit.engine')">
               <a-segmented
                 :value="selectedEngine"
                 :options="engineOptions"
@@ -86,7 +89,7 @@
               v-if="!Boolean(taskSwitch[selectedTask.key])"
               type="info"
               show-icon
-              message="该用户暂未启用此模块；配置会保存，但本轮不会执行。"
+              :message="t('edit.thisModuleNotEnabled')"
               class="panel-alert"
             />
 
@@ -100,15 +103,10 @@
                 @change="handleFieldChange"
               />
             </template>
-            <a-alert
-              v-else
-              type="warning"
-              show-icon
-              message="所选引擎没有返回该模块的动态配置，请检查原生配置文件与适配器版本。"
-            />
+            <a-alert v-else type="warning" show-icon :message="t('edit.engineReturnedNoDynamic')" />
           </div>
           <div v-else class="task-option-empty">
-            <a-empty description="没有可配置任务" />
+            <a-empty :description="t('edit.nothingConfigure')" />
           </div>
         </a-col>
       </a-row>
@@ -117,6 +115,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { RightOutlined } from '@ant-design/icons-vue'
 import type {
@@ -125,6 +124,8 @@ import type {
   HSRManagedTask,
 } from '@/composables/useHSRPluginApi'
 import DynamicManagedFields from './DynamicManagedFields.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   snapshot: HSRManagedConfigSnapshot | null

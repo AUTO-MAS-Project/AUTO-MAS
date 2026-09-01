@@ -19,13 +19,11 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
 import shutil
 import asyncio
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -55,7 +53,10 @@ def normalize_maaend_config(
         for instance in instances:
             if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
                 return instance
-            if isinstance(instance, dict) and instance.get("id") == last_active_instance_id:
+            if (
+                isinstance(instance, dict)
+                and instance.get("id") == last_active_instance_id
+            ):
                 return instance
 
         for instance in instances:
@@ -148,14 +149,6 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         maaend_set = read_file(maaend_set_path)
-        maaend_template_path = (
-            Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
-        )
-        template_config = (
-            read_file(maaend_template_path)
-            if maaend_template_path.exists()
-            else None
-        )
         maaend_set = normalize_maaend_config(
             maaend_set,
             self.script_config.get("Game", "ControllerType"),

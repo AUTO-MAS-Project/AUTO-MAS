@@ -16,6 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
+from .account_switch import account_switch, async_switch_account
 from .notify import push_notification
 
-__all__ = ["push_notification"]
+__all__ = ["push_notification", "account_switch", "async_switch_account"]

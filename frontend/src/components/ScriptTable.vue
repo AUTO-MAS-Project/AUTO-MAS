@@ -19,7 +19,11 @@
             <!-- 脚本头部信息 -->
             <div class="script-header">
               <div class="script-info">
-                <span class="script-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                <span
+                  class="script-drag-handle"
+                  :title="t('comp.dragReorder')"
+                  :aria-label="t('comp.dragReorder')"
+                >
                   <span class="script-drag-dots" aria-hidden="true"></span>
                 </span>
                 <div class="script-logo-container">
@@ -65,30 +69,23 @@
                     alt="HSR"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'MaaFW'"
+                    src="@/assets/maafw.png"
+                    alt="MFW"
+                    class="script-logo"
+                  />
+                  <img
+                    v-else-if="script.type === 'BetterGI'"
+                    src="@/assets/bettergi.ico"
+                    alt="BetterGI"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag
-                    :color="
-                      script.type === 'MAA'
-                        ? 'blue'
-                        : script.type === 'SRC'
-                          ? 'purple'
-                          : script.type === 'MaaEnd'
-                            ? 'blue'
-                            : script.type === 'M9A'
-                              ? 'cyan'
-                              : script.type === 'Okww'
-                                ? 'blue'
-                                : script.type === 'OkNte'
-                                  ? 'blue'
-                                  : script.type === 'HSR'
-                                    ? 'purple'
-                                    : 'green'
-                    "
-                    class="script-type"
-                  >
+                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
                 </div>
@@ -104,7 +101,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  配置MAA
+                  {{ t('comp.configureMaa') }}
                 </a-button>
                 <a-button
                   v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
@@ -116,7 +113,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  正在配置
+                  {{ t('comp.configuring') }}
                 </a-button>
                 <a-button
                   v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)"
@@ -128,7 +125,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  配置SRC
+                  {{ t('comp.configureSrc') }}
                 </a-button>
                 <a-button
                   v-if="script.type === 'SRC' && props.activeConnections.has(script.id)"
@@ -140,7 +137,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  正在配置
+                  {{ t('comp.configuring') }}
                 </a-button>
                 <a-button
                   v-if="isMaaEndPresetSupported(script) && !props.activeConnections.has(script.id)"
@@ -152,7 +149,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  配置MaaEnd
+                  {{ t('comp.configureMaaend') }}
                 </a-button>
                 <a-button
                   v-if="isMaaEndPresetSupported(script) && props.activeConnections.has(script.id)"
@@ -164,7 +161,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  正在配置
+                  {{ t('comp.configuring') }}
                 </a-button>
                 <a-button
                   v-if="script.type === 'Okww' && !props.activeConnections.has(script.id)"
@@ -176,7 +173,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  配置ok-ww
+                  {{ t('comp.configureOkWw') }}
                 </a-button>
                 <a-button
                   v-if="script.type === 'Okww' && props.activeConnections.has(script.id)"
@@ -188,13 +185,13 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  正在配置
+                  {{ t('comp.configuring') }}
                 </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
                   </template>
-                  编辑脚本
+                  {{ t('comp.editScript') }}
                 </a-button>
                 <a-button
                   type="default"
@@ -205,7 +202,7 @@
                   <template #icon>
                     <UserAddOutlined />
                   </template>
-                  添加用户
+                  {{ t('comp.addUser') }}
                 </a-button>
                 <a-dropdown :trigger="['click']">
                   <a-button
@@ -217,18 +214,18 @@
                     <template #icon>
                       <EllipsisOutlined />
                     </template>
-                    更多
+                    {{ t('comp.more') }}
                   </a-button>
                   <template #overlay>
                     <a-menu>
                       <a-menu-item key="copy" @click="handleCopy(script)">
                         <CopyOutlined />
-                        复制脚本
+                        {{ t('comp.copyScript') }}
                       </a-menu-item>
                       <a-menu-divider />
                       <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
                         <DeleteOutlined />
-                        删除脚本
+                        {{ t('comp.deleteScript') }}
                       </a-menu-item>
                     </a-menu>
                   </template>
@@ -236,10 +233,10 @@
                 <a-tooltip
                   :title="
                     props.searching
-                      ? '搜索时自动展开用户'
+                      ? t('comp.expandUsersWhileSearching')
                       : isUsersCollapsed(script.id)
-                        ? '展开用户'
-                        : '收起用户'
+                        ? t('comp.expandUsers')
+                        : t('comp.collapseUsers')
                   "
                 >
                   <a-button
@@ -278,7 +275,11 @@
               >
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
-                    <span class="user-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                    <span
+                      class="user-drag-handle"
+                      :title="t('comp.dragReorder')"
+                      :aria-label="t('comp.dragReorder')"
+                    >
                       <span class="script-drag-dots" aria-hidden="true"></span>
                     </span>
                     <div class="user-info">
@@ -377,7 +378,8 @@
                           v-if="
                             script.type === 'General' ||
                             script.type === 'Okww' ||
-                            script.type === 'OkNte'
+                            script.type === 'OkNte' ||
+                            script.type === 'BetterGI'
                           "
                           class="user-info-tags"
                         >
@@ -448,8 +450,8 @@
                       <div class="user-status">
                         <a-switch
                           :checked="user.Info.Status"
-                          :checked-children="'启用'"
-                          :un-checked-children="'禁用'"
+                          :checked-children="t('comp.enabled')"
+                          :un-checked-children="t('comp.disabled')"
                           class="status-switch"
                           @click="handleToggleUserStatus(user)"
                         />
@@ -458,7 +460,7 @@
                       <div class="user-actions">
                         <a-tooltip
                           v-if="shouldShowMaaEndUserConfigButton(script, user)"
-                          title="配置用户级 MaaEnd"
+                          :title="t('comp.configurePerUserMaaend')"
                         >
                           <a-button
                             v-if="!props.activeConnections.has(user.id)"
@@ -470,7 +472,7 @@
                             <template #icon>
                               <SettingOutlined />
                             </template>
-                            配置MaaEnd
+                            {{ t('comp.configureMaaend') }}
                           </a-button>
                           <a-button
                             v-else
@@ -483,10 +485,10 @@
                             <template #icon>
                               <SettingOutlined />
                             </template>
-                            正在配置
+                            {{ t('comp.configuring') }}
                           </a-button>
                         </a-tooltip>
-                        <a-tooltip title="编辑用户配置">
+                        <a-tooltip :title="t('comp.editUserConfiguration')">
                           <a-button
                             type="default"
                             size="middle"
@@ -496,22 +498,22 @@
                             <template #icon>
                               <EditOutlined />
                             </template>
-                            编辑
+                            {{ t('comp.edit') }}
                           </a-button>
                         </a-tooltip>
                         <a-popconfirm
-                          title="确定要删除这个用户吗？"
-                          description="删除后将无法恢复"
-                          ok-text="确定"
-                          cancel-text="取消"
+                          :title="t('comp.deleteThisUser')"
+                          :description="t('comp.thisCannotBeUndone')"
+                          :ok-text="t('comp.ok')"
+                          :cancel-text="t('comp.cancel')"
                           @confirm="handleDeleteUser(user)"
                         >
-                          <a-tooltip title="删除用户">
+                          <a-tooltip :title="t('comp.deleteUser')">
                             <a-button type="default" size="middle" danger class="user-action-btn">
                               <template #icon>
                                 <DeleteOutlined />
                               </template>
-                              删除
+                              {{ t('comp.delete') }}
                             </a-button>
                           </a-tooltip>
                         </a-popconfirm>
@@ -525,7 +527,7 @@
             <!-- 空状态 -->
             <div v-else-if="!isUsersCollapsed(script.id)" class="empty-users">
               <div class="empty-content">
-                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+                <img src="@/assets/NoData.png" :alt="t('comp.noData')" class="empty-image" />
               </div>
             </div>
           </a-card>
@@ -536,7 +538,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { Script, User } from '../types/script'
+import type { M9AConfig, MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -554,12 +558,14 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 
+const { t } = useI18n()
+
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
-  allPlansData?: Record<string, Record<string, any>>
-  currentPlanData?: Record<string, any>
+  allPlansData?: Record<string, Record<string, unknown>>
+  currentPlanData?: Record<string, unknown>
   searching?: boolean
 }
 
@@ -663,11 +669,11 @@ const handleCopy = (script: Script) => {
 
 const handleDeleteConfirm = (script: Script) => {
   Modal.confirm({
-    title: '确定要删除这个脚本吗？',
-    content: '删除后将无法恢复，请谨慎操作',
-    okText: '确定',
+    title: t('comp.deleteThisScript'),
+    content: t('comp.thisCannotBeUndone2'),
+    okText: t('comp.ok'),
     okType: 'danger',
-    cancelText: '取消',
+    cancelText: t('comp.cancel'),
     onOk: () => handleDelete(script),
   })
 }
@@ -724,7 +730,8 @@ const handleStartMaaEndUserConfig = (script: Script, user: User) => {
 }
 
 const isMaaEndPresetSupported = (script: Script) => {
-  const controllerType = (script.config as any).Game?.ControllerType
+  const controllerType =
+    script.type === 'MaaEnd' ? (script.config as MaaEndConfig).Game?.ControllerType : null
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
@@ -746,13 +753,28 @@ const getScriptTypeLabel = (type: Script['type']) => {
   return type
 }
 
+const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+  MAA: 'blue',
+  SRC: 'purple',
+  MaaEnd: 'blue',
+  M9A: 'cyan',
+  MaaFW: 'geekblue',
+  Okww: 'blue',
+  OkNte: 'blue',
+  HSR: 'purple',
+  BetterGI: 'gold',
+  General: 'green',
+}
+
+const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
+
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
 }
 
 // 处理账号ID点击
-const handleUserIdClick = async (user: any) => {
+const handleUserIdClick = async (user: User) => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
@@ -767,15 +789,15 @@ const handleUserIdClick = async (user: any) => {
   if (userIdValue) {
     try {
       await navigator.clipboard.writeText(userIdValue)
-      message.success('账号已复制到剪贴板')
+      message.success(t('comp.accountCopiedClipboard'))
     } catch {
-      message.error('复制失败')
+      message.error(t('comp.copyFailed'))
     }
   }
 }
 
 // 处理密码点击
-const handlePasswordClick = async (user: any) => {
+const handlePasswordClick = async (user: User) => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
@@ -790,15 +812,15 @@ const handlePasswordClick = async (user: any) => {
   if (passwordValue) {
     try {
       await navigator.clipboard.writeText(passwordValue)
-      message.success('密码已复制到剪贴板')
+      message.success(t('comp.passwordCopiedClipboard'))
     } catch {
-      message.error('复制失败')
+      message.error(t('comp.copyFailed'))
     }
   }
 }
 
 // 获取账号ID显示文本
-const getUserIdDisplayText = (user: any): string => {
+const getUserIdDisplayText = (user: User): string => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
@@ -812,7 +834,7 @@ const getUserIdDisplayText = (user: any): string => {
 }
 
 // 获取密码显示文本
-const getPasswordDisplayText = (user: any): string => {
+const getPasswordDisplayText = (user: User): string => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
@@ -825,11 +847,11 @@ const getPasswordDisplayText = (user: any): string => {
   }
 }
 
-const getMaaEndResourceLabel = (user: any): string => {
+const getMaaEndResourceLabel = (user: User): string => {
   return user.Info?.Resource || '官服'
 }
 
-const getMaaEndResourceTagColor = (user: any): string => {
+const getMaaEndResourceTagColor = (user: User): string => {
   switch (getMaaEndResourceLabel(user)) {
     case '官服':
     default:
@@ -939,9 +961,11 @@ const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): bo
 }
 
 const getM9AOnceStatusTags = (script: Script, user: User) => {
-  const runConfig = (script.config as any)?.Run || {}
-  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
-  const data = (user as any).Data || {}
+  if (script.type !== 'M9A') return []
+
+  const runConfig = (script.config as M9AConfig).Run ?? {}
+  const queue = parseM9ATaskQueue(user.Task?.Queue)
+  const data = user.Data ?? {}
   const tags: Array<{ text: string; color: string }> = []
 
   if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {

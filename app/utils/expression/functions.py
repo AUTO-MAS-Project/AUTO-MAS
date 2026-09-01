@@ -19,6 +19,7 @@ Arg = Union[str, int]
 
 # ==================== 自定义算子 ====================
 
+
 class Process:
     """自定义文本处理算子基类
 
@@ -184,9 +185,7 @@ def fn_cutby(text: str, args: list[Arg]) -> str:
       最后一个的场景。
     """
     if len(args) < 1:
-        raise ValueError(
-            'cutby 至少需要一个参数: cutby("文本", direction, keep, nth)'
-        )
+        raise ValueError('cutby 至少需要一个参数: cutby("文本", direction, keep, nth)')
     marker = str(args[0])
     direction = int(args[1]) if len(args) > 1 else 0
     keep = int(args[2]) if len(args) > 2 else 0
@@ -200,7 +199,7 @@ def fn_cutby(text: str, args: list[Arg]) -> str:
         # 向前切割：去掉定位文本之前的内容
         if keep == 0:
             return text[pos:]
-        return text[pos + len(marker):]
+        return text[pos + len(marker) :]
     else:
         # 向后切割：去掉定位文本之后的内容
         if keep == 0:

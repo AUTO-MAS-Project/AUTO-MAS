@@ -6,13 +6,10 @@ export interface SatelliteModule {
   enabled: boolean
 }
 
-const iconModules = import.meta.glob<{ default: string }>(
-  ['@/assets/satellite-icons/*.png', '@/assets/ok-nte.ico', '@/assets/hsr.png'],
-  {
-    eager: true,
-    query: 'url',
-  }
-)
+const iconModules = import.meta.glob<{ default: string }>(['@/assets/*.png', '@/assets/*.ico'], {
+  eager: true,
+  query: 'url',
+})
 
 function getIconUrl(filename: string): string {
   const key = Object.keys(iconModules).find(k => k.endsWith(`/${filename}`))
@@ -26,12 +23,14 @@ const filenameToScriptType: Record<string, ScriptType> = {
   'SRC.png': 'SRC',
   'M9A.png': 'M9A',
   'MaaEnd.png': 'MaaEnd',
-  'ok-ww.png': 'Okww',
+  'ok-ww.ico': 'Okww',
   'ok-nte.ico': 'OkNte',
   'hsr.png': 'HSR',
+  'maafw.png': 'MaaFW',
+  'bettergi.ico': 'BetterGI',
 }
 
-const iconFilenames: ScriptType[] = ['MAA', 'SRC', 'M9A', 'MaaEnd', 'Okww', 'OkNte', 'HSR']
+const iconFilenames: ScriptType[] = ['MAA', 'SRC', 'M9A', 'MaaEnd', 'Okww', 'OkNte', 'HSR', 'MaaFW', 'BetterGI']
 
 export const satelliteModules: SatelliteModule[] = iconFilenames
   .map(type => {
@@ -44,4 +43,4 @@ export const satelliteModules: SatelliteModule[] = iconFilenames
   })
   .filter(module => module.iconUrl !== '')
 
-export const centerIconUrl = getIconUrl('AUTO-MAS.png')
+export const centerIconUrl = getIconUrl('AUTO-MAS.ico')

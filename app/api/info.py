@@ -21,21 +21,11 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 
 from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
-from app.services.endfield_activity import endfield_activity_service
-from app.services.reverse1999_activity import reverse1999_activity_service
-from app.services.starrail_activity import (
-    genshin_activity_service,
-    neverness_to_everness_activity_service,
-    starrail_activity_service,
-    wuthering_waves_activity_service,
-    zenless_zone_zero_activity_service,
-)
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
@@ -75,7 +65,7 @@ async def get_git_version() -> VersionOut:
     status_code=200,
 )
 async def get_stage_combox(
-    stage: GetStageIn = Body(..., description="关卡号类型")
+    stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
     try:
@@ -268,23 +258,6 @@ async def get_web_config() -> InfoOut:
     status_code=200,
 )
 async def get_overview() -> InfoOut:
-    (
-        endfield_overview,
-        starrail_overview,
-        genshin_overview,
-        zenless_overview,
-        wuthering_waves_overview,
-        neverness_to_everness_overview,
-        reverse1999_overview,
-    ) = await asyncio.gather(
-        endfield_activity_service.get_overview(),
-        starrail_activity_service.get_overview(),
-        genshin_activity_service.get_overview(),
-        zenless_zone_zero_activity_service.get_overview(),
-        wuthering_waves_activity_service.get_overview(),
-        neverness_to_everness_activity_service.get_overview(),
-        reverse1999_activity_service.get_overview(),
-    )
     try:
         stage_by_server = {
             server: await Config.get_stage_info("Info", server=server)
@@ -306,13 +279,6 @@ async def get_overview() -> InfoOut:
             data={
                 "Stage": [],
                 "Proxy": [],
-                "Endfield": endfield_overview,
-                "StarRail": starrail_overview,
-                "Genshin": genshin_overview,
-                "ZenlessZoneZero": zenless_overview,
-                "WutheringWaves": wuthering_waves_overview,
-                "NevernessToEverness": neverness_to_everness_overview,
-                "Reverse1999": reverse1999_overview,
             },
         )
     return InfoOut(
@@ -320,12 +286,5 @@ async def get_overview() -> InfoOut:
             "Stage": stage_by_server["Official"],
             "StageByServer": stage_by_server,
             "Proxy": proxy,
-            "Endfield": endfield_overview,
-            "StarRail": starrail_overview,
-            "Genshin": genshin_overview,
-            "ZenlessZoneZero": zenless_overview,
-            "WutheringWaves": wuthering_waves_overview,
-            "NevernessToEverness": neverness_to_everness_overview,
-            "Reverse1999": reverse1999_overview,
         }
     )

@@ -6,7 +6,7 @@
 
     <a-card
       v-if="activityData.length"
-      title="明日方舟活动信息"
+      :title="t('home.module.arknights')"
       class="arknights-card"
       :loading="loading"
     >
@@ -16,7 +16,7 @@
             <div class="activity-title">{{ currentActivity.Tip }}</div>
             <div class="activity-end-time">
               <ClockCircleOutlined class="time-icon" />
-              <span class="time-label">结束时间：</span>
+              <span class="time-label">{{ t('home.arknights.endTime') }}</span>
               <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
             </div>
           </div>
@@ -26,7 +26,7 @@
               v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
               title=""
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="活动已结束"
+              :format="t('home.countdown.ended')"
               :value-style="{
                 color: 'var(--ant-color-error)',
                 fontWeight: '600',
@@ -36,12 +36,12 @@
             />
             <a-statistic-countdown
               v-else
-              title="当期活动剩余时间"
+              :title="t('home.arknights.remaining')"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
               :format="
                 getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'
-                  ? 'D 天 H 时 m 分 ss 秒'
-                  : 'D 天 H 时 m 分'
+                  ? t('home.countdown.dhms')
+                  : t('home.countdown.dhm')
               "
               :value-style="{
                 color:
@@ -79,7 +79,7 @@
       </div>
     </a-card>
 
-    <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
+    <a-card :title="t('home.arknights.resourceToday')" class="resource-card" :loading="loading">
       <div v-if="resourceData.length" class="resource-list">
         <div v-for="item in resourceData" :key="item.Value" class="resource-item">
           <div class="stage-info">
@@ -103,13 +103,14 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+        <img src="@/assets/NoData.png" :alt="t('home.empty.noData')" class="empty-image" />
       </div>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { ClockCircleOutlined } from '@ant-design/icons-vue'
@@ -162,8 +163,10 @@ const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ende
   return 'normal'
 }
 
+const { t } = useI18n()
+
 const onCountdownFinish = () => {
-  message.warning('活动已结束')
+  message.warning(t('home.arknights.activityEnded'))
   emit('refresh')
 }
 

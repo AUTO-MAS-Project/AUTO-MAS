@@ -155,11 +155,4 @@ export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
-  Endfield: EndfieldActivityOverview
-  StarRail: StarRailActivityOverview
-  Genshin: GenshinActivityOverview
-  ZenlessZoneZero: ZenlessZoneZeroActivityOverview
-  WutheringWaves: WutheringWavesActivityOverview
-  NevernessToEverness: NevernessToEvernessActivityOverview
-  Reverse1999: Reverse1999ActivityOverview
 }

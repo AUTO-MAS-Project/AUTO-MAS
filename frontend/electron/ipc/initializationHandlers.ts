@@ -7,8 +7,17 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
 import { getLogger } from '../services/logger'
+import type { ApiEndpoints, MirrorConfig } from '../services/mirrorService'
 
 const logger = getLogger('初始化处理器')
+const mirrorTypes = new Set<keyof MirrorConfig>(['python', 'get_pip', 'git', 'repo', 'pip_mirror'])
+const apiEndpointKeys = new Set<keyof ApiEndpoints>(['local', 'websocket'])
+
+const isMirrorType = (value: unknown): value is keyof MirrorConfig =>
+  typeof value === 'string' && mirrorTypes.has(value as keyof MirrorConfig)
+
+const isApiEndpointKey = (value: unknown): value is keyof ApiEndpoints =>
+  typeof value === 'string' && apiEndpointKeys.has(value as keyof ApiEndpoints)
 
 // 全局实例
 let initService: InitializationService | null = null
@@ -191,21 +200,25 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== 获取镜像源列表 ====================
 
-  ipcMain.handle('get-mirrors', async (event, type: string) => {
+  ipcMain.handle('get-mirrors', async (_event, type: unknown) => {
+    if (!isMirrorType(type)) throw new TypeError(`不支持的镜像源类型: ${String(type)}`)
+
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const mirrors = mirrorService.getMirrors(type as any)
+    const mirrors = mirrorService.getMirrors(type)
     return mirrors
   })
 
   // ==================== 获取 API 端点 ====================
 
-  ipcMain.handle('get-api-endpoint', async (event, key: string) => {
+  ipcMain.handle('get-api-endpoint', async (_event, key: unknown) => {
+    if (!isApiEndpointKey(key)) throw new TypeError(`不支持的 API 端点: ${String(key)}`)
+
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    return mirrorService.getApiEndpoint(key as any)
+    return mirrorService.getApiEndpoint(key)
   })
 
   ipcMain.handle('get-api-endpoints', async () => {

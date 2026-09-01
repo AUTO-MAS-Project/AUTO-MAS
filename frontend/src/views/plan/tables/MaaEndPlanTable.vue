@@ -156,6 +156,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { ComboBoxItem, MaaEndConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -179,6 +180,8 @@ import {
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
+
+const { t } = useI18n()
 
 interface Props {
   tableData: Record<string, any> | null
@@ -252,28 +255,52 @@ watch(
   { immediate: true }
 )
 
-const configColumns = [
+const configColumns = computed(() => [
   {
-    title: '配置项',
+    title: t('plan.table.field'),
     dataIndex: 'fieldName',
     key: 'fieldName',
     width: 120,
     fixed: 'left',
     align: 'center',
   },
-  { title: '全局', dataIndex: 'ALL', key: 'ALL', width: 160, align: 'center' },
-  { title: '周一', dataIndex: 'Monday', key: 'Monday', width: 160, align: 'center' },
-  { title: '周二', dataIndex: 'Tuesday', key: 'Tuesday', width: 160, align: 'center' },
-  { title: '周三', dataIndex: 'Wednesday', key: 'Wednesday', width: 160, align: 'center' },
-  { title: '周四', dataIndex: 'Thursday', key: 'Thursday', width: 160, align: 'center' },
-  { title: '周五', dataIndex: 'Friday', key: 'Friday', width: 160, align: 'center' },
-  { title: '周六', dataIndex: 'Saturday', key: 'Saturday', width: 160, align: 'center' },
-  { title: '周日', dataIndex: 'Sunday', key: 'Sunday', width: 160, align: 'center' },
-]
-
-const simpleColumns = [
+  { title: t('plan.week.ALL'), dataIndex: 'ALL', key: 'ALL', width: 160, align: 'center' },
+  { title: t('plan.week.Monday'), dataIndex: 'Monday', key: 'Monday', width: 160, align: 'center' },
   {
-    title: '时间',
+    title: t('plan.week.Tuesday'),
+    dataIndex: 'Tuesday',
+    key: 'Tuesday',
+    width: 160,
+    align: 'center',
+  },
+  {
+    title: t('plan.week.Wednesday'),
+    dataIndex: 'Wednesday',
+    key: 'Wednesday',
+    width: 160,
+    align: 'center',
+  },
+  {
+    title: t('plan.week.Thursday'),
+    dataIndex: 'Thursday',
+    key: 'Thursday',
+    width: 160,
+    align: 'center',
+  },
+  { title: t('plan.week.Friday'), dataIndex: 'Friday', key: 'Friday', width: 160, align: 'center' },
+  {
+    title: t('plan.week.Saturday'),
+    dataIndex: 'Saturday',
+    key: 'Saturday',
+    width: 160,
+    align: 'center',
+  },
+  { title: t('plan.week.Sunday'), dataIndex: 'Sunday', key: 'Sunday', width: 160, align: 'center' },
+])
+
+const simpleColumns = computed(() => [
+  {
+    title: t('plan.table.time'),
     dataIndex: 'timeLabel',
     key: 'timeLabel',
     width: 120,
@@ -281,21 +308,27 @@ const simpleColumns = [
     align: 'center',
   },
   {
-    title: '任务类型',
+    title: t('plan.table.taskType'),
     dataIndex: 'SanityTaskType',
     key: 'SanityTaskType',
     width: 140,
     align: 'center',
   },
-  { title: '当前任务', dataIndex: 'CurrentTask', key: 'CurrentTask', width: 220, align: 'center' },
   {
-    title: '奖励组',
+    title: t('plan.table.currentTask'),
+    dataIndex: 'CurrentTask',
+    key: 'CurrentTask',
+    width: 220,
+    align: 'center',
+  },
+  {
+    title: t('plan.table.rewardsSet'),
     dataIndex: 'RewardsSetOption',
     key: 'RewardsSetOption',
     width: 160,
     align: 'center',
   },
-]
+])
 
 const asTimeKey = (value: string): PlanTimeKey => value as PlanTimeKey
 
@@ -337,21 +370,21 @@ const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) => {
 const configRows = computed(() => [
   {
     rowKey: 'SanityTaskType',
-    fieldName: '理智任务',
+    fieldName: t('plan.table.sanityTask'),
     ...Object.fromEntries(
       MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).SanityTaskType])
     ),
   },
   {
     rowKey: 'CurrentTask',
-    fieldName: '当前任务',
+    fieldName: t('plan.table.currentTask'),
     ...Object.fromEntries(
       MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getCurrentTaskValue(getDayConfig(timeKey))])
     ),
   },
   {
     rowKey: 'RewardsSetOption',
-    fieldName: '奖励组',
+    fieldName: t('plan.table.rewardsSet'),
     ...Object.fromEntries(
       MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).RewardsSetOption])
     ),

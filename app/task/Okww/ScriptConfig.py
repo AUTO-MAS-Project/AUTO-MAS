@@ -22,7 +22,6 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.schema import WSTaskNoticeData
 from app.models.ConfigBase import MultipleConfig
@@ -108,7 +107,9 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
             _configure_okww_launcher(self.root_path, self.resource)
             if not self.script_config_path.is_dir():
-                raise FileNotFoundError("未找到 OK-WW 配置目录，请先在 OK-WW 中保存设置")
+                raise FileNotFoundError(
+                    "未找到 OK-WW 配置目录，请先在 OK-WW 中保存设置"
+                )
             _update_json(
                 self.script_config_path / "Basic Options.json",
                 {"Exit App when Game Exits": True},
@@ -136,7 +137,9 @@ class ScriptConfigTask(TaskExecuteBase):
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=f"OK-WW 设置任务出现异常: {e}"),
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-WW 设置任务出现异常: {e}"
+            ),
         )
 
     async def _kill_processes(self) -> None:

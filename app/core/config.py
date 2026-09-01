@@ -20,65 +20,77 @@
 
 #   Contact: DLmaster_361@163.com
 
+import asyncio
+import json
 import os
 import re
-import sys
-import httpx
 import shutil
-import asyncio
-import uvicorn
 import sqlite3
-import truststore
-from pathlib import Path
-from collections import defaultdict
-from jinja2 import Environment, FileSystemLoader
-from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Dict, Any, List
+import sys
+import time
 import uuid
-import json
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
-from app.utils.platform import IS_WINDOWS
+import httpx
+import truststore
+
+# 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
+if TYPE_CHECKING:
+    import uvicorn
+from jinja2 import Environment, FileSystemLoader
+
 from app.models.config import (
-    GeneralConfig,
-    MaaConfig,
-    SrcConfig,
-    M9AConfig,
-    MaaEndConfig,
-    OkwwConfig,
-    OkNteConfig,
-    HSRConfig,
-    HSRUserConfig,
-    MaaPlanConfig,
-    MaaEndPlanConfig,
-    QueueConfig,
-    QueueItem,
-    MaaUserConfig,
-    SrcUserConfig,
-    M9AUserConfig,
-    MaaEndUserConfig,
-    GeneralUserConfig,
-    OkwwUserConfig,
-    OkNteUserConfig,
-    GlobalConfig,
+    BetterGIConfig,
+    BetterGIUserConfig,
     CLASS_BOOK,
     PLAN_BOOK,
-    Webhook,
-    TimeSet,
     EmulatorConfig,
     GameSignAccountGroup,
+    GeneralConfig,
+    GeneralUserConfig,
+    GlobalConfig,
+    HSRConfig,
+    HSRUserConfig,
+    M9AConfig,
+    M9AUserConfig,
+    MaaConfig,
+    MaaEndConfig,
+    MaaEndPlanConfig,
+    MaaEndUserConfig,
+    MaaFWConfig,
+    MaaFWUserConfig,
+    MaaPlanConfig,
+    MaaUserConfig,
+    OkNteConfig,
+    OkNteUserConfig,
+    OkwwConfig,
+    OkwwUserConfig,
+    QueueConfig,
+    QueueItem,
+    SrcConfig,
+    SrcUserConfig,
+    TimeSet,
+    Webhook,
 )
 from app.models.schema import PlanComboxConsumer
+from app.utils import get_logger
 from app.utils.constants import (
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
+    RESOURCE_STAGE_DATE_TEXT,
+    RESOURCE_STAGE_DROP_INFO,
+    RESOURCE_STAGE_INFO,
+    TYPE_BOOK,
     UTC4,
     UTC8,
-    RESOURCE_STAGE_INFO,
-    RESOURCE_STAGE_DROP_INFO,
-    TYPE_BOOK,
-    RESOURCE_STAGE_DATE_TEXT,
-    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
-from app.utils import get_logger
 from app.utils.io import write_file
+from app.utils.platform import IS_WINDOWS
+
+# 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
+MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 
 logger = get_logger("配置管理")
 
@@ -195,9 +207,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         last_drop_stats: dict[str, int] = {}
 
         for line in logs[start_index : end_index + 1]:
-            drop_match = re.search(
-                r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line
-            )
+            drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
             if drop_match:
                 current_stage = drop_match.group(1)
                 last_drop_stats = {}
@@ -236,7 +246,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.2"
+    VERSION = "v5.5.0-beta.3"
 
     def __init__(self) -> None:
         super().__init__()
@@ -262,11 +272,7 @@ class AppConfig(GlobalConfig):
         self._repo: Any = None
         self._repo_initialized = False
 
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
-        )
-
-        self.server: Optional[uvicorn.Server] = None
+        self.server: Optional["uvicorn.Server"] = None
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -278,10 +284,16 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        # 正在循环运行的队列，供配置改动前的安全检查使用
+        self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
         self._inject_truststore()
+
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+        )
 
     @staticmethod
     def _inject_truststore() -> None:
@@ -308,6 +320,23 @@ class AppConfig(GlobalConfig):
                 "_preloaded_ssl_context",
                 truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
             )
+
+        # 缓存 SSL 上下文：httpx 为每个 AsyncClient 都调用 create_default_context()，
+        # truststore 场景下会全量加载 Windows 证书库（实测一次 5~15s，且发生在
+        # 事件循环上时冻结全部请求）。按参数缓存后全程只加载一次，
+        # 首次加载由启动预热线程完成，见 main.py。
+        _original_create_default_context = ssl.create_default_context
+        _ssl_context_cache: dict[tuple, ssl.SSLContext] = {}
+
+        def _cached_create_default_context(*args: object, **kwargs: object) -> ssl.SSLContext:
+            key = (args, tuple(sorted(kwargs.items())))
+            context = _ssl_context_cache.get(key)
+            if context is None:
+                context = _original_create_default_context(*args, **kwargs)
+                _ssl_context_cache[key] = context
+            return context
+
+        ssl.create_default_context = _cached_create_default_context
 
     def _get_repo(self) -> Any:
         """惰性初始化 Git 仓库，避免启动时导入 GitPython。"""
@@ -706,12 +735,11 @@ class AppConfig(GlobalConfig):
 
             # 检查是否为最新 commit
             try:
-                # 获取远程分支的最新 commit
-                origin = repo.remotes.origin
-                origin.fetch()  # 拉取最新信息
-                remote_commit = repo.commit(
-                    f"origin/{repo.active_branch.name}"
-                )
+                # 仅比对本地已缓存的远程引用，不在请求路径上调用 origin.fetch()。
+                # fetch 是联网操作（弱网/VPN 下耗时 5~15s），以同步 GitPython 子进程
+                # 形式执行会阻塞事件循环，期间所有请求排队无响应；远程引用由
+                # 版本更新等流程自行维护，此处只读本地。
+                remote_commit = repo.commit(f"origin/{repo.active_branch.name}")
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
                 logger.warning(f"无法获取远程分支信息: {e}")
@@ -728,7 +756,16 @@ class AppConfig(GlobalConfig):
     async def add_script(
         self,
         script: Literal[
-            "MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"
+            "MAA",
+            "SRC",
+            "General",
+            "MaaEnd",
+            "M9A",
+            "MaaFW",
+            "Okww",
+            "OkNte",
+            "HSR",
+            "BetterGI",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -738,9 +775,11 @@ class AppConfig(GlobalConfig):
         | GeneralConfig
         | MaaEndConfig
         | M9AConfig
+        | MaaFWConfig
         | OkwwConfig
         | OkNteConfig
-        | HSRConfig,
+        | HSRConfig
+        | BetterGIConfig,
     ]:
         """添加脚本配置"""
 
@@ -828,6 +867,15 @@ class AppConfig(GlobalConfig):
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+
+        # 删脚本会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
+        # 结构一变就会跑错脚本，两轮之间脚本没锁也要拦住。
+        for queue_uid, queue in self.QueueConfig.items():
+            if any(
+                item.get("Info", "ScriptId") == str(uid)
+                for item in queue.QueueItem.values()
+            ):
+                self._ensure_cycle_safe(queue_uid, "删除它引用的脚本")
 
         # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
@@ -999,11 +1047,8 @@ class AppConfig(GlobalConfig):
                         Path(config["Info"]["RootPath"])
                     )
                 )
-            if (
-                IS_WINDOWS
-                and Path(config["Script"][path]).is_relative_to(
-                    Path(os.environ["APPDATA"])
-                )
+            if IS_WINDOWS and Path(config["Script"][path]).is_relative_to(
+                Path(os.environ["APPDATA"])
             ):
                 config["Script"][path] = (
                     f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
@@ -1040,9 +1085,11 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
+        | MaaFWUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
-        | HSRUserConfig,
+        | HSRUserConfig
+        | BetterGIUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1075,8 +1122,12 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, MaaFWConfig):
+            uid, config = await script_config.UserData.add(MaaFWUserConfig)
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
+        elif isinstance(script_config, BetterGIConfig):
+            uid, config = await script_config.UserData.add(BetterGIUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -1304,7 +1355,9 @@ class AppConfig(GlobalConfig):
         logger.info(f"添加计划表: {script}")
 
         plan_class = next(
-            item["config_class"] for item in PLAN_BOOK.values() if item["create_type"] == script
+            item["config_class"]
+            for item in PLAN_BOOK.values()
+            if item["create_type"] == script
         )
         return await self.PlanConfig.add(plan_class)
 
@@ -1469,6 +1522,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        # 队列名、完成后操作这类字段改了不影响正在跑的循环，放行；
+        # 只有循环开关本身不能在运行中动。
+        if "CycleEnabled" in data.get("Info", {}):
+            self._ensure_cycle_safe(queue_uid, "切换循环开关")
 
         await self.QueueConfig[queue_uid].update(data)
 
@@ -1477,7 +1534,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "删除")
+
+        await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -1571,6 +1631,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
 
@@ -1585,6 +1646,10 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        # 循环调度参数每轮都会重读，运行中改没问题；换脚本会让任务的脚本列表
+        # 与队列对不上号，必须拦住。
+        if "Info" in data:
+            self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
@@ -1595,6 +1660,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
@@ -1604,10 +1670,29 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "调整队列项顺序")
 
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
+        """拦住会打乱正在运行的循环的改动。
+
+        任务的脚本列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
+        排序、换脚本都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
+        周期都不受影响。
+        """
+
+        if queue_uid not in self.running_cycle_queue_ids:
+            return
+
+        queue_name = (
+            self.QueueConfig[queue_uid].get("Info", "Name")
+            if queue_uid in self.QueueConfig
+            else str(queue_uid)
+        )
+        raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法{action}")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
@@ -2859,6 +2944,67 @@ class AppConfig(GlobalConfig):
             k: v
             for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
+
+    async def clean_maafw_agent_venvs(self) -> None:
+        """清掉已无脚本引用的 MFW agent 隔离 venv。
+
+        这些 venv 每个几十到上百 MB，此前没有任何回收——只有「同一项目依赖变了
+        就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，旧 venv 都会
+        永远留着。
+
+        放在启动清理里而不是运行前：判定依赖「当前全部脚本配置」这个全局状态，
+        只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
+        把开发者磁盘上的真 venv 删掉了。
+
+        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
+        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
+        """
+
+        from app.models.config import MaaFWConfig
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+            collect_orphan_agent_venvs,
+        )
+
+        root = Path.cwd() / "config" / "maafw_agent_venvs"
+        if not root.is_dir():
+            return
+
+        live_paths = [
+            path
+            for config in self.ScriptConfig.values()
+            if isinstance(config, MaaFWConfig)
+            and (path := str(config.get("Info", "Path") or "").strip())
+        ]
+
+        # 目录名是 Path.resolve() 之后的路径哈希，而 resolve() 只在路径**当下
+        # 存在**时才展开映射盘 / junction / 符号链接；不存在时原样返回。建 venv
+        # 时项目必然在，算的是展开后的真实路径；开机自启动早于网络盘挂载时，
+        # 这里却只能算出字面路径——名字对不上，存活 venv 就会被当成孤儿删掉。
+        # 分不清的时候不删：只要有一个存活项目此刻不可达，整轮弃权。
+        unreachable = [path for path in live_paths if not Path(path).exists()]
+        if unreachable:
+            logger.info(
+                "MFW 隔离 venv 清理已跳过：以下项目路径当前不可达，"
+                f"无法可靠判定归属: {unreachable[:3]}"
+            )
+            return
+
+        try:
+            orphans = collect_orphan_agent_venvs(root, live_paths)
+        except Exception as exc:
+            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
+            return
+
+        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
+        for venv_path in orphans:
+            try:
+                if venv_path.stat().st_mtime > cutoff:
+                    continue  # 刚动过，可能有运行正在用它
+                shutil.rmtree(venv_path)
+            except OSError as exc:
+                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
+                continue
+            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
 
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""

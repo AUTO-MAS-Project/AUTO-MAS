@@ -22,7 +22,6 @@
 import asyncio
 from pathlib import Path
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -263,7 +262,9 @@ class ScriptConfigTask(TaskExecuteBase):
                 Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
+                    data=WSTaskNoticeData(
+                        level="error", message=f"脚本设置任务出现异常: {e}"
+                    ),
                 ),
                 timeout=5,
             )

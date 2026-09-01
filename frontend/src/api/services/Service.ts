@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { BackendHealthOut } from '../models/BackendHealthOut';
+import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
@@ -34,6 +35,12 @@ import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
+import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
+import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
+import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
+import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -755,6 +762,73 @@ export class Service {
         });
     }
     /**
+     * 预览 MFW interface
+     * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
+     * @param requestBody
+     * @returns MaaFWInterfacePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewMaafwInterfaceApiScriptsMaafwPreviewPost(
+        requestBody: MaaFWInterfacePreviewIn,
+    ): CancelablePromise<MaaFWInterfacePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查或执行 MFW 项目更新
+     * 按脚本 ``Update.*`` 配置检查或应用 MaaFW 项目目录更新。
+     *
+     * ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
+     * ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
+     * @param requestBody
+     * @returns MaaFWProjectUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMaafwProjectApiScriptsMaafwUpdatePost(
+        requestBody: MaaFWProjectUpdateIn,
+    ): CancelablePromise<MaaFWProjectUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预备 MFW 运行环境
+     * 按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
+     *
+     * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
+     * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
+     * 在请求内完成，首次冷启动可能耗时数分钟。
+     * @param requestBody
+     * @returns MaaFWAgentEnvPrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost(
+        requestBody: MaaFWAgentEnvPrepareIn,
+    ): CancelablePromise<MaaFWAgentEnvPrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/agent-env/prepare',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 M9A 可用任务列表（排除 standalone 任务）
      * 获取 M9A 可用任务列表（排除 standalone 任务）
      *
@@ -811,6 +885,79 @@ export class Service {
                 'engine': engine,
                 'userId': userId,
                 'slot': slot,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 自动战斗策略选项
+     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt`` 文件名。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiStrategiesApiApiScriptsBettergiStrategiesGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/strategies',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 一条龙自定义配置组
+     * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
+     *
+     * ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
+     * per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
+     * 独立配置添加的自定义组。
+     * @param scriptId
+     * @param configName
+     * @param useMasConfig
+     * @returns BetterGICustomGroupsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
+        scriptId: string,
+        configName: string = '',
+        useMasConfig: boolean = false,
+    ): CancelablePromise<BetterGICustomGroupsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/one-dragon/custom-groups',
+            query: {
+                'scriptId': scriptId,
+                'configName': configName,
+                'useMasConfig': useMasConfig,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 一条龙配置名列表
+     * 返回 BetterGI 可选一条龙配置名：{RootPath}/User/OneDragon*.json 文件名（默认配置置顶）。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiOneDragonConfigsApiApiScriptsBettergiOneDragonConfigsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/one-dragon/configs',
+            query: {
+                'scriptId': scriptId,
             },
             errors: {
                 422: `Validation Error`,
@@ -966,6 +1113,36 @@ export class Service {
             url: '/api/scripts/oknte/configs/batch-update',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取 MFW 项目内的图片资源
+     * 把 MFW 项目目录内的图片按需读给前端。
+     *
+     * 任务说明（interface 的 ``doc`` / ``description``）是 markdown，里面的图片写的是
+     * **项目内相对路径**，浏览器没法直接读本地文件，必须由后端转一手。
+     *
+     * 前端侧对应 ``buildMaaFWAssetUrl``：它已经拦掉了绝对路径、UNC、上跳与远程 URL，
+     * 但那只是省一次往返，安全边界在这里 —— 请求可以绕过前端直接打过来。
+     * @param root MFW 项目根目录
+     * @param path 项目根目录内的相对图片路径
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwAssetApiScriptsMaafwAssetGet(
+        root: string,
+        path: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maafw/asset',
+            query: {
+                'root': root,
+                'path': path,
+            },
             errors: {
                 422: `Validation Error`,
             },

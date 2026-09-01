@@ -380,14 +380,10 @@ def stage_src_config_update(
     staging_path = src_set_path.with_name(src_set_path.name + ".tmp")
     backup_path = src_set_path.with_name(src_set_path.name + ".old")
     if staging_path.exists():
-        raise RuntimeError(
-            f"SRC 配置目录存在未完成的替换事务: {staging_path}"
-        )
+        raise RuntimeError(f"SRC 配置目录存在未完成的替换事务: {staging_path}")
     if backup_path.exists():
         if not is_src_config_available(src_set_path):
-            raise RuntimeError(
-                f"SRC 配置目录存在未完成的替换事务: {backup_path}"
-            )
+            raise RuntimeError(f"SRC 配置目录存在未完成的替换事务: {backup_path}")
         _remove_directory(backup_path)
         validate_src_installation(src_set_path.parent, expected_installation_id)
     shutil.copytree(src_set_path, staging_path)

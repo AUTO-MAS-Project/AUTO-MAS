@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
@@ -53,7 +54,7 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   try {
     const response = await Service.getScriptsApiSettingGetPost()
     if (response.code === 200 && response.data) {
-      const isEnabled = response.data.Update?.IfAutoUpdate || false
+      const isEnabled = response.data.Update?.IfAutoUpdate === true
       if (!isEnabled) {
         logger.info('自动更新已关闭，禁用自动检查更新')
       }
@@ -102,7 +103,7 @@ export function useUpdateChecker() {
           showUpdateModal(response.update_info, response.latest_version)
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新检查失败: ${errorMsg}`)
     } finally {
@@ -125,7 +126,7 @@ export function useUpdateChecker() {
           // 播放无新版本音频
           if (!silent) {
             await playSound('no_new_version')
-            message.success('暂无更新~')
+            message.success(t('misc.noUpdates'))
           }
         }
       } else {
@@ -133,11 +134,11 @@ export function useUpdateChecker() {
           message.error(response.message || '获取更新失败')
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`手动更新检查失败: ${errorMsg}`)
       if (!silent) {
-        message.error('获取更新失败！')
+        message.error(t('misc.couldNotCheckUpdates'))
       }
     }
   }

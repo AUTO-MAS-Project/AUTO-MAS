@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   BookOutlined,
   DownOutlined,
@@ -15,6 +16,8 @@ import {
   type PushLogPattern,
   type PushLogPatternType,
 } from '../composables/usePushLogPatterns'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   enabled: boolean
@@ -51,9 +54,13 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'split', label: '字符串切割', title: '按关键字过滤行，再掐头去尾提取内容' },
-  { key: 'regex', label: '表达式', title: '正则匹配行后用 $() 表达式提取内容' },
-  { key: 'multiline', label: '多行聚合', title: '由起始/结束正则划定窗口后提取字段' },
+  { key: 'split', label: t('edit.stringSplitting'), title: t('edit.filterLinesByKeyword') },
+  { key: 'regex', label: t('edit.expression'), title: t('edit.matchLineRegexThen') },
+  {
+    key: 'multiline',
+    label: t('edit.multiLineAggregation'),
+    title: t('edit.extractFieldsFromWindow'),
+  },
 ]
 
 const onAddMenuClick = ({ key }: { key: string }) => {
@@ -69,9 +76,9 @@ const onRuleUpdate = (idx: number, value: PushLogPattern) => {
   onPatternFieldChange()
 }
 
-// 拖拽排序
+// 拖拽排序（结构性操作，不做缺必填字段提示）
 const onDragEnd = () => {
-  save()
+  save({ warn: false })
 }
 
 // 调试弹窗
@@ -93,21 +100,30 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   docsActiveKey.value = key
   docsOpen.value = true
 }
+
+// 标题栏支持点击折叠/展开，默认展开；鼠标悬停标题时提示
+const collapsed = ref(false)
+const toggleCollapsed = () => {
+  collapsed.value = !collapsed.value
+}
 </script>
 
 <template>
-  <div class="push-log-config">
+  <div class="push-log-config" :class="{ collapsed }">
     <div class="push-config-header">
       <h3>
-        推送配置
-        <a-tooltip
-          title="开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，日志单行按规则顺序取首个命中的规则匹配提取，统一推送。"
-        >
+        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
+          <span class="push-config-title-text" @click="toggleCollapsed">
+            {{ t('edit.pushSettings') }}
+            <DownOutlined class="push-config-title-arrow" :class="{ collapsed }" />
+          </span>
+        </a-tooltip>
+        <a-tooltip :title="t('edit.whenTaskProgressCollected')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
       <div class="push-config-actions">
-        <a-tooltip title="开启后才会按规则采集任务进程信息；关闭时配置仍保留，但不进行采集">
+        <a-tooltip :title="t('edit.progressCollectedOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -115,17 +131,19 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
             @change="onEnabledChange"
           />
         </a-tooltip>
-        <a-tooltip title="查看日志提取表达式参考文档">
+        <a-tooltip :title="t('edit.readExtractionPatternReference')">
           <a-button size="small" class="docs-btn" @click="openDocs('regex')">
             <BookOutlined />
-            说明文档
+            {{ t('edit.documentation') }}
           </a-button>
         </a-tooltip>
       </div>
     </div>
 
-    <div class="push-config-body">
-      <div v-if="!enabled" class="push-config-disabled-tip">推送配置已停用，规则不会参与采集。</div>
+    <div v-show="!collapsed" class="push-config-body">
+      <div v-if="!enabled" class="push-config-disabled-tip">
+        {{ t('edit.pushCollectionOffRules') }}
+      </div>
 
       <draggable
         v-model="patterns"
@@ -157,7 +175,7 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
         <a-dropdown :trigger="['click']">
           <a-button type="dashed" class="add-pattern-btn">
             <PlusOutlined />
-            添加规则
+            {{ t('edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
@@ -194,17 +212,54 @@ const openDocs = (key: 'split' | 'regex' | 'expression' | 'multiline') => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
 }
 
 .push-config-header h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--ant-color-text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+}
+
+.push-config-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
+}
+
+.push-config-title-text {
+  cursor: pointer;
+  color: inherit;
+  transition: color 0.2s ease;
+}
+
+.push-config-title-text:hover {
+  color: var(--ant-color-primary);
+}
+
+.push-config-title-arrow {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  vertical-align: middle;
+  transition: transform 0.2s ease;
+}
+
+.push-config-title-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
+.push-log-config.collapsed .push-config-header {
+  margin-bottom: 24px;
 }
 
 .push-config-actions {

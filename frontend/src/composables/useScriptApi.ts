@@ -1,46 +1,46 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  type GeneralConfig,
-  type MaaConfig,
-  type MaaEndConfig,
-  type M9AConfig,
-  type OkwwConfig,
-  type OkNteConfig,
-  type SrcConfig,
-  type HSRConfig,
+  type ScriptUpdateIn,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
+  type MaaFWInterfacePreviewOut,
+  type MaaFWAgentEnvPrepareOut,
   ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
+  MaaFwService,
   Service,
 } from '@/api'
-import type { ScriptDetail, ScriptType } from '@/types/script'
+import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
-type ScriptListConfig =
-  | MaaConfig
-  | GeneralConfig
-  | OkwwConfig
-  | OkNteConfig
-  | SrcConfig
-  | MaaEndConfig
-  | M9AConfig
-  | HSRConfig
-
 type HSRStageEngine = 'M7A' | 'SRA'
+type ScriptWithUsers = ScriptDetail & { users: User[] }
+type LooseSection = Record<string, unknown>
+type LooseUserConfig = Record<string, unknown> & {
+  Info?: LooseSection | null
+  Data?: LooseSection | null
+  Task?: LooseSection | null
+  Notify?: LooseSection | null
+  Stage?: LooseSection | null
+  TaskSwitch?: LooseSection | null
+  TaskOpt?: LooseSection | null
+}
 
 const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
   MAA: ScriptCreateIn.type.MAA,
   SRC: ScriptCreateIn.type.SRC,
   MaaEnd: ScriptCreateIn.type.MAA_END,
   M9A: ScriptCreateIn.type.M9A,
+  MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
+  BetterGI: ScriptCreateIn.type.BETTER_GI,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -51,7 +51,9 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
   M9AConfig: 'M9A',
+  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
+  BetterGIConfig: 'BetterGI',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -105,14 +107,7 @@ export function useScriptApi() {
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
   const getScripts = async (
     manageLoading: boolean = true
-  ): Promise<
-    {
-      uid: string
-      type: string
-      name: string
-      config: ScriptListConfig
-    }[]
-  > => {
+  ): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
       error.value = null
@@ -152,107 +147,7 @@ export function useScriptApi() {
   }
 
   // 获取脚本列表及其用户数据（统一管理一次 loading）
-  const getScriptsWithUsers = async (): Promise<
-    Awaited<
-      | {
-          uid: string
-          type: string
-          name: string
-          config: ScriptListConfig
-          users: (
-            | {
-                id: string
-                name: any
-                Info: {
-                  Name: any
-                  Id: any
-                  Mode: any
-                  StageMode: any
-                  Server: any
-                  Status: any
-                  RemainedDay: any
-                  Annihilation: any
-                  InfrastMode: any
-                  InfrastName: any
-                  InfrastIndex: any
-                  Password: any
-                  Notes: any
-                  MedicineNumb: any
-                  SeriesNumb: any
-                  Stage: any
-                  Stage_1: any
-                  Stage_2: any
-                  Stage_3: any
-                  Stage_Remain: any
-                }
-                Task: {
-                  IfStartUp: any
-                  IfRecruit: any
-                  IfInfrast: any
-                  IfFight: any
-                  IfMall: any
-                  IfAward: any
-                  IfRoguelike: any
-                  IfReclamation: any
-                }
-                Notify: {
-                  Enabled: any
-                  IfSendStatistic: any
-                  IfSendSixStar: any
-                  IfSendMail: any
-                  ToAddress: any
-                  IfServerChan: any
-                  ServerChanKey: any
-                  CustomWebhooks: any
-                }
-                Data: {
-                  LastProxyDate: any
-                  ProxyTimes: any
-                }
-              }
-            | {
-                id: string
-                name: any
-                Info: {
-                  Name: any
-                  Status: any
-                  RemainedDay: any
-                  IfScriptBeforeTask: any
-                  ScriptBeforeTask: any
-                  IfScriptAfterTask: any
-                  ScriptAfterTask: any
-                  Notes: any
-                }
-                Notify: {
-                  Enabled: any
-                  IfSendStatistic: any
-                  IfSendMail: any
-                  ToAddress: any
-                  IfServerChan: any
-                  ServerChanKey: any
-                  CustomWebhooks: any
-                }
-                Data: { LastProxyDate: any; ProxyTimes: any }
-              }
-            | null
-          )[]
-        }
-      | {
-          uid: string
-          type: string
-          name: string
-          config: ScriptListConfig
-          users: any[]
-        }
-      | {
-          uid: string
-          type: string
-          name: string
-          config: ScriptListConfig
-          users: any[]
-        }
-    >[]
-  > => {
+  const getScriptsWithUsers = async (): Promise<ScriptWithUsers[]> => {
     loading.value = true
     error.value = null
 
@@ -276,7 +171,7 @@ export function useScriptApi() {
                   const userData = userResponse.data[userIndex.uid]
 
                   if (userIndex.type === 'MaaUserConfig' && userData) {
-                    const maaUserData = userData as any
+                    const maaUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
                       name: maaUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -418,10 +313,6 @@ export function useScriptApi() {
                           maaUserData.Notify?.ServerChanKey !== undefined
                             ? maaUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          maaUserData.Notify?.CustomWebhooks !== undefined
-                            ? maaUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -435,7 +326,7 @@ export function useScriptApi() {
                       },
                     }
                   } else if (userIndex.type === 'SrcUserConfig' && userData) {
-                    const srcUserData = userData as any
+                    const srcUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
                       name: srcUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -522,10 +413,6 @@ export function useScriptApi() {
                           srcUserData.Notify?.ServerChanKey !== undefined
                             ? srcUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          srcUserData.Notify?.CustomWebhooks !== undefined
-                            ? srcUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -539,7 +426,7 @@ export function useScriptApi() {
                       },
                     }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {
-                    const generalUserData = userData as any
+                    const generalUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
                       name: generalUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -608,10 +495,6 @@ export function useScriptApi() {
                           generalUserData.Notify?.ServerChanKey !== undefined
                             ? generalUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          generalUserData.Notify?.CustomWebhooks !== undefined
-                            ? generalUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -625,7 +508,7 @@ export function useScriptApi() {
                       },
                     }
                   } else if (userIndex.type === 'MaaEndUserConfig' && userData) {
-                    const maaEndUserData = userData as any
+                    const maaEndUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
                       name: maaEndUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -783,10 +666,6 @@ export function useScriptApi() {
                           maaEndUserData.Notify?.ServerChanKey !== undefined
                             ? maaEndUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          maaEndUserData.Notify?.CustomWebhooks !== undefined
-                            ? maaEndUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -804,7 +683,7 @@ export function useScriptApi() {
                       },
                     }
                   } else if (userIndex.type === 'M9AUserConfig' && userData) {
-                    const m9aUserData = userData as any
+                    const m9aUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
                       name: m9aUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -869,10 +748,6 @@ export function useScriptApi() {
                           m9aUserData.Notify?.ServerChanKey !== undefined
                             ? m9aUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          m9aUserData.Notify?.CustomWebhooks !== undefined
-                            ? m9aUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -901,7 +776,7 @@ export function useScriptApi() {
                     (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
                     userData
                   ) {
-                    const okwwUserData = userData as any
+                    const okwwUserData = userData as unknown as LooseUserConfig
                     const isOkwwUser = userIndex.type === 'OkwwUserConfig'
                     return {
                       id: userIndex.uid,
@@ -994,10 +869,6 @@ export function useScriptApi() {
                           okwwUserData.Notify?.ServerChanKey !== undefined
                             ? okwwUserData.Notify.ServerChanKey
                             : '',
-                        CustomWebhooks:
-                          okwwUserData.Notify?.CustomWebhooks !== undefined
-                            ? okwwUserData.Notify.CustomWebhooks
-                            : [],
                       },
                       Data: {
                         LastProxyDate:
@@ -1014,8 +885,29 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (String(userIndex.type) === 'MaaFWUserConfig' && userData) {
+                    const maafwUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                        Status: maafwUserData.Info?.Status ?? true,
+                        RemainedDay: maafwUserData.Info?.RemainedDay ?? -1,
+                        Notes: maafwUserData.Info?.Notes ?? '',
+                        Tag: maafwUserData.Info?.Tag ?? null,
+                      },
+                      Task: maafwUserData.Task ?? {},
+                      Notify: maafwUserData.Notify ?? {},
+                      Data: {
+                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '',
+                        ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
+                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? false,
+                        LastSklandDate: '',
+                      },
+                    } as unknown as User
                   } else if (userIndex.type === 'HSRUserConfig' && userData) {
-                    const hsrUserData = userData as any
+                    const hsrUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
                       name: hsrUserData.Info?.Name || `用户${userIndex.uid}`,
@@ -1115,11 +1007,114 @@ export function useScriptApi() {
                             : 0,
                       },
                     }
+                  } else if (userIndex.type === 'BetterGIUserConfig' && userData) {
+                    const bettergiUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: bettergiUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          bettergiUserData.Info?.Name !== undefined
+                            ? bettergiUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          bettergiUserData.Info?.Status !== undefined
+                            ? bettergiUserData.Info.Status
+                            : true,
+                        Id: bettergiUserData.Info?.Id !== undefined ? bettergiUserData.Info.Id : '',
+                        Password:
+                          bettergiUserData.Info?.Password !== undefined
+                            ? bettergiUserData.Info.Password
+                            : '',
+                        RemainedDay:
+                          bettergiUserData.Info?.RemainedDay !== undefined
+                            ? bettergiUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          bettergiUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          bettergiUserData.Info?.ScriptBeforeTask !== undefined
+                            ? bettergiUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          bettergiUserData.Info?.IfScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          bettergiUserData.Info?.ScriptAfterTask !== undefined
+                            ? bettergiUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          bettergiUserData.Info?.Notes !== undefined
+                            ? bettergiUserData.Info.Notes
+                            : '',
+                        Tag:
+                          bettergiUserData.Info?.Tag !== undefined
+                            ? bettergiUserData.Info.Tag
+                            : null,
+                      },
+                      Task: {
+                        OneDragonConfigName:
+                          bettergiUserData.Task?.OneDragonConfigName !== undefined
+                            ? bettergiUserData.Task.OneDragonConfigName
+                            : '',
+                      },
+                      Notify: {
+                        Enabled:
+                          bettergiUserData.Notify?.Enabled !== undefined
+                            ? bettergiUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          bettergiUserData.Notify?.IfSendStatistic !== undefined
+                            ? bettergiUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          bettergiUserData.Notify?.IfSendMail !== undefined
+                            ? bettergiUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          bettergiUserData.Notify?.ToAddress !== undefined
+                            ? bettergiUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          bettergiUserData.Notify?.IfServerChan !== undefined
+                            ? bettergiUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          bettergiUserData.Notify?.ServerChanKey !== undefined
+                            ? bettergiUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          bettergiUserData.Notify?.CustomWebhooks !== undefined
+                            ? bettergiUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          bettergiUserData.Data?.LastProxyDate !== undefined
+                            ? bettergiUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          bettergiUserData.Data?.ProxyTimes !== undefined
+                            ? bettergiUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          bettergiUserData.Data?.LastProxyStatus !== undefined
+                            ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                        LastOneDragonConfig:
+                          bettergiUserData.Data?.LastOneDragonConfig !== undefined
+                            ? bettergiUserData.Data.LastOneDragonConfig
+                            : '',
+                      },
+                    }
                   }
 
                   return null
                 })
-                .filter(user => user !== null)
+                .filter((user): user is User => user !== null)
 
               return {
                 ...script,
@@ -1218,6 +1213,33 @@ export function useScriptApi() {
     }
   }
 
+  // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
+  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+    try {
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
+      return null
+    }
+  }
+
+  const prepareMaaFWAgentEnv = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWAgentEnvPrepareOut | null> => {
+    try {
+      return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
+        path,
+        scriptId,
+      })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
+      return null
+    }
+  }
+
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
@@ -1227,7 +1249,7 @@ export function useScriptApi() {
       const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
       error.value = errorMsg
       logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
-      message.error('MaaEnd 文件不完整，请卸载后重新安装 MaaEnd')
+      message.error(t('misc.maaendIncompleteUninstallIt'))
       return null
     }
   }
@@ -1264,7 +1286,10 @@ export function useScriptApi() {
   }
 
   // 更新脚本
-  const updateScript = async (scriptId: string, data: any): Promise<boolean> => {
+  const updateScript = async (
+    scriptId: string,
+    data: Record<string, unknown>
+  ): Promise<boolean> => {
     loading.value = true
     error.value = null
 
@@ -1275,7 +1300,7 @@ export function useScriptApi() {
 
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,
-        data: dataToSend,
+        data: dataToSend as ScriptUpdateIn['data'],
       })
 
       if (response.code !== 200) {
@@ -1340,6 +1365,8 @@ export function useScriptApi() {
     getScript,
     getHsrStageOptions,
     getMaaEndOptions,
+    previewMaaFWInterface,
+    prepareMaaFWAgentEnv,
     deleteScript,
     updateScript,
     reorderScript,

@@ -191,8 +191,7 @@ class _MainConnectionManager:
         tasks = [
             task
             for task in self._hook_tasks
-            if generation is None
-            or self._hook_task_owners.get(task) == generation
+            if generation is None or self._hook_task_owners.get(task) == generation
         ]
         for task in tasks:
             if not task.done():

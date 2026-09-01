@@ -159,8 +159,7 @@ class M7ARunner:
         stdout_stream = getattr(proc, "stdout", None)
         stderr_stream = getattr(proc, "stderr", None)
         if not (
-            can_read_stream_live(stdout_stream)
-            or can_read_stream_live(stderr_stream)
+            can_read_stream_live(stdout_stream) or can_read_stream_live(stderr_stream)
         ):
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
@@ -178,10 +177,9 @@ class M7ARunner:
                         result = self._output_line_callback(line)
                         if isawaitable(result):
                             await result
-            completed = (
-                self._has_completion_marker(stdout)
-                or self._has_completion_marker(stderr)
-            )
+            completed = self._has_completion_marker(
+                stdout
+            ) or self._has_completion_marker(stderr)
             return stdout, stderr, completed
 
         stdout_lines: list[str] = []
@@ -306,13 +304,14 @@ class M7ARunner:
             proc = self._process_manager.main_process
             if not isinstance(proc, asyncio.subprocess.Process):
                 raise RuntimeError("M7A 子进程启动后未能被 ProcessManager 跟踪")
-            stdout, stderr, completed_by_marker = (
-                await self._communicate_with_live_output(proc, timeout)
-            )
+            (
+                stdout,
+                stderr,
+                completed_by_marker,
+            ) = await self._communicate_with_live_output(proc, timeout)
             success = (
-                (completed_by_marker or proc.returncode == 0)
-                and not has_failure_output(stdout, stderr)
-            )
+                completed_by_marker or proc.returncode == 0
+            ) and not has_failure_output(stdout, stderr)
 
             logger.info(
                 f"M7A {task_name} → {'success' if success else 'failed'}"

@@ -1,0 +1,99 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "vue"],
+  "env": {
+    "browser": true,
+    "builtin": true,
+    "node": true
+  },
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-caller": "off",
+    "no-eval": "off",
+    "no-iterator": "off",
+    "no-unassigned-vars": "off",
+    "no-unused-expressions": "off",
+    "no-useless-rename": "off",
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "no-case-declarations": "error",
+    "no-empty": "error",
+    "no-fallthrough": "error",
+    "no-prototype-builtins": "error",
+    "no-redeclare": "error",
+    "no-regex-spaces": "error",
+    "no-undef": "error",
+    "no-unexpected-multiline": "error",
+    "vue/no-this-in-before-route-enter": "off",
+    "vue/component-definition-name-casing": "warn",
+    "vue/no-multiple-slot-args": "warn",
+    "vue/no-required-prop-with-default": "warn",
+    "vue/prop-name-casing": "warn",
+    "vue/require-default-prop": "warn",
+    "vue/require-prop-types": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.vue"],
+      "globals": {
+        "defineEmits": "readonly",
+        "defineExpose": "readonly",
+        "defineModel": "readonly",
+        "defineOptions": "readonly",
+        "defineProps": "readonly",
+        "withDefaults": "readonly"
+      }
+    },
+    {
+      "files": ["electron/**/*.ts"],
+      "rules": {
+        "no-undef": "off"
+      }
+    },
+    {
+      "files": [
+        "src/composables/useScriptApi.ts",
+        "src/composables/useBettergiGuiSession.ts",
+        "src/composables/useUserApi.ts",
+        "src/composables/useSettingsApi.ts",
+        "src/composables/useTemplateApi.ts",
+        "src/composables/useUpdateChecker.ts",
+        "src/composables/usePlanApi.ts",
+        "src/composables/useHSRPluginApi.ts",
+        "src/components/ScriptTable.vue",
+        "src/router/index.ts",
+        "src/utils/planTypeRegistry.ts",
+        "src/types/script.ts",
+        "src/types/electron.d.ts",
+        "electron/**/*.ts"
+      ],
+      "rules": {
+        "typescript/no-explicit-any": "error"
+      }
+    },
+    {
+      "files": ["*.mjs"],
+      "rules": {
+        "no-unused-vars": "error"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "dist",
+    "dist-electron",
+    "out",
+    "build",
+    "node_modules",
+    "**/*.d.ts",
+    "**/*.js",
+    "**/*.md",
+    "src/api"
+  ]
+}

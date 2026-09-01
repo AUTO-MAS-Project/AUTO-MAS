@@ -123,6 +123,16 @@ interface PluginEnvelope<T> {
   data?: T
 }
 
+type HSRStageSource = Record<string, unknown>
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const firstNumber = (...values: unknown[]): number | null => {
+  const value = values.find(candidate => typeof candidate === 'number')
+  return typeof value === 'number' ? value : null
+}
+
 export interface HSRStageOption {
   id: string
   label: string
@@ -173,7 +183,7 @@ const requestPluginData = async <T>(
 }
 
 const normalizeStageOptions = (
-  data: { engine: HSREngine; categories?: Array<Record<string, any>> } | undefined,
+  data: { engine: HSREngine; categories?: HSRStageSource[] } | undefined,
   engine: HSREngine
 ): { engine: HSREngine; categories: HSRStageCategory[] } => ({
   engine: data?.engine || engine,
@@ -182,21 +192,26 @@ const normalizeStageOptions = (
     label: String(
       category.label ?? category.categoryLabel ?? category.key ?? category.categoryKey ?? ''
     ),
-    options: (Array.isArray(category.options) ? category.options : []).map(option => ({
-      id: String(option.id ?? option.value ?? ''),
-      label: String(option.label ?? option.name ?? option.value ?? ''),
-      detail: String(option.detail ?? ''),
-      cost: option.cost ?? category.cost ?? null,
-      max_count:
-        option.max_count ?? option.maxCount ?? category.max_count ?? category.maxCount ?? null,
-      native_payload:
-        option.native_payload && typeof option.native_payload === 'object'
+    options: (Array.isArray(category.options) ? category.options.filter(isRecord) : []).map(
+      option => ({
+        id: String(option.id ?? option.value ?? ''),
+        label: String(option.label ?? option.name ?? option.value ?? ''),
+        detail: String(option.detail ?? ''),
+        cost: firstNumber(option.cost, category.cost),
+        max_count: firstNumber(
+          option.max_count,
+          option.maxCount,
+          category.max_count,
+          category.maxCount
+        ),
+        native_payload: isRecord(option.native_payload)
           ? option.native_payload
           : {
               ...(option.m7a ? { m7a: option.m7a } : {}),
               ...(option.sra ? { sra: option.sra } : {}),
             },
-    })),
+      })
+    ),
   })),
 })
 
@@ -217,9 +232,9 @@ export function useHSRPluginApi() {
   ): Promise<{ engine: HSREngine; categories: HSRStageCategory[] }> => {
     const data = await requestPluginData<{
       engine: HSREngine
-      categories?: Array<Record<string, any>>
+      categories?: HSRStageSource[]
     }>(
-      axios.get<PluginEnvelope<{ engine: HSREngine; categories?: Array<Record<string, any>> }>>(
+      axios.get<PluginEnvelope<{ engine: HSREngine; categories?: HSRStageSource[] }>>(
         url('/stage-options'),
         { params: { scriptId, userId, engine, slot } }
       )

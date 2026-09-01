@@ -32,17 +32,29 @@ import {
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
+import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
-import { configureMainSentry, recordMainStartup, setMainTelemetryEnabled } from './services/sentry'
+import { createOkwwIssueReport } from './services/okwwIssueReportService'
+import {
+  captureMainRendererCrash,
+  configureMainSentry,
+  recordMainCount,
+  recordMainStartup,
+  setMainTelemetryEnabled,
+} from './services/sentry'
+import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
 import AdmZip = require('adm-zip')
+
+// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
 
 const logger = getLogger('主进程')
-const STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+M'
+const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
 interface ApiResult {
@@ -192,6 +204,7 @@ let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
+let rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
@@ -217,7 +230,7 @@ interface AppConfig {
     IfEnableTelemetry: boolean
   }
 
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // 默认配置
@@ -697,6 +710,52 @@ function createWindow() {
   mainWindow = win
   lastWindowActivity = null
 
+  // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
+  let keepHiddenAfterRecovery = false
+
+  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
+  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
+  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const decision = decideRendererRecovery({
+      reason: details.reason,
+      exitCode: details.exitCode,
+      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+      isWindowDestroyed: win.isDestroyed(),
+      now: Date.now(),
+      previousCrashes: rendererCrashes,
+    })
+    rendererCrashes = decision.crashes
+
+    if (decision.action === 'ignore') {
+      logger.info(decision.detail)
+      return
+    }
+
+    logger.error(decision.detail)
+    captureMainRendererCrash({
+      reason: details.reason,
+      exitCode: details.exitCode,
+      crashCount: decision.crashCount,
+      action: decision.action,
+      detail: decision.detail,
+    })
+
+    if (decision.action === 'give-up') return
+
+    keepHiddenAfterRecovery = !win.isVisible()
+    win.webContents.reload()
+  })
+
+  win.on('unresponsive', () => {
+    logger.warn('渲染进程无响应（主线程卡住），等待其自行恢复')
+    recordMainCount('auto_mas.app.renderer.unresponsive', { component: 'electron-main' })
+  })
+
+  win.on('responsive', () => {
+    logger.info('渲染进程已恢复响应')
+  })
+
   // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
   let restoreToMaximized = Boolean(config.UI.maximized)
   win.on('maximize', () => {
@@ -714,6 +773,14 @@ function createWindow() {
 
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
+    // 崩溃前窗口就在托盘里，恢复后保持隐藏，不要打断用户。
+    if (keepHiddenAfterRecovery) {
+      keepHiddenAfterRecovery = false
+      notifyWindowActivity('background')
+      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      return
+    }
+
     // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
     if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
@@ -1107,29 +1174,52 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
-ipcMain.handle('maaend:exportIssueReport', async () => {
-  try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+function registerIssueReportExporter(
+  ipcChannel: string,
+  title: string,
+  fileNamePrefix: string,
+  create: (
+    appRoot: string,
+    zipPath: string
+  ) => { success: boolean; message?: string; zipPath?: string; error?: string }
+): void {
+  ipcMain.handle(ipcChannel, async () => {
+    try {
+      if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出 MaaEnd 问题包',
-      defaultPath: `MaaEnd-logs-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title,
+        defaultPath: `${fileNamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      })
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
+
+      return create(getAppRoot(), result.filePath)
+    } catch (error) {
+      logger.error(`${title}失败:`, error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
     }
+  })
+}
 
-    return createMaaEndIssueReport(getAppRoot(), result.filePath)
-  } catch (error) {
-    logger.error('导出 MaaEnd 问题包失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
-})
+registerIssueReportExporter(
+  'maaend:exportIssueReport',
+  '导出 MaaEnd 问题包',
+  'MaaEnd-logs',
+  createMaaEndIssueReport
+)
+registerIssueReportExporter(
+  'okww:exportIssueReport',
+  '导出 OK-WW 问题包',
+  'OK-WW-logs',
+  createOkwwIssueReport
+)
 
 ipcMain.handle('data:backup', async () => {
   let partialPath: string | undefined
@@ -1497,7 +1587,7 @@ ipcMain.handle('get-theme-info', async () => {
 })
 
 // 获取应用路径
-ipcMain.handle('get-app-path', async (_event, name: any) => {
+ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPath>[0]) => {
   try {
     return app.getPath(name)
   } catch {
@@ -1745,6 +1835,14 @@ app.on('second-instance', () => {
     mainWindow.show()
     mainWindow.focus()
   }
+})
+
+// GPU 进程崩溃同样会让窗口变黑，此前同样不会在日志里留下任何痕迹。
+app.on('child-process-gone', (_event, details) => {
+  if (details.reason === 'clean-exit') return
+  logger.error(
+    `子进程异常退出: type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}`
+  )
 })
 
 app.on('will-quit', () => {

@@ -14,13 +14,14 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
         server = MagicMock()
         server.should_exit = False
 
-        with patch.object(
-            core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
-        ) as teardown, patch(
-            "app.api.core.Publisher.send", new_callable=AsyncMock
-        ) as send, patch.object(
-            core_api.Config, "server", server
-        ), patch.object(core_api, "is_backend_dev_mode", return_value=False):
+        with (
+            patch.object(
+                core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
+            ) as teardown,
+            patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
+            patch.object(core_api.Config, "server", server),
+            patch.object(core_api, "is_backend_dev_mode", return_value=False),
+        ):
             result = await core_api.close()
             assert core_api._shutdown_task is not None
             await asyncio.wait_for(core_api._shutdown_task, timeout=1)
@@ -30,23 +31,26 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
         teardown.assert_awaited_once()
         send.assert_awaited_once()
         self.assertEqual(send.await_args.kwargs["id"], protocol.ID_MAIN)
-        self.assertEqual(send.await_args.kwargs["type"], protocol.BACKEND_SHUTDOWN_READY)
+        self.assertEqual(
+            send.await_args.kwargs["type"], protocol.BACKEND_SHUTDOWN_READY
+        )
         self.assertTrue(server.should_exit)
 
     async def test_teardown_failure_skips_ready_and_exit(self):
         server = MagicMock()
         server.should_exit = False
 
-        with patch.object(
-            core_api.ShutdownCoordinator,
-            "run_teardown",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("teardown failed"),
-        ), patch(
-            "app.api.core.Publisher.send", new_callable=AsyncMock
-        ) as send, patch.object(
-            core_api.Config, "server", server
-        ), patch.object(core_api, "is_backend_dev_mode", return_value=False):
+        with (
+            patch.object(
+                core_api.ShutdownCoordinator,
+                "run_teardown",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("teardown failed"),
+            ),
+            patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
+            patch.object(core_api.Config, "server", server),
+            patch.object(core_api, "is_backend_dev_mode", return_value=False),
+        ):
             await core_api.close()
             assert core_api._shutdown_task is not None
             await asyncio.wait_for(core_api._shutdown_task, timeout=1)
@@ -78,17 +82,18 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
         server = MagicMock()
         server.should_exit = False
 
-        with patch.object(
-            core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
-        ) as teardown, patch.object(
-            core_api.TaskManager, "stop_task", new_callable=AsyncMock
-        ) as stop_task, patch.object(
-            core_api.System, "cancel_power_task", new_callable=AsyncMock
-        ), patch(
-            "app.api.core.Publisher.send", new_callable=AsyncMock
-        ) as send, patch.object(
-            core_api.Config, "server", server
-        ), patch.object(core_api, "is_backend_dev_mode", return_value=True):
+        with (
+            patch.object(
+                core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
+            ) as teardown,
+            patch.object(
+                core_api.TaskManager, "stop_task", new_callable=AsyncMock
+            ) as stop_task,
+            patch.object(core_api.System, "cancel_power_task", new_callable=AsyncMock),
+            patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
+            patch.object(core_api.Config, "server", server),
+            patch.object(core_api, "is_backend_dev_mode", return_value=True),
+        ):
             await core_api.close()
             assert core_api._shutdown_task is not None
             await asyncio.wait_for(core_api._shutdown_task, timeout=1)

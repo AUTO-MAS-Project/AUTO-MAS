@@ -121,7 +121,9 @@ class SraActivityService:
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             temporary_path.write_text(
-                json.dumps({"etag": self._etag, "data": self._data}, ensure_ascii=False),
+                json.dumps(
+                    {"etag": self._etag, "data": self._data}, ensure_ascii=False
+                ),
                 encoding="utf-8",
             )
             temporary_path.replace(cache_path)

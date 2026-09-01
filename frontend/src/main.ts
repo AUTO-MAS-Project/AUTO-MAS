@@ -8,13 +8,14 @@ import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
 import { configureSentry, recordRendererStartup } from '@/utils/sentry'
+import { getDefaultHttpEndpoint } from '@/utils/backendEndpoint'
+import { i18n } from '@/i18n'
+import { useLocale } from '@/composables/useLocale'
 
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
 import '@/styles/formSection.css'
-import dayjs from 'dayjs'
-import 'dayjs/locale/zh-cn'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8
@@ -43,15 +44,11 @@ if (typeof window.requestIdleCallback === 'function') {
 if (
   (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
 ) {
-  OpenAPI.BASE = 'http://127.0.0.1:36163'
+  OpenAPI.BASE = getDefaultHttpEndpoint()
 }
 
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
-
-// 正常路由：执行完整初始化
-// 配置dayjs中文本地化
-dayjs.locale('zh-cn')
 
 // 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
 bootstrapRealtimeResidents()
@@ -69,12 +66,12 @@ if (window.electronAPI?.getApiEndpoint) {
     .catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
-      OpenAPI.BASE = 'http://127.0.0.1:36163'
+      OpenAPI.BASE = getDefaultHttpEndpoint()
       logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
     })
 } else {
   // 非 Electron 环境，使用默认值
-  OpenAPI.BASE = 'http://127.0.0.1:36163'
+  OpenAPI.BASE = getDefaultHttpEndpoint()
   logger.info('前端应用开始初始化')
   logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
 }
@@ -86,6 +83,7 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(Antd)
 app.use(router)
+app.use(i18n)
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
@@ -95,6 +93,9 @@ app.config.errorHandler = (err, instance, info) => {
 
 const bootstrap = async () => {
   const frontendConfig = await getConfig()
+
+  // 语言必须在挂载前定好，否则首帧会闪一次默认语言；复用上面已读的配置，避免重复 IPC
+  await useLocale().initLocale(frontendConfig)
   configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
 
   // 挂载应用

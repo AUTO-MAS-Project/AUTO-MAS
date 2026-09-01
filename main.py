@@ -38,6 +38,10 @@ from app.utils import get_logger, sanitize_log_message
 
 logger = get_logger("主程序")
 
+# 正式版固定端口；开发环境错开一位，避免与用户已装正式版抢占同一端口
+DEFAULT_HTTP_PORT = 36163
+DEV_HTTP_PORT = 36164
+
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
@@ -67,18 +71,26 @@ def is_admin() -> bool:
             return False
     return True
 
+
 def restart_as_admin():
     """以管理员权限重启当前进程"""
     if IS_WINDOWS:
-        executable = sys.executable.removesuffix('.exe')
-        executable += '.exe'
+        executable = sys.executable.removesuffix(".exe")
+        executable += ".exe"
         result = ctypes.windll.shell32.ShellExecuteW(
-            None, 'runas', 'wt.exe', f'"{executable}" "{os.path.realpath(sys.argv[0])}"', None, 1)
+            None,
+            "runas",
+            "wt.exe",
+            f'"{executable}" "{os.path.realpath(sys.argv[0])}"',
+            None,
+            1,
+        )
         if result > 32:
             sys.exit(0)
         else:
             result = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", executable, os.path.realpath(sys.argv[0]), None, 1)
+                None, "runas", executable, os.path.realpath(sys.argv[0]), None, 1
+            )
             sys.exit(result)
 
 
@@ -103,12 +115,39 @@ def is_hosted_launch() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def resolve_http_port(development_environment: bool) -> int:
+    """解析 HTTP/WS 监听端口，让开发环境与用户安装的正式版可以同时运行。
+
+    正式版保持 36163 不变；开发环境默认改用 36164，因此源码调试不会再抢占
+    用户已装正式版的端口。前端拉起后端时会注入 AUTO_MAS_HTTP_PORT，保证两侧
+    始终对齐同一个端口。
+
+    Args:
+        development_environment: 当前是否为开发环境。
+
+    Returns:
+        实际用于监听的端口号。
+    """
+
+    raw = str(os.getenv("AUTO_MAS_HTTP_PORT", "")).strip()
+    if raw:
+        try:
+            port = int(raw)
+        except ValueError:
+            port = 0
+        if 1 <= port <= 65535:
+            return port
+        logger.warning(f"AUTO_MAS_HTTP_PORT 取值无效，已忽略: {raw}")
+
+    return DEV_HTTP_PORT if development_environment else DEFAULT_HTTP_PORT
+
+
 @logger.catch
 def main():
     development_environment = is_development_environment()
     if development_environment:
         os.environ["AUTO_MAS_ENV"] = "development"
-    
+
     if not (is_admin() or is_hosted_launch() or development_environment):
         restart_as_admin()
 
@@ -118,6 +157,7 @@ def main():
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+
     # 开发环境不上报遥测数据
     init_sentry(
         release=Config.VERSION,
@@ -135,6 +175,11 @@ def main():
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         from app.core import Config, MainTimer, TaskManager
+
+        # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
+        import ssl
+
+        asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
 
@@ -175,11 +220,11 @@ def main():
 
                 await Config.get_stage()
                 await Config.clean_old_history()
+                await Config.clean_maafw_agent_venvs()
 
                 if IS_WINDOWS:
                     for adapter in (
                         "app.MaaFW.ArknightWin32",
-                        "app.MaaFW.EndFieldPCWin32",
                     ):
                         await asyncio.to_thread(importlib.import_module, adapter)
 
@@ -325,11 +370,13 @@ def main():
     )
 
     async def run_server():
+        http_port = resolve_http_port(development_environment)
+        logger.info(f"后端监听端口: {http_port}")
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
-            port=36163,
+            port=http_port,
             log_level="info",
             log_config=None,
             ws_ping_interval=20.0,
@@ -343,6 +390,7 @@ def main():
         await server.serve()
 
     asyncio.run(run_server())
+
 
 if __name__ == "__main__":
     main()

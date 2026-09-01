@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link
@@ -16,7 +16,7 @@
         <a-breadcrumb-item>
           <span class="breadcrumb-current">
             <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
-            {{ currentLabel ?? (isEdit ? '编辑用户' : '添加用户') }}
+            {{ currentLabel ?? (isEdit ? t('comp.editUser') : t('comp.addUser2')) }}
           </span>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -49,22 +49,25 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        正在配置
+        {{ t('comp.configuring') }}
       </a-button>
 
       <a-button size="large" class="cancel-button" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('comp.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{

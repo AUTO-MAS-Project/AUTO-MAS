@@ -124,10 +124,7 @@ def prepare_game_resolution_if_needed(
         first_apply = override.apply()
 
     if first_apply:
-        append_log(
-            "已临时把星铁注册表设为 1920×1080 窗口模式；"
-            "游戏关闭后将恢复原值"
-        )
+        append_log("已临时把星铁注册表设为 1920×1080 窗口模式；游戏关闭后将恢复原值")
     else:
         append_log("重新启动游戏前已再次应用临时 1920×1080 窗口模式")
 
@@ -225,9 +222,7 @@ async def stop_external_processes(
     stopped = False
     if runtime.m7a_runner is not None:
         try:
-            stopped = (
-                await runtime.m7a_runner.terminate_current_process() or stopped
-            )
+            stopped = await runtime.m7a_runner.terminate_current_process() or stopped
         except Exception as e:  # noqa: BLE001
             logger.warning(f"终止 M7A 当前子进程失败：{e}")
             append_log(f"终止 M7A 当前子进程失败：{e}")
@@ -280,9 +275,7 @@ async def close_game_if_needed(
     if not runtime.game_started_by_mas:
         return
 
-    game_exe_path = runtime.game_exe_path or resolve_game_executable_path(
-        script_config
-    )
+    game_exe_path = runtime.game_exe_path or resolve_game_executable_path(script_config)
     append_log("任务结束，正在关闭由 MAS 启动的游戏")
     try:
         await System.kill_process(game_exe_path)
@@ -353,8 +346,7 @@ class HSRAccountSwitcher:
         if not is_game_management_enabled(self.script_config):
             self.runtime.last_external_script = None
             self._append_log(
-                f"用户「{user_name}」外部脚本切换，"
-                "MAS 未管理游戏，跳过游戏重启"
+                f"用户「{user_name}」外部脚本切换，MAS 未管理游戏，跳过游戏重启"
             )
             return
 
@@ -376,8 +368,7 @@ class HSRAccountSwitcher:
             await System.kill_process(game_exe_path)
             await self.runtime.game_process_manager.clear()
             self._append_log(
-                f"已请求关闭游戏，等待 "
-                f"{HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
+                f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
             )
             await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
             if process_name and is_process_running(process_name):
@@ -405,9 +396,7 @@ class HSRAccountSwitcher:
         if not is_game_management_enabled(self.script_config):
             self.runtime.game_started_by_mas = False
             self.runtime.game_transitioning = False
-            self._append_log(
-                "MAS 未管理游戏，跳过游戏启动、进程检查和窗口前置"
-            )
+            self._append_log("MAS 未管理游戏，跳过游戏启动、进程检查和窗口前置")
             return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
@@ -422,9 +411,7 @@ class HSRAccountSwitcher:
                     "检测到游戏已在运行，本轮不会中途修改分辨率；"
                     "请关闭游戏后重新执行以应用 1920×1080"
                 )
-            self._append_log(
-                f"检测到游戏进程已在运行（{process_name}），跳过重复启动"
-            )
+            self._append_log(f"检测到游戏进程已在运行（{process_name}），跳过重复启动")
             await self._wait_after_game_process_detected(process_name)
             return
 
@@ -463,8 +450,7 @@ class HSRAccountSwitcher:
             self.runtime.last_external_script = None
             self.runtime.game_transitioning = False
             self._append_log(
-                f"用户「{user_name}」需要登录/切号，"
-                "MAS 未管理游戏，跳过游戏重启"
+                f"用户「{user_name}」需要登录/切号，MAS 未管理游戏，跳过游戏重启"
             )
             return
 
@@ -490,7 +476,9 @@ class HSRAccountSwitcher:
                     await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"登录/切号前关闭 HSR 游戏失败：{e}")
-                    self._append_log(f"登录/切号前关闭游戏失败，将继续尝试启动流程：{e}")
+                    self._append_log(
+                        f"登录/切号前关闭游戏失败，将继续尝试启动流程：{e}"
+                    )
 
             await self.ensure_game_started_by_mas()
         finally:
@@ -531,13 +519,9 @@ class HSRAccountSwitcher:
             module_key=module_key,
         )
         if result.success:
-            self._append_log(
-                f"用户「{user_name}」SRA {module_name} 执行完成"
-            )
+            self._append_log(f"用户「{user_name}」SRA {module_name} 执行完成")
         else:
-            self._append_log(
-                f"用户「{user_name}」SRA {module_name} 执行失败"
-            )
+            self._append_log(f"用户「{user_name}」SRA {module_name} 执行失败")
         return result
 
     async def run_start_game(
@@ -637,7 +621,7 @@ class HSRAccountSwitcher:
             try:
                 await manager.search_process(
                     ProcessInfo(name=process_name),
-                    datetime.now() + timedelta(seconds=5),
+                    5.0,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"定位 HSR 游戏进程窗口失败：{e}")
@@ -670,6 +654,4 @@ class HSRAccountSwitcher:
                 await self._wait_after_game_process_detected(process_name)
                 return
 
-        self._append_log(
-            f"已达到最大启动等待时间 {wait_time}s，继续执行 M7A/SRA 任务"
-        )
+        self._append_log(f"已达到最大启动等待时间 {wait_time}s，继续执行 M7A/SRA 任务")

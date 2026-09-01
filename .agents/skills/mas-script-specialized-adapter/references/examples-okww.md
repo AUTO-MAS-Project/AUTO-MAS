@@ -38,6 +38,20 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 进程清理至少覆盖：ProcessManager 管理的进程、`ok-ww.exe`、`data/apps/ok-ww/python/pythonw.exe`、`Game.Enabled` 时解析出的客户端进程。**每步独立捕获异常**，一个失败不阻断后续。
 
+## 账号切换（MAS 强制切号）
+
+游戏配置区 `Game.AccountSwitch`（是/否，默认否）控制游戏启动后是否由 MAS 按
+用户手机号后 4 位强制切换登录账号；开关依赖 `Game.Enabled`（未启用游戏配置
+则不生效），用户未填写手机号时跳过不切换。
+
+OCR 走共享工具 `app/tools/ocr.py`（用法见 [ocr-tools.md](./ocr-tools.md)），
+交互层在 `app/task/Okww/tools/account_switch.py`：
+
+- 判据要点：弹窗「确认登出」按钮按文本精确定位，**排除说明文本「确认登出账号？」**，
+  且不认裸「退出」（主菜单右侧有退出游戏按钮）。
+- 切换失败留 OCR 文本 + 原图截图到 `debug/okww-account-switch/`，经
+  `handle_pre_okww_error` 走调度台报错 + 通知 + 重试，不回退静默。
+
 ## 陷阱
 
 - **兼容字段不等于现行功能**：`LaunchBeforeTask` 等仅存在于 config/schema、未被当前 UI 或任务逻辑读取的字段，不得写成现行功能；移除前仍要评估旧配置兼容。`Game.Enabled` 才是当前的游戏启停总开关。

@@ -53,7 +53,6 @@ class _EmulatorManager:
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
         if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
-
             # 设置模拟器广告
             with suppress(Exception):
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:

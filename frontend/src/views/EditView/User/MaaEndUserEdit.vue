@@ -6,11 +6,11 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
           </div>
-          <h2 class="mask-title">正在进行 MaaEnd 配置</h2>
+          <h2 class="mask-title">{{ t('edit.maaendConfigurationProgress') }}</h2>
           <p class="mask-description">
-            当前正在为这个用户打开 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。
+            {{ t('edit.maaendConfigurationWindowOpen') }}
             <br />
-            配置完成后，点击“保存配置”结束本次会话。
+            {{ t('edit.clickSaveConfigurationWhen') }}
           </p>
           <div class="mask-actions">
             <a-button
@@ -19,7 +19,7 @@
               size="large"
               @click="handleSaveMaaEndConfig"
             >
-              保存配置
+              {{ t('edit.saveConfiguration') }}
             </a-button>
           </div>
         </div>
@@ -74,8 +74,8 @@
             :loading="loading"
             @save="handleFieldSave"
           />
-          <NotifyConfigSection
-            v-model:form-data="formData"
+          <UserNotifyConfig
+            v-model="formData.Notify"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
@@ -88,6 +88,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -117,8 +118,10 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
@@ -152,7 +155,7 @@ let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
 const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: '固定', value: 'Fixed' },
+  { label: t('edit.fixed'), value: 'Fixed' },
 ])
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
@@ -228,8 +231,8 @@ const formData = reactive({
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 1, max: 50, message: '用户名长度应为 1-50 个字符', trigger: 'blur' },
+    { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
+    { min: 1, max: 50, message: t('edit.usernameMustBe12'), trigger: 'blur' },
   ],
 }))
 
@@ -444,7 +447,7 @@ const handleMaaEndConfig = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(`MaaEnd 配置异常: ${data.message}`)
+          message.error(t('edit.maaendConfigurationErrorP0', { p0: data.message }))
         }
       }),
       subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
@@ -455,12 +458,16 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionIds.value = subscriptionIds
     maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success(`已启动 ${formData.Info.Mode === '简洁' ? '脚本' : '用户'} MaaEnd 配置`)
+    message.success(
+      t('edit.startedP0MaaendConfiguration', {
+        p0: formData.Info.Mode === '简洁' ? '脚本' : '用户',
+      })
+    )
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
         cleanupConfigSession()
-        message.info('MaaEnd 配置会话已超时断开')
+        message.info(t('edit.maaendConfigurationSessionTimed'))
       },
       30 * 60 * 1000
     )
@@ -481,7 +488,9 @@ const handleImportMaaEndConfig = async () => {
     if (response.code !== 200) {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
-    message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
+    message.success(
+      t('edit.importedP0ConfigurationFile', { p0: formData.Info.Mode === '简洁' ? '脚本' : '用户' })
+    )
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
   } finally {
@@ -501,7 +510,7 @@ const handleSaveMaaEndConfig = async () => {
     }
 
     cleanupConfigSession()
-    message.success('MaaEnd 配置已保存')
+    message.success(t('edit.maaendConfigurationSaved'))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存配置失败')
   }
@@ -527,7 +536,7 @@ onMounted(async () => {
       isEdit.value = true
       await normalizeQuickConfig()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       router.push('/scripts')
       return
     }

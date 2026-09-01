@@ -47,7 +47,10 @@ class NormalizeMaaEndPlanKeyTest(unittest.TestCase):
         for alias in ("Matrix", "AutoEssence"):
             with self.subTest(alias=alias):
                 key = normalize_maaend_plan_key(
-                    {"SanityTaskType": alias, "AutoEssenceSpecifiedLocation": "VFTheHub"}
+                    {
+                        "SanityTaskType": alias,
+                        "AutoEssenceSpecifiedLocation": "VFTheHub",
+                    }
                 )
                 self.assertEqual(
                     key,
@@ -106,7 +109,10 @@ class ValidateMaaEndPlanKeyTest(unittest.TestCase):
         )
 
     def test_canonical_essence_key_round_trips(self) -> None:
-        essence_key = {"SanityTaskType": "Essence", "AutoEssenceSpecifiedLocation": "VFTheHub"}
+        essence_key = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": "VFTheHub",
+        }
         self.assertEqual(validate_maaend_plan_key(essence_key), essence_key)
 
     def test_incomplete_key_fills_defaults(self) -> None:
@@ -122,7 +128,10 @@ class ValidateMaaEndPlanKeyTest(unittest.TestCase):
     def test_invalid_field_value_raises(self) -> None:
         with self.assertRaises(ValueError):
             validate_maaend_plan_key(
-                {"SanityTaskType": "OperatorProgression", "OperatorProgression": "非法值"}
+                {
+                    "SanityTaskType": "OperatorProgression",
+                    "OperatorProgression": "非法值",
+                }
             )
 
     def test_non_dict_raises(self) -> None:
@@ -140,7 +149,10 @@ class MaaEndPlanKeyValidatorTest(unittest.TestCase):
         self.assertTrue(self.validator.validate(PROTOCOL_SPACE_DEFAULT_KEY))
         self.assertTrue(
             self.validator.validate(
-                {"SanityTaskType": "Essence", "AutoEssenceSpecifiedLocation": "VFTheHub"}
+                {
+                    "SanityTaskType": "Essence",
+                    "AutoEssenceSpecifiedLocation": "VFTheHub",
+                }
             )
         )
 

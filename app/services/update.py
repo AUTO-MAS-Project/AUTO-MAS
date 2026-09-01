@@ -51,7 +51,6 @@ logger = get_logger("更新服务")
 # 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
 Config = LazyProxy("app.core", "Config")
 
-
 @dataclass(frozen=True)
 class _DownloadJob:
     """下载任务启动时冻结的版本、来源与 URL。"""
@@ -61,9 +60,7 @@ class _DownloadJob:
     mirror_chyan_download_url: Optional[str]
     download_url: Optional[str]
 
-
 class _UpdateHandler:
-
     def __init__(self) -> None:
         self.is_locked: bool = False
         self.download_task: Optional[asyncio.Task[None]] = None
@@ -113,9 +110,7 @@ class _UpdateHandler:
             data=WSUpdateCompletedData(file=file_path),
         )
 
-    async def start_download(
-        self, *, target_version: Optional[str] = None
-    ) -> bool:
+    async def start_download(self, *, target_version: Optional[str] = None) -> bool:
         if self.is_switching_source or self.is_locked:
             return False
 
@@ -127,9 +122,7 @@ class _UpdateHandler:
             job=self._create_download_job(download_version=target_version)
         )
 
-    def _start_download_task(
-        self, *, job: Optional[_DownloadJob] = None
-    ) -> bool:
+    def _start_download_task(self, *, job: Optional[_DownloadJob] = None) -> bool:
         if self.download_task is not None and not self.download_task.done():
             return False
 
@@ -170,9 +163,7 @@ class _UpdateHandler:
 
         if notify:
             self._update_download_snapshot(status="cancelled", speed=0)
-            await Publisher.send(
-                id=protocol.ID_UPDATE, type=protocol.UPDATE_CANCELLED
-            )
+            await Publisher.send(id=protocol.ID_UPDATE, type=protocol.UPDATE_CANCELLED)
         return True
 
     async def switch_to_cnb(self) -> bool:
@@ -207,9 +198,7 @@ class _UpdateHandler:
                 raise
 
             self.is_locked = False
-            restart_job = self._create_download_job(
-                download_version=download_version
-            )
+            restart_job = self._create_download_job(download_version=download_version)
             if not self._start_download_task(job=restart_job):
                 error = RuntimeError("切换至 CNB 源失败: 无法重新启动更新下载任务")
                 await self._publish_failed(str(error))
@@ -217,7 +206,9 @@ class _UpdateHandler:
             return True
         finally:
             self.is_switching_source = False
-            if self.is_locked and (self.download_task is None or self.download_task.done()):
+            if self.is_locked and (
+                self.download_task is None or self.download_task.done()
+            ):
                 self.is_locked = False
 
     def _cleanup_download(self) -> None:
@@ -235,9 +226,7 @@ class _UpdateHandler:
         self, *, download_version: Optional[str] = None
     ) -> _DownloadJob:
         frozen_version = (
-            download_version
-            if download_version is not None
-            else self.remote_version
+            download_version if download_version is not None else self.remote_version
         )
         frozen_source = self._get_download_source()
         frozen_mirror_url = self.mirror_chyan_download_url
@@ -268,9 +257,7 @@ class _UpdateHandler:
         mirror_chyan_download_url: Optional[str] = None,
     ) -> str:
         remote_version = (
-            download_version
-            if download_version is not None
-            else self.remote_version
+            download_version if download_version is not None else self.remote_version
         )
         if remote_version is None:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
@@ -389,7 +376,6 @@ class _UpdateHandler:
         self.mirror_chyan_download_url = version_info["data"].get("url")
 
         if version.parse(self.remote_version) > version.parse(current_version):
-
             # 版本更新信息
             version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
                 re.sub(
@@ -405,7 +391,6 @@ class _UpdateHandler:
                 for ver, info in version_info_json.items()
                 if version.parse(ver) > version.parse(current_version)
             ]:
-
                 for key, value in v_i.items():
                     if key not in self.update_version_info:
                         self.update_version_info[key] = []
@@ -416,9 +401,7 @@ class _UpdateHandler:
         else:
             return False, current_version, {}
 
-    async def download_update(
-        self, *, job: Optional[_DownloadJob] = None
-    ) -> None:
+    async def download_update(self, *, job: Optional[_DownloadJob] = None) -> None:
 
         download_job = job or self._create_download_job()
 
@@ -428,9 +411,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data=WSUpdateFailedData(
-                    message="已有更新任务在进行中, 请勿重复操作"
-                ),
+                data=WSUpdateFailedData(message="已有更新任务在进行中, 请勿重复操作"),
             )
             return None
 
@@ -441,12 +422,8 @@ class _UpdateHandler:
             logger.info("更新下载已取消")
             raise
         except Exception as error:
-            logger.exception(
-                f"更新下载任务异常: {type(error).__name__}: {error}"
-            )
-            await self._publish_failed(
-                f"下载失败: {type(error).__name__}: {error}"
-            )
+            logger.exception(f"更新下载任务异常: {type(error).__name__}: {error}")
+            await self._publish_failed(f"下载失败: {type(error).__name__}: {error}")
         finally:
             self._cleanup_download()
 
@@ -463,9 +440,7 @@ class _UpdateHandler:
             return None
 
         if (Path.cwd() / f"UpdatePack_{download_version}.zip").exists():
-            existing_package = (
-                Path.cwd() / f"UpdatePack_{download_version}.zip"
-            )
+            existing_package = Path.cwd() / f"UpdatePack_{download_version}.zip"
             logger.info(f"更新包已存在: {existing_package}")
             await self._publish_completed(existing_package)
             self.is_locked = False
@@ -483,7 +458,6 @@ class _UpdateHandler:
 
         check_times = 3
         while check_times != 0:
-
             try:
                 # 清理可能存在的临时文件
                 if (Path.cwd() / "download.temp").exists():
@@ -568,7 +542,6 @@ class _UpdateHandler:
                 break
 
             except Exception as e:
-
                 if check_times != -1:
                     check_times -= 1
 
@@ -578,7 +551,6 @@ class _UpdateHandler:
                 await asyncio.sleep(1)
 
         else:
-
             if (Path.cwd() / "download.temp").exists():
                 (Path.cwd() / "download.temp").unlink()
             await self._publish_failed(f"下载失败: {download_url}")

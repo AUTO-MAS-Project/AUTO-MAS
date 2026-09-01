@@ -13,19 +13,21 @@ import UpdateModal from './components/UpdateModal.vue'
 import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
+import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
-import zhCN from 'ant-design-vue/es/locale/zh_CN'
+import { useLocale } from './composables/useLocale.ts'
 
 const logger = window.electronAPI.getLogger('App组件')
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
+const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
-const { isInitialized, isAppReady } = useAppInitialization()
+const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 
@@ -63,7 +65,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <ConfigProvider :theme="antdTheme" :locale="zhCN">
+  <ConfigProvider :theme="antdTheme" :locale="antdLocale">
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />
@@ -100,6 +102,7 @@ onMounted(async () => {
 
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
+    <BackendStartupOverlay :visible="isBootstrapping" />
     <CursorEffectLayer v-if="isAppReady && performanceStore.initialized" />
   </ConfigProvider>
 </template>

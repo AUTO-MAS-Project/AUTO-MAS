@@ -6,7 +6,7 @@
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedTaskId"
-            placeholder="选择任务项"
+            :placeholder="t('scheduler.control.taskPlaceholder')"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
@@ -18,7 +18,7 @@
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedMode"
-            placeholder="选择模式"
+            :placeholder="t('scheduler.control.modePlaceholder')"
             style="width: 120px"
             :disabled="disabled"
             size="large"
@@ -29,17 +29,17 @@
               :key="option.value"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ t(option.labelKey) }}
             </a-select-option>
           </a-select>
           <div v-else class="running-info">
             <span class="info-item">
-              <span class="label">任务：</span>
+              <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
             </span>
             <span class="divider">|</span>
             <span class="info-item">
-              <span class="label">模式：</span>
+              <span class="label">{{ t('scheduler.control.modeLabel') }}</span>
               <span class="value">{{ runningModeLabel }}</span>
             </span>
           </div>
@@ -49,7 +49,7 @@
           <a-select
             v-if="status !== '运行' && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
-            placeholder="从指定脚本继续（默认第一个）"
+            :placeholder="t('scheduler.control.resumePlaceholder')"
             style="width: 260px"
             :loading="resumeScriptLoading"
             :options="resumeScriptOptions || []"
@@ -72,8 +72,31 @@
               <StopOutlined v-if="status === '运行'" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? '停止任务' : '开始执行' }}
+            {{ status === '运行' ? t('scheduler.control.stop') : t('scheduler.control.start') }}
           </a-button>
+        </a-space>
+      </div>
+
+      <!-- 循环运行的下轮预览 -->
+      <div v-if="cyclePreview.length" class="cycle-preview">
+        <span class="cycle-preview-label">{{ t('scheduler.cycle.nextTitle') }}</span>
+        <a-space size="small" wrap>
+          <a-tag
+            v-for="item in cyclePreview"
+            :key="item.queueItemId"
+            :color="item.isRunning ? 'blue' : item.isDue ? 'orange' : 'default'"
+          >
+            {{ item.scriptName }}
+            <span class="cycle-preview-time">
+              {{
+                item.isRunning
+                  ? t('scheduler.cycle.running')
+                  : item.isDue
+                    ? t('scheduler.cycle.due')
+                    : item.nextRunAt
+              }}
+            </span>
+          </a-tag>
         </a-space>
       </div>
     </div>
@@ -81,11 +104,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
+import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+
+const { t } = useI18n()
 
 interface Props {
   selectedTaskId: string | null
@@ -99,6 +126,8 @@ interface Props {
   disabled?: boolean
   runningTaskLabel?: string
   runningModeLabel?: string
+  isCycleQueue?: boolean
+  cycleNextList?: WSTaskCyclePreviewData[]
 }
 
 interface Emits {
@@ -127,6 +156,8 @@ const props = withDefaults(defineProps<Props>(), {
   resumeScriptLoading: false,
   runningTaskLabel: '',
   runningModeLabel: '',
+  isCycleQueue: false,
+  cycleNextList: () => [],
 })
 
 const emit = defineEmits<Emits>()
@@ -136,7 +167,14 @@ const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
-const modeOptions = computed(() => getTaskModeOptions())
+// 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
+const modeOptions = computed(() =>
+  getTaskModeOptions(props.isCycleQueue ? null : [TaskCreateIn.mode.AUTO_PROXY])
+)
+
+const cyclePreview = computed(() =>
+  props.status === '运行' ? (props.cycleNextList ?? []) : []
+)
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
@@ -152,6 +190,17 @@ const showResumeScriptSelect = computed(() => {
 // const runningTaskLabel = ref('')
 // const runningModeLabel = ref('')
 
+// 刷新页面时任务选项还没加载完，运行态文案会先落成裸 ID；选项到了再补成名称
+watch(
+  () => props.taskOptions,
+  options => {
+    if (props.status !== '运行' || !props.selectedTaskId) return
+    if (props.runningTaskLabel && props.runningTaskLabel !== props.selectedTaskId) return
+    const taskOption = options.find(opt => opt.value === props.selectedTaskId)
+    if (taskOption?.label) emit('update:runningTaskLabel', taskOption.label)
+  }
+)
+
 // 监听状态变化，记录运行时的文本信息
 watch(
   () => props.status,
@@ -162,7 +211,7 @@ watch(
       emit('update:runningTaskLabel', taskLabel)
 
       const modeOption = modeOptions.value.find(opt => opt.value === props.selectedMode)
-      const modeLabel = modeOption?.label || props.selectedMode || ''
+      const modeLabel = modeOption ? t(modeOption.labelKey) : props.selectedMode || ''
       emit('update:runningModeLabel', modeLabel)
     }
   }
@@ -254,6 +303,25 @@ const onDropdownVisibleChange = (open: boolean) => {
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+.cycle-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.cycle-preview-label {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.cycle-preview-time {
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
 }
 
 .control-spacer {

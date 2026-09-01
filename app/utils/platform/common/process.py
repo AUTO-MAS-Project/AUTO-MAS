@@ -20,6 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
+import subprocess
 import time
 import psutil
 import asyncio
@@ -73,6 +75,54 @@ def is_process_running(process_name: str) -> bool:
                     if window.is_visible(hwnd):
                         return True
     return False
+
+
+def is_process_alive(process_name: str) -> bool:
+    """检查指定进程名是否有存活实例（不依赖窗口）。
+
+    is_process_running 要求存在可见窗口，窗口销毁后进程仍可能存活；
+    需要「等待进程完全退出」的调用方（如多用户切换等待旧游戏退出）应
+    用本函数按进程名判断存活。
+    """
+
+    for proc in psutil.process_iter(["name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            if proc.info.get("name") == process_name:
+                return True
+    return False
+
+
+def has_visible_window(pid: int) -> bool:
+    """指定进程是否已经拥有可见窗口。
+
+    用作「程序起来了没有」的就绪判据：进程创建远早于窗口出现，只看进程在不在
+    会把还在加载的游戏当成已就绪。
+    """
+
+    for hwnd in window.get_window_handles(pid):
+        with suppress(Exception):
+            if window.is_visible(hwnd):
+                return True
+    return False
+
+
+def activate_window_by_pid(
+    pid: int, window_title: str | None = None, window_class_name: str | None = None
+) -> bool:
+    """按 pid 把窗口置前。
+
+    给「只有 pid、不该为此造一个 ProcessManager」的调用方用：ProcessManager 代表
+    「本次由我方启动并持有的进程」，为了点一下窗口就 new 一个，会让持有关系失真
+    （也会污染按实例计数的测试）。
+    """
+
+    hwnd = window.get_main_window_handle(pid, window_title, window_class_name)
+    if hwnd is None:
+        return False
+    try:
+        return window.activate_window(hwnd)
+    except Exception:
+        return False
 
 
 def get_window_handles(pid: int) -> list[int]:
@@ -155,6 +205,7 @@ class ProcessManager:
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
         null_stream_to_pipe: bool = False,
+        elevated: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -168,6 +219,7 @@ class ProcessManager:
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
             null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
+            elevated (bool): 若为 True 且在 Windows 上, 以管理员权限启动进程（触发 UAC），此时不直接持有子进程句柄，依赖 target_process 追踪。
         """
 
         if await self.is_running():
@@ -183,6 +235,20 @@ class ProcessManager:
             raise ValueError("目标进程信息不完整")
 
         await self.clear()
+
+        if elevated and os.name == "nt":
+            # 以管理员权限启动进程（触发 UAC），ShellExecute 不返回子进程句柄，
+            # 因此无法直接持有 process，仅支持通过 target_process 追踪。
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._open_process_elevated, program, args, cwd
+            )
+            if target_process is not None:
+                await self.search_process(
+                    target_process,
+                    60.0,
+                    min_create_time=time.time(),
+                )
+            return
 
         # 若指定了 null_stream_to_pipe, 将 stdout/stderr 为 DEVNULL 的流替换为管道, 并在后台消费以防止阻塞
         drain_streams = []
@@ -212,11 +278,38 @@ class ProcessManager:
                     self._drain_tasks.append(asyncio.create_task(self._drain(stream)))
 
         if target_process is not None:
-
             await self.search_process(
                 target_process,
-                datetime.now() + timedelta(seconds=60),
+                60.0,
                 min_create_time=time.time(),
+            )
+
+    @staticmethod
+    def _open_process_elevated(
+        program: Path | str, args: tuple[str, ...], cwd: Path | None
+    ) -> None:
+        """以管理员权限启动进程（触发 UAC），ShellExecute 成功时返回码大于 32。
+
+        win32 仅在 Windows 路径才使用，故延迟导入，保证本平台通用模块在
+        非 Windows 上也能安全导入。
+        """
+        import win32api
+        import win32con
+
+        parameters = subprocess.list2cmdline(list(args)) if args else None
+        working_directory = str(cwd) if cwd is not None else None
+
+        ret = win32api.ShellExecute(
+            None,
+            "runas",
+            str(program),
+            parameters,
+            working_directory,
+            win32con.SW_SHOWNORMAL,
+        )
+        if ret <= 32:
+            raise RuntimeError(
+                f"以管理员权限启动进程失败: {program} (ShellExecute 返回 {ret})"
             )
 
     async def _drain(self, stream: asyncio.StreamReader) -> None:
@@ -254,26 +347,27 @@ class ProcessManager:
 
         await self.search_process(
             target_process,
-            datetime.now() + timedelta(seconds=60),
+            60.0,
             min_create_time=time.time(),
         )
 
     async def search_process(
         self,
         target_process: ProcessInfo,
-        search_end_time: datetime,
+        timeout_seconds: float = 60.0,
         min_create_time: float | None = None,
     ) -> None:
         """查找目标进程
 
         Args:
             target_process: 期望目标进程信息
-            search_end_time: 搜索截止时间
+            timeout_seconds: 搜索超时秒数，按单调时钟计量，不受系统时钟跳变影响
             min_create_time: 进程创建时间下限（epoch 秒），早于该时刻创建的同名进程视为
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
         """
 
-        while datetime.now() < search_end_time:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
             for proc in psutil.process_iter(
                 ["pid", "name", "exe", "cmdline", "create_time"]
             ):

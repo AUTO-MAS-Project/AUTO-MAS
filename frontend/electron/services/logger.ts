@@ -16,7 +16,7 @@ const moduleColors = new Map<string, string>()
  * 文件日志格式化函数
  * 格式：{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {module} | {message}
  */
-function fileFormat(params: { data: any[]; level: string; message: { date: Date } }): string[] {
+function fileFormat(params: { data: unknown[]; level: string; message: { date: Date } }): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'
@@ -29,7 +29,7 @@ function fileFormat(params: { data: any[]; level: string; message: { date: Date 
  * 控制台日志格式化函数
  * 格式：<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <custom-color>{module}</custom-color> | <level>{message}</level>
  */
-function consoleFormat(params: { data: any[]; level: string; message: { date: Date } }): string[] {
+function consoleFormat(params: { data: unknown[]; level: string; message: { date: Date } }): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'
@@ -132,27 +132,27 @@ const originalConsole = {
  */
 function hookConsole(): void {
   // Hook console.log -> log.info
-  console.log = function (...args: any[]) {
+  console.log = function (...args: unknown[]) {
     log.info('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.info -> log.info
-  console.info = function (...args: any[]) {
+  console.info = function (...args: unknown[]) {
     log.info('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.warn -> log.warn
-  console.warn = function (...args: any[]) {
+  console.warn = function (...args: unknown[]) {
     log.warn('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.error -> log.error
-  console.error = function (...args: any[]) {
+  console.error = function (...args: unknown[]) {
     log.error('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.debug -> log.debug
-  console.debug = function (...args: any[]) {
+  console.debug = function (...args: unknown[]) {
     log.debug('控制台', ...formatConsoleArgs(args))
   }
 }
@@ -160,7 +160,7 @@ function hookConsole(): void {
 /**
  * 格式化 console 参数
  */
-function formatConsoleArgs(args: any[]): any[] {
+function formatConsoleArgs(args: unknown[]): unknown[] {
   return args.map(arg => {
     if (arg instanceof Error) {
       // 特殊处理 Error 对象

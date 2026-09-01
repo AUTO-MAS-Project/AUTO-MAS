@@ -1,5 +1,5 @@
 <template>
-  <a-empty v-if="fields.length === 0" description="当前版本没有可配置项" />
+  <a-empty v-if="fields.length === 0" :description="t('edit.thisVersionHasNothing')" />
   <div v-else class="dynamic-fields">
     <div
       v-for="field in fields"
@@ -52,17 +52,19 @@
         />
         <a-textarea
           v-else-if="field.type === 'json'"
-          :value="formatJson(field.value)"
+          :value="draftValue(field, formatJson(field.value))"
           :auto-size="{ minRows: 3, maxRows: 10 }"
           :disabled="disabled || field.readonly"
           class="option-control monospace-input"
+          @update:value="setDraft(field, $event)"
           @blur="handleJsonBlur(field, $event)"
         />
         <a-input
           v-else
-          :value="String(field.value ?? '')"
+          :value="draftValue(field, String(field.value ?? ''))"
           :disabled="disabled || field.readonly"
           class="option-control"
+          @update:value="setDraft(field, $event)"
           @blur="handleTextBlur(field, $event)"
         />
       </template>
@@ -71,11 +73,15 @@
 </template>
 
 <script setup lang="ts">
+import { reactive, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { HSRManagedField } from '@/composables/useHSRPluginApi'
 
-defineProps<{
+const { t } = useI18n()
+
+const props = defineProps<{
   fields: HSRManagedField[]
   disabled: boolean
 }>()
@@ -83,6 +89,26 @@ defineProps<{
 const emit = defineEmits<{
   change: [key: string, value: unknown]
 }>()
+
+// 文本与 JSON 输入只在失焦时提交，而父级每次保存都会整体重渲染受控输入。
+// 未提交的内容先留在草稿里，避免重渲染用旧的 field.value 把用户输入冲掉。
+const drafts = reactive<Record<string, string>>({})
+
+const clearDrafts = () => {
+  Object.keys(drafts).forEach(key => delete drafts[key])
+}
+
+watch(() => props.fields, clearDrafts)
+
+const draftValue = (field: HSRManagedField, fallback: string) => drafts[field.key] ?? fallback
+
+const setDraft = (field: HSRManagedField, value: string) => {
+  drafts[field.key] = value
+}
+
+const clearDraft = (field: HSRManagedField) => {
+  delete drafts[field.key]
+}
 
 const emitValue = (field: HSRManagedField, value: unknown) => {
   if (value === null || value === undefined) return
@@ -101,15 +127,19 @@ const numberValue = (value: unknown) => {
 const formatJson = (value: unknown) => JSON.stringify(value ?? null, null, 2)
 
 const handleTextBlur = (field: HSRManagedField, event: FocusEvent) => {
+  clearDraft(field)
   emitValue(field, (event.target as HTMLInputElement).value)
 }
 
 const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
   const raw = (event.target as HTMLTextAreaElement).value
   try {
-    emitValue(field, JSON.parse(raw))
+    const parsed = JSON.parse(raw)
+    clearDraft(field)
+    emitValue(field, parsed)
   } catch {
-    message.error(`${field.label} 不是有效的 JSON`)
+    // 保留草稿，让用户在原文上继续修正而不是丢失已输入的内容
+    message.error(t('edit.p0NotValidJson', { p0: field.label }))
   }
 }
 </script>
