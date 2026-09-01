@@ -12,7 +12,8 @@ import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
-import { handleExternalLink } from '@/utils/openExternal'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
 import { useQrLogin } from './useQrLogin'
@@ -434,14 +435,7 @@ onMounted(() => {
       <div class="section-header">
         <h3>{{ t('gamesign.section.settings') }}</h3>
         <div class="section-header-actions">
-          <a
-            href="https://doc.auto-mas.top/docs/advanced-features/game-sign.html"
-            class="section-doc-link"
-            :title="t('gamesign.section.doc')"
-            @click="handleExternalLink"
-          >
-            {{ t('common.doc') }}
-          </a>
+          <DocLink :url="MAS_DOC_URLS.gameSign" />
           <a-button
             type="primary"
             size="small"

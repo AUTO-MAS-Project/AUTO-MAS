@@ -4,6 +4,7 @@ export const MAS_DOC_URLS = {
   plans: 'https://doc.auto-mas.top/docs/task-scheduler.html',
   emulator: 'https://doc.auto-mas.top/docs/advanced-features/emulator.html',
   scripts: 'https://doc.auto-mas.top/docs/script-guide/',
+  gameSign: 'https://doc.auto-mas.top/docs/advanced-features/game-sign.html',
   scriptTypes: {
     MAA: 'https://doc.auto-mas.top/docs/script-guide/maa.html',
     SRC: 'https://doc.auto-mas.top/docs/script-guide/general.html',
