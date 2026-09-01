@@ -37,14 +37,28 @@ describe('decideFailureActions', () => {
     expect(plan.legacy).toBe(false)
   })
 
-  // 依赖段的包索引被 uv.lock 冻结，Runtime 收不下 package-index 镜像，
-  // 给了按钮也只会弹出一个空面板。
-  it('Runtime 下依赖段的换镜像降级成普通重试', () => {
+  // 依赖段的锁文件冻结在 PyPI，但 Runtime 同步时改写锁副本里的下载地址参与镜像轮换，
+  // 显式选中的镜像排在最前，所以依赖段照样给换镜像按钮。
+  it('Runtime 下依赖段也能换镜像', () => {
     const plan = decideFailureActions({
       code: 'DEPENDENCY_SYNC_FAILED',
       retryable: true,
       remediation: ['retry-other-mirror'],
       stage: 'dependency',
+      runtimeMode: 'managed',
+    })
+
+    expect(plan.actions.map(action => action.kind)).toEqual(['retry-other-mirror'])
+    expect(plan.showMirrorSelection).toBe(true)
+  })
+
+  // `pip` 段在 Runtime 下根本不执行，也没有对应的镜像目录，给了按钮只会弹出空面板。
+  it('Runtime 下没有镜像可换的段把换镜像降级成普通重试', () => {
+    const plan = decideFailureActions({
+      code: 'UV_EXEC_FAILED',
+      retryable: true,
+      remediation: ['retry-other-mirror'],
+      stage: 'pip',
       runtimeMode: 'managed',
     })
 
