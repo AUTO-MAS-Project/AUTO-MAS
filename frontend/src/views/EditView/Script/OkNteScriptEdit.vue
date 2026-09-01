@@ -161,7 +161,7 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换">
+                  <a-tooltip title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用">
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -172,7 +172,7 @@
                   v-model:value="oknteConfig.Game.AccountSwitch"
                   size="large"
                   class="modern-input"
-                  :disabled="!oknteConfig.Game.Enabled"
+                  :disabled="!oknteConfig.Game.Enabled || !oknteConfig.Game.LaunchBeforeTask"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
                 >
                   <a-select-option :value="true">是</a-select-option>
