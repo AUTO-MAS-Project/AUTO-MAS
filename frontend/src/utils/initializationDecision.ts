@@ -133,11 +133,12 @@ export interface FailureContext {
 /**
  * Runtime 链路下仍有镜像可换的段。
  *
- * Runtime 的镜像目录里只有 `python`（python-build-standalone）与 `git` 两类对得上界面：
- * 依赖段的包索引被 uv.lock 冻结，Runtime 明确拒绝在依赖命令上指定 package-index，
- * `pip` / `git` 两段在 Runtime 下根本不执行。这几段给「换镜像」按钮只会弹出空面板。
+ * Runtime 的镜像目录里 `python`（python-build-standalone）、`git` 与 `package-index` 三类
+ * 对得上界面：依赖段的锁文件虽然冻结在 PyPI，但 Runtime 同步时会把锁副本里的下载地址改写到
+ * 所选镜像（显式指定的排在尝试顺序最前，失败再逐个换源），所以依赖段也能换镜像。
+ * `pip` / `git` 两段在 Runtime 下根本不执行，给「换镜像」按钮只会弹出空面板。
  */
-const RUNTIME_MIRROR_STAGES = new Set(['python', 'repository'])
+const RUNTIME_MIRROR_STAGES = new Set(['python', 'repository', 'dependency'])
 
 /** remediation 到界面动作的显式对应；这里没有的一律忽略。 */
 const REMEDIATION_ACTIONS: Readonly<Record<string, FailureActionKind>> = {
