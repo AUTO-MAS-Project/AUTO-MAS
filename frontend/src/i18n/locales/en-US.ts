@@ -2156,6 +2156,11 @@ export default {
     always: 'Yes',
     never: 'No',
     dailyFirst: 'First launch each day',
+    cycleType: 'Queue type',
+    cycleTypeTip:
+      'A scheduled queue runs as a whole at set times; a cycle queue keeps running, each task on its own schedule',
+    typeTimed: 'Scheduled queue',
+    typeCycle: 'Cycle queue',
     scheduled: 'Run on schedule',
     scheduledTip: 'Run this queue automatically at the configured times',
     yes: 'Yes',
@@ -2183,6 +2188,17 @@ export default {
       selectScript: 'Select a script',
       deleteConfirm: 'Delete this task?',
     },
+    cycle: {
+      colConfig: 'Cycle schedule',
+      modeFixed: 'Fixed time',
+      modeInterval: 'Interval',
+      minuteUnit: 'min',
+      anchorStart: 'From last start',
+      anchorFinish: 'From last finish',
+      nextRun: 'Next run',
+      notScheduled: 'Not scheduled yet',
+      runOnce: 'Run once now',
+    },
     time: {
       cardTitle: 'Schedules',
       add: 'Add schedule',
@@ -2205,6 +2221,7 @@ export default {
     toast: {
       unknownError: 'Unknown error',
       scriptUpdateFailed: 'Could not update the script: {error}',
+      scheduleUpdateFailed: 'Failed to update cycle schedule: {error}',
       updateScriptFailed: 'Could not update the script: {error}',
       addTaskFailed: 'Could not add the task: {error}',
       addTaskFailed2: 'Could not add the task: {error}',
@@ -2238,7 +2255,12 @@ export default {
     emptyTabs: 'No consoles',
     mainTab: 'Main console',
     tabName: 'Console {n}',
-    mode: { autoProxy: 'Auto run' },
+    mode: { autoProxy: 'Auto run', cycleRun: 'Cycle run' },
+    cycle: {
+      nextTitle: 'Up next',
+      running: 'Running',
+      due: 'Due',
+    },
     power: {
       noAction: 'Do nothing',
       shutdown: 'Shut down',
