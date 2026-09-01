@@ -8,6 +8,8 @@ import { message } from 'ant-design-vue'
 import {
   DeleteOutlined,
   EyeOutlined,
+  BookOutlined,
+  ExportOutlined,
   FolderOpenOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -17,6 +19,7 @@ import {
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
+import { MAS_DOC_URLS, handleExternalLink } from '@/utils/openExternal'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
@@ -823,6 +826,18 @@ const handleBossKeyInputChange = (uuid: string) => {
   <div class="emulator-page">
     <div class="page-header">
       <h1>{{ t('emulator.title') }}</h1>
+      <a
+        class="doc-link"
+        :href="MAS_DOC_URLS.emulator"
+        target="_blank"
+        rel="noreferrer"
+        :aria-label="t('common.viewPageDocs')"
+        @click="handleExternalLink"
+      >
+        <BookOutlined />
+        {{ t('common.viewPageDocs') }}
+        <ExportOutlined />
+      </a>
     </div>
 
     <div class="page-content">
@@ -1221,6 +1236,14 @@ const handleBossKeyInputChange = (uuid: string) => {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
 }
 
 .page-content {

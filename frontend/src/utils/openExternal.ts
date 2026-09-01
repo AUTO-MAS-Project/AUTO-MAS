@@ -1,5 +1,11 @@
 export const MAS_QQ_GROUP_URL = 'https://qm.qq.com/q/bd9fISNoME'
 
+export const MAS_DOC_URLS = {
+  plans: 'https://doc.auto-mas.top/docs/task-scheduler.html',
+  emulator: 'https://doc.auto-mas.top/docs/advanced-features/emulator.html',
+  scripts: 'https://doc.auto-mas.top/docs/script-guide/',
+} as const
+
 /**
  * 在系统默认浏览器中打开URL
  * @param url 要打开的URL

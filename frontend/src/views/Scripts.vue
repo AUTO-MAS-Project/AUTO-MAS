@@ -111,6 +111,18 @@
   <div class="scripts-header">
     <div class="header-left">
       <h1 class="page-title">{{ t('scripts.title') }}</h1>
+      <a
+        class="doc-link"
+        :href="MAS_DOC_URLS.scripts"
+        target="_blank"
+        rel="noreferrer"
+        :aria-label="t('common.viewPageDocs')"
+        @click="handleExternalLink"
+      >
+        <BookOutlined />
+        {{ t('common.viewPageDocs') }}
+        <ExportOutlined />
+      </a>
       <a-input
         v-model:value="scriptSearchKeyword"
         allow-clear
@@ -622,8 +634,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
+  BookOutlined,
   ClockCircleOutlined,
   DownOutlined,
+  ExportOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
@@ -653,7 +667,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { openExternalUrl } from '@/utils/openExternal'
+import { MAS_DOC_URLS, handleExternalLink, openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
 
@@ -1772,6 +1786,14 @@ const handleToggleUserStatus = async (user: User) => {
   align-items: flex-end;
   margin-bottom: 24px;
   padding: 0 4px;
+}
+
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
 }
 
 .header-left {
