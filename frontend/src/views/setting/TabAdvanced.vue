@@ -114,48 +114,42 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.advanced.maaEndSection') }}</h3>
+        <h3>{{ t('setting.advanced.issueSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
-          <a-button type="primary" :loading="exportingMaaEndLogs" @click="exportMaaEndIssueReport">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            {{ t('setting.advanced.exportMaaEnd') }}
-          </a-button>
-        </a-col>
-      </a-row>
-    </div>
-
-    <div class="form-section">
-      <div class="section-header">
-        <h3>OK-WW 日志包导出</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-button type="primary" :loading="exportingOkwwLogs" @click="exportOkwwIssueReport">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出 OK-WW 问题包
-          </a-button>
-        </a-col>
-      </a-row>
-    </div>
-
-    <div class="form-section">
-      <div class="section-header">
-        <h3>OK-NTE 日志包导出</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-button type="primary" :loading="exportingOkNteLogs" @click="exportOkNteIssueReport">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出 OK-NTE 问题包
-          </a-button>
+          <a-space size="large" wrap>
+            <a-button
+              type="primary"
+              :loading="exportingMaaEndLogs"
+              @click="exportMaaEndIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportMaaEnd') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingOkwwLogs"
+              @click="exportOkwwIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportOkww') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingOkNteLogs"
+              @click="exportOkNteIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportOkNte') }}
+            </a-button>
+          </a-space>
         </a-col>
       </a-row>
     </div>
