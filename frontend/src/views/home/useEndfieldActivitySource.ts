@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import {
   buildEndfieldOverview,
   resolveEndfieldSourceData,
+  restoreEndfieldSourceData,
   type AkedataManifest,
   type EndfieldSourceData,
 } from './endfieldActivityTransform'
@@ -25,11 +26,7 @@ const loadSnapshot = (): EndfieldSourceData | null => {
     if (!raw) {
       return null
     }
-    const cached = JSON.parse(raw) as EndfieldSourceData
-    if (typeof cached.versionId !== 'string' || !Array.isArray(cached.activities)) {
-      return null
-    }
-    return cached
+    return restoreEndfieldSourceData(JSON.parse(raw))
   } catch {
     return null
   }
@@ -53,10 +50,7 @@ export const useEndfieldActivitySource = () => {
 
   // 启动先用上次快照填卡片，不等网络
   if (sourceData !== null) {
-    overview.value = buildEndfieldOverview(
-      sourceData,
-      new Date()
-    ) as EndfieldActivityOverview
+    overview.value = buildEndfieldOverview(sourceData, new Date()) as EndfieldActivityOverview
     hasData = true
   } else {
     loading.value = true
@@ -104,7 +98,7 @@ export const useEndfieldActivitySource = () => {
     try {
       const manifest = (await fetchJson(AKEDATA_MANIFEST_URL, controller.signal)) as AkedataManifest
       const latest = manifest.latest
-      const version = (manifest.versions ?? []).find((item) => item.id === latest)
+      const version = (manifest.versions ?? []).find(item => item.id === latest)
       if (!version) {
         throw new Error('manifest 未包含最新版本')
       }
@@ -120,28 +114,15 @@ export const useEndfieldActivitySource = () => {
       }
 
       const tableRoot = AKEDATA_BASE_URL + '/' + stripSlashes(version.tableCfgPath)
-      const [
-        activities,
-        timeRanges,
-        activityTags,
-        textTable,
-        pools,
-        characters,
-      ] = (await Promise.all([
-        fetchJson(tableRoot + '/ActivityTable.json', controller.signal),
-        fetchJson(tableRoot + '/TimeRangeTable.json', controller.signal),
-        fetchJson(tableRoot + '/ActivityTagTable.json', controller.signal),
-        fetchJson(tableRoot + '/I18nTextTable_CN.json', controller.signal),
-        fetchJson(tableRoot + '/GachaCharPoolTable.json', controller.signal),
-        fetchJson(tableRoot + '/CharacterTable.json', controller.signal),
-      ])) as unknown as [
-        unknown,
-        unknown,
-        unknown,
-        unknown,
-        unknown,
-        unknown,
-      ]
+      const [activities, timeRanges, activityTags, textTable, pools, characters] =
+        (await Promise.all([
+          fetchJson(tableRoot + '/ActivityTable.json', controller.signal),
+          fetchJson(tableRoot + '/TimeRangeTable.json', controller.signal),
+          fetchJson(tableRoot + '/ActivityTagTable.json', controller.signal),
+          fetchJson(tableRoot + '/I18nTextTable_CN.json', controller.signal),
+          fetchJson(tableRoot + '/GachaCharPoolTable.json', controller.signal),
+          fetchJson(tableRoot + '/CharacterTable.json', controller.signal),
+        ])) as unknown as [unknown, unknown, unknown, unknown, unknown, unknown]
       const resolved = resolveEndfieldSourceData({
         activities,
         timeRanges,

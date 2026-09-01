@@ -14,6 +14,7 @@
                 "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "修复BUG": [
+                "修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题",
                 "渲染进程崩溃后不再永久黑屏：新增 render-process-gone / unresponsive / child-process-gone 监听，崩溃时记录 reason 与 exitCode 并自动重载窗口（5 分钟内最多 3 次，窗口原本在托盘则恢复后保持隐藏）；此前渲染进程一死主进程与后端仍在运行，窗口会一直黑着且日志与 Sentry 里没有任何记录，只能从任务管理器强杀 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 修复剿灭任务因体力耗尽结束时被误判为已完成本周额度的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复 MaaFW 运行池解释器自检不覆盖标准库、导致 Python 运行时损坏时直到任务中途才报出难以理解的错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",
