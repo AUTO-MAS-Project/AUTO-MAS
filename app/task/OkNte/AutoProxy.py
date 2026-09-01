@@ -362,7 +362,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
         if self.cur_user_config.get("Notify", "PushLogMode") != "关闭":
             self.log_collect = log_box.get_collect(
-                paths=[self._resolve_log_path()],
+                paths=[self._resolve_log_file_path()],
                 sink=self._append_push_log,
                 start_from_end=True,
             )
@@ -643,7 +643,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
             await self.log_monitor.start_monitor_file(
-                self._resolve_log_path(), self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
 
             self.wait_event.clear()
@@ -713,7 +713,7 @@ class AutoProxyTask(TaskExecuteBase):
             or self.script_config.get("Game", "CloseOnFinish")
         )
 
-    def _resolve_log_path(self) -> Path:
+    def _resolve_log_file_path(self) -> Path:
         # 若用户给了带日期模板的日志路径，则按启动时间格式化文件名
         if self.log_format and self.script_log_path.name != self.log_format:
             try:

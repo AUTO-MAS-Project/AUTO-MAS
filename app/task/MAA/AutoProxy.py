@@ -422,6 +422,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
                 )
 
+    def _resolve_log_file_path(self) -> Path:
+        return self.maa_log_path
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -551,7 +554,7 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.maa_process_manager.open_process(self.maa_exe_path)
                 await asyncio.sleep(1)  # 等待 MAA 处理日志文件
                 await self.maa_log_monitor.start_monitor_file(
-                    self.maa_log_path, self.log_start_time
+                    self._resolve_log_file_path, self.log_start_time
                 )
                 await self.wait_event.wait()
                 await self.maa_log_monitor.stop()

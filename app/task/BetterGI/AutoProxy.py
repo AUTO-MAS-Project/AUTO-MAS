@@ -244,7 +244,7 @@ class AutoProxyTask(TaskExecuteBase):
             cmdline=None,
         )
 
-        self.script_log_path = self._build_log_path()
+        self.script_log_path = self._resolve_log_file_path()
 
         self.log_time_range = (_BGI_LOG_TIME_START, _BGI_LOG_TIME_END)
         self.log_time_format = _BGI_LOG_TIME_FORMAT
@@ -284,7 +284,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示尚未接管
         self._reseed_global_config: dict | None = None
 
-    def _build_log_path(self) -> Path:
+    def _resolve_log_file_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
         return (
             self.script_root_path
@@ -436,7 +436,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
             await self.log_monitor.start_monitor_file(
-                self.script_log_path, self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
 
             self.wait_event.clear()
@@ -615,7 +615,7 @@ class AutoProxyTask(TaskExecuteBase):
             switch_result["started"] = True
             await asyncio.sleep(1)
             await switch_monitor.start_monitor_file(
-                self.script_log_path, datetime.now()
+                self._resolve_log_file_path, datetime.now()
             )
 
             try:

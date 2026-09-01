@@ -19,7 +19,8 @@
                 "OK-WW与OK-NTE专项 多用户切换时等待上一用户的游戏进程完全退出，避免误复用正在退出的旧游戏窗口导致任务被中止 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "OK-NTE专项 修复任务报告剩余体力计算不准确的问题：体力不足以刷满设定目标时误显「剩余体力: 0」，改为按实际刷本消耗（异象界域双倍/单倍次数、异象追猎实际消耗）精确计算剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "前端类型治理 清理脚本与 Electron 基础边界中的 any，并修复 BetterGI 设置会话无法接收完成和错误事件的问题",
-                "HSR专项 修复 MAS 管控任务的文本与 JSON 配置项在输入过程中被重渲染清空、导致只有数字项能填写的问题（如货币战争的首领/投资重开条件、策略文件、开拓者名称） by [@qiyinxi](https://github.com/qiyinxi)"
+                "HSR专项 修复 MAS 管控任务的文本与 JSON 配置项在输入过程中被重渲染清空、导致只有数字项能填写的问题（如货币战争的首领/投资重开条件、策略文件、开拓者名称） by [@qiyinxi](https://github.com/qiyinxi)",
+                "BetterGI专项 修复任务跨过本地午夜后仍监控前一天日志文件、导致后续状态误判的问题 by [@Craun718](https://github.com/Craun718)"
             ]
         },
         "v5.5.0-beta.2": {

@@ -276,6 +276,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = False
 
+    def _resolve_log_file_path(self) -> Path:
+        return self.script_log_path
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -470,7 +473,7 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             await self.general_log_monitor.start_monitor_file(
-                self.script_log_path, self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
             await self.wait_event.wait()
             await self.general_log_monitor.stop()

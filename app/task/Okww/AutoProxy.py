@@ -319,6 +319,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = False
 
+    def _resolve_log_file_path(self) -> Path:
+        return self.script_log_path
+
     def _okww_mas_config_dir(self) -> Path:
         return _okww_mas_config_dir(
             self.script_info.script_id,
@@ -635,7 +638,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
             await self.log_monitor.start_monitor_file(
-                self.script_log_path, self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
 
             self.wait_event.clear()
