@@ -430,7 +430,7 @@ export class RuntimeInitializationService {
    */
   private resolveRetryCommand(stage: InitializationRunStage, rebuild?: boolean): string[] | null {
     const needsRebuild =
-      rebuild ?? (this.lastRemediation.get(stage)?.includes('rebuild-environment') ?? false)
+      rebuild ?? this.lastRemediation.get(stage)?.includes('rebuild-environment') ?? false
 
     switch (stage) {
       case 'python':
