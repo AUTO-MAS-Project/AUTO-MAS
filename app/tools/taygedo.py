@@ -73,7 +73,7 @@ TAYGEDO_GAME_NAMES = {
 }
 # 1257 的中文名称未在已核对的角色卡响应中确认；未知名称必须显式保留 ID。
 APP_VERSION = "1.1.0"
-# 用户中心刷新、角色列表和社区接口使用 1.1.0；角色卡接口保留 1.2.5。
+# 角色列表和社区接口使用 1.1.0；用户中心登录、刷新和角色卡接口使用 1.2.5。
 TAYGEDO_NATIVE_APP_VERSION = "1.2.5"
 TAYGEDO_COMMUNITY_IDS = ("1", "2")
 TAYGEDO_COMMUNITY_NAMES = {
@@ -557,29 +557,67 @@ async def refresh_taygedo_credential(
     refresh_token = str(credential.get("refreshToken") or "").strip()
     if not refresh_token:
         raise ValueError("塔吉多凭据缺少 refreshToken")
-    request_device_id = str(credential.get("deviceId") or "").strip()
+    request_device_id = str(
+        credential.get("deviceId") or credential.get("cloudDeviceId") or ""
+    ).strip()
     if not request_device_id:
         # 参考客户端会复用设备标识；旧的纯 refreshToken 凭据没有该字段时，
         # 用 refreshToken 派生稳定值，避免每天以不同设备发起刷新。
         request_device_id = _stable_device_id(refresh_token)
 
+    cloud_token = str(credential.get("cloudToken") or "").strip()
+    cloud_user_id = str(credential.get("cloudUserId") or "").strip()
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
         response = await client.post(
             REFRESH_TOKEN_URL,
             headers={
+                "accept": "application/json, text/plain, */*",
                 "authorization": refresh_token,
-                "deviceid": request_device_id,
-                "appversion": APP_VERSION,
+                "deviceId": request_device_id,
+                "appVersion": TAYGEDO_LOGIN_APP_VERSION,
+                "platform": "android",
+                "uid": str(credential.get("uid") or "0"),
+                "debug-uid": "3",
+                "ds": _make_login_ds(),
                 "content-type": "application/x-www-form-urlencoded",
                 "user-agent": APP_USER_AGENT,
             },
             timeout=30.0,
         )
-    data = _read_json(response, "塔吉多刷新 Token")
-    if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
-        raise _api_error("塔吉多刷新 Token", response, data)
+        data: dict[str, Any] | None = None
+        try:
+            data = _read_json(response, "塔吉多刷新 Token")
+        except ValueError:
+            if response.status_code not in (401, 402, 403):
+                raise
 
-    refreshed = data["data"]
+        code = data.get("code") if data is not None else None
+        refresh_rejected = response.status_code in (401, 402, 403) or any(
+            _is_code(code, value) for value in (22, 401, 402, 403, 4011)
+        )
+        if (
+            response.is_success
+            and data is not None
+            and _is_code(code, 0)
+            and isinstance(data.get("data"), dict)
+        ):
+            refreshed = data["data"]
+        elif refresh_rejected and cloud_token and cloud_user_id:
+            # refreshToken 被明确拒绝时，复用登录时保存的老虎侧会话重建用户中心
+            # Token；该路径不需要也不会持久化账号密码。
+            refreshed = await _user_center_login(
+                client,
+                cloud_token,
+                cloud_user_id,
+                request_device_id,
+            )
+        elif data is None:
+            raise ValueError(
+                f"塔吉多刷新 Token 被拒绝（HTTP {response.status_code}）"
+            )
+        else:
+            raise _api_error("塔吉多刷新 Token", response, data)
+
     access_token = str(refreshed.get("accessToken") or "").strip()
     if not access_token:
         raise ValueError("塔吉多刷新接口未返回 accessToken")

@@ -25,7 +25,7 @@
 可安全删除本文件，不会影响任何已有功能。
 删除后同时移除 main.py 中的 include_router 调用。
 
-流程（GameToken 优先，Passport 回退）:
+流程（Passport App 优先，Passport Web 兼容回退；旧 GameToken ticket 仅兼容）:
   1. /create  → 生成二维码 (ticket, qr_url, device)
   2. /check   → 轮询状态 (Init/Scanned/Confirmed)，确认后返回完整 cookies_str
   3. /save    → 将 cookies 保存到账号配置
@@ -98,7 +98,7 @@ async def qr_create() -> QrCreateOut:
 
 @router.post("/check", summary="轮询扫码状态", response_model=QrCheckOut)
 async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
-    """轮询状态，确认后返回 GameToken 兑换或 Passport 提取的 cookies。"""
+    """轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。"""
     try:
         from app.tools.miyoushe_qr import check_qr_status
 

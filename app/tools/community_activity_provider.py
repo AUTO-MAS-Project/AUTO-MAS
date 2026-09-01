@@ -44,6 +44,7 @@ import json
 import random
 import string
 import time
+import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -82,11 +83,18 @@ _MIYOUSHE_DEVICE_LOGIN_URL = (
 _MIYOUSHE_DEVICE_SAVE_URL = "https://bbs-api.mihoyo.com/apihub/api/saveDevice"
 _MIYOUSHE_DEVICE_MODEL = "MI 8 SE"
 _MIYOUSHE_DEVICE_NAME = "Xiaomi MI 8 SE"
+_MIYOUSHE_ZZZ_DEVICE_NAME = "XiaomiMI 8 SE"
+_MIYOUSHE_ZZZ_DEVICE_FP_SEED = "38d805c20d53d"
 _MIYOUSHE_DEVICE_USER_AGENT = (
     "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 "
     "miHoYoBBS/2.99.1"
+)
+_MIYOUSHE_ZZZ_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 12; MI 8 SE Build/RQ3A.211001.001; wv) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+    "Chrome/111.0.5563.116 Mobile Safari/537.36 miHoYoBBS/2.73.1"
 )
 _MIYOUSHE_RISK_CODES = frozenset({1034, 5003, 10035, 10041})
 
@@ -195,65 +203,216 @@ def _skland_signature(
     return {**sign_header, "sign": digest}
 
 
-def _miyoushe_ds(*, query: str = "", widget: bool = False) -> str:
+def _miyoushe_ds(
+    *,
+    query: str = "",
+    widget: bool = False,
+    data: bool = False,
+    game: str = "",
+) -> str:
     timestamp = str(int(time.time()))
-    nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-    if widget:
-        raw = f"salt={_MIYOUSHE_WIDGET_SALT}&t={timestamp}&r={nonce}"
+    if data:
+        from .miyoushe import SALT_DATA
+
+        # 星铁 Widget 的参考实现调用 generate_ds(data={})，
+        # 因而使用数据签名盐和空 body/query，而不是 iOS 无参盐。
+        nonce = str(random.randint(100000, 200000))
+        raw = f"salt={SALT_DATA}&t={timestamp}&r={nonce}&b=&q="
     else:
-        raw = (
-            f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
-            f"&b=&q={query}"
-        )
+        if widget:
+            nonce = "".join(
+                random.choices(string.ascii_lowercase + string.digits, k=6)
+            )
+            raw = f"salt={_MIYOUSHE_WIDGET_SALT}&t={timestamp}&r={nonce}"
+        elif game == "绝区零":
+            # 绝区零参考实现的 CN 记录接口使用 xV8 盐和六位数字 nonce。
+            nonce = str(random.randint(100000, 999999))
+            raw = (
+                f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
+                f"&b=&q={query}"
+            )
+        elif query:
+            # 记录接口的参数签名沿用参考实现的 4X 合同。
+            nonce = str(random.randint(100000, 200000))
+            raw = (
+                f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
+                f"&b=&q={query}"
+            )
+        else:
+            nonce = "".join(
+                random.choices(string.ascii_lowercase + string.digits, k=6)
+            )
+            raw = (
+                f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
+                f"&b=&q={query}"
+            )
     return f"{timestamp},{nonce},{hashlib.md5(raw.encode()).hexdigest()}"
 
 
-def _device_ds(body: str) -> str:
+def _device_ds(body: str, *, game: str = "") -> str:
     from .miyoushe import SALT_DATA
 
     timestamp = str(int(time.time()))
-    nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-    raw = f"salt={SALT_DATA}&t={timestamp}&r={nonce}&b={body}&q="
+    if game == "绝区零":
+        nonce = str(random.randint(100000, 999999))
+        salt = _MIYOUSHE_RECORD_SALT
+    else:
+        nonce = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=6)
+        )
+        salt = SALT_DATA
+    raw = f"salt={salt}&t={timestamp}&r={nonce}&b={body}&q="
     return f"{timestamp},{nonce},{hashlib.md5(raw.encode()).hexdigest()}"
 
 
-def _device_fp_body(device_id: str) -> dict[str, str]:
-    return {
-        "seed_id": "".join(
-            random.choices(string.ascii_lowercase + string.digits, k=16)
-        ),
-        "device_id": device_id.lower(),
-        "platform": "5",
-        "seed_time": str(int(time.time() * 1000)),
-        "ext_fields": json.dumps(
-            {
-                "userAgent": _MIYOUSHE_DEVICE_USER_AGENT,
-                "browserScreenSize": 243750,
-                "maxTouchPoints": 5,
-                "isTouchSupported": True,
-                "browserLanguage": "zh-CN",
-                "browserPlat": "Linux armv8l",
-                "browserTimeZone": "Asia/Shanghai",
-                "webGlRender": "Adreno (TM) 640",
-                "webGlVendor": "Qualcomm",
-                "numOfPlugins": 0,
-                "listOfPlugins": "unknown",
-                "screenRatio": 3,
-                "deviceMemory": "4",
-                "hardwareConcurrency": "8",
-                "cpuClass": "unknown",
-                "ifNotTrack": "unknown",
-                "ifAdBlock": 0,
-                "hasLiedResolution": 1,
-                "hasLiedOs": 0,
-                "hasLiedBrowser": 0,
-            },
-            ensure_ascii=False,
-        ),
-        "app_name": "account_cn",
-        # getFp 需要一个本次申请用的种子；官方返回值才会用于后续请求。
-        "device_fp": "".join(random.choices("0123456789abcdef", k=13)),
+def _device_fp_body(
+    device_id: str,
+    *,
+    game: str = "",
+    seed_id: str | None = None,
+) -> dict[str, str]:
+    is_zzz = game == "绝区零"
+    normalized_device_id = device_id.lower()
+    zzz_seed_id = (seed_id or str(uuid.uuid4())) if is_zzz else ""
+    ext_fields = {
+        "userAgent": _MIYOUSHE_ZZZ_USER_AGENT
+        if is_zzz
+        else _MIYOUSHE_DEVICE_USER_AGENT,
+        "browserScreenSize": 243750,
+        "maxTouchPoints": 5,
+        "isTouchSupported": True,
+        "browserLanguage": "zh-CN",
+        "browserPlat": "Linux armv8l",
+        "browserTimeZone": "Asia/Shanghai",
+        "webGlRender": "Adreno (TM) 640",
+        "webGlVendor": "Qualcomm",
+        "numOfPlugins": 0,
+        "listOfPlugins": "unknown",
+        "screenRatio": 3,
+        "deviceMemory": "4",
+        "hardwareConcurrency": "8",
+        "cpuClass": "unknown",
+        "ifNotTrack": "unknown",
+        "ifAdBlock": 0,
+        "hasLiedResolution": 1,
+        "hasLiedOs": 0,
+        "hasLiedBrowser": 0,
     }
+    if is_zzz:
+        # ZZZ-Plugin 的 CN getFp 合同同时需要 Android 设备字段和一枚
+        # 与实际 device_id 分离的 bbs/seed UUID；这里使用固定兼容设备
+        # 描述，不读取或持久化本机设备信息。
+        ext_fields.update(
+            {
+                "proxyStatus": 1,
+                "isRoot": 0,
+                "romCapacity": "768",
+                "deviceName": _MIYOUSHE_DEVICE_MODEL,
+                "productName": "MI 8 SE",
+                "romRemain": "727",
+                "hostname": "BuildHost",
+                "screenSize": "1096x2434",
+                "isTablet": 0,
+                "aaid": zzz_seed_id,
+                "model": _MIYOUSHE_DEVICE_MODEL,
+                "brand": "Xiaomi",
+                "hardware": "qcom",
+                "deviceType": "MI 8 SE",
+                "devId": "REL",
+                "serialNumber": "unknown",
+                "sdCapacity": 224845,
+                "buildTime": "1692775759000",
+                "buildUser": "BuildUser",
+                "simState": 1,
+                "ramRemain": "218344",
+                "appUpdateTimeDiff": 1740498108042,
+                "deviceInfo": "Xiaomi/MI 8 SE/MI 8 SE/MI 8 SE",
+                "vaid": zzz_seed_id,
+                "buildType": "user",
+                "sdkVersion": "33",
+                "ui_mode": "UI_MODE_TYPE_NORMAL",
+                "isMockLocation": 0,
+                "cpuType": "arm64-v8a",
+                "isAirMode": 0,
+                "ringMode": 2,
+                "chargeStatus": 1,
+                "manufacturer": "Xiaomi",
+                "emulatorStatus": 0,
+                "appMemory": "768",
+                "osVersion": "12",
+                "vendor": "unknown",
+                "accelerometer": "-1.588236x6.8404818x6.999604",
+                "sdRemain": 218214,
+                "buildTags": "release-keys",
+                "packageName": "com.mihoyo.hyperion",
+                "networkType": "WiFi",
+                "oaid": zzz_seed_id,
+                "debugStatus": 1,
+                "ramCapacity": "224845",
+                "magnetometer": "-47.04375x51.3375x137.96251",
+                "display": _MIYOUSHE_DEVICE_MODEL,
+                "appInstallTimeDiff": 1740498108042,
+                "packageVersion": "2.35.0",
+                "gyroscope": "-0.22601996x-0.09453133x0.09040799",
+                "batteryStatus": 88,
+                "hasKeyboard": 0,
+                "board": "qcom",
+            }
+        )
+    body: dict[str, str] = {
+        "seed_id": (
+            zzz_seed_id
+            if is_zzz
+            else "".join(
+                random.choices(string.ascii_lowercase + string.digits, k=16)
+            )
+        ),
+        # ZZZ 参考实现的固定值只是 getFp 模板占位符；最终 noDs 请求会
+        # 替换为当前账号设备 ID，设备登记和后续查询也使用同一设备值。
+        "device_id": normalized_device_id,
+        "platform": "2" if is_zzz else "5",
+        "seed_time": str(int(time.time() * 1000)),
+        "ext_fields": json.dumps(ext_fields, ensure_ascii=False),
+        "app_name": "bbs_cn" if is_zzz else "account_cn",
+        # getFp 需要一个本次申请用的种子；官方返回值才会用于后续请求。
+        "device_fp": (
+            _MIYOUSHE_ZZZ_DEVICE_FP_SEED
+            if is_zzz
+            else "".join(random.choices("0123456789abcdef", k=13))
+        ),
+    }
+    if is_zzz:
+        body["bbs_device_id"] = zzz_seed_id
+    return body
+
+
+def _miyoushe_v2_stoken(cookies: Mapping[str, str]) -> str:
+    """读取小组件要求的 v2 stoken，兼容旧 Cookie 命名。"""
+
+    stoken_v2 = str(cookies.get("stoken_v2") or "").strip()
+    if stoken_v2:
+        return stoken_v2
+    stoken = str(cookies.get("stoken") or "").strip()
+    return stoken if stoken.startswith("v2_") else ""
+
+
+def _miyoushe_request_cookies(
+    cookies: Mapping[str, str],
+    *,
+    require_v2_stoken: bool = False,
+) -> dict[str, str]:
+    """构建只用于本次请求的 Cookie 副本，不改变已保存凭据。"""
+
+    result = dict(cookies)
+    if require_v2_stoken:
+        stoken_v2 = _miyoushe_v2_stoken(result)
+        if stoken_v2:
+            # 参考 BBSCookies.dict(v2_stoken=True, cookie_type=True)：
+            # 请求字段使用 stoken，内部别名不随请求发送。
+            result["stoken"] = stoken_v2
+            result.pop("stoken_v1", None)
+            result.pop("stoken_v2", None)
+    return result
 
 
 @dataclass
@@ -277,6 +436,12 @@ class CommunityActivityProvider:
     )
     _device_id: str = field(default="", init=False, repr=False)
     _device_fp: str = field(default="", init=False, repr=False)
+    _miyoushe_device_fps: dict[str, str] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _miyoushe_zzz_seed_id: str = field(
+        default="", init=False, repr=False
+    )
     _credential_ready: bool = field(default=False, init=False, repr=False)
     _credential_update_sent: bool = field(default=False, init=False, repr=False)
     _miyoushe_cookies: dict[str, str] | None = field(
@@ -450,7 +615,10 @@ class CommunityActivityProvider:
                 response = await client.get(
                     ROLES_URL,
                     headers=headers,
-                    cookies=cookies,
+                    cookies=_miyoushe_request_cookies(
+                        cookies,
+                        require_v2_stoken=True,
+                    ),
                     timeout=_ACTIVITY_REQUEST_TIMEOUT,
                 )
         except httpx.TimeoutException as exc:
@@ -680,6 +848,10 @@ class CommunityActivityProvider:
                     parse_cookie=_parse_cookie,
                     validate_cookie=validate_miyoushe_cookie,
                 )
+                request_cookies = _miyoushe_request_cookies(
+                    cookies,
+                    require_v2_stoken=True,
+                )
                 await self._wait_miyoushe_request()
                 headers = self._miyoushe_request_headers(
                     request,
@@ -690,7 +862,7 @@ class CommunityActivityProvider:
                     request.source,
                     params=request.query,
                     headers=headers,
-                    cookies=cookies,
+                    cookies=request_cookies,
                     timeout=request.timeout,
                 )
         except httpx.TimeoutException as exc:
@@ -731,42 +903,114 @@ class CommunityActivityProvider:
                 self._miyoushe_cookies = parse_cookie(self.raw_credential)
                 ensure_auth_aliases(self._miyoushe_cookies)
             cookies = dict(self._miyoushe_cookies)
+            requires_v2_widget = (
+                require_stoken_v2
+                and request.signature_profile in {
+                    "miyoushe_ios",
+                    "miyoushe_data",
+                }
+            )
+            if requires_v2_widget and (
+                not _miyoushe_v2_stoken(cookies)
+                or not str(cookies.get("mid") or "").strip()
+            ):
+                raise CommunityActivityTransportError(
+                    "米游社小组件需要配套的 stoken_v2 和 mid，当前凭据不完整",
+                    status="limited",
+                )
             if not self._device_id:
                 self._device_id = request.target.device_id or generate_device_id(
                     self.raw_credential
                 )
-            if request.target.device_fp and not self._device_fp:
-                self._device_fp = request.target.device_fp
-            if request.requires_device_fingerprint and not self._device_fp:
-                self._device_fp = await self._acquire_device_fp(
-                    client, self._device_id
+            game = request.target.game
+            if game == "绝区零" and not self._miyoushe_zzz_seed_id:
+                self._miyoushe_zzz_seed_id = str(uuid.uuid4())
+            device_fp = self._miyoushe_device_fps.get(game, "")
+            if request.target.device_fp and not device_fp:
+                device_fp = request.target.device_fp
+                self._miyoushe_device_fps[game] = device_fp
+            if request.requires_device_fingerprint and not device_fp:
+                device_fp = await self._acquire_device_fp(
+                    client,
+                    self._device_id,
+                    game=game,
+                    seed_id=self._miyoushe_zzz_seed_id,
+                    cookies=_miyoushe_request_cookies(
+                        cookies,
+                        require_v2_stoken=True,
+                    ),
                 )
                 await self._register_device(
                     client,
                     device_id=self._device_id,
-                    device_fp=self._device_fp,
-                    cookies=cookies,
+                    device_fp=device_fp,
+                    cookies=_miyoushe_request_cookies(
+                        cookies,
+                        require_v2_stoken=True,
+                    ),
+                    game=game,
                 )
-            if require_stoken_v2 and request.signature_profile in {
-                "miyoushe_ios",
-                "miyoushe_data",
-            } and not cookies.get("stoken_v2"):
-                raise CommunityActivityTransportError(
-                    "米游社小组件需要 stoken_v2，当前凭据不完整",
-                    status="limited",
-                )
+                self._miyoushe_device_fps[game] = device_fp
+            self._device_fp = device_fp
             return cookies, self._device_id, self._device_fp
 
+    @staticmethod
+    def _miyoushe_device_fp_headers(
+        device_id: str,
+        *,
+        game: str,
+        user_agent: str,
+    ) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": user_agent,
+        }
+        if game == "绝区零":
+            headers.update(
+                {
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": "https://act.mihoyo.com",
+                    "Referer": "https://act.mihoyo.com/",
+                    "X-Requested-With": "com.mihoyo.hyperion",
+                    "x-rpc-app_version": "2.73.1",
+                    "x-rpc-channel": "mihoyo",
+                    "x-rpc-client_type": "2",
+                    "x-rpc-csm_source": "myself",
+                    "x-rpc-device_id": device_id,
+                    "x-rpc-device_model": _MIYOUSHE_DEVICE_MODEL,
+                    "x-rpc-device_name": _MIYOUSHE_DEVICE_NAME,
+                    "x-rpc-sys_version": "12",
+                }
+            )
+        return headers
+
     async def _acquire_device_fp(
-        self, client: httpx.AsyncClient, device_id: str
+        self,
+        client: httpx.AsyncClient,
+        device_id: str,
+        *,
+        game: str = "",
+        seed_id: str = "",
+        cookies: Mapping[str, str] | None = None,
     ) -> str:
+        user_agent = (
+            _MIYOUSHE_ZZZ_USER_AGENT
+            if game == "绝区零"
+            else _MIYOUSHE_DEVICE_USER_AGENT
+        )
         response = await client.post(
             _MIYOUSHE_DEVICE_FP_URL,
-            json=_device_fp_body(device_id),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": _MIYOUSHE_DEVICE_USER_AGENT,
-            },
+            json=_device_fp_body(
+                device_id,
+                game=game,
+                seed_id=seed_id or None,
+            ),
+            headers=self._miyoushe_device_fp_headers(
+                device_id,
+                game=game,
+                user_agent=user_agent,
+            ),
+            cookies=cookies,
             timeout=_ACTIVITY_REQUEST_TIMEOUT,
         )
         payload = _response_json(response, platform="米游社", game="设备指纹")
@@ -787,34 +1031,69 @@ class CommunityActivityProvider:
         device_id: str,
         device_fp: str,
         cookies: Mapping[str, str],
+        game: str = "",
     ) -> None:
-        data = {
-            "app_version": "2.99.1",
+        is_zzz = game == "绝区零"
+        app_version = "2.73.1" if is_zzz else "2.99.1"
+        base_data = {
+            "app_version": app_version,
             "device_id": device_id,
-            "device_name": _MIYOUSHE_DEVICE_NAME,
-            "os_version": "30",
+            "device_name": (
+                _MIYOUSHE_ZZZ_DEVICE_NAME
+                if is_zzz
+                else _MIYOUSHE_DEVICE_NAME
+            ),
+            "os_version": "33" if is_zzz else "30",
             "platform": "Android",
-            "registration_id": "1a0018970a5c00e814d",
         }
-        body = json.dumps(data, separators=(",", ":"))
-        headers = {
-            "DS": _device_ds(body),
+        base_headers = {
             "x-rpc-client_type": "2",
-            "x-rpc-app_version": "2.99.1",
+            "x-rpc-app_version": app_version,
             "x-rpc-sys_version": "12",
-            "x-rpc-channel": "miyousheluodi",
+            "x-rpc-channel": "mihoyo" if is_zzz else "miyousheluodi",
             "x-rpc-device_id": device_id,
             "x-rpc-device_name": _MIYOUSHE_DEVICE_NAME,
             "x-rpc-device_model": _MIYOUSHE_DEVICE_MODEL,
             "x-rpc-device_fp": device_fp,
-            "Referer": "https://app.mihoyo.com",
+            "Referer": (
+                "https://act.mihoyo.com/"
+                if is_zzz
+                else "https://app.mihoyo.com"
+            ),
             "Content-Type": "application/json; charset=UTF-8",
-            "User-Agent": "okhttp/4.9.3",
+            "User-Agent": (
+                _MIYOUSHE_ZZZ_USER_AGENT
+                if is_zzz
+                else "okhttp/4.9.3"
+            ),
         }
+        if is_zzz:
+            base_headers.update(
+                {
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": "https://act.mihoyo.com",
+                    "X-Requested-With": "com.mihoyo.hyperion",
+                    "x-rpc-csm_source": "myself",
+                }
+            )
         # 登记是降低风控概率的辅助步骤；失败时保留官方 getFp 值继续查询，
-        # 由真正的实时便笺响应决定最终是成功还是受限。
+        # 由真正的实时便笺响应决定最终是成功还是受限。两个登记接口各自
+        # 重新计算 DS，避免复用已过时的请求签名。
         for url in (_MIYOUSHE_DEVICE_LOGIN_URL, _MIYOUSHE_DEVICE_SAVE_URL):
             try:
+                data = {
+                    **base_data,
+                    "registration_id": "".join(
+                        random.choices(
+                            string.ascii_lowercase + string.digits, k=19
+                        )
+                    ),
+                }
+                body = json.dumps(data, separators=(",", ":"))
+                headers = {
+                    **base_headers,
+                    "DS": _device_ds(body, game=game),
+                }
                 response = await client.post(
                     url,
                     headers=headers,
@@ -859,9 +1138,14 @@ class CommunityActivityProvider:
         profile = request.signature_profile
         headers = request.header_map
         if profile == "miyoushe_params":
-            headers["DS"] = _miyoushe_ds(query=request.query_string)
-        elif profile in {"miyoushe_ios", "miyoushe_data"}:
+            headers["DS"] = _miyoushe_ds(
+                query=request.query_string,
+                game=request.target.game,
+            )
+        elif profile == "miyoushe_ios":
             headers["DS"] = _miyoushe_ds(widget=True)
+        elif profile == "miyoushe_data":
+            headers["DS"] = _miyoushe_ds(data=True)
         else:
             raise CommunityActivityTransportError(
                 "米游社当前请求规格未确认，不发起请求",
@@ -871,9 +1155,35 @@ class CommunityActivityProvider:
         headers.setdefault("x-rpc-device_model", _MIYOUSHE_DEVICE_MODEL)
         headers.setdefault("x-rpc-device_name", _MIYOUSHE_DEVICE_NAME)
         headers.setdefault("User-Agent", _MIYOUSHE_DEVICE_USER_AGENT)
-        headers["x-rpc-device_id"] = device_id
-        if device_fp:
+        if request.requires_device_id:
+            headers["x-rpc-device_id"] = device_id
+        else:
+            headers.pop("x-rpc-device_id", None)
+        if request.requires_device_fingerprint and device_fp:
             headers["x-rpc-device_fp"] = device_fp
+        else:
+            headers.pop("x-rpc-device_fp", None)
+        if (
+            request.target.game == "星穹铁道"
+            and profile == "miyoushe_data"
+        ):
+            # 参考项目的星铁便笺走 iOS Widget 合同，不混入记录接口的
+            # Android 设备头，避免上游返回通用 -10001。
+            headers.update(
+                {
+                    "x-rpc-app_version": "2.63.1",
+                    "x-rpc-channel": "appstore",
+                    "x-rpc-page": "",
+                    "x-rpc-device_fp": "",
+                    "x-rpc-device_id": "",
+                    "x-rpc-device_model": "iPhone10,2",
+                    "x-rpc-device_name": "iPhone",
+                    "x-rpc-sys_version": "16.2",
+                    "Connection": "keep-alive",
+                    "Host": "api-takumi-record.mihoyo.com",
+                    "User-Agent": "WidgetExtension/231 CFNetwork/1390 Darwin/22.0.0",
+                }
+            )
         return headers
 
 

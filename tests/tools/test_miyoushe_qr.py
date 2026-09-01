@@ -6,9 +6,13 @@ import httpx
 
 from app.tools.miyoushe_qr import (
     _check_game_token_qr_status,
+    _check_passport_app_qr_status,
+    _create_passport_app_qr,
     _game_token_qr_data,
     _has_complete_qr_credential,
+    _passport_app_qr_data,
     check_qr_status,
+    create_qr_login,
     exchange_stoken,
 )
 
@@ -16,6 +20,7 @@ from app.tools.miyoushe_qr import (
 class _FakeAsyncClient:
     def __init__(self, *responses: httpx.Response) -> None:
         self.responses = list(responses)
+        self.post_calls = []
 
     async def __aenter__(self):
         return self
@@ -24,10 +29,151 @@ class _FakeAsyncClient:
         return None
 
     async def post(self, *args, **kwargs) -> httpx.Response:
+        self.post_calls.append((args, kwargs))
         return self.responses.pop(0)
 
 
 class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
+    def test_accepts_passport_app_qr_host_and_data_ticket(self) -> None:
+        qr_url = (
+            "https://user.mihoyo.com/login-platform/mobile.html"
+            "?tk=url-ticket&token_types=1"
+        )
+
+        self.assertEqual(
+            _passport_app_qr_data(
+                {"url": qr_url, "ticket": "response-ticket"}
+            ),
+            (qr_url, "response-ticket"),
+        )
+        self.assertEqual(
+            _passport_app_qr_data({"url": qr_url}),
+            (qr_url, "url-ticket"),
+        )
+        self.assertIsNone(
+            _passport_app_qr_data(
+                {
+                    "url": (
+                        "https://example.com/login-platform/mobile.html"
+                        "?tk=url-ticket"
+                    )
+                }
+            )
+        )
+
+    async def test_passport_app_create_uses_current_contract(self) -> None:
+        qr_url = (
+            "https://user.mihoyo.com/login-platform/mobile.html"
+            "?tk=url-ticket&token_types=1"
+        )
+        response = httpx.Response(
+            200,
+            json={
+                "retcode": 0,
+                "data": {"url": qr_url, "ticket": "response-ticket"},
+            },
+            request=httpx.Request("POST", "https://passport.invalid"),
+        )
+        client = _FakeAsyncClient(response)
+        with patch(
+            "app.tools.miyoushe_qr.httpx.AsyncClient",
+            return_value=client,
+        ):
+            result = await _create_passport_app_qr("DEVICE-ID")
+
+        self.assertEqual(result, (qr_url, "response-ticket"))
+        args, kwargs = client.post_calls[0]
+        self.assertEqual(
+            args[0],
+            "https://passport-api.mihoyo.com/account/ma-cn-passport/app/createQRLogin",
+        )
+        self.assertEqual(kwargs["json"], {})
+        self.assertEqual(kwargs["headers"]["x-rpc-app_id"], "ddxf5dufpuyo")
+        self.assertEqual(kwargs["headers"]["x-rpc-client_type"], "3")
+        self.assertEqual(kwargs["headers"]["x-rpc-device_id"], "DEVICE-ID")
+
+    async def test_create_prefers_passport_app_and_uses_uppercase_device(
+        self,
+    ) -> None:
+        devices = []
+
+        async def create_passport_app(device: str, proxy=None):
+            devices.append(device)
+            return (
+                "https://user.mihoyo.com/login-platform/mobile.html?tk=ticket",
+                "ticket",
+            )
+
+        with patch(
+            "app.tools.miyoushe_qr._create_passport_app_qr",
+            new=AsyncMock(side_effect=create_passport_app),
+        ):
+            result = await create_qr_login()
+
+        self.assertEqual(result["ticket"], "passport-app:ticket")
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0], devices[0].upper())
+        self.assertEqual(result["device"], devices[0])
+
+    async def test_passport_app_confirmation_preserves_long_stoken_v2(
+        self,
+    ) -> None:
+        long_stoken = "v2_" + "p" * 4096 + ".CAE="
+        response = httpx.Response(
+            200,
+            json={
+                "retcode": 0,
+                "data": {
+                    "status": "Confirmed",
+                    "tokens": [
+                        {"token_type": 2, "token": "ignored"},
+                        {"token_type": 1, "token": long_stoken},
+                    ],
+                    "user_info": {"aid": "100", "mid": "mid-value"},
+                },
+            },
+            request=httpx.Request("POST", "https://passport.invalid"),
+        )
+        client = _FakeAsyncClient(response)
+        with patch(
+            "app.tools.miyoushe_qr.httpx.AsyncClient",
+            return_value=client,
+        ):
+            result = await _check_passport_app_qr_status(
+                "qr-ticket", "DEVICE-ID"
+            )
+
+        self.assertEqual(result["status"], "Confirmed")
+        parts = dict(
+            item.split("=", 1)
+            for item in result["cookies_str"].split("; ")
+        )
+        self.assertEqual(parts["stoken_v2"], long_stoken)
+        self.assertEqual(parts["stoken"], long_stoken)
+        self.assertEqual(parts["mid"], "mid-value")
+        self.assertEqual(parts["account_mid_v2"], "mid-value")
+        self.assertEqual(parts["account_id_v2"], "100")
+        args, kwargs = client.post_calls[0]
+        self.assertEqual(
+            args[0],
+            "https://passport-api.mihoyo.com/account/ma-cn-passport/app/queryQRLoginStatus",
+        )
+        self.assertEqual(kwargs["json"], {"ticket": "qr-ticket"})
+
+    async def test_check_routes_prefixed_ticket_to_passport_app(self) -> None:
+        with patch(
+            "app.tools.miyoushe_qr._check_passport_app_qr_status",
+            new=AsyncMock(return_value={"status": "Init"}),
+        ) as check_mock:
+            result = await check_qr_status(
+                "passport-app:qr-ticket", "DEVICE-ID"
+            )
+
+        self.assertEqual(result, {"status": "Init"})
+        check_mock.assert_awaited_once_with(
+            "qr-ticket", "DEVICE-ID", None
+        )
+
     def test_accepts_confirmed_game_token_qr_host(self) -> None:
         result = _game_token_qr_data(
             {

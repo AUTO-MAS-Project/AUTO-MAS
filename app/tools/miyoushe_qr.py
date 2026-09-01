@@ -5,6 +5,9 @@
 #   GameToken API compatibility knowledge:
 #       nonebot-plugin-mystool Copyright (c) 2022 Ljzd-PRO (MIT License)
 #       https://github.com/Ljzd-PRO/nonebot-plugin-mystool
+#   Passport App QR compatibility knowledge:
+#       PizzaHelperUnited Copyright (c) 2024 and onwards Pizza Studio
+#       https://github.com/pizza-studio/PizzaHelperUnited (AGPL-3.0-or-later)
 
 #   This file is part of AUTO-MAS.
 
@@ -30,10 +33,12 @@
 可安全删除本文件及 app/api/qr_login.py、前端扫码按钮，
 不会影响任何已有功能。
 
-扫码流程（GameToken 优先，Passport 回退）:
-  1. GameToken/Passport 创建二维码，返回二维码 URL + ticket
-  2. 轮询状态，GameToken 确认后兑换完整凭据，Passport 从响应头或响应体获取 cookies
+扫码流程（Passport App 优先，Passport Web 兼容回退）:
+  1. Passport 创建二维码，返回二维码 URL + ticket
+  2. 轮询状态，App 接口确认后直接取得 stoken，Web 接口从响应头或响应体获取 cookies
   3. 保存时补充签到模块兼容的认证与 UID 别名
+
+旧 GameToken ticket 仅保留轮询兼容，不再用于新建二维码。
 
 参考项目:
   - https://github.com/thesadru/genshin.py (2026-06 最新)
@@ -55,6 +60,17 @@ logger = get_logger("米游社扫码登录")
 
 CREATE_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
 CHECK_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+# ---- Passport App QR 登录 API（替代已废弃的 Panda GameToken QR） ----
+PASSPORT_APP_CREATE_URL = (
+    "https://passport-api.mihoyo.com/account/ma-cn-passport/app/createQRLogin"
+)
+PASSPORT_APP_CHECK_URL = (
+    "https://passport-api.mihoyo.com/account/ma-cn-passport/app/queryQRLoginStatus"
+)
+PASSPORT_APP_ID = "ddxf5dufpuyo"
+PASSPORT_APP_CLIENT_TYPE = "3"
+PASSPORT_APP_USER_AGENT = "HYPContainer/1.3.3.182"
+_PASSPORT_APP_TICKET_PREFIX = "passport-app:"
 # ---- GameToken QR 登录 API（参考项目已确认的请求/响应形状） ----
 GAME_TOKEN_CREATE_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/fetch"
 GAME_TOKEN_CHECK_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/query"
@@ -300,6 +316,86 @@ def _qr_headers(device: str) -> dict:
     return headers
 
 
+def _passport_app_qr_headers(device: str) -> dict[str, str]:
+    """构建 Passport App 扫码请求头。"""
+
+    return {
+        "x-rpc-app_id": PASSPORT_APP_ID,
+        "x-rpc-client_type": PASSPORT_APP_CLIENT_TYPE,
+        "x-rpc-device_id": device,
+        "User-Agent": PASSPORT_APP_USER_AGENT,
+        "Content-Type": "application/json",
+    }
+
+
+def _passport_app_qr_data(payload: object) -> tuple[str, str] | None:
+    """从 Passport App 创建响应中提取可信二维码 URL 和 ticket。"""
+
+    if not isinstance(payload, dict):
+        return None
+    qr_url = str(payload.get("url") or "").strip()
+    parsed = urlparse(qr_url)
+    if (
+        parsed.scheme.lower() != "https"
+        or parsed.netloc.lower() != "user.mihoyo.com"
+        or parsed.path.lower() != "/login-platform/mobile.html"
+    ):
+        return None
+    ticket = str(payload.get("ticket") or "").strip()
+    if not ticket:
+        ticket_values = parse_qs(parsed.query).get("tk", [])
+        ticket = str(ticket_values[0] if ticket_values else "").strip()
+    if not ticket:
+        return None
+    return qr_url, ticket
+
+
+def _passport_app_cookie_parts(payload: object) -> dict[str, str]:
+    """将 Passport App 确认响应转换为完整 stoken_v2 凭据。"""
+
+    if not isinstance(payload, dict):
+        return {}
+    user_info = payload.get("user_info")
+    tokens = payload.get("tokens")
+    if not isinstance(user_info, dict) or not isinstance(tokens, list):
+        return {}
+
+    uid = str(
+        user_info.get("aid")
+        or user_info.get("uid")
+        or user_info.get("account_id")
+        or ""
+    ).strip()
+    mid = str(user_info.get("mid") or "").strip()
+    stoken_v2 = ""
+    for token_info in tokens:
+        if not isinstance(token_info, dict):
+            continue
+        if str(token_info.get("token_type")) != "1":
+            continue
+        stoken_v2 = str(token_info.get("token") or "").strip()
+        if stoken_v2:
+            break
+    if not uid or not mid or not stoken_v2:
+        return {}
+
+    return {
+        "stoken_v2": stoken_v2,
+        "stoken": stoken_v2,
+        "mid": mid,
+        "mid_v2": mid,
+        "ltmid_v2": mid,
+        "account_mid_v2": mid,
+        "stuid": uid,
+        "stuid_v2": uid,
+        "ltuid": uid,
+        "ltuid_v2": uid,
+        "account_id": uid,
+        "account_id_v2": uid,
+        "login_uid": uid,
+    }
+
+
 def _game_token_qr_data(payload: object) -> tuple[str, str] | None:
     """从 GameToken 二维码响应中提取二维码 URL 和 ticket。"""
 
@@ -351,32 +447,60 @@ async def _create_game_token_qr(
     return _game_token_qr_data(payload.get("data"))
 
 
-async def create_qr_login(proxy: str | None = None) -> dict:
-    """创建米游社扫码登录二维码（GameToken 优先，Passport 回退）
+async def _create_passport_app_qr(
+    device: str, proxy: str | None = None
+) -> tuple[str, str] | None:
+    """创建新版 Passport App 扫码二维码。"""
 
-    优先使用已确认的 GameToken 链路；其不可用时继续使用 Passport。
+    async with httpx.AsyncClient(
+        proxy=proxy or Config.proxy,
+        trust_env=False,
+    ) as client:
+        response = await client.post(
+            PASSPORT_APP_CREATE_URL,
+            headers=_passport_app_qr_headers(device),
+            json={},
+            timeout=15.0,
+        )
+        payload = response.json()
+    if not isinstance(payload, dict) or payload.get("retcode") not in (0, "0"):
+        return None
+    return _passport_app_qr_data(payload.get("data"))
+
+
+async def create_qr_login(proxy: str | None = None) -> dict:
+    """创建米游社扫码登录二维码（Passport App 优先）
+
+    优先使用可直接返回 stoken 的 Passport App 链路；其不可用时继续使用
+    原 Passport Web 兼容链路。
 
     Returns:
         {ticket, qr_url, device} 或 {error}
     """
     from uuid import uuid4
 
-    device = str(uuid4())
+    device = str(uuid4()).upper()
 
     try:
-        game_token_qr = await _create_game_token_qr(device, proxy)
+        passport_app_qr = await _create_passport_app_qr(device, proxy)
     except (httpx.HTTPError, OSError, ValueError) as error:
-        logger.debug(f"GameToken QR 不可用，回退 Passport: {type(error).__name__}")
-        game_token_qr = None
+        logger.debug(
+            f"Passport App QR 不可用，回退 Web: {type(error).__name__}"
+        )
+        passport_app_qr = None
     except Exception as error:
-        logger.debug(f"GameToken QR 回退 Passport: {type(error).__name__}")
-        game_token_qr = None
+        logger.debug(
+            f"Passport App QR 回退 Web: {type(error).__name__}"
+        )
+        passport_app_qr = None
 
-    if game_token_qr is not None:
-        qr_url, game_token_ticket = game_token_qr
-        logger.info("GameToken QR 创建成功")
+    if passport_app_qr is not None:
+        qr_url, passport_app_ticket = passport_app_qr
+        logger.info("Passport App QR 创建成功")
         return {
-            "ticket": f"{_GAME_TOKEN_TICKET_PREFIX}{game_token_ticket}",
+            "ticket": (
+                f"{_PASSPORT_APP_TICKET_PREFIX}{passport_app_ticket}"
+            ),
             "qr_url": qr_url,
             "device": device,
         }
@@ -429,6 +553,92 @@ async def create_qr_login(proxy: str | None = None) -> dict:
     except Exception:
         logger.exception("创建扫码登录程序异常")
         return {"error": "创建二维码失败，请稍后重试"}
+
+
+async def _check_passport_app_qr_status(
+    ticket: str,
+    device: str,
+    proxy: str | None = None,
+) -> dict:
+    """查询 Passport App 二维码并返回可保存的完整 stoken 凭据。"""
+
+    try:
+        async with httpx.AsyncClient(
+            proxy=proxy or Config.proxy,
+            trust_env=False,
+        ) as client:
+            response = await client.post(
+                PASSPORT_APP_CHECK_URL,
+                headers=_passport_app_qr_headers(device),
+                json={"ticket": ticket},
+                timeout=30.0,
+            )
+            data = response.json()
+    except (httpx.HTTPError, OSError) as error:
+        logger.warning(
+            format_exception_reason(
+                error,
+                stage="查询 Passport App 扫码状态网络请求失败",
+            )
+        )
+        return {
+            "status": "Error",
+            "error": "查询二维码状态网络请求失败，请检查网络或代理设置",
+        }
+    except ValueError:
+        logger.warning("解析 Passport App 扫码状态响应失败")
+        return {"status": "Error", "error": "二维码状态响应解析失败"}
+    except Exception:
+        logger.exception("查询 Passport App 扫码状态程序异常")
+        return {"status": "Error", "error": "查询二维码状态失败，请稍后重试"}
+
+    if not isinstance(data, dict):
+        return {"status": "Error", "error": "二维码状态响应格式无效"}
+    retcode = data.get("retcode", 0)
+    response_message = data.get("message")
+    if not isinstance(response_message, str):
+        response_message = ""
+    if retcode not in (0, "0"):
+        if str(retcode) == "-106" or _is_expired_message(response_message):
+            return {
+                "status": "Expired",
+                "message": response_message or QR_EXPIRED_MESSAGE,
+            }
+        return {"status": "Error", "error": response_message or "查询失败"}
+
+    qr_data = data.get("data")
+    if not isinstance(qr_data, dict):
+        return {"status": "Error", "error": "二维码状态响应格式无效"}
+    status = qr_data.get("status")
+    if status in ("Created", "Init"):
+        return {"status": "Init"}
+    if status == "Scanned":
+        return {"status": "Scanned"}
+    if status in ("Expired", "Canceled"):
+        return {
+            "status": status,
+            "message": (
+                QR_EXPIRED_MESSAGE if status == "Expired" else "登录已取消"
+            ),
+        }
+    if status != "Confirmed":
+        return {"status": "Error", "error": "收到未知扫码状态"}
+
+    cookie_parts = _passport_app_cookie_parts(qr_data)
+    if not _has_complete_qr_credential(cookie_parts):
+        return {
+            "status": "Error",
+            "error": "扫码确认成功但响应缺少 stoken_v2 或配套 mid",
+        }
+    if not _has_qr_uid_cookie(cookie_parts):
+        return {
+            "status": "Error",
+            "error": "扫码确认成功但响应未包含用户 UID",
+        }
+    cookies_str = _serialize_cookie_parts(cookie_parts)
+    cookie_parts.clear()
+    logger.info("Passport App QR 确认成功，已取得完整 stoken 凭据")
+    return {"status": "Confirmed", "cookies_str": cookies_str}
 
 
 async def _check_game_token_qr_status(
@@ -581,6 +791,14 @@ async def check_qr_status(
         {status: "Init"|"Scanned"|"Confirmed"|"Expired"|"Error",
          cookies_str?, error?}
     """
+    if isinstance(ticket, str) and ticket.startswith(
+        _PASSPORT_APP_TICKET_PREFIX
+    ):
+        return await _check_passport_app_qr_status(
+            ticket[len(_PASSPORT_APP_TICKET_PREFIX):],
+            device,
+            proxy,
+        )
     if isinstance(ticket, str) and ticket.startswith(_GAME_TOKEN_TICKET_PREFIX):
         return await _check_game_token_qr_status(
             ticket[len(_GAME_TOKEN_TICKET_PREFIX):],

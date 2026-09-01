@@ -562,8 +562,16 @@ def _parse_miyoushe_hsr(
         daily = _activity_item(
             "每日实训",
             {
-                "current": root.get("current_training_score"),
-                "total": root.get("max_training_score"),
+                "current": (
+                    root.get("current_train_score")
+                    if root.get("current_train_score") is not None
+                    else root.get("current_training_score")
+                ),
+                "total": (
+                    root.get("max_train_score")
+                    if root.get("max_train_score") is not None
+                    else root.get("max_training_score")
+                ),
             },
         )
     items = [daily] if daily is not None else []
@@ -571,7 +579,17 @@ def _parse_miyoushe_hsr(
     resource_values = (
         ("开拓力", {"current": root.get("current_stamina"), "total": root.get("max_stamina")}),
         ("储备开拓力", {"current": root.get("current_reserve_stamina"), "total": root.get("max_reserve_stamina")}),
-        ("探索派遣", {"current": root.get("current_expedition_num"), "total": root.get("total_expedition_num")}),
+        (
+            "探索派遣",
+            {
+                "current": (
+                    root.get("accepted_expedition_num")
+                    if root.get("accepted_expedition_num") is not None
+                    else root.get("current_expedition_num")
+                ),
+                "total": root.get("total_expedition_num"),
+            },
+        ),
     )
     for name, value in resource_values:
         item = _resource_item(name, value)

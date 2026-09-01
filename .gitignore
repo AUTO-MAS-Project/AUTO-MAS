@@ -58,6 +58,9 @@ list/
 /skills/
 .ace-tool/
 
+# Local-only Kuro SMS capture patch
+/local/kuro-sms-capture-patch/
+
 # Plugin workspace (external plugin sources stay ignored)
 /plugins/*
 !/plugins/auto_mas_core/

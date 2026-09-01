@@ -216,9 +216,39 @@ def _miyoushe_widget_headers(
     return _headers(
         target,
         ("Accept", "*/*"),
+        ("Accept-Encoding", "gzip, deflate, br"),
+        ("Accept-Language", "zh-CN,zh-Hans;q=0.9"),
         ("Referer", "https://app.mihoyo.com"),
         ("x-rpc-client_type", client_type),
         ("x-rpc-channel", "appstore"),
+    )
+
+
+def _miyoushe_zzz_headers(
+    target: CommunityActivityTarget,
+) -> tuple[tuple[str, str], ...]:
+    """复用绝区零参考插件的 CN 记录接口请求头。"""
+
+    return _headers(
+        target,
+        ("Accept", "application/json, text/plain, */*"),
+        ("Origin", "https://act.mihoyo.com"),
+        ("Referer", "https://act.mihoyo.com/"),
+        (
+            "User-Agent",
+            "Mozilla/5.0 (Linux; Android 12; "
+            "MI 8 SE Build/RQ3A.211001.001; wv) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+            "Chrome/111.0.5563.116 Mobile Safari/537.36 "
+            "miHoYoBBS/2.73.1",
+        ),
+        ("x-rpc-app_version", "2.73.1"),
+        ("x-rpc-channel", "mihoyo"),
+        ("x-rpc-client_type", "2"),
+        ("x-rpc-csm_source", "myself"),
+        ("x-rpc-sys_version", "12"),
+        ("X-Requested-With", "com.mihoyo.hyperion"),
+        ("Connection", "keep-alive"),
     )
 
 
@@ -230,7 +260,8 @@ def build_community_activity_requests(
     """按已确认的 provider 接口生成一款游戏的请求规格。
 
     规格不包含 Cookie、Token、Authorization 或请求体；认证签名由调用方的
-    provider 适配器在执行请求时注入。原神保留记录卡失败后的 Widget 回退。
+    provider 适配器在执行请求时注入。原神和星穹铁道保留记录接口失败后的
+    Widget/记录接口回退。
 
     Args:
         target: 当前账号组和游戏角色的脱敏上下文。
@@ -330,6 +361,20 @@ def build_community_activity_requests(
                 target=target,
                 source=(
                     f"{MIYOUSHE_RECORD_BASE_URL}"
+                    "/game_record/app/hkrpg/aapi/widget"
+                ),
+                method="GET",
+                headers=_miyoushe_widget_headers(target, client_type="2"),
+                auth_scope="miyoushe",
+                signature_profile="miyoushe_data",
+                requires_ds=True,
+                requires_device_id=False,
+                requires_device_fingerprint=False,
+            ),
+            CommunityActivityRequest(
+                target=target,
+                source=(
+                    f"{MIYOUSHE_RECORD_BASE_URL}"
                     "/game_record/app/hkrpg/api/note"
                 ),
                 method="GET",
@@ -341,20 +386,6 @@ def build_community_activity_requests(
                 ),
                 auth_scope="miyoushe",
                 signature_profile="miyoushe_params",
-                requires_ds=True,
-                requires_device_id=True,
-                requires_device_fingerprint=True,
-            ),
-            CommunityActivityRequest(
-                target=target,
-                source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/game_record/app/hkrpg/aapi/widget"
-                ),
-                method="GET",
-                headers=_miyoushe_widget_headers(target, client_type="2"),
-                auth_scope="miyoushe",
-                signature_profile="miyoushe_data",
                 requires_ds=True,
                 requires_device_id=True,
                 requires_device_fingerprint=True,
@@ -371,11 +402,7 @@ def build_community_activity_requests(
                 ),
                 method="GET",
                 params=role_params,
-                headers=_miyoushe_bbs_headers(
-                    target,
-                    tool_version="v4.51.1",
-                    page="v4.51.1_#/zzz",
-                ),
+                headers=_miyoushe_zzz_headers(target),
                 auth_scope="miyoushe",
                 signature_profile="miyoushe_params",
                 requires_ds=True,
@@ -466,7 +493,10 @@ async def _collect_one(
 
             if snapshot.status == "success" and snapshot.source != request.source:
                 snapshot = replace(snapshot, source=request.source)
-            last_snapshot = snapshot
+            if last_snapshot is None or _activity_failure_priority(
+                snapshot.status
+            ) >= _activity_failure_priority(last_snapshot.status):
+                last_snapshot = snapshot
             if snapshot.status == "success":
                 return snapshot
 
@@ -475,6 +505,18 @@ async def _collect_one(
             status="failed",
             reason="社区活动接口未返回结果",
         )
+
+
+def _activity_failure_priority(status: ActivityState) -> int:
+    """回退时保留更具体的受限/不可用原因。"""
+
+    return {
+        "limited": 3,
+        "unavailable": 2,
+        "failed": 1,
+        "empty": 0,
+        "success": 4,
+    }.get(status, 1)
 
 
 async def collect_community_activity(
