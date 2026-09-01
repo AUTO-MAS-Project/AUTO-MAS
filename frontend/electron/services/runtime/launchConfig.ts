@@ -8,9 +8,17 @@
  * 一次生命周期只走一条链路：模式非 `off` 却找不到可执行文件时，按 `RUNTIME_NOT_FOUND`
  * 失败并展示，绝不静默回退旧链路——否则用户会在不知情的情况下拿到另一套端口与关闭语义。
  *
- * 本任务只提供环境变量开关，配置项与设置界面属于后续任务。
+ * 灰度开关的来源分三级，优先级从高到低：
+ * 1. 环境变量 `AUTO_MAS_RUNTIME_MODE`；
+ * 2. 设置界面持久化的用户选择（`<appRoot>/config/frontend_config.json` 的
+ *    `Runtime.LaunchMode`，与 `main.ts` 的 `loadConfig()/saveConfig()` 同一份文件）；
+ * 3. 构建默认值：打包安装且已捆绑 Runtime 时默认 `managed`，否则 `off`——即打包安装且带
+ *    Runtime 的用户默认走新链路，开发者跑源码默认仍走旧链路，除非显式设了环境变量。
+ *
+ * 任一级取值非法都记 warning 后落到下一级，不再像早前只有环境变量一级时那样直接判 `off`。
  */
 
+import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -37,6 +45,23 @@ export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 
 const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['off', 'development', 'managed']
 
+/** 持久化设置比运行时开关多一个哨兵值：`auto` 表示不覆盖，跟随构建默认值。 */
+export type PersistedRuntimeLaunchMode = RuntimeLaunchMode | 'auto'
+
+const PERSISTED_RUNTIME_LAUNCH_MODES: readonly PersistedRuntimeLaunchMode[] = [
+  'auto',
+  ...RUNTIME_LAUNCH_MODES,
+]
+
+/** 最终生效值来自哪一级，供设置界面展示「当前由环境变量强制」之类的说明。 */
+export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
+
+/** 一次解析的完整结果：生效模式 + 来源。 */
+export interface RuntimeLaunchModeResolution {
+  mode: RuntimeLaunchMode
+  source: RuntimeLaunchModeSource
+}
+
 /** 灰度开关关闭时的定位信息：不去找可执行文件。 */
 export interface RuntimeDisabledLaunchConfig {
   mode: 'off'
@@ -62,27 +87,88 @@ function isRuntimeLaunchMode(value: string): value is RuntimeLaunchMode {
   return (RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
 }
 
-/**
- * 解析灰度开关。
- *
- * 来源优先级：环境变量 `AUTO_MAS_RUNTIME_MODE` → 默认 `off`。非法取值记 warning 后按
- * `off` 处理，避免拼错一个单词就把用户带上一条没验证过的链路。
- */
-export function resolveRuntimeLaunchMode(): RuntimeLaunchMode {
-  const raw = process.env[RUNTIME_MODE_ENV]
-  if (raw === undefined || raw.trim() === '') {
-    return 'off'
-  }
-
-  const normalized = raw.trim().toLowerCase()
-  if (isRuntimeLaunchMode(normalized)) {
-    return normalized
-  }
-
-  logger.warn(
-    `${RUNTIME_MODE_ENV} 取值非法：${raw}，按 off 处理（可选值：off/development/managed）`
+/** 供 IPC 校验渲染进程传入值使用。 */
+export function isPersistedRuntimeLaunchMode(value: unknown): value is PersistedRuntimeLaunchMode {
+  return (
+    typeof value === 'string' &&
+    (PERSISTED_RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
   )
-  return 'off'
+}
+
+/** 持久化设置文件路径，须与 `main.ts` 的 `loadConfig()`/`saveConfig()` 保持一致。 */
+function resolveSettingsPath(appRoot: string): string {
+  return path.join(appRoot, 'config', 'frontend_config.json')
+}
+
+/**
+ * 读取持久化设置里的启动方式。
+ *
+ * 文件不存在、字段缺失、类型不对或 JSON 损坏都视为「未设置」而不是报错——设置文件在用户
+ * 从未碰过这一项时本就可能没有 `Runtime` 节点，这不是异常情况。
+ */
+function readPersistedLaunchMode(appRoot: string): string | undefined {
+  try {
+    const settingsPath = resolveSettingsPath(appRoot)
+    if (!fs.existsSync(settingsPath)) return undefined
+
+    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
+      Runtime?: { LaunchMode?: unknown }
+    }
+    const value = parsed.Runtime?.LaunchMode
+    return typeof value === 'string' ? value : undefined
+  } catch (error) {
+    logger.warn(
+      `读取持久化的 Runtime 启动方式设置失败，改按构建默认值处理: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
+    return undefined
+  }
+}
+
+/** 构建默认值：打包安装且已捆绑 Runtime 才默认切新链路，源码开发默认走旧链路。 */
+function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
+  const packaged = Boolean(app?.isPackaged)
+  return packaged && resolveRuntimeExecutable() !== null ? 'managed' : 'off'
+}
+
+/**
+ * 解析灰度开关，并带上生效来源。
+ *
+ * 优先级：环境变量 `AUTO_MAS_RUNTIME_MODE` > 持久化的用户设置 > 构建默认值。任一级取值
+ * 非法都记 warning 后落到下一级，而不是直接判 `off`——最终结果永远来自某一级的合法取值，
+ * 不会因为拼错一个单词就整体失效。
+ */
+export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchModeResolution {
+  const rawEnv = process.env[RUNTIME_MODE_ENV]
+  if (rawEnv !== undefined && rawEnv.trim() !== '') {
+    const normalizedEnv = rawEnv.trim().toLowerCase()
+    if (isRuntimeLaunchMode(normalizedEnv)) {
+      return { mode: normalizedEnv, source: 'env' }
+    }
+    logger.warn(
+      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按持久化设置处理（可选值：off/development/managed）`
+    )
+  }
+
+  const rawSetting = readPersistedLaunchMode(appRoot)
+  if (rawSetting !== undefined && rawSetting.trim() !== '') {
+    const normalizedSetting = rawSetting.trim().toLowerCase()
+    if (normalizedSetting !== 'auto') {
+      if (isRuntimeLaunchMode(normalizedSetting)) {
+        return { mode: normalizedSetting, source: 'setting' }
+      }
+      logger.warn(`持久化的 Runtime 启动方式设置非法：${rawSetting}，改按构建默认值处理`)
+    }
+    // normalizedSetting === 'auto'：用户显式选择跟随构建默认值，直接走下一级。
+  }
+
+  return { mode: resolveBuildDefaultLaunchMode(), source: 'default' }
+}
+
+/** 只要最终生效模式时用这个；需要在界面上展示来源时用 `resolveRuntimeLaunchModeDetail`。 */
+export function resolveRuntimeLaunchMode(appRoot: string): RuntimeLaunchMode {
+  return resolveRuntimeLaunchModeDetail(appRoot).mode
 }
 
 function isExistingFile(candidate: string): boolean {
@@ -126,7 +212,7 @@ export function resolveRuntimeExecutable(): string | null {
  * `development` 的 `--repo` 就是当前 appRoot：开发者跑的就是这份源码检出。
  */
 export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig {
-  const mode = resolveRuntimeLaunchMode()
+  const mode = resolveRuntimeLaunchMode(appRoot)
   if (mode === 'off') {
     return { mode, runtimePath: null, appRoot }
   }

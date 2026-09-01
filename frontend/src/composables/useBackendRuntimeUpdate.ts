@@ -57,7 +57,8 @@ let progressListenerAttached = false
 async function ensureLaunchMode(): Promise<RuntimeLaunchMode> {
   if (launchMode.value) return launchMode.value
   try {
-    launchMode.value = await window.electronAPI.getRuntimeLaunchMode()
+    // 灰度开关升级为三级来源后返回的是 {persisted, mode, source}，这里只关心生效值。
+    launchMode.value = (await window.electronAPI.getRuntimeLaunchMode()).mode
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`获取 Runtime 启动模式失败，按 off 处理: ${errorMsg}`)

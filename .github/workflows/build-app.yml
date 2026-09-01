@@ -28,6 +28,13 @@ permissions:
   contents: write
   actions: write
 
+env:
+  # AUTO-MAS-Project/AUTO-MAS-Runtime 的发布版本，随桌面安装包一起分发。钉死具体版本、不追
+  # latest：Runtime 有自己的发布节奏，本仓库的改动不应该在没有联调的情况下自动带出一个新
+  # Runtime。Runtime 不自更新，只随这里构建的安装包整体升级；本仓库如有依赖 Runtime 新行为
+  # 的改动（T13 系列），必须等 Runtime 一侧先发布对应版本，再手动把这个版本号提上去。
+  RUNTIME_VERSION: v0.1.0-beta.8
+
 jobs:
 
   build:
@@ -51,6 +58,52 @@ jobs:
         with:
           node-version: '20'
 
+      - name: 下载并校验 Runtime 可执行文件
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $runtimeDir = Join-Path "${{ github.workspace }}" 'runtime'
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+          $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
+
+          gh release download $env:RUNTIME_VERSION `
+            -R AUTO-MAS-Project/AUTO-MAS-Runtime `
+            -D $runtimeDir `
+            -p $exeName `
+            -p 'SHA256SUMS.txt' `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+          }
+
+          Push-Location $runtimeDir
+          try {
+            $sumsLine = Select-String -Path 'SHA256SUMS.txt' -Pattern ([regex]::Escape($exeName)) |
+              Select-Object -First 1
+            if (-not $sumsLine) {
+              throw "SHA256SUMS.txt 中找不到 $exeName 对应的记录"
+            }
+            $expectedHash = ($sumsLine.Line -split '\s+')[0].ToUpperInvariant()
+            $actualHash = (Get-FileHash -Path $exeName -Algorithm SHA256).Hash.ToUpperInvariant()
+
+            Write-Host "期望哈希: $expectedHash"
+            Write-Host "实际哈希: $actualHash"
+
+            if ($actualHash -ne $expectedHash) {
+              throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配，可能下载损坏或被篡改"
+            }
+
+            # 校验通过后改成稳定文件名，Electron 侧固定按 auto-mas-runtime.exe 定位
+            # （见 frontend/electron/services/runtime/launchConfig.ts）。
+            Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
+            Remove-Item 'SHA256SUMS.txt'
+            Write-Host "Runtime $env:RUNTIME_VERSION 校验通过：$runtimeDir\auto-mas-runtime.exe"
+          } finally {
+            Pop-Location
+          }
+        shell: pwsh
+
       - name: 构建应用程序
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -72,6 +125,17 @@ jobs:
           }
           yarn build
           Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
+        shell: pwsh
+
+      - name: 放入 Runtime 可执行文件
+        run: |
+          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
+          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
+          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
+          # 两者会一起带上它。
+          $target = 'frontend\dist\win-unpacked\resources'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
         shell: pwsh
 
       - name: 上传未签名主程序

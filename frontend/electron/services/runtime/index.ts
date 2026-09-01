@@ -4,13 +4,11 @@
  * 使用示例：
  *
  * ```typescript
- * import { RuntimeClient } from './runtime'
+ * import { createRuntimeClient } from './runtime'
  *
- * const client = new RuntimeClient({
- *   runtimePath,
- *   appRoot,
- *   env: { AUTO_MAS_TELEMETRY: 'disabled' },
- * })
+ * // 遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient 统一注入，不需要调用方自己判断；
+ * // 显式传 env 仍可覆盖它。
+ * const client = createRuntimeClient({ runtimePath, appRoot })
  *
  * const outcome = await client.run(['doctor'], {
  *   onProgress: event => console.log(event.stage, event.status, event.message),
@@ -51,16 +49,25 @@ export {
   RUNTIME_EXECUTABLE_NAME,
   RUNTIME_EXE_ENV,
   RUNTIME_MODE_ENV,
+  PersistedRuntimeLaunchMode,
   RuntimeDisabledLaunchConfig,
   RuntimeLaunchConfig,
   RuntimeLaunchMode,
+  RuntimeLaunchModeResolution,
+  RuntimeLaunchModeSource,
   RuntimeSupervisedLaunchConfig,
+  isPersistedRuntimeLaunchMode,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
+  resolveRuntimeLaunchModeDetail,
 } from './launchConfig'
 
 export { NdjsonEventStream, NdjsonItem, parseRuntimeEventLine } from './ndjson'
+
+export { RUNTIME_TELEMETRY_ENV, buildRuntimeEnv } from './runtimeEnv'
+
+export { createRuntimeClient } from './runtimeClientFactory'
 
 export {
   RUNTIME_CAPABILITIES,

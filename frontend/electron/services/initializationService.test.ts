@@ -167,6 +167,45 @@ vi.mock('./runtime', async importActual => {
   return { ...actual, RuntimeClient: FakeRuntimeClient }
 })
 
+// runtimeInitializationService.ts 的默认客户端工厂现在经 createRuntimeClient（见
+// runtime/runtimeClientFactory.ts）统一注入遥测环境变量，它从 './client'（相对
+// runtime/ 目录，即 './runtime/client'）直接拿 RuntimeClient，不经过上面这层
+// './runtime' 桶文件的重导出。只替身 './runtime' 拦不到这次真实构造，这里必须把
+// 同一个假类也接到 './runtime/client' 上，否则会去 spawn 一个真的子进程。
+vi.mock('./runtime/client', async importActual => {
+  const actual = await importActual<typeof import('./runtime/client')>()
+
+  class FakeRuntimeClient {
+    constructor(readonly options: { runtimePath: string; appRoot: string }) {}
+
+    async run(command: string[], options: RuntimeRunOptions = {}) {
+      runtimeClientCalls.push(command)
+      for (const event of bootstrapEvents) {
+        if (event.type === 'state') options.onState?.(event)
+      }
+      const result = bootstrapEvents[bootstrapEvents.length - 1]
+      return {
+        hello: bootstrapEvents[0],
+        result,
+        success: true,
+        code: 'OK',
+        events: bootstrapEvents,
+        warnings: [],
+        errors: [],
+        logs: {},
+        protocolErrors: [],
+        exitCode: 0,
+        signal: null,
+        stderr: '',
+        argv: command,
+        durationMs: 1,
+      }
+    }
+  }
+
+  return { ...actual, RuntimeClient: FakeRuntimeClient }
+})
+
 // ==================== 用例 ====================
 
 const APP_ROOT = 'D:\\AUTO-MAS'

@@ -163,7 +163,8 @@ export interface RuntimeInitContext {
 
 export function resolveRuntimeInitContext(): RuntimeInitContext {
   return {
-    mode: resolveRuntimeLaunchMode(),
+    // 灰度开关升级为三级来源后要按 appRoot 读持久化设置，不能再零参解析。
+    mode: resolveRuntimeLaunchMode(getAppRoot()),
     fallbackLogPath: path.join(path.dirname(app.getPath('exe')), 'debug', 'frontend.log'),
     mirrorKeys: listRuntimeMappableMirrorKeys(),
   }
@@ -522,10 +523,9 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== Runtime 链路的后端更新 ====================
 
-  // 渲染进程据此决定标题栏的更新入口走哪条链路：off 走原有下载安装包流程，
-  // development 直接禁用，managed 走下面的 update-backend-via-runtime。
-  ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchMode())
-
+  // 标题栏更新入口走哪条链路由 `get-runtime-launch-mode` 决定（off 走原有下载安装包流程，
+  // development 直接禁用，managed 走下面的 update-backend-via-runtime）；该通道由 main.ts
+  // 统一注册，返回持久化设置与生效来源，这里不再重复注册。
   ipcMain.handle(
     'update-backend-via-runtime',
     async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {

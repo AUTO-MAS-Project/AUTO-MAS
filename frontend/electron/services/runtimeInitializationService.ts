@@ -23,6 +23,7 @@ import {
   RuntimeRunResult,
   RuntimeStage,
   RuntimeSupervisedLaunchConfig,
+  createRuntimeClient,
   formatStartupLogs,
   isRuntimeClientError,
 } from './runtime'
@@ -349,7 +350,9 @@ export interface RuntimeInitializationOptions {
   targetVersion?: string
 }
 
-const defaultClientFactory: RuntimeClientFactory = options => new RuntimeClient(options)
+// 走统一工厂而不是裸 new RuntimeClient：遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient
+// 注入，这里不用再重复读一遍配置。
+const defaultClientFactory: RuntimeClientFactory = options => createRuntimeClient(options)
 
 /**
  * Runtime 初始化链路的编排入口。

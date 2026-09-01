@@ -90,6 +90,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitializedVersion: (version: string) =>
     ipcRenderer.invoke('set-initialized-version', version),
 
+  // Runtime 灰度开关：持久化设置 + 当前生效值与来源
+  getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
+  setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
+
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: unknown) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
@@ -255,8 +259,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
 
-  // Runtime 链路的后端更新
-  getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
+  // Runtime 链路的后端更新（启动模式复用上面的 getRuntimeLaunchMode）
   updateBackendViaRuntime: (targetVersion: string) =>
     ipcRenderer.invoke('update-backend-via-runtime', targetVersion),
   retryBackendUpdate: (action: string) => ipcRenderer.invoke('retry-backend-update', action),
