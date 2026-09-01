@@ -20,29 +20,28 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import shutil
-from pathlib import Path
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
-from app.services import Notify
-from app.utils import get_logger, ProcessManager
-from app.utils.constants import TASK_MODE_ZH
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.community_notify import (
     append_task_community_summary,
-    mark_task_community_summary_consumed,
 )
+from app.tools.game_sign_notify import finalize_task_game_sign_notification
 from app.tools.push_log import build_user_result_text
-from .tools import push_notification
+from app.utils import ProcessManager, get_logger
+from app.utils.constants import TASK_MODE_ZH
+
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-
+from .tools import push_notification
 
 logger = get_logger("通用调度器")
 
@@ -344,19 +343,19 @@ class GeneralManager(TaskExecuteBase):
                 "uncompleted_count": len(error_user) + len(wait_user),
                 "result": task_result,
                 "game_sign_summary": has_community_summary,
-                "push_log": "",  # 进程信息已并入 result，不再单独推送
             }
 
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                10,
-            )
             try:
-                await push_notification("代理结果", title, result, None)
-                if has_community_summary:
-                    mark_task_community_summary_consumed(self.task_info)
+                push_result = await push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
+                )
+                finalize_task_game_sign_notification(
+                    self.task_info, has_community_summary, push_result
+                )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Publisher.send(

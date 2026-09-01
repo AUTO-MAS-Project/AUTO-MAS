@@ -13,6 +13,8 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
   - "❌ 失败: 节点" = 失败（匹配源码 log_error 的专属失败日志，排除战斗噪音）
   - "⏭ 跳过: 节点" = 跳过（如每周乐园已完成）
   - "✅ 成功: 节点" = 明确成功（源码有成功/完成日志的节点）
+  - "⚡ 剩余体力: N" = 刷完后的剩余体力（取最后一条 `体力当前:`，独立成行不参与
+    状态聚合）；"体力刷本" 保留为成功节点
   后处理按节点聚合，状态优先级 失败 > 跳过 > 成功。
 - 补充翻译为 AutoMAS 项目自带的 .po 文件（res/i18n/ 内置资源），与 ok-ww 自带
   的 ok.po 一同加载，补充优先；.po 为可读源码，可直接维护。
@@ -79,13 +81,11 @@ OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     # 战令成功无日志（battle pass 为开始），靠无失败判定；此规则置于失败规则后
     (r"先约电台", r'"先约电台"'),
     (r"乐园任务完成", r'"✅ 成功: 每周乐园"'),
-    # 体力刷本：结束日志（must_use completed 带剩余体力）
-    (
-        r"must_use completed",
-        r'"✅ 成功: 体力刷本 剩余" + $((?:current stamina: )(\d+))',
-    ),
-    (r"体力已用尽", r'"✅ 成功: 体力刷本（体力已用尽）"'),
-    (r"体力不足以继续", r'"✅ 成功: 体力刷本（体力已用尽）"'),
+    # 体力刷本：must_use completed = 一次刷本完成（保留成功节点）
+    (r"must_use completed", r'"体力刷本"'),
+    # 当前体力：反复记录的 `info_set current_stamina N` 是游戏界面读取的真实值，
+    # 保留最后一次作为刷完剩余（体力不足以刷一次的数值也会被记录到）。
+    (r"current_stamina (\d+)", r'"体力当前:" + $((?:current_stamina )(\d+))'),
     (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
     (r"MainWindow:退出", r'"✅ 成功: 退出"'),
     # 多账号：登录成功
@@ -96,29 +96,55 @@ OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 
-def okww_resolve(results: list[tuple[str, str]]) -> list[tuple[str, str]]:
+def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
-    输入/输出均为 ``(log_type, text)`` 元组（与 log_box `_PostProcessor` 契约
-    一致），日志类型随元组一并保留。规则产出两类标记：裸节点名（开始/动作标记，
-    默认成功）与 "状态: 节点" 标记。同一节点多次出现保留最高优先级状态，且节点
-    顺序按最后一次出现排列（多会话日志时取最后会话的流程顺序）。
+    输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
+    契约一致），日志类型与采集时间戳随元组一并保留。规则产出两类标记：裸节点
+    名（开始/动作标记，默认成功）与 "状态: 节点" 标记；另外 ``体力当前:`` 为
+    体力刷本的当前体力追踪标记，只保留最后一次，结束后独立输出一行
+    「⚡ 剩余体力: N」，不参与状态聚合。同一节点多次出现保留最高优先级状态，
+    且节点顺序与时间戳都按最后一次出现排列（多会话日志时取最后会话的流程顺序），
+    同优先级后出现也刷新时间戳，与排序逻辑保持一致。
     """
-    lines = [text for _, text in results]
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
-    for line in lines:
-        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", line)
-        if m:
-            status, node = m.group(1), m.group(2)
-        else:
-            status, node = "✅ 成功", line
+    ts_of: dict[str, float] = {}
+    last_stamina: int | None = None
+    last_stamina_ts: float = 0.0
+
+    def _mark(status: str, node: str, ts: float) -> None:
         rank = _STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
         order.append(node)
-        if rank > states.get(node, (0, ""))[0]:
+        if rank >= states.get(node, (0, ""))[0]:
             states[node] = (rank, status)
+            ts_of[node] = ts
+
+    for _, text, ts in results:
+        # 当前体力：仅记录最后一次，结束后据此输出「⚡ 剩余体力: N」
+        if text.startswith("体力当前:"):
+            try:
+                last_stamina = int(text[len("体力当前:"):])
+                last_stamina_ts = ts
+            except ValueError:
+                pass
+            continue
+        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
+        if m:
+            status, node = m.group(1), m.group(2)
+        else:
+            status, node = "✅ 成功", text
+        _mark(status, node, ts)
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
-    return [(LogType.NORMAL, f"{states[node][1]}: {node}") for node in order]
+    status_lines = [
+        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
+        for node in order
+    ]
+    if last_stamina is not None:
+        status_lines.append(
+            (LogType.NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
+        )
+    return status_lines

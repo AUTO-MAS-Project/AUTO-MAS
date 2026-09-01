@@ -9,6 +9,7 @@ import type {
   SrcConfig,
   MaaEndConfig,
   M9AConfig,
+  BetterGIConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -28,9 +29,11 @@ export type ScriptType =
   | 'M9A'
   | 'MaaFW'
   | 'HSR'
+  | 'BetterGI'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
+export type BetterGIScriptConfig = BetterGIConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -316,15 +319,6 @@ export interface MaaFWUserConfig {
     ToAddress: string
     IfServerChan: boolean
     ServerChanKey: string
-    CustomWebhooks?: Array<{
-      id: string
-      name: string
-      url: string
-      template: string
-      enabled: boolean
-      headers?: Record<string, string>
-      method?: 'POST' | 'GET'
-    }>
   }
   Data: {
     LastProxyDate: string
@@ -516,6 +510,7 @@ export interface Script {
     | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
+    | BetterGIConfig
   users: User[]
 }
 
@@ -559,15 +554,6 @@ export interface User {
     Enabled: boolean
     IfSendMail: boolean
     IfSendSixStar: boolean
-    CustomWebhooks: Array<{
-      id: string
-      name: string
-      url: string
-      template: string
-      enabled: boolean
-      headers?: Record<string, string>
-      method?: 'POST' | 'GET'
-    }>
     IfSendStatistic: boolean
     IfServerChan: boolean
     ServerChanChannel: string
@@ -618,6 +604,7 @@ export interface AddScriptResponse {
     | M9AScriptConfig
     | MaaFWScriptConfig
     | HSRScriptConfig
+    | BetterGIScriptConfig
 }
 
 // 脚本索引项
@@ -633,6 +620,7 @@ export interface ScriptIndexItem {
     | 'M9AConfig'
     | 'MaaFWConfig'
     | 'HSRConfig'
+    | 'BetterGIConfig'
 }
 
 // 获取脚本API响应
@@ -652,6 +640,7 @@ export interface GetScriptsResponse {
     | M9AScriptConfig
     | MaaFWScriptConfig
     | HSRScriptConfig
+    | BetterGIScriptConfig
   >
 }
 
@@ -670,6 +659,7 @@ export interface ScriptDetail {
     | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
+    | BetterGIConfig
   users?: User[]
   createTime?: string
 }

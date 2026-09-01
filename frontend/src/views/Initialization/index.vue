@@ -439,7 +439,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
       logger.info(`步骤 ${stepKey} 完成`)
 
       // 显示成功状态，让用户看到阶段完成
-      await new Promise(resolve => setTimeout(resolve, 600))
+      await new Promise(resolve => setTimeout(resolve, 300))
 
       return true
     } else {
@@ -617,15 +617,7 @@ async function handleBackendComplete() {
   await getBackendVersion()
   logger.info('后端版本状态已刷新')
 
-  logger.info('等待后端服务完全稳定...')
-
-  // 延迟进入应用，确保：
-  // 1. 后端服务完全启动
-  // 2. WebSocket 连接已建立
-  // 3. 版本检查任务已启动
-  // 4. 所有初始化工作已完成
-  await new Promise(resolve => setTimeout(resolve, 2000))
-
+  // 后端就绪、WebSocket 连接与版本检查任务均已在后端步骤内等待完成，直接进入应用
   logger.info('准备进入主应用界面')
   handleLocalEnterApp()
 }

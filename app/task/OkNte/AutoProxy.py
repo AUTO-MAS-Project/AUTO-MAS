@@ -22,6 +22,7 @@ import json
 import re
 import shlex
 import shutil
+import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
@@ -29,12 +30,15 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
+from app.log_box import LogType, log_box
 from app.models.config import OkNteConfig, OkNteUserConfig
-from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.services import System
+from app.task.general.tools import execute_script_task
+from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
+from app.utils.constants import UTC4
 from app.utils.io import read_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.LogPatternExtractor import (
@@ -42,9 +46,6 @@ from app.utils.LogPatternExtractor import (
     LogSignMatcher,
     compile_log_signs,
 )
-from app.utils.constants import UTC4
-from app.task.general.tools import execute_script_task
-from app.log_box import LogType, log_box
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,
@@ -342,10 +343,13 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         # ── log_box：节点日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
-        # 受用户级「是否采集节点详情」开关控制：关闭时不创建（不读日志、不匹配、
+        # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不匹配、
         # 不处理），该用户 push_log 保持为空，报告聚合时自然不含其节点详情。
         # ok-nte 日志文本已是中文，无需前置翻译；open() 记录起始偏移，只采会话内新增。
-        if self.cur_user_config.get("Notify", "PushLogEnabled"):
+        self.cur_user_item.push_log_mode = self.cur_user_config.get(
+            "Notify", "PushLogMode"
+        )
+        if self.cur_user_config.get("Notify", "PushLogMode") != "关闭":
             self.log_collect = log_box.get_collect(
                 paths=[self._resolve_log_path()],
                 sink=self._append_push_log,
@@ -486,9 +490,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
-    def _append_push_log(self, log_type: str, text: str) -> None:
+    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
         """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text))
+        self.cur_user_item.push_log.append((log_type, text, ts))
 
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
@@ -788,7 +792,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning("OK-NTE log_box 收尾推送失败（oknte_resolve）")
             # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
             self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败")
+                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
             )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）

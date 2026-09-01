@@ -105,6 +105,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: SCRIPT_LOGOS.HSR,
   },
+  {
+    value: 'BetterGI',
+    titleKey: 'scripts.type.BetterGI',
+    descriptionKey: 'scripts.create.typeDesc.BetterGI',
+    keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.BetterGI,
+  },
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
@@ -152,6 +160,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   Okww: 'okww',
   OkNte: 'oknte',
   HSR: 'hsr',
+  BetterGI: 'bettergi',
   General: 'general',
 }
 

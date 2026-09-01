@@ -169,20 +169,21 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      是否采集节点详情
+                      节点详情推送
                       <a-tooltip
-                        title="开启后采集该用户运行日志的关键节点（每日任务/邮件/体力刷本等）并展示在任务报告中；关闭后不采集这些节点，报告仅保留常规统计"
+                        mouse-enter-delay="0.5"
+                        title="选择该用户关键节点在任务报告中的呈现方式：关闭 = 不采集；逐条 = 每条带上采集时间，一行一条；汇总 = 按成功/失败/跳过各合并为一行"
                       >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
-                    v-model:value="formData.Notify.PushLogEnabled"
+                    v-model:value="formData.Notify.PushLogMode"
                     size="large"
                     class="modern-select"
-                    :options="quickConfigOptions"
-                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                    :options="pushLogModeOptions"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
@@ -268,83 +269,13 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.notificationSettings') }}</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  {{ t('edit.statistics') }}
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  {{ t('edit.emailNotification') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  :placeholder="t('edit.enterRecipientAddress')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  {{ t('edit.serverchan') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  :placeholder="t('edit.enterSendkey')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="activeUserId"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
     </div>
@@ -369,7 +300,7 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import UserEditHeader from '@/components/UserEditHeader.vue'
-import WebhookManager from '@/components/WebhookManager.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 
 const { t } = useI18n()
@@ -401,9 +332,11 @@ let oknteConfigTimeout: number | null = null
 const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
-const quickConfigOptions = [
-  { label: '启用', value: true },
-  { label: '关闭', value: false },
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const oknteTaskOptions = [
@@ -430,11 +363,13 @@ const oknteTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
+type OkNteNotifyForm = FormSection<NonNullable<OkNteUserConfig['Notify']>>
+
 type OkNteUserFormData = {
   userName: string
   Info: FormSection<NonNullable<OkNteUserConfig['Info']>>
   Task: FormSection<NonNullable<OkNteUserConfig['Task']>>
-  Notify: FormSection<NonNullable<OkNteUserConfig['Notify']>>
+  Notify: OkNteNotifyForm
   Data: FormSection<NonNullable<OkNteUserConfig['Data']>>
 }
 
@@ -461,7 +396,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
-    PushLogEnabled: true,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

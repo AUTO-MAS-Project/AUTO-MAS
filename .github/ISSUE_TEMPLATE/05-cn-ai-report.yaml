@@ -1,0 +1,47 @@
+name: AI 提交的 Bug（使用中文）
+description: 由 AI 工具自动生成或直接提交的 Bug 报告
+labels: ["AI", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本分区用于 **AI 工具自动生成或直接提交** 的 Bug 报告。
+
+        这类 Issue 会被保留和归档，但**不承诺处理时间，也不保证有人认领**。
+        如果你是真人用户，遇到的是实际使用中的问题，请改用其他 Bug 反馈模板，那边会被优先处理。
+
+  - type: input
+    id: tool
+    attributes:
+      label: 提交所用的 AI 工具或模型
+      placeholder: Claude Code / Codex / ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: describe
+    attributes:
+      label: 问题描述
+      description: 说明这是什么问题，以及在什么条件下会出现
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: |
+        请给出可核对的依据：涉及的代码位置（文件路径与行号）、日志片段、复现路径。
+        只有推测而没有证据的报告会被直接关闭。
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我确认这是 AI 生成的内容，并已自行核对上面给出的代码位置属实
+          required: true
+        - label: 我理解本分区不承诺处理时间，也不保证有人认领
+          required: true

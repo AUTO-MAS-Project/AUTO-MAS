@@ -21,7 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
 from typing import (
     Annotated,
     Any,
@@ -33,6 +32,8 @@ from typing import (
     TypeVar,
     Union,
 )
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -87,6 +88,19 @@ class ComboBoxItem(BaseModel):
 
 class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class BetterGICustomGroupOut(BaseModel):
+    """BetterGI 一条龙自定义配置组（非内置 8 组）"""
+
+    name: str = Field(..., description="配置组名称")
+    enabled: bool = Field(..., description="启用状态")
+
+
+class BetterGICustomGroupsOut(OutBase):
+    data: List[BetterGICustomGroupOut] = Field(
+        default_factory=list, description="一条龙自定义配置组列表"
+    )
 
 
 class MaaEndOptionsOut(OutBase):
@@ -510,6 +524,7 @@ class ScriptIndexItem(BaseModel):
         "M9AConfig",
         "MaaFWConfig",
         "HSRConfig",
+        "BetterGIConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -525,6 +540,7 @@ class UserIndexItem(BaseModel):
         "M9AUserConfig",
         "MaaFWUserConfig",
         "HSRUserConfig",
+        "BetterGIUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -788,9 +804,9 @@ class OkwwUserConfig_Data(GeneralUserConfig_Data):
 class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
     """OK-WW 用户通知（复用通用字段）"""
 
-    PushLogEnabled: Optional[bool] = Field(
+    PushLogMode: Optional[Literal["关闭", "逐条", "汇总"]] = Field(
         default=None,
-        description="任务报告中是否推送该用户的节点详情（log_box 采集的关键节点）",
+        description="任务报告节点详情的推送模式：关闭=不采集；逐条=采集并逐条带回时间戳；汇总=采集并按状态聚合",
     )
 
 
@@ -837,9 +853,9 @@ class OkNteUserConfig_Data(GeneralUserConfig_Data):
 class OkNteUserConfig_Notify(GeneralUserConfig_Notify):
     """OK-NTE 用户通知（复用通用字段）"""
 
-    PushLogEnabled: Optional[bool] = Field(
+    PushLogMode: Optional[Literal["关闭", "逐条", "汇总"]] = Field(
         default=None,
-        description="任务报告中是否推送该用户的节点详情（log_box 采集的关键节点）",
+        description="任务报告节点详情的推送模式：关闭=不采集；逐条=采集并逐条带回时间戳；汇总=采集并按状态聚合",
     )
 
 
@@ -850,6 +866,96 @@ class OkNteUserConfig(BaseModel):
     Notify: Optional[OkNteUserConfig_Notify] = Field(
         default=None, description="单独通知"
     )
+
+
+class BetterGIUserConfig_Task(BaseModel):
+    OneDragonConfigName: Optional[str] = Field(
+        default=None, description="BetterGI「一条龙」配置名"
+    )
+
+
+class BetterGIUserConfig_Switch(BaseModel):
+    """BetterGI 切换账号配置（切换账号多模式脚本专项适配）"""
+
+    Resource: Optional[str] = Field(
+        default=None, description="游戏服务器：官服/B服/亚服/欧服/美服/港澳台服"
+    )
+    Uid: Optional[str] = Field(
+        default=None, description="账号 UID（可不填，切换前识别一致将不执行切换动作）"
+    )
+
+
+class BetterGIUserConfig_Info(BaseModel):
+    """BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）"""
+
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    Id: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+    IfUseMasConfig: Optional[bool] = Field(
+        default=None, description="是否使用用户独立一条龙配置"
+    )
+
+
+class BetterGIUserConfig_OneDragon(BaseModel):
+    """BetterGI 一条龙配置"""
+
+    Groups: Optional[List[str]] = Field(
+        default=None, description="一条龙要执行的内置配置组名列表"
+    )
+    DailyRewardPartyName: Optional[str] = Field(
+        default=None, description="领取奖励队伍（对应一条龙 DailyRewardPartyName，留空不覆盖）"
+    )
+    PartyName: Optional[str] = Field(
+        default=None, description="战斗队伍（对应一条龙通用 PartyName，留空不覆盖）"
+    )
+    AutoBossStrategyName: Optional[str] = Field(
+        default=None, description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）"
+    )
+    IfUseCustomGroups: Optional[bool] = Field(
+        default=None, description="是否管理自定义配置组（总开关）"
+    )
+    CustomGroups: Optional[Union[str, List]] = Field(
+        default=None,
+        description="自定义配置组 JSON 列表字符串，元素含 name/enabled",
+    )
+
+
+class BetterGIUserConfig_Data(GeneralUserConfig_Data):
+    """BetterGI 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+    LastOneDragonConfig: Optional[str] = Field(
+        default=None, description="上次运行的一条龙配置名"
+    )
+
+
+class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
+    """BetterGI 用户通知（复用通用字段）"""
+
+
+class BetterGIUserConfig(BaseModel):
+    Info: Optional[BetterGIUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[BetterGIUserConfig_Task] = Field(default=None, description="任务配置")
+    Switch: Optional[BetterGIUserConfig_Switch] = Field(default=None, description="切换账号配置")
+    OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(default=None, description="一条龙配置")
+    Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[BetterGIUserConfig_Notify] = Field(default=None, description="单独通知")
 
 
 class GeneralConfig_Info(BaseModel):
@@ -983,8 +1089,42 @@ class OkNteConfig_Info(GeneralConfig_Info):
     """OK-NTE 脚本基础信息（复用通用字段）"""
 
 
-class OkNteConfig_Script(GeneralConfig_Script):
-    """OK-NTE 脚本配置（复用通用字段）"""
+class OkNteConfig_Script(BaseModel):
+    """OK-NTE 脚本配置（仅暴露运行期存在的字段；LogHook/PushLog 等通用脚本字段不适用于 OK-NTE）"""
+
+    ScriptPath: Optional[str] = Field(default=None, description="脚本可执行文件路径")
+    Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
+    IfTrackProcess: Optional[bool] = Field(
+        default=None, description="是否追踪脚本子进程"
+    )
+    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
+    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
+    TrackProcessCmdline: Optional[str] = Field(
+        default=None, description="追踪进程启动命令行参数"
+    )
+    ConfigPath: Optional[str] = Field(default=None, description="配置文件路径")
+    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
+        default=None, description="配置文件类型: 单个文件, 文件夹"
+    )
+    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
+        Field(
+            default=None,
+            description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
+        )
+    )
+    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
+    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
+    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
+    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
+    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
+    SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
+    SuccessLogMode: Optional[Literal["Split", "Regex"]] = Field(
+        default=None, description="成功时日志匹配模式: 关键字子串包含, 正则表达式"
+    )
+    ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+    ErrorLogMode: Optional[Literal["Split", "Regex"]] = Field(
+        default=None, description="错误时日志匹配模式: 关键字子串包含, 正则表达式"
+    )
 
 
 class OkNteConfig_Game(BaseModel):
@@ -1019,6 +1159,31 @@ class OkNteConfig(BaseModel):
     Script: Optional[OkNteConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[OkNteConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[OkNteConfig_Run] = Field(default=None, description="运行配置")
+
+
+class BetterGIConfig_Info(GeneralConfig_Info):
+    """BetterGI 脚本基础信息（复用通用字段）"""
+
+
+class BetterGIConfig_Run(GeneralConfig_Run):
+    """BetterGI 运行配置（复用通用字段）"""
+
+
+class BetterGIConfig_Game(BaseModel):
+    """BetterGI 游戏配置"""
+
+    Controller: Optional[str] = Field(
+        default=None, description="控制器：电脑端-前台/电脑端-云原神/电脑端-桌面分身"
+    )
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭游戏"
+    )
+
+
+class BetterGIConfig(BaseModel):
+    Info: Optional[BetterGIConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
+    Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -1523,7 +1688,6 @@ class HSRUserConfig_Notify(BaseModel):
     ToAddress: Optional[str] = Field(default=None, description="收件地址")
     IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-    CustomWebhooks: Optional[Any] = Field(default=None, description="自定义 Webhook")
 
 
 class HSRUserConfig(BaseModel):
@@ -1874,7 +2038,6 @@ class MaaFWUserConfig_Notify(BaseModel):
     ToAddress: Optional[str] = Field(default=None, description="收件地址")
     IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-    CustomWebhooks: Optional[Any] = Field(default=None, description="自定义 Webhook")
 
 
 class MaaFWUserConfig(BaseModel):
@@ -2482,10 +2645,10 @@ class HistoryData(BaseModel):
 
 class ScriptCreateIn(BaseModel):
     type: Literal[
-        "MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "MaaFW", "HSR"
+        "MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "MaaFW", "HSR", "BetterGI"
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -2504,7 +2667,10 @@ class ScriptCreateOut(OutBase):
         M9AConfig,
         MaaFWConfig,
         HSRConfig,
-    ] = Field(..., description="脚本配置数据")
+        BetterGIConfig,
+    ] = Field(
+        ..., description="脚本配置数据"
+    )
 
 
 class ScriptGetIn(BaseModel):
@@ -2527,6 +2693,7 @@ class ScriptGetOut(OutBase):
             M9AConfig,
             MaaFWConfig,
             HSRConfig,
+            BetterGIConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -2543,7 +2710,10 @@ class ScriptUpdateIn(BaseModel):
         M9AConfig,
         MaaFWConfig,
         HSRConfig,
-    ] = Field(..., description="脚本更新数据")
+        BetterGIConfig,
+    ] = Field(
+        ..., description="脚本更新数据"
+    )
 
 
 class ScriptDeleteIn(BaseModel):
@@ -2601,6 +2771,7 @@ class UserGetOut(OutBase):
             M9AUserConfig,
             MaaFWUserConfig,
             HSRUserConfig,
+            BetterGIUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -2617,6 +2788,7 @@ class UserCreateOut(OutBase):
         M9AUserConfig,
         MaaFWUserConfig,
         HSRUserConfig,
+        BetterGIUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -2632,6 +2804,7 @@ class UserUpdateIn(UserInBase):
         M9AUserConfig,
         MaaFWUserConfig,
         HSRUserConfig,
+        BetterGIUserConfig,
     ] = Field(..., description="用户更新数据")
 
 

@@ -46,6 +46,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
+from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
 
 from .project_path import release_project_path, try_reserve_project_path
@@ -95,6 +96,18 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 _RELAY_YIELD_EVERY_LINES = 50
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
+
+# 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
+# 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
+# 判据取消息标记而不是异常类型：这些错误跨了 runtime_pool 与 runner 两个包，
+# 而 runner_task 有意不在模块层导入 runtime_pool（那会让所有请求都付出导入成本）。
+_UNRETRYABLE_ENVIRONMENT_MARKERS = (
+    "MaaFW runtime Python 自检失败",
+    "MaaFW runtime ABI 探测失败",
+    "runtime Python identity could not be verified",
+    "MaaFW Runner 环境准备失败",
+    "MaaFW Runner 环境准备超时",
+)
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERBOSE_FRAMEWORK_LOG_MARKERS = (
     "Transceiver::send] send canceled",
@@ -265,6 +278,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_plan: MaaFWRunPlan | None = None
         self.cur_user_log: LogRecord | None = None
         self.cur_user_log_started_at: datetime | None = None
+        # 每次尝试的结构化结果，供用户级统计的「任务详情」用。MaaFW 不像
+        # M9A 那样只能正则解析日志文本——这里本来就有 completedTasks 与
+        # 失败摘要，直接记下来即可。
+        self._attempt_reports: list[dict[str, Any]] = []
         self.check_result = "-"
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.run_complete = False
@@ -408,6 +425,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 except Exception as exc:
                     message = f"MaaFW 运行异常: {exc}"
                     self._append_log(message)
+                    self._record_attempt(index + 1, [], message)
+                    unretryable = any(
+                        marker in message
+                        for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS
+                    )
+                    if unretryable:
+                        self._append_log(
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮"
+                        )
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     await Publisher.send(
@@ -415,6 +441,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(level="error", message=message),
                     )
+                    if unretryable:
+                        break
                     continue
                 finally:
                     if self.cur_user_config.get("Info", "IfScriptAfterTask"):
@@ -435,11 +463,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(
                         "MaaFW 任务完成: " + ", ".join(completed_task_labels)
                     )
+                    self._record_attempt(index + 1, completed_task_labels, None)
                 else:
                     message = _failed_task_user_summary(result, self.run_plan)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     self._append_log(message)
+                    self._record_attempt(
+                        index + 1,
+                        _format_completed_task_labels(
+                            self.run_plan, result.completedTasks
+                        ),
+                        message,
+                    )
                     await self._refresh_run_plan_after_period_update()
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
@@ -458,7 +494,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         await self._close_emulator()
         await self._close_game()
-        await self._save_user_logs()
+        statistic_paths = await self._save_user_logs()
         if self.run_complete:
             if (
                 self.cur_user_config.get("Data", "ProxyTimes") == 0
@@ -482,6 +518,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.cur_user_item.status == "运行":
                 self.cur_user_item.status = "异常"
 
+        await self._push_user_statistics(statistic_paths)
         await self._release_project_path()
 
     async def on_crash(self, e: Exception) -> None:
@@ -1672,7 +1709,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await release_project_path(self.project_lock_key)
         self.project_lock_key = None
 
-    async def _save_user_logs(self) -> None:
+    async def _save_user_logs(self) -> list[Path]:
+        """保存本轮各次尝试的日志，返回对应的统计文件路径。
+
+        路径给用户级统计推送用——``save_general_log`` 会在 ``.log`` 旁边
+        同名写一份 ``.json``，``merge_statistic_info`` 读的就是它。
+        """
+
+        statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
             dt = timestamp.replace(
                 tzinfo=datetime.now().astimezone().tzinfo
@@ -1686,6 +1730,118 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if log_item.status == "未开始监看日志":
                 log_item.status = "MaaFW 任务被中止"
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+            statistic_paths.append(log_path.with_suffix(".json"))
+        return statistic_paths
+
+    def _record_attempt(
+        self, attempt: int, completed_labels: list[str], failure: str | None
+    ) -> None:
+        """记下本次尝试的结果，供统计通知的「任务详情」用。"""
+
+        self._attempt_reports.append(
+            {
+                "attempt": attempt,
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "completed": list(completed_labels),
+                "failure": failure,
+            }
+        )
+
+    def _build_task_details(self) -> str:
+        """汇总各次尝试的任务详情。
+
+        与 M9A 专项同形（多次尝试分块列出、最终成功时并集去重），但数据来源
+        不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，MaaFW 手里本来
+        就有 ``completedTasks`` 与失败摘要，直接用结构化结果，不必反解日志。
+        """
+
+        if not self._attempt_reports:
+            return ""
+
+        def block(report: dict[str, Any]) -> str:
+            lines = []
+            if report["completed"]:
+                lines.append("已完成: " + "、".join(report["completed"]))
+            else:
+                lines.append("已完成: 无")
+            if report["failure"]:
+                lines.append("未完成: " + report["failure"])
+            return "\n".join(lines)
+
+        if len(self._attempt_reports) == 1:
+            return block(self._attempt_reports[0])
+
+        if self.run_complete:
+            # 多次尝试最终成功时，逐次罗列意义不大，合并成一份去重清单。
+            merged: list[str] = []
+            for report in self._attempt_reports:
+                for label in report["completed"]:
+                    if label not in merged:
+                        merged.append(label)
+            return "已完成: " + ("、".join(merged) if merged else "无")
+
+        blocks = []
+        for report in self._attempt_reports:
+            blocks.append(
+                f"第 {report['attempt']} 次尝试（{report['time']}）"
+                + "\n"
+                + block(report)
+            )
+        return ("\n\n").join(blocks)
+
+    async def _push_user_statistics(self, statistic_paths: list[Path]) -> None:
+        """按通知设置推送用户级统计信息。
+
+        与 M9A 专项同形（``M9A/AutoProxy.py`` 的「统计信息」分支）：合并本轮各次
+        尝试的统计文件，补上用户名 / 起止时间 / 结果，再发往全局与该用户自己的
+        渠道。``MaaFWUserConfig`` 的 Notify 组一直都在、编辑页也能配，但在此之前
+        没有任何代码往它发——脚本级「代理结果」是唯一会发出去的报告。
+
+        放在状态落定之后：``user_result`` 要读最终的 ``run_complete``。
+        """
+
+        try:
+            statistics = await Config.merge_statistic_info(statistic_paths)
+            statistics["user_info"] = self.cur_user_item.name
+            statistics["start_time"] = (
+                self.cur_user_log_started_at.strftime("%Y-%m-%d %H:%M:%S")
+                if self.cur_user_log_started_at is not None
+                else ""
+            )
+            statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            statistics["task_details"] = self._build_task_details()
+            statistics["user_result"] = (
+                "代理任务全部完成"
+                if self.run_complete
+                else (
+                    self.cur_user_log.status
+                    if self.cur_user_log is not None
+                    else "代理任务未完成"
+                )
+            )
+            mark = "√" if self.run_complete else "X"
+            await push_notification(
+                mode="统计信息",
+                title=(
+                    f"{datetime.now().strftime('%m-%d')} |{mark}|  "
+                    f"{self.cur_user_item.name} 的自动代理统计报告"
+                ),
+                message=statistics,
+                user_config=self.cur_user_config,
+            )
+        except Exception as exc:
+            logger.opt(exception=True).warning(
+                f"推送 MaaFW 统计信息时出现异常: {exc}"
+            )
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"推送 MaaFW 统计信息时出现异常: {exc}",
+                    ),
+                )
 
     async def _send_success_notify(self) -> None:
         try:

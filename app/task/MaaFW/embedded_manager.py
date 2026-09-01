@@ -29,23 +29,79 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaFWConfig, MaaFWUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.MaaFW.tools.notify import push_notification
+from app.tools.game_sign_notify import (
+    append_task_game_sign_summary,
+    finalize_task_game_sign_notification,
+)
 from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
 
 logger = get_logger("MFW 内置运行")
+
+
+def describe_unusable_runtime(project_path: Path) -> str | None:
+    """运行前自检：这个项目要用的运行池 runtime 还能用吗？
+
+    只在池里已经存在匹配的 runtime 时才探一次（一个子进程，约 100ms——解释器
+    本来就要起）。没建过就不拦：那份环境会在运行时按需准备，失败自有它自己的
+    报错路径。
+
+    拦在 ``check()`` 而不是只靠编辑页的提示：队列与定时任务不经过编辑页，
+    绕不过 check()；而且这里拦下来时模拟器和游戏都还没启动。
+    """
+
+    # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
+    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        resolve_project_maafw_requirement,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
+        probe_python_identity,
+    )
+
+    try:
+        requirement = resolve_project_maafw_requirement(project_path)
+    except Exception:  # noqa: BLE001 - 自检失败不该反过来挡住运行
+        return None
+    if not requirement:
+        return None
+
+    try:
+        runtimes = MaaFWRuntimePoolService().list()
+    except Exception:  # noqa: BLE001
+        return None
+
+    for runtime in runtimes:
+        if str(runtime.get("maafwRequirement") or "").strip() != requirement:
+            continue
+        python_executable = str(runtime.get("pythonExecutable") or "").strip()
+        if not python_executable:
+            continue
+        try:
+            probe_python_identity(Path(python_executable))
+        except Exception as exc:  # noqa: BLE001 - 原文就是给用户看的
+            return f"MFW 运行环境不可用：{exc}"
+        return None
+    return None
 
 
 class MaaFWEmbeddedManager(TaskExecuteBase):
@@ -66,6 +122,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result: str = "-"
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         self.script_config: MaaFWConfig | None = None
         self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
@@ -74,6 +131,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 当前正在跑的那一位用户的 AutoProxy 任务；每个用户各建一个。
         self.inner_task: "MaaFWPluginAutoProxyTask | None" = None
         self._inner_finalized = True
+        self._report_finalized = False
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。"""
@@ -115,6 +173,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return "MFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
+
+        environment_problem = await asyncio.to_thread(
+            describe_unusable_runtime, Path(project_value)
+        )
+        if environment_problem:
+            return environment_problem
+
         return "Pass"
 
     @staticmethod
@@ -244,10 +309,57 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         error_users = [
             user for user in self.script_info.user_list if user.status == "异常"
         ]
+        completed_users = [
+            user for user in self.script_info.user_list if user.status == "完成"
+        ]
         if self.check_result == "Pass" and not error_users:
             self.script_info.status = "完成"
         else:
             self.script_info.status = "异常"
+
+        if self.check_result != "Pass":
+            return
+        if self._report_finalized:
+            return
+        self._report_finalized = True
+
+        title = (
+            f"{datetime.now().strftime('%m-%d')} | "
+            f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+        )
+        task_result = append_task_game_sign_summary(
+            self.task_info, self.script_info.result
+        )
+        has_game_sign_summary = task_result != self.script_info.result
+        result = {
+            "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
+            "script_name": self.script_info.name or "空白",
+            "start_time": self.begin_time,
+            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "completed_count": len(completed_users),
+            "uncompleted_count": len(error_users),
+            "result": task_result,
+            "game_sign_summary": has_game_sign_summary,
+        }
+        try:
+            push_result = await push_notification(
+                mode="代理结果",
+                title=title,
+                message=result,
+                task_info=self.task_info,
+            )
+            finalize_task_game_sign_notification(
+                self.task_info, has_game_sign_summary, push_result
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"推送 MFW 代理结果时出现异常: {exc}")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error", message=f"推送 MFW 代理结果时出现异常: {exc}"
+                ),
+            )
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")

@@ -117,17 +117,20 @@
                   <template #label>
                     <span class="form-label">
                       {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip :title="t('edit.collectsKeyMomentsFrom')">
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        :title="t('edit.collectsKeyMomentsFrom')"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
-                    v-model:value="formData.Notify.PushLogEnabled"
+                    v-model:value="formData.Notify.PushLogMode"
                     size="large"
                     class="modern-select"
-                    :options="quickConfigOptions"
-                    @change="saveField('Notify.PushLogEnabled', formData.Notify.PushLogEnabled)"
+                    :options="pushLogModeOptions"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
@@ -338,83 +341,13 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.notificationSettings') }}</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  {{ t('edit.statistics') }}
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  {{ t('edit.emailNotification') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  :placeholder="t('edit.enterRecipientAddress')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  {{ t('edit.serverchan') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  :placeholder="t('edit.enterSendkey')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
     </div>
@@ -438,8 +371,8 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import UserEditHeader from '@/components/UserEditHeader.vue'
-import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
@@ -474,6 +407,13 @@ const resourceOptions = [
 const quickConfigOptions = [
   { label: t('edit.enabled3'), value: true },
   { label: t('edit.off'), value: false },
+]
+
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const okwwConfigModeOptions: Array<{
@@ -532,11 +472,7 @@ const additionalTaskOptions = [
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
-// PushLogEnabled 为本页新增开关；待后端 schema 重新生成前端 API 后，
-// 该字段会并入 OkwwUserConfig['Notify']，届时可移除本地扩展
-type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>> & {
-  PushLogEnabled: boolean
-}
+type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>>
 
 type OkwwUserFormData = {
   userName: string
@@ -574,7 +510,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   },
   Notify: {
     Enabled: false,
-    PushLogEnabled: true,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',
