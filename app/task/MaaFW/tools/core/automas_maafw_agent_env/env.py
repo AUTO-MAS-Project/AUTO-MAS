@@ -685,6 +685,15 @@ def _python_supports_venv(python: str) -> bool:
 
 
 def _find_uv_executable() -> str | None:
+    # 受管模式（AUTO-MAS-Runtime 监督后端）下没有便携 Python，监督器改为
+    # 用 AUTO_MAS_UV_EXE 注入它已校验过的 uv 路径，也不会把这个 uv 加进
+    # PATH——优先信它，找不到再退回便携路径与 PATH 查找。
+    configured_uv = os.environ.get("AUTO_MAS_UV_EXE")
+    if configured_uv:
+        configured_path = Path(configured_uv)
+        if configured_path.is_file():
+            return str(configured_path.resolve())
+
     portable_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if portable_uv.is_file():
         return str(portable_uv)
