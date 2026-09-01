@@ -14,6 +14,17 @@ import type {
   RuntimeStageOutcome,
 } from '../services/runtimeInitializationService'
 import { mapDoctorChecksToCriticalFiles } from '../services/runtimeInitializationService'
+import type {
+  RuntimeUpdateOutcome,
+  RuntimeUpdateRetryAction,
+} from '../services/runtimeUpdateService'
+import {
+  cancelBackendUpdate,
+  resetRuntimeUpdateSession,
+  retryBackendUpdate,
+  updateBackendViaRuntime,
+} from '../services/runtimeUpdateService'
+import { resolveRuntimeLaunchConfig, resolveRuntimeLaunchMode } from '../services/runtime'
 
 const logger = getLogger('初始化处理器')
 const mirrorTypes = new Set<keyof MirrorConfig>(['python', 'get_pip', 'git', 'repo', 'pip_mirror'])
@@ -24,6 +35,19 @@ const isMirrorType = (value: unknown): value is keyof MirrorConfig =>
 
 const isApiEndpointKey = (value: unknown): value is keyof ApiEndpoints =>
   typeof value === 'string' && apiEndpointKeys.has(value as keyof ApiEndpoints)
+
+/** 更新流程的进度事件通道，与初始化的分段进度通道分开，互不干扰。 */
+export const BACKEND_UPDATE_PROGRESS_CHANNEL = 'backend-update-progress'
+
+const retryActions = new Set<RuntimeUpdateRetryAction>([
+  'workspace-sync',
+  'dependencies-sync',
+  'dependencies-rebuild',
+  'repair',
+])
+
+const isRetryAction = (value: unknown): value is RuntimeUpdateRetryAction =>
+  typeof value === 'string' && retryActions.has(value as RuntimeUpdateRetryAction)
 
 // 全局实例
 let initService: InitializationService | null = null
@@ -438,10 +462,58 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return backend.getStatus()
   })
 
+  // ==================== Runtime 链路的后端更新 ====================
+
+  // 渲染进程据此决定标题栏的更新入口走哪条链路：off 走原有下载安装包流程，
+  // development 直接禁用，managed 走下面的 update-backend-via-runtime。
+  ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchMode())
+
+  ipcMain.handle(
+    'update-backend-via-runtime',
+    async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {
+      logger.info(`收到 Runtime 后端更新请求，目标版本: ${String(targetVersion)}`)
+
+      const result = await updateBackendViaRuntime(
+        typeof targetVersion === 'string' ? targetVersion : '',
+        progress => event.sender.send(BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
+        {
+          backend: getBackendService(),
+          launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
+        }
+      )
+
+      if (!result.success) {
+        logger.error(`Runtime 后端更新失败（${result.phase}）: ${result.error}`)
+      }
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'retry-backend-update',
+    async (event, action: unknown): Promise<RuntimeUpdateOutcome> => {
+      if (!isRetryAction(action)) throw new TypeError(`不支持的重试入口: ${String(action)}`)
+
+      logger.info(`重试 Runtime 后端更新: ${action}`)
+      const result = await retryBackendUpdate(action, progress =>
+        event.sender.send(BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
+      )
+
+      if (!result.success) {
+        logger.error(`Runtime 后端更新重试失败（${result.phase}）: ${result.error}`)
+      }
+      return result
+    }
+  )
+
+  ipcMain.handle('cancel-backend-update', () => cancelBackendUpdate())
+
   // ==================== 清理 ====================
 
   ipcMain.handle('cleanup', async () => {
     logger.info('清理初始化资源')
+
+    resetRuntimeUpdateSession()
 
     if (backendService) {
       await backendService.cleanup()
@@ -461,6 +533,8 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
  */
 export async function cleanupInitializationResources() {
   logger.info('清理初始化资源')
+
+  resetRuntimeUpdateSession()
 
   if (backendService) {
     await backendService.cleanup()

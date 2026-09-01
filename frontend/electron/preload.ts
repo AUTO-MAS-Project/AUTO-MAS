@@ -250,6 +250,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
 
+  // Runtime 链路的后端更新
+  getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
+  updateBackendViaRuntime: (targetVersion: string) =>
+    ipcRenderer.invoke('update-backend-via-runtime', targetVersion),
+  retryBackendUpdate: (action: string) => ipcRenderer.invoke('retry-backend-update', action),
+  cancelBackendUpdate: () => ipcRenderer.invoke('cancel-backend-update'),
+  onBackendUpdateProgress: (callback: (progress: unknown) => void) => {
+    ipcRenderer.on('backend-update-progress', (_, progress) => callback(progress))
+  },
+  removeBackendUpdateProgressListener: () => {
+    ipcRenderer.removeAllListeners('backend-update-progress')
+  },
+
   // 清理资源
   cleanup: () => ipcRenderer.invoke('cleanup'),
 
