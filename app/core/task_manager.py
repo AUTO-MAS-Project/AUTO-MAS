@@ -94,9 +94,9 @@ logger = get_logger("业务调度")
 
 # 循环队列没有条目可跑时的空转间隔
 CYCLE_IDLE_SLEEP_SECONDS = 60
-# 单次等待上限。墙钟跳变（夏令时、NTP 校时）最多让一轮迟到这么久，
-# 而不会因为一次超长 sleep 无限期挂起，详见 app/core/queue_cycle.py 的说明。
-CYCLE_MAX_SLEEP_SECONDS = 300
+# 单次等待上限。用户点「立即运行一次」或改了周期，要等这一觉睡完才会被注意到；
+# 墙钟跳变（夏令时、NTP 校时）也最多让一轮迟到这么久，详见 app/core/queue_cycle.py。
+CYCLE_MAX_SLEEP_SECONDS = 30
 # 全部到点条目都被别的任务占用时的重试间隔
 CYCLE_RETRY_SLEEP_SECONDS = 30
 # 运行期间刷新预览的间隔

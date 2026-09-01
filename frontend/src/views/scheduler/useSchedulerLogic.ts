@@ -27,7 +27,14 @@ import {
 } from '@/services/websocket/types'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
-import { type SchedulerTab, type SchedulerStatus } from './schedulerConstants'
+import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+
+// 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
+const runtimeModeLabel = (mode: string | null): string | null => {
+  if (!mode) return null
+  const option = TASK_MODE_OPTIONS.find(item => item.value === mode)
+  return option ? t(option.labelKey) : mode
+}
 
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
@@ -1204,7 +1211,11 @@ export function useSchedulerLogic() {
       tab.selectedMode = TaskCreateIn.mode.CYCLE_RUN
       tab.isCycleQueue = true
     }
-    tab.runningModeLabel = state.taskType ?? state.mode ?? tab.runningModeLabel
+    // 没有任务类型文案（调度台手动启动）时按模式取词表标签，别把枚举原值亮给用户
+    tab.runningModeLabel =
+      state.taskType ??
+      (state.isCycle ? t('scheduler.mode.cycleRun') : runtimeModeLabel(state.mode)) ??
+      tab.runningModeLabel
     if (state.taskName) tab.runningTaskLabel = state.taskName
     const selectedTaskId = getRuntimeSelectedTaskId(state)
     if (selectedTaskId) tab.selectedTaskId = selectedTaskId

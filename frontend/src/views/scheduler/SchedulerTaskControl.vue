@@ -190,6 +190,17 @@ const showResumeScriptSelect = computed(() => {
 // const runningTaskLabel = ref('')
 // const runningModeLabel = ref('')
 
+// 刷新页面时任务选项还没加载完，运行态文案会先落成裸 ID；选项到了再补成名称
+watch(
+  () => props.taskOptions,
+  options => {
+    if (props.status !== '运行' || !props.selectedTaskId) return
+    if (props.runningTaskLabel && props.runningTaskLabel !== props.selectedTaskId) return
+    const taskOption = options.find(opt => opt.value === props.selectedTaskId)
+    if (taskOption?.label) emit('update:runningTaskLabel', taskOption.label)
+  }
+)
+
 // 监听状态变化，记录运行时的文本信息
 watch(
   () => props.status,

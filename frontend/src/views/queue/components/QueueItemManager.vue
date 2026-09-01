@@ -101,7 +101,7 @@
                     <a-select
                       v-model:value="record.schedule.IntervalAnchor"
                       size="small"
-                      style="width: 128px"
+                      style="width: 150px"
                       :disabled="!record.schedule.Enabled"
                       @change="saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })"
                     >
