@@ -96,6 +96,9 @@ _IN_GAME_UPDATE_TIMEOUT = 1800.0
 _IN_GAME_STALL_SECONDS = 60.0
 # 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
 _IN_GAME_POLL_INTERVAL = 3.0
+# 长等待期诊断 OCR 的落盘节流：更新可能耗时数十分钟，若每个轮询都全量写诊断文件，
+# 单次切换会累积数千行；改为每 N 次轮询（≈ N*3s）写一次，既能保留过渡帧采样又不膨胀。
+_DIAGNOSTIC_DUMP_EVERY_POLLS = 10
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
@@ -383,7 +386,8 @@ def _wait_for_actionable_state(
     while time.monotonic() < deadline:
         frame = _capture_window(hwnd, activate=False)
         items = ocr_image(frame)
-        _dump_ocr_items(items)
+        if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
+            _dump_ocr_items(items)
         if (
             _find_text(items, _PANEL_TEXTS) is not None
             or _find_text(items, _TITLE_TEXTS) is not None
