@@ -16,9 +16,9 @@
                 "修复 MaaFW 运行环境不可用时仍会按重试次数反复重启模拟器与游戏、白等数分钟的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 MaaFW 运行环境损坏时直到任务中途才暴露的问题，改为安装后立即校验、运行前再自检一次 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 建项向导在运行环境准备完成前不再允许进入下一步，准备失败时可就地重试 by [@qiyinxi](https://github.com/qiyinxi)",
-                "OK-WW与OK-NTE专项 多用户切换时等待上一用户的游戏进程完全退出，避免误复用正在退出的旧游戏窗口导致任务被中止 by [@AthenaHibou](https://github.com/AthenaHibou)"
-                "OK-NTE专项 修复任务报告剩余体力计算不准确的问题：体力不足以刷满设定目标时误显「剩余体力: 0」，改为按实际刷本消耗（异象界域双倍/单倍次数、异象追猎实际消耗）精确计算剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)"
-
+                "OK-WW与OK-NTE专项 多用户切换时等待上一用户的游戏进程完全退出，避免误复用正在退出的旧游戏窗口导致任务被中止 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "OK-NTE专项 修复任务报告剩余体力计算不准确的问题：体力不足以刷满设定目标时误显「剩余体力: 0」，改为按实际刷本消耗（异象界域双倍/单倍次数、异象追猎实际消耗）精确计算剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "前端类型治理 清理脚本与 Electron 基础边界中的 any，并修复 BetterGI 设置会话无法接收完成和错误事件的问题"
             ]
         },
         "v5.5.0-beta.2": {

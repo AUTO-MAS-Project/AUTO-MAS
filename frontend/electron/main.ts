@@ -222,7 +222,7 @@ interface AppConfig {
     IfEnableTelemetry: boolean
   }
 
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // 默认配置
@@ -1525,7 +1525,7 @@ ipcMain.handle('get-theme-info', async () => {
 })
 
 // 获取应用路径
-ipcMain.handle('get-app-path', async (_event, name: any) => {
+ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPath>[0]) => {
   try {
     return app.getPath(name)
   } catch {

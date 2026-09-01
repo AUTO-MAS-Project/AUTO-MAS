@@ -215,7 +215,7 @@ abstract class BaseEnvironmentInstaller {
    * 安装环境（抽象方法）
    */
   protected abstract installEnvironment(
-    onProgress?: (progress: number, message: string, details?: any) => void,
+    onProgress?: (progress: number, message: string, details?: unknown) => void,
     selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }>
 }
@@ -339,7 +339,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async installEnvironment(
-    onProgress?: (progress: number, message: string, details?: any) => void,
+    onProgress?: (progress: number, message: string, details?: unknown) => void,
     _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Python 环境 ===')
@@ -500,7 +500,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async installEnvironment(
-    onProgress?: (progress: number, message: string, details?: any) => void,
+    onProgress?: (progress: number, message: string, details?: unknown) => void,
     selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Pip ===')
@@ -715,7 +715,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async installEnvironment(
-    onProgress?: (progress: number, message: string, details?: any) => void,
+    onProgress?: (progress: number, message: string, details?: unknown) => void,
     _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Git 环境 ===')

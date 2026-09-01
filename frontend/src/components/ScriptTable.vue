@@ -540,6 +540,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { Script, User } from '../types/script'
+import type { M9AConfig, MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -563,8 +564,8 @@ interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
-  allPlansData?: Record<string, Record<string, any>>
-  currentPlanData?: Record<string, any>
+  allPlansData?: Record<string, Record<string, unknown>>
+  currentPlanData?: Record<string, unknown>
   searching?: boolean
 }
 
@@ -729,7 +730,8 @@ const handleStartMaaEndUserConfig = (script: Script, user: User) => {
 }
 
 const isMaaEndPresetSupported = (script: Script) => {
-  const controllerType = (script.config as any).Game?.ControllerType
+  const controllerType =
+    script.type === 'MaaEnd' ? (script.config as MaaEndConfig).Game?.ControllerType : null
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
@@ -772,7 +774,7 @@ const truncateText = (text: string, maxLength: number = 10): string => {
 }
 
 // 处理账号ID点击
-const handleUserIdClick = async (user: any) => {
+const handleUserIdClick = async (user: User) => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
@@ -795,7 +797,7 @@ const handleUserIdClick = async (user: any) => {
 }
 
 // 处理密码点击
-const handlePasswordClick = async (user: any) => {
+const handlePasswordClick = async (user: User) => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
@@ -818,7 +820,7 @@ const handlePasswordClick = async (user: any) => {
 }
 
 // 获取账号ID显示文本
-const getUserIdDisplayText = (user: any): string => {
+const getUserIdDisplayText = (user: User): string => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
@@ -832,7 +834,7 @@ const getUserIdDisplayText = (user: any): string => {
 }
 
 // 获取密码显示文本
-const getPasswordDisplayText = (user: any): string => {
+const getPasswordDisplayText = (user: User): string => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
@@ -845,11 +847,11 @@ const getPasswordDisplayText = (user: any): string => {
   }
 }
 
-const getMaaEndResourceLabel = (user: any): string => {
+const getMaaEndResourceLabel = (user: User): string => {
   return user.Info?.Resource || '官服'
 }
 
-const getMaaEndResourceTagColor = (user: any): string => {
+const getMaaEndResourceTagColor = (user: User): string => {
   switch (getMaaEndResourceLabel(user)) {
     case '官服':
     default:
@@ -959,9 +961,11 @@ const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): bo
 }
 
 const getM9AOnceStatusTags = (script: Script, user: User) => {
-  const runConfig = (script.config as any)?.Run || {}
-  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
-  const data = (user as any).Data || {}
+  if (script.type !== 'M9A') return []
+
+  const runConfig = (script.config as M9AConfig).Run ?? {}
+  const queue = parseM9ATaskQueue(user.Task?.Queue)
+  const data = user.Data ?? {}
   const tags: Array<{ text: string; color: string }> = []
 
   if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
