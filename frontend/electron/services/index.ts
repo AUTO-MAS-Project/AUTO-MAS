@@ -76,3 +76,23 @@ export {
   BackendStartOptions,
   BackendStatusCallback,
 } from './backendService'
+
+// AUTO-MAS Runtime 客户端（NDJSON 协议 v1）
+export {
+  RuntimeClient,
+  RuntimeClientError,
+  RuntimeClientErrorCode,
+  RuntimeClientOptions,
+  RuntimeEvent,
+  RuntimeHelloEvent,
+  RuntimeLogsByOperation,
+  RuntimeProgressEvent,
+  RuntimeResultEvent,
+  RuntimeRunOptions,
+  RuntimeRunResult,
+  RuntimeStateEvent,
+  RuntimeSuperviseHandle,
+  RuntimeSuperviseOptions,
+  formatStartupLogs,
+  isRuntimeClientError,
+} from './runtime'

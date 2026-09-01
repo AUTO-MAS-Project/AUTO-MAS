@@ -50,8 +50,26 @@ export function getBackendService(): BackendService {
   return backendService
 }
 
+/**
+ * 主进程与渲染进程共用的后端端点解析。
+ *
+ * Runtime 监督链路就绪后必须用它在 `state:running` 事件里下发的 baseUrl（协议 v1 固定
+ * 36163），不能再按 `resolveHttpPort()` 的开发/正式分流算端口；旧链路仍走镜像源服务。
+ */
+function resolveApiEndpoints(): ApiEndpoints {
+  const initService = getInitService()
+  // 完整初始化流程用 InitializationService 内部的实例启动后端，backend-start 用模块级实例，
+  // 两条路径都可能持有 Runtime 句柄，取先就绪的那个。
+  const runtimeEndpoints =
+    getBackendService().getRuntimeApiEndpoints() ??
+    initService.getBackendService().getRuntimeApiEndpoints()
+  if (runtimeEndpoints) return runtimeEndpoints
+
+  return initService.getMirrorService().getApiEndpoints()
+}
+
 export function getLocalApiEndpoint(): string {
-  return getInitService().getMirrorService().getApiEndpoint('local')
+  return resolveApiEndpoints().local
 }
 
 /**
@@ -215,17 +233,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   ipcMain.handle('get-api-endpoint', async (_event, key: unknown) => {
     if (!isApiEndpointKey(key)) throw new TypeError(`不支持的 API 端点: ${String(key)}`)
 
-    const initService = getInitService()
-    const mirrorService = initService.getMirrorService()
-
-    return mirrorService.getApiEndpoint(key)
+    return resolveApiEndpoints()[key]
   })
 
   ipcMain.handle('get-api-endpoints', async () => {
-    const initService = getInitService()
-    const mirrorService = initService.getMirrorService()
-
-    return mirrorService.getApiEndpoints()
+    return resolveApiEndpoints()
   })
 
   // ==================== 完整初始化流程（保留用于兼容） ====================
