@@ -43,21 +43,24 @@ from .config import (
     BetterGIConfig,
 )
 
-# 延迟加载 System，避免 app.services 初始化期间触发循环导入；
-# 绑定为模块级 LazyProxy（真实对象引用），函数体裸名 System 才能经
-# LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
-from .ws import MainConnection, Publisher, protocol
-from app.models.config import CLASS_BOOK
 from .queue_cycle import (
     CycleEntry,
     collect_cycle_entries,
     due_entries,
     format_cycle_time,
+    is_empty_cycle_time,
     is_script_success,
     next_after_finish,
     next_after_start,
+    parse_cycle_time,
     sort_for_preview,
 )
+
+# 延迟加载 System，避免 app.services 初始化期间触发循环导入；
+# 绑定为模块级 LazyProxy（真实对象引用），函数体裸名 System 才能经
+# LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
+from .ws import MainConnection, Publisher, protocol
+from app.models.config import CLASS_BOOK
 from app.models.schema import (
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
@@ -384,9 +387,11 @@ class Task(TaskExecuteBase):
         entries = collect_cycle_entries(queue, Config.ScriptConfig, now)
 
         # 首次推算的结果要落盘，重启后才不会当成「立刻可跑」重来一遍。
+        # 只在还是空值哨兵时写：已经排过期的每轮重写一遍纯属白费写盘。
         for entry in entries:
             queue_item = queue.QueueItem[uuid.UUID(entry.queue_item_id)]
-            if entry.next_run_at > now:
+            stored = parse_cycle_time(queue_item.get("Schedule", "NextRunAt"))
+            if is_empty_cycle_time(stored) and entry.next_run_at > now:
                 await queue_item.set(
                     "Schedule", "NextRunAt", format_cycle_time(entry.next_run_at)
                 )
