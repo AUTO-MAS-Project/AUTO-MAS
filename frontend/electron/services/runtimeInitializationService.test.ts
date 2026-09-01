@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   BootstrapProgressBridge,
   BootstrapProgressUpdate,
+  MirrorLookup,
   RUNTIME_TAKEOVER_MESSAGE,
   RuntimeInitializationService,
   emitDevelopmentSkipProgress,
@@ -16,6 +17,7 @@ import {
   toRuntimeVersion,
 } from './runtimeInitializationService'
 import type { RuntimeEvent, RuntimeRunOptions, RuntimeSupervisedLaunchConfig } from './runtime'
+import type { MirrorConfig, MirrorSource } from './mirrorService'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('./logger', () => ({
@@ -113,7 +115,45 @@ class FakeRuntimeClient {
   }
 }
 
-function createService(overrides: Partial<RuntimeSupervisedLaunchConfig> = {}) {
+// ==================== 假 MirrorService ====================
+
+/** key/name 组合与 mirrorService.ts 的默认配置一致，覆盖测试要用到的三类、含中文 name。 */
+const FAKE_MIRROR_SOURCES: Readonly<Record<string, MirrorSource[]>> = {
+  python: [
+    { key: 'aliyun', name: '阿里云镜像', url: '', type: 'mirror', description: '' },
+    { key: 'official', name: 'Python 官方', url: '', type: 'official', description: '' },
+  ],
+  repo: [
+    { key: 'cnb', name: 'CNB 官方镜像', url: '', type: 'mirror', description: '' },
+    { key: 'github', name: 'GitHub 官方', url: '', type: 'official', description: '' },
+    {
+      key: 'ghproxy_edgeone',
+      name: 'gh-proxy (EdgeOne)',
+      url: '',
+      type: 'mirror',
+      description: '',
+    },
+    { key: 'ghfast', name: 'ghfast 镜像', url: '', type: 'mirror', description: '' },
+  ],
+  pip_mirror: [
+    { key: 'aliyun', name: '阿里云', url: '', type: 'mirror', description: '' },
+    { key: 'tsinghua', name: '清华大学', url: '', type: 'mirror', description: '' },
+    { key: 'ustc', name: '中科大', url: '', type: 'mirror', description: '' },
+    { key: 'official', name: 'PyPI 官方', url: '', type: 'official', description: '' },
+  ],
+}
+
+/** 只实现 mapMirrorSelection 需要的 getMirrors，不碰真实 MirrorService 的文件读写。 */
+function fakeMirrorService(): MirrorLookup {
+  return {
+    getMirrors: (type: keyof MirrorConfig) => FAKE_MIRROR_SOURCES[type] ?? [],
+  }
+}
+
+function createService(
+  overrides: Partial<RuntimeSupervisedLaunchConfig> = {},
+  mirrorService: MirrorLookup = fakeMirrorService()
+) {
   const launchConfig: RuntimeSupervisedLaunchConfig = {
     mode: 'managed',
     runtimePath: RUNTIME_PATH,
@@ -122,6 +162,7 @@ function createService(overrides: Partial<RuntimeSupervisedLaunchConfig> = {}) {
   }
   return new RuntimeInitializationService({
     launchConfig,
+    mirrorService,
     createClient: options => new FakeRuntimeClient(options) as never,
   })
 }
@@ -210,21 +251,68 @@ describe('目标版本', () => {
 })
 
 describe('镜像源映射', () => {
-  it('只映射语义对得上的键，其余返回 null', () => {
-    expect(mapMirrorSelection('repository', 'cnb')).toEqual({ kind: 'git', key: 'cnb' })
-    expect(mapMirrorSelection('repository', 'github')).toEqual({ kind: 'git', key: 'github' })
-    expect(mapMirrorSelection('python', 'official')).toEqual({ kind: 'python', key: 'github' })
+  it('选中值本来就是 key 时按 key 解析，只映射语义对得上的键，其余返回 null', () => {
+    const mirrors = fakeMirrorService()
+    expect(mapMirrorSelection(mirrors, 'repository', 'cnb')).toEqual({ kind: 'git', key: 'cnb' })
+    expect(mapMirrorSelection(mirrors, 'repository', 'github')).toEqual({
+      kind: 'git',
+      key: 'github',
+    })
+    expect(mapMirrorSelection(mirrors, 'python', 'official')).toEqual({
+      kind: 'python',
+      key: 'github',
+    })
 
     // Runtime 的 git 目录里没有这些源
-    expect(mapMirrorSelection('repository', 'ghproxy_edgeone')).toBeNull()
-    expect(mapMirrorSelection('repository', 'ghfast')).toBeNull()
+    expect(mapMirrorSelection(mirrors, 'repository', 'ghproxy_edgeone')).toBeNull()
+    expect(mapMirrorSelection(mirrors, 'repository', 'ghfast')).toBeNull()
     // 旧 python 类是 python.org 分发源，其余键在 Runtime 里没有对应物
-    expect(mapMirrorSelection('python', 'aliyun')).toBeNull()
-    // 依赖段不能传 package-index，Runtime 会按 INVALID_ARGUMENT 拒绝
-    expect(mapMirrorSelection('dependency', 'tsinghua')).toBeNull()
-    expect(mapMirrorSelection('dependency', 'official')).toBeNull()
-    expect(mapMirrorSelection('git', 'autonas')).toBeNull()
-    expect(mapMirrorSelection('repository', '')).toBeNull()
+    expect(mapMirrorSelection(mirrors, 'python', 'aliyun')).toBeNull()
+    // official 对应 Runtime 的 pypi，键名对不上，不映射
+    expect(mapMirrorSelection(mirrors, 'dependency', 'official')).toBeNull()
+    expect(mapMirrorSelection(mirrors, 'git', 'autonas')).toBeNull()
+    expect(mapMirrorSelection(mirrors, 'repository', '')).toBeNull()
+  })
+
+  it('选中值是旧链路存的 name 时也能解析——渲染进程存进 state.selectedMirror 的就是 name', () => {
+    const mirrors = fakeMirrorService()
+    // MirrorRotationService.execute(..., preferredMirrorName) 按 mirror.name 匹配；
+    // 用 name 或用 key 解析到同一个 MirrorSource，映射结果应当一致
+    expect(mapMirrorSelection(mirrors, 'repository', 'CNB 官方镜像')).toEqual({
+      kind: 'git',
+      key: 'cnb',
+    })
+    expect(mapMirrorSelection(mirrors, 'python', 'Python 官方')).toEqual({
+      kind: 'python',
+      key: 'github',
+    })
+  })
+
+  it('旧镜像列表里根本找不到这个选中值时返回 null', () => {
+    const mirrors = fakeMirrorService()
+    expect(mapMirrorSelection(mirrors, 'repository', '不存在的镜像')).toBeNull()
+    expect(mapMirrorSelection(mirrors, 'dependency', 'unknown-key')).toBeNull()
+  })
+
+  it('T13.4 起 dependency 段可以传 package-index，但只映射键名相同的三项', () => {
+    const mirrors = fakeMirrorService()
+    expect(mapMirrorSelection(mirrors, 'dependency', 'aliyun')).toEqual({
+      kind: 'package-index',
+      key: 'aliyun',
+    })
+    expect(mapMirrorSelection(mirrors, 'dependency', 'tsinghua')).toEqual({
+      kind: 'package-index',
+      key: 'tsinghua',
+    })
+    expect(mapMirrorSelection(mirrors, 'dependency', 'ustc')).toEqual({
+      kind: 'package-index',
+      key: 'ustc',
+    })
+    // 用 name 选中同样生效
+    expect(mapMirrorSelection(mirrors, 'dependency', '清华大学')).toEqual({
+      kind: 'package-index',
+      key: 'tsinghua',
+    })
   })
 })
 
@@ -504,7 +592,8 @@ describe('单步重试', () => {
   it('镜像键映射不到时仍重跑 bootstrap 但不传 --mirror', async () => {
     FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('bootstrap')] }]
 
-    await createService().retryStage('dependency', () => undefined, 'tsinghua')
+    // official 在 pip_mirror 里能解析到，但键名对不上 Runtime 的 pypi，映射表里没有它
+    await createService().retryStage('dependency', () => undefined, 'official')
 
     expect(FakeRuntimeClient.calls[0].command[0]).toBe('bootstrap')
     expect(FakeRuntimeClient.calls[0].mirrors).toEqual([])

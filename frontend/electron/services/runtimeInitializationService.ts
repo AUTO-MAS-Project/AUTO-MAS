@@ -13,6 +13,7 @@
 import { app } from 'electron'
 
 import { getLogger } from './logger'
+import { MirrorConfig, MirrorService } from './mirrorService'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClient,
@@ -110,10 +111,12 @@ export function mapRuntimeStage(stage: RuntimeStage): InitializationRunStage {
  *   python-build-standalone，只有「官方」这一项对得上；
  * - 旧 `repo` 类的 gitee / gh-proxy 各变体 / ghfast 在 Runtime 的 `git` 类里没有对应源；
  * - 旧 `git` 类是「去哪下 git.exe」，Runtime 内置 Go Git 不再安装 Git，没有对应物；
- * - 旧 `pip_mirror` 类对应 Runtime 的 `package-index`，但 Runtime 明确规定
+ * - 旧 `pip_mirror` 类对应 Runtime 的 `package-index`。T13.4 之前 Runtime 在
  *   `bootstrap` / `dependencies *` / `repair` 上显式指定 `--mirror package-index=<键>`
- *   一律返回 INVALID_ARGUMENT（不能覆盖 uv.lock 里冻结的 registry URL），所以依赖段
- *   的镜像选择在新链路下没有可传的等价物。
+ *   一律返回 INVALID_ARGUMENT；T13.4 起改为允许显式指定（改写的是锁文件里的索引副本，
+ *   不覆盖 `uv.lock` 冻结的 registry URL），依赖段因此也能换镜像了——但只映射键名字面
+ *   相同的三项（aliyun / tsinghua / ustc）。旧 `official` 对应 Runtime 的 `pypi`，键名
+ *   对不上，不假定两边是同一个源，仍然不映射。
  */
 const MIRROR_KEY_MAP: Readonly<
   Partial<Record<InitializationRunStage, Readonly<Record<string, RuntimeMirrorSelection>>>>
@@ -125,14 +128,63 @@ const MIRROR_KEY_MAP: Readonly<
     cnb: { kind: 'git', key: 'cnb' },
     github: { kind: 'git', key: 'github' },
   },
+  dependency: {
+    aliyun: { kind: 'package-index', key: 'aliyun' },
+    tsinghua: { kind: 'package-index', key: 'tsinghua' },
+    ustc: { kind: 'package-index', key: 'ustc' },
+  },
 }
 
-/** 把界面上选中的旧镜像键转成 Runtime 的镜像选择；映射不到返回 null。 */
-export function mapMirrorSelection(
+/** 可供解析旧镜像选中值的最小依赖形状；`MirrorService` 结构上天然满足它。 */
+export type MirrorLookup = Pick<MirrorService, 'getMirrors'>
+
+/**
+ * `MIRROR_KEY_MAP` 的段与旧链路镜像类型（`mirrorService.ts` 的 `MirrorConfig` 键）的对应。
+ *
+ * 只列 `RUNTIME_BOOTSTRAP_STAGE_ORDER` 里真正会传镜像选择的三段；`mirror` / `pip` / `git`
+ * 在新链路没有对应物，`retryStage` 里直接短路，走不到这张表。
+ */
+const LEGACY_MIRROR_TYPE_BY_STAGE: Readonly<
+  Partial<Record<InitializationRunStage, keyof MirrorConfig>>
+> = {
+  python: 'python',
+  repository: 'repo',
+  dependency: 'pip_mirror',
+}
+
+/**
+ * 把界面选中的旧镜像标识解析成 `MirrorSource.key`。
+ *
+ * 旧链路的 `MirrorRotationService.execute(..., preferredMirrorName)` 按 `mirror.name`
+ * 匹配，渲染进程存的选中值也是 `name`（`Initialization/index.vue` 的 `convertMirror`
+ * 甚至把展示层的 `key` 字段本身都填成了 `name`）；但 `MIRROR_KEY_MAP` 是按
+ * `MirrorSource.key` 建的表。两种取值都可能传进来，按 key 或 name 任一命中即可。
+ */
+function resolveMirrorSourceKey(
+  mirrorService: MirrorLookup,
   stage: InitializationRunStage,
-  mirrorKey: string | undefined
+  selected: string
+): string | null {
+  const legacyType = LEGACY_MIRROR_TYPE_BY_STAGE[stage]
+  if (!legacyType) return null
+  const source = mirrorService
+    .getMirrors(legacyType)
+    .find(m => m.key === selected || m.name === selected)
+  return source?.key ?? null
+}
+
+/**
+ * 把界面上选中的旧镜像标识（`MirrorSource.key` 或 `name`）转成 Runtime 的镜像选择；
+ * 解析不到旧镜像源、或解析到了但映射表没有对应项时都返回 null。
+ */
+export function mapMirrorSelection(
+  mirrorService: MirrorLookup,
+  stage: InitializationRunStage,
+  selected: string | undefined
 ): RuntimeMirrorSelection | null {
-  const key = mirrorKey?.trim()
+  const trimmed = selected?.trim()
+  if (!trimmed) return null
+  const key = resolveMirrorSourceKey(mirrorService, stage, trimmed)
   if (!key) return null
   return MIRROR_KEY_MAP[stage]?.[key] ?? null
 }
@@ -299,6 +351,8 @@ export type RuntimeClientFactory = (options: RuntimeClientOptions) => RuntimeCli
 
 export interface RuntimeInitializationOptions {
   launchConfig: RuntimeSupervisedLaunchConfig
+  /** 解析镜像选择要用到的旧 `MirrorService`；复用调用方已有的实例，这里不再新建。 */
+  mirrorService: MirrorLookup
   createClient?: RuntimeClientFactory
 }
 
@@ -312,11 +366,13 @@ const defaultClientFactory: RuntimeClientFactory = options => new RuntimeClient(
  */
 export class RuntimeInitializationService {
   private readonly createClient: RuntimeClientFactory
+  private readonly mirrorService: MirrorLookup
   /** 各段上一次失败给出的 remediation，决定单步重试用普通重试还是重建环境。 */
   private readonly lastRemediation = new Map<InitializationRunStage, RuntimeRemediation[]>()
 
   constructor(private readonly options: RuntimeInitializationOptions) {
     this.createClient = options.createClient ?? defaultClientFactory
+    this.mirrorService = options.mirrorService
   }
 
   get launchConfig(): RuntimeSupervisedLaunchConfig {
@@ -374,7 +430,7 @@ export class RuntimeInitializationService {
     }
 
     if (mirrorKey?.trim()) {
-      const mirror = mapMirrorSelection(stage, mirrorKey)
+      const mirror = mapMirrorSelection(this.mirrorService, stage, mirrorKey)
       if (!mirror) {
         logger.info(`镜像源 ${mirrorKey} 在 Runtime 目录里没有对应源，按默认轮换重跑 bootstrap`)
       }
