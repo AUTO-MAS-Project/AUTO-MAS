@@ -21,6 +21,7 @@
 
 
 import os
+import math
 import time
 import ctypes
 import psutil
@@ -50,6 +51,11 @@ logger = get_logger("明日方舟PC工具")
 # 上限取 60 秒，保证用户随时进入游戏后仍能在一分钟内自动接上。
 CONNECT_RETRY_BASE_SECONDS = 2.0
 CONNECT_RETRY_MAX_SECONDS = 60.0
+# 指数要先封顶：失败次数一直累加时 2 ** (failures - 1) 会在第 1025 次转 float 溢出，
+# 异常从 except 块里抛出会直接终止每秒定时任务；封顶到刚越过上限的那一档即可。
+_CONNECT_RETRY_MAX_EXPONENT = math.ceil(
+    math.log2(CONNECT_RETRY_MAX_SECONDS / CONNECT_RETRY_BASE_SECONDS)
+)
 
 
 def connect_retry_delay(failures: int) -> float:
@@ -63,8 +69,9 @@ def connect_retry_delay(failures: int) -> float:
         float: 等待秒数, 指数增长并封顶到 ``CONNECT_RETRY_MAX_SECONDS``
     """
 
+    exponent = min(max(failures - 1, 0), _CONNECT_RETRY_MAX_EXPONENT)
     return min(
-        CONNECT_RETRY_BASE_SECONDS * 2 ** max(failures - 1, 0),
+        CONNECT_RETRY_BASE_SECONDS * 2**exponent,
         CONNECT_RETRY_MAX_SECONDS,
     )
 
