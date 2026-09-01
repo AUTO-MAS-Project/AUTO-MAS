@@ -69,6 +69,23 @@ export {
   InitializationResult,
 } from './initializationService'
 
+// Runtime 初始化链路（灰度开关打开后顶掉五步安装链）
+export {
+  BootstrapProgressBridge,
+  BootstrapProgressUpdate,
+  CriticalFilesCheck,
+  InitializationRunStage,
+  InitializationStage,
+  InitializationStageStatus,
+  RuntimeDoctorCheck,
+  RuntimeInitializationService,
+  RuntimeStageOutcome,
+  mapDoctorChecksToCriticalFiles,
+  mapMirrorSelection,
+  mapRuntimeStage,
+  toRuntimeVersion,
+} from './runtimeInitializationService'
+
 // 后端服务
 export {
   BackendService,

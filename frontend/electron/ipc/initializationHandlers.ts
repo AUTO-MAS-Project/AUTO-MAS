@@ -3,11 +3,17 @@
  * 使用新的服务
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
 import { getLogger } from '../services/logger'
 import type { ApiEndpoints, MirrorConfig } from '../services/mirrorService'
+import type {
+  CriticalFilesCheck,
+  InitializationRunStage,
+  RuntimeStageOutcome,
+} from '../services/runtimeInitializationService'
+import { mapDoctorChecksToCriticalFiles } from '../services/runtimeInitializationService'
 
 const logger = getLogger('初始化处理器')
 const mirrorTypes = new Set<keyof MirrorConfig>(['python', 'get_pip', 'git', 'repo', 'pip_mirror'])
@@ -73,6 +79,54 @@ export function getLocalApiEndpoint(): string {
 }
 
 /**
+ * Runtime 链路下的单步执行与重试。
+ *
+ * 界面上的「重试」与「切换镜像后重试」用的都是下面这几个安装 handler，Runtime 链路下
+ * 它们转成对应的下层命令（`environment ensure` / `workspace sync` / `dependencies sync`），
+ * 选了镜像源则整条 `bootstrap` 带 `--mirror` 重跑。返回 null 表示灰度开关关闭，走旧链路。
+ *
+ * 逐步进度通道是按步骤分的，渲染进程只看进度数值不看段名，所以这里只转发本段的进度，
+ * 否则整条 bootstrap 重跑时 `mirror` / `pip` / `git` 的完成进度会把当前步骤误标成完成。
+ */
+async function runStageViaRuntime(
+  event: IpcMainInvokeEvent,
+  stage: InitializationRunStage,
+  progressChannel: string,
+  selectedMirror?: string
+): Promise<RuntimeStageOutcome | null> {
+  const initService = getInitService()
+  return initService.retryStageViaRuntime(
+    stage,
+    progress => {
+      if (progress.stage !== stage) return
+      event.sender.send(progressChannel, progress)
+    },
+    selectedMirror
+  )
+}
+
+/**
+ * Runtime 链路下的关键文件检查。
+ *
+ * 旧链路数 exe 文件，新链路问 Runtime `doctor`：受管布局里 `repo` 缺失就是没装过。
+ * 返回 null 表示灰度开关关闭或 doctor 没跑成，调用方继续走旧的文件存在性检查。
+ */
+export async function checkCriticalFilesViaRuntime(): Promise<CriticalFilesCheck | null> {
+  const runtimeService = getInitService().getRuntimeService()
+  if (!runtimeService) return null
+
+  const checks = await runtimeService.doctor()
+  if (!checks) {
+    logger.warn('Runtime doctor 未给出检查结果，按未初始化处理')
+    return { pythonExists: false, pipExists: false, gitExists: false, mainPyExists: false }
+  }
+
+  const result = mapDoctorChecksToCriticalFiles(checks)
+  logger.info(`Runtime doctor 检查结果 - 受管仓库${result.mainPyExists ? '已就绪' : '缺失'}`)
+  return result
+}
+
+/**
  * 注册所有初始化相关的 IPC 处理器
  */
 export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
@@ -99,6 +153,15 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装Python: ${selectedMirror}`)
     }
+
+    const runtimeOutcome = await runStageViaRuntime(
+      event,
+      'python',
+      'python-progress',
+      selectedMirror
+    )
+    if (runtimeOutcome) return runtimeOutcome
+
     const appRoot = getAppRoot()
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
@@ -123,6 +186,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装Pip: ${selectedMirror}`)
     }
+
+    const runtimeOutcome = await runStageViaRuntime(event, 'pip', 'pip-progress', selectedMirror)
+    if (runtimeOutcome) return runtimeOutcome
+
     const appRoot = getAppRoot()
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
@@ -147,6 +214,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装Git: ${selectedMirror}`)
     }
+
+    const runtimeOutcome = await runStageViaRuntime(event, 'git', 'git-progress', selectedMirror)
+    if (runtimeOutcome) return runtimeOutcome
+
     const appRoot = getAppRoot()
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
@@ -173,6 +244,16 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       if (selectedMirror) {
         logger.info(`使用指定镜像源拉取源码: ${selectedMirror}`)
       }
+
+      // Runtime 链路的目标分支由目标版本推导（`release/<版本>`），targetBranch 不参与。
+      const runtimeOutcome = await runStageViaRuntime(
+        event,
+        'repository',
+        'repository-progress',
+        selectedMirror
+      )
+      if (runtimeOutcome) return runtimeOutcome
+
       const appRoot = getAppRoot()
       const initService = getInitService(targetBranch)
       const mirrorService = initService.getMirrorService()
@@ -198,6 +279,15 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装依赖: ${selectedMirror}`)
     }
+
+    const runtimeOutcome = await runStageViaRuntime(
+      event,
+      'dependency',
+      'dependency-progress',
+      selectedMirror
+    )
+    if (runtimeOutcome) return runtimeOutcome
+
     const appRoot = getAppRoot()
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
