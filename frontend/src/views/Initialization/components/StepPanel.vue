@@ -173,18 +173,20 @@
       />
     </div>
 
-    <!-- 失败状态 - 显示镜像源选择 -->
-    <div v-else-if="status === 'failed' && showMirrorSelection" class="failed-state">
+    <!-- 失败状态 -->
+    <div v-else-if="status === 'failed'" class="failed-state">
       <a-alert
         type="error"
         :message="t('init.step.failed', { title })"
         :description="message"
         show-icon
-        style="margin-bottom: 20px"
       />
 
+      <!-- 需要额外说清楚的失败：运行时内部错误、需要携带日志反馈 -->
+      <a-alert v-if="noticeText" type="warning" :message="noticeText" show-icon />
+
       <!-- 镜像源选择 -->
-      <div class="mirror-selection">
+      <div v-if="showMirrorSelection" class="mirror-selection">
         <h4>{{ t('init.step.chooseMirrorRetry') }}</h4>
 
         <!-- 镜像源 -->
@@ -237,35 +239,54 @@
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="retry-actions">
-          <a-space size="large">
-            <a-button v-if="showSkipButton" size="large" @click="$emit('skip')">
-              {{ t('init.step.skip') }}
-            </a-button>
-            <a-button type="primary" size="large" @click="$emit('retry')">
-              {{ t('init.step.retryWithMirror') }}
-            </a-button>
-          </a-space>
-          <div v-if="countdown > 0" class="countdown-text">
-            {{ t('init.step.autoRetryIn', { seconds: countdown }) }}
+      <!-- 运行诊断结果 -->
+      <div v-if="doctorRunning || doctorChecks" class="info-section">
+        <div class="info-title">{{ t('init.failure.doctorTitle') }}</div>
+        <div v-if="doctorRunning" class="operation-desc">
+          {{ t('init.failure.doctorRunning') }}
+        </div>
+        <div v-else-if="doctorChecks && doctorChecks.length > 0" class="doctor-checks">
+          <div v-for="check in doctorChecks" :key="check.id" class="doctor-check">
+            <a-tag :color="check.status === 'ok' ? 'green' : 'orange'">{{ check.name }}</a-tag>
+            <span class="doctor-check-message">{{ check.message || check.status }}</span>
           </div>
         </div>
+        <div v-else class="operation-desc">{{ t('init.failure.doctorEmpty') }}</div>
       </div>
-    </div>
 
-    <!-- 简单失败状态 -->
-    <div v-else-if="status === 'failed'" class="simple-failed-state">
-      <a-result status="error" :title="t('init.step.failed', { title })" :sub-title="message">
-        <template #extra>
-          <a-space>
-            <a-button v-if="showSkipButton" @click="$emit('skip')">{{
-              t('init.step.skip')
-            }}</a-button>
-            <a-button type="primary" @click="$emit('retry')">{{ t('init.step.retry') }}</a-button>
-          </a-space>
-        </template>
-      </a-result>
+      <!-- 处置动作：顺序与内容全部由 decideFailureActions 决定 -->
+      <div class="retry-actions">
+        <a-space size="large" wrap>
+          <a-button v-if="showSkipButton" size="large" @click="$emit('skip')">
+            {{ t('init.step.skip') }}
+          </a-button>
+          <a-button
+            v-for="(action, index) in failureActions"
+            :key="action.kind"
+            :type="index === 0 ? 'primary' : 'default'"
+            size="large"
+            :loading="action.kind === 'run-doctor' && doctorRunning"
+            @click="$emit('action', action.kind)"
+          >
+            {{ t(action.labelKey) }}
+          </a-button>
+        </a-space>
+        <div v-if="countdown > 0" class="countdown-text">
+          {{ t('init.step.autoRetryIn', { seconds: countdown }) }}
+        </div>
+      </div>
+
+      <!-- 失败日志整块展示，与后端启动步骤的失败界面一致 -->
+      <a-card
+        v-if="failureLogs"
+        size="small"
+        :title="t('init.failure.logTitle')"
+        class="failed-log-card"
+      >
+        <pre class="failure-log-output">{{ failureLogs }}</pre>
+      </a-card>
     </div>
   </div>
 </template>
@@ -274,6 +295,12 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import type { MirrorConfig } from '@/types/mirror'
+import type { RuntimeDoctorCheck } from '@/types/electron'
+import type {
+  FailureAction,
+  FailureActionKind,
+  FailureNoticeKind,
+} from '@/utils/initializationDecision'
 
 interface CheckInfo {
   // 环境检查信息（Python/Pip/Git）
@@ -318,6 +345,17 @@ interface Props {
   operationDesc?: string
   checkInfo?: CheckInfo
   mirrorProgress?: MirrorProgress
+  /** 失败时该给哪些按钮，由 decideFailureActions 算好，本组件只负责渲染。 */
+  failureActions?: FailureAction[]
+  /** 按钮之外还要说的一句话；不需要时为 null。 */
+  failureNotice?: FailureNoticeKind | null
+  /** `[stdout]…
+
+[stderr]…` 整块失败日志。 */
+  failureLogs?: string
+  /** 运行诊断的逐项结果；未诊断过为 null。 */
+  doctorChecks?: RuntimeDoctorCheck[] | null
+  doctorRunning?: boolean
 }
 
 const { t } = useI18n()
@@ -342,13 +380,30 @@ const props = withDefaults(defineProps<Props>(), {
   operationDesc: '',
   checkInfo: undefined,
   mirrorProgress: undefined,
+  failureActions: () => [],
+  failureNotice: null,
+  failureLogs: '',
+  doctorChecks: null,
+  doctorRunning: false,
 })
 
 defineEmits<{
   'update:selected-mirror': [value: string]
-  retry: []
+  action: [kind: FailureActionKind]
   skip: []
 }>()
+
+// 词表只能在 setup 里取，模板里按种类查这一句提示。
+const noticeText = computed(() => {
+  switch (props.failureNotice) {
+    case 'internal-error':
+      return t('init.failure.internalErrorNotice')
+    case 'contact-support':
+      return t('init.failure.contactSupportNotice')
+    default:
+      return ''
+  }
+})
 
 const mirrorMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) => m.type === 'mirror'))
 const officialMirrors = computed(() =>
@@ -419,18 +474,6 @@ const officialMirrors = computed(() =>
   width: 100%;
   min-height: 0;
   padding: 8px;
-}
-
-.simple-failed-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  width: 100%;
 }
 
 .status-text {
@@ -548,6 +591,49 @@ const officialMirrors = computed(() =>
   align-items: center;
   gap: 12px;
   margin-top: 20px;
+}
+
+.doctor-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.doctor-check {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.doctor-check-message {
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+  word-break: break-word;
+}
+
+.failed-log-card {
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.failed-log-card :deep(.ant-card-body) {
+  padding: 0;
+}
+
+.failure-log-output {
+  margin: 0;
+  max-height: 260px;
+  width: 100%;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .countdown-text {

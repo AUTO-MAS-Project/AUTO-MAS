@@ -7,7 +7,7 @@
     </div>
 
     <a-steps :current="currentStepIndex" :status="stepStatus" class="init-steps">
-      <a-step v-for="step in steps" :key="step.key" :title="t(`init.steps.${step.key}`)" />
+      <a-step v-for="step in steps" :key="step.key" :title="t(stepTitleKey(step.key))" />
     </a-steps>
 
     <div class="step-content">
@@ -16,7 +16,7 @@
         :is="currentStepComponent"
         v-bind="currentStepProps"
         @update:selected-mirror="handleMirrorSelect"
-        @retry="handleRetry"
+        @action="handleFailureAction"
         @skip="handleSkip"
         @complete="handleBackendComplete"
         @error="handleBackendError"
@@ -52,7 +52,19 @@ import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { getBackendVersion } from '@/composables/useVersionService'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
+import { decideFailureActions, filterRuntimeMirrors } from '@/utils/initializationDecision'
+import type {
+  FailureAction,
+  FailureActionKind,
+  FailureNoticeKind,
+} from '@/utils/initializationDecision'
 import type { MirrorConfig } from '@/types/mirror'
+import type {
+  InstallStageResult,
+  RuntimeDoctorCheck,
+  RuntimeFailureFields,
+  RuntimeInitMode,
+} from '@/types/electron'
 
 defineOptions({ name: 'InitializationPage' })
 
@@ -113,115 +125,86 @@ interface StepState {
     current: number
     total: number
   }
+  /** 以下几项由失败结果里的机器字段算出，旧链路下退化成原来的「重试 + 镜像面板」。 */
+  failureActions: FailureAction[]
+  failureNotice: FailureNoticeKind | null
+  failureLogs: string
+  failureLogPath: string
+  doctorChecks: RuntimeDoctorCheck[] | null
+  doctorRunning: boolean
+}
+
+/** 六个步骤的初始状态一模一样，逐个抄一遍只会在加字段时漏掉其中一份。 */
+function createStepState(): StepState {
+  return {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+    failureActions: [],
+    failureNotice: null,
+    failureLogs: '',
+    failureLogPath: '',
+    doctorChecks: null,
+    doctorRunning: false,
+  }
 }
 
 const stepStates = ref<Record<string, StepState>>({
-  python: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  pip: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  git: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  repository: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  dependency: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  backend: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
+  python: createStepState(),
+  pip: createStepState(),
+  git: createStepState(),
+  repository: createStepState(),
+  dependency: createStepState(),
+  backend: createStepState(),
 })
 
 // 倒计时定时器
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+// ==================== Runtime 链路 ====================
+
+const runtimeMode = ref<RuntimeInitMode>('off')
+const runtimeMirrorKeys = ref<Record<string, string[]>>({})
+const runtimeFallbackLogPath = ref('')
+
+/**
+ * Runtime 接管后不再执行的段。
+ *
+ * uv 与 Python 合并进 python 段，pip 由 uv 管、Git 由 Runtime 内置，都不再单独安装。
+ * `mirror` 段不在界面的步骤条上，列在这里只是让判定覆盖主进程发得出的全部段名。
+ */
+const RUNTIME_TAKEOVER_STEPS = new Set(['mirror', 'pip', 'git'])
+
+/** 会真的再跑一次安装的动作，自动重试只挑这几种。 */
+const RETRY_ACTION_KINDS = new Set<FailureActionKind>([
+  'retry',
+  'retry-other-mirror',
+  'rebuild-environment',
+])
+
+function isRuntimeTakenOver(stepKey: string): boolean {
+  return runtimeMode.value !== 'off' && RUNTIME_TAKEOVER_STEPS.has(stepKey)
+}
+
+/** 步骤条上的标题：Runtime 接管后 uv 与 Python 合成一段，另外两段直接说明由谁负责。 */
+function stepTitleKey(stepKey: string): string {
+  if (runtimeMode.value === 'off') return `init.steps.${stepKey}`
+  if (stepKey === 'python') return 'init.runtime.preparingEnv'
+  if (RUNTIME_TAKEOVER_STEPS.has(stepKey)) return 'init.runtime.takenOver'
+  return `init.steps.${stepKey}`
+}
 
 // ==================== 计算属性 ====================
 const currentStep = computed(() => steps[currentStepIndex.value])
@@ -239,7 +222,7 @@ const currentStepProps = computed(() => {
   const step = currentStep.value
 
   return {
-    title: t(`init.steps.${step.key}`),
+    title: t(stepTitleKey(step.key)),
     status: state.status,
     message: state.message,
     progress: state.progress,
@@ -249,9 +232,15 @@ const currentStepProps = computed(() => {
       | 'exception'
       | 'success',
     successTitle: `${step.title}完成`,
-    showMirrorSelection: state.showMirrorSelection, // 所有步骤失败时都显示镜像源选择
+    showMirrorSelection: state.showMirrorSelection, // 由 decideFailureActions 决定，旧链路下仍是失败即显示
     showSkipButton: step.canSkip && state.status === 'failed', // 只有可跳过的步骤且失败时才显示跳过按钮
-    mirrors: state.mirrors,
+    // Runtime 收不下的镜像源不摆出来：选了也只会被忽略，键名以主进程给的映射表为准
+    mirrors: filterRuntimeMirrors(
+      state.mirrors,
+      step.key,
+      runtimeMode.value,
+      runtimeMirrorKeys.value
+    ),
     selectedMirror: state.selectedMirror,
     countdown: state.countdown,
     currentMirror: state.currentMirror,
@@ -264,6 +253,11 @@ const currentStepProps = computed(() => {
     operationDesc: state.operationDesc,
     checkInfo: state.checkInfo,
     mirrorProgress: state.mirrorProgress,
+    failureActions: state.failureActions,
+    failureNotice: state.failureNotice,
+    failureLogs: state.failureLogs,
+    doctorChecks: state.doctorChecks,
+    doctorRunning: state.doctorRunning,
   }
 })
 
@@ -385,34 +379,78 @@ function handleProgress(stepKey: string, progressData: any) {
   }
 }
 
+/** 把失败结果里的机器字段落进步骤状态，并算出该给哪些按钮。 */
+function applyFailure(state: StepState, stepKey: string, failure: RuntimeFailureFields) {
+  const plan = decideFailureActions({
+    code: failure.code,
+    retryable: failure.retryable,
+    remediation: failure.remediation,
+    stage: stepKey,
+    runtimeMode: runtimeMode.value,
+  })
+
+  state.failureActions = plan.actions
+  state.failureNotice = plan.notice
+  state.showMirrorSelection = plan.showMirrorSelection
+  state.failureLogs = failure.logs ?? ''
+  state.failureLogPath = failure.logPath ?? ''
+  state.doctorChecks = null
+  state.doctorRunning = false
+
+  logger.info(
+    `[${stepKey}] 失败处置 - code: ${failure.code ?? '无'}, retryable: ${failure.retryable ?? '无'}, ` +
+      `动作: ${plan.actions.map(action => action.kind).join(', ') || '无'}`
+  )
+  return plan
+}
+
+/** Runtime 接管的段没有对应的安装动作，直接置完成，不必往主进程跑一趟。 */
+function markStepTakenOver(state: StepState) {
+  state.status = 'success'
+  state.progress = 100
+  state.message = t('init.runtime.takenOver')
+  state.showMirrorSelection = false
+  state.countdown = 0
+  state.failureActions = []
+  state.failureNotice = null
+}
+
 // 执行单个步骤
-async function executeStep(stepKey: string): Promise<boolean> {
+async function executeStep(stepKey: string, rebuild: boolean = false): Promise<boolean> {
   const state = stepStates.value[stepKey]
+
+  if (isRuntimeTakenOver(stepKey)) {
+    logger.info(`步骤 ${stepKey} 由 Runtime 接管，直接置为完成`)
+    markStepTakenOver(state)
+    return true
+  }
+
   state.status = 'processing'
   state.progress = 0
   state.message = t('init.msg.running')
 
+  // 失败结果上的机器字段：抛异常前先接住，catch 里统一算按钮
+  let failure: RuntimeFailureFields = {}
+
   try {
-    let result: any
+    const api = window.electronAPI
+    let result: InstallStageResult
 
     switch (stepKey) {
       case 'python':
-        result = await (window.electronAPI as any).installPython(state.selectedMirror)
+        result = await api.installPython(state.selectedMirror, rebuild)
         break
       case 'pip':
-        result = await (window.electronAPI as any).installPip(state.selectedMirror)
+        result = await api.installPip(state.selectedMirror, rebuild)
         break
       case 'git':
-        result = await (window.electronAPI as any).installGit(state.selectedMirror)
+        result = await api.installGit(state.selectedMirror, rebuild)
         break
       case 'repository':
-        result = await (window.electronAPI as any).pullRepository(
-          targetBranch.value,
-          state.selectedMirror
-        )
+        result = await api.pullRepository(targetBranch.value, state.selectedMirror, rebuild)
         break
       case 'dependency':
-        result = await (window.electronAPI as any).installDependencies(state.selectedMirror)
+        result = await api.installDependencies(state.selectedMirror, rebuild)
         break
       case 'backend':
         // 后端启动由BackendStartStep组件处理
@@ -443,6 +481,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
       return true
     } else {
+      failure = result
       throw new Error(result.error || t('init.msg.execFailed'))
     }
   } catch (error) {
@@ -451,10 +490,14 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
     state.status = 'failed'
     state.message = errorMsg
-    state.showMirrorSelection = true
 
-    // 开始倒计时
-    startCountdown(stepKey)
+    const plan = applyFailure(state, stepKey, failure)
+
+    // 只有真会重跑安装的动作才值得自动重试；不可重试的失败干等 60 秒没有意义
+    const autoAction = plan.actions.find(action => RETRY_ACTION_KINDS.has(action.kind))
+    if (autoAction) {
+      startCountdown(stepKey, autoAction.kind === 'rebuild-environment')
+    }
 
     return false
   }
@@ -521,6 +564,8 @@ async function handleSkip() {
     state.message = t('init.msg.skipped')
     state.showMirrorSelection = false
     state.countdown = 0
+    state.failureActions = []
+    state.failureNotice = null
 
     message.warning(t('init.msg.skippedStep', { step: t(`init.steps.${currentStep.value.key}`) }))
 
@@ -553,7 +598,7 @@ async function handleSkip() {
   }
 }
 
-async function handleRetry() {
+async function handleRetry(rebuild: boolean = false) {
   const stepKey = currentStep.value.key
   const state = stepStates.value[stepKey]
 
@@ -567,11 +612,17 @@ async function handleRetry() {
     // 重置状态
     state.showMirrorSelection = false
     state.countdown = 0
+    state.failureActions = []
+    state.failureNotice = null
+    state.failureLogs = ''
+    state.doctorChecks = null
 
-    logger.info(`重试 ${stepKey}，使用镜像源: ${state.selectedMirror}`)
+    logger.info(
+      `重试 ${stepKey}，使用镜像源: ${state.selectedMirror}${rebuild ? '（重建环境）' : ''}`
+    )
 
     // 重新执行当前步骤
-    const success = await executeStep(stepKey)
+    const success = await executeStep(stepKey, rebuild)
 
     if (success) {
       // 继续执行后续步骤
@@ -631,7 +682,7 @@ function handleBackendError(error: string) {
   stepStatus.value = 'error'
 }
 
-function startCountdown(stepKey: string) {
+function startCountdown(stepKey: string, rebuild: boolean = false) {
   const state = stepStates.value[stepKey]
   if (!state) return
 
@@ -644,10 +695,78 @@ function startCountdown(stepKey: string) {
         clearInterval(countdownTimer)
         countdownTimer = null
       }
-      // 自动重试
-      handleRetry()
+      // 自动重试：用决策给出的第一个重试类动作，不硬当作普通重试
+      handleRetry(rebuild)
     }
   }, 1000)
+}
+
+// ==================== 失败态动作 ====================
+
+/**
+ * 分发失败态按钮。
+ *
+ * 按钮是什么、有几个由 decideFailureActions 决定，这里只把 kind 接回对应的通道，
+ * 不再按文案或中文 message 判断任何东西。
+ */
+async function handleFailureAction(kind: FailureActionKind) {
+  const state = stepStates.value[currentStep.value.key]
+  if (!state) return
+
+  switch (kind) {
+    case 'open-log':
+      await openFailureLog(state)
+      return
+    case 'run-doctor':
+      await runRuntimeDoctor(state)
+      return
+    // 三种重试共用一条通道，只有要不要重建环境这一个区别
+    case 'retry':
+    case 'retry-other-mirror':
+      await handleRetry(false)
+      return
+    case 'rebuild-environment':
+      await handleRetry(true)
+      return
+  }
+}
+
+/** 打开日志：优先 Runtime 本次操作的日志文件，没有就退回本程序自己的日志。 */
+async function openFailureLog(state: StepState) {
+  const target = state.failureLogPath || runtimeFallbackLogPath.value
+
+  if (!target) {
+    logger.error('没有可打开的日志文件路径')
+    message.error(t('init.failure.openLogFailed', { error: t('init.msg.execFailed') }))
+    return
+  }
+
+  try {
+    logger.info(`打开日志文件: ${target}`)
+    await window.electronAPI.openFile(target)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`打开日志失败: ${errorMsg}`)
+    message.error(t('init.failure.openLogFailed', { error: errorMsg }))
+  }
+}
+
+/** 运行诊断：check-critical-files 在 Runtime 链路下问的就是 Runtime doctor。 */
+async function runRuntimeDoctor(state: StepState) {
+  state.doctorRunning = true
+
+  try {
+    const result = await window.electronAPI.checkCriticalFiles()
+    state.doctorChecks = result.runtimeChecks ?? []
+    logger.info(`运行诊断完成，检查项: ${state.doctorChecks.length}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`运行诊断失败: ${errorMsg}`)
+    message.error(t('init.failure.doctorFailed', { error: errorMsg }))
+    state.doctorChecks = []
+  } finally {
+    state.doctorRunning = false
+  }
 }
 
 async function handleForceEnterConfirm() {
@@ -736,6 +855,30 @@ onMounted(async () => {
     logger.info('开发环境，跳过初始化流程，直接进入应用')
     await handleLocalEnterApp()
     return
+  }
+
+  // Runtime 上下文决定步骤标签、哪些段不再执行、失败时日志开哪个文件、能换哪些镜像；
+  // 拿不到就按旧链路走，界面与原来完全一致。
+  try {
+    const context = await api.getRuntimeInitContext?.()
+    if (context) {
+      runtimeMode.value = context.mode
+      runtimeMirrorKeys.value = context.mirrorKeys ?? {}
+      runtimeFallbackLogPath.value = context.fallbackLogPath ?? ''
+      logger.info(`Runtime 初始化模式: ${context.mode}`)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取 Runtime 上下文失败，按旧链路处理: ${errorMsg}`)
+  }
+
+  // Runtime 接管的段没有对应的安装动作，进界面就置成完成，不让它们空转一遍
+  if (runtimeMode.value !== 'off') {
+    for (const step of steps) {
+      if (RUNTIME_TAKEOVER_STEPS.has(step.key)) {
+        markStepTakenOver(stepStates.value[step.key])
+      }
+    }
   }
 
   // 检查是否为强制后端更新模式（从标题栏触发）

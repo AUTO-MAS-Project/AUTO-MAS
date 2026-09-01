@@ -1268,18 +1268,21 @@ export default {
     bettergiExeNotFound: '所选目录下未找到 {p0}，请选择完整的 BetterGI 脚本根目录。',
     bettergiNotBettergiScript: '脚本类型不是 BetterGI',
     bettergiConfigure: '配置 BetterGI',
-    bettergiMasConfigTooltip: '独立配置模式：将打开 BetterGI，请在「一条龙」页面编辑「MAS独立配置」，保存退出后自动回读到该用户。',
+    bettergiMasConfigTooltip:
+      '独立配置模式：将打开 BetterGI，请在「一条龙」页面编辑「MAS独立配置」，保存退出后自动回读到该用户。',
     bettergiConfiguringTitle: '正在进行 BetterGI 设置',
     bettergiConfiguringDesc: '请在 BetterGI 界面完成设置。',
     bettergiConfiguringDesc2: '完成后点击「保存设置」结束本次会话。',
     bettergiUserNameHint: '用于区分用户的名称，相同名称的用户将被视为同一用户进行统计',
     bettergiAccount: '账户',
     bettergiEnterAccount: '请输入账户',
-    bettergiAccountHint: '用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式',
+    bettergiAccountHint:
+      '用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式',
     bettergiAccountUid: '账号 UID',
     bettergiEnterUid: '请输入 UID（切换账号建议填写）',
     bettergiUidHint: '可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作',
-    bettergiPasswordHint: '没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码',
+    bettergiPasswordHint:
+      '没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码',
     bettergiEnterPasswordPlaceholder: '请输入密码（没有填写密码时，默认为下拉列表切换账号）',
     bettergiGameServer: '游戏服务器',
     bettergiGameServerHint: '账号所在服务器：官服 / B服 / 亚服 / 欧服 / 美服 / 港澳台服',
@@ -1289,16 +1292,22 @@ export default {
     bettergiServerEurope: '欧服',
     bettergiServerAmerica: '美服',
     bettergiServerTwHkMo: '港澳台服',
-    bettergiTaskConfigHint: '勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑',
-    bettergiDirectModeAlert: '当前为「脚本直控配置」，任务配置项不可编辑。请切换到「用户独立配置」，以在本页为该用户配置独立的一条龙任务。',
+    bettergiTaskConfigHint:
+      '勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑',
+    bettergiDirectModeAlert:
+      '当前为「脚本直控配置」，任务配置项不可编辑。请切换到「用户独立配置」，以在本页为该用户配置独立的一条龙任务。',
     bettergiSwitchToMasConfig: '切换到用户独立配置',
     bettergiMasConfigHowTo: '如何使用「用户独立配置」',
-    bettergiMasConfigHowTo1a: '该用户的一条龙已走独立配置：MAS 会以「MAS独立配置」这条龙槽位启动。想调整具体任务，点击右上角「配置 BetterGI」打开 BGI，在其「一条龙」页面选择并编辑名为',
+    bettergiMasConfigHowTo1a:
+      '该用户的一条龙已走独立配置：MAS 会以「MAS独立配置」这条龙槽位启动。想调整具体任务，点击右上角「配置 BetterGI」打开 BGI，在其「一条龙」页面选择并编辑名为',
     bettergiMasConfigSlotName: '「MAS独立配置」',
-    bettergiMasConfigHowTo1b: '的配置，保存退出后 MAS 会自动回读到该用户。请不要修改你原有的一龙实配（如「默认配置」）——独立配置读取的是「MAS独立配置」槽位，同名实配不会被读取、也不受这里编辑影响。',
-    bettergiMasConfigHowTo2: '下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。',
+    bettergiMasConfigHowTo1b:
+      '的配置，保存退出后 MAS 会自动回读到该用户。请不要修改你原有的一龙实配（如「默认配置」）——独立配置读取的是「MAS独立配置」槽位，同名实配不会被读取、也不受这里编辑影响。',
+    bettergiMasConfigHowTo2:
+      '下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。',
     bettergiOneDragonName: '一条龙名称',
-    bettergiOneDragonNameHint: '必填。对应 BetterGI 一条龙页面中已保存/将保存的一条龙配置名称，默认为「默认配置」',
+    bettergiOneDragonNameHint:
+      '必填。对应 BetterGI 一条龙页面中已保存/将保存的一条龙配置名称，默认为「默认配置」',
     bettergiPickOneDragonName: '请选择一条龙配置名称',
     bettergiDailyRewardParty: '领取奖励队伍',
     bettergiEnterDailyRewardParty: '请输入领取奖励队伍',
@@ -1318,12 +1327,15 @@ export default {
     bettergiGroupDailyReward: '领取每日奖励',
     bettergiGroupTeapot: '领取尘歌壶奖励',
     bettergiCustomGroups: '自定义配置组',
-    bettergiCustomGroupsTip1: '来源：BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组（在 BetterGI 一条龙界面添加），不是下方的「任务配置组」开关。',
+    bettergiCustomGroupsTip1:
+      '来源：BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组（在 BetterGI 一条龙界面添加），不是下方的「任务配置组」开关。',
     bettergiCustomGroupsTip2a: '用法（本表只是一个开关）：一条龙里存在但本表未列出的配置组',
     bettergiCustomGroupsDefaultRun: '默认执行',
     bettergiCustomGroupsTip2b: '；已加入本表的组按行的开关执行——开启则执行、关闭则不执行。',
-    bettergiCustomGroupsTip3: '「添加配置组」从 BetterGI 现有配置（独立配置模式下读取「MAS独立配置」槽位）选取要纳入控制的组；未入表的组仍保留在一条龙里，不会因本表而丢失。',
-    bettergiCustomGroupsDesc: '来源是 BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组；本表只是一个开关——一条龙里有但表里没有的组默认执行，入表的组按行的开关执行（开启执行、关闭不执行）。',
+    bettergiCustomGroupsTip3:
+      '「添加配置组」从 BetterGI 现有配置（独立配置模式下读取「MAS独立配置」槽位）选取要纳入控制的组；未入表的组仍保留在一条龙里，不会因本表而丢失。',
+    bettergiCustomGroupsDesc:
+      '来源是 BetterGI 一条龙配置里除 8 个内置组以外的自定义配置组；本表只是一个开关——一条龙里有但表里没有的组默认执行，入表的组按行的开关执行（开启执行、关闭不执行）。',
     bettergiAddGroup: '添加配置组',
     bettergiDeleteGroupConfirm: '确定删除选中的配置组吗？',
     bettergiAdding: '添加中...',
@@ -1757,6 +1769,24 @@ export default {
   },
   init: {
     unknownStepP0: '未知步骤: {p0}',
+    runtime: {
+      takenOver: '由运行时接管',
+      preparingEnv: '准备运行环境',
+    },
+    failure: {
+      retryOtherMirror: '换镜像重试',
+      rebuildEnvironment: '重建环境',
+      openLog: '打开日志',
+      runDoctor: '运行诊断',
+      internalErrorNotice: '这是运行时内部错误，请携带日志反馈',
+      contactSupportNotice: '这个问题需要携带日志反馈给开发者',
+      logTitle: '失败日志',
+      openLogFailed: '打开日志失败: {error}',
+      doctorTitle: '运行环境诊断',
+      doctorEmpty: '诊断没有给出任何检查项',
+      doctorFailed: '运行诊断失败: {error}',
+      doctorRunning: '正在诊断运行环境...',
+    },
     common: {
       currentMirror: '当前使用: {mirror}',
     },

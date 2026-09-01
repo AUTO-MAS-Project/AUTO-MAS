@@ -1335,7 +1335,8 @@ export default {
     bettergiPickExeDir: 'BetterGI.exe があるフォルダーを選択します',
     bettergiPickExeDirPlaceholder: 'BetterGI.exe があるフォルダーを選択してください',
     bettergiPathRequired: 'BetterGI のパスを選択してください',
-    bettergiControllerHint: 'ゲームの操作方法です。クラウド原神とデスクトップ分身は未実装で、現在は PC フォアグラウンドのみ利用できます',
+    bettergiControllerHint:
+      'ゲームの操作方法です。クラウド原神とデスクトップ分身は未実装で、現在は PC フォアグラウンドのみ利用できます',
     bettergiControllerForeground: 'PC - フォアグラウンド',
     bettergiControllerCloud: 'PC - クラウド原神（未実装）',
     bettergiControllerDesktopClone: 'PC - デスクトップ分身（未実装）',
@@ -1345,40 +1346,55 @@ export default {
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
     bettergiRootPathSaved: 'BetterGI のルートフォルダーを保存しました',
     bettergiInvalidDirectory: '選択したフォルダーは無効です',
-    bettergiExeNotFound: '選択したフォルダーに {p0} が見つかりません。BetterGI スクリプトのルートフォルダーを選択してください。',
+    bettergiExeNotFound:
+      '選択したフォルダーに {p0} が見つかりません。BetterGI スクリプトのルートフォルダーを選択してください。',
     bettergiNotBettergiScript: 'このスクリプトは BetterGI ではありません',
     bettergiConfigure: 'BetterGI を設定',
-    bettergiMasConfigTooltip: '独立設定モード：BetterGI が開きます。「一条龍」ページで「MAS独立配置」を編集してください。保存して終了すると、このユーザーへ自動的に読み戻されます。',
+    bettergiMasConfigTooltip:
+      '独立設定モード：BetterGI が開きます。「一条龍」ページで「MAS独立配置」を編集してください。保存して終了すると、このユーザーへ自動的に読み戻されます。',
     bettergiConfiguringTitle: 'BetterGI の設定中です',
     bettergiConfiguringDesc: 'BetterGI の画面で設定を完了してください。',
-    bettergiConfiguringDesc2: '完了したら「設定を保存」をクリックしてこのセッションを終了してください。',
-    bettergiUserNameHint: 'ユーザーを区別するための名前です。同じ名前のユーザーは統計上、同一ユーザーとして扱われます',
+    bettergiConfiguringDesc2:
+      '完了したら「設定を保存」をクリックしてこのセッションを終了してください。',
+    bettergiUserNameHint:
+      'ユーザーを区別するための名前です。同じ名前のユーザーは統計上、同一ユーザーとして扱われます',
     bettergiAccount: 'アカウント',
     bettergiEnterAccount: 'アカウントを入力してください',
-    bettergiAccountHint: 'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。ドロップダウンモードでは電話番号またはメールアドレスを完全な形で入力すると、MAS がゲームの表示に合わせて伏せ字に変換します',
+    bettergiAccountHint:
+      'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。ドロップダウンモードでは電話番号またはメールアドレスを完全な形で入力すると、MAS がゲームの表示に合わせて伏せ字に変換します',
     bettergiAccountUid: 'アカウント UID',
     bettergiEnterUid: 'UID を入力してください（アカウント切り替え時は推奨）',
-    bettergiUidHint: '任意項目です。アカウント切り替え時は入力を推奨します。切り替え前に一致が確認できた場合、切り替え処理は行われません',
-    bettergiPasswordHint: 'パスワードが未入力の場合、アカウント切り替えはゲーム内のドロップダウンで行われます。パスワードログインで切り替える場合は必ず入力してください',
-    bettergiEnterPasswordPlaceholder: 'パスワードを入力してください（未入力の場合はドロップダウンで切り替えます）',
+    bettergiUidHint:
+      '任意項目です。アカウント切り替え時は入力を推奨します。切り替え前に一致が確認できた場合、切り替え処理は行われません',
+    bettergiPasswordHint:
+      'パスワードが未入力の場合、アカウント切り替えはゲーム内のドロップダウンで行われます。パスワードログインで切り替える場合は必ず入力してください',
+    bettergiEnterPasswordPlaceholder:
+      'パスワードを入力してください（未入力の場合はドロップダウンで切り替えます）',
     bettergiGameServer: 'ゲームサーバー',
-    bettergiGameServerHint: 'このアカウントのサーバー：公式サーバー / B サーバー / アジア / ヨーロッパ / アメリカ / 台港澳',
+    bettergiGameServerHint:
+      'このアカウントのサーバー：公式サーバー / B サーバー / アジア / ヨーロッパ / アメリカ / 台港澳',
     bettergiServerCn: '公式サーバー',
     bettergiServerBili: 'B サーバー',
     bettergiServerAsia: 'アジア',
     bettergiServerEurope: 'ヨーロッパ',
     bettergiServerAmerica: 'アメリカ',
     bettergiServerTwHkMo: '台港澳',
-    bettergiTaskConfigHint: '実行する一条龍の組み込み設定グループを選択します。「スクリプト直接制御」を選んだ場合は BetterGI 側の設定に従うため、ここは編集できません',
-    bettergiDirectModeAlert: '現在は「スクリプト直接制御」のため、タスク設定は編集できません。このページでユーザーごとの一条龍を設定するには「ユーザー独立設定」に切り替えてください。',
+    bettergiTaskConfigHint:
+      '実行する一条龍の組み込み設定グループを選択します。「スクリプト直接制御」を選んだ場合は BetterGI 側の設定に従うため、ここは編集できません',
+    bettergiDirectModeAlert:
+      '現在は「スクリプト直接制御」のため、タスク設定は編集できません。このページでユーザーごとの一条龍を設定するには「ユーザー独立設定」に切り替えてください。',
     bettergiSwitchToMasConfig: 'ユーザー独立設定に切り替える',
     bettergiMasConfigHowTo: '「ユーザー独立設定」の使い方',
-    bettergiMasConfigHowTo1a: 'このユーザーの一条龍は独立設定で動作し、MAS は「MAS独立配置」スロットから起動します。タスクを調整するには右上の「BetterGI を設定」をクリックし、「一条龍」ページで次の名前の設定を選んで編集してください：',
+    bettergiMasConfigHowTo1a:
+      'このユーザーの一条龍は独立設定で動作し、MAS は「MAS独立配置」スロットから起動します。タスクを調整するには右上の「BetterGI を設定」をクリックし、「一条龍」ページで次の名前の設定を選んで編集してください：',
     bettergiMasConfigSlotName: '「MAS独立配置」',
-    bettergiMasConfigHowTo1b: '。保存して終了すると MAS が自動的にこのユーザーへ読み戻します。既存の一条龍設定（「默认配置」など）は変更しないでください。独立設定が読むのは「MAS独立配置」スロットのみで、同名の実設定は読み込まれず、影響も受けません。',
-    bettergiMasConfigHowTo2: '下の共通戦闘パーティー / 共通戦闘ストラテジー：空欄のままにすると BetterGI の現在の設定が使われます（ストラテジーが空欄の場合は「パーティーに応じて自動選択」）。入力すると、一条龍内の戦闘を伴う 4 つのタスク（地脈の花、秘境、ボス討伐、幽境危戦）に適用され、BetterGI の既定のパーティーとストラテジーを置き換えます。',
+    bettergiMasConfigHowTo1b:
+      '。保存して終了すると MAS が自動的にこのユーザーへ読み戻します。既存の一条龍設定（「默认配置」など）は変更しないでください。独立設定が読むのは「MAS独立配置」スロットのみで、同名の実設定は読み込まれず、影響も受けません。',
+    bettergiMasConfigHowTo2:
+      '下の共通戦闘パーティー / 共通戦闘ストラテジー：空欄のままにすると BetterGI の現在の設定が使われます（ストラテジーが空欄の場合は「パーティーに応じて自動選択」）。入力すると、一条龍内の戦闘を伴う 4 つのタスク（地脈の花、秘境、ボス討伐、幽境危戦）に適用され、BetterGI の既定のパーティーとストラテジーを置き換えます。',
     bettergiOneDragonName: '一条龍の設定名',
-    bettergiOneDragonNameHint: '必須項目です。BetterGI の「一条龍」ページで保存済み（または今後保存する）設定名に対応します。既定は「默认配置」です',
+    bettergiOneDragonNameHint:
+      '必須項目です。BetterGI の「一条龍」ページで保存済み（または今後保存する）設定名に対応します。既定は「默认配置」です',
     bettergiPickOneDragonName: '一条龍の設定名を選択してください',
     bettergiDailyRewardParty: '報酬受け取りパーティー',
     bettergiEnterDailyRewardParty: '報酬受け取りパーティーを入力してください',
@@ -1388,7 +1404,8 @@ export default {
     bettergiBattleStrategy: '共通戦闘ストラテジー',
     bettergiEnterBattleStrategy: '共通戦闘ストラテジーを入力してください',
     bettergiBattleStrategyHint: '空欄の場合は「パーティーに応じて自動選択」になります',
-    bettergiGroupCapsuleHint: '各ピルはタスクグループのスイッチです。オンのグループだけが実行されます。',
+    bettergiGroupCapsuleHint:
+      '各ピルはタスクグループのスイッチです。オンのグループだけが実行されます。',
     bettergiGroupMail: 'メールを受け取る',
     bettergiGroupResin: '樹脂を精製する',
     bettergiGroupLeyLine: '地脈の花',
@@ -1398,12 +1415,17 @@ export default {
     bettergiGroupDailyReward: 'デイリー報酬を受け取る',
     bettergiGroupTeapot: '塵歌壺の報酬を受け取る',
     bettergiCustomGroups: 'カスタム設定グループ',
-    bettergiCustomGroupsTip1: '取得元：BetterGI の一条龍設定にある、組み込み 8 グループ以外のカスタム設定グループです（BetterGI の一条龍画面で追加します）。下のタスクグループのスイッチとは別物です。',
-    bettergiCustomGroupsTip2a: '使い方（この表はスイッチにすぎません）：一条龍に存在してこの表に無いグループは',
+    bettergiCustomGroupsTip1:
+      '取得元：BetterGI の一条龍設定にある、組み込み 8 グループ以外のカスタム設定グループです（BetterGI の一条龍画面で追加します）。下のタスクグループのスイッチとは別物です。',
+    bettergiCustomGroupsTip2a:
+      '使い方（この表はスイッチにすぎません）：一条龍に存在してこの表に無いグループは',
     bettergiCustomGroupsDefaultRun: '既定で実行されます',
-    bettergiCustomGroupsTip2b: '。この表に追加したグループは行のスイッチに従い、オンなら実行、オフなら実行されません。',
-    bettergiCustomGroupsTip3: '「設定グループを追加」では、既存の BetterGI 設定（独立設定モードでは「MAS独立配置」スロット）から管理対象のグループを選びます。表に入れていないグループも一条龍に残り、この表が原因で失われることはありません。',
-    bettergiCustomGroupsDesc: 'BetterGI の一条龍設定にある、組み込み 8 グループ以外のカスタム設定グループが対象です。この表はスイッチにすぎず、一条龍にあって表に無いグループは既定で実行され、表にあるグループは行のスイッチに従います（オンなら実行、オフなら実行されません）。',
+    bettergiCustomGroupsTip2b:
+      '。この表に追加したグループは行のスイッチに従い、オンなら実行、オフなら実行されません。',
+    bettergiCustomGroupsTip3:
+      '「設定グループを追加」では、既存の BetterGI 設定（独立設定モードでは「MAS独立配置」スロット）から管理対象のグループを選びます。表に入れていないグループも一条龍に残り、この表が原因で失われることはありません。',
+    bettergiCustomGroupsDesc:
+      'BetterGI の一条龍設定にある、組み込み 8 グループ以外のカスタム設定グループが対象です。この表はスイッチにすぎず、一条龍にあって表に無いグループは既定で実行され、表にあるグループは行のスイッチに従います（オンなら実行、オフなら実行されません）。',
     bettergiAddGroup: '設定グループを追加',
     bettergiDeleteGroupConfirm: '選択した設定グループを削除しますか？',
     bettergiAdding: '追加中...',
@@ -1420,7 +1442,8 @@ export default {
     bettergiConnectFailed: 'BetterGI 設定の接続に失敗しました: {p0}',
     bettergiSessionFailed: 'BetterGI の設定に失敗しました: {p0}',
     bettergiSessionOpened: 'BetterGI 設定を開きました',
-    bettergiSessionTimeoutWarn: 'BetterGI 設定セッションがまもなくタイムアウトします。30 秒後に自動保存されます',
+    bettergiSessionTimeoutWarn:
+      'BetterGI 設定セッションがまもなくタイムアウトします。30 秒後に自動保存されます',
     bettergiSettingsSaved: 'BetterGI の設定を保存しました',
     bettergiSettingsSaveFailed: 'BetterGI の設定を保存できませんでした',
   },
@@ -1851,6 +1874,24 @@ export default {
   },
   init: {
     unknownStepP0: '不明なステップ: {p0}',
+    runtime: {
+      takenOver: 'ランタイムが担当',
+      preparingEnv: '実行環境を準備',
+    },
+    failure: {
+      retryOtherMirror: '別のミラーで再試行',
+      rebuildEnvironment: '環境を再構築',
+      openLog: 'ログを開く',
+      runDoctor: '診断を実行',
+      internalErrorNotice: 'ランタイム内部のエラーです。ログを添えて報告してください',
+      contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      logTitle: '失敗ログ',
+      openLogFailed: 'ログを開けませんでした: {error}',
+      doctorTitle: '実行環境の診断',
+      doctorEmpty: '診断結果に項目がありません',
+      doctorFailed: '診断の実行に失敗しました: {error}',
+      doctorRunning: '実行環境を診断しています...',
+    },
     common: {
       currentMirror: '使用中: {mirror}',
     },
