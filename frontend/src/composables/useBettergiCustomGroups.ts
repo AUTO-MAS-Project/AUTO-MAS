@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import type { TableColumnsType } from 'ant-design-vue'
-import { BettergiService } from '@/api'
+import { BetterGiService } from '@/api'
 
 const logger = window.electronAPI.getLogger('BetterGI自定义配置组')
 
@@ -96,7 +96,7 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const fetchBettergiGroups = async (): Promise<BettergiCustomGroupRow[]> => {
     try {
       const resp =
-        await BettergiService.getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
+        await BetterGiService.getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
           scriptId,
           configName(),
           masConfig()

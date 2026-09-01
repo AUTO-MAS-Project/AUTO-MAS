@@ -19,3 +19,4 @@ export type BetterGIConfig_Run = {
      */
     RunTimeLimit?: (number | null);
 };
+
