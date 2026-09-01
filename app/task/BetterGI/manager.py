@@ -22,9 +22,9 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
@@ -33,7 +33,7 @@ from app.tools.game_sign_notify import (
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
-from .AutoProxy import AutoProxyTask, _BGI_REL_EXE
+from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 
@@ -84,7 +84,9 @@ class BetterGIManager(TaskExecuteBase):
                 and self.script_info.user_list[0].name == "暂未加载"
             ):
                 self.script_info.user_list = [
-                    UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+                    UserItem(
+                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+                    )
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
@@ -139,7 +141,9 @@ class BetterGIManager(TaskExecuteBase):
         if self.check_result != "Pass":
             self.script_info.status = "异常"
             await Config.send_websocket_message(
-                id=self.task_info.task_id, type="Info", data={"Error": self.check_result}
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": self.check_result},
             )
             return
 
@@ -169,7 +173,9 @@ class BetterGIManager(TaskExecuteBase):
             sub_check = await method.check()
             if sub_check != "Pass":
                 self.check_result = sub_check
-                current_user = self.script_info.user_list[self.script_info.current_index]
+                current_user = self.script_info.user_list[
+                    self.script_info.current_index
+                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
                 await Config.send_websocket_message(
@@ -189,8 +195,7 @@ class BetterGIManager(TaskExecuteBase):
                 await script_cfg.unlock()
 
             if self.check_result != "Pass" and not any(
-                user.status in ("完成", "跳过")
-                for user in self.script_info.user_list
+                user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await script_cfg.UserData.load(await self.user_config.toDict())

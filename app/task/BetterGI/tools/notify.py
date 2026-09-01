@@ -42,7 +42,9 @@ def _step_duration(step: dict) -> str:
         b = datetime.strptime(step["end"].split(".")[0], _STEP_TIME_FMT)
     except (KeyError, ValueError, AttributeError):
         return "—"
-    total = (b.hour - a.hour) * 3600 + (b.minute - a.minute) * 60 + (b.second - a.second)
+    total = (
+        (b.hour - a.hour) * 3600 + (b.minute - a.minute) * 60 + (b.second - a.second)
+    )
     total = max(0, total)
     if total < 60:
         return f"{total}秒"
@@ -64,7 +66,9 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
                 f"✓ {tag} {s['task']} 成功（含 {s['issue_count']} 处异常: {s['issue_text']}） {span}"
             )
         else:
-            reason = f" · {s['issue_text']}" if s["issue_text"] else " · 未走完就结束/中断"
+            reason = (
+                f" · {s['issue_text']}" if s["issue_text"] else " · 未走完就结束/中断"
+            )
             lines.append(f"✗ {tag} {s['task']} 失败{reason} {span}")
     return "\n".join(lines)
 
@@ -100,9 +104,9 @@ async def push_notification(
         )
         # 完整版：4 字段 + 「一条龙分步执行」
         message_text_full = f"{message_text}{steps_text}"
-        message_html = Config.notify_env.get_template(
-            "general_statistics.html"
-        ).render(message)
+        message_html = Config.notify_env.get_template("general_statistics.html").render(
+            message
+        )
 
         if user_config.get("Notify", "IfSendMail"):
             if user_config.get("Notify", "ToAddress"):
@@ -136,9 +140,7 @@ async def push_notification(
         for webhook in user_config.Notify_CustomWebhooks.values():
             # Webhook 目标多为聊天机器人（企业微信 2048 字节 / Discord 2000 字符 / Telegram
             # 4096 字符），有真实字数瓶颈 → 用回简略版，避免分步表塞爆被静默丢弃。
-            await Notify.WebhookPush(
-                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-            )
+            await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
         return
 
     if mode != "代理结果":
@@ -147,10 +149,7 @@ async def push_notification(
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
     if not message.get("game_sign_summary", False) and (
         result_time_setting != "任何时刻"
-        and (
-            result_time_setting != "仅失败时"
-            or message["uncompleted_count"] == 0
-        )
+        and (result_time_setting != "仅失败时" or message["uncompleted_count"] == 0)
     ):
         return
 
@@ -160,9 +159,7 @@ async def push_notification(
         f"未完成数: {message['uncompleted_count']}\n\n"
         f"{message['result']}"
     )
-    message_html = Config.notify_env.get_template("general_result.html").render(
-        message
-    )
+    message_html = Config.notify_env.get_template("general_result.html").render(message)
     serverchan_message = message_text.replace("\n", "\n\n")
 
     if Config.get("Notify", "IfSendMail"):
@@ -178,11 +175,7 @@ async def push_notification(
         )
 
     for webhook in Config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(
-            title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-        )
+        await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
 
     if Config.get("Notify", "IfKoishiSupport"):
-        await Notify.send_koishi(
-            f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
-        )
+        await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
