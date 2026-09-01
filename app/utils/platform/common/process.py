@@ -31,11 +31,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from app.utils import get_logger
 from app.utils.platform import window
 from app.utils.platform.common.errors import UnsupportedPlatformError
 from app.utils.platform.process import platform_process
 
 from .process_runner import ProcessResult, ProcessRunner
+
+logger = get_logger("进程管理")
 
 
 @dataclass
@@ -260,15 +263,44 @@ class ProcessManager:
                 stderr = asyncio.subprocess.PIPE
                 drain_streams.append("stderr")
 
-        self.process = await asyncio.create_subprocess_exec(
-            program,
-            *args,
-            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            creationflags=platform_process.creation_flags,
-        )
+        resolved_cwd = cwd or (Path(program).parent if Path(program).is_file() else None)
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                program,
+                *args,
+                cwd=resolved_cwd,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                creationflags=platform_process.creation_flags,
+            )
+        except OSError as exc:
+            # 受 AUTO-MAS-Runtime 监督时 creation_flags 带
+            # CREATE_BREAKAWAY_FROM_JOB（详见 WindowsProcessPlatform），让模拟
+            # 器/游戏之类的外部进程不随后端一起被 Job 回收。但父进程若恰好处
+            # 在一个不允许 breakaway 的 Job 里，CreateProcess 会以
+            # ERROR_ACCESS_DENIED（WinError 5，映射为 PermissionError）失败——
+            # 去掉该位重试一次，此时子进程会留在当前 Job 里。
+            breakaway_flag = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+            if (
+                os.name != "nt"
+                or not (platform_process.creation_flags & breakaway_flag)
+                or getattr(exc, "winerror", None) != 5
+            ):
+                raise
+            logger.warning(
+                f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
+                f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
+            )
+            self.process = await asyncio.create_subprocess_exec(
+                program,
+                *args,
+                cwd=resolved_cwd,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                creationflags=platform_process.creation_flags & ~breakaway_flag,
+            )
 
         # 启动协程消费管道流以防止阻塞
         if drain_streams:

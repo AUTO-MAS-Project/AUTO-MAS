@@ -99,6 +99,37 @@ def venv_python_exe(venv_path: str | Path) -> Path:
     return path / "bin" / "python"
 
 
+def venv_base_python_missing(venv_path: str | Path) -> bool:
+    """venv 自己的文件都在，但 pyvenv.cfg 里 home 指向的基解释器已经不存在。
+
+    venv 的 python.exe（Windows 上）在启动时要靠 pyvenv.cfg 的 home 才能定位
+    标准库/DLL 所在目录，不是自包含的——home 目录被删掉后 venv 会静默失效，
+    即使 venv 自己的文件一个没少。这种情况出现在：引导用的基解释器本身是另
+    一个 venv（比如受管模式下落到 sys.executable 的那个监督器管理的
+    venv），而它之后被整个删掉重建过。
+
+    home 行缺失或读不出时不判定失效，交给调用方已有的结构完整性检查处理。
+    """
+
+    try:
+        text = (Path(venv_path) / "pyvenv.cfg").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return False
+
+    home: str | None = None
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip().casefold() == "home":
+            home = value.strip()
+    if not home:
+        return False
+
+    exe_name = "python.exe" if os.name == "nt" else "python"
+    return not (Path(home) / exe_name).is_file()
+
+
 def _coerce_agent_configs(
     raw_agent: MaaFWAgent
     | list[MaaFWAgent]
