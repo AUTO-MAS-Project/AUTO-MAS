@@ -87,10 +87,15 @@ _NTE_CLIENT_PROCESS = "HTGame.exe"
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
-# 启动界面稳定等待：窗口已出现但尚未进入可执行态（仍停在 splash/加载过渡帧）时，
-# 在宽限期内轮询等待「标题界面」或「登录面板」出现，避免在过渡帧上立即误判失败；
-# 超时才按停在标题界面的预期抛错，请用户人工确认。
-_SWITCH_STABILIZE_SECONDS = 45.0
+# 启动界面稳定等待：窗口已出现但尚未进入可执行态（仍停在 splash/加载/游戏内更新
+# 过渡帧）时，在硬上限内轮询等待「标题界面」或「登录面板」出现。异环更新频繁，点
+# 「开始游戏」后游戏内更新可能耗时很长，故界面仍在变化（有进展）时持续顺延等待；
+# 只有持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展（界面静止且仍非标题/登录）才判失败。
+_IN_GAME_UPDATE_TIMEOUT = 1800.0
+# 长时间无进展判定：界面静止达到该时长仍非标题/登录面板则视为卡死，提前失败。
+_IN_GAME_STALL_SECONDS = 60.0
+# 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
+_IN_GAME_POLL_INTERVAL = 3.0
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
@@ -350,9 +355,10 @@ def _on_login_panel(hwnd: int) -> bool:
     return _find_text(_read_texts(hwnd), _PANEL_TEXTS) is not None
 
 
-def _on_title_screen(hwnd: int) -> bool:
-    """是否处于标题界面（独有文本「进入游戏」）。"""
-    return _find_text(_read_texts(hwnd), _TITLE_TEXTS) is not None
+def _frame_signature(frame: np.ndarray) -> int:
+    """对下采样的帧做哈希，用于判断界面是否仍在变化（有更新/加载进展）。"""
+    small = frame[::40, ::40]
+    return hash(small.tobytes())
 
 
 def _wait_for_actionable_state(
@@ -360,25 +366,42 @@ def _wait_for_actionable_state(
 ) -> None:
     """等待进入可执行的切号态（标题界面或登录面板）。
 
-    游戏窗口刚出现时可能仍停在启动过渡帧（splash/加载），此时标题界面与登录
-    面板都不命中。若立即按标题界面退出图标分流，可能落在不匹配的画面上。故在
-    宽限期 ``_SWITCH_STABILIZE_SECONDS`` 内轮询等待两态之一出现；超时仍未命中
-    才抛错（可能未停在标题界面，需人工确认）。
+    游戏窗口刚出现时可能仍停在启动过渡帧（splash/加载），而异环更新频繁，点「开始
+    游戏」后游戏内可能出现体积大、耗时长更新的界面（此时标题界面与登录面板都不命中）。
+    若立即按标题界面退出图标分流，会落在不匹配的画面上。故采用「进展续延」语义等待：
 
-    进度日志按约 5 条/轮询节流，避免每秒向调度台刷屏。
+    - 命中标题界面/登录面板 → 返回，由调用方按对应态执行；
+    - 界面仍在变化（有更新/加载进展）→ 持续顺延等待，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
+    - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非标题/登录 → 判卡死提前失败。
+
+    进度日志按约 5 条/轮询节流，避免向调度台频繁刷屏。
     """
-    deadline = time.monotonic() + _SWITCH_STABILIZE_SECONDS
+    deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
+    last_progress = time.monotonic()
+    last_sig: int | None = None
     iter_count = 0
     while time.monotonic() < deadline:
-        if _on_login_panel(hwnd) or _on_title_screen(hwnd):
+        frame = _capture_window(hwnd, activate=False)
+        items = ocr_image(frame)
+        _dump_ocr_items(items)
+        if (
+            _find_text(items, _PANEL_TEXTS) is not None
+            or _find_text(items, _TITLE_TEXTS) is not None
+        ):
             return
+        sig = _frame_signature(frame)
+        if sig != last_sig:
+            last_sig = sig
+            last_progress = time.monotonic()
+        if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
+            break
         if iter_count % 5 == 0:
-            on_log("窗口已出现但尚未进入标题界面或登录面板，等待启动过渡帧稳定...")
+            on_log("异环仍在游戏内更新/加载过渡帧中，等待进入标题界面或登录面板...")
         iter_count += 1
-        time.sleep(1)
+        time.sleep(_IN_GAME_POLL_INTERVAL)
     raise RuntimeError(
-        "等待异环标题界面/登录面板稳定超时 "
-        f"（{_SWITCH_STABILIZE_SECONDS:g}s），请人工确认游戏已停在标题界面"
+        "等待异环标题界面/登录面板超时：长时间无进展或超过硬上限"
+        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），请人工确认游戏已停在标题界面"
     )
 
 
