@@ -32,6 +32,7 @@ from .security import (
     format_exception_reason,
     sanitize_log_message,
 )
+from .supervision import is_supervised
 
 _LAZY_EXPORTS = {
     "LogMonitor": (".LogMonitor", "LogMonitor"),
@@ -136,6 +137,7 @@ __all__ = [
     "dpapi_decrypt",
     "format_exception_reason",
     "sanitize_log_message",
+    "is_supervised",
     "strptime",
     "MumuManager",
     "LDManager",

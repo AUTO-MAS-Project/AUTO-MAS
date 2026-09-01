@@ -31,6 +31,23 @@ class ResolveHttpPortTest(unittest.TestCase):
                         main.resolve_http_port(False), main.DEFAULT_HTTP_PORT
                     )
 
+    def test_supervised_forces_default_port_ignoring_dev_and_override(self) -> None:
+        """受监督模式端口固定 36163：开发环境判据与 AUTO_MAS_HTTP_PORT 均不生效。
+
+        AUTO-MAS-Runtime 健康检查固定打 36163，不能因为宿主环境残留的
+        .env / AUTO_MAS_ENV=development 或历史 AUTO_MAS_HTTP_PORT 而错开端口。
+        """
+
+        with patch.dict(
+            os.environ,
+            {
+                "AUTO_MAS_SUPERVISED": "1",
+                "AUTO_MAS_ENV": "development",
+                "AUTO_MAS_HTTP_PORT": "36164",
+            },
+        ):
+            self.assertEqual(main.resolve_http_port(True), main.DEFAULT_HTTP_PORT)
+
 
 if __name__ == "__main__":
     unittest.main()
