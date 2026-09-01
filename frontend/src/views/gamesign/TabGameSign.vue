@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
   SwapOutlined,
   QrcodeOutlined,
+  MessageOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
@@ -79,13 +80,22 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const asString = (value: unknown) => (typeof value === 'string' ? value : '')
 
-const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
-  useGameSignAccountApi()
+const {
+  addAccount,
+  updateAccount,
+  sendKuroSmsCode,
+  loginKuroSms,
+  loginTaygedo,
+  loginSkland,
+  deleteAccount,
+} = useGameSignAccountApi()
 const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
-const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
+const credentialAction = ref<
+  'kuro-sms-send' | 'kuro-sms-login' | 'taygedo-login' | 'skland-login' | null
+>(null)
 
 const loadAccounts = async () => {
   try {
@@ -207,6 +217,13 @@ const onDragEnd = async (evt: DragEndEvent) => {
 
 const editModalVisible = ref(false)
 const editingAccount = ref<AccountInstance | null>(null)
+const kuroSmsModalVisible = ref(false)
+const kuroSmsAccountId = ref('')
+const kuroSmsPhone = ref('')
+const kuroSmsCode = ref('')
+const kuroSmsSessionId = ref('')
+const kuroSmsExpiresIn = ref(0)
+const kuroSmsResendIn = ref(0)
 const taygedoLoginModalVisible = ref(false)
 const taygedoLoginAccountId = ref('')
 const taygedoLoginPhone = ref('')
@@ -215,6 +232,43 @@ const sklandLoginModalVisible = ref(false)
 const sklandLoginAccountId = ref('')
 const sklandLoginPhone = ref('')
 const sklandLoginPassword = ref('')
+let kuroSmsCountdownTimer: ReturnType<typeof setInterval> | undefined
+let kuroSmsRequestGeneration = 0
+
+const stopKuroSmsCountdown = () => {
+  if (kuroSmsCountdownTimer !== undefined) {
+    clearInterval(kuroSmsCountdownTimer)
+    kuroSmsCountdownTimer = undefined
+  }
+}
+
+const startKuroSmsCountdown = (expiresIn: number) => {
+  stopKuroSmsCountdown()
+  kuroSmsExpiresIn.value = expiresIn
+  kuroSmsResendIn.value = 60
+  kuroSmsCountdownTimer = setInterval(() => {
+    kuroSmsExpiresIn.value = Math.max(0, kuroSmsExpiresIn.value - 1)
+    kuroSmsResendIn.value = Math.max(0, kuroSmsResendIn.value - 1)
+    if (kuroSmsExpiresIn.value === 0) {
+      kuroSmsSessionId.value = ''
+      kuroSmsCode.value = ''
+      stopKuroSmsCountdown()
+    }
+  }, 1000)
+}
+
+const closeKuroSmsModal = () => {
+  kuroSmsRequestGeneration += 1
+  stopKuroSmsCountdown()
+  kuroSmsModalVisible.value = false
+  kuroSmsAccountId.value = ''
+  kuroSmsPhone.value = ''
+  kuroSmsCode.value = ''
+  kuroSmsSessionId.value = ''
+  kuroSmsExpiresIn.value = 0
+  kuroSmsResendIn.value = 0
+  credentialAction.value = null
+}
 
 const closeTaygedoLoginModal = () => {
   taygedoLoginModalVisible.value = false
@@ -240,6 +294,18 @@ const openTaygedoLoginModal = () => {
   taygedoLoginModalVisible.value = true
 }
 
+const openKuroSmsModal = () => {
+  if (!editingAccount.value) return
+  kuroSmsRequestGeneration += 1
+  kuroSmsAccountId.value = editingAccount.value.uid
+  kuroSmsPhone.value = ''
+  kuroSmsCode.value = ''
+  kuroSmsSessionId.value = ''
+  kuroSmsExpiresIn.value = 0
+  kuroSmsResendIn.value = 0
+  kuroSmsModalVisible.value = true
+}
+
 const openSklandLoginModal = () => {
   if (!editingAccount.value) return
   sklandLoginAccountId.value = editingAccount.value.uid
@@ -249,6 +315,7 @@ const openSklandLoginModal = () => {
 }
 
 const openEditModal = (account: AccountInstance) => {
+  closeKuroSmsModal()
   closeTaygedoLoginModal()
   closeSklandLoginModal()
   editingAccount.value = { ...account }
@@ -257,6 +324,7 @@ const openEditModal = (account: AccountInstance) => {
 
 const handleEditModalCancel = () => {
   closeQrModal()
+  closeKuroSmsModal()
   closeTaygedoLoginModal()
   closeSklandLoginModal()
   editModalVisible.value = false
@@ -275,12 +343,93 @@ const handleEditModalOk = async () => {
     }
     message.success(t('gamesign.toast.tokenSaved'))
     closeQrModal()
+    closeKuroSmsModal()
     editModalVisible.value = false
     editingAccount.value = null
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 Token 失败: ${errorMsg}`)
     message.error(t('gamesign.toast.saveFailed'))
+  }
+}
+
+const handleSendKuroSmsCode = async () => {
+  const accountId = kuroSmsAccountId.value
+  const phone = kuroSmsPhone.value.trim()
+  if (!accountId) return
+  if (!/^1\d{10}$/.test(phone)) {
+    message.warning(t('gamesign.toast.needKuroPhone'))
+    return
+  }
+  const requestGeneration = ++kuroSmsRequestGeneration
+  credentialAction.value = 'kuro-sms-send'
+  try {
+    const result = await sendKuroSmsCode(accountId, phone)
+    if (
+      requestGeneration !== kuroSmsRequestGeneration ||
+      !kuroSmsModalVisible.value ||
+      kuroSmsAccountId.value !== accountId
+    ) {
+      return
+    }
+    kuroSmsPhone.value = phone
+    kuroSmsSessionId.value = result.sessionId
+    kuroSmsCode.value = ''
+    startKuroSmsCountdown(result.expiresIn)
+  } catch {
+    // sendKuroSmsCode 已展示脱敏错误，保留弹窗供用户重试。
+  } finally {
+    if (requestGeneration === kuroSmsRequestGeneration) {
+      credentialAction.value = null
+    }
+  }
+}
+
+const handleKuroSmsLogin = async () => {
+  const accountId = kuroSmsAccountId.value
+  const sessionId = kuroSmsSessionId.value
+  const phone = kuroSmsPhone.value.trim()
+  const code = kuroSmsCode.value.trim()
+  if (!accountId) return
+  if (!sessionId) {
+    message.warning(t('gamesign.toast.needKuroSession'))
+    return
+  }
+  if (!/^\d{4,8}$/.test(code)) {
+    message.warning(t('gamesign.toast.needKuroCode'))
+    return
+  }
+  const requestGeneration = ++kuroSmsRequestGeneration
+  credentialAction.value = 'kuro-sms-login'
+  try {
+    await loginKuroSms(accountId, sessionId, phone, code)
+    if (
+      requestGeneration !== kuroSmsRequestGeneration ||
+      !kuroSmsModalVisible.value ||
+      kuroSmsAccountId.value !== accountId
+    ) {
+      return
+    }
+    await loadAccounts()
+    if (
+      requestGeneration !== kuroSmsRequestGeneration ||
+      !kuroSmsModalVisible.value ||
+      kuroSmsAccountId.value !== accountId
+    ) {
+      return
+    }
+    const updated = accounts.value.find(item => item.uid === accountId)
+    if (updated && editingAccount.value?.uid === accountId) {
+      editingAccount.value = { ...updated }
+    }
+    closeKuroSmsModal()
+  } catch {
+    // loginKuroSms 已展示脱敏错误，保留短期会话供用户修正验证码。
+  } finally {
+    if (requestGeneration === kuroSmsRequestGeneration) {
+      kuroSmsCode.value = ''
+      credentialAction.value = null
+    }
   }
 }
 
@@ -455,6 +604,10 @@ const handleManualSign = async () => {
 
 onMounted(() => {
   loadAccounts()
+})
+
+onBeforeUnmount(() => {
+  stopKuroSmsCountdown()
 })
 </script>
 
@@ -689,6 +842,8 @@ onMounted(() => {
       :ok-text="t('gamesign.edit.save')"
       :cancel-text="t('common.cancel')"
       :width="560"
+      :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
+      centered
       @ok="handleEditModalOk"
       @cancel="handleEditModalCancel"
     >
@@ -709,6 +864,7 @@ onMounted(() => {
           />
           <a-button
             size="small"
+            danger
             class="credential-helper-btn"
             style="margin-top: 6px"
             :loading="qrLoading"
@@ -728,6 +884,18 @@ onMounted(() => {
             :placeholder="t('gamesign.edit.kuroPlaceholder')"
             allow-clear
           />
+          <a-button
+            size="small"
+            danger
+            class="credential-helper-btn"
+            style="margin-top: 6px"
+            :loading="credentialAction === 'kuro-sms-send'"
+            :disabled="credentialAction !== null"
+            @click="openKuroSmsModal"
+          >
+            <template #icon><MessageOutlined /></template>
+            {{ t('gamesign.edit.smsLogin') }}
+          </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">{{
           t('gamesign.edit.skland')
@@ -741,6 +909,7 @@ onMounted(() => {
           />
           <a-button
             size="small"
+            danger
             class="credential-helper-btn"
             style="margin-top: 6px"
             :loading="credentialAction === 'skland-login'"
@@ -762,6 +931,7 @@ onMounted(() => {
           />
           <a-button
             size="small"
+            danger
             class="credential-helper-btn"
             style="margin-top: 6px"
             :loading="credentialAction === 'taygedo-login'"
@@ -771,6 +941,88 @@ onMounted(() => {
             {{ t('gamesign.edit.passwordLogin') }}
           </a-button>
         </div>
+      </div>
+    </a-modal>
+
+    <!-- 库街区短信验证码获取 Token 弹窗 -->
+    <a-modal
+      v-model:open="kuroSmsModalVisible"
+      :title="t('gamesign.login.kuroTitle')"
+      :footer="null"
+      :width="440"
+      @cancel="closeKuroSmsModal"
+    >
+      <div class="modal-form">
+        <a-alert class="credential-disclaimer" type="warning" show-icon>
+          <template #message>{{ t('gamesign.login.smsDisclaimerTitle') }}</template>
+          <template #description>{{ credentialPrivacyNotice }}</template>
+        </a-alert>
+        <a-alert type="warning" show-icon :message="t('gamesign.login.kuroConflictNotice')" />
+        <div class="form-item-vertical">
+          <span class="form-label">{{ t('gamesign.login.currentAccount') }}</span>
+          <a-input :value="editingAccount?.Name || ''" disabled />
+        </div>
+        <div class="form-item-vertical">
+          <span class="form-label">{{ t('gamesign.login.kuroPhone') }}</span>
+          <div class="sms-send-row">
+            <a-input
+              v-model:value="kuroSmsPhone"
+              autocomplete="tel"
+              inputmode="numeric"
+              :maxlength="11"
+              :disabled="Boolean(kuroSmsSessionId)"
+              :placeholder="t('gamesign.login.kuroPhonePlaceholder')"
+              allow-clear
+            />
+            <a-button
+              danger
+              class="sms-send-button credential-helper-btn"
+              :loading="credentialAction === 'kuro-sms-send'"
+              :disabled="credentialAction !== null || kuroSmsResendIn > 0"
+              @click="handleSendKuroSmsCode"
+            >
+              {{
+                kuroSmsResendIn > 0
+                  ? t('gamesign.login.resendAfter', { seconds: kuroSmsResendIn })
+                  : kuroSmsSessionId
+                    ? t('gamesign.login.resendCode')
+                    : t('gamesign.login.sendCode')
+              }}
+            </a-button>
+          </div>
+        </div>
+        <a-alert
+          v-if="kuroSmsSessionId"
+          type="info"
+          show-icon
+          :message="t('gamesign.login.kuroSessionHint', { seconds: kuroSmsExpiresIn })"
+        />
+        <div class="form-item-vertical">
+          <span class="form-label">{{ t('gamesign.login.smsCode') }}</span>
+          <a-input
+            v-model:value="kuroSmsCode"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            :maxlength="8"
+            :disabled="!kuroSmsSessionId"
+            :placeholder="t('gamesign.login.smsCodePlaceholder')"
+            allow-clear
+            @press-enter="handleKuroSmsLogin"
+          />
+        </div>
+        <a-space style="width: 100%; justify-content: flex-end">
+          <a-button @click="closeKuroSmsModal">{{ t('common.cancel') }}</a-button>
+          <a-button
+            type="primary"
+            danger
+            class="credential-helper-btn"
+            :loading="credentialAction === 'kuro-sms-login'"
+            :disabled="credentialAction !== null || !kuroSmsSessionId"
+            @click="handleKuroSmsLogin"
+          >
+            {{ t('gamesign.login.smsSubmit') }}
+          </a-button>
+        </a-space>
       </div>
     </a-modal>
 
@@ -813,6 +1065,7 @@ onMounted(() => {
           <a-button @click="closeTaygedoLoginModal">{{ t('common.cancel') }}</a-button>
           <a-button
             type="primary"
+            danger
             class="credential-helper-btn"
             :loading="credentialAction === 'taygedo-login'"
             :disabled="credentialAction !== null"
@@ -863,6 +1116,7 @@ onMounted(() => {
           <a-button @click="closeSklandLoginModal">{{ t('common.cancel') }}</a-button>
           <a-button
             type="primary"
+            danger
             class="credential-helper-btn"
             :loading="credentialAction === 'skland-login'"
             :disabled="credentialAction !== null"
@@ -1362,6 +1616,16 @@ onMounted(() => {
   font-weight: 700;
 }
 
+.sms-send-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 136px;
+  gap: 8px;
+}
+
+.sms-send-button {
+  width: 136px;
+}
+
 .community-divider {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
@@ -1463,6 +1727,16 @@ onMounted(() => {
     border: 1px solid var(--ant-color-border);
     border-radius: 8px;
     background: var(--ant-color-bg-container);
+  }
+}
+
+@media (max-width: 480px) {
+  .sms-send-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sms-send-button {
+    width: 100%;
   }
 }
 

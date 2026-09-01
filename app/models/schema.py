@@ -312,6 +312,75 @@ class CommunityActivityOut(OutBase):
     )
 
 
+class KuroSmsSendIn(BaseModel):
+    """库街区短信验证码发送请求。"""
+
+    accountId: str = Field(..., min_length=1, description="账号组 UUID")
+    phone: str = Field(
+        ...,
+        min_length=11,
+        max_length=11,
+        pattern=r"^1\d{10}$",
+        description="库街区手机号",
+    )
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: object) -> str:
+        """去除用户无意输入的首尾空格后再执行手机号约束。"""
+
+        return str(value or "").strip()
+
+
+class KuroSmsSendOut(OutBase):
+    """库街区短信发送响应。"""
+
+    sessionId: str = Field(default="", description="短期短信登录会话标识")
+    expiresIn: int = Field(default=0, description="会话剩余秒数")
+
+
+class KuroSmsLoginIn(BaseModel):
+    """库街区短信验证码登录请求。"""
+
+    accountId: str = Field(..., min_length=1, description="账号组 UUID")
+    sessionId: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="发送验证码返回的短期会话标识",
+    )
+    phone: str = Field(
+        ...,
+        min_length=11,
+        max_length=11,
+        pattern=r"^1\d{10}$",
+        description="库街区手机号",
+    )
+    code: SecretStr = Field(
+        ...,
+        min_length=4,
+        max_length=8,
+        description="短信验证码",
+    )
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: object) -> str:
+        """去除用户无意输入的首尾空格后再执行手机号约束。"""
+
+        return str(value or "").strip()
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, value: SecretStr) -> SecretStr:
+        """只接受数字验证码，并保持 SecretStr 的脱敏表示。"""
+
+        code = value.get_secret_value().strip()
+        if not code.isdigit():
+            raise ValueError("短信验证码必须为数字")
+        return SecretStr(code)
+
+
 class TaygedoLoginIn(BaseModel):
     """塔吉多一次性账号密码登录请求。"""
 

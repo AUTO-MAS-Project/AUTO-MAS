@@ -1,6 +1,12 @@
 import unittest
 
-from app.models.schema import GameSignAccountsListOut
+from pydantic import SecretStr, ValidationError
+
+from app.models.schema import (
+    GameSignAccountsListOut,
+    KuroSmsLoginIn,
+    KuroSmsSendIn,
+)
 
 
 class CommunitySchemaTest(unittest.TestCase):
@@ -30,6 +36,29 @@ class CommunitySchemaTest(unittest.TestCase):
             data["account-1"]["GameSignAccount"]["LastSignDate"],
             "2026-09-01",
         )
+
+    def test_kuro_sms_contract_normalizes_phone_and_keeps_code_secret(self) -> None:
+        request = KuroSmsLoginIn(
+            accountId="account-1",
+            sessionId="session-1",
+            phone=" 13800138000 ",
+            code=SecretStr("123456"),
+        )
+
+        self.assertEqual(request.phone, "13800138000")
+        self.assertEqual(request.code.get_secret_value(), "123456")
+        self.assertNotIn("123456", repr(request))
+
+    def test_kuro_sms_contract_rejects_non_mobile_or_non_numeric_code(self) -> None:
+        with self.assertRaises(ValidationError):
+            KuroSmsSendIn(accountId="account-1", phone="1380013800")
+        with self.assertRaises(ValidationError):
+            KuroSmsLoginIn(
+                accountId="account-1",
+                sessionId="session-1",
+                phone="13800138000",
+                code="12ab56",
+            )
 
 
 if __name__ == "__main__":

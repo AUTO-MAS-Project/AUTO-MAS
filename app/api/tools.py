@@ -54,6 +54,9 @@ from app.models.schema import (
     CommunityActivityResourceOut,
     CommunityActivitySnapshotOut,
     CommunityActivityTaskOut,
+    KuroSmsSendIn,
+    KuroSmsSendOut,
+    KuroSmsLoginIn,
     SklandLoginIn,
     TaygedoLoginIn,
 )
@@ -499,6 +502,160 @@ async def reorder_game_sign_accounts(
             message="调整游戏社区账号组顺序失败，请稍后重试",
         )
     return OutBase()
+
+
+@router.post(
+    "/sign/account/kuro/sms/send",
+    tags=["GameSign"],
+    summary="发送库街区短信验证码",
+    response_model=KuroSmsSendOut,
+    status_code=200,
+)
+async def send_kuro_sms_code(
+    credential: KuroSmsSendIn = Body(...),
+) -> KuroSmsSendOut:
+    """发送库街区短信验证码，不保存手机号或验证码。"""
+
+    from app.tools import kuro as kuro_provider
+
+    try:
+        account_id = str(UUID(credential.accountId))
+        Config.ToolsConfig.GameSign_Accounts[UUID(account_id)]
+        session = await kuro_provider.create_kuro_sms_session(
+            account_id,
+            credential.phone,
+            proxy=Config.proxy,
+        )
+    except kuro_provider.KuroSmsCaptchaRequiredError:
+        _log_community_api_error("库街区短信发送需要安全验证", ValueError("captcha"))
+        return KuroSmsSendOut(
+            code=409,
+            status="error",
+            message="库街区当前要求完成安全验证，请先在库街区客户端或网页完成验证后重试",
+        )
+    except kuro_provider.KuroSmsRateLimitError:
+        _log_community_api_error("库街区短信发送频率受限", ValueError("rate_limit"))
+        return KuroSmsSendOut(
+            code=429,
+            status="error",
+            message="库街区短信验证码发送过于频繁，请稍后重试",
+        )
+    except kuro_provider.KuroSmsError as error:
+        _log_community_api_error("库街区短信发送失败", error)
+        return KuroSmsSendOut(
+            code=400,
+            status="error",
+            message="库街区短信验证码发送失败，请检查手机号或稍后重试",
+        )
+    except KeyError as error:
+        _log_community_api_error("库街区短信发送账号不存在", error)
+        return KuroSmsSendOut(
+            code=404,
+            status="error",
+            message="游戏社区账号不存在，请刷新账号列表后重试",
+        )
+    except ValueError as error:
+        _log_community_api_error("库街区短信发送参数无效", error)
+        return KuroSmsSendOut(
+            code=400,
+            status="error",
+            message="库街区短信验证码发送参数无效",
+        )
+    except Exception as error:
+        _log_community_api_error("库街区短信发送异常", error)
+        return KuroSmsSendOut(
+            code=500,
+            status="error",
+            message="库街区短信验证码发送失败，请检查网络或稍后重试",
+        )
+
+    return KuroSmsSendOut(
+        sessionId=session.session_id,
+        expiresIn=session.expires_in,
+        message="验证码已发送，请输入短信验证码",
+    )
+
+
+@router.post(
+    "/sign/account/kuro/sms/login",
+    tags=["GameSign"],
+    summary="使用库街区短信验证码登录",
+    response_model=OutBase,
+    status_code=200,
+)
+async def login_kuro_sms(
+    credential: KuroSmsLoginIn = Body(...),
+) -> OutBase:
+    """使用一次性短信验证码换取并保存库街区 Token。"""
+
+    from app.tools import kuro as kuro_provider
+
+    try:
+        account_id = str(UUID(credential.accountId))
+        Config.ToolsConfig.GameSign_Accounts[UUID(account_id)]
+        token = await kuro_provider.login_kuro_with_sms(
+            account_id,
+            credential.sessionId,
+            credential.phone,
+            credential.code.get_secret_value(),
+            proxy=Config.proxy,
+        )
+        serialized = kuro_provider.validate_kuro_credential(token)
+        await Config.update_game_sign_account(
+            account_id,
+            {"GameSignAccount": {"KuroToken": serialized}},
+        )
+    except kuro_provider.KuroSmsCodeError:
+        _log_community_api_error("库街区短信验证码无效", ValueError("invalid_code"))
+        return OutBase(
+            code=400,
+            status="error",
+            message="库街区短信验证码错误或已过期",
+        )
+    except kuro_provider.KuroSmsSessionError:
+        _log_community_api_error("库街区短信登录会话失效", ValueError("session"))
+        return OutBase(
+            code=410,
+            status="error",
+            message="库街区短信登录会话已失效，请重新发送验证码",
+        )
+    except kuro_provider.KuroSmsRateLimitError:
+        _log_community_api_error("库街区短信登录频率受限", ValueError("rate_limit"))
+        return OutBase(
+            code=429,
+            status="error",
+            message="库街区短信登录请求过于频繁，请稍后重试",
+        )
+    except kuro_provider.KuroSmsError as error:
+        _log_community_api_error("库街区短信登录失败", error)
+        return OutBase(
+            code=400,
+            status="error",
+            message="库街区短信登录失败，请检查验证码或稍后重试",
+        )
+    except KeyError as error:
+        _log_community_api_error("库街区短信登录账号不存在", error)
+        return OutBase(
+            code=404,
+            status="error",
+            message="游戏社区账号不存在，请刷新账号列表后重试",
+        )
+    except ValueError as error:
+        _log_community_api_error("库街区短信登录参数无效", error)
+        return OutBase(
+            code=400,
+            status="error",
+            message="库街区短信登录参数无效",
+        )
+    except Exception as error:
+        _log_community_api_error("库街区短信登录异常", error)
+        return OutBase(
+            code=500,
+            status="error",
+            message="库街区短信登录失败，请检查网络或稍后重试",
+        )
+
+    return OutBase(message="库街区登录成功，Token 已保存")
 
 
 @router.post(

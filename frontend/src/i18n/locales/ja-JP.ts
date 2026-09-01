@@ -1580,7 +1580,7 @@ export default {
       toolDesc:
         'ゲームコミュニティツールは各コミュニティの認証情報を管理し、起動時・スケジュール実行時・手動実行時にチェックインします。',
       privacyNotice:
-        'アカウントとパスワードによるトークン取得では、どちらも保存されません。入力した情報はそのログイン要求のあいだメモリ上にのみ存在し、完了または失敗した時点で破棄されます。設定・ログ・通知のいずれにも書き込まれません。',
+        'QR・パスワード・SMS でトークンを取得する際、アカウント・電話番号・パスワード・確認コードは保存されません。パスワードとコードは現在の要求中のみ、SMS の電話番号は最長 10 分間の短期メモリセッションにのみ存在し、設定・ログ・通知には書き込まれません。',
       enable: 'コミュニティツールを有効にする',
       enableDesc:
         'MAS のタスクスケジュールに従ってコミュニティのチェックインを実行します。手動実行は 1 日 1 回の制限を受けません。',
@@ -1616,6 +1616,7 @@ export default {
       qrLogin: 'QR コードでトークンを取得',
       kuro: '库街区（Kuro Games コミュニティ）',
       kuroPlaceholder: '库街区クライアントで取得したトークンを貼り付けてください',
+      smsLogin: 'SMS 確認コードでトークンを取得',
       skland: 'Skland（森空島）',
       sklandPlaceholder: 'Hypergryph 通行証のログイン認証情報',
       passwordLogin: 'アカウントとパスワードでトークンを取得',
@@ -1624,10 +1625,23 @@ export default {
         'refreshToken、または認証情報の JSON（cloudToken/cloudUserId/cloudDeviceId を含む場合があります）',
     },
     login: {
+      kuroTitle: 'SMS 確認コードで库街区のトークンを取得',
       taygedoTitle: 'Taygedo のトークンをアカウントとパスワードで取得',
       sklandTitle: 'Skland のトークンをアカウントとパスワードで取得',
+      smsDisclaimerTitle: 'SMS ログインとプライバシーについて',
       disclaimerTitle: 'アカウント・パスワード利用に関する注意',
       currentAccount: '対象アカウント',
+      kuroPhone: '库街区の電話番号',
+      kuroPhonePlaceholder: '中国本土の携帯電話番号を入力してください',
+      smsCode: 'SMS 確認コード',
+      smsCodePlaceholder: 'SMS 確認コードを入力してください',
+      sendCode: 'コードを送信',
+      resendCode: '再送',
+      resendAfter: '{seconds} 秒後に再送',
+      kuroSessionHint: 'SMS セッションは {seconds} 秒後に期限切れになります',
+      kuroConflictNotice:
+        '新しいトークンの取得により、库街区クライアントの現在のログインが無効になる場合があります。その場合はクライアントへ再度ログインしてください。',
+      smsSubmit: 'トークンを取得して保存',
       taygedoAccount: 'アカウントまたは電話番号',
       taygedoAccountPlaceholder: 'Taygedo のアカウントまたは電話番号を入力してください',
       password: 'パスワード',
@@ -1668,6 +1682,13 @@ export default {
       reorderFailed: '並び替えを保存できませんでした',
       reorderError: '並び替えを保存できませんでした：{error}',
       tokenSaved: 'トークンを保存しました',
+      needKuroPhone: '中国本土の有効な 11 桁の携帯電話番号を入力してください',
+      needKuroCode: '4～8 桁の SMS 確認コードを入力してください',
+      needKuroSession: '先に SMS 確認コードを送信してください',
+      kuroSmsSendFailed:
+        '库街区の SMS 確認コードを送信できませんでした。通信を確認して再度お試しください。',
+      kuroSmsLoginFailed:
+        'SMS で库街区にログインできませんでした。しばらくしてからお試しください。',
       needTaygedoCredential: 'Taygedo のアカウントとパスワードを入力してください',
       needSklandCredential: 'Skland の電話番号とパスワードを入力してください',
       autoSignRunning: '自動受け取りが実行中です。しばらくしてからお試しください',

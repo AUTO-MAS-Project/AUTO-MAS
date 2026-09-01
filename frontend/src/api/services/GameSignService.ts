@@ -8,6 +8,9 @@ import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
+import type { KuroSmsLoginIn } from '../models/KuroSmsLoginIn';
+import type { KuroSmsSendIn } from '../models/KuroSmsSendIn';
+import type { KuroSmsSendOut } from '../models/KuroSmsSendOut';
 import type { OutBase } from '../models/OutBase';
 import type { SklandLoginIn } from '../models/SklandLoginIn';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
@@ -112,6 +115,46 @@ export class GameSignService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/reorder',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 发送库街区短信验证码
+     * 发送库街区短信验证码，不保存手机号或验证码。
+     * @param requestBody
+     * @returns KuroSmsSendOut Successful Response
+     * @throws ApiError
+     */
+    public static sendKuroSmsCodeApiToolsSignAccountKuroSmsSendPost(
+        requestBody: KuroSmsSendIn,
+    ): CancelablePromise<KuroSmsSendOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/kuro/sms/send',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 使用库街区短信验证码登录
+     * 使用一次性短信验证码换取并保存库街区 Token。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginKuroSmsApiToolsSignAccountKuroSmsLoginPost(
+        requestBody: KuroSmsLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/kuro/sms/login',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
