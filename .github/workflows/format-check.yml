@@ -1,0 +1,59 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+name: Format Check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: format-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 格式检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7.0.1
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 检查 Python 格式
+        run: |
+          python -m pip install ruff==0.15.14
+          ruff format --check .
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+
+      - name: 设置 Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: yarn install --immutable --mode=skip-build
+
+      - name: 检查前端格式
+        working-directory: frontend
+        run: yarn oxfmt . --check
+
+      - name: 检查前端 Markdown Lint
+        working-directory: frontend
+        run: yarn lint:md
