@@ -93,7 +93,10 @@ export class InitializationService {
     }
 
     if (!this.runtimeService || this.runtimeService.launchConfig.mode !== launchConfig.mode) {
-      this.runtimeService = new RuntimeInitializationService({ launchConfig })
+      this.runtimeService = new RuntimeInitializationService({
+        launchConfig,
+        mirrorService: this.mirrorService,
+      })
     }
     return this.runtimeService
   }
