@@ -713,6 +713,8 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
 
     if (response.code !== 200) {
       message.error(response.message || t('queue.toast.saveFailed'))
+      // 保存失败时界面控件仍停在用户刚选的值，回读真实配置以纠正显示
+      await refreshQueueConfig()
       return false
     }
 
@@ -723,6 +725,8 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存队列数据失败: ${errorMsg}`)
     message.error(t('queue.toast.saveQueueFailed', { error: errorMsg }))
+    // 同上：网络异常等情况也要回读，避免界面与后端配置不一致
+    await refreshQueueConfig()
     return false
   }
 }

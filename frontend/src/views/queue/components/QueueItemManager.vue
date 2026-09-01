@@ -95,7 +95,8 @@
                       :max="10080"
                       :disabled="!record.schedule.Enabled"
                       :addon-after="t('queue.cycle.minuteUnit')"
-                      @change="saveInterval(record)"
+                      @blur="saveInterval(record)"
+                      @press-enter="saveInterval(record)"
                     />
                     <a-select
                       v-model:value="record.schedule.IntervalAnchor"
@@ -120,6 +121,7 @@
                       style="width: 104px"
                       :placeholder="t('queue.time.selectTime')"
                       :disabled="!record.schedule.Enabled"
+                      :allow-clear="false"
                       @change="saveScheduleTime(record)"
                     />
                     <a-select
@@ -270,11 +272,18 @@ const CYCLE_SCHEDULE_DEFAULTS = {
   NextRunAt: CYCLE_EMPTY_TIME,
 }
 
-// 补齐循环配置并派生时间选择器需要的 dayjs 值
+// 补齐循环配置并派生时间选择器需要的 dayjs 值。
+// savedIntervalMinutes 记录“上次成功保存”的间隔分钟数，用于校验失败时回填，
+// 而不是硬编码默认值 480。
 const withCycleSchedule = (items: any[]) =>
   items.map(item => {
     const schedule = { ...CYCLE_SCHEDULE_DEFAULTS, ...(item.schedule || {}) }
-    return { ...item, schedule, scheduleTimeValue: parseTimeString(schedule.Time) }
+    return {
+      ...item,
+      schedule,
+      scheduleTimeValue: parseTimeString(schedule.Time),
+      savedIntervalMinutes: schedule.IntervalMinutes,
+    }
   })
 
 // 计算属性 - 使用props传入的数据
@@ -307,8 +316,9 @@ const formatNextRun = (nextRunAt: string) =>
   !nextRunAt || nextRunAt === CYCLE_EMPTY_TIME ? t('queue.cycle.notScheduled') : nextRunAt
 
 // 保存循环调度配置。这里不 emit refresh：本地 record 已是最新值，
-// 整表刷新反而会把用户正在编辑的输入顶掉。
-const saveSchedule = async (record: any, data: Record<string, any>) => {
+// 整表刷新反而会把用户正在编辑的输入顶掉。返回是否保存成功，供调用方
+// 决定要不要把本地值当作“已确认”的基线（例如 savedIntervalMinutes）。
+const saveSchedule = async (record: any, data: Record<string, any>): Promise<boolean> => {
   try {
     const response = await Service.updateItemApiQueueItemUpdatePost({
       queueId: props.queueId,
@@ -323,22 +333,40 @@ const saveSchedule = async (record: any, data: Record<string, any>) => {
         })
       )
       emit('refresh')
+      return false
     }
+    return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新循环调度失败: ${errorMsg}`)
     message.error(t('queue.toast.scheduleUpdateFailed', { error: errorMsg }))
     emit('refresh')
+    return false
   }
 }
 
+// 失焦/回车才保存，而不是每次键入都存盘（InputNumber 的 change 事件逐字符触发）。
+// 校验失败（非 1..10080 的整数，含清空后的 null）时回填上次成功保存的值，不发请求；
+// 值未变化时同样不发请求。
 const saveInterval = async (record: any) => {
   const minutes = Number(record.schedule.IntervalMinutes)
-  if (!Number.isFinite(minutes) || minutes < 1) {
-    record.schedule.IntervalMinutes = CYCLE_SCHEDULE_DEFAULTS.IntervalMinutes
+  const isValid = Number.isInteger(minutes) && minutes >= 1 && minutes <= 10080
+
+  if (!isValid) {
+    record.schedule.IntervalMinutes = record.savedIntervalMinutes
     return
   }
-  await saveSchedule(record, { IntervalMinutes: minutes })
+
+  if (minutes === record.savedIntervalMinutes) {
+    record.schedule.IntervalMinutes = minutes
+    return
+  }
+
+  record.schedule.IntervalMinutes = minutes
+  const success = await saveSchedule(record, { IntervalMinutes: minutes })
+  if (success) {
+    record.savedIntervalMinutes = minutes
+  }
 }
 
 const saveScheduleTime = async (record: any) => {
