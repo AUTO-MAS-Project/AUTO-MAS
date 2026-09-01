@@ -88,6 +88,8 @@
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
+              :is-cycle-queue="tab.isCycleQueue"
+              :cycle-next-list="tab.cycleNextList || []"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
               @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"

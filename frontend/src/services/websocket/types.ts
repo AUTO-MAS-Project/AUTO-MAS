@@ -82,16 +82,28 @@ export interface WSTaskScriptInfoData {
   userList: WSTaskUserInfoData[]
 }
 
-export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update'
+export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun'
 
 export interface WSTaskScriptIdentityData {
   scriptId: string
   scriptType: string
 }
 
+/** 循环运行的一个待运行条目 */
+export interface WSTaskCyclePreviewData {
+  queueItemId: string
+  scriptId: string
+  scriptName: string
+  nextRunAt: string
+  isDue: boolean
+  isRunning: boolean
+}
+
 /** 任务信息快照 (type=task.info.updated) */
 export interface WSTaskInfoUpdatedData {
   task_info: WSTaskScriptInfoData[]
+  /** 循环运行的待运行条目，仅循环任务非空 */
+  cycleNextList?: WSTaskCyclePreviewData[]
 }
 
 /** 当前任务日志 (type=task.log.updated) */

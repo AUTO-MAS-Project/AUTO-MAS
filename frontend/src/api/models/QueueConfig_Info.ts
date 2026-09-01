@@ -16,6 +16,10 @@ export type QueueConfig_Info = {
      */
     StartUpMode?: ('Never' | 'Always' | 'DailyFirst' | null);
     /**
+     * 是否为循环队列, 与定时互斥
+     */
+    CycleEnabled?: (boolean | null);
+    /**
      * 完成后操作
      */
     AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'Logoff' | null);

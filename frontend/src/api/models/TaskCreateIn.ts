@@ -8,7 +8,7 @@ export type TaskCreateIn = {
      */
     taskId: string;
     /**
-     * 任务模式
+     * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行
      */
     mode: TaskCreateIn.mode;
     /**
@@ -18,12 +18,13 @@ export type TaskCreateIn = {
 };
 export namespace TaskCreateIn {
     /**
-     * 任务模式
+     * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行
      */
     export enum mode {
         AUTO_PROXY = 'AutoProxy',
         SCRIPT_CONFIG = 'ScriptConfig',
         UPDATE = 'Update',
+        CYCLE_RUN = 'CycleRun',
     }
 }
 
