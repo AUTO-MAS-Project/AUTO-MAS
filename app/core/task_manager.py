@@ -277,6 +277,51 @@ class Task(TaskExecuteBase):
                 attributes=metric_attributes,
             )
 
+    def _build_task_item(
+        self,
+        script_item: ScriptItem,
+        script_config,
+        *,
+        script_uid: uuid.UUID,
+        reservation_owner: str,
+        src_root_path: Path | None,
+    ):
+        """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。"""
+
+        if isinstance(script_config, MaaConfig):
+            return task.MaaManager(script_item)
+        if isinstance(script_config, SrcConfig):
+            if src_root_path is None:
+                raise RuntimeError("SRC 路径占用未初始化")
+            return task.SrcManager(
+                script_item,
+                reserved_src_root_path=src_root_path,
+                reserve_src_root=lambda root_path, script_uid=script_uid, owner=reservation_owner: (
+                    self.script_reservations.try_acquire(
+                        script_uid,
+                        owner,
+                        src_root_path=root_path,
+                    )
+                ),
+            )
+        if isinstance(script_config, GeneralConfig):
+            return task.GeneralManager(script_item)
+        if isinstance(script_config, OkwwConfig):
+            return task.OkwwManager(script_item)
+        if isinstance(script_config, OkNteConfig):
+            return task.OkNteManager(script_item)
+        if isinstance(script_config, MaaEndConfig):
+            return task.MaaEndManager(script_item)
+        if isinstance(script_config, M9AConfig):
+            return task.M9AManager(script_item)
+        if isinstance(script_config, HSRConfig):
+            return task.HSRManager(script_item)
+        if isinstance(script_config, BetterGIConfig):
+            return task.BetterGIManager(script_item)
+        if isinstance(script_config, MaaFWConfig):
+            return task.MaaFWEmbeddedManager(script_item)
+        return None
+
     async def _run_main_task(self):
 
         # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
@@ -380,39 +425,14 @@ class Task(TaskExecuteBase):
                 script_item.status = "运行"
                 logger.info(f"任务开始: {current_script_uid}")
 
-                if isinstance(script_config, MaaConfig):
-                    task_item = task.MaaManager(script_item)
-                elif isinstance(script_config, SrcConfig):
-                    if src_root_path is None:
-                        raise RuntimeError("SRC 路径占用未初始化")
-                    task_item = task.SrcManager(
-                        script_item,
-                        reserved_src_root_path=src_root_path,
-                        reserve_src_root=lambda root_path, script_uid=current_script_uid, owner=reservation_owner: (
-                            self.script_reservations.try_acquire(
-                                script_uid,
-                                owner,
-                                src_root_path=root_path,
-                            )
-                        ),
-                    )
-                elif isinstance(script_config, GeneralConfig):
-                    task_item = task.GeneralManager(script_item)
-                elif isinstance(script_config, OkwwConfig):
-                    task_item = task.OkwwManager(script_item)
-                elif isinstance(script_config, OkNteConfig):
-                    task_item = task.OkNteManager(script_item)
-                elif isinstance(script_config, MaaEndConfig):
-                    task_item = task.MaaEndManager(script_item)
-                elif isinstance(script_config, M9AConfig):
-                    task_item = task.M9AManager(script_item)
-                elif isinstance(script_config, HSRConfig):
-                    task_item = task.HSRManager(script_item)
-                elif isinstance(script_config, BetterGIConfig):
-                    task_item = task.BetterGIManager(script_item)
-                elif isinstance(script_config, MaaFWConfig):
-                    task_item = task.MaaFWEmbeddedManager(script_item)
-                else:
+                task_item = self._build_task_item(
+                    script_item,
+                    script_config,
+                    script_uid=current_script_uid,
+                    reservation_owner=reservation_owner,
+                    src_root_path=src_root_path,
+                )
+                if task_item is None:
                     script_item.status = "异常"
                     self._record_error(
                         f"不支持的脚本类型: {type(script_config).__name__}"
