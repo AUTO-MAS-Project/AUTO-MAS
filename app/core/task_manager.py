@@ -80,6 +80,7 @@ from app.models.task import (
     TaskTriggerSource,
     UserItem,
 )
+from app.runtime_tasks import RuntimeTasks
 from app.utils import LazyProxy, get_logger
 import app.task as task
 
@@ -427,16 +428,15 @@ class Task(TaskExecuteBase):
     ) -> None:
         """按队列顺序跑完这一轮所有到点的条目。
 
-        被别的任务占用的条目留到下一轮重试：本轮结束后外层会用新时间重新推算，
-        预览也跟着刷新，比在本轮里原地打转更不容易卡住。
+        被占用或没跑成的条目留到下一轮：本轮结束后外层会用新时间重新推算，预览也
+        跟着刷新。一轮里一个都没跑成就先退避，不管是被占用还是别的原因，都不让
+        循环空转。
         """
 
-        blocked = False
-        for entry in pending:
-            if await self._run_cycle_entry(queue_uid, entry, entries) == "blocked":
-                blocked = True
-
-        if blocked:
+        results = [
+            await self._run_cycle_entry(queue_uid, entry, entries) for entry in pending
+        ]
+        if not any(result == "success" for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
     async def _run_cycle_entry(
@@ -456,9 +456,9 @@ class Task(TaskExecuteBase):
         script_uid = uuid.UUID(entry.script_id)
         script_item = self.task_info.script_list[entry.index]
 
+        # collect 时已过滤掉被删的脚本，这里只防它在本轮中途被删。
         if script_uid not in Config.ScriptConfig:
             script_item.status = "异常"
-            self._record_error(f"脚本 {script_uid} 已被删除")
             logger.warning(f"循环跳过: {script_uid} 对应脚本已被删除")
             return "failed"
 
@@ -474,8 +474,11 @@ class Task(TaskExecuteBase):
             logger.info(f"循环等待: {entry.script_name} 已被其他任务占用")
             return "blocked"
 
+        started_at = datetime.now()
+        success = False
+        # 循环要跑上几天，单个条目出错只算这一轮失败，不能把整个循环带崩；
+        # 用户主动停止走的是 CancelledError，不在这里拦。
         try:
-            started_at = datetime.now()
             await queue_item.set(
                 "Data", "LastCycleStartedAt", format_cycle_time(started_at)
             )
@@ -496,46 +499,40 @@ class Task(TaskExecuteBase):
             )
             if task_item is None:
                 script_item.status = "异常"
-                self._record_error(f"不支持的脚本类型: {type(script_config).__name__}")
                 logger.error(f"不支持的脚本类型: {type(script_config).__name__}")
-                return "failed"
-
-            self.task_info.current_index = entry.index
-            script_item.status = "运行"
-            logger.info(f"循环任务开始: {script_uid}")
-
-            await self._spawn_with_preview(task_item, entry, entries)
-
-            finished_at = datetime.now()
-            await queue_item.set(
-                "Data", "LastCycleFinishedAt", format_cycle_time(finished_at)
-            )
-            if queue_item.get("Schedule", "IntervalAnchor") == "start":
-                # 跑得比间隔还久时往后顺延，别一结束就立刻再来一轮。
-                await queue_item.set(
-                    "Schedule",
-                    "NextRunAt",
-                    format_cycle_time(
-                        next_after_start(queue_item, started_at, after=finished_at)
-                    ),
-                )
             else:
-                await queue_item.set(
-                    "Schedule",
-                    "NextRunAt",
-                    format_cycle_time(next_after_finish(queue_item, finished_at)),
+                self.task_info.current_index = entry.index
+                script_item.status = "运行"
+                logger.info(f"循环任务开始: {script_uid}")
+
+                await self._spawn_with_preview(task_item, entry, entries)
+
+                self._trim_cycle_log_records(script_item)
+                success = is_script_success(
+                    script_item.status,
+                    (user.status for user in script_item.user_list),
                 )
-
-            self._trim_cycle_log_records(script_item)
-
-            success = is_script_success(
-                script_item.status, (user.status for user in script_item.user_list)
-            )
-            if not success:
-                logger.warning(f"循环任务未成功: {entry.script_name}")
-            return "success" if success else "failed"
+        except Exception as e:
+            script_item.status = "异常"
+            logger.exception(f"循环任务出现异常: {entry.script_name}: {e}")
         finally:
             self.script_reservations.release(script_uid, reservation_owner)
+
+        # 成败都要把下次运行时间推到未来，否则失败的条目会立刻再被挑中。
+        finished_at = datetime.now()
+        await queue_item.set(
+            "Data", "LastCycleFinishedAt", format_cycle_time(finished_at)
+        )
+        if queue_item.get("Schedule", "IntervalAnchor") == "start":
+            # 跑得比间隔还久时往后顺延，别一结束就立刻再来一轮。
+            next_run_at = next_after_start(queue_item, started_at, after=finished_at)
+        else:
+            next_run_at = next_after_finish(queue_item, finished_at)
+        await queue_item.set("Schedule", "NextRunAt", format_cycle_time(next_run_at))
+
+        if not success:
+            logger.warning(f"循环任务未成功: {entry.script_name}")
+        return "success" if success else "failed"
 
     async def _spawn_with_preview(
         self,
@@ -543,17 +540,30 @@ class Task(TaskExecuteBase):
         entry: CycleEntry,
         entries: list[CycleEntry],
     ) -> None:
-        """跑子任务，期间定期刷新预览，让「还有多久轮到下一个」保持准确。"""
+        """跑子任务，期间定期刷新预览，让「还有多久轮到下一个」保持准确。
+
+        子任务必须直接 ``await``：用户停止时取消要顺着这个 await 传到子任务，
+        换成 ``asyncio.wait`` 之类的间接等待，取消就只会停到循环这一层，正在跑的
+        脚本还会继续。所以定时刷新放在旁路任务里，跑完就撤。
+        """
 
         child = self.spawn(task_item)
+        refresher = RuntimeTasks.spawn(
+            self._refresh_preview_while_running(entries, entry),
+            name=f"cycle-preview:{self.task_info.task_id}",
+        )
+        try:
+            await child
+        finally:
+            if refresher is not None:
+                refresher.cancel()
+
+    async def _refresh_preview_while_running(
+        self, entries: list[CycleEntry], running: CycleEntry
+    ) -> None:
         while True:
-            done, _ = await asyncio.wait(
-                {child}, timeout=CYCLE_PREVIEW_REFRESH_SECONDS
-            )
-            if done:
-                break
-            await self._publish_cycle_preview(entries, running=entry)
-        await child
+            await asyncio.sleep(CYCLE_PREVIEW_REFRESH_SECONDS)
+            await self._publish_cycle_preview(entries, running=running)
 
     async def _publish_cycle_preview(
         self, entries: list[CycleEntry], running: CycleEntry | None = None
@@ -577,6 +587,8 @@ class Task(TaskExecuteBase):
         # 正在跑的那个排到最前，用户第一眼看到的是当前进度。
         preview.sort(key=lambda item: not item["isRunning"])
         self.task_info.cycle_next_list = preview[:CYCLE_PREVIEW_SIZE]
+        # TaskItem 自己的字段改了不会像脚本状态那样自动发布，得显式排一次。
+        self.task_info.schedule_on_change()
 
     def _trim_cycle_log_records(self, script_item: ScriptItem) -> None:
         """裁剪用户历史日志，循环跑上几天也不会把内存撑爆。"""
@@ -821,6 +833,9 @@ class _TaskManager:
 
         identities: dict[uuid.UUID, WSTaskScriptIdentityData] = {}
         for queue_id, queue in Config.QueueConfig.items():
+            # 循环队列不走定时唤起，与 timed_start 口径一致
+            if queue.get("Info", "CycleEnabled"):
+                continue
             if not queue.get("Info", "TimeEnabled"):
                 continue
             if not any(
