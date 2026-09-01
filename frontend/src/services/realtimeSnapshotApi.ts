@@ -1,6 +1,7 @@
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { request } from '@/api/core/request'
 import type {
+  WSTaskCyclePreviewData,
   WSTaskMode,
   WSTaskScriptIdentityData,
   WSTaskScriptInfoData,
@@ -19,8 +20,10 @@ export interface TaskRuntimeSnapshotItem {
   scriptId: string | null
   userId: string | null
   stopping: boolean
+  isCycle: boolean
   scripts: WSTaskScriptIdentityData[]
   task_info: WSTaskScriptInfoData[]
+  cycleNextList: WSTaskCyclePreviewData[]
   log: string
 }
 
