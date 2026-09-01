@@ -42,6 +42,57 @@ export interface ElectronMirrorSource {
 export type ElectronMirrorType = 'python' | 'get_pip' | 'git' | 'repo' | 'pip_mirror'
 export type ElectronApiEndpointKey = 'local' | 'websocket'
 
+/**
+ * Runtime 灰度开关的三态。
+ *
+ * `off` 是原有的自装 Python / pip / Git 链路，另外两态由 auto-mas-runtime.exe 接管；
+ * 主进程没给这个字段时（旧版本主进程、旧链路进度）界面一律按 `off` 处理。
+ */
+export type RuntimeInitMode = 'off' | 'development' | 'managed'
+
+/** 初始化界面开局问一次的 Runtime 上下文。 */
+export interface RuntimeInitContext {
+  mode: RuntimeInitMode
+  /** Runtime 没给 logPath 时「打开日志」退回的文件。 */
+  fallbackLogPath: string
+  /** 各段在 Runtime 链路下可选的镜像键；空数组表示该段不展示镜像选择。 */
+  mirrorKeys: Record<string, string[]>
+}
+
+/** Runtime doctor 的单项检查结果。 */
+export interface RuntimeDoctorCheck {
+  id: string
+  name: string
+  message: string
+  /** 实测取值为 `ok` / `missing` / `error`。 */
+  status: string
+  details: Record<string, unknown>
+}
+
+/**
+ * Runtime 链路失败时随结果一起给出的结构化字段。
+ *
+ * 旧链路一律缺省，所以全是可选的；界面按这些机器字段决定给哪些按钮，
+ * 绝不解析 `error` 里的中文文案。
+ */
+export interface RuntimeFailureFields {
+  /** Runtime 结果码，如 `MIRROR_EXHAUSTED` / `INTERNAL_ERROR`。 */
+  code?: string
+  retryable?: boolean
+  /** 处置动作，如 `retry` / `retry-other-mirror` / `open-log`；未知取值忽略即可。 */
+  remediation?: string[]
+  /** `[stdout]…\n\n[stderr]…` 整块文本。 */
+  logs?: string
+  /** Runtime 本次操作的日志文件路径。 */
+  logPath?: string
+}
+
+/** 单步安装与重试的返回形状：旧链路只有前两项，Runtime 链路额外带结构化字段。 */
+export type InstallStageResult = {
+  success: boolean
+  error?: string
+} & RuntimeFailureFields
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
@@ -77,11 +128,14 @@ export interface ElectronAPI {
     pythonExists: boolean
     gitExists: boolean
     mainPyExists: boolean
+    pipExists?: boolean
+    /** doctor 的逐项检查，只有 Runtime 链路产生，供失败态的「运行诊断」展示。 */
+    runtimeChecks?: RuntimeDoctorCheck[]
   }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<unknown>
   downloadGit: () => Promise<unknown>
-  installDependencies: (mirror?: string) => Promise<unknown>
+  // installDependencies 的权威声明在下面的「单步初始化API」里，这里原有的一份签名已过时
   cloneBackend: (repoUrl?: string) => Promise<unknown>
   updateBackend: (repoUrl?: string) => Promise<unknown>
   startBackend: () => Promise<{ success: boolean; error?: string; logs?: string }>
@@ -205,17 +259,22 @@ export interface ElectronAPI {
 
   // 单步初始化API
   initMirrors: () => Promise<{ success: boolean; error?: string }>
-  installPython: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  installPip: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  installGit: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  // rebuild 对应失败态的「重建环境」按钮，只在 Runtime 链路下有意义
+  installPython: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
+  installPip: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
+  installGit: (selectedMirror?: string, rebuild?: boolean) => Promise<InstallStageResult>
   pullRepository: (
     targetBranch?: string,
-    selectedMirror?: string
-  ) => Promise<{ success: boolean; error?: string }>
+    selectedMirror?: string,
+    rebuild?: boolean
+  ) => Promise<InstallStageResult>
   installDependencies: (
-    selectedMirror?: string
-  ) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
+    selectedMirror?: string,
+    rebuild?: boolean
+  ) => Promise<InstallStageResult & { skipped?: boolean }>
   getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
+  /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
+  getRuntimeInitContext?: () => Promise<RuntimeInitContext>
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
@@ -225,12 +284,14 @@ export interface ElectronAPI {
   initialize: (
     targetBranch?: string,
     startBackend?: boolean
-  ) => Promise<{
-    success: boolean
-    error?: string
-    completedStages: string[]
-    failedStage?: string
-  }>
+  ) => Promise<
+    {
+      success: boolean
+      error?: string
+      completedStages: string[]
+      failedStage?: string
+    } & RuntimeFailureFields
+  >
 
   // 仅更新模式
   updateOnly: (targetBranch?: string) => Promise<{
@@ -241,9 +302,9 @@ export interface ElectronAPI {
   }>
 
   // 后端服务管理
-  backendStart: () => Promise<{ success: boolean; error?: string; logs?: string }>
+  backendStart: () => Promise<InstallStageResult>
   backendStop: () => Promise<{ success: boolean; error?: string }>
-  backendRestart: () => Promise<{ success: boolean; error?: string; logs?: string }>
+  backendRestart: () => Promise<InstallStageResult>
   backendStatus: () => Promise<{
     isRunning: boolean
     pid?: number
@@ -276,6 +337,10 @@ export interface ElectronAPI {
       totalStages: number
       progress: number
       message: string
+      /** Runtime 链路给出的机器可读段状态；旧链路不产生。 */
+      status?: 'started' | 'running' | 'completed' | 'failed'
+      /** 本条进度来自哪条链路；旧链路不产生，按 off 处理。 */
+      runtimeMode?: RuntimeInitMode
     }) => void
   ) => void
   removeInitializationProgressListener?: () => void
