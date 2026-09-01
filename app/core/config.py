@@ -76,7 +76,7 @@ from app.models.config import (
     Webhook,
 )
 from app.models.schema import PlanComboxConsumer
-from app.utils import get_logger, resource_path
+from app.utils import get_logger, is_supervised, resource_path
 from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
     RESOURCE_STAGE_DATE_TEXT,
@@ -87,6 +87,7 @@ from app.utils.constants import (
     UTC8,
 )
 from app.utils.io import write_file
+from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
@@ -347,7 +348,9 @@ class AppConfig(GlobalConfig):
             try:
                 from git import Repo
 
-                self._repo = Repo(Path.cwd())
+                # .git 随源码走：受 AUTO-MAS-Runtime 监督时源码在 <app-root>/repo/，
+                # 工作目录（app-root）下没有仓库，不能再按 Path.cwd() 打开
+                self._repo = Repo(SOURCE_ROOT)
             except Exception as e:
                 logger.warning(f"Git仓库初始化失败: {e}")
                 self._repo = None
@@ -715,7 +718,19 @@ class AppConfig(GlobalConfig):
             logger.success("数据文件版本更新完成")
 
     async def get_git_version(self) -> tuple[bool, str, str]:
-        """获取Git版本信息，如果Git不可用则返回默认值"""
+        """获取Git版本信息，如果Git不可用则返回默认值。
+
+        受 AUTO-MAS-Runtime 监督时后端不是更新主体：更新由 Runtime 整体替换
+        repo/ 完成、不在旧仓库上 fetch，比对远端分支判定“需要更新”没有意义，
+        一律视为最新。managed 模式直接回显 Runtime 从校验过的仓库注入的 HEAD，
+        不依赖 Runtime 布局里并不存在的 git 命令行；development 模式无注入
+        身份，仍从源码目录读取 Git 信息用于展示。
+        """
+
+        supervised = is_supervised()
+        expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "")
+        if supervised and expected_commit:
+            return True, expected_commit, "unknown"
 
         def _get_git_info():
 
@@ -749,7 +764,7 @@ class AppConfig(GlobalConfig):
         is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
             None, _get_git_info
         )
-        return is_latest, commit_hash, commit_time
+        return is_latest or supervised, commit_hash, commit_time
 
     async def add_script(
         self,
