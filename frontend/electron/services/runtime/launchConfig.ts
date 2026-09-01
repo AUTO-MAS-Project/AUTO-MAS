@@ -37,9 +37,16 @@ export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 
 const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['off', 'development', 'managed']
 
-/** 一次启动所需的全部定位信息。 */
-export interface RuntimeLaunchConfig {
-  mode: RuntimeLaunchMode
+/** 灰度开关关闭时的定位信息：不去找可执行文件。 */
+export interface RuntimeDisabledLaunchConfig {
+  mode: 'off'
+  runtimePath: null
+  appRoot: string
+}
+
+/** 走 Runtime 监督链路时的定位信息。 */
+export interface RuntimeSupervisedLaunchConfig {
+  mode: Exclude<RuntimeLaunchMode, 'off'>
   /** 找不到可执行文件时为 null，由调用方按 `RUNTIME_NOT_FOUND` 处理。 */
   runtimePath: string | null
   /** 传给 `--app-root`。 */
@@ -47,6 +54,9 @@ export interface RuntimeLaunchConfig {
   /** `development` 模式传给 `--repo`；`managed` 模式不传。 */
   repo?: string
 }
+
+/** 一次启动所需的全部定位信息，按 `mode` 判别。 */
+export type RuntimeLaunchConfig = RuntimeDisabledLaunchConfig | RuntimeSupervisedLaunchConfig
 
 function isRuntimeLaunchMode(value: string): value is RuntimeLaunchMode {
   return (RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
