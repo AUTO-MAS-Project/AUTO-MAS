@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.5.0b2"
+version = "5.5.0b3"
 description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
