@@ -33,6 +33,7 @@ export {
   RuntimeLogBucket,
   RuntimeLogsByOperation,
   RuntimeMirrorSelection,
+  RuntimeRunControl,
   RuntimeRunOptions,
   RuntimeRunResult,
   RuntimeShutdownOptions,

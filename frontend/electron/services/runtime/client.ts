@@ -82,6 +82,23 @@ export interface RuntimeClientOptions {
   handshakeTimeoutMs?: number
 }
 
+/**
+ * 一次性命令在途时的控制入口。
+ *
+ * `run()` 本身只返回终态，长驻的 `supervise()` 才有句柄；更新流程需要在 `bootstrap`
+ * 跑到一半时下发 stdin `cancel`（Runtime 保证克隆未完成时保留旧 `repo/`），所以这里
+ * 把同一个会话的控制通道以回调形式交出去，握手成功后回调一次。
+ */
+export interface RuntimeRunControl {
+  readonly pid: number | undefined
+  /** 下发一条控制命令，返回本次生成的 commandId。 */
+  sendControl(command: RuntimeControlKind): string
+  /** 请求取消，返回 commandId。 */
+  cancel(): string
+  /** 强制结束 Runtime 进程，只在兜底路径使用。 */
+  kill(signal?: NodeJS.Signals): void
+}
+
 export interface RuntimeRunOptions {
   onEvent?: (event: RuntimeEvent) => void
   onProgress?: (event: RuntimeProgressEvent) => void
@@ -95,6 +112,8 @@ export interface RuntimeRunOptions {
   handshakeTimeoutMs?: number
   /** 握手成功后再出现坏行时不再中断本次调用，只记录并回调。默认 false。 */
   tolerateProtocolErrors?: boolean
+  /** 握手成功后回调一次，交出本次调用的控制入口；调用失败于握手阶段时不会被调用。 */
+  onStarted?: (control: RuntimeRunControl) => void
 }
 
 /** 单个 operationId 下按流分组、保序的日志行。 */
@@ -719,6 +738,12 @@ export class RuntimeClient extends EventEmitter {
     )
 
     await session.hello
+    options.onStarted?.({
+      pid: session.child.pid,
+      sendControl: control => session.sendControl(control),
+      cancel: () => session.sendControl('cancel'),
+      kill: signal => session.kill(signal),
+    })
     return session.completion
   }
 

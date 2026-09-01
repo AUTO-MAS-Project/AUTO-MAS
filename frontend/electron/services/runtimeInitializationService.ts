@@ -19,6 +19,7 @@ import {
   RuntimeClientOptions,
   RuntimeMirrorSelection,
   RuntimeRemediation,
+  RuntimeRunControl,
   RuntimeRunResult,
   RuntimeStage,
   RuntimeSupervisedLaunchConfig,
@@ -290,16 +291,39 @@ export interface RuntimeStageOutcome {
   remediation?: RuntimeRemediation[]
   /** `[stdout]…\n\n[stderr]…` 整块文本，与旧链路失败界面的展示格式一致。 */
   logs?: string
+  /** Runtime 按命令与日期轮转的日志文件路径（`result.details.logPath`），可能没有。 */
+  logPath?: string
   /** 映射后的失败段名。 */
   failedStage?: InitializationRunStage
+}
+
+/** 从事件 details 里读 Runtime 自己的轮转日志路径。 */
+export function readRuntimeLogPath(details: Record<string, unknown>): string | undefined {
+  const logPath = details.logPath
+  return typeof logPath === 'string' && logPath.length > 0 ? logPath : undefined
 }
 
 /** 可注入的客户端工厂，便于单元测试替换掉真实子进程。 */
 export type RuntimeClientFactory = (options: RuntimeClientOptions) => RuntimeClient
 
+/**
+ * 单步重试的处置强度。
+ *
+ * `auto` 按上一次失败给出的 remediation 决定，是初始化界面「重试」按钮的行为；
+ * 更新流程要在界面上同时摆出「重试同步」与「重建环境」两个按钮，所以还能显式指定。
+ */
+export type RuntimeRetryMode = 'auto' | 'sync' | 'rebuild'
+
 export interface RuntimeInitializationOptions {
   launchConfig: RuntimeSupervisedLaunchConfig
   createClient?: RuntimeClientFactory
+  /**
+   * 本实例的目标版本，省略时用应用自身版本。
+   *
+   * 首次安装装的就是应用自身版本；更新流程要装的是另一个版本，用同一个编排器但换目标，
+   * `bootstrap` 与 `workspace sync` 的 `--version` 都跟着它走。
+   */
+  targetVersion?: string
 }
 
 const defaultClientFactory: RuntimeClientFactory = options => new RuntimeClient(options)
@@ -314,6 +338,8 @@ export class RuntimeInitializationService {
   private readonly createClient: RuntimeClientFactory
   /** 各段上一次失败给出的 remediation，决定单步重试用普通重试还是重建环境。 */
   private readonly lastRemediation = new Map<InitializationRunStage, RuntimeRemediation[]>()
+  /** 在途命令的控制入口，用于下发 stdin `cancel`；没有命令在跑时为 null。 */
+  private activeControl: RuntimeRunControl | null = null
 
   constructor(private readonly options: RuntimeInitializationOptions) {
     this.createClient = options.createClient ?? defaultClientFactory
@@ -321,6 +347,25 @@ export class RuntimeInitializationService {
 
   get launchConfig(): RuntimeSupervisedLaunchConfig {
     return this.options.launchConfig
+  }
+
+  /** 本实例的目标版本；省略时退回应用自身版本。 */
+  get targetVersion(): string {
+    return this.options.targetVersion ?? resolveRuntimeTargetVersion()
+  }
+
+  /**
+   * 向在途命令下发 stdin `cancel`；没有命令在跑时返回 false。
+   *
+   * 只是「请求」取消：Runtime 在提交点之后的迟到取消不会把已激活的现场伪装成取消，
+   * 最终结局仍以它给出的 `result` 为准。
+   */
+  cancel(): boolean {
+    const control = this.activeControl
+    if (!control) return false
+    control.cancel()
+    logger.info('已向在途 Runtime 命令下发 cancel')
+    return true
   }
 
   /**
@@ -332,7 +377,7 @@ export class RuntimeInitializationService {
     onProgress: (update: BootstrapProgressUpdate) => void,
     mirror?: RuntimeMirrorSelection | null
   ): Promise<RuntimeStageOutcome> {
-    const version = resolveRuntimeTargetVersion()
+    const version = this.targetVersion
     const bridge = new BootstrapProgressBridge(onProgress)
     bridge.takeOver()
 
@@ -353,14 +398,15 @@ export class RuntimeInitializationService {
    *
    * - 用户选了镜像源：镜像是全局选项，只能整条 `bootstrap` 重跑（映射不到就不传
    *   `--mirror`，用 Runtime 自己的默认轮换）；
-   * - 没选镜像源：走该段对应的下层命令，上一次失败要求重建环境时换成重建版本。
+   * - 没选镜像源：走该段对应的下层命令，处置强度按 `mode` 决定。
    *
    * `mirror` / `pip` / `git` 三段在新链路没有对应物，直接按成功返回。
    */
   async retryStage(
     stage: InitializationRunStage,
     onProgress: (update: BootstrapProgressUpdate) => void,
-    mirrorKey?: string
+    mirrorKey?: string,
+    mode: RuntimeRetryMode = 'auto'
   ): Promise<RuntimeStageOutcome> {
     if (stage === 'mirror' || stage === 'pip' || stage === 'git') {
       logger.info(`${stage} 段在 Runtime 链路没有对应物，直接跳过`)
@@ -381,7 +427,7 @@ export class RuntimeInitializationService {
       return this.bootstrap(onProgress, mirror)
     }
 
-    const command = this.resolveRetryCommand(stage)
+    const command = this.resolveRetryCommand(stage, mode)
     if (!command) {
       logger.warn(`未知的重试段 ${stage}，按整条 bootstrap 重跑`)
       return this.bootstrap(onProgress)
@@ -401,17 +447,23 @@ export class RuntimeInitializationService {
    * 单步重试用的下层命令。
    *
    * `python` 段的下层命令是 `environment ensure`，它只准备并校验固定版本 uv；本段还覆盖
-   * 由 bootstrap 内部完成的 `uv python install`，所以上一次失败要求重建环境时直接用整体
-   * `repair`，而不是只重跑 uv 那半截。
+   * 由 bootstrap 内部完成的 `uv python install`，所以要重建环境时直接用整体 `repair`，
+   * 而不是只重跑 uv 那半截。
    */
-  private resolveRetryCommand(stage: InitializationRunStage): string[] | null {
-    const needsRebuild = this.lastRemediation.get(stage)?.includes('rebuild-environment') ?? false
+  resolveRetryCommand(
+    stage: InitializationRunStage,
+    mode: RuntimeRetryMode = 'auto'
+  ): string[] | null {
+    const needsRebuild =
+      mode === 'auto'
+        ? (this.lastRemediation.get(stage)?.includes('rebuild-environment') ?? false)
+        : mode === 'rebuild'
 
     switch (stage) {
       case 'python':
         return needsRebuild ? ['repair'] : ['environment', 'ensure']
       case 'repository':
-        return ['workspace', 'sync', '--version', resolveRuntimeTargetVersion()]
+        return ['workspace', 'sync', '--version', this.targetVersion]
       case 'dependency':
         return needsRebuild ? ['dependencies', 'rebuild'] : ['dependencies', 'sync']
       default:
@@ -483,6 +535,9 @@ export class RuntimeInitializationService {
     let outcome: RuntimeRunResult
     try {
       outcome = await client.run(command, {
+        onStarted: control => {
+          this.activeControl = control
+        },
         onProgress: event => bridge.observe(event.stage, event.message, event.percent),
         onState: event => bridge.observe(event.stage, event.message),
         onLog: event => {
@@ -514,6 +569,8 @@ export class RuntimeInitializationService {
         logs: mergeRuntimeLogs(stdoutLines, stderrLines),
         failedStage: bridge.currentStage ?? FALLBACK_INITIALIZATION_STAGE,
       }
+    } finally {
+      this.activeControl = null
     }
 
     if (outcome.success) {
@@ -540,6 +597,7 @@ export class RuntimeInitializationService {
       retryable: outcome.result.retryable,
       remediation,
       logs: mergeRuntimeLogs(stdoutLines, stderrLines, outcome.stderr),
+      logPath: readRuntimeLogPath(outcome.result.details),
       failedStage,
     }
   }

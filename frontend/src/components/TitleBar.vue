@@ -24,7 +24,14 @@
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
           <span
-            v-if="backendUpdateInfo?.if_need_update"
+            v-if="backendUpdateInfo?.if_need_update && isRuntimeDevelopment"
+            class="update-hint disabled"
+            :title="t('comp.backendUpdateDevUnsupported')"
+          >
+            {{ t('comp.backendUpdateDevUnsupported') }}
+          </span>
+          <span
+            v-else-if="backendUpdateInfo?.if_need_update"
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
@@ -64,6 +71,70 @@
         </button>
       </div>
     </div>
+
+    <!-- Runtime 链路的后端更新进度与失败处置 -->
+    <a-modal
+      v-model:open="updateModalVisible"
+      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
+      :width="620"
+      :footer="null"
+      :mask-closable="false"
+      :closable="!updateRunning"
+      :z-index="9999"
+      centered
+      @cancel="closeUpdateModal"
+    >
+      <div class="backend-update-body">
+        <template v-if="updateRunning">
+          <a-progress :percent="updateOverallPercent" :show-info="false" :stroke-width="8" />
+          <p class="backend-update-message">
+            <LoadingOutlined />
+            {{ updateCurrentMessage }}
+          </p>
+          <div class="backend-update-actions">
+            <a-button danger :loading="updateCancelling" @click="cancelUpdate">
+              {{ t('comp.backendUpdateCancelAction') }}
+            </a-button>
+          </div>
+        </template>
+
+        <template v-else-if="updateOutcome">
+          <a-alert
+            :type="updateAlertType"
+            :message="updateAlertMessage"
+            :description="updateOutcome.error"
+            show-icon
+          />
+          <p v-if="updateOutcome.code" class="backend-update-meta">
+            {{ t('comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
+          </p>
+          <p v-if="updateOutcome.logPath" class="backend-update-meta">
+            {{ t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
+          </p>
+          <pre v-if="updateOutcome.logs" class="backend-update-logs">{{ updateOutcome.logs }}</pre>
+
+          <div class="backend-update-actions">
+            <a-button
+              v-for="action in updateOutcome.retryActions || []"
+              :key="action"
+              type="primary"
+              @click="retryUpdate(action)"
+            >
+              {{ retryActionLabel(action) }}
+            </a-button>
+            <a-button
+              v-if="updateOutcome.phase === 'restart' && !updateOutcome.success"
+              type="primary"
+              :loading="updateRestartingBackend"
+              @click="restartBackendAfterUpdate"
+            >
+              {{ t('comp.backendUpdateRestartBackend') }}
+            </a-button>
+            <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
+          </div>
+        </template>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -75,6 +146,7 @@ import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
@@ -86,6 +158,8 @@ import {
 import { Modal } from 'ant-design-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+import type { RuntimeUpdateRetryAction } from '@/types/electron'
 
 const { t } = useI18n()
 
@@ -103,6 +177,56 @@ const {
   progressPercent,
   open: openDownloadModal,
 } = useUpdateDownload()
+
+const {
+  ensureLaunchMode,
+  isRuntimeManaged,
+  isRuntimeDevelopment,
+  modalVisible: updateModalVisible,
+  running: updateRunning,
+  cancelling: updateCancelling,
+  restartingBackend: updateRestartingBackend,
+  targetVersion: updateTargetVersion,
+  currentMessage: updateCurrentMessage,
+  overallPercent: updateOverallPercent,
+  outcome: updateOutcome,
+  start: startRuntimeUpdate,
+  retry: retryUpdate,
+  cancel: cancelUpdate,
+  restartBackend: restartBackendAfterUpdate,
+  close: closeUpdateModal,
+} = useBackendRuntimeUpdate()
+
+const updateAlertType = computed(() => {
+  const result = updateOutcome.value
+  if (!result) return 'info'
+  if (result.success) return 'success'
+  return result.cancelled ? 'warning' : 'error'
+})
+
+// 三类失败结局各有各的后果，文案不能共用一句「更新失败」。
+const updateAlertMessage = computed(() => {
+  const result = updateOutcome.value
+  if (!result) return ''
+  if (result.success) return t('comp.backendUpdateSucceeded')
+  if (result.cancelled) return t('comp.backendUpdateCancelled')
+  if (result.unsupported) return t('comp.backendUpdateUnsupportedMode')
+
+  if (result.phase === 'shutdown') return t('comp.backendUpdateFailedShutdown')
+  if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
+  return t('comp.backendUpdateFailedBootstrap')
+})
+
+// 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
+const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
+  'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
+  'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
+  'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
+  repair: t('comp.backendUpdateRetryRepair'),
+}))
+
+const retryActionLabel = (action: RuntimeUpdateRetryAction): string =>
+  retryActionLabels.value[action]
 
 const downloadHint = computed(() => {
   if (downloadStatus.value === 'completed') return '下载完成，点击安装'
@@ -146,6 +270,14 @@ const handleAppUpdateClick = () => {
   showUpdateModal(updateInfo.value.update_info || {}, updateInfo.value.latest_version || '')
 }
 
+/**
+ * Runtime 链路的目标版本。
+ *
+ * `/api/update/check` 返回的 `latest_version` 就是发布标签；还没查到时退回应用自身版本，
+ * 主进程会再做一次规范化与合法性校验。
+ */
+const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_version || version
+
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
   Modal.confirm({
@@ -155,6 +287,12 @@ const handleBackendUpdateClick = () => {
     cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
+      // Runtime 监督链路下走「停机 → bootstrap → 重新监督」，不再跳初始化页整包更新。
+      if (isRuntimeManaged.value) {
+        await startRuntimeUpdate(resolveRuntimeUpdateVersion())
+        return
+      }
+
       try {
         logger.info('开始更新后端')
 
@@ -307,6 +445,9 @@ const handleTrayActionRequest = (request: {
 onMounted(async () => {
   // 监听托盘动作请求（启动任务 / 退出 / 重启）
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+
+  // 后端更新入口按启动链路分流，模式一个生命周期只查一次
+  await ensureLaunchMode()
 
   try {
     const config = await window.electronAPI?.loadConfig()
@@ -539,6 +680,57 @@ onBeforeUnmount(() => {
 
 .update-hint.clickable:active {
   transform: scale(0.98);
+}
+
+/* development 模式下 Runtime 不管理源码，入口只展示不可点 */
+.update-hint.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.update-hint.disabled:hover {
+  transform: none;
+  filter: none;
+}
+
+.backend-update-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backend-update-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+}
+
+.backend-update-meta {
+  margin: 0;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.backend-update-logs {
+  max-height: 220px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--ant-color-fill-quaternary);
+  border-radius: 6px;
+}
+
+.backend-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .update-hint:hover {

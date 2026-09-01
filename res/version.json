@@ -13,6 +13,7 @@
                 "MaaFW 运行池在受 AUTO-MAS-Runtime 监督时复用其注入的 uv 缓存目录、Python 安装目录与有序镜像源列表并按序重试，未受监督时行为不变"
             ],
             "开发流程": [
+                "开启 Runtime 灰度开关 AUTO_MAS_RUNTIME_MODE 后，标题栏的后端更新入口改由 auto-mas-runtime.exe 完成停机、bootstrap 到目标版本与重新监督三步，失败时按停机、同步、重启三类结局给出对应的重试入口，开发模式下入口禁用并说明原因",
                 "开启 Runtime 灰度开关 AUTO_MAS_RUNTIME_MODE 后，首次初始化的装 Python、装 pip、装 Git、拉源码、装依赖五步改由 auto-mas-runtime.exe 一次完成，初始化界面的步骤展示、失败重试与切换镜像源照常可用，默认关闭时仍走原有安装流程",
                 "新增 Runtime 后端监督灰度开关 AUTO_MAS_RUNTIME_MODE：开启后由 auto-mas-runtime.exe backend supervise 启停后端并下发 API/WS 端点，默认关闭时仍走原有的自行启动 python.exe 链路",
                 "新增 Electron 侧 AUTO-MAS Runtime 客户端模块，封装 NDJSON 协议 v1 的类型、解析、握手、stdin 控制与错误分类，暂未接入现有初始化与后端启动流程",
