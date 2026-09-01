@@ -2076,6 +2076,7 @@ export default {
     cycleTypeTip: '定时队列按设定时间整体运行；循环队列按每个任务各自的周期持续运行',
     typeTimed: '定时队列',
     typeCycle: '循环队列',
+    cycleLocked: '队列正在循环运行，队列类型与任务的增删排序暂不可改，停止后恢复',
     scheduled: '定时运行',
     scheduledTip: '在设定的时间自动运行此队列',
     yes: '是',

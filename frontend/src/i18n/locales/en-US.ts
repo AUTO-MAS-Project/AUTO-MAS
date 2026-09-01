@@ -2161,6 +2161,7 @@ export default {
       'A scheduled queue runs as a whole at set times; a cycle queue keeps running, each task on its own schedule',
     typeTimed: 'Scheduled queue',
     typeCycle: 'Cycle queue',
+    cycleLocked: 'This queue is cycling; its type and task list are locked until it stops',
     scheduled: 'Run on schedule',
     scheduledTip: 'Run this queue automatically at the configured times',
     yes: 'Yes',

@@ -55,6 +55,7 @@ const getDefaultTabRuntimeState = () => ({
   overviewData: undefined,
   lastMessageHash: '',
   lastMessageTime: 0,
+  cycleNextList: [],
 })
 
 const trimLogForRender = (content: string) => {
@@ -90,6 +91,8 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   runningTaskLabel: tab.runningTaskLabel,
   runningModeLabel: tab.runningModeLabel,
   logMode: tab.logMode || 'follow',
+  // 不存这个的话，刷新后模式选项里没有「循环运行」，已选的循环模式会被静默改回自动代理
+  isCycleQueue: tab.isCycleQueue ?? false,
   ...getDefaultTabRuntimeState(),
 })
 

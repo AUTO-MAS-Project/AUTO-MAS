@@ -27,7 +27,7 @@
             :cancel-text="t('queue.cancel')"
             @confirm="handleRemoveQueue(activeQueueId)"
           >
-            <a-button danger size="large" :disabled="!activeQueueId">
+            <a-button danger size="large" :disabled="!activeQueueId || cycleRunning">
               <template #icon>
                 <DeleteOutlined />
               </template>
@@ -116,7 +116,7 @@
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.cycleType') }}</span>
-                  <a-tooltip :title="t('queue.cycleTypeTip')">
+                  <a-tooltip :title="cycleRunning ? t('queue.cycleLocked') : t('queue.cycleTypeTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -124,6 +124,7 @@
                   v-model:value="currentCycleEnabled"
                   style="width: 100%"
                   size="large"
+                  :disabled="cycleRunning"
                   @change="(value: any) => handleConfigChange('CycleEnabled', value)"
                 >
                   <a-select-option :value="false">{{ t('queue.typeTimed') }}</a-select-option>
@@ -213,6 +214,7 @@
             :queue-id="activeQueueId"
             :queue-items="currentQueueItems"
             :show-cycle-config="currentCycleEnabled"
+            :locked="cycleRunning"
             style="font-size: 14px"
             @refresh="refreshQueueItems"
           />
@@ -235,6 +237,7 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
 
 const { t } = useI18n()
 
@@ -258,6 +261,15 @@ const currentStartUpMode = ref<'Never' | 'Always' | 'DailyFirst'>('Never')
 const currentTimeEnabled = ref<boolean>(false)
 // 队列类型：true 为循环队列，与定时互斥
 const currentCycleEnabled = ref<boolean>(false)
+// 当前队列是否正在循环运行。运行中后端会拦下增删排序队列项、换脚本、删队列、
+// 切换队列类型，这里提前把对应控件置灰，别让用户撞到报错才知道。
+const { tasks: runtimeTasks } = useTaskRuntimeState()
+const cycleRunning = computed(() =>
+  [...runtimeTasks.value.values()].some(
+    state =>
+      state.isCycle && state.queueId === activeQueueId.value && state.phase !== 'completed'
+  )
+)
 // 新增：完成后操作状态
 const currentAfterAccomplish = ref<string>('NoAction')
 // 队列名称编辑状态

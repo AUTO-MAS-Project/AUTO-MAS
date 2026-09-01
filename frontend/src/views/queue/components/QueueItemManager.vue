@@ -2,7 +2,7 @@
   <a-card :title="t('queue.item.cardTitle')" class="queue-item-card">
     <template #extra>
       <a-space>
-        <a-button type="primary" :loading="loading" @click="addQueueItem">
+        <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
           <template #icon>
             <PlusOutlined />
           </template>
@@ -30,7 +30,7 @@
         group="queueItems"
         item-key="id"
         :animation="200"
-        :disabled="loading"
+        :disabled="loading || locked"
         ghost-class="ghost"
         chosen-class="chosen"
         drag-class="drag"
@@ -58,6 +58,7 @@
                 class="script-select"
                 :placeholder="t('queue.item.selectScript')"
                 :options="scriptOptions"
+                :disabled="locked"
                 allow-clear
                 @change="updateQueueItemScript(record)"
               />
@@ -174,7 +175,7 @@
                   :cancel-text="t('queue.cancel')"
                   @confirm="deleteQueueItem(record.id)"
                 >
-                  <a-button size="middle" danger>
+                  <a-button size="middle" danger :disabled="locked">
                     <DeleteOutlined />
                     {{ t('queue.del') }}
                   </a-button>
@@ -212,10 +213,13 @@ interface Props {
   queueId: string
   queueItems: any[]
   showCycleConfig?: boolean
+  // 队列正在循环运行：增删、排序、换脚本会被后端拦下，循环周期仍可改
+  locked?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showCycleConfig: false,
+  locked: false,
 })
 
 // Emits
