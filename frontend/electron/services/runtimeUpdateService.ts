@@ -18,6 +18,7 @@
 
 import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
+import { MirrorService } from './mirrorService'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
 import {
   InitializationRunStage,
@@ -219,6 +220,8 @@ export async function updateBackendViaRuntime(
   const runtimeService = (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
     launchConfig,
     targetVersion: version,
+    // 更新流程不按段重试，这里的镜像查找只为满足构造契约；镜像配置与初始化流程同源。
+    mirrorService: new MirrorService(launchConfig.appRoot),
   })
   const current: UpdateSession = {
     version,
