@@ -1,4 +1,0 @@
-interface:
-  display_name: "MAS Game Sign"
-  short_description: "Maintain game community sign-in"
-  default_prompt: "Add, refactor, or review AUTO-MAS game community sign-in code, including the platform provider registry, credential encryption and one-time login routes, sign-in locks and trigger paths, and result/notification contracts."
