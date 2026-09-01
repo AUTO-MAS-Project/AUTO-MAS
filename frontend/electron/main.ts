@@ -144,7 +144,18 @@ let forceKillPromise: Promise<void> | null = null
 async function forceKillRelatedProcesses(): Promise<void> {
   if (forceKillPromise) return forceKillPromise
   forceKillPromise = (async () => {
-    const result = await getBackendService().forceStopBackend()
+    const backendService = getBackendService()
+
+    // Runtime 监督链路：只向监督进程发 shutdown（有上限，超时才 kill Runtime 进程本身），
+    // 后端进程树由 Runtime 的 Job Object 收走，不再走 processManager 的全局清理。
+    if (backendService.isRuntimeSupervised()) {
+      const result = await backendService.stopBackend()
+      if (!result.success) throw new Error(result.error || '未知错误')
+      logger.info('Runtime 监督的后端已关闭')
+      return
+    }
+
+    const result = await backendService.forceStopBackend()
     if (!result.success) throw new Error(result.error || '未知错误')
     logger.info('所有相关进程已清理')
   })().finally(() => {
@@ -482,6 +493,10 @@ function finishCoordinatedQuit(): void {
 }
 
 async function shouldPreserveBackendForDevMode(): Promise<boolean> {
+  // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
+  // 否则 Electron 退出后会遗留一个没人负责的监督进程。
+  if (getBackendService().isRuntimeSupervised()) return false
+
   const backendDevMode = await getBackendService().getBackendDevMode()
   if (backendDevMode !== null) return backendDevMode
   return Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
