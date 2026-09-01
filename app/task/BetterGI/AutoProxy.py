@@ -198,7 +198,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_root_path: Path | None = None
         self.script_exe_path: Path | None = None
         self.script_target_process_info: ProcessInfo | None = None
-        self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
         self._party_err_pushed = False
@@ -239,8 +238,6 @@ class AutoProxyTask(TaskExecuteBase):
             exe=str(self.script_exe_path),
             cmdline=None,
         )
-
-        self.script_log_path = self._resolve_log_file_path()
 
         self.log_time_range = (_BGI_LOG_TIME_START, _BGI_LOG_TIME_END)
         self.log_time_format = _BGI_LOG_TIME_FORMAT
