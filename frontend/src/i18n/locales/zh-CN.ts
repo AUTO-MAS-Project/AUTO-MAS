@@ -1674,6 +1674,8 @@ export default {
     },
     endfield: {
       stale: '缓存数据',
+      staleMessage: '正在使用上次成功获取的活动数据',
+      unavailable: '终末地活动数据暂不可用',
       source: '数据来源：{name}',
       poolRemaining: '卡池剩余时间',
       endsAt: '{time} 结束',

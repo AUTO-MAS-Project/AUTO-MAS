@@ -1208,18 +1208,20 @@ class MaaEndConfig(ConfigBase):
         root_path_value = str(self.get("Info", "Path")).strip()
         resource_interface_path = Path(root_path_value) / "interface.json"
         if root_path_value and resource_interface_path.is_file():
-            await self.preload_resource()
+            # 预加载搬入后台：MaaEnd 资源链的 import（约 270ms）与磁盘读取
+            # 不再阻塞启动路径，资源就绪后仍会缓存到用户配置
+            self._preload_task = asyncio.create_task(self.preload_resource())
         return is_dirty
 
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
 
-        from app.task.MaaEnd.resource_loader import try_load_maaend_options
+        def _try_load_in_thread():
+            from app.task.MaaEnd.resource_loader import try_load_maaend_options
 
-        resource = await asyncio.to_thread(
-            try_load_maaend_options,
-            Path(self.get("Info", "Path")),
-        )
+            return try_load_maaend_options(Path(self.get("Info", "Path")))
+
+        resource = await asyncio.to_thread(_try_load_in_thread)
         if resource is None:
             return
         for user_config in self.UserData.values():

@@ -1768,6 +1768,8 @@ export default {
     },
     endfield: {
       stale: 'キャッシュ',
+      staleMessage: '前回取得したイベント情報を表示しています',
+      unavailable: 'エンドフィールドのイベント情報を一時的に取得できません',
       source: 'データ提供：{name}',
       poolRemaining: 'ガチャの残り時間',
       endsAt: '{time} 終了',

@@ -1752,6 +1752,8 @@ export default {
     },
     endfield: {
       stale: 'Cached',
+      staleMessage: 'Using the last successfully fetched event data',
+      unavailable: 'Endfield event data is temporarily unavailable',
       source: 'Source: {name}',
       poolRemaining: 'Time left on this banner',
       endsAt: 'Ends {time}',
