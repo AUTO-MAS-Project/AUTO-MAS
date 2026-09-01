@@ -48,6 +48,7 @@ from .queue_cycle import (
     collect_cycle_entries,
     due_entries,
     format_cycle_time,
+    format_next_run,
     is_empty_cycle_time,
     is_script_success,
     next_after_finish,
@@ -102,8 +103,6 @@ CYCLE_RETRY_SLEEP_SECONDS = 30
 CYCLE_PREVIEW_REFRESH_SECONDS = 5
 # 预览展示的条目数
 CYCLE_PREVIEW_SIZE = 4
-# 循环会一直跑下去，每个用户只保留最近这么多条历史日志，避免内存无限增长
-CYCLE_LOG_RECORD_KEEP_COUNT = 50
 
 
 class _ScriptTaskReservations:
@@ -370,9 +369,11 @@ class Task(TaskExecuteBase):
             raise RuntimeError("循环运行必须指定队列")
 
         queue_uid = uuid.UUID(self.task_info.queue_id)
-        Config.running_cycle_queue_ids.add(queue_uid)
         logger.info(f"循环队列开始运行: {queue_uid}")
+        # 占用标记在 add_task 里与重复启动检查一起打上，这里只负责撤掉；
+        # prepare 也放进 try，它一失败标记就得跟着清。
         try:
+            await self.prepare()
             while True:
                 await self._run_cycle_round(queue_uid)
         finally:
@@ -408,7 +409,7 @@ class Task(TaskExecuteBase):
             await self._sleep_until(min(entry.next_run_at for entry in entries))
             return
 
-        await self._run_due_entries(queue_uid, entries, pending)
+        await self._run_due_entries(queue_uid, pending)
 
     async def _sleep_until(self, target: datetime) -> None:
         """睡到目标时刻，单次不超过上限。
@@ -421,23 +422,33 @@ class Task(TaskExecuteBase):
         await asyncio.sleep(max(1.0, min(delay, CYCLE_MAX_SLEEP_SECONDS)))
 
     async def _run_due_entries(
-        self,
-        queue_uid: uuid.UUID,
-        entries: list[CycleEntry],
-        pending: list[CycleEntry],
+        self, queue_uid: uuid.UUID, pending: list[CycleEntry]
     ) -> None:
         """按队列顺序跑完这一轮所有到点的条目。
 
-        被占用或没跑成的条目留到下一轮：本轮结束后外层会用新时间重新推算，预览也
-        跟着刷新。一轮里一个都没跑成就先退避，不管是被占用还是别的原因，都不让
-        循环空转。
+        每跑一个都重新推算：前一个条目刚改写了自己的下次运行时间，后面的预览和
+        判断都得基于新状态，不能沿用本轮开头那份快照。被占用或没跑成的条目留到
+        下一轮；一轮里一个都没跑成就先退避，不让循环空转。
         """
 
-        results = [
-            await self._run_cycle_entry(queue_uid, entry, entries) for entry in pending
-        ]
-        if not any(result == "success" for result in results):
+        results: list[str] = []
+        for stale in pending:
+            entries = self._collect_entries(queue_uid)
+            entry = next(
+                (e for e in entries if e.queue_item_id == stale.queue_item_id), None
+            )
+            if entry is None or not entry.is_due:
+                continue
+            results.append(await self._run_cycle_entry(queue_uid, entry, entries))
+
+        if results and not any(result == "success" for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
+
+    @staticmethod
+    def _collect_entries(queue_uid: uuid.UUID) -> list[CycleEntry]:
+        return collect_cycle_entries(
+            Config.QueueConfig[queue_uid], Config.ScriptConfig, datetime.now()
+        )
 
     async def _run_cycle_entry(
         self,
@@ -451,10 +462,24 @@ class Task(TaskExecuteBase):
             ``blocked`` 表示脚本被别的任务占用、本轮没跑；``failed`` 表示跑了但没成功。
         """
 
-        queue = Config.QueueConfig[queue_uid]
-        queue_item = queue.QueueItem[uuid.UUID(entry.queue_item_id)]
+        # 脚本列表是建任务时冻结的，靠下标回写状态。队列结构在运行中被改过
+        # （队列项没了、下标对不上脚本）就不能再信任，宁可停下也不能跑错脚本。
+        try:
+            queue_item = Config.QueueConfig[queue_uid].QueueItem[
+                uuid.UUID(entry.queue_item_id)
+            ]
+        except KeyError:
+            raise RuntimeError(
+                "循环队列的结构在运行中被改动，已停止循环，请重新启动"
+            ) from None
+        script_list = self.task_info.script_list
+        if (
+            entry.index >= len(script_list)
+            or script_list[entry.index].script_id != entry.script_id
+        ):
+            raise RuntimeError("循环队列的结构在运行中被改动，已停止循环，请重新启动")
         script_uid = uuid.UUID(entry.script_id)
-        script_item = self.task_info.script_list[entry.index]
+        script_item = script_list[entry.index]
 
         # collect 时已过滤掉被删的脚本，这里只防它在本轮中途被删。
         if script_uid not in Config.ScriptConfig:
@@ -487,7 +512,7 @@ class Task(TaskExecuteBase):
                 await queue_item.set(
                     "Schedule",
                     "NextRunAt",
-                    format_cycle_time(next_after_start(queue_item, started_at)),
+                    format_next_run(next_after_start(queue_item, started_at)),
                 )
 
             task_item = self._build_task_item(
@@ -507,9 +532,8 @@ class Task(TaskExecuteBase):
                 # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
                 await self._publish_cycle_preview(entries, running=entry)
 
-                await self._spawn_with_preview(task_item, entry, entries)
+                await self._spawn_with_preview(task_item, entry, queue_uid)
 
-                self._trim_cycle_log_records(script_item)
                 success = is_script_success(
                     script_item.status,
                     (user.status for user in script_item.user_list),
@@ -530,7 +554,7 @@ class Task(TaskExecuteBase):
             next_run_at = next_after_start(queue_item, started_at, after=finished_at)
         else:
             next_run_at = next_after_finish(queue_item, finished_at)
-        await queue_item.set("Schedule", "NextRunAt", format_cycle_time(next_run_at))
+        await queue_item.set("Schedule", "NextRunAt", format_next_run(next_run_at))
 
         if not success:
             logger.warning(f"循环任务未成功: {entry.script_name}")
@@ -540,7 +564,7 @@ class Task(TaskExecuteBase):
         self,
         task_item: TaskExecuteBase,
         entry: CycleEntry,
-        entries: list[CycleEntry],
+        queue_uid: uuid.UUID,
     ) -> None:
         """跑子任务，期间定期刷新预览，让「还有多久轮到下一个」保持准确。
 
@@ -551,7 +575,7 @@ class Task(TaskExecuteBase):
 
         child = self.spawn(task_item)
         refresher = RuntimeTasks.spawn(
-            self._refresh_preview_while_running(entries, entry),
+            self._refresh_preview_while_running(queue_uid, entry),
             name=f"cycle-preview:{self.task_info.task_id}",
         )
         try:
@@ -561,11 +585,14 @@ class Task(TaskExecuteBase):
                 refresher.cancel()
 
     async def _refresh_preview_while_running(
-        self, entries: list[CycleEntry], running: CycleEntry
+        self, queue_uid: uuid.UUID, running: CycleEntry
     ) -> None:
+        # 每次都重新推算：跑得久的时候其他条目会陆续到点，预览得跟着变
         while True:
             await asyncio.sleep(CYCLE_PREVIEW_REFRESH_SECONDS)
-            await self._publish_cycle_preview(entries, running=running)
+            await self._publish_cycle_preview(
+                self._collect_entries(queue_uid), running=running
+            )
 
     async def _publish_cycle_preview(
         self, entries: list[CycleEntry], running: CycleEntry | None = None
@@ -592,29 +619,10 @@ class Task(TaskExecuteBase):
         # TaskItem 自己的字段改了不会像脚本状态那样自动发布，得显式排一次。
         self.task_info.schedule_on_change()
 
-    def _trim_cycle_log_records(self, script_item: ScriptItem) -> None:
-        """裁剪用户历史日志，循环跑上几天也不会把内存撑爆。"""
-
-        trimmed = 0
-        for user_item in script_item.user_list:
-            excess = len(user_item.log_record) - CYCLE_LOG_RECORD_KEEP_COUNT
-            if excess <= 0:
-                continue
-            for log_time in sorted(user_item.log_record)[:excess]:
-                user_item.log_record.pop(log_time, None)
-                trimmed += 1
-
-        if trimmed:
-            logger.debug(
-                f"循环清理历史日志: {script_item.name} 清理 {trimmed} 条, "
-                f"保留最近 {CYCLE_LOG_RECORD_KEEP_COUNT} 条"
-            )
-
     async def _run_main_task(self):
 
         # 循环运行不参与签到与顺序执行那套流程，单独走自己的调度。
         if self.task_info.is_cycle:
-            await self.prepare()
             await self._run_cycle_task()
             return
 
@@ -942,6 +950,8 @@ class _TaskManager:
                 raise RuntimeError(
                     f"循环队列 {Config.QueueConfig[uid].get('Info', 'Name')} 已在运行"
                 )
+            # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
+            Config.running_cycle_queue_ids.add(uid)
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -1034,6 +1044,8 @@ class _TaskManager:
         except BaseException:
             if reservation_acquired and script_uid is not None:
                 self._script_reservations.release(script_uid, reservation_owner)
+            if is_cycle:
+                Config.running_cycle_queue_ids.discard(uid)
             self.task_handler.pop(task_uid, None)
             self.task_info.pop(task_uid, None)
             raise

@@ -15,6 +15,9 @@
 夏令时的两种边界都不会漏跑：春季跳过的时刻（如 02:30）在时钟跳到 03:00 后
 立刻满足「已到点」，表现为迟到而非跳过；秋季重复的时刻只会触发一次，因为跑完
 是以「结束时间之后」为基准推算下一次的。
+
+固定时间模式星期全不选表示「不排期」，推算函数返回 None、条目不参与调度——
+与定时队列「执行周期为空则永不触发」的口径一致。
 """
 
 import uuid
@@ -74,18 +77,26 @@ def is_empty_cycle_time(value: datetime | None) -> bool:
     return empty is not None and value <= empty
 
 
+def format_next_run(value: datetime | None) -> str:
+    """下次运行时间落盘用：推算不出来（不排期）时写空值哨兵。"""
+
+    return format_cycle_time(value) if value is not None else CYCLE_EMPTY_TIME
+
+
 def next_fixed_time(
     *, days: Iterable[str], hhmm: str, after: datetime
-) -> datetime:
+) -> datetime | None:
     """推算固定时间模式下 ``after`` 之后的第一个执行时刻。
 
     Args:
-        days: 允许执行的星期名，空集合视为每天。
+        days: 允许执行的星期名，一个都没选表示不排期，返回 None。
         hhmm: 执行时间，格式 ``HH:MM``。
         after: 推算基准，返回值严格晚于它。
     """
 
-    day_set = {day for day in days if day in WEEKDAY_NAMES} or set(WEEKDAY_NAMES)
+    day_set = {day for day in days if day in WEEKDAY_NAMES}
+    if not day_set:
+        return None
 
     try:
         hour, minute = (int(part) for part in hhmm.split(":"))
@@ -114,10 +125,11 @@ def _interval_minutes(queue_item) -> int:
         return 1
 
 
-def resolve_next_run(queue_item, now: datetime) -> datetime:
+def resolve_next_run(queue_item, now: datetime) -> datetime | None:
     """取队列项的下次运行时间；尚未推算过时按模式给出初值。
 
     间隔模式的初值是「立刻」——用户刚打开循环，不该再等一个完整间隔。
+    固定时间模式没选星期时返回 None，表示不排期。
     """
 
     next_run_at = parse_cycle_time(queue_item.get("Schedule", "NextRunAt"))
@@ -135,7 +147,7 @@ def resolve_next_run(queue_item, now: datetime) -> datetime:
 
 def next_after_start(
     queue_item, started_at: datetime, after: datetime | None = None
-) -> datetime:
+) -> datetime | None:
     """按「上次开始」基准推算下次运行时间。
 
     ``after`` 用于跑得比间隔还久的情况：一路加间隔直到越过它，避免一结束就
@@ -156,7 +168,7 @@ def next_after_start(
     return next_run_at
 
 
-def next_after_finish(queue_item, finished_at: datetime) -> datetime:
+def next_after_finish(queue_item, finished_at: datetime) -> datetime | None:
     """按「上次结束」基准推算下次运行时间。"""
 
     if queue_item.get("Schedule", "Mode") == "fixed_time":
@@ -198,6 +210,8 @@ def collect_cycle_entries(queue, script_config, now: datetime) -> list[CycleEntr
             continue
 
         next_run_at = resolve_next_run(queue_item, now)
+        if next_run_at is None:
+            continue
         entries.append(
             CycleEntry(
                 queue_item_id=str(queue_item_id),
