@@ -51,7 +51,6 @@ logger = get_logger("更新服务")
 # 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
 Config = LazyProxy("app.core", "Config")
 
-
 @dataclass(frozen=True)
 class _DownloadJob:
     """下载任务启动时冻结的版本、来源与 URL。"""
@@ -60,7 +59,6 @@ class _DownloadJob:
     source: str
     mirror_chyan_download_url: Optional[str]
     download_url: Optional[str]
-
 
 class _UpdateHandler:
     def __init__(self) -> None:

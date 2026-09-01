@@ -20,6 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
+import subprocess
 import time
 import psutil
 import asyncio
@@ -188,6 +190,7 @@ class ProcessManager:
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
         null_stream_to_pipe: bool = False,
+        elevated: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -201,6 +204,7 @@ class ProcessManager:
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
             null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
+            elevated (bool): 若为 True 且在 Windows 上, 以管理员权限启动进程（触发 UAC），此时不直接持有子进程句柄，依赖 target_process 追踪。
         """
 
         if await self.is_running():
@@ -216,6 +220,20 @@ class ProcessManager:
             raise ValueError("目标进程信息不完整")
 
         await self.clear()
+
+        if elevated and os.name == "nt":
+            # 以管理员权限启动进程（触发 UAC），ShellExecute 不返回子进程句柄，
+            # 因此无法直接持有 process，仅支持通过 target_process 追踪。
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._open_process_elevated, program, args, cwd
+            )
+            if target_process is not None:
+                await self.search_process(
+                    target_process,
+                    60.0,
+                    min_create_time=time.time(),
+                )
+            return
 
         # 若指定了 null_stream_to_pipe, 将 stdout/stderr 为 DEVNULL 的流替换为管道, 并在后台消费以防止阻塞
         drain_streams = []
@@ -249,6 +267,34 @@ class ProcessManager:
                 target_process,
                 60.0,
                 min_create_time=time.time(),
+            )
+
+    @staticmethod
+    def _open_process_elevated(
+        program: Path | str, args: tuple[str, ...], cwd: Path | None
+    ) -> None:
+        """以管理员权限启动进程（触发 UAC），ShellExecute 成功时返回码大于 32。
+
+        win32 仅在 Windows 路径才使用，故延迟导入，保证本平台通用模块在
+        非 Windows 上也能安全导入。
+        """
+        import win32api
+        import win32con
+
+        parameters = subprocess.list2cmdline(list(args)) if args else None
+        working_directory = str(cwd) if cwd is not None else None
+
+        ret = win32api.ShellExecute(
+            None,
+            "runas",
+            str(program),
+            parameters,
+            working_directory,
+            win32con.SW_SHOWNORMAL,
+        )
+        if ret <= 32:
+            raise RuntimeError(
+                f"以管理员权限启动进程失败: {program} (ShellExecute 返回 {ret})"
             )
 
     async def _drain(self, stream: asyncio.StreamReader) -> None:

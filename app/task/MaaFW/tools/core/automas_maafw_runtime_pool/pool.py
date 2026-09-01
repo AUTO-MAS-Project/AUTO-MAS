@@ -1229,9 +1229,11 @@ def _verify_installed_python_identity(
     try:
         actual = probe_python_identity(python_executable)
     except Exception as exc:
+        # 带上原因原文：ctypes 自检失败这类信息只有在这里传出去，用户
+        # 才看得到「标准库不可用」，而不是一句无从下手的「无法校验」。
         raise MaaFWRuntimePoolError(
             "installed runtime Python identity could not be verified: "
-            f"{python_executable}"
+            f"{python_executable}: {exc}"
         ) from exc
 
     required_probe_fields = (

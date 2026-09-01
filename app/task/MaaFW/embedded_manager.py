@@ -29,6 +29,7 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +54,54 @@ if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
 
 logger = get_logger("MFW 内置运行")
+
+
+def describe_unusable_runtime(project_path: Path) -> str | None:
+    """运行前自检：这个项目要用的运行池 runtime 还能用吗？
+
+    只在池里已经存在匹配的 runtime 时才探一次（一个子进程，约 100ms——解释器
+    本来就要起）。没建过就不拦：那份环境会在运行时按需准备，失败自有它自己的
+    报错路径。
+
+    拦在 ``check()`` 而不是只靠编辑页的提示：队列与定时任务不经过编辑页，
+    绕不过 check()；而且这里拦下来时模拟器和游戏都还没启动。
+    """
+
+    # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
+    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        resolve_project_maafw_requirement,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
+        probe_python_identity,
+    )
+
+    try:
+        requirement = resolve_project_maafw_requirement(project_path)
+    except Exception:  # noqa: BLE001 - 自检失败不该反过来挡住运行
+        return None
+    if not requirement:
+        return None
+
+    try:
+        runtimes = MaaFWRuntimePoolService().list()
+    except Exception:  # noqa: BLE001
+        return None
+
+    for runtime in runtimes:
+        if str(runtime.get("maafwRequirement") or "").strip() != requirement:
+            continue
+        python_executable = str(runtime.get("pythonExecutable") or "").strip()
+        if not python_executable:
+            continue
+        try:
+            probe_python_identity(Path(python_executable))
+        except Exception as exc:  # noqa: BLE001 - 原文就是给用户看的
+            return f"MFW 运行环境不可用：{exc}"
+        return None
+    return None
 
 
 class MaaFWEmbeddedManager(TaskExecuteBase):
@@ -124,6 +173,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return "MFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
+
+        environment_problem = await asyncio.to_thread(
+            describe_unusable_runtime, Path(project_value)
+        )
+        if environment_problem:
+            return environment_problem
+
         return "Pass"
 
     @staticmethod

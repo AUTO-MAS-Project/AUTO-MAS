@@ -3218,6 +3218,214 @@ class OkNteUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+# BetterGI 一条龙内置配置组（按 BetterGI 默认顺序，与 tools/one_dragon.py 保持同步）
+_BGI_BUILTIN_ONE_DRAGON_GROUPS = [
+    "领取邮件",
+    "合成树脂",
+    "自动地脉花",
+    "自动秘境",
+    "自动首领讨伐",
+    "自动幽境危战",
+    "领取每日奖励",
+    "领取尘歌壶奖励",
+]
+
+# 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。
+# 用于加载旧配置时迁移（GlobalAccount=True 且 Servers 未知/「不切换服务器」时兜底为亚服）。
+_BGI_LEGACY_SERVERS_TO_RESOURCE = {
+    "Asia": "亚服",
+    "Europe": "欧服",
+    "America": "美服",
+    "TW,HK,MO": "港澳台服",
+}
+
+
+class BetterGIUserConfig(ConfigBase):
+    """BetterGI 用户配置（更好的原神）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        self.Info_Id = ConfigItem("Info", "Id", "")
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+        ## 是否使用用户独立一条龙配置（借鉴通用脚本 IfUseMasConfig）
+        self.Info_IfUseMasConfig = ConfigItem(
+            "Info", "IfUseMasConfig", True, BoolValidator()
+        )
+
+        ## Task ------------------------------------------------------------
+        ## BetterGI「一条龙」配置名，对应脚本一条龙页面中已保存的配置名称
+        self.Task_OneDragonConfigName = ConfigItem(
+            "Task", "OneDragonConfigName", ""
+        )
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙要执行的内置配置组（按组名，默认全部 8 组开启）
+        self.OneDragon_Groups = ConfigItem(
+            "OneDragon",
+            "Groups",
+            list(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+            MultipleOptionsValidator(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+        )
+        ## 领取奖励队伍（对应 BetterGI 一条龙的 DailyRewardPartyName，留空不覆盖）
+        self.OneDragon_DailyRewardPartyName = ConfigItem(
+            "OneDragon", "DailyRewardPartyName", ""
+        )
+        ## 战斗队伍（对应 BetterGI 一条龙的通用 PartyName，留空不覆盖）
+        self.OneDragon_PartyName = ConfigItem("OneDragon", "PartyName", "")
+        ## 战斗策略（对应 BetterGI 一条龙的 AutoBossStrategyName，留空不覆盖）
+        ## 默认「根据队伍自动选择」为 BetterGI 内置策略名
+        self.OneDragon_AutoBossStrategyName = ConfigItem(
+            "OneDragon", "AutoBossStrategyName", ""
+        )
+        ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
+        self.OneDragon_IfUseCustomGroups = ConfigItem(
+            "OneDragon", "IfUseCustomGroups", False, BoolValidator()
+        )
+        ## 自定义配置组列表：JSON 数组字符串，元素为 {"name": str, "enabled": bool}
+        self.OneDragon_CustomGroups = ConfigItem(
+            "OneDragon", "CustomGroups", "[]", JSONValidator(list)
+        )
+
+        ## Switch ----------------------------------------------------------
+        ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）
+        ## 账号/密码复用 Info.Id / Info.Password（密码经 EncryptValidator 加密）
+        ## 切换模式不再由用户配置，运行时按密码是否填写推断：
+        ##   填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」；B服 强制「B服切换另一个账号匹配+键鼠」。
+        ## 游戏服务器（账号所在服务器：官服/B服/国际服各服务器）
+        self.Switch_Resource = ConfigItem(
+            "Switch",
+            "Resource",
+            "官服",
+            OptionsValidator(["官服", "B服", "亚服", "欧服", "美服", "港澳台服"]),
+        )
+        ## 账号 UID（可不填，切换前识别一致将不执行切换动作）
+        self.Switch_Uid = ConfigItem("Switch", "Uid", "")
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+        self.Data_LastOneDragonConfig = ConfigItem(
+            "Data", "LastOneDragonConfig", ""
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送用户统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载配置前，把旧版「国际服账号 + 国际服服务器 / B服切换模式」迁移为「游戏服务器」。"""
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        switch = normalized_data.get("Switch")
+        if isinstance(switch, dict) and "Resource" not in switch:
+            if switch.get("Modes") == "B服切换另一个账号匹配+键鼠":
+                # 旧版 B服 是切换模式，现作为游戏服务器
+                switch["Resource"] = "B服"
+            elif switch.get("GlobalAccount"):
+                switch["Resource"] = _BGI_LEGACY_SERVERS_TO_RESOURCE.get(
+                    switch.get("Servers"), "亚服"
+                )
+            else:
+                switch["Resource"] = "官服"
+        return await super().load(normalized_data)
+
+    def getTags(self) -> str:
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append({"text": f"上次：{last_status}", "color": "green"})
+
+        config_name = self.get("Task", "OneDragonConfigName") or "未设置"
+        tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
 class GeneralConfig(ConfigBase):
     """通用配置"""
 
@@ -3503,6 +3711,46 @@ class OkNteConfig(ConfigBase):
         )
 
         self.UserData = MultipleConfig([OkNteUserConfig])
+
+        super().__init__()
+
+
+class BetterGIConfig(ConfigBase):
+    """BetterGI 配置（更好的原神，原生 GUI 直控 + 仅一条龙任务）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新 BetterGI 脚本")
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
+
+        ## Run -------------------------------------------------------------
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）
+        ## ⚠️ 预留字段：当前运行时不读取（BetterGI 自行管理游戏控制），云原神 / 桌面分身
+        ##    尚未开发。为将来支持而保留占位并持久化，恒为默认「电脑端-前台」，勿被判定死代码误删。
+        self.Game_Controller = ConfigItem(
+            "Game",
+            "Controller",
+            "电脑端-前台",
+            OptionsValidator(["电脑端-前台", "电脑端-云原神", "电脑端-桌面分身"]),
+        )
+        ## 任务结束后关闭游戏
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        self.UserData = MultipleConfig([BetterGIUserConfig])
 
         super().__init__()
 
@@ -3896,6 +4144,7 @@ class GlobalConfig(ConfigBase):
                 OkwwConfig,
                 OkNteConfig,
                 HSRConfig,
+                BetterGIConfig,
             ]
         )
         ## 队列配置列表
@@ -4004,6 +4253,7 @@ CLASS_BOOK = {
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
+    "BetterGI": BetterGIConfig,
 }
 """配置类映射表"""
 
