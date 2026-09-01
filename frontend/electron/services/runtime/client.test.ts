@@ -323,6 +323,24 @@ describe('RuntimeClient.run', () => {
     expect(outcome.exitCode).toBe(2)
   })
 
+  it('可重试的 Runtime 失败照样正常返回，retryable 与 remediation 取自 result', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+
+    const pending = client.run(['dependencies', 'check'])
+    child.stdout.feed(fixture('dependencies-check-failed.ndjson'))
+    child.close(40)
+    const outcome = await pending
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe('GIT_REPOSITORY_INVALID')
+    expect(outcome.result.retryable).toBe(true)
+    expect(outcome.result.remediation).toEqual(['retry-sync'])
+    expect(isRetryableRuntimeCode('GIT_REPOSITORY_INVALID')).toBe(true)
+    // hello.capabilities 随命令变化，不能从命令名推断。
+    expect(outcome.hello.capabilities).toEqual(['stdin.cancel'])
+  })
+
   it('warning 单独归集并保留在 result.details.warnings 里', async () => {
     const client = createClient()
     const child = mockSpawn()
