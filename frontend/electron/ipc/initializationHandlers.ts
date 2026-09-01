@@ -3,17 +3,23 @@
  * 使用新的服务
  */
 
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent, app } from 'electron'
+import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
 import { getLogger } from '../services/logger'
 import type { ApiEndpoints, MirrorConfig } from '../services/mirrorService'
+import type { RuntimeLaunchMode } from '../services/runtime'
+import { resolveRuntimeLaunchMode } from '../services/runtime'
 import type {
   CriticalFilesCheck,
   InitializationRunStage,
   RuntimeStageOutcome,
 } from '../services/runtimeInitializationService'
-import { mapDoctorChecksToCriticalFiles } from '../services/runtimeInitializationService'
+import {
+  listRuntimeMappableMirrorKeys,
+  mapDoctorChecksToCriticalFiles,
+} from '../services/runtimeInitializationService'
 
 const logger = getLogger('初始化处理器')
 const mirrorTypes = new Set<keyof MirrorConfig>(['python', 'get_pip', 'git', 'repo', 'pip_mirror'])
@@ -87,12 +93,16 @@ export function getLocalApiEndpoint(): string {
  *
  * 逐步进度通道是按步骤分的，渲染进程只看进度数值不看段名，所以这里只转发本段的进度，
  * 否则整条 bootstrap 重跑时 `mirror` / `pip` / `git` 的完成进度会把当前步骤误标成完成。
+ *
+ * `rebuild` 对应界面上「重建环境」这个按钮：它与「重试」共用本通道，只是要求 Runtime
+ * 走重建版本的下层命令。
  */
 async function runStageViaRuntime(
   event: IpcMainInvokeEvent,
   stage: InitializationRunStage,
   progressChannel: string,
-  selectedMirror?: string
+  selectedMirror?: string,
+  rebuild?: boolean
 ): Promise<RuntimeStageOutcome | null> {
   const initService = getInitService()
   return initService.retryStageViaRuntime(
@@ -101,8 +111,32 @@ async function runStageViaRuntime(
       if (progress.stage !== stage) return
       event.sender.send(progressChannel, progress)
     },
-    selectedMirror
+    selectedMirror,
+    rebuild
   )
+}
+
+/**
+ * 界面开局要问一次的 Runtime 上下文。
+ *
+ * 三件事各有各的来源，但界面在同一时刻需要它们：走没走 Runtime（决定步骤标签与哪些段
+ * 直接置完成）、失败时「打开日志」拿不到 Runtime 日志路径要退回哪个文件、
+ * 「换镜像重试」在 Runtime 下该列哪些镜像键。
+ */
+export interface RuntimeInitContext {
+  mode: RuntimeLaunchMode
+  /** 本程序自己的日志文件，Runtime 没给 `logPath` 时的回退。 */
+  fallbackLogPath: string
+  /** 各段在 Runtime 链路下映射得到的旧镜像键；空数组表示该段不展示镜像选择。 */
+  mirrorKeys: Record<InitializationRunStage, string[]>
+}
+
+export function resolveRuntimeInitContext(): RuntimeInitContext {
+  return {
+    mode: resolveRuntimeLaunchMode(),
+    fallbackLogPath: path.join(path.dirname(app.getPath('exe')), 'debug', 'frontend.log'),
+    mirrorKeys: listRuntimeMappableMirrorKeys(),
+  }
 }
 
 /**
@@ -149,7 +183,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== Python 安装 ====================
 
-  ipcMain.handle('install-python', async (event, selectedMirror?: string) => {
+  ipcMain.handle('install-python', async (event, selectedMirror?: string, rebuild?: boolean) => {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装Python: ${selectedMirror}`)
     }
@@ -158,7 +192,8 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       event,
       'python',
       'python-progress',
-      selectedMirror
+      selectedMirror,
+      rebuild
     )
     if (runtimeOutcome) return runtimeOutcome
 
@@ -182,12 +217,18 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== Pip 安装 ====================
 
-  ipcMain.handle('install-pip', async (event, selectedMirror?: string) => {
+  ipcMain.handle('install-pip', async (event, selectedMirror?: string, rebuild?: boolean) => {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装Pip: ${selectedMirror}`)
     }
 
-    const runtimeOutcome = await runStageViaRuntime(event, 'pip', 'pip-progress', selectedMirror)
+    const runtimeOutcome = await runStageViaRuntime(
+      event,
+      'pip',
+      'pip-progress',
+      selectedMirror,
+      rebuild
+    )
     if (runtimeOutcome) return runtimeOutcome
 
     const appRoot = getAppRoot()
@@ -210,12 +251,18 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== Git 安装 ====================
 
-  ipcMain.handle('install-git', async (event, selectedMirror?: string) => {
+  ipcMain.handle('install-git', async (event, selectedMirror?: string, rebuild?: boolean) => {
     if (selectedMirror) {
       logger.info(`使用指定镜像源安装Git: ${selectedMirror}`)
     }
 
-    const runtimeOutcome = await runStageViaRuntime(event, 'git', 'git-progress', selectedMirror)
+    const runtimeOutcome = await runStageViaRuntime(
+      event,
+      'git',
+      'git-progress',
+      selectedMirror,
+      rebuild
+    )
     if (runtimeOutcome) return runtimeOutcome
 
     const appRoot = getAppRoot()
@@ -240,7 +287,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'pull-repository',
-    async (event, targetBranch: string = 'dev', selectedMirror?: string) => {
+    async (event, targetBranch: string = 'dev', selectedMirror?: string, rebuild?: boolean) => {
       if (selectedMirror) {
         logger.info(`使用指定镜像源拉取源码: ${selectedMirror}`)
       }
@@ -250,7 +297,8 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
         event,
         'repository',
         'repository-progress',
-        selectedMirror
+        selectedMirror,
+        rebuild
       )
       if (runtimeOutcome) return runtimeOutcome
 
@@ -275,36 +323,40 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== 依赖安装 ====================
 
-  ipcMain.handle('install-dependencies', async (event, selectedMirror?: string) => {
-    if (selectedMirror) {
-      logger.info(`使用指定镜像源安装依赖: ${selectedMirror}`)
+  ipcMain.handle(
+    'install-dependencies',
+    async (event, selectedMirror?: string, rebuild?: boolean) => {
+      if (selectedMirror) {
+        logger.info(`使用指定镜像源安装依赖: ${selectedMirror}`)
+      }
+
+      const runtimeOutcome = await runStageViaRuntime(
+        event,
+        'dependency',
+        'dependency-progress',
+        selectedMirror,
+        rebuild
+      )
+      if (runtimeOutcome) return runtimeOutcome
+
+      const appRoot = getAppRoot()
+      const initService = getInitService()
+      const mirrorService = initService.getMirrorService()
+
+      const { DependencyService } = await import('../services/dependencyService')
+      const depService = new DependencyService(appRoot, mirrorService)
+
+      const result = await depService.installDependencies(progress => {
+        event.sender.send('dependency-progress', progress)
+      }, selectedMirror)
+
+      if (!result.success) {
+        logger.error(`依赖安装失败: ${result.error}`)
+      }
+
+      return result
     }
-
-    const runtimeOutcome = await runStageViaRuntime(
-      event,
-      'dependency',
-      'dependency-progress',
-      selectedMirror
-    )
-    if (runtimeOutcome) return runtimeOutcome
-
-    const appRoot = getAppRoot()
-    const initService = getInitService()
-    const mirrorService = initService.getMirrorService()
-
-    const { DependencyService } = await import('../services/dependencyService')
-    const depService = new DependencyService(appRoot, mirrorService)
-
-    const result = await depService.installDependencies(progress => {
-      event.sender.send('dependency-progress', progress)
-    }, selectedMirror)
-
-    if (!result.success) {
-      logger.error(`依赖安装失败: ${result.error}`)
-    }
-
-    return result
-  })
+  )
 
   // ==================== 获取镜像源列表 ====================
 

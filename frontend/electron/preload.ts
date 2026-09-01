@@ -223,15 +223,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 初始化 API ====================
 
   // 单步初始化API
+  // rebuild 对应界面「重建环境」按钮，只在 Runtime 链路下有意义（走 repair / dependencies rebuild）
   initMirrors: () => ipcRenderer.invoke('init-mirrors'),
-  installPython: (selectedMirror?: string) => ipcRenderer.invoke('install-python', selectedMirror),
-  installPip: (selectedMirror?: string) => ipcRenderer.invoke('install-pip', selectedMirror),
-  installGit: (selectedMirror?: string) => ipcRenderer.invoke('install-git', selectedMirror),
-  pullRepository: (targetBranch?: string, selectedMirror?: string) =>
-    ipcRenderer.invoke('pull-repository', targetBranch, selectedMirror),
-  installDependencies: (selectedMirror?: string) =>
-    ipcRenderer.invoke('install-dependencies', selectedMirror),
+  installPython: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-python', selectedMirror, rebuild),
+  installPip: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-pip', selectedMirror, rebuild),
+  installGit: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-git', selectedMirror, rebuild),
+  pullRepository: (targetBranch?: string, selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('pull-repository', targetBranch, selectedMirror, rebuild),
+  installDependencies: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-dependencies', selectedMirror, rebuild),
   getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
+  getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
 
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),

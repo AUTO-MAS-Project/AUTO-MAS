@@ -137,6 +137,21 @@ export function mapMirrorSelection(
   return MIRROR_KEY_MAP[stage]?.[key] ?? null
 }
 
+/**
+ * 各段在 Runtime 链路下映射得到的旧镜像键，供界面过滤「换镜像重试」的候选列表。
+ *
+ * 界面不该把 Runtime 根本收不下的镜像源摆出来（选了也只会被忽略），也不该自己抄一份
+ * 键名，所以这里把上面那张映射表的键原样导出，映射表是唯一真相源。列表为空的段
+ * （`dependency` 等）在 Runtime 模式下不展示镜像选择。
+ */
+export function listRuntimeMappableMirrorKeys(): Record<InitializationRunStage, string[]> {
+  const result = {} as Record<InitializationRunStage, string[]>
+  for (const stage of Object.keys(INITIALIZATION_STAGE_INDEX) as InitializationRunStage[]) {
+    result[stage] = Object.keys(MIRROR_KEY_MAP[stage] ?? {})
+  }
+  return result
+}
+
 // ==================== 目标版本 ====================
 
 /**
@@ -290,6 +305,8 @@ export interface RuntimeStageOutcome {
   remediation?: RuntimeRemediation[]
   /** `[stdout]…\n\n[stderr]…` 整块文本，与旧链路失败界面的展示格式一致。 */
   logs?: string
+  /** Runtime 本次操作的日志文件路径（`result.details.logPath`），供界面「打开日志」使用。 */
+  logPath?: string
   /** 映射后的失败段名。 */
   failedStage?: InitializationRunStage
 }
@@ -356,11 +373,15 @@ export class RuntimeInitializationService {
    * - 没选镜像源：走该段对应的下层命令，上一次失败要求重建环境时换成重建版本。
    *
    * `mirror` / `pip` / `git` 三段在新链路没有对应物，直接按成功返回。
+   *
+   * `rebuild` 显式覆盖上一次失败留下的判断：界面的「重建环境」按钮传 true，普通「重试」
+   * 按钮传 false，两个按钮才不会做同一件事；不传时保持按上一次 remediation 决定。
    */
   async retryStage(
     stage: InitializationRunStage,
     onProgress: (update: BootstrapProgressUpdate) => void,
-    mirrorKey?: string
+    mirrorKey?: string,
+    rebuild?: boolean
   ): Promise<RuntimeStageOutcome> {
     if (stage === 'mirror' || stage === 'pip' || stage === 'git') {
       logger.info(`${stage} 段在 Runtime 链路没有对应物，直接跳过`)
@@ -381,7 +402,7 @@ export class RuntimeInitializationService {
       return this.bootstrap(onProgress, mirror)
     }
 
-    const command = this.resolveRetryCommand(stage)
+    const command = this.resolveRetryCommand(stage, rebuild)
     if (!command) {
       logger.warn(`未知的重试段 ${stage}，按整条 bootstrap 重跑`)
       return this.bootstrap(onProgress)
@@ -403,9 +424,13 @@ export class RuntimeInitializationService {
    * `python` 段的下层命令是 `environment ensure`，它只准备并校验固定版本 uv；本段还覆盖
    * 由 bootstrap 内部完成的 `uv python install`，所以上一次失败要求重建环境时直接用整体
    * `repair`，而不是只重跑 uv 那半截。
+   *
+   * `rebuild` 由调用方显式给出时以它为准（界面上「重试」与「重建环境」是两个按钮）；
+   * 不给时沿用上一次失败的 remediation。
    */
-  private resolveRetryCommand(stage: InitializationRunStage): string[] | null {
-    const needsRebuild = this.lastRemediation.get(stage)?.includes('rebuild-environment') ?? false
+  private resolveRetryCommand(stage: InitializationRunStage, rebuild?: boolean): string[] | null {
+    const needsRebuild =
+      rebuild ?? (this.lastRemediation.get(stage)?.includes('rebuild-environment') ?? false)
 
     switch (stage) {
       case 'python':
@@ -540,9 +565,21 @@ export class RuntimeInitializationService {
       retryable: outcome.result.retryable,
       remediation,
       logs: mergeRuntimeLogs(stdoutLines, stderrLines, outcome.stderr),
+      logPath: readRuntimeLogPath(outcome.result.details),
       failedStage,
     }
   }
+}
+
+/**
+ * 取 Runtime 本次操作的日志文件路径。
+ *
+ * `details` 是裸 `Record<string, unknown>`，Runtime 只在写了日志文件的命令上放 `logPath`，
+ * 所以拿不到就返回 undefined，由界面退回自己的日志文件。
+ */
+function readRuntimeLogPath(details: Record<string, unknown>): string | undefined {
+  const value = details.logPath
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
 /** Runtime 自身的 stderr 诊断并入 `[stderr]` 块，避免失败界面一片空白。 */
@@ -597,6 +634,13 @@ export interface CriticalFilesCheck {
   pipExists: boolean
   gitExists: boolean
   mainPyExists: boolean
+  /**
+   * doctor 的逐项检查原文，只有 Runtime 链路产生。
+   *
+   * 四个布尔量只回答「要不要初始化」，界面的「运行诊断」要展示的是每一项到底怎么了，
+   * 所以原样带上而不是再压缩一次。
+   */
+  runtimeChecks?: RuntimeDoctorCheck[]
 }
 
 /**
@@ -616,6 +660,7 @@ export function mapDoctorChecksToCriticalFiles(checks: RuntimeDoctorCheck[]): Cr
     pipExists: true,
     gitExists: true,
     mainPyExists: repoPresent,
+    runtimeChecks: checks,
   }
 }
 
