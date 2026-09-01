@@ -1,9 +1,28 @@
 import asyncio
+import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import app.api.core as core_api
 from app.core.ws import protocol
+
+
+class IsBackendDevModeTest(unittest.TestCase):
+    """受监督优先级高于 AUTO_MAS_DEV 与 AUTO_MAS_ENV：见 main.is_supervised。"""
+
+    def test_supervised_overrides_dev_env(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"AUTO_MAS_SUPERVISED": "1", "AUTO_MAS_ENV": "development"},
+        ):
+            self.assertFalse(core_api.is_backend_dev_mode())
+
+    def test_dev_env_without_supervision_still_dev_mode(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"AUTO_MAS_SUPERVISED": "", "AUTO_MAS_ENV": "development"},
+        ):
+            self.assertTrue(core_api.is_backend_dev_mode())
 
 
 class CoreCloseTest(unittest.IsolatedAsyncioTestCase):

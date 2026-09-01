@@ -34,7 +34,7 @@ if __name__ == "__main__":
     os.chdir(current_dir)
 
 from app.utils.platform import IS_WINDOWS
-from app.utils import get_logger, sanitize_log_message
+from app.utils import get_logger, sanitize_log_message, is_supervised
 
 logger = get_logger("主程序")
 
@@ -115,12 +115,36 @@ def is_hosted_launch() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def should_restart_as_admin(
+    *,
+    supervised: bool,
+    admin: bool,
+    hosted_launch: bool,
+    development_environment: bool,
+) -> bool:
+    """判断是否需要以管理员身份重启当前进程。
+
+    抽成纯函数便于单独测试：restart_as_admin() 会 ShellExecuteW("runas", ...)
+    拉起新进程再退出当前进程，若在受 AUTO-MAS-Runtime 监督（Windows Job Object
+    托管进程树）下这么做，新进程会脱离 Job Object，监督器看到旧进程退出即判定
+    后端已结束，因此受监督时优先级最高、永远不重启；其余情况维持既有判据。
+    """
+
+    if supervised:
+        return False
+    return not (admin or hosted_launch or development_environment)
+
+
 def resolve_http_port(development_environment: bool) -> int:
     """解析 HTTP/WS 监听端口，让开发环境与用户安装的正式版可以同时运行。
 
     正式版保持 36163 不变；开发环境默认改用 36164，因此源码调试不会再抢占
     用户已装正式版的端口。前端拉起后端时会注入 AUTO_MAS_HTTP_PORT，保证两侧
     始终对齐同一个端口。
+
+    受 AUTO-MAS-Runtime 监督时固定返回 36163：监督器的健康检查与关闭请求都
+    硬编码打这个端口，且不会注入 AUTO_MAS_HTTP_PORT，因此忽略该变量与开发
+    环境判据，优先级高于两者。
 
     Args:
         development_environment: 当前是否为开发环境。
@@ -130,6 +154,12 @@ def resolve_http_port(development_environment: bool) -> int:
     """
 
     raw = str(os.getenv("AUTO_MAS_HTTP_PORT", "")).strip()
+
+    if is_supervised():
+        if raw:
+            logger.info(f"受监督模式下端口固定为 {DEFAULT_HTTP_PORT}，已忽略 AUTO_MAS_HTTP_PORT={raw}")
+        return DEFAULT_HTTP_PORT
+
     if raw:
         try:
             port = int(raw)
@@ -148,8 +178,19 @@ def main():
     if development_environment:
         os.environ["AUTO_MAS_ENV"] = "development"
 
-    if not (is_admin() or is_hosted_launch() or development_environment):
+    supervised = is_supervised()
+    admin = is_admin()
+    if should_restart_as_admin(
+        supervised=supervised,
+        admin=admin,
+        hosted_launch=is_hosted_launch(),
+        development_environment=development_environment,
+    ):
         restart_as_admin()
+    elif supervised and not admin:
+        logger.warning(
+            "受监督模式下不自行提权，当前非管理员，依赖模拟器/窗口操作的功能可能受限"
+        )
 
     from app.core import Config
     from app.services.telemetry import (
