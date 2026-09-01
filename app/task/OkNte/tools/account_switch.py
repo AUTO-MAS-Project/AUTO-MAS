@@ -104,8 +104,9 @@ _DIAGNOSTIC_DUMP_EVERY_POLLS = 10
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 
-# 标题界面右上角退出图标（无文本可 OCR，按 2048x1152 参考截图换算 1080p 坐标）
-_LOGOUT_ICON_POINT = (1865, 342)
+# 标题界面右上角退出图标（无文本可 OCR，按 2048x1152 参考截图换算 1080p 坐标；
+# 图标中心 x≈1962/2048→1839，y≈363/1152→340，原 1865 偏右落在图标右缘外导致点击不生效）
+_LOGOUT_ICON_POINT = (1839, 340)
 # 账号列表滚动中心（HOTTA STUDIO 面板中部），目标账号超出可见范围时滚轮翻页
 _LIST_SCROLL_POINT = (960, 600)
 
