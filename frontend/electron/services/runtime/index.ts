@@ -46,6 +46,17 @@ export {
   serializeControlCommand,
 } from './client'
 
+export {
+  RUNTIME_EXECUTABLE_NAME,
+  RUNTIME_EXE_ENV,
+  RUNTIME_MODE_ENV,
+  RuntimeLaunchConfig,
+  RuntimeLaunchMode,
+  resolveRuntimeExecutable,
+  resolveRuntimeLaunchConfig,
+  resolveRuntimeLaunchMode,
+} from './launchConfig'
+
 export { NdjsonEventStream, NdjsonItem, parseRuntimeEventLine } from './ndjson'
 
 export {
