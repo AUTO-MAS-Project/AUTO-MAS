@@ -61,7 +61,7 @@ _HPATCHZ_URL = (
 )
 _HPATCHZ_ZIP_SHA256 = "77f141386e5d8f785c1c846e10fbbc19b6c05aa00e3f59cc44670fb3f0e2ae94"
 _HPATCHZ_MEMBER = "windows64/hpatchz.exe"
-_HPATCHZ_CACHE_DIR = Path.cwd() / "environment/hpatchz"
+_HPATCHZ_CACHE_DIR = Path.cwd() / "data" / "cache" / "hpatchz"
 
 # 暂存区放在安装目录内，确保与游戏目录同卷，move 才是原子改名而非跨卷复制。
 _STAGING_DIR_NAME = "_mas_update"

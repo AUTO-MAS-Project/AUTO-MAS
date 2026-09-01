@@ -76,7 +76,7 @@ from app.models.config import (
     Webhook,
 )
 from app.models.schema import PlanComboxConsumer
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
     RESOURCE_STAGE_DATE_TEXT,
@@ -290,7 +290,7 @@ class AppConfig(GlobalConfig):
         self._inject_truststore()
 
         self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+            loader=FileSystemLoader(str(resource_path("html")))
         )
 
     @staticmethod

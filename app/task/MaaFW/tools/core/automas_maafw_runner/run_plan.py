@@ -30,6 +30,7 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
     normalize_snapshot,
     normalize_task_execution_payload,
 )
+from app.utils import resource_path
 
 from .models import (
     MaaFWResolvedPath,
@@ -677,7 +678,7 @@ def _build_pi_env(
 
 
 def _load_client_version() -> str:
-    version_path = Path.cwd() / "res" / "version.json"
+    version_path = resource_path("version.json")
     try:
         data = json.loads(version_path.read_text(encoding="utf-8"))
         version = data.get("version")
