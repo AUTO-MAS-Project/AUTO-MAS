@@ -54,7 +54,8 @@
                 "OK-NTE专项 修复日常任务在当日活跃度奖励已领取过（或日常领取子任务被关闭）时被误判为失败并反复重试的问题，已领取时任务报告显示「跳过（当日已领取）」 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "HSR专项 修复模块重试耗尽仍失败时用户被误标为「完成」的问题，调度台总览与任务报告不再把失败的代理报成成功 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 修复便携版在装有另一份 Python 3.12 的电脑上运行环境准备成功、任务一启动却报 ctypes 错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "HSR专项 修复脚本直控的用户在脚本结束后偶发被标记为异常的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "HSR专项 修复脚本直控的用户在脚本结束后偶发被标记为异常的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "BetterGI专项 修复一条龙复查发现的问题：日志监控改为按日期滚动自动切换当日文件（任务跨零点不再误判超时）；设置会话结束后删除运行时槽位（不再残留到 BGI GUI）；切号脚本缺失仅在上一轮检出也失败时才重建仓库（首次启用不再误删用户已有脚本仓库）；MAS 自身已提权时不再重复触发 UAC；多次重试的分步执行报告只取成功轮（不再出现两轮 1/N 重复）；步骤耗时跨零点补一天修正；自定义配置组 enabled 缺失时前后端统一默认启用"
             ]
         },
         "v5.5.0-beta.2": {

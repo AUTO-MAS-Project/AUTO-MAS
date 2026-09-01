@@ -160,6 +160,14 @@ def switch_script_dir(root_path: Path) -> Path:
     return root_path / _JS_SCRIPT_REL_DIR / _SCRIPT_FOLDER_NAME
 
 
+def _checkout_failed_marker(root_path: Path) -> Path:
+    """「上轮检出失败」标记文件路径（脚本缺失但 BGI 未成功补位时存在）。
+
+    标记放在 ``User/JsScript`` 下，点前缀文件名不会与 BGI 脚本目录冲突。
+    """
+    return root_path / _JS_SCRIPT_REL_DIR / ".mas_switch_checkout_failed"
+
+
 def _ensure_script_subscription(root_path: Path) -> Path:
     """合并订阅清单，返回订阅文件路径。
 
@@ -232,12 +240,30 @@ def ensure_switch_subscription(root_path: Path) -> bool:
     try:
         _ensure_script_subscription(root_path)
         _ensure_auto_update_on_cli(root_path)
+        marker = _checkout_failed_marker(root_path)
         if not switch_script_dir(root_path).is_dir():
-            # 脚本缺失（用户误删/初次使用）：清掉本地仓库，逼 BGI 下次启动整体重建
-            repo_dir = root_path / _REPO_REL_DIR
-            if repo_dir.is_dir():
-                shutil.rmtree(repo_dir, ignore_errors=True)
-                logger.info(f"切换账号脚本缺失，已清理本地脚本仓库强制重建: {repo_dir}")
+            # 脚本缺失（用户误删/初次使用）：首次只写「检出失败」标记交给 BGI
+            # 自动补位，不清空仓库——避免首次启用切号就误删用户已有的整个脚本仓库。
+            # 仅当上一轮也确实缺失（标记已存在，说明 BGI 未成功补位/检出失败）才
+            # 清掉本地仓库强制完整重建，且重建后清除标记防止每次重复触发。
+            if marker.exists():
+                repo_dir = root_path / _REPO_REL_DIR
+                if repo_dir.is_dir():
+                    shutil.rmtree(repo_dir, ignore_errors=True)
+                    logger.info(
+                        f"切换账号脚本缺失且上轮检出失败，已清理本地脚本仓库强制重建: "
+                        f"{repo_dir}"
+                    )
+                marker.unlink(missing_ok=True)
+            else:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.touch(exist_ok=True)
+                logger.info(
+                    "切换账号脚本缺失，已记录检出失败标记，等待 BGI 下次启动自动补位"
+                )
+        else:
+            # 脚本已就绪，清除可能残留的失败标记
+            marker.unlink(missing_ok=True)
     except Exception as e:
         logger.opt(exception=True).warning(f"切换账号脚本仓库订阅设置失败: {e}")
         raise

@@ -32,6 +32,7 @@ from app.task.general.tools import execute_script_task
 from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
+from app.utils.platform import IS_ELEVATED
 
 from .tools import account_switch, one_dragon, push_notification
 from .tools.one_dragon_report import parse_one_dragon_report
@@ -424,13 +425,16 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_exe_path,
                 *self.bettergi_args,
                 target_process=self.script_target_process_info,
-                elevated=True,
+                # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
+                elevated=not IS_ELEVATED,
             )
 
             # 启动日志监控（文件日志）
+            # 传入可调用对象让监控器按日期滚动日志跨零点自动切换新文件，
+            # 避免固定路径在午夜后读不到新日志行而误判超时
             await asyncio.sleep(1)
             await self.log_monitor.start_monitor_file(
-                self.script_log_path, self.log_start_time
+                self._build_log_path, self.log_start_time
             )
 
             self.wait_event.clear()
@@ -597,13 +601,15 @@ class AutoProxyTask(TaskExecuteBase):
                 "--startGroups",
                 account_switch.GROUP_NAME,
                 target_process=self.script_target_process_info,
-                elevated=True,
+                # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
+                elevated=not IS_ELEVATED,
             )
             # open_process 内部 search_process 已确认目标进程存在，之后退出才算失败
             switch_result["started"] = True
             await asyncio.sleep(1)
+            # 传可调用对象：跨零点时自动切换到当日新日志，避免误判超时
             await switch_monitor.start_monitor_file(
-                self.script_log_path, datetime.now()
+                self._build_log_path, datetime.now()
             )
 
             try:
@@ -725,11 +731,23 @@ class AutoProxyTask(TaskExecuteBase):
             statistic_paths.append(log_path.with_suffix(".json"))
 
         # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
+        # 多次重试会产生多轮 log_record，若拼成一条再解析会重复出现两轮 1/N…N/N，
+        # 故逐轮解析后优先取「成功轮」的报告，无成功轮则取最后一次尝试。
         # 无一条龙任务（仅配置组/未捕获到日志）时自动省略该区块。
-        combined_log = "".join(
-            ln for item in self.cur_user_item.log_record.values() for ln in item.content
-        )
-        one_dragon_report = parse_one_dragon_report(combined_log)
+        one_dragon_report: list[dict] | None = None
+        run_items = list(self.cur_user_item.log_record.items())
+        if run_items:
+            success_run = next(
+                (
+                    item
+                    for _, item in reversed(run_items)
+                    if item.status == "Success!"
+                ),
+                run_items[-1][1],
+            )
+            one_dragon_report = parse_one_dragon_report(
+                "".join(success_run.content)
+            )
 
         if statistic_paths:
             try:
