@@ -57,7 +57,7 @@ export interface MAAScriptConfig {
   }
   SubConfigsInfo: {
     UserData: {
-      instances: any[]
+      instances: unknown[]
     }
   }
 }
@@ -111,7 +111,7 @@ export interface GeneralScriptConfig {
   }
   SubConfigsInfo: {
     UserData: {
-      instances: any[]
+      instances: unknown[]
     }
   }
 }
@@ -188,7 +188,7 @@ export interface M9AScriptConfig {
   }
   SubConfigsInfo: {
     UserData: {
-      instances: any[]
+      instances: unknown[]
     }
   }
 }
@@ -307,6 +307,7 @@ export interface MaaFWUserConfig {
     Tag?: string | null
     Account: string
     Password: string
+    Resource?: string
   }
   Task: {
     SelectedPreset: string
@@ -537,6 +538,7 @@ export interface User {
     SanityMode?: string
     Notes: string
     Password: string
+    Resource?: string
     RemainedDay: number
     IfUseMasConfig?: boolean
     SeriesNumb: string
@@ -570,6 +572,7 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    Queue?: unknown
     IfActivityFirst?: boolean
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number

@@ -750,7 +750,7 @@ onMounted(async () => {
   try {
     const config = await api.loadConfig?.()
     if (config?.Update?.IfAutoUpdate !== undefined) {
-      IfAutoUpdate = config.Update.IfAutoUpdate
+      IfAutoUpdate = config.Update.IfAutoUpdate === true
       logger.info(`从配置读取到 IfAutoUpdate: ${IfAutoUpdate}`)
     } else {
       logger.warn('配置中未找到 IfAutoUpdate，默认为 false')

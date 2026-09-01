@@ -55,7 +55,7 @@ export function usePlanApi() {
   }
 
   // 更新计划
-  const updatePlan = async (planId: string, data: Record<string, Record<string, any>>) => {
+  const updatePlan = async (planId: string, data: PlanUpdateIn['data']) => {
     loading.value = true
     try {
       const params: PlanUpdateIn = { planId, data }

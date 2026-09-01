@@ -1,3 +1,5 @@
+import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
   path: string
@@ -12,10 +14,38 @@ export interface PathDiscoveryResult {
   error?: string
 }
 
+export interface RelatedProcess {
+  pid: number
+  name: string
+  commandLine?: string
+  command?: string
+}
+
+export interface ElectronConfig {
+  UI?: GlobalConfig_UI & {
+    TrayItems?: unknown[]
+    [key: string]: unknown
+  }
+  Update?: GlobalConfig_Update & {
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+export interface ElectronMirrorSource {
+  name: string
+  url: string
+  type: 'official' | 'mirror'
+  description: string
+}
+
+export type ElectronMirrorType = 'python' | 'get_pip' | 'git' | 'repo' | 'pip_mirror'
+export type ElectronApiEndpointKey = 'local' | 'websocket'
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
-  selectFile: (filters?: any[]) => Promise<string[]>
+  selectFile: (filters?: unknown[]) => Promise<string[]>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
   discoverOkwwPath: () => Promise<PathDiscoveryResult>
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
@@ -38,22 +68,22 @@ export interface ElectronAPI {
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
 
   // 进程管理
-  getRelatedProcesses: () => Promise<any[]>
+  getRelatedProcesses: () => Promise<RelatedProcess[]>
   killAllProcesses: () => Promise<{ success: boolean; error?: string }>
 
   // 初始化相关API
-  checkEnvironment: () => Promise<any>
+  checkEnvironment: () => Promise<unknown>
   checkCriticalFiles: () => Promise<{
     pythonExists: boolean
     gitExists: boolean
     mainPyExists: boolean
   }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
-  downloadPython: (mirror?: string) => Promise<any>
-  downloadGit: () => Promise<any>
-  installDependencies: (mirror?: string) => Promise<any>
-  cloneBackend: (repoUrl?: string) => Promise<any>
-  updateBackend: (repoUrl?: string) => Promise<any>
+  downloadPython: (mirror?: string) => Promise<unknown>
+  downloadGit: () => Promise<unknown>
+  installDependencies: (mirror?: string) => Promise<unknown>
+  cloneBackend: (repoUrl?: string) => Promise<unknown>
+  updateBackend: (repoUrl?: string) => Promise<unknown>
   startBackend: () => Promise<{ success: boolean; error?: string; logs?: string }>
   stopBackend: () => Promise<{ success: boolean; error?: string }>
 
@@ -91,8 +121,8 @@ export interface ElectronAPI {
   restartAsAdmin: () => Promise<void>
 
   // 配置文件操作
-  saveConfig: (config: any) => Promise<void>
-  loadConfig: () => Promise<any>
+  saveConfig: (config: unknown) => Promise<void>
+  loadConfig: () => Promise<ElectronConfig | null>
   resetConfig: () => Promise<void>
 
   // 应用初始化版本（保存前端版本号用于比对）
@@ -100,8 +130,8 @@ export interface ElectronAPI {
   setInitializedVersion: (version: string) => Promise<boolean>
 
   // 托盘设置
-  updateTraySettings: (uiSettings: any) => Promise<boolean>
-  updateTrayConfig: (trayItems: any) => Promise<boolean>
+  updateTraySettings: (uiSettings: unknown) => Promise<boolean>
+  updateTrayConfig: (trayItems: unknown) => Promise<boolean>
   onTrayActionRequest: (
     callback: (request: {
       action: 'quit' | 'restart' | 'startTask'
@@ -109,7 +139,7 @@ export interface ElectronAPI {
       label?: string
     }) => void
   ) => () => void
-  syncBackendConfig: (backendSettings: any) => Promise<boolean>
+  syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 
   // 日志文件操作
   exportLogs: () => Promise<{
@@ -140,10 +170,10 @@ export interface ElectronAPI {
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {
-    debug: (...args: any[]) => Promise<void>
-    info: (...args: any[]) => Promise<void>
-    warn: (...args: any[]) => Promise<void>
-    error: (...args: any[]) => Promise<void>
+    debug: (...args: unknown[]) => Promise<void>
+    info: (...args: unknown[]) => Promise<void>
+    warn: (...args: unknown[]) => Promise<void>
+    error: (...args: unknown[]) => Promise<void>
   }
 
   // 保留原有方法以兼容现有代码
@@ -168,7 +198,7 @@ export interface ElectronAPI {
   getAppPath: (name: string) => Promise<string>
 
   // 监听下载进度
-  onDownloadProgress: (callback: (progress: any) => void) => void
+  onDownloadProgress: (callback: (progress: unknown) => void) => void
   removeDownloadProgressListener: () => void
 
   // ==================== 初始化 API ====================
@@ -185,10 +215,10 @@ export interface ElectronAPI {
   installDependencies: (
     selectedMirror?: string
   ) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
-  getMirrors: (type: string) => Promise<any[]>
+  getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
 
   // API 端点获取
-  getApiEndpoint: (key: string) => Promise<string>
+  getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   getApiEndpoints: () => Promise<{ local: string; websocket: string }>
 
   // 完整初始化流程（保留用于兼容）
@@ -227,15 +257,15 @@ export interface ElectronAPI {
   cleanup: () => Promise<{ success: boolean }>
 
   // 监听单步进度
-  onPythonProgress: (callback: (progress: any) => void) => void
+  onPythonProgress: (callback: (progress: unknown) => void) => void
   removePythonProgressListener?: () => void
-  onPipProgress: (callback: (progress: any) => void) => void
+  onPipProgress: (callback: (progress: unknown) => void) => void
   removePipProgressListener?: () => void
-  onGitProgress: (callback: (progress: any) => void) => void
+  onGitProgress: (callback: (progress: unknown) => void) => void
   removeGitProgressListener?: () => void
-  onRepositoryProgress: (callback: (progress: any) => void) => void
+  onRepositoryProgress: (callback: (progress: unknown) => void) => void
   removeRepositoryProgressListener?: () => void
-  onDependencyProgress: (callback: (progress: any) => void) => void
+  onDependencyProgress: (callback: (progress: unknown) => void) => void
   removeDependencyProgressListener?: () => void
 
   // 监听初始化进度（保留用于兼容）

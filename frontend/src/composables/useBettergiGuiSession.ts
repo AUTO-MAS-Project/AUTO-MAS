@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { WS_TASK_COMPLETED, WS_TASK_NOTICE } from '@/services/websocket/types'
 
 const logger = window.electronAPI.getLogger('BetterGI配置会话')
 
@@ -19,7 +20,7 @@ export function useBettergiGuiSession() {
   const { subscribe, unsubscribe } = useWebSocket()
 
   const bettergiConfigLoading = ref(false)
-  const bettergiSubscriptionId = ref<string | null>(null)
+  const bettergiSubscriptionIds = ref<string[]>([])
   const bettergiWebsocketId = ref<string | null>(null)
   const showBettergiConfigMask = ref(false)
   const stoppingBettergiConfig = ref(false)
@@ -32,10 +33,8 @@ export function useBettergiGuiSession() {
   let bettergiConfigWarningTimeout: number | null = null
 
   const clearSession = () => {
-    if (bettergiSubscriptionId.value) {
-      unsubscribe(bettergiSubscriptionId.value)
-      bettergiSubscriptionId.value = null
-    }
+    bettergiSubscriptionIds.value.forEach(unsubscribe)
+    bettergiSubscriptionIds.value = []
     bettergiWebsocketId.value = null
     showBettergiConfigMask.value = false
     if (bettergiConfigTimeout) {
@@ -87,22 +86,17 @@ export function useBettergiGuiSession() {
 
       showBettergiConfigMask.value = true
       bettergiWebsocketId.value = response.taskId
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          message.error(t('edit.bettergiConnectFailed', { p0: String(wsMessage.data) }))
+      bettergiSubscriptionIds.value = [
+        subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+          if (wsMessage.data.level !== 'error') return
+
+          message.error(t('edit.bettergiSessionFailed', { p0: wsMessage.data.message }))
           void stopSession()
-          return
-        }
-        if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-          message.error(t('edit.bettergiSessionFailed', { p0: String(wsMessage.data.Error) }))
-          void stopSession()
-          return
-        }
-        if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        }),
+        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           clearSession()
-        }
-      })
-      bettergiSubscriptionId.value = subscriptionId
+        }),
+      ]
       message.success(t('edit.bettergiSessionOpened'))
       bettergiConfigWarningTimeout = window.setTimeout(() => {
         message.warning(t('edit.bettergiSessionTimeoutWarn'))

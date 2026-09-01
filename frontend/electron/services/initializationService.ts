@@ -22,7 +22,7 @@ export interface InitializationProgress {
   progress: number
   message: string
   details?: {
-    checkInfo?: any // 可以是 EnvironmentCheckResult, RepositoryCheckResult, 或 DependencyCheckResult
+    checkInfo?: unknown // 可以是 EnvironmentCheckResult, RepositoryCheckResult, 或 DependencyCheckResult
     currentMirror?: string
     mirrorProgress?: { current: number; total: number }
     downloadSpeed?: number

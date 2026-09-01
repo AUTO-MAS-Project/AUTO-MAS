@@ -293,14 +293,15 @@ export class MirrorService {
       }
 
       const client = targetUrl.startsWith('https') ? https : http
-      const options: any = {
+      const headers: Record<string, string> = {}
+      const options: http.RequestOptions = {
         timeout: 10000,
-        headers: {},
+        headers,
       }
 
       // 如果有 ETag，添加 If-None-Match 头
       if (currentEtag) {
-        options.headers['If-None-Match'] = currentEtag
+        headers['If-None-Match'] = currentEtag
       }
 
       const req = client.get(targetUrl, options, response => {
