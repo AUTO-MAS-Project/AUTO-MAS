@@ -6,6 +6,7 @@ import { ref } from 'vue'
 
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
+import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 
 const { t } = useI18n()
 
@@ -18,6 +19,7 @@ const exportingLogs = ref(false)
 const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
+const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 
 const exportLogsZip = async () => {
   exportingLogs.value = true
@@ -137,6 +139,22 @@ const exportDataBackup = async () => {
               <DownloadOutlined />
             </template>
             导出 OK-WW 问题包
+          </a-button>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>OK-NTE 日志包导出</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="24">
+          <a-button type="primary" :loading="exportingOkNteLogs" @click="exportOkNteIssueReport">
+            <template #icon>
+              <DownloadOutlined />
+            </template>
+            导出 OK-NTE 问题包
           </a-button>
         </a-col>
       </a-row>
