@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from .installer import (
-    UV_CACHE_RELATIVE_PATH,
     _clean_process_environment,
     _find_uv_executable,
     _uv_version,
+    resolve_uv_cache_dir,
 )
 
 
@@ -35,7 +35,13 @@ def prune_uv_cache(
     """
 
     root = Path(pool_root).resolve()
-    cache_path = root / UV_CACHE_RELATIVE_PATH
+    cache_path = resolve_uv_cache_dir(root)
+    try:
+        relative_to_pool = cache_path.relative_to(root).as_posix()
+    except ValueError:
+        # 受监督时 cache_path 可能是 Runtime 注入的共享缓存目录，不在 pool_root
+        # 之内——不是错误，只是「相对池目录」这个概念本身不适用。
+        relative_to_pool = None
     result: dict[str, Any] = {
         "kind": "uv",
         "scope": "pool",
@@ -43,7 +49,7 @@ def prune_uv_cache(
         "attempted": False,
         "status": "preview" if dry_run else "pending",
         "cachePath": str(cache_path),
-        "relativeToPool": UV_CACHE_RELATIVE_PATH.as_posix(),
+        "relativeToPool": relative_to_pool,
         "previewExact": False,
         "observedAt": _format_time(),
     }

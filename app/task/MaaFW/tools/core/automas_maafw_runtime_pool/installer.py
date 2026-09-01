@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import re
@@ -14,6 +15,8 @@ from typing import Any
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+
+logger = logging.getLogger("automas.maafw.runtime_pool.installer")
 
 RUNTIME_INSTALL_TIMEOUT_SECONDS = 300
 RUNTIME_AUDIT_TIMEOUT_SECONDS = 60
@@ -29,10 +32,148 @@ AUTO_MAS_UV_INDEX_URL_ENV = "AUTO_MAS_UV_INDEX_URL"
 # 另一条路（python-build-standalone 的 GitHub Release），此前没有任何镜像开关——
 # 受限网络下这一步要么慢到超时，要么拿到不完整的解释器。UV_* 不在
 # _clean_process_environment 的剔除名单里，所以显式设置的 UV_PYTHON_INSTALL_MIRROR
-# 优先，本变量只作兜底。
+# 优先，其次是本变量，最后是 Runtime 注入的 AUTO_MAS_MIRROR_PYTHON 有序列表
+# （见 _resolve_python_mirror_candidates）。
 AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV = "AUTO_MAS_UV_PYTHON_INSTALL_MIRROR"
+# 以下四个变量由 Runtime 监督器在受监督时注入（契约见
+# doc/契约补充-v1-增补1.md C11 与「新增注入环境变量」一节）；未受监督时均不设置，
+# 行为回退到本文件原有的池本地目录 / 单值镜像逻辑。变量名与取值格式已冻结，
+# 改名或改格式须先改 Runtime 侧契约文档。
+AUTO_MAS_UV_CACHE_DIR_ENV = "AUTO_MAS_UV_CACHE_DIR"
+AUTO_MAS_UV_PYTHON_INSTALL_DIR_ENV = "AUTO_MAS_UV_PYTHON_INSTALL_DIR"
+AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV = "AUTO_MAS_MIRROR_PACKAGE_INDEX"
+AUTO_MAS_MIRROR_PYTHON_ENV = "AUTO_MAS_MIRROR_PYTHON"
 RUNTIME_POOL_STAGING_DIRECTORY_NAME = ".staging"
 SUPPORTED_CPYTHON_MINORS = ((3, 12), (3, 13))
+
+
+def _resolve_injected_pool_directory(
+    pool_root: str | Path,
+    *,
+    env_name: str,
+    relative_default: Path,
+    label: str,
+) -> Path:
+    """解析一个可能被 Runtime 注入覆盖的池托管目录。
+
+    非空且为绝对路径、父目录存在时采用注入值；未设置该变量时按池本地默认
+    目录静默回退（未受监督的今天没有变化）；设置了但无效（相对路径、父目录
+    不存在）时同样回退，但记一条 warning——这属于配置错误，不应该被默默吞掉。
+    """
+
+    default_dir = (Path(pool_root).resolve() / relative_default).resolve()
+    raw_value = os.environ.get(env_name)
+    if raw_value is None:
+        return default_dir
+    candidate_text = raw_value.strip()
+    if not candidate_text:
+        return default_dir
+    candidate = Path(candidate_text)
+    if not candidate.is_absolute():
+        logger.warning(
+            "%s环境变量 %s 不是绝对路径，已忽略注入值并回退到池本地目录：%s",
+            label,
+            env_name,
+            candidate_text,
+        )
+        return default_dir
+    if not candidate.parent.exists():
+        logger.warning(
+            "%s环境变量 %s 的父目录不存在，已忽略注入值并回退到池本地目录：%s",
+            label,
+            env_name,
+            candidate_text,
+        )
+        return default_dir
+    return candidate.resolve()
+
+
+def resolve_uv_cache_dir(pool_root: str | Path) -> Path:
+    """解析 MaaFW 运行池实际使用的 uv 缓存目录。
+
+    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_CACHE_DIR`` 注入的受管缓存目录，
+    与 Runtime 主项目共用一份 wheel 缓存；未设置、相对路径或父目录不存在时
+    视为无效注入，回退到池本地目录 ``<pool_root>/cache/uv``。
+    """
+
+    return _resolve_injected_pool_directory(
+        pool_root,
+        env_name=AUTO_MAS_UV_CACHE_DIR_ENV,
+        relative_default=UV_CACHE_RELATIVE_PATH,
+        label="uv 缓存目录",
+    )
+
+
+def resolve_python_install_dir(pool_root: str | Path) -> Path:
+    """解析 MaaFW 运行池实际使用的 Python 安装目录。
+
+    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` 注入的受管
+    Python 安装目录，与 Runtime 主项目共用同一份解释器；未设置、相对路径或
+    父目录不存在时视为无效注入，回退到池本地目录 ``<pool_root>/python``。
+    """
+
+    return _resolve_injected_pool_directory(
+        pool_root,
+        env_name=AUTO_MAS_UV_PYTHON_INSTALL_DIR_ENV,
+        relative_default=UV_PYTHON_RELATIVE_PATH,
+        label="Python 安装目录",
+    )
+
+
+def _split_semicolon_list(raw: str | None) -> list[str]:
+    """按 ``;`` 切分一份有序源列表，去首尾空白、丢弃空项；不做去重。"""
+
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(";") if item.strip()]
+
+
+def _build_ordered_candidates(*groups: Sequence[str | None]) -> list[str]:
+    """按给定顺序合并多组候选值，跳过空白项并做跨组保序去重。"""
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for raw in group:
+            value = str(raw or "").strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            ordered.append(value)
+    return ordered
+
+
+def resolve_package_index_candidates() -> list[str] | None:
+    """解析 Python 包索引的有序候选列表，供调用方按序重试。
+
+    优先级：单值 ``AUTO_MAS_UV_INDEX_URL``（若设置，作为用户显式首选）在前，
+    随后追加 Runtime 经 ``AUTO_MAS_MIRROR_PACKAGE_INDEX`` 注入的 ``;`` 分隔有序
+    列表；跨两者保序去重。全部为空时返回 ``None``，调用方应沿用 uv 默认行为。
+    """
+
+    ordered = _build_ordered_candidates(
+        [os.environ.get(AUTO_MAS_UV_INDEX_URL_ENV)],
+        _split_semicolon_list(os.environ.get(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV)),
+    )
+    return ordered or None
+
+
+def _resolve_python_mirror_candidates(*, explicit_mirror: str | None) -> list[str] | None:
+    """解析 Python 解释器分发源的有序候选列表，供 ``uv python install`` 按序重试。
+
+    优先级：调用方已解析出的显式 ``UV_PYTHON_INSTALL_MIRROR``（若有）最高，
+    其次是单值 ``AUTO_MAS_UV_PYTHON_INSTALL_MIRROR``，最后追加 Runtime 经
+    ``AUTO_MAS_MIRROR_PYTHON`` 注入的 ``;`` 分隔有序列表；全体保序去重。
+    全部为空时返回 ``None``，调用方应沿用 uv 默认行为（不设置该变量）。
+    """
+
+    ordered = _build_ordered_candidates(
+        [explicit_mirror],
+        [os.environ.get(AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV)],
+        _split_semicolon_list(os.environ.get(AUTO_MAS_MIRROR_PYTHON_ENV)),
+    )
+    return ordered or None
+
 
 # 探针里必须真的 import ctypes：MaaFW 的 Python 绑定第一行就是 ``import ctypes``，
 # 而 ABI 那几项（version/soabi/platform）全部来自解释器二进制，标准库那一半坏了
@@ -122,8 +263,8 @@ def resolve_python_interpreter(
     root = Path(pool_root).resolve()
     root, python_root, cache_dir = _canonicalize_pool_paths(
         root,
-        root / UV_PYTHON_RELATIVE_PATH,
-        root / UV_CACHE_RELATIVE_PATH,
+        resolve_python_install_dir(root),
+        resolve_uv_cache_dir(root),
     )
     uv_executable = _find_uv_executable(sys.executable)
     if uv_executable is None:
@@ -265,7 +406,7 @@ def install_python_runtime(
     _verify_runtime_identity(Path(bootstrap), identity)
     resolved_cwd = Path(cwd).resolve() if cwd is not None else Path.cwd()
     pool_root = _runtime_pool_root(environment_path)
-    uv_cache_dir = (pool_root / UV_CACHE_RELATIVE_PATH).resolve()
+    uv_cache_dir = resolve_uv_cache_dir(pool_root)
     uv_executable = _find_uv_executable(bootstrap)
     if uv_executable is not None:
         uv_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -286,7 +427,7 @@ def install_python_runtime(
     probe = _verify_runtime_identity(python_executable, identity)
     log(f"[MaaFW Runtime Pool] 安装依赖: {', '.join(requirements)}")
     if uv_executable is not None:
-        _install_requirements_with_uv(
+        index_metadata = _install_requirements_with_uv(
             uv_executable,
             python_executable,
             requirements,
@@ -308,10 +449,19 @@ def install_python_runtime(
         )
         dependency_installer = "pip"
         resolved_requirements = _resolved_requirements(python_executable)
+        index_metadata = None
     _verify_maafw_importable(python_executable)
     version = _installed_maafw_version(python_executable)
     installer_name = "uv" if uv_executable is not None else "pip"
-    installer_metadata = {
+    cache_relative_to_pool: str | None = None
+    if uv_executable is not None:
+        try:
+            cache_relative_to_pool = uv_cache_dir.relative_to(pool_root).as_posix()
+        except ValueError:
+            # 受监督时 uv_cache_dir 可能是 Runtime 注入的共享目录，不在 pool_root
+            # 之内——这不是错误，只是「相对池目录」这个概念本身不适用。
+            cache_relative_to_pool = None
+    installer_metadata: dict[str, Any] = {
         "installer": {
             "name": installer_name,
             "version": (
@@ -332,14 +482,14 @@ def install_python_runtime(
             "scope": "pool" if uv_executable is not None else "external",
             "shared": uv_executable is not None,
             "path": str(uv_cache_dir) if uv_executable is not None else None,
-            "relativeToPool": (
-                UV_CACHE_RELATIVE_PATH.as_posix() if uv_executable is not None else None
-            ),
+            "relativeToPool": cache_relative_to_pool,
         },
         "link": {
             "mode": UV_LINK_MODE if uv_executable is not None else "pip-default",
         },
     }
+    if index_metadata is not None:
+        installer_metadata["index"] = index_metadata
     return {
         "pythonExecutable": str(python_executable),
         "pythonVersion": probe.get("version") or platform.python_version(),
@@ -620,28 +770,51 @@ def _install_pool_managed_python(
     python_root: Path,
     cache_dir: Path,
 ) -> None:
+    """按 ``_resolve_python_mirror_candidates`` 的顺序重试同一条安装命令。
+
+    命令本身不含镜像参数——uv 只认 ``UV_PYTHON_INSTALL_MIRROR`` 环境变量，
+    因此每次重试只换 env 里这一个键，命令行不变。
+    """
+
     pool_root, python_root, cache_dir = _canonicalize_pool_paths(
         pool_root,
         python_root,
         cache_dir,
     )
-    _run(
-        [
-            uv_executable,
-            "python",
-            "install",
-            f"cpython-{target_version}",
-            "--install-dir",
-            str(python_root),
-            "--no-bin",
-            "--no-registry",
-            "--cache-dir",
-            str(cache_dir),
-            "--no-progress",
-        ],
+    base_env = _uv_environment(cache_dir, UV_LINK_MODE)
+    base_env["UV_PYTHON_INSTALL_DIR"] = str(python_root)
+    explicit_mirror = str(base_env.get("UV_PYTHON_INSTALL_MIRROR") or "").strip() or None
+    candidates = _resolve_python_mirror_candidates(explicit_mirror=explicit_mirror)
+
+    command = [
+        uv_executable,
+        "python",
+        "install",
+        f"cpython-{target_version}",
+        "--install-dir",
+        str(python_root),
+        "--no-bin",
+        "--no-registry",
+        "--cache-dir",
+        str(cache_dir),
+        "--no-progress",
+    ]
+
+    def _build_env(source: str | None) -> dict[str, str]:
+        env = dict(base_env)
+        if source:
+            env["UV_PYTHON_INSTALL_MIRROR"] = source
+        else:
+            env.pop("UV_PYTHON_INSTALL_MIRROR", None)
+        return env
+
+    _run_with_source_rotation(
+        lambda _source: command,
+        candidates,
         cwd=pool_root,
-        env=_pool_python_environment(python_root, cache_dir),
+        build_env=_build_env,
         timeout=UV_PYTHON_INSTALL_TIMEOUT_SECONDS,
+        failure_label="MaaFW runtime Python 安装",
     )
 
 
@@ -749,30 +922,25 @@ def _canonicalize_pool_paths(
     python_root: Path,
     cache_dir: Path,
 ) -> tuple[Path, Path, Path]:
-    """Normalize uv-managed paths and keep them inside the owning pool."""
+    """Normalize the three uv-managed paths to absolute paths.
+
+    ``python_root``/``cache_dir`` used to always be a subdirectory of
+    ``pool_root`` (derived from it via ``UV_PYTHON_RELATIVE_PATH`` /
+    ``UV_CACHE_RELATIVE_PATH``), so this function used to also assert
+    containment as a defensive sanity check. Under supervision they may now
+    legitimately resolve outside ``pool_root`` — ``resolve_python_install_dir``
+    / ``resolve_uv_cache_dir`` return a Runtime-injected shared directory
+    instead (``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` / ``AUTO_MAS_UV_CACHE_DIR``),
+    which is by design (C11). Those two resolvers already validate the
+    injected value (absolute path, existing parent) before returning it, so
+    no containment check is repeated here — same trust level as
+    ``AUTO_MAS_UV_EXE`` / ``AUTO_MAS_PYTHON_*_EXE`` elsewhere in this module.
+    """
 
     resolved_pool = Path(pool_root).resolve()
     resolved_python = Path(python_root).resolve()
     resolved_cache = Path(cache_dir).resolve()
-    for label, candidate in (
-        ("python", resolved_python),
-        ("cache", resolved_cache),
-    ):
-        if not _path_is_within(candidate, resolved_pool):
-            raise RuntimeError(
-                f"runtime pool {label} path escapes the pool: {candidate}"
-            )
     return resolved_pool, resolved_python, resolved_cache
-
-
-def _path_is_within(path: Path, base: Path) -> bool:
-    try:
-        common = os.path.commonpath(
-            [os.path.normcase(str(path)), os.path.normcase(str(base))]
-        )
-    except ValueError:
-        return False
-    return common == os.path.normcase(str(base))
 
 
 def _python_supports_venv(python: str) -> bool:
@@ -836,17 +1004,24 @@ def _install_requirements_with_uv(
     cache_dir: Path,
     link_mode: str,
     cwd: Path,
-) -> None:
-    index_args: list[str] = []
-    if not any(
-        str(os.environ.get(name) or "").strip()
-        for name in ("UV_INDEX_URL", "UV_DEFAULT_INDEX")
-    ):
-        index_url = str(os.environ.get(AUTO_MAS_UV_INDEX_URL_ENV) or "").strip()
-        if index_url:
-            index_args = ["--index-url", index_url]
-    _run(
-        [
+) -> dict[str, Any] | None:
+    """按 ``resolve_package_index_candidates()`` 的顺序重试同一条安装命令。
+
+    用户已经显式设置 ``UV_INDEX_URL``/``UV_DEFAULT_INDEX`` 时，沿用 uv 自身对
+    这两个环境变量的解析，不参与本机制的候选与重试（尊重更明确的显式配置）。
+    返回实际生效的索引来源与尝试序号，供调用方写入 ``installer_metadata``；
+    未使用候选列表（未配置任何镜像/单值索引，或命中上面的显式旁路）时返回
+    ``None``。
+    """
+
+    env = _uv_install_environment(
+        python_executable.parent.parent,
+        cache_dir,
+        link_mode,
+    )
+
+    def _base_command(index_args: list[str]) -> list[str]:
+        return [
             uv_executable,
             "pip",
             "install",
@@ -860,14 +1035,29 @@ def _install_requirements_with_uv(
             "--quiet",
             *index_args,
             *requirements,
-        ],
-        cwd=cwd,
-        env=_uv_install_environment(
-            python_executable.parent.parent,
-            cache_dir,
-            link_mode,
+        ]
+
+    if any(
+        str(os.environ.get(name) or "").strip()
+        for name in ("UV_INDEX_URL", "UV_DEFAULT_INDEX")
+    ):
+        _run(_base_command([]), cwd=cwd, env=env)
+        return None
+
+    candidates = resolve_package_index_candidates()
+    source, attempt = _run_with_source_rotation(
+        lambda index_source: _base_command(
+            ["--index-url", index_source] if index_source else []
         ),
+        candidates,
+        cwd=cwd,
+        build_env=lambda _source: env,
+        timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
+        failure_label="MaaFW runtime 依赖安装",
     )
+    if source is None:
+        return None
+    return {"source": source, "attempt": attempt}
 
 
 def _install_requirements_with_pip(
@@ -1003,6 +1193,67 @@ def _run(
     raise RuntimeError(
         f"MaaFW runtime 安装失败 (exit={result.returncode}): {detail[:800]}"
     )
+
+
+def _run_with_source_rotation(
+    build_command: Callable[[str | None], list[str]],
+    candidates: Sequence[str] | None,
+    *,
+    cwd: Path,
+    build_env: Callable[[str | None], dict[str, str]],
+    timeout: int,
+    failure_label: str,
+) -> tuple[str | None, int]:
+    """按候选源顺序重试同一条安装命令，返回 (实际使用的源, 尝试序号)。
+
+    ``candidates`` 为 ``None``/空时只按「不指定源」跑一次，行为与未下发候选
+    列表时完全一致；返回的源是 ``None``，序号是 1。
+
+    某次尝试以非零退出码结束（命令确实跑完了，只是失败）就记一条 warning
+    （含失败来源与 stderr 尾部）后换下一个候选；全部候选都失败则抛出最后一次
+    的 ``RuntimeError``。超时或进程本身无法启动（``subprocess.TimeoutExpired``
+    以外的异常，例如可执行文件不存在）视为该次尝试之外的问题，不换源，直接
+    向上抛出——换一个包索引或分发源不可能修好「uv 都跑不起来」。
+    """
+
+    attempts: list[str | None] = list(candidates) if candidates else [None]
+    last_error: RuntimeError | None = None
+    for attempt_index, source in enumerate(attempts, start=1):
+        command = build_command(source)
+        env = build_env(source)
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=timeout,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=cwd,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{failure_label}超时: {command[:3]}") from exc
+        if result.returncode == 0:
+            return source, attempt_index
+        detail = (result.stderr or result.stdout or "").strip()
+        last_error = RuntimeError(
+            f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
+        )
+        if attempt_index < len(attempts):
+            logger.warning(
+                "%s失败，换下一个源重试（失败源：%s，第 %d/%d 次尝试）：%s",
+                failure_label,
+                source or "默认",
+                attempt_index,
+                len(attempts),
+                detail[-400:],
+            )
+    if last_error is None:
+        # attempts 至少一项，循环体必然至少跑过一次并设置过 last_error；
+        # 走到这里说明调用方式本身有 bug。
+        raise RuntimeError(f"{failure_label}重试逻辑内部错误：候选列表为空")
+    raise last_error
 
 
 def _clean_process_environment() -> dict[str, str]:
