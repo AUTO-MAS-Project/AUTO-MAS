@@ -36,7 +36,7 @@ from app.utils.platform import window
 from app.utils.platform.common.errors import UnsupportedPlatformError
 from app.utils.platform.process import platform_process
 
-from .process_runner import ProcessResult, ProcessRunner
+from .process_runner import ProcessResult, ProcessRunner, create_subprocess
 
 logger = get_logger("进程管理")
 
@@ -209,6 +209,7 @@ class ProcessManager:
         stderr: int = asyncio.subprocess.DEVNULL,
         null_stream_to_pipe: bool = False,
         elevated: bool = False,
+        breakaway: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -223,6 +224,7 @@ class ProcessManager:
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
             null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
             elevated (bool): 若为 True 且在 Windows 上, 以管理员权限启动进程（触发 UAC），此时不直接持有子进程句柄，依赖 target_process 追踪。
+            breakaway (bool): 若为 True 且在 Windows 上, 让子进程脱离监督器的 Job Object（CREATE_BREAKAWAY_FROM_JOB）。只给游戏/模拟器这类不该随后端退出的进程用, 脚本本体、MAA、agent 等保持默认 False。
         """
 
         if await self.is_running():
@@ -263,44 +265,15 @@ class ProcessManager:
                 stderr = asyncio.subprocess.PIPE
                 drain_streams.append("stderr")
 
-        resolved_cwd = cwd or (Path(program).parent if Path(program).is_file() else None)
-        try:
-            self.process = await asyncio.create_subprocess_exec(
-                program,
-                *args,
-                cwd=resolved_cwd,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                creationflags=platform_process.creation_flags,
-            )
-        except OSError as exc:
-            # 受 AUTO-MAS-Runtime 监督时 creation_flags 带
-            # CREATE_BREAKAWAY_FROM_JOB（详见 WindowsProcessPlatform），让模拟
-            # 器/游戏之类的外部进程不随后端一起被 Job 回收。但父进程若恰好处
-            # 在一个不允许 breakaway 的 Job 里，CreateProcess 会以
-            # ERROR_ACCESS_DENIED（WinError 5，映射为 PermissionError）失败——
-            # 去掉该位重试一次，此时子进程会留在当前 Job 里。
-            breakaway_flag = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
-            if (
-                os.name != "nt"
-                or not (platform_process.creation_flags & breakaway_flag)
-                or getattr(exc, "winerror", None) != 5
-            ):
-                raise
-            logger.warning(
-                f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
-                f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
-            )
-            self.process = await asyncio.create_subprocess_exec(
-                program,
-                *args,
-                cwd=resolved_cwd,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                creationflags=platform_process.creation_flags & ~breakaway_flag,
-            )
+        self.process = await create_subprocess(
+            program,
+            *args,
+            breakaway=breakaway,
+            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
         # 启动协程消费管道流以防止阻塞
         if drain_streams:

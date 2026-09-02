@@ -86,6 +86,7 @@ class MumuManager(DeviceBase):
                 package_name,
                 timeout=self.config.get("Info", "MaxWaitTime"),
                 if_merge_std=True,
+                breakaway=True,
             )
         except Exception as e:
             logger.warning(f"获取 MuMu 应用状态失败: {e}")
@@ -136,6 +137,7 @@ class MumuManager(DeviceBase):
                     "activities",
                     timeout=self.config.get("Info", "MaxWaitTime"),
                     if_merge_std=True,
+                    breakaway=True,
                 )
             except Exception as e:
                 logger.debug(f"检查 MuMu 应用前台状态失败: {e}")
@@ -167,6 +169,7 @@ class MumuManager(DeviceBase):
                     package_name,
                     timeout=self.config.get("Info", "MaxWaitTime"),
                     if_merge_std=True,
+                    breakaway=True,
                 )
                 if result.returncode != 0:
                     logger.warning(f"MuMu 应用补启动失败: {result.stdout.strip()}")
@@ -190,6 +193,7 @@ class MumuManager(DeviceBase):
                 "1",
                 timeout=self.config.get("Info", "MaxWaitTime"),
                 if_merge_std=True,
+                breakaway=True,
             )
             if result.returncode != 0:
                 logger.warning(f"MuMu monkey 补启动失败: {result.stdout.strip()}")
@@ -219,6 +223,7 @@ class MumuManager(DeviceBase):
                 "deny",
                 timeout=10,
                 if_merge_std=True,
+                breakaway=True,
             )
         except Exception as e:
             logger.warning(f"屏蔽 MuMu 应用商店悬浮广告失败: {e}")
@@ -242,6 +247,7 @@ class MumuManager(DeviceBase):
                 MUMU_STORE_PACKAGE,
                 timeout=10,
                 if_merge_std=True,
+                breakaway=True,
             )
         except Exception as e:
             logger.warning(f"停止 MuMu 应用商店广告进程失败: {e}")
@@ -286,6 +292,7 @@ class MumuManager(DeviceBase):
             "false",
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         if result.returncode != 0:
             raise RuntimeError(f"设置 app_keptlive 失败: {result.stdout}")
@@ -299,6 +306,7 @@ class MumuManager(DeviceBase):
             *(["-pkg", package_name] if package_name else []),
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         # 参考命令 MuMuManager.exe control -v 2 launch
 
@@ -350,6 +358,7 @@ class MumuManager(DeviceBase):
                 "shutdown",
                 timeout=self.config.get("Info", "MaxWaitTime"),
                 if_merge_std=True,
+                breakaway=True,
             )
             # 参考命令 MuMuManager.exe control -v 2 shutdown
 
@@ -531,6 +540,7 @@ class MumuManager(DeviceBase):
             "show_window" if is_visible else "hide_window",
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
@@ -545,6 +555,7 @@ class MumuManager(DeviceBase):
             idx,
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         if result.returncode != 0:
             logger.error(f"获取模拟器 {idx} 信息失败: {result.stdout.strip()}")
@@ -560,6 +571,7 @@ class MumuManager(DeviceBase):
             str(idx),
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout.strip()}")
