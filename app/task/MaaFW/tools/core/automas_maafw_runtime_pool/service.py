@@ -10,7 +10,7 @@ from packaging.version import InvalidVersion, Version
 
 from .cache import prune_uv_cache
 from .identity import build_runtime_id, canonicalize_requirements
-from .installer import install_python_runtime
+from .installer import host_bootstrap_python_request, install_python_runtime
 from .pool import (
     MaaFWRuntimePool,
     MaaFWRuntimePoolError,
@@ -116,6 +116,9 @@ class MaaFWRuntimePoolService:
                 return resolved
         requirements, _, touch, python_request = _normalize_runtime_request(request)
         if python_request is None:
+            # 宿主是 embeddable 时不能拿它建 venv，改按同小版本走池内托管解释器。
+            python_request = host_bootstrap_python_request()
+        if python_request is None:
             return self.resolve(requirements, touch=touch)
         target = self.pool.resolve_python(python_request, allow_install=False)
         if target is None:
@@ -163,6 +166,8 @@ class MaaFWRuntimePoolService:
                         "cannot ensure an unknown runtimeId without requirements"
                     )
         requirements, metadata, _, python_request = _normalize_runtime_request(request)
+        if python_request is None:
+            python_request = host_bootstrap_python_request()
         if python_request is None:
             python_identity = None
             bootstrap_python = None

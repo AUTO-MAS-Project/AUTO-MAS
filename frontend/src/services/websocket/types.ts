@@ -142,7 +142,7 @@ export interface WSPowerSignData {
 
 /** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */
 export interface WSMaaFWEnvPrepareProgressData {
-  /** resolving / creating_runtime / installing_runtime / runtime_ready / reused / log / ready / failed */
+  /** resolving / installing_python / creating_runtime / installing_runtime / runtime_ready / reused / log / ready / failed */
   stage: string
   /** running / success / failed */
   status: string

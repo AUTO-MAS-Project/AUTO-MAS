@@ -59,9 +59,13 @@ logger = get_logger("MFW 内置运行")
 def describe_unusable_runtime(project_path: Path) -> str | None:
     """运行前自检：这个项目要用的运行池 runtime 还能用吗？
 
-    只在池里已经存在匹配的 runtime 时才探一次（一个子进程，约 100ms——解释器
-    本来就要起）。没建过就不拦：那份环境会在运行时按需准备，失败自有它自己的
-    报错路径。
+    只在池里已经存在这个项目会用到的那份 runtime 时才探一次（一个子进程，约
+    100ms——解释器本来就要起）。没建过就不拦：那份环境会在运行时按需准备，失败
+    自有它自己的报错路径。
+
+    runtime 的选法与 ``prepare_runner_environment`` 一致：同一份依赖选择器加同一个
+    引导解释器。只按 MaaFW 版本去池里挑不行——旧版本用便携包 embeddable Python
+    建出的坏环境和修好后新建的好环境 MaaFW 版本相同，挑错了会把能跑的任务拦下。
 
     拦在 ``check()`` 而不是只靠编辑页的提示：队列与定时任务不经过编辑页，
     绕不过 check()；而且这里拦下来时模拟器和游戏都还没启动。
@@ -69,37 +73,40 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
 
     # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
     from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        build_runner_packages,
         resolve_project_maafw_requirement,
     )
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolError,
         MaaFWRuntimePoolService,
     )
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
-        probe_python_identity,
+        host_bootstrap_python_request,
     )
 
     try:
         requirement = resolve_project_maafw_requirement(project_path)
+        if not requirement:
+            return None
+        packages = build_runner_packages(project_path, maafw_requirement=requirement)
+        service = MaaFWRuntimePoolService()
+        python_identity = None
+        bootstrap_request = host_bootstrap_python_request()
+        if bootstrap_request is not None:
+            target = service.pool.resolve_python(bootstrap_request, allow_install=False)
+            if target is None:
+                # 托管解释器还没装，runtime 也就不可能存在。
+                return None
+            python_identity = target["identity"]
     except Exception:  # noqa: BLE001 - 自检失败不该反过来挡住运行
-        return None
-    if not requirement:
         return None
 
     try:
-        runtimes = MaaFWRuntimePoolService().list()
+        # 找到 runtime 后 resolve() 会真的起一次解释器核对 ABI，起不来就是坏了。
+        service.resolve(packages, python_identity=python_identity)
+    except MaaFWRuntimePoolError as exc:  # 原文就是给用户看的
+        return f"MFW 运行环境不可用：{exc}"
     except Exception:  # noqa: BLE001
-        return None
-
-    for runtime in runtimes:
-        if str(runtime.get("maafwRequirement") or "").strip() != requirement:
-            continue
-        python_executable = str(runtime.get("pythonExecutable") or "").strip()
-        if not python_executable:
-            continue
-        try:
-            probe_python_identity(Path(python_executable))
-        except Exception as exc:  # noqa: BLE001 - 原文就是给用户看的
-            return f"MFW 运行环境不可用：{exc}"
         return None
     return None
 
