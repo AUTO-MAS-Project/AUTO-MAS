@@ -32,6 +32,7 @@ from typing import Any, Callable
 from app.utils.constants import (
     UTC4,
     UTC8,
+    CYCLE_EMPTY_TIME,
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
@@ -316,6 +317,62 @@ class QueueItem(ConfigBase):
             MultipleUIDValidator("-", self.related_config, "ScriptConfig"),
         )
 
+        ## Schedule --------------------------------------------------------
+        ## 是否参与循环调度
+        self.Schedule_Enabled = ConfigItem("Schedule", "Enabled", True, BoolValidator())
+        ## 循环调度模式: fixed_time 为固定时间, interval 为间隔
+        self.Schedule_Mode = ConfigItem(
+            "Schedule",
+            "Mode",
+            "fixed_time",
+            OptionsValidator(["fixed_time", "interval"]),
+        )
+        ## 固定时间模式的执行周期
+        self.Schedule_Days = ConfigItem(
+            "Schedule",
+            "Days",
+            list(calendar.day_name),
+            MultipleOptionsValidator(list(calendar.day_name)),
+        )
+        ## 固定时间模式的执行时间
+        self.Schedule_Time = ConfigItem(
+            "Schedule", "Time", "00:00", DateTimeValidator("%H:%M")
+        )
+        ## 间隔模式的间隔分钟数
+        self.Schedule_IntervalMinutes = ConfigItem(
+            "Schedule", "IntervalMinutes", 480, RangeValidator(1, 10080)
+        )
+        ## 间隔模式的计时基准: start 为上次开始, finish 为上次结束
+        self.Schedule_IntervalAnchor = ConfigItem(
+            "Schedule",
+            "IntervalAnchor",
+            "start",
+            OptionsValidator(["start", "finish"]),
+        )
+        ## 下次运行时间, 空值哨兵表示由调度器按模式推算
+        self.Schedule_NextRunAt = ConfigItem(
+            "Schedule",
+            "NextRunAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次循环开始时间
+        self.Data_LastCycleStartedAt = ConfigItem(
+            "Data",
+            "LastCycleStartedAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 上次循环结束时间
+        self.Data_LastCycleFinishedAt = ConfigItem(
+            "Data",
+            "LastCycleFinishedAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
         super().__init__()
 
 
@@ -358,6 +415,10 @@ class QueueConfig(ConfigBase):
             "StartUpMode",
             "Never",
             OptionsValidator(["Never", "Always", "DailyFirst"]),
+        )
+        ## 是否为循环队列: 定时与循环互斥, 循环队列按队列项各自的周期持续运行
+        self.Info_CycleEnabled = ConfigItem(
+            "Info", "CycleEnabled", False, BoolValidator()
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -3689,6 +3750,8 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
+        # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
+        # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
@@ -3699,6 +3762,10 @@ class OkNteConfig(ConfigBase):
         )
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
         )
 
         ## Run -------------------------------------------------------------

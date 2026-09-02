@@ -2,16 +2,26 @@
     "version": "v5.5.0-beta.3",
     "version_info": {
         "v5.5.0-beta.3": {
+            "新增功能": [
+                "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
+                "OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、自动点击开始游戏（替代直启客户端避免卡界面，兼容旧客户端路径与启动器更新流程），失败均留存诊断截图，并新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)"
+            ],
             "程序优化": [
+                "MaaEnd专项 清理已停用的终末地 PC MaaFW 登录管线与适配器，并按实际引用保留登录识别图片 by [@HarcoChen](https://github.com/HarcoChen)",
                 "启动流程 超大幅度优化启动速度，前端加载纵享丝滑 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "启动与首页性能 修复活动数据刷新时创建 httpx 客户端同步全量加载系统证书库（truststore）导致的事件循环冻结（弱网或 VPN 下所有请求最长十几秒无响应）：SSL 上下文改为进程内缓存并在启动时线程预热，版本检查不再在请求路径同步拉取远端 git；六张第三方活动卡（星穹铁道/原神/绝区零/鸣潮/异环/重返未来1999）改为前端直连公开接口并各自维护快照、超时重试与失败态，任一源异常只影响自身卡片；后端聚合接口同步瘦身为仅本地数据（方舟关卡与代理状态），MaaEnd 资源预加载移入后台减轻启动阻塞，安装包不再携带 sourcemap by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与两个配置组件接入词表，切到英文/日文后即时生效；参与后端判定的中文（控制器与游戏服务器取值、一条龙内置配置组名、默认配置名与内置战斗策略名）保持原样 by [@qiyinxi](https://github.com/qiyinxi)"
+                "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与两个配置组件接入词表，切到英文/日文后即时生效；参与后端判定的中文（控制器与游戏服务器取值、一条龙内置配置组名、默认配置名与内置战斗策略名）保持原样 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaEnd专项 清理不再需要的MFW资源 by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板：Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，另设需求建议、AI 提交与其他议题模板，并挂上常见问题、文档站与官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
+                "修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题",
+                "渲染进程崩溃后不再永久黑屏：新增 render-process-gone / unresponsive / child-process-gone 监听，崩溃时记录 reason 与 exitCode 并自动重载窗口（5 分钟内最多 3 次，窗口原本在托盘则恢复后保持隐藏）；此前渲染进程一死主进程与后端仍在运行，窗口会一直黑着且日志与 Sentry 里没有任何记录，只能从任务管理器强杀 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MAA专项 修复剿灭任务因体力耗尽结束时被误判为已完成本周额度的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复 MaaFW 运行池解释器自检不覆盖标准库、导致 Python 运行时损坏时直到任务中途才报出难以理解的错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "新增 AUTO_MAS_UV_PYTHON_INSTALL_MIRROR，受限网络下可为 MaaFW 运行池的 Python 解释器下载配置镜像 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 MaaFW 运行环境不可用时仍会按重试次数反复重启模拟器与游戏、白等数分钟的问题 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -22,6 +32,8 @@
                 "前端类型治理 清理脚本与 Electron 基础边界中的 any，并修复 BetterGI 设置会话无法接收完成和错误事件的问题",
                 "HSR专项 修复 MAS 管控任务的文本与 JSON 配置项在输入过程中被重渲染清空、导致只有数字项能填写的问题（如货币战争的首领/投资重开条件、策略文件、开拓者名称） by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送因漏传通知用户配置参数而失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "游戏签到 修复通知返回值改为 DispatchResult 后未同步两处消费方、开启签到通知时执行签到必报 TypeError 的问题（手动签到接口返回 500，慢渠道后台通知路径丢失日志） by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复账号切换在游戏启动阶段定位不到窗口、或界面尚未进入可执行登录态就误操作而失败的问题，改为分段进展续延等待：先轮询窗口就绪，再等待界面进入「登录页/已登录主菜单」（游戏内长时间更新/加载时持续顺延，长时间无进展才判失败），兼容低性能设备启动延迟"
             ]
         },

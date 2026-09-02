@@ -74,6 +74,39 @@ export interface EndfieldSourceData {
   pools: ResolvedEndfieldPool[]
 }
 
+const restoreDate = (value: unknown): Date | null => {
+  if (value === null || value === undefined || value === '') return null
+  const date = value instanceof Date ? value : new Date(String(value))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** 恢复 localStorage JSON 中被序列化为字符串的日期字段。 */
+export const restoreEndfieldSourceData = (value: unknown): EndfieldSourceData | null => {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<EndfieldSourceData>
+  if (
+    typeof raw.versionId !== 'string' ||
+    !Array.isArray(raw.activities) ||
+    !Array.isArray(raw.pools)
+  ) {
+    return null
+  }
+  return {
+    versionId: raw.versionId,
+    sourceUpdatedAt: typeof raw.sourceUpdatedAt === 'string' ? raw.sourceUpdatedAt : '',
+    activities: raw.activities.map(activity => ({
+      ...activity,
+      startTime: restoreDate(activity.startTime),
+      endTime: restoreDate(activity.endTime),
+    })) as ResolvedEndfieldActivity[],
+    pools: raw.pools.map(pool => ({
+      ...pool,
+      startTime: restoreDate(pool.startTime),
+      endTime: restoreDate(pool.endTime),
+    })) as ResolvedEndfieldPool[],
+  }
+}
+
 export interface AkedataManifest {
   latest: string
   updatedAt?: string
@@ -107,9 +140,7 @@ const parseActivityTime = (value: string | null | undefined): Date | null => {
     return null
   }
   // 按 +08:00 固定偏移构造，等价于后端 datetime.strptime(...).replace(tzinfo=Asia/Shanghai)
-  return new Date(
-    Date.UTC(year, month - 1, day, hour, minute, second) - TIMEZONE_OFFSET_MS
-  )
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, second) - TIMEZONE_OFFSET_MS)
 }
 
 const formatDateTime = (date: Date): string => {
@@ -141,7 +172,7 @@ export interface NormalizedLookup<T> {
   get: (id: string | number) => T | undefined
 }
 
-export const buildNormalizedLookup = <T,>(table: Record<string, T>): NormalizedLookup<T> => {
+export const buildNormalizedLookup = <T>(table: Record<string, T>): NormalizedLookup<T> => {
   const byNumber = new Map<string, string>()
   for (const key of Object.keys(table)) {
     const normalized = String(Number(key))
@@ -182,7 +213,7 @@ const firstTimeRange = (
   defaultTimeId = ''
 ): TimeRangeRecord => {
   const timeId =
-    (record as Record<string, unknown>)[timeKey] as string | undefined || defaultTimeId
+    ((record as Record<string, unknown>)[timeKey] as string | undefined) || defaultTimeId
   return timeRanges[timeId]?.timeRangeList?.[0] ?? {}
 }
 
@@ -196,10 +227,9 @@ export interface EndfieldTables {
   characters: unknown
 }
 
-export const resolveEndfieldSourceData = (tables: EndfieldTables): Pick<
-  EndfieldSourceData,
-  'activities' | 'pools'
-> => {
+export const resolveEndfieldSourceData = (
+  tables: EndfieldTables
+): Pick<EndfieldSourceData, 'activities' | 'pools'> => {
   const activitiesTable = tables.activities as Record<string, RawActivity>
   const timeRanges = tables.timeRanges as TimeRangeTable
   const activityTags = tables.activityTags as Record<string, NamedRef>
@@ -224,7 +254,7 @@ export const resolveEndfieldSourceData = (tables: EndfieldTables): Pick<
         encodeURIComponent(tabImage) +
         '.png'
       : ''
-    const tags = (activity.tagIds ?? []).map((tagId) =>
+    const tags = (activity.tagIds ?? []).map(tagId =>
       resolveName(tagLookup.get(tagId)?.name, textLookup, String(tagId))
     )
     activities.push({
@@ -244,7 +274,7 @@ export const resolveEndfieldSourceData = (tables: EndfieldTables): Pick<
   for (const [poolId, pool] of Object.entries(poolsTable)) {
     const timeRange = firstTimeRange(pool, timeRanges, 'clientTopTimeId', 'time_' + poolId)
     const upCharacterIds = pool.upCharIds ?? []
-    const upCharacters = upCharacterIds.map((characterId) =>
+    const upCharacters = upCharacterIds.map(characterId =>
       resolveName(characterLookup.get(characterId)?.name, textLookup, String(characterId))
     )
     const imageUrl = upCharacterIds.length
@@ -258,7 +288,7 @@ export const resolveEndfieldSourceData = (tables: EndfieldTables): Pick<
     pools.push({
       poolId,
       name: resolveName(pool.name, textLookup, poolId),
-      poolType: pool.type !== undefined ? POOL_TYPE_NAMES[pool.type] ?? '角色寻访' : '角色寻访',
+      poolType: pool.type !== undefined ? (POOL_TYPE_NAMES[pool.type] ?? '角色寻访') : '角色寻访',
       startTime: parseActivityTime(timeRange.openTime),
       endTime: parseActivityTime(timeRange.closeTime),
       imageUrl,
@@ -309,18 +339,14 @@ export const buildEndfieldOverview = (
     (startTime === null || startTime.getTime() <= now.getTime())
 
   const activePools = source.pools
-    .filter((pool) => isRunning(pool.startTime, pool.endTime))
-    .sort(
-      (a, b) =>
-        a.sortId - b.sortId || (a.poolId < b.poolId ? -1 : a.poolId > b.poolId ? 1 : 0)
-    )
+    .filter(pool => isRunning(pool.startTime, pool.endTime))
+    .sort((a, b) => a.sortId - b.sortId || (a.poolId < b.poolId ? -1 : a.poolId > b.poolId ? 1 : 0))
 
   const activeActivities = source.activities
-    .filter((activity) => isRunning(activity.startTime, activity.endTime))
+    .filter(activity => isRunning(activity.startTime, activity.endTime))
     .sort(
       (a, b) =>
-        a.sortId -
-        b.sortId ||
+        a.sortId - b.sortId ||
         (a.activityId < b.activityId ? -1 : a.activityId > b.activityId ? 1 : 0)
     )
 
@@ -332,7 +358,7 @@ export const buildEndfieldOverview = (
     UpdatedAt: source.sourceUpdatedAt,
     SourceName: 'AKEData',
     SourceUrl: AKEDATA_SOURCE_URL,
-    Pools: activePools.map((pool) => ({
+    Pools: activePools.map(pool => ({
       Id: pool.poolId,
       Name: pool.name,
       Type: pool.poolType,
@@ -341,7 +367,7 @@ export const buildEndfieldOverview = (
       ImageUrl: pool.imageUrl,
       UpCharacters: [...pool.upCharacters],
     })),
-    Activities: activeActivities.map((activity) => ({
+    Activities: activeActivities.map(activity => ({
       Id: activity.activityId,
       Name: activity.name,
       StartTime: activity.startTime ? formatDateTime(activity.startTime) : '',

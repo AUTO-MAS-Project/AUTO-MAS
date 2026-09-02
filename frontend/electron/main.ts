@@ -32,11 +32,19 @@ import {
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
+import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
-import { configureMainSentry, recordMainStartup, setMainTelemetryEnabled } from './services/sentry'
+import { createOkNteIssueReport } from './services/okNteIssueReportService'
+import {
+  captureMainRendererCrash,
+  configureMainSentry,
+  recordMainCount,
+  recordMainStartup,
+  setMainTelemetryEnabled,
+} from './services/sentry'
 import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
 import AdmZip = require('adm-zip')
 
@@ -197,6 +205,7 @@ let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
+let rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
@@ -702,6 +711,52 @@ function createWindow() {
   mainWindow = win
   lastWindowActivity = null
 
+  // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
+  let keepHiddenAfterRecovery = false
+
+  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
+  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
+  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const decision = decideRendererRecovery({
+      reason: details.reason,
+      exitCode: details.exitCode,
+      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+      isWindowDestroyed: win.isDestroyed(),
+      now: Date.now(),
+      previousCrashes: rendererCrashes,
+    })
+    rendererCrashes = decision.crashes
+
+    if (decision.action === 'ignore') {
+      logger.info(decision.detail)
+      return
+    }
+
+    logger.error(decision.detail)
+    captureMainRendererCrash({
+      reason: details.reason,
+      exitCode: details.exitCode,
+      crashCount: decision.crashCount,
+      action: decision.action,
+      detail: decision.detail,
+    })
+
+    if (decision.action === 'give-up') return
+
+    keepHiddenAfterRecovery = !win.isVisible()
+    win.webContents.reload()
+  })
+
+  win.on('unresponsive', () => {
+    logger.warn('渲染进程无响应（主线程卡住），等待其自行恢复')
+    recordMainCount('auto_mas.app.renderer.unresponsive', { component: 'electron-main' })
+  })
+
+  win.on('responsive', () => {
+    logger.info('渲染进程已恢复响应')
+  })
+
   // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
   let restoreToMaximized = Boolean(config.UI.maximized)
   win.on('maximize', () => {
@@ -719,6 +774,14 @@ function createWindow() {
 
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
+    // 崩溃前窗口就在托盘里，恢复后保持隐藏，不要打断用户。
+    if (keepHiddenAfterRecovery) {
+      keepHiddenAfterRecovery = false
+      notifyWindowActivity('background')
+      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      return
+    }
+
     // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
     if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
@@ -1157,6 +1220,12 @@ registerIssueReportExporter(
   '导出 OK-WW 问题包',
   'OK-WW-logs',
   createOkwwIssueReport
+)
+registerIssueReportExporter(
+  'oknte:exportIssueReport',
+  '导出 OK-NTE 问题包',
+  'OK-NTE-logs',
+  createOkNteIssueReport
 )
 
 ipcMain.handle('data:backup', async () => {
@@ -1773,6 +1842,14 @@ app.on('second-instance', () => {
     mainWindow.show()
     mainWindow.focus()
   }
+})
+
+// GPU 进程崩溃同样会让窗口变黑，此前同样不会在日志里留下任何痕迹。
+app.on('child-process-gone', (_event, details) => {
+  if (details.reason === 'clean-exit') return
+  logger.error(
+    `子进程异常退出: type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}`
+  )
 })
 
 app.on('will-quit', () => {
