@@ -2,8 +2,8 @@
  * Runtime NDJSON 输出的逐行解析器
  *
  * 只负责把子进程 stdout 的字节流切成行、把每行反序列化成协议事件。
- * 处理三件事：chunk 边界上的半行、空行、CRLF 换行。
- * 单行解析失败不会被吞掉，而是产生一条 `RUNTIME_PROTOCOL_ERROR` 条目交给调用方。
+ * 处理四件事：chunk 边界上的半行、空行、CRLF 换行、超长单行。
+ * 单行解析失败或超限不会被吞掉，而是产生一条 `RUNTIME_PROTOCOL_ERROR` 条目交给调用方。
  */
 
 import {
@@ -195,13 +195,28 @@ function truncate(line: string): string {
 }
 
 /**
+ * 单行的最大长度（UTF-16 码元数）。协议事件都是短行，超过这个长度只可能是
+ * Runtime 输出通道坏了或对端根本不是 Runtime；不设上限的话半行会一直堆在内存里。
+ */
+export const MAX_NDJSON_LINE_LENGTH = 4 * 1024 * 1024
+
+/**
  * NDJSON 增量解析器。
  *
  * 逐个 chunk 喂入，返回本次能确定的完整条目；进程退出后调用 `flush()`
  * 处理最后一行没有换行符的情况。
+ *
+ * 单行超过 `maxLineLength` 时按协议错误处理：丢弃该行已缓冲的内容，并继续丢弃
+ * 直到下一个换行符为止，之后的行照常解析。
  */
 export class NdjsonEventStream {
   private buffer = ''
+  /** 当前行已超限，正在丢弃直到下一个换行符。 */
+  private discarding = false
+  /** 超限行被丢弃前的开头片段，用于报错时回显。 */
+  private discardedHead = ''
+
+  constructor(private readonly maxLineLength: number = MAX_NDJSON_LINE_LENGTH) {}
 
   /** 尚未凑齐换行符的半行内容，仅供诊断。 */
   get pending(): string {
@@ -209,19 +224,43 @@ export class NdjsonEventStream {
   }
 
   push(chunk: string | Buffer): NdjsonItem[] {
-    this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-
+    let text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
     const items: NdjsonItem[] = []
+
+    if (this.discarding) {
+      // 超限行的后续内容一个字符都不缓冲，直到看见换行符才恢复正常解析。
+      const endOfLine = text.indexOf('\n')
+      if (endOfLine === -1) {
+        return items
+      }
+      items.push(this.finishDiscard())
+      text = text.slice(endOfLine + 1)
+    }
+
+    this.buffer += text
     let newlineIndex = this.buffer.indexOf('\n')
 
     while (newlineIndex !== -1) {
       const line = this.buffer.slice(0, newlineIndex)
       this.buffer = this.buffer.slice(newlineIndex + 1)
-      const item = toItem(line)
+      // 整行一次到齐但仍超限：同样按协议错误处理，不去解析它。
+      const item =
+        line.length > this.maxLineLength
+          ? this.oversizedItem(line.slice(0, MAX_ECHO_LENGTH))
+          : toItem(line)
       if (item) {
         items.push(item)
       }
       newlineIndex = this.buffer.indexOf('\n')
+    }
+
+    if (this.buffer.length > this.maxLineLength) {
+      // 半行已经超限：记下开头片段后立刻释放缓冲，后续 chunk 直到换行符为止全部丢弃。
+      if (!this.discarding) {
+        this.discarding = true
+        this.discardedHead = this.buffer.slice(0, MAX_ECHO_LENGTH)
+      }
+      this.buffer = ''
     }
 
     return items
@@ -231,8 +270,28 @@ export class NdjsonEventStream {
   flush(): NdjsonItem[] {
     const rest = this.buffer
     this.buffer = ''
-    const item = toItem(rest)
+    const item = this.discarding ? this.finishDiscard() : toItem(rest)
     return item ? [item] : []
+  }
+
+  /** 超限行到达行尾（或流结束），产出一条协议错误并恢复正常解析。 */
+  private finishDiscard(): NdjsonItem {
+    const head = this.discardedHead
+    this.discarding = false
+    this.discardedHead = ''
+    return this.oversizedItem(head)
+  }
+
+  private oversizedItem(head: string): NdjsonItem {
+    return {
+      kind: 'error',
+      line: head,
+      error: new RuntimeClientError(
+        'RUNTIME_PROTOCOL_ERROR',
+        `Runtime 输出了超过 ${this.maxLineLength} 个字符的单行，已丢弃：${head}…`,
+        { line: head, maxLineLength: this.maxLineLength }
+      ),
+    }
   }
 }
 

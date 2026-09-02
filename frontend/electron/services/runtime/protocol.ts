@@ -150,8 +150,18 @@ export const RUNTIME_STATE_STATUSES: readonly RuntimeKnownStateStatus[] = [
  */
 export type RuntimeResultStatus = RuntimeProgressStatus | RuntimeStateStatus
 
-/** `hello.capabilities` 的稳定能力标识（values.go: Capability）。 */
-export type RuntimeKnownCapability = 'stdin.cancel' | 'state.v1' | 'log.stream'
+/**
+ * `hello.capabilities` 的稳定能力标识（values.go: Capability）。
+ *
+ * `stdin.shutdown` 与 `stdin.status` 是 `backend supervise` 一直接受、后来才补公告的两条
+ * stdin 控制命令；调用方按契约只信 hello 宣告的能力，没宣告就不发对应命令。
+ */
+export type RuntimeKnownCapability =
+  | 'stdin.cancel'
+  | 'state.v1'
+  | 'log.stream'
+  | 'stdin.shutdown'
+  | 'stdin.status'
 
 export type RuntimeCapability = OpenUnion<RuntimeKnownCapability>
 
@@ -159,6 +169,8 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeKnownCapability[] = [
   'stdin.cancel',
   'state.v1',
   'log.stream',
+  'stdin.shutdown',
+  'stdin.status',
 ]
 
 /** 稳定的处置动作标识（errors.go: Remediation）。 */
@@ -886,8 +898,10 @@ export interface RuntimeClientErrorDetails {
   signal?: NodeJS.Signals | null
   /** Runtime 自身的 stderr 诊断输出（不是被监督进程的日志）。 */
   stderr?: string
-  /** 触发 RUNTIME_PROTOCOL_ERROR 的原始行。 */
+  /** 触发 RUNTIME_PROTOCOL_ERROR 的原始行；超长行被丢弃时只保留开头片段。 */
   line?: string
+  /** 单行超过该长度时被丢弃，仅超长行的 RUNTIME_PROTOCOL_ERROR 携带。 */
+  maxLineLength?: number
   /** 握手拿到的协议版本，用于 RUNTIME_PROTOCOL_MISMATCH。 */
   actualProtocol?: number
   expectedProtocol?: number

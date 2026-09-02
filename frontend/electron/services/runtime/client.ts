@@ -53,6 +53,14 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000
 /** 判定失败并结束进程后，等待 close 事件的兜底时间，避免调用方永久挂起。 */
 const FAIL_SETTLE_GRACE_MS = 2_000
 
+/**
+ * 保留的最近 log 事件条数。
+ *
+ * `backend supervise` 会把后端每一行 stdout / stderr（含 DEBUG 日志）都包装成 log 事件
+ * 转发，整个监督期间无上限累积会把内存吃光；这里只留最近一段供失败展示与排查。
+ */
+export const DEFAULT_RECENT_LOG_CAPACITY = 500
+
 // ==================== 选项与结果 ====================
 
 /** 镜像源选择，对应 `--mirror <kind>=<key>`。 */
@@ -90,11 +98,14 @@ export interface RuntimeRunOptions {
   onWarning?: (event: RuntimeWarningEvent) => void
   /** Runtime 输出的 error 事件（不是调用侧错误）。 */
   onRuntimeError?: (event: RuntimeErrorEvent) => void
-  /** NDJSON 行解析失败。默认会让本次调用直接失败。 */
+  /**
+   * NDJSON 行解析失败。握手前的坏行会让本次调用直接失败；握手后的坏行只记录并回调，
+   * 不会为一行脏输出杀掉在途命令或正在运行的后端。
+   */
   onProtocolError?: (error: RuntimeClientError) => void
   handshakeTimeoutMs?: number
-  /** 握手成功后再出现坏行时不再中断本次调用，只记录并回调。默认 false。 */
-  tolerateProtocolErrors?: boolean
+  /** 保留的最近 log 事件条数，默认 `DEFAULT_RECENT_LOG_CAPACITY`。 */
+  recentLogCapacity?: number
 }
 
 /** 单个 operationId 下按流分组、保序的日志行。 */
@@ -114,12 +125,15 @@ export interface RuntimeRunResult {
   success: boolean
   /** `result.code`，成功时为 `OK`。精确原因只能读它，不能读退出码。 */
   code: RuntimeCode
+  /** 除 log 之外的全部事件；log 只保留最近一段，见 `recentLogs`。 */
   events: RuntimeEvent[]
   warnings: RuntimeWarningEvent[]
   errors: RuntimeErrorEvent[]
-  /** 按 operationId 聚合的 log 事件。 */
+  /** 最近的 log 事件（最多 `recentLogCapacity` 条），保序。 */
+  recentLogs: RuntimeLogEvent[]
+  /** `recentLogs` 按 operationId 聚合后的结果。 */
   logs: RuntimeLogsByOperation
-  /** 握手后被容忍的坏行；默认配置下不会有，因为坏行会直接让调用失败。 */
+  /** 握手后被容忍的坏行。 */
   protocolErrors: RuntimeClientError[]
   exitCode: number | null
   signal: NodeJS.Signals | null
@@ -151,13 +165,20 @@ export interface RuntimeSuperviseHandle {
   readonly completion: Promise<RuntimeRunResult>
   /** 订阅全部事件，返回取消订阅函数。 */
   onEvent(listener: (event: RuntimeEvent) => void): () => void
+  /** 最近的 log 事件快照（最多 `recentLogCapacity` 条），返回副本。 */
+  recentLogs(): RuntimeLogEvent[]
   /** 下发一条控制命令，返回本次生成的 commandId。 */
   sendControl(command: RuntimeControlKind): string
   /** 请求一次只读状态快照，返回 commandId。 */
   status(): string
   /** 请求取消，返回 commandId。 */
   cancel(): string
-  /** 发 shutdown 后等待最终 result 与进程退出，超时才 kill。 */
+  /**
+   * 发 shutdown 后等待最终 result 与进程退出，超时才 kill。
+   *
+   * hello 没宣告 `stdin.shutdown` 时不发命令、不等待，直接 kill 并以
+   * `RUNTIME_EXITED_UNEXPECTEDLY` 收尾。
+   */
   shutdown(options?: RuntimeShutdownOptions): Promise<RuntimeRunResult>
   /** 强制结束 Runtime 进程，只在兜底路径使用。 */
   kill(signal?: NodeJS.Signals): void
@@ -298,12 +319,32 @@ function mergeEnv(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env
 }
 
-// ==================== 会话 ====================
+/** 固定容量的环形缓冲，满了之后覆盖最旧的一条。 */
+class RingBuffer<T> {
+  private readonly slots: T[]
+  private next = 0
+  private count = 0
 
-interface SessionOptions extends RuntimeRunOptions {
-  /** 握手完成后遇到坏行是否仍视为致命错误。 */
-  fatalProtocolErrorsAfterHello: boolean
+  constructor(capacity: number) {
+    this.slots = new Array<T>(Math.max(1, Math.floor(capacity)))
+  }
+
+  push(item: T): void {
+    this.slots[this.next] = item
+    this.next = (this.next + 1) % this.slots.length
+    this.count = Math.min(this.count + 1, this.slots.length)
+  }
+
+  /** 按写入顺序导出副本。 */
+  toArray(): T[] {
+    if (this.count < this.slots.length) {
+      return this.slots.slice(0, this.count)
+    }
+    return [...this.slots.slice(this.next), ...this.slots.slice(0, this.next)]
+  }
 }
+
+// ==================== 会话 ====================
 
 /** 一次 Runtime 调用的内部状态机，run 与 supervise 共用。 */
 class RuntimeSession {
@@ -314,7 +355,9 @@ class RuntimeSession {
 
   private readonly listeners = new Set<(event: RuntimeEvent) => void>()
   private readonly stdoutStream = new NdjsonEventStream()
+  /** 除 log 之外的事件。log 只进 `recentLogs`，否则长驻监督会无上限堆内存。 */
   private readonly events: RuntimeEvent[] = []
+  private readonly recentLogs: RingBuffer<RuntimeLogEvent>
   private readonly warnings: RuntimeWarningEvent[] = []
   private readonly errors: RuntimeErrorEvent[] = []
   private readonly protocolErrors: RuntimeClientError[] = []
@@ -337,10 +380,11 @@ class RuntimeSession {
   constructor(
     private readonly clientOptions: RuntimeClientOptions,
     command: string[],
-    private readonly options: SessionOptions,
+    private readonly options: RuntimeRunOptions,
     private readonly emitter: EventEmitter
   ) {
     this.argv = buildRuntimeArgs(clientOptions, command)
+    this.recentLogs = new RingBuffer(options.recentLogCapacity ?? DEFAULT_RECENT_LOG_CAPACITY)
 
     this.hello = new Promise<RuntimeHelloEvent>((resolve, reject) => {
       this.resolveHello = resolve
@@ -458,13 +502,24 @@ class RuntimeSession {
     this.options.onProtocolError?.(error)
     this.emitter.emit('protocol-error', error)
 
-    if (!this.helloEvent || this.options.fatalProtocolErrorsAfterHello) {
+    // 握手前的坏行说明对端根本不是按协议说话的 Runtime，直接失败；
+    // 握手后的坏行只记录并回调，不为一行脏输出杀掉在途命令或正在运行的后端。
+    if (!this.helloEvent) {
       this.fail(error)
     }
   }
 
+  /** 最近 log 事件的副本，按到达顺序。 */
+  recentLogSnapshot(): RuntimeLogEvent[] {
+    return this.recentLogs.toArray()
+  }
+
   private dispatch(event: RuntimeEvent): void {
-    this.events.push(event)
+    if (event.type === 'log') {
+      this.recentLogs.push(event)
+    } else {
+      this.events.push(event)
+    }
 
     switch (event.type) {
       case 'hello':
@@ -659,6 +714,7 @@ class RuntimeSession {
     exitCode: number | null,
     signal: NodeJS.Signals | null
   ): RuntimeRunResult {
+    const recentLogs = this.recentLogs.toArray()
     return {
       hello,
       result,
@@ -667,7 +723,8 @@ class RuntimeSession {
       events: this.events,
       warnings: this.warnings,
       errors: this.errors,
-      logs: collectRuntimeLogs(this.events),
+      recentLogs,
+      logs: collectRuntimeLogs(recentLogs),
       protocolErrors: this.protocolErrors,
       exitCode,
       signal,
@@ -708,15 +765,7 @@ export class RuntimeClient extends EventEmitter {
    * 不会抛异常，而是以 `result.success === false` 返回，由调用方读 `result.code`。
    */
   async run(command: string[], options: RuntimeRunOptions = {}): Promise<RuntimeRunResult> {
-    const session = new RuntimeSession(
-      this.options,
-      command,
-      {
-        ...options,
-        fatalProtocolErrorsAfterHello: !options.tolerateProtocolErrors,
-      },
-      this
-    )
+    const session = new RuntimeSession(this.options, command, options, this)
 
     await session.hello
     return session.completion
@@ -734,17 +783,10 @@ export class RuntimeClient extends EventEmitter {
       command.push('--repo', options.repo)
     }
 
-    const session = new RuntimeSession(
-      this.options,
-      command,
-      {
-        ...options,
-        fatalProtocolErrorsAfterHello: options.tolerateProtocolErrors === false,
-      },
-      this
-    )
+    const session = new RuntimeSession(this.options, command, options, this)
 
     const hello = await session.hello
+    const canShutdown = hello.capabilities.includes('stdin.shutdown')
     let shutdownRequested = false
 
     return {
@@ -753,11 +795,22 @@ export class RuntimeClient extends EventEmitter {
       capabilities: hello.capabilities,
       completion: session.completion,
       onEvent: listener => session.addListener(listener),
+      recentLogs: () => session.recentLogSnapshot(),
       sendControl: command => session.sendControl(command),
       status: () => session.sendControl('status'),
       cancel: () => session.sendControl('cancel'),
       kill: signal => session.kill(signal),
       shutdown: async ({ timeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS } = {}) => {
+        if (!canShutdown) {
+          // 调用方按契约只信 hello 宣告的能力：没宣告 stdin.shutdown 就不发命令，
+          // 也不白等超时，直接走强制结束这条退路。
+          logger.warn(
+            `Runtime 未宣告 stdin.shutdown 能力（已宣告 [${hello.capabilities.join(', ')}]），跳过优雅关闭，直接强制结束进程`
+          )
+          session.kill()
+          return session.completion
+        }
+
         if (!shutdownRequested) {
           shutdownRequested = true
           session.sendControl('shutdown')
