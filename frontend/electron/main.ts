@@ -37,6 +37,7 @@ import { decideRendererRecovery } from './rendererCrashRecovery'
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
+import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import {
   captureMainRendererCrash,
   configureMainSentry,
@@ -1219,6 +1220,12 @@ registerIssueReportExporter(
   '导出 OK-WW 问题包',
   'OK-WW-logs',
   createOkwwIssueReport
+)
+registerIssueReportExporter(
+  'oknte:exportIssueReport',
+  '导出 OK-NTE 问题包',
+  'OK-NTE-logs',
+  createOkNteIssueReport
 )
 
 ipcMain.handle('data:backup', async () => {

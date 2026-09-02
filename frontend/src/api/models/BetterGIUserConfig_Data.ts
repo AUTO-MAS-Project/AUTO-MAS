@@ -23,3 +23,4 @@ export type BetterGIUserConfig_Data = {
      */
     LastOneDragonConfig?: (string | null);
 };
+

@@ -159,8 +159,14 @@ def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
     return {**deepcopy(source_task), **deepcopy(managed_task)}
 
 
-def _find_task_source(task_queue: list[dict], name: str, task_type: str) -> dict | None:
-    """优先按任务名称取原生配置，兼容旧配置中只有任务类型的情况。"""
+def _find_task_source(
+    task_queue: list[dict],
+    name: str,
+    task_type: str,
+    *,
+    allow_type_fallback: bool = True,
+) -> dict | None:
+    """按任务名称取原生配置，必要时兼容旧配置中的类型匹配。"""
 
     for task in task_queue:
         if (
@@ -169,9 +175,10 @@ def _find_task_source(task_queue: list[dict], name: str, task_type: str) -> dict
             and task.get("Name") == name
         ):
             return deepcopy(task)
-    for task in task_queue:
-        if isinstance(task, dict) and task.get("TaskType") == task_type:
-            return deepcopy(task)
+    if allow_type_fallback:
+        for task in task_queue:
+            if isinstance(task, dict) and task.get("TaskType") == task_type:
+                return deepcopy(task)
     return None
 
 
@@ -180,25 +187,48 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
 
     source_tasks = [deepcopy(task) for task in source_queue if isinstance(task, dict)]
 
-    def source_or_default(name: str, task_type: str) -> dict:
-        task = _find_task_source(source_tasks, name, task_type) or {
+    def source_or_default(
+        name: str,
+        task_type: str,
+        *,
+        allow_type_fallback: bool = True,
+    ) -> dict:
+        task = _find_task_source(
+            source_tasks,
+            name,
+            task_type,
+            allow_type_fallback=allow_type_fallback,
+        ) or {
             "$type": f"{task_type}Task",
             "IsEnable": True,
         }
         task.update({"Name": name, "TaskType": task_type})
         return task
 
-    fight_source = _find_task_source(source_tasks, "理智作战", "Fight") or {}
+    fight_source = (
+        _find_task_source(
+            source_tasks, "理智作战", "Fight", allow_type_fallback=False
+        )
+        or {}
+    )
     annihilation = _merge_fight_task(
-        _find_task_source(source_tasks, "剿灭作战", "Fight") or fight_source,
+        _find_task_source(
+            source_tasks, "剿灭作战", "Fight", allow_type_fallback=False
+        )
+        or {},
         MAA_ANNIHILATION_FIGHT_BASE,
     )
     activity = _build_activity_priority_fight(
-        _find_task_source(source_tasks, "活动关优先", "Fight") or fight_source,
+        _find_task_source(
+            source_tasks, "活动关优先", "Fight", allow_type_fallback=False
+        )
+        or fight_source,
         "",
         0,
     )
-    remain = _find_task_source(source_tasks, "剩余理智", "Fight")
+    remain = _find_task_source(
+        source_tasks, "剩余理智", "Fight", allow_type_fallback=False
+    )
     if remain is None:
         remain = _merge_fight_task(fight_source, MAA_REMAIN_FIGHT_BASE)
     remain.update({"Name": "剩余理智", "TaskType": "Fight", "IsEnable": True})
@@ -214,7 +244,7 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
         source_or_default("基建换班", "Infrast"),
         activity,
         depot,
-        source_or_default("理智作战", "Fight"),
+        source_or_default("理智作战", "Fight", allow_type_fallback=False),
         remain,
         source_or_default("信用收支", "Mall"),
         source_or_default("领取奖励", "Award"),
@@ -323,6 +353,7 @@ def _build_activity_priority_fight(
         {
             "Name": "活动关优先",
             "IsEnable": True,
+            "TaskType": "Fight",
             "StagePlan": [activity_stage],
             "IsStageManually": True,
             "UseOptionalStage": False,
@@ -689,16 +720,27 @@ class AutoProxyTask(TaskExecuteBase):
             if en_task == "DepotMaintain" and not self.task_dict[en_task]:
                 continue
 
-            task_set[en_task] = _find_task_source(source_queue, zh_task, en_task) or {
+            task_set[en_task] = _find_task_source(
+                source_queue,
+                zh_task,
+                en_task,
+                allow_type_fallback=en_task != "Fight",
+            ) or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
                 "IsEnable": False,
                 "TaskType": en_task,
             }
 
-        annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
-        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
-        remain_source = _find_task_source(source_queue, "剩余理智", "Fight")
+        annihilation_source = _find_task_source(
+            source_queue, "剿灭作战", "Fight", allow_type_fallback=False
+        )
+        activity_source = _find_task_source(
+            source_queue, "活动关优先", "Fight", allow_type_fallback=False
+        )
+        remain_source = _find_task_source(
+            source_queue, "剩余理智", "Fight", allow_type_fallback=False
+        )
 
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
@@ -791,6 +833,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
         elif self.cur_user_config.get("Info", "Server") == "Bilibili":
             task_set["StartUp"]["AccountName"] = self.cur_user_config.get("Info", "Id")
+        # MAA v6.14.0-b2 起账号切换由独立开关控制，配置里已存为 false 时只写账号名不会切号
+        if self.cur_user_config.get("Info", "Server") in ("Official", "Bilibili"):
+            task_set["StartUp"]["AccountSwitchEnabled"] = bool(
+                task_set["StartUp"]["AccountName"].strip()
+            )
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
@@ -824,6 +871,14 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         elif self.mode == "Routine":
+            # 普通理智作战不能继承剿灭任务的语义字段。
+            task_set["Fight"].update(
+                {
+                    "Name": "理智作战",
+                    "TaskType": "Fight",
+                    "UseCustomAnnihilation": False,
+                }
+            )
             # 理智药配置
             task_set["Fight"]["UseMedicine"] = bool(
                 plan_data.get("MedicineNumb", 0) != 0

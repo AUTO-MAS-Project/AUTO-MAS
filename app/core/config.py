@@ -284,6 +284,8 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        # 正在循环运行的队列，供配置改动前的安全检查使用
+        self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
@@ -865,6 +867,15 @@ class AppConfig(GlobalConfig):
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+
+        # 删脚本会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
+        # 结构一变就会跑错脚本，两轮之间脚本没锁也要拦住。
+        for queue_uid, queue in self.QueueConfig.items():
+            if any(
+                item.get("Info", "ScriptId") == str(uid)
+                for item in queue.QueueItem.values()
+            ):
+                self._ensure_cycle_safe(queue_uid, "删除它引用的脚本")
 
         # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
@@ -1511,6 +1522,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        # 队列名、完成后操作这类字段改了不影响正在跑的循环，放行；
+        # 只有循环开关本身不能在运行中动。
+        if "CycleEnabled" in data.get("Info", {}):
+            self._ensure_cycle_safe(queue_uid, "切换循环开关")
 
         await self.QueueConfig[queue_uid].update(data)
 
@@ -1519,7 +1534,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "删除")
+
+        await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -1613,6 +1631,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
 
@@ -1627,6 +1646,10 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        # 循环调度参数每轮都会重读，运行中改没问题；换脚本会让任务的脚本列表
+        # 与队列对不上号，必须拦住。
+        if "Info" in data:
+            self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
@@ -1637,6 +1660,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
@@ -1646,10 +1670,29 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "调整队列项顺序")
 
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
+        """拦住会打乱正在运行的循环的改动。
+
+        任务的脚本列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
+        排序、换脚本都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
+        周期都不受影响。
+        """
+
+        if queue_uid not in self.running_cycle_queue_ids:
+            return
+
+        queue_name = (
+            self.QueueConfig[queue_uid].get("Info", "Name")
+            if queue_uid in self.QueueConfig
+            else str(queue_uid)
+        )
+        raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法{action}")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""

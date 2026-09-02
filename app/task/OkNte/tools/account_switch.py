@@ -16,17 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-WW（鸣潮）强制账号切换。
+"""OK-NTE（异环）强制账号切换。
 
-参照 ok-ww-old 可用的 MultiAccountDailyTask 切换逻辑重写（不依赖失效版的模板
-特征匹配），交互与截图采用 MaaEnd login 已验证的前台 pyautogui + DPI 适配模式，
-OCR 复用通用工具集 `app.tools.ocr`。
+参照 OK-WW 强制切号骨架重写（前台 pyautogui + DPI 适配 + 1080p 帧坐标空间，
+OCR 复用通用工具集 `app.tools.ocr`）。异环部分界面元素没有文本可识别，
+无文本元素按 1080p 帧相对坐标点击。
 
 流程::
 
-    找到游戏窗口 → 返回登录界面（已登录时 ESC → 终端 → 返回登录）
-    → 按手机号后 4 位识别掩码账号 → 展开账号下拉选择目标 → 点击登录
-    → 等待登录页消失（登录成功）
+    标题界面点右上角退出图标位置（相对坐标，双入口）→ 已登录：确认弹窗
+    点「确认」；未登录：直接打开登录面板 → HOTTA STUDIO 登录面板
+    → 点账号卡片展开列表 → 按手机号后 4 位选择目标账号（超出可见范围时
+    滚轮翻页）→ 点「登 录」→ 等待登录面板消失（登录成功）
+
+退出图标位置的点击是双入口：已登录时弹出「是否退出当前账号」确认弹窗，
+未登录时该点击直接打开登录面板，按点击后弹出的界面分流。
 """
 
 import asyncio
@@ -58,9 +62,9 @@ if IS_WINDOWS:
     import win32gui
     import win32process
 
-logger = get_logger("OK-WW 账号切换")
+logger = get_logger("OK-NTE 账号切换")
 
-# 诊断文件（debug/okww-account-switch/switch-detail-*.log）：记录切换过程各步骤
+# 诊断文件（debug/oknte-account-switch/switch-detail-*.log）：记录切换过程各步骤
 # OCR 文本，供用户反馈登录失败时对照定位识别漂移；切换串行独占前台，单例写入。
 _DIAGNOSTIC_PATH: Path | None = None
 
@@ -74,22 +78,23 @@ def _write_diagnostic(text: str) -> None:
         except OSError:
             pass
 
-# ── 鸣潮客户端窗口识别（与 Okww/AutoProxy 的 _WUWA_CLIENT_PROCESS 一致）──
-_WUWA_CLASS = "UnrealWindow"
-_WUWA_PROCESS = "Client-Win64-Shipping.exe"
+# ── 异环客户端窗口识别（与 OkNte/AutoProxy 的 _NTE_CLIENT_PROCESS 一致）──
+_NTE_CLIENT_PROCESS = "HTGame.exe"
 
-# 游戏窗口就绪宽限期：进程拉起到 UnrealWindow 窗口可见通常存在启动延迟，且设备
-# 性能越差窗口创建/亮相越慢。账号切换紧随脚本配置的定长 WaitTime 之后立即执行，
-# 须在宽限期内轮询等待窗口就绪，否则慢设备会误报「未找到鸣潮游戏窗口」。
+# 游戏窗口就绪宽限期：进程拉起到窗口可见通常存在启动延迟，且设备性能越差窗口
+# 创建/亮相越慢。账号切换紧随定长 WaitTime 之后立即执行，须在宽限期内轮询等待
+# 窗口就绪，否则慢设备会误报「未找到异环游戏窗口」。
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
-# 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载/游戏内更新
-# 过渡帧）时，在硬上限内轮询等待「登录页」或「已登录主菜单」出现。鸣潮更新由 MAS
-# 启动前预更新，游戏内更新概率较低，但仍以「进展续延」应答长加载：界面仍在变化时
-# 持续顺延，长时间无进展才判失败并交由返回登录流程兜底。
-_IN_GAME_UPDATE_TIMEOUT = 1800.0
-# 长时间无进展判定：界面静止达到该时长仍未进入登录态则视为卡死，提前交还兜底流程。
+# 启动界面稳定等待：窗口已出现但尚未进入可执行态（仍停在 splash/加载/游戏内更新
+# 过渡帧）时，在硬上限内轮询等待「标题界面」或「登录面板」出现。异环更新频繁，点
+# 「开始游戏」后游戏内更新可能耗时很长，故界面仍在变化（有进展）时持续顺延等待；
+# 只有持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展（界面静止且仍非标题/登录）才判失败。
+# 异环更新频繁且包体大，慢网下 30 分钟不够，硬上限放宽到 2 小时；真挂起由无进展
+# 检测在 60s 内提前失败，不会傻等满上限。
+_IN_GAME_UPDATE_TIMEOUT = 7200.0
+# 长时间无进展判定：界面静止达到该时长仍非标题/登录面板则视为卡死，提前失败。
 _IN_GAME_STALL_SECONDS = 60.0
 # 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
 _IN_GAME_POLL_INTERVAL = 3.0
@@ -101,16 +106,24 @@ _DIAGNOSTIC_DUMP_EVERY_POLLS = 10
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 
-# 登录表单判定区域（相对 1080p 帧，对齐 ok-ww box_of_screen(0.3, 0.3, 0.7, 0.8)）
-_LOGIN_ROI: Box = (576, 324, 1344, 864)
-# 仅在登录页出现的文本，用于判定「已处于登录界面 / 登录成功」
-_LOGIN_PAGE_TEXTS = ("其他登录方式",)
-# 已登录主菜单判定文本（登录界面但无输入框：退出/公告/工具/账号/设置 + 登录状态）
-_LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
+# 标题界面右上角退出图标（无文本可 OCR，按 2048x1152 参考截图换算 1080p 坐标；
+# 图标中心 x≈1962/2048→1839，y≈363/1152→340，原 1865 偏右落在图标右缘外导致点击不生效）
+_LOGOUT_ICON_POINT = (1839, 340)
+# 账号列表滚动中心（HOTTA STUDIO 面板中部），目标账号超出可见范围时滚轮翻页
+_LIST_SCROLL_POINT = (960, 600)
 
-# 掩码账号形如 123****5678
+# 仅标题界面出现的文本（底部居中按钮），用于判定「处于标题界面」
+_TITLE_TEXTS = ("进入游戏",)
+# 仅登录面板出现的文本，用于判定「登录面板已打开 / 登录成功后面板消失」
+_PANEL_TEXTS = ("使用其他方式登录",)
+# 加载完成后常驻左上角的适龄提示徽标（16+/CADPA），标题界面与登录面板均有：
+# 作为就绪判定的附加信号，防止「进入游戏」按钮被特效遮挡或 OCR 瞬时失败漏判
+_LOADED_BADGE_TEXTS = ("适龄提示",)
+
+# 掩码账号形如 130*****6220
 _MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
 _MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
+
 
 @lru_cache(maxsize=1)
 def _user32_dpi_api():
@@ -152,17 +165,18 @@ def _window_area(hwnd: int) -> int:
 
 
 def _find_game_hwnd(*, wait: bool = True) -> int:
-    """按窗口类 + 所属进程名定位鸣潮主窗口。
+    """按所属进程名定位异环主窗口。
 
-    用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
-    规避提权进程 name 读取被拒导致的漏判；同进程存在多个窗口时取面积最大者。
+    异环窗口类未实测稳定，故只用 ``EnumWindows + psutil.Process(pid).name()``
+    过滤 HTGame.exe 的可见窗口（规避提权进程 name 读取被拒导致的漏判），
+    同进程存在多个窗口时取面积最大者。
 
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
-            以吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+            吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到异环游戏窗口。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
     while True:
@@ -172,12 +186,10 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             try:
                 if not win32gui.IsWindowVisible(hwnd):
                     return True
-                if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
-                    return True
             except Exception:
                 return True
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            if pid and _process_name(pid) == _WUWA_PROCESS:
+            if pid and _process_name(pid) == _NTE_CLIENT_PROCESS:
                 candidates.append(hwnd)
             return True
 
@@ -187,12 +199,12 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
         if not wait or time.monotonic() >= deadline:
             break
         logger.info(
-            "鸣潮游戏进程已启动但窗口暂未就绪，"
+            "异环游戏进程已启动但窗口暂未就绪，"
             f"{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
         time.sleep(_WINDOW_POLL_INTERVAL)
     raise RuntimeError(
-        f"未找到鸣潮游戏窗口（进程 {_WUWA_PROCESS}，窗口类 {_WUWA_CLASS}）"
+        f"未找到异环游戏窗口（进程 {_NTE_CLIENT_PROCESS}）"
     )
 
 
@@ -201,7 +213,7 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
 
 def _activate_window(hwnd: int) -> None:
     if not win32gui.IsWindow(hwnd):
-        raise RuntimeError("鸣潮游戏窗口已失效")
+        raise RuntimeError("异环游戏窗口已失效")
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
@@ -213,7 +225,7 @@ def _activate_window(hwnd: int) -> None:
     try:
         if win32gui.GetForegroundWindow() != hwnd:
             # Windows 前台锁：后台进程不能直接抢占前台。先附着当前前台窗口线程
-            # 的输入队列，再置前，绕过系统限制（与 ok-ww ensure_in_front 同理）。
+            # 的输入队列，再置前，绕过系统限制（与 OK-WW 切号同理）。
             foreground = win32gui.GetForegroundWindow()
             fg_thread = win32process.GetWindowThreadProcessId(foreground)[0]
             win32process.AttachThreadInput(
@@ -230,17 +242,17 @@ def _activate_window(hwnd: int) -> None:
             win32gui.BringWindowToTop(hwnd)
             win32gui.SetForegroundWindow(hwnd)
     except win32gui.error:
-        logger.debug("鸣潮游戏窗口焦点请求被系统忽略，继续按前置窗口处理")
+        logger.debug("异环游戏窗口焦点请求被系统忽略，继续按前置窗口处理")
     time.sleep(0.1)
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
     _, _, width, height = win32gui.GetClientRect(hwnd)
     if width <= 0 or height <= 0:
-        raise RuntimeError("鸣潮游戏窗口尺寸异常")
+        raise RuntimeError("异环游戏窗口尺寸异常")
     if abs(width / height - 16 / 9) > 0.02:
         logger.warning(
-            f"鸣潮窗口非 16:9（{width}x{height}），账号切换坐标可能偏移"
+            f"异环窗口非 16:9（{width}x{height}），账号切换坐标可能偏移"
         )
     return width, height
 
@@ -321,12 +333,6 @@ def _click_point(
     _click_box(hwnd, (px, py, 1, 1), after_sleep=after_sleep)
 
 
-def _press_escape(hwnd: int, *, after_sleep: float = 1.5) -> None:
-    _activate_window(hwnd)
-    pyautogui.press("esc")
-    time.sleep(after_sleep)
-
-
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
@@ -353,75 +359,9 @@ def _wait_ocr_text(
     return None
 
 
-def _on_login_page(hwnd: int) -> bool:
-    return _find_text(_read_texts(hwnd, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
-
-
-def _on_logged_in_menu(hwnd: int) -> bool:
-    """已登录主菜单（登录界面但无输入框）：出现 登录状态/点击连接。"""
-    return _find_text(_read_texts(hwnd), _LOGGED_IN_MENU_TEXTS) is not None
-
-
-def _find_confirm_logout_box(items: list[OCRItem]) -> Box | None:
-    """在 OCR 条目中定位弹窗中的「确认登出」按钮。
-
-    只认「登出」，不认裸「退出」——主菜单右侧有「退出」（退出游戏）按钮，
-    弹窗未打开时绝不能误点；弹窗说明文本「确认登出账号？」含问号需排除，
-    按钮文本恰为「确认登出」。
-    """
-    candidates = [(text, box) for text, box in items if "登出" in text]
-    if not candidates:
-        return None
-    # 精确等于按钮文本
-    for text, box in candidates:
-        if text == "确认登出":
-            logger.info("OK-WW 登出按钮精确命中「确认登出」")
-            return box
-    # 排除说明文本（含问号）后取含「登出」的候选，多个命中取最右（按钮在弹窗右侧）
-    filtered = [(t, b) for t, b in candidates if "？" not in t and "?" not in t]
-    if filtered:
-        text, box = max(filtered, key=lambda item: item[1][0] + item[1][2])
-        logger.info(f"OK-WW 登出按钮命中候选文本: {text}")
-        return box
-    logger.info(f"登出候选均为说明文本: {[t for t, _ in candidates]}")
-    return None
-
-
-def _post_logout(hwnd: int, on_log: Callable[[str], None]) -> None:
-    """点击确认登出后：点一下画面中央触发输入框，识别到「登录」再返回。"""
-    on_log("已点击确认登出，正在等待登录输入框")
-    _click_point(hwnd, _FRAME_WIDTH // 2, _FRAME_HEIGHT // 2, after_sleep=2.5)
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        if _find_text(_read_texts(hwnd, _LOGIN_ROI), ("登录",)) is not None:
-            on_log("识别到「登录」，登录输入框已弹出")
-            return
-        time.sleep(1)
-    on_log("等待登录输入框超时（30s 未识别到「登录」）")
-    raise RuntimeError("等待登录输入框超时（30s 未识别到「登录」）")
-
-
-def _logout_from_menu(hwnd: int, on_log: Callable[[str], None]) -> None:
-    """已登录主菜单 -> 打开账号菜单 -> 点「确认登出」-> 弹登录输入框。
-
-    右侧竖排按钮（1080p）：退出193 公告317 工具450 账号576 设置709。
-    账号按钮候选点击后，优先按 OCR「确认登出」文本定位按钮。
-    """
-    on_log("检测到已登录主菜单，正在登出当前账号")
-    for label, y in (("账号", 576), ("账号上方", 505), ("工具", 450)):
-        confirm = _find_confirm_logout_box(_read_texts(hwnd))
-        if confirm is not None:
-            _click_box(hwnd, confirm, after_sleep=1.5)
-            _post_logout(hwnd, on_log)
-            return
-        on_log(f"尝试点击右侧{label}按钮区域打开账号菜单")
-        _click_point(hwnd, round(0.93 * _FRAME_WIDTH), y, after_sleep=1.5)
-        confirm = _find_confirm_logout_box(_read_texts(hwnd))
-        if confirm is not None:
-            _click_box(hwnd, confirm, after_sleep=1.5)
-            _post_logout(hwnd, on_log)
-            return
-    raise RuntimeError("未找到「确认登出」入口，请人工确认主菜单登出按钮位置")
+def _on_login_panel(hwnd: int) -> bool:
+    """登录面板是否已打开（面板内独有文本「使用其他方式登录」）。"""
+    return _find_text(_read_texts(hwnd), _PANEL_TEXTS) is not None
 
 
 def _frame_signature(frame: np.ndarray) -> int:
@@ -430,19 +370,28 @@ def _frame_signature(frame: np.ndarray) -> int:
     return hash(small.tobytes())
 
 
+def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
+    """窗口句柄在等待期间失效（如游戏内更新触发客户端重启）时重新定位异环窗口。
+
+    重定位成功返回新句柄；等待宽限期内仍找不到则抛出，交由调用方失败处理。
+    """
+    on_log("游戏窗口句柄已失效，重新定位异环游戏窗口...")
+    return _find_game_hwnd(wait=True)
+
+
 def _wait_for_actionable_state(
     hwnd: int, on_log: Callable[[str], None]
-) -> None:
-    """等待进入可执行的登录态（登录页或已登录主菜单）。
+) -> int:
+    """等待进入可执行的切号态（标题界面或登录面板），返回当前有效的游戏窗口句柄。
 
-    游戏窗口刚出现时可能仍停在启动过渡帧（警告弹窗、加载条、游戏内更新、自动登录等），
-    此时登录页与主菜单两态都不命中。若立即按 ESC 走返回登录，可能落在不匹配的画面上。
-    故采用「进展续延」语义等待两态之一出现：
+    游戏窗口刚出现时可能仍停在启动过渡帧（splash/加载），而异环更新频繁，点「开始
+    游戏」后游戏内可能出现体积大、耗时长更新的界面（此时标题界面与登录面板都不命中）。
+    若立即按标题界面退出图标分流，会落在不匹配的画面上。故采用「进展续延」语义等待：
 
-    - 命中任意态 → 返回，由调用方按对应态执行（登录页→选择登录，主菜单→登出）；
-    - 界面仍在变化（有更新/加载进展）→ 持续顺延，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
-    - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非登录态 → 判卡死，交还调用方
-      走「ESC→终端→返回登录」兜底（覆盖已直接进入游戏主场景的情形）。
+    - 命中标题界面/登录面板/左上角适龄提示徽标 → 返回有效句柄，由调用方按对应态执行；
+    - 界面仍在变化（有更新/加载进展）→ 持续顺延等待，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
+    - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非标题/登录 → 判卡死提前失败。
+    - 等待期间窗口句柄失效（客户端更新重启）→ 重新定位新窗口后继续等待。
 
     进度日志按约 5 条/轮询节流，避免向调度台频繁刷屏。
     """
@@ -451,15 +400,23 @@ def _wait_for_actionable_state(
     last_sig: int | None = None
     iter_count = 0
     while time.monotonic() < deadline:
-        frame = _capture_window(hwnd, activate=False)
-        items_full = ocr_image(frame)
+        try:
+            frame = _capture_window(hwnd, activate=False)
+            items = ocr_image(frame)
+        except RuntimeError:
+            # 窗口句柄失效：可能是游戏内更新触发客户端重启，重找新窗口继续而非中止。
+            hwnd = _reacquire_game_hwnd(on_log)
+            last_progress = time.monotonic()
+            last_sig = None
+            continue
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
-            _dump_ocr_items(items_full)
+            _dump_ocr_items(items)
         if (
-            _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
-            or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None
+            _find_text(items, _PANEL_TEXTS) is not None
+            or _find_text(items, _TITLE_TEXTS) is not None
+            or _find_text(items, _LOADED_BADGE_TEXTS) is not None
         ):
-            return
+            return hwnd
         sig = _frame_signature(frame)
         if sig != last_sig:
             last_sig = sig
@@ -467,64 +424,102 @@ def _wait_for_actionable_state(
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:
-            on_log("鸣潮仍在启动/游戏内更新或加载过渡帧中，等待进入登录页或已登录主菜单...")
+            on_log("异环仍在游戏内更新/加载过渡帧中，等待进入标题界面或登录面板...")
         iter_count += 1
         time.sleep(_IN_GAME_POLL_INTERVAL)
-    on_log(
-        "等待进入可执行登录态超时或长时间无进展"
-        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），按未知状态走返回登录流程"
+    raise RuntimeError(
+        "等待异环标题界面/登录面板超时：长时间无进展或超过硬上限"
+        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），请人工确认游戏已停在标题界面"
     )
 
 
-def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
-    """回到登录界面；已处于登录页直接返回，主菜单走登出，其余（含游戏主场景）走游戏内返回。"""
-    _wait_for_actionable_state(hwnd, on_log)
+def _find_confirm_box(items: list[OCRItem]) -> Box | None:
+    """在 OCR 条目中定位退出确认弹窗的「确认」按钮。
 
-    if _on_login_page(hwnd):
-        on_log("已处于登录界面，跳过返回登录")
-        return
-    if _on_logged_in_menu(hwnd):
-        _logout_from_menu(hwnd, on_log)
-        if _on_login_page(hwnd):
+    弹窗说明文本「是否确认退出当前账号?」含「确认」子串，必须排除；
+    按钮文本恰为「确认」，与左侧「取消」区分。
+    """
+    candidates = [(text, box) for text, box in items if "确认" in text]
+    if not candidates:
+        return None
+    # 精确等于按钮文本
+    for text, box in candidates:
+        if text == "确认":
+            logger.info("OK-NTE 确认按钮精确命中「确认」")
+            return box
+    # 排除说明文本（含问号 / 「退出」）后取含「确认」的候选，多个命中取最右
+    # （确认按钮在弹窗右侧）
+    filtered = [
+        (t, b)
+        for t, b in candidates
+        if "？" not in t and "?" not in t and "退出" not in t and "取消" not in t
+    ]
+    if filtered:
+        text, box = max(filtered, key=lambda item: item[1][0] + item[1][2])
+        logger.info(f"OK-NTE 确认按钮命中候选文本: {text}")
+        return box
+    logger.info(f"确认候选均为说明文本: {[t for t, _ in candidates]}")
+    return None
+
+
+def _find_login_button(items: list[OCRItem]) -> Box | None:
+    """在 OCR 条目中定位登录面板的「登 录」按钮。
+
+    OCR 文本已去空白，按钮文本归一化后恰为「登录」；面板下方还有
+    「使用其他方式登录」，须排除。
+    """
+    candidates = [(text, box) for text, box in items if "登录" in text]
+    if not candidates:
+        return None
+    for text, box in candidates:
+        if text == "登录":
+            logger.info("OK-NTE 登录按钮精确命中「登录」")
+            return box
+    filtered = [(t, b) for t, b in candidates if "其他方式" not in t]
+    if filtered:
+        text, box = max(filtered, key=lambda item: item[1][0] + item[1][2])
+        logger.info(f"OK-NTE 登录按钮命中候选文本: {text}")
+        return box
+    logger.info(f"登录候选均为干扰文本: {[t for t, _ in candidates]}")
+    return None
+
+
+def _open_account_panel(hwnd: int, on_log: Callable[[str], None]) -> None:
+    """标题界面 → 点右上角退出图标位置 → 按弹出的界面分流。
+
+    该位置点击是双入口：已登录时此点击弹出「是否退出当前账号」确认弹窗，
+    点「确认」后登录面板打开；未登录时此点击直接打开登录面板。
+    """
+    on_log("正在点击标题界面右上角退出图标位置")
+    _click_point(hwnd, *_LOGOUT_ICON_POINT, after_sleep=1.5)
+
+    # 已登录：等待退出确认弹窗；未登录：登录面板直接打开
+    confirm: Box | None = None
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        items = _read_texts(hwnd)
+        confirm = _find_confirm_box(items)
+        if confirm is not None:
+            break
+        if _find_text(items, _PANEL_TEXTS) is not None:
+            on_log("登录面板已打开（当前未登录）")
             return
-        on_log("登出后仍未出现登录输入框，继续走游戏内返回登录流程")
+        time.sleep(1)
 
-    on_log("正在返回登录界面")
-    _press_escape(hwnd)
-    _wait_ocr_text(hwnd, ("终端",), timeout=30)
-    _click_point(
-        hwnd,
-        round(0.04 * _FRAME_WIDTH),
-        round(0.96 * _FRAME_HEIGHT),
-        after_sleep=1,
-    )
-    back_box = _wait_ocr_text(hwnd, ("返回登录",), timeout=30)
-    if back_box is not None:
-        _click_box(hwnd, back_box, after_sleep=3)
-    else:
-        _click_point(
-            hwnd,
-            round(0.67 * _FRAME_WIDTH),
-            round(0.63 * _FRAME_HEIGHT),
-            after_sleep=3,
-        )
-    if _wait_ocr_text(
-        hwnd,
-        _LOGIN_PAGE_TEXTS,
-        roi=_LOGIN_ROI,
-        timeout=60,
-    ) is None:
-        # 不能在等待超时后假报「已返回登录界面」：盲点可能误触登录进入游戏，
-        # 此时画面无掩码账号，继续选号必然失败且更难排查，必须显式失败留证。
+    if confirm is None:
         raise RuntimeError(
-            "返回登录流程结束但未识别到登录界面（60s 未出现「其他登录方式」），"
-            "可能误入了游戏内画面，请人工确认后重试"
+            "点击退出图标位置后未出现退出确认或登录面板，请人工确认当前处于标题界面"
         )
-    on_log("已返回登录界面")
+    on_log("检测到已登录，点击「确认」退出当前账号")
+    _click_box(hwnd, confirm, after_sleep=2)
+
+    if _wait_ocr_text(hwnd, _PANEL_TEXTS, timeout=30) is None:
+        raise RuntimeError("退出账号后登录面板未打开（30s 未识别到登录面板）")
+    on_log("登录面板已打开")
 
 
 def _detect_current_account(hwnd: int) -> str | None:
-    """从登录页 OCR 掩码账号（如 123****5678）识别当前账号后 4 位。"""
+    """从登录面板 OCR 掩码账号（如 130*****6220）识别当前账号后 4 位。"""
     for text, _ in _read_texts(hwnd):
         match = _MASKED_SUFFIX.search(text)
         if match:
@@ -532,15 +527,15 @@ def _detect_current_account(hwnd: int) -> str | None:
     return None
 
 
-def _expand_account_dropdown(hwnd: int) -> None:
-    """点击账号选择框直至下拉列表展开（出现多个掩码账号）。
+def _expand_account_list(hwnd: int) -> None:
+    """点击当前账号卡片直至账号列表展开（出现多个掩码账号）。
 
-    若始终识别不到任何掩码账号，说明无法确认账号选择器已打开（OCR 失败或
-    登录界面布局变化）；继续登录可能落在错误账号上，按失败抛出而非静默返回。
+    若始终识别不到任何掩码账号，说明无法确认账号列表已打开（OCR 失败或
+    面板布局变化）；继续登录可能落在错误账号上，按失败抛出而非静默返回。
     """
     found_masked = False
     for _ in range(3):
-        items = _read_texts(hwnd, _LOGIN_ROI)
+        items = _read_texts(hwnd)
         masked = [box for text, box in items if _MASKED_ACCOUNT.search(text)]
         if len(masked) >= 2:
             return
@@ -552,32 +547,53 @@ def _expand_account_dropdown(hwnd: int) -> None:
         _click_box(hwnd, masked[0], after_sleep=1)
     if not found_masked:
         raise RuntimeError(
-            "未识别到任何掩码账号，无法确认账号选择器已打开，请人工检查登录界面"
+            "未识别到任何掩码账号，无法确认账号列表已打开，请人工检查登录面板"
         )
 
 
-def _click_masked_account(hwnd: int, pattern: re.Pattern[str]) -> bool:
-    items = _read_texts(hwnd)
-    for text, box in items:
-        if pattern.search(text):
-            _click_box(hwnd, box, after_sleep=1)
-            return True
+def _scroll_list(hwnd: int) -> None:
+    """在账号列表区域滚轮下翻一页（目标账号不在可见范围时使用）。"""
+    with _per_monitor_dpi():
+        width, height = _client_size(hwnd)
+        px, py = _LIST_SCROLL_POINT
+        client_x = round(px * width / _FRAME_WIDTH)
+        client_y = round(py * height / _FRAME_HEIGHT)
+        screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
+    pyautogui.moveTo(screen_x, screen_y)
+    time.sleep(0.2)
+    pyautogui.scroll(-3)
+    time.sleep(0.5)
+
+
+def _click_masked_account(
+    hwnd: int, pattern: re.Pattern[str], on_log: Callable[[str], None]
+) -> bool:
+    """在账号列表中点击目标掩码账号；不在可见范围时滚轮翻页（上限 5 页）。"""
+    for page in range(6):
+        items = _read_texts(hwnd)
+        for text, box in items:
+            if pattern.search(text):
+                _click_box(hwnd, box, after_sleep=1)
+                return True
+        if page < 5:
+            on_log(f"目标账号不在当前可见列表，滚轮翻页（{page + 1}/5）")
+            _scroll_list(hwnd)
     return False
 
 
-def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
-    """点击登录后等待登录页消失（登录成功进入加载/主界面）。"""
+def _wait_login_success(hwnd: int, *, timeout: int = 120) -> None:
+    """点击登录后等待登录面板消失（登录成功进入加载/游戏）。"""
     deadline = time.monotonic() + timeout
     absent_count = 0
     while time.monotonic() < deadline:
-        if not _on_login_page(hwnd):
+        if not _on_login_panel(hwnd):
             absent_count += 1
             if absent_count >= 2:
                 return
         else:
             absent_count = 0
         time.sleep(1)
-    raise RuntimeError("等待登录完成超时（登录页未消失）")
+    raise RuntimeError("等待登录完成超时（登录面板未消失）")
 
 
 def _select_and_login(
@@ -588,9 +604,9 @@ def _select_and_login(
     for attempt in range(1, max_retries + 1):
         _activate_window(hwnd)
         time.sleep(1)
-        _expand_account_dropdown(hwnd)
+        _expand_account_list(hwnd)
         time.sleep(0.5)
-        if _click_masked_account(hwnd, pattern):
+        if _click_masked_account(hwnd, pattern, on_log):
             time.sleep(1)
             detected = _detect_current_account(hwnd)
             on_log(
@@ -605,18 +621,14 @@ def _select_and_login(
         else:
             on_log(f"账号选择失败，已重试 {max_retries} 次")
             raise RuntimeError(f"账号选择失败，已重试 {max_retries} 次")
-    time.sleep(4)
-    items = _read_texts(hwnd, _LOGIN_ROI)
-    login_box = _find_text(items, ("登录",))
+    time.sleep(2)
+    login_box = _find_login_button(_read_texts(hwnd))
     if login_box is not None:
         _click_box(hwnd, login_box, after_sleep=3)
     else:
-        _click_point(
-            hwnd,
-            _FRAME_WIDTH // 2,
-            _FRAME_HEIGHT // 2 + 95,
-            after_sleep=3,
-        )
+        # OCR 失败兜底：登录按钮在面板中线、账号卡片下方约一卡处
+        on_log("未识别到「登录」按钮文本，按面板相对位置兜底点击")
+        _click_point(hwnd, 960, 660, after_sleep=3)
     _wait_login_success(hwnd)
     on_log(f"登录成功：****{suffix}")
 
@@ -624,7 +636,7 @@ def _select_and_login(
 def _save_error_screenshot(hwnd: int) -> None:
     """保存切换失败时的原始窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        screenshot_dir = Path.cwd() / "debug" / "okww-account-switch"
+        screenshot_dir = Path.cwd() / "debug" / "oknte-account-switch"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = screenshot_dir / (
             f"switch-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
@@ -644,30 +656,30 @@ def _save_error_screenshot(hwnd: int) -> None:
 def account_switch(
     account_id: str, *, on_log: Callable[[str], None] | None = None
 ) -> bool:
-    """强制切换鸣潮登录账号到 ``account_id``（按手机号后 4 位匹配）。
+    """强制切换异环登录账号到 ``account_id``（按手机号后 4 位匹配）。
 
     Args:
-        account_id: 目标账号（手机号），取后 4 位匹配登录页掩码账号。
+        account_id: 目标账号（手机号），取后 4 位匹配登录面板掩码账号。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
 
     Returns:
         切换成功返回 True；失败抛出带原因描述的 RuntimeError。
 
     Raises:
-        RuntimeError: 未找到游戏窗口 / 登录流程失败 / 超时。
+        RuntimeError: 未找到游戏窗口 / 画面不在标题界面或登录面板 / 流程失败 / 超时。
     """
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
-        raise RuntimeError("OK-WW 账号切换仅支持 Windows 平台")
+        raise RuntimeError("OK-NTE 账号切换仅支持 Windows 平台")
     account_id = str(account_id or "").strip()
     if len(account_id) < 4:
         raise RuntimeError("账号不足四位，无法按手机号后 4 位匹配登录账号")
     suffix = account_id[-4:]
 
-    # 开启诊断记录：进度日志与各步骤 OCR 文本写入 debug/okww-account-switch/，
+    # 开启诊断记录：进度日志与各步骤 OCR 文本写入 debug/oknte-account-switch/，
     # 供登录失败时用户反馈定位（文件随时间戳命名，一次切换一个文件）
     global _DIAGNOSTIC_PATH
-    diagnostic_dir = Path.cwd() / "debug" / "okww-account-switch"
+    diagnostic_dir = Path.cwd() / "debug" / "oknte-account-switch"
     diagnostic_dir.mkdir(parents=True, exist_ok=True)
     _DIAGNOSTIC_PATH = diagnostic_dir / (
         f"switch-detail-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.log"
@@ -677,11 +689,17 @@ def account_switch(
         _write_diagnostic(f"[{datetime.now():%H:%M:%S}] {msg}\n")
         on_log(msg)
 
-    _on_log(f"开始切换鸣潮账号：****{suffix}")
+    _on_log(f"开始切换异环账号：****{suffix}")
     try:
         hwnd = _find_game_hwnd()
         _activate_window(hwnd)
-        _switch_to_login(hwnd, _on_log)
+        # 启动稳定化：等界面进入「标题界面」或「登录面板」之一，再按各自流程分流，
+        # 避免在窗口已现但仍在加载过渡帧时立即误判失败；等待期间窗口重启会返回新句柄。
+        hwnd = _wait_for_actionable_state(hwnd, _on_log)
+        if _on_login_panel(hwnd):
+            on_log("登录面板已打开，直接选择账号")
+        else:
+            _open_account_panel(hwnd, _on_log)
         _select_and_login(hwnd, suffix, _on_log)
     except Exception:
         try:
@@ -692,7 +710,7 @@ def account_switch(
         raise
     finally:
         _DIAGNOSTIC_PATH = None
-    logger.success(f"鸣潮账号切换成功：****{suffix}")
+    logger.success(f"异环账号切换成功：****{suffix}")
     return True
 
 

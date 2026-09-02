@@ -8,3 +8,4 @@ export type BetterGIUserConfig_Task = {
      */
     OneDragonConfigName?: (string | null);
 };
+
