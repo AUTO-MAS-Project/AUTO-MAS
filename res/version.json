@@ -35,7 +35,8 @@
                 "游戏签到 修复通知返回值改为 DispatchResult 后未同步两处消费方、开启签到通知时执行签到必报 TypeError 的问题（手动签到接口返回 500，慢渠道后台通知路径丢失日志） by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复账号切换在游戏启动阶段定位不到窗口、或界面尚未进入可执行登录态就误操作而失败的问题，改为分段进展续延等待：先轮询窗口就绪，再等待界面进入「登录页/已登录主菜单」（游戏内长时间更新/加载时持续顺延，长时间无进展才判失败），兼容低性能设备启动延迟 by [@AthenaHibou](https://github.com/AthenaHibou)",
-                "OK-WW专项 账号切换未能回到登录界面时立即报错并说明原因，不再误报已就绪后在错误画面上继续选号失败 by [@AthenaHibou](https://github.com/AthenaHibou)"
+                "OK-WW专项 账号切换未能回到登录界面时立即报错并说明原因，不再误报已就绪后在错误画面上继续选号失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "OK-NTE专项 修复日常任务在当日活跃度奖励已领取过（或日常领取子任务被关闭）时被误判为失败并反复重试的问题，已领取时任务报告显示「跳过（当日已领取）」 by [@AthenaHibou](https://github.com/AthenaHibou)"
             ]
         },
         "v5.5.0-beta.2": {
