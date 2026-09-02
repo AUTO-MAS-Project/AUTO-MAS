@@ -198,6 +198,7 @@ class LDManager(DeviceBase):
             *(["--packagename", f'"{package_name}"'] if package_name else []),
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         # 参考命令 dnconsole.exe launch --index 0
 
@@ -245,6 +246,7 @@ class LDManager(DeviceBase):
             idx,
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         # 参考命令 dnconsole.exe quit --index 0
 
@@ -350,6 +352,7 @@ class LDManager(DeviceBase):
             "list2",
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
 
         if result.returncode != 0:

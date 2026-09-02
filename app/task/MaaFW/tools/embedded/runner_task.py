@@ -1551,6 +1551,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             game_path,
             *game_arguments,
             cwd=game_path.parent,
+            breakaway=True,
         )
 
         try:
