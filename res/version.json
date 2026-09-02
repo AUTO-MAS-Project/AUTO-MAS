@@ -12,7 +12,7 @@
             "开发流程": [
                 "新增 GitHub Issue 模板：Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，另设需求建议、AI 提交与其他议题模板，并挂上常见问题、文档站与官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
                 "BetterGI专项 清理：移除未达提交规范的测试文件，修复其格式与静态检查问题，并移除 .yarnrc.yml 中误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "新增受监督模式（AUTO_MAS_SUPERVISED=1）语义：不自行提权、端口固定 36163、关闭请求真实生效，为接入 AUTO-MAS-Runtime 做准备"
+                "新增受监督模式（AUTO_MAS_SUPERVISED=1）语义：不自行提权、端口由运行时注入（AUTO_MAS_SUPERVISED_PORT，缺省 36163）、关闭请求真实生效，为接入 AUTO-MAS-Runtime 做准备"
             ],
             "修复BUG": [
                 "修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题",
