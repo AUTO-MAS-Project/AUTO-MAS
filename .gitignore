@@ -61,6 +61,9 @@ list/
 # Local-only Kuro SMS capture patch
 /local/kuro-sms-capture-patch/
 
+# Local-only game community protocol and UI references
+/local/community-reference-projects/
+
 # Plugin workspace (external plugin sources stay ignored)
 /plugins/*
 !/plugins/auto_mas_core/

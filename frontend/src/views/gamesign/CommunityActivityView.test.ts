@@ -11,7 +11,9 @@ describe('CommunityActivityView structure', () => {
     expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
     expect(source).toContain('grid-auto-rows: 1fr;')
     expect(source).toContain('handle=".activity-drag-handle"')
-    expect(source).toContain('<component :is="gameVisual(element.game).icon" />')
+    expect(source).toContain('class="activity-game-image"')
+    expect(source).toContain('v-if="gameVisual(element.game).image"')
+    expect(source).toContain('v-else :is="gameVisual(element.game).icon"')
   })
 
   it('uses the i18n catalog and does not add a card-level scroll owner', () => {
@@ -25,6 +27,9 @@ describe('CommunityActivityView structure', () => {
     for (const game of ['明日方舟', '终末地', '原神', '星穹铁道', '绝区零']) {
       expect(source).toContain(`${game}:`)
     }
+    expect(source.match(/image: \w+NoteImage/g)).toHaveLength(5)
+    expect(source).toContain('@/assets/community-notes/arknights.png')
+    expect(source).toContain('@/assets/community-notes/zenless.png')
   })
 
   it('keeps one vertical page scroll owner and removes page-level gradients', () => {

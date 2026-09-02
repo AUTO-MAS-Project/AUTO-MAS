@@ -1522,6 +1522,9 @@ export default {
       miyoushe: '米游社',
       miyoushePlaceholder: '浏览器 F12 → document.cookie 获取',
       qrLogin: '扫码获取 Token',
+      cloudGenshin: '云原神',
+      cloudGenshinPlaceholder: '粘贴云原神网页请求中的 x-rpc-combo_token',
+      cloudTokenLogin: '打开云原神获取 Token',
       kuro: '库街区',
       kuroPlaceholder: '粘贴已从库街区客户端获取的 Token',
       smsLogin: '短信验证码获取 Token',
@@ -1600,6 +1603,7 @@ export default {
       signPartialNotify: '签到完成，但部分通知发送失败',
       signDone: '签到完成',
       signError: '签到失败: {error}',
+      externalLinkFailed: '打开外部链接失败，请稍后重试',
     },
   },
   history: {

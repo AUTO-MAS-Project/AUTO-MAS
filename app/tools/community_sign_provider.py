@@ -140,6 +140,10 @@ def _default_error_game(platform: str) -> str:
     return platform
 
 
+def _cloud_genshin_error_game(_platform: str) -> str:
+    return "云原神"
+
+
 def _taygedo_error_game(platform: str) -> str:
     # 未完成凭据/上游校验时没有可靠的游戏 ID，不把结果猜成某一款游戏。
     return "塔吉多社区" if platform == "塔吉多" else "云异环"
@@ -210,8 +214,8 @@ async def _run_skland_provider(
 
 async def _run_miyoushe_provider(
     token: str,
-    _account_name: str,
-    _account_uid: str,
+    account_name: str,
+    account_uid: str,
     on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
     from .miyoushe import merge_miyoushe_cookie_update, miyoushe_sign_in
@@ -234,6 +238,8 @@ async def _run_miyoushe_provider(
 
     results = await miyoushe_sign_in(
         token,
+        account_name=account_name,
+        account_uid=account_uid,
         on_credential_update=capture_credential,
     )
     updates = {"MiyousheToken": updated_token} if updated_token else {}
@@ -255,6 +261,24 @@ async def _run_kuro_provider(
     return _CommunityProviderRun(
         results=await kuro_sign_in(token),
         platforms=("库街区",),
+    )
+
+
+async def _run_cloud_genshin_provider(
+    token: str,
+    account_name: str,
+    account_uid: str,
+    _on_credential_update: CredentialUpdateCallback | None = None,
+) -> _CommunityProviderRun:
+    from .cloud_genshin import cloud_genshin_sign_in
+
+    return _CommunityProviderRun(
+        results=await cloud_genshin_sign_in(
+            token,
+            account_name=account_name,
+            account_uid=account_uid,
+        ),
+        platforms=("米游社",),
     )
 
 
@@ -324,6 +348,13 @@ _COMMUNITY_SIGN_PROVIDERS = (
         runner=_run_miyoushe_provider,
         resolve_platforms=_fixed_platforms("米游社"),
         error_game=_default_error_game,
+    ),
+    _CommunitySignProvider(
+        token_field="CloudGenshinToken",
+        log_name="云原神",
+        runner=_run_cloud_genshin_provider,
+        resolve_platforms=_fixed_platforms("米游社"),
+        error_game=_cloud_genshin_error_game,
     ),
     _CommunitySignProvider(
         token_field="KuroToken",

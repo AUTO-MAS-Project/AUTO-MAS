@@ -46,6 +46,7 @@ export interface PlatformTag {
 export interface SignAccount {
   uid: string
   MiyousheToken?: string
+  CloudGenshinToken?: string
   KuroToken?: string
   SklandToken?: string
   TaygedoToken?: string
@@ -108,7 +109,7 @@ export const hasPlatformToken = (
 ): boolean => {
   switch (platform) {
     case '米游社':
-      return !!account.MiyousheToken
+      return !!(account.MiyousheToken || account.CloudGenshinToken)
     case '库街区':
       return !!account.KuroToken
     case '森空岛':

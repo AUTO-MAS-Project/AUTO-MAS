@@ -1614,6 +1614,9 @@ export default {
       miyoushe: '米游社（Miyoushe）',
       miyoushePlaceholder: 'ブラウザで F12 → document.cookie から取得',
       qrLogin: 'QR コードでトークンを取得',
+      cloudGenshin: '原神クラウドゲーム',
+      cloudGenshinPlaceholder: 'クラウドゲーム画面の x-rpc-combo_token を貼り付けてください',
+      cloudTokenLogin: 'クラウドゲームを開いてトークンを取得',
       kuro: '库街区（Kuro Games コミュニティ）',
       kuroPlaceholder: '库街区クライアントで取得したトークンを貼り付けてください',
       smsLogin: 'SMS 確認コードでトークンを取得',
@@ -1696,6 +1699,7 @@ export default {
       signPartialNotify: '受け取りは完了しましたが、一部の通知を送信できませんでした',
       signDone: '受け取りが完了しました',
       signError: '受け取りに失敗しました: {error}',
+      externalLinkFailed: '外部リンクを開けませんでした。しばらくしてからお試しください',
     },
   },
   history: {

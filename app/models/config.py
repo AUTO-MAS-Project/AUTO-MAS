@@ -3768,6 +3768,10 @@ class GameSignAccountGroup(ConfigBase):
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
         )
+        ## GameSignAccount - 云原神 combo token (DPAPI 加密)
+        self.CloudGenshinToken = ConfigItem(
+            "GameSignAccount", "CloudGenshinToken", "", EncryptValidator()
+        )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
             "GameSignAccount", "KuroToken", "", EncryptValidator()

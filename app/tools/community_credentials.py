@@ -119,6 +119,12 @@ def _validate_miyoushe(raw_token: str) -> object:
     return validate_miyoushe_cookie(raw_token)
 
 
+def _validate_cloud_genshin(raw_token: str) -> object:
+    from .cloud_genshin import validate_cloud_genshin_token
+
+    return validate_cloud_genshin_token(raw_token)
+
+
 def _validate_kuro(raw_token: str) -> object:
     from .kuro import validate_kuro_credential
 
@@ -134,6 +140,7 @@ def _validate_taygedo(raw_token: str) -> object:
 _CREDENTIAL_VALIDATORS: dict[str, CredentialValidator] = {
     "SklandToken": _validate_skland,
     "MiyousheToken": _validate_miyoushe,
+    "CloudGenshinToken": _validate_cloud_genshin,
     "KuroToken": _validate_kuro,
     "TaygedoToken": _validate_taygedo,
 }

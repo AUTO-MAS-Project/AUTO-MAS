@@ -1600,6 +1600,9 @@ export default {
       miyoushe: 'Miyoushe',
       miyoushePlaceholder: 'From the browser: F12 -> document.cookie',
       qrLogin: 'Get a token by QR code',
+      cloudGenshin: 'Genshin Cloud Gaming',
+      cloudGenshinPlaceholder: 'Paste x-rpc-combo_token from the cloud game page',
+      cloudTokenLogin: 'Open cloud game to get a token',
       kuro: 'Kuro Games community',
       kuroPlaceholder: 'Paste the token from the Kuro Games client',
       smsLogin: 'Get a token by SMS',
@@ -1679,6 +1682,7 @@ export default {
       signPartialNotify: 'Check-in finished, but some notifications did not send',
       signDone: 'Check-in finished',
       signError: 'Check-in failed: {error}',
+      externalLinkFailed: 'Could not open the external link. Try again shortly.',
     },
   },
   history: {

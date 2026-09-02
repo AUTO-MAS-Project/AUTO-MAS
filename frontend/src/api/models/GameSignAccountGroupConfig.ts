@@ -19,6 +19,10 @@ export type GameSignAccountGroupConfig = {
      */
     MiyousheToken?: (string | null);
     /**
+     * 云原神 combo token
+     */
+    CloudGenshinToken?: (string | null);
+    /**
      * 库街区登录凭证
      */
     KuroToken?: (string | null);
@@ -30,5 +34,9 @@ export type GameSignAccountGroupConfig = {
      * 塔吉多及云异环登录凭证
      */
     TaygedoToken?: (string | null);
+    /**
+     * 账号组上次签到日期
+     */
+    LastSignDate?: (string | null);
 };
 

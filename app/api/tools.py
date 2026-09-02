@@ -444,6 +444,21 @@ async def update_game_sign_account(
                     status="error",
                     message="森空岛凭据格式无效，请检查后重试",
                 )
+        cloud_genshin_token = flat_data.get("CloudGenshinToken")
+        if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():
+            from app.tools.cloud_genshin import validate_cloud_genshin_token
+
+            try:
+                flat_data["CloudGenshinToken"] = validate_cloud_genshin_token(
+                    cloud_genshin_token
+                )
+            except ValueError as exc:
+                _log_community_api_error("云原神凭据校验失败", exc)
+                return OutBase(
+                    code=400,
+                    status="error",
+                    message="云原神 combo token 格式无效，请检查后重试",
+                )
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:

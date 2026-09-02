@@ -521,6 +521,8 @@ async def miyoushe_sign_in(
     cookie: str,
     proxy: str | None = None,
     *,
+    account_name: str = "",
+    account_uid: str = "",
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
 ) -> list[dict[str, object]]:
     """米游社社区签到
@@ -534,6 +536,8 @@ async def miyoushe_sign_in(
     Args:
         cookie: cookie 字符串，至少包含 UID 字段 + (cookie_token 或 stoken)
         proxy: 代理地址
+        account_name: AUTO-MAS 账号组别名
+        account_uid: AUTO-MAS 账号组 UUID
         on_credential_update: 凭据被替换后的可选回写回调
 
     Returns:
@@ -638,6 +642,20 @@ async def miyoushe_sign_in(
     _ensure_uid_aliases(effective_cookies, stuid)
     effective_cookie = _build_cookie_str(effective_cookies)
 
+    # 米游币是账号级任务，不依赖任何游戏角色；复用本轮已经补齐的 Cookie
+    # 和稳定设备 ID，并把结果并入同一社区结果链。
+    from .miyoushe_coin import run_miyoushe_coin_tasks
+
+    results.append(
+        await run_miyoushe_coin_tasks(
+            effective_cookies,
+            account_name=account_name or stuid,
+            account_uid=account_uid,
+            device_id=device_id,
+            proxy=proxy,
+        )
+    )
+
     # 获取游戏角色列表
     try:
         roles = await _get_game_roles(
@@ -648,7 +666,7 @@ async def miyoushe_sign_in(
     except _RiskControlError:
         logger.warning("获取米游社游戏角色被风控")
         await report_credential_update()
-        return [
+        results.append(
             {
                 "account": f"{stuid}/米游社",
                 "game": "米游社",
@@ -657,11 +675,12 @@ async def miyoushe_sign_in(
                 "reward": "",
                 "reason": "账号被风控，接口返回异常",
             }
-        ]
+        )
+        return results
     except Exception as e:
         reason = _log_miyoushe_exception("获取米游社游戏角色失败", e)
         await report_credential_update()
-        return [
+        results.append(
             {
                 "account": f"{stuid}/米游社",
                 "game": "米游社",
@@ -670,7 +689,8 @@ async def miyoushe_sign_in(
                 "reward": "",
                 "reason": reason,
             }
-        ]
+        )
+        return results
 
     if not roles:
         logger.warning("未找到米游社绑定的游戏角色")

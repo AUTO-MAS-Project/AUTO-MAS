@@ -8,12 +8,13 @@ import {
   SwapOutlined,
   QrcodeOutlined,
   MessageOutlined,
+  ExportOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
-import { handleExternalLink } from '@/utils/openExternal'
+import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
 import { useQrLogin } from './useQrLogin'
@@ -60,6 +61,7 @@ interface AccountInstance {
   Name: string
   Enabled: boolean
   MiyousheToken: string
+  CloudGenshinToken: string
   KuroToken: string
   SklandToken: string
   TaygedoToken: string
@@ -114,6 +116,7 @@ const loadAccounts = async () => {
         Name: asString(accountData.Name) || t('gamesign.defaultUserName'),
         Enabled: typeof accountData.Enabled === 'boolean' ? accountData.Enabled : true,
         MiyousheToken: asString(accountData.MiyousheToken),
+        CloudGenshinToken: asString(accountData.CloudGenshinToken),
         KuroToken: asString(accountData.KuroToken),
         SklandToken: asString(accountData.SklandToken),
         TaygedoToken: asString(accountData.TaygedoToken),
@@ -130,6 +133,7 @@ const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig
   Name: account.Name,
   Enabled: account.Enabled,
   MiyousheToken: account.MiyousheToken,
+  CloudGenshinToken: account.CloudGenshinToken,
   KuroToken: account.KuroToken,
   SklandToken: account.SklandToken,
   TaygedoToken: account.TaygedoToken,
@@ -148,6 +152,7 @@ const handleAddAccount = async () => {
         Name: data.Name || defaultName,
         Enabled: data.Enabled ?? true,
         MiyousheToken: data.MiyousheToken || '',
+        CloudGenshinToken: data.CloudGenshinToken || '',
         KuroToken: data.KuroToken || '',
         SklandToken: data.SklandToken || '',
         TaygedoToken: data.TaygedoToken || '',
@@ -484,6 +489,13 @@ const handleSklandLogin = async () => {
     sklandLoginPhone.value = ''
     sklandLoginPassword.value = ''
     credentialAction.value = null
+  }
+}
+
+const openCloudGenshinTokenPage = async () => {
+  const opened = await openExternalUrl('https://ys.mihoyo.com/cloud/#/')
+  if (!opened) {
+    message.error(t('gamesign.toast.externalLinkFailed'))
   }
 }
 
@@ -872,6 +884,27 @@ onBeforeUnmount(() => {
           >
             <template #icon><QrcodeOutlined /></template>
             {{ t('gamesign.edit.qrLogin') }}
+          </a-button>
+        </div>
+        <a-divider orientation="left" class="community-divider">{{
+          t('gamesign.edit.cloudGenshin')
+        }}</a-divider>
+        <div class="form-item-vertical cloud-token-item">
+          <a-input-password
+            v-model:value="editingAccount.CloudGenshinToken"
+            size="large"
+            :placeholder="t('gamesign.edit.cloudGenshinPlaceholder')"
+            allow-clear
+          />
+          <a-button
+            size="small"
+            danger
+            class="credential-helper-btn"
+            style="margin-top: 6px"
+            @click="openCloudGenshinTokenPage"
+          >
+            <template #icon><ExportOutlined /></template>
+            {{ t('gamesign.edit.cloudTokenLogin') }}
           </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">{{

@@ -7,6 +7,17 @@ import app.tools.game_sign as game_sign
 
 
 class CommunitySignProviderCompatibilityTest(unittest.TestCase):
+    def test_cloud_genshin_has_an_independent_credential_provider(self) -> None:
+        providers = {
+            provider.token_field: provider
+            for provider in community_sign_provider.get_community_sign_providers()
+        }
+
+        cloud_genshin = providers["CloudGenshinToken"]
+        self.assertEqual(cloud_genshin.log_name, "云原神")
+        self.assertEqual(cloud_genshin.resolve_platforms("opaque-token"), ("米游社",))
+        self.assertEqual(cloud_genshin.error_game("米游社"), "云原神")
+
     def test_legacy_registry_aliases_share_canonical_objects(self) -> None:
         self.assertIs(
             game_sign._GAME_SIGN_PROVIDERS,

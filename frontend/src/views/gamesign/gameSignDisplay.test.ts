@@ -34,6 +34,7 @@ const group = (uid: string, games: GameItem[], alias = '别名'): AccountGroup =
 const account = (extra: Partial<SignAccount> = {}): SignAccount => ({
   uid: 'u1',
   MiyousheToken: '',
+  CloudGenshinToken: '',
   KuroToken: '',
   SklandToken: '',
   TaygedoToken: '',
@@ -97,6 +98,7 @@ describe('解析塔吉多凭据', () => {
 describe('社区凭据判定', () => {
   it('各社区读各自的 Token 字段', () => {
     expect(hasPlatformToken(account({ MiyousheToken: 't' }), '米游社')).toBe(true)
+    expect(hasPlatformToken(account({ CloudGenshinToken: 't' }), '米游社')).toBe(true)
     expect(hasPlatformToken(account({ KuroToken: 't' }), '库街区')).toBe(true)
     expect(hasPlatformToken(account({ SklandToken: 't' }), '森空岛')).toBe(true)
     expect(hasPlatformToken(account({ MiyousheToken: 't' }), '库街区')).toBe(false)

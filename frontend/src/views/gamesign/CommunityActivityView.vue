@@ -12,6 +12,11 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
+import arknightsNoteImage from '@/assets/community-notes/arknights.png'
+import endfieldNoteImage from '@/assets/community-notes/endfield.jpg'
+import genshinNoteImage from '@/assets/community-notes/genshin.jpg'
+import starRailNoteImage from '@/assets/community-notes/star-rail.jpg'
+import zenlessNoteImage from '@/assets/community-notes/zenless.png'
 import {
   useCommunityActivityApi,
   type ActivitySnapshot,
@@ -21,6 +26,7 @@ import {
 interface GameVisual {
   accent: string
   icon: Component
+  image: string
   labelKey: string
 }
 
@@ -40,26 +46,31 @@ const GAME_VISUALS: Record<string, GameVisual> = {
   明日方舟: {
     accent: 'var(--ant-color-primary)',
     icon: AimOutlined,
+    image: arknightsNoteImage,
     labelKey: 'gamesign.activity.game.arknights',
   },
   终末地: {
     accent: 'var(--ant-color-success)',
     icon: ApiOutlined,
+    image: endfieldNoteImage,
     labelKey: 'gamesign.activity.game.endfield',
   },
   原神: {
     accent: '#8fe3b0',
     icon: CompassOutlined,
+    image: genshinNoteImage,
     labelKey: 'gamesign.activity.game.genshin',
   },
   星穹铁道: {
     accent: '#62c4e7',
     icon: RocketOutlined,
+    image: starRailNoteImage,
     labelKey: 'gamesign.activity.game.starrail',
   },
   绝区零: {
     accent: '#ffd24a',
     icon: ThunderboltOutlined,
+    image: zenlessNoteImage,
     labelKey: 'gamesign.activity.game.zenless',
   },
 }
@@ -67,6 +78,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
 const DEFAULT_GAME_VISUAL: GameVisual = {
   accent: 'var(--ant-color-primary)',
   icon: AppstoreOutlined,
+  image: '',
   labelKey: '',
 }
 
@@ -257,8 +269,14 @@ onMounted(() => {
                 >
                   <HolderOutlined />
                 </span>
-                <span class="activity-game-mark" aria-hidden="true">
-                  <component :is="gameVisual(element.game).icon" />
+                <span class="activity-game-mark">
+                  <img
+                    v-if="gameVisual(element.game).image"
+                    class="activity-game-image"
+                    :src="gameVisual(element.game).image"
+                    alt=""
+                  />
+                  <component v-else :is="gameVisual(element.game).icon" aria-hidden="true" />
                 </span>
                 <div class="activity-card-title">
                   <strong>{{ gameLabel(element.game) }}</strong>
@@ -481,6 +499,7 @@ onMounted(() => {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   width: 38px;
   height: 38px;
   border: 1px solid color-mix(in srgb, var(--activity-accent) 55%, transparent);
@@ -488,6 +507,13 @@ onMounted(() => {
   background: color-mix(in srgb, var(--activity-accent) 14%, transparent);
   color: var(--activity-accent);
   font-size: 19px;
+}
+
+.activity-game-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .activity-card-title {
