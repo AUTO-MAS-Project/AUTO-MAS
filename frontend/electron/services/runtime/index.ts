@@ -23,6 +23,7 @@
 
 export {
   DEFAULT_HANDSHAKE_TIMEOUT_MS,
+  DEFAULT_RECENT_LOG_CAPACITY,
   DEFAULT_RESULT_SETTLE_TIMEOUT_MS,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
   RuntimeClient,
@@ -63,7 +64,12 @@ export {
   resolveRuntimeLaunchModeDetail,
 } from './launchConfig'
 
-export { NdjsonEventStream, NdjsonItem, parseRuntimeEventLine } from './ndjson'
+export {
+  MAX_NDJSON_LINE_LENGTH,
+  NdjsonEventStream,
+  NdjsonItem,
+  parseRuntimeEventLine,
+} from './ndjson'
 
 export { RUNTIME_TELEMETRY_ENV, buildRuntimeEnv } from './runtimeEnv'
 
