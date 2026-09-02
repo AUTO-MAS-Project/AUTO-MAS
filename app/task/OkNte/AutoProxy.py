@@ -126,11 +126,18 @@ _OKNTE_DAILY_LEGACY_ACTIVITY_KEY = "完成每日活跃度"
 _OKNTE_DAILY_LEGACY_REQUIRED_SUCCESS = "完成每日活跃度"
 _OKNTE_DAILY_ROUTINE_ACTIVITY_IDS = ("daily_anomaly", "daily_anomaly_hunter")
 _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS = ("日常领取", "Daily Claim")
+# 当日活跃度奖励已领取的特征：上游面板正常打开后，仅因找不到亮起的领取按钮
+# （无可领取项）而失败——邮件失败会抛异常中断、面板打不开走不到此步，
+# 故出现该文本即视为当日已领取
+_OKNTE_DAILY_CLAIM_NO_REWARD = "无法找到活跃度奖励领取框"
 _OKNTE_DAILY_LEGACY_SUCCESS_RE = re.compile(
     r"DailyTask:info_set success\s*(?P<success>\[[^\r\n]*\])"
 )
 _OKNTE_DAILY_ROUTINE_SUCCESS_RE = re.compile(
     r"DailyRoutineTask:info_set success\s*(?P<success>\[[^\r\n]*\])"
+)
+_OKNTE_DAILY_ROUTINE_SKIPPED_RE = re.compile(
+    r"DailyRoutineTask:info_set skipped\s*(?P<skipped>\[[^\r\n]*\])"
 )
 
 
@@ -203,6 +210,19 @@ def _oknte_daily_task_success_error(
         if any(
             required in success_items for required in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS
         ):
+            return None
+        # 子任务被用户关闭时进 skipped 列表、未运行，
+        # 不作为日常任务的必需成功项
+        skipped_matches = _OKNTE_DAILY_ROUTINE_SKIPPED_RE.findall(log)
+        if skipped_matches:
+            skipped_items = _parse_oknte_info_list(skipped_matches[-1])
+            if any(
+                required in skipped_items
+                for required in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS
+            ):
+                return None
+        # 当日活跃度奖励已领取：找不到领取框是"无可领取"的正常出口，不判失败
+        if _OKNTE_DAILY_CLAIM_NO_REWARD in log:
             return None
         return "OK-NTE 日常任务未完成日常领取"
 

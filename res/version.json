@@ -45,7 +45,8 @@
                 "HSR专项 修复任务配置的文本与 JSON 项在输入时被清空、导致只有数字项能填写的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "游戏签到 修复开启签到通知时执行签到必报 TypeError 的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "OK-NTE专项 修复日常任务在当日活跃度奖励已领取过（或日常领取子任务被关闭）时被误判为失败并反复重试的问题，已领取时任务报告显示「跳过（当日已领取）」 by [@AthenaHibou](https://github.com/AthenaHibou)"
             ]
         },
         "v5.5.0-beta.2": {
