@@ -48,7 +48,7 @@
                 "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-NTE专项 修复日常任务在当日活跃度奖励已领取过（或日常领取子任务被关闭）时被误判为失败并反复重试的问题，已领取时任务报告显示「跳过（当日已领取）」 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "HSR专项 修复模块重试耗尽仍失败时用户被误标为「完成」的问题，调度台总览与任务报告不再把失败的代理报成成功 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MFW专项 修复便携版在装有另一份 Python 3.12 的电脑上运行环境准备成功、任务一启动却报 ctypes 错误的问题"
+                "MFW专项 修复便携版在装有另一份 Python 3.12 的电脑上运行环境准备成功、任务一启动却报 ctypes 错误的问题 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.2": {
