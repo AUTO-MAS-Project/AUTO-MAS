@@ -44,6 +44,9 @@ logger = get_logger("主程序")
 # 正式版固定端口；开发环境错开一位，避免与用户已装正式版抢占同一端口
 DEFAULT_HTTP_PORT = 36163
 DEV_HTTP_PORT = 36164
+# 受 AUTO-MAS-Runtime 监督时由监督器注入的监听端口；受监督时只认它
+SUPERVISED_PORT_ENV = "AUTO_MAS_SUPERVISED_PORT"
+SUPERVISED_PORT_MIN = 1024
 
 
 class InterceptHandler(logging.Handler):
@@ -145,9 +148,11 @@ def resolve_http_port(development_environment: bool) -> int:
     用户已装正式版的端口。前端拉起后端时会注入 AUTO_MAS_HTTP_PORT，保证两侧
     始终对齐同一个端口。
 
-    受 AUTO-MAS-Runtime 监督时固定返回 36163：监督器的健康检查与关闭请求都
-    硬编码打这个端口，且不会注入 AUTO_MAS_HTTP_PORT，因此忽略该变量与开发
-    环境判据，优先级高于两者。
+    受 AUTO-MAS-Runtime 监督时只认监督器注入的 AUTO_MAS_SUPERVISED_PORT：
+    监督器按实例类型自行选定端口（managed 缺省 36163、development 缺省 36164）
+    并据此做健康检查与关闭请求。后端若钉死 36163，受监督的开发版就会撞上同机
+    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；.env、
+    AUTO_MAS_HTTP_PORT 与开发环境判据在受监督时一律忽略，优先级低于注入值。
 
     Args:
         development_environment: 当前是否为开发环境。
@@ -160,8 +165,8 @@ def resolve_http_port(development_environment: bool) -> int:
 
     if is_supervised():
         if raw:
-            logger.info(f"受监督模式下端口固定为 {DEFAULT_HTTP_PORT}，已忽略 AUTO_MAS_HTTP_PORT={raw}")
-        return DEFAULT_HTTP_PORT
+            logger.info(f"受监督模式下端口由运行时注入，已忽略 AUTO_MAS_HTTP_PORT={raw}")
+        return _resolve_supervised_port()
 
     if raw:
         try:
@@ -173,6 +178,29 @@ def resolve_http_port(development_environment: bool) -> int:
         logger.warning(f"AUTO_MAS_HTTP_PORT 取值无效，已忽略: {raw}")
 
     return DEV_HTTP_PORT if development_environment else DEFAULT_HTTP_PORT
+
+
+def _resolve_supervised_port() -> int:
+    """读取 Runtime 注入的 AUTO_MAS_SUPERVISED_PORT；缺失或非法时回退 36163。"""
+
+    raw = os.getenv(SUPERVISED_PORT_ENV)
+    if raw is None:
+        logger.warning(
+            f"受监督模式下未注入 {SUPERVISED_PORT_ENV}，回退 {DEFAULT_HTTP_PORT}"
+        )
+        return DEFAULT_HTTP_PORT
+
+    try:
+        port = int(str(raw).strip())
+    except ValueError:
+        port = 0
+    if SUPERVISED_PORT_MIN <= port <= 65535:
+        return port
+
+    logger.warning(
+        f"{SUPERVISED_PORT_ENV} 取值无效，回退 {DEFAULT_HTTP_PORT}: {raw!r}"
+    )
+    return DEFAULT_HTTP_PORT
 
 
 @logger.catch

@@ -27,11 +27,12 @@ def is_supervised() -> bool:
     """识别当前进程是否处于外部监督器（AUTO-MAS-Runtime）托管之下。
 
     Runtime 用 Windows Job Object 托管后端进程树，拉起时注入
-    AUTO_MAS_SUPERVISED=1，健康检查固定打 36163，关闭时依赖 /api/core/close
-    真正生效。判据按其契约要求精确匹配字符串 "1"，不做 true/yes 等宽松解析。
+    AUTO_MAS_SUPERVISED=1，并经 AUTO_MAS_SUPERVISED_PORT 注入监听端口据此做
+    健康检查，关闭时依赖 /api/core/close 真正生效。判据按其契约要求精确匹配
+    字符串 "1"，不做 true/yes 等宽松解析。
 
     main.py 与 app/api/core.py 都据此判断是否遵守受监督约定
-    （不自行提权、端口固定、关闭请求真实生效），因此放在两者都能直接
+    （不自行提权、端口由运行时注入、关闭请求真实生效），因此放在两者都能直接
     依赖的 app.utils 里，避免互相导入。
     """
 
