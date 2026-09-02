@@ -129,13 +129,14 @@ function line(event: Record<string, unknown>): string {
   return `${JSON.stringify(event)}\n`
 }
 
+// 与 Runtime 侧 backend.go 公告的五项能力一致；没宣告 stdin.shutdown 时客户端不会发 shutdown。
 const helloLine = line({
   ...base,
   type: 'hello',
   sequence: 1,
   runtimeVersion: 'dev',
   command: 'backend supervise',
-  capabilities: ['stdin.cancel', 'state.v1', 'log.stream'],
+  capabilities: ['stdin.cancel', 'state.v1', 'log.stream', 'stdin.shutdown', 'stdin.status'],
 })
 
 const runningStateLine = line({
@@ -401,6 +402,143 @@ describe('development 模式', () => {
     expect(result.remediation).toEqual(['restart-backend', 'open-log'])
     expect(child.killed).toBe(false)
     expect(killAllMock).not.toHaveBeenCalled()
+  })
+
+  it('就绪只认 backend.run running 且带 baseUrl，其他阶段的 running 不算', async () => {
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn()
+    child.stdout.feed(helloLine)
+    // 同名 status 但阶段不对，或阶段对了却没有 baseUrl，都不能让启动成功。
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'state',
+        sequence: 2,
+        stage: 'backend.health',
+        status: 'running',
+        message: '健康检查中',
+        details: { baseUrl: 'http://127.0.0.1:1' },
+      })
+    )
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'state',
+        sequence: 3,
+        stage: 'backend.run',
+        status: 'running',
+        message: '后端运行中',
+        details: { pid: 9001 },
+      })
+    )
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(service.getRuntimeApiEndpoints()).toBeNull()
+    expect(service.getStatus().isRunning).toBe(false)
+
+    child.stdout.feed(runningStateLine)
+    expect(await pending).toEqual({ success: true })
+    expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
+
+    child.stdout.feed(stoppedResultLine)
+    child.close(0)
+  })
+
+  it('启动阶段每路日志只保留最近 200 行', async () => {
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn()
+    child.stdout.feed(helloLine)
+    for (let i = 1; i <= 250; i += 1) {
+      child.stdout.feed(logLine('stdout', `out ${i}`, 1 + i))
+    }
+    for (let i = 1; i <= 3; i += 1) {
+      child.stdout.feed(logLine('stderr', `err ${i}`, 300 + i))
+    }
+    child.close(60)
+
+    const result = await pending
+
+    expect(result.success).toBe(false)
+    const [stdoutBlock, stderrBlock] = (result.logs ?? '').split('\n\n')
+    const stdoutLines = stdoutBlock.split('\n').slice(1)
+    expect(stdoutLines).toHaveLength(200)
+    expect(stdoutLines[0]).toBe('out 51')
+    expect(stdoutLines.at(-1)).toBe('out 250')
+    expect(stderrBlock).toBe('[stderr]\nerr 1\nerr 2\nerr 3')
+  })
+
+  it('关闭时 Runtime 没给终态就退出，进程已不在则按已停止处理', async () => {
+    const service = createService()
+    mockSpawn()
+
+    const pendingStart = service.startBackend()
+    const child = await waitForSpawn()
+    child.stdout.feed(helloLine + runningStateLine)
+    await pendingStart
+
+    const pendingStop = service.stopBackend()
+    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+    // Runtime 收到 shutdown 后直接退出、没有 result：进程树已随 Job Object 回收。
+    child.close(60)
+
+    expect(await pendingStop).toEqual({ success: true })
+    expect(service.getStatus().isRunning).toBe(false)
+    expect(killAllMock).not.toHaveBeenCalled()
+  })
+
+  it('关闭超时被客户端 kill 后同样算作已停止，不再报「无法安全退出」', async () => {
+    vi.useFakeTimers()
+    try {
+      const service = createService()
+      mockSpawn()
+
+      const pendingStart = service.startBackend()
+      const child = await waitForSpawn()
+      child.stdout.feed(helloLine + runningStateLine)
+      await pendingStart
+
+      const pendingStop = service.stopBackend()
+      await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+      expect(child.killed).toBe(false)
+
+      // Runtime 对 shutdown 毫无反应：30 秒后客户端 kill，假子进程随之 close。
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(child.killed).toBe(true)
+      expect(await pendingStop).toEqual({ success: true })
+      expect(service.getStatus().isRunning).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hello 未宣告 stdin.shutdown 时 stopBackend 不发命令，直接 kill 并算作已停止', async () => {
+    const service = createService()
+    mockSpawn()
+
+    const pendingStart = service.startBackend()
+    const child = await waitForSpawn()
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'backend supervise',
+        capabilities: ['stdin.cancel', 'state.v1', 'log.stream'],
+      }) + runningStateLine
+    )
+    await pendingStart
+
+    expect(await service.stopBackend()).toEqual({ success: true })
+    expect(child.stdin.chunks).toEqual([])
+    expect(child.killed).toBe(true)
+    expect(service.getStatus().isRunning).toBe(false)
   })
 
   it('找不到 Runtime 可执行文件时按 RUNTIME_NOT_FOUND 失败，不回退旧链路', async () => {

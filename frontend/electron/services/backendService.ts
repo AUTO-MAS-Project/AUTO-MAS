@@ -36,6 +36,17 @@ const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 const RUNTIME_READY_TIMEOUT_MS = 180000
 // 等待 Runtime 完成关闭的上限，超时由客户端 kill Runtime 进程本身，进程树由其 Job Object 收走。
 const RUNTIME_SHUTDOWN_TIMEOUT_MS = 30000
+// 启动阶段每路输出只保留最近这么多行：后端每行 DEBUG 日志都会以 log 事件到达，
+// 失败界面也只需要尾部；无上限累积会在长驻监督期间把内存吃光。
+const RUNTIME_STARTUP_LOG_LINE_LIMIT = 200
+
+/** 尾部保留固定行数的追加：超出上限时丢弃最旧的一行。 */
+function pushBoundedLine(lines: string[], message: string, limit: number): void {
+  lines.push(message)
+  if (lines.length > limit) {
+    lines.splice(0, lines.length - limit)
+  }
+}
 
 // ==================== 类型定义 ====================
 
@@ -330,16 +341,19 @@ export class BackendService {
         mode: config.mode,
         repo: config.repo,
         onLog: event => {
-          if (event.stream === 'stderr') {
-            stderrLines.push(event.message)
-            return
-          }
-          stdoutLines.push(event.message)
+          const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
+          pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
         },
         onState: event => {
-          if (event.status !== 'running') return
+          // 就绪的唯一判据是 backend.run 阶段进入 running 且带 baseUrl；其他阶段即便
+          // status 同名也不算，baseUrl 必须取自事件本身而不是自行假定端口。
+          if (event.stage !== 'backend.run' || event.status !== 'running') return
           const baseUrl = readRuntimeBaseUrl(event.details)
-          if (baseUrl) resolveReady(baseUrl)
+          if (!baseUrl) {
+            logger.warn('Runtime 报告 backend.run running 但未携带 baseUrl，忽略该事件')
+            return
+          }
+          resolveReady(baseUrl)
         },
       })
     } catch (error) {
@@ -497,10 +511,32 @@ export class BackendService {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`Runtime 关闭后端失败: ${errorMsg}`)
       this.clearRuntimeState(handle)
+      if (this.hasRuntimeProcessExited(error)) {
+        // 关闭超时被客户端 kill、或 Runtime 没给终态就退出：进程本身已经不在了，
+        // 后端进程树随 Job Object 一并回收，对调用方而言后端已停止，不必再弹「无法安全退出」。
+        logger.warn(`Runtime 未给出关闭终态就已退出，按已停止处理: ${errorMsg}`)
+        return { success: true }
+      }
+      logger.error(`Runtime 关闭后端失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
     }
+  }
+
+  /**
+   * 判断关闭失败是否只是「Runtime 进程已退出但没给终态」。
+   *
+   * 客户端在收到 close 时才以 RUNTIME_EXITED_UNEXPECTEDLY 收尾，退出码与信号至少有一个
+   * 非空；两者都为空说明是进程不响应结束信号后的兜底收敛，进程可能还活着，不能算已停止。
+   */
+  private hasRuntimeProcessExited(error: unknown): boolean {
+    if (!isRuntimeClientError(error) || error.code !== 'RUNTIME_EXITED_UNEXPECTEDLY') {
+      return false
+    }
+    const { exitCode, signal } = error.details
+    return (
+      (exitCode !== null && exitCode !== undefined) || (signal !== null && signal !== undefined)
+    )
   }
 
   /**
