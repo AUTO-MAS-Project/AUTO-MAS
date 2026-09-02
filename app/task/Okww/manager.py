@@ -391,6 +391,7 @@ class OkwwManager(TaskExecuteBase):
                         mode="代理结果",
                         title=title,
                         message=result,
+                        user_config=None,
                         task_info=self.task_info,
                     )
                     finalize_task_game_sign_notification(

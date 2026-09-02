@@ -20,71 +20,75 @@
 
 #   Contact: DLmaster_361@163.com
 
+import asyncio
+import json
 import os
 import re
-import sys
-import httpx
 import shutil
-import time
-import asyncio
-import uvicorn
 import sqlite3
-import truststore
-from pathlib import Path
-from collections import defaultdict
-from jinja2 import Environment, FileSystemLoader
-from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Dict, Any, List
+import sys
+import time
 import uuid
-import json
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
-from app.utils.platform import IS_WINDOWS
+import httpx
+import truststore
+
+# 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
+if TYPE_CHECKING:
+    import uvicorn
+from jinja2 import Environment, FileSystemLoader
+
 from app.models.config import (
-    GeneralConfig,
-    MaaConfig,
-    SrcConfig,
-    M9AConfig,
-    MaaFWConfig,
-    MaaEndConfig,
-    OkwwConfig,
-    OkNteConfig,
-    HSRConfig,
     BetterGIConfig,
-    HSRUserConfig,
-    MaaPlanConfig,
-    MaaEndPlanConfig,
-    QueueConfig,
-    QueueItem,
-    MaaUserConfig,
-    SrcUserConfig,
-    M9AUserConfig,
-    MaaFWUserConfig,
-    MaaEndUserConfig,
-    GeneralUserConfig,
-    OkwwUserConfig,
-    OkNteUserConfig,
     BetterGIUserConfig,
-    GlobalConfig,
     CLASS_BOOK,
     PLAN_BOOK,
-    Webhook,
-    TimeSet,
     EmulatorConfig,
     GameSignAccountGroup,
+    GeneralConfig,
+    GeneralUserConfig,
+    GlobalConfig,
+    HSRConfig,
+    HSRUserConfig,
+    M9AConfig,
+    M9AUserConfig,
+    MaaConfig,
+    MaaEndConfig,
+    MaaEndPlanConfig,
+    MaaEndUserConfig,
+    MaaFWConfig,
+    MaaFWUserConfig,
+    MaaPlanConfig,
+    MaaUserConfig,
+    OkNteConfig,
+    OkNteUserConfig,
+    OkwwConfig,
+    OkwwUserConfig,
+    QueueConfig,
+    QueueItem,
+    SrcConfig,
+    SrcUserConfig,
+    TimeSet,
+    Webhook,
 )
 from app.models.schema import PlanComboxConsumer
+from app.utils import get_logger
 from app.utils.constants import (
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
+    RESOURCE_STAGE_DATE_TEXT,
+    RESOURCE_STAGE_DROP_INFO,
+    RESOURCE_STAGE_INFO,
+    TYPE_BOOK,
     UTC4,
     UTC8,
-    RESOURCE_STAGE_INFO,
-    RESOURCE_STAGE_DROP_INFO,
-    TYPE_BOOK,
-    RESOURCE_STAGE_DATE_TEXT,
-    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
-from app.utils import get_logger
 from app.utils.io import write_file
 from app.utils.community import next_community_account_name
+from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
@@ -269,11 +273,7 @@ class AppConfig(GlobalConfig):
         self._repo: Any = None
         self._repo_initialized = False
 
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
-        )
-
-        self.server: Optional[uvicorn.Server] = None
+        self.server: Optional["uvicorn.Server"] = None
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -285,11 +285,17 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        # 正在循环运行的队列，供配置改动前的安全检查使用
+        self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
         self._inject_truststore()
+
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+        )
 
     @staticmethod
     def _inject_truststore() -> None:
@@ -316,6 +322,23 @@ class AppConfig(GlobalConfig):
                 "_preloaded_ssl_context",
                 truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
             )
+
+        # 缓存 SSL 上下文：httpx 为每个 AsyncClient 都调用 create_default_context()，
+        # truststore 场景下会全量加载 Windows 证书库（实测一次 5~15s，且发生在
+        # 事件循环上时冻结全部请求）。按参数缓存后全程只加载一次，
+        # 首次加载由启动预热线程完成，见 main.py。
+        _original_create_default_context = ssl.create_default_context
+        _ssl_context_cache: dict[tuple, ssl.SSLContext] = {}
+
+        def _cached_create_default_context(*args: object, **kwargs: object) -> ssl.SSLContext:
+            key = (args, tuple(sorted(kwargs.items())))
+            context = _ssl_context_cache.get(key)
+            if context is None:
+                context = _original_create_default_context(*args, **kwargs)
+                _ssl_context_cache[key] = context
+            return context
+
+        ssl.create_default_context = _cached_create_default_context
 
     def _get_repo(self) -> Any:
         """惰性初始化 Git 仓库，避免启动时导入 GitPython。"""
@@ -714,9 +737,10 @@ class AppConfig(GlobalConfig):
 
             # 检查是否为最新 commit
             try:
-                # 获取远程分支的最新 commit
-                origin = repo.remotes.origin
-                origin.fetch()  # 拉取最新信息
+                # 仅比对本地已缓存的远程引用，不在请求路径上调用 origin.fetch()。
+                # fetch 是联网操作（弱网/VPN 下耗时 5~15s），以同步 GitPython 子进程
+                # 形式执行会阻塞事件循环，期间所有请求排队无响应；远程引用由
+                # 版本更新等流程自行维护，此处只读本地。
                 remote_commit = repo.commit(f"origin/{repo.active_branch.name}")
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
@@ -845,6 +869,15 @@ class AppConfig(GlobalConfig):
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+
+        # 删脚本会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
+        # 结构一变就会跑错脚本，两轮之间脚本没锁也要拦住。
+        for queue_uid, queue in self.QueueConfig.items():
+            if any(
+                item.get("Info", "ScriptId") == str(uid)
+                for item in queue.QueueItem.values()
+            ):
+                self._ensure_cycle_safe(queue_uid, "删除它引用的脚本")
 
         # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
@@ -1491,6 +1524,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        # 队列名、完成后操作这类字段改了不影响正在跑的循环，放行；
+        # 只有循环开关本身不能在运行中动。
+        if "CycleEnabled" in data.get("Info", {}):
+            self._ensure_cycle_safe(queue_uid, "切换循环开关")
 
         await self.QueueConfig[queue_uid].update(data)
 
@@ -1499,7 +1536,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "删除")
+
+        await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -1593,6 +1633,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
 
@@ -1607,6 +1648,10 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        # 循环调度参数每轮都会重读，运行中改没问题；换脚本会让任务的脚本列表
+        # 与队列对不上号，必须拦住。
+        if "Info" in data:
+            self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
@@ -1617,6 +1662,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
@@ -1626,10 +1672,29 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "调整队列项顺序")
 
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
+        """拦住会打乱正在运行的循环的改动。
+
+        任务的脚本列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
+        排序、换脚本都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
+        周期都不受影响。
+        """
+
+        if queue_uid not in self.running_cycle_queue_ids:
+            return
+
+        queue_name = (
+            self.QueueConfig[queue_uid].get("Info", "Name")
+            if queue_uid in self.QueueConfig
+            else str(queue_uid)
+        )
+        raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法{action}")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
@@ -2917,10 +2982,10 @@ class AppConfig(GlobalConfig):
         即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
         """
 
+        from app.models.config import MaaFWConfig
         from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
             collect_orphan_agent_venvs,
         )
-        from app.models.config import MaaFWConfig
 
         root = Path.cwd() / "config" / "maafw_agent_venvs"
         if not root.is_dir():

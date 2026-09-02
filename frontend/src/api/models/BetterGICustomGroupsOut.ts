@@ -19,5 +19,5 @@ export type BetterGICustomGroupsOut = {
     /**
      * 一条龙自定义配置组列表
      */
-    data: Array<BetterGICustomGroupOut>;
+    data?: Array<BetterGICustomGroupOut>;
 };

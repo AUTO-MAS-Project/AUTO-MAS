@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["vue"],
+  "plugins": ["typescript", "vue"],
   "env": {
     "browser": true,
     "builtin": true,
@@ -55,6 +55,27 @@
       "files": ["electron/**/*.ts"],
       "rules": {
         "no-undef": "off"
+      }
+    },
+    {
+      "files": [
+        "src/composables/useScriptApi.ts",
+        "src/composables/useBettergiGuiSession.ts",
+        "src/composables/useUserApi.ts",
+        "src/composables/useSettingsApi.ts",
+        "src/composables/useTemplateApi.ts",
+        "src/composables/useUpdateChecker.ts",
+        "src/composables/usePlanApi.ts",
+        "src/composables/useHSRPluginApi.ts",
+        "src/components/ScriptTable.vue",
+        "src/router/index.ts",
+        "src/utils/planTypeRegistry.ts",
+        "src/types/script.ts",
+        "src/types/electron.d.ts",
+        "electron/**/*.ts"
+      ],
+      "rules": {
+        "typescript/no-explicit-any": "error"
       }
     },
     {

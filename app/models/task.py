@@ -122,6 +122,9 @@ class ScriptItem:
 class TaskItem(ABC):
     """任务信息基类，管理任务的信息和脚本列表"""
 
+    # 脚本执行模式。循环运行不占用这个字段：各脚本适配器都按 mode 分派任务类
+    # （METHOD_BOOK）并有近百处 == "AutoProxy" 的分支，循环里的每一轮本就是自动
+    # 代理，写成 "CycleRun" 会让所有适配器 KeyError 或走错分支。循环与否见 is_cycle。
     mode: Literal["AutoProxy", "ScriptConfig", "Update"]  # 任务模式
     task_id: str  # 任务唯一标识符
     queue_id: str | None  # 执行的队列ID
@@ -130,6 +133,10 @@ class TaskItem(ABC):
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
+    cycle_next_list: List[dict] = field(
+        default_factory=list, repr=False
+    )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
     game_sign_results: list[dict] = field(default_factory=list, repr=False)
     game_sign_summary_consumed: bool = field(default=False, repr=False)

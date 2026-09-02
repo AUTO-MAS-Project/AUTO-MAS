@@ -46,6 +46,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
         timer = _MainTimer()
         queue = MagicMock()
         queue.get.side_effect = lambda group, key: {
+            ("Info", "CycleEnabled"): False,
             ("Info", "TimeEnabled"): True,
             ("Data", "LastTimedStart"): "2000-01-01 00:00",
             ("Info", "Name"): "定时队列",
@@ -90,6 +91,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
         queue = MagicMock()
         queue.set = AsyncMock()
         queue.get.side_effect = lambda group, key: {
+            ("Info", "CycleEnabled"): False,
             ("Info", "StartUpMode"): "Always",
             ("Info", "Name"): "启动队列",
         }[(group, key)]
@@ -126,6 +128,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
         queue = MagicMock()
         queue.set = AsyncMock()
         queue.get.side_effect = lambda group, key: {
+            ("Info", "CycleEnabled"): False,
             ("Info", "StartUpMode"): "DailyFirst",
             ("Info", "Name"): "启动队列",
             ("Data", "LastStartupTime"): "2000-01-01",
@@ -163,6 +166,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
         queue = MagicMock()
         queue.set = AsyncMock()
         queue.get.side_effect = lambda group, key: {
+            ("Info", "CycleEnabled"): False,
             ("Info", "StartUpMode"): "DailyFirst",
             ("Data", "LastStartupTime"): "2026-08-27",
         }[(group, key)]

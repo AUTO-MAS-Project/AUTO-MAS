@@ -149,12 +149,6 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         maaend_set = read_file(maaend_set_path)
-        maaend_template_path = (
-            Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
-        )
-        template_config = (
-            read_file(maaend_template_path) if maaend_template_path.exists() else None
-        )
         maaend_set = normalize_maaend_config(
             maaend_set,
             self.script_config.get("Game", "ControllerType"),

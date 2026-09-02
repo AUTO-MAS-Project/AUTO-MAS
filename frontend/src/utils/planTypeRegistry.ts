@@ -21,7 +21,7 @@ export interface PlanChangeOptions {
 
 export type PlanChangeHandler = (
   _path: string,
-  _value: any,
+  _value: unknown,
   _reloadOrOptions?: boolean | PlanChangeOptions
 ) => Promise<boolean>
 

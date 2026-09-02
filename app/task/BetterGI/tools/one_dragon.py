@@ -43,7 +43,7 @@ _BUILTIN_ONE_DRAGON_GROUPS = _BGI_BUILTIN_ONE_DRAGON_GROUPS
 # 全局主配置 config.json 的读-改-写串行化锁。atomic_write 只保证单次写原子，
 # 读-改-写整体仍可能交错丢失更新（切号的 _ensure_auto_update_on_cli 与一条龙的
 # apply_global_battle_* / snapshot / restore 都读写同一文件），故加锁串行化。
-_GLOBAL_CONFIG_LOCK = threading.Lock()
+GLOBAL_CONFIG_LOCK = threading.Lock()
 
 # 一条龙配置目录（从 RootPath 派生）
 _ONE_DRAGON_REL_DIR = Path("User") / "OneDragon"
@@ -165,7 +165,10 @@ def parse_custom_groups(raw: Any) -> list[dict[str, Any]]:
     else:
         return []
     return [
-        {"name": str(item.get("name", "")).strip(), "enabled": bool(item.get("enabled", True))}
+        {
+            "name": str(item.get("name", "")).strip(),
+            "enabled": bool(item.get("enabled", True)),
+        }
         for item in data
         if isinstance(item, dict) and str(item.get("name", "")).strip()
     ]
@@ -192,11 +195,7 @@ def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
         items.append({"name": name, "enabled": bool(enabled_map.get(uid, True))})
     # 兜底：不在 TaskOrder 里但存在定义的自定义组
     for uid, name in defs.items():
-        if (
-            name
-            and name not in _BUILTIN_ONE_DRAGON_GROUPS
-            and name not in seen
-        ):
+        if name and name not in _BUILTIN_ONE_DRAGON_GROUPS and name not in seen:
             seen.add(name)
             items.append({"name": name, "enabled": bool(enabled_map.get(uid, True))})
     return items
@@ -339,7 +338,7 @@ def _apply_leaves(root: Path, leaves, value: str) -> None:
     value = (value or "").strip()
     if not value:
         return
-    with _GLOBAL_CONFIG_LOCK:
+    with GLOBAL_CONFIG_LOCK:
         config = read_file(_global_config_path(root))
         if not isinstance(config, dict):
             config = {}
@@ -413,12 +412,14 @@ def _prune_empty_ancestors(config: dict, leaf: tuple[str, ...]) -> None:
             return
 
 
-def snapshot_global_battle_config(root: Path) -> dict[tuple[str, ...], tuple[bool, Any]]:
+def snapshot_global_battle_config(
+    root: Path,
+) -> dict[tuple[str, ...], tuple[bool, Any]]:
     """快照 config.json 本次可能改写的队伍/策略叶子路径，供结束还原。
 
     键为叶子路径元组，值为 ``(该叶子原本是否存在, 原值)``。
     """
-    with _GLOBAL_CONFIG_LOCK:
+    with GLOBAL_CONFIG_LOCK:
         config = read_file(_global_config_path(root))
         if not isinstance(config, dict):
             config = {}
@@ -435,14 +436,16 @@ def snapshot_global_battle_config(root: Path) -> dict[tuple[str, ...], tuple[boo
         return snap
 
 
-def restore_global_battle_config(root: Path, snapshot: dict[tuple[str, ...], tuple[bool, Any]]) -> None:
+def restore_global_battle_config(
+    root: Path, snapshot: dict[tuple[str, ...], tuple[bool, Any]]
+) -> None:
     """把 config.json 的队伍/策略叶子路径还原为快照状态，消除单次运行残留。
 
     原本缺失则删除（沿路径清理变空字典），原本存在则回写原值；只改写本次动过的键。
     """
     if not snapshot:
         return
-    with _GLOBAL_CONFIG_LOCK:
+    with GLOBAL_CONFIG_LOCK:
         config = read_file(_global_config_path(root))
         if not isinstance(config, dict):
             return
@@ -553,11 +556,7 @@ def apply_groups(
 
     # 兜底：未出现在 TaskOrder 的自定义组不丢失
     for uid, name in old_defs.items():
-        if (
-            name
-            and name not in _BUILTIN_ONE_DRAGON_GROUPS
-            and uid not in new_defs
-        ):
+        if name and name not in _BUILTIN_ONE_DRAGON_GROUPS and uid not in new_defs:
             new_defs[uid] = name
             new_order.append(uid)
             if manage_customs:

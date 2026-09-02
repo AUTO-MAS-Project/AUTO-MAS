@@ -24,19 +24,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import BetterGIConfig, BetterGIUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo, ProcessRunner
-from app.utils.LogMonitor import LogMonitor
-from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
+from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
+from app.utils.constants import UTC4
+from app.utils.LogMonitor import LogMonitor
 
-from .tools import push_notification
-from .tools import account_switch
-from .tools import one_dragon
-from .tools.one_dragon_report import _parse_one_dragon_report
+from .tools import account_switch, one_dragon, push_notification
+from .tools.one_dragon_report import parse_one_dragon_report
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -84,10 +82,10 @@ _BGI_SWITCH_TIMEOUT_SECONDS = 600
 # BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
 # TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
 _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
-    "YuanShen",                     # 官服 / B服（国服）
-    "GenshinImpact",                # 国际服
-    "Genshin Impact Cloud Game",    # 云原神（国际）
-    "Genshin Impact Cloud",         # 云原神（备用进程名）
+    "YuanShen",  # 官服 / B服（国服）
+    "GenshinImpact",  # 国际服
+    "Genshin Impact Cloud Game",  # 云原神（国际）
+    "Genshin Impact Cloud",  # 云原神（备用进程名）
 )
 # 优雅关闭游戏后等待退出时间（秒），超时未退出则强制结束
 _BGI_GAME_CLOSE_WAIT_SECONDS = 5
@@ -155,9 +153,7 @@ def _is_switch_script_updated(log: str) -> bool:
 #     InvalidOperationException "Sequence contains no elements" → 自动地脉花等任务打 [ERR]。
 # 两者都说明配置的战斗队伍名不合法。命中时给明确报错（指明队伍名），而非笼统的
 # 「任务执行异常」/「完成任务前退出」。
-_BGI_PARTY_SWITCH_RE = re.compile(
-    r'尝试切换至队伍:\s*["“]?([^"”\n]+)["”]?\s*$', re.M
-)
+_BGI_PARTY_SWITCH_RE = re.compile(r'尝试切换至队伍:\s*["“]?([^"”\n]+)["”]?\s*$', re.M)
 _BGI_PARTY_ERROR_HINTS = ("未找到队伍", "Sequence contains no elements")
 
 
@@ -214,11 +210,11 @@ class AutoProxyTask(TaskExecuteBase):
         if not (root / _BGI_REL_EXE).is_file():
             return "请设置 BetterGI 脚本路径"
 
-        if (
-            self.script_config.get("Run", "ProxyTimesLimit") != 0
-            and self.cur_user_config.get("Data", "ProxyTimes")
-            >= self.script_config.get("Run", "ProxyTimesLimit")
-        ):
+        if self.script_config.get(
+            "Run", "ProxyTimesLimit"
+        ) != 0 and self.cur_user_config.get(
+            "Data", "ProxyTimes"
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
         if self.cur_user_config.get("Info", "RemainedDay") == 0:
@@ -303,9 +299,7 @@ class AutoProxyTask(TaskExecuteBase):
         """用户独立配置模式下，把组开关应用到一条龙配置并写回 BetterGI。"""
         if not self.use_mas_config:
             return
-        party_name = str(
-            self.cur_user_config.get("OneDragon", "PartyName") or ""
-        )
+        party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
         one_dragon.write_user_one_dragon(
             self.script_root_path,
             self.script_info.script_id,
@@ -460,9 +454,7 @@ class AutoProxyTask(TaskExecuteBase):
                 f"用户 {self.cur_user_item.name} - BetterGI 代理异常: "
                 f"{self.cur_user_log.status}"
             )
-            self.script_info.log = (
-                f"{self.cur_user_log.status}\n正在中止相关程序"
-            )
+            self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.kill_managed_process()
             try:
                 await Notify.push_plyer(
@@ -479,9 +471,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本后任务",
                 )
             if i + 1 < run_limit:
-                self.script_info.log += (
-                    f"\n将在稍后重试 ({i + 1}/{run_limit})"
-                )
+                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
 
     async def _switch_account(self) -> bool:
@@ -540,11 +530,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         await self._push_dispatch_log(
-            f"开始切换账号: --startGroups {account_switch._GROUP_NAME}"
+            f"开始切换账号: --startGroups {account_switch.GROUP_NAME}"
         )
         logger.info(
             f"用户 {self.cur_user_item.name} 启动 BetterGI 切换账号: "
-            f"{self.script_exe_path} --startGroups {account_switch._GROUP_NAME}"
+            f"{self.script_exe_path} --startGroups {account_switch.GROUP_NAME}"
         )
 
         # 2. 杀旧进程，保证单实例下 --startGroups 由新进程执行
@@ -558,7 +548,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 单组 --startGroups 的成功/失败判定取自 BetterGI 配置组日志：
         #   成功: 配置组 "MAS切换账号" 执行结束
         #   失败: 执行配置组任务时失败 / 任务启动失败 / 任务执行异常 / [FTL] / [ERR]
-        switch_group_done = f'配置组 "{account_switch._GROUP_NAME}" 执行结束'
+        switch_group_done = f'配置组 "{account_switch.GROUP_NAME}" 执行结束'
         # 单组 --startGroups 场景下 [ERR] 即该配置组执行失败（无后续组可续跑），与一条龙判定中
         # [ERR] 是「任务级可恢复、跳过继续跑」的语义不同，故此处按失败处理。
         switch_group_fail = (
@@ -569,9 +559,7 @@ class AutoProxyTask(TaskExecuteBase):
             "[ERR]",
         )
 
-        async def on_switch_log(
-            log_content: list[str], latest_time: datetime
-        ) -> None:
+        async def on_switch_log(log_content: list[str], latest_time: datetime) -> None:
             log = "".join(log_content)
 
             # 转述 BGI 脚本仓库的下载/更新进展，避免下载阶段长时间无动静被误认为卡死
@@ -607,7 +595,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 "--startGroups",
-                account_switch._GROUP_NAME,
+                account_switch.GROUP_NAME,
                 target_process=self.script_target_process_info,
                 elevated=True,
             )
@@ -640,7 +628,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.success(f"用户 {self.cur_user_item.name} 切换账号完成")
         else:
             await self._push_dispatch_log("切换账号失败或超时，已中止任务")
-            logger.warning(f"用户 {self.cur_user_item.name} 切换账号失败或超时，已中止任务")
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 切换账号失败或超时，已中止任务"
+            )
         return switch_result["success"]
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
@@ -679,10 +669,8 @@ class AutoProxyTask(TaskExecuteBase):
                 elif not await self.bettergi_process_manager.is_running():
                     log_status = "BetterGI 在完成任务前退出"
                     user_item_status = "异常"
-                elif (
-                    "[ERR]" in log
-                    and datetime.now() - latest_time
-                    > timedelta(minutes=_BGI_ERR_STALL_MINUTES)
+                elif "[ERR]" in log and datetime.now() - latest_time > timedelta(
+                    minutes=_BGI_ERR_STALL_MINUTES
                 ):
                     # [ERR] 后长时间无任何新日志行：BGI 既没走完收尾、也没继续推进也没退出，
                     # 判定卡死提前失败（不等 RunTimeLimit）。仍在新行推进则不触发。
@@ -741,7 +729,7 @@ class AutoProxyTask(TaskExecuteBase):
         combined_log = "".join(
             ln for item in self.cur_user_item.log_record.values() for ln in item.content
         )
-        one_dragon_report = _parse_one_dragon_report(combined_log)
+        one_dragon_report = parse_one_dragon_report(combined_log)
 
         if statistic_paths:
             try:
@@ -888,6 +876,4 @@ class AutoProxyTask(TaskExecuteBase):
             try:
                 await System.kill_process(self.script_exe_path)
             except Exception as e:
-                logger.opt(exception=True).warning(
-                    f"中止 BetterGI 主进程失败: {e}"
-                )
+                logger.opt(exception=True).warning(f"中止 BetterGI 主进程失败: {e}")

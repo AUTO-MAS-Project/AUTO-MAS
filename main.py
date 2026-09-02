@@ -176,6 +176,11 @@ def main():
     async def lifespan(app: FastAPI):
         from app.core import Config, MainTimer, TaskManager
 
+        # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
+        import ssl
+
+        asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
+
         await Config.init_config()
 
         background_task: asyncio.Task | None = None
@@ -220,7 +225,6 @@ def main():
                 if IS_WINDOWS:
                     for adapter in (
                         "app.MaaFW.ArknightWin32",
-                        "app.MaaFW.EndFieldPCWin32",
                     ):
                         await asyncio.to_thread(importlib.import_module, adapter)
 

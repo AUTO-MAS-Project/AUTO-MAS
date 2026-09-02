@@ -78,6 +78,25 @@ def _write_diagnostic(text: str) -> None:
 _WUWA_CLASS = "UnrealWindow"
 _WUWA_PROCESS = "Client-Win64-Shipping.exe"
 
+# 游戏窗口就绪宽限期：进程拉起到 UnrealWindow 窗口可见通常存在启动延迟，且设备
+# 性能越差窗口创建/亮相越慢。账号切换紧随脚本配置的定长 WaitTime 之后立即执行，
+# 须在宽限期内轮询等待窗口就绪，否则慢设备会误报「未找到鸣潮游戏窗口」。
+_GAME_WINDOW_WAIT_SECONDS = 60.0
+# 窗口轮询间隔。
+_WINDOW_POLL_INTERVAL = 1.0
+# 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载/游戏内更新
+# 过渡帧）时，在硬上限内轮询等待「登录页」或「已登录主菜单」出现。鸣潮更新由 MAS
+# 启动前预更新，游戏内更新概率较低，但仍以「进展续延」应答长加载：界面仍在变化时
+# 持续顺延，长时间无进展才判失败并交由返回登录流程兜底。
+_IN_GAME_UPDATE_TIMEOUT = 1800.0
+# 长时间无进展判定：界面静止达到该时长仍未进入登录态则视为卡死，提前交还兜底流程。
+_IN_GAME_STALL_SECONDS = 60.0
+# 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
+_IN_GAME_POLL_INTERVAL = 3.0
+# 长等待期诊断 OCR 的落盘节流：更新可能耗时数十分钟，若每个轮询都全量写诊断文件，
+# 单次切换会累积数千行；改为每 N 次轮询（≈ N*3s）写一次，既能保留过渡帧采样又不膨胀。
+_DIAGNOSTIC_DUMP_EVERY_POLLS = 10
+
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
@@ -132,33 +151,49 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd() -> int:
+def _find_game_hwnd(*, wait: bool = True) -> int:
     """按窗口类 + 所属进程名定位鸣潮主窗口。
 
     用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
     规避提权进程 name 读取被拒导致的漏判；同进程存在多个窗口时取面积最大者。
+
+    Args:
+        wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
+            以吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+
+    Raises:
+        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口。
     """
-    candidates: list[int] = []
+    deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    while True:
+        candidates: list[int] = []
 
-    def _enum(hwnd: int, _lparam: int) -> bool:
-        try:
-            if not win32gui.IsWindowVisible(hwnd):
+        def _enum(hwnd: int, _lparam: int) -> bool:
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
+                    return True
+            except Exception:
                 return True
-            if win32gui.GetClassName(hwnd) != _WUWA_CLASS:
-                return True
-        except Exception:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if pid and _process_name(pid) == _WUWA_PROCESS:
+                candidates.append(hwnd)
             return True
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pid and _process_name(pid) == _WUWA_PROCESS:
-            candidates.append(hwnd)
-        return True
 
-    win32gui.EnumWindows(_enum, 0)
-    if not candidates:
-        raise RuntimeError(
-            f"未找到鸣潮游戏窗口（进程 {_WUWA_PROCESS}，窗口类 {_WUWA_CLASS}）"
+        win32gui.EnumWindows(_enum, 0)
+        if candidates:
+            return max(candidates, key=_window_area)
+        if not wait or time.monotonic() >= deadline:
+            break
+        logger.info(
+            "鸣潮游戏进程已启动但窗口暂未就绪，"
+            f"{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
-    return max(candidates, key=_window_area)
+        time.sleep(_WINDOW_POLL_INTERVAL)
+    raise RuntimeError(
+        f"未找到鸣潮游戏窗口（进程 {_WUWA_PROCESS}，窗口类 {_WUWA_CLASS}）"
+    )
 
 
 # ── 截图 / 交互（前台 pyautogui + DPI 适配）─────────────────────────────
@@ -389,8 +424,62 @@ def _logout_from_menu(hwnd: int, on_log: Callable[[str], None]) -> None:
     raise RuntimeError("未找到「确认登出」入口，请人工确认主菜单登出按钮位置")
 
 
+def _frame_signature(frame: np.ndarray) -> int:
+    """对下采样的帧做哈希，用于判断界面是否仍在变化（有更新/加载进展）。"""
+    small = frame[::40, ::40]
+    return hash(small.tobytes())
+
+
+def _wait_for_actionable_state(
+    hwnd: int, on_log: Callable[[str], None]
+) -> None:
+    """等待进入可执行的登录态（登录页或已登录主菜单）。
+
+    游戏窗口刚出现时可能仍停在启动过渡帧（警告弹窗、加载条、游戏内更新、自动登录等），
+    此时登录页与主菜单两态都不命中。若立即按 ESC 走返回登录，可能落在不匹配的画面上。
+    故采用「进展续延」语义等待两态之一出现：
+
+    - 命中任意态 → 返回，由调用方按对应态执行（登录页→选择登录，主菜单→登出）；
+    - 界面仍在变化（有更新/加载进展）→ 持续顺延，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
+    - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非登录态 → 判卡死，交还调用方
+      走「ESC→终端→返回登录」兜底（覆盖已直接进入游戏主场景的情形）。
+
+    进度日志按约 5 条/轮询节流，避免向调度台频繁刷屏。
+    """
+    deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
+    last_progress = time.monotonic()
+    last_sig: int | None = None
+    iter_count = 0
+    while time.monotonic() < deadline:
+        frame = _capture_window(hwnd, activate=False)
+        items_full = ocr_image(frame)
+        if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
+            _dump_ocr_items(items_full)
+        if (
+            _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
+            or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None
+        ):
+            return
+        sig = _frame_signature(frame)
+        if sig != last_sig:
+            last_sig = sig
+            last_progress = time.monotonic()
+        if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
+            break
+        if iter_count % 5 == 0:
+            on_log("鸣潮仍在启动/游戏内更新或加载过渡帧中，等待进入登录页或已登录主菜单...")
+        iter_count += 1
+        time.sleep(_IN_GAME_POLL_INTERVAL)
+    on_log(
+        "等待进入可执行登录态超时或长时间无进展"
+        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），按未知状态走返回登录流程"
+    )
+
+
 def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
-    """回到登录界面；已处于登录页直接返回，主菜单走登出，其余走游戏内返回。"""
+    """回到登录界面；已处于登录页直接返回，主菜单走登出，其余（含游戏主场景）走游戏内返回。"""
+    _wait_for_actionable_state(hwnd, on_log)
+
     if _on_login_page(hwnd):
         on_log("已处于登录界面，跳过返回登录")
         return
@@ -419,12 +508,18 @@ def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
             round(0.63 * _FRAME_HEIGHT),
             after_sleep=3,
         )
-    _wait_ocr_text(
+    if _wait_ocr_text(
         hwnd,
         _LOGIN_PAGE_TEXTS,
         roi=_LOGIN_ROI,
         timeout=60,
-    )
+    ) is None:
+        # 不能在等待超时后假报「已返回登录界面」：盲点可能误触登录进入游戏，
+        # 此时画面无掩码账号，继续选号必然失败且更难排查，必须显式失败留证。
+        raise RuntimeError(
+            "返回登录流程结束但未识别到登录界面（60s 未出现「其他登录方式」），"
+            "可能误入了游戏内画面，请人工确认后重试"
+        )
     on_log("已返回登录界面")
 
 
@@ -590,7 +685,8 @@ def account_switch(
         _select_and_login(hwnd, suffix, _on_log)
     except Exception:
         try:
-            _save_error_screenshot(_find_game_hwnd())
+            # wait=False：主流程已等待过窗口，此处单次枚举即可，避免失败后再空等宽限期。
+            _save_error_screenshot(_find_game_hwnd(wait=False))
         except Exception:
             pass
         raise

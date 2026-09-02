@@ -27,7 +27,14 @@ import {
 } from '@/services/websocket/types'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
-import { type SchedulerTab, type SchedulerStatus } from './schedulerConstants'
+import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+
+// 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
+const runtimeModeLabel = (mode: string | null): string | null => {
+  if (!mode) return null
+  const option = TASK_MODE_OPTIONS.find(item => item.value === mode)
+  return option ? t(option.labelKey) : mode
+}
 
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
@@ -55,6 +62,7 @@ const getDefaultTabRuntimeState = () => ({
   overviewData: undefined,
   lastMessageHash: '',
   lastMessageTime: 0,
+  cycleNextList: [],
 })
 
 const trimLogForRender = (content: string) => {
@@ -90,6 +98,8 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   runningTaskLabel: tab.runningTaskLabel,
   runningModeLabel: tab.runningModeLabel,
   logMode: tab.logMode || 'follow',
+  // 不存这个的话，刷新后模式选项里没有「循环运行」，已选的循环模式会被静默改回自动代理
+  isCycleQueue: tab.isCycleQueue ?? false,
   ...getDefaultTabRuntimeState(),
 })
 
@@ -546,7 +556,33 @@ export function useSchedulerLogic() {
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
-    await loadResumeScriptOptions(tab)
+    await Promise.all([loadResumeScriptOptions(tab), loadCycleQueueFlag(tab)])
+  }
+
+  // 只有循环队列能选「循环运行」，先问后端拿队列类型再决定给不给这个模式
+  const loadCycleQueueFlag = async (tab: SchedulerTab) => {
+    if (!tab.selectedTaskId || !isQueueTask(tab)) {
+      tab.isCycleQueue = false
+      if (tab.selectedMode === TaskCreateIn.mode.CYCLE_RUN) {
+        tab.selectedMode = TaskCreateIn.mode.AUTO_PROXY
+      }
+      return
+    }
+
+    try {
+      const response = await Service.getQueuesApiQueueGetPost({ queueId: tab.selectedTaskId })
+      tab.isCycleQueue =
+        response.code === 200 &&
+        Boolean(response.data?.[tab.selectedTaskId]?.Info?.CycleEnabled)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取队列类型失败，按定时队列处理: ${errorMsg}`)
+      tab.isCycleQueue = false
+    }
+
+    if (!tab.isCycleQueue && tab.selectedMode === TaskCreateIn.mode.CYCLE_RUN) {
+      tab.selectedMode = TaskCreateIn.mode.AUTO_PROXY
+    }
   }
 
   const startTask = async (tab: SchedulerTab) => {
@@ -579,6 +615,7 @@ export function useSchedulerLogic() {
         tab.logs.splice(0)
         tab.isLogAtBottom = true
         tab.lastLogContent = ''
+        tab.cycleNextList = []
         tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
         subscribeToTask(tab)
@@ -752,6 +789,7 @@ export function useSchedulerLogic() {
   }
 
   const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
+    tab.cycleNextList = data.cycleNextList ?? []
     if (!data.task_info || !Array.isArray(data.task_info)) {
       logger.debug('没有task_info数据，保持现有overviewData')
       return false
@@ -942,6 +980,7 @@ export function useSchedulerLogic() {
 
     // 使用Vue的响应式更新方式
     tab.status = data.outcome === 'error' ? '异常' : '结束'
+    tab.cycleNextList = []
     logger.info(`已更新tab.status，当前tab状态: ${JSON.stringify(tab.status)}`)
 
     logger.info(`任务完成，清理订阅与任务ID: key=${tab.key}, taskId=${tab.taskId}`)
@@ -1167,11 +1206,23 @@ export function useSchedulerLogic() {
 
     tab.status = '运行'
     if (state.mode) tab.selectedMode = taskModeFromRuntime(state.mode)
-    tab.runningModeLabel = state.taskType ?? state.mode ?? tab.runningModeLabel
+    // 快照里的 mode 是脚本执行模式，循环与否只看 isCycle
+    if (state.isCycle) {
+      tab.selectedMode = TaskCreateIn.mode.CYCLE_RUN
+      tab.isCycleQueue = true
+    }
+    // 没有任务类型文案（调度台手动启动）时按模式取词表标签，别把枚举原值亮给用户
+    tab.runningModeLabel =
+      state.taskType ??
+      (state.isCycle ? t('scheduler.mode.cycleRun') : runtimeModeLabel(state.mode)) ??
+      tab.runningModeLabel
     if (state.taskName) tab.runningTaskLabel = state.taskName
     const selectedTaskId = getRuntimeSelectedTaskId(state)
     if (selectedTaskId) tab.selectedTaskId = selectedTaskId
-    applyTaskInfoSnapshot(tab, { task_info: state.taskInfo })
+    applyTaskInfoSnapshot(tab, {
+      task_info: state.taskInfo,
+      cycleNextList: state.cycleNextList,
+    })
     subscribeToTask(tab)
   }
 

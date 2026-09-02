@@ -77,6 +77,21 @@ def is_process_running(process_name: str) -> bool:
     return False
 
 
+def is_process_alive(process_name: str) -> bool:
+    """检查指定进程名是否有存活实例（不依赖窗口）。
+
+    is_process_running 要求存在可见窗口，窗口销毁后进程仍可能存活；
+    需要「等待进程完全退出」的调用方（如多用户切换等待旧游戏退出）应
+    用本函数按进程名判断存活。
+    """
+
+    for proc in psutil.process_iter(["name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            if proc.info.get("name") == process_name:
+                return True
+    return False
+
+
 def has_visible_window(pid: int) -> bool:
     """指定进程是否已经拥有可见窗口。
 

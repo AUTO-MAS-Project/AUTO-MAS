@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import type { TableColumnsType } from 'ant-design-vue'
-import { BettergiService } from '@/api'
+import { BetterGiService } from '@/api'
 
 const logger = window.electronAPI.getLogger('BetterGI自定义配置组')
 
@@ -36,8 +36,7 @@ export interface BettergiCustomGroupOptions {
  */
 export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const { t } = useI18n()
-  const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } =
-    options
+  const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } = options
   const oneDragon = () => getOneDragon()
 
   const table = ref<BettergiCustomGroupRow[]>([])
@@ -52,7 +51,12 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
 
   const columns = computed<TableColumnsType>(() => [
     { title: t('edit.bettergiGroupNameColumn'), dataIndex: 'name', key: 'name' },
-    { title: t('edit.bettergiGroupEnabledColumn'), dataIndex: 'enabled', key: 'enabled', width: 120 },
+    {
+      title: t('edit.bettergiGroupEnabledColumn'),
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 120,
+    },
   ])
 
   const rowSelection = computed(() => ({
@@ -92,7 +96,7 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const fetchBettergiGroups = async (): Promise<BettergiCustomGroupRow[]> => {
     try {
       const resp =
-        await BettergiService.getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
+        await BetterGiService.getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
           scriptId,
           configName(),
           masConfig()

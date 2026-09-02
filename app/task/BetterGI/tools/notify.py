@@ -49,7 +49,9 @@ def _step_duration(step: dict) -> str:
         b = datetime.strptime(step["end"].split(".")[0], _STEP_TIME_FMT)
     except (KeyError, ValueError, AttributeError):
         return "—"
-    total = (b.hour - a.hour) * 3600 + (b.minute - a.minute) * 60 + (b.second - a.second)
+    total = (
+        (b.hour - a.hour) * 3600 + (b.minute - a.minute) * 60 + (b.second - a.second)
+    )
     total = max(0, total)
     if total < 60:
         return f"{total}秒"
@@ -71,7 +73,9 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
                 f"✓ {tag} {s['task']} 成功（含 {s['issue_count']} 处异常: {s['issue_text']}） {span}"
             )
         else:
-            reason = f" · {s['issue_text']}" if s["issue_text"] else " · 未走完就结束/中断"
+            reason = (
+                f" · {s['issue_text']}" if s["issue_text"] else " · 未走完就结束/中断"
+            )
             lines.append(f"✗ {tag} {s['task']} 失败{reason} {span}")
     return "\n".join(lines)
 
@@ -108,9 +112,9 @@ async def push_notification(
         )
         # 完整版：4 字段 + 「一条龙分步执行」
         message_text_full = f"{message_text}{steps_text}"
-        message_html = Config.notify_env.get_template(
-            "general_statistics.html"
-        ).render(message)
+        message_html = Config.notify_env.get_template("general_statistics.html").render(
+            message
+        )
 
         if user_config.get("Notify", "IfSendMail"):
             if user_config.get("Notify", "ToAddress"):

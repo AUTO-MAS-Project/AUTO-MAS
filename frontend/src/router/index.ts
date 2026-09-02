@@ -1,4 +1,9 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import {
+  createRouter,
+  createWebHashHistory,
+  type LocationQueryRaw,
+  type RouteParamsRawGeneric,
+} from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
@@ -330,7 +335,7 @@ router.beforeEach(async (to, from, next) => {
   const { isInitialized, isBootstrapping } = useAppInitialization()
 
   // 声明跳过的路由：直接放行
-  if ((to.meta as any)?.skipGuard) {
+  if (to.meta.skipGuard === true) {
     next()
     return
   }
@@ -408,7 +413,7 @@ router.beforeEach(async (to, from, next) => {
 
 export function navigateTo(
   path: string,
-  options?: { replace?: boolean; query?: Record<string, any> }
+  options?: { replace?: boolean; query?: LocationQueryRaw }
 ) {
   const { replace = false, query } = options || {}
   if (replace) return router.replace({ path, query })
@@ -417,7 +422,7 @@ export function navigateTo(
 
 export function navigateToByName(
   name: string,
-  options?: { replace?: boolean; query?: Record<string, any>; params?: Record<string, any> }
+  options?: { replace?: boolean; query?: LocationQueryRaw; params?: RouteParamsRawGeneric }
 ) {
   const { replace = false, query, params } = options || {}
   if (replace) return router.replace({ name, query, params })

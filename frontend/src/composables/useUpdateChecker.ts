@@ -54,7 +54,7 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   try {
     const response = await Service.getScriptsApiSettingGetPost()
     if (response.code === 200 && response.data) {
-      const isEnabled = response.data.Update?.IfAutoUpdate || false
+      const isEnabled = response.data.Update?.IfAutoUpdate === true
       if (!isEnabled) {
         logger.info('自动更新已关闭，禁用自动检查更新')
       }
@@ -103,7 +103,7 @@ export function useUpdateChecker() {
           showUpdateModal(response.update_info, response.latest_version)
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新检查失败: ${errorMsg}`)
     } finally {
@@ -134,7 +134,7 @@ export function useUpdateChecker() {
           message.error(response.message || '获取更新失败')
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`手动更新检查失败: ${errorMsg}`)
       if (!silent) {
