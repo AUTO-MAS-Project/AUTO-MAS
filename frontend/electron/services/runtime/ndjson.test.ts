@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { NdjsonEventStream, parseRuntimeEventLine } from './ndjson'
+import { MAX_NDJSON_LINE_LENGTH, NdjsonEventStream, parseRuntimeEventLine } from './ndjson'
 import { RuntimeClientError } from './protocol'
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '__fixtures__')
@@ -194,6 +194,57 @@ describe('NdjsonEventStream', () => {
     const bad = items[1]
     expect(bad.kind === 'error' && bad.error.code).toBe('RUNTIME_PROTOCOL_ERROR')
     expect(bad.line).toBe('{"protocol":1,')
+  })
+
+  // 一条比 80 字符上限短的合法事件行，用来验证超限行之后能恢复正常解析。
+  const shortLine = '{"protocol":1,"type":"progress","stage":"x","status":"succeeded"}'
+
+  it('半行超过长度上限时释放缓冲，行尾产出协议错误，后续行照常解析', () => {
+    const stream = new NdjsonEventStream(80)
+
+    // 三个 chunk 拼出一条 150 字符的半行，超限后缓冲不再增长。
+    expect(stream.push('x'.repeat(50))).toEqual([])
+    expect(stream.push('y'.repeat(50))).toEqual([])
+    expect(stream.pending).toBe('')
+    expect(stream.push('z'.repeat(50))).toEqual([])
+    expect(stream.pending).toBe('')
+
+    const items = stream.push(`tail\n${shortLine}\n`)
+
+    expect(items.map(item => item.kind)).toEqual(['error', 'event'])
+    const bad = items[0]
+    if (bad.kind !== 'error') throw new Error('第一条应为 error')
+    expect(bad.error.code).toBe('RUNTIME_PROTOCOL_ERROR')
+    expect(bad.error.message).toMatch(/超过 80 个字符/)
+    expect(bad.error.details.maxLineLength).toBe(80)
+    // 回显只保留开头片段，不把超长内容原样带出去。
+    expect(bad.line).toBe('x'.repeat(50) + 'y'.repeat(50))
+    expect(bad.error.details.line).toBe(bad.line)
+    expect(stream.pending).toBe('')
+  })
+
+  it('一次到齐的整行超限同样按协议错误丢弃', () => {
+    const stream = new NdjsonEventStream(80)
+
+    const items = stream.push(`${'{'.repeat(100)}\n${shortLine}\n`)
+
+    expect(items.map(item => item.kind)).toEqual(['error', 'event'])
+    expect(items[0].kind === 'error' && items[0].error.code).toBe('RUNTIME_PROTOCOL_ERROR')
+  })
+
+  it('流在超限半行中结束时 flush 仍产出协议错误', () => {
+    const stream = new NdjsonEventStream(80)
+
+    stream.push('x'.repeat(100))
+    const flushed = stream.flush()
+
+    expect(flushed).toHaveLength(1)
+    expect(flushed[0].kind === 'error' && flushed[0].error.code).toBe('RUNTIME_PROTOCOL_ERROR')
+    expect(stream.flush()).toEqual([])
+  })
+
+  it('默认上限为 4 MiB', () => {
+    expect(MAX_NDJSON_LINE_LENGTH).toBe(4 * 1024 * 1024)
   })
 
   it('flush 处理结尾没有换行符的最后一行', () => {

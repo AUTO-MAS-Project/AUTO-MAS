@@ -15,9 +15,11 @@ import {
   serializeControlCommand,
 } from './client'
 import {
+  RUNTIME_CAPABILITIES,
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClientError,
   RuntimeEvent,
+  isKnownRuntimeCapability,
   isRetryableRuntimeCode,
   lookupRuntimeErrorDefinition,
 } from './protocol'
@@ -355,7 +357,7 @@ describe('RuntimeClient.run', () => {
     expect(outcome.result.details.warningCount).toBe(1)
   })
 
-  it('坏 JSON 行让本次调用失败，并带上原始行', async () => {
+  it('握手前的坏 JSON 行让本次调用失败，并带上原始行', async () => {
     const client = createClient()
     const child = mockSpawn()
     const protocolErrors: RuntimeClientError[] = []
@@ -363,8 +365,7 @@ describe('RuntimeClient.run', () => {
     const pending = client.run(['version'], {
       onProtocolError: error => protocolErrors.push(error),
     })
-    const [helloLine] = fixture('version.ndjson').trim().split('\n')
-    child.stdout.feed(`${helloLine}\n{"protocol":1,\n`)
+    child.stdout.feed('{"protocol":1,\n')
 
     await expect(pending).rejects.toMatchObject({
       code: 'RUNTIME_PROTOCOL_ERROR',
@@ -373,6 +374,30 @@ describe('RuntimeClient.run', () => {
     })
     expect(protocolErrors).toHaveLength(1)
     expect(child.killed).toBe(true)
+  })
+
+  it('握手后的坏行只记录并回调，不 kill 在途命令', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+    const protocolErrors: RuntimeClientError[] = []
+
+    const pending = client.run(['version'], {
+      onProtocolError: error => protocolErrors.push(error),
+    })
+    const [helloLine, progressLine, resultLine] = fixture('version.ndjson').trim().split('\n')
+    child.stdout.feed(`${helloLine}\n{"protocol":1,\n${progressLine}\n`)
+
+    expect(protocolErrors).toHaveLength(1)
+    expect(protocolErrors[0].code).toBe('RUNTIME_PROTOCOL_ERROR')
+    expect(child.killed).toBe(false)
+
+    child.stdout.feed(`${resultLine}\n`)
+    child.close(0)
+    const outcome = await pending
+
+    expect(outcome.success).toBe(true)
+    expect(outcome.protocolErrors).toHaveLength(1)
+    expect(outcome.events.map(event => event.type)).toEqual(['hello', 'progress', 'result'])
   })
 
   it('hello 迟迟不来时报 RUNTIME_HANDSHAKE_TIMEOUT', async () => {
@@ -620,14 +645,21 @@ describe('RuntimeClient.supervise', () => {
   const operationId = '01M1F6M33JFZZ7Y85BE5S849ZN'
   const base = { protocol: 1, operationId, timestamp: '2026-09-01T21:20:03.442+02:00' }
 
+  // 与 Runtime 侧 backend.go 公告的五项能力一致；早期构建只公告前三项（见 ndjson 夹具）。
+  const capabilities = ['stdin.cancel', 'state.v1', 'log.stream', 'stdin.shutdown', 'stdin.status']
+
   const helloLine = line({
     ...base,
     type: 'hello',
     sequence: 1,
     runtimeVersion: 'dev',
     command: 'backend supervise',
-    capabilities: ['stdin.cancel', 'state.v1', 'log.stream'],
+    capabilities,
   })
+
+  function logLine(sequence: number, stream: 'stdout' | 'stderr', message: string): string {
+    return line({ ...base, type: 'log', sequence, source: 'backend', stream, message })
+  }
 
   const runningStateLine = line({
     ...base,
@@ -667,7 +699,7 @@ describe('RuntimeClient.supervise', () => {
     child.stdout.feed(runningStateLine)
 
     expect(handle.hello.command).toBe('backend supervise')
-    expect(handle.capabilities).toEqual(['stdin.cancel', 'state.v1', 'log.stream'])
+    expect(handle.capabilities).toEqual(capabilities)
     expect(handle.pid).toBe(4242)
     expect(states).toEqual(['running:http://127.0.0.1:36163'])
     expect(spawnMock.mock.calls[0][1]).toEqual([
@@ -792,6 +824,80 @@ describe('RuntimeClient.supervise', () => {
     expect(child.killed).toBe(true)
   })
 
+  it('hello 未宣告 stdin.shutdown 时 shutdown 不发命令、不等超时，直接 kill', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+
+    const pendingHandle = client.supervise({ mode: 'managed' })
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'backend supervise',
+        capabilities: ['stdin.cancel', 'state.v1', 'log.stream'],
+      })
+    )
+    const handle = await pendingHandle
+
+    // 超时给得很长：若走了等待路径，这里会一直挂着直到 vitest 自己超时。
+    const pendingShutdown = handle.shutdown({ timeoutMs: 600_000 })
+
+    expect(child.stdin.chunks).toEqual([])
+    expect(child.killed).toBe(true)
+    await expect(pendingShutdown).rejects.toMatchObject({
+      code: 'RUNTIME_EXITED_UNEXPECTEDLY',
+      details: { signal: 'SIGTERM' },
+    })
+  })
+
+  it('log 事件只保留最近 N 条，不进 events，可通过句柄随时读取', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+    const seen: string[] = []
+
+    const pendingHandle = client.supervise({
+      mode: 'managed',
+      recentLogCapacity: 3,
+      onLog: event => seen.push(event.message),
+    })
+    child.stdout.feed(helloLine)
+    const handle = await pendingHandle
+
+    child.stdout.feed(runningStateLine)
+    for (let i = 1; i <= 5; i += 1) {
+      child.stdout.feed(logLine(10 + i, i === 4 ? 'stderr' : 'stdout', `第 ${i} 行`))
+    }
+
+    // 回调仍逐条收到；缓冲只留最近三条。
+    expect(seen).toEqual(['第 1 行', '第 2 行', '第 3 行', '第 4 行', '第 5 行'])
+    expect(handle.recentLogs().map(event => event.message)).toEqual([
+      '第 3 行',
+      '第 4 行',
+      '第 5 行',
+    ])
+    // 返回的是副本，改它不影响内部缓冲。
+    handle.recentLogs().length = 0
+    expect(handle.recentLogs()).toHaveLength(3)
+
+    child.stdout.feed(stoppedResultLine)
+    child.close(0)
+    const outcome = await handle.completion
+
+    expect(outcome.events.map(event => event.type)).toEqual(['hello', 'state', 'result'])
+    expect(outcome.recentLogs.map(event => event.message)).toEqual([
+      '第 3 行',
+      '第 4 行',
+      '第 5 行',
+    ])
+    expect(outcome.logs[operationId]).toEqual({
+      stdout: ['第 3 行', '第 5 行'],
+      stderr: ['第 4 行'],
+      other: [],
+    })
+  })
+
   it('握手后的坏行不掀翻正在运行的后端，只记录并回调', async () => {
     const client = createClient()
     const child = mockSpawn()
@@ -834,6 +940,21 @@ describe('RuntimeClient.supervise', () => {
     await handle.completion
 
     expect(seen).toEqual(['state'])
+  })
+})
+
+describe('RUNTIME_CAPABILITIES', () => {
+  it('与 Runtime 侧 values.go 的五项能力一致', () => {
+    expect(RUNTIME_CAPABILITIES).toEqual([
+      'stdin.cancel',
+      'state.v1',
+      'log.stream',
+      'stdin.shutdown',
+      'stdin.status',
+    ])
+    expect(isKnownRuntimeCapability('stdin.shutdown')).toBe(true)
+    expect(isKnownRuntimeCapability('stdin.status')).toBe(true)
+    expect(isKnownRuntimeCapability('stdin.future')).toBe(false)
   })
 })
 
