@@ -185,6 +185,17 @@ class OkNteResolveTest(unittest.TestCase):
             ],
         )
 
+    def test_no_reward_downgrades_english_daily_claim_fail(self) -> None:
+        # info_set 列表经 tr 翻译，英文环境节点名为 Daily Claim：同样降级为跳过
+        results = [
+            (LogType.NORMAL, "❌ 失败: Daily Claim", T),
+            (LogType.NORMAL, "NO_REWARD", T),
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [(LogType.NORMAL, "⏭ 跳过: Daily Claim（当日已领取）", T)],
+        )
+
     def test_no_reward_without_daily_claim_fail_keeps_states(self) -> None:
         # 有 NO_REWARD 标记但「日常领取」未失败（如成功）时，不改写任何状态
         results = [
