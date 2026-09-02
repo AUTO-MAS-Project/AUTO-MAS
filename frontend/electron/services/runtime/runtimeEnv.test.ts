@@ -3,7 +3,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { RUNTIME_TELEMETRY_ENV, buildRuntimeEnv } from './runtimeEnv'
+import { RUNTIME_APP_ENV, RUNTIME_TELEMETRY_ENV, buildRuntimeEnv } from './runtimeEnv'
 
 const warn = vi.fn()
 
@@ -75,5 +75,26 @@ describe('buildRuntimeEnv', () => {
 
     expect(buildRuntimeEnv(appRoot)).toEqual({})
     expect(warn).toHaveBeenCalledOnce()
+  })
+})
+
+describe('buildRuntimeEnv：开发标记', () => {
+  it('development 模式追加 AUTO_MAS_ENV=development', () => {
+    expect(buildRuntimeEnv(appRoot, 'development')).toEqual({ [RUNTIME_APP_ENV]: 'development' })
+  })
+
+  it('development 模式且关闭遥测时两项同时透传', () => {
+    writeBackendConfig({ Function: { IfEnableTelemetry: false } })
+
+    expect(buildRuntimeEnv(appRoot, 'development')).toEqual({
+      [RUNTIME_TELEMETRY_ENV]: 'disabled',
+      [RUNTIME_APP_ENV]: 'development',
+    })
+  })
+
+  it('managed / off / 未指定模式都不碰 AUTO_MAS_ENV', () => {
+    expect(buildRuntimeEnv(appRoot, 'managed')).toEqual({})
+    expect(buildRuntimeEnv(appRoot, 'off')).toEqual({})
+    expect(buildRuntimeEnv(appRoot)).toEqual({})
   })
 })

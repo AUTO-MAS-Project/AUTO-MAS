@@ -45,6 +45,7 @@ export {
 } from './client'
 
 export {
+  RUNTIME_DEVELOPMENT_ROOT_DIRNAME,
   RUNTIME_EXECUTABLE_NAME,
   RUNTIME_EXE_ENV,
   RUNTIME_MODE_ENV,
@@ -56,6 +57,7 @@ export {
   RuntimeLaunchModeSource,
   RuntimeSupervisedLaunchConfig,
   isPersistedRuntimeLaunchMode,
+  resolveDevelopmentRuntimeRoot,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
@@ -64,9 +66,9 @@ export {
 
 export { NdjsonEventStream, NdjsonItem, parseRuntimeEventLine } from './ndjson'
 
-export { RUNTIME_TELEMETRY_ENV, buildRuntimeEnv } from './runtimeEnv'
+export { RUNTIME_APP_ENV, RUNTIME_TELEMETRY_ENV, buildRuntimeEnv } from './runtimeEnv'
 
-export { createRuntimeClient } from './runtimeClientFactory'
+export { CreateRuntimeClientOptions, createRuntimeClient } from './runtimeClientFactory'
 
 export {
   RUNTIME_CAPABILITIES,

@@ -4,9 +4,11 @@ import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  RUNTIME_DEVELOPMENT_ROOT_DIRNAME,
   RUNTIME_EXE_ENV,
   RUNTIME_MODE_ENV,
   isPersistedRuntimeLaunchMode,
+  resolveDevelopmentRuntimeRoot,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
@@ -257,19 +259,24 @@ describe('resolveRuntimeLaunchConfig', () => {
     })
   })
 
-  it('development 模式把当前 appRoot 作为 --repo', () => {
+  it('development 模式把传入的源码根作为 --repo 与 dataRoot，--app-root 另取仓外目录', () => {
     process.env[RUNTIME_MODE_ENV] = 'development'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
 
-    expect(resolveRuntimeLaunchConfig(appRoot)).toEqual({
+    const config = resolveRuntimeLaunchConfig(appRoot)
+    expect(config).toEqual({
       mode: 'development',
       runtimePath: EXISTING_EXE,
-      appRoot,
+      appRoot: resolveDevelopmentRuntimeRoot(appRoot),
       repo: appRoot,
+      dataRoot: appRoot,
     })
+    // Runtime 拒绝 runtime_root_inside_development_repo：Runtime 根既不能等于源码根，也不能在它里面。
+    expect(config.appRoot).not.toBe(appRoot)
+    expect(config.appRoot.startsWith(appRoot + path.sep)).toBe(false)
   })
 
-  it('managed 模式不传 --repo', () => {
+  it('managed 模式不传 --repo，--app-root 就是用户数据根', () => {
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
 
@@ -278,6 +285,7 @@ describe('resolveRuntimeLaunchConfig', () => {
       runtimePath: EXISTING_EXE,
       appRoot,
       repo: undefined,
+      dataRoot: appRoot,
     })
   })
 
@@ -290,6 +298,32 @@ describe('resolveRuntimeLaunchConfig', () => {
       runtimePath: EXISTING_EXE,
       appRoot,
       repo: undefined,
+      dataRoot: appRoot,
     })
+  })
+})
+
+describe('resolveDevelopmentRuntimeRoot', () => {
+  afterEach(() => {
+    delete (electronApp as unknown as { getPath?: unknown }).getPath
+  })
+
+  it('Electron 环境下落在 userData 的 auto-mas-runtime 子目录', () => {
+    const userData = path.join(appRoot, 'userData-dev')
+    ;(electronApp as unknown as { getPath: (name: string) => string }).getPath = name => {
+      expect(name).toBe('userData')
+      return userData
+    }
+
+    expect(resolveDevelopmentRuntimeRoot(appRoot)).toBe(
+      path.join(userData, RUNTIME_DEVELOPMENT_ROOT_DIRNAME)
+    )
+  })
+
+  it('非 Electron 环境下落在源码根同级的 <目录名>-runtime，且不在源码根内', () => {
+    const root = resolveDevelopmentRuntimeRoot(appRoot)
+
+    expect(root).toBe(path.join(path.dirname(appRoot), `${path.basename(appRoot)}-runtime`))
+    expect(root.startsWith(appRoot + path.sep)).toBe(false)
   })
 })

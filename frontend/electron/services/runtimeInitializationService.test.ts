@@ -15,7 +15,12 @@ import {
   mapRuntimeStageToInitializationStage,
   toRuntimeVersion,
 } from './runtimeInitializationService'
-import type { RuntimeEvent, RuntimeRunOptions, RuntimeSupervisedLaunchConfig } from './runtime'
+import type {
+  CreateRuntimeClientOptions,
+  RuntimeEvent,
+  RuntimeRunOptions,
+  RuntimeSupervisedLaunchConfig,
+} from './runtime'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('./logger', () => ({
@@ -118,6 +123,7 @@ function createService(overrides: Partial<RuntimeSupervisedLaunchConfig> = {}) {
     mode: 'managed',
     runtimePath: RUNTIME_PATH,
     appRoot: APP_ROOT,
+    dataRoot: APP_ROOT,
     ...overrides,
   }
   return new RuntimeInitializationService({
@@ -550,5 +556,37 @@ describe('doctor', () => {
 
     expect(critical.mainPyExists).toBe(true)
     expect(critical.pythonExists).toBe(true)
+  })
+})
+
+// ==================== 客户端构造参数 ====================
+
+describe('客户端构造参数', () => {
+  it('把 dataRoot 与启动模式一并交给客户端工厂，--app-root 仍是 Runtime 根目录', async () => {
+    const received: CreateRuntimeClientOptions[] = []
+    const service = new RuntimeInitializationService({
+      launchConfig: {
+        mode: 'development',
+        runtimePath: RUNTIME_PATH,
+        appRoot: 'D:\\AUTO-MAS-runtime',
+        repo: APP_ROOT,
+        dataRoot: APP_ROOT,
+      },
+      createClient: options => {
+        received.push(options)
+        return new FakeRuntimeClient(options) as never
+      },
+    })
+    FakeRuntimeClient.scripts = [{ events: fixtureEvents('doctor.ndjson') }]
+
+    await service.doctor()
+
+    expect(received).toHaveLength(1)
+    expect(received[0]).toMatchObject({
+      runtimePath: RUNTIME_PATH,
+      appRoot: 'D:\\AUTO-MAS-runtime',
+      dataRoot: APP_ROOT,
+      launchMode: 'development',
+    })
   })
 })
