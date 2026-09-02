@@ -26,6 +26,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     _install_pool_managed_python,
     _install_requirements_with_uv,
     _resolve_python_mirror_candidates,
+    is_package_index_offline,
     resolve_package_index_candidates,
     resolve_python_install_dir,
     resolve_uv_cache_dir,
@@ -155,6 +156,18 @@ def test_package_index_candidates_none_when_nothing_configured() -> None:
 def test_package_index_candidates_blank_mirror_list_is_still_none(monkeypatch) -> None:
     monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "  ; ; ")
     assert resolve_package_index_candidates() is None
+
+
+def test_package_index_offline_only_when_key_exists_and_is_empty(monkeypatch) -> None:
+    # 键不存在（未受监督 / 旧版 Runtime）不是离线；键存在但值为空串（含纯空白）
+    # 才是 Runtime --offline 的注入形式；有内容的列表照常在线。
+    assert is_package_index_offline() is False
+    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "")
+    assert is_package_index_offline() is True
+    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "   ")
+    assert is_package_index_offline() is True
+    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-a.invalid/simple")
+    assert is_package_index_offline() is False
 
 
 def test_package_index_candidates_explicit_single_value_only(monkeypatch) -> None:
@@ -318,6 +331,67 @@ def test_index_rotation_is_bypassed_when_uv_index_url_is_already_set(
     )
 
     assert len(calls) == 1
+    assert "--index-url" not in calls[0]
+    assert result is None
+
+
+def test_offline_injection_passes_offline_flag_and_records_it(
+    tmp_path, monkeypatch
+) -> None:
+    # Runtime 以 --offline 运行时注入 AUTO_MAS_MIRROR_PACKAGE_INDEX=（键存在、
+    # 值为空串）。此前空串被解析成「没有候选」，随后按不指定索引跑一次，等于
+    # 直连 PyPI；现在必须给 uv 传 --offline、不带任何 --index-url，且离线优先级
+    # 高于用户单值 AUTO_MAS_UV_INDEX_URL——「不要联网」不因用户配了镜像而失效。
+    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "")
+    monkeypatch.setenv(AUTO_MAS_UV_INDEX_URL_ENV, "https://mirror-a.invalid/simple")
+
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return _FakeCompleted(0)
+
+    monkeypatch.setattr(installer_module.subprocess, "run", fake_run)
+
+    result = _install_requirements_with_uv(
+        "uv.exe",
+        tmp_path / "envs" / "shared" / "Scripts" / "python.exe",
+        ["maafw==1.0"],
+        cache_dir=tmp_path / "cache",
+        link_mode="hardlink",
+        cwd=tmp_path,
+    )
+
+    assert len(calls) == 1
+    assert "--offline" in calls[0]
+    assert "--index-url" not in calls[0]
+    assert result == {"source": None, "attempt": 1, "offline": True}
+
+
+def test_missing_injection_key_keeps_online_default_behavior(
+    tmp_path, monkeypatch
+) -> None:
+    # 键不存在（未受监督或旧版 Runtime）：行为不变——不带 --offline、不带
+    # --index-url，按 uv 默认索引跑一次，元数据不记录索引。
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return _FakeCompleted(0)
+
+    monkeypatch.setattr(installer_module.subprocess, "run", fake_run)
+
+    result = _install_requirements_with_uv(
+        "uv.exe",
+        tmp_path / "envs" / "shared" / "Scripts" / "python.exe",
+        ["maafw==1.0"],
+        cache_dir=tmp_path / "cache",
+        link_mode="hardlink",
+        cwd=tmp_path,
+    )
+
+    assert len(calls) == 1
+    assert "--offline" not in calls[0]
     assert "--index-url" not in calls[0]
     assert result is None
 
