@@ -1122,7 +1122,9 @@ class OkNteConfig_Game(BaseModel):
     Type: Optional[Literal["Client", "URL"]] = Field(
         default=None, description="类型: PC端, URL协议"
     )
-    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Path: Optional[str] = Field(
+        default=None, description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）"
+    )
     URL: Optional[str] = Field(default=None, description="自定义协议URL")
     ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
@@ -1135,6 +1137,9 @@ class OkNteConfig_Game(BaseModel):
     )
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭游戏"
+    )
+    AccountSwitch: Optional[bool] = Field(
+        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
     )
 
 

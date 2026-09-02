@@ -28,6 +28,8 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+import psutil
+
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogType, log_box
@@ -35,7 +37,7 @@ from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.services import System
+from app.services import Notify, System
 from app.task.general.tools import execute_script_task
 from app.utils import (
     ProcessInfo,
@@ -59,12 +61,18 @@ from .config_schema import (
 )
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
+from .tools.account_switch import async_switch_account
+from .tools.launcher_start import async_start_game_via_launcher
 
 logger = get_logger("OK-NTE 自动代理")
 
 # 异环 PC 客户端进程名固定，MAS 接管启动前据此避免重复拉起
 _NTE_CLIENT_PROCESS = "HTGame.exe"
-_NTE_LAUNCHER_RELATIVE_PATH = Path("Neverness To Everness/NTELauncher/NTEGame.exe")
+# 异环必须经启动器拉起（直启 HTGame.exe 会卡界面）：启动器相对目录与候选 exe
+# （国服/国际/台服，对齐 ok-nte 上游）
+_NTE_LAUNCHER_DIR = Path("Neverness To Everness/NTELauncher")
+_NTE_LAUNCHER_EXES = ("NTEGame.exe", "NTEGlobalGame.exe", "NTETWGame.exe")
+_NTE_LAUNCHER_EXES_CASEFOLD = {exe.casefold() for exe in _NTE_LAUNCHER_EXES}
 
 # 多用户切换时等待旧游戏完全退出的上限（秒）：
 # 异环客户端「自退」不是瞬时的（ok-nte `-e` 退出约 70 秒），若不等待完全退出，
@@ -81,13 +89,16 @@ def _load_nte_launcher_path(config_path: Path) -> Path | None:
         return None
 
     launcher_path = Path(str(config.get("Launcher Path") or "").strip())
-    expected_parts = tuple(
-        part.casefold() for part in _NTE_LAUNCHER_RELATIVE_PATH.parts
+    if not launcher_path.is_absolute():
+        return None
+    expected_dirs = tuple(part.casefold() for part in _NTE_LAUNCHER_DIR.parts)
+    actual_dirs = tuple(
+        part.casefold() for part in launcher_path.parts[-len(expected_dirs) - 1 : -1]
     )
-    actual_parts = tuple(
-        part.casefold() for part in launcher_path.parts[-len(expected_parts) :]
-    )
-    if not launcher_path.is_absolute() or actual_parts != expected_parts:
+    if (
+        actual_dirs != expected_dirs
+        or launcher_path.name.casefold() not in _NTE_LAUNCHER_EXES_CASEFOLD
+    ):
         return None
     return launcher_path
 
@@ -270,7 +281,7 @@ class AutoProxyTask(TaskExecuteBase):
             and self.script_config.get("Game", "Type") == "Client"
             and not Path(self.script_config.get("Game", "Path")).is_file()
         ):
-            return "请设置异环游戏路径"
+            return "请设置异环启动器路径"
         if (
             self.script_config.get("Game", "Enabled")
             and self.script_config.get("Game", "Type") == "URL"
@@ -382,8 +393,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.oknte_args.append("-e")
         self.oknte_args.extend(extra_args)
 
-        # 游戏配置（对齐通用脚本逻辑）
-        self.game_path = Path(self.script_config.get("Game", "Path"))
+        # 游戏配置（对齐通用脚本逻辑）；启动器路径在启动时经 _resolve_launcher_path 解析
         self.game_url = self.script_config.get("Game", "URL")
         self.game_process_name = self.script_config.get("Game", "ProcessName")
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
@@ -511,6 +521,26 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = "\n".join(self._game_config_summary_lines())
         await asyncio.sleep(0)
 
+    def _resolve_launcher_path(self) -> Path | None:
+        """解析异环启动器路径（异环直启 HTGame.exe 会卡界面，必须经启动器）。
+
+        Game.Path 优先：新语义直接选启动器 exe；旧值是 HTGame.exe 时按
+        <安装根>\\Client\\... 反推 <安装根>\\NTELauncher\\<启动器>。都没有时
+        回退 ok-nte 自己的 LauncherTask.json（其注册表回退由 ok-nte 维护）。
+        """
+        game_path = Path(self.script_config.get("Game", "Path"))
+        if game_path.is_file():
+            if game_path.name.casefold() in _NTE_LAUNCHER_EXES_CASEFOLD:
+                return game_path
+            for ancestor in game_path.parents:
+                if ancestor.name.casefold() == "client":
+                    for exe in _NTE_LAUNCHER_EXES:
+                        candidate = ancestor.parent / "NTELauncher" / exe
+                        if candidate.is_file():
+                            return candidate
+                    break
+        return _load_nte_launcher_path(self.script_config_path)
+
     async def _mas_launch_game_before_task(self) -> None:
         """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
 
@@ -526,13 +556,29 @@ class AutoProxyTask(TaskExecuteBase):
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 return
 
-            await self._push_dispatch_log("未检测到运行中的客户端，正在拉起游戏...")
-            await self.game_manager.open_process(
-                self.game_path,
-                *_split_args(self.script_config.get("Game", "Arguments")),
+            await self._push_dispatch_log("未检测到运行中的客户端，正在拉起启动器...")
+            launcher_path = self._resolve_launcher_path()
+            if launcher_path is None:
+                raise RuntimeError(
+                    "未找到异环启动器路径，请重新选择游戏目录以定位 NTELauncher 启动器"
+                )
+            await self.game_manager.open_process(launcher_path)
+            await self._push_dispatch_log("启动器已拉起，正在等待点击「开始游戏」...")
+            # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
+            # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
+            # 调度回事件循环（与账号切换的 _push_switch_log 同理）。
+            launch_loop = asyncio.get_running_loop()
+
+            def _push_launch_log(line: str) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    self._push_dispatch_log(line), launch_loop
+                )
+
+            await async_start_game_via_launcher(
+                launcher_path, on_log=_push_launch_log
             )
             wait_time = int(self.script_config.get("Game", "WaitTime"))
-            await self._push_dispatch_log(f"正在等待游戏完成启动（{wait_time}s）...")
+            await self._push_dispatch_log(f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）...")
             await asyncio.sleep(wait_time)
             await self._push_dispatch_log("游戏启动完成")
             return
@@ -558,6 +604,46 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(2)
             await self._push_dispatch_log("游戏启动指令已发送")
             return
+
+    async def handle_pre_oknte_error(
+        self, error_message: str, e: Exception | None = None
+    ) -> None:
+        """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 OK-WW）。"""
+
+        if e is None:
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=error_message),
+            )
+        else:
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error", message=f"{error_message}: {e}"
+                ),
+            )
+        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
+        self.cur_user_log.status = error_message
+
+        await self.kill_managed_process(
+            kill_game=self._mas_should_close_game_on_retry()
+        )
+
+        try:
+            await Notify.push_plyer(
+                "OK-NTE 自动代理出现异常！",
+                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                f"{self.cur_user_item.name}的自动代理出现异常",
+                3,
+            )
+        except Exception:
+            pass
 
     async def main_task(self):
         await self.prepare()
@@ -624,6 +710,52 @@ class AutoProxyTask(TaskExecuteBase):
                     else:
                         self.cur_user_item.status = "异常"
                     continue
+
+            # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
+            # 开关在游戏配置区，依赖 Game.Enabled 且需开启「任务前启动游戏」（否则游戏非
+            # MAS 拉起、无窗口可切）；用户未填写手机号时跳过不切换。
+            if (
+                self.script_config.get("Game", "AccountSwitch")
+                and self.script_config.get("Game", "Enabled")
+                and self.script_config.get("Game", "LaunchBeforeTask")
+                and self.game_manager is not None
+            ):
+                account_id = (self.cur_user_config.get("Info", "Id") or "").strip()
+                if not account_id:
+                    await self._push_dispatch_log(
+                        "未配置账号，跳过账号切换"
+                    )
+                else:
+                    try:
+                        await self._push_dispatch_log(
+                            "正在强制切换异环登录账号..."
+                        )
+                        # 账号切换在后台线程内同步执行，on_log 契约是同步回调；
+                        # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
+                        # 调度回事件循环，否则进度不会推送到调度台且产生未等待协程告警。
+                        switch_loop = asyncio.get_running_loop()
+
+                        def _push_switch_log(line: str) -> None:
+                            asyncio.run_coroutine_threadsafe(
+                                self._push_dispatch_log(line), switch_loop
+                            )
+
+                        await async_switch_account(
+                            account_id, on_log=_push_switch_log
+                        )
+                        await self._push_dispatch_log(
+                            f"异环账号切换成功：****{account_id[-4:]}"
+                        )
+                    except Exception as e:
+                        await self.handle_pre_oknte_error("异环账号切换失败", e)
+                        if i + 1 < run_limit:
+                            await self._push_dispatch_log(
+                                f"异环账号切换失败，将在稍后重试 ({i + 1}/{run_limit})"
+                            )
+                            await asyncio.sleep(10)
+                        else:
+                            self.cur_user_item.status = "异常"
+                        continue
 
             await self.set_oknte()
             await self._push_dispatch_log(
@@ -966,9 +1098,20 @@ class AutoProxyTask(TaskExecuteBase):
             if isinstance(self.game_manager, ProcessManager):
                 await self.game_manager.kill()
             if game_type == "Client":
-                gp = self.game_path
-                if gp.is_file():
-                    await System.kill_process(gp)
+                # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
+                # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内
+                for process in psutil.process_iter(["name"]):
+                    try:
+                        if process.info["name"] != _NTE_CLIENT_PROCESS:
+                            continue
+                    except psutil.Error:
+                        continue
+                    try:
+                        await System.kill_process_by_pid(process.pid)
+                    except Exception as e:
+                        logger.opt(exception=True).warning(
+                            f"结束异环游戏进程失败 PID: {process.pid}, {e}"
+                        )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
