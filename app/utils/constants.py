@@ -1260,3 +1260,9 @@ EMULATOR_SPLASH_ADS_PATH_BOOK = {
     "ldplayer": [APPDATA_PATH / "leidian9/cache"],
 }
 """模拟器启动时广告路径"""
+
+CYCLE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+"""循环队列时间字段的持久化格式"""
+
+CYCLE_EMPTY_TIME = "2000-01-01 00:00:00"
+"""循环队列时间字段的空值哨兵，表示「尚未推算」而非某个真实时刻"""

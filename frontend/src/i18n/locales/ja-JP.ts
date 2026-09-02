@@ -2177,6 +2177,12 @@ export default {
     always: 'はい',
     never: 'いいえ',
     dailyFirst: '1 日の初回起動時のみ',
+    cycleType: 'キューの種類',
+    cycleTypeTip:
+      '定時キューは設定時刻にキュー全体を実行し、循環キューは各タスクの周期で実行し続けます',
+    typeTimed: '定時キュー',
+    typeCycle: '循環キュー',
+    cycleLocked: '循環実行中のため、キューの種類とタスクの追加・削除・並び替えは停止するまで変更できません',
     scheduled: '定時実行',
     scheduledTip: '設定した時刻にこのキューを自動実行します',
     yes: 'はい',
@@ -2204,6 +2210,17 @@ export default {
       selectScript: 'スクリプトを選択してください',
       deleteConfirm: 'このタスクを削除しますか？',
     },
+    cycle: {
+      colConfig: '循環設定',
+      modeFixed: '時刻指定',
+      modeInterval: '間隔',
+      minuteUnit: '分',
+      anchorStart: '前回の開始から',
+      anchorFinish: '前回の終了から',
+      nextRun: '次回実行',
+      notScheduled: '未定',
+      runOnce: '今すぐ 1 回実行',
+    },
     time: {
       cardTitle: 'スケジュール一覧',
       add: 'スケジュールを追加',
@@ -2226,6 +2243,7 @@ export default {
     toast: {
       unknownError: '不明なエラー',
       scriptUpdateFailed: 'スクリプトを更新できませんでした: {error}',
+      scheduleUpdateFailed: '循環設定の更新に失敗しました: {error}',
       updateScriptFailed: 'スクリプトを更新できませんでした: {error}',
       addTaskFailed: 'タスクを追加できませんでした: {error}',
       addTaskFailed2: 'タスクを追加できませんでした: {error}',
@@ -2262,6 +2280,12 @@ export default {
     tabName: 'コンソール {n}',
     mode: {
       autoProxy: '自動代行',
+      cycleRun: '循環実行',
+    },
+    cycle: {
+      nextTitle: '次の実行',
+      running: '実行中',
+      due: '実行待ち',
     },
     power: {
       noAction: '何もしない',

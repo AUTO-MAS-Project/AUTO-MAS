@@ -114,6 +114,15 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
     return (current, total) if total > 0 else None
 
 
+def _has_completed_annihilation_week(log: str) -> bool:
+    """判断剿灭日志是否表明本周额度已完成。"""
+
+    progress = _parse_annihilation_weekly_progress(log)
+    return "完成任务: 剿灭作战" in log and (
+        progress is None or progress[0] >= progress[1]
+    )
+
+
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     """判断日志记录中是否已经完成过体力任务。"""
 
@@ -1021,8 +1030,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         if self.mode == "Annihilation":
             progress = _parse_annihilation_weekly_progress(log)
-            completed = progress and progress[0] >= progress[1]
-            completed = completed or "完成任务: 剿灭作战" in log
+            completed = _has_completed_annihilation_week(log)
             if completed:
                 self.task_dict["Fight"] = False
                 self.run_book["Annihilation"] = True

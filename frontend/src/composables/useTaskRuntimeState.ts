@@ -9,6 +9,7 @@ import {
   WS_TASK_INFO_UPDATED,
   type WSTaskCompletedData,
   type WSTaskCreatedData,
+  type WSTaskCyclePreviewData,
   type WSTaskMode,
   type WSTaskScriptIdentityData,
   type WSTaskScriptInfoData,
@@ -29,8 +30,10 @@ export interface TaskRuntimeState {
   scriptId: string | null
   userId: string | null
   stopping: boolean
+  isCycle: boolean
   scripts: WSTaskScriptIdentityData[]
   taskInfo: WSTaskScriptInfoData[]
+  cycleNextList: WSTaskCyclePreviewData[]
   log: string
   phase: 'created' | 'active' | 'completed'
   taskName: string | null
@@ -113,8 +116,10 @@ const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   scriptId: null,
   userId: null,
   stopping: false,
+  isCycle: false,
   scripts: [],
   taskInfo: [],
+  cycleNextList: [],
   log: '',
   phase: 'created',
   taskName: null,
@@ -135,6 +140,7 @@ const ensureTaskSubscriptions = (taskId: string): void => {
         ...(current ?? createUnknownTaskState(taskId)),
         phase: 'active',
         taskInfo: cloneTaskInfo(message.data.task_info),
+        cycleNextList: message.data.cycleNextList ?? [],
       }
       setTaskState(state)
       emitRuntimeEvent({ type: 'info', state })
@@ -151,6 +157,7 @@ const handleTaskCreated = (data: WSTaskCreatedData): void => {
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(data.taskId)),
     mode: data.mode,
+    isCycle: data.mode === 'CycleRun',
     queueId: data.queueId ?? null,
     scriptId: data.scripts[0]?.scriptId ?? null,
     scripts: cloneScripts(data.scripts),
@@ -196,8 +203,10 @@ const stateFromSnapshot = (
   scriptId: item.scriptId,
   userId: item.userId,
   stopping: item.stopping,
+  isCycle: item.isCycle,
   scripts: cloneScripts(item.scripts),
   taskInfo: cloneTaskInfo(item.task_info),
+  cycleNextList: item.cycleNextList ?? [],
   log: item.log,
   phase: 'active',
   result: null,

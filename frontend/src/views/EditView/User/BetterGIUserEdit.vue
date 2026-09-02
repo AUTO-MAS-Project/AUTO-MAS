@@ -692,7 +692,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { BettergiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
+import { BetterGiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useBettergiGuiSession } from '@/composables/useBettergiGuiSession'
@@ -869,7 +869,7 @@ const oneDragonConfigOptions = ref<{ label: string; value: string }[]>([])
 const loadOneDragonConfigs = async () => {
   try {
     const resp =
-      await BettergiService.getBettergiOneDragonConfigsApiApiScriptsBettergiOneDragonConfigsGet(
+      await BetterGiService.getBettergiOneDragonConfigsApiApiScriptsBettergiOneDragonConfigsGet(
         scriptId
       )
     oneDragonConfigOptions.value = (resp.data || [])
@@ -885,7 +885,7 @@ const strategyOptions = ref<{ label: string; value: string }[]>([])
 const loadStrategyOptions = async () => {
   try {
     const resp =
-      await BettergiService.getBettergiStrategiesApiApiScriptsBettergiStrategiesGet(scriptId)
+      await BetterGiService.getBettergiStrategiesApiApiScriptsBettergiStrategiesGet(scriptId)
     strategyOptions.value = (resp.data || [])
       .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
       .map(item => ({ label: item.label, value: item.value }))

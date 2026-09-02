@@ -2,9 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BetterGIConfig_Game } from './BetterGIConfig_Game';
 import type { BetterGIConfig_Info } from './BetterGIConfig_Info';
 import type { BetterGIConfig_Run } from './BetterGIConfig_Run';
-import type { BetterGIConfig_Game } from './BetterGIConfig_Game';
 export type BetterGIConfig = {
     /**
      * 脚本基础信息
@@ -19,3 +19,4 @@ export type BetterGIConfig = {
      */
     Game?: (BetterGIConfig_Game | null);
 };
+
