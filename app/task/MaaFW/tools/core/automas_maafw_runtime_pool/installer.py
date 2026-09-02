@@ -178,6 +178,20 @@ def resolve_package_index_candidates() -> list[str] | None:
     return ordered or None
 
 
+def is_package_index_offline() -> bool:
+    """判断 Runtime 是否要求依赖安装完全离线。
+
+    契约：Runtime 以 ``--offline`` 运行时注入 ``AUTO_MAS_MIRROR_PACKAGE_INDEX=``
+    （键存在、值为空串），表示「不要联网」。必须区分「键不存在」（未受监督或
+    旧版 Runtime，行为不变）与「键存在但为空」（离线）；只有后者返回 ``True``。
+    ``resolve_package_index_candidates()`` 会把空串和「键不存在」一样解析成
+    ``None``，单看它无法分辨这两种情况，所以离线判据单独放在这里。
+    """
+
+    raw = os.environ.get(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV)
+    return raw is not None and not raw.strip()
+
+
 def _resolve_python_mirror_candidates(*, explicit_mirror: str | None) -> list[str] | None:
     """解析 Python 解释器分发源的有序候选列表，供 ``uv python install`` 按序重试。
 
@@ -1084,11 +1098,16 @@ def _install_requirements_with_uv(
 ) -> dict[str, Any] | None:
     """按 ``resolve_package_index_candidates()`` 的顺序重试同一条安装命令。
 
+    Runtime 注入离线标记（见 ``is_package_index_offline()``）时优先级最高：
+    只给 uv 传 ``--offline`` 跑一次，让它只从缓存解析、绝不联网，也不带任何
+    ``--index-url``。此前空串被解析成「没有候选」，随后按不指定索引跑，等于
+    直连 PyPI，与 Runtime 的 ``--offline`` 承诺相悖。
+
     用户已经显式设置 ``UV_INDEX_URL``/``UV_DEFAULT_INDEX`` 时，沿用 uv 自身对
     这两个环境变量的解析，不参与本机制的候选与重试（尊重更明确的显式配置）。
     返回实际生效的索引来源与尝试序号，供调用方写入 ``installer_metadata``；
-    未使用候选列表（未配置任何镜像/单值索引，或命中上面的显式旁路）时返回
-    ``None``。
+    离线时返回 ``{"source": None, "attempt": 1, "offline": True}``；未使用候选
+    列表（未配置任何镜像/单值索引，或命中上面的显式旁路）时返回 ``None``。
     """
 
     env = _uv_install_environment(
@@ -1113,6 +1132,10 @@ def _install_requirements_with_uv(
             *index_args,
             *requirements,
         ]
+
+    if is_package_index_offline():
+        _run(_base_command(["--offline"]), cwd=cwd, env=env)
+        return {"source": None, "attempt": 1, "offline": True}
 
     if any(
         str(os.environ.get(name) or "").strip()
