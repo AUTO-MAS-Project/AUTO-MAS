@@ -214,10 +214,16 @@ class TaskInfo(TaskItem):
             ),
         )
         if self.current_index != -1:
+            log = self.script_list[self.current_index].log
+            # 部分任务模式（MAA/SRC/General/M9A）无上限累积脚本日志，全量 JSON
+            # 序列化超大字符串会在 iterencode 阶段 MemoryError；在共享推送点做
+            # 防御性限长（保留最新日志），一处覆盖所有任务模式。
+            if len(log) > 200_000:
+                log = log[-200_000:]
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
-                data=WSTaskLogUpdatedData(log=self.script_list[self.current_index].log),
+                data=WSTaskLogUpdatedData(log=log),
             )
 
 
