@@ -194,10 +194,7 @@ class EndfieldActivityService:
         self._load_cache()
 
     async def get_overview(self) -> dict[str, Any]:
-        if (
-            time.monotonic() >= self._next_manifest_check
-            and self._refresh_task is None
-        ):
+        if time.monotonic() >= self._next_manifest_check and self._refresh_task is None:
             self._refresh_task = asyncio.create_task(self._refresh_if_needed())
         return self._build_overview()
 
@@ -219,7 +216,9 @@ class EndfieldActivityService:
     async def _refresh(self) -> None:
         timeout = httpx.Timeout(AKEDATA_REQUEST_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            manifest = await self._fetch_json(client, AKEDATA_MANIFEST_URL)
+            manifest = await self._fetch_json(
+                client, f"{AKEDATA_MANIFEST_URL}?t={int(time.time())}"
+            )
             version = self._get_latest_version(manifest)
             version_id = version["id"]
             source_updated_at = str(manifest.get("updatedAt", ""))
