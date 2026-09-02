@@ -19,30 +19,31 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
-import uuid
-import shutil
 import asyncio
-from pathlib import Path
+import re
+import shutil
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
+from app.task.general.tools import execute_script_task
+from app.utils import LogMonitor, ProcessManager, get_logger, is_process_running
+from app.utils.constants import MAAEND_TASKS, UTC4
 from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4, MAAEND_TASKS
-from .tools import login, push_notification, replace_account_switch_task
+
 from .resource_loader import (
     load_maaend_interface_i18n,
     load_maaend_task_i18n,
 )
-from app.task.general.tools import execute_script_task
+from .tools import login, push_notification, replace_account_switch_task
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -70,6 +71,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        self.account_id = str(self.cur_user_config.get("Info", "Id") or "").strip()
         self.check_result = "-"
         self.account_switch_task_name = ""
         self.color_match_failed_message: str | None = None
@@ -87,17 +89,11 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        if (
-            self.script_config.get("Run", "AccountSwitchMethod") == "MAAEND"
-            and account_id
+        if self.account_id and (
+            len(self.account_id) < 4 or not self.account_id[-4:].isdigit()
         ):
-            if len(account_id) < 4 or not account_id[-4:].isdigit():
-                self.cur_user_item.status = "异常"
-                return (
-                    "MAAEND 内置账号切换需要账号末四位为数字，"
-                    "请检查账号ID或改用 MAS 自建账号切换"
-                )
+            self.cur_user_item.status = "异常"
+            return "账号切换需要账号末四位为数字，请检查账号ID"
 
         config_user_id = (
             "Default"
@@ -127,7 +123,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.maaend_set_path = self.maaend_root_path / "config"
         self.maaend_cache_path = self.maaend_root_path / "cache"
-        self.maaend_log_path = self.maaend_root_path / "debug/maa.log"
 
         self.maaend_log_monitor = LogMonitor(
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
@@ -162,7 +157,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         self.task_dict: dict[str, dict[str, bool]] | None = None
-        self.unique_task: dict[str, str] = {}
 
         run_times_limit = self.script_config.get("Run", "RunTimesLimit")
         maaend_update_retry_used = False
@@ -224,12 +218,11 @@ class AutoProxyTask(TaskExecuteBase):
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
 
-            account_id = str(self.cur_user_config.get("Info", "Id")).strip()
             account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
             if account_switch_method == "MAS":
                 try:
-                    if account_id:
-                        await login(account_id, emulator_info)
+                    if self.account_id:
+                        await login(self.account_id, emulator_info)
                     logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
                 except RuntimeError as e:
                     await self.handle_pre_maaend_error(
@@ -241,7 +234,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "「明日方舟：终末地」登录成功"
                 )
             else:
-                if account_id:
+                if self.account_id:
                     logger.info(
                         f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                     )
@@ -264,7 +257,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.maaend_exe_path,
                 "--autostart",
                 "--instance",
-                self.maaend_instance_name,
+                "AUTO-MAS",
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
             )
@@ -483,21 +476,7 @@ class AutoProxyTask(TaskExecuteBase):
                 "MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤"
             )
 
-        maaend_instance = None
-        for instance in instances:
-            if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
-                maaend_instance = instance
-                break
-            if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
-                maaend_instance = instance
-                break
-        if maaend_instance is None:
-            maaend_instance = instances[0]
-        self.maaend_instance_name = (
-            maaend_instance.get("name")
-            or maaend_instance.get("customName")
-            or "AUTO-MAS"
-        )
+        maaend_instance = instances[0]
         if device_info is not None:
             from app.core import MaaFWManager
 
@@ -506,11 +485,10 @@ class AutoProxyTask(TaskExecuteBase):
             }
         maaend_tasks = maaend_instance["tasks"]
 
-        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
         account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
         replace_account_switch_task(
             tasks=maaend_tasks,
-            account_id=(account_id if account_switch_method == "MAAEND" else ""),
+            account_id=(self.account_id if account_switch_method == "MAAEND" else ""),
             controller_type=str(self.script_config.get("Game", "ControllerType")),
             task_id=f"mas{self.cur_user_uid.hex[:4]}",
         )
