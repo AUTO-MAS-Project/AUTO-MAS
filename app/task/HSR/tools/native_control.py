@@ -157,11 +157,24 @@ def get_user_direct_config(user_config: Any, engine: HSREngine) -> str:
     return str(value or "")
 
 
+def _discard_isolated_root(isolated_root: Path | None) -> None:
+    """尽力删除隔离启动目录。
+
+    外部脚本被中止后可能仍占用目录内的文件句柄，删除隔离目录只是收尾动作，
+    失败时把目录留给系统临时目录回收，不应让整个用户任务失败。
+    """
+
+    if isolated_root is not None:
+        shutil.rmtree(isolated_root, ignore_errors=True)
+
+
 class SRADirectControlSession:
-    def __init__(self, executable: Path, config_path: Path, temporary, log) -> None:
+    def __init__(
+        self, executable: Path, config_path: Path, isolated_root: Path, log
+    ) -> None:
         self._executable = executable
         self._config_path = config_path
-        self._temporary = temporary
+        self._isolated_root: Path | None = isolated_root
         self._log = log
         self._process_registry = SRAProcessRegistry()
         self._closed = False
@@ -188,9 +201,8 @@ class SRADirectControlSession:
             return
         await self.cancel()
         await self._process_registry.clear()
-        if self._temporary is not None:
-            self._temporary.cleanup()
-            self._temporary = None
+        _discard_isolated_root(self._isolated_root)
+        self._isolated_root = None
         self._closed = True
 
 
@@ -256,11 +268,11 @@ class SRANativeControlProvider:
         if not isinstance(parsed, dict):
             raise ValueError("SRA 用户快照顶层必须是对象")
         safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", session_id).strip("-") or "user"
-        temporary = tempfile.TemporaryDirectory(prefix=f"automas-sra-{safe_id[:32]}-")
-        config_path = Path(temporary.name) / "config.json"
+        isolated_root = Path(tempfile.mkdtemp(prefix=f"automas-sra-{safe_id[:32]}-"))
+        config_path = isolated_root / "config.json"
         atomic_write(config_path, config_content.encode("utf-8"))
         log("SRA 将原样执行当前用户导入的隔离配置快照；MAS 只负责外部进程生命周期")
-        return SRADirectControlSession(executable, config_path, temporary, log)
+        return SRADirectControlSession(executable, config_path, isolated_root, log)
 
 
 class M7ADirectControlSession:
@@ -269,7 +281,7 @@ class M7ADirectControlSession:
         self._config_content = config_content
         self._session_id = session_id
         self._log = log
-        self._temporary: tempfile.TemporaryDirectory[str] | None = None
+        self._isolated_root: Path | None = None
         self._runner: M7ARunner | None = None
         self._closed = False
 
@@ -281,10 +293,8 @@ class M7ADirectControlSession:
         if not isinstance(config, dict):
             raise ValueError("三月七助手用户快照顶层必须是对象")
         safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", self._session_id).strip("-") or "user"
-        self._temporary = tempfile.TemporaryDirectory(
-            prefix=f"automas-m7a-{safe_id[:32]}-"
-        )
-        isolated_root = Path(self._temporary.name)
+        isolated_root = Path(tempfile.mkdtemp(prefix=f"automas-m7a-{safe_id[:32]}-"))
+        self._isolated_root = isolated_root
         try:
             for source in self._source_root.iterdir():
                 if source.name.casefold() == "config.yaml":
@@ -301,8 +311,8 @@ class M7ADirectControlSession:
                 isolated_root / "config.yaml", self._config_content.encode("utf-8")
             )
         except Exception:
-            self._temporary.cleanup()
-            self._temporary = None
+            self._isolated_root = None
+            _discard_isolated_root(isolated_root)
             raise
         return isolated_root
 
@@ -327,9 +337,8 @@ class M7ADirectControlSession:
         if self._closed:
             return
         await self.cancel()
-        if self._temporary is not None:
-            self._temporary.cleanup()
-            self._temporary = None
+        _discard_isolated_root(self._isolated_root)
+        self._isolated_root = None
         self._closed = True
 
 
