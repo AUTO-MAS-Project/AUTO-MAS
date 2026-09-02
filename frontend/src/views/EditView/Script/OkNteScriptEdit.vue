@@ -90,7 +90,7 @@
             <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.masterSwitchGameManagement')">
@@ -111,7 +111,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.whetherMasLaunchesGame')">
@@ -133,7 +133,10 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+          </a-row>
+
+          <a-row :gutter="24" class="game-control-row">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.whetherMasClosesGame')">
@@ -155,6 +158,28 @@
                 </a-select>
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用">
+                    <span class="form-label">
+                      运行前强制切换账号
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="oknteConfig.Game.AccountSwitch"
+                  size="large"
+                  class="modern-input"
+                  :disabled="!oknteConfig.Game.Enabled || !oknteConfig.Game.LaunchBeforeTask"
+                  @change="handleChange('Game', 'AccountSwitch', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
           </a-row>
 
           <a-row :gutter="24">
@@ -162,17 +187,17 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.gameRootDirectory') }}
+                    {{ t('edit.gameLauncher') }}
                     <span class="label-hint"
                       >选择包含 <strong>Neverness To Everness</strong> 的任意目录，自动定位
-                      HTGame.exe</span
+                      NTEGame.exe 启动器</span
                     >
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="oknteConfig.Game.Path"
-                    :placeholder="t('edit.pickGameRootDirectory')"
+                    :placeholder="t('edit.pickGameLauncherDirectory')"
                     size="large"
                     class="path-input"
                     readonly
@@ -391,6 +416,7 @@ const oknteConfig = reactive<OkNteFormConfig>({
     WaitTime: 60,
     IfForceClose: true,
     CloseOnFinish: true,
+    AccountSwitch: false,
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 120 },
 })
@@ -400,9 +426,11 @@ const rules = {
   path: [{ required: true, message: t('edit.pickOkNtePath'), trigger: 'blur' }],
 }
 
-// 异环游戏路径预设锚点与相对路径
+// 异环游戏路径预设锚点与启动器相对路径（直启 HTGame.exe 会卡界面，必须经启动器）
 const NTE_GAME_ANCHOR = 'Neverness To Everness'
-const NTE_EXE_RELATIVE = 'Client/WindowsNoEditor/HT/Binaries/Win64/HTGame.exe'
+const NTE_LAUNCHER_DIR = 'NTELauncher'
+const NTE_LAUNCHER_EXES = ['NTEGame.exe', 'NTEGlobalGame.exe', 'NTETWGame.exe']
+const NTE_CLIENT_EXE = 'htgame.exe'
 
 const showPathRejectModal = (title: string, content: string) => {
   Modal.error({ title, content, okText: t('edit.gotIt') })
@@ -509,6 +537,26 @@ const loadScript = async () => {
     Object.assign(oknteConfig.Script, config.Script || {})
     Object.assign(oknteConfig.Game, config.Game || {})
     Object.assign(oknteConfig.Run, config.Run || {})
+
+    // 旧配置 Game.Path 存的是 HTGame.exe：展示层自动升级为同安装根下的启动器
+    // （运行时后端也会按同一规则反推，此处仅为回显正确）
+    const gamePath = (oknteConfig.Game.Path || '').replace(/\\/g, '/')
+    if (
+      oknteConfig.Game.Enabled &&
+      gamePath.toLowerCase().endsWith(`/${NTE_CLIENT_EXE}`)
+    ) {
+      const clientIdx = gamePath.toLowerCase().lastIndexOf('/client/')
+      if (clientIdx !== -1) {
+        const installRoot = gamePath.substring(0, clientIdx)
+        for (const exe of NTE_LAUNCHER_EXES) {
+          const candidate = `${installRoot}/${NTE_LAUNCHER_DIR}/${exe}`
+          if (await window.electronAPI.fileExists(candidate)) {
+            oknteConfig.Game.Path = candidate
+            break
+          }
+        }
+      }
+    }
   } catch {
     message.error(t('edit.couldNotLoadScript'))
   } finally {
@@ -550,17 +598,28 @@ const selectGameRootPath = async () => {
     return
   }
 
-  // 截断锚点之后的内容，拼接预设相对路径
+  // 截断锚点之后的内容，拼接启动器候选相对路径（国服/国际/台服）
   const prefix = normalized.substring(0, idx)
-  const candidateExe = prefix + NTE_GAME_ANCHOR + '/' + NTE_EXE_RELATIVE
+  const launcherCandidates = NTE_LAUNCHER_EXES.map(
+    (exe) => `${prefix}${NTE_GAME_ANCHOR}/${NTE_LAUNCHER_DIR}/${exe}`
+  )
 
-  // 校验 exe 是否真实存在
-  if (!(await window.electronAPI.fileExists(candidateExe))) {
-    showPathRejectModal('所选目录无效', '检测到异环目录但未找到 HTGame.exe，请验证游戏完整性。')
+  let candidateLauncher: string | null = null
+  for (const candidate of launcherCandidates) {
+    if (await window.electronAPI.fileExists(candidate)) {
+      candidateLauncher = candidate
+      break
+    }
+  }
+  if (!candidateLauncher) {
+    showPathRejectModal(
+      '所选目录无效',
+      '检测到异环目录但未找到 NTELauncher 启动器（NTEGame.exe），请验证游戏完整性。'
+    )
     return
   }
 
-  oknteConfig.Game.Path = candidateExe
+  oknteConfig.Game.Path = candidateLauncher
   oknteConfig.Game.Type = 'Client'
   isSaving.value = true
   try {

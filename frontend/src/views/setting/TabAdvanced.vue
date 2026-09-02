@@ -7,6 +7,7 @@ import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/e
 
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
+import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 
 const { t } = useI18n()
 
@@ -19,6 +20,7 @@ const exportingLogs = ref(false)
 const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
+const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 
 // Runtime 灰度开关：持久化设置 + 当前生效值与来源（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
@@ -180,32 +182,42 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.advanced.maaEndSection') }}</h3>
+        <h3>{{ t('setting.advanced.issueSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
-          <a-button type="primary" :loading="exportingMaaEndLogs" @click="exportMaaEndIssueReport">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            {{ t('setting.advanced.exportMaaEnd') }}
-          </a-button>
-        </a-col>
-      </a-row>
-    </div>
-
-    <div class="form-section">
-      <div class="section-header">
-        <h3>OK-WW 日志包导出</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-button type="primary" :loading="exportingOkwwLogs" @click="exportOkwwIssueReport">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出 OK-WW 问题包
-          </a-button>
+          <a-space size="large" wrap>
+            <a-button
+              type="primary"
+              :loading="exportingMaaEndLogs"
+              @click="exportMaaEndIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportMaaEnd') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingOkwwLogs"
+              @click="exportOkwwIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportOkww') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingOkNteLogs"
+              @click="exportOkNteIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportOkNte') }}
+            </a-button>
+          </a-space>
         </a-col>
       </a-row>
     </div>

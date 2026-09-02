@@ -980,7 +980,7 @@ export default {
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
     importedFromCurrentSra: '現在の SRA / 三月なのかアシスタントの設定からインポートしました',
     scriptLevelMaaendConfiguration: 'スクリプト単位の MaaEnd 設定を開始しました',
-    gamePathMatchedHtgame: 'ゲームのパスを HTGame.exe に自動で合わせました',
+    gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
     turnThisOffWhen:
       'スクリプト直接制御でクラウドゲームを使う場合は、このスイッチをオフにすることをおすすめします',
@@ -1275,6 +1275,8 @@ export default {
     pickGameExecutable: 'ゲームの実行ファイルを選択してください',
     pickGameRootDirectory:
       'ゲームのルートフォルダを選択してください（HTGame.exe は自動で照合されます）',
+    pickGameLauncherDirectory:
+      'ゲームのルートフォルダを選択してください（NTEGame.exe は自動で照合されます）',
     pickGameExecutable2: 'ゲームの実行ファイルを選択してください',
     pickScriptSMain: 'スクリプトのメインプログラムを選択してください',
     pickScriptRootDirectory2: 'スクリプトのルートフォルダを選択してください',
@@ -2213,6 +2215,12 @@ export default {
     always: 'はい',
     never: 'いいえ',
     dailyFirst: '1 日の初回起動時のみ',
+    cycleType: 'キューの種類',
+    cycleTypeTip:
+      '定時キューは設定時刻にキュー全体を実行し、循環キューは各タスクの周期で実行し続けます',
+    typeTimed: '定時キュー',
+    typeCycle: '循環キュー',
+    cycleLocked: '循環実行中のため、キューの種類とタスクの追加・削除・並び替えは停止するまで変更できません',
     scheduled: '定時実行',
     scheduledTip: '設定した時刻にこのキューを自動実行します',
     yes: 'はい',
@@ -2240,6 +2248,17 @@ export default {
       selectScript: 'スクリプトを選択してください',
       deleteConfirm: 'このタスクを削除しますか？',
     },
+    cycle: {
+      colConfig: '循環設定',
+      modeFixed: '時刻指定',
+      modeInterval: '間隔',
+      minuteUnit: '分',
+      anchorStart: '前回の開始から',
+      anchorFinish: '前回の終了から',
+      nextRun: '次回実行',
+      notScheduled: '未定',
+      runOnce: '今すぐ 1 回実行',
+    },
     time: {
       cardTitle: 'スケジュール一覧',
       add: 'スケジュールを追加',
@@ -2262,6 +2281,7 @@ export default {
     toast: {
       unknownError: '不明なエラー',
       scriptUpdateFailed: 'スクリプトを更新できませんでした: {error}',
+      scheduleUpdateFailed: '循環設定の更新に失敗しました: {error}',
       updateScriptFailed: 'スクリプトを更新できませんでした: {error}',
       addTaskFailed: 'タスクを追加できませんでした: {error}',
       addTaskFailed2: 'タスクを追加できませんでした: {error}',
@@ -2298,6 +2318,12 @@ export default {
     tabName: 'コンソール {n}',
     mode: {
       autoProxy: '自動代行',
+      cycleRun: '循環実行',
+    },
+    cycle: {
+      nextTitle: '次の実行',
+      running: '実行中',
+      due: '実行待ち',
     },
     power: {
       noAction: '何もしない',
@@ -2730,8 +2756,10 @@ export default {
         'MAS が復旧できない問題に遭遇する前に、このバックアップを書き出しておいてください。保存しておけば安心して再インストールでき、重要なデータが失われることはありません。',
       logSection: 'MAS 本体のログ書き出し',
       exportLog: 'ログのアーカイブを書き出す',
-      maaEndSection: 'MaaEnd のログパッケージ',
       exportMaaEnd: 'MaaEnd の問題報告パッケージを書き出す',
+      issueSection: '専用の問題報告パッケージ',
+      exportOkww: 'OK-WW の問題報告パッケージを書き出す',
+      exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',
       devSection: '開発者向けオプション',
       openDevTools: '開発者ツールを開く',
       runtimeLaunchMode: 'バックエンドの起動方式',

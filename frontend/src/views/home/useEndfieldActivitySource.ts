@@ -96,7 +96,7 @@ export const useEndfieldActivitySource = () => {
     const controller = new AbortController()
     const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
     try {
-      const manifest = (await fetchJson(AKEDATA_MANIFEST_URL, controller.signal)) as AkedataManifest
+      const manifest = (await fetchJson(`${AKEDATA_MANIFEST_URL}?t=${Date.now()}`, controller.signal)) as AkedataManifest
       const latest = manifest.latest
       const version = (manifest.versions ?? []).find(item => item.id === latest)
       if (!version) {

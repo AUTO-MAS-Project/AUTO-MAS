@@ -282,6 +282,12 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportOkNteIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   exportDataBackup: () => Promise<{
     success: boolean
     message?: string
