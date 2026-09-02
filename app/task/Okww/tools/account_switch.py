@@ -508,12 +508,18 @@ def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
             round(0.63 * _FRAME_HEIGHT),
             after_sleep=3,
         )
-    _wait_ocr_text(
+    if _wait_ocr_text(
         hwnd,
         _LOGIN_PAGE_TEXTS,
         roi=_LOGIN_ROI,
         timeout=60,
-    )
+    ) is None:
+        # 不能在等待超时后假报「已返回登录界面」：盲点可能误触登录进入游戏，
+        # 此时画面无掩码账号，继续选号必然失败且更难排查，必须显式失败留证。
+        raise RuntimeError(
+            "返回登录流程结束但未识别到登录界面（60s 未出现「其他登录方式」），"
+            "可能误入了游戏内画面，请人工确认后重试"
+        )
     on_log("已返回登录界面")
 
 
