@@ -388,6 +388,8 @@ export class InitializationService {
    * development 模式：跳过全部安装步骤，直接起后端。
    *
    * 开发检出自带 `.venv`，Runtime 的 development 模式只监督这份源码，既不创建也不更新它。
+   * 唯一要准备的是 Runtime 自己的 uv（`backend supervise` 不下载它），这一步由
+   * `backendService` 在 supervise 之前以 `environment ensure` 完成，不占用界面上的段。
    */
   private async initializeViaDevelopmentRuntime(
     onProgress?: InitializationProgressCallback,

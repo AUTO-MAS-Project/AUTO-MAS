@@ -14,6 +14,7 @@ import { isDevelopmentEnvironment } from './environmentService'
 import { resolveHttpPort } from './instanceConfig'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
+  RuntimeClient,
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeSuperviseHandle,
@@ -291,10 +292,16 @@ export class BackendService {
    * 经 `auto-mas-runtime.exe backend supervise` 启动后端。
    *
    * 与旧链路的三点区别：
-   * 1. 不注入 `AUTO_MAS_DEV` / `AUTO_MAS_HTTP_PORT` / `AUTO_MAS_ENV`：受监督后端的端口与身份
-   *    由 Runtime 注入的 `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架；
+   * 1. 不注入 `AUTO_MAS_DEV` / `AUTO_MAS_HTTP_PORT`：受监督后端的端口与身份由 Runtime 注入的
+   *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV=development`
+   *    与遥测开关一样由 `createRuntimeClient` 按启动模式统一注入（见 runtimeEnv.ts），只影响
+   *    后端的遥测判定；
    * 2. 就绪以 `state:running` 事件为准，而不是解析 stdout 里的 `Uvicorn running`；
    * 3. 后端地址取事件里的 `details.baseUrl`，不按 `resolveHttpPort()` 自行拼装。
+   *
+   * `development` 模式在 supervise 之前先跑一次 `environment ensure`：`backend supervise` 本身
+   * 不下载 uv，Runtime 根目录没种过 uv 时会直接以 `UV_EXEC_FAILED` 失败；`managed` 模式的
+   * `bootstrap` 已包含这一步，不重复。
    */
   private async startBackendViaRuntime(
     config: RuntimeSupervisedLaunchConfig,
@@ -322,8 +329,22 @@ export class BackendService {
 
     logger.info(
       `经 Runtime 启动后端 - 模式: ${config.mode}, Runtime: ${runtimePath}, ` +
-        `应用根目录: ${config.appRoot}${config.repo ? `, 源码目录: ${config.repo}` : ''}`
+        `Runtime 根目录: ${config.appRoot}${config.repo ? `, 源码目录: ${config.repo}` : ''}`
     )
+
+    // 遥测开关（AUTO_MAS_TELEMETRY）与开发标记（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
+    // 见 runtimeEnv.ts；配置从用户数据根 dataRoot 读，development 模式下它不是 --app-root。
+    const client = createRuntimeClient({
+      runtimePath,
+      appRoot: config.appRoot,
+      dataRoot: config.dataRoot,
+      launchMode: config.mode,
+    })
+
+    if (config.mode === 'development') {
+      const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
+      if (failure) return failure
+    }
 
     // 后端 stdout / stderr 由 Runtime 逐行包装成 log 事件转发，这里按流分开累积，
     // 失败时组装成现有失败界面直接展示的整块文本。
@@ -334,8 +355,6 @@ export class BackendService {
       resolveReady = baseUrl => resolve({ baseUrl })
     })
 
-    // 遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient 统一注入，见 runtimeEnv.ts。
-    const client = createRuntimeClient({ runtimePath, appRoot: config.appRoot })
     let handle: RuntimeSuperviseHandle
     try {
       handle = await client.supervise({
@@ -399,6 +418,58 @@ export class BackendService {
     // 就绪前拿到终态或调用侧异常：后端没起来，按失败展示。
     const reason = 'result' in outcome ? outcome.result : outcome.error
     return this.buildRuntimeStartFailure(reason, stdoutLines, stderrLines)
+  }
+
+  /**
+   * `development` 模式 supervise 之前的准备：创建仓外的 Runtime 根目录并种好 uv。
+   *
+   * Runtime 要求 `--app-root` 已存在，且 `backend supervise` 不下载 uv，所以先跑一次
+   * `environment ensure`（幂等：uv 已在时只做校验，很快返回；首次会下载，实测约一分钟）。
+   * 进度只记日志——development 模式在初始化界面上没有对应的段。失败时按与 supervise 失败
+   * 同形的结果返回，界面据 `code` / `remediation` 决定重试或修复。
+   *
+   * 成功返回 null，失败返回可直接交给界面的启动失败结果。
+   */
+  private async ensureDevelopmentRuntimeEnvironment(
+    client: RuntimeClient,
+    config: RuntimeSupervisedLaunchConfig
+  ): Promise<BackendStartResult | null> {
+    try {
+      fs.mkdirSync(config.appRoot, { recursive: true })
+    } catch (error) {
+      const message = `无法创建 Runtime 根目录 ${config.appRoot}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+      logger.error(message)
+      return { success: false, error: message }
+    }
+
+    logger.info('development 模式：supervise 之前先经 environment ensure 准备 uv')
+    const stdoutLines: string[] = []
+    const stderrLines: string[] = []
+    let outcome: RuntimeRunResult
+    try {
+      outcome = await client.run(['environment', 'ensure'], {
+        onProgress: event => logger.info(`Runtime ${event.stage}: ${event.message}`),
+        onState: event => logger.info(`Runtime ${event.stage}: ${event.message}`),
+        onLog: event => {
+          if (event.stream === 'stderr') {
+            stderrLines.push(event.message)
+            return
+          }
+          stdoutLines.push(event.message)
+        },
+      })
+    } catch (error) {
+      return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+    }
+
+    if (!outcome.success) {
+      return this.buildRuntimeStartFailure(outcome, stdoutLines, stderrLines)
+    }
+
+    logger.info(`uv 已就绪，开始 supervise（environment ensure 用时 ${outcome.durationMs}ms）`)
+    return null
   }
 
   /** 记下监督句柄与后端地址，并在 Runtime 结束时清理状态。 */

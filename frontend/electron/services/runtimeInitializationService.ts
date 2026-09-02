@@ -15,9 +15,9 @@ import { app } from 'electron'
 import { getLogger } from './logger'
 import { MirrorConfig, MirrorService } from './mirrorService'
 import {
+  CreateRuntimeClientOptions,
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClient,
-  RuntimeClientOptions,
   RuntimeMirrorSelection,
   RuntimeRemediation,
   RuntimeRunControl,
@@ -380,7 +380,7 @@ export function readRuntimeLogPath(details: Record<string, unknown>): string | u
 }
 
 /** 可注入的客户端工厂，便于单元测试替换掉真实子进程。 */
-export type RuntimeClientFactory = (options: RuntimeClientOptions) => RuntimeClient
+export type RuntimeClientFactory = (options: CreateRuntimeClientOptions) => RuntimeClient
 
 /**
  * 单步重试的处置强度。
@@ -570,7 +570,12 @@ export class RuntimeInitializationService {
     if (!runtimePath) return undefined
 
     try {
-      const client = this.createClient({ runtimePath, appRoot: this.options.launchConfig.appRoot })
+      const client = this.createClient({
+        runtimePath,
+        appRoot: this.options.launchConfig.appRoot,
+        dataRoot: this.options.launchConfig.dataRoot,
+        launchMode: this.options.launchConfig.mode,
+      })
       const outcome = await client.run(['doctor'])
       if (!outcome.success) {
         logger.warn(`Runtime doctor 报告失败: ${outcome.code} ${outcome.result.message}`)
@@ -614,6 +619,8 @@ export class RuntimeInitializationService {
     const client = this.createClient({
       runtimePath,
       appRoot: this.options.launchConfig.appRoot,
+      dataRoot: this.options.launchConfig.dataRoot,
+      launchMode: this.options.launchConfig.mode,
       mirrors: mirror ? [mirror] : undefined,
     })
 

@@ -74,10 +74,19 @@ export interface RuntimeSupervisedLaunchConfig {
   mode: Exclude<RuntimeLaunchMode, 'off'>
   /** 找不到可执行文件时为 null，由调用方按 `RUNTIME_NOT_FOUND` 处理。 */
   runtimePath: string | null
-  /** 传给 `--app-root`。 */
+  /**
+   * 传给 `--app-root` 的 Runtime 根目录：Runtime 在它下面维护 `runtime/`、`runtime-state/`、
+   * `logs/runtime/`。`managed` 模式就是安装根（与 `dataRoot` 相同）；`development` 模式是仓外
+   * 的独立目录（见 `resolveDevelopmentRuntimeRoot`），**不是**用户数据根，读配置不能用它。
+   */
   appRoot: string
-  /** `development` 模式传给 `--repo`；`managed` 模式不传。 */
+  /** `development` 模式传给 `--repo`（源码根）；`managed` 模式不传。 */
   repo?: string
+  /**
+   * 用户数据根，即传入 `resolveRuntimeLaunchConfig` 的 `getAppRoot()`：`config/Config.json`、
+   * `config/frontend_config.json` 等都在它下面。凡是读用户配置的地方一律用它，不用 `appRoot`。
+   */
+  dataRoot: string
 }
 
 /** 一次启动所需的全部定位信息，按 `mode` 判别。 */
@@ -206,10 +215,38 @@ export function resolveRuntimeExecutable(): string | null {
   return null
 }
 
+/** `development` 模式下 Runtime 根目录在 userData 里的子目录名。 */
+export const RUNTIME_DEVELOPMENT_ROOT_DIRNAME = 'auto-mas-runtime'
+
+/**
+ * `development` 模式的 Runtime 根目录（`--app-root`）。
+ *
+ * Runtime 明确拒绝根目录位于开发源码目录内（`INVALID_ARGUMENT`，
+ * `reason=runtime_root_inside_development_repo`），而 Electron 开发态的 `getAppRoot()` 恰好就是
+ * 源码仓根；源码仓也不该被 Runtime 的 `runtime/`、`runtime-state/`、`logs/runtime/` 污染。
+ * 所以 Runtime 根目录放到仓外：
+ * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 已由 `applyInstanceIdentity()`
+ *   与正式版分开（`<appData>/<name>-dev`），两版各自一份 Runtime 布局，互不干扰；
+ * - 非 Electron 环境（单元测试、脚本）：源码根的同级目录 `<父目录>/<源码根目录名>-runtime`，
+ *   与源码根一一对应且可预测，不依赖任何全局状态。
+ *
+ * 这里只算路径，不创建目录：Runtime 要求 `--app-root` 已存在，由真正要起 Runtime 的调用方
+ * （`backendService`）在首次使用前创建。
+ */
+export function resolveDevelopmentRuntimeRoot(dataRoot: string): string {
+  if (typeof app?.getPath === 'function') {
+    return path.join(app.getPath('userData'), RUNTIME_DEVELOPMENT_ROOT_DIRNAME)
+  }
+  const sourceRoot = path.resolve(dataRoot)
+  return path.join(path.dirname(sourceRoot), `${path.basename(sourceRoot)}-runtime`)
+}
+
 /**
  * 汇总本次启动的模式与路径。
  *
- * `development` 的 `--repo` 就是当前 appRoot：开发者跑的就是这份源码检出。
+ * `appRoot` 参数是用户数据根（`getAppRoot()`）。`managed` 模式下它同时就是 Runtime 根目录；
+ * `development` 模式下它是开发者跑的这份源码检出，作为 `--repo` 传给 Runtime，而 Runtime 根目录
+ * 另取仓外位置（见 `resolveDevelopmentRuntimeRoot`）。
  */
 export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig {
   const mode = resolveRuntimeLaunchMode(appRoot)
@@ -217,10 +254,21 @@ export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig
     return { mode, runtimePath: null, appRoot }
   }
 
+  if (mode === 'development') {
+    return {
+      mode,
+      runtimePath: resolveRuntimeExecutable(),
+      appRoot: resolveDevelopmentRuntimeRoot(appRoot),
+      repo: appRoot,
+      dataRoot: appRoot,
+    }
+  }
+
   return {
     mode,
     runtimePath: resolveRuntimeExecutable(),
     appRoot,
-    repo: mode === 'development' ? appRoot : undefined,
+    repo: undefined,
+    dataRoot: appRoot,
   }
 }

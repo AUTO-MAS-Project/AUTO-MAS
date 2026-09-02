@@ -1,7 +1,8 @@
 import { spawn } from 'child_process'
 import { EventEmitter } from 'node:events'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -103,15 +104,20 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function mockSpawn(): FakeChild {
-  const child = new FakeChild()
-  spawnMock.mockReturnValue(child as never)
-  return child
+/** 每次 spawn 都给一个新的假子进程：development 模式一次启动会先后 spawn 两个 Runtime。 */
+function mockSpawn(): void {
+  spawnMock.mockImplementation(() => new FakeChild() as never)
 }
 
 // ==================== 夹具与桩 ====================
 
-const APP_ROOT = 'D:\\AUTO-MAS'
+/**
+ * 用户数据根（传给 BackendService 的 appRoot）。用真实临时目录而不是常量：development 模式
+ * 会在 supervise 前创建仓外的 Runtime 根目录，常量路径会把目录建到真实磁盘上。
+ */
+let appRoot: string
+/** development 模式的 Runtime 根目录：非 Electron 环境下是 appRoot 同级的 `<目录名>-runtime`。 */
+let runtimeRoot: string
 // Runtime 与 python 可执行文件的存在性都用 fs 判断，借用一定存在的 node 自身路径。
 const EXISTING_EXE = process.execPath
 const LOCAL_ENDPOINT = 'http://127.0.0.1:36164'
@@ -122,7 +128,7 @@ const mirrorServiceStub = {
 }
 
 function createService(): BackendService {
-  return new BackendService(APP_ROOT, mirrorServiceStub as never)
+  return new BackendService(appRoot, mirrorServiceStub as never)
 }
 
 const operationId = '01M1F6M33JFZZ7Y85BE5S849ZN'
@@ -170,27 +176,42 @@ function logLine(stream: 'stdout' | 'stderr', message: string, sequence: number)
   return line({ ...base, type: 'log', sequence, source: 'backend', stream, message })
 }
 
-/** 等 Runtime 或 python 被 spawn 出来，再往假子进程里喂数据。 */
-async function waitForSpawn(): Promise<FakeChild> {
-  await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled())
-  return spawnMock.mock.results[0].value as FakeChild
+/** 等第 index 次 spawn（Runtime 或 python）发生，再往那个假子进程里喂数据。 */
+async function waitForSpawn(index = 0): Promise<FakeChild> {
+  await vi.waitFor(() => expect(spawnMock.mock.calls.length).toBeGreaterThan(index))
+  return spawnMock.mock.results[index].value as FakeChild
 }
 
-function spawnedArgs(): string[] {
-  return spawnMock.mock.calls[0][1] as string[]
+function spawnedArgs(index = 0): string[] {
+  return spawnMock.mock.calls[index][1] as string[]
 }
 
-function spawnedEnv(): NodeJS.ProcessEnv {
-  return (spawnMock.mock.calls[0][2] as { env: NodeJS.ProcessEnv }).env
+function spawnedEnv(index = 0): NodeJS.ProcessEnv {
+  return (spawnMock.mock.calls[index][2] as { env: NodeJS.ProcessEnv }).env
+}
+
+/**
+ * development 模式的第一次 spawn 是 `environment ensure`：用真机夹具让它成功结束，
+ * 再返回随后 spawn 出来的 `backend supervise` 子进程。
+ */
+async function passEnvironmentEnsure(): Promise<FakeChild> {
+  const ensure = await waitForSpawn(0)
+  ensure.stdout.feed(fixtureLines('environment-ensure.ndjson').join(''))
+  ensure.close(0)
+  return waitForSpawn(1)
 }
 
 const fetchMock = vi.fn()
 
 beforeEach(() => {
+  appRoot = mkdtempSync(join(tmpdir(), 'auto-mas-backend-'))
+  runtimeRoot = join(dirname(appRoot), `${basename(appRoot)}-runtime`)
   spawnMock.mockReset()
   killAllMock.mockClear()
   resolveHttpPortMock.mockClear()
   fetchMock.mockReset()
+  // 宿主环境若带着这个变量，会经 process.env 原样继承，干扰对「不设」的断言。
+  delete process.env.AUTO_MAS_ENV
   // 旧链路启动前会探测是否已有后端：默认不可达。
   fetchMock.mockImplementation(async (url: unknown) => {
     if (String(url).includes('/api/core/health')) {
@@ -207,6 +228,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
   delete process.env[RUNTIME_MODE_ENV]
   delete process.env[RUNTIME_EXE_ENV]
+  rmSync(appRoot, { recursive: true, force: true })
+  rmSync(runtimeRoot, { recursive: true, force: true })
 })
 
 // ==================== 旧链路 ====================
@@ -251,15 +274,30 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pending = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine + runningStateLine)
     const result = await pending
 
     expect(result).toEqual({ success: true })
+    expect(spawnMock).toHaveBeenCalledTimes(2)
     expect(spawnMock.mock.calls[0][0]).toBe(EXISTING_EXE)
-    expect(spawnedArgs()).toEqual([
+    expect(spawnMock.mock.calls[1][0]).toBe(EXISTING_EXE)
+    // 第一步先在仓外的 Runtime 根目录种 uv：backend supervise 自己不下载 uv。
+    expect(spawnedArgs(0)).toEqual([
       '--app-root',
-      APP_ROOT,
+      runtimeRoot,
+      '--output',
+      'ndjson',
+      '--protocol',
+      '1',
+      'environment',
+      'ensure',
+    ])
+    expect(existsSync(runtimeRoot)).toBe(true)
+    // 第二步 supervise：--app-root 仍是仓外的 Runtime 根，--repo 才是源码根（用户数据根）。
+    expect(spawnedArgs(1)).toEqual([
+      '--app-root',
+      runtimeRoot,
       '--output',
       'ndjson',
       '--protocol',
@@ -269,7 +307,7 @@ describe('development 模式', () => {
       '--mode',
       'development',
       '--repo',
-      APP_ROOT,
+      appRoot,
     ])
 
     // WS 根地址由 baseUrl 派生，不按 resolveHttpPort 另算。
@@ -280,11 +318,14 @@ describe('development 模式', () => {
     expect(service.getStatus()).toMatchObject({ isRunning: true, pid: 4242 })
     expect(service.isRuntimeSupervised()).toBe(true)
 
-    // Runtime 原样继承宿主环境，Electron 不再注入这三个变量。
+    // 端口与身份归 Runtime 注入，Electron 不再注入这两个变量；开发标记则两次 spawn 都带上，
+    // 让受监督的开发版后端仍按开发环境关闭遥测上报。
     expect(resolveHttpPortMock).not.toHaveBeenCalled()
-    expect(spawnedEnv().AUTO_MAS_HTTP_PORT).toBeUndefined()
-    expect(spawnedEnv().AUTO_MAS_DEV).toBeUndefined()
-    expect(spawnedEnv().AUTO_MAS_ENV).toBeUndefined()
+    for (const index of [0, 1]) {
+      expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBeUndefined()
+      expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
+      expect(spawnedEnv(index).AUTO_MAS_ENV).toBe('development')
+    }
 
     child.stdout.feed(stoppedResultLine)
     child.close(0)
@@ -295,7 +336,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pending = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
 
     // 真实夹具：--repo 指向不存在的目录，Runtime 在 backend.spawn 阶段直接失败。
     const [fixtureHello, ...fixtureRest] = fixtureLines('supervise-dev-repo-missing.ndjson')
@@ -324,7 +365,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pendingStart = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine + runningStateLine)
     await pendingStart
 
@@ -353,7 +394,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pending = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine)
     child.stdout.feed(logLine('stdout', 'AUTO-MAS backend starting', 2))
     child.stderr.feed('auto-mas-runtime: 后端进程树清理失败\n')
@@ -375,7 +416,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pending = service.startBackend({ timeout: 20 })
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine)
 
     // 超时后本模块只发 shutdown，不 kill；这里模拟 Runtime 响应关闭并给出终态。
@@ -407,12 +448,60 @@ describe('development 模式', () => {
     expect(killAllMock).not.toHaveBeenCalled()
   })
 
+  it('environment ensure 失败时不再 supervise，按它的结果码报告失败', async () => {
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const ensure = await waitForSpawn(0)
+    ensure.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'environment ensure',
+        capabilities: ['stdin.cancel', 'state.v1'],
+      })
+    )
+    ensure.stderr.feed('auto-mas-runtime: 下载 uv 失败\n')
+    ensure.stdout.feed(
+      line({
+        ...base,
+        type: 'result',
+        sequence: 2,
+        success: false,
+        code: 'UV_DOWNLOAD_FAILED',
+        stage: 'uv.download',
+        status: 'failed',
+        message: '下载 uv 失败',
+        retryable: true,
+        remediation: ['retry', 'switch-mirror'],
+        details: {},
+      })
+    )
+    ensure.close(50)
+
+    const result = await pending
+
+    expect(result.success).toBe(false)
+    expect(result.code).toBe('UV_DOWNLOAD_FAILED')
+    expect(result.retryable).toBe(true)
+    expect(result.remediation).toEqual(['retry', 'switch-mirror'])
+    expect(result.error).toBe('下载 uv 失败')
+    expect(result.logs).toBe('[stderr]\nauto-mas-runtime: 下载 uv 失败')
+    // uv 没就绪就不该起 supervise，也不该有任何旧链路清理。
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(service.getRuntimeApiEndpoints()).toBeNull()
+    expect(killAllMock).not.toHaveBeenCalled()
+  })
+
   it('就绪只认 backend.run running 且带 baseUrl，其他阶段的 running 不算', async () => {
     const service = createService()
     mockSpawn()
 
     const pending = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine)
     // 同名 status 但阶段不对，或阶段对了却没有 baseUrl，都不能让启动成功。
     child.stdout.feed(
@@ -454,7 +543,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pending = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine)
     for (let i = 1; i <= 250; i += 1) {
       child.stdout.feed(logLine('stdout', `out ${i}`, 1 + i))
@@ -480,7 +569,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pendingStart = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine + runningStateLine)
     await pendingStart
 
@@ -501,7 +590,7 @@ describe('development 模式', () => {
       mockSpawn()
 
       const pendingStart = service.startBackend()
-      const child = await waitForSpawn()
+      const child = await passEnvironmentEnsure()
       child.stdout.feed(helloLine + runningStateLine)
       await pendingStart
 
@@ -525,7 +614,7 @@ describe('development 模式', () => {
     mockSpawn()
 
     const pendingStart = service.startBackend()
-    const child = await waitForSpawn()
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(
       line({
         ...base,
@@ -564,19 +653,24 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
-  it('不传 --repo，其余流程与 development 一致', async () => {
+  it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
     const service = createService()
     mockSpawn()
 
     const pending = service.startBackend()
+    // managed 的 bootstrap 已包含 uv 准备，第一次 spawn 直接就是 supervise。
     const child = await waitForSpawn()
     child.stdout.feed(helloLine + runningStateLine)
 
     expect(await pending).toEqual({ success: true })
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(spawnedArgs().slice(0, 2)).toEqual(['--app-root', appRoot])
     expect(spawnedArgs().slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
     expect(spawnedArgs()).not.toContain('--repo')
+    expect(spawnedEnv().AUTO_MAS_ENV).toBeUndefined()
+    expect(existsSync(runtimeRoot)).toBe(false)
 
     child.stdout.feed(stoppedResultLine)
     child.close(0)

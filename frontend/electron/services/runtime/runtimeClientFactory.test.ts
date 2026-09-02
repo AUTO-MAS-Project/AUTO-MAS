@@ -87,6 +87,8 @@ function writeBackendConfig(value: unknown): void {
 beforeEach(() => {
   spawnMock.mockReset()
   spawnMock.mockReturnValue(new FakeChild() as never)
+  // 宿主环境若带着这个变量，会经 process.env 原样继承，干扰下面对「不设」的断言。
+  delete process.env.AUTO_MAS_ENV
   appRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-mas-runtime-factory-'))
 })
 
@@ -135,5 +137,40 @@ describe('createRuntimeClient', () => {
     feedHello()
 
     expect(spawnedEnv().AUTO_MAS_TELEMETRY).toBeUndefined()
+  })
+
+  it('遥测开关从 dataRoot 读，而不是从 --app-root 读', () => {
+    // development 模式：--app-root 是仓外的 Runtime 根目录，Config.json 在源码根（dataRoot）。
+    writeBackendConfig({ Function: { IfEnableTelemetry: false } })
+    const runtimeRoot = path.join(appRoot, 'runtime-root-without-config')
+    fs.mkdirSync(runtimeRoot, { recursive: true })
+
+    void createRuntimeClient({ runtimePath: RUNTIME_PATH, appRoot: runtimeRoot, dataRoot: appRoot })
+      .run(['doctor'])
+      .catch(() => undefined)
+    feedHello()
+
+    expect(spawnedEnv().AUTO_MAS_TELEMETRY).toBe('disabled')
+    // --app-root 仍是 Runtime 根目录，dataRoot 不会漏进参数。
+    expect(spawnMock.mock.calls[0][1]).toEqual(expect.arrayContaining(['--app-root', runtimeRoot]))
+    expect(spawnMock.mock.calls[0][1]).not.toContain(appRoot)
+  })
+
+  it('development 模式给 Runtime 子进程带上 AUTO_MAS_ENV=development', () => {
+    void createRuntimeClient({ runtimePath: RUNTIME_PATH, appRoot, launchMode: 'development' })
+      .run(['doctor'])
+      .catch(() => undefined)
+    feedHello()
+
+    expect(spawnedEnv().AUTO_MAS_ENV).toBe('development')
+  })
+
+  it('managed 模式不设 AUTO_MAS_ENV', () => {
+    void createRuntimeClient({ runtimePath: RUNTIME_PATH, appRoot, launchMode: 'managed' })
+      .run(['doctor'])
+      .catch(() => undefined)
+    feedHello()
+
+    expect(spawnedEnv().AUTO_MAS_ENV).toBeUndefined()
   })
 })
