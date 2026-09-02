@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  abortRuntimeUpdateForShutdown,
   cancelBackendUpdate,
   describeRetryAction,
   normalizeRuntimeUpdateVersion,
+  requiresSupport,
   resetRuntimeUpdateSession,
   resolveRetryActions,
   retryBackendUpdate,
@@ -72,7 +74,9 @@ function failResult(options: {
   message: string
   remediation: string[]
   logPath?: string
+  retryable?: boolean
 }): RuntimeEvent[] {
+  const retryable = options.retryable ?? true
   return [
     {
       ...base,
@@ -81,7 +85,7 @@ function failResult(options: {
       code: options.code,
       stage: options.stage,
       message: options.message,
-      retryable: true,
+      retryable,
       remediation: options.remediation,
       details: {},
     } as unknown as RuntimeEvent,
@@ -95,7 +99,7 @@ function failResult(options: {
       code: options.code,
       status: 'failed',
       message: options.message,
-      retryable: true,
+      retryable,
       remediation: options.remediation,
       details: options.logPath ? { logPath: options.logPath } : {},
     } as unknown as RuntimeEvent,
@@ -128,6 +132,10 @@ function logEvent(stream: 'stdout' | 'stderr', message: string): RuntimeEvent {
 class FakeRuntimeClient {
   static scripts: RuntimeEvent[][] = []
   static index = 0
+  /** 设了闸门时，命令在回放 result 前一直挂着，模拟长跑中的 bootstrap。 */
+  static gate: Promise<void> | null = null
+  /** 收到 stdin cancel 时的回调；真实 Runtime 会据此以 OPERATION_CANCELLED 收尾。 */
+  static onCancel: (() => void) | null = null
 
   constructor(readonly options: { runtimePath: string; appRoot: string }) {}
 
@@ -144,10 +152,13 @@ class FakeRuntimeClient {
       sendControl: () => 'CMD',
       cancel: () => {
         callLog.push('stdin:cancel')
+        FakeRuntimeClient.onCancel?.()
         return 'CMD'
       },
       kill: () => undefined,
     })
+
+    if (FakeRuntimeClient.gate) await FakeRuntimeClient.gate
 
     let result: RuntimeEvent | undefined
     const errors: RuntimeEvent[] = []
@@ -194,7 +205,7 @@ class FakeRuntimeClient {
 
 interface FakeBackendOptions {
   stop?: { success: boolean; error?: string }
-  start?: { success: boolean; error?: string; logs?: string; code?: string }
+  start?: { success: boolean; error?: string; logs?: string; code?: string; retryable?: boolean }
   onStop?: () => void
 }
 
@@ -244,8 +255,24 @@ beforeEach(() => {
   progressUpdates.length = 0
   FakeRuntimeClient.scripts = [[helloEvent, okResult()]]
   FakeRuntimeClient.index = 0
+  FakeRuntimeClient.gate = null
+  FakeRuntimeClient.onCancel = null
   resetRuntimeUpdateSession()
 })
+
+/** 取消进行中的 bootstrap 时 Runtime 给的收尾脚本。 */
+function cancelledScript(): RuntimeEvent[] {
+  return [
+    helloEvent,
+    progressEvent('workspace.clone', '正在克隆 release/v5.6.0'),
+    ...failResult({
+      stage: 'workspace.clone',
+      code: 'OPERATION_CANCELLED',
+      message: '操作已取消',
+      remediation: ['retry'],
+    }),
+  ]
+}
 
 // ==================== 版本号 ====================
 
@@ -498,19 +525,8 @@ describe('取消更新', () => {
     expect(callLog).toEqual(['stopBackend', 'startBackend'])
   })
 
-  it('bootstrap 进行中取消：走 stdin cancel，结局仍按 Runtime 给的 result 算', async () => {
-    FakeRuntimeClient.scripts = [
-      [
-        helloEvent,
-        progressEvent('workspace.clone', '正在克隆 release/v5.6.0'),
-        ...failResult({
-          stage: 'workspace.clone',
-          code: 'OPERATION_CANCELLED',
-          message: '操作已取消',
-          remediation: ['retry'],
-        }),
-      ],
-    ]
+  it('bootstrap 进行中取消：OPERATION_CANCELLED 意味着源码没动，把旧后端拉回来', async () => {
+    FakeRuntimeClient.scripts = [cancelledScript()]
 
     const outcome = await updateBackendViaRuntime(
       '5.6.0',
@@ -522,18 +538,287 @@ describe('取消更新', () => {
       createDeps(createBackend(), managedConfig())
     )
 
-    expect(callLog).toEqual(['stopBackend', `run:bootstrap --version ${TARGET}`, 'stdin:cancel'])
+    expect(callLog).toEqual([
+      'stopBackend',
+      `run:bootstrap --version ${TARGET}`,
+      'stdin:cancel',
+      'startBackend',
+    ])
+    // 结局与 bootstrap 开始前取消完全一样：shutdown + cancelled，没有重试入口。
     expect(outcome).toMatchObject({
+      success: false,
+      phase: 'shutdown',
+      cancelled: true,
+      code: 'OPERATION_CANCELLED',
+    })
+    expect(outcome.retryActions).toBeUndefined()
+    expect(progressUpdates.at(-1)).toMatchObject({ stage: 'restart', status: 'completed' })
+  })
+
+  it('bootstrap 进行中取消后旧后端拉不起来：结局是 restart，界面给「重新启动后端」', async () => {
+    FakeRuntimeClient.scripts = [cancelledScript()]
+    const backend = createBackend({
+      start: { success: false, error: '端口被占用', code: 'BACKEND_EXITED_BEFORE_READY' },
+    })
+
+    const outcome = await updateBackendViaRuntime(
+      '5.6.0',
+      update => {
+        collect(update)
+        if (update.stage === 'repository' && update.status === 'started') cancelBackendUpdate()
+      },
+      createDeps(backend, managedConfig())
+    )
+
+    expect(callLog).toEqual([
+      'stopBackend',
+      `run:bootstrap --version ${TARGET}`,
+      'stdin:cancel',
+      'startBackend',
+    ])
+    expect(outcome).toMatchObject({
+      success: false,
+      phase: 'restart',
+      cancelled: true,
+      code: 'BACKEND_EXITED_BEFORE_READY',
+      error: '端口被占用',
+    })
+  })
+
+  it('单步重试中取消：源码可能已是新版本，不拉旧后端，保留重试入口', async () => {
+    FakeRuntimeClient.scripts = [
+      [
+        helloEvent,
+        ...failResult({
+          stage: 'dependencies.sync',
+          code: 'DEPENDENCY_SYNC_FAILED',
+          message: 'uv sync 失败',
+          remediation: ['retry-sync', 'rebuild-environment'],
+        }),
+      ],
+      [
+        helloEvent,
+        progressEvent('dependencies.sync', '正在同步依赖'),
+        ...failResult({
+          stage: 'dependencies.sync',
+          code: 'OPERATION_CANCELLED',
+          message: '操作已取消',
+          remediation: ['retry'],
+        }),
+      ],
+    ]
+
+    await updateBackendViaRuntime('5.6.0', collect, createDeps(createBackend(), managedConfig()))
+    callLog = []
+
+    let cancelled = false
+    const retried = await retryBackendUpdate('dependencies-sync', update => {
+      collect(update)
+      if (update.stage === 'dependency' && !cancelled) {
+        cancelled = true
+        cancelBackendUpdate()
+      }
+    })
+
+    expect(callLog).toEqual(['run:dependencies sync', 'stdin:cancel'])
+    expect(retried).toMatchObject({
       success: false,
       phase: 'bootstrap',
       cancelled: true,
       code: 'OPERATION_CANCELLED',
-      retryActions: ['workspace-sync'],
+      retryActions: ['dependencies-sync', 'dependencies-rebuild', 'repair'],
     })
   })
 
   it('没有进行中的会话时取消不受理', () => {
     expect(cancelBackendUpdate()).toEqual({ accepted: false, forwarded: false })
+  })
+})
+
+// ==================== 不可重试 ====================
+
+describe('不可重试的失败', () => {
+  const cases: Array<{
+    title: string
+    code: string
+    remediation: string[]
+    retryable?: boolean
+  }> = [
+    {
+      title: 'retryable=false：一个重试入口都不给',
+      code: 'GIT_CLONE_FAILED',
+      remediation: ['open-log'],
+      retryable: false,
+    },
+    {
+      title: 'INTERNAL_ERROR 一律不可重试，哪怕 retryable 标成 true',
+      code: 'INTERNAL_ERROR',
+      remediation: ['retry'],
+      retryable: true,
+    },
+    {
+      title: 'remediation 含 contact-support 时同样只提示反馈',
+      code: 'DEPENDENCY_SYNC_FAILED',
+      remediation: ['open-log', 'contact-support'],
+      retryable: true,
+    },
+  ]
+
+  for (const item of cases) {
+    it(item.title, async () => {
+      FakeRuntimeClient.scripts = [
+        [
+          helloEvent,
+          ...failResult({
+            stage: 'workspace.clone',
+            code: item.code,
+            message: '失败',
+            remediation: item.remediation,
+            retryable: item.retryable,
+            logPath: 'D:\\AUTO-MAS\\logs\\runtime\\bootstrap-20260901.log',
+          }),
+        ],
+      ]
+
+      const outcome = await updateBackendViaRuntime(
+        '5.6.0',
+        collect,
+        createDeps(createBackend(), managedConfig())
+      )
+
+      expect(outcome).toMatchObject({
+        success: false,
+        phase: 'bootstrap',
+        code: item.code,
+        retryActions: [],
+        supportRequired: true,
+        // 日志路径要留着，用户反馈时得带上。
+        logPath: 'D:\\AUTO-MAS\\logs\\runtime\\bootstrap-20260901.log',
+      })
+      expect(callLog).toEqual(['stopBackend', `run:bootstrap --version ${TARGET}`])
+    })
+  }
+
+  it('可重试的普通失败不受影响', async () => {
+    FakeRuntimeClient.scripts = [
+      [
+        helloEvent,
+        ...failResult({
+          stage: 'workspace.clone',
+          code: 'GIT_CLONE_FAILED',
+          message: '浅克隆失败',
+          remediation: ['retry'],
+        }),
+      ],
+    ]
+
+    const outcome = await updateBackendViaRuntime(
+      '5.6.0',
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(outcome).toMatchObject({
+      retryActions: ['workspace-sync'],
+      supportRequired: false,
+    })
+  })
+
+  it('新后端起不来且不可重试：结局仍是 restart，但标记只能反馈', async () => {
+    const backend = createBackend({
+      start: {
+        success: false,
+        error: 'Runtime 内部错误',
+        code: 'INTERNAL_ERROR',
+        retryable: false,
+      },
+    })
+
+    const outcome = await updateBackendViaRuntime(
+      '5.6.0',
+      collect,
+      createDeps(backend, managedConfig())
+    )
+
+    expect(outcome).toMatchObject({ phase: 'restart', supportRequired: true })
+  })
+
+  it('requiresSupport 的三条判据', () => {
+    expect(requiresSupport({ retryable: false })).toBe(true)
+    expect(requiresSupport({ code: 'INTERNAL_ERROR', retryable: true })).toBe(true)
+    expect(requiresSupport({ retryable: true, remediation: ['contact-support'] })).toBe(true)
+    expect(requiresSupport({ retryable: true, remediation: ['retry', 'open-log'] })).toBe(false)
+    expect(requiresSupport({})).toBe(false)
+  })
+})
+
+// ==================== 应用退出清场 ====================
+
+describe('应用退出时中止更新', () => {
+  it('没有会话时直接返回', async () => {
+    await expect(abortRuntimeUpdateForShutdown(50)).resolves.toEqual({
+      hadSession: false,
+      forwarded: false,
+      settled: true,
+    })
+  })
+
+  it('在途 bootstrap 收到 cancel 并落地后才清场，且不再拉起旧后端', async () => {
+    let releaseGate: () => void = () => undefined
+    FakeRuntimeClient.gate = new Promise<void>(resolve => {
+      releaseGate = resolve
+    })
+    // 真实 Runtime 收到 stdin cancel 后以 OPERATION_CANCELLED 收尾。
+    FakeRuntimeClient.onCancel = () => releaseGate()
+    FakeRuntimeClient.scripts = [cancelledScript()]
+
+    const updating = updateBackendViaRuntime(
+      '5.6.0',
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+    // 让停机与 bootstrap 的启动都跑到闸门前。
+    await vi.waitFor(() => expect(callLog).toContain(`run:bootstrap --version ${TARGET}`))
+
+    const aborted = await abortRuntimeUpdateForShutdown(1000)
+    expect(aborted).toEqual({ hadSession: true, forwarded: true, settled: true })
+
+    const outcome = await updating
+    expect(outcome).toMatchObject({ success: false, phase: 'shutdown', cancelled: true })
+    // 退出路上不能再拉后端，交给退出清场统一处理。
+    expect(callLog).toEqual(['stopBackend', `run:bootstrap --version ${TARGET}`, 'stdin:cancel'])
+    // 会话已清空，后续取消不再受理。
+    expect(cancelBackendUpdate()).toEqual({ accepted: false, forwarded: false })
+  })
+
+  it('在途命令超时不落地也要清场，不拖住退出', async () => {
+    FakeRuntimeClient.gate = new Promise<void>(() => undefined)
+    FakeRuntimeClient.scripts = [cancelledScript()]
+
+    void updateBackendViaRuntime('5.6.0', collect, createDeps(createBackend(), managedConfig()))
+    await vi.waitFor(() => expect(callLog).toContain(`run:bootstrap --version ${TARGET}`))
+
+    const aborted = await abortRuntimeUpdateForShutdown(20)
+    expect(aborted).toEqual({ hadSession: true, forwarded: true, settled: false })
+    expect(callLog).toContain('stdin:cancel')
+    expect(cancelBackendUpdate()).toEqual({ accepted: false, forwarded: false })
+  })
+
+  it('停机后、bootstrap 前退出：取消后不拉旧后端', async () => {
+    const backend = createBackend({
+      onStop: () => {
+        void abortRuntimeUpdateForShutdown(50)
+      },
+    })
+
+    const outcome = await updateBackendViaRuntime(
+      '5.6.0',
+      collect,
+      createDeps(backend, managedConfig())
+    )
+
+    expect(outcome).toMatchObject({ success: false, phase: 'shutdown', cancelled: true })
+    expect(callLog).toEqual(['stopBackend'])
   })
 })
 

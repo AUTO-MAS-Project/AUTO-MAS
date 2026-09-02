@@ -206,6 +206,8 @@ export default {
     backendUpdateCancelAction: '更新をキャンセル',
     backendUpdateErrorCode: 'エラーコード',
     backendUpdateLogPath: 'ログファイル',
+    backendUpdateContactSupport:
+      'この問題は再試行では解決できません。上記のログファイルを添えて報告してください',
     closingBackend: 'バックエンドを終了しています...',
     startingBackend: 'バックエンドを起動しています...',
     lightTheme: 'ライトテーマ',

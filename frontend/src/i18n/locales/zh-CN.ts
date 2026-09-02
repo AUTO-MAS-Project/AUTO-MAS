@@ -201,6 +201,7 @@ export default {
     backendUpdateCancelAction: '取消更新',
     backendUpdateErrorCode: '错误码',
     backendUpdateLogPath: '日志文件',
+    backendUpdateContactSupport: '此问题无法通过重试解决，请携带上述日志文件反馈',
     closingBackend: '正在关闭后端应用...',
     startingBackend: '正在启动后端服务...',
     lightTheme: '浅色主题',

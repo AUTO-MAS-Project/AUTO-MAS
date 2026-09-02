@@ -203,6 +203,8 @@ export default {
     backendUpdateCancelAction: 'Cancel the update',
     backendUpdateErrorCode: 'Error code',
     backendUpdateLogPath: 'Log file',
+    backendUpdateContactSupport:
+      'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
     startingBackend: 'Starting the backend...',
     lightTheme: 'Light theme',
