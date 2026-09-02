@@ -1452,6 +1452,7 @@ export default {
       dailyProgress: '日常完成',
       noProgress: '暂无进度',
       tasks: '每日任务',
+      weeklyTasks: '每周与周期事项',
       noTasks: '暂无可识别任务',
       resources: '可用资源',
       noResources: '暂无可识别资源',

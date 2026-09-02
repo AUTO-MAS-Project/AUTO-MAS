@@ -30,6 +30,22 @@ describe('CommunityActivityView structure', () => {
     expect(source.match(/image: \w+NoteImage/g)).toHaveLength(5)
     expect(source).toContain('@/assets/community-notes/arknights.png')
     expect(source).toContain('@/assets/community-notes/zenless.png')
+    expect(source).toContain("'--activity-background-image'")
+    expect(source).toContain('.activity-card::before')
+    expect(source).toMatch(/background-image:\s*var\(--activity-background-image\);/)
+  })
+
+  it('shows only confirmed daily progress and separates recurring information', () => {
+    expect(source).toContain('<div v-if="hasProgress(element)" class="activity-summary">')
+    expect(source).not.toContain("t('gamesign.activity.noProgress')")
+    expect(source).toContain('v-for="task in dailyTasks(element)"')
+    expect(source).toContain('v-for="task in weeklyTasks(element)"')
+    expect(source).toContain("t('gamesign.activity.weeklyTasks')")
+    expect(source).toContain('{{ task.status }}')
+    expect(source).toContain('{{ resource.status }}')
+    expect(source).toContain('v-if="hasTaskProgress(task)"')
+    expect(source).toContain('v-if="hasResourceProgress(resource)"')
+    expect(source).toContain('background-size: cover;')
   })
 
   it('keeps one vertical page scroll owner and removes page-level gradients', () => {

@@ -1529,6 +1529,7 @@ export default {
       dailyProgress: 'Daily progress',
       noProgress: 'No progress data',
       tasks: 'Daily tasks',
+      weeklyTasks: 'Weekly and recurring',
       noTasks: 'No recognized tasks',
       resources: 'Available resources',
       noResources: 'No recognized resources',

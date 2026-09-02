@@ -1538,6 +1538,7 @@ export default {
       dailyProgress: 'デイリー進捗',
       noProgress: '進捗データなし',
       tasks: 'デイリー任務',
+      weeklyTasks: '週間・定期項目',
       noTasks: '認識できる任務なし',
       resources: '利用可能なリソース',
       noResources: '認識できるリソースなし',

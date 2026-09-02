@@ -95,10 +95,13 @@ const platformLabel = (platform: string) => {
   return platform
 }
 
-const activityCardStyle = (game: string) =>
-  ({
-    '--activity-accent': gameVisual(game).accent,
-  }) as CSSProperties
+const activityCardStyle = (game: string) => {
+  const visual = gameVisual(game)
+  return {
+    '--activity-accent': visual.accent,
+    '--activity-background-image': visual.image ? `url("${visual.image}")` : 'none',
+  } as CSSProperties
+}
 
 const statusMeta = (status: ActivityStatus) => {
   switch (status) {
@@ -141,6 +144,17 @@ const hasProgress = (snapshot: ActivitySnapshot) =>
   typeof snapshot.completed === 'number' &&
   typeof snapshot.target === 'number' &&
   snapshot.target > 0
+
+const dailyTasks = (snapshot: ActivitySnapshot) =>
+  snapshot.tasks.filter(task => task.period !== 'weekly')
+
+const weeklyTasks = (snapshot: ActivitySnapshot) =>
+  snapshot.tasks.filter(task => task.period === 'weekly')
+
+const hasTaskProgress = (task: ActivitySnapshot['tasks'][number]) => task.target > 0
+
+const hasResourceProgress = (resource: ActivitySnapshot['resources'][number]) =>
+  resource.target > 0
 
 const formatTime = (value: string) => {
   if (!value) return ''
@@ -293,18 +307,12 @@ onMounted(() => {
                 <span v-if="element.server">{{ element.server }}</span>
               </div>
 
-              <div class="activity-summary">
+              <div v-if="hasProgress(element)" class="activity-summary">
                 <div class="activity-progress-heading">
                   <span>{{ t('gamesign.activity.dailyProgress') }}</span>
-                  <strong v-if="hasProgress(element)">
-                    {{ element.completed }} / {{ element.target }}
-                  </strong>
-                  <span v-else class="activity-muted">
-                    {{ t('gamesign.activity.noProgress') }}
-                  </span>
+                  <strong>{{ element.completed }} / {{ element.target }}</strong>
                 </div>
                 <a-progress
-                  v-if="hasProgress(element)"
                   :percent="progressPercent(element)"
                   :show-info="false"
                   :status="progressStatus(element.status)"
@@ -313,39 +321,71 @@ onMounted(() => {
                 />
               </div>
 
-              <div class="activity-section-grid">
-                <section class="activity-section">
+              <div
+                v-if="element.tasks.length || element.resources.length"
+                class="activity-section-grid"
+              >
+                <section v-if="dailyTasks(element).length" class="activity-section">
                   <h3>{{ t('gamesign.activity.tasks') }}</h3>
-                  <div v-if="element.tasks.length" class="activity-list">
+                  <div class="activity-list">
                     <div
-                      v-for="task in element.tasks"
+                      v-for="task in dailyTasks(element)"
                       :key="`${task.name}-${task.period}`"
                       class="activity-row"
                     >
-                      <span class="activity-row-name">{{ task.name }}</span>
-                      <strong>{{ task.completed }} / {{ task.target }}</strong>
+                      <span class="activity-row-copy">
+                        <span class="activity-row-name">{{ task.name }}</span>
+                        <small v-if="task.status" class="activity-row-status">
+                          {{ task.status }}
+                        </small>
+                      </span>
+                      <strong v-if="hasTaskProgress(task)">
+                        {{ task.completed }} / {{ task.target }}
+                      </strong>
                     </div>
                   </div>
-                  <span v-else class="activity-muted">
-                    {{ t('gamesign.activity.noTasks') }}
-                  </span>
                 </section>
 
-                <section class="activity-section">
+                <section v-if="weeklyTasks(element).length" class="activity-section">
+                  <h3>{{ t('gamesign.activity.weeklyTasks') }}</h3>
+                  <div class="activity-list">
+                    <div
+                      v-for="task in weeklyTasks(element)"
+                      :key="`${task.name}-${task.period}`"
+                      class="activity-row"
+                    >
+                      <span class="activity-row-copy">
+                        <span class="activity-row-name">{{ task.name }}</span>
+                        <small v-if="task.status" class="activity-row-status">
+                          {{ task.status }}
+                        </small>
+                      </span>
+                      <strong v-if="hasTaskProgress(task)">
+                        {{ task.completed }} / {{ task.target }}
+                      </strong>
+                    </div>
+                  </div>
+                </section>
+
+                <section v-if="element.resources.length" class="activity-section">
                   <h3>{{ t('gamesign.activity.resources') }}</h3>
-                  <div v-if="element.resources.length" class="activity-list">
+                  <div class="activity-list">
                     <div
                       v-for="resource in element.resources"
                       :key="resource.name"
                       class="activity-row"
                     >
-                      <span class="activity-row-name">{{ resource.name }}</span>
-                      <strong>{{ resource.current }} / {{ resource.target }}</strong>
+                      <span class="activity-row-copy">
+                        <span class="activity-row-name">{{ resource.name }}</span>
+                        <small v-if="resource.status" class="activity-row-status">
+                          {{ resource.status }}
+                        </small>
+                      </span>
+                      <strong v-if="hasResourceProgress(resource)">
+                        {{ resource.current }} / {{ resource.target }}
+                      </strong>
                     </div>
                   </div>
-                  <span v-else class="activity-muted">
-                    {{ t('gamesign.activity.noResources') }}
-                  </span>
                 </section>
               </div>
 
@@ -442,6 +482,9 @@ onMounted(() => {
 }
 
 .activity-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   height: 100%;
   border: 1px solid var(--ant-color-border-secondary);
   border-top: 3px solid var(--activity-accent);
@@ -453,12 +496,28 @@ onMounted(() => {
     box-shadow 0.2s ease;
 }
 
+.activity-card::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image: var(--activity-background-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  content: '';
+  filter: saturate(0.78);
+  opacity: 0.18;
+  pointer-events: none;
+}
+
 .activity-card:hover {
   border-color: var(--activity-accent);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .activity-card :deep(.ant-card-body) {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -557,8 +616,9 @@ onMounted(() => {
 
 .activity-summary {
   padding: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
+  background: color-mix(in srgb, var(--ant-color-bg-container) 82%, transparent);
 }
 
 .activity-progress-heading,
@@ -607,6 +667,20 @@ onMounted(() => {
 
 .activity-row-name {
   min-width: 0;
+}
+
+.activity-row-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.activity-row-status {
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .activity-row strong {

@@ -20,11 +20,11 @@ from app.tools.community_activity_provider import (
     _device_fp_body,
     _miyoushe_request_cookies,
 )
-from app.tools.community_activity_roles import normalize_skland_roles
 from app.tools.community_activity_roles import (
     CommunityActivityCapability,
     CommunityActivityRole,
     CommunityActivityRoleDiscovery,
+    normalize_skland_roles,
 )
 from app.tools.community_activity_transport import (
     CommunityActivityTransportError,
@@ -346,6 +346,11 @@ class CommunityActivityRequestTest(unittest.TestCase):
 
         self.assertEqual(device_fp, "fp-value")
         request_kwargs = client.post.call_args.kwargs
+        self.assertEqual(request_kwargs["json"]["device_id"], "device-id")
+        self.assertEqual(
+            request_kwargs["headers"]["x-rpc-device_id"],
+            "device-id",
+        )
         self.assertEqual(request_kwargs["cookies"]["stoken"], "v2-token")
         self.assertNotIn("stoken_v2", request_kwargs["cookies"])
         self.assertEqual(original["stoken"], "legacy-token")
@@ -531,12 +536,58 @@ class CommunityActivityParserTest(unittest.TestCase):
                         "daily": {"current": 8, "total": 10},
                         "weekly": {"current": 20, "total": 100},
                     },
+                    "campaign": {
+                        "reward": {"current": 1725, "total": 1800}
+                    },
+                    "tower": {
+                        "reward": {
+                            "lowerItem": {"current": 12, "total": 60},
+                            "higherItem": {"current": 3, "total": 24},
+                        }
+                    },
                     "status": {
                         "ap": {
                             "current": 20,
                             "max": 135,
                             "lastApAddTime": 1000,
-                        }
+                        },
+                        "exp": {"current": 21966, "total": 76000},
+                    },
+                    "recruit": [
+                        {"state": 1, "finishTs": -1},
+                        {"state": 0, "finishTs": -1},
+                        {"state": 2, "finishTs": 1720},
+                    ],
+                    "building": {
+                        "hire": {
+                            "refreshCount": 0,
+                            "completeWorkTime": 1720,
+                        },
+                        "training": {
+                            "trainee": {"charId": "char_1"},
+                            "slotState": 1,
+                            "remainSecs": 7200,
+                        },
+                        "labor": {
+                            "value": 222,
+                            "maxValue": 225,
+                            "remainSecs": 540,
+                        },
+                        "manufactures": [
+                            {
+                                "complete": 16,
+                                "capacity": 148,
+                                "formulaId": "formula_1",
+                            }
+                        ],
+                        "tradings": [
+                            {"stock": [{}, {}, {}, {}, {}], "stockLimit": 21}
+                        ],
+                        "tiredChars": [{"charId": "char_2"}],
+                    },
+                    "charInfoMap": {"char_1": {"name": "阿米娅"}},
+                    "manufactureFormulaInfoMap": {
+                        "formula_1": {"weight": 2}
                     },
                 },
             },
@@ -548,9 +599,19 @@ class CommunityActivityParserTest(unittest.TestCase):
                 "code": 0,
                 "data": {
                     "detail": {
-                        "dailyActivation": 100,
-                        "maxDailyActivation": 100,
-                        "dungeon": {"curStamina": 80, "maxStamina": 240},
+                        "dailyMission": {
+                            "dailyActivation": 100,
+                            "maxDailyActivation": 100,
+                        },
+                        "currentTs": 1000,
+                        "dungeon": {
+                            "curStamina": 80,
+                            "maxStamina": 240,
+                            "maxTs": 70120,
+                        },
+                        "weeklyMission": {"score": 2, "total": 10},
+                        "bpSystem": {"curLevel": 45, "maxLevel": 60},
+                        "seekSuspicion": {"count": 200000, "total": 200000},
                     }
                 },
             },
@@ -559,8 +620,66 @@ class CommunityActivityParserTest(unittest.TestCase):
 
         self.assertEqual((arknights.completed, arknights.target), (8, 10))
         self.assertEqual(arknights.resources[0]["current"], 21)
+        self.assertEqual(
+            arknights.resources[0]["status"],
+            "预计11小时24分钟后回满",
+        )
+        arknights_tasks = {item["name"]: item for item in arknights.tasks}
+        self.assertEqual(
+            arknights_tasks["每周报酬合成玉"]["completed"],
+            1725,
+        )
+        self.assertEqual(arknights_tasks["数据增补条"]["target"], 60)
+        self.assertEqual(arknights_tasks["数据增补仪"]["target"], 24)
+        arknights_resources = {
+            item["name"]: item for item in arknights.resources
+        }
+        self.assertEqual(arknights_resources["公开招募"]["current"], 2)
+        self.assertEqual(
+            arknights_resources["公招刷新"]["status"],
+            "预计6分钟后获得刷新次数",
+        )
+        self.assertEqual(
+            arknights_resources["训练室"]["status"],
+            "阿米娅，预计2小时后完成训练",
+        )
+        self.assertEqual(arknights_resources["无人机"]["current"], 222)
+        self.assertEqual(arknights_resources["制造进度"]["target"], 74)
+        self.assertEqual(arknights_resources["订单进度"]["current"], 5)
+        self.assertEqual(
+            arknights_resources["干员疲劳"]["status"],
+            "1名干员疲劳",
+        )
         self.assertEqual((endfield.completed, endfield.target), (100, 100))
+        self.assertEqual(endfield.resources[0]["name"], "理智")
         self.assertEqual(endfield.resources[0]["current"], 80)
+        self.assertEqual(
+            endfield.resources[0]["status"],
+            "预计19小时12分钟后回满",
+        )
+        endfield_tasks = {item["name"]: item for item in endfield.tasks}
+        self.assertEqual(endfield_tasks["每周事务"]["completed"], 2)
+        self.assertEqual(endfield_tasks["通行证等级"]["target"], 60)
+        self.assertEqual(endfield_tasks["蚀像寻遗"]["completed"], 200000)
+        self.assertEqual(endfield_tasks["蚀像寻遗"]["period"], "weekly")
+
+    def test_endfield_rejects_unconfirmed_daily_progress_shape(self) -> None:
+        snapshot = self.parse(
+            "终末地",
+            {
+                "code": 0,
+                "data": {
+                    "detail": {
+                        "dailyMission": {"current": 100, "total": 100},
+                        "dungeon": {"curStamina": 80, "maxStamina": 240},
+                    }
+                },
+            },
+            platform="森空岛",
+        )
+
+        self.assertEqual(snapshot.status, "unavailable")
+        self.assertIn("每日任务进度", snapshot.reason)
 
     def test_miyoushe_three_game_progress(self) -> None:
         genshin = self.parse(
@@ -572,6 +691,34 @@ class CommunityActivityParserTest(unittest.TestCase):
                     "total_task_num": 4,
                     "current_resin": 120,
                     "max_resin": 200,
+                    "resin_recovery_time": 38400,
+                    "current_home_coin": 30,
+                    "max_home_coin": 2400,
+                    "home_coin_recovery_time": 282960,
+                    "max_expedition_num": 5,
+                    "expeditions": [
+                        {"status": "Ongoing"},
+                        {"status": "Ongoing"},
+                        {"status": "Ongoing"},
+                        {"status": "Ongoing"},
+                    ],
+                    "remain_resin_discount_num": 1,
+                    "resin_discount_num_limit": 3,
+                    "transformer": {
+                        "obtained": True,
+                        "recovery_time": {
+                            "reached": True,
+                            "Day": 0,
+                            "Hour": 0,
+                            "Minute": 0,
+                            "Second": 0,
+                        },
+                    },
+                    "daily_task": {
+                        "attendance_visible": True,
+                        "is_extra_task_reward_received": True,
+                        "stored_attendance": 298.8,
+                    },
                 },
             },
             platform="米游社",
@@ -585,6 +732,17 @@ class CommunityActivityParserTest(unittest.TestCase):
                     "max_train_score": 500,
                     "current_stamina": 120,
                     "max_stamina": 300,
+                    "stamina_recover_time": 21600,
+                    "current_rogue_score": 12000,
+                    "max_rogue_score": 18000,
+                    "rogue_tourn_weekly_unlocked": True,
+                    "rogue_tourn_weekly_cur": 1000,
+                    "rogue_tourn_weekly_max": 14000,
+                    "weekly_cocoon_cnt": 2,
+                    "weekly_cocoon_limit": 3,
+                    "current_reserve_stamina": 300,
+                    "accepted_epedition_num": 3,
+                    "total_expedition_num": 4,
                 },
             },
             platform="米游社",
@@ -599,17 +757,75 @@ class CommunityActivityParserTest(unittest.TestCase):
                         "restore": 3600,
                     },
                     "vitality": {"current": 320, "max": 400},
-                    "vhs_sale": {"sale_state": "SaleStateDoing"},
+                    "vhs_sale": {"sale_state": "SaleStateDone"},
                     "card_sign": "CardSignDone",
+                    "bounty_commission": {"num": 3, "total": 5},
+                    "survey_points": {"num": 400, "total": 8000},
+                    "weekly_task": {"cur_point": 1200, "max_point": 1600},
+                    "temple_running": {
+                        "current_currency": 800,
+                        "weekly_currency_max": 2000,
+                    },
                 },
             },
             platform="米游社",
         )
 
         self.assertEqual((genshin.completed, genshin.target), (4, 4))
+        self.assertEqual(genshin.tasks[0]["status"], "奖励已领取")
+        self.assertEqual(genshin.tasks[1]["name"], "周本减半次数")
+        self.assertEqual(genshin.tasks[1]["status"], "剩余1次")
+        self.assertEqual(
+            genshin.resources[0]["status"],
+            "预计10小时40分钟后回满",
+        )
+        genshin_tasks = {item["name"]: item for item in genshin.tasks}
+        self.assertEqual(genshin_tasks["参量质变仪"]["status"], "可使用")
+        genshin_resources = {item["name"]: item for item in genshin.resources}
+        self.assertEqual(
+            genshin_resources["长效历练点"]["status"],
+            "现有298.8点",
+        )
+        self.assertEqual(genshin_resources["探索派遣"]["current"], 4)
+        self.assertEqual(genshin_resources["探索派遣"]["target"], 5)
         self.assertEqual((hsr.completed, hsr.target), (300, 500))
+        hsr_tasks = {item["name"]: item for item in hsr.tasks}
+        self.assertEqual(hsr_tasks["模拟宇宙积分"]["period"], "weekly")
+        self.assertEqual(hsr_tasks["差分宇宙同步积分"]["target"], 14000)
+        self.assertEqual(hsr_tasks["历战余响次数"]["status"], "剩余2次")
+        self.assertEqual(hsr.resources[0]["status"], "预计6小时后回满")
+        hsr_resources = {item["name"]: item for item in hsr.resources}
+        self.assertEqual(hsr_resources["储备开拓力"]["target"], 2400)
+        self.assertEqual(hsr_resources["探索派遣"]["current"], 3)
         self.assertEqual((zzz.completed, zzz.target), (320, 400))
         self.assertEqual(zzz.resources[0]["current"], 180)
+        self.assertEqual(zzz.resources[0]["status"], "预计1小时后回满")
+        zzz_tasks = {item["name"]: item for item in zzz.tasks}
+        self.assertEqual(zzz_tasks["录像店经营"]["status"], "待结算")
+        self.assertEqual(zzz_tasks["录像店经营"]["target"], 0)
+        self.assertEqual(zzz_tasks["悬赏委托"]["completed"], 3)
+        self.assertEqual(zzz_tasks["零号空洞调查积分"]["target"], 8000)
+        self.assertEqual(zzz_tasks["丽都周纪积分"]["completed"], 1200)
+        self.assertEqual(zzz.resources[1]["name"], "随便观周收益")
+
+    def test_starrail_ignores_reversed_synchronicity_progress(self) -> None:
+        snapshot = self.parse(
+            "星穹铁道",
+            {
+                "retcode": 0,
+                "data": {
+                    "current_train_score": 0,
+                    "max_train_score": 500,
+                    "rogue_tourn_weekly_unlocked": True,
+                    "rogue_tourn_weekly_cur": 18000,
+                    "rogue_tourn_weekly_max": 1000,
+                },
+            },
+            platform="米游社",
+        )
+
+        task_names = {item["name"] for item in snapshot.tasks}
+        self.assertNotIn("差分宇宙同步积分", task_names)
 
     def test_non_json_is_reported_as_limited_without_decoder_details(self) -> None:
         snapshot = self.parse("原神", "<html>blocked</html>", platform="米游社")
