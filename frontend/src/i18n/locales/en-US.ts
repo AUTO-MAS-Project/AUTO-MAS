@@ -7,6 +7,7 @@
  */
 export default {
   common: {
+    viewPageDocs: 'View this page docs',
     language: 'Language',
     languageTip: 'Interface display language',
     languageSaveFailed: 'Failed to save the language setting; reverted to the previous one.',

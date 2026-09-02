@@ -9,6 +9,7 @@
  */
 export default {
   common: {
+    viewPageDocs: 'このページのドキュメントを表示',
     language: '言語',
     languageTip: 'インターフェースの表示言語',
     languageSaveFailed: '言語設定の保存に失敗しました。元の言語に戻しました。',
