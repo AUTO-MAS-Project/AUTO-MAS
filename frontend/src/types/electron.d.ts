@@ -84,6 +84,8 @@ export interface RuntimeUpdateOutcome {
   logs?: string
   logPath?: string
   retryActions?: RuntimeUpdateRetryAction[]
+  /** 重试已无意义（不可重试 / INTERNAL_ERROR / contact-support），只能携带日志反馈。 */
+  supportRequired?: boolean
   cancelled?: boolean
   unsupported?: boolean
 }

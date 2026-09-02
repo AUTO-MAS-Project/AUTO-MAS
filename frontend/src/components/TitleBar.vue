@@ -112,10 +112,13 @@
             {{ t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
           </p>
           <pre v-if="updateOutcome.logs" class="backend-update-logs">{{ updateOutcome.logs }}</pre>
+          <p v-if="updateActions.showContactSupport" class="backend-update-meta">
+            {{ t('comp.backendUpdateContactSupport') }}
+          </p>
 
           <div class="backend-update-actions">
             <a-button
-              v-for="action in updateOutcome.retryActions || []"
+              v-for="action in updateActions.retryActions"
               :key="action"
               type="primary"
               @click="retryUpdate(action)"
@@ -123,7 +126,7 @@
               {{ retryActionLabel(action) }}
             </a-button>
             <a-button
-              v-if="updateOutcome.phase === 'restart' && !updateOutcome.success"
+              v-if="updateActions.showRestartBackend"
               type="primary"
               :loading="updateRestartingBackend"
               @click="restartBackendAfterUpdate"
@@ -148,6 +151,7 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
+import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
@@ -216,6 +220,9 @@ const updateAlertMessage = computed(() => {
   if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
   return t('comp.backendUpdateFailedBootstrap')
 })
+
+// 不可重试（retryable=false / INTERNAL_ERROR / contact-support）时一个重试按钮都不给。
+const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.value))
 
 // 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
 const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({

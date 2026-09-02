@@ -93,8 +93,15 @@ export interface RuntimeUpdateOutcome {
   logs?: string
   /** Runtime 自己的轮转日志路径。 */
   logPath?: string
-  /** 本次失败可用的重试入口，按推荐顺序排列。 */
+  /** 本次失败可用的重试入口，按推荐顺序排列；不可重试时为空。 */
   retryActions?: RuntimeUpdateRetryAction[]
+  /**
+   * 重试已无意义，只能携带日志反馈。
+   *
+   * `retryable=false`、`INTERNAL_ERROR` 或 remediation 含 `contact-support` 时为真；
+   * 此时 `retryActions` 必为空，界面改为提示用户带上日志反馈。
+   */
+  supportRequired?: boolean
   /** 用户主动取消。 */
   cancelled?: boolean
   /** 当前模式根本不支持自动更新（development 或灰度开关关闭）。 */
@@ -156,13 +163,71 @@ interface UpdateSession {
   runtimeService: RuntimeInitializationService
   backend: BackendUpdateController
   cancelRequested: boolean
+  /** 应用正在退出：取消后不再把旧后端拉回来，交给退出清场统一处理。 */
+  abortedForShutdown: boolean
+  /** 在途的 bootstrap 或单步重试，退出清场要等它落地。 */
+  inFlight: Promise<unknown> | null
 }
 
 let session: UpdateSession | null = null
 
-/** 仅供测试与应用退出清场。 */
+/** 仅供测试清场；应用退出走 `abortRuntimeUpdateForShutdown`。 */
 export function resetRuntimeUpdateSession(): void {
   session = null
+}
+
+export interface RuntimeUpdateAbortResult {
+  /** 清场时是否有更新会话。 */
+  hadSession: boolean
+  /** 是否有在途 Runtime 命令并已向它下发 cancel。 */
+  forwarded: boolean
+  /** 在途命令是否在时限内落地；没有在途命令时为真。 */
+  settled: boolean
+}
+
+/** 退出清场默认等在途命令落地的上限。 */
+export const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = 5000
+
+/**
+ * 应用退出时中止更新。
+ *
+ * 只置空会话不够：bootstrap 子进程会跑成孤儿，下次启动撞 `MUTATION_IN_PROGRESS`。
+ * 这里先对在途命令下发 cancel，等它在时限内落地（Runtime 收到 cancel 会以
+ * `OPERATION_CANCELLED` 收尾），再置空；超时也置空，不拖住退出。
+ */
+export async function abortRuntimeUpdateForShutdown(
+  timeoutMs = RUNTIME_UPDATE_ABORT_TIMEOUT_MS
+): Promise<RuntimeUpdateAbortResult> {
+  const current = session
+  if (!current) return { hadSession: false, forwarded: false, settled: true }
+
+  current.cancelRequested = true
+  current.abortedForShutdown = true
+  const forwarded = current.runtimeService.cancel()
+
+  let settled = true
+  const inFlight = current.inFlight
+  if (inFlight) {
+    logger.info(`应用退出，等待在途更新命令落地（上限 ${timeoutMs}ms）`)
+    settled = await waitForSettle(inFlight, timeoutMs)
+    if (!settled) logger.warn('在途更新命令未在时限内落地，放弃等待')
+  }
+
+  if (session === current) session = null
+  logger.info(`更新会话已因应用退出清场${forwarded ? '，并已下发 stdin cancel' : ''}`)
+  return { hadSession: true, forwarded, settled }
+}
+
+/** 等一个 promise 落地（无论成败），超时返回 false。 */
+function waitForSettle(target: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(false), timeoutMs)
+    const done = (): void => {
+      clearTimeout(timer)
+      resolve(true)
+    }
+    target.then(done, done)
+  })
 }
 
 const defaultRuntimeServiceFactory = (
@@ -225,6 +290,8 @@ export async function updateBackendViaRuntime(
     runtimeService,
     backend: deps.backend,
     cancelRequested: false,
+    abortedForShutdown: false,
+    inFlight: null,
   }
   session = current
 
@@ -250,12 +317,21 @@ export async function updateBackendViaRuntime(
   // 停机期间按了取消：源码一动没动，直接把旧后端拉回来。
   if (current.cancelRequested) {
     logger.info('更新在 bootstrap 开始前被取消，重新启动旧后端')
-    return finishCancelledBeforeBootstrap(current, onProgress)
+    return finishCancelled(current, onProgress)
   }
 
   // ---------- 2. bootstrap ----------
-  const bootstrapOutcome = await runtimeService.bootstrap(update => onProgress(update))
+  const bootstrapOutcome = await trackInFlight(
+    current,
+    runtimeService.bootstrap(update => onProgress(update))
+  )
   if (!bootstrapOutcome.success) {
+    // Runtime 只在提交点（整体替换 `repo/`）之前受理取消，所以 OPERATION_CANCELLED 就
+    // 意味着源码一动没动，结局与 bootstrap 开始前取消完全一样：把旧后端拉回来。
+    if (isCancelledOutcome(bootstrapOutcome)) {
+      logger.info('bootstrap 在替换源码前被取消，重新启动旧后端')
+      return finishCancelled(current, onProgress, bootstrapOutcome)
+    }
     return buildBootstrapFailure(bootstrapOutcome, current.cancelRequested)
   }
 
@@ -284,13 +360,17 @@ export async function retryBackendUpdate(
   current.cancelRequested = false
   logger.info(`重试更新入口 ${action}（段 ${mapped.stage}，模式 ${mapped.mode}）`)
 
-  const outcome = await current.runtimeService.retryStage(
-    mapped.stage,
-    update => onProgress(update),
-    undefined,
-    mapped.mode
+  const outcome = await trackInFlight(
+    current,
+    current.runtimeService.retryStage(
+      mapped.stage,
+      update => onProgress(update),
+      undefined,
+      mapped.mode
+    )
   )
   if (!outcome.success) {
+    // 单步重试时源码可能已是新版本，取消后不能再拉旧后端；保留重试入口让用户接着修。
     return buildBootstrapFailure(outcome, current.cancelRequested)
   }
 
@@ -334,14 +414,56 @@ function unsupported(message: string): RuntimeUpdateOutcome {
   }
 }
 
-/** 取消发生在 bootstrap 之前：后端已经停了，得把它按原样拉回来。 */
-async function finishCancelledBeforeBootstrap(
+/** 记下在途的 Runtime 命令，供退出清场等待；落地后清掉。 */
+async function trackInFlight<T>(current: UpdateSession, task: Promise<T>): Promise<T> {
+  current.inFlight = task
+  try {
+    return await task
+  } finally {
+    if (current.inFlight === task) current.inFlight = null
+  }
+}
+
+/** Runtime 受理了取消：源码没动。 */
+function isCancelledOutcome(outcome: RuntimeStageOutcome): boolean {
+  return outcome.code === 'OPERATION_CANCELLED'
+}
+
+/**
+ * 取消时源码一动没动（停机后、bootstrap 前，或 bootstrap 在提交点前被 Runtime 受理）：
+ * 后端已经停了，得把它按原样拉回来。拉不起来时结局是 `restart`，界面给「重新启动后端」。
+ * 应用正在退出时不再拉起，交给退出清场。
+ */
+async function finishCancelled(
   current: UpdateSession,
-  onProgress: (update: RuntimeUpdateProgress) => void
+  onProgress: (update: RuntimeUpdateProgress) => void,
+  outcome?: RuntimeStageOutcome
 ): Promise<RuntimeUpdateOutcome> {
+  const detail = outcome ? { code: outcome.code, logPath: outcome.logPath } : {}
+  if (current.abortedForShutdown) {
+    logger.info('应用正在退出，取消后不再重新启动旧后端')
+    return { success: false, phase: 'shutdown', cancelled: true, error: '更新已取消', ...detail }
+  }
+
   const restarted = await restartBackend(current, onProgress)
   if (!restarted.success) return { ...restarted, cancelled: true }
-  return { success: false, phase: 'shutdown', cancelled: true, error: '更新已取消' }
+  return { success: false, phase: 'shutdown', cancelled: true, error: '更新已取消', ...detail }
+}
+
+/**
+ * 重试已无意义、只能携带日志反馈的失败。
+ *
+ * `INTERNAL_ERROR` 一律视为不可重试，不看 `retryable`；remediation 里明确给了
+ * `contact-support` 的同样如此。
+ */
+export function requiresSupport(outcome: {
+  code?: string
+  retryable?: boolean
+  remediation?: RuntimeRemediation[]
+}): boolean {
+  if (outcome.retryable === false) return true
+  if (outcome.code === 'INTERNAL_ERROR') return true
+  return outcome.remediation?.includes('contact-support') ?? false
 }
 
 async function restartBackend(
@@ -363,6 +485,7 @@ async function restartBackend(
       retryable: startResult.retryable,
       remediation: startResult.remediation,
       logs: startResult.logs,
+      supportRequired: requiresSupport(startResult),
     }
   }
 
@@ -376,11 +499,16 @@ async function restartBackend(
   return { success: true }
 }
 
-/** bootstrap 或单步重试失败：结局一律是 `bootstrap`，附上该段对应的重试入口。 */
+/**
+ * bootstrap 或单步重试失败：结局一律是 `bootstrap`，附上该段对应的重试入口；
+ * 不可重试（`retryable=false`、`INTERNAL_ERROR`、`contact-support`）时重试入口为空，
+ * 改为提示携带日志反馈。
+ */
 function buildBootstrapFailure(
   outcome: RuntimeStageOutcome,
   cancelled: boolean
 ): RuntimeUpdateOutcome {
+  const supportRequired = requiresSupport(outcome)
   return {
     success: false,
     phase: 'bootstrap',
@@ -390,7 +518,8 @@ function buildBootstrapFailure(
     remediation: outcome.remediation,
     logs: outcome.logs,
     logPath: outcome.logPath,
-    retryActions: resolveRetryActions(outcome.failedStage),
+    retryActions: supportRequired ? [] : resolveRetryActions(outcome.failedStage),
+    supportRequired,
     ...(cancelled ? { cancelled: true } : {}),
   }
 }

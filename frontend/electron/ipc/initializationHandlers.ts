@@ -19,8 +19,8 @@ import type {
   RuntimeUpdateRetryAction,
 } from '../services/runtimeUpdateService'
 import {
+  abortRuntimeUpdateForShutdown,
   cancelBackendUpdate,
-  resetRuntimeUpdateSession,
   retryBackendUpdate,
   updateBackendViaRuntime,
 } from '../services/runtimeUpdateService'
@@ -513,7 +513,8 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   ipcMain.handle('cleanup', async () => {
     logger.info('清理初始化资源')
 
-    resetRuntimeUpdateSession()
+    // 先让在途的 bootstrap 收到 cancel 并落地，否则它会在 Electron 退出后跑成孤儿。
+    await abortRuntimeUpdateForShutdown()
 
     if (backendService) {
       await backendService.cleanup()
@@ -534,7 +535,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 export async function cleanupInitializationResources() {
   logger.info('清理初始化资源')
 
-  resetRuntimeUpdateSession()
+  await abortRuntimeUpdateForShutdown()
 
   if (backendService) {
     await backendService.cleanup()
