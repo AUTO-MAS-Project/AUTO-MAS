@@ -791,6 +791,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
         elif self.cur_user_config.get("Info", "Server") == "Bilibili":
             task_set["StartUp"]["AccountName"] = self.cur_user_config.get("Info", "Id")
+        # MAA v6.14.0-b2 起账号切换由独立开关控制，配置里已存为 false 时只写账号名不会切号
+        if self.cur_user_config.get("Info", "Server") in ("Official", "Bilibili"):
+            task_set["StartUp"]["AccountSwitchEnabled"] = bool(
+                task_set["StartUp"]["AccountName"].strip()
+            )
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
