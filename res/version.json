@@ -18,9 +18,6 @@
                 "启动与首页 大幅优化启动速度；修复弱网或 VPN 下刷新活动数据导致所有请求长时间无响应的问题，六张第三方活动卡任一张数据异常只影响自身 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与配置组件接入词表，切换界面语言即时生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 清理不再需要的 MFW 资源 by [@HarcoChen](https://github.com/HarcoChen)",
-                "启动与首页性能 修复活动数据刷新时创建 httpx 客户端同步全量加载系统证书库（truststore）导致的事件循环冻结（弱网或 VPN 下所有请求最长十几秒无响应）：SSL 上下文改为进程内缓存并在启动时线程预热，版本检查不再在请求路径同步拉取远端 git；六张第三方活动卡（星穹铁道/原神/绝区零/鸣潮/异环/重返未来1999）改为前端直连公开接口并各自维护快照、超时重试与失败态，任一源异常只影响自身卡片；后端聚合接口同步瘦身为仅本地数据（方舟关卡与代理状态），MaaEnd 资源预加载移入后台减轻启动阻塞，安装包不再携带 sourcemap by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与两个配置组件接入词表，切到英文/日文后即时生效；参与后端判定的中文（控制器与游戏服务器取值、一条龙内置配置组名、默认配置名与内置战斗策略名）保持原样 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaEnd专项 清理不再需要的MFW资源 by [@HarcoChen](https://github.com/HarcoChen)",
                 "Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退"
             ],
             "开发流程": [
@@ -54,7 +51,6 @@
                 "HSR专项 修复任务配置的文本与 JSON 项在输入时被清空、导致只有数字项能填写的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "游戏签到 修复开启签到通知时执行签到必报 TypeError 的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-NTE专项 修复日常任务在当日活跃度奖励已领取过（或日常领取子任务被关闭）时被误判为失败并反复重试的问题，已领取时任务报告显示「跳过（当日已领取）」 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "HSR专项 修复模块重试耗尽仍失败时用户被误标为「完成」的问题，调度台总览与任务报告不再把失败的代理报成成功 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 修复便携版在装有另一份 Python 3.12 的电脑上运行环境准备成功、任务一启动却报 ctypes 错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",
