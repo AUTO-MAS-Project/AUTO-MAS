@@ -1,5 +1,5 @@
 <template>
-  <a class="doc-link" :href="url" target="_blank" rel="noreferrer" :aria-label="t('common.viewPageDocs')" @click="handleExternalLink">
+  <a class="doc-link" :href="localizedUrl" target="_blank" rel="noreferrer" :aria-label="t('common.viewPageDocs')" @click="handleExternalLink">
     <BookOutlined />
     {{ t('common.viewPageDocs') }}
     <ExportOutlined />
@@ -8,11 +8,16 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
 import { BookOutlined, ExportOutlined } from '@ant-design/icons-vue'
-import { handleExternalLink } from '@/utils/openExternal'
+import { handleExternalLink, localizeDocUrl } from '@/utils/openExternal'
+import { useLocale } from '@/composables/useLocale'
 
-defineProps<{ url: string }>()
+const props = defineProps<{ url: string }>()
 const { t } = useI18n()
+const { locale } = useLocale()
+/** 按界面语言打开对应语言的文档，避免英文用户落在中文文档页。 */
+const localizedUrl = computed(() => localizeDocUrl(props.url, locale.value))
 </script>
 
 <style scoped>
