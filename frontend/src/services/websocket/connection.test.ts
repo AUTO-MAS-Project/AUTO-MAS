@@ -191,3 +191,99 @@ describe('websocket connection 状态机', () => {
     conn.shutdown()
   })
 })
+
+describe('devMode 协商', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    // hostname 为 localhost 时本地回退值是 devMode=true，正是 Runtime 链路下页面先于后端起来的情形。
+    vi.stubGlobal('window', {
+      electronAPI: { getLogger: () => logger },
+      location: { hostname: 'localhost' },
+      setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
+      clearTimeout: (id: number) => clearTimeout(id),
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('连接前 ws_meta 不可达时用回退值，连接建立后重新协商并纠正 devMode', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ devMode: false, wsPath: '/api/core/ws' }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const conn = await loadConnection()
+    const promise = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    // 协商失败：此时只能拿到本地回退值
+    expect(conn.isBackendDevMode()).toBe(true)
+
+    latestSocket().triggerOpen()
+    await expect(promise).resolves.toBe(true)
+
+    // 后端已可达：连接建立后补协商一次，devMode 以后端权威值为准
+    await vi.waitFor(() => expect(conn.isBackendDevMode()).toBe(false))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(conn.connectionState().value).toBe('open')
+    conn.shutdown()
+  })
+
+  it('连接前协商成功时不重复请求 ws_meta', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ devMode: false, wsPath: '/api/core/ws' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const conn = await loadConnection()
+    const promise = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    latestSocket().triggerOpen()
+    await expect(promise).resolves.toBe(true)
+
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(conn.isBackendDevMode()).toBe(false)
+    conn.shutdown()
+  })
+
+  it('补协商期间连接层已 shutdown 时丢弃结果，不复活旧连接的 devMode', async () => {
+    let releaseMeta: (() => void) | null = null
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            releaseMeta = () =>
+              resolve({
+                ok: true,
+                status: 200,
+                json: async () => ({ devMode: false, wsPath: '/api/core/ws' }),
+              })
+          })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const conn = await loadConnection()
+    const promise = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    latestSocket().triggerOpen()
+    await expect(promise).resolves.toBe(true)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    conn.shutdown('测试关闭')
+    releaseMeta!() // 补协商完成，但连接层已终态
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(conn.isBackendDevMode()).toBe(true)
+  })
+})

@@ -12,6 +12,7 @@ import {
   createCommandId,
   formatStartupLogs,
   readRuntimeBaseUrl,
+  readRuntimeWarningSummaries,
   serializeControlCommand,
 } from './client'
 import {
@@ -25,16 +26,17 @@ import {
 } from './protocol'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
-// logger 会拉起 electron-log，与本模块逻辑无关，直接替换掉。
+// logger 会拉起 electron-log，与本模块逻辑无关，直接替换掉；共用一个实例以便断言日志调用。
+const loggerMock = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  verbose: vi.fn(),
+  debug: vi.fn(),
+  silly: vi.fn(),
+}))
 vi.mock('../logger', () => ({
-  getLogger: () => ({
-    error: vi.fn(),
-    warn: vi.fn(),
-    info: vi.fn(),
-    verbose: vi.fn(),
-    debug: vi.fn(),
-    silly: vi.fn(),
-  }),
+  getLogger: () => loggerMock,
 }))
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '__fixtures__')
@@ -113,6 +115,7 @@ function line(event: Record<string, unknown>): string {
 
 beforeEach(() => {
   spawnMock.mockReset()
+  for (const fn of Object.values(loggerMock)) fn.mockClear()
 })
 
 afterEach(() => {
@@ -277,6 +280,27 @@ describe('RuntimeClient.run', () => {
     expect((options as { shell?: unknown }).shell).toBeUndefined()
   })
 
+  it('Runtime 以 detached 启动但保留三路 stdio 管道：宿主被强杀时靠 stdin EOF 优雅收口', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+
+    const pending = client.run(['version'])
+    child.stdout.feed(fixture('version.ndjson'))
+    child.close(0)
+    await pending
+
+    const options = spawnMock.mock.calls[0][2] as {
+      detached?: boolean
+      stdio?: unknown
+      windowsHide?: boolean
+    }
+    // detached 让 Runtime 脱离 libuv 的 KILL_ON_JOB_CLOSE Job；管道不能因此退化成 ignore/inherit，
+    // NDJSON 事件流与 stdin 控制（含 EOF 隐式 shutdown）都依赖它们。
+    expect(options.detached).toBe(true)
+    expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe'])
+    expect(options.windowsHide).toBe(true)
+  })
+
   it('doctor 的进度事件全部透出，终态仍为成功', async () => {
     const client = createClient()
     const child = mockSpawn()
@@ -355,6 +379,159 @@ describe('RuntimeClient.run', () => {
     expect(outcome.warnings.map(item => item.code)).toEqual(['INVALID_CONTROL_COMMAND'])
     expect(outcome.code).toBe('OPERATION_CANCELLED')
     expect(outcome.result.details.warningCount).toBe(1)
+
+    // 真实夹具：warning 事件带 details 记 warn，终态再汇总一行；桌面侧此前完全看不到这些。
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'Runtime warning INVALID_CONTROL_COMMAND（阶段 dependencies.check）：已忽略无效的 stdin 控制命令，details={"lineBytes":15,"reason":"invalid_json"}'
+    )
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'Runtime 终态 OPERATION_CANCELLED（workspace.check/cancelled）携带 1 条 warning：INVALID_CONTROL_COMMAND'
+    )
+    expect(loggerMock.error).not.toHaveBeenCalled()
+  })
+
+  it('监督期间的 BACKEND_ORPHANS_REAPED 记 warn 并带孤儿清单，BACKEND_FORCE_TERMINATED 记 error', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+    const seen: string[] = []
+
+    const pending = client.supervise({
+      mode: 'development',
+      repo: APP_ROOT,
+      onWarning: event => seen.push(event.code),
+    })
+    child.stdout.feed(
+      line({
+        protocol: 1,
+        operationId: '01M1F6M33JFZZ7Y85BE5S849ZN',
+        sequence: 1,
+        timestamp: '2026-09-03T08:39:56.000+02:00',
+        type: 'hello',
+        runtimeVersion: 'dev',
+        command: 'backend supervise',
+        capabilities: ['stdin.cancel', 'state.v1', 'log.stream', 'stdin.shutdown', 'stdin.status'],
+      })
+    )
+    const handle = await pending
+
+    const orphanDetails = {
+      pid: 23144,
+      exitCode: 0,
+      orphanCount: 2,
+      orphans: [
+        { pid: 3001, executable: 'MuMuPlayer.exe' },
+        { pid: 3002, executable: 'adb.exe' },
+      ],
+      orphansTruncated: false,
+    }
+    child.stdout.feed(
+      line({
+        protocol: 1,
+        operationId: '01M1F6M33JFZZ7Y85BE5S849ZN',
+        sequence: 2,
+        timestamp: '2026-09-03T08:39:57.000+02:00',
+        type: 'warning',
+        code: 'BACKEND_ORPHANS_REAPED',
+        stage: 'backend.shutdown',
+        message: '后端已退出，已回收其遗留的孤儿进程',
+        retryable: false,
+        remediation: ['open-log'],
+        details: orphanDetails,
+      })
+    )
+    child.stdout.feed(
+      line({
+        protocol: 1,
+        operationId: '01M1F6M33JFZZ7Y85BE5S849ZN',
+        sequence: 3,
+        timestamp: '2026-09-03T08:39:58.000+02:00',
+        type: 'warning',
+        code: 'BACKEND_FORCE_TERMINATED',
+        stage: 'backend.shutdown',
+        message: '后端已强制终止',
+        retryable: false,
+        remediation: ['open-log'],
+        details: { pid: 23144, timeoutMs: 30000 },
+      })
+    )
+
+    expect(seen).toEqual(['BACKEND_ORPHANS_REAPED', 'BACKEND_FORCE_TERMINATED'])
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      `Runtime warning BACKEND_ORPHANS_REAPED（阶段 backend.shutdown）：后端已退出，已回收其遗留的孤儿进程，details=${JSON.stringify(orphanDetails)}`
+    )
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Runtime warning BACKEND_FORCE_TERMINATED（阶段 backend.shutdown）：后端已强制终止，details={"pid":23144,"timeoutMs":30000}'
+    )
+
+    // 终态汇总：只要有一条强制终止就整体记 error，并标出截断。
+    child.stdout.feed(
+      line({
+        protocol: 1,
+        operationId: '01M1F6M33JFZZ7Y85BE5S849ZN',
+        sequence: 4,
+        timestamp: '2026-09-03T08:39:59.000+02:00',
+        type: 'result',
+        success: true,
+        code: 'OK',
+        stage: 'backend.shutdown',
+        status: 'stopped',
+        message: '后端已停止',
+        retryable: false,
+        remediation: [],
+        details: {
+          warningCount: 3,
+          warningsTruncated: true,
+          warnings: [
+            {
+              code: 'BACKEND_ORPHANS_REAPED',
+              stage: 'backend.shutdown',
+              message: '后端已退出，已回收其遗留的孤儿进程',
+              retryable: false,
+              remediation: ['open-log'],
+              details: orphanDetails,
+            },
+            {
+              code: 'BACKEND_FORCE_TERMINATED',
+              stage: 'backend.shutdown',
+              message: '后端已强制终止',
+              retryable: false,
+              remediation: ['open-log'],
+              details: {},
+            },
+          ],
+        },
+      })
+    )
+    child.close(0)
+    const outcome = await handle.completion
+
+    expect(outcome.warnings).toHaveLength(2)
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Runtime 终态 OK（backend.shutdown/stopped）携带 2 条 warning：BACKEND_ORPHANS_REAPED, BACKEND_FORCE_TERMINATED，且已截断'
+    )
+  })
+
+  it('readRuntimeWarningSummaries 只接受字段齐全的条目', () => {
+    expect(readRuntimeWarningSummaries({})).toEqual([])
+    expect(readRuntimeWarningSummaries({ warnings: 'nope' })).toEqual([])
+    expect(
+      readRuntimeWarningSummaries({
+        warnings: [
+          null,
+          { code: 'BACKEND_ORPHANS_REAPED' },
+          { code: 'BACKEND_ORPHANS_REAPED', message: '已回收', details: { orphanCount: 1 } },
+        ],
+      })
+    ).toEqual([
+      {
+        code: 'BACKEND_ORPHANS_REAPED',
+        stage: '',
+        message: '已回收',
+        retryable: false,
+        remediation: [],
+        details: { orphanCount: 1 },
+      },
+    ])
   })
 
   it('握手前的坏 JSON 行让本次调用失败，并带上原始行', async () => {

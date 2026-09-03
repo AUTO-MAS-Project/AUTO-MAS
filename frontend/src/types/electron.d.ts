@@ -388,6 +388,8 @@ export interface ElectronAPI {
     wsConnected: boolean
     lastPingTime?: Date
     error?: string
+    /** 本次生命周期是否走 Runtime 监督链路；true 时后端只能由 Electron 经 Runtime 停止。 */
+    runtimeSupervised?: boolean
   }>
 
   // Runtime 链路的后端更新（启动模式统一走上面的 getRuntimeLaunchMode）

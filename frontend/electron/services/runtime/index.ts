@@ -43,6 +43,7 @@ export {
   createCommandId,
   formatStartupLogs,
   readRuntimeBaseUrl,
+  readRuntimeWarningSummaries,
   serializeControlCommand,
 } from './client'
 

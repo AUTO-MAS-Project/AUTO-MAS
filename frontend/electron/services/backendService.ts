@@ -56,6 +56,11 @@ export interface BackendStatus {
   pid?: number
   startTime?: Date
   error?: string
+  /**
+   * 本次生命周期是否走 Runtime 监督链路。渲染进程据此决定关闭方式：Runtime 链路下
+   * 后端只能由 Electron 经 Runtime stdin shutdown 停止，渲染进程不得自己 POST /close。
+   */
+  runtimeSupervised: boolean
 }
 
 export interface BackendStartOptions {
@@ -1009,6 +1014,7 @@ export class BackendService {
         isRunning: true,
         pid: this.runtimeHandle.pid,
         startTime: this.startTime || undefined,
+        runtimeSupervised: true,
       }
     }
 
@@ -1018,6 +1024,7 @@ export class BackendService {
       isRunning,
       pid: this.backendProcess?.pid,
       startTime: this.startTime || undefined,
+      runtimeSupervised: this.isRuntimeSupervised(),
     }
   }
 

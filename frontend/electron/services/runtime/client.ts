@@ -37,6 +37,7 @@ import {
   RuntimeResultEvent,
   RuntimeStateEvent,
   RuntimeWarningEvent,
+  RuntimeWarningSummary,
 } from './protocol'
 
 const logger = getLogger('Runtime客户端')
@@ -326,6 +327,85 @@ export function readRuntimeBaseUrl(details: Record<string, unknown>): string | u
   return typeof baseUrl === 'string' && baseUrl.length > 0 ? baseUrl : undefined
 }
 
+/**
+ * 从 `result.details.warnings` 读出 warning 快照（Go 侧 WarningSummary），字段不齐的条目跳过。
+ *
+ * Runtime 会把整个操作期间的 warning 汇总进最终 result；协议规定 result 之后不再有事件，
+ * 所以这是调用方最后一次观察到「后端被强制终止」「遗留孤儿被回收」这类信息的机会。
+ */
+export function readRuntimeWarningSummaries(
+  details: Record<string, unknown>
+): RuntimeWarningSummary[] {
+  const raw = details.warnings
+  if (!Array.isArray(raw)) return []
+
+  const summaries: RuntimeWarningSummary[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const candidate = item as Partial<RuntimeWarningSummary>
+    if (typeof candidate.code !== 'string' || typeof candidate.message !== 'string') continue
+    summaries.push({
+      code: candidate.code,
+      stage: typeof candidate.stage === 'string' ? candidate.stage : '',
+      message: candidate.message,
+      retryable: candidate.retryable === true,
+      remediation: Array.isArray(candidate.remediation) ? candidate.remediation : [],
+      details:
+        candidate.details && typeof candidate.details === 'object'
+          ? (candidate.details as Record<string, unknown>)
+          : {},
+    })
+  }
+  return summaries
+}
+
+/** 主进程日志里 details 的最大长度：孤儿清单最多 20 条，再长只会淹没日志。 */
+const WARNING_DETAILS_LOG_LIMIT = 2000
+
+function formatWarningDetails(details: Record<string, unknown>): string {
+  let text: string
+  try {
+    text = JSON.stringify(details)
+  } catch {
+    text = String(details)
+  }
+  if (text === undefined || text === '{}') return ''
+  if (text.length > WARNING_DETAILS_LOG_LIMIT) {
+    text = `${text.slice(0, WARNING_DETAILS_LOG_LIMIT)}…（已截断）`
+  }
+  return `，details=${text}`
+}
+
+/**
+ * warning 的日志级别。后端主进程被强杀（`BACKEND_FORCE_TERMINATED`）意味着正在跑的模拟器
+ * 与任务状态被硬断，记 error；后端自己退出后遗留孙进程被 Job 回收（`BACKEND_ORPHANS_REAPED`）
+ * 只是清理动作，与其他 warning 一样记 warn。
+ */
+function warningLogLevel(code: string): 'error' | 'warn' {
+  return code === 'BACKEND_FORCE_TERMINATED' ? 'error' : 'warn'
+}
+
+/** warning 事件到达时写主进程日志：桌面侧此前完全看不到 Runtime 的 warning。 */
+function logRuntimeWarning(event: RuntimeWarningEvent): void {
+  const level = warningLogLevel(event.code)
+  logger[level](
+    `Runtime warning ${event.code}（阶段 ${event.stage}）：${event.message}${formatWarningDetails(event.details)}`
+  )
+}
+
+/** result 携带的 warning 汇总：每条 warning 已在事件到达时带 details 记过，这里只列结论。 */
+function logRuntimeResultWarnings(event: RuntimeResultEvent): void {
+  const summaries = readRuntimeWarningSummaries(event.details)
+  if (summaries.length === 0) return
+
+  const codes = summaries.map(summary => summary.code)
+  const level = codes.some(code => warningLogLevel(code) === 'error') ? 'error' : 'warn'
+  const truncated = event.details.warningsTruncated === true ? '，且已截断' : ''
+  logger[level](
+    `Runtime 终态 ${event.code}（${event.stage}/${event.status}）携带 ${summaries.length} 条 warning：${codes.join(', ')}${truncated}`
+  )
+}
+
 function mergeEnv(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const [key, value] of Object.entries(overrides ?? {})) {
@@ -428,10 +508,16 @@ class RuntimeSession {
 
     logger.debug(`启动 Runtime：${clientOptions.runtimePath} ${this.argv.join(' ')}`)
 
+    // detached：让 Runtime 脱离 libuv 给非 detached 子进程套的 KILL_ON_JOB_CLOSE Job。
+    // 否则宿主被强杀时 Runtime 会随 Job 一起消失，拿不到 stdin EOF，后端没有优雅清理的机会。
+    // 三路 stdio 仍是管道：NDJSON 事件与 stdin 控制都靠它们；宿主退出（正常或被强杀）时
+    // 管道随之关闭，Runtime 按契约把 stdin EOF 视为隐式 shutdown，优雅关闭后端后自行退出，
+    // 不会留下永久孤儿。不 unref：close 事件与兜底 kill 仍由本会话负责。
     this.child = spawn(clientOptions.runtimePath, this.argv, {
       cwd: clientOptions.cwd,
       env: mergeEnv(clientOptions.env),
       windowsHide: true,
+      detached: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ChildProcessWithoutNullStreams
 
@@ -558,6 +644,7 @@ class RuntimeSession {
         break
       case 'warning':
         this.warnings.push(event)
+        logRuntimeWarning(event)
         this.options.onWarning?.(event)
         this.emitter.emit('warning', event)
         break
@@ -609,6 +696,7 @@ class RuntimeSession {
 
   private onResult(event: RuntimeResultEvent): void {
     this.resultEvent = event
+    logRuntimeResultWarnings(event)
     this.emitter.emit('result', event)
     // 协议规定 result 之后不再有任何事件，进程应随即退出；给一段宽限再兜底 kill。
     this.resultSettleTimer = setTimeout(() => {
