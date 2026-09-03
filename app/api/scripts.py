@@ -49,6 +49,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     detect_maafw_project_shell_hint,
+    _public_package_source,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
@@ -893,7 +894,9 @@ async def update_maafw_project(
         candidate = getattr(discovery, "candidate", None)
         # discovery.source 是版本元数据来源（恒为 Mirror 酱）；响应里的 source
         # 要回答「会从哪里下载」：优先候选包来源，其次核心包的 package_source。
-        candidate_source = (
+        # 一律用对外名（mirrorchyan / github）：candidate.source 是核心包的内部
+        # 名（github_release），直接回给前端会让「下载来源」显示成 github_release。
+        candidate_source = _public_package_source(
             (getattr(candidate, "source", None) if candidate is not None else None)
             or getattr(discovery, "package_source", None)
             or getattr(discovery, "source", None)

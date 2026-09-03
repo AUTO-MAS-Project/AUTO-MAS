@@ -100,11 +100,20 @@ class MaaFWProjectUpdateCandidate:
     range_supported: bool | None = None
     plan_id: str | None = None
     project_fingerprint: str | None = None
+    # 只查版本时为真：有新版本且来源可用，但尚未去换下载地址。
+    url_deferred: bool = False
 
     @property
     def installable(self) -> bool:
-        """Return whether this candidate has an actionable package URL."""
+        """这个候选包能不能装。
 
+        ``url_deferred`` 是「只查版本」用的：确认了有新版本、来源也可用，
+        只是**故意还没去换下载地址**——带 CDK 换地址会扣一次当日额度，
+        而用户可能只是随手点了下检查更新。真更新时会重新走一遍拿到地址。
+        """
+
+        if self.url_deferred:
+            return True
         return bool(str(self.download_url or "").strip())
 
 
@@ -797,7 +806,10 @@ async def _discover_project_update_detailed(
                 source="mirrorchyan",
                 version=latest,
                 candidate=MaaFWProjectUpdateCandidate(
-                    source="mirrorchyan", version=latest, to_version=latest
+                    source="mirrorchyan",
+                    version=latest,
+                    to_version=latest,
+                    url_deferred=True,
                 ),
             )
             return (
