@@ -480,7 +480,7 @@ const getDefaultMAAUserData = () => ({
     SeriesNumb: '0',
     Notes: '',
     Status: true,
-    Mode: '简洁',
+    Mode: '脚本',
     InfrastMode: 'Normal',
     InfrastName: '',
     InfrastIndex: '',

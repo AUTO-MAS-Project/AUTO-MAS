@@ -296,9 +296,7 @@ export default {
     multiLineAggregation: '複数行集約',
     stringSplitting: '文字列分割',
     gotIt: '了解',
-    simple: '簡易',
     expression: '式',
-    detailed: '詳細',
     masManaged: 'MAS 管理',
     none: '選択しない',
     drop: '破棄',
@@ -374,9 +372,6 @@ export default {
     all: 'すべて',
     userSPasswordStored:
       'ユーザーのパスワードです。忘れないよう保管する目的のみで、ほかの用途はありません',
-    userConfigurationMode: 'ユーザー設定モード',
-    simpleModeFollowsScript:
-      '簡易モードではスクリプトの全体設定を、詳細モードではこのユーザー独自の設定を使います',
     enterAccountId: 'アカウント ID を入力してください',
     goPlan: 'プランへ移動',
     pickGameServerThis: 'このユーザーがプレイするゲームサーバーを選びます',
