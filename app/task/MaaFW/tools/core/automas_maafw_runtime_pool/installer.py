@@ -1425,6 +1425,11 @@ def _run_with_source_rotation(
     的 ``RuntimeError``。超时或进程本身无法启动（``subprocess.TimeoutExpired``
     以外的异常，例如可执行文件不存在）视为该次尝试之外的问题，不换源，直接
     向上抛出——换一个包索引或分发源不可能修好「uv 都跑不起来」。
+
+    每次尝试都经 ``_run_subprocess`` 执行，所以当前线程登记了安装取消令牌时，
+    令牌置位会杀掉正在跑的子进程并抛 ``MaaFWRuntimeInstallCancelled``。它不是
+    ``RuntimeError``，这里也不捕获它：取消必须立刻穿透出去，绝不能被当成
+    「这个源失败了」而继续轮换下一个候选——那会把关机时的取消变成慢动作重试。
     """
 
     attempts: list[str | None] = list(candidates) if candidates else [None]
@@ -1433,15 +1438,11 @@ def _run_with_source_rotation(
         command = build_command(source)
         env = build_env(source)
         try:
-            result = subprocess.run(
+            result = _run_subprocess(
                 command,
-                capture_output=True,
-                timeout=timeout,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 cwd=cwd,
                 env=env,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"{failure_label}超时: {command[:3]}") from exc
