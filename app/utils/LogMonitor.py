@@ -24,7 +24,7 @@ import time
 
 import aiofiles
 from contextlib import suppress
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from copy import copy
 from pathlib import Path
 from typing import Callable, Literal, Awaitable

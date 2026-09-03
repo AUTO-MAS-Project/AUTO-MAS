@@ -784,10 +784,6 @@ class ConfigItem:
         if slot in self._slots:
             self._slots.remove(slot)
 
-    def unbind_all(self):
-        """断开所有槽函数连接"""
-        self._slots.clear()
-
     @logger.catch
     async def _emit_signal(self, value: Any) -> None:
         """
