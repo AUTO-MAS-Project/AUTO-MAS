@@ -22,7 +22,6 @@
 from __future__ import annotations
 
 import json
-import json5
 import os
 import threading
 import tomllib
@@ -30,6 +29,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+import json5
 import tomli_w
 import yaml
 

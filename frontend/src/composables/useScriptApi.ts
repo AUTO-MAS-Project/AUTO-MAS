@@ -1104,10 +1104,6 @@ export function useScriptApi() {
                           bettergiUserData.Data?.LastProxyStatus !== undefined
                             ? bettergiUserData.Data.LastProxyStatus
                             : '未知',
-                        LastOneDragonConfig:
-                          bettergiUserData.Data?.LastOneDragonConfig !== undefined
-                            ? bettergiUserData.Data.LastOneDragonConfig
-                            : '',
                       },
                     }
                   }

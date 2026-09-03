@@ -21,8 +21,8 @@ from contextlib import suppress
 from pathlib import Path
 
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
 from app.models.config import OkwwConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services.wuthering_waves import check_wuthering_waves_update
 from app.services.wuthering_waves_updater import update_wuthering_waves

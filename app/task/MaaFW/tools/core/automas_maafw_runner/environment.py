@@ -3,11 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform as platform_module
 import re
 import shutil
-import subprocess
-import platform as platform_module
 import struct
+import subprocess
 import sys
 import sysconfig
 import threading
@@ -16,6 +16,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
+
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
     MaaFWRuntimePool,
@@ -27,11 +32,6 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     host_bootstrap_python_request,
 )
-from packaging.requirements import InvalidRequirement, Requirement
-from packaging.specifiers import InvalidSpecifier, SpecifierSet
-from packaging.utils import canonicalize_name
-from packaging.version import InvalidVersion, Version
-
 
 RUNNER_ENV_MANIFEST_NAME = ".auto_mas_maafw_runner_env.json"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"

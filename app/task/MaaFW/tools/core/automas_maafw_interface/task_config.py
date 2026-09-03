@@ -27,13 +27,12 @@ from .models import (
     MaaFWOption,
     MaaFWPreset,
     MaaFWPresetOptionValue,
-    MaaFWTaskOptionValue,
     MaaFWTaskOptionsByTask,
+    MaaFWTaskOptionValue,
     build_pretask_task_name,
     is_pretask_task_name,
     iter_pretasks,
 )
-
 
 CUSTOM_PRESET_NAME = "__auto_mas_custom_preset__"
 

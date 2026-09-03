@@ -20,41 +20,42 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
+import asyncio
+import re
 import shlex
 import shutil
-import asyncio
 import time
-import re
-from pathlib import Path
+import uuid
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import GeneralConfig, GeneralUserConfig
-from app.models.emulator import DeviceBase
-from app.services import Notify, System
-from app.utils import (
-    get_logger,
-    LogMonitor,
-    ProcessManager,
-    ProcessInfo,
-    strptime,
-    is_process_running,
-    load_patterns,
-    apply_patterns,
-    flush_patterns,
-    compile_log_signs,
-)
-from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 from app.log_box.hooks import make_line_hook
 from app.log_box.markers import parse_marker
+from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.services import Notify, System
+from app.utils import (
+    LogMonitor,
+    ProcessInfo,
+    ProcessManager,
+    apply_patterns,
+    compile_log_signs,
+    flush_patterns,
+    get_logger,
+    is_process_running,
+    load_patterns,
+    strptime,
+)
 from app.utils.constants import UTC4
+from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+
 from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")

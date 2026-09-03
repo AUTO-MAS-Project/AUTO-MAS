@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import json5
+
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
     build_maafw_agent_command_plans,
 )
@@ -19,8 +20,8 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     MaaFWPretask,
     MaaFWResource,
     MaaFWTask,
-    MaaFWTaskOptionValue,
     MaaFWTaskOptionsByTask,
+    MaaFWTaskOptionValue,
     find_pretask_by_task_name,
     is_pretask_task_name,
 )
@@ -32,15 +33,14 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
 )
 
 from .models import (
-    MaaFWResolvedPath,
     MaaFWPretaskRunPlan,
+    MaaFWResolvedPath,
     MaaFWResourceBundlePlan,
     MaaFWRunPlan,
     MaaFWSkippedTaskPlan,
     MaaFWTaskRunPlan,
 )
 from .pipeline_override import MaaFWPipelineOverrideBuilder
-
 
 PI_INTERFACE_VERSION = "v2.8.1"
 PI_CLIENT_LANGUAGE = "zh_cn"

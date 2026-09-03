@@ -1,17 +1,18 @@
 # ocr_tool.py
-import cv2
-from PIL import Image
-from rapidocr_onnxruntime import RapidOCR
 import subprocess
 from pathlib import Path
 
+import cv2
+from PIL import Image
+from rapidocr_onnxruntime import RapidOCR
+
 from app.utils import get_logger
-from app.utils.platform import window as platform_window
 from app.utils.exception import (
-    WindowsNotFoundException,
-    WindowsNotFocusException,
     OCRNotFoundTitleException,
+    WindowsNotFocusException,
+    WindowsNotFoundException,
 )
+from app.utils.platform import window as platform_window
 
 # OCR入门指南！
 # ┌────────────────────────────┐
@@ -988,6 +989,7 @@ class OCRTool:
             OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
+
         import numpy as np
 
         # 使用传入的 title 或类的全局 title

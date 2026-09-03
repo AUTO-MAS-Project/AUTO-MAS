@@ -113,19 +113,29 @@ def discover_sra_managed_options(
         section_name = "cosmicStrife"
     _source, payload = load_sra_native_config(script_config)
     if module_key == "Daily":
-        predicate = lambda key: key not in {"enabled", "tasklist"}
+
+        def predicate(key):
+            return key not in {"enabled", "tasklist"}
+
     elif module_key == "ReceiveRewards":
-        predicate = lambda key: key not in {"enabled", "redeemCodes"}
+
+        def predicate(key):
+            return key not in {"enabled", "redeemCodes"}
+
     else:
         if module_key == "DivergentUniverse":
-            predicate = lambda key: (
-                (key == "pointRewards.enabled" or key.startswith("divergentUniverse."))
-                and key != "divergentUniverse.enabled"
-            )
+
+            def predicate(key):
+                return (
+                    key == "pointRewards.enabled"
+                    or key.startswith("divergentUniverse.")
+                ) and key != "divergentUniverse.enabled"
+
         else:
-            predicate = lambda key: (
-                key.startswith("currencyWars.") and key != "currencyWars.enabled"
-            )
+
+            def predicate(key):
+                return key.startswith("currencyWars.") and key != "currencyWars.enabled"
+
     section = payload.get(section_name)
     if not isinstance(section, dict):
         return {}, section_name

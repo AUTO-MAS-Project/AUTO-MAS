@@ -7,8 +7,21 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from ..automas_maafw_interface.models import MaaFWInterface
 
+from ..automas_maafw_interface.models import MaaFWInterface
+from .apply import recover_update_operation
+from .contracts import project_fingerprint
+from .state import (
+    DEFAULT_CACHE_ROOT,
+    DEFAULT_PLAN_ROOT,
+    UpdateOperationStore,
+    UpdatePlanStore,
+    cancel_update,
+    discard_update_artifact,
+    list_recovery_operations,
+    request_update_pause,
+    resume_update,
+)
 from .updater import (
     DOWNLOAD_MAX_BYTES,
     MaaFWDownloadedProjectPackage,
@@ -24,24 +37,11 @@ from .updater import (
     discover_maafw_project_update,
     download_maafw_project_package,
     list_update_providers,
-    release_maafw_project_package,
-    update_maafw_project_if_needed,
     persist_maafw_update_plan,
+    release_maafw_project_package,
     resolve_maafw_update_plan_candidate,
+    update_maafw_project_if_needed,
 )
-from .state import (
-    DEFAULT_CACHE_ROOT,
-    DEFAULT_PLAN_ROOT,
-    cancel_update,
-    discard_update_artifact,
-    list_recovery_operations,
-    request_update_pause,
-    resume_update,
-    UpdateOperationStore,
-    UpdatePlanStore,
-)
-from .contracts import project_fingerprint
-from .apply import recover_update_operation
 
 
 class MaaFWProjectUpdateService:

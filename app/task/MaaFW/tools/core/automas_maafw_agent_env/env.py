@@ -14,7 +14,6 @@ from typing import Callable
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_python_exe
 
-
 AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
 AGENT_ENV_MANIFEST_NAME = ".auto_mas_agent_env.json"
 AGENT_COMPAT_SHIM_DIR_NAME = ".auto_mas_shims"

@@ -28,15 +28,30 @@ from pathlib import Path
 from typing import Literal
 
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4, UTC8
+
 from .task_mapping import HSR_TASK_MODULES, get_assigned_script
+from .tools import push_notification
+from .tools.account_switch import (
+    HSR_GAME_PROCESS_NAME,
+    HSR_GAME_READY_DELAY_SECONDS,
+    HSRAccountSwitcher,
+    is_game_management_enabled,
+    resolve_game_executable_path,
+    stop_external_processes,
+    user_needs_account_switch,
+)
+from .tools.log_detect import detect_echo_of_war_completion
 from .tools.m7a_control import HSRM7AControl
+from .tools.m7a_runtime import M7ARunner
+from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
+from .tools.native_control import resolve_configured_engines, resolve_script_path
 from .tools.run_model import (
     CompletionWriteback,
     HSRLoginPlan,
@@ -49,20 +64,6 @@ from .tools.run_model import (
     external_result_failure_summary,
 )
 from .tools.sra_control import HSRSRAControl
-from .tools.account_switch import (
-    HSRAccountSwitcher,
-    HSR_GAME_PROCESS_NAME,
-    HSR_GAME_READY_DELAY_SECONDS,
-    is_game_management_enabled,
-    stop_external_processes,
-    resolve_game_executable_path,
-    user_needs_account_switch,
-)
-from .tools import push_notification
-from .tools.log_detect import detect_echo_of_war_completion
-from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_configured_engines, resolve_script_path
-from .tools.m7a_runtime import M7ARunner
 from .tools.sra_runtime import cleanup_sra_temp_config
 from .tools.stage_runtime import (
     get_sra_native_stage,

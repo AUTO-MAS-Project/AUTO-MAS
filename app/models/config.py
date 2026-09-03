@@ -20,59 +20,60 @@
 
 
 import asyncio
-import uuid
-import json
 import calendar
+import json
+import uuid
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from app.utils.constants import (
-    UTC4,
-    UTC8,
     CYCLE_EMPTY_TIME,
-    MATERIALS_MAP,
-    RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
+    MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_WITH_AB,
     MAAEND_TASKS,
-    MAAEND_SANITY_TASK_TYPES,
+    MATERIALS_MAP,
     PLAN_CONSUMER_VALUES,
+    RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
+    UTC4,
+    UTC8,
 )
+
 from . import schema as schema_model
 from .ConfigBase import (
-    ConfigBase,
-    ValidatorBase,
-    MultipleConfig,
-    ConfigItem,
-    MultipleUIDValidator,
-    TypedMultipleUIDValidator,
+    AdvancedArgumentValidator,
+    ArgumentValidator,
     BoolValidator,
-    OptionsValidator,
-    MultipleOptionsValidator,
-    RangeValidator,
-    StringValidator,
-    VirtualConfigValidator,
-    FileValidator,
-    FolderValidator,
+    ConfigBase,
+    ConfigItem,
+    DateTimeValidator,
     EmulatorPathValidator,
     EncryptValidator,
-    UUIDValidator,
-    DateTimeValidator,
+    FileValidator,
+    FolderValidator,
     JSONValidator,
+    KeyValidator,
+    MultipleConfig,
+    MultipleOptionsValidator,
+    MultipleUIDValidator,
+    OptionsValidator,
+    RangeValidator,
+    StringValidator,
+    TypedMultipleUIDValidator,
     URLValidator,
     UserNameValidator,
-    KeyValidator,
-    ArgumentValidator,
-    AdvancedArgumentValidator,
+    UUIDValidator,
+    ValidatorBase,
+    VirtualConfigValidator,
 )
 from .schema import TagItem
 
@@ -3109,10 +3110,6 @@ class BetterGIUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
-        self.Data_LastOneDragonConfig = ConfigItem(
-            "Data", "LastOneDragonConfig", ""
-        )
-
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())

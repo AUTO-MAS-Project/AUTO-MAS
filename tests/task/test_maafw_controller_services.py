@@ -13,7 +13,6 @@ import unittest
 from pathlib import Path
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.task.MaaFW.tools.core.automas_maafw_controller_adb import (
     MaaFWAdbControllerService,
 )

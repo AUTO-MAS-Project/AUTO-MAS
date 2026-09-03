@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.core  # noqa: F401
-
 from app.task.MaaFW.tools.core.automas_maafw_interface import loader as loader_module
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import parse_json_text
 

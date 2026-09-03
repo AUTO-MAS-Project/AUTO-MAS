@@ -151,6 +151,7 @@ def build_managed_config(
     """Discover managed forms and merge script/user engine assignments."""
 
     from app.task.HSR.task_mapping import HSR_TASK_MODULES, get_assigned_script
+
     from .managed_config import list_managed_modules
 
     effective = _configured_engines(script_config)

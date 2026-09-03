@@ -30,8 +30,8 @@
 """
 
 from . import protocol
-from .manager import MainConnection
 from .dispatcher import Dispatcher
+from .manager import MainConnection
 from .publisher import Publisher
 
 __all__ = [

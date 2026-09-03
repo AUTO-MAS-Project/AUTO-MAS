@@ -6,7 +6,6 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-
 PROJECT_MANIFEST_NAME = ".auto_mas_maafw_project.json"
 SHARED_RUNTIME_KIND = "shared_runtime"
 _BARE_PYTHON_COMMANDS = frozenset(

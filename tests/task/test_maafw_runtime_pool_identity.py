@@ -8,14 +8,13 @@ import importlib
 import unittest
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    POOL_MARKER_NAME,
+    POOL_SCHEMA_VERSION,
     MaaFWRuntimeIdentityError,
     MaaFWRuntimePool,
     MaaFWRuntimePoolError,
     MaaFWRuntimePoolService,
-    POOL_MARKER_NAME,
-    POOL_SCHEMA_VERSION,
     build_runtime_id,
     build_runtime_identity,
     canonicalize_requirements,

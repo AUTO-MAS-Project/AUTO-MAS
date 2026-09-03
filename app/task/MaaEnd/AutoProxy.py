@@ -19,30 +19,31 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
-import uuid
-import shutil
 import asyncio
-from pathlib import Path
+import re
+import shutil
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
+from app.task.general.tools import execute_script_task
+from app.utils import LogMonitor, ProcessManager, get_logger, is_process_running
+from app.utils.constants import MAAEND_TASKS, UTC4
 from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4, MAAEND_TASKS
-from .tools import login, push_notification, replace_account_switch_task
+
 from .resource_loader import (
     load_maaend_interface_i18n,
     load_maaend_task_i18n,
 )
-from app.task.general.tools import execute_script_task
+from .tools import login, push_notification, replace_account_switch_task
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -812,7 +813,7 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         self.cur_user_log.status = "Success!"
-                except:
+                except Exception:
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif self.is_log_stalled(

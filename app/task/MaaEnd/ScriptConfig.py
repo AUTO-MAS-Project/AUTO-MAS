@@ -19,19 +19,19 @@
 #   Contact: DLmaster_361@163.com
 
 
-import shutil
 import asyncio
+import shutil
 from pathlib import Path
 from typing import Any
 
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
 logger = get_logger("MaaEnd 脚本设置")
