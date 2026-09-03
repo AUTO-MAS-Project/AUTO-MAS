@@ -41,7 +41,7 @@ from app.utils.constants import (
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
-    MAAEND_STAGE_WITH_AB,
+    MAAEND_REWARDS_SET_OPTIONS,
     MAAEND_TASKS,
     MAAEND_SANITY_TASK_TYPES,
     PLAN_CONSUMER_VALUES,
@@ -1145,7 +1145,7 @@ class MaaEndUserConfig(ConfigBase):
                 }
             )
 
-            if detail_key in MAAEND_STAGE_WITH_AB:
+            if detail_key in MAAEND_REWARDS_SET_OPTIONS:
                 tags.append(
                     {
                         "text": (

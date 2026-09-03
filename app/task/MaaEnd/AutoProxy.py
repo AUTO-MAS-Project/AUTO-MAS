@@ -19,32 +19,78 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
-import uuid
-import shutil
 import asyncio
-from pathlib import Path
+import re
+import shutil
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
+from app.task.general.tools import execute_script_task
+from app.utils import LogMonitor, ProcessManager, get_logger, is_process_running
+from app.utils.constants import MAAEND_REWARDS_SET_OPTIONS, MAAEND_TASKS, UTC4
 from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4, MAAEND_TASKS
-from .tools import login, push_notification, replace_account_switch_task
+
 from .resource_loader import (
     load_maaend_interface_i18n,
     load_maaend_task_i18n,
 )
-from app.task.general.tools import execute_script_task
+from .tools import login, push_notification, replace_account_switch_task
 
 logger = get_logger("MaaEnd 自动代理")
+
+
+def _inherit_fields(
+    target: dict[str, object], source: dict[str, object], fields: tuple[str, ...]
+) -> None:
+    """让 target 的指定字段跟随 source: source 有则覆盖, 没有则移除"""
+
+    for field in fields:
+        if field in source:
+            target[field] = source[field]
+        else:
+            target.pop(field, None)
+
+
+def _set_sanity_task_options(
+    *,
+    task_name: str,
+    option_values: dict[str, object],
+    sanity_task_key: dict[str, str],
+) -> None:
+    """按 MAS 理智任务配置写入 MaaEnd 目标任务(协议空间/基质刷取)的选项值"""
+
+    if task_name == "AutoEssence":
+        option_values.pop("AutoEssenceSpecifiedLocation", None)
+        option_values["AutoEssenceChooseLocation"] = {
+            "type": "checkbox",
+            "caseNames": [sanity_task_key["AutoEssenceSpecifiedLocation"]],
+        }
+        return
+
+    sanity_task_type = sanity_task_key["SanityTaskType"]
+    option_values["ProtocolSpaceTab"] = {"type": "select", "caseName": sanity_task_type}
+    for option in ("OperatorProgression", "WeaponProgression", "CrisisDrills"):
+        option_values[option] = {"type": "select", "caseName": sanity_task_key[option]}
+
+    # 含 AB 关的关卡按奖励组选择对应产出
+    stage = sanity_task_key[sanity_task_type]
+    reward_option = sanity_task_key.get("RewardsSetOption", "")
+    if stage in MAAEND_REWARDS_SET_OPTIONS:
+        option, case_names = MAAEND_REWARDS_SET_OPTIONS[stage]
+        if reward_option in case_names:
+            option_values[option] = {
+                "type": "select",
+                "caseName": case_names[reward_option],
+            }
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -70,10 +116,23 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        self.account_id = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        # 简洁模式共用脚本级配置, 详细模式使用用户独立配置
+        config_user_id = (
+            "Default"
+            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            else self.cur_user_uid
+        )
+        self.maaend_config_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
+        )
         self.check_result = "-"
         self.account_switch_task_name = ""
         self.color_match_failed_message: str | None = None
         self.retryable = True
+        # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
+        self.task_dict: dict[str, dict[str, bool]] = {}
 
     async def check(self) -> str:
 
@@ -87,28 +146,13 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        if (
-            self.script_config.get("Run", "AccountSwitchMethod") == "MAAEND"
-            and account_id
+        if self.account_id and (
+            len(self.account_id) < 4 or not self.account_id[-4:].isdigit()
         ):
-            if len(account_id) < 4 or not account_id[-4:].isdigit():
-                self.cur_user_item.status = "异常"
-                return (
-                    "MAAEND 内置账号切换需要账号末四位为数字，"
-                    "请检查账号ID或改用 MAS 自建账号切换"
-                )
+            self.cur_user_item.status = "异常"
+            return "账号切换需要账号末四位为数字，请检查账号ID"
 
-        config_user_id = (
-            "Default"
-            if self.cur_user_config.get("Info", "Mode") == "简洁"
-            else self.cur_user_uid
-        )
-        config_file = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile/mxu-MaaEnd.json"
-        )
-        if not config_file.exists():
+        if not (self.maaend_config_path / "mxu-MaaEnd.json").exists():
             self.cur_user_item.status = "异常"
             return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
@@ -127,7 +171,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.maaend_set_path = self.maaend_root_path / "config"
         self.maaend_cache_path = self.maaend_root_path / "cache"
-        self.maaend_log_path = self.maaend_root_path / "debug/maa.log"
 
         self.maaend_log_monitor = LogMonitor(
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
@@ -160,9 +203,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info(f"开始代理用户 {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
-
-        self.task_dict: dict[str, dict[str, bool]] | None = None
-        self.unique_task: dict[str, str] = {}
 
         run_times_limit = self.script_config.get("Run", "RunTimesLimit")
         maaend_update_retry_used = False
@@ -224,12 +264,11 @@ class AutoProxyTask(TaskExecuteBase):
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
 
-            account_id = str(self.cur_user_config.get("Info", "Id")).strip()
             account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
             if account_switch_method == "MAS":
                 try:
-                    if account_id:
-                        await login(account_id, emulator_info)
+                    if self.account_id:
+                        await login(self.account_id, emulator_info)
                     logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
                 except RuntimeError as e:
                     await self.handle_pre_maaend_error(
@@ -241,7 +280,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "「明日方舟：终末地」登录成功"
                 )
             else:
-                if account_id:
+                if self.account_id:
                     logger.info(
                         f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                     )
@@ -264,7 +303,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.maaend_exe_path,
                 "--autostart",
                 "--instance",
-                self.maaend_instance_name,
+                "AUTO-MAS",
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
             )
@@ -312,49 +351,34 @@ class AutoProxyTask(TaskExecuteBase):
                 pass
             await self.maaend_log_monitor.stop()
 
+            if self.cur_user_log.status == "MaaEnd 正在更新":
+                logger.info("MaaEnd 更新流程已退出，准备自动重试当前用户")
+                self.script_info.log = "MaaEnd 更新完成，正在自动重试当前用户"
+
+                # MaaEnd 更新后只重启脚本本体，保留 Endfield 进程减少重试成本。
+                await self.kill_maaend_process()
+
+                if not maaend_update_retry_used:
+                    maaend_update_retry_used = True
+                    i -= 1
+                    await asyncio.sleep(3)
+                    continue
+
+                logger.warning("MaaEnd 更新后已自动重试一次，跳过后续重试")
+                break
+
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
                 self.script_info.log = (
                     "检测到 MaaEnd 完成代理任务\n正在等待相关程序结束"
                 )
-
-                # 中止相关程序
-                await self.maaend_process_manager.kill()
-                await System.kill_process(self.maaend_exe_path)
-
-                # 执行任务后脚本
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
-
+                await self.kill_maaend_process()
             else:
-                if self.cur_user_log.status == "MaaEnd 正在更新":
-                    logger.info("MaaEnd 更新流程已退出，准备自动重试当前用户")
-                    self.script_info.log = "MaaEnd 更新完成，正在自动重试当前用户"
-
-                    # MaaEnd 更新后只重启脚本本体，保留 Endfield 进程减少重试成本。
-                    await self.maaend_process_manager.kill()
-                    await System.kill_process(self.maaend_exe_path)
-
-                    if not maaend_update_retry_used:
-                        maaend_update_retry_used = True
-                        i -= 1
-                        await asyncio.sleep(3)
-                        continue
-
-                    logger.warning("MaaEnd 更新后已自动重试一次，跳过后续重试")
-                    break
-
                 logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
-
-                # 中止相关程序
                 await self.kill_managed_process()
-
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
                     f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -362,37 +386,28 @@ class AutoProxyTask(TaskExecuteBase):
                     3,
                 )
 
-                # 执行任务后脚本
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
+            # 执行任务后脚本
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
 
-                if not self.retryable:
-                    logger.info("检测到游戏画面参数错误，跳过后续重试")
-                    break
+            if not self.retryable:
+                logger.info("检测到游戏画面参数错误，跳过后续重试")
+                break
 
-    async def handle_pre_maaend_error(
-        self, error_message: str, e: Exception | None = None
-    ):
+    async def handle_pre_maaend_error(self, error_message: str, e: Exception) -> None:
+        """记录 MaaEnd 启动前(启动游戏、登录)的失败并清理进程"""
 
-        if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=error_message),
-            )
-        else:
-            logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
-            )
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
-            )
+        logger.opt(exception=True).warning(
+            f"用户: {self.cur_user_uid} - {error_message}: {e}"
+        )
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
+        )
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
 
@@ -405,8 +420,8 @@ class AutoProxyTask(TaskExecuteBase):
             3,
         )
 
-    async def kill_managed_process(self) -> None:
-        """中止关联进程"""
+    async def kill_maaend_process(self) -> None:
+        """中止 MaaEnd 进程"""
 
         try:
             logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
@@ -414,6 +429,11 @@ class AutoProxyTask(TaskExecuteBase):
             await System.kill_process(self.maaend_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
+
+    async def kill_managed_process(self) -> None:
+        """中止 MaaEnd 与游戏/模拟器进程"""
+
+        await self.kill_maaend_process()
         try:
             if self.emulator_manager is None:
                 logger.info("中止终末地进程")
@@ -433,49 +453,26 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info("开始配置 MaaEnd 运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
-        await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await self.kill_maaend_process()
 
-        maaend_local_config = None
-        if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
-            maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
-
-        config_user_id = (
-            "Default"
-            if self.cur_user_config.get("Info", "Mode") == "简洁"
-            else self.cur_user_uid
-        )
-        maaend_config_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
-        )
-        maaend_config_file = maaend_config_path / "mxu-MaaEnd.json"
-        if not maaend_config_file.exists():
+        if not (self.maaend_config_path / "mxu-MaaEnd.json").exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
             )
 
+        # 版本号、任务快照与欢迎页标记跟随本机 MaaEnd, 不沿用用户配置快照
+        maaend_local_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-        shutil.copytree(maaend_config_path, self.maaend_set_path)
+        shutil.copytree(self.maaend_config_path, self.maaend_set_path)
         maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
-        for field in ("version", "interfaceTaskSnapshot"):
-            maaend_set.pop(field, None)
-            if maaend_local_config is not None and field in maaend_local_config:
-                maaend_set[field] = maaend_local_config[field]
-
-        settings = maaend_set.get("settings")
-        if isinstance(settings, dict):
-            settings.pop("welcomeShownHash", None)
-
-        if maaend_local_config is not None:
-            local_settings = maaend_local_config.get("settings")
-            if (
-                isinstance(local_settings, dict)
-                and "welcomeShownHash" in local_settings
-            ):
-                maaend_set.setdefault("settings", {})["welcomeShownHash"] = (
-                    local_settings["welcomeShownHash"]
-                )
+        _inherit_fields(
+            maaend_set, maaend_local_set, ("version", "interfaceTaskSnapshot")
+        )
+        _inherit_fields(
+            maaend_set.setdefault("settings", {}),
+            maaend_local_set.get("settings", {}),
+            ("welcomeShownHash",),
+        )
 
         instances = maaend_set.get("instances")
         if not isinstance(instances, list) or len(instances) == 0:
@@ -483,21 +480,7 @@ class AutoProxyTask(TaskExecuteBase):
                 "MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤"
             )
 
-        maaend_instance = None
-        for instance in instances:
-            if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
-                maaend_instance = instance
-                break
-            if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
-                maaend_instance = instance
-                break
-        if maaend_instance is None:
-            maaend_instance = instances[0]
-        self.maaend_instance_name = (
-            maaend_instance.get("name")
-            or maaend_instance.get("customName")
-            or "AUTO-MAS"
-        )
+        maaend_instance = instances[0]
         if device_info is not None:
             from app.core import MaaFWManager
 
@@ -506,11 +489,13 @@ class AutoProxyTask(TaskExecuteBase):
             }
         maaend_tasks = maaend_instance["tasks"]
 
-        account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
         replace_account_switch_task(
             tasks=maaend_tasks,
-            account_id=(account_id if account_switch_method == "MAAEND" else ""),
+            account_id=(
+                self.account_id
+                if self.script_config.get("Run", "AccountSwitchMethod") == "MAAEND"
+                else ""
+            ),
             controller_type=str(self.script_config.get("Game", "ControllerType")),
             task_id=f"mas{self.cur_user_uid.hex[:4]}",
         )
@@ -519,15 +504,12 @@ class AutoProxyTask(TaskExecuteBase):
         settings = maaend_set["settings"]
         if settings["language"] == "system":
             settings["language"] = "zh-CN"
+        language = str(settings["language"])
         maaend_i18n = await asyncio.to_thread(
-            load_maaend_task_i18n,
-            self.maaend_root_path,
-            str(settings["language"]),
+            load_maaend_task_i18n, self.maaend_root_path, language
         )
         maaend_interface_i18n = await asyncio.to_thread(
-            load_maaend_interface_i18n,
-            self.maaend_root_path,
-            str(settings["language"]),
+            load_maaend_interface_i18n, self.maaend_root_path, language
         )
         self.account_switch_task_name = maaend_i18n["AccountSwitch"]
         self.color_match_failed_message = maaend_interface_i18n[
@@ -537,62 +519,55 @@ class AutoProxyTask(TaskExecuteBase):
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
 
         def get_task_book_name(task: dict[str, object]) -> str:
-            if not if_quick_config:
-                return str(
-                    task.get("customName")
-                    or maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
-                )
-            return maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
+            # 快速配置按任务名归并, 否则保留用户在 MaaEnd 中的自定义名称
+            label = maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
+            return label if if_quick_config else str(task.get("customName") or label)
 
-        sanity_task_key = {}
-        sanity_task_type = ""
+        sanity_task_key: dict[str, str] = {}
         target_task_name = ""
         if if_quick_config:
             sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
-            sanity_task_type = sanity_task_key["SanityTaskType"]
             target_task_name = (
-                "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
+                "AutoEssence"
+                if sanity_task_key["SanityTaskType"] == "Essence"
+                else "ProtocolSpace"
             )
 
-        if self.task_dict is None:
-            # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
-            self.task_dict = {}
-            sanity_configured = False
-            sanity_switch_enabled = if_quick_config and self.cur_user_config.get(
+        if not self.task_dict:
+            sanity_enabled = if_quick_config and self.cur_user_config.get(
                 "Task", "IfSanity"
             )
-            target_sanity_task_exists = any(
-                task.get("taskName") == target_task_name for task in maaend_tasks
+            # 配置里缺少目标理智任务时不接管理智任务, 维持用户原有开关
+            sanity_missing = sanity_enabled and all(
+                task.get("taskName") != target_task_name for task in maaend_tasks
             )
-            sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
-            sanity_managed = if_quick_config and (
-                not sanity_switch_enabled or target_sanity_task_exists
-            )
+            sanity_configured = False
 
             for task in maaend_tasks:
                 if task["taskName"].startswith("__MXU_"):
                     continue
 
                 task_enabled = task["enabled"]
-                if if_quick_config:
-                    if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
-                        if sanity_managed:
-                            task_enabled = (
-                                sanity_switch_enabled
-                                and task["taskName"] == target_task_name
-                                and not sanity_configured
-                            )
-                            if task_enabled:
-                                sanity_configured = True
-                    elif task["taskName"] in MAAEND_TASKS:
-                        task_enabled = self.cur_user_config.get(
-                            "Task", f"If{task['taskName']}"
+                if if_quick_config and task["taskName"] in (
+                    "ProtocolSpace",
+                    "AutoEssence",
+                ):
+                    if not sanity_missing:
+                        # 理智任务只保留首个目标任务
+                        task_enabled = (
+                            sanity_enabled
+                            and task["taskName"] == target_task_name
+                            and not sanity_configured
                         )
+                        sanity_configured = sanity_configured or task_enabled
+                elif if_quick_config and task["taskName"] in MAAEND_TASKS:
+                    task_enabled = self.cur_user_config.get(
+                        "Task", f"If{task['taskName']}"
+                    )
 
-                task_name = get_task_book_name(task)
-                if task_name not in self.task_dict:
-                    self.task_dict[task_name] = {}
-                self.task_dict[task_name][task["id"]] = task_enabled
+                self.task_dict.setdefault(get_task_book_name(task), {})[task["id"]] = (
+                    task_enabled
+                )
 
             if sanity_missing:
                 warning_message = (
@@ -612,93 +587,19 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_name = get_task_book_name(task)
-            if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
+            if task["id"] in self.task_dict.get(task_name, {}):
                 task["enabled"] = self.task_dict[task_name][task["id"]]
 
-            if not task["enabled"]:
-                continue
-
             if (
-                if_quick_config
+                task["enabled"]
+                and if_quick_config
                 and task["taskName"] == target_task_name
-                and target_task_name == "ProtocolSpace"
             ):
-                task.setdefault("optionValues", {})
-                task["optionValues"]["ProtocolSpaceTab"] = {
-                    "type": "select",
-                    "caseName": sanity_task_type,
-                }
-                for option in (
-                    "OperatorProgression",
-                    "WeaponProgression",
-                    "CrisisDrills",
-                ):
-                    task["optionValues"][option] = {
-                        "type": "select",
-                        "caseName": sanity_task_key[option],
-                    }
-                reward_option = sanity_task_key.get("RewardsSetOption")
-                if reward_option == "RewardsSetA":
-                    if sanity_task_type == "OperatorProgression":
-                        if sanity_task_key["OperatorProgression"] == "OperatorEXP":
-                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "CognitiveCarriers",
-                            }
-                        elif sanity_task_key["OperatorProgression"] == "Promotions":
-                            task["optionValues"]["PromotionsRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protoset",
-                            }
-                        elif sanity_task_key["OperatorProgression"] == "SkillUp":
-                            task["optionValues"]["SkillUpRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protohedron",
-                            }
-                    elif (
-                        sanity_task_type == "WeaponProgression"
-                        and sanity_task_key["WeaponProgression"] == "WeaponTune"
-                    ):
-                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
-                            "type": "select",
-                            "caseName": "HeavyCastDie",
-                        }
-                elif reward_option == "RewardsSetB":
-                    if sanity_task_type == "OperatorProgression":
-                        if sanity_task_key["OperatorProgression"] == "OperatorEXP":
-                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "AdvancedCombatRecord",
-                            }
-                        elif sanity_task_key["OperatorProgression"] == "Promotions":
-                            task["optionValues"]["PromotionsRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protodisk",
-                            }
-                        elif sanity_task_key["OperatorProgression"] == "SkillUp":
-                            task["optionValues"]["SkillUpRewardsSetOption"] = {
-                                "type": "select",
-                                "caseName": "Protoprism",
-                            }
-                    elif (
-                        sanity_task_type == "WeaponProgression"
-                        and sanity_task_key["WeaponProgression"] == "WeaponTune"
-                    ):
-                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
-                            "type": "select",
-                            "caseName": "CastDie",
-                        }
-            elif (
-                if_quick_config
-                and task["taskName"] == target_task_name
-                and target_task_name == "AutoEssence"
-            ):
-                task.setdefault("optionValues", {})
-                task["optionValues"].pop("AutoEssenceSpecifiedLocation", None)
-                task["optionValues"]["AutoEssenceChooseLocation"] = {
-                    "type": "checkbox",
-                    "caseNames": [sanity_task_key["AutoEssenceSpecifiedLocation"]],
-                }
+                _set_sanity_task_options(
+                    task_name=task["taskName"],
+                    option_values=task.setdefault("optionValues", {}),
+                    sanity_task_key=sanity_task_key,
+                )
 
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
@@ -770,51 +671,7 @@ class AutoProxyTask(TaskExecuteBase):
         elif f"任务失败: {self.account_switch_task_name}" in log:
             self.cur_user_log.status = "MaaEnd 账号切换失败"
         elif if_stream_end:
-            if self.task_dict is None:
-                self.cur_user_log.status = "MaaEnd 未加载任何任务"
-            else:
-                try:
-                    task_name = ""
-                    task_index = {
-                        k: {"index": 0, "list": list(v.keys())}
-                        for k, v in self.task_dict.items()
-                    }
-                    for log_line in self.cur_user_log.content:
-                        match = re.search(r"任务开始:\s*(.+)", log_line)
-                        task_name = match.group(1) if match else task_name
-                        if (
-                            task_name in self.task_dict
-                            and f"任务完成: {task_name}" in log_line
-                        ):
-                            self.task_dict[task_name][
-                                task_index[task_name]["list"][
-                                    task_index[task_name]["index"]
-                                ]
-                            ] = False
-                            task_index[task_name]["index"] += 1
-                        elif f"任务失败: {task_name}" in log_line:
-                            task_index[task_name]["index"] += 1
-
-                    unfinished_tasks = {}
-                    for task_name, task_status in self.task_dict.items():
-                        task_ids = [
-                            task_id
-                            for task_id, enabled in task_status.items()
-                            if enabled
-                        ]
-                        if task_ids:
-                            unfinished_tasks[task_name] = task_ids
-
-                    if unfinished_tasks:
-                        logger.info(f"MaaEnd 未完成任务列表: {unfinished_tasks}")
-                        self.cur_user_log.status = (
-                            f"MaaEnd 部分任务执行失败: {'、'.join(unfinished_tasks)}"
-                        )
-                    else:
-                        self.cur_user_log.status = "Success!"
-                except:
-                    self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
-
+            self.cur_user_log.status = self.parse_task_result()
         elif self.is_log_stalled(
             latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
@@ -827,6 +684,34 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"MaaEnd 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
 
+    def parse_task_result(self) -> str:
+        """按日志中的任务开始/完成节点收束本轮任务表, 返回代理结果"""
+
+        try:
+            # 同名任务按日志出现顺序依次对应任务表中的任务 id
+            pending_ids = {name: iter(ids) for name, ids in self.task_dict.items()}
+            task_name = ""
+            for log_line in self.cur_user_log.content:
+                match = re.search(r"任务开始:\s*(.+)", log_line)
+                if match:
+                    task_name = match.group(1)
+                if task_name in self.task_dict and f"任务完成: {task_name}" in log_line:
+                    self.task_dict[task_name][next(pending_ids[task_name])] = False
+                elif f"任务失败: {task_name}" in log_line:
+                    next(pending_ids[task_name])
+        except Exception:
+            return "MaaEnd 任务执行情况解析失败"
+
+        unfinished_tasks = {
+            name: [task_id for task_id, enabled in status.items() if enabled]
+            for name, status in self.task_dict.items()
+            if any(status.values())
+        }
+        if unfinished_tasks:
+            logger.info(f"MaaEnd 未完成任务列表: {unfinished_tasks}")
+            return f"MaaEnd 部分任务执行失败: {'、'.join(unfinished_tasks)}"
+        return "Success!"
+
     async def final_task(self):
 
         if self.check_result != "Pass":
@@ -838,22 +723,27 @@ class AutoProxyTask(TaskExecuteBase):
             and self.run_book
             and not self.script_config.get("Game", "CloseOnFinish")
         ):
-            try:
-                logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
-                await self.maaend_process_manager.kill()
-                await System.kill_process(self.maaend_exe_path)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
+            await self.kill_maaend_process()
         else:
             await self.kill_managed_process()
 
+        # 更新中的记录不写入历史, 只用于判定本轮是否停在 MaaEnd 更新
+        log_record = self.cur_user_item.log_record
+        if_maaend_updating = (
+            bool(log_record)
+            and next(reversed(log_record.values())).status == "MaaEnd 正在更新"
+        )
+        for t in [
+            t for t, item in log_record.items() if item.status == "MaaEnd 正在更新"
+        ]:
+            log_record.pop(t)
+
         user_logs_list = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
+        for t, log_item in log_record.items():
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,
-                log_time=dt,
+                log_time=t.astimezone(UTC4),
             )
 
             if log_item.status == "MaaEnd 正常运行中":
@@ -863,25 +753,8 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            if log_item.status == "MaaEnd 正在更新":
-                continue
-
             await Config.save_maaend_log(log_path, log_item.content, log_item.status)
             user_logs_list.append(log_path.with_suffix(".json"))
-
-        latest_log_status = (
-            next(reversed(self.cur_user_item.log_record.values())).status
-            if self.cur_user_item.log_record
-            else ""
-        )
-        if_maaend_updating = latest_log_status == "MaaEnd 正在更新"
-        update_log_times = [
-            t
-            for t, log_item in self.cur_user_item.log_record.items()
-            if log_item.status == "MaaEnd 正在更新"
-        ]
-        for t in update_log_times:
-            self.cur_user_item.log_record.pop(t, None)
 
         statistics = await Config.merge_statistic_info(user_logs_list)
         statistics["user_info"] = self.cur_user_item.name

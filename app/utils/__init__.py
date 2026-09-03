@@ -23,15 +23,28 @@
 
 import sys
 import types
+from typing import TYPE_CHECKING
 
 from .constants import *
 from .logger import get_logger
 from .security import (
-    dpapi_encrypt,
     dpapi_decrypt,
+    dpapi_encrypt,
     format_exception_reason,
     sanitize_log_message,
 )
+
+if TYPE_CHECKING:
+    from .LogMonitor import LogMonitor as LogMonitor
+    from .LogMonitor import strptime as strptime
+    from .ProcessManager import ProcessInfo as ProcessInfo
+    from .ProcessManager import ProcessManager as ProcessManager
+    from .ProcessManager import ProcessResult as ProcessResult
+    from .ProcessManager import ProcessRunner as ProcessRunner
+    from .ProcessManager import activate_window_by_pid as activate_window_by_pid
+    from .ProcessManager import has_visible_window as has_visible_window
+    from .ProcessManager import is_process_alive as is_process_alive
+    from .ProcessManager import is_process_running as is_process_running
 
 _LAZY_EXPORTS = {
     "LogMonitor": (".LogMonitor", "LogMonitor"),

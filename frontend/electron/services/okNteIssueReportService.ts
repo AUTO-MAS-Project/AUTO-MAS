@@ -1,6 +1,4 @@
-import * as fs from 'fs'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
 import {
@@ -9,6 +7,7 @@ import {
   addDiagnosticFile,
   addDirectory,
   addLatestMasHistoryLog,
+  createCollector,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -53,8 +52,7 @@ export interface OkNteIssueReportResult {
 }
 
 export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteIssueReportResult {
-  const zip = new AdmZip()
-  const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
+  const state = createCollector(zipPath)
   const dataRoots = resolveDataRoots(appRoot)
   const installations = discoverInstallations(dataRoots, {
     configType: 'OkNteConfig',
@@ -80,12 +78,11 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
   addLatestOkNteScriptLog(state, installations)
 
   try {
-    fs.mkdirSync(path.dirname(zipPath), { recursive: true })
-    zip.writeZip(zipPath)
+    state.zip.finalize()
     logger.info(`OK-NTE 问题包已导出: ${zipPath}`)
     return {
       success: true,
-      message: `OK-NTE 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
+      message: `OK-NTE 问题包导出成功，已收集 ${state.entries.length} 个文件`,
       zipPath,
     }
   } catch (error) {

@@ -1,14 +1,12 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
+import { StreamingZipWriter } from './streamingZip'
 
 const logger = getLogger('问题包')
 
-export const MAX_ENTRY_BYTES = 25 * 1024 * 1024
-export const MAX_ARCHIVE_BYTES = 95 * 1024 * 1024
 const TEXT_EXTENSIONS = new Set([
   '.cfg',
   '.csv',
@@ -34,14 +32,11 @@ export interface ReportEntry {
   path: string
   sourceSize: number
   storedSize: number
-  status: 'included' | 'truncated' | 'skipped'
-  reason?: string
 }
 
 export interface CollectorState {
-  zip: AdmZip
+  zip: StreamingZipWriter
   entries: ReportEntry[]
-  archiveBytes: number
 }
 
 export interface HistoryLogCandidate {
@@ -175,37 +170,22 @@ export function discoverInstallations(
   return installations
 }
 
+export function createCollector(zipPath: string): CollectorState {
+  fs.mkdirSync(path.dirname(zipPath), { recursive: true })
+  return { zip: new StreamingZipWriter(zipPath), entries: [] }
+}
+
 export function addEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
-  content: Buffer,
-  status: ReportEntry['status'],
-  reason?: string
+  content: Buffer
 ): void {
-  state.zip.addFile(archivePath, content)
-  state.archiveBytes += content.byteLength
+  state.zip.addBuffer(archivePath, content)
   state.entries.push({
     path: archivePath,
     sourceSize,
     storedSize: content.byteLength,
-    status,
-    reason,
-  })
-}
-
-export function addSkippedEntry(
-  state: CollectorState,
-  archivePath: string,
-  sourceSize: number,
-  reason: string
-): void {
-  state.entries.push({
-    path: archivePath,
-    sourceSize,
-    storedSize: 0,
-    status: 'skipped',
-    reason,
   })
 }
 
@@ -237,54 +217,22 @@ export function addDiagnosticFile(
     return
   }
 
-  const remainingBytes = MAX_ARCHIVE_BYTES - state.archiveBytes
-  if (remainingBytes <= 0) {
-    addSkippedEntry(state, archivePath, stat.size, '问题包已达到总大小限制')
-    return
-  }
-
   if (isTextFile(sourcePath)) {
     try {
       const content = readDiagnosticContent(sourcePath)
-      if (content.byteLength <= MAX_ENTRY_BYTES && content.byteLength <= remainingBytes) {
-        addEntry(state, archivePath, stat.size, content, 'included')
-        return
-      }
-
-      const storedSize = Math.min(MAX_ENTRY_BYTES, remainingBytes)
-      if (storedSize <= 0) {
-        addSkippedEntry(state, archivePath, stat.size, '问题包已达到总大小限制')
-        return
-      }
-
-      const tail = content.subarray(content.byteLength - storedSize)
-      addEntry(
-        state,
-        `${archivePath}.tail`,
-        stat.size,
-        Buffer.concat([Buffer.from('[文件过大，仅保留文件末尾内容。]\n', 'utf-8'), tail]).subarray(
-          0,
-          storedSize
-        ),
-        'truncated',
-        `原始文件超过 ${MAX_ENTRY_BYTES} 字节`
-      )
+      addEntry(state, archivePath, stat.size, content)
       return
     } catch (error) {
-      addSkippedEntry(state, archivePath, stat.size, `读取文本文件失败: ${String(error)}`)
+      logger.debug(`读取文本文件失败: ${sourcePath}, ${String(error)}`)
       return
     }
   }
 
-  if (stat.size > MAX_ENTRY_BYTES || stat.size > remainingBytes) {
-    addSkippedEntry(state, archivePath, stat.size, '二进制文件超过问题包大小限制')
-    return
-  }
-
   try {
-    addEntry(state, archivePath, stat.size, fs.readFileSync(sourcePath), 'included')
+    state.zip.addFile(archivePath, sourcePath)
+    state.entries.push({ path: archivePath, sourceSize: stat.size, storedSize: stat.size })
   } catch (error) {
-    addSkippedEntry(state, archivePath, stat.size, `读取二进制文件失败: ${String(error)}`)
+    logger.debug(`读取二进制文件失败: ${sourcePath}, ${String(error)}`)
   }
 }
 
@@ -342,12 +290,7 @@ export function addSanitizedJsonFile(
     } else {
       const content = Buffer.from(`${JSON.stringify(sanitizeJsonValue(json), null, 2)}\n`, 'utf-8')
       const sourceSize = fs.statSync(sourcePath).size
-      const remainingBytes = MAX_ARCHIVE_BYTES - state.archiveBytes
-      if (content.byteLength > MAX_ENTRY_BYTES || content.byteLength > remainingBytes) {
-        addSkippedEntry(state, archivePath, sourceSize, '脱敏配置超过问题包大小限制')
-      } else {
-        addEntry(state, archivePath, sourceSize, content, 'included')
-      }
+      addEntry(state, archivePath, sourceSize, content)
     }
     return true
   } catch (error) {
