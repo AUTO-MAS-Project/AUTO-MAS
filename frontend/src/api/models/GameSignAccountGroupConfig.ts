@@ -19,6 +19,14 @@ export type GameSignAccountGroupConfig = {
      */
     MiyousheToken?: (string | null);
     /**
+     * 米游社安卓设备 ID，仅用于绝区零便笺
+     */
+    MiyousheDeviceId?: (string | null);
+    /**
+     * 米游社安卓设备指纹，仅用于绝区零便笺
+     */
+    MiyousheDeviceFp?: (string | null);
+    /**
      * 云原神 combo token
      */
     CloudGenshinToken?: (string | null);

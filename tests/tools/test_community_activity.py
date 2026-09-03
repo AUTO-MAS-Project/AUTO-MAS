@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from app.core.community_activity import (
+    _targets_for_roles,
     build_configured_community_activity_failures,
     collect_configured_community_activity,
 )
@@ -19,6 +20,7 @@ from app.tools.community_activity_provider import (
     CommunityActivityProvider,
     _device_fp_body,
     _miyoushe_request_cookies,
+    _raise_business_error,
 )
 from app.tools.community_activity_roles import (
     CommunityActivityCapability,
@@ -72,6 +74,32 @@ class CommunityActivityRoleTest(unittest.TestCase):
             [(role.game, role.role_uid) for role in discovery.roles],
             [("明日方舟", "arknights-uid"), ("终末地", "endfield-role")],
         )
+
+    def test_real_miyoushe_device_pair_is_only_attached_to_zzz(self) -> None:
+        roles = tuple(
+            CommunityActivityRole(
+                platform="米游社",
+                game=game,
+                role_uid=f"role-{index}",
+                server="server",
+            )
+            for index, game in enumerate(("原神", "星穹铁道", "绝区零"))
+        )
+
+        targets = _targets_for_roles(
+            roles=roles,
+            account_uid="account",
+            account_name="用户 1",
+            miyoushe_device_id="real-device-id",
+            miyoushe_device_fp="real-device-fp",
+        )
+
+        self.assertEqual(targets[0].device_id, "")
+        self.assertEqual(targets[1].device_fp, "")
+        self.assertEqual(targets[2].device_id, "real-device-id")
+        self.assertEqual(targets[2].device_fp, "real-device-fp")
+        self.assertNotIn("real-device-id", repr(targets[2]))
+        self.assertNotIn("real-device-fp", repr(targets[2]))
 
 
 class CommunityActivityFailureTest(unittest.TestCase):
@@ -425,6 +453,101 @@ class CommunityActivityRequestTest(unittest.TestCase):
         )
         self.assertTrue(ready.capabilities.activity_ready)
         self.assertEqual(ready.capabilities.activity_missing_fields, ())
+
+    def test_zzz_requires_persisted_real_device_pair(self) -> None:
+        target = CommunityActivityTarget(
+            account_uid="account",
+            account_name="用户 1",
+            platform="米游社",
+            game="绝区零",
+            role_uid="10000001",
+            server="prod_gf_cn",
+        )
+        request = build_community_activity_requests(target)[0]
+        provider = CommunityActivityProvider(
+            "米游社",
+            "stuid=10000001; cookie_token=cookie-token; "
+            "stoken_v2=v2-token; mid=mid-value",
+        )
+
+        with self.assertRaises(CommunityActivityTransportError) as context:
+            asyncio.run(provider._prepare_miyoushe(request, AsyncMock()))
+
+        self.assertEqual(context.exception.status, "limited")
+        self.assertIn("设备 ID", context.exception.reason)
+
+    def test_zzz_uses_persisted_real_device_pair_without_registration(self) -> None:
+        target = CommunityActivityTarget(
+            account_uid="account",
+            account_name="用户 1",
+            platform="米游社",
+            game="绝区零",
+            role_uid="10000001",
+            server="prod_gf_cn",
+            device_id="real-device-id",
+            device_fp="real-device-fp",
+        )
+        request = build_community_activity_requests(target)[0]
+        self.assertNotIn("real-device-id", repr(request))
+        self.assertNotIn("real-device-fp", repr(request))
+        self.assertNotIn("x-rpc-device_id", request.header_map)
+        self.assertNotIn("x-rpc-device_fp", request.header_map)
+        client = AsyncMock()
+        provider = CommunityActivityProvider(
+            "米游社",
+            "stuid=10000001; cookie_token=cookie-token; "
+            "stoken_v2=v2-token; mid=mid-value",
+        )
+
+        _, device_id, device_fp = asyncio.run(
+            provider._prepare_miyoushe(request, client)
+        )
+
+        self.assertEqual(device_id, "real-device-id")
+        self.assertEqual(device_fp, "real-device-fp")
+        headers = provider._miyoushe_request_headers(
+            request,
+            device_id=device_id,
+            device_fp=device_fp,
+        )
+        self.assertEqual(headers["x-rpc-device_id"], "real-device-id")
+        self.assertEqual(headers["x-rpc-device_fp"], "real-device-fp")
+        client.post.assert_not_awaited()
+
+    def test_other_miyoushe_games_ignore_zzz_device_pair(self) -> None:
+        target = CommunityActivityTarget(
+            account_uid="account",
+            account_name="用户 1",
+            platform="米游社",
+            game="星穹铁道",
+            role_uid="10000001",
+            server="prod_official_usa",
+            device_id="real-device-id",
+            device_fp="real-device-fp",
+        )
+        request = build_community_activity_requests(target)[0]
+        provider = CommunityActivityProvider(
+            "米游社",
+            "stuid=10000001; cookie_token=cookie-token; "
+            "stoken_v2=v2-token; mid=mid-value",
+        )
+
+        _, device_id, device_fp = asyncio.run(
+            provider._prepare_miyoushe(request, AsyncMock())
+        )
+
+        self.assertNotEqual(device_id, "real-device-id")
+        self.assertEqual(device_fp, "")
+
+    def test_zzz_risk_code_remains_limited(self) -> None:
+        with self.assertRaises(CommunityActivityTransportError) as context:
+            _raise_business_error(
+                {"retcode": 10041},
+                platform="米游社",
+                game="绝区零",
+            )
+
+        self.assertEqual(context.exception.status, "limited")
 
     def test_zzz_uses_separate_bbs_device_fp_contract(self) -> None:
         account_device = "DEVICE-ID"

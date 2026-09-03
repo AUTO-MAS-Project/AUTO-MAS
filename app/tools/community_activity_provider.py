@@ -409,9 +409,6 @@ class CommunityActivityProvider:
     _miyoushe_device_fps: dict[str, str] = field(
         default_factory=dict, init=False, repr=False
     )
-    _miyoushe_zzz_seed_id: str = field(
-        default="", init=False, repr=False
-    )
     _credential_ready: bool = field(default=False, init=False, repr=False)
     _credential_update_sent: bool = field(default=False, init=False, repr=False)
     _miyoushe_cookies: dict[str, str] | None = field(
@@ -801,7 +798,7 @@ class CommunityActivityProvider:
                 session = prepare_miyoushe_session(self.raw_credential)
                 self._miyoushe_cookies = dict(session.cookies)
                 self._miyoushe_capabilities = session.capabilities
-                self._device_id = request.target.device_id or session.device_id
+                self._device_id = session.device_id
             cookies = dict(self._miyoushe_cookies)
             capabilities = self._miyoushe_capabilities
             if (
@@ -814,18 +811,23 @@ class CommunityActivityProvider:
                     status="limited",
                 )
             game = request.target.game
-            if game == "绝区零" and not self._miyoushe_zzz_seed_id:
-                self._miyoushe_zzz_seed_id = str(uuid.uuid4())
+            if game == "绝区零":
+                device_id = request.target.device_id.strip()
+                device_fp = request.target.device_fp.strip()
+                if not device_id or not device_fp:
+                    raise CommunityActivityTransportError(
+                        "绝区零便笺需要同时配置米游社安卓设备 ID 和设备指纹",
+                        status="limited",
+                    )
+                return cookies, device_id, device_fp
+
+            device_id = self._device_id
             device_fp = self._miyoushe_device_fps.get(game, "")
-            if request.target.device_fp and not device_fp:
-                device_fp = request.target.device_fp
-                self._miyoushe_device_fps[game] = device_fp
             if request.requires_device_fingerprint and not device_fp:
                 device_fp = await self._acquire_device_fp(
                     client,
-                    self._device_id,
+                    device_id,
                     game=game,
-                    seed_id=self._miyoushe_zzz_seed_id,
                     cookies=_miyoushe_request_cookies(
                         cookies,
                         require_v2_stoken=True,
@@ -833,7 +835,7 @@ class CommunityActivityProvider:
                 )
                 await self._register_device(
                     client,
-                    device_id=self._device_id,
+                    device_id=device_id,
                     device_fp=device_fp,
                     cookies=_miyoushe_request_cookies(
                         cookies,
@@ -843,7 +845,7 @@ class CommunityActivityProvider:
                 )
                 self._miyoushe_device_fps[game] = device_fp
             self._device_fp = device_fp
-            return cookies, self._device_id, self._device_fp
+            return cookies, device_id, self._device_fp
 
     @staticmethod
     def _miyoushe_device_fp_headers(

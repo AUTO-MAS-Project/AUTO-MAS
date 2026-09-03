@@ -249,6 +249,7 @@ def _miyoushe_zzz_headers(
         ("x-rpc-sys_version", "12"),
         ("X-Requested-With", "com.mihoyo.hyperion"),
         ("Connection", "keep-alive"),
+        include_device=False,
     )
 
 

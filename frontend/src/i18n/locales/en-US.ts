@@ -1603,6 +1603,12 @@ export default {
       miyoushe: 'Miyoushe',
       miyoushePlaceholder: 'From the browser: F12 -> document.cookie',
       qrLogin: 'Get a token by QR code',
+      miyousheDeviceHint:
+        'Used only for Zenless Zone Zero notes. Enter the device ID and fingerprint from the official Miyoushe Android app together; both values are stored encrypted.',
+      miyousheDeviceId: 'Android device ID',
+      miyousheDeviceIdPlaceholder: 'Enter x-rpc-device_id from the request headers',
+      miyousheDeviceFp: 'Android device fingerprint',
+      miyousheDeviceFpPlaceholder: 'Enter x-rpc-device_fp from the request headers',
       cloudGenshin: 'Genshin Cloud Gaming',
       cloudGenshinPlaceholder: 'Paste x-rpc-combo_token from the cloud game page',
       cloudTokenLogin: 'Open cloud game to get a token',
@@ -1673,6 +1679,8 @@ export default {
       reorderFailed: 'Could not save the new order',
       reorderError: 'Could not save the new order: {error}',
       tokenSaved: 'Token saved',
+      miyousheDevicePairRequired:
+        'The Miyoushe device ID and device fingerprint must both be filled in or both cleared',
       needKuroPhone: 'Enter a valid 11-digit mainland China phone number',
       needKuroCode: 'Enter a 4- to 8-digit SMS verification code',
       needKuroSession: 'Send an SMS verification code first',

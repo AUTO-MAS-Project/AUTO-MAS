@@ -99,9 +99,24 @@ def _targets_for_roles(
     roles: Sequence[CommunityActivityRole],
     account_uid: str,
     account_name: str,
+    miyoushe_device_id: str = "",
+    miyoushe_device_fp: str = "",
 ) -> tuple[CommunityActivityTarget, ...]:
     return tuple(
-        role.to_target(account_uid=account_uid, account_name=account_name)
+        role.to_target(
+            account_uid=account_uid,
+            account_name=account_name,
+            device_id=(
+                miyoushe_device_id
+                if role.platform == "米游社" and role.game == "绝区零"
+                else ""
+            ),
+            device_fp=(
+                miyoushe_device_fp
+                if role.platform == "米游社" and role.game == "绝区零"
+                else ""
+            ),
+        )
         for role in roles
     )
 
@@ -189,6 +204,17 @@ async def collect_configured_community_activity(
         account_name = str(_account_value(account, "Name", "用户") or "用户")
         if not _account_value(account, "Enabled", False):
             continue
+        try:
+            miyoushe_device_id = str(
+                _account_value(account, "MiyousheDeviceId", "") or ""
+            ).strip()
+            miyoushe_device_fp = str(
+                _account_value(account, "MiyousheDeviceFp", "") or ""
+            ).strip()
+        except Exception:
+            # 设备字段读取失败只限制绝区零便笺，不影响同账号的其他游戏。
+            miyoushe_device_id = ""
+            miyoushe_device_fp = ""
 
         for definition in ACTIVITY_COMMUNITY_DEFINITIONS:
             token_field = get_community_token_field(definition.platform)
@@ -268,6 +294,8 @@ async def collect_configured_community_activity(
                 roles=discovered.roles,
                 account_uid=account_uid,
                 account_name=account_name,
+                miyoushe_device_id=miyoushe_device_id,
+                miyoushe_device_fp=miyoushe_device_fp,
             )
             queried: tuple[CommunityActivitySnapshot, ...] = ()
             if targets:

@@ -186,6 +186,16 @@ class GameSignAccountGroupConfig(BaseModel):
     Name: str | None = Field(default=None, description="账号组名称")
     Enabled: bool | None = Field(default=None, description="是否启用")
     MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
+    MiyousheDeviceId: str | None = Field(
+        default=None,
+        description="米游社安卓设备 ID，仅用于绝区零便笺",
+        repr=False,
+    )
+    MiyousheDeviceFp: str | None = Field(
+        default=None,
+        description="米游社安卓设备指纹，仅用于绝区零便笺",
+        repr=False,
+    )
     CloudGenshinToken: str | None = Field(
         default=None,
         description="云原神 combo token",

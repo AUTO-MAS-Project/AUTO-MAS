@@ -1,6 +1,8 @@
+import asyncio
 import unittest
 from unittest.mock import patch
 
+from app.models.config import GameSignAccountGroup
 from app.models.ConfigBase import ConfigItem, EncryptValidator
 from app.utils.community import next_community_account_name
 
@@ -44,6 +46,49 @@ class CommunityCredentialStorageTest(unittest.TestCase):
 
             self.assertEqual(item.getValue(), credential)
             self.assertEqual(len(item.getValue()), len(credential))
+
+    def test_miyoushe_device_pair_uses_independent_encrypted_fields(self) -> None:
+        def encrypt(value: str) -> str:
+            return f"encrypted:{value}"
+
+        def decrypt(value: str) -> str:
+            if value == "":
+                return ""
+            if value.startswith("encrypted:"):
+                return value.removeprefix("encrypted:")
+            raise ValueError("not encrypted")
+
+        with (
+            patch("app.models.ConfigBase.dpapi_encrypt", side_effect=encrypt),
+            patch("app.models.ConfigBase.dpapi_decrypt", side_effect=decrypt),
+        ):
+            account = GameSignAccountGroup()
+            account.MiyousheDeviceId.setValue("android-device-id")
+            account.MiyousheDeviceFp.setValue("android-device-fp")
+
+            encrypted = asyncio.run(account.toDict(if_decrypt=False))[
+                "GameSignAccount"
+            ]
+            decrypted = asyncio.run(account.toDict())["GameSignAccount"]
+
+        self.assertIsInstance(
+            account.MiyousheDeviceId.validator,
+            EncryptValidator,
+        )
+        self.assertIsInstance(
+            account.MiyousheDeviceFp.validator,
+            EncryptValidator,
+        )
+        self.assertEqual(
+            encrypted["MiyousheDeviceId"],
+            "encrypted:android-device-id",
+        )
+        self.assertEqual(
+            encrypted["MiyousheDeviceFp"],
+            "encrypted:android-device-fp",
+        )
+        self.assertEqual(decrypted["MiyousheDeviceId"], "android-device-id")
+        self.assertEqual(decrypted["MiyousheDeviceFp"], "android-device-fp")
 
 if __name__ == "__main__":
     unittest.main()

@@ -67,6 +67,9 @@ from app.utils.security import format_exception_reason
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
 _PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task] = set()
+_MIYOUSHE_DEVICE_FIELDS = frozenset(
+    {"MiyousheDeviceId", "MiyousheDeviceFp"}
+)
 
 
 def _log_community_api_error(stage: str, error: Exception) -> None:
@@ -75,6 +78,31 @@ def _log_community_api_error(stage: str, error: Exception) -> None:
     logger.warning(
         format_exception_reason(error, stage=stage, include_message=False)
     )
+
+
+def _normalize_miyoushe_device_pair(data: dict[str, object]) -> bool:
+    """校验绝区零设备信息必须原子更新，并原地去除首尾空白。"""
+
+    provided_fields = _MIYOUSHE_DEVICE_FIELDS.intersection(data)
+    if not provided_fields:
+        return True
+    if provided_fields != _MIYOUSHE_DEVICE_FIELDS:
+        return False
+
+    device_id_value = data.get("MiyousheDeviceId")
+    device_fp_value = data.get("MiyousheDeviceFp")
+    device_id = (
+        device_id_value.strip() if isinstance(device_id_value, str) else ""
+    )
+    device_fp = (
+        device_fp_value.strip() if isinstance(device_fp_value, str) else ""
+    )
+    if bool(device_id) != bool(device_fp):
+        return False
+
+    data["MiyousheDeviceId"] = device_id
+    data["MiyousheDeviceFp"] = device_fp
+    return True
 
 
 def _track_community_notification(task: asyncio.Task) -> None:
@@ -431,6 +459,12 @@ async def update_game_sign_account(
     try:
         # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
         flat_data = account.data.model_dump(exclude_unset=True)
+        if not _normalize_miyoushe_device_pair(flat_data):
+            return OutBase(
+                code=400,
+                status="error",
+                message="米游社设备 ID 和设备指纹必须同时填写或同时清空",
+            )
         skland_token = flat_data.get("SklandToken")
         if isinstance(skland_token, str) and skland_token.strip():
             from app.tools.skland import validate_skland_credential

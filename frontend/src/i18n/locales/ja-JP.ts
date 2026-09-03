@@ -1617,6 +1617,12 @@ export default {
       miyoushe: '米游社（Miyoushe）',
       miyoushePlaceholder: 'ブラウザで F12 → document.cookie から取得',
       qrLogin: 'QR コードでトークンを取得',
+      miyousheDeviceHint:
+        'ゼンレスゾーンゼロのメモ専用です。米游社公式 Android アプリのリクエストヘッダーから取得した端末 ID と端末フィンガープリントをセットで入力してください。どちらも暗号化して保存されます。',
+      miyousheDeviceId: 'Android 端末 ID',
+      miyousheDeviceIdPlaceholder: 'リクエストヘッダーの x-rpc-device_id を入力',
+      miyousheDeviceFp: 'Android 端末フィンガープリント',
+      miyousheDeviceFpPlaceholder: 'リクエストヘッダーの x-rpc-device_fp を入力',
       cloudGenshin: '原神クラウドゲーム',
       cloudGenshinPlaceholder: 'クラウドゲーム画面の x-rpc-combo_token を貼り付けてください',
       cloudTokenLogin: 'クラウドゲームを開いてトークンを取得',
@@ -1688,6 +1694,8 @@ export default {
       reorderFailed: '並び替えを保存できませんでした',
       reorderError: '並び替えを保存できませんでした：{error}',
       tokenSaved: 'トークンを保存しました',
+      miyousheDevicePairRequired:
+        '米游社の端末 ID と端末フィンガープリントは、両方を入力するか両方を空にしてください',
       needKuroPhone: '中国本土の有効な 11 桁の携帯電話番号を入力してください',
       needKuroCode: '4～8 桁の SMS 確認コードを入力してください',
       needKuroSession: '先に SMS 確認コードを送信してください',

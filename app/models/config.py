@@ -3837,6 +3837,14 @@ class GameSignAccountGroup(ConfigBase):
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
         )
+        ## GameSignAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceId = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceId", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceFp = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceFp", "", EncryptValidator()
+        )
         ## GameSignAccount - 云原神 combo token (DPAPI 加密)
         self.CloudGenshinToken = ConfigItem(
             "GameSignAccount", "CloudGenshinToken", "", EncryptValidator()

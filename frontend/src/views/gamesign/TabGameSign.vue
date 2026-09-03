@@ -61,6 +61,8 @@ interface AccountInstance {
   Name: string
   Enabled: boolean
   MiyousheToken: string
+  MiyousheDeviceId: string
+  MiyousheDeviceFp: string
   CloudGenshinToken: string
   KuroToken: string
   SklandToken: string
@@ -116,6 +118,8 @@ const loadAccounts = async () => {
         Name: asString(accountData.Name) || t('gamesign.defaultUserName'),
         Enabled: typeof accountData.Enabled === 'boolean' ? accountData.Enabled : true,
         MiyousheToken: asString(accountData.MiyousheToken),
+        MiyousheDeviceId: asString(accountData.MiyousheDeviceId),
+        MiyousheDeviceFp: asString(accountData.MiyousheDeviceFp),
         CloudGenshinToken: asString(accountData.CloudGenshinToken),
         KuroToken: asString(accountData.KuroToken),
         SklandToken: asString(accountData.SklandToken),
@@ -133,6 +137,8 @@ const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig
   Name: account.Name,
   Enabled: account.Enabled,
   MiyousheToken: account.MiyousheToken,
+  MiyousheDeviceId: account.MiyousheDeviceId,
+  MiyousheDeviceFp: account.MiyousheDeviceFp,
   CloudGenshinToken: account.CloudGenshinToken,
   KuroToken: account.KuroToken,
   SklandToken: account.SklandToken,
@@ -152,6 +158,8 @@ const handleAddAccount = async () => {
         Name: data.Name || defaultName,
         Enabled: data.Enabled ?? true,
         MiyousheToken: data.MiyousheToken || '',
+        MiyousheDeviceId: data.MiyousheDeviceId || '',
+        MiyousheDeviceFp: data.MiyousheDeviceFp || '',
         CloudGenshinToken: data.CloudGenshinToken || '',
         KuroToken: data.KuroToken || '',
         SklandToken: data.SklandToken || '',
@@ -338,6 +346,14 @@ const handleEditModalCancel = () => {
 
 const handleEditModalOk = async () => {
   if (!editingAccount.value) return
+  const miyousheDeviceId = editingAccount.value.MiyousheDeviceId.trim()
+  const miyousheDeviceFp = editingAccount.value.MiyousheDeviceFp.trim()
+  if (Boolean(miyousheDeviceId) !== Boolean(miyousheDeviceFp)) {
+    message.warning(t('gamesign.toast.miyousheDevicePairRequired'))
+    return
+  }
+  editingAccount.value.MiyousheDeviceId = miyousheDeviceId
+  editingAccount.value.MiyousheDeviceFp = miyousheDeviceFp
   try {
     const uid = editingAccount.value.uid
     const idx = accounts.value.findIndex(a => a.uid === uid)
@@ -885,6 +901,29 @@ onBeforeUnmount(() => {
             <template #icon><QrcodeOutlined /></template>
             {{ t('gamesign.edit.qrLogin') }}
           </a-button>
+        </div>
+        <div class="miyoushe-device-fields">
+          <div class="device-credential-hint">{{ t('gamesign.edit.miyousheDeviceHint') }}</div>
+          <div class="form-item-vertical">
+            <span class="form-label">{{ t('gamesign.edit.miyousheDeviceId') }}</span>
+            <a-input-password
+              v-model:value="editingAccount.MiyousheDeviceId"
+              size="large"
+              :placeholder="t('gamesign.edit.miyousheDeviceIdPlaceholder')"
+              autocomplete="off"
+              allow-clear
+            />
+          </div>
+          <div class="form-item-vertical">
+            <span class="form-label">{{ t('gamesign.edit.miyousheDeviceFp') }}</span>
+            <a-input-password
+              v-model:value="editingAccount.MiyousheDeviceFp"
+              size="large"
+              :placeholder="t('gamesign.edit.miyousheDeviceFpPlaceholder')"
+              autocomplete="off"
+              allow-clear
+            />
+          </div>
         </div>
         <a-divider orientation="left" class="community-divider">{{
           t('gamesign.edit.cloudGenshin')
@@ -1647,6 +1686,21 @@ onBeforeUnmount(() => {
 
 .credential-helper-btn {
   font-weight: 700;
+}
+
+.miyoushe-device-fields {
+  margin-bottom: 16px;
+}
+
+.miyoushe-device-fields .form-item-vertical:last-child {
+  margin-bottom: 0;
+}
+
+.device-credential-hint {
+  margin-bottom: 12px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .sms-send-row {
