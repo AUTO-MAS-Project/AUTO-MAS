@@ -2367,8 +2367,12 @@ class MaaFWConfig(ConfigBase):
         ## 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成
         ## GitHub——用户得知道自己在从哪下载，出问题才查得动。
         ## 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。
+        # 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**，
+        # 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被
+        # correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有
+        # 脚本会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。
         self.Update_Source = ConfigItem(
-            "Update", "Source", "GitHub", OptionsValidator(["MirrorChyan", "GitHub"])
+            "Update", "Source", "GitHub", OptionsValidator(["GitHub", "MirrorChyan"])
         )
         ## 更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。
         ## 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道，
@@ -2377,7 +2381,8 @@ class MaaFWConfig(ConfigBase):
         ## 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。
         ## 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致：
         ## 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
-        ## 旧配置里的空串现在是非法值，会被 OptionsValidator 自动回退成 stable。
+        ## 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]，
+        ## 即 stable——这里的顺序同样不能随意调换。
         self.Update_Channel = ConfigItem(
             "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
         )

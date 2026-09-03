@@ -30,7 +30,6 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
-import inspect
 import time
 import uuid
 from collections.abc import Mapping
@@ -89,8 +88,8 @@ NoticeLevel = Literal["info", "warning"]
 def _result_field(result: Any, name: str, *fallbacks: str) -> Any:
     """按契约字段名读更新结果；dataclass 与 dict 都要能取到，缺字段当 None。
 
-    核心包（子任务 A）正在补齐 ``previous_version`` / ``version_name`` 等字段，
-    补齐前用旧字段名兜底，所以这里允许给备选名。
+    允许给备选名，是为了兼容核心包里同义的旧字段（如 ``current_version`` 之于
+    ``previous_version``），不是为了容忍字段缺失。
     """
 
     for key in (name, *fallbacks):
@@ -100,13 +99,6 @@ def _result_field(result: Any, name: str, *fallbacks: str) -> Any:
         if value is not None:
             return value
     return None
-
-
-def _accepts_parameter(func: Any, name: str) -> bool:
-    try:
-        return name in inspect.signature(func).parameters
-    except (TypeError, ValueError):  # pragma: no cover - C 实现或 mock 对象
-        return True
 
 
 def describe_update_result(
@@ -447,14 +439,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         }
         # 核心包签名正在收敛：``interface_model`` 位置参数可能被拿掉（改为包内
         # 自己读）。按实际签名决定传不传，两种形态都能跑。
-        if _accepts_parameter(update_maafw_project_if_needed, "interface_model"):
-            kwargs["interface_model"] = await asyncio.to_thread(
-                self._load_interface_model, project_path
-            )
+        kwargs["interface_model"] = await asyncio.to_thread(
+            self._load_interface_model, project_path
+        )
         # 与手动更新的 API 路径一致：用户配了代理，运行时更新也得走代理，
-        # 否则受限网络下"手动能更、自动不能"。
-        if _accepts_parameter(update_maafw_project_if_needed, "proxy"):
-            kwargs["proxy"] = Config.proxy
+        # 否则受限网络下「手动能更、自动不能」。
+        kwargs["proxy"] = Config.proxy
         return await update_maafw_project_if_needed(project_path, **kwargs)
 
     async def _run_project_update(self, phase: AutoUpdateMode) -> None:

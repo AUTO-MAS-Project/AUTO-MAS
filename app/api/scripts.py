@@ -163,7 +163,11 @@ def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
 
 
 def _maafw_update_message_with_cdk(message: str, extra: dict[str, Any]) -> str:
-    """CDK 状态异常时把提示原文附到摘要里；CDK 问题不是错误，核心包会改走 GitHub。"""
+    """CDK 状态异常时把提示原文附到摘要里。
+
+    仍按成功返回（HTTP 200）：CDK 有问题只是这次装不了，脚本本身照常能跑，
+    用户看到原因后可以去续期或改用 GitHub 源。
+    """
 
     status = extra.get("cdkStatus")
     cdk_message = extra.get("cdkMessage")
@@ -864,6 +868,9 @@ async def update_maafw_project(
                 source_config=source_config,
                 proxy=proxy,
                 send_log=_maafw_update_send_log,
+                # 只问有没有新版本：带 CDK 去换下载地址会扣一次今日额度，
+                # 而用户可能只是随手点了下「检查更新」。真更新时再取。
+                version_only=True,
             )
         except MaaFWProjectUpdateError as exc:
             return MaaFWProjectUpdateOut(

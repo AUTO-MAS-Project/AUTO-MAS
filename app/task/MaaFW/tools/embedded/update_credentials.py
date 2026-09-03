@@ -18,9 +18,9 @@
 
 """MaaFW 项目更新的凭据与时机合并。
 
-核心更新包（``tools/core/automas_maafw_project_update``）不读 Config；脚本级
-配置留空时用全局配置兜底这件事只在这里做一次。API 侧复制的是同一表达式，
-所以逻辑必须保持极简：
+核心更新包（``tools/core/automas_maafw_project_update``）不读 Config，配置到
+参数的翻译只在这里做一次；API 侧直接复用本函数，保证手动更新与运行时自动更新
+的行为一致。
 
 三项全部只看脚本级，**不做全局兜底**：
 

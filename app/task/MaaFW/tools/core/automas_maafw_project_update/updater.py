@@ -655,6 +655,7 @@ async def discover_maafw_project_update(
     proxy: httpx.Proxy | None = None,
     send_log: Callable[[str], None] | None = None,
     prefer_full_package: bool = False,
+    version_only: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Discover a newer project version and pick where to download it from.
 
@@ -687,6 +688,7 @@ async def discover_maafw_project_update(
             proxy=proxy,
             send_log=send_log,
             prefer_full_package=prefer_full_package,
+            version_only=version_only,
         )
     )
     return discovery
@@ -700,6 +702,7 @@ async def _discover_project_update_detailed(
     proxy: httpx.Proxy | None = None,
     send_log: Callable[[str], None] | None = None,
     prefer_full_package: bool = False,
+    version_only: bool = False,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -783,6 +786,26 @@ async def _discover_project_update_detailed(
                 "未配置 Mirror酱 CDK；"
                 "更新源选的是 Mirror 酱，请填写 CDK 或改用 GitHub 源"
             )
+        if version_only:
+            # 只问「有没有新版本」的场景（编辑页那个检查更新按钮）到此为止：
+            # 再往下就要带 CDK 换下载地址，而那一下会扣今日额度。用户点
+            # 「更新」时才走完整流程。这里按「可安装」返回——填了 CDK 就
+            # 确实能装，只是还没去取地址；CDK 本身有没有问题留到真更新时
+            # 才会知道，这是不烧额度换来的代价。
+            send_update_log("仅检查版本：不获取 Mirror酱 下载地址，避免占用 CDK 额度")
+            discovery = MaaFWProjectUpdateDiscovery(
+                source="mirrorchyan",
+                version=latest,
+                candidate=MaaFWProjectUpdateCandidate(
+                    source="mirrorchyan", version=latest, to_version=latest
+                ),
+            )
+            return (
+                _attach_version_check(discovery, version_check, current),
+                version_check,
+                None,
+            )
+
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
         send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
