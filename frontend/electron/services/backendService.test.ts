@@ -408,7 +408,8 @@ describe('development 模式', () => {
     expect(service.getStatus()).toMatchObject({ isRunning: false, runtimeSupervised: true })
 
     const pendingStart = service.startBackend()
-    const child = await waitForSpawn()
+    // development 模式下先跑 environment ensure，supervise 是第二次 spawn。
+    const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine + runningStateLine)
     await pendingStart
     expect(service.getStatus()).toMatchObject({
