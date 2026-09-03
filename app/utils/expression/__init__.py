@@ -25,8 +25,8 @@
 from .evaluator import CompiledExpression, compile_expression
 from .functions import (
     FUNCTIONS,
-    Process,
     REGISTRY,
+    Process,
     apply_function,
     make_process,
     register_process,

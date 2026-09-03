@@ -22,10 +22,10 @@ from typing import Callable
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 
-from .run_model import HSRPhase, HSRRunItem
 from ..task_mapping import HSRTaskModule
 from .account_switch import HSRAccountSwitcher, resolve_sra_start_mode
 from .log_detect import detect_weekly_completion
+from .run_model import HSRPhase, HSRRunItem
 from .sra_runtime import (
     build_sra_module_config,
     build_sra_tasklist_description,

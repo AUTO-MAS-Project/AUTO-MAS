@@ -33,9 +33,9 @@
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
+
 from app.core import Config
 from app.models.schema import OutBase
-
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
 

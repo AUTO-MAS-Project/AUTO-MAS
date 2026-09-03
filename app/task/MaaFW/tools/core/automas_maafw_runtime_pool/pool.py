@@ -19,7 +19,6 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 from .cache import prune_uv_cache
-
 from .identity import (
     IDENTITY_SCHEMA_VERSION,
     RUNTIME_ID_PREFIX,
@@ -29,7 +28,6 @@ from .identity import (
     runtime_id_for_identity,
 )
 from .installer import probe_python_identity, resolve_python_interpreter
-
 
 POOL_SCHEMA_VERSION = 2
 LEGACY_POOL_SCHEMA_VERSION = 1

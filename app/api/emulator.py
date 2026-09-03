@@ -22,24 +22,26 @@
 
 
 import asyncio
+
 from fastapi import APIRouter, Body
+
 from app.core import Config, EmulatorManager
-from app.utils.emulator.tools import search_all_emulators
 from app.models.schema import (
-    OutBase,
     EmulatorConfig,
-    EmulatorGetIn,
-    EmulatorGetOut,
     EmulatorConfigIndexItem,
     EmulatorCreateOut,
-    EmulatorUpdateIn,
     EmulatorDeleteIn,
-    EmulatorReorderIn,
+    EmulatorGetIn,
+    EmulatorGetOut,
     EmulatorOperateIn,
-    EmulatorStatusOut,
+    EmulatorReorderIn,
     EmulatorSearchOut,
     EmulatorSearchResult,
+    EmulatorStatusOut,
+    EmulatorUpdateIn,
+    OutBase,
 )
+from app.utils.emulator.tools import search_all_emulators
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 

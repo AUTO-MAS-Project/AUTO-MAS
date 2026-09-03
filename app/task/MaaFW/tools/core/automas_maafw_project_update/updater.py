@@ -18,12 +18,15 @@ from urllib.parse import quote, urljoin, urlsplit
 
 import aiofiles
 import httpx
-from ..automas_maafw_interface.models import MaaFWInterface
 from packaging import version
 
-from .apply import UpdateApplyError, apply_package_transaction
+from ..automas_maafw_interface.models import MaaFWInterface
+from .apply import (
+    UpdateApplyError,
+    apply_package_transaction,
+    has_trusted_update_baseline,
+)
 from .contracts import artifact_id_for, normalise_sha256, project_fingerprint
-from .apply import has_trusted_update_baseline
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
@@ -36,7 +39,6 @@ from .transport import (
     DownloadPaused,
     download_resumable,
 )
-
 
 UPDATE_WORK_DIR = ".mas-update"
 DOWNLOAD_FILE_NAME = "download.zip"

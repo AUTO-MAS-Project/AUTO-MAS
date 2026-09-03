@@ -18,10 +18,9 @@ from pathlib import Path
 from unittest import mock
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.core.task_manager import TaskInfo
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.task import ScriptItem, UserItem
 from app.task.HSR.AutoProxy import HSRAutoProxyTask
 from app.task.HSR.manager import HSRManager

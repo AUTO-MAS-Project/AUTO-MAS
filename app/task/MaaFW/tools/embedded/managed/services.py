@@ -11,13 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     build_runner_packages,
     requirement_distribution_name,
 )
-from packaging.specifiers import InvalidSpecifier, SpecifierSet
-from packaging.version import InvalidVersion, Version
-
 
 PROJECT_STORE_SERVICE = "maafw.project_store.v1"
 RUNTIME_POOL_SERVICE = "maafw.runtime_pool.v1"

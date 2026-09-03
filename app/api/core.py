@@ -29,12 +29,12 @@ from typing import Optional
 from fastapi import APIRouter, Request, WebSocket
 from pydantic import BaseModel, Field
 
+from app.api.ws_command import ws_command
 from app.core import Config, TaskManager
 from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import MainConnection, Publisher, protocol
-from app.services import System
 from app.models.schema import *
-from app.api.ws_command import ws_command
+from app.services import System
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])

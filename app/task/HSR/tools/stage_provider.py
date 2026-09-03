@@ -41,6 +41,7 @@ from app.task.HSR.tools.m7a_config import (
     M7A_INSTANCE_TYPE_RELIC,
     M7A_INSTANCE_TYPE_STAGNANT_SHADOW,
 )
+
 from .native_control import resolve_script_path
 
 HSR_STAGE_ENGINE_M7A = "M7A"

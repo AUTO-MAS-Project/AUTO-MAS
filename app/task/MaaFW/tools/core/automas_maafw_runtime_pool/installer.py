@@ -14,7 +14,6 @@ from typing import Any
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-
 RUNTIME_INSTALL_TIMEOUT_SECONDS = 300
 RUNTIME_AUDIT_TIMEOUT_SECONDS = 60
 VENV_PROBE_TIMEOUT_SECONDS = 30

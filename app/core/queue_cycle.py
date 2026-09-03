@@ -27,7 +27,6 @@ from typing import Iterable
 
 from app.utils.constants import CYCLE_DATETIME_FORMAT, CYCLE_EMPTY_TIME
 
-
 WEEKDAY_NAMES = (
     "Monday",
     "Tuesday",

@@ -14,7 +14,6 @@ from .installer import (
     _uv_version,
 )
 
-
 UV_CACHE_PRUNE_TIMEOUT_SECONDS = 300
 
 

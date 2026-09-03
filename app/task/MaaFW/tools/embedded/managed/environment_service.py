@@ -17,7 +17,6 @@ from .services import (
     ManagedServiceGateway,
 )
 
-
 MANAGED_ENVIRONMENT_SERVICE = "maafw.managed.environment.v1"
 _MANAGED_SCRIPT_TYPE = "MaaFWManaged"
 _MANAGED_BINDING_KEYS = (

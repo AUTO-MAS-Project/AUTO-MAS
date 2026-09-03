@@ -22,31 +22,32 @@
 
 
 from __future__ import annotations
-import os
-import json
-import uuid
-import shlex
-import inspect
-import asyncio
-from copy import deepcopy
-from urllib.parse import urlparse
-from datetime import datetime
-from contextlib import suppress
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
-from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
-from app.utils.io import write_file
+import asyncio
+import inspect
+import json
+import os
+import shlex
+import uuid
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
+from urllib.parse import urlparse
+
+from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
 from app.utils.constants import (
-    RESERVED_NAMES,
-    ILLEGAL_CHARS,
-    KEYBOARD_KEYS,
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
-    FORBIDDEN_PATH_PREFIXES,
     FORBIDDEN_PATH_EXACT,
+    FORBIDDEN_PATH_PREFIXES,
+    ILLEGAL_CHARS,
+    KEYBOARD_KEYS,
+    RESERVED_NAMES,
 )
+from app.utils.io import write_file
 
 logger = get_logger("配置基类")
 

@@ -43,10 +43,10 @@ if TYPE_CHECKING:
 from jinja2 import Environment, FileSystemLoader
 
 from app.models.config import (
-    BetterGIConfig,
-    BetterGIUserConfig,
     CLASS_BOOK,
     PLAN_BOOK,
+    BetterGIConfig,
+    BetterGIUserConfig,
     EmulatorConfig,
     GameSignAccountGroup,
     GeneralConfig,

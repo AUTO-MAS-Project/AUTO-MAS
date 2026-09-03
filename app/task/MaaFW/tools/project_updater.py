@@ -34,17 +34,15 @@ import aiofiles
 import httpx
 from packaging import version
 
-from .async_operation import run_blocking_to_completion
-
 from app.utils import get_logger
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.security import sanitize_log_message
 
+from .async_operation import run_blocking_to_completion
 from .core.automas_maafw_interface.models import MaaFWInterface
 from .core.automas_maafw_project_update.updater import (
     detect_maafw_project_shell_hint,
 )
-
 
 logger = get_logger("MaaFW 项目更新")
 
@@ -906,11 +904,23 @@ def _is_within_path(path: Path, base_dir: Path) -> bool:
 
 from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWDownloadedProjectPackage as _CoreDownloadedProjectPackage,
+)
+from .core.automas_maafw_project_update import (
     MaaFWProjectUpdateCandidate as _CoreCandidate,
+)
+from .core.automas_maafw_project_update import (
     MaaFWProjectUpdateDiscovery as _CoreDiscovery,
+)
+from .core.automas_maafw_project_update import (
     MaaFWProjectUpdateError as _CoreUpdateError,
+)
+from .core.automas_maafw_project_update import (
     MaaFWProjectUpdateResult as _CoreResult,
+)
+from .core.automas_maafw_project_update import (
     apply_maafw_project_update as _core_apply_update,
+)
+from .core.automas_maafw_project_update import (
     discover_maafw_project_update as _core_discover_update,
 )
 from .core.automas_maafw_project_update.apply import apply_package_transaction

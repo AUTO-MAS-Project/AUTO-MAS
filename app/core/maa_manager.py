@@ -24,28 +24,28 @@ from ctypes import c_void_p
 from pathlib import Path
 from typing import Any
 
-
-from maa.tasker import Tasker
 from maa.context import Context
-from maa.toolkit import Toolkit, AdbDevice
-from maa.resource import Resource
-from maa.custom_action import CustomAction
 
 # from maa.define import LoggingLevelEnum
 from maa.controller import (
     AdbController,
-    Win32Controller,
-    MaaAdbScreencapMethodEnum,
-    MaaAdbInputMethodEnum,
-    MaaWin32ScreencapMethodEnum,
-    MaaWin32InputMethodEnum,
-    JobWithResult,
     Job,
+    JobWithResult,
+    MaaAdbInputMethodEnum,
+    MaaAdbScreencapMethodEnum,
+    MaaWin32InputMethodEnum,
+    MaaWin32ScreencapMethodEnum,
+    Win32Controller,
 )
+from maa.custom_action import CustomAction
+from maa.resource import Resource
+from maa.tasker import Tasker
+from maa.toolkit import AdbDevice, Toolkit
 
-from .config import Config
 from app.models.emulator import DeviceInfo
 from app.utils import get_logger
+
+from .config import Config
 
 logger = get_logger("MaaFW管理")
 

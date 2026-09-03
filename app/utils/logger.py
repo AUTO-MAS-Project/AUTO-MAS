@@ -29,9 +29,10 @@ import os
 # 下方本项目自有的 sink 均显式传入 diagnose=False，不受影响。
 os.environ.setdefault("LOGURU_DIAGNOSE", "NO")
 
-from loguru import logger as _logger
 import sys
 from pathlib import Path
+
+from loguru import logger as _logger
 
 from .security import sanitize_log_message
 

@@ -20,15 +20,15 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import os
 import subprocess
 import time
-import psutil
-import asyncio
-
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+
+import psutil
 
 from app.utils.platform import window
 from app.utils.platform.common.errors import UnsupportedPlatformError

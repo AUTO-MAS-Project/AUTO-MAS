@@ -37,10 +37,9 @@ import string
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from typing import Dict
 
 import httpx
-
-from typing import Dict
 
 from app.core import Config
 from app.utils.logger import get_logger

@@ -37,7 +37,6 @@ from .log_detect import (
     has_failure_output,
 )
 
-
 logger = get_logger("HSR M7A 运行器")
 
 

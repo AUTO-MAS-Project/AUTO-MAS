@@ -34,6 +34,7 @@ from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
+
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
