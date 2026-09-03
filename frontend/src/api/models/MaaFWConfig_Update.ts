@@ -20,7 +20,7 @@ export type MaaFWConfig_Update = {
      */
     Channel?: ('stable' | 'beta' | null);
     /**
-     * Mirror 酱 CDK，留空时使用全局项目更新 CDK
+     * Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填
      */
     MirrorChyanCDK?: (string | null);
     /**
