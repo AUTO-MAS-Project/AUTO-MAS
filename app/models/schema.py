@@ -353,6 +353,30 @@ class KuroSmsSendOut(OutBase):
     expiresIn: int = Field(default=0, description="会话剩余秒数")
 
 
+class KuroSmsVerificationIn(BaseModel):
+    """库街区安全验证结果提交请求。"""
+
+    sessionId: str = Field(
+        ...,
+        min_length=32,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="短期短信登录会话标识",
+    )
+    lotNumber: SecretStr = Field(
+        ..., min_length=1, max_length=512, description="极验 lot_number"
+    )
+    captchaOutput: SecretStr = Field(
+        ..., min_length=1, max_length=4096, description="极验 captcha_output"
+    )
+    passToken: SecretStr = Field(
+        ..., min_length=1, max_length=4096, description="极验 pass_token"
+    )
+    genTime: SecretStr = Field(
+        ..., min_length=1, max_length=128, description="极验 gen_time"
+    )
+
+
 class KuroSmsLoginIn(BaseModel):
     """库街区短信验证码登录请求。"""
 

@@ -290,6 +290,32 @@ class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("future_cookie_field=keep", result["cookies_str"])
         self.assertNotIn("login_ticket", result["cookies_str"])
 
+    async def test_passport_confirmation_keeps_cloud_web_token(self) -> None:
+        response = httpx.Response(
+            200,
+            json={
+                "retcode": 0,
+                "data": {
+                    "status": "Confirmed",
+                    "cookies": {
+                        "uni_web_token": "cloud-web-token",
+                        "stoken_v2": "v2-stoken",
+                        "account_id_v2": "100",
+                        "account_mid_v2": "mid",
+                    },
+                },
+            },
+            request=httpx.Request("POST", "https://passport.invalid"),
+        )
+        with patch(
+            "app.tools.miyoushe_qr.httpx.AsyncClient",
+            return_value=_FakeAsyncClient(response),
+        ):
+            result = await check_qr_status("ticket", "device")
+
+        self.assertEqual(result["status"], "Confirmed")
+        self.assertIn("uni_web_token=cloud-web-token", result["cookies_str"])
+
     async def test_game_token_confirmation_returns_full_v2_credential(self) -> None:
         response = httpx.Response(
             200,

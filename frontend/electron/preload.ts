@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
+  openKuroLogin: (sessionId: string) => ipcRenderer.invoke('open-kuro-login', sessionId),
   discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
   discoverWutheringWavesPath: () =>
     ipcRenderer.invoke('okww-path-discovery:discover-wuthering-waves'),

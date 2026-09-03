@@ -172,12 +172,18 @@ async def _run_configured_community_sign_in(
             )
             for provider in providers
         }
+        runtime_tokens = dict(tokens)
+        miyoushe_token = tokens.get("MiyousheToken", "")
+        if is_community_credential_configured("MiyousheToken", miyoushe_token):
+            # 云原神只在本轮从米游社 Cookie 换取临时凭据；旧字段继续作为
+            # 没有米游社凭据时的兼容后备，不回写临时 token。
+            runtime_tokens["CloudGenshinToken"] = miyoushe_token
         configured = [
             provider
             for provider in providers
             if is_community_credential_configured(
                 provider.token_field,
-                tokens.get(provider.token_field, ""),
+                runtime_tokens.get(provider.token_field, ""),
             )
         ]
         if not configured:
@@ -238,7 +244,7 @@ async def _run_configured_community_sign_in(
             *(
                 run_community_provider(
                     provider,
-                    tokens[provider.token_field],
+                    runtime_tokens[provider.token_field],
                     account_name=account_name,
                     account_uid=account_uid,
                     on_credential_update=persist_credential_update,

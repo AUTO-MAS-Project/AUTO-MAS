@@ -584,6 +584,8 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+let kuroLoginWindow: Electron.BrowserWindow | null = null
+let kuroLoginSessionId = ''
 type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
@@ -1077,6 +1079,88 @@ function createLogWindow() {
   })
 }
 
+const KURO_VERIFICATION_PATH = '/api/tools/sign/account/kuro/sms/verification'
+
+function isKuroVerificationUrl(value: string, expectedUrl: URL): boolean {
+  try {
+    const url = new URL(value)
+    return url.origin === expectedUrl.origin && url.pathname === expectedUrl.pathname
+  } catch {
+    return false
+  }
+}
+
+async function openKuroLoginWindow(sessionId: string): Promise<void> {
+  const normalizedSessionId = sessionId.trim()
+  if (!/^[A-Za-z0-9_-]{32}$/.test(normalizedSessionId)) {
+    throw new Error('库街区短信登录会话无效')
+  }
+
+  if (kuroLoginWindow && !kuroLoginWindow.isDestroyed()) {
+    if (kuroLoginSessionId === normalizedSessionId) {
+      kuroLoginWindow.show()
+      kuroLoginWindow.focus()
+      return
+    }
+    kuroLoginWindow.destroy()
+  }
+
+  const loginUrl = new URL(KURO_VERIFICATION_PATH, getLocalApiEndpoint())
+  loginUrl.searchParams.set('sessionId', normalizedSessionId)
+  const partition = `kuro-login-${Date.now()}`
+  const win = new BrowserWindow({
+    width: 520,
+    height: 760,
+    minWidth: 420,
+    minHeight: 560,
+    title: '库街区安全验证',
+    parent: mainWindow ?? undefined,
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      partition,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      devTools: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+  kuroLoginWindow = win
+  kuroLoginSessionId = normalizedSessionId
+  const loginSession = win.webContents.session
+
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-attach-webview', event => event.preventDefault())
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isKuroVerificationUrl(url, loginUrl)) event.preventDefault()
+  })
+  win.webContents.on('will-redirect', (event, url) => {
+    if (!isKuroVerificationUrl(url, loginUrl)) event.preventDefault()
+  })
+  loginSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false)
+  })
+  loginSession.on('will-download', event => event.preventDefault())
+
+  win.on('closed', () => {
+    void loginSession.clearStorageData()
+    if (kuroLoginWindow === win) {
+      kuroLoginWindow = null
+      kuroLoginSessionId = ''
+    }
+  })
+
+  try {
+    await win.loadURL(loginUrl.toString())
+    if (!win.isDestroyed()) win.show()
+  } catch {
+    if (!win.isDestroyed()) win.destroy()
+    throw new Error('库街区验证页加载失败')
+  }
+}
+
 // 日志系统 IPC 处理器
 ipcMain.handle(
   'log:write',
@@ -1453,6 +1537,16 @@ ipcMain.handle('open-url', async (_event, url: string) => {
       logger.error(`未知错误: ${error}`)
       return { success: false, error: String(error) }
     }
+  }
+})
+
+ipcMain.handle('open-kuro-login', async (_event, sessionId: string) => {
+  try {
+    await openKuroLoginWindow(sessionId)
+    return { success: true }
+  } catch {
+    logger.error('打开库街区验证页失败')
+    return { success: false, error: '无法打开库街区验证页' }
   }
 })
 

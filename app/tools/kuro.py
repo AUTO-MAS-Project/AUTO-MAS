@@ -32,13 +32,16 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import asyncio
+import json
 import secrets
 import time
-from dataclasses import dataclass
-import httpx
+import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import datetime
+
+import httpx
 
 
 from app.core import Config
@@ -112,7 +115,7 @@ class KuroSmsError(ValueError):
 
 
 class KuroSmsCaptchaRequiredError(KuroSmsError):
-    """发送短信前需要完成库街区安全验证。"""
+    """兼容旧调用方：发送短信前需要完成库街区安全验证。"""
 
 
 class KuroSmsRateLimitError(KuroSmsError):
@@ -121,6 +124,10 @@ class KuroSmsRateLimitError(KuroSmsError):
 
 class KuroSmsSessionError(KuroSmsError):
     """短信登录会话不存在、过期或与账号不匹配。"""
+
+
+class KuroSmsVerificationRequiredError(KuroSmsError):
+    """短信登录会话尚未完成库街区安全验证。"""
 
 
 class KuroSmsCodeError(KuroSmsError):
@@ -133,6 +140,7 @@ class KuroSmsSessionResult:
 
     session_id: str
     expires_in: int
+    requires_verification: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +152,7 @@ class _KuroSmsSession:
     dev_code: str
     distinct_id: str
     expires_at: float
+    sms_sent: bool = False
 
 
 _KURO_RISK_MARKERS = (
@@ -487,6 +496,17 @@ def _get_kuro_sms_session(
     return session
 
 
+def _get_kuro_sms_session_by_id(session_id: str) -> _KuroSmsSession:
+    """仅按不可猜测的短期标识读取安全验证会话。"""
+
+    normalized_session_id = str(session_id or "").strip()
+    _prune_kuro_sms_sessions()
+    session = _KURO_SMS_SESSIONS.get(normalized_session_id)
+    if session is None:
+        raise KuroSmsSessionError("库街区短信登录会话已失效，请重新发送验证码")
+    return session
+
+
 def _kuro_sms_headers(session: _KuroSmsSession) -> dict[str, str]:
     """构造短信接口使用的匿名设备请求头。"""
 
@@ -529,8 +549,8 @@ async def create_kuro_sms_session(
 ) -> KuroSmsSessionResult:
     """发送库街区短信验证码并建立短期登录会话。
 
-    库街区在部分请求中会要求极验；本工具不绕过该验证，严格检查
-    `data.geeTest`，只有明确为 false 才认为短信已发送。
+    库街区要求极验时保留同一手机号和设备码的短期会话，由 MAS
+    验证窗口完成后续短信发送；无需验证时直接进入验证码登录步骤。
     """
 
     normalized_phone = validate_kuro_sms_phone(phone)
@@ -550,18 +570,74 @@ async def create_kuro_sms_session(
     payload = response_data.get("data")
     if not isinstance(payload, dict) or not isinstance(payload.get("geeTest"), bool):
         raise KuroSmsError("库街区短信接口返回数据不完整")
-    if payload["geeTest"]:
-        raise KuroSmsCaptchaRequiredError(
-            "库街区当前要求完成安全验证，请先在库街区客户端或网页完成验证"
-        )
-
+    requires_verification = payload["geeTest"]
+    if not requires_verification:
+        session = replace(session, sms_sent=True)
     _prune_kuro_sms_sessions()
+    # 同一账号只保留最后一次短信会话，旧验证窗口不能继续重复发码。
+    for existing_id, existing_session in tuple(_KURO_SMS_SESSIONS.items()):
+        if existing_session.account_id == account_id:
+            _KURO_SMS_SESSIONS.pop(existing_id, None)
     _KURO_SMS_SESSIONS[session_id] = session
     _schedule_kuro_sms_session_expiry(session_id, session)
     return KuroSmsSessionResult(
         session_id=session_id,
         expires_in=KURO_SMS_SESSION_TTL,
+        requires_verification=requires_verification,
     )
+
+
+async def verify_kuro_sms_session(
+    session_id: str,
+    validation: Mapping[str, object],
+    proxy: str | None = None,
+) -> None:
+    """提交极验结果，并使用原短信会话发送验证码。"""
+
+    session = _get_kuro_sms_session_by_id(session_id)
+    if session.sms_sent:
+        return
+
+    required_fields = (
+        "lot_number",
+        "captcha_output",
+        "pass_token",
+        "gen_time",
+    )
+    normalized_validation = {
+        field: str(validation.get(field) or "").strip()
+        for field in required_fields
+    }
+    if any(not normalized_validation[field] for field in required_fields):
+        raise KuroSmsError("库街区安全验证结果不完整，请重新验证")
+
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+        response = await client.post(
+            SMS_SEND_URL,
+            headers=_kuro_sms_headers(session),
+            data={
+                "mobile": session.phone,
+                "geeTestData": json.dumps(
+                    normalized_validation,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            },
+            timeout=30.0,
+        )
+    response_data = _safe_json(response)
+    _raise_kuro_sms_response_error(response, response_data, "安全验证")
+    payload = response_data.get("data")
+    if isinstance(payload, dict) and payload.get("geeTest") is True:
+        raise KuroSmsError("库街区安全验证未通过，请重新验证")
+
+    current_session = _KURO_SMS_SESSIONS.get(str(session_id).strip())
+    if current_session is session:
+        _KURO_SMS_SESSIONS[str(session_id).strip()] = replace(
+            session,
+            sms_sent=True,
+        )
 
 
 async def login_kuro_with_sms(
@@ -583,6 +659,8 @@ async def login_kuro_with_sms(
         account_id,
         normalized_phone,
     )
+    if not session.sms_sent:
+        raise KuroSmsVerificationRequiredError("请先完成库街区安全验证并获取验证码")
     resolved_proxy = proxy if proxy is not None else Config.proxy
 
     async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:

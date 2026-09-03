@@ -114,6 +114,7 @@ _QR_COOKIE_ALIASES = {
 }
 
 _QR_COOKIE_FIELDS = (
+    "uni_web_token",
     "cookie_token",
     "cookie_token_v2",
     "stoken",

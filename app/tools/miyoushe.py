@@ -459,7 +459,7 @@ def validate_miyoushe_cookie(cookie: str) -> None:
 # ==================== Token 派生 ====================
 
 
-async def _derive_cookie_token(
+async def derive_miyoushe_cookie_token(
     stoken: str,
     mid: str,
     stuid: str,
@@ -585,7 +585,7 @@ async def miyoushe_sign_in(
         # 策略 3: stoken_v2 + mid，派生 cookie_token
         logger.info("缺少 cookie_token，尝试从 stoken 派生")
         try:
-            derived_token, derived_uid = await _derive_cookie_token(
+            derived_token, derived_uid = await derive_miyoushe_cookie_token(
                 cookies["stoken"],
                 cookies["mid"],
                 stuid,
@@ -999,7 +999,7 @@ async def _do_sign(
                     f"尝试用 stoken 刷新"
                 )
                 try:
-                    new_token, new_uid = await _derive_cookie_token(
+                    new_token, new_uid = await derive_miyoushe_cookie_token(
                         parsed["stoken"],
                         parsed["mid"],
                         stuid,

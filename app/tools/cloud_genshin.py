@@ -25,6 +25,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import uuid
 from collections.abc import Mapping
 
@@ -40,12 +42,47 @@ from .community_contract import CommunitySignResult
 logger = get_logger("云原神签到")
 
 _BASE_URL = "https://api-cloudgame.mihoyo.com/hk4e_cg_cn"
+_WEB_LOGIN_URL = (
+    "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/granter/login/webLogin"
+)
 _WALLET_URL = f"{_BASE_URL}/wallet/wallet/get"
 _NOTIFICATIONS_URL = (
     f"{_BASE_URL}/gamer/api/listNotifications"
     "?status=NotificationStatusUnread&type=NotificationTypePopup&is_sort=true"
 )
 _ACK_NOTIFICATION_URL = f"{_BASE_URL}/gamer/api/ackNotification"
+_APP_ID = 4
+_CHANNEL_ID = 1
+_GAME_BIZ = "hk4e_cn"
+_APP_SIGN_KEY = b"d0d3a7342df2026a70f650b907800111"
+_MIYOUSHE_COOKIE_FIELDS = frozenset(
+    {
+        "uni_web_token",
+        "cookie_token",
+        "cookie_token_v2",
+        "stoken",
+        "stoken_v2",
+        "stuid",
+        "stuid_v2",
+        "ltuid",
+        "ltuid_v2",
+        "account_id",
+        "account_id_v2",
+    }
+)
+_AUTH_EXPIRED_RETCODES = frozenset({"-100", "10001"})
+
+
+class CloudGenshinUnavailableError(ValueError):
+    """当前米游社账号未开通或无法使用云原神。"""
+
+
+class CloudGenshinAuthenticationError(ValueError):
+    """米游社或云原神凭据已失效。"""
+
+
+class CloudGenshinBusinessError(ValueError):
+    """云原神接口返回了非认证类业务失败。"""
 
 
 def validate_cloud_genshin_token(token: str) -> str:
@@ -65,10 +102,12 @@ def validate_cloud_genshin_token(token: str) -> str:
 def parse_cloud_genshin_free_time(payload: Mapping[str, object]) -> int:
     """从钱包响应严格读取剩余免费时长，单位为秒。"""
 
-    if payload.get("retcode") not in (0, None) or payload.get("message") != "OK":
-        retcode = payload.get("retcode")
+    retcode = payload.get("retcode")
+    if str(retcode).strip() in _AUTH_EXPIRED_RETCODES:
+        raise CloudGenshinAuthenticationError("云原神登录凭据已失效")
+    if retcode not in (0, "0", None) or payload.get("message") != "OK":
         code = retcode if isinstance(retcode, (int, str)) else "未知"
-        raise ValueError(f"云原神钱包查询失败（错误码 {code}）")
+        raise CloudGenshinBusinessError(f"云原神钱包查询失败（错误码 {code}）")
     data = payload.get("data")
     free_time = data.get("free_time") if isinstance(data, Mapping) else None
     value = free_time.get("free_time") if isinstance(free_time, Mapping) else None
@@ -109,8 +148,32 @@ def calculate_cloud_genshin_gain(before: int, after: int) -> int:
     return max(0, after - before)
 
 
-def _headers(token: str) -> dict[str, str]:
-    device_id = str(uuid.uuid3(uuid.NAMESPACE_URL, f"cloud-genshin:{token}"))
+def build_cloud_genshin_combo_token(combo_token: str, open_id: str) -> str:
+    """将 Web 登录结果签名为云原神接口使用的完整 combo token。"""
+
+    token = validate_cloud_genshin_token(combo_token)
+    uid = str(open_id or "").strip()
+    if not uid or any(ord(character) < 32 for character in uid):
+        raise ValueError("云原神 Web 登录返回的 open_id 无效")
+    message = (
+        f"app_id={_APP_ID}&channel_id={_CHANNEL_ID}"
+        f"&combo_token={token}&open_id={uid}"
+    )
+    signature = hmac.new(
+        _APP_SIGN_KEY,
+        message.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return (
+        f"ai={_APP_ID};ci={_CHANNEL_ID};oi={uid};ct={token};"
+        f"si={signature};bi={_GAME_BIZ}"
+    )
+
+
+def _headers(token: str, *, device_id: str = "") -> dict[str, str]:
+    resolved_device_id = device_id or str(
+        uuid.uuid3(uuid.NAMESPACE_URL, f"cloud-genshin:{token}")
+    )
     return {
         "Accept": "application/json, text/plain, */*",
         "Accept-Encoding": "gzip, deflate, br",
@@ -130,7 +193,7 @@ def _headers(token: str) -> dict[str, str]:
         "x-rpc-client_type": "17",
         "x-rpc-combo_token": token,
         "x-rpc-cps": "mac_mihoyo",
-        "x-rpc-device_id": device_id,
+        "x-rpc-device_id": resolved_device_id,
         "x-rpc-device_model": "Macintosh",
         "x-rpc-device_name": "Apple Macintosh",
         "x-rpc-language": "zh-cn",
@@ -147,12 +210,14 @@ async def _request_json(
     *,
     headers: Mapping[str, str],
     json_body: Mapping[str, object] | None = None,
+    cookies: Mapping[str, str] | None = None,
 ) -> Mapping[str, object]:
     response = await client.request(
         method,
         url,
         headers=dict(headers),
         json=dict(json_body) if json_body is not None else None,
+        cookies=dict(cookies) if cookies is not None else None,
         timeout=30.0,
     )
     text = response.text.strip()
@@ -167,13 +232,107 @@ async def _request_json(
     return payload
 
 
+def _web_login_headers(device_id: str, device_fp: str) -> dict[str, str]:
+    """构造米游社 Cookie 换取云原神临时凭据所需的浏览器请求头。"""
+
+    return {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+        "Origin": "https://ys.mihoyo.com",
+        "Referer": "https://ys.mihoyo.com/",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+        ),
+        "x-rpc-channel_id": str(_CHANNEL_ID),
+        "x-rpc-client_type": "22",
+        "x-rpc-device_fp": device_fp,
+        "x-rpc-device_id": device_id,
+        "x-rpc-device_model": "Chrome%20140.0.0.0",
+        "x-rpc-device_name": "Chrome",
+        "x-rpc-device_os": "Windows%2010%2064-bit",
+        "x-rpc-game_biz": _GAME_BIZ,
+        "x-rpc-language": "zh-cn",
+        "x-rpc-mdk_version": "2.24.0",
+    }
+
+
+async def _prepare_cloud_genshin_credential(
+    client: httpx.AsyncClient,
+    credential: str,
+    *,
+    proxy: str | None = None,
+) -> tuple[str, bool, str]:
+    """兼容历史 token，并按需从米游社 Cookie 换取本轮临时 token。"""
+
+    value = validate_cloud_genshin_token(credential)
+
+    from .miyoushe import (
+        derive_miyoushe_cookie_token,
+        prepare_miyoushe_session,
+        validate_miyoushe_cookie,
+    )
+
+    session = prepare_miyoushe_session(value)
+    if not _MIYOUSHE_COOKIE_FIELDS.intersection(session.cookies):
+        return value, False, ""
+
+    validate_miyoushe_cookie(value)
+    cookies = dict(session.cookies)
+    if not cookies.get("cookie_token"):
+        cookie_token, derived_uid = await derive_miyoushe_cookie_token(
+            stoken=cookies["stoken"],
+            mid=cookies["mid"],
+            stuid=session.uid,
+            proxy=proxy,
+        )
+        cookies["cookie_token"] = cookie_token
+        if derived_uid:
+            session_uid = derived_uid
+        else:
+            session_uid = session.uid
+    else:
+        session_uid = session.uid
+
+    device_id = str(cookies.get("_MHYUUID") or session.device_id).strip()
+    device_fp = str(cookies.get("DEVICEFP") or "38d7fa104e5d7").strip()
+    payload = await _request_json(
+        client,
+        "POST",
+        _WEB_LOGIN_URL,
+        headers=_web_login_headers(device_id, device_fp),
+        json_body={"app_id": _APP_ID, "channel_id": _CHANNEL_ID},
+        cookies=cookies,
+    )
+    if payload.get("retcode") not in (0, "0"):
+        if str(payload.get("retcode")).strip() in _AUTH_EXPIRED_RETCODES:
+            raise CloudGenshinAuthenticationError(
+                "米游社凭据已失效，无法登录云原神"
+            )
+        # 云原神是米游社凭据的自动附加能力。除明确认证失效外，上游的
+        # 业务拒绝通常表示账号未开通或不可用，不应拖累普通游戏签到。
+        raise CloudGenshinUnavailableError("当前米游社账号无法使用云原神，已跳过")
+    data = payload.get("data")
+    combo_token = data.get("combo_token") if isinstance(data, Mapping) else None
+    open_id = (
+        data.get("open_id") if isinstance(data, Mapping) else None
+    ) or session_uid
+    if not isinstance(combo_token, str) or not combo_token.strip() or not open_id:
+        raise ValueError("云原神 Web 登录返回数据不完整")
+    return (
+        build_cloud_genshin_combo_token(combo_token, str(open_id)),
+        True,
+        device_id or str(uuid.uuid3(uuid.NAMESPACE_URL, session_uid)),
+    )
+
+
 def _response_data(payload: Mapping[str, object], stage: str) -> Mapping[str, object]:
-    if payload.get("retcode") in (-100, 10001):
-        raise ValueError("云原神 combo token 已失效")
-    if payload.get("retcode") not in (0, None) or payload.get("message") != "OK":
-        retcode = payload.get("retcode")
+    retcode = payload.get("retcode")
+    if str(retcode).strip() in _AUTH_EXPIRED_RETCODES:
+        raise CloudGenshinAuthenticationError("云原神 combo token 已失效")
+    if retcode not in (0, "0", None) or payload.get("message") != "OK":
         code = retcode if isinstance(retcode, (int, str)) else "未知"
-        raise ValueError(f"{stage}失败（错误码 {code}）")
+        raise CloudGenshinBusinessError(f"{stage}失败（错误码 {code}）")
     data = payload.get("data")
     if not isinstance(data, Mapping):
         raise ValueError(f"{stage}返回数据格式无效")
@@ -238,6 +397,8 @@ def _result(
     status: str,
     reward: str = "",
     reason: str = "",
+    completed: bool = False,
+    notification_only: bool = False,
 ) -> dict[str, object]:
     return CommunitySignResult(
         account=f"{account_name}/云原神",
@@ -247,6 +408,8 @@ def _result(
         status=status,
         reward=reward,
         reason=reason,
+        completed=completed,
+        notification_only=notification_only,
     ).to_legacy()
 
 
@@ -260,22 +423,39 @@ async def cloud_genshin_sign_in(
     """确认云原神签到通知并返回本轮新增免费时长。"""
 
     try:
-        credential = validate_cloud_genshin_token(token)
-        headers = _headers(credential)
         resolved_proxy = proxy if proxy is not None else Config.proxy
         async with httpx.AsyncClient(
             proxy=resolved_proxy,
             trust_env=False,
         ) as client:
-            before = await _query_free_time(client, headers)
-            notification_ids = await _list_notification_ids(client, headers)
-            for index, notification_id in enumerate(notification_ids):
-                await _ack_notification(client, headers, notification_id)
-                if index + 1 < len(notification_ids):
+            credential, from_miyoushe_cookie, device_id = (
+                await _prepare_cloud_genshin_credential(
+                    client,
+                    token,
+                    proxy=resolved_proxy,
+                )
+            )
+            headers = _headers(credential, device_id=device_id)
+            try:
+                before = await _query_free_time(client, headers)
+                notification_ids = await _list_notification_ids(client, headers)
+                for index, notification_id in enumerate(notification_ids):
+                    await _ack_notification(
+                        client,
+                        headers,
+                        notification_id,
+                    )
+                    if index + 1 < len(notification_ids):
+                        await asyncio.sleep(1.0)
+                if notification_ids:
                     await asyncio.sleep(1.0)
-            if notification_ids:
-                await asyncio.sleep(1.0)
-            after = await _query_free_time(client, headers)
+                after = await _query_free_time(client, headers)
+            except CloudGenshinBusinessError as error:
+                if from_miyoushe_cookie:
+                    raise CloudGenshinUnavailableError(
+                        "当前米游社账号无法使用云原神，已跳过"
+                    ) from error
+                raise
 
         gained = calculate_cloud_genshin_gain(before, after)
         return [
@@ -284,6 +464,18 @@ async def cloud_genshin_sign_in(
                 account_uid,
                 status="成功" if gained else "已签到",
                 reward=f"新增 {format_cloud_genshin_duration(gained)}",
+            )
+        ]
+    except CloudGenshinUnavailableError as error:
+        logger.info(f"[{account_name}] {error}")
+        return [
+            _result(
+                account_name,
+                account_uid,
+                status="跳过",
+                reason=str(error),
+                completed=True,
+                notification_only=True,
             )
         ]
     except Exception as error:

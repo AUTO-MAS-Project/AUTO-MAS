@@ -8,14 +8,13 @@ import {
   SwapOutlined,
   QrcodeOutlined,
   MessageOutlined,
-  ExportOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS, openExternalUrl } from '@/utils/openExternal'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
 import { useQrLogin } from './useQrLogin'
@@ -238,6 +237,7 @@ const kuroSmsCode = ref('')
 const kuroSmsSessionId = ref('')
 const kuroSmsExpiresIn = ref(0)
 const kuroSmsResendIn = ref(0)
+const kuroSmsRequiresVerification = ref(false)
 const taygedoLoginModalVisible = ref(false)
 const taygedoLoginAccountId = ref('')
 const taygedoLoginPhone = ref('')
@@ -266,6 +266,7 @@ const startKuroSmsCountdown = (expiresIn: number) => {
     if (kuroSmsExpiresIn.value === 0) {
       kuroSmsSessionId.value = ''
       kuroSmsCode.value = ''
+      kuroSmsRequiresVerification.value = false
       stopKuroSmsCountdown()
     }
   }, 1000)
@@ -281,6 +282,7 @@ const closeKuroSmsModal = () => {
   kuroSmsSessionId.value = ''
   kuroSmsExpiresIn.value = 0
   kuroSmsResendIn.value = 0
+  kuroSmsRequiresVerification.value = false
   credentialAction.value = null
 }
 
@@ -317,6 +319,7 @@ const openKuroSmsModal = () => {
   kuroSmsSessionId.value = ''
   kuroSmsExpiresIn.value = 0
   kuroSmsResendIn.value = 0
+  kuroSmsRequiresVerification.value = false
   kuroSmsModalVisible.value = true
 }
 
@@ -347,14 +350,6 @@ const handleEditModalCancel = () => {
 
 const handleEditModalOk = async () => {
   if (!editingAccount.value) return
-  const miyousheDeviceId = editingAccount.value.MiyousheDeviceId.trim()
-  const miyousheDeviceFp = editingAccount.value.MiyousheDeviceFp.trim()
-  if (Boolean(miyousheDeviceId) !== Boolean(miyousheDeviceFp)) {
-    message.warning(t('gamesign.toast.miyousheDevicePairRequired'))
-    return
-  }
-  editingAccount.value.MiyousheDeviceId = miyousheDeviceId
-  editingAccount.value.MiyousheDeviceFp = miyousheDeviceFp
   try {
     const uid = editingAccount.value.uid
     const idx = accounts.value.findIndex(a => a.uid === uid)
@@ -372,6 +367,23 @@ const handleEditModalOk = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 Token 失败: ${errorMsg}`)
     message.error(t('gamesign.toast.saveFailed'))
+  }
+}
+
+const openKuroVerification = async () => {
+  const sessionId = kuroSmsSessionId.value
+  if (!sessionId) {
+    message.warning(t('gamesign.toast.needKuroSession'))
+    return
+  }
+  try {
+    const result = await window.electronAPI.openKuroLogin(sessionId)
+    if (result.success) return
+    logger.error('打开库街区验证页失败')
+    message.error(t('gamesign.login.kuroVerificationOpenFailed'))
+  } catch {
+    logger.error('调用库街区验证窗口失败')
+    message.error(t('gamesign.login.kuroVerificationOpenFailed'))
   }
 }
 
@@ -396,8 +408,12 @@ const handleSendKuroSmsCode = async () => {
     }
     kuroSmsPhone.value = phone
     kuroSmsSessionId.value = result.sessionId
+    kuroSmsRequiresVerification.value = result.requiresVerification
     kuroSmsCode.value = ''
     startKuroSmsCountdown(result.expiresIn)
+    if (result.requiresVerification) {
+      await openKuroVerification()
+    }
   } catch {
     // sendKuroSmsCode 已展示脱敏错误，保留弹窗供用户重试。
   } finally {
@@ -506,13 +522,6 @@ const handleSklandLogin = async () => {
     sklandLoginPhone.value = ''
     sklandLoginPassword.value = ''
     credentialAction.value = null
-  }
-}
-
-const openCloudGenshinTokenPage = async () => {
-  const opened = await openExternalUrl('https://ys.mihoyo.com/cloud/#/')
-  if (!opened) {
-    message.error(t('gamesign.toast.externalLinkFailed'))
   }
 }
 
@@ -896,50 +905,6 @@ onBeforeUnmount(() => {
             {{ t('gamesign.edit.qrLogin') }}
           </a-button>
         </div>
-        <div class="miyoushe-device-fields">
-          <div class="device-credential-hint">{{ t('gamesign.edit.miyousheDeviceHint') }}</div>
-          <div class="form-item-vertical">
-            <span class="form-label">{{ t('gamesign.edit.miyousheDeviceId') }}</span>
-            <a-input-password
-              v-model:value="editingAccount.MiyousheDeviceId"
-              size="large"
-              :placeholder="t('gamesign.edit.miyousheDeviceIdPlaceholder')"
-              autocomplete="off"
-              allow-clear
-            />
-          </div>
-          <div class="form-item-vertical">
-            <span class="form-label">{{ t('gamesign.edit.miyousheDeviceFp') }}</span>
-            <a-input-password
-              v-model:value="editingAccount.MiyousheDeviceFp"
-              size="large"
-              :placeholder="t('gamesign.edit.miyousheDeviceFpPlaceholder')"
-              autocomplete="off"
-              allow-clear
-            />
-          </div>
-        </div>
-        <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.cloudGenshin')
-        }}</a-divider>
-        <div class="form-item-vertical cloud-token-item">
-          <a-input-password
-            v-model:value="editingAccount.CloudGenshinToken"
-            size="large"
-            :placeholder="t('gamesign.edit.cloudGenshinPlaceholder')"
-            allow-clear
-          />
-          <a-button
-            size="small"
-            danger
-            class="credential-helper-btn"
-            style="margin-top: 6px"
-            @click="openCloudGenshinTokenPage"
-          >
-            <template #icon><ExportOutlined /></template>
-            {{ t('gamesign.edit.cloudTokenLogin') }}
-          </a-button>
-        </div>
         <a-divider orientation="left" class="community-divider">{{
           t('gamesign.edit.kuro')
         }}</a-divider>
@@ -1063,6 +1028,18 @@ onBeforeUnmount(() => {
           show-icon
           :message="t('gamesign.login.kuroSessionHint', { seconds: kuroSmsExpiresIn })"
         />
+        <a-alert
+          v-if="kuroSmsRequiresVerification"
+          type="warning"
+          show-icon
+          :message="t('gamesign.login.kuroVerificationHint')"
+        >
+          <template #action>
+            <a-button danger size="small" @click="openKuroVerification">
+              {{ t('gamesign.login.openKuroVerification') }}
+            </a-button>
+          </template>
+        </a-alert>
         <div class="form-item-vertical">
           <span class="form-label">{{ t('gamesign.login.smsCode') }}</span>
           <a-input
@@ -1659,21 +1636,6 @@ onBeforeUnmount(() => {
 
 .credential-helper-btn {
   font-weight: 700;
-}
-
-.miyoushe-device-fields {
-  margin-bottom: 16px;
-}
-
-.miyoushe-device-fields .form-item-vertical:last-child {
-  margin-bottom: 0;
-}
-
-.device-credential-hint {
-  margin-bottom: 12px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  line-height: 1.6;
 }
 
 .sms-send-row {

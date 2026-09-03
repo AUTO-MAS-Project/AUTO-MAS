@@ -113,21 +113,30 @@ export function useGameSignAccountApi() {
   const sendKuroSmsCode = async (
     accountId: string,
     phone: string
-  ): Promise<{ sessionId: string; expiresIn: number }> => {
+  ): Promise<{ sessionId: string; expiresIn: number; requiresVerification: boolean }> => {
     let publicMessage = t('gamesign.toast.kuroSmsSendFailed')
     try {
       const response = await GameSignService.sendKuroSmsCodeApiToolsSignAccountKuroSmsSendPost({
         accountId,
         phone,
       })
-      if (Number(response.code) !== 200 || response.status !== 'success' || !response.sessionId) {
+      const requiresVerification =
+        Number(response.code) === 409 && response.status === 'captcha_required'
+      if (
+        (!requiresVerification &&
+          (Number(response.code) !== 200 || response.status !== 'success')) ||
+        !response.sessionId
+      ) {
         publicMessage = response.message || publicMessage
         throw new Error(publicMessage)
       }
-      message.success(response.message || '验证码已发送')
+      if (!requiresVerification) {
+        message.success(response.message || '验证码已发送')
+      }
       return {
         sessionId: response.sessionId,
         expiresIn: Number(response.expiresIn) || 600,
+        requiresVerification,
       }
     } catch (error) {
       logger.error('库街区短信验证码发送失败')

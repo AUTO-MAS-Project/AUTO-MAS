@@ -814,12 +814,10 @@ class CommunityActivityProvider:
             if game == "绝区零":
                 device_id = request.target.device_id.strip()
                 device_fp = request.target.device_fp.strip()
-                if not device_id or not device_fp:
-                    raise CommunityActivityTransportError(
-                        "绝区零便笺需要同时配置米游社安卓设备 ID 和设备指纹",
-                        status="limited",
-                    )
-                return cookies, device_id, device_fp
+                # 历史配置中的真实设备对继续优先使用；没有配置时复用下方
+                # 官方 getFp 和设备登记链路自动准备运行期设备信息。
+                if device_id and device_fp:
+                    return cookies, device_id, device_fp
 
             device_id = self._device_id
             device_fp = self._miyoushe_device_fps.get(game, "")

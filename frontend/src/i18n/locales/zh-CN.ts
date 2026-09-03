@@ -1522,7 +1522,7 @@ export default {
       save: '保存',
       userName: '用户名称',
       miyoushe: '米游社',
-      miyoushePlaceholder: '浏览器 F12 → document.cookie 获取',
+      miyoushePlaceholder: '可粘贴已有米游社 Cookie，或使用下方扫码登录',
       qrLogin: '扫码获取 Token',
       miyousheDeviceHint:
         '仅用于绝区零便笺。请同时填写从米游社官方安卓客户端请求头取得的设备 ID 和设备指纹，两项均会加密保存。',
@@ -1557,6 +1557,10 @@ export default {
       resendCode: '重新发送',
       resendAfter: '{seconds} 秒后重发',
       kuroSessionHint: '短信会话将在 {seconds} 秒后过期，请及时完成登录',
+      kuroVerificationHint:
+        '库街区要求安全验证。请在 MAS 打开的验证窗口完成验证并发送短信，再返回此处输入验证码。',
+      openKuroVerification: '打开库街区验证页',
+      kuroVerificationOpenFailed: '无法打开库街区验证页，请稍后重试',
       kuroConflictNotice:
         '短信登录获取的新 Token 可能使库街区客户端当前登录失效；如客户端被退出，请重新登录库街区。',
       smsSubmit: '获取并保存 Token',

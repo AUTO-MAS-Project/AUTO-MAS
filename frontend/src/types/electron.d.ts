@@ -47,6 +47,7 @@ export interface ElectronAPI {
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
+  openKuroLogin: (sessionId: string) => Promise<{ success: boolean; error?: string }>
   discoverOkwwPath: () => Promise<PathDiscoveryResult>
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 

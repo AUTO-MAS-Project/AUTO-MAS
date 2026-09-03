@@ -454,7 +454,7 @@ class CommunityActivityRequestTest(unittest.TestCase):
         self.assertTrue(ready.capabilities.activity_ready)
         self.assertEqual(ready.capabilities.activity_missing_fields, ())
 
-    def test_zzz_requires_persisted_real_device_pair(self) -> None:
+    def test_zzz_automatically_acquires_and_registers_device_pair(self) -> None:
         target = CommunityActivityTarget(
             account_uid="account",
             account_name="用户 1",
@@ -470,11 +470,18 @@ class CommunityActivityRequestTest(unittest.TestCase):
             "stoken_v2=v2-token; mid=mid-value",
         )
 
-        with self.assertRaises(CommunityActivityTransportError) as context:
-            asyncio.run(provider._prepare_miyoushe(request, AsyncMock()))
+        client = AsyncMock()
+        provider._acquire_device_fp = AsyncMock(return_value="automatic-device-fp")
+        provider._register_device = AsyncMock()
 
-        self.assertEqual(context.exception.status, "limited")
-        self.assertIn("设备 ID", context.exception.reason)
+        _, device_id, device_fp = asyncio.run(
+            provider._prepare_miyoushe(request, client)
+        )
+
+        self.assertTrue(device_id)
+        self.assertEqual(device_fp, "automatic-device-fp")
+        provider._acquire_device_fp.assert_awaited_once()
+        provider._register_device.assert_awaited_once()
 
     def test_zzz_uses_persisted_real_device_pair_without_registration(self) -> None:
         target = CommunityActivityTarget(
