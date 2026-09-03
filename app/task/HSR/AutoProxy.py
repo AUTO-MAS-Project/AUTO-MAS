@@ -1515,8 +1515,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
             ]
             if _daily_items and len(_daily_failed) < len(_daily_items):
                 self._queue_daily_proxy_completion(uid, user_name)
-            self._finish_current_user_log(status)
+            # 结束当前用户日志会清空用户上下文，每轮只能调用一次；
+            # 用户状态必须在这一次里定好，否则后续补写全部失效。
             if not failed_items:
+                self._finish_current_user_log(status)
                 return
 
             if attempt < retry_limit:
@@ -1529,10 +1531,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
                     f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
                 )
-                self._finish_current_user_log(
-                    "HSR 用户任务本轮失败，等待补跑",
-                    user_status="运行",
-                )
+                self._finish_current_user_log(status, user_status="运行")
                 current_items = self._build_retry_queue_items(
                     failed_items,
                     user_item=user_item,
@@ -1544,10 +1543,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     temp_files=self.temp_files,
                 )
             else:
-                self._finish_current_user_log(
-                    "HSR 用户任务重试失败",
-                    user_status="异常",
-                )
+                self._finish_current_user_log(status, user_status="异常")
                 for failed_item in failed_items:
                     if failed_item.module_key == "StartGame":
                         continue
