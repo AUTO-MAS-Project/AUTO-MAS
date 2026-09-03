@@ -2230,6 +2230,10 @@ export default {
     no: 'いいえ',
     afterDone: '完了後の動作',
     afterDoneTip: 'キュー完了後に実行する動作',
+    afterDoneDelay: '遅延実行',
+    afterDoneDelayTip:
+      'キュー完了後、この時間だけ待ってから動作を実行します。0 は待機なし。実行前の 60 秒カウントダウンでキャンセルできます。',
+    afterDoneDelayUnit: '分',
     actionPlaceholder: '動作を選択してください',
     action: {
       NoAction: '何もしない',

@@ -2232,6 +2232,10 @@ export default {
     no: 'No',
     afterDone: 'When finished',
     afterDoneTip: 'What to do after the queue completes',
+    afterDoneDelay: 'Delay',
+    afterDoneDelayTip:
+      'Wait this long after the queue completes before running the action; 0 means no wait. The 60-second countdown still runs before it, so you can still cancel.',
+    afterDoneDelayUnit: 'min',
     actionPlaceholder: 'Select an action',
     action: {
       NoAction: 'Do nothing',
