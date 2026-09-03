@@ -233,6 +233,17 @@ describe('灰度开关关闭时', () => {
     expect(service.isRuntimeSupervised()).toBe(false)
     expect(service.getRuntimeApiEndpoints()).toBeNull()
   })
+
+  it('getStatus 标记 runtimeSupervised=false，渲染进程据此沿用 POST /close 的旧关闭流程', () => {
+    const service = createService()
+
+    expect(service.getStatus()).toEqual({
+      isRunning: false,
+      pid: undefined,
+      startTime: undefined,
+      runtimeSupervised: false,
+    })
+  })
 })
 
 // ==================== Runtime 监督链路 ====================
@@ -343,6 +354,31 @@ describe('development 模式', () => {
     expect(child.killed).toBe(false)
     expect(service.getRuntimeApiEndpoints()).toBeNull()
     expect(service.getStatus().isRunning).toBe(false)
+  })
+
+  it('getStatus 全程标记 runtimeSupervised=true：未启动、监督中与关闭后都不能让渲染进程走 /close', async () => {
+    const service = createService()
+    mockSpawn()
+
+    // 尚未启动：灰度开关已打开，关闭方式就已经确定，不能等到句柄出现才切换。
+    expect(service.getStatus()).toMatchObject({ isRunning: false, runtimeSupervised: true })
+
+    const pendingStart = service.startBackend()
+    const child = await waitForSpawn()
+    child.stdout.feed(helloLine + runningStateLine)
+    await pendingStart
+    expect(service.getStatus()).toMatchObject({
+      isRunning: true,
+      pid: 4242,
+      runtimeSupervised: true,
+    })
+
+    const pendingStop = service.stopBackend()
+    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+    child.stdout.feed(stoppedResultLine)
+    child.close(0)
+    await pendingStop
+    expect(service.getStatus()).toMatchObject({ isRunning: false, runtimeSupervised: true })
   })
 
   it('Runtime 未给终态就退出时归为 RUNTIME_EXITED_UNEXPECTEDLY，诊断输出并入 stderr 块', async () => {
