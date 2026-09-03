@@ -1,9 +1,9 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
+import { StreamingZipWriter } from './streamingZip'
 
 const logger = getLogger('问题包')
 
@@ -35,7 +35,7 @@ export interface ReportEntry {
 }
 
 export interface CollectorState {
-  zip: AdmZip
+  zip: StreamingZipWriter
   entries: ReportEntry[]
 }
 
@@ -170,13 +170,18 @@ export function discoverInstallations(
   return installations
 }
 
+export function createCollector(zipPath: string): CollectorState {
+  fs.mkdirSync(path.dirname(zipPath), { recursive: true })
+  return { zip: new StreamingZipWriter(zipPath), entries: [] }
+}
+
 export function addEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
   content: Buffer
 ): void {
-  state.zip.addFile(archivePath, content)
+  state.zip.addBuffer(archivePath, content)
   state.entries.push({
     path: archivePath,
     sourceSize,
@@ -224,7 +229,8 @@ export function addDiagnosticFile(
   }
 
   try {
-    addEntry(state, archivePath, stat.size, fs.readFileSync(sourcePath))
+    state.zip.addFile(archivePath, sourcePath)
+    state.entries.push({ path: archivePath, sourceSize: stat.size, storedSize: stat.size })
   } catch (error) {
     logger.debug(`读取二进制文件失败: ${sourcePath}, ${String(error)}`)
   }

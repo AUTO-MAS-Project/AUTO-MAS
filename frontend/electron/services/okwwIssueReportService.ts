@@ -1,6 +1,4 @@
-import * as fs from 'fs'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
 import {
@@ -9,6 +7,7 @@ import {
   addDiagnosticFile,
   addDirectory,
   addLatestMasHistoryLog,
+  createCollector,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -53,8 +52,7 @@ export interface OkwwIssueReportResult {
 }
 
 export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIssueReportResult {
-  const zip = new AdmZip()
-  const state: CollectorState = { zip, entries: [] }
+  const state = createCollector(zipPath)
   const dataRoots = resolveDataRoots(appRoot)
   const installations = discoverInstallations(dataRoots, {
     configType: 'OkwwConfig',
@@ -80,8 +78,7 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
   addLatestOkwwScriptLog(state, installations)
 
   try {
-    fs.mkdirSync(path.dirname(zipPath), { recursive: true })
-    zip.writeZip(zipPath)
+    state.zip.finalize()
     logger.info(`OK-WW 问题包已导出: ${zipPath}`)
     return {
       success: true,

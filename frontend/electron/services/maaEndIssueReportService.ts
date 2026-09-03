@@ -1,13 +1,11 @@
-import * as fs from 'fs'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
 import {
-  CollectorState,
   addDirectory,
   addLatestMasHistoryLog,
   addSanitizedJsonFile,
+  createCollector,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -22,8 +20,7 @@ export interface MaaEndIssueReportResult {
 }
 
 export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEndIssueReportResult {
-  const zip = new AdmZip()
-  const state: CollectorState = { zip, entries: [] }
+  const state = createCollector(zipPath)
   const dataRoots = resolveDataRoots(appRoot)
   const installations = discoverInstallations(dataRoots, {
     configType: 'MaaEndConfig',
@@ -65,8 +62,7 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
   }
 
   try {
-    fs.mkdirSync(path.dirname(zipPath), { recursive: true })
-    zip.writeZip(zipPath)
+    state.zip.finalize()
     logger.info(`MaaEnd 问题包已导出: ${zipPath}`)
     return {
       success: true,
