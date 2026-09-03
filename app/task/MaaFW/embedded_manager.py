@@ -296,11 +296,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         await user_config.load(await script_config.UserData.toDict())
         self.user_config = user_config
 
-        # 只跑「已启用且剩余天数未耗尽」的用户。
+        # 只跑「已启用且剩余天数未耗尽」的用户；单独运行指定了用户时只保留该用户。
         self.runnable_user_uids = [
             uid
             for uid, cfg in user_config.data.items()
-            if cfg.get("Info", "Status") and cfg.get("Info", "RemainedDay") != 0
+            if cfg.get("Info", "Status")
+            and cfg.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
         ]
         if not self.runnable_user_uids:
             return "MFW 没有可运行的用户，请在用户管理页添加并启用至少一个用户"

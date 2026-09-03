@@ -90,6 +90,7 @@ class BetterGIManager(TaskExecuteBase):
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
+                    and self.task_info.is_target_user(str(uid))
                 ]
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -134,6 +135,7 @@ class BetterGIManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
 
     async def main_task(self):

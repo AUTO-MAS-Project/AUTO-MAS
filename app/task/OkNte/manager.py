@@ -106,6 +106,7 @@ class OkNteManager(TaskExecuteBase):
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
+                    and self.task_info.is_target_user(str(uid))
                 ]
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -140,7 +141,8 @@ class OkNteManager(TaskExecuteBase):
                 UserItem(user_id=target_user_id, name=target_user_name, status="等待")
             ]
         else:
-            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
+            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的；
+            # 单独运行指定了用户时只保留该用户
             self.script_info.user_list = [
                 UserItem(
                     user_id=str(uid), name=config.get("Info", "Name"), status="等待"
@@ -148,6 +150,7 @@ class OkNteManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）

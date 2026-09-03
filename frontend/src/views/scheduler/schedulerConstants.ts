@@ -88,6 +88,10 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
+  // 脚本任务单独运行的目标用户；为空表示按脚本自身筛选跑全部用户
+  selectedUserId?: string | null
+  userOptions?: Array<{ label: string; value: string }>
+  userOptionsLoading?: boolean
   taskId: string | null
   subscriptionIds?: string[]
   taskQueue: QueueItem[]

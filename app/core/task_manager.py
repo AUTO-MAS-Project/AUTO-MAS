@@ -914,12 +914,53 @@ class _TaskManager:
 
         clean_task.add_done_callback(_on_done)
 
+    @staticmethod
+    def _resolve_target_user(
+        script_uid: uuid.UUID, user_id: str | None
+    ) -> uuid.UUID | None:
+        """校验单独运行所指定的用户
+
+        Args:
+            script_uid (uuid.UUID): 目标脚本 UID。
+            user_id (str | None): 指定的用户 ID; 为 None 时表示运行全部用户。
+
+        Returns:
+            uuid.UUID | None: 指定用户的 UID; 未指定时为 None。
+
+        Raises:
+            ValueError: 用户不属于该脚本, 或该用户当前不可运行。
+        """
+
+        if user_id is None:
+            return None
+
+        script_config = Config.ScriptConfig[script_uid]
+        script_name = script_config.get("Info", "Name")
+        try:
+            user_uid = uuid.UUID(user_id)
+        except ValueError as e:
+            raise ValueError(f"用户 {user_id} 不属于脚本 {script_name}") from e
+        if user_uid not in script_config.UserData:
+            raise ValueError(f"用户 {user_id} 不属于脚本 {script_name}")
+
+        # 与各脚本适配器构建用户列表时的筛选口径保持一致，否则会静默跑出一个空用户列表
+        user_config = script_config.UserData[user_uid]
+        if (
+            not user_config.get("Info", "Status")
+            or user_config.get("Info", "RemainedDay") == 0
+        ):
+            raise ValueError(
+                f"用户 {user_config.get('Info', 'Name')} 未启用或代理天数已耗尽"
+            )
+        return user_uid
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
         id: str,
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
+        user_id: str | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
     ) -> uuid.UUID:
         """
@@ -929,6 +970,7 @@ class _TaskManager:
             mode (str): 任务模式; CycleRun 只接受循环队列
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
+            user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
 
         Returns:
@@ -936,6 +978,13 @@ class _TaskManager:
         """
 
         uid = uuid.UUID(id)
+
+        # 指定单个用户只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
+        # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
+        if user_id is not None and (
+            mode != "AutoProxy" or uid not in Config.ScriptConfig
+        ):
+            raise ValueError("指定单个用户仅支持脚本的自动代理任务")
 
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
@@ -983,7 +1032,7 @@ class _TaskManager:
             task_uid = uuid.uuid4()
             queue_id = None
             script_uid = uid
-            user_uid = None
+            user_uid = self._resolve_target_user(uid, user_id)
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 

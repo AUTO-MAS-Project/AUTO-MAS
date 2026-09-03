@@ -2307,6 +2307,7 @@ export default {
       taskLabel: 'タスク：',
       modeLabel: 'モード：',
       resumePlaceholder: '指定したスクリプトから再開（既定は先頭）',
+      userPlaceholder: '指定ユーザーのみ実行（既定は全員）',
       stop: '停止',
       start: '実行',
     },
@@ -2347,6 +2348,7 @@ export default {
       batchDeleted: 'コンソールを {count} 件閉じました',
       loadQueueScriptsFailed:
         'キュー内のスクリプトを読み込めなかったため、スクリプト ID からの再開はできません',
+      loadScriptUsersFailed: 'スクリプトのユーザーを読み込めなかったため、単独実行はできません',
       needTaskAndMode: 'タスクと実行モードの両方を選んでください',
       taskStarted: 'タスクを開始しました',
       startTaskFailed: 'タスクを開始できませんでした',
