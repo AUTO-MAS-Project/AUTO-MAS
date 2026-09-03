@@ -331,7 +331,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
-            self.script_info.log = f"正在启动游戏 / 模拟器"
+            self.script_info.log = "正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
             if self.game_manager is not None:
                 try:
@@ -610,7 +610,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
-        logger.info(f"开始配置脚本运行参数: 自动代理")
+        logger.info("开始配置脚本运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
         await System.kill_process(self.script_exe_path)
@@ -639,7 +639,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
             )
 
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     def _format_push_log(
         self,

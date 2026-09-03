@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.api.update import (
-    Updater,
     cancel_update_download,
     download_update,
     switch_update_download_to_cnb,

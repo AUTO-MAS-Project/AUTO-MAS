@@ -712,7 +712,7 @@ class WSClientManager:
                 # 认证已在 on_connect 回调中自动处理
                 return True
             else:
-                self._logger.warning(f"Koishi 系统客户端连接失败，将在后台持续重连")
+                self._logger.warning("Koishi 系统客户端连接失败，将在后台持续重连")
                 return False
 
         except Exception as e:
