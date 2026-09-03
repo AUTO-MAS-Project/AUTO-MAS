@@ -5,18 +5,7 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a
-          class="doc-link"
-          :href="MAS_DOC_URLS.plans"
-          target="_blank"
-          rel="noreferrer"
-          :aria-label="t('common.viewPageDocs')"
-          @click="handleExternalLink"
-        >
-          <BookOutlined />
-          {{ t('common.viewPageDocs') }}
-          <ExportOutlined />
-        </a>
+        <DocLink :url="MAS_DOC_URLS.plans" />
         <a-dropdown :trigger="['click']">
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
@@ -52,9 +41,10 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { BookOutlined, DeleteOutlined, DownOutlined, ExportOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
-import { MAS_DOC_URLS, handleExternalLink } from '@/utils/openExternal'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
 
@@ -111,14 +101,6 @@ const onAddPlanMenu = ({ key }: { key: string }) => {
 .header-actions {
   flex-shrink: 0;
   margin-left: 16px; /* 添加间距防止太紧密 */
-}
-
-.doc-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ant-color-primary);
-  white-space: nowrap;
 }
 
 @media (max-width: 768px) {

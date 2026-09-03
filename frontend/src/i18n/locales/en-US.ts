@@ -1524,7 +1524,6 @@ export default {
     newUserName: 'User {n}',
     section: {
       settings: 'Check-in settings',
-      doc: 'Open the Skland check-in docs',
       signAll: 'Check in everywhere',
       noticeTitle: 'What this does, and your privacy',
       toolDesc:

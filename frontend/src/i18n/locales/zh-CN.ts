@@ -1447,7 +1447,6 @@ export default {
     newUserName: '用户 {n}',
     section: {
       settings: '签到设置',
-      doc: '查看森空岛签到配置文档',
       signAll: '全部签到',
       noticeTitle: '功能说明与隐私声明',
       toolDesc: '游戏签到社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。',

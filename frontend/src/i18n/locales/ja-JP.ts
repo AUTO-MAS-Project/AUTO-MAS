@@ -1538,7 +1538,6 @@ export default {
     newUserName: 'ユーザー {n}',
     section: {
       settings: 'ログインボーナス設定',
-      doc: 'Skland のログインボーナス設定ドキュメントを開く',
       signAll: 'すべて受け取る',
       noticeTitle: '機能の説明とプライバシーについて',
       toolDesc: 'このツールは各コミュニティの認証情報を管理し',

@@ -16,19 +16,7 @@
 
     <a-space size="middle" wrap>
       <slot name="extra-actions" />
-      <a
-        v-if="docUrl"
-        class="doc-link"
-        :href="docUrl"
-        target="_blank"
-        rel="noreferrer"
-        :aria-label="t('common.viewPageDocs')"
-        @click="handleExternalLink"
-      >
-        <BookOutlined />
-        {{ t('common.viewPageDocs') }}
-        <ExportOutlined />
-      </a>
+      <DocLink v-if="docUrl" :url="docUrl" />
 
       <a-button size="large" class="cancel-button" @click="emit('cancel')">
         <template #icon>
@@ -43,10 +31,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { ArrowLeftOutlined, BookOutlined, ExportOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
-import { MAS_DOC_URLS, handleExternalLink } from '@/utils/openExternal'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
 
@@ -105,14 +94,6 @@ const docUrl = computed(() => MAS_DOC_URLS.scriptTypes[props.scriptType as keyof
   width: 20px;
   height: 20px;
   object-fit: contain;
-}
-
-.doc-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ant-color-primary);
-  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
