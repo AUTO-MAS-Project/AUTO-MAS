@@ -249,7 +249,7 @@ class JSONValidator(ValidatorBase):
 
     def correct(self, value):
         return (
-            value if self.validate(value) else ("{ }" if self.type == dict else "[ ]")
+            value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
         )
 
 
@@ -262,7 +262,7 @@ class EncryptValidator(ValidatorBase):
         try:
             dpapi_decrypt(value)
             return True
-        except:
+        except Exception:
             return False
 
     def correct(self, value: Any) -> Any:
@@ -719,7 +719,7 @@ class ConfigItem:
         # deepcopy new value
         try:
             self.value = deepcopy(value)
-        except:
+        except Exception:
             self.value = value
 
         if isinstance(self.validator, EncryptValidator):
@@ -949,7 +949,7 @@ class ConfigBase(ABC):
             for name, item in info.items():
                 try:
                     item.setValue(working_data[group][name])
-                except:
+                except Exception:
                     if item.legacy_group_name is not None:
                         with suppress(Exception):
                             item.setValue(

@@ -210,31 +210,39 @@ class HSRSRAControl:
 
         on_success = None
         if module.key == "Daily":
-            on_success = (
-                lambda result, uid=uid, user_name=user_name, daily_eow_enabled=daily_eow_enabled: (
-                    self._queue_eow_completion(
-                        uid,
-                        user_name,
-                        daily_eow_enabled,
-                        result,
-                        "SRA",
-                    )
+
+            def on_success(
+                result,
+                uid=uid,
+                user_name=user_name,
+                daily_eow_enabled=daily_eow_enabled,
+            ):
+                self._queue_eow_completion(
+                    uid,
+                    user_name,
+                    daily_eow_enabled,
+                    result,
+                    "SRA",
                 )
-            )
+
         elif module.key in ("DivergentUniverse", "CurrencyWars"):
-            on_success = (
-                lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
-                    _on_sra_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
-                    )
+
+            def on_success(
+                result,
+                uid=uid,
+                user_name=user_name,
+                module_name=module.name,
+                module_key=module.key,
+            ):
+                _on_sra_weekly_success(
+                    result,
+                    uid,
+                    user_name,
+                    module_name,
+                    module_key,
+                    self._queue_weekly_completion,
+                    self._record_module_result,
                 )
-            )
 
         return HSRRunItem(
             user_item=user_item,

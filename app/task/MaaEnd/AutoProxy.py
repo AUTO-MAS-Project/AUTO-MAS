@@ -813,7 +813,7 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         self.cur_user_log.status = "Success!"
-                except:
+                except Exception:
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif self.is_log_stalled(

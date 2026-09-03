@@ -941,7 +941,8 @@ MaaFWProjectUpdateCandidate = _CoreCandidate
 MaaFWProjectUpdateDiscovery = _CoreDiscovery
 MaaFWDownloadedProjectPackage = _CoreDownloadedProjectPackage
 MaaFWProjectUpdateResult = _CoreResult
-MaaFWProjectUpdateError = _CoreUpdateError
+# 有意覆盖上方旧定义：compat facade 以 core 实现为准（见上方 Compatibility facade 注释）
+MaaFWProjectUpdateError = _CoreUpdateError  # noqa: F811
 
 
 def _compat_source_config(
@@ -971,7 +972,7 @@ def _compat_source_config(
     }
 
 
-async def update_maafw_project_if_needed(
+async def update_maafw_project_if_needed(  # noqa: F811  (compat facade: 有意覆盖顶部旧实现)
     project_path: Path,
     interface_model: Any,
     *,
