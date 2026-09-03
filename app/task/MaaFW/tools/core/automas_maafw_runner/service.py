@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -192,6 +193,7 @@ class MaaFWRunnerService:
         import_paths: list[str | Path] | None = None,
         send_log: Callable[[str], None] | None = None,
         progress: ProjectEnvironmentProgressCallback | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> MaaFWRunnerEnvironment:
         return prepare_runner_environment(
             project_path,
@@ -209,6 +211,7 @@ class MaaFWRunnerService:
             import_paths=import_paths or [],
             send_log=send_log,
             progress=progress,
+            cancel_event=cancel_event,
         )
 
     def release_environment(
