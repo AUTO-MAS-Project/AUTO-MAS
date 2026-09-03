@@ -257,6 +257,7 @@ export default {
     maaAnnihilationStartDayHint:
       '达到设置的星期后才会启动剿灭任务；本周达到上限后会自动跳过后续剿灭',
     maaWeekStatus: '本周状态：',
+    maaMonthStatus: '本月状态：',
     maaDone: '已完成',
     maaNotDone: '未完成',
     maaEventFirst: '活动关优先',
@@ -279,6 +280,9 @@ export default {
     maaDaily: '日常任务',
     maaRoguelike: '自动肉鸽',
     maaRoguelikeHint: '长时间运行可能被误判超时',
+    maaGreenTicketStore: '绿票商店',
+    maaGreenTicketStoreHint:
+      '每月单独启动一次 MAA 购买，排在剿灭之前：一层全买，二层买寻访凭证和招聘许可；当月买过就跳过，失败也不影响后面的任务。需要 MAA v6.3.0 及以上版本',
     maaRecruit: '自动公招',
     maaMall: '信用收支',
     fixed: '固定',

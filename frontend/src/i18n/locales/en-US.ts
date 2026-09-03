@@ -255,6 +255,7 @@ export default {
     maaAnnihilationStartDayHint:
       'Annihilation only starts once this weekday is reached; once the weekly cap is hit, later runs are skipped.',
     maaWeekStatus: 'This week:',
+    maaMonthStatus: 'This month:',
     maaDone: 'done',
     maaNotDone: 'not done',
     maaEventFirst: 'Event stages first',
@@ -280,6 +281,9 @@ export default {
     maaDaily: 'Daily tasks',
     maaRoguelike: 'Integrated Strategies',
     maaRoguelikeHint: 'A long run may be mistaken for a timeout',
+    maaGreenTicketStore: 'Green Ticket Store',
+    maaGreenTicketStoreHint:
+      'Starts its own MAA session once a month, before annihilation, buying everything on the 1st floor plus Headhunting Permits and Recruitment Permits on the 2nd floor. Skipped once bought this month, and a failure does not affect the later tasks. Requires MAA v6.3.0 or newer',
     maaRecruit: 'Auto recruit',
     maaMall: 'Credit store',
     fixed: 'Fixed',
