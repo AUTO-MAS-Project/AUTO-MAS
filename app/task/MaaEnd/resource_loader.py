@@ -75,15 +75,12 @@ class MaaEndResourceLoader:
 
         root_path = root_path.resolve()
         with cls._cache_lock:
-            cached = cls._loader_cache.get(root_path)
-            if cached is not None and not force_reload:
-                return cached
-
             if force_reload:
                 cls._loader_cache.pop(root_path, None)
-
-            if not force_reload:
-                loader = cls._load_from_disk_cache(root_path)
+            else:
+                loader = cls._loader_cache.get(root_path) or cls._load_from_disk_cache(
+                    root_path
+                )
                 if loader is not None:
                     cls._loader_cache[root_path] = loader
                     return loader

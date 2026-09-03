@@ -54,7 +54,7 @@ export interface OkwwIssueReportResult {
 
 export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIssueReportResult {
   const zip = new AdmZip()
-  const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
+  const state: CollectorState = { zip, entries: [] }
   const dataRoots = resolveDataRoots(appRoot)
   const installations = discoverInstallations(dataRoots, {
     configType: 'OkwwConfig',
@@ -85,7 +85,7 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
     logger.info(`OK-WW 问题包已导出: ${zipPath}`)
     return {
       success: true,
-      message: `OK-WW 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
+      message: `OK-WW 问题包导出成功，已收集 ${state.entries.length} 个文件`,
       zipPath,
     }
   } catch (error) {

@@ -54,7 +54,7 @@ export interface OkNteIssueReportResult {
 
 export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteIssueReportResult {
   const zip = new AdmZip()
-  const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
+  const state: CollectorState = { zip, entries: [] }
   const dataRoots = resolveDataRoots(appRoot)
   const installations = discoverInstallations(dataRoots, {
     configType: 'OkNteConfig',
@@ -85,7 +85,7 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
     logger.info(`OK-NTE 问题包已导出: ${zipPath}`)
     return {
       success: true,
-      message: `OK-NTE 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
+      message: `OK-NTE 问题包导出成功，已收集 ${state.entries.length} 个文件`,
       zipPath,
     }
   } catch (error) {

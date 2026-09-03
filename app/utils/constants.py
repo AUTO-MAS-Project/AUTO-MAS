@@ -284,8 +284,25 @@ MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
 }
 """MaaEnd协议空间任务选项列表"""
 
-MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
-"""MAAEnd任务包含AB关的关卡列表"""
+MAAEND_REWARDS_SET_OPTIONS = {
+    "OperatorEXP": (
+        "OperatorEXPRewardsSetOption",
+        {"RewardsSetA": "CognitiveCarriers", "RewardsSetB": "AdvancedCombatRecord"},
+    ),
+    "Promotions": (
+        "PromotionsRewardsSetOption",
+        {"RewardsSetA": "Protoset", "RewardsSetB": "Protodisk"},
+    ),
+    "SkillUp": (
+        "SkillUpRewardsSetOption",
+        {"RewardsSetA": "Protohedron", "RewardsSetB": "Protoprism"},
+    ),
+    "WeaponTune": (
+        "WeaponTuneRewardsSetOption",
+        {"RewardsSetA": "HeavyCastDie", "RewardsSetB": "CastDie"},
+    ),
+}
+"""MaaEnd含AB关关卡的奖励组选项: 关卡 -> (MaaEnd选项名, 奖励组 -> 产出)"""
 
 MAAEND_TASK_GROUPS = {
     "Sanity": {

@@ -97,12 +97,7 @@ class MaaEndManager(TaskExecuteBase):
         if (
             self.task_info.mode == "AutoProxy"
             and not (
-                Path(
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                        "Info", "Path"
-                    )
-                )
-                / "config/mxu-MaaEnd.json"
+                Path(script_config.get("Info", "Path")) / "config/mxu-MaaEnd.json"
             ).exists()
         ):
             return "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成！"
@@ -192,7 +187,7 @@ class MaaEndManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["AutoProxy"]:
+        if self.task_info.mode == "AutoProxy":
             if self.emulator_manager is not None:
                 await self.emulator_manager.close(
                     self.script_config.get("Game", "EmulatorIndex")
