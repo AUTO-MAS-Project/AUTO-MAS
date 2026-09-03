@@ -31,7 +31,6 @@ if IS_WINDOWS:
     import win32con
     import win32process
 from contextlib import suppress
-from datetime import datetime, timedelta
 import time
 from pathlib import Path
 

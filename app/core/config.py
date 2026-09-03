@@ -697,20 +697,6 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
-                if (Path.cwd() / "config/ScriptConfig.json").exists():
-                    data = (Path.cwd() / "config/ScriptConfig.json").read_text(
-                        encoding="utf-8"
-                    )
-                    data.replace("IfWakeUp", "IfStartUp")
-                    data.replace("IfAutoRoguelike", "IfRoguelike")
-                    data.replace("IfBase", "IfInfrast")
-                    data.replace("IfCombat", "IfFight")
-                    data.replace("IfMission", "IfAward")
-                    data.replace("IfRecruiting", "IfRecruit")
-                    (Path.cwd() / "config/ScriptConfig.json").write_text(
-                        data, encoding="utf-8"
-                    )
-
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
                 db.commit()

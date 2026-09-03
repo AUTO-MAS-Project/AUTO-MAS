@@ -63,10 +63,6 @@ def _normalize_fs_path_candidate(raw: str) -> str:
     return s.strip()
 
 
-def _executable_name_set(config: Dict) -> Set[str]:
-    return {x.lower() for x in (config.get("executables") or []) if x}
-
-
 def _emulator_brand_keyword_rows() -> List[Tuple[str, List[str]]]:
     return [
         (emulator_type, cfg.get("registry_display_keywords") or [])

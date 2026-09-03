@@ -15,7 +15,6 @@ from typing import Any, Callable, Mapping
 
 from .contracts import (
     ArtifactType,
-    RESERVED_PROJECT_DIRS,
     is_within,
     project_fingerprint,
     safe_relative_path,

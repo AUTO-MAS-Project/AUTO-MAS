@@ -26,6 +26,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     MaaFWRuntimeInstallCancelled,
+    host_bootstrap_python_request,
     install_cancel_scope,
 )
 from packaging.requirements import InvalidRequirement, Requirement
@@ -267,6 +268,8 @@ def prepare_runner_environment(
         raise RuntimeError(
             "MaaFW Managed Python constraint 必须随完整 selector/runtimeId 注入"
         )
+    bootstrap_python = sys.executable
+    bootstrap_python_identity: dict[str, Any] | None = None
     if explicit_requirements is not None and bound_runtime_id:
         if bound_runtime is None:
             raise RuntimeError(f"MaaFW Managed runtime 不存在: {bound_runtime_id}")
@@ -290,7 +293,34 @@ def prepare_runner_environment(
         # the CP312 host process.
         expected_runtime_id = bound_runtime_id
     else:
-        expected_runtime_id = build_runtime_id(packages)
+        # 宿主是 embeddable 发行版时不能拿它建 venv（见 installer 探针注释），改用
+        # 池内同小版本的托管解释器；identity 也随之取自那份解释器，别再从宿主进程推。
+        bootstrap_request = host_bootstrap_python_request()
+        if bootstrap_request is not None:
+            bootstrap_target = pool.resolve_python(
+                bootstrap_request, allow_install=False
+            )
+            if bootstrap_target is None:
+                _report_environment_progress(
+                    progress,
+                    "installing_python",
+                    "running",
+                    "正在准备 MaaFW Runtime 的 Python 解释器",
+                    percent=10.0,
+                )
+                bootstrap_target = pool.resolve_python(
+                    bootstrap_request, allow_install=True
+                )
+            if bootstrap_target is None:  # pragma: no cover - fail-closed
+                raise RuntimeError(
+                    "MaaFW runtime 宿主 Python 不能作引导，且池内没有可用的托管解释器"
+                )
+            bootstrap_python = str(bootstrap_target["executable"])
+            bootstrap_python_identity = dict(bootstrap_target["identity"])
+        expected_runtime_id = build_runtime_id(
+            packages,
+            python_identity=bootstrap_python_identity,
+        )
     _report_environment_progress(
         progress,
         "runtime_check",
@@ -339,9 +369,10 @@ def prepare_runner_environment(
                 requirements,
                 identity,
                 cwd=project,
-                # Runtime identity is derived from this process' Python ABI, so
-                # the created environment must use the same interpreter family.
-                bootstrap_python=sys.executable,
+                # Runtime identity is derived from the bootstrap interpreter (this
+                # process, or the pool-managed one standing in for an embeddable
+                # host), so the created environment must use that same interpreter.
+                bootstrap_python=bootstrap_python,
                 send_log=send_log,
             )
 
@@ -353,6 +384,7 @@ def prepare_runner_environment(
             packages,
             installer=runtime_installer or install,
             metadata={"component": "automas-maafw-runner"},
+            python_identity=bootstrap_python_identity,
         )
     # 安装可能恰好在取消后一瞬间完成：runtime 已发布是好事，但本次调用不能再
     # 拿租约，否则取消方已经放弃等待，这份租约要拖到 TTL 过期才释放。
@@ -796,7 +828,6 @@ def _declared_project_maafw_requirement(project_path: Path) -> str | None:
     return matches[0] if matches else None
 
 
-
 def resolve_project_maafw_requirement(project_path: Path) -> str | None:
     """普通项目（非 Managed）会用到的 MaaFW requirement。
 
@@ -808,9 +839,14 @@ def resolve_project_maafw_requirement(project_path: Path) -> str | None:
     """
 
     project = Path(project_path)
-    return _bundled_project_maafw_requirement(
+    requirement = _bundled_project_maafw_requirement(
         project
     ) or _declared_project_maafw_requirement(project)
+    if requirement is None:
+        return None
+    return _normalize_maafw_requirement(requirement, allow_unconstrained=True)
+
+
 def _normalize_python_constraint(value: str | None) -> str | None:
     if value is None:
         return None

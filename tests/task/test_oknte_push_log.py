@@ -169,6 +169,50 @@ class OkNteResolveTest(unittest.TestCase):
     def test_empty_results(self) -> None:
         self.assertEqual(oknte_resolve([]), [])
 
+    def test_no_reward_downgrades_daily_claim_fail_to_skip(self) -> None:
+        # 当日已领取（NO_REWARD 标记）：仅「日常领取」的失败降级为跳过，
+        # 其他节点的失败不受影响
+        results = [
+            (LogType.NORMAL, "❌ 失败: 异象界域", T),
+            (LogType.NORMAL, "❌ 失败: 日常领取", T),
+            (LogType.NORMAL, "NO_REWARD", T),
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [
+                (LogType.NORMAL, "❌ 失败: 异象界域", T),
+                (LogType.NORMAL, "⏭ 跳过: 日常领取（当日已领取）", T),
+            ],
+        )
+
+    def test_no_reward_downgrades_english_daily_claim_fail(self) -> None:
+        # info_set 列表经 tr 翻译，英文环境节点名为 Daily Claim：同样降级为跳过
+        results = [
+            (LogType.NORMAL, "❌ 失败: Daily Claim", T),
+            (LogType.NORMAL, "NO_REWARD", T),
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [(LogType.NORMAL, "⏭ 跳过: Daily Claim（当日已领取）", T)],
+        )
+
+    def test_no_reward_without_daily_claim_fail_keeps_states(self) -> None:
+        # 有 NO_REWARD 标记但「日常领取」未失败（如成功）时，不改写任何状态
+        results = [
+            (LogType.NORMAL, "✅ 成功: 日常领取", T),
+            (LogType.NORMAL, "NO_REWARD", T),
+        ]
+        self.assertEqual(
+            oknte_resolve(results),
+            [(LogType.NORMAL, "✅ 成功: 日常领取", T)],
+        )
+
+    def test_no_reward_marker_alone_produces_nothing(self) -> None:
+        # 仅 NO_REWARD 标记不产出任何节点
+        self.assertEqual(
+            oknte_resolve([(LogType.NORMAL, "NO_REWARD", T)]), []
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

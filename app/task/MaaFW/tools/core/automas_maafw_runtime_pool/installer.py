@@ -256,8 +256,16 @@ def _resolve_python_mirror_candidates(*, explicit_mirror: str | None) -> list[st
 # 照样报得一模一样。真机上就这么漏过去过——探测全绿，worker 起来才在
 # ``maa/library.py`` 第 1 行炸掉，抛出的还是 ctypes 内部的天书。放在同一个子进程
 # 里做，零额外开销。
+#
+# stdlibLandmark：解释器能否靠 ``Lib/os.py`` 这个 landmark 找到自己的标准库。
+# 便携包随附的 embeddable 发行版把标准库装在 python3xx.zip 里、靠 python3xx._pth
+# 定位；uv 复制它建 venv 时不会带上 ._pth，建出的解释器找不到 landmark，就按
+# CPython 在 Windows 上的回退规则读注册表 PythonPath，把本机另一份同小版本 Python
+# 的 Lib/DLLs 混进 sys.path——3.12.10 的 _ctypes.pyd 装进 3.12.0 的 python312.dll，
+# ``import ctypes`` 直接炸，而 base 解释器自己却是好的。没有 landmark 的解释器
+# 因此不能当 venv 的引导，见 ``host_bootstrap_python_request``。
 _IDENTITY_PROBE_SCRIPT = (
-    "import ctypes,json,platform,sys,sysconfig;"
+    "import ctypes,json,os,platform,sys,sysconfig;"
     "print(json.dumps({"
     "'implementation': getattr(sys.implementation, 'name', 'python'),"
     "'cacheTag': getattr(sys.implementation, 'cache_tag', None) or 'unknown',"
@@ -266,8 +274,31 @@ _IDENTITY_PROBE_SCRIPT = (
     "'shortVersion': f'{sys.version_info.major}.{sys.version_info.minor}',"
     "'platform': sysconfig.get_platform() or sys.platform,"
     "'architecture': platform.machine() or 'unknown',"
+    "'stdlibLandmark': os.path.isfile("
+    "os.path.join(sysconfig.get_paths()['stdlib'], 'os.py')),"
     "}))"
 )
+
+
+def host_bootstrap_python_request() -> dict[str, str] | None:
+    """宿主解释器不能作 venv 引导时，给出替代它的 python request。
+
+    便携包的 ``environment/python`` 是 embeddable 发行版，由它建出的 venv 不自
+    包含（见 ``_IDENTITY_PROBE_SCRIPT`` 里 stdlibLandmark 的说明）。这时运行池
+    要改用同小版本的托管解释器，identity 也随之取自那份解释器，不再从宿主进程推。
+
+    Returns:
+        宿主能自己作引导时返回 ``None``；否则返回同小版本的 python request，
+        交给 ``resolve_python_interpreter`` 去找或下载。
+    """
+
+    probe = probe_python_identity(Path(sys.executable))
+    if _python_probe_can_bootstrap(probe):
+        return None
+    return {
+        "implementation": "cpython",
+        "constraint": f"=={sys.version_info.major}.{sys.version_info.minor}.*",
+    }
 
 
 def resolve_python_interpreter(
@@ -279,9 +310,10 @@ def resolve_python_interpreter(
     """Resolve one exact interpreter for an explicit Python constraint.
 
     Resolution never silently crosses ABI boundaries.  The host interpreter
-    is reused when it satisfies the request.  Otherwise an explicitly
-    configured interpreter or a uv-managed interpreter under ``pool/python``
-    is used.  Only ``allow_install=True`` may download a missing interpreter.
+    is reused when it satisfies the request and can bootstrap a self-contained
+    venv (an embeddable host cannot).  Otherwise an explicitly configured
+    interpreter or a uv-managed interpreter under ``pool/python`` is used.
+    Only ``allow_install=True`` may download a missing interpreter.
     """
 
     implementation = (
@@ -299,7 +331,9 @@ def resolve_python_interpreter(
         )
 
     host_probe = probe_python_identity(Path(sys.executable))
-    if _python_probe_satisfies(host_probe, implementation, specifier):
+    if _python_probe_satisfies(
+        host_probe, implementation, specifier
+    ) and _python_probe_can_bootstrap(host_probe):
         return {
             "executable": str(Path(sys.executable).resolve()),
             "identity": host_probe,
@@ -328,6 +362,11 @@ def resolve_python_interpreter(
                 "configured MaaFW runtime Python does not satisfy the request: "
                 f"path={configured}, constraint={constraint}, "
                 f"actual={probe.get('implementation')} {probe.get('version')}"
+            )
+        if not _python_probe_can_bootstrap(probe):
+            raise RuntimeError(
+                "configured MaaFW runtime Python cannot bootstrap a self-contained "
+                f"venv (embeddable distribution without a stdlib landmark): {configured}"
             )
         return {
             "executable": str(configured.resolve()),
@@ -490,13 +529,22 @@ def install_python_runtime(
     is available, package downloads and unpacked wheels are shared through a
     cache located beside the pool's ``runtimes``/``.staging`` directories, and
     uv hardlinks cached package files into each venv.  A complete Python may
-    fall back to stdlib ``venv`` + pip when uv is unavailable; an embeddable
-    Python without ``venv``/``ensurepip`` cannot.
+    fall back to stdlib ``venv`` + pip when uv is unavailable.  An embeddable
+    Python is rejected outright: even uv can only copy it into a venv that has
+    to borrow a stdlib from the Windows registry.
     """
 
     log = send_log or (lambda _: None)
     bootstrap = str(bootstrap_python or sys.executable)
-    _verify_runtime_identity(Path(bootstrap), identity)
+    bootstrap_probe = _verify_runtime_identity(Path(bootstrap), identity)
+    if not _python_probe_can_bootstrap(bootstrap_probe):
+        # 调用方应先经 host_bootstrap_python_request() 换成托管解释器；走到这里
+        # 说明有路径漏了，宁可失败也别建出一份靠注册表凑标准库的环境。
+        raise RuntimeError(
+            "MaaFW runtime 安装失败：引导 Python 找不到自己的标准库"
+            "（便携版常见 embeddable 发行版），由它建出的环境不自包含，"
+            f"会从注册表混入本机其它 Python 的标准库：{bootstrap}"
+        )
     resolved_cwd = Path(cwd).resolve() if cwd is not None else Path.cwd()
     pool_root = _runtime_pool_root(environment_path)
     uv_cache_dir = resolve_uv_cache_dir(pool_root)
@@ -605,7 +653,9 @@ def _create_environment(
 
     绿色免安装包随附的 environment/python 是 embeddable 发行版
     （python3xx._pth，不含 Lib/venv），`python.exe -m venv` 会直接报
-    "No module named venv"。必须先探测，不合格再走 uv 兜底。
+    "No module named venv"——它在 ``install_python_runtime`` 里就被拒了，
+    根本到不了这里。这里的 uv 兜底只服务完整但没带 venv/ensurepip 模块的
+    解释器（部分发行版把它们拆成了单独的包）。
     """
 
     if _python_supports_venv(bootstrap):
@@ -759,6 +809,12 @@ def _python_probe_satisfies(
     except InvalidVersion:
         return False
     return specifier.contains(version, prereleases=True)
+
+
+def _python_probe_can_bootstrap(probe: Mapping[str, Any]) -> bool:
+    """探针报告了 stdlibLandmark 才能建自包含的 venv；缺字段按不能处理。"""
+
+    return str(probe.get("stdlibLandmark") or "").strip().casefold() == "true"
 
 
 def _configured_python_executable(target_version: str) -> Path | None:
@@ -1247,7 +1303,9 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
                 "MaaFW runtime Python 自检失败：标准库 ctypes 不可用。"
                 "MaaFW 绑定完全依赖 ctypes，这通常意味着这份 Python 的标准库与"
                 "扩展模块来自不同构建——例如运行时被升级或替换过，而已有的运行池"
-                f"仍指向它。请修复或重装该 Python 运行时。原始错误：{detail[-400:]}"
+                "仍指向它；或者这个环境是早期版本用便携包的 embeddable Python 建的，"
+                "从注册表混入了本机另一份 Python 的扩展模块。前者请修复或重装该 "
+                f"Python 运行时，后者删除该运行环境后重新准备即可。原始错误：{detail[-400:]}"
             )
         raise RuntimeError(
             f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {detail[:400]}"

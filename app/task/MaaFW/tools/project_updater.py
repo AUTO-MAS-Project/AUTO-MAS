@@ -522,7 +522,7 @@ def _apply_full_package(
             if child.name in {UPDATE_WORK_DIR, "changes.json"}:
                 continue
             _copy_path(child, project_path / child.name)
-    except Exception as apply_error:
+    except Exception:
         try:
             _restore_full_backup(project_path, backup_dir)
         except Exception as restore_error:
@@ -575,7 +575,7 @@ def _apply_incremental_package(
             _backup_target(project_path, target, backup_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    except Exception as apply_error:
+    except Exception:
         try:
             _restore_incremental_backup(project_path, backup_dir, touched_paths)
         except Exception as restore_error:
@@ -912,7 +912,6 @@ from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWProjectUpdateResult as _CoreResult,
     apply_maafw_project_update as _core_apply_update,
     discover_maafw_project_update as _core_discover_update,
-    download_maafw_project_package as _core_download_package,
 )
 from .core.automas_maafw_project_update.apply import apply_package_transaction
 from .core.automas_maafw_project_update.contracts import project_fingerprint
@@ -920,11 +919,7 @@ from .core.automas_maafw_project_update.state import (
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
 )
-from .core.automas_maafw_project_update.transport import (
-    DownloadCancelled,
-    DownloadPaused,
-    download_resumable,
-)
+from .core.automas_maafw_project_update.transport import download_resumable
 
 MaaFWProjectUpdateCandidate = _CoreCandidate
 MaaFWProjectUpdateDiscovery = _CoreDiscovery
@@ -1103,7 +1098,6 @@ async def _download_update_package(
 ) -> Path:
     """Compatibility helper backed by the resumable core transport."""
 
-    root = Path(project_path).resolve()
     operation = UpdateOperationStore.create(
         root=DEFAULT_OPERATION_ROOT,
         source="compat",

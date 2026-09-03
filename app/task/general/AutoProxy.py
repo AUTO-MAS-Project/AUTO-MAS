@@ -28,7 +28,7 @@ import time
 import re
 from pathlib import Path
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from app.core import Config
