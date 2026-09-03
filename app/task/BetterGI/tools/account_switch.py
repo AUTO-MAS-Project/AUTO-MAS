@@ -160,7 +160,7 @@ def switch_script_dir(root_path: Path) -> Path:
     return root_path / _JS_SCRIPT_REL_DIR / _SCRIPT_FOLDER_NAME
 
 
-def _checkout_failed_marker(root_path: Path) -> Path:
+def _checkout_failed_marker_path(root_path: Path) -> Path:
     """「上轮检出失败」标记文件路径（脚本缺失但 BGI 未成功补位时存在）。
 
     标记放在 ``User/JsScript`` 下，点前缀文件名不会与 BGI 脚本目录冲突。
@@ -240,7 +240,7 @@ def ensure_switch_subscription(root_path: Path) -> bool:
     try:
         _ensure_script_subscription(root_path)
         _ensure_auto_update_on_cli(root_path)
-        marker = _checkout_failed_marker(root_path)
+        marker = _checkout_failed_marker_path(root_path)
         if not switch_script_dir(root_path).is_dir():
             # 脚本缺失（用户误删/初次使用）：首次只写「检出失败」标记交给 BGI
             # 自动补位，不清空仓库——避免首次启用切号就误删用户已有的整个脚本仓库。

@@ -146,8 +146,10 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
-        # 异常退出也清理 MAS 运行时槽位，避免 GUI 残留
+        # 异常退出也先快照（固化 GUI 中已保存的编辑）再清理 MAS 运行时槽位，避免残留与丢编辑
         if self.use_mas_config:
+            with suppress(Exception):
+                self._snapshot_one_dragon_config()
             with suppress(Exception):
                 one_dragon.remove_one_dragon_slot(self.root_path)
         await Config.send_websocket_message(
