@@ -823,11 +823,10 @@ class HSRManager(TaskExecuteBase):
         if not self.script_info.user_list:
             return
 
-        over_user = [u.name for u in self.script_info.user_list if u.status == "完成"]
-        unfinished_user = [
-            u.name for u in self.script_info.user_list if u.status != "完成"
-        ]
-        uncompleted_count = len(unfinished_user)
+        over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
+        uncompleted_count = sum(
+            1 for u in self.script_info.user_list if u.status != "完成"
+        )
         task_mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
@@ -842,7 +841,7 @@ class HSRManager(TaskExecuteBase):
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_count": len(over_user),
+            "completed_count": over_count,
             "uncompleted_count": uncompleted_count,
             "result": task_result,
             "game_sign_summary": has_game_sign_summary,
