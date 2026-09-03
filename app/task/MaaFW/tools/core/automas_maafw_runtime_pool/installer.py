@@ -8,7 +8,10 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
+import threading
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +48,45 @@ AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV = "AUTO_MAS_MIRROR_PACKAGE_INDEX"
 AUTO_MAS_MIRROR_PYTHON_ENV = "AUTO_MAS_MIRROR_PYTHON"
 RUNTIME_POOL_STAGING_DIRECTORY_NAME = ".staging"
 SUPPORTED_CPYTHON_MINORS = ((3, 12), (3, 13))
+# 安装被取消后，等 uv/pip 子进程退出的最长时间；超过就不再等，交给调用方放弃。
+INSTALL_CANCEL_TERMINATE_TIMEOUT_SECONDS = 2.0
+_INSTALL_CANCEL_POLL_INTERVAL_SECONDS = 0.2
+
+
+class MaaFWRuntimeInstallCancelled(Exception):
+    """安装被调用方取消（任务中止、后端关机）。
+
+    故意不继承 ``RuntimeError``：安装步骤里的「换源重试」只该吞掉安装本身的
+    失败，取消必须原样穿透到 ``MaaFWRuntimePool.ensure``，由它把半成品的
+    staging 目录删掉。
+    """
+
+
+# 取消令牌按线程保存：安装整段跑在一个 ``asyncio.to_thread`` 工作线程里，
+# 各步骤只需从这里取当前令牌，不用把 ``cancel_event`` 一路穿过每个签名。
+_INSTALL_CANCEL_STATE = threading.local()
+
+
+@contextmanager
+def install_cancel_scope(cancel_event: threading.Event | None) -> Iterator[None]:
+    """在当前线程上登记安装取消令牌；``None`` 表示本段安装不可取消。"""
+
+    previous = getattr(_INSTALL_CANCEL_STATE, "event", None)
+    _INSTALL_CANCEL_STATE.event = cancel_event
+    try:
+        yield
+    finally:
+        _INSTALL_CANCEL_STATE.event = previous
+
+
+def current_install_cancel_event() -> threading.Event | None:
+    return getattr(_INSTALL_CANCEL_STATE, "event", None)
+
+
+def raise_if_install_cancelled() -> None:
+    event = current_install_cancel_event()
+    if event is not None and event.is_set():
+        raise MaaFWRuntimeInstallCancelled("MaaFW runtime 安装已取消")
 
 
 def _resolve_injected_pool_directory(
@@ -1267,15 +1309,24 @@ def _verify_runtime_identity(
     return probe
 
 
-def _run(
+def _run_subprocess(
     command: list[str],
     *,
     cwd: Path,
-    env: dict[str, str] | None = None,
-    timeout: int = RUNTIME_INSTALL_TIMEOUT_SECONDS,
-) -> None:
-    try:
-        result = subprocess.run(
+    env: dict[str, str] | None,
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """``subprocess.run`` 的可取消版本。
+
+    当前线程没有登记取消令牌时与 ``subprocess.run`` 完全等价；登记了令牌时改为
+    ``Popen`` 并轮询：令牌一置位就用手里的进程句柄杀掉子进程（不按进程名找），
+    有界等它退出后抛 ``MaaFWRuntimeInstallCancelled``。后端关机时安装可能正卡在
+    uv 下载依赖，没有这一步，任务取消只能干等安装线程跑完。
+    """
+
+    cancel_event = current_install_cancel_event()
+    if cancel_event is None:
+        return subprocess.run(
             command,
             capture_output=True,
             timeout=timeout,
@@ -1284,6 +1335,66 @@ def _run(
             errors="replace",
             cwd=cwd,
             env=env,
+        )
+
+    raise_if_install_cancelled()
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=cwd,
+        env=env,
+    )
+    # 不用 ``with process:``：它的 ``__exit__`` 会无界 ``wait()``，子进程若没被
+    # 杀干净就把这里重新变成干等。``communicate`` 正常结束时自会关掉管道。
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            stdout, stderr = process.communicate(
+                timeout=_INSTALL_CANCEL_POLL_INTERVAL_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            if cancel_event.is_set():
+                _kill_and_reap(process)
+                raise MaaFWRuntimeInstallCancelled(
+                    f"MaaFW runtime 安装已取消: {command[:3]}"
+                ) from None
+            if time.monotonic() >= deadline:
+                _kill_and_reap(process)
+                raise subprocess.TimeoutExpired(command, timeout)
+            continue
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _kill_and_reap(process: subprocess.Popen[str]) -> None:
+    ignored = (OSError, subprocess.SubprocessError)
+    try:
+        process.kill()
+    except ignored:
+        pass
+    try:
+        process.communicate(timeout=INSTALL_CANCEL_TERMINATE_TIMEOUT_SECONDS)
+    except ignored:
+        # 子进程没能在限期内退出：不再等，调用方会放弃这个安装线程。
+        pass
+
+
+def _run(
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: int = RUNTIME_INSTALL_TIMEOUT_SECONDS,
+) -> None:
+    try:
+        result = _run_subprocess(
+            command,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"MaaFW runtime 安装超时: {command[:3]}") from exc
