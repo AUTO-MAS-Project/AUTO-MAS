@@ -90,7 +90,7 @@ class _MaaFWManager:
             if isinstance(result, JobWithResult):
                 raise RuntimeError(f"任务执行失败, 执行信息: {result.get()}")
             elif isinstance(result, Job):
-                raise RuntimeError(f"任务执行失败")
+                raise RuntimeError("任务执行失败")
 
     @staticmethod
     async def convert_adb(raw_info: DeviceInfo) -> AdbDevice:

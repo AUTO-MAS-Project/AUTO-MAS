@@ -767,7 +767,7 @@ class ConfigItem:
             槽函数，接收新值作为参数，支持同步和异步函数
         """
         if not callable(slot):
-            raise TypeError(f"槽函数必须是可调用对象")
+            raise TypeError("槽函数必须是可调用对象")
 
         if slot not in self._slots:
             self._slots.append(slot)
