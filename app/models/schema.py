@@ -2060,24 +2060,33 @@ class MaaFWConfig_Game(BaseModel):
 
 
 class MaaFWConfig_Update(BaseModel):
+    AutoUpdateMode: Optional[Literal["Off", "BeforeRun", "AfterRun"]] = Field(
+        default=None,
+        description="项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后",
+    )
     IfAutoUpdate: Optional[bool] = Field(
-        default=None, description="是否在运行前自动更新 MaaFW 项目"
+        default=None,
+        description="[已废弃] 旧布尔开关，加载时迁移为 AutoUpdateMode，运行流程不再读取",
     )
     Source: Optional[Literal["", "MirrorChyan", "GitHub"]] = Field(
-        default=None, description="项目更新源，留空时使用全局更新源"
+        default=None,
+        description="[已废弃] 项目更新源；版本检查固定走 Mirror 酱，下载源按 CDK 自动分流",
     )
-    Channel: Optional[Literal["", "stable", "beta"]] = Field(
-        default=None, description="项目更新渠道，留空时使用全局更新渠道"
+    Channel: Optional[Literal["", "stable", "beta", "alpha"]] = Field(
+        default=None,
+        description="项目更新渠道：稳定版 / 测试版 / 内测版，留空时使用全局更新渠道",
     )
     MirrorChyanCDK: Optional[str] = Field(
         default=None, description="Mirror 酱 CDK，留空时使用全局项目更新 CDK"
     )
-    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库覆盖")
+    GitHubRepo: Optional[str] = Field(
+        default=None, description="[已废弃] GitHub 仓库覆盖，改为从 interface.json 推导"
+    )
     GitHubTag: Optional[str] = Field(
-        default=None, description="GitHub release tag 覆盖"
+        default=None, description="[已废弃] GitHub release tag 覆盖"
     )
     GitHubAssetPattern: Optional[str] = Field(
-        default=None, description="GitHub release asset 文件名匹配模式"
+        default=None, description="[已废弃] GitHub release asset 文件名匹配模式"
     )
 
 
@@ -2396,7 +2405,25 @@ class MaaFWProjectUpdateData(BaseModel):
         default=None, description="interface 声明的当前项目版本"
     )
     latestVersion: Optional[str] = Field(default=None, description="发现的最新项目版本")
-    source: Optional[str] = Field(default=None, description="更新包来源")
+    source: Optional[str] = Field(
+        default=None, description="实际更新包来源：mirrorchyan / github；未下载时为空"
+    )
+    versionName: Optional[str] = Field(
+        default=None, description="Mirror 酱返回的最新版本名；查版本失败时为空"
+    )
+    cdkStatus: Optional[str] = Field(
+        default=None,
+        description="CDK 状态：ok / absent / expired / invalid / quota / mismatched / blocked",
+    )
+    cdkMessage: Optional[str] = Field(
+        default=None, description="CDK 状态对应的用户提示；ok / absent 时为空"
+    )
+    cdkExpiredTime: Optional[int] = Field(
+        default=None, description="Mirror 酱返回的 CDK 过期时间（unix 秒），仅 ok 时有"
+    )
+    skippedReason: Optional[str] = Field(
+        default=None, description="未执行更新的原因（无 rid、已最新、锁被占等）"
+    )
 
 
 class MaaFWProjectUpdateOut(OutBase):

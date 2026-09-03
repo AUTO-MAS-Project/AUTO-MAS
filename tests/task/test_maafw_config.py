@@ -35,7 +35,7 @@ class MaaFWConfigTest(unittest.TestCase):
                 "Emulator": 2,
                 "Device": 11,
                 "Game": 5,
-                "Update": 7,
+                "Update": 8,
                 "Managed": 9,
                 "ManagedRuntime": 5,
                 "ManagedRemote": 7,
@@ -43,8 +43,9 @@ class MaaFWConfigTest(unittest.TestCase):
                 "Selection": 3,
             },
         )
-        # 第一层删除后少了 Run.Engine 与 Game.{Path,LaunchURL,ProcessPath,ProcessName}
-        self.assertEqual(_item_count(script), 60)
+        # 第一层删除后少了 Run.Engine 与 Game.{Path,LaunchURL,ProcessPath,ProcessName}；
+        # 自动更新接线新增 Update.AutoUpdateMode，故 Update 组 8 项、总计 61
+        self.assertEqual(_item_count(script), 61)
         self.assertNotIn("Engine", script._config_item_index["Run"])
         self.assertIn("DailyOnceTasks", script._config_item_index["Run"])
         self.assertIn("WeeklyOnceTasks", script._config_item_index["Run"])

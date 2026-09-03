@@ -1147,6 +1147,22 @@ export default {
     leaveEmptySkipTrailing: 'Leave empty to skip trailing removal',
     leaveEmptySkipLeading: 'Leave empty to skip leading removal',
     leaveEmptyUseGlobal: 'Leave empty to use the global MirrorChyan CDK',
+    autoUpdateMode: 'Auto update',
+    autoUpdateModeTip:
+      'Before run: check and update the project before every run; After run: update once the run finishes. The download source (MirrorChyan / GitHub) is picked automatically.',
+    autoUpdateModeOff: 'Off',
+    autoUpdateModeBeforeRun: 'Before run',
+    autoUpdateModeAfterRun: 'After run',
+    updateChannel: 'Update channel',
+    cdkHint:
+      'Leave empty to use the CDK from global settings; without a CDK, downloads fall back to GitHub automatically',
+    cdkGetLink: 'Get a MirrorChyan CDK',
+    updateResultVersion: 'Latest version',
+    updateResultSource: 'Download source',
+    sourceMirrorChyan: 'MirrorChyan',
+    sourceGithub: 'GitHub',
+    cdkStatusIssue: 'MirrorChyan CDK unavailable ({status}); this download falls back to GitHub',
+    cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
     directory: 'Directory',
     useExistingOkwwConfiguration:
       'Use the existing Okww configuration and leave the complex settings to the script GUI.',
@@ -2689,6 +2705,9 @@ export default {
       cdkSite: 'the MirrorChyan site',
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
+      cdkHint:
+        'Script updates use this CDK when their own is empty; without a CDK, downloads fall back to GitHub automatically',
+      cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',
       siteDesc: 'Latest releases and a feature tour',

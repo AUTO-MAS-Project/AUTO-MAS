@@ -10,7 +10,7 @@ import shutil
 import stat
 import uuid
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -19,6 +19,8 @@ from urllib.parse import quote, urljoin, urlsplit
 import aiofiles
 import httpx
 from packaging import version
+
+from app.utils.constants import MIRROR_ERROR_INFO
 
 from ..automas_maafw_interface.models import MaaFWInterface
 from .apply import (
@@ -58,19 +60,21 @@ HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
-MIRROR_ERROR_INFO = {
-    1001: "MirrorChyan URL parameters are invalid",
-    7001: "MirrorChyan CDK is expired",
-    7002: "MirrorChyan CDK is invalid",
-    7003: "MirrorChyan CDK download limit reached today",
-    7004: "MirrorChyan CDK type does not match the resource",
-    7005: "MirrorChyan CDK has been banned",
-    8001: "MirrorChyan resource is not available for this platform",
-    8002: "MirrorChyan OS parameter is invalid",
-    8003: "MirrorChyan arch parameter is invalid",
-    8004: "MirrorChyan channel parameter is invalid",
-    1: "MirrorChyan returned unknown error",
+# 错误码文案只维护一份：``app/utils/constants.py`` 的中文 ``MIRROR_ERROR_INFO``。
+#
+# 7001-7005 是 CDK 业务错误（HTTP 403）。实测服务端此时仍返回
+# ``data.version_name``，版本检查照常成功，只是拿不到下载地址；这些码不当
+# 致命错误，而是记录状态后改从 GitHub Release 下载。
+MIRROR_CDK_STATUS_BY_CODE: dict[int, str] = {
+    7001: "expired",
+    7002: "invalid",
+    7003: "quota",
+    7004: "mismatched",
+    7005: "blocked",
 }
+CDK_STATUS_OK = "ok"
+CDK_STATUS_ABSENT = "absent"
+CDK_ABSENT_REASON = "未配置 Mirror酱 CDK"
 
 
 @dataclass
@@ -141,10 +145,43 @@ class MaaFWProjectUpdateDiscovery:
     unavailable_reason: str = ""
     plan_id: str | None = None
     project_fingerprint: str | None = None
+    # 与 MaaFWProjectUpdateResult 共享的结果字段（子任务契约 §8）。
+    # ``source`` 在本对象上仍是版本元数据来源（恒为 ``mirrorchyan``）；
+    # 实际下载来源看 ``package_source``。
+    previous_version: str | None = None
+    cdk_status: str = CDK_STATUS_ABSENT
+    cdk_message: str = ""
+    cdk_expired_time: int | None = None
+    provider_error_code: int | None = None
+    message: str = ""
+    skipped_reason: str | None = None
 
     @property
     def installable(self) -> bool:
         return self.candidate is not None and self.candidate.installable
+
+    @property
+    def updated(self) -> bool:
+        """A discovery never installs anything."""
+
+        return False
+
+    @property
+    def version_name(self) -> str | None:
+        return self.version or None
+
+    @property
+    def package_source(self) -> str | None:
+        """Public download source name (``mirrorchyan`` / ``github``) or None."""
+
+        return _public_package_source(
+            self.candidate.source if self.candidate is not None else None
+        )
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Mapping-style access so callers may use ``r.get(x)`` or ``getattr``."""
+
+        return getattr(self, key, default)
 
 
 @dataclass
@@ -162,6 +199,55 @@ class MaaFWProjectUpdateResult:
     project_fingerprint: str | None = None
     package_type: str | None = None
     resumed_from: int = 0
+    # 子任务契约 §8 字段。``previous_version`` / ``version_name`` 与既有的
+    # ``current_version`` / ``latest_version`` 同义，构造时自动补齐。
+    previous_version: str | None = None
+    version_name: str | None = None
+    cdk_status: str = CDK_STATUS_ABSENT
+    cdk_message: str = ""
+    cdk_expired_time: int | None = None
+    skipped_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.previous_version is None and self.current_version:
+            self.previous_version = self.current_version
+        if self.version_name is None and self.latest_version:
+            self.version_name = self.latest_version
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Mapping-style access so callers may use ``r.get(x)`` or ``getattr``."""
+
+        return getattr(self, key, default)
+
+
+@dataclass
+class MaaFWMirrorChyanVersionCheck:
+    """One MirrorChyan ``/latest`` query outcome, before the newer-than compare.
+
+    A CDK business error (7001-7005) is *not* a failed check: the server still
+    returns ``data.version_name`` (with HTTP 403), so the version can be
+    compared and the package fetched from GitHub instead.  Only responses that
+    carry no usable version raise :class:`MaaFWProjectUpdateError`.
+    """
+
+    version_name: str
+    data: dict[str, Any] = field(default_factory=dict)
+    download_url: str | None = None
+    sha256: str | None = None
+    cdk_status: str = CDK_STATUS_ABSENT
+    cdk_message: str = ""
+    cdk_expired_time: int | None = None
+    provider_error_code: int | None = None
+
+    @property
+    def fallback_reason(self) -> str:
+        """Why the package cannot come from MirrorChyan (for logs/reasons)."""
+
+        if self.cdk_status == CDK_STATUS_ABSENT:
+            return CDK_ABSENT_REASON
+        if self.cdk_message:
+            return self.cdk_message
+        return "Mirror酱 未提供下载地址"
 
 
 class MaaFWProjectUpdateError(RuntimeError):
@@ -188,7 +274,12 @@ class _MaaFWProjectDownloadError(MaaFWProjectUpdateError):
 
 
 def _normalise_package_source(raw_value: Any) -> str:
-    """Normalize the user-selected package source without changing metadata ownership."""
+    """Normalize a package source name for plan descriptors and legacy callers.
+
+    Routing no longer depends on this value: discovery always queries
+    MirrorChyan for the version and picks MirrorChyan or GitHub automatically
+    depending on whether MirrorChyan returned a download URL.
+    """
 
     value = str(raw_value or "").strip().casefold().replace("_", " ")
     if not value:
@@ -200,6 +291,17 @@ def _normalise_package_source(raw_value: Any) -> str:
     raise MaaFWProjectUpdateError(
         f"unsupported MaaFW update package source: {raw_value}"
     )
+
+
+def _public_package_source(raw_value: Any) -> str | None:
+    """Map an internal candidate source to the public ``source`` field value."""
+
+    value = str(raw_value or "").strip().casefold()
+    if not value:
+        return None
+    if value.startswith("github"):
+        return "github"
+    return "mirrorchyan"
 
 
 def list_update_providers() -> list[MaaFWUpdateProviderInfo]:
@@ -320,6 +422,7 @@ async def update_maafw_project_if_needed(
             updated=False,
             current_version=current_version,
             message=message,
+            skipped_reason=message,
         )
 
     send_update_log("start checking MaaFW project update")
@@ -345,24 +448,21 @@ async def update_maafw_project_if_needed(
         )
         if project_shell_hint:
             merged_source_config["project_shell_hint"] = project_shell_hint
-    package_source = _normalise_package_source(
-        merged_source_config.get("package_source")
-        or merged_source_config.get("packageSource")
-        or merged_source_config.get("source")
-    )
     _report_progress(progress, "checking", message="checking for project updates")
     try:
         # 没有可信基线就直接要全量包：差量包在 apply 阶段必须能对上
         # projectFingerprint，而从未经 MAS 更新过的项目根本没有那份 manifest，
         # 于是「首次更新」必然被拒——这就是自举死锁。探测是只读的，不建目录。
         prefer_full = not has_trusted_update_baseline(project_path)
-        discovery = await discover_maafw_project_update(
-            interface_model,
-            current_version=current_version,
-            source_config=merged_source_config,
-            proxy=proxy,
-            send_log=send_update_log,
-            prefer_full_package=prefer_full,
+        discovery, version_check, skipped_reason = (
+            await _discover_project_update_detailed(
+                interface_model,
+                current_version=current_version,
+                source_config=merged_source_config,
+                proxy=proxy,
+                send_log=send_update_log,
+                prefer_full_package=prefer_full,
+            )
         )
     except Exception as exc:
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
@@ -376,21 +476,33 @@ async def update_maafw_project_if_needed(
         )
         raise
 
+    cdk_fields = _cdk_result_fields(version_check)
+
     if discovery is None:
-        message = f"MaaFW project is up to date: {current_version}"
+        if version_check is not None:
+            message = f"MaaFW 项目已是最新版本: {current_version}"
+            status = "no_update"
+        else:
+            message = skipped_reason or "MaaFW 项目未配置可用更新源，跳过更新"
+            status = "skipped"
         send_update_log(message)
         _report_progress(
             progress,
             "completed",
-            status="no_update",
+            status=status,
             message=message,
             final=True,
         )
         return MaaFWProjectUpdateResult(
-            checked=True,
+            checked=version_check is not None,
             updated=False,
             current_version=current_version,
+            latest_version=(
+                version_check.version_name if version_check is not None else None
+            ),
             message=message,
+            skipped_reason=skipped_reason or message,
+            **cdk_fields,
         )
 
     _report_progress(
@@ -399,21 +511,17 @@ async def update_maafw_project_if_needed(
         status="version_discovered",
         version=discovery.version,
         metadata_source=discovery.source,
-        package_source=(
-            discovery.candidate.source
-            if discovery.candidate is not None
-            else package_source
-        ),
+        package_source=discovery.package_source,
     )
 
     if not discovery.installable:
         reason = (
             discovery.unavailable_reason
-            or f"{discovery.source} did not return an installable download URL"
+            or "更新源没有返回可安装的下载地址"
         )
         message = (
-            f"found MaaFW project update {current_version} -> {discovery.version} "
-            f"({package_source}), but it is not installable: {reason}"
+            f"发现 MaaFW 项目更新 {current_version} -> {discovery.version}，"
+            f"但没有可安装的更新包: {reason}"
         )
         send_update_log(message)
         _report_progress(
@@ -430,8 +538,10 @@ async def update_maafw_project_if_needed(
             update_available=True,
             installable=False,
             latest_version=discovery.version,
-            source=package_source,
+            source=None,
             message=message,
+            skipped_reason=reason,
+            **cdk_fields,
         )
 
     candidate = discovery.candidate
@@ -486,7 +596,10 @@ async def update_maafw_project_if_needed(
         )
         raise
 
-    message = f"MaaFW project update applied: {candidate.version}"
+    message = (
+        f"MaaFW 项目更新完成: {current_version} -> {candidate.version}"
+        f"（来源: {_public_package_source(candidate.source)}）"
+    )
     send_update_log(message)
     _report_progress(
         progress,
@@ -502,8 +615,9 @@ async def update_maafw_project_if_needed(
         update_available=True,
         installable=True,
         latest_version=candidate.version,
-        source=candidate.source,
+        source=_public_package_source(candidate.source),
         message=message,
+        **cdk_fields,
         operation_id=str(apply_result.get("operationId") or "") or None,
         plan_id=str(apply_result.get("planId") or candidate.plan_id or "") or None,
         project_fingerprint=str(apply_result.get("finalFingerprint") or "") or None,
@@ -524,12 +638,60 @@ async def discover_maafw_project_update(
     send_log: Callable[[str], None] | None = None,
     prefer_full_package: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
-    config = dict(source_config or {})
-    package_source = _normalise_package_source(
-        config.get("package_source")
-        or config.get("packageSource")
-        or config.get("source")
+    """Discover a newer project version and pick where to download it from.
+
+    Routing is automatic and no longer user-selectable:
+
+    1. MirrorChyan is always queried for the latest version (works without a
+       CDK; a CDK business error 7001-7005 still yields the version).
+    2. If MirrorChyan returned a download URL (valid CDK), that package is used.
+    3. Otherwise the same version is fetched from the GitHub release of
+       ``interface.github``.  Without ``interface.github`` the version is
+       reported but marked not installable.
+
+    ``source_config`` keys ``package_source`` / ``source`` / ``repo`` / ``tag``
+    / ``asset_pattern`` / ``token`` are deprecated and ignored; ``mirror_cdk``,
+    ``channel`` and ``project_shell_hint`` are still honoured.  Returns
+    ``None`` when the project is already up to date or has no
+    ``mirrorchyan_rid``; the returned discovery carries the §8 result fields
+    (``cdk_status`` / ``cdk_message`` / ``cdk_expired_time`` / ``message`` /
+    ``skipped_reason`` ...).
+    """
+
+    discovery, _version_check, _skipped_reason = (
+        await _discover_project_update_detailed(
+            interface_model,
+            current_version=current_version,
+            source_config=source_config,
+            proxy=proxy,
+            send_log=send_log,
+            prefer_full_package=prefer_full_package,
+        )
     )
+    return discovery
+
+
+async def _discover_project_update_detailed(
+    interface_model: MaaFWInterface,
+    *,
+    current_version: str | None = None,
+    source_config: dict[str, Any] | None = None,
+    proxy: httpx.Proxy | None = None,
+    send_log: Callable[[str], None] | None = None,
+    prefer_full_package: bool = False,
+) -> tuple[
+    MaaFWProjectUpdateDiscovery | None,
+    MaaFWMirrorChyanVersionCheck | None,
+    str | None,
+]:
+    """Return ``(discovery, mirror_version_check, skipped_reason)``.
+
+    ``discovery`` is ``None`` when nothing newer exists; ``mirror_version_check``
+    is ``None`` only when MirrorChyan was never queried (no rid), so callers can
+    still surface the CDK status for an up-to-date project.
+    """
+
+    config = dict(source_config or {})
     current = (
         current_version
         if current_version is not None
@@ -537,91 +699,152 @@ async def discover_maafw_project_update(
     )
     send_update_log = send_log or (lambda _: None)
 
-    # MirrorChyan is the single version/channel authority.  The selected
-    # package source only decides where the exact MirrorChyan target is
-    # downloaded from; it must never switch version discovery to GitHub's
-    # moving ``latest`` endpoint.
-    if not interface_model.mirrorchyan_rid:
-        send_update_log("MirrorChyan RID is not configured, skip update")
-        return None
+    rid = str(interface_model.mirrorchyan_rid or "").strip()
+    if not rid:
+        reason = "interface.json 未声明 mirrorchyan_rid，跳过更新检查"
+        send_update_log(reason)
+        return None, None, reason
 
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
-    send_update_log(f"MirrorChyan RID: {interface_model.mirrorchyan_rid}")
+    channel = str(config.get("channel") or "stable").strip() or "stable"
+    send_update_log(f"MirrorChyan RID: {rid}")
     if interface_model.mirrorchyan_multiplatform:
-        send_update_log("MirrorChyan platform: win/x64")
-    if package_source == "mirrorchyan" and not mirror_cdk:
+        send_update_log("MirrorChyan platform: win/x86_64")
+    # 日志里绝不出现 CDK 明文，连前几位都不打。
+    if mirror_cdk:
+        send_update_log("MirrorChyan CDK: 已配置")
+    else:
         send_update_log(
-            "MirrorChyan CDK 未配置，仅检查版本；安装更新需要项目或全局 CDK"
+            "MirrorChyan CDK 未配置：仍通过 Mirror酱 查版本，更新包将从 GitHub Release 下载"
         )
 
-    mirror_discovery = await _check_mirrorchyan_update(
+    version_check = await _query_mirrorchyan_latest(
         interface_model,
         current_version=current,
         mirror_cdk=mirror_cdk,
-        channel=str(config.get("channel") or "stable"),
+        channel=channel,
         proxy=proxy,
         prefer_full=prefer_full_package,
         send_log=send_update_log,
     )
-    if mirror_discovery is None:
-        return None
+    latest = version_check.version_name
+    send_update_log(f"version metadata source: MirrorChyan; latest={latest}")
 
-    send_update_log(
-        f"version metadata source: MirrorChyan; latest={mirror_discovery.version}"
-    )
-    if package_source == "mirrorchyan":
-        if not mirror_cdk and mirror_discovery.installable:
-            # A provider response must never turn a metadata-only check into
-            # an unauthenticated install.  Keep the discovered version
-            # visible, but require a project or host CDK before exposing an
-            # installable candidate.
-            mirror_discovery = MaaFWProjectUpdateDiscovery(
-                source=mirror_discovery.source,
-                version=mirror_discovery.version,
-                unavailable_reason="MirrorChyan CDK is required to install this update",
-            )
-        if mirror_discovery.installable:
-            send_update_log(
-                "install package source: MirrorChyan; "
-                f"version={mirror_discovery.version}"
-            )
-        return mirror_discovery
+    if not _is_remote_newer(latest, current):
+        reason = f"已是最新版本: {current or latest}"
+        return None, version_check, reason
 
-    # GitHub is a package transport only.  Resolve the exact version selected
-    # by MirrorChyan, ignoring a configured GitHub tag that could otherwise
-    # override the authoritative target.
-    github_discovery = await _check_github_release_update(
-        interface_model,
-        current_version=current,
-        source_config=config,
-        proxy=proxy,
-        target_version=mirror_discovery.version,
-    )
-    if github_discovery is None:
-        return MaaFWProjectUpdateDiscovery(
+    if version_check.download_url:
+        discovery = _discovery_from_mirror_check(version_check)
+        send_update_log(f"install package source: MirrorChyan; version={latest}")
+        return _attach_version_check(discovery, version_check, current), version_check, None
+
+    fallback_reason = version_check.fallback_reason
+    repo = _normalize_github_repo(str(interface_model.github or ""))
+    if not repo:
+        reason = (
+            f"{fallback_reason}，且 interface.json 未声明 github 仓库，无法下载更新包"
+        )
+        send_update_log(reason)
+        discovery = MaaFWProjectUpdateDiscovery(
             source="mirrorchyan",
-            version=mirror_discovery.version,
+            version=latest,
+            unavailable_reason=reason,
+        )
+        return _attach_version_check(discovery, version_check, current), version_check, None
+
+    send_update_log(f"{fallback_reason}，改从 GitHub Release 下载: {repo}")
+    try:
+        github_discovery = await _check_github_release_update(
+            interface_model,
+            current_version=current,
+            source_config=config,
+            proxy=proxy,
+            target_version=latest,
+        )
+    except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
+        # GitHub 回退失败不阻断任务：报为「有更新但不可安装」，原因留在
+        # unavailable_reason / skipped_reason 里，让上层照常继续运行脚本。
+        reason = f"GitHub Release 查询失败: {_sanitize_log_message(str(exc))}"
+        send_update_log(reason)
+        discovery = MaaFWProjectUpdateDiscovery(
+            source="mirrorchyan",
+            version=latest,
+            unavailable_reason=reason,
+        )
+        return _attach_version_check(discovery, version_check, current), version_check, None
+
+    if github_discovery is None:
+        discovery = MaaFWProjectUpdateDiscovery(
+            source="mirrorchyan",
+            version=latest,
             unavailable_reason=(
-                "GitHub has no release matching the MirrorChyan target version"
+                f"GitHub 仓库 {repo} 没有与 Mirror酱 版本 {latest} 匹配的 Release"
             ),
         )
+        return _attach_version_check(discovery, version_check, current), version_check, None
 
     if github_discovery.candidate is not None:
         # Keep the target identity from MirrorChyan even when GitHub spells
         # the matching tag with a conventional leading ``v``.
-        github_discovery.candidate.version = mirror_discovery.version
-        github_discovery.candidate.to_version = mirror_discovery.version
-        send_update_log(
-            "install package source: GitHub Release; "
-            f"version={mirror_discovery.version}"
-        )
+        github_discovery.candidate.version = latest
+        github_discovery.candidate.to_version = latest
+        send_update_log(f"install package source: GitHub Release; version={latest}")
 
-    return MaaFWProjectUpdateDiscovery(
+    discovery = MaaFWProjectUpdateDiscovery(
         source="mirrorchyan",
-        version=mirror_discovery.version,
+        version=latest,
         candidate=github_discovery.candidate,
         unavailable_reason=github_discovery.unavailable_reason,
     )
+    return _attach_version_check(discovery, version_check, current), version_check, None
+
+
+def _attach_version_check(
+    discovery: MaaFWProjectUpdateDiscovery,
+    version_check: MaaFWMirrorChyanVersionCheck,
+    current_version: str,
+) -> MaaFWProjectUpdateDiscovery:
+    """Copy CDK/version context onto a discovery and fill its summary."""
+
+    discovery.previous_version = current_version or None
+    discovery.cdk_status = version_check.cdk_status
+    discovery.cdk_message = version_check.cdk_message
+    discovery.cdk_expired_time = version_check.cdk_expired_time
+    discovery.provider_error_code = version_check.provider_error_code
+    if discovery.installable:
+        label = (
+            "Mirror酱" if discovery.package_source == "mirrorchyan" else "GitHub Release"
+        )
+        discovery.message = (
+            f"发现新版本 {current_version} -> {discovery.version}，将从 {label} 下载"
+        )
+        discovery.skipped_reason = None
+    else:
+        reason = discovery.unavailable_reason or "更新源没有返回可安装的下载地址"
+        discovery.message = (
+            f"发现新版本 {current_version} -> {discovery.version}，"
+            f"但没有可安装的更新包: {reason}"
+        )
+        discovery.skipped_reason = reason
+    return discovery
+
+
+def _cdk_result_fields(
+    version_check: MaaFWMirrorChyanVersionCheck | None,
+) -> dict[str, Any]:
+    if version_check is None:
+        return {
+            "cdk_status": CDK_STATUS_ABSENT,
+            "cdk_message": "",
+            "cdk_expired_time": None,
+        }
+    return {
+        "cdk_status": version_check.cdk_status,
+        "cdk_message": version_check.cdk_message,
+        "cdk_expired_time": version_check.cdk_expired_time,
+    }
+
 
 
 def persist_maafw_update_plan(
@@ -760,6 +983,15 @@ async def resolve_maafw_update_plan_candidate(
         )
     else:
         raise MaaFWProjectUpdateError(f"unsupported update plan provider: {source}")
+    if (
+        discovery is not None
+        and discovery.candidate is None
+        and discovery.cdk_status != CDK_STATUS_OK
+    ):
+        raise MaaFWProjectUpdateError(
+            f"MirrorChyan: {discovery.cdk_message or CDK_ABSENT_REASON}，无法下载已计划的更新包",
+            provider_error_code=discovery.provider_error_code,
+        )
     if discovery is None or discovery.candidate is None:
         raise MaaFWProjectUpdateError("planned release is no longer available")
     candidate = discovery.candidate
@@ -1047,16 +1279,58 @@ async def _check_mirrorchyan_update(
     prefer_full: bool = False,
     send_log: Callable[[str], None] | None = None,
 ) -> MaaFWProjectUpdateDiscovery | None:
-    send_update_log = send_log or (lambda _: None)
-    rid = interface_model.mirrorchyan_rid
-    if not rid:
+    """Return a MirrorChyan discovery when a newer version exists.
+
+    A CDK business error (7001-7005) still returns the discovery — carrying
+    ``version`` plus ``cdk_status`` / ``cdk_message`` / ``provider_error_code``
+    — just without an installable candidate.  Only version lookups that fail
+    outright (8001-8004, 1001, unknown or negative codes, transport errors)
+    raise.
+    """
+
+    if not str(interface_model.mirrorchyan_rid or "").strip():
         return None
+    version_check = await _query_mirrorchyan_latest(
+        interface_model,
+        current_version=current_version,
+        mirror_cdk=mirror_cdk,
+        channel=channel,
+        proxy=proxy,
+        prefer_full=prefer_full,
+        send_log=send_log,
+    )
+    if not _is_remote_newer(version_check.version_name, current_version):
+        return None
+    return _attach_version_check(
+        _discovery_from_mirror_check(version_check),
+        version_check,
+        current_version,
+    )
+
+
+async def _query_mirrorchyan_latest(
+    interface_model: MaaFWInterface,
+    *,
+    current_version: str,
+    mirror_cdk: str,
+    channel: str,
+    proxy: httpx.Proxy | None,
+    prefer_full: bool = False,
+    send_log: Callable[[str], None] | None = None,
+) -> MaaFWMirrorChyanVersionCheck:
+    """Query ``/api/resources/{rid}/latest`` and classify the CDK outcome."""
+
+    send_update_log = send_log or (lambda _: None)
+    rid = str(interface_model.mirrorchyan_rid or "").strip()
+    if not rid:
+        raise MaaFWProjectUpdateError("interface.json 未声明 mirrorchyan_rid")
 
     params: dict[str, str] = {
         "user_agent": "AutoMasGui",
-        "cdk": mirror_cdk or "",
         "channel": channel or "stable",
     }
+    if mirror_cdk:
+        params["cdk"] = mirror_cdk
     if prefer_full:
         # 不带 current_version：MirrorChyan 的 current_version 是差量包的计算基准
         # （文档标为「推荐」而非必填），不给它就没法算差量，返回的是全量包。
@@ -1066,8 +1340,10 @@ async def _check_mirrorchyan_update(
     else:
         params["current_version"] = current_version
     if interface_model.mirrorchyan_multiplatform:
+        # 实测 os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；
+        # 这里沿用 GitHub 资产命名的那套写法。
         params["os"] = "win"
-        params["arch"] = "x64"
+        params["arch"] = "x86_64"
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:
@@ -1083,15 +1359,43 @@ async def _check_mirrorchyan_update(
     result = _load_response_json(response)
     raw_error_code = result.get("code", 0)
     try:
-        error_code = int(raw_error_code)
+        error_code: int | None = int(raw_error_code)
     except (TypeError, ValueError):
         error_code = None
+    server_message = _sanitize_log_message(
+        str(result.get("msg") or result.get("message") or "").strip()
+    )
+    raw_data = result.get("data")
+    data: dict[str, Any] = dict(raw_data) if isinstance(raw_data, dict) else {}
+    latest_version = str(
+        data.get("version_name") or data.get("version") or data.get("name") or ""
+    ).strip()
+
+    if error_code in MIRROR_CDK_STATUS_BY_CODE:
+        cdk_message = MIRROR_ERROR_INFO.get(error_code, MIRROR_ERROR_INFO[1])
+        if not latest_version:
+            raise MaaFWProjectUpdateError(
+                f"MirrorChyan [{error_code}]: {cdk_message}",
+                provider_error_code=error_code,
+            )
+        send_update_log(
+            f"MirrorChyan CDK 状态 [{error_code}]: {cdk_message}；本次仅用 Mirror酱 查版本"
+        )
+        return MaaFWMirrorChyanVersionCheck(
+            version_name=latest_version,
+            data=data,
+            cdk_status=MIRROR_CDK_STATUS_BY_CODE[error_code],
+            cdk_message=cdk_message,
+            provider_error_code=error_code,
+        )
+
     if response.status_code != 200 or error_code != 0:
         if error_code not in (None, 0):
-            error_message = MIRROR_ERROR_INFO.get(
-                error_code,
-                "MirrorChyan returned an unknown error",
-            )
+            error_message = MIRROR_ERROR_INFO.get(error_code)
+            if error_message is None:
+                error_message = MIRROR_ERROR_INFO[1]
+                if server_message:
+                    error_message = f"{error_message}: {server_message}"
             raise MaaFWProjectUpdateError(
                 f"MirrorChyan [{error_code}]: {error_message}",
                 provider_error_code=error_code,
@@ -1100,23 +1404,31 @@ async def _check_mirrorchyan_update(
             f"MirrorChyan returned HTTP {response.status_code}"
         )
 
-    data = result.get("data")
-    if not isinstance(data, dict):
+    if not data:
         raise MaaFWProjectUpdateError("MirrorChyan did not return version data")
-
-    latest_version = str(
-        data.get("version_name") or data.get("version") or data.get("name") or ""
-    ).strip()
     if not latest_version:
         raise MaaFWProjectUpdateError("MirrorChyan did not return version")
-    if not _is_remote_newer(latest_version, current_version):
-        return None
 
+    return MaaFWMirrorChyanVersionCheck(
+        version_name=latest_version,
+        data=data,
+        download_url=str(data.get("url") or "").strip() or None,
+        sha256=str(data.get("sha256") or "").strip() or None,
+        cdk_status=CDK_STATUS_OK if mirror_cdk else CDK_STATUS_ABSENT,
+        cdk_expired_time=_metadata_int(data, "cdk_expired_time", "cdkExpiredTime"),
+    )
+
+
+def _discovery_from_mirror_check(
+    version_check: MaaFWMirrorChyanVersionCheck,
+) -> MaaFWProjectUpdateDiscovery:
+    data = version_check.data
+    latest_version = version_check.version_name
     return _build_update_discovery(
         source="mirrorchyan",
         version=latest_version,
-        download_url=str(data.get("url") or "").strip() or None,
-        sha256=str(data.get("sha256") or "").strip() or None,
+        download_url=version_check.download_url,
+        sha256=version_check.sha256,
         artifact_id=str(data.get("artifact_id") or data.get("artifactId") or "").strip()
         or None,
         package_type=_package_type_from_metadata(data),
@@ -1136,7 +1448,7 @@ async def _check_mirrorchyan_update(
             data, "range", "range_supported", "rangeSupported"
         ),
         unavailable_reason=(
-            "MirrorChyan returned newer version metadata without a download URL"
+            f"{version_check.fallback_reason}，Mirror酱 未提供下载地址"
         ),
     )
 
@@ -1149,44 +1461,36 @@ async def _check_github_release_update(
     proxy: httpx.Proxy | None,
     target_version: str = "",
 ) -> MaaFWProjectUpdateDiscovery | None:
-    repo = _normalize_github_repo(
-        str(
-            source_config.get("repo")
-            or source_config.get("github_repo")
-            or interface_model.github
-            or ""
-        )
-    )
+    """Fetch the exact MirrorChyan-selected version from GitHub Releases.
+
+    The repository is always ``interface.github``, the tag is always the
+    MirrorChyan ``version_name`` (``target_version``), and the asset is picked
+    from the release's zip files by project name, Windows x86_64 platform and
+    UI-shell variant (``project_shell_hint``, falling back to the
+    ``mirrorchyan_rid`` suffix).  The historical ``source_config`` keys
+    ``repo`` / ``github_repo`` / ``tag`` / ``github_tag`` / ``asset_pattern``
+    / ``github_asset_pattern`` / ``token`` / ``github_token`` are deprecated
+    and ignored.
+    """
+
+    repo = _normalize_github_repo(str(interface_model.github or ""))
     if not repo:
         return None
 
-    tag = str(source_config.get("tag") or source_config.get("github_tag") or "").strip()
-    if target_version:
-        # MirrorChyan remains the version/channel authority in automatic mode.
-        # Resolve that exact release instead of GitHub's stable-only ``latest``
-        # endpoint so prereleases and an older same-version package stay
-        # reachable.  A stale GitHubTag from a previous explicit-GitHub setup
-        # must not override the Mirror-selected version in automatic mode.
-        # Only the conventional optional leading ``v`` differs.
-        api_urls = [
-            f"https://api.github.com/repos/{repo}/releases/tags/{quote(candidate, safe='')}"
-            for candidate in _github_tag_candidates(target_version)
-        ]
-    elif tag:
-        api_urls = [
-            f"https://api.github.com/repos/{repo}/releases/tags/{quote(tag, safe='')}"
-        ]
-    else:
+    target_version = str(target_version or "").strip()
+    if not target_version:
         raise MaaFWProjectUpdateError(
             "GitHub release lookup requires an exact target version selected by MirrorChyan"
         )
-    token = str(
-        source_config.get("token") or source_config.get("github_token") or ""
-    ).strip()
+    # Resolve that exact release instead of GitHub's stable-only ``latest``
+    # endpoint so prereleases and an older same-version package stay
+    # reachable.  Only the conventional optional leading ``v`` differs.
+    api_urls = [
+        f"https://api.github.com/repos/{repo}/releases/tags/{quote(candidate, safe='')}"
+        for candidate in _github_tag_candidates(target_version)
+    ]
     headers = dict(HTTP_HEADERS)
     headers["Accept"] = "application/vnd.github+json"
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
 
     response: httpx.Response | None = None
     async with httpx.AsyncClient(
@@ -1235,19 +1539,18 @@ async def _check_github_release_update(
             unavailable_reason="GitHub matching release is a draft",
         )
 
-    configured_asset_pattern = str(
-        source_config.get("asset_pattern")
-        or source_config.get("github_asset_pattern")
-        or ""
-    ).strip()
-    asset_pattern = configured_asset_pattern or r"\.zip$"
+    shell_hint = str(source_config.get("project_shell_hint") or "").strip()
+    if not shell_hint:
+        shell_hint = _shell_from_rid_value(
+            str(interface_model.mirrorchyan_rid or "")
+        )
     download_url, selection_reason = _select_github_release_asset(
         data,
-        asset_pattern,
+        r"\.zip$",
         project_name=interface_model.name,
-        project_shell_hint=str(source_config.get("project_shell_hint") or ""),
-        require_explicit_match=bool(configured_asset_pattern),
-        prefer_windows_x64=interface_model.mirrorchyan_multiplatform,
+        project_shell_hint=shell_hint,
+        require_explicit_match=False,
+        prefer_windows_x64=True,
     )
     asset = _github_asset_for_url(data, download_url)
     asset_digest = str(asset.get("digest") or "").strip() if asset else ""
@@ -2561,11 +2864,28 @@ def _shell_from_mirrorchyan_rid(project_path: Path) -> str:
     except (OSError, ValueError):
         # 解析不了（比如 JSON5 写法）就当没有，交给下面的特征判定
         return ""
+    return _shell_from_rid_value(rid)
 
+
+def _shell_from_rid_value(rid: str) -> str:
+    """Map a ``mirrorchyan_rid`` suffix such as ``M9A-MXU`` to its shell family."""
+
+    rid = str(rid or "").strip()
     if "-" not in rid:
         return ""
     suffix = re.sub(r"[^a-z0-9]+", "", rid.rsplit("-", 1)[1].casefold())
     return _RID_SHELL_SUFFIXES.get(suffix, "")
+
+
+def _shell_from_directory_name(directory_name: str) -> str:
+    """Infer the shell variant from a release-style install directory name.
+
+    GitHub packages unpack to ``{名}-{os}-{arch}-{版本}[-{变体}]`` (for
+    example ``MaaYYs-win-x86_64-v3.14.8-MXU``); the trailing segment is the
+    same variant token used to tell the release assets apart.
+    """
+
+    return _shell_from_rid_value(directory_name)
 
 
 def detect_maafw_project_shell_hint(project_path: Path) -> str:
@@ -2590,6 +2910,10 @@ def detect_maafw_project_shell_hint(project_path: Path) -> str:
     declared = _shell_from_mirrorchyan_rid(project_path)
     if declared:
         return declared
+
+    from_directory = _shell_from_directory_name(project_path.name)
+    if from_directory:
+        return from_directory
 
     try:
         entries = list(project_path.iterdir())

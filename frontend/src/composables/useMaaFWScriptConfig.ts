@@ -14,7 +14,6 @@ const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
   ldplayer: '雷电模拟器',
 }
 
-type MaaFWProjectUpdateSource = MaaFWScriptConfig['Update']['Source']
 type MaaFWConcreteUpdateChannel = Exclude<MaaFWScriptConfig['Update']['Channel'], ''>
 
 const MAAFW_DIRECT_CONTROLLER_TYPES = ['Adb', 'Win32'] as const
@@ -25,16 +24,11 @@ export const isDirectControllerType = (
 ): controllerType is MaaFWDirectControllerType =>
   MAAFW_DIRECT_CONTROLLER_TYPES.includes(controllerType as MaaFWDirectControllerType)
 
-export const updateSourceOptions = [
-  { label: '自动', value: '' },
-  { label: 'MirrorChyan', value: 'MirrorChyan' },
-  { label: 'GitHub', value: 'GitHub' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateSource }>
-
 export const updateChannelOptions = [
   { label: '跟随全局', value: '' as MaaFWScriptConfig['Update']['Channel'] },
   { label: '稳定版', value: 'stable' as MaaFWConcreteUpdateChannel },
   { label: '测试版', value: 'beta' as MaaFWConcreteUpdateChannel },
+  { label: '内测版', value: 'alpha' as MaaFWConcreteUpdateChannel },
 ]
 
 /**
@@ -74,13 +68,9 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     CloseOnFinish: true,
   },
   Update: {
-    IfAutoUpdate: true,
-    Source: '',
+    AutoUpdateMode: 'BeforeRun',
     Channel: '',
     MirrorChyanCDK: '',
-    GitHubRepo: '',
-    GitHubTag: '',
-    GitHubAssetPattern: '',
   },
   Managed: {
     Enabled: false,

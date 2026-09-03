@@ -2237,6 +2237,24 @@ class MaaFWUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+def _migrate_maafw_auto_update_mode(data: dict) -> dict:
+    """兼容旧版 Update.IfAutoUpdate 布尔开关 → 三态 Update.AutoUpdateMode
+
+    旧值 False（关闭）迁移为 ``Off``，保留用户之前的关闭选择；旧值 True 交由
+    新默认 ``BeforeRun`` 生效。只在新项尚未显式写入时迁移，且不动旧键：
+    ``IfAutoUpdate`` 的 ConfigItem 还保留一个版本兼容旧配置文件。
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    update = normalized_data.get("Update")
+    if (
+        isinstance(update, dict)
+        and update.get("IfAutoUpdate") is False
+        and "AutoUpdateMode" not in update
+    ):
+        update["AutoUpdateMode"] = "Off"
+    return normalized_data
+
+
 class MaaFWConfig(ConfigBase):
     """MaaFW 项目配置"""
 
@@ -2331,30 +2349,45 @@ class MaaFWConfig(ConfigBase):
         )
 
         ## Update ----------------------------------------------------------
-        ## 是否在运行前自动更新 MaaFW 项目目录
+        ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。
+        ## 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。
+        self.Update_AutoUpdateMode = ConfigItem(
+            "Update",
+            "AutoUpdateMode",
+            "BeforeRun",
+            OptionsValidator(["Off", "BeforeRun", "AfterRun"]),
+        )
+        ## [已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off），
+        ## 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", True, BoolValidator()
         )
-        ## 更新源，留空时使用全局更新源
+        ## [已废弃] 更新源。版本检查固定走 Mirror 酱，下载源按 CDK 有无自动分流，
+        ## 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_Source = ConfigItem(
             "Update",
             "Source",
             "",
             OptionsValidator(["", "MirrorChyan", "GitHub"]),
         )
-        ## 更新渠道，留空时使用全局更新渠道
+        ## 更新渠道，留空时使用全局更新渠道（GlobalConfig.Update.Channel）。
+        ## alpha 是 Mirror 酱实测支持的第三档（channel=alpha 返回预发布版本），
+        ## 与全局那个「MAS 自身发布通道」不是一回事，后者只有 stable/beta。
         self.Update_Channel = ConfigItem(
-            "Update", "Channel", "", OptionsValidator(["", "stable", "beta"])
+            "Update",
+            "Channel",
+            "",
+            OptionsValidator(["", "stable", "beta", "alpha"]),
         )
-        ## Mirror 酱 CDK，留空时运行前使用全局项目更新 CDK
+        ## Mirror 酱 CDK，留空时使用全局 Update.MirrorChyanCDK 兜底
+        ## （合并逻辑见 tools/embedded/update_credentials.py）
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
-        ## GitHub 仓库覆盖，留空时使用 interface.github
+        ## [已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json
+        ## 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_GitHubRepo = ConfigItem("Update", "GitHubRepo", "")
-        ## GitHub release tag 覆盖
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
-        ## GitHub release asset 文件名匹配模式
         self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
         ## Managed --------------------------------------------------------
@@ -2454,6 +2487,10 @@ class MaaFWConfig(ConfigBase):
         self.UserData = MultipleConfig([MaaFWUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
+        return await super().load(_migrate_maafw_auto_update_mode(data))
 
 
 class MaaPlanConfig(ConfigBase):

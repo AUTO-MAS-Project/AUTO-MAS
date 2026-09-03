@@ -15,23 +15,24 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.versionChecksAlwaysGo')">
+            <a-tooltip :title="t('edit.autoUpdateModeTip')">
               <span class="form-label">
-                {{ t('edit.packageSource') }}
+                {{ t('edit.autoUpdateMode') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-select
-            v-model:value="maafwConfig.Update.Source"
+            v-model:value="maafwConfig.Update.AutoUpdateMode"
             size="large"
-            :options="updateSourceOptions"
-            @change="(value: string | number) => emit('change', 'Update', 'Source', value)"
+            :disabled="isAutoUpdateDisabled"
+            :options="autoUpdateModeOptions"
+            @change="(value: string | number) => emit('change', 'Update', 'AutoUpdateMode', value)"
           />
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item :label="t('edit.channel')">
+        <a-form-item :label="t('edit.updateChannel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
             size="large"
@@ -40,7 +41,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col v-if="maafwConfig.Update.Source !== 'GitHub'" :span="8">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('edit.whenSetScriptS')">
@@ -58,30 +59,20 @@
             autocomplete="off"
             @blur="emit('change', 'Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)"
           />
+          <div class="form-hint">
+            {{ t('edit.cdkHint') }}
+            <a
+              :href="MIRRORCHYAN_CDK_URL"
+              class="form-hint-link"
+              @click="handleExternalLink"
+              >{{ t('edit.cdkGetLink') }}</a
+            >
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
     <a-row :gutter="24" class="update-action-row">
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <a-tooltip :title="t('edit.notWiredIntoRun')">
-              <span class="form-label">
-                {{ t('edit.updateAutomaticallyBeforeRun') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-switch
-            :checked="maafwConfig.Update.IfAutoUpdate"
-            :disabled="isAutoUpdateDisabled"
-            :checked-children="t('edit.on2')"
-            :un-checked-children="t('edit.off')"
-            @change="handleAutoUpdateChange"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="16">
+      <a-col :span="24">
         <a-form-item :label="t('edit.updateNow')">
           <a-space wrap>
             <a-button :loading="updateChecking" @click="emit('check-update')">{{
@@ -107,13 +98,27 @@
       show-icon
       :message="updateError"
     />
-    <a-alert
-      v-else-if="updateResult"
-      class="update-alert"
-      :type="updateResultType"
-      show-icon
-      :message="updateResult.message"
-    />
+    <template v-else-if="updateResult">
+      <a-alert class="update-alert" :type="updateResultType" show-icon :message="updateResult.message">
+        <template v-if="updateResultDetail" #description>
+          <span class="update-result-detail">{{ updateResultDetail }}</span>
+        </template>
+      </a-alert>
+      <a-alert
+        v-if="cdkWarningMessage"
+        class="update-alert"
+        type="warning"
+        show-icon
+        :message="cdkWarningMessage"
+      />
+      <a-alert
+        v-else-if="cdkExpiryMessage"
+        class="update-alert"
+        type="info"
+        show-icon
+        :message="cdkExpiryMessage"
+      />
+    </template>
 
     <div v-if="previewData" class="update-info-grid">
       <div class="update-info-item">
@@ -143,10 +148,17 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { Modal } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
+import {
+  resolveCdkExpiry,
+  resolveCdkWarning,
+  type MaaFWAutoUpdateMode,
+} from '@/composables/useMaaFWProjectUpdate'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
+import { handleExternalLink } from '@/utils/openExternal'
+
+const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
@@ -158,7 +170,6 @@ const props = defineProps<{
   updateApplying: boolean
   updateError: string
   updateResult: MaaFWUpdateResult | null
-  updateSourceOptions: Array<{ label: string; value: string }>
   updateChannelOptions: Array<{ label: string; value: string }>
 }>()
 
@@ -168,25 +179,51 @@ const emit = defineEmits<{
   'apply-update': []
 }>()
 
+const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(
+  () => [
+    { label: t('edit.autoUpdateModeOff'), value: 'Off' },
+    { label: t('edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
+    { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
+  ]
+)
+
 const updateResultType = computed<'success' | 'warning' | 'info'>(() => {
   if (!props.updateResult) return 'info'
   if (props.updateResult.updated || !props.updateResult.updateAvailable) return 'success'
   return 'warning'
 })
 
-const handleAutoUpdateChange = (checked: boolean) => {
-  if (!checked) {
-    emit('change', 'Update', 'IfAutoUpdate', false)
-    return
-  }
-  Modal.confirm({
-    title: t('edit.updateAutomaticallyBeforeEvery'),
-    content: `每次运行前会检查并更新本地目录 ${props.maafwConfig.Info.Path || '（尚未选择）'}。更新失败时旧版本保持可用。`,
-    okText: t('edit.on'),
-    cancelText: t('edit.keepClosed'),
-    onOk: () => emit('change', 'Update', 'IfAutoUpdate', true),
-  })
+const sourceLabel = (source: string | null | undefined) => {
+  const normalized = (source ?? '').trim().toLowerCase()
+  if (!normalized) return ''
+  if (normalized === 'mirrorchyan') return t('edit.sourceMirrorChyan')
+  if (normalized === 'github') return t('edit.sourceGithub')
+  return source ?? ''
 }
+
+// 检查结果的补充信息：版本名 + 实际下载来源。旧后端不返回这些字段时整行不显示。
+const updateResultDetail = computed(() => {
+  const result = props.updateResult
+  if (!result) return ''
+  const parts: string[] = []
+  const versionName = result.versionName?.trim() || result.latestVersion?.trim() || ''
+  if (versionName) parts.push(`${t('edit.updateResultVersion')}: ${versionName}`)
+  const source = sourceLabel(result.source)
+  if (source) parts.push(`${t('edit.updateResultSource')}: ${source}`)
+  return parts.join('  ·  ')
+})
+
+const cdkWarningMessage = computed(() => {
+  const warning = resolveCdkWarning(props.updateResult)
+  if (!warning) return ''
+  return warning.message || t('edit.cdkStatusIssue', { status: warning.status })
+})
+
+const cdkExpiryMessage = computed(() => {
+  const expiry = resolveCdkExpiry(props.updateResult)
+  if (!expiry) return ''
+  return t('edit.cdkExpiresSoon', { date: expiry.dateText })
+})
 </script>
 
 <style scoped>
@@ -237,6 +274,28 @@ const handleAutoUpdateChange = (checked: boolean) => {
 
 .update-alert {
   margin-bottom: 16px;
+}
+
+.update-result-detail {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.form-hint {
+  margin-top: 6px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.form-hint-link {
+  margin-left: 4px;
+  color: var(--ant-color-primary);
+  text-decoration: underline;
+}
+
+.form-hint-link:hover {
+  color: var(--ant-color-primary-hover);
 }
 
 .update-config-row {

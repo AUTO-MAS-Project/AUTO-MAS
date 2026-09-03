@@ -199,6 +199,9 @@ export type HSRScriptConfig = HSRConfig
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
 export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
 
+/** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
+export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
+
 export interface MaaFWScriptConfig {
   Info: {
     Name: string
@@ -232,13 +235,17 @@ export interface MaaFWScriptConfig {
     CloseOnFinish: boolean
   }
   Update: {
-    IfAutoUpdate: boolean
-    Source: '' | 'MirrorChyan' | 'GitHub'
-    Channel: '' | 'stable' | 'beta'
+    /** 自动更新时机：不更新 / 运行前 / 运行后。来源分流（Mirror 酱 / GitHub）由后端决定。 */
+    AutoUpdateMode: MaaFWAutoUpdateMode
+    /** 更新通道；空串表示跟随全局设置。 */
+    Channel: '' | 'stable' | 'beta' | 'alpha'
+    /** 脚本自己的 Mirror 酱 CDK；空串表示使用全局设置中的 CDK。 */
     MirrorChyanCDK: string
-    GitHubRepo: string
-    GitHubTag: string
-    GitHubAssetPattern: string
+    /**
+     * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
+     * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
+     */
+    IfAutoUpdate?: boolean
   }
   Managed: {
     Enabled: boolean

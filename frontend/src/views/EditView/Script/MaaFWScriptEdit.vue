@@ -123,7 +123,6 @@
             :update-applying="updateApplying"
             :update-error="updateError"
             :update-result="updateResult"
-            :update-source-options="updateSourceOptions"
             :update-channel-options="updateChannelOptions"
             @change="handleChange"
             @check-update="runUpdateCheck"
@@ -180,9 +179,9 @@ import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaF
 import {
   getDefaultMaaFWScriptConfig,
   updateChannelOptions,
-  updateSourceOptions,
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
+import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -396,6 +395,8 @@ const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined
       (config?.[section] as Record<string, unknown>) ?? {}
     )
   })
+  // 旧配置只有 IfAutoUpdate 时映射到新的自动更新时机；只改本地草稿，不回写后端。
+  maafwConfig.Update.AutoUpdateMode = resolveAutoUpdateMode(config?.Update)
   formData.name = maafwConfig.Info.Name || ''
   formData.path = maafwConfig.Info.Path || ''
   dailyOnceTasks.value = parseTaskNameList(maafwConfig.Run.DailyOnceTasks)

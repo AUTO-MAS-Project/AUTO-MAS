@@ -45,11 +45,13 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
 from app.task.MaaFW.tools.core.automas_maafw_project_update import (
     MaaFWProjectUpdateError,
     discover_maafw_project_update,
+    update_maafw_project_if_needed,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     detect_maafw_project_shell_hint,
 )
-from app.task.MaaFW.tools.project_updater import update_maafw_project_if_needed
+from app.utils import get_logger
+from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -112,11 +114,79 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
     return script_config
 
 
-def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
-    """按脚本级 Update.* 组装更新实现所需的 source_config。
+_MAAFW_UPDATE_DEFAULT_CHANNEL = "stable"
+# 这两种 CDK 状态不需要向用户额外提示：ok 正常走 Mirror 酱，absent 正常走 GitHub。
+_MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
+_maafw_update_logger = get_logger("MaaFW 项目更新")
 
-    键名与 ``project_updater._compat_source_config`` 一致；留空字段代表
-    「继承全局」，此处照原样透传，由更新实现层决定回退。
+
+def _maafw_update_send_log(line: str) -> None:
+    """更新实现的逐行日志回调；写日志前先打码，避免 CDK 等敏感值落盘。"""
+
+    _maafw_update_logger.info(sanitize_log_message(str(line)))
+
+
+def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
+    """按核心包约定的属性名读取 CDK / 版本附加字段，缺字段一律 None。
+
+    核心包返回对象（discovery 或 result）带 ``version_name`` / ``source`` /
+    ``cdk_status`` / ``cdk_message`` / ``cdk_expired_time`` / ``skipped_reason``；
+    此处用 ``getattr(..., None)`` 读取，核心包尚未补齐时也能返回。
+    """
+
+    def _text(name: str) -> str | None:
+        value = getattr(result, name, None)
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    expired_raw = getattr(result, "cdk_expired_time", None)
+    expired_time: int | None
+    if isinstance(expired_raw, bool) or expired_raw is None:
+        expired_time = None
+    else:
+        try:
+            expired_time = int(expired_raw)
+        except (TypeError, ValueError):
+            expired_time = None
+
+    return {
+        "versionName": _text("version_name"),
+        "cdkStatus": _text("cdk_status"),
+        "cdkMessage": _text("cdk_message"),
+        "cdkExpiredTime": expired_time,
+        "skippedReason": _text("skipped_reason"),
+    }
+
+
+def _maafw_update_message_with_cdk(message: str, extra: dict[str, Any]) -> str:
+    """CDK 状态异常时把提示原文附到摘要里；CDK 问题不是错误，核心包会改走 GitHub。"""
+
+    status = extra.get("cdkStatus")
+    cdk_message = extra.get("cdkMessage")
+    if status and status not in _MAAFW_CDK_QUIET_STATUSES and cdk_message:
+        return f"{message}（{cdk_message}）"
+    return message
+
+
+def _config_text(config: Any, group: str, name: str) -> str:
+    """读取一个可能不存在的配置项并归一为去空白字符串。"""
+
+    try:
+        return str(config.get(group, name) or "").strip()
+    except AttributeError:
+        return ""
+
+
+def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
+    """组装 MaaFW 项目更新实现所需的 source_config。
+
+    只包含 ``mirror_cdk`` 与 ``channel`` 两个用户可配置项：脚本级留空时兜底到
+    全局 ``Update.MirrorChyanCDK`` / ``Update.Channel``，两者都空时 CDK 为空串、
+    channel 为 ``stable``。仓库、tag、资产文件名等 GitHub 参数不再由用户填写，
+    由核心包从 ``interface.json`` 与目录名自行推断；下载来源也由核心包按 CDK
+    状态在 Mirror 酱 / GitHub 之间自动分流，脚本级 ``Update.Source`` 不再参与。
 
     额外注入 ``project_shell_hint``：GitHub 发行版常按 UI 外壳分包
     （如 M9A 同版本同时发 ``*-MFAA.zip`` 与 ``*-MXU.zip``），选包实现
@@ -125,19 +195,16 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     （兜底在 ``update_maafw_project_if_needed`` 里），故必须在此补上。
     """
 
-    source = str(script_config.get("Update", "Source") or "").strip()
-    config = {
-        "source": source,
-        "package_source": source,
-        "mirror_cdk": str(script_config.get("Update", "MirrorChyanCDK") or "").strip(),
-        "channel": str(script_config.get("Update", "Channel") or "").strip(),
-        "repo": str(script_config.get("Update", "GitHubRepo") or "").strip(),
-        "tag": str(script_config.get("Update", "GitHubTag") or "").strip(),
-        "asset_pattern": str(
-            script_config.get("Update", "GitHubAssetPattern") or ""
-        ).strip(),
-    }
-    project_path = str(script_config.get("Info", "Path") or "").strip()
+    mirror_cdk = _config_text(script_config, "Update", "MirrorChyanCDK")
+    if not mirror_cdk:
+        mirror_cdk = _config_text(Config, "Update", "MirrorChyanCDK")
+    channel = (
+        _config_text(script_config, "Update", "Channel")
+        or _config_text(Config, "Update", "Channel")
+        or _MAAFW_UPDATE_DEFAULT_CHANNEL
+    )
+    config = {"mirror_cdk": mirror_cdk, "channel": channel}
+    project_path = _config_text(script_config, "Info", "Path")
     if project_path:
         shell_hint = detect_maafw_project_shell_hint(Path(project_path))
         if shell_hint:
@@ -779,6 +846,12 @@ async def update_maafw_project(
     current_version = str(interface.version or "")
     source_config = _maafw_update_source_config(script_config)
     proxy = Config.proxy
+    # CDK 值绝不进日志：只记录「有没有」。
+    _maafw_update_logger.info(
+        f"MFW 项目更新({payload.action}): script={payload.scriptId} "
+        f"channel={source_config['channel']} "
+        f"cdk={'已配置' if source_config['mirror_cdk'] else '未配置'}"
+    )
 
     if payload.action == "check":
         try:
@@ -787,6 +860,7 @@ async def update_maafw_project(
                 current_version=current_version,
                 source_config=source_config,
                 proxy=proxy,
+                send_log=_maafw_update_send_log,
             )
         except MaaFWProjectUpdateError as exc:
             return MaaFWProjectUpdateOut(
@@ -805,41 +879,47 @@ async def update_maafw_project(
                 ),
             )
 
+        extra = _maafw_update_extra_fields(discovery)
+        candidate = getattr(discovery, "candidate", None)
+        # discovery.source 是版本元数据来源（恒为 Mirror 酱）；响应里的 source
+        # 要回答「会从哪里下载」：优先候选包来源，其次核心包的 package_source。
         candidate_source = (
-            discovery.candidate.source
-            if discovery.candidate is not None
-            else discovery.source
+            (getattr(candidate, "source", None) if candidate is not None else None)
+            or getattr(discovery, "package_source", None)
+            or getattr(discovery, "source", None)
         )
+        installable = bool(getattr(discovery, "installable", False))
+        latest_version = getattr(discovery, "version", None) or extra["versionName"]
+        extra["versionName"] = extra["versionName"] or latest_version
         message = (
-            f"发现 MFW 项目新版本: {current_version or '未知'} -> {discovery.version}"
+            f"发现 MFW 项目新版本: {current_version or '未知'} -> {latest_version}"
         )
-        if not discovery.installable and discovery.unavailable_reason:
-            message = f"{message}（暂无可安装更新包: {discovery.unavailable_reason}）"
+        unavailable_reason = getattr(discovery, "unavailable_reason", "")
+        if not installable and unavailable_reason:
+            message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
         return MaaFWProjectUpdateOut(
-            message=message,
+            message=_maafw_update_message_with_cdk(message, extra),
             data=MaaFWProjectUpdateData(
                 checked=True,
                 updateAvailable=True,
-                installable=discovery.installable,
+                installable=installable,
                 currentVersion=current_version,
-                latestVersion=discovery.version,
+                latestVersion=latest_version,
                 source=candidate_source,
+                **extra,
             ),
         )
 
-    logs: list[str] = []
     try:
+        # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
+        # 目录名自行推断，并按 CDK 状态在 Mirror 酱 / GitHub 之间自动分流。
         result = await update_maafw_project_if_needed(
             root_path,
             interface,
-            source=source_config["source"],
             mirror_cdk=source_config["mirror_cdk"],
             channel=source_config["channel"],
-            github_repo=source_config["repo"],
-            github_tag=source_config["tag"],
-            github_asset_pattern=source_config["asset_pattern"],
             proxy=proxy,
-            send_log=logs.append,
+            send_log=_maafw_update_send_log,
         )
     except MaaFWProjectUpdateError as exc:
         return MaaFWProjectUpdateOut(
@@ -850,16 +930,24 @@ async def update_maafw_project(
             code=500, status="error", message=f"MFW 项目更新失败: {exc}"
         )
 
+    extra = _maafw_update_extra_fields(result)
+    message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
     return MaaFWProjectUpdateOut(
-        message=result.message or "MFW 项目更新完成",
+        message=_maafw_update_message_with_cdk(message, extra),
         data=MaaFWProjectUpdateData(
-            checked=result.checked,
-            updated=result.updated,
-            updateAvailable=result.update_available,
-            installable=result.installable,
-            currentVersion=result.current_version,
-            latestVersion=result.latest_version,
-            source=result.source,
+            checked=bool(getattr(result, "checked", True)),
+            updated=bool(getattr(result, "updated", False)),
+            updateAvailable=bool(getattr(result, "update_available", False)),
+            installable=bool(getattr(result, "installable", False)),
+            currentVersion=(
+                getattr(result, "current_version", None)
+                or getattr(result, "previous_version", None)
+                or current_version
+            ),
+            latestVersion=getattr(result, "latest_version", None)
+            or extra["versionName"],
+            source=getattr(result, "source", None),
+            **extra,
         ),
     )
 
