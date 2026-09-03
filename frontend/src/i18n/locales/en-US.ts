@@ -946,8 +946,6 @@ export default {
     updateScriptConfigurationFile: 'Update the script configuration file at the chosen moment',
     includeRunStatisticsNotification: 'Include run statistics in the notification',
     baseConfigurationImported: 'Base configuration imported',
-    whenSetScriptS:
-      "When set, the script's own MirrorChyan CDK takes priority; leave empty to use the CDK from the global update settings",
     fillingPathEnablesThat:
       'Filling in a path enables that engine; clearing it stops the engine from being checked or scheduled.',
     multiPlatform: 'Multi-platform',
@@ -1146,7 +1144,30 @@ export default {
       'MAS checks the official version and updates it; make sure the game is not running first',
     leaveEmptySkipTrailing: 'Leave empty to skip trailing removal',
     leaveEmptySkipLeading: 'Leave empty to skip leading removal',
-    leaveEmptyUseGlobal: 'Leave empty to use the global MirrorChyan CDK',
+    autoUpdateMode: 'Auto update',
+    autoUpdateModeTip:
+      'Before run: check and update the project before every run; After run: update once the run finishes. A failed update never blocks the run.',
+    autoUpdateModeOff: 'Off',
+    autoUpdateModeBeforeRun: 'Before run',
+    autoUpdateModeAfterRun: 'After run',
+    updateSource: 'Update source',
+    updateSourceTip:
+      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
+    updateChannel: 'Update channel',
+    cdkTip:
+      "Used only for this script's project updates and unrelated to the CDK in global settings; required when MirrorChyan is the update source",
+    cdkPlaceholder: 'Enter the MirrorChyan CDK',
+    cdkHint: 'Required when MirrorChyan is the update source; get one on the MirrorChyan site',
+    cdkGetLink: 'Get a MirrorChyan CDK',
+    cdkMissingForMirror:
+      'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
+    updateResultVersion: 'Latest version',
+    updateResultSource: 'Download source',
+    sourceMirrorChyan: 'MirrorChyan',
+    sourceGithub: 'GitHub',
+    cdkStatusIssue:
+      'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
+    cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
     directory: 'Directory',
     useExistingOkwwConfiguration:
       'Use the existing Okww configuration and leave the complex settings to the script GUI.',
@@ -2689,6 +2710,9 @@ export default {
       cdkSite: 'the MirrorChyan site',
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
+      cdkHint:
+        'Used only for updating MAS itself; MaaFW script project updates take their own CDK on the script edit page',
+      cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',
       siteDesc: 'Latest releases and a feature tour',

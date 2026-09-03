@@ -28,8 +28,28 @@ export type MaaFWProjectUpdateData = {
      */
     latestVersion?: (string | null);
     /**
-     * 更新包来源
+     * 实际更新包来源：mirrorchyan / github；未下载时为空
      */
     source?: (string | null);
+    /**
+     * Mirror 酱返回的最新版本名；查版本失败时为空
+     */
+    versionName?: (string | null);
+    /**
+     * CDK 状态：ok / absent / expired / invalid / quota / mismatched / blocked
+     */
+    cdkStatus?: (string | null);
+    /**
+     * CDK 状态对应的用户提示；ok / absent 时为空
+     */
+    cdkMessage?: (string | null);
+    /**
+     * Mirror 酱返回的 CDK 过期时间（unix 秒），仅 ok 时有
+     */
+    cdkExpiredTime?: (number | null);
+    /**
+     * 未执行更新的原因（无 rid、已最新、锁被占等）
+     */
+    skippedReason?: (string | null);
 };
 
