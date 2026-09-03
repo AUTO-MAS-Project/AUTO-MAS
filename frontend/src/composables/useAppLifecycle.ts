@@ -28,6 +28,7 @@ import {
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_BACKEND_SHUTDOWN_READY,
+  WS_CLOSE_CODE_REPLACED,
   WS_FRONTEND_CLOSE_REQUESTED,
   WS_ID_MAIN,
   WS_POWER_COUNTDOWN_CANCELLED,
@@ -57,6 +58,8 @@ const DEV_MODE_RETRY_DELAY = 3000
 const POWER_COUNTDOWN_STALE_MS = 3000
 // 断开提示的通知 key：同一次断开只保留一条，重连成功后按 key 收起
 const DISCONNECT_NOTICE_KEY = 'app-lifecycle-disconnect'
+// 被另一个前端窗口接管的提示 key：同样只保留一条，重新连上后收起
+const SUPERSEDED_NOTICE_KEY = 'app-lifecycle-superseded'
 
 export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'error'
 
@@ -504,8 +507,24 @@ const escalateDisconnectIncident = (): void => {
 const dismissDisconnectIncident = (): void => {
   disconnectIncidentShown = false
   notification.close(DISCONNECT_NOTICE_KEY)
+  notification.close(SUPERSEDED_NOTICE_KEY)
   closeDisconnectModal?.()
   closeDisconnectModal = null
+}
+
+const showSupersededNotice = (event: WSDisconnectEvent): void => {
+  // 另一个前端窗口接管了后端主连接（后端以专用关闭码通知）。后端没坏，
+  // 连接层也已停止自动重连，所以只给一次非阻塞提示：不弹模态框、不自动重启后端、
+  // 不进入恢复流程，否则本窗口会把对方踢掉、两边无限互踢。
+  logger.warn(`主连接已被另一个前端窗口接管: code=${event.code}, reason=${event.reason || '无'}`)
+  dismissDisconnectIncident()
+  notification.info({
+    key: SUPERSEDED_NOTICE_KEY,
+    message: t('misc.anotherWindowTookOverBackend'),
+    description: t('misc.thisWindowStoppedReconnecting'),
+    // 本窗口不会自己恢复，提示保留到显式重连成功或关闭流程开始
+    duration: null,
+  })
 }
 
 const recoverAfterDisconnect = (): Promise<void> => {
@@ -529,6 +548,11 @@ const handleDisconnected = (event: WSDisconnectEvent): void => {
       logger.warn('关闭流程期间 WebSocket 断开且未收到 ready')
       resolveShutdownReady?.(false)
     }
+    return
+  }
+  if (event.code === WS_CLOSE_CODE_REPLACED) {
+    // 被另一个窗口接管：后端仍在运行，backendStatus 不改，不进入恢复流程
+    showSupersededNotice(event)
     return
   }
   backendStatus.value = 'stopped'

@@ -205,8 +205,24 @@ export type WSDataForType<TType extends string> = TType extends WSKnownMessageTy
 
 // ==================== 连接层类型 ====================
 
-/** 连接状态机 */
-export type WSConnectionState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed'
+/**
+ * 后端应用级关闭码：本连接已被另一条新主连接替换（与 app/core/ws/protocol.py 保持一致）。
+ * 收到后连接层停止自动重连并进入 superseded，否则两个前端会互相把对方踢下线。
+ */
+export const WS_CLOSE_CODE_REPLACED = 4001
+
+/**
+ * 连接状态机。
+ * closed 是退出流程终态；superseded 是"被另一个前端接管"的终态：不再自动重连，
+ * 但仍允许显式 connect / reconnectNow 重新接管。
+ */
+export type WSConnectionState =
+  | 'idle'
+  | 'connecting'
+  | 'open'
+  | 'reconnecting'
+  | 'closed'
+  | 'superseded'
 
 /** 订阅键：只允许按 id + type 精确路由。 */
 export interface WSSubscriptionKey<TType extends string = string> {

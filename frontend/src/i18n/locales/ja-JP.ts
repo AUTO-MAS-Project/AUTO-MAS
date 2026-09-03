@@ -2035,6 +2035,9 @@ export default {
       'バックエンドの状態を確認し、自動で復旧しています。接続が戻り次第、タスクの状態は HTTP スナップショットから再同期されます。',
     devBackendReconnecting:
       '開発モード：バックエンドは開発者が管理しています。再接続を続け、接続が戻ればこの通知は自動で消えます。',
+    anotherWindowTookOverBackend: '別のウィンドウがバックエンド接続を引き継ぎました',
+    thisWindowStoppedReconnecting:
+      'このウィンドウは再接続を停止しました。2 つのウィンドウが接続を奪い合わないようにするためです。',
     couldNotAddAccount: 'アカウントグループを追加できませんでした',
     gotIt: '了解',
     continueDownload: 'ダウンロードを続ける',

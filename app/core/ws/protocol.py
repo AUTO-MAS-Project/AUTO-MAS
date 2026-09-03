@@ -82,6 +82,14 @@ EMULATOR_NOTICE = "emulator.notice"
 TOOLKIT_NOTICE = "toolkit.notice"
 
 
+# ==================== 主连接关闭码（后端 → 前端） ====================
+
+# 旧主连接被新连接替换。4000-4999 为 WebSocket 应用私有段；前端据此停止自动重连、
+# 安静让位给新窗口，否则两个前端会互相把对方踢下线。reason 为机器可读 ASCII 标记。
+CLOSE_CODE_REPLACED = 4001
+CLOSE_REASON_REPLACED = "replaced-by-new-connection"
+
+
 def parse_envelope(raw: object) -> Optional[WSEnvelope]:
     """解析入站消息为统一信封，非法消息记录后丢弃。
 

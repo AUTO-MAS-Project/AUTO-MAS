@@ -8,12 +8,13 @@ import { ref, type Ref } from 'vue'
 import { OpenAPI } from '@/api'
 import { dispatchMessage, subscribe, unsubscribe } from './subscriptions'
 import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
-import type {
-  WSConnectionState,
-  WSDataForType,
-  WSDisconnectEvent,
-  WSEnvelope,
-  WSJsonObject,
+import {
+  WS_CLOSE_CODE_REPLACED,
+  type WSConnectionState,
+  type WSDataForType,
+  type WSDisconnectEvent,
+  type WSEnvelope,
+  type WSJsonObject,
 } from './types'
 
 const logger = window.electronAPI.getLogger('WebSocket连接')
@@ -190,7 +191,20 @@ const handleMessage = (raw: string): void => {
 
 const handleClosed = (event: WSDisconnectEvent): void => {
   if (state.value === 'closed') return
-  state.value = 'reconnecting'
+
+  // 后端用专用关闭码告知本连接已被另一条新主连接替换（通常是另一个前端窗口）：
+  // 本窗口安静让位，进入 superseded 终态并停止自动重连。若照常重连，
+  // 会反过来踢掉对方，两个窗口每几秒互踢一次、各自都算一次异常断开。
+  const superseded = event.code === WS_CLOSE_CODE_REPLACED
+  if (superseded) {
+    logger.warn('主连接已被另一个前端接管，本窗口停止自动重连')
+    automaticReconnectEnabled = false
+    clearReconnectTimer()
+    reconnectAttempts = 0
+    state.value = 'superseded'
+  } else {
+    state.value = 'reconnecting'
+  }
 
   for (const listener of [...disconnectListeners]) {
     try {
@@ -203,6 +217,7 @@ const handleClosed = (event: WSDisconnectEvent): void => {
 
   // 断开事件可能触发生命周期协调器进入关闭流程（state 变为 closed）
   if (
+    !superseded &&
     (state.value as WSConnectionState) !== 'closed' &&
     automaticReconnectEnabled &&
     !connectPromise
@@ -213,7 +228,9 @@ const handleClosed = (event: WSDisconnectEvent): void => {
 
 const scheduleNextAttempt = (): void => {
   clearReconnectTimer()
-  if (state.value === 'closed' || !automaticReconnectEnabled) return
+  if (state.value === 'closed' || state.value === 'superseded' || !automaticReconnectEnabled) {
+    return
+  }
 
   if (reconnectAttempts >= RECONNECT_CYCLE_ATTEMPTS) {
     // 一轮重连失败：清零计数并交由生命周期协调器决策（重启后端 / 延迟下一轮）
@@ -384,11 +401,12 @@ export async function connect(): Promise<boolean> {
 
 /**
  * 由生命周期协调器安排下一轮重连（例如后端进程仍在运行、等待其恢复时）。
+ * 被另一个前端接管（superseded）后不再自动重连，只有显式 connect / reconnectNow 能重新接管。
  *
  * @param delayMs 延迟毫秒数，默认使用最大退避间隔
  */
 export function scheduleReconnect(delayMs: number = RECONNECT_DELAY_MAX): void {
-  if (state.value === 'closed') return
+  if (state.value === 'closed' || state.value === 'superseded') return
   automaticReconnectEnabled = true
   clearReconnectTimer()
   state.value = 'reconnecting'

@@ -186,8 +186,97 @@ describe('websocket connection 状态机', () => {
     latestSocket().triggerClose(1006, '异常断开')
     expect(onDisc).toHaveBeenCalledWith({ code: 1006, reason: '异常断开' })
     expect(conn.connectionState().value).toBe('reconnecting')
+    // 普通异常断开照常安排自动重连
+    expect(conn.connectionInfo()).toMatchObject({
+      hasReconnectTimer: true,
+      automaticReconnectEnabled: true,
+    })
 
     conn.stopReconnect()
     conn.shutdown()
+  })
+
+  it('收到被替换关闭码进入 superseded 终态：通知监听但不自动重连，显式 connect 仍可接管', async () => {
+    const conn = await loadConnection()
+    const onDisc = vi.fn()
+    const onCycleFailed = vi.fn()
+    conn.onDisconnected(onDisc)
+    conn.onReconnectCycleFailed(onCycleFailed)
+
+    const p = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    latestSocket().triggerOpen()
+    await p
+
+    latestSocket().triggerClose(4001, 'replaced-by-new-connection')
+    expect(onDisc).toHaveBeenCalledWith({ code: 4001, reason: 'replaced-by-new-connection' })
+    expect(conn.connectionState().value).toBe('superseded')
+    expect(conn.connectionInfo()).toMatchObject({
+      hasReconnectTimer: false,
+      automaticReconnectEnabled: false,
+      reconnectAttempts: 0,
+    })
+    expect(onCycleFailed).not.toHaveBeenCalled()
+
+    // 协调器安排的自动重连在 superseded 下也不生效
+    conn.scheduleReconnect(0)
+    expect(conn.connectionState().value).toBe('superseded')
+    expect(conn.connectionInfo()).toMatchObject({ hasReconnectTimer: false })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(FakeWebSocket.instances.length).toBe(1)
+
+    // 显式 connect 允许本窗口重新接管
+    const p2 = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(2))
+    latestSocket().triggerOpen()
+    await expect(p2).resolves.toBe(true)
+    expect(conn.connectionState().value).toBe('open')
+
+    conn.shutdown()
+  })
+
+  it('自己 reconnectNow 后旧连接收到被替换关闭码不影响当前连接', async () => {
+    const conn = await loadConnection()
+    const onDisc = vi.fn()
+    conn.onDisconnected(onDisc)
+
+    const p = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    const oldSocket = latestSocket()
+    oldSocket.triggerOpen()
+    await p
+
+    const p2 = conn.reconnectNow('测试重连')
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(2))
+    const newSocket = latestSocket()
+    expect(newSocket).not.toBe(oldSocket)
+
+    // 新连接在后端把旧连接顶掉：旧 socket 的 close 事件带被替换码，但已不是当前 socket
+    oldSocket.triggerClose(4001, 'replaced-by-new-connection')
+    expect(onDisc).not.toHaveBeenCalledWith(expect.objectContaining({ code: 4001 }))
+    expect(conn.connectionState().value).not.toBe('superseded')
+
+    newSocket.triggerOpen()
+    await expect(p2).resolves.toBe(true)
+    expect(conn.connectionState().value).toBe('open')
+
+    conn.shutdown()
+  })
+
+  it('shutdown 后收到被替换关闭码保持 closed 终态', async () => {
+    const conn = await loadConnection()
+    const onDisc = vi.fn()
+    conn.onDisconnected(onDisc)
+
+    const p = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    const ws = latestSocket()
+    ws.triggerOpen()
+    await p
+
+    conn.shutdown('应用关闭')
+    ws.triggerClose(4001, 'replaced-by-new-connection')
+    expect(conn.connectionState().value).toBe('closed')
+    expect(onDisc).not.toHaveBeenCalled()
   })
 })
