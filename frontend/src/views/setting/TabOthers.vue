@@ -180,6 +180,7 @@ const copyAllInfo = async () => {
             </div>
             <a-input-password
               :value="settings.Update?.MirrorChyanCDK"
+              :disabled="settings.Update?.Source !== 'MirrorChyan'"
               :placeholder="t('setting.others.cdkPlaceholder')"
               :visibility-toggle="true"
               size="large"

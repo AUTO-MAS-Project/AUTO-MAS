@@ -32,6 +32,24 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
+        <a-form-item>
+          <template #label>
+            <a-tooltip :title="t('edit.updateSourceTip')">
+              <span class="form-label">
+                {{ t('edit.updateSource') }}
+                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="maafwConfig.Update.Source"
+            size="large"
+            :options="updateSourceOptions"
+            @change="(value: string | number) => emit('change', 'Update', 'Source', value)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="8">
         <a-form-item :label="t('edit.updateChannel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
@@ -41,10 +59,12 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+    </a-row>
+    <a-row :gutter="24" class="update-config-row">
+      <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.whenSetScriptS')">
+            <a-tooltip :title="t('edit.cdkTip')">
               <span class="form-label">
                 {{ t('edit.mirrorchyanCdk') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -53,13 +73,13 @@
           </template>
           <a-input-password
             v-model:value="maafwConfig.Update.MirrorChyanCDK"
-            :placeholder="t('edit.leaveEmptyUseGlobal')"
+            :placeholder="t('edit.cdkPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"
             @blur="emit('change', 'Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)"
           />
-          <div class="form-hint">
+          <div class="form-hint" :class="{ 'form-hint--warning': isCdkMissingForMirror }">
             {{ t('edit.cdkHint') }}
             <a
               :href="MIRRORCHYAN_CDK_URL"
@@ -170,6 +190,7 @@ const props = defineProps<{
   updateApplying: boolean
   updateError: string
   updateResult: MaaFWUpdateResult | null
+  updateSourceOptions: Array<{ label: string; value: string }>
   updateChannelOptions: Array<{ label: string; value: string }>
 }>()
 
@@ -213,10 +234,19 @@ const updateResultDetail = computed(() => {
   return parts.join('  ·  ')
 })
 
+// 选了 Mirror 酱却没填 CDK：下载注定失败，后端不会替用户改走 GitHub，输入框下方直接提醒。
+const isCdkMissingForMirror = computed(
+  () =>
+    props.maafwConfig.Update.Source === 'MirrorChyan' &&
+    !props.maafwConfig.Update.MirrorChyanCDK.trim()
+)
+
 const cdkWarningMessage = computed(() => {
-  const warning = resolveCdkWarning(props.updateResult)
+  const warning = resolveCdkWarning(props.updateResult, props.maafwConfig.Update.Source)
   if (!warning) return ''
-  return warning.message || t('edit.cdkStatusIssue', { status: warning.status })
+  if (warning.message) return warning.message
+  if (warning.status === 'absent') return t('edit.cdkMissingForMirror')
+  return t('edit.cdkStatusIssue', { status: warning.status })
 })
 
 const cdkExpiryMessage = computed(() => {
@@ -286,6 +316,10 @@ const cdkExpiryMessage = computed(() => {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.form-hint--warning {
+  color: var(--ant-color-warning);
 }
 
 .form-hint-link {

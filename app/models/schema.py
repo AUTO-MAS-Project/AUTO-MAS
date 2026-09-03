@@ -2068,16 +2068,15 @@ class MaaFWConfig_Update(BaseModel):
         default=None,
         description="[已废弃] 旧布尔开关，加载时迁移为 AutoUpdateMode，运行流程不再读取",
     )
-    Source: Optional[Literal["", "MirrorChyan", "GitHub"]] = Field(
+    Source: Optional[Literal["MirrorChyan", "GitHub"]] = Field(
         default=None,
-        description="[已废弃] 项目更新源；版本检查固定走 Mirror 酱，下载源按 CDK 自动分流",
+        description="项目更新包下载源：Mirror 酱（需自行填写 CDK）/ GitHub",
     )
-    Channel: Optional[Literal["", "stable", "beta", "alpha"]] = Field(
-        default=None,
-        description="项目更新渠道：稳定版 / 测试版 / 内测版，留空时使用全局更新渠道",
+    Channel: Optional[Literal["stable", "beta"]] = Field(
+        default=None, description="项目更新渠道：稳定版 / 测试版"
     )
     MirrorChyanCDK: Optional[str] = Field(
-        default=None, description="Mirror 酱 CDK，留空时使用全局项目更新 CDK"
+        default=None, description="Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填"
     )
     GitHubRepo: Optional[str] = Field(
         default=None, description="[已废弃] GitHub 仓库覆盖，改为从 interface.json 推导"

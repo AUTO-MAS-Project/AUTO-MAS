@@ -42,7 +42,24 @@ describe('resolveCdkWarning', () => {
     expect(resolveCdkWarning({ cdkStatus: '   ' })).toBeNull()
   })
 
-  it('其他状态返回后端文案', () => {
+  it('未填 CDK 只在更新源是 Mirror 酱时才提示：后端不会替用户改走 GitHub', () => {
+    expect(resolveCdkWarning({ cdkStatus: 'absent' }, 'GitHub')).toBeNull()
+    expect(resolveCdkWarning({ cdkStatus: 'absent' }, null)).toBeNull()
+    expect(
+      resolveCdkWarning({ cdkStatus: 'absent', cdkMessage: '未填写 CDK' }, 'MirrorChyan')
+    ).toEqual({ status: 'absent', message: '未填写 CDK' })
+    expect(resolveCdkWarning({ cdkStatus: 'absent' }, 'MirrorChyan')).toEqual({
+      status: 'absent',
+      message: '',
+    })
+    // ok 与更新源无关，永远不提示
+    expect(resolveCdkWarning({ cdkStatus: 'ok' }, 'MirrorChyan')).toBeNull()
+  })
+
+  it('其他状态返回后端文案，与更新源无关', () => {
+    expect(resolveCdkWarning({ cdkStatus: 'expired', cdkMessage: 'CDK 已过期' }, 'GitHub')).toEqual(
+      { status: 'expired', message: 'CDK 已过期' }
+    )
     expect(resolveCdkWarning({ cdkStatus: 'expired', cdkMessage: 'CDK 已过期' })).toEqual({
       status: 'expired',
       message: 'CDK 已过期',

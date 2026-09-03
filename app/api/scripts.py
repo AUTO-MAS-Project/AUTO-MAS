@@ -50,6 +50,9 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     detect_maafw_project_shell_hint,
 )
+from app.task.MaaFW.tools.embedded.update_credentials import (
+    resolve_update_credentials,
+)
 from app.utils import get_logger
 from app.utils.security import sanitize_log_message
 
@@ -114,8 +117,7 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
     return script_config
 
 
-_MAAFW_UPDATE_DEFAULT_CHANNEL = "stable"
-# 这两种 CDK 状态不需要向用户额外提示：ok 正常走 Mirror 酱，absent 正常走 GitHub。
+# 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 
@@ -182,11 +184,13 @@ def _config_text(config: Any, group: str, name: str) -> str:
 def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
     """组装 MaaFW 项目更新实现所需的 source_config。
 
-    只包含 ``mirror_cdk`` 与 ``channel`` 两个用户可配置项：脚本级留空时兜底到
-    全局 ``Update.MirrorChyanCDK`` / ``Update.Channel``，两者都空时 CDK 为空串、
-    channel 为 ``stable``。仓库、tag、资产文件名等 GitHub 参数不再由用户填写，
-    由核心包从 ``interface.json`` 与目录名自行推断；下载来源也由核心包按 CDK
-    状态在 Mirror 酱 / GitHub 之间自动分流，脚本级 ``Update.Source`` 不再参与。
+    只包含用户可配置的三项：``package_source``（脚本级 ``Update.Source``，
+    Mirror 酱 / GitHub）、``mirror_cdk``、``channel``。三项**都只看脚本级、
+    不做全局兜底**，与 ``tools/embedded/update_credentials.py`` 用的是同一个
+    解析函数，保证手动更新与运行时自动更新的行为一致。
+
+    仓库、tag、资产文件名等 GitHub 参数不再由用户填写，由核心包从
+    ``interface.json`` 与目录名自行推断。
 
     额外注入 ``project_shell_hint``：GitHub 发行版常按 UI 外壳分包
     （如 M9A 同版本同时发 ``*-MFAA.zip`` 与 ``*-MXU.zip``），选包实现
@@ -195,15 +199,14 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     （兜底在 ``update_maafw_project_if_needed`` 里），故必须在此补上。
     """
 
-    mirror_cdk = _config_text(script_config, "Update", "MirrorChyanCDK")
-    if not mirror_cdk:
-        mirror_cdk = _config_text(Config, "Update", "MirrorChyanCDK")
-    channel = (
-        _config_text(script_config, "Update", "Channel")
-        or _config_text(Config, "Update", "Channel")
-        or _MAAFW_UPDATE_DEFAULT_CHANNEL
-    )
-    config = {"mirror_cdk": mirror_cdk, "channel": channel}
+    # 三项都只看脚本级，不做全局兜底（与 embedded 侧的 resolve_update_credentials
+    # 一致）：全局那两项服务的是 MAS 自身的更新，语义不同。
+    credentials = resolve_update_credentials(script_config)
+    config = {
+        "mirror_cdk": credentials.cdk,
+        "channel": credentials.channel,
+        "package_source": credentials.package_source,
+    }
     project_path = _config_text(script_config, "Info", "Path")
     if project_path:
         shell_hint = detect_maafw_project_shell_hint(Path(project_path))
@@ -912,12 +915,15 @@ async def update_maafw_project(
 
     try:
         # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
-        # 目录名自行推断，并按 CDK 状态在 Mirror 酱 / GitHub 之间自动分流。
+        # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
+        # 漏了就会退回缺省的 GitHub——check 说走 Mirror 酱、apply 却从 GitHub
+        # 下载，正是本次设计要禁掉的静默换源。
         result = await update_maafw_project_if_needed(
             root_path,
             interface,
             mirror_cdk=source_config["mirror_cdk"],
             channel=source_config["channel"],
+            source_config=source_config,
             proxy=proxy,
             send_log=_maafw_update_send_log,
         )

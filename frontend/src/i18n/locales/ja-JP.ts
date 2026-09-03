@@ -946,8 +946,6 @@ export default {
     updateScriptConfigurationFile: '選んだタイミングでスクリプトの設定ファイルを更新します',
     includeRunStatisticsNotification: '通知の本文に実行統計を含めます',
     baseConfigurationImported: '基地設定をインポートしました',
-    whenSetScriptS:
-      '入力するとスクリプト自身の MirrorChyan CDK を優先して使います。空の場合は MAS 全体の更新設定にある CDK を使います',
     fillingPathEnablesThat:
       'パスを入力するとそのエンジンが有効になります。パスを空にすると、そのエンジンは検証もスケジュールもされなくなります。',
     multiPlatform: 'マルチプラットフォーム',
@@ -1147,7 +1145,9 @@ export default {
       'MAS が公式のバージョンを確認して更新します。更新前にゲームが起動していないことを確認してください',
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
-    leaveEmptyUseGlobal: '空の場合は全体設定の MirrorChyan CDK を使います',
+    cdkTip:
+      'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
+    cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     directory: 'フォルダ',
     useExistingOkwwConfiguration:
       'Okww の既存設定をそのまま使い、細かい設定はスクリプトの GUI に任せます。',

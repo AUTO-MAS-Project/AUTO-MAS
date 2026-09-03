@@ -2362,24 +2362,28 @@ class MaaFWConfig(ConfigBase):
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", True, BoolValidator()
         )
-        ## [已废弃] 更新源。版本检查固定走 Mirror 酱，下载源按 CDK 有无自动分流，
-        ## 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
+        ## 更新包的下载源，由用户显式选择——**不做自动分流**。
+        ## 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定：
+        ## 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成
+        ## GitHub——用户得知道自己在从哪下载，出问题才查得动。
+        ## 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。
         self.Update_Source = ConfigItem(
-            "Update",
-            "Source",
-            "",
-            OptionsValidator(["", "MirrorChyan", "GitHub"]),
+            "Update", "Source", "GitHub", OptionsValidator(["MirrorChyan", "GitHub"])
         )
-        ## 更新渠道，留空时使用全局更新渠道（GlobalConfig.Update.Channel）。
-        ## alpha 是 Mirror 酱实测支持的第三档（channel=alpha 返回预发布版本），
-        ## 与全局那个「MAS 自身发布通道」不是一回事，后者只有 stable/beta。
+        ## 更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。
+        ## 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道，
+        ## 和脚本本体的版本档位是两回事，串在一起只会让人猜。
+        ## Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部
+        ## 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。
+        ## 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致：
+        ## 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
+        ## 旧配置里的空串现在是非法值，会被 OptionsValidator 自动回退成 stable。
         self.Update_Channel = ConfigItem(
-            "Update",
-            "Channel",
-            "",
-            OptionsValidator(["", "stable", "beta", "alpha"]),
+            "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
         )
-        ## Mirror 酱 CDK，留空时使用全局 Update.MirrorChyanCDK 兜底
+        ## Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是
+        ## AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜
+        ## 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。
         ## （合并逻辑见 tools/embedded/update_credentials.py）
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()

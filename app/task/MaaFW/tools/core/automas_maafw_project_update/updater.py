@@ -274,11 +274,11 @@ class _MaaFWProjectDownloadError(MaaFWProjectUpdateError):
 
 
 def _normalise_package_source(raw_value: Any) -> str:
-    """Normalize a package source name for plan descriptors and legacy callers.
+    """Normalize a package source name to the internal identifier.
 
-    Routing no longer depends on this value: discovery always queries
-    MirrorChyan for the version and picks MirrorChyan or GitHub automatically
-    depending on whether MirrorChyan returned a download URL.
+    Version metadata always comes from MirrorChyan (it answers without a CDK).
+    This value decides only where the **package** is downloaded from, and it is
+    the user's explicit choice — there is no automatic fallback between sources.
     """
 
     value = str(raw_value or "").strip().casefold().replace("_", " ")
@@ -291,6 +291,23 @@ def _normalise_package_source(raw_value: Any) -> str:
     raise MaaFWProjectUpdateError(
         f"unsupported MaaFW update package source: {raw_value}"
     )
+
+
+def _requested_package_source(config: dict[str, Any]) -> str:
+    """用户选定的下载源，归一为核心包内部名。
+
+    缺省 ``github_release``：与 ``MaaFWConfig.Update_Source`` 的默认值一致，
+    也是唯一零配置可用的源（Mirror 酱必须有 CDK）。
+    """
+
+    raw = (
+        config.get("package_source")
+        or config.get("packageSource")
+        or config.get("source")
+    )
+    if not str(raw or "").strip():
+        return "github_release"
+    return _normalise_package_source(raw)
 
 
 def _public_package_source(raw_value: Any) -> str | None:
@@ -435,9 +452,10 @@ async def update_maafw_project_if_needed(
     ).strip()
     inherited_cdk = str(mirror_cdk or "").strip()
     if not configured_cdk and inherited_cdk:
-        # Script-local blank means "inherit the host CDK".  ``setdefault``
-        # cannot express this because the schema deliberately serializes an
-        # empty local value.
+        # 调用方既可以用 ``mirror_cdk=`` 参数给 CDK，也可以塞进 source_config；
+        # 前者为准只在后者为空时生效。不能用 ``setdefault``：schema 会把未填的
+        # CDK 序列化成空串而不是缺键。（这里说的不是全局兜底——凭据只看脚本级，
+        # 合并发生在调用方，见 tools/embedded/update_credentials.py。）
         merged_source_config["mirror_cdk"] = inherited_cdk
     if not str(merged_source_config.get("channel") or "").strip():
         merged_source_config["channel"] = update_channel
@@ -640,18 +658,21 @@ async def discover_maafw_project_update(
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Discover a newer project version and pick where to download it from.
 
-    Routing is automatic and no longer user-selectable:
+    Version metadata always comes from MirrorChyan (it answers without a CDK;
+    a CDK business error 7001-7005 still yields the version).  **Where the
+    package is downloaded from is the user's explicit choice** — there is no
+    automatic fallback between sources:
 
-    1. MirrorChyan is always queried for the latest version (works without a
-       CDK; a CDK business error 7001-7005 still yields the version).
-    2. If MirrorChyan returned a download URL (valid CDK), that package is used.
-    3. Otherwise the same version is fetched from the GitHub release of
-       ``interface.github``.  Without ``interface.github`` the version is
-       reported but marked not installable.
+    - ``package_source="mirrorchyan"``: needs a download URL, i.e. a working
+      CDK.  Missing or rejected CDK means "not installable" with a readable
+      reason; it does **not** silently switch to GitHub.
+    - ``package_source="github_release"`` (the default): fetches the same
+      version from the release of ``interface.github``.  Without
+      ``interface.github`` the version is reported but marked not installable.
 
-    ``source_config`` keys ``package_source`` / ``source`` / ``repo`` / ``tag``
-    / ``asset_pattern`` / ``token`` are deprecated and ignored; ``mirror_cdk``,
-    ``channel`` and ``project_shell_hint`` are still honoured.  Returns
+    ``source_config`` keys ``repo`` / ``tag`` / ``asset_pattern`` / ``token``
+    are deprecated and ignored; ``package_source``, ``mirror_cdk``, ``channel``
+    and ``project_shell_hint`` are honoured.  Returns
     ``None`` when the project is already up to date or has no
     ``mirrorchyan_rid``; the returned discovery carries the §8 result fields
     (``cdk_status`` / ``cdk_message`` / ``cdk_expired_time`` / ``message`` /
@@ -715,13 +736,17 @@ async def _discover_project_update_detailed(
         send_update_log("MirrorChyan CDK: 已配置")
     else:
         send_update_log(
-            "MirrorChyan CDK 未配置：仍通过 Mirror酱 查版本，更新包将从 GitHub Release 下载"
+            "MirrorChyan CDK 未配置：仍可通过 Mirror酱 查版本，但拿不到下载地址"
         )
 
+    # **查版本一律不带 CDK。** Mirror 酱在有更新且 CDK 有效时会签发一个一次性
+    # 下载地址，而它能计数的就是这一下签发——带着 CDK 查一次版本就可能扣掉一次
+    # 今日下载额度。运行前自动更新意味着每跑一次脚本查一次，编辑页那个「检查
+    # 更新」按钮也随手就点，这些都不该烧额度。真要下载时再带 CDK 查第二次。
     version_check = await _query_mirrorchyan_latest(
         interface_model,
         current_version=current,
-        mirror_cdk=mirror_cdk,
+        mirror_cdk="",
         channel=channel,
         proxy=proxy,
         prefer_full=prefer_full_package,
@@ -734,26 +759,64 @@ async def _discover_project_update_detailed(
         reason = f"已是最新版本: {current or latest}"
         return None, version_check, reason
 
-    if version_check.download_url:
-        discovery = _discovery_from_mirror_check(version_check)
-        send_update_log(f"install package source: MirrorChyan; version={latest}")
-        return _attach_version_check(discovery, version_check, current), version_check, None
+    # 下载源由用户在脚本配置里显式选定，**不做自动分流**。选 Mirror 酱就必须
+    # 自己填 CDK；CDK 缺失或不可用时明确报出原因，不悄悄换成 GitHub——用户得
+    # 知道自己在从哪下载，出问题才查得动。
+    requested = _requested_package_source(config)
 
-    fallback_reason = version_check.fallback_reason
-    repo = _normalize_github_repo(str(interface_model.github or ""))
-    if not repo:
-        reason = (
-            f"{fallback_reason}，且 interface.json 未声明 github 仓库，无法下载更新包"
-        )
+    def unavailable(reason: str):
         send_update_log(reason)
         discovery = MaaFWProjectUpdateDiscovery(
             source="mirrorchyan",
             version=latest,
             unavailable_reason=reason,
         )
-        return _attach_version_check(discovery, version_check, current), version_check, None
+        return (
+            _attach_version_check(discovery, version_check, current),
+            version_check,
+            None,
+        )
 
-    send_update_log(f"{fallback_reason}，改从 GitHub Release 下载: {repo}")
+    if requested == "mirrorchyan":
+        if not mirror_cdk:
+            return unavailable(
+                "未配置 Mirror酱 CDK；"
+                "更新源选的是 Mirror 酱，请填写 CDK 或改用 GitHub 源"
+            )
+        # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
+        # 这一次才可能扣今日下载额度，而它对应一次真实下载。
+        send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
+        authorized = await _query_mirrorchyan_latest(
+            interface_model,
+            current_version=current,
+            mirror_cdk=mirror_cdk,
+            channel=channel,
+            proxy=proxy,
+            prefer_full=prefer_full_package,
+            send_log=send_update_log,
+        )
+        # CDK 状态以带 CDK 的这次为准：不带 CDK 那次只知道有没有新版本。
+        version_check = authorized
+        if authorized.download_url is None:
+            return unavailable(
+                f"{authorized.fallback_reason}；"
+                "更新源选的是 Mirror 酱，请检查 CDK 或改用 GitHub 源"
+            )
+        discovery = _discovery_from_mirror_check(authorized)
+        send_update_log(f"install package source: MirrorChyan; version={latest}")
+        return (
+            _attach_version_check(discovery, authorized, current),
+            authorized,
+            None,
+        )
+
+    repo = _normalize_github_repo(str(interface_model.github or ""))
+    if not repo:
+        return unavailable(
+            "更新源选的是 GitHub，但 interface.json 未声明 github 仓库，无法下载更新包"
+        )
+
+    send_update_log(f"install package source: GitHub Release; repo={repo}")
     try:
         github_discovery = await _check_github_release_update(
             interface_model,
@@ -763,26 +826,16 @@ async def _discover_project_update_detailed(
             target_version=latest,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
-        # GitHub 回退失败不阻断任务：报为「有更新但不可安装」，原因留在
+        # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
         # unavailable_reason / skipped_reason 里，让上层照常继续运行脚本。
-        reason = f"GitHub Release 查询失败: {_sanitize_log_message(str(exc))}"
-        send_update_log(reason)
-        discovery = MaaFWProjectUpdateDiscovery(
-            source="mirrorchyan",
-            version=latest,
-            unavailable_reason=reason,
+        return unavailable(
+            f"GitHub Release 查询失败: {_sanitize_log_message(str(exc))}"
         )
-        return _attach_version_check(discovery, version_check, current), version_check, None
 
     if github_discovery is None:
-        discovery = MaaFWProjectUpdateDiscovery(
-            source="mirrorchyan",
-            version=latest,
-            unavailable_reason=(
-                f"GitHub 仓库 {repo} 没有与 Mirror酱 版本 {latest} 匹配的 Release"
-            ),
+        return unavailable(
+            f"GitHub 仓库 {repo} 没有与 Mirror酱 版本 {latest} 匹配的 Release"
         )
-        return _attach_version_check(discovery, version_check, current), version_check, None
 
     if github_discovery.candidate is not None:
         # Keep the target identity from MirrorChyan even when GitHub spells

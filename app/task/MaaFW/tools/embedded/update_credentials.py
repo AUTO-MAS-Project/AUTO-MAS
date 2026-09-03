@@ -22,8 +22,14 @@
 配置留空时用全局配置兜底这件事只在这里做一次。API 侧复制的是同一表达式，
 所以逻辑必须保持极简：
 
-- ``cdk``：脚本级 ``Update.MirrorChyanCDK`` 明文，空则全局 ``Update.MirrorChyanCDK``
-- ``channel``：脚本级 ``Update.Channel``，空则全局 ``Update.Channel``，再空则 ``stable``
+三项全部只看脚本级，**不做全局兜底**：
+
+- ``source``：``Update.Source``，``MirrorChyan`` / ``GitHub``（默认 GitHub）
+- ``cdk``：``Update.MirrorChyanCDK`` 明文，用户自己填，空就是空
+- ``channel``：``Update.Channel``（默认 ``stable``）
+
+全局那两项（``Update.MirrorChyanCDK`` / ``Update.Channel``）服务的是 MAS 自身的
+更新，和脚本本体的版本档位不是一回事，串在一起只会让人猜自己在用哪个。
 
 任何日志都不得出现 CDK 明文，打码用 :func:`describe_cdk`。
 """
@@ -39,15 +45,33 @@ AUTO_UPDATE_MODES: tuple[AutoUpdateMode, ...] = ("Off", "BeforeRun", "AfterRun")
 DEFAULT_AUTO_UPDATE_MODE: AutoUpdateMode = "BeforeRun"
 DEFAULT_UPDATE_CHANNEL = "stable"
 
+UpdateSource = Literal["MirrorChyan", "GitHub"]
+
+# 与 MaaFWConfig.Update_Source 的 OptionsValidator、schema 的 Literal、前端的
+# updateSourceOptions 必须一致；任一处多给一项，用户选了就会 422 或被静默纠回。
+UPDATE_SOURCES: tuple[UpdateSource, ...] = ("MirrorChyan", "GitHub")
+DEFAULT_UPDATE_SOURCE: UpdateSource = "GitHub"
+
+# 核心更新包内部用的源名；配置里的展示名映射到它。
+PACKAGE_SOURCE_BY_UPDATE_SOURCE: dict[str, str] = {
+    "MirrorChyan": "mirrorchyan",
+    "GitHub": "github_release",
+}
+
 
 @dataclass(frozen=True)
 class MaaFWUpdateCredentials:
-    """合并全局兜底后的更新凭据。"""
+    """脚本级更新凭据。不做全局兜底，所见即所得。"""
 
+    source: UpdateSource
     cdk: str
     channel: str
-    # 供日志说明 CDK 来自哪一层；不携带明文
-    cdk_origin: Literal["script", "global", "none"]
+
+    @property
+    def package_source(self) -> str:
+        """核心更新包用的内部源名。"""
+
+        return PACKAGE_SOURCE_BY_UPDATE_SOURCE[self.source]
 
 
 def _read_text(config: Any, group: str, name: str) -> str:
@@ -59,24 +83,17 @@ def _read_text(config: Any, group: str, name: str) -> str:
         return ""
 
 
-def resolve_update_credentials(
-    script_config: Any, global_config: Any
-) -> MaaFWUpdateCredentials:
-    """脚本级优先、全局兜底，得到传给核心更新包的明文 CDK 与渠道。"""
+def resolve_update_credentials(script_config: Any) -> MaaFWUpdateCredentials:
+    """只读脚本级配置，得到传给核心更新包的下载源、明文 CDK 与渠道。"""
 
-    script_cdk = _read_text(script_config, "Update", "MirrorChyanCDK")
-    if script_cdk:
-        cdk, origin = script_cdk, "script"
-    else:
-        global_cdk = _read_text(global_config, "Update", "MirrorChyanCDK")
-        cdk, origin = (global_cdk, "global") if global_cdk else ("", "none")
-
+    source = _read_text(script_config, "Update", "Source")
+    if source not in UPDATE_SOURCES:
+        source = DEFAULT_UPDATE_SOURCE
+    cdk = _read_text(script_config, "Update", "MirrorChyanCDK")
     channel = (
-        _read_text(script_config, "Update", "Channel")
-        or _read_text(global_config, "Update", "Channel")
-        or DEFAULT_UPDATE_CHANNEL
+        _read_text(script_config, "Update", "Channel") or DEFAULT_UPDATE_CHANNEL
     )
-    return MaaFWUpdateCredentials(cdk=cdk, channel=channel, cdk_origin=origin)
+    return MaaFWUpdateCredentials(source=source, cdk=cdk, channel=channel)
 
 
 def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
@@ -89,17 +106,13 @@ def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
 
 
 def describe_cdk(credentials: MaaFWUpdateCredentials) -> str:
-    """给日志用的 CDK 描述：只说有没有、来自哪一级，一个字符都不露。
+    """给日志用的 CDK 描述：只说有没有，一个字符都不露。
 
     不打印前几位：Mirror 酱的 CDK 前缀高度重复（实测样例全是 ``0001bf52`` 开头），
-    露出来既帮不上排查，又和核心包「只记有无」的口径不一致。真要区分是哪个 CDK
-    在生效，看「脚本级/全局」就够了。
+    露出来既帮不上排查，又和核心包「只记有无」的口径不一致。
     """
 
-    if not credentials.cdk:
-        return "未配置"
-    origin = "脚本级" if credentials.cdk_origin == "script" else "全局"
-    return f"已配置（{origin}）"
+    return "已配置" if credentials.cdk else "未配置"
 
 
 __all__ = [
@@ -107,6 +120,10 @@ __all__ = [
     "AutoUpdateMode",
     "DEFAULT_AUTO_UPDATE_MODE",
     "DEFAULT_UPDATE_CHANNEL",
+    "DEFAULT_UPDATE_SOURCE",
+    "PACKAGE_SOURCE_BY_UPDATE_SOURCE",
+    "UPDATE_SOURCES",
+    "UpdateSource",
     "MaaFWUpdateCredentials",
     "describe_cdk",
     "resolve_auto_update_mode",

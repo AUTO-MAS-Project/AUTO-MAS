@@ -41,8 +41,8 @@ export type MaaFWCdkStatus =
   | 'mismatched'
   | 'blocked'
 
-/** 这两种状态不是用户需要处理的问题：没填 CDK 时后端会自动改走 GitHub。 */
-const CDK_SILENT_STATUSES: ReadonlySet<string> = new Set(['ok', 'absent'])
+/** 项目更新的下载源；与 MaaFWScriptConfig['Update']['Source'] 一致。 */
+export type MaaFWUpdateSource = 'MirrorChyan' | 'GitHub'
 
 export interface MaaFWCdkResultLike {
   cdkStatus?: string | null
@@ -57,13 +57,20 @@ export interface MaaFWCdkWarning {
 }
 
 /**
- * `cdkStatus` 不是 ok / absent 时返回需要用 warning 展示的内容，否则返回 null。
+ * `cdkStatus` 有问题时返回需要用 warning 展示的内容，否则返回 null。
+ *
+ * - `ok` 永远不提示；
+ * - `absent` 只在更新源是 Mirror 酱时才是问题：没填 CDK 就下不了，后端不会替用户
+ *   改走 GitHub。更新源是 GitHub 时 CDK 不参与下载，缺失不提示；
+ * - 其余状态（过期 / 错误 / 次数用尽 / 类型不符 / 封禁）一律提示，文案优先用后端给的。
  */
 export const resolveCdkWarning = (
-  result: MaaFWCdkResultLike | null | undefined
+  result: MaaFWCdkResultLike | null | undefined,
+  source?: MaaFWUpdateSource | string | null
 ): MaaFWCdkWarning | null => {
   const status = typeof result?.cdkStatus === 'string' ? result.cdkStatus.trim() : ''
-  if (!status || CDK_SILENT_STATUSES.has(status)) return null
+  if (!status || status === 'ok') return null
+  if (status === 'absent' && source !== 'MirrorChyan') return null
   const message = typeof result?.cdkMessage === 'string' ? result.cdkMessage.trim() : ''
   return { status, message }
 }

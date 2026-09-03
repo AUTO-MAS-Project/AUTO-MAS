@@ -12,13 +12,13 @@ export type MaaFWConfig_Update = {
      */
     IfAutoUpdate?: (boolean | null);
     /**
-     * [已废弃] 项目更新源；版本检查固定走 Mirror 酱，下载源按 CDK 自动分流
+     * 项目更新包下载源：Mirror 酱（需自行填写 CDK）/ GitHub
      */
-    Source?: ('' | 'MirrorChyan' | 'GitHub' | null);
+    Source?: ('MirrorChyan' | 'GitHub' | null);
     /**
-     * 项目更新渠道：稳定版 / 测试版 / 内测版，留空时使用全局更新渠道
+     * 项目更新渠道：稳定版 / 测试版
      */
-    Channel?: ('' | 'stable' | 'beta' | 'alpha' | null);
+    Channel?: ('stable' | 'beta' | null);
     /**
      * Mirror 酱 CDK，留空时使用全局项目更新 CDK
      */

@@ -235,11 +235,13 @@ export interface MaaFWScriptConfig {
     CloseOnFinish: boolean
   }
   Update: {
-    /** 自动更新时机：不更新 / 运行前 / 运行后。来源分流（Mirror 酱 / GitHub）由后端决定。 */
+    /** 自动更新时机：不更新 / 运行前 / 运行后。 */
     AutoUpdateMode: MaaFWAutoUpdateMode
-    /** 更新通道；空串表示跟随全局设置。 */
-    Channel: '' | 'stable' | 'beta' | 'alpha'
-    /** 脚本自己的 Mirror 酱 CDK；空串表示使用全局设置中的 CDK。 */
+    /** 更新包的下载源，由用户显式选择，没有「自动」；默认 GitHub（零配置可用）。 */
+    Source: 'MirrorChyan' | 'GitHub'
+    /** 更新通道：稳定版 / 测试版，默认稳定版；不跟随全局，也不开放 alpha。 */
+    Channel: 'stable' | 'beta'
+    /** 脚本自己的 Mirror 酱 CDK，选 Mirror 酱作为更新源时必填；不从全局设置兜底。 */
     MirrorChyanCDK: string
     /**
      * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，

@@ -74,12 +74,13 @@ CDK_EXPIRY_WARNING_DAYS = 7
 
 _UPDATE_SOURCE_ZH = {"mirrorchyan": "Mirror 酱", "github": "GitHub"}
 # 核心包没给 cdk_message 时的兜底文案；正常情况下以核心包的原文为准
+# 不再说「改用 GitHub」：下载源是用户选的，CDK 有问题时不会自动换源。
 _CDK_STATUS_FALLBACK_ZH = {
-    "expired": "Mirror 酱 CDK 已过期，本次改用 GitHub 下载",
-    "invalid": "Mirror 酱 CDK 无效，本次改用 GitHub 下载",
-    "quota": "Mirror 酱 CDK 今日下载次数已用尽，本次改用 GitHub 下载",
-    "mismatched": "Mirror 酱 CDK 类型与该资源不匹配，本次改用 GitHub 下载",
-    "blocked": "Mirror 酱 CDK 已被封禁，本次改用 GitHub 下载",
+    "expired": "Mirror 酱 CDK 已过期",
+    "invalid": "Mirror 酱 CDK 无效",
+    "quota": "Mirror 酱 CDK 今日下载次数已用尽",
+    "mismatched": "Mirror 酱 CDK 类型与该资源不匹配",
+    "blocked": "Mirror 酱 CDK 已被封禁",
 }
 
 NoticeLevel = Literal["info", "warning"]
@@ -439,6 +440,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         kwargs: dict[str, Any] = {
             "mirror_cdk": credentials.cdk,
             "channel": credentials.channel,
+            # 下载源由用户显式选定，核心包不再自动分流。
+            "source_config": {"package_source": credentials.package_source},
             "send_log": self._append_update_log,
             "project_lock_already_held": False,
         }
@@ -473,10 +476,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self._append_update_log("受管项目由 Store 管理版本，跳过原地更新")
             return
 
-        credentials = resolve_update_credentials(self.script_config, Config)
+        credentials = resolve_update_credentials(self.script_config)
         self._append_update_log(
-            f"开始{phase_zh}检查 MFW 项目更新：渠道 {credentials.channel}，"
-            f"Mirror 酱 CDK {describe_cdk(credentials)}"
+            f"开始{phase_zh}检查 MFW 项目更新：下载源 {credentials.source}，"
+            f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}"
         )
 
         try:
