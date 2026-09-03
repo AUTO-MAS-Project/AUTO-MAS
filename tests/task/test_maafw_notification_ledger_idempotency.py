@@ -3,8 +3,6 @@ import unittest
 import uuid
 from pathlib import Path
 
-import app.core
-
 from app.task.MaaFW.tools.notify.ledger import (
     MaaFWNotificationClaim,
     MaaFWNotificationLedger,

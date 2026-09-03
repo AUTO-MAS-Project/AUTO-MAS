@@ -727,7 +727,7 @@ class AutoProxyTask(TaskExecuteBase):
             err_log = getattr(self.script_info, "_m9a_err_log", [])
             err_suffix = f"（{err_log[-1]}）" if err_log else ""
             logger.warning(f"虚拟用户: 更新超时（10分钟）{err_suffix}")
-            self.cur_user_log.status = f"M9A 更新超时"
+            self.cur_user_log.status = "M9A 更新超时"
             self.wait_event.set()
             return
 
