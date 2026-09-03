@@ -401,13 +401,3 @@ def _parse_cookie_string(cookie_str: str) -> dict[str, str]:
     return cookies
 
 
-async def exchange_stoken(
-    game_token: str,
-    uid: str,
-    proxy: str | None = None,
-) -> dict:
-    """兼容接口：Passport 模式下此函数不被调用，cookies 直接从响应头获取。
-
-    保留此函数以兼容 API 路由层的调用。
-    """
-    return {"error": "Passport 模式不需要 exchange_stoken，请直接使用 cookies_str"}

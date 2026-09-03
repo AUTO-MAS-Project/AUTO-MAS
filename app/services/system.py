@@ -254,15 +254,6 @@ class _SystemHandler:
 
         logger.success("模拟器进程清除完成")
 
-    async def is_startup(self) -> bool:
-        """判断程序是否已经开机自启。
-
-        平台不支持开机自启时抛出 UnsupportedPlatformError, 不与「未开启」
-        共用 False; 调用方需在 API 边界转换为用户可见的错误。
-        """
-
-        return await startup.is_enabled()
-
     async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
         """根据路径中止进程。
 
@@ -364,18 +355,6 @@ class _SystemHandler:
             uncertain_pids=uncertain_pids,
             complete=complete,
         )
-
-    async def search_pids(self, path: Path | str) -> list[int]:
-        """
-        根据路径查找进程PID
-
-        :param path: 进程路径
-        :return: 匹配的进程PID列表
-        """
-
-        logger.info(f"开始查找进程 PID: {path}")
-
-        return (await self._scan_processes_by_path(path)).pids
 
 
 System = _SystemHandler()
