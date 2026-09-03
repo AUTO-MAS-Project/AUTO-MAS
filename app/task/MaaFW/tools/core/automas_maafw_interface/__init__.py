@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from .preview import build_task_alias_index
 from .loader import (
     MaaFWInterfaceLoadError,
     load_interface_model,
@@ -17,6 +16,7 @@ from .models import (
     MaaFWSetting,
     MaaFWTask,
 )
+from .preview import build_task_alias_index
 from .service import MaaFWInterfaceService
 from .task_config import (
     MaaFWTaskConfig,

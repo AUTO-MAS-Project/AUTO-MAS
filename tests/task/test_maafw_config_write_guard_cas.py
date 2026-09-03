@@ -6,8 +6,6 @@ import unittest
 import uuid
 from pathlib import Path
 
-import app.core
-
 from app.task.MaaFW.tools.config_write_guard import (
     MaaFWConfigCorruptionError,
     MaaFWConfigSnapshot,

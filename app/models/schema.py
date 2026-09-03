@@ -873,29 +873,11 @@ class BetterGIUserConfig_Switch(BaseModel):
     )
 
 
-class BetterGIUserConfig_Info(BaseModel):
+class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     """BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）"""
 
-    Name: Optional[str] = Field(default=None, description="用户名")
-    Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    IfScriptBeforeTask: Optional[bool] = Field(
-        default=None, description="是否在任务前执行脚本"
-    )
-    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
-    IfScriptAfterTask: Optional[bool] = Field(
-        default=None, description="是否在任务后执行脚本"
-    )
-    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
-    Notes: Optional[str] = Field(default=None, description="备注")
-    Tag: Optional[str] = Field(
-        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
-    )
-    IfUseMasConfig: Optional[bool] = Field(
-        default=None, description="是否使用用户独立一条龙配置"
-    )
 
 
 class BetterGIUserConfig_OneDragon(BaseModel):
@@ -928,13 +910,6 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
     LastProxyStatus: Optional[str] = Field(
         default=None, description="上次代理状态（未知/成功/失败）"
     )
-    LastOneDragonConfig: Optional[str] = Field(
-        default=None, description="上次运行的一条龙配置名"
-    )
-
-
-class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
-    """BetterGI 用户通知（复用通用字段）"""
 
 
 class BetterGIUserConfig(BaseModel):
@@ -943,7 +918,7 @@ class BetterGIUserConfig(BaseModel):
     Switch: Optional[BetterGIUserConfig_Switch] = Field(default=None, description="切换账号配置")
     OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(default=None, description="一条龙配置")
     Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[BetterGIUserConfig_Notify] = Field(default=None, description="单独通知")
+    Notify: Optional[GeneralUserConfig_Notify] = Field(default=None, description="单独通知")
 
 
 class GeneralConfig_Info(BaseModel):
@@ -1154,14 +1129,6 @@ class OkNteConfig(BaseModel):
     Run: Optional[OkNteConfig_Run] = Field(default=None, description="运行配置")
 
 
-class BetterGIConfig_Info(GeneralConfig_Info):
-    """BetterGI 脚本基础信息（复用通用字段）"""
-
-
-class BetterGIConfig_Run(GeneralConfig_Run):
-    """BetterGI 运行配置（复用通用字段）"""
-
-
 class BetterGIConfig_Game(BaseModel):
     """BetterGI 游戏配置"""
 
@@ -1174,8 +1141,8 @@ class BetterGIConfig_Game(BaseModel):
 
 
 class BetterGIConfig(BaseModel):
-    Info: Optional[BetterGIConfig_Info] = Field(default=None, description="脚本基础信息")
-    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 

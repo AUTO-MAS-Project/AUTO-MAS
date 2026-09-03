@@ -20,24 +20,24 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import psutil
 import asyncio
+import json
+
+import psutil
 
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
-    import win32gui
     import win32con
+    import win32gui
     import win32process
-from contextlib import suppress
 import time
+from contextlib import suppress
 from pathlib import Path
 
-from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
 from app.models.config import EmulatorConfig
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import ProcessRunner, get_logger
-
 
 logger = get_logger("MuMu模拟器管理")
 

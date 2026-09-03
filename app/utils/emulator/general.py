@@ -20,24 +20,24 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
-import json
-import shlex
 import asyncio
+import json
+import re
+import shlex
 
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
-    import win32gui
     import keyboard
+    import win32gui
 import time
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.utils.ProcessManager import ProcessManager
-from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
 from app.models.config import EmulatorConfig
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import get_logger
+from app.utils.ProcessManager import ProcessManager
 
 logger = get_logger("通用模拟器管理")
 

@@ -34,17 +34,15 @@ import aiofiles
 import httpx
 from packaging import version
 
-from .async_operation import run_blocking_to_completion
-
 from app.utils import get_logger
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.security import sanitize_log_message
 
+from .async_operation import run_blocking_to_completion
 from .core.automas_maafw_interface.models import MaaFWInterface
 from .core.automas_maafw_project_update.updater import (
     detect_maafw_project_shell_hint,
 )
-
 
 logger = get_logger("MaaFW 项目更新")
 
@@ -906,26 +904,45 @@ def _is_within_path(path: Path, base_dir: Path) -> bool:
 
 from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWDownloadedProjectPackage as _CoreDownloadedProjectPackage,
+)
+from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWProjectUpdateCandidate as _CoreCandidate,
+)
+from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWProjectUpdateDiscovery as _CoreDiscovery,
+)
+from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWProjectUpdateError as _CoreUpdateError,
+)
+from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     MaaFWProjectUpdateResult as _CoreResult,
+)
+from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     apply_maafw_project_update as _core_apply_update,
+)
+from .core.automas_maafw_project_update import (  # noqa: E402  (compat facade)
     discover_maafw_project_update as _core_discover_update,
 )
-from .core.automas_maafw_project_update.apply import apply_package_transaction
-from .core.automas_maafw_project_update.contracts import project_fingerprint
-from .core.automas_maafw_project_update.state import (
+from .core.automas_maafw_project_update.apply import (  # noqa: E402  (compat facade)
+    apply_package_transaction,
+)
+from .core.automas_maafw_project_update.contracts import (  # noqa: E402  (compat facade)
+    project_fingerprint,
+)
+from .core.automas_maafw_project_update.state import (  # noqa: E402  (compat facade)
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
 )
-from .core.automas_maafw_project_update.transport import download_resumable
+from .core.automas_maafw_project_update.transport import (  # noqa: E402  (compat facade)
+    download_resumable,
+)
 
 MaaFWProjectUpdateCandidate = _CoreCandidate
 MaaFWProjectUpdateDiscovery = _CoreDiscovery
 MaaFWDownloadedProjectPackage = _CoreDownloadedProjectPackage
 MaaFWProjectUpdateResult = _CoreResult
-MaaFWProjectUpdateError = _CoreUpdateError
+# 有意覆盖上方旧定义：compat facade 以 core 实现为准（见上方 Compatibility facade 注释）
+MaaFWProjectUpdateError = _CoreUpdateError  # noqa: F811
 
 
 def _compat_source_config(
@@ -955,7 +972,7 @@ def _compat_source_config(
     }
 
 
-async def update_maafw_project_if_needed(
+async def update_maafw_project_if_needed(  # noqa: F811  (compat facade: 有意覆盖顶部旧实现)
     project_path: Path,
     interface_model: Any,
     *,

@@ -20,41 +20,42 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
+import asyncio
+import re
 import shlex
 import shutil
-import asyncio
 import time
-import re
-from pathlib import Path
+import uuid
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import GeneralConfig, GeneralUserConfig
-from app.models.emulator import DeviceBase
-from app.services import Notify, System
-from app.utils import (
-    get_logger,
-    LogMonitor,
-    ProcessManager,
-    ProcessInfo,
-    strptime,
-    is_process_running,
-    load_patterns,
-    apply_patterns,
-    flush_patterns,
-    compile_log_signs,
-)
-from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 from app.log_box.hooks import make_line_hook
 from app.log_box.markers import parse_marker
+from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.services import Notify, System
+from app.utils import (
+    LogMonitor,
+    ProcessInfo,
+    ProcessManager,
+    apply_patterns,
+    compile_log_signs,
+    flush_patterns,
+    get_logger,
+    is_process_running,
+    load_patterns,
+    strptime,
+)
 from app.utils.constants import UTC4
+from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+
 from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")
@@ -331,7 +332,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
-            self.script_info.log = f"正在启动游戏 / 模拟器"
+            self.script_info.log = "正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
             if self.game_manager is not None:
                 try:
@@ -611,7 +612,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
-        logger.info(f"开始配置脚本运行参数: 自动代理")
+        logger.info("开始配置脚本运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
         await System.kill_process(self.script_exe_path)
@@ -640,7 +641,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
             )
 
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     def _format_push_log(
         self,

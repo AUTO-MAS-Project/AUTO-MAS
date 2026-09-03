@@ -770,9 +770,6 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config is None:
             return
 
-        await self.cur_user_config.set(
-            "Data", "LastOneDragonConfig", getattr(self, "one_dragon_config", "")
-        )
         if self.run_book:
             if (
                 self.cur_user_config.get("Data", "ProxyTimes") == 0

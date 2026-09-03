@@ -2,12 +2,12 @@
 
 from .platform.common.process import (
     ProcessInfo,
-    is_process_alive,
     ProcessManager,
     ProcessResult,
     ProcessRunner,
     get_main_window_handle,
     get_window_handles,
+    is_process_alive,
     is_process_running,
     match_process,
 )

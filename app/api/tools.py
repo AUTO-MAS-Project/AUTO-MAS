@@ -22,27 +22,28 @@
 
 
 import asyncio
-from fastapi import APIRouter, Body
 from datetime import datetime
 from inspect import isawaitable
 from uuid import UUID
 
+from fastapi import APIRouter, Body
+
 from app.core import Config
 from app.core.notify import DispatchResult
 from app.models.schema import (
-    ToolsGetOut,
-    ToolsConfig,
-    OutBase,
-    ToolsUpdateIn,
     GameSignAccountCreateOut,
-    GameSignAccountGroupConfig,
-    GameSignAccountGetIn,
-    GameSignAccountUpdateIn,
     GameSignAccountDeleteIn,
+    GameSignAccountGetIn,
+    GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
+    GameSignAccountUpdateIn,
+    OutBase,
     SklandLoginIn,
     TaygedoLoginIn,
+    ToolsConfig,
+    ToolsGetOut,
+    ToolsUpdateIn,
 )
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
@@ -67,7 +68,9 @@ def _track_game_sign_notification(task: asyncio.Task) -> None:
         logger.warning(f"后台游戏签到通知部分失败: {'、'.join(result.failed)}")
 
 
-async def _dispatch_game_sign_notification(results: list[dict]) -> DispatchResult | None:
+async def _dispatch_game_sign_notification(
+    results: list[dict],
+) -> DispatchResult | None:
     """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
 
     from app.tools.game_sign_notify import push_game_sign_notification
@@ -437,7 +440,6 @@ async def login_skland(
             validate_skland_credential,
         )
 
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
         serialized = await login_skland_with_password(
             credential.phone.strip(),
             credential.password.get_secret_value(),

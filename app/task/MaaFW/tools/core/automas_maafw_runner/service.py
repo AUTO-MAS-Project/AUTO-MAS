@@ -45,7 +45,6 @@ from .worker_registry import (
     MaaFWWorkerShutdownReport,
 )
 
-
 ProjectEnvironmentProgressCallback = Callable[[dict[str, Any]], None]
 _PROJECT_ENVIRONMENT_INPUTS = (
     "interface.json",

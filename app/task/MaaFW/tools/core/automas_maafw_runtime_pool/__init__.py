@@ -3,17 +3,17 @@ from __future__ import annotations
 from .cache import prune_uv_cache
 from .identity import (
     MaaFWRuntimeIdentityError,
-    build_runtime_identity,
     build_runtime_id,
+    build_runtime_identity,
     canonicalize_requirements,
     find_maafw_requirement,
 )
 from .installer import install_python_runtime
 from .pool import (
-    MaaFWRuntimePool,
-    MaaFWRuntimePoolError,
     POOL_MARKER_NAME,
     POOL_SCHEMA_VERSION,
+    MaaFWRuntimePool,
+    MaaFWRuntimePoolError,
     RuntimeCachePruner,
     RuntimeInstaller,
 )

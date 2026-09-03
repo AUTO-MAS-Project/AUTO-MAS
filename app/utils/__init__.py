@@ -28,8 +28,8 @@ from .constants import *
 from .logger import get_logger
 from .paths import resource_path
 from .security import (
-    dpapi_encrypt,
     dpapi_decrypt,
+    dpapi_encrypt,
     format_exception_reason,
     sanitize_log_message,
 )

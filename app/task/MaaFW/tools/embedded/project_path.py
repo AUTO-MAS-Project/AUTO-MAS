@@ -4,7 +4,6 @@ import os
 import threading
 from pathlib import Path
 
-
 _ACTIVE_PROJECT_PATHS: set[str] = set()
 _ACTIVE_PROJECT_PATHS_LOCK = threading.Lock()
 

@@ -49,7 +49,6 @@ from app.services.wuthering_waves import (
 )
 from app.utils import get_logger
 
-
 logger = get_logger("鸣潮更新")
 
 # hpatchz 用于应用官方增量包。上游 sisong/HDiffPatch 为 MIT，与本项目 AGPL 兼容。

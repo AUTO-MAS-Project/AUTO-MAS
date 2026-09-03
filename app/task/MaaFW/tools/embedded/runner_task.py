@@ -19,14 +19,11 @@ import psutil
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
 from app.task.general.tools import execute_script_task
-from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.constants import UTC4
-from app.utils.io import migrate_legacy_dir
 from app.task.MaaFW.tools.core.automas_maafw_controller_win32.service import (
     MaaFWWin32ControllerService,
 )
@@ -47,12 +44,14 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
-from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
+from app.task.MaaFW.tools.notify import push_notification
+from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils.constants import UTC4
+from app.utils.io import migrate_legacy_dir
 
 from .project_path import release_project_path, try_reserve_project_path
 from .runtime_route import MaaFWManagedExecutionRoute, managed_execution_route
-
 
 logger = get_logger("MaaFW 插件自动代理")
 

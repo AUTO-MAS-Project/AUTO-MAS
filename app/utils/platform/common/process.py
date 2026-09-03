@@ -20,22 +20,26 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import os
 import subprocess
 import time
-import psutil
-import asyncio
-
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+
+import psutil
 
 from app.utils import get_logger
 from app.utils.platform import window
 from app.utils.platform.common.errors import UnsupportedPlatformError
 from app.utils.platform.process import platform_process
 
-from .process_runner import ProcessResult, ProcessRunner, create_subprocess
+from .process_runner import (  # noqa: F401  # 兼容 re-export：ProcessManager.py 经本模块再导出
+    ProcessResult,
+    ProcessRunner,
+    create_subprocess,
+)
 
 logger = get_logger("进程管理")
 

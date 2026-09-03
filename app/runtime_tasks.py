@@ -11,7 +11,6 @@ import logging
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-
 logger = logging.getLogger("AUTO-MAS运行时后台任务")
 T = TypeVar("T")
 

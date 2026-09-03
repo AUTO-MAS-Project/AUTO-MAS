@@ -21,7 +21,6 @@ from .contracts import (
 )
 from .state import DEFAULT_OPERATION_ROOT, UpdateOperationStore, project_lock
 
-
 ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
 MANIFEST_NAME = "resource-manifest.json"

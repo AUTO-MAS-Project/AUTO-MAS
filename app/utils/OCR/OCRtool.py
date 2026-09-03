@@ -1,17 +1,18 @@
 # ocr_tool.py
-import cv2
-from PIL import Image
-from rapidocr_onnxruntime import RapidOCR
 import subprocess
 from pathlib import Path
 
+import cv2
+from PIL import Image
+from rapidocr_onnxruntime import RapidOCR
+
 from app.utils import get_logger
-from app.utils.platform import window as platform_window
 from app.utils.exception import (
-    WindowsNotFoundException,
-    WindowsNotFocusException,
     OCRNotFoundTitleException,
+    WindowsNotFocusException,
+    WindowsNotFoundException,
 )
+from app.utils.platform import window as platform_window
 
 # OCR入门指南！
 # ┌────────────────────────────┐
@@ -218,7 +219,7 @@ class OCRTool:
             return
 
         # 重试一次
-        logger.warning(f"窗口未激活，再次尝试强制激活...")
+        logger.warning("窗口未激活，再次尝试强制激活...")
         cls._force_activate_window(hwnd)
         time.sleep(0.2)
 
@@ -357,7 +358,7 @@ class OCRTool:
             result = subprocess.run(cmd, capture_output=True, timeout=10, check=False)
 
             if result.returncode != 0:
-                raise RuntimeError(f"无法执行 adb devices 命令")
+                raise RuntimeError("无法执行 adb devices 命令")
 
             devices_output = result.stdout.decode("utf-8", errors="ignore")
             logger.debug(f"ADB devices 输出:\n{devices_output}")
@@ -404,7 +405,7 @@ class OCRTool:
                 )
 
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"ADB 命令超时")
+            raise RuntimeError("ADB 命令超时")
         except Exception as e:
             logger.error(f"检查/连接设备失败: {e}")
             raise
@@ -988,6 +989,7 @@ class OCRTool:
             OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
+
         import numpy as np
 
         # 使用传入的 title 或类的全局 title

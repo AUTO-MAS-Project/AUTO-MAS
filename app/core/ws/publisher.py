@@ -25,9 +25,10 @@ from typing import Mapping, Optional, Union
 
 from pydantic import BaseModel, JsonValue
 
+from app.utils.logger import get_logger
+
 from .manager import MainConnection
 from .protocol import build_message
-from app.utils.logger import get_logger
 
 logger = get_logger("WS发布器")
 

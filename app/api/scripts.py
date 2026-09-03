@@ -883,6 +883,8 @@ async def prepare_maafw_agent_env(
 
     # 这些模块会拉起 runtime_pool 与 agent_env，放在函数内延迟导入，
     # 避免所有 API 请求都为它们付出导入成本。
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
     from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
         MaaFWRunnerService,
     )
@@ -896,9 +898,6 @@ async def prepare_maafw_agent_env(
     from app.task.MaaFW.tools.embedded.runtime_route import (
         runtime_pool_route_from_service,
     )
-
-    from app.core.ws import protocol as ws_protocol
-    from app.core.ws.publisher import Publisher
 
     logs: list[str] = []
     # 准备过程可能持续数分钟（首次要下载 MaaFramework），全程把阶段、百分比
@@ -1065,8 +1064,9 @@ async def get_m9a_available_tasks(script_id: str):
     Returns:
         dict: 包含任务列表的响应
     """
-    from app.task.M9A.task_loader import M9ATaskLoader
     from pathlib import Path
+
+    from app.task.M9A.task_loader import M9ATaskLoader
 
     try:
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
@@ -1388,11 +1388,12 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
     try:
         import json
         import shutil
+
         from app.task.OkNte.config_schema import (
-            get_all_config_info,
             build_fields_for_config,
-            load_oknte_option_labels,
             ensure_oknte_daily_routine_configs,
+            get_all_config_info,
+            load_oknte_option_labels,
         )
 
         _, script_config = _oknte_script_config(script_id)

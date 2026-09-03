@@ -8,7 +8,6 @@ from app.utils.platform.common.errors import UnsupportedPlatformError
 from app.utils.platform.common.process import get_main_window_handle, get_window_handles
 from app.utils.platform.process import platform_process
 
-
 pytestmark = pytest.mark.skipif(IS_WINDOWS, reason="仅验证非 Windows 公共入口")
 
 

@@ -23,7 +23,6 @@
 import re
 from typing import Callable
 
-
 M7A_COMPLETION_MARKERS: tuple[str, ...] = ("停止运行",)
 
 HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT = 3

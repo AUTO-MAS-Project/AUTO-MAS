@@ -3,8 +3,8 @@ import unittest
 
 from fastapi import WebSocketDisconnect
 
-from app.core.ws.manager import _MainConnectionManager
 from app.core.ws import manager as manager_module
+from app.core.ws.manager import _MainConnectionManager
 
 
 class FakeWebSocket:

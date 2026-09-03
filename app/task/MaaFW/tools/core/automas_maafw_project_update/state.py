@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import re
 import socket
@@ -25,7 +25,6 @@ except ImportError:  # pragma: no cover - exercised on Windows CI only
     fcntl = None
 
 from urllib.parse import urlsplit
-
 
 DEFAULT_OPERATION_ROOT = Path.cwd() / "data" / "maafw_update_operations"
 DEFAULT_CACHE_ROOT = Path.cwd() / "data" / "maafw_update_cache"

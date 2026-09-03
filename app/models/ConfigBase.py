@@ -22,31 +22,32 @@
 
 
 from __future__ import annotations
-import os
-import json
-import uuid
-import shlex
-import inspect
-import asyncio
-from copy import deepcopy
-from urllib.parse import urlparse
-from datetime import datetime
-from contextlib import suppress
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
-from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
-from app.utils.io import write_file
+import asyncio
+import inspect
+import json
+import os
+import shlex
+import uuid
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
+from urllib.parse import urlparse
+
+from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
 from app.utils.constants import (
-    RESERVED_NAMES,
-    ILLEGAL_CHARS,
-    KEYBOARD_KEYS,
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
-    FORBIDDEN_PATH_PREFIXES,
     FORBIDDEN_PATH_EXACT,
+    FORBIDDEN_PATH_PREFIXES,
+    ILLEGAL_CHARS,
+    KEYBOARD_KEYS,
+    RESERVED_NAMES,
 )
+from app.utils.io import write_file
 
 logger = get_logger("配置基类")
 
@@ -248,7 +249,7 @@ class JSONValidator(ValidatorBase):
 
     def correct(self, value):
         return (
-            value if self.validate(value) else ("{ }" if self.type == dict else "[ ]")
+            value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
         )
 
 
@@ -261,7 +262,7 @@ class EncryptValidator(ValidatorBase):
         try:
             dpapi_decrypt(value)
             return True
-        except:
+        except Exception:
             return False
 
     def correct(self, value: Any) -> Any:
@@ -718,7 +719,7 @@ class ConfigItem:
         # deepcopy new value
         try:
             self.value = deepcopy(value)
-        except:
+        except Exception:
             self.value = value
 
         if isinstance(self.validator, EncryptValidator):
@@ -767,7 +768,7 @@ class ConfigItem:
             槽函数，接收新值作为参数，支持同步和异步函数
         """
         if not callable(slot):
-            raise TypeError(f"槽函数必须是可调用对象")
+            raise TypeError("槽函数必须是可调用对象")
 
         if slot not in self._slots:
             self._slots.append(slot)
@@ -948,7 +949,7 @@ class ConfigBase(ABC):
             for name, item in info.items():
                 try:
                     item.setValue(working_data[group][name])
-                except:
+                except Exception:
                     if item.legacy_group_name is not None:
                         with suppress(Exception):
                             item.setValue(

@@ -20,44 +20,45 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import calendar
-import re
-import uuid
 import asyncio
+import calendar
+import json
+import re
 import shutil
+import uuid
 from copy import deepcopy
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
-from app.models.emulator import DeviceInfo, DeviceBase
+from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.io import read_file, write_file
+from app.task.general.tools import execute_script_task
+from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
-    UTC4,
-    MAA_TASKS,
-    MAA_TASKS_ZH,
-    MAA_STAGE_KEY,
+    ARKNIGHTS_PACKAGE_NAME,
     MAA_ANNIHILATION_FIGHT_BASE,
     MAA_REMAIN_FIGHT_BASE,
-    ARKNIGHTS_PACKAGE_NAME,
     MAA_RUN_MOOD_BOOK,
+    MAA_STAGE_KEY,
     MAA_TASK_TRANSITION_METHOD_BOOK,
+    MAA_TASKS,
+    MAA_TASKS_ZH,
+    UTC4,
 )
+from app.utils.io import read_file, write_file
+
 from .tools import (
-    push_notification,
     agree_bilibili,
-    update_maa,
     ensure_game_updated,
+    push_notification,
+    update_maa,
 )
-from app.task.general.tools import execute_script_task
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5

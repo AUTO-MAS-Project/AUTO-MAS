@@ -22,9 +22,9 @@
 
 
 from .bilibili import agree_bilibili
+from .game_update import ensure_game_updated
 from .notify import push_notification
 from .UpdateMAA import update_maa
-from .game_update import ensure_game_updated
 
 __all__ = [
     "agree_bilibili",

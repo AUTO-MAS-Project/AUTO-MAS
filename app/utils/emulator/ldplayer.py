@@ -20,21 +20,23 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import psutil
 import asyncio
+import json
+
+import psutil
 
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
-    import win32gui
     import keyboard
+    import win32gui
 import time
-from pydantic import BaseModel
 from pathlib import Path
 
-from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
+from pydantic import BaseModel
+
 from app.models.config import EmulatorConfig
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")

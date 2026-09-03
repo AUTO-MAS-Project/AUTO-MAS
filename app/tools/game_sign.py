@@ -34,6 +34,7 @@ from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
+
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
@@ -586,13 +587,13 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 if platform not in enabled_platforms:
                     enabled_platforms.append(platform)
             results.extend(run.results)
-            for field, updated_token in run.credential_updates.items():
-                if not updated_token or updated_token == tokens.get(field, ""):
+            for token_field, updated_token in run.credential_updates.items():
+                if not updated_token or updated_token == tokens.get(token_field, ""):
                     continue
                 try:
-                    await account.set("GameSignAccount", field, updated_token)
+                    await account.set("GameSignAccount", token_field, updated_token)
                 except Exception as e:
-                    logger.warning(f"[{account_name}] 保存{field}失败: {e}")
+                    logger.warning(f"[{account_name}] 保存{token_field}失败: {e}")
 
         # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
         # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。
