@@ -5,7 +5,7 @@
 
 import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
-import { Modal } from 'ant-design-vue'
+import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
@@ -55,6 +55,8 @@ const NEXT_CYCLE_DELAY = 30000
 const DEV_MODE_RETRY_DELAY = 3000
 // 倒计时消息停止更新后自动清除展示状态
 const POWER_COUNTDOWN_STALE_MS = 3000
+// 断开提示的通知 key：同一次断开只保留一条，重连成功后按 key 收起
+const DISCONNECT_NOTICE_KEY = 'app-lifecycle-disconnect'
 
 export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'error'
 
@@ -179,10 +181,8 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
 const handleConnected = async (): Promise<void> => {
   backendRestartAttempts = 0
   restartFailureShown = false
-  disconnectIncidentShown = false
   backendStatus.value = 'running'
-  closeDisconnectModal?.()
-  closeDisconnectModal = null
+  dismissDisconnectIncident()
   await refreshLifecycleSnapshots()
 }
 
@@ -310,8 +310,7 @@ export function disposeAppLifecycle(): void {
     window.clearTimeout(powerCountdownStaleTimer)
     powerCountdownStaleTimer = undefined
   }
-  closeDisconnectModal?.()
-  closeDisconnectModal = null
+  dismissDisconnectIncident()
   logger.info('应用生命周期协调器已释放')
 }
 
@@ -343,6 +342,8 @@ const runCloseFlow = async (): Promise<void> => {
 
   // 关闭流程期间停止普通自动重连；自动重启与 taskkill 互斥由 isClosing() 保证
   stopReconnect()
+  // 关闭流程开始即收起断开提示，不让它叠在关闭遮罩上
+  dismissDisconnectIncident()
 
   closeViaRuntime = await queryRuntimeSupervised()
   if (closeViaRuntime) {
@@ -549,10 +550,32 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
   return restartPromise
 }
 
-const showDisconnectIncident = (event: WSDisconnectEvent): void => {
+// ==================== 断开提示 ====================
+// 断开先只给右上角非阻塞通知：后端偶发抖动或 Electron 主动重启后端时几秒即恢复，
+// 一断开就弹阻塞式模态框只是噪音。生产模式仅在整轮重连失败后才升级为模态框；
+// 开发模式后端由开发者手动重启，属于常规操作，始终不弹模态框。
+
+const showDisconnectNotice = (event: WSDisconnectEvent): void => {
   if (disconnectIncidentShown) return
   disconnectIncidentShown = true
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
+  notification.warning({
+    key: DISCONNECT_NOTICE_KEY,
+    message: t('misc.lostConnectionBackend'),
+    description: t(
+      isBackendDevMode()
+        ? 'misc.devBackendReconnecting'
+        : 'misc.checkingBackendRecoveringAutomatically'
+    ),
+    // 持续到重连成功或关闭流程开始时按 key 收起，不自动消失
+    duration: null,
+  })
+}
+
+const escalateDisconnectIncident = (): void => {
+  // 只升级由断开事件开启的事故；开发模式与已升级过的事故不重复弹
+  if (!disconnectIncidentShown || closeDisconnectModal || isBackendDevMode()) return
+  notification.close(DISCONNECT_NOTICE_KEY)
   const modal = Modal.warning({
     title: t('misc.lostConnectionBackend'),
     content: t('misc.checkingBackendRecoveringAutomatically'),
@@ -561,6 +584,13 @@ const showDisconnectIncident = (event: WSDisconnectEvent): void => {
   if (modal && typeof modal.destroy === 'function') {
     closeDisconnectModal = () => modal.destroy()
   }
+}
+
+const dismissDisconnectIncident = (): void => {
+  disconnectIncidentShown = false
+  notification.close(DISCONNECT_NOTICE_KEY)
+  closeDisconnectModal?.()
+  closeDisconnectModal = null
 }
 
 const recoverAfterDisconnect = (): Promise<void> => {
@@ -587,12 +617,14 @@ const handleDisconnected = (event: WSDisconnectEvent): void => {
     return
   }
   backendStatus.value = 'stopped'
-  showDisconnectIncident(event)
+  showDisconnectNotice(event)
   void recoverAfterDisconnect()
 }
 
 const handleReconnectCycleFailed = async (): Promise<void> => {
   if (isClosing() || restartFailureShown) return
+  // 一整轮重连都没连上，才把非阻塞通知升级为模态框
+  escalateDisconnectIncident()
 
   const running = await queryBackendRunning()
   // IPC 查询期间关闭流程可能已开始：重查后再决策，避免在关闭态重建重连计时器

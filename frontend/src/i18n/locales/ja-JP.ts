@@ -2131,6 +2131,8 @@ export default {
     emulator: 'エミュレータ',
     checkingBackendRecoveringAutomatically:
       'バックエンドの状態を確認し、自動で復旧しています。接続が戻り次第、タスクの状態は HTTP スナップショットから再同期されます。',
+    devBackendReconnecting:
+      '開発モード：バックエンドは開発者が管理しています。再接続を続け、接続が戻ればこの通知は自動で消えます。',
     couldNotAddAccount: 'アカウントグループを追加できませんでした',
     gotIt: '了解',
     continueDownload: 'ダウンロードを続ける',
