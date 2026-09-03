@@ -321,15 +321,15 @@ class M9AManager(TaskExecuteBase):
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_user = [
-                u.name for u in self.script_info.user_list if u.status == "异常"
-            ]
-            over_user = [
-                u.name for u in self.script_info.user_list if u.status == "完成"
-            ]
-            wait_user = [
-                u.name for u in self.script_info.user_list if u.status == "等待"
-            ]
+            error_count = sum(
+                1 for u in self.script_info.user_list if u.status == "异常"
+            )
+            over_count = sum(
+                1 for u in self.script_info.user_list if u.status == "完成"
+            )
+            wait_count = sum(
+                1 for u in self.script_info.user_list if u.status == "等待"
+            )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             task_result = append_task_game_sign_summary(
@@ -341,8 +341,8 @@ class M9AManager(TaskExecuteBase):
                 "script_name": self.script_info.name or "空白",
                 "start_time": self.begin_time,
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": len(over_user),
-                "uncompleted_count": len(error_user) + len(wait_user),
+                "completed_count": over_count,
+                "uncompleted_count": error_count + wait_count,
                 "result": task_result,
                 "game_sign_summary": has_game_sign_summary,
             }

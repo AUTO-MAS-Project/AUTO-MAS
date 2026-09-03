@@ -472,6 +472,55 @@ class QueueConfig(ConfigBase):
         return await super().load(data)
 
 
+def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
+    """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
+    if (
+        datetime.strptime(config.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+        == datetime.now(tz=UTC4).date()
+    ):
+        return {
+            "text": f"{label}：已代理{config.get('Data', 'ProxyTimes')}次",
+            "color": "green",
+        }
+    return {"text": f"{label}：未代理", "color": "orange"}
+
+
+def _tag_remained_days(config: ConfigBase) -> dict:
+    """剩余天数标签。"""
+    remained_day = config.get("Info", "RemainedDay")
+    if remained_day == -1:
+        tag_color = "gold"
+    elif remained_day == 0:
+        tag_color = "red"
+    elif remained_day <= 3:
+        tag_color = "orange"
+    elif remained_day <= 7:
+        tag_color = "yellow"
+    elif remained_day <= 30:
+        tag_color = "blue"
+    else:
+        tag_color = "green"
+    return {
+        "text": (
+            f"剩余天数：{remained_day}天"
+            if remained_day >= 0
+            else "剩余天数：无期限"
+        ),
+        "color": tag_color,
+    }
+
+
+def _tag_notes(config: ConfigBase) -> dict:
+    """备注标签。"""
+    notes = config.get("Info", "Notes")
+    return {
+        "text": (
+            f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+        ),
+        "color": "pink",
+    }
+
+
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
 
@@ -747,43 +796,10 @@ class MaaUserConfig(ConfigBase):
         tags = []
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 基建模式标签
         infrast_mode = self.get("Info", "InfrastMode")
@@ -838,15 +854,7 @@ class MaaUserConfig(ConfigBase):
             )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1104,43 +1112,10 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 理智任务标签
         if self.get("Task", "IfSanity"):
@@ -1183,15 +1158,7 @@ class MaaEndUserConfig(ConfigBase):
                 )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1595,43 +1562,10 @@ class SrcUserConfig(ConfigBase):
         tags = []
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 关卡信息标签
         tags.append(
@@ -1654,15 +1588,7 @@ class SrcUserConfig(ConfigBase):
         )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1903,43 +1829,10 @@ class HSRUserConfig(ConfigBase):
         tags.append({"text": f"服务器：{server_label}", "color": "blue"})
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         now = datetime.now(tz=UTC8)
         iso_year, iso_week, _ = now.isocalendar()
@@ -1973,15 +1866,8 @@ class HSRUserConfig(ConfigBase):
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2156,53 +2042,12 @@ class M9AUserConfig(ConfigBase):
         tags = []
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2379,52 +2224,14 @@ class MaaFWUserConfig(ConfigBase):
         if not self.get("Data", "IfPassCheck"):
             tags.append({"text": "人工排查未通过", "color": "red"})
 
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+        # 任务代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self, "任务"))
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2838,54 +2645,13 @@ class GeneralUserConfig(ConfigBase):
         tags = []
 
         # 任务代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self, "任务"))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -3085,39 +2851,11 @@ class OkwwUserConfig(ConfigBase):
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -3244,39 +2982,11 @@ class OkNteUserConfig(ConfigBase):
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -3452,39 +3162,11 @@ class BetterGIUserConfig(ConfigBase):
         config_name = self.get("Task", "OneDragonConfigName") or "未设置"
         tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
