@@ -9,6 +9,7 @@ const modalWarning = vi.fn()
 const modalError = vi.fn()
 const modalDestroy = vi.fn()
 const notificationWarning = vi.fn()
+const notificationInfo = vi.fn()
 const notificationClose = vi.fn()
 
 vi.mock('ant-design-vue', () => ({
@@ -21,6 +22,7 @@ vi.mock('ant-design-vue', () => ({
   },
   notification: {
     warning: (...args: unknown[]) => notificationWarning(...args),
+    info: (...args: unknown[]) => notificationInfo(...args),
     close: (...args: unknown[]) => notificationClose(...args),
   },
 }))
@@ -85,6 +87,8 @@ vi.mock('@/services/websocket/connection', () => ({
 }))
 
 const DISCONNECT_EVENT = { code: 1006, reason: '' }
+// 与 services/websocket/types.ts 的 WS_CLOSE_CODE_REPLACED 一致：被另一个前端接管
+const SUPERSEDED_EVENT = { code: 4001, reason: 'replaced-by-new-connection' }
 
 const loadLifecycle = async () => {
   vi.resetModules()
@@ -96,7 +100,7 @@ const loadLifecycle = async () => {
   return mod
 }
 
-const emitDisconnected = () => listeners.disconnected.forEach(l => l(DISCONNECT_EVENT))
+const emitDisconnected = (event = DISCONNECT_EVENT) => listeners.disconnected.forEach(l => l(event))
 const emitConnected = async () => {
   await Promise.all(listeners.connected.map(l => l()))
 }
@@ -188,6 +192,56 @@ describe('useAppLifecycle 断开提示', () => {
     await emitCycleFailed()
     expect(modalWarning).not.toHaveBeenCalled()
     expect(notificationWarning).not.toHaveBeenCalled()
+  })
+
+  it('被另一个窗口接管只给一次非阻塞提示，不弹模态框、不查后端、不重启、不重连', async () => {
+    const connection = await import('@/services/websocket/connection')
+    const mod = await loadLifecycle()
+    const { backendStatus } = mod.useAppLifecycle()
+    await emitConnected()
+    expect(backendStatus.value).toBe('running')
+    vi.clearAllMocks()
+
+    emitDisconnected(SUPERSEDED_EVENT)
+    expect(notificationInfo).toHaveBeenCalledTimes(1)
+    expect(notificationInfo.mock.calls[0][0]).toMatchObject({
+      key: 'app-lifecycle-superseded',
+      message: 'misc.anotherWindowTookOverBackend',
+      description: 'misc.thisWindowStoppedReconnecting',
+      duration: null,
+    })
+    // 不是异常断开：不走断开提示与恢复流程
+    expect(notificationWarning).not.toHaveBeenCalled()
+    expect(modalWarning).not.toHaveBeenCalled()
+    expect(modalError).not.toHaveBeenCalled()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(window.electronAPI.backendStatus).not.toHaveBeenCalled()
+    expect(connection.scheduleReconnect).not.toHaveBeenCalled()
+    expect(connection.reconnectNow).not.toHaveBeenCalled()
+    expect(connection.shutdown).not.toHaveBeenCalled()
+    // 后端没坏，状态不改成 stopped
+    expect(backendStatus.value).toBe('running')
+
+    // 显式重连成功后按 key 收起接管提示
+    await emitConnected()
+    expect(notificationClose).toHaveBeenCalledWith('app-lifecycle-superseded')
+  })
+
+  it('关闭流程期间收到被接管关闭码行为不变：不提示、连接层进入终态', async () => {
+    vi.useFakeTimers()
+    const connection = await import('@/services/websocket/connection')
+    const mod = await loadLifecycle()
+
+    void mod.closeApp()
+    await Promise.resolve()
+
+    emitDisconnected(SUPERSEDED_EVENT)
+    await Promise.resolve()
+
+    expect(notificationInfo).not.toHaveBeenCalled()
+    expect(notificationWarning).not.toHaveBeenCalled()
+    expect(modalWarning).not.toHaveBeenCalled()
+    expect(connection.shutdown).toHaveBeenCalledWith('关闭流程中断开')
   })
 
   it('关闭流程期间断开与重连周期失败都不提示', async () => {

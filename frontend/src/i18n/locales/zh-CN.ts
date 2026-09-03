@@ -2044,6 +2044,8 @@ export default {
     checkingBackendRecoveringAutomatically:
       '正在检查后端状态并自动恢复。任务状态会在连接恢复后从 HTTP 快照重新同步。',
     devBackendReconnecting: '开发模式：后端由开发者管理，前端会持续重连，连上后此提示自动消失。',
+    anotherWindowTookOverBackend: '另一个窗口已接管后端连接',
+    thisWindowStoppedReconnecting: '本窗口已停止重连，不再与另一个窗口互相顶替。',
     couldNotAddAccount: '添加账号组失败',
     gotIt: '知道了',
     continueDownload: '继续下载',

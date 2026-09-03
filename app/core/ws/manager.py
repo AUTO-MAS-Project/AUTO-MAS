@@ -32,7 +32,7 @@ from pydantic import JsonValue
 from app.utils.logger import get_logger
 
 from .dispatcher import Dispatcher
-from .protocol import parse_envelope
+from .protocol import CLOSE_CODE_REPLACED, CLOSE_REASON_REPLACED, parse_envelope
 
 logger = get_logger("WS连接管理器")
 
@@ -102,8 +102,12 @@ class _MainConnectionManager:
 
         if old_websocket is not None:
             logger.warning("已存在主连接，旧连接将被新连接替换")
+            # 专用关闭码告诉旧前端"你被接管了"：它应停止自动重连，
+            # 而不是当成异常断开 3 秒后又把新连接踢掉，两边无限互踢。
             with suppress(Exception):
-                await old_websocket.close(code=1000, reason="被新连接替换")
+                await old_websocket.close(
+                    code=CLOSE_CODE_REPLACED, reason=CLOSE_REASON_REPLACED
+                )
 
         logger.info(f"主 WebSocket 已连接: {websocket.client}")
         async with self._connection_lock:

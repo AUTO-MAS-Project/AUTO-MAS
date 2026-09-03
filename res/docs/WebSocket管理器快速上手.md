@@ -117,6 +117,6 @@ unsubscribe(subscriptionId) // 幂等
 
 ## 连接状态
 
-前端连接层状态机：`idle` → `connecting` → `open` ⇄ `reconnecting`，`closed` 为退出流程终态。同时最多存在一个连接尝试和一个重连计时器，连接成功后退避状态清零。
+前端连接层状态机：`idle` → `connecting` → `open` ⇄ `reconnecting`，`closed` 为退出流程终态，`superseded` 为"被另一个前端接管"终态（不再自动重连，显式 `connect` / `reconnectNow` 仍可重新接管）。同时最多存在一个连接尝试和一个重连计时器，连接成功后退避状态清零。
 
-后端第二条主连接接入时，**新连接替换旧连接**（旧连接被关闭），避免休眠恢复后残留死连接阻塞重连。
+后端第二条主连接接入时，**新连接替换旧连接**（旧连接被关闭），避免休眠恢复后残留死连接阻塞重连。旧连接以应用级关闭码 **`4001`**、reason `replaced-by-new-connection` 关闭（常量 `CLOSE_CODE_REPLACED` / `WS_CLOSE_CODE_REPLACED`，见 `app/core/ws/protocol.py` 与 `services/websocket/types.ts`）；前端收到该码即进入 `superseded`，只提示一次、不重连，避免两个窗口互相踢下线。后端关闭流程中拒绝新连接仍使用 `1001`。
