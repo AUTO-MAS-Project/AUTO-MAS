@@ -538,7 +538,7 @@ class MaaUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
@@ -961,7 +961,7 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置文件来源
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 是否启用快速配置
         self.Info_IfQuickConfig = ConfigItem(
@@ -1051,17 +1051,17 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
-        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
+        # 旧“自定义”仍等价于用户级配置且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本级配置来源，快速配置使用默认值。
         if isinstance(info_data, dict):
             if info_data.get("Mode") == "自定义":
-                info_data["Mode"] = "详细"
+                info_data["Mode"] = "用户"
                 info_data["IfQuickConfig"] = False
             elif (
                 info_data.get("Mode") in ("简洁", "详细")
                 and "SanityMode" not in info_data
             ):
-                info_data["Mode"] = "简洁"
+                info_data["Mode"] = "脚本"
                 info_data.pop("IfQuickConfig", None)
 
         task_data = data.get("Task")
@@ -1298,7 +1298,7 @@ class SrcUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -2667,6 +2667,21 @@ class OkwwTaskIndexValidator(OptionsValidator):
         return 7 if value == 2 else super().correct(value)
 
 
+class ScriptUserModeValidator(OptionsValidator):
+    """脚本/用户配置来源，兼容旧版“简洁/详细”。
+
+    旧配置里“简洁”即脚本级配置，“详细”即用户级配置，加载时自动归一为“脚本/用户”。
+    """
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户"])
+
+    def correct(self, value: Any) -> Any:
+        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+
+
 class OkwwConfigModeValidator(OptionsValidator):
     """兼容旧版“简洁/详细”，统一为脚本/用户/直控配置来源。"""
 
@@ -2905,7 +2920,7 @@ class OkNteUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()

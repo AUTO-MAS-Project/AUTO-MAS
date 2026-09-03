@@ -117,7 +117,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if self.cur_user_config.get("Info", "Mode") == "详细":
+        if self.cur_user_config.get("Info", "Mode") == "用户":
             config_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
@@ -337,7 +337,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             await asyncio.sleep(10)
             # 更新脚本配置文件
-            if self.cur_user_config.get("Info", "Mode") == "详细":
+            if self.cur_user_config.get("Info", "Mode") == "用户":
                 save_src_user_config(
                     self.src_set_path,
                     Path.cwd()
@@ -443,11 +443,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         overlay_path = None
-        if self.cur_user_config.get("Info", "Mode") == "简洁":
+        if self.cur_user_config.get("Info", "Mode") == "脚本":
             overlay_path = (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
-        elif self.cur_user_config.get("Info", "Mode") == "详细":
+        elif self.cur_user_config.get("Info", "Mode") == "用户":
             overlay_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
