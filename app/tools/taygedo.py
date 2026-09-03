@@ -850,24 +850,6 @@ async def _sign_taygedo_games(
     return results
 
 
-async def _get_taygedo_game_roles(
-    access_token: str,
-    uid: str,
-    device_id: str,
-    *,
-    proxy: str | None,
-) -> list[dict[str, str]]:
-    """兼容旧调用方，仅返回已发现的绑定角色列表。"""
-
-    roles, _ = await _get_taygedo_game_roles_with_status(
-        access_token,
-        uid,
-        device_id,
-        proxy=proxy,
-    )
-    return roles
-
-
 async def _get_taygedo_game_roles_with_status(
     access_token: str,
     uid: str,

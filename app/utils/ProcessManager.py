@@ -2,8 +2,6 @@
 
 from .platform.common.process import (
     ProcessInfo,
-    activate_window_by_pid,
-    has_visible_window,
     is_process_alive,
     ProcessManager,
     ProcessResult,
@@ -16,8 +14,6 @@ from .platform.common.process import (
 
 __all__ = [
     "ProcessInfo",
-    "activate_window_by_pid",
-    "has_visible_window",
     "is_process_alive",
     "ProcessManager",
     "ProcessResult",

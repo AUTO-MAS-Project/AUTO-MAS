@@ -142,6 +142,3 @@ async def execute_ws_command(
         }
 
 
-def list_ws_commands() -> list[str]:
-    """列出所有已注册的命令名称"""
-    return list(_ws_command_registry.keys())

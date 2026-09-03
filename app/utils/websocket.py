@@ -743,29 +743,3 @@ class WSClientManager:
 
 # 全局管理器实例
 ws_client_manager = WSClientManager()
-
-
-# 便捷函数：创建并连接客户端
-async def create_ws_client(
-    host: str = "localhost",
-    port: int = 5140,
-    path: str = "/ws",
-    use_ssl: bool = False,
-    **kwargs,
-) -> WebSocketClient:
-    """
-    创建 WebSocket 客户端实例
-
-    Args:
-        host: 服务器主机地址
-        port: 服务器端口
-        path: WebSocket 路径
-        use_ssl: 是否使用 SSL
-        **kwargs: 传递给 WebSocketClient 的其他参数
-
-    Returns:
-        WebSocketClient: 客户端实例
-    """
-    protocol = "wss" if use_ssl else "ws"
-    url = f"{protocol}://{host}:{port}{path}"
-    return WebSocketClient(url=url, **kwargs)
