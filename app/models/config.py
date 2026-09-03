@@ -666,6 +666,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
+        ## 上次完成绿票商店购买的月份
+        self.Data_GreenTicketStoreMonth = ConfigItem(
+            "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 自定义基建配置
@@ -701,6 +705,10 @@ class MaaUserConfig(ConfigBase):
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 是否每月自动购买一次绿票商店
+        self.Task_IfGreenTicketStore = ConfigItem(
+            "Task", "IfGreenTicketStore", False, BoolValidator()
         )
         ## 活动期间是否优先刷活动关
         self.Task_IfActivityFirst = ConfigItem(

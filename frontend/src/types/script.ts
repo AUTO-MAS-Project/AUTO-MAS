@@ -533,6 +533,7 @@ export interface User {
     LastPsychubeDate?: string
     LastLimboMonth?: string
     LastLucidscapeMonth?: string
+    GreenTicketStoreMonth?: string
     ProxyTimes: number
   }
   Info: {
@@ -586,6 +587,7 @@ export interface User {
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
+    IfGreenTicketStore?: boolean
     DepotMaintainPlans?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']

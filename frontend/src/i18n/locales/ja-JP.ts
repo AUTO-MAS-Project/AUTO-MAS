@@ -258,6 +258,7 @@ export default {
     maaAnnihilationStartDayHint:
       '設定した曜日になってから殲滅タスクを開始します。今週の上限に達すると以降の殲滅は自動的にスキップされます',
     maaWeekStatus: '今週の状態：',
+    maaMonthStatus: '今月の状態：',
     maaDone: '完了',
     maaNotDone: '未完了',
     maaEventFirst: 'イベントステージ優先',
@@ -283,6 +284,9 @@ export default {
     maaDaily: '日課タスク',
     maaRoguelike: '自動ローグライク',
     maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
+    maaGreenTicketStore: '緑チケット商店',
+    maaGreenTicketStoreHint:
+      '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
     maaRecruit: '自動公開求人',
     maaMall: '信用取引所',
     fixed: '固定',

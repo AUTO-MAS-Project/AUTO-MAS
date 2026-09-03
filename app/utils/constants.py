@@ -50,8 +50,19 @@ TYPE_BOOK = {
 PLAN_CONSUMER_VALUES = ("maa", "maaend")
 """计划表消费方列表"""
 
-MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
+MAA_RUN_MOOD_BOOK = {
+    "GreenTicketStore": "绿票商店",
+    "Annihilation": "剿灭",
+    "Routine": "日常",
+}
 """MAA运行模式映射表"""
+
+MAA_MODE_TIME_LIMIT_BOOK = {
+    "GreenTicketStore": "RoutineTimeLimit",
+    "Annihilation": "AnnihilationTimeLimit",
+    "Routine": "RoutineTimeLimit",
+}
+"""MAA运行模式对应的超时配置项：绿票商店只买一次商店，复用日常时限"""
 
 MAA_TASKS = [
     "StartUp",
@@ -239,6 +250,15 @@ MAA_REMAIN_FIGHT_BASE = {
     "TaskType": "Fight",
 }
 """MAA剩余理智作战基础配置"""
+
+MAA_GREEN_TICKET_STORE_TASK = {
+    "$type": "CustomTask",
+    "Name": "绿票商店",
+    "IsEnable": True,
+    "TaskType": "Custom",
+    "CustomTaskName": "GreenTicket@Store@Begin",
+}
+"""MAA绿票商店任务配置：牛杂「绿票商店」的任务链，需 MAA v6.3.0 及以上"""
 
 MAAEND_SANITY_TASK_LABELS = {
     "OperatorProgression": "干员养成",

@@ -502,6 +502,7 @@ const getDefaultMAAUserData = () => ({
     IfReclamation: false,
     IfRoguelike: false,
     IfDepotMaintain: false,
+    IfGreenTicketStore: false,
     IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
