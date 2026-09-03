@@ -3110,10 +3110,6 @@ class BetterGIUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
-        self.Data_LastOneDragonConfig = ConfigItem(
-            "Data", "LastOneDragonConfig", ""
-        )
-
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())

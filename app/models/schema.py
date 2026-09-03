@@ -910,9 +910,6 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
     LastProxyStatus: Optional[str] = Field(
         default=None, description="上次代理状态（未知/成功/失败）"
     )
-    LastOneDragonConfig: Optional[str] = Field(
-        default=None, description="上次运行的一条龙配置名"
-    )
 
 
 class BetterGIUserConfig(BaseModel):
