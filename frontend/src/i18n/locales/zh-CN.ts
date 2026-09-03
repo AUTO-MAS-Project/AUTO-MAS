@@ -9,6 +9,7 @@
  */
 export default {
   common: {
+    viewPageDocs: '查看本页文档',
     language: '语言',
     languageTip: '界面显示语言',
     languageSaveFailed: '语言设置保存失败，已恢复原语言',
@@ -1486,7 +1487,6 @@ export default {
     newUserName: '用户 {n}',
     section: {
       settings: '社区设置',
-      doc: '查看森空岛签到配置文档',
       signAll: '全部签到',
       noticeTitle: '功能说明与隐私声明',
       toolDesc: '游戏社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。',

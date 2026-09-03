@@ -30,7 +30,6 @@ from app.utils.platform import IS_WINDOWS
 if IS_WINDOWS:
     import win32gui
     import keyboard
-from datetime import datetime, timedelta
 import time
 from pathlib import Path
 from typing import Dict, Any

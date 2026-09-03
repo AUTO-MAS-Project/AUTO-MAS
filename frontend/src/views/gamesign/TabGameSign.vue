@@ -14,7 +14,8 @@ import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
-import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS, openExternalUrl } from '@/utils/openExternal'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
 import { useQrLogin } from './useQrLogin'
@@ -646,14 +647,7 @@ onBeforeUnmount(() => {
       <div class="section-header">
         <h3>{{ t('gamesign.section.settings') }}</h3>
         <div class="section-header-actions">
-          <a
-            href="https://doc.auto-mas.top/docs/advanced-features/game-sign.html"
-            class="section-doc-link"
-            :title="t('gamesign.section.doc')"
-            @click="handleExternalLink"
-          >
-            {{ t('common.doc') }}
-          </a>
+          <DocLink :url="MAS_DOC_URLS.gameSign" />
           <a-button
             type="primary"
             size="small"
@@ -1255,27 +1249,6 @@ onBeforeUnmount(() => {
 .section-header-actions .section-update-button.primary-style:disabled {
   transform: none;
   box-shadow: none;
-}
-
-.section-doc-link {
-  color: var(--ant-color-primary);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--ant-color-primary);
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.section-doc-link:hover {
-  color: var(--ant-color-primary-hover);
-  background-color: var(--ant-color-primary-bg);
-  border-color: var(--ant-color-primary-hover);
-  text-decoration: none;
 }
 
 /* ==================== 签到设置（开关列表） ==================== */

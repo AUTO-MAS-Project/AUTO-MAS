@@ -5,6 +5,7 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
+        <DocLink :url="MAS_DOC_URLS.plans" />
         <a-dropdown :trigger="['click']">
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
@@ -42,6 +43,8 @@
 import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
 

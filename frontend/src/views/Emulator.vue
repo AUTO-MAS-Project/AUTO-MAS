@@ -17,6 +17,8 @@ import {
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
@@ -823,6 +825,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   <div class="emulator-page">
     <div class="page-header">
       <h1>{{ t('emulator.title') }}</h1>
+      <DocLink :url="MAS_DOC_URLS.emulator" />
     </div>
 
     <div class="page-content">

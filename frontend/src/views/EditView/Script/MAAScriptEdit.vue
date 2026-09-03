@@ -15,6 +15,7 @@
     </div>
 
     <a-space size="middle">
+      <DocLink :url="MAS_DOC_URLS.scriptTypes.MAA" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -389,6 +390,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'

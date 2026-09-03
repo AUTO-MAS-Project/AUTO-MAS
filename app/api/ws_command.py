@@ -140,8 +140,3 @@ async def execute_ws_command(
             "message": f"执行失败: {type(e).__name__}: {str(e)}",
             "code": 500,
         }
-
-
-def list_ws_commands() -> list[str]:
-    """列出所有已注册的命令名称"""
-    return list(_ws_command_registry.keys())

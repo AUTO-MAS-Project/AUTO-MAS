@@ -170,10 +170,6 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
     """
     try:
         OCRTool = _ocr_tool()
-        # 初始化OCRTool
-        ocr_tool = OCRTool(
-            width=params.aspect_ratio_width, height=params.aspect_ratio_height
-        )
 
         # 获取截图区域（如果没有提供自定义区域）
         if params.region is None:

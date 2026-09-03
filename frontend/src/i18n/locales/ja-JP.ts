@@ -9,6 +9,7 @@
  */
 export default {
   common: {
+    viewPageDocs: 'このページのドキュメントを表示',
     language: '言語',
     languageTip: 'インターフェースの表示言語',
     languageSaveFailed: '言語設定の保存に失敗しました。元の言語に戻しました。',
@@ -1577,7 +1578,6 @@ export default {
     newUserName: 'ユーザー {n}',
     section: {
       settings: 'コミュニティ設定',
-      doc: 'Skland のログインボーナス設定ドキュメントを開く',
       signAll: 'すべて受け取る',
       noticeTitle: '機能の説明とプライバシーについて',
       toolDesc:
