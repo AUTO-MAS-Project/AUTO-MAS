@@ -15,6 +15,7 @@
     </div>
 
     <a-space size="middle">
+      <DocLink :url="MAS_DOC_URLS.scriptTypes.General" />
       <a-button size="large" type="primary" class="upload-button" @click="showUploadModal">
         <template #icon>
           <CloudUploadOutlined />
@@ -923,6 +924,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'

@@ -7,6 +7,7 @@
  */
 export default {
   common: {
+    viewPageDocs: 'View this page docs',
     language: 'Language',
     languageTip: 'Interface display language',
     languageSaveFailed: 'Failed to save the language setting; reverted to the previous one.',
@@ -1523,7 +1524,6 @@ export default {
     newUserName: 'User {n}',
     section: {
       settings: 'Check-in settings',
-      doc: 'Open the Skland check-in docs',
       signAll: 'Check in everywhere',
       noticeTitle: 'What this does, and your privacy',
       toolDesc:

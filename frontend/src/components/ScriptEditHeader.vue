@@ -16,6 +16,7 @@
 
     <a-space size="middle" wrap>
       <slot name="extra-actions" />
+      <DocLink v-if="docUrl" :url="docUrl" />
 
       <a-button size="large" class="cancel-button" @click="emit('cancel')">
         <template #icon>
@@ -33,6 +34,8 @@ import { computed } from 'vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
 
@@ -51,6 +54,7 @@ const emit = defineEmits<{ cancel: [] }>()
 
 const logoSrc = computed(() => SCRIPT_LOGOS[props.scriptType])
 const logoAlt = computed(() => SCRIPT_LABELS[props.scriptType])
+const docUrl = computed(() => MAS_DOC_URLS.scriptTypes[props.scriptType as keyof typeof MAS_DOC_URLS.scriptTypes])
 </script>
 
 <style scoped>
