@@ -20,9 +20,9 @@ export type SrcUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 脚本模式
+     * 配置来源（脚本/用户）
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('脚本' | '用户' | null);
     /**
      * 游戏服务器
      */
