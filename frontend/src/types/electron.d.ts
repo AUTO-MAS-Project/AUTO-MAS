@@ -356,7 +356,7 @@ export interface ElectronAPI {
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   getApiEndpoints: () => Promise<{ local: string; websocket: string }>
 
-  // 完整初始化流程（保留用于兼容）
+  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
   initialize: (
     targetBranch?: string,
     startBackend?: boolean
@@ -414,7 +414,7 @@ export interface ElectronAPI {
   onDependencyProgress: (callback: (progress: unknown) => void) => void
   removeDependencyProgressListener?: () => void
 
-  // 监听初始化进度（保留用于兼容）
+  // 监听完整初始化进度
   onInitializationProgress: (
     callback: (progress: {
       stage: string

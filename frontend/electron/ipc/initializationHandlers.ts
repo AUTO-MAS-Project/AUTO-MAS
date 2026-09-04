@@ -413,7 +413,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return resolveApiEndpoints()
   })
 
-  // ==================== 完整初始化流程（保留用于兼容） ====================
+  // ==================== 完整初始化流程（Runtime 首次初始化与旧链路共用） ====================
 
   ipcMain.handle(
     'initialize',

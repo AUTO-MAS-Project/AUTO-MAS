@@ -415,6 +415,75 @@ function markStepTakenOver(state: StepState) {
   state.failureNotice = null
 }
 
+/** 完整 Runtime 初始化的进度按真实段落切换界面；没有独立页面的接管段保持已完成。 */
+function handleRuntimeInitializationProgress(progressData: {
+  stage: string
+  progress: number
+  message: string
+}) {
+  if (RUNTIME_TAKEOVER_STEPS.has(progressData.stage)) return
+
+  const stepIndex = steps.findIndex(step => step.key === progressData.stage)
+  if (stepIndex < 0 || progressData.stage === 'backend') return
+
+  currentStepIndex.value = stepIndex
+  handleProgress(progressData.stage, progressData)
+}
+
+function markStepFailed(stepKey: string, errorMsg: string, failure: RuntimeFailureFields) {
+  const state = stepStates.value[stepKey]
+
+  logger.error(`步骤 ${stepKey} 失败: ${errorMsg}`)
+  state.status = 'failed'
+  state.message = errorMsg
+
+  const plan = applyFailure(state, stepKey, failure)
+
+  // 只有真会重跑安装的动作才值得自动重试；不可重试的失败干等 60 秒没有意义
+  const autoAction = plan.actions.find(action => RETRY_ACTION_KINDS.has(action.kind))
+  if (autoAction) {
+    startCountdown(stepKey, autoAction.kind === 'rebuild-environment')
+  }
+}
+
+/** Runtime 的完整首次准备必须走 bootstrap；分步 IPC 继续承担更新与失败重试。 */
+async function executeRuntimeInitialization(): Promise<boolean> {
+  try {
+    const result = await window.electronAPI.initialize(targetBranch.value, false)
+
+    if (!result.success) {
+      const failedStep = steps.find(
+        step => step.key === result.failedStage && !RUNTIME_TAKEOVER_STEPS.has(step.key)
+      )
+      const failedStepKey = failedStep?.key ?? 'python'
+      currentStepIndex.value = steps.findIndex(step => step.key === failedStepKey)
+      markStepFailed(
+        failedStepKey,
+        result.error || t('init.msg.execFailed'),
+        result
+      )
+      return false
+    }
+
+    // 进度事件是界面展示，最终结果才是准备完成的权威状态。
+    for (const step of steps.slice(0, -1)) {
+      const state = stepStates.value[step.key]
+      state.status = 'success'
+      state.progress = 100
+      state.message ||= t('init.msg.stageDone')
+    }
+
+    currentStepIndex.value = steps.length - 1
+    logger.info('Runtime bootstrap 完成，准备启动后端')
+    return true
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    currentStepIndex.value = 0
+    markStepFailed('python', errorMsg, {})
+    return false
+  }
+}
+
 // 执行单个步骤
 async function executeStep(stepKey: string, rebuild: boolean = false): Promise<boolean> {
   const state = stepStates.value[stepKey]
@@ -486,19 +555,7 @@ async function executeStep(stepKey: string, rebuild: boolean = false): Promise<b
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`步骤 ${stepKey} 失败: ${errorMsg}`)
-
-    state.status = 'failed'
-    state.message = errorMsg
-
-    const plan = applyFailure(state, stepKey, failure)
-
-    // 只有真会重跑安装的动作才值得自动重试；不可重试的失败干等 60 秒没有意义
-    const autoAction = plan.actions.find(action => RETRY_ACTION_KINDS.has(action.kind))
-    if (autoAction) {
-      startCountdown(stepKey, autoAction.kind === 'rebuild-environment')
-    }
-
+    markStepFailed(stepKey, errorMsg, failure)
     return false
   }
 }
@@ -508,6 +565,15 @@ async function startInitialization(startIndex: number = 0) {
   logger.info('开始初始化流程...')
 
   try {
+    if (runtimeMode.value !== 'off' && startIndex === 0) {
+      logger.info('Runtime 接管首次初始化，执行完整 bootstrap')
+      const success = await executeRuntimeInitialization()
+      if (!success) {
+        stepStatus.value = 'error'
+      }
+      return
+    }
+
     // 依次执行每个步骤
     for (let i = startIndex; i < steps.length; i++) {
       const step = steps[i]
@@ -955,6 +1021,7 @@ onMounted(async () => {
   api.onGitProgress?.((progress: any) => handleProgress('git', progress))
   api.onRepositoryProgress?.((progress: any) => handleProgress('repository', progress))
   api.onDependencyProgress?.((progress: any) => handleProgress('dependency', progress))
+  api.onInitializationProgress?.(handleRuntimeInitializationProgress)
 
   api.onBackendStatus?.((status: any) => {
     logger.info(`后端状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
@@ -989,6 +1056,7 @@ onUnmounted(() => {
   api.removeGitProgressListener?.()
   api.removeRepositoryProgressListener?.()
   api.removeDependencyProgressListener?.()
+  api.removeInitializationProgressListener?.()
   api.removeBackendStatusListener?.()
 })
 </script>

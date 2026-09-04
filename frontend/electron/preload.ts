@@ -247,7 +247,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
   getApiEndpoints: () => ipcRenderer.invoke('get-api-endpoints'),
 
-  // 完整初始化流程（保留用于兼容）
+  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
   initialize: (targetBranch?: string, startBackend?: boolean) =>
     ipcRenderer.invoke('initialize', targetBranch, startBackend),
 
@@ -311,7 +311,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('dependency-progress')
   },
 
-  // 监听初始化进度（保留用于兼容）
+  // 监听完整初始化进度
   onInitializationProgress: (callback: (progress: unknown) => void) => {
     ipcRenderer.on('initialization-progress', (_, progress) => callback(progress))
   },
