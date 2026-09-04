@@ -20,40 +20,41 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import asyncio
-import time
 import re
-from pathlib import Path
+import time
+import uuid
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
-from app.utils import get_logger, LogMonitor, ProcessManager, strptime
+from app.task.general.tools import execute_script_task
+from app.utils import LogMonitor, ProcessManager, get_logger, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from app.utils.io import read_file, write_file
+
 from .tools import (
     kill_src_processes,
     login,
-    push_notification,
     poor_yaml_read,
     poor_yaml_write,
     promote_src_config_update,
+    push_notification,
     read_src_webui_port,
     recover_src_user_config,
     save_src_user_config,
     stage_src_config_update,
-    write_src_process_state,
     validate_src_installation,
+    write_src_process_state,
 )
-from app.task.general.tools import execute_script_task
 
 logger = get_logger("SRC脚本自动代理")
 
@@ -116,7 +117,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if self.cur_user_config.get("Info", "Mode") == "详细":
+        if self.cur_user_config.get("Info", "Mode") == "用户":
             config_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
@@ -336,7 +337,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             await asyncio.sleep(10)
             # 更新脚本配置文件
-            if self.cur_user_config.get("Info", "Mode") == "详细":
+            if self.cur_user_config.get("Info", "Mode") == "用户":
                 save_src_user_config(
                     self.src_set_path,
                     Path.cwd()
@@ -442,11 +443,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         overlay_path = None
-        if self.cur_user_config.get("Info", "Mode") == "简洁":
+        if self.cur_user_config.get("Info", "Mode") == "脚本":
             overlay_path = (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
-        elif self.cur_user_config.get("Info", "Mode") == "详细":
+        elif self.cur_user_config.get("Info", "Mode") == "用户":
             overlay_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"

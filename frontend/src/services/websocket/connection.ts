@@ -44,6 +44,9 @@ let automaticReconnectEnabled = true
 // 避免旧异步尝试创建的连接把已终止或已被立即重连替换的连接层复活
 let connectGeneration = 0
 let backendDevMode = import.meta.env.DEV === true || window.location.hostname === 'localhost'
+// 连接前的 ws_meta 协商是否拿到了后端权威值：失败时 devMode 只是本地回退值，
+// 连接建立后必须再协商一次，否则页面先于后端起来的场景会一直拿着错误的 devMode。
+let backendMetaNegotiated = false
 let websocketUrl = `${getDefaultWebSocketEndpoint()}${DEFAULT_WS_PATH}`
 
 type DisconnectListener = (event: WSDisconnectEvent) => void
@@ -87,6 +90,30 @@ const fetchWithTimeout = async (
   }
 }
 
+interface BackendWsMeta {
+  devMode?: boolean
+  wsPath?: string
+}
+
+/** 读取后端 ws_meta；后端未监听或返回非 2xx 时返回 null，由调用方决定回退。 */
+const fetchBackendMeta = async (httpBase: string): Promise<BackendWsMeta | null> => {
+  try {
+    const response = await fetchWithTimeout(
+      `${httpBase.replace(/\/+$/, '')}${WS_META_URL}`,
+      { method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store' },
+      WS_META_TIMEOUT
+    )
+    if (response.ok) {
+      return (await response.json()) as BackendWsMeta
+    }
+    logger.warn(`协商 WebSocket 元信息失败，HTTP 状态: ${response.status}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`协商 WebSocket 元信息失败，继续使用本地回退配置: ${errorMsg}`)
+  }
+  return null
+}
+
 /** 协商主 WebSocket 地址与后端开发模式，失败时回退本地默认配置 */
 const negotiateWebSocketUrl = async (): Promise<string> => {
   let httpBase = OpenAPI.BASE || getDefaultHttpEndpoint()
@@ -111,32 +138,40 @@ const negotiateWebSocketUrl = async (): Promise<string> => {
     }
   }
 
-  try {
-    const response = await fetchWithTimeout(
-      `${httpBase.replace(/\/+$/, '')}${WS_META_URL}`,
-      { method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store' },
-      WS_META_TIMEOUT
-    )
-    if (response.ok) {
-      const meta = (await response.json()) as { devMode?: boolean; wsPath?: string }
-      if (typeof meta.devMode === 'boolean') {
-        backendDevMode = meta.devMode
-      }
-      if (typeof meta.wsPath === 'string' && meta.wsPath.trim()) {
-        wsPath = normalizeWsPath(meta.wsPath.trim())
-      }
-    } else {
-      logger.warn(`协商 WebSocket 元信息失败，HTTP 状态: ${response.status}`)
+  const meta = await fetchBackendMeta(httpBase)
+  backendMetaNegotiated = meta !== null
+  if (meta) {
+    if (typeof meta.devMode === 'boolean') {
+      backendDevMode = meta.devMode
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`协商 WebSocket 元信息失败，继续使用本地回退配置: ${errorMsg}`)
+    if (typeof meta.wsPath === 'string' && meta.wsPath.trim()) {
+      wsPath = normalizeWsPath(meta.wsPath.trim())
+    }
   }
 
   OpenAPI.BASE = httpBase
   websocketUrl = `${websocketBase}${wsPath}`
   logger.info(`已协商 WebSocket 链接: ${websocketUrl}, devMode=${backendDevMode}`)
   return websocketUrl
+}
+
+/**
+ * 连接建立后补一次 ws_meta 协商。
+ *
+ * 页面先于后端起来（Runtime 链路尤其如此）时，连接前的协商会失败并把 devMode 留在
+ * 本地回退值上；连接一旦成功说明后端已可达，此时的权威值才能用于关闭与重启决策。
+ * 只更新 devMode：wsPath 已经用于建立当前连接，改它没有意义。
+ */
+const renegotiateBackendMetaAfterOpen = async (generation: number): Promise<void> => {
+  const meta = await fetchBackendMeta(OpenAPI.BASE || getDefaultHttpEndpoint())
+  // 协商期间连接层已被 shutdown/替换：结果不再属于当前连接，丢弃
+  if (generation !== connectGeneration || state.value !== 'open') return
+  if (!meta) return
+  backendMetaNegotiated = true
+  if (typeof meta.devMode === 'boolean' && meta.devMode !== backendDevMode) {
+    logger.info(`连接建立后重新协商后端元信息: devMode ${backendDevMode} -> ${meta.devMode}`)
+    backendDevMode = meta.devMode
+  }
 }
 
 // ==================== 连接管理 ====================
@@ -340,6 +375,10 @@ export async function connect(): Promise<boolean> {
           reconnectAttempts = 0
           settle(true)
           notifyConnected()
+          // 连接前的协商没拿到权威值：现在后端已可达，补协商一次，不阻塞连接成功通知
+          if (!backendMetaNegotiated) {
+            void renegotiateBackendMetaAfterOpen(myGeneration)
+          }
         }
 
         ws.onmessage = event => {

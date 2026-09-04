@@ -8,7 +8,6 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-
 ArtifactType = Literal["full", "delta"]
 UpdateStatus = Literal[
     "discovered",

@@ -23,9 +23,9 @@
 
 from fastapi import APIRouter, Body
 
+from app.api.ws_command import ws_command
 from app.core import Config
 from app.models.schema import *
-from app.api.ws_command import ws_command
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 

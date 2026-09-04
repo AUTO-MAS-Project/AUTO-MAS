@@ -26,7 +26,6 @@ import json5
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-
 MANIFEST_FILE_NAME = ".auto_mas_maafw_project.json"
 MANIFEST_SCHEMA_VERSION = 3
 LEGACY_MANIFEST_SCHEMA_VERSION = 2

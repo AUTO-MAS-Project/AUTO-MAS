@@ -16,8 +16,18 @@ export interface MaaFWUpdateResult {
   installable: boolean
   currentVersion: string | null
   latestVersion: string | null
+  /** 实际选用的下载来源：`mirrorchyan` / `github`。 */
   source: string | null
   message: string
+  // 以下字段由后端 MaaFW 更新接口新增，旧后端不返回，读取时一律走可选链。
+  /** Mirror 酱返回的版本名（可能与 latestVersion 不同）。 */
+  versionName?: string | null
+  /** `ok` / `absent` / `expired` / `invalid` / `quota` / `mismatched` / `blocked`。 */
+  cdkStatus?: string | null
+  /** 后端给的中文一句话说明。 */
+  cdkMessage?: string | null
+  /** CDK 到期时间，unix 秒。 */
+  cdkExpiredTime?: number | null
 }
 
 interface MaaFWUpdateEnvelope {

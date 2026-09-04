@@ -32,8 +32,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
+from app.utils.constants import EMULATOR_PATH_BOOK
 
 logger = get_logger("模拟器管理工具")
 

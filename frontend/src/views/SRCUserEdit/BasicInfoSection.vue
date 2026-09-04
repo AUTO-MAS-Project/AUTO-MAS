@@ -146,9 +146,9 @@
       <a-col :span="12">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip :title="t('edit.simpleModeFollowsScript')">
+            <a-tooltip :title="t('edit.scriptUsesGlobalConfiguration')">
               <span class="form-label">
-                {{ t('edit.userConfigurationMode') }}
+                {{ t('edit.configurationSource') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -156,8 +156,8 @@
           <a-select
             v-model:value="formData.Info.Mode"
             :options="[
-              { label: t('edit.simple'), value: '简洁' },
-              { label: t('edit.detailed'), value: '详细' },
+              { label: t('edit.script'), value: '脚本' },
+              { label: t('edit.user'), value: '用户' },
             ]"
             :disabled="loading"
             size="large"

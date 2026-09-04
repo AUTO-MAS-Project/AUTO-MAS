@@ -106,6 +106,7 @@ class OkNteManager(TaskExecuteBase):
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
+                    and self.task_info.is_target_user(str(uid))
                 ]
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -140,7 +141,8 @@ class OkNteManager(TaskExecuteBase):
                 UserItem(user_id=target_user_id, name=target_user_name, status="等待")
             ]
         else:
-            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
+            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的；
+            # 单独运行指定了用户时只保留该用户
             self.script_info.user_list = [
                 UserItem(
                     user_id=str(uid), name=config.get("Info", "Name"), status="等待"
@@ -148,6 +150,7 @@ class OkNteManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
@@ -283,15 +286,15 @@ class OkNteManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_user = [
-                    u.name for u in self.script_info.user_list if u.status == "异常"
-                ]
-                over_user = [
-                    u.name for u in self.script_info.user_list if u.status == "完成"
-                ]
-                wait_user = [
-                    u.name for u in self.script_info.user_list if u.status == "等待"
-                ]
+                error_count = sum(
+                    1 for u in self.script_info.user_list if u.status == "异常"
+                )
+                over_count = sum(
+                    1 for u in self.script_info.user_list if u.status == "完成"
+                )
+                wait_count = sum(
+                    1 for u in self.script_info.user_list if u.status == "等待"
+                )
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
                 # 按用户交错组装「用户结果行 + 该用户节点详情」：
@@ -300,7 +303,7 @@ class OkNteManager(TaskExecuteBase):
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐 ok-ww/通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
                 # 为空，自然只有结果行。
-                has_uncompleted = len(error_user) + len(wait_user) > 0
+                has_uncompleted = error_count + wait_count > 0
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
@@ -313,8 +316,8 @@ class OkNteManager(TaskExecuteBase):
                     "script_name": self.script_info.name or "空白",
                     "start_time": self.begin_time,
                     "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": len(over_user),
-                    "uncompleted_count": len(error_user) + len(wait_user),
+                    "completed_count": over_count,
+                    "uncompleted_count": error_count + wait_count,
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
                 }

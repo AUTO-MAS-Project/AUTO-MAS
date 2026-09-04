@@ -17,10 +17,10 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
-import time
 import json
 import shlex
 import shutil
+import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
@@ -28,29 +28,29 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
+from app.log_box import LogCollect, LogType, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.services.wuthering_waves import (
     check_wuthering_waves_update,
     resolve_wuthering_waves_process_path,
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
+from app.task.general.tools import execute_script_task
 from app.utils import (
-    get_logger,
-    ProcessManager,
     ProcessInfo,
+    ProcessManager,
+    get_logger,
     is_process_alive,
     is_process_running,
 )
-from app.utils.io import write_file
-from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.log_box import LogCollect, log_box, LogType
-from app.task.general.tools import execute_script_task
+from app.utils.io import write_file
+from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
     OKWW_PUSH_RULES,

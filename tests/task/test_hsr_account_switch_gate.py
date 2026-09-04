@@ -24,7 +24,6 @@ from pathlib import Path
 from unittest import mock
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.core.task_manager import TaskInfo
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import ScriptItem

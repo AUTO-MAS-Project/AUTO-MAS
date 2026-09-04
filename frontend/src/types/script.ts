@@ -199,6 +199,9 @@ export type HSRScriptConfig = HSRConfig
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
 export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
 
+/** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
+export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
+
 export interface MaaFWScriptConfig {
   Info: {
     Name: string
@@ -232,13 +235,19 @@ export interface MaaFWScriptConfig {
     CloseOnFinish: boolean
   }
   Update: {
-    IfAutoUpdate: boolean
-    Source: '' | 'MirrorChyan' | 'GitHub'
-    Channel: '' | 'stable' | 'beta'
+    /** 自动更新时机：不更新 / 运行前 / 运行后。 */
+    AutoUpdateMode: MaaFWAutoUpdateMode
+    /** 更新包的下载源，由用户显式选择，没有「自动」；默认 GitHub（零配置可用）。 */
+    Source: 'MirrorChyan' | 'GitHub'
+    /** 更新通道：稳定版 / 测试版，默认稳定版；不跟随全局，也不开放 alpha。 */
+    Channel: 'stable' | 'beta'
+    /** 脚本自己的 Mirror 酱 CDK，选 Mirror 酱作为更新源时必填；不从全局设置兜底。 */
     MirrorChyanCDK: string
-    GitHubRepo: string
-    GitHubTag: string
-    GitHubAssetPattern: string
+    /**
+     * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
+     * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
+     */
+    IfAutoUpdate?: boolean
   }
   Managed: {
     Enabled: boolean
@@ -524,6 +533,7 @@ export interface User {
     LastPsychubeDate?: string
     LastLimboMonth?: string
     LastLucidscapeMonth?: string
+    GreenTicketStoreMonth?: string
     ProxyTimes: number
   }
   Info: {
@@ -577,6 +587,7 @@ export interface User {
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
+    IfGreenTicketStore?: boolean
     DepotMaintainPlans?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']

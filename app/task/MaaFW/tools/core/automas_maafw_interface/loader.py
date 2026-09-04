@@ -38,7 +38,6 @@ from .models import (
     iter_pretasks,
 )
 
-
 IMPORTABLE_KEYS = (
     "task",
     "option",

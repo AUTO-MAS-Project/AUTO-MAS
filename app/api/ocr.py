@@ -21,14 +21,15 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field
-from typing import Optional, TYPE_CHECKING
 import base64
 from io import BytesIO
+from typing import TYPE_CHECKING, Optional
 
-from app.utils import get_logger
+from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
+
 from app.models.schema import OutBase
+from app.utils import get_logger
 
 if TYPE_CHECKING:
     from app.utils.OCR.OCRtool import OCRTool as OCRTool

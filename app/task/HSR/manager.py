@@ -345,6 +345,10 @@ class HSRManager(TaskExecuteBase):
                 continue
             if user_config.get("Info", "RemainedDay") == 0:
                 continue
+            # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
+            # 用户的直控快照、引擎需求与托管账号数把这一个用户拦下来。
+            if not self.task_info.is_target_user(str(uid)):
+                continue
             has_executable_user = True
 
             control = resolve_user_control(user_config, script_config=script_config)
@@ -478,8 +482,10 @@ class HSRManager(TaskExecuteBase):
     ) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
 
-        for _uid, user_config in script_config.UserData.items():
+        for uid, user_config in script_config.UserData.items():
             if not self._is_executable_user(user_config):
+                continue
+            if not self.task_info.is_target_user(str(uid)):
                 continue
             if (
                 resolve_user_control(
@@ -564,7 +570,9 @@ class HSRManager(TaskExecuteBase):
                 status="等待",
             )
             for uid, config in self.user_config.items()
-            if config.get("Info", "Status") and config.get("Info", "RemainedDay") != 0
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
         ]
         logger.info(
             f"HSR 用户列表加载完成，已筛选用户数：{len(self.script_info.user_list)}"
@@ -823,11 +831,10 @@ class HSRManager(TaskExecuteBase):
         if not self.script_info.user_list:
             return
 
-        over_user = [u.name for u in self.script_info.user_list if u.status == "完成"]
-        unfinished_user = [
-            u.name for u in self.script_info.user_list if u.status != "完成"
-        ]
-        uncompleted_count = len(unfinished_user)
+        over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
+        uncompleted_count = sum(
+            1 for u in self.script_info.user_list if u.status != "完成"
+        )
         task_mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
@@ -842,7 +849,7 @@ class HSRManager(TaskExecuteBase):
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_count": len(over_user),
+            "completed_count": over_count,
             "uncompleted_count": uncompleted_count,
             "result": task_result,
             "game_sign_summary": has_game_sign_summary,

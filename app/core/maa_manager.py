@@ -24,28 +24,28 @@ from ctypes import c_void_p
 from pathlib import Path
 from typing import Any
 
-
-from maa.tasker import Tasker
 from maa.context import Context
-from maa.toolkit import Toolkit, AdbDevice
-from maa.resource import Resource
-from maa.custom_action import CustomAction
 
 # from maa.define import LoggingLevelEnum
 from maa.controller import (
     AdbController,
-    Win32Controller,
-    MaaAdbScreencapMethodEnum,
-    MaaAdbInputMethodEnum,
-    MaaWin32ScreencapMethodEnum,
-    MaaWin32InputMethodEnum,
-    JobWithResult,
     Job,
+    JobWithResult,
+    MaaAdbInputMethodEnum,
+    MaaAdbScreencapMethodEnum,
+    MaaWin32InputMethodEnum,
+    MaaWin32ScreencapMethodEnum,
+    Win32Controller,
 )
+from maa.custom_action import CustomAction
+from maa.resource import Resource
+from maa.tasker import Tasker
+from maa.toolkit import AdbDevice, Toolkit
+
+from app.models.emulator import DeviceInfo
+from app.utils import get_logger, resource_path
 
 from .config import Config
-from app.models.emulator import DeviceInfo
-from app.utils import get_logger
 
 logger = get_logger("MaaFW管理")
 
@@ -70,7 +70,7 @@ class _MaaFWManager:
             encoding="utf-8",
         )
         Toolkit.init_option(Path.cwd())
-        self.resource.post_bundle(Path.cwd() / "res/MaaFW").wait()
+        self.resource.post_bundle(resource_path("MaaFW")).wait()
 
     @staticmethod
     async def do_job(job: Job | JobWithResult) -> Any:

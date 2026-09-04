@@ -34,14 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Literal, TextIO
 
-from packaging.version import InvalidVersion, Version
-
 import maa as maa_package
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
-from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
-    describe_runtime_architecture_mismatch,
-    project_maafw_runtime_path,
-)
 from maa.agent_client import AgentClient
 from maa.controller import (
     AdbController,
@@ -59,7 +52,14 @@ from maa.library import Library
 from maa.resource import Resource, ResourceEventSink
 from maa.tasker import Tasker, TaskerEventSink
 from maa.toolkit import Toolkit
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
+
+from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
+from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    describe_runtime_architecture_mismatch,
+    project_maafw_runtime_path,
+)
 
 try:
     from .run_plan import (

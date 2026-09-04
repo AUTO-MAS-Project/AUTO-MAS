@@ -25,7 +25,6 @@ from .state import (
     redact_url,
 )
 
-
 CHUNK_SIZE = 64 * 1024
 MAX_REDIRECTS = 10
 RETRY_COUNT = 3

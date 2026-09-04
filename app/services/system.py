@@ -22,10 +22,11 @@
 
 import asyncio
 import os
-import psutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
+
+import psutil
 
 from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData

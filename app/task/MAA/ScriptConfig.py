@@ -19,21 +19,22 @@
 
 #   Contact: DLmaster_361@163.com
 
-import json
 import asyncio
+import json
 import shutil
 from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
+
 from .AutoProxy import _build_maa_preset_task_queue
 
 logger = get_logger("MAA 脚本设置")

@@ -22,8 +22,8 @@
 
 import json
 import re
-from contextlib import contextmanager
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -32,7 +32,6 @@ import sentry_sdk
 from sentry_sdk import metrics
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.loguru import LoguruIntegration
-
 
 SENTRY_DSN = (
     "https://eae490f602916b04f2f51f49f0fb5155@"
