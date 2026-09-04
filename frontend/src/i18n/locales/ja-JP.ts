@@ -258,6 +258,7 @@ export default {
     maaAnnihilationStartDayHint:
       '設定した曜日になってから殲滅タスクを開始します。今週の上限に達すると以降の殲滅は自動的にスキップされます',
     maaWeekStatus: '今週の状態：',
+    maaMonthStatus: '今月の状態：',
     maaDone: '完了',
     maaNotDone: '未完了',
     maaEventFirst: 'イベントステージ優先',
@@ -283,6 +284,9 @@ export default {
     maaDaily: '日課タスク',
     maaRoguelike: '自動ローグライク',
     maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
+    maaGreenTicketStore: '緑チケット商店',
+    maaGreenTicketStoreHint:
+      '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
     maaRecruit: '自動公開求人',
     maaMall: '信用取引所',
     fixed: '固定',
@@ -946,8 +950,6 @@ export default {
     updateScriptConfigurationFile: '選んだタイミングでスクリプトの設定ファイルを更新します',
     includeRunStatisticsNotification: '通知の本文に実行統計を含めます',
     baseConfigurationImported: '基地設定をインポートしました',
-    whenSetScriptS:
-      '入力するとスクリプト自身の MirrorChyan CDK を優先して使います。空の場合は MAS 全体の更新設定にある CDK を使います',
     fillingPathEnablesThat:
       'パスを入力するとそのエンジンが有効になります。パスを空にすると、そのエンジンは検証もスケジュールもされなくなります。',
     multiPlatform: 'マルチプラットフォーム',
@@ -1147,7 +1149,9 @@ export default {
       'MAS が公式のバージョンを確認して更新します。更新前にゲームが起動していないことを確認してください',
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
-    leaveEmptyUseGlobal: '空の場合は全体設定の MirrorChyan CDK を使います',
+    cdkTip:
+      'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
+    cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     directory: 'フォルダ',
     useExistingOkwwConfiguration:
       'Okww の既存設定をそのまま使い、細かい設定はスクリプトの GUI に任せます。',

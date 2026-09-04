@@ -179,10 +179,13 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   getDefaultMaaFWScriptConfig,
+  isMaaFWUpdateChannel,
+  isMaaFWUpdateSource,
   updateChannelOptions,
   updateSourceOptions,
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
+import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -396,6 +399,16 @@ const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined
       (config?.[section] as Record<string, unknown>) ?? {}
     )
   })
+  // 旧配置只有 IfAutoUpdate 时映射到新的自动更新时机；只改本地草稿，不回写后端。
+  maafwConfig.Update.AutoUpdateMode = resolveAutoUpdateMode(config?.Update)
+  // 旧配置里 Source / Channel 可能是空串（曾表示「自动」/「跟随全局」），现在都不是
+  // 合法选项，下拉框会显示空白；同样只修正本地草稿，用户改动前不回写。
+  if (!isMaaFWUpdateSource(maafwConfig.Update.Source)) {
+    maafwConfig.Update.Source = defaults.Update.Source
+  }
+  if (!isMaaFWUpdateChannel(maafwConfig.Update.Channel)) {
+    maafwConfig.Update.Channel = defaults.Update.Channel
+  }
   formData.name = maafwConfig.Info.Name || ''
   formData.path = maafwConfig.Info.Path || ''
   dailyOnceTasks.value = parseTaskNameList(maafwConfig.Run.DailyOnceTasks)

@@ -43,6 +43,8 @@ from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
     ARKNIGHTS_PACKAGE_NAME,
     MAA_ANNIHILATION_FIGHT_BASE,
+    MAA_GREEN_TICKET_STORE_TASK,
+    MAA_MODE_TIME_LIMIT_BOOK,
     MAA_REMAIN_FIGHT_BASE,
     MAA_RUN_MOOD_BOOK,
     MAA_STAGE_KEY,
@@ -91,6 +93,12 @@ def _current_week_marker(now: datetime) -> str:
 
     iso_year, iso_week, _ = now.isocalendar()
     return f"{iso_year:04d}-W{iso_week:02d}"
+
+
+def _current_month_marker(now: datetime) -> str:
+    """返回月份标记。"""
+
+    return now.strftime("%Y-%m")
 
 
 def _should_run_annihilation(
@@ -443,9 +451,22 @@ class AutoProxyTask(TaskExecuteBase):
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
 
         self.run_book = {
+            "GreenTicketStore": not self.cur_user_config.get(
+                "Task", "IfGreenTicketStore"
+            ),
             "Annihilation": self.cur_user_config.get("Info", "Annihilation") == "Close",
             "Routine": False,
         }
+
+        if not self.run_book["GreenTicketStore"]:
+            completed_month = self.cur_user_config.get("Data", "GreenTicketStoreMonth")
+
+            if completed_month == _current_month_marker(datetime.now(tz=UTC4)):
+                self.run_book["GreenTicketStore"] = True
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 本次跳过绿票商店："
+                    f"本月记录={completed_month}"
+                )
 
         if not self.run_book["Annihilation"]:
             now = datetime.now(tz=UTC4)
@@ -497,8 +518,9 @@ class AutoProxyTask(TaskExecuteBase):
                 "脚本前任务",
             )
 
-        # 执行剿灭 + 日常
-        for self.mode in ["Annihilation", "Routine"]:
+        # 执行绿票商店 + 剿灭 + 日常
+        # 绿票商店的任务链只认主界面、跑完也停在商店页，放在最前面由后续模式的开始唤醒收拾界面
+        for self.mode in ["GreenTicketStore", "Annihilation", "Routine"]:
             if self.run_book[self.mode]:
                 continue
 
@@ -511,10 +533,12 @@ class AutoProxyTask(TaskExecuteBase):
                 }
                 if self.cur_user_config.get("Info", "StageMode") != "Fixed":
                     self.task_dict["DepotMaintain"] = False
-            else:  # Annihilation
+            elif self.mode == "Annihilation":
                 self.task_dict = {
                     task: bool(task in ("StartUp", "Fight")) for task in MAA_TASKS
                 }
+            else:  # GreenTicketStore
+                self.task_dict = {task: task == "StartUp" for task in MAA_TASKS}
 
             logger.info(
                 f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 任务列表: {list(self.task_dict.values())}"
@@ -626,12 +650,16 @@ class AutoProxyTask(TaskExecuteBase):
                         logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
                     await System.kill_process(self.maa_exe_path)
 
-                    await Notify.push_plyer(
-                        "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
-                        f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
-                        3,
-                    )
+                    # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
+                    if self.mode == "GreenTicketStore":
+                        self.run_book[self.mode] = True
+                    else:
+                        await Notify.push_plyer(
+                            "用户自动代理出现异常！",
+                            f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
+                            f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
+                            3,
+                        )
 
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
@@ -997,6 +1025,10 @@ class AutoProxyTask(TaskExecuteBase):
                 remain_fight["Series"] = int(plan_data.get("SeriesNumb", "0"))
                 task_queue.append(remain_fight)
 
+        # 绿票商店走 MAA 的自定义任务，本模式下队列里只有它和开始唤醒
+        if self.mode == "GreenTicketStore":
+            task_queue.append(dict(MAA_GREEN_TICKET_STORE_TASK))
+
         (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
             json.dumps(gui_set, ensure_ascii=False, indent=4),
             encoding="utf-8",  # OLD: 即将移除
@@ -1105,6 +1137,20 @@ class AutoProxyTask(TaskExecuteBase):
                         f"{progress_text}"
                     )
 
+        # MAA 完成自定义任务时打印的是队列项名称，据此记录本月已购买
+        if (
+            self.mode == "GreenTicketStore"
+            and not self.run_book["GreenTicketStore"]
+            and f"完成任务: {MAA_GREEN_TICKET_STORE_TASK['Name']}" in log
+        ):
+            self.run_book["GreenTicketStore"] = True
+            await self.cur_user_config.set(
+                "Data",
+                "GreenTicketStoreMonth",
+                _current_month_marker(datetime.now(tz=UTC4)),
+            )
+            logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
+
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
@@ -1144,11 +1190,11 @@ class AutoProxyTask(TaskExecuteBase):
             minutes=(
                 # 本次开始唤醒会触发资源热更新时放宽超时，避免把正常更新误判为卡死
                 max(
-                    self.script_config.get("Run", f"{self.mode}TimeLimit"),
+                    self.script_config.get("Run", MAA_MODE_TIME_LIMIT_BOOK[self.mode]),
                     self.script_config.get("Run", "GameUpdateTimeLimit"),
                 )
                 if self.if_game_hot_update
-                else self.script_config.get("Run", f"{self.mode}TimeLimit")
+                else self.script_config.get("Run", MAA_MODE_TIME_LIMIT_BOOK[self.mode])
             ),
         ):
             self.cur_user_log.status = "MAA 进程超时"

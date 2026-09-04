@@ -100,33 +100,30 @@
       class="activity-list"
       :class="{ 'is-plain': activityPlain }"
     >
-      <div
-        v-for="activity in activeActivities"
-        :key="activity.name"
-        class="activity-item"
-        :class="{ 'is-fallback': !getActivityImage(activity) }"
-      >
-        <img
-          v-if="getActivityImage(activity)"
-          :src="getActivityImage(activity)"
-          :alt="activity.name"
-          class="activity-image"
-          referrerpolicy="no-referrer"
-          @error="handleImageError(activity.name)"
-        />
-        <div class="activity-overlay" />
-        <div class="activity-content">
-          <div class="activity-name">{{ activity.name }}</div>
-          <div v-if="activity.description" class="activity-desc">{{ activity.description }}</div>
-          <div class="activity-meta">
-            <a-statistic-countdown
-              :value="getCountdownValue(activity.endTime)"
-              :format="t('home.countdown.dh')"
-              :value-style="activityCountdownStyle"
-              @finish="emit('refresh')"
-            />
-            <div class="activity-end-time">
-              {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+      <div v-for="activity in activeActivities" :key="activity.name" class="activity-card">
+        <div class="activity-item" :class="{ 'is-fallback': !getActivityImage(activity) }">
+          <img
+            v-if="getActivityImage(activity)"
+            :src="getActivityImage(activity)"
+            :alt="activity.name"
+            class="activity-image"
+            referrerpolicy="no-referrer"
+            @error="handleImageError(activity.name)"
+          />
+          <div class="activity-overlay" />
+          <div class="activity-content">
+            <div class="activity-name">{{ activity.name }}</div>
+            <div v-if="activity.description" class="activity-desc">{{ activity.description }}</div>
+            <div class="activity-meta">
+              <a-statistic-countdown
+                :value="getCountdownValue(activity.endTime)"
+                :format="t('home.countdown.dh')"
+                :value-style="activityCountdownStyle"
+                @finish="emit('refresh')"
+              />
+              <div class="activity-end-time">
+                {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+              </div>
             </div>
           </div>
         </div>
@@ -515,7 +512,7 @@ const formatTime = (value: string) =>
     box-shadow 0.25s ease;
 }
 
-.activity-item:hover {
+.activity-card:hover .activity-item {
   transform: translateY(-3px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
 }
@@ -529,7 +526,7 @@ const formatTime = (value: string) =>
   transition: transform 0.35s ease;
 }
 
-.activity-item:hover .activity-image {
+.activity-card:hover .activity-image {
   transform: scale(1.05);
 }
 
@@ -602,7 +599,7 @@ const formatTime = (value: string) =>
   scrollbar-width: none;
 }
 
-.activity-item:hover .activity-desc {
+.activity-card:hover .activity-desc {
   max-height: 60px;
   opacity: 1;
   margin-bottom: 8px;
@@ -715,11 +712,11 @@ const formatTime = (value: string) =>
 }
 
 @media (max-width: 560px) {
-  .activity-item {
+  .activity-card {
     width: 180px;
   }
 
-  .activity-list.is-plain .activity-item {
+  .activity-list.is-plain .activity-card {
     width: 200px;
   }
 }
