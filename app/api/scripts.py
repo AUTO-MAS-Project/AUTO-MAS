@@ -1283,6 +1283,79 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
 
 
 @router.get(
+    "/bettergi/one-dragon/settings",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 一条龙设置项（右栏按任务分组展示）",
+    response_model=BetterGIOneDragonSettingsOut,
+    status_code=200,
+)
+async def get_bettergi_one_dragon_settings_api(
+    scriptId: str, userId: str, configName: str = ""
+) -> BetterGIOneDragonSettingsOut:
+    """返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+
+    供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        data = one_dragon.read_user_one_dragon_settings(
+            root, scriptId, userId, configName
+        )
+        return BetterGIOneDragonSettingsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 项一条龙设置",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGIOneDragonSettingsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
+
+
+@router.post(
+    "/bettergi/one-dragon/settings",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 一条龙设置项到 per-user 副本",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_one_dragon_settings_api(
+    req: BetterGIOneDragonSettingsIn = Body(...),
+) -> OutBase:
+    """把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。"""
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        one_dragon.write_user_one_dragon_settings(
+            root, req.scriptId, req.userId, req.configName, req.settings
+        )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存 {len(req.settings)} 项一条龙设置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
     "/bettergi/one-dragon/custom-groups",
     tags=["BetterGI"],
     summary="获取 BetterGI 一条龙自定义配置组",
@@ -1357,6 +1430,125 @@ async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
+        )
+
+
+@router.get(
+    "/bettergi/js-scripts",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 可用自定义 JS 脚本列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_js_scripts_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 可执行自定义 JS 脚本候选。
+
+    ``label`` 为 ``manifest.json`` 的中文显示名（目录名常为英文，如
+    ``AAA-Artifacts-Bulk-Supply`` → 「AAA狗粮批发」）；``value`` 为脚本**目录名**
+    （BetterGI 一条龙按目录名定位任务，落库与执行都用它）。
+    供一条龙「添加配置组」弹窗作为候选（贴 JS 标签）选择。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        items = one_dragon.list_js_scripts(root)
+        data = [ComboBoxItem(label=display, value=folder) for folder, display in items]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个自定义 JS 脚本",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/bettergi/dirs",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 常用目录（脚本仓库 / JsScript / AutoPathing）",
+    response_model=BetterGIScriptDirsOut,
+    status_code=200,
+)
+async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
+    """返回 BetterGI 三个常用目录的绝对路径，供「添加配置组」弹窗的打开目录按钮使用。"""
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        dirs = one_dragon.resolve_script_dirs(root)
+        return BetterGIScriptDirsOut(
+            code=200,
+            status="success",
+            message="目录解析成功",
+            repoDir=dirs.get("repo"),
+            jsScriptDir=dirs.get("jsScript"),
+            autoPathingDir=dirs.get("autoPathing"),
+            oneDragonDir=dirs.get("oneDragon"),
+            scriptGroupDir=dirs.get("scriptGroup"),
+            exePath=dirs.get("exe"),
+        )
+    except Exception as e:
+        return BetterGIScriptDirsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            repoDir=None,
+            jsScriptDir=None,
+            autoPathingDir=None,
+            oneDragonDir=None,
+            scriptGroupDir=None,
+            exePath=None,
+        )
+
+
+@router.get(
+    "/bettergi/auto-pathing-tree",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 地图追踪目录树",
+    response_model=BetterGIPathingTreeOut,
+    status_code=200,
+)
+async def get_bettergi_auto_pathing_tree_api(scriptId: str) -> BetterGIPathingTreeOut:
+    """返回 BetterGI 地图追踪目录树：{RootPath}/User/AutoPathing 的递归结构。
+
+    节点：``{name, dirs, files}``，``files`` 为路径文件名（不含 ``.json``、含相对目录前缀），
+    全局唯一。供「添加配置组」弹窗「地图追踪」标签页左树右表浏览。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        root_dir, tree = one_dragon.build_auto_pathing_tree(root)
+        return BetterGIPathingTreeOut(
+            code=200,
+            status="success",
+            message="地图追踪目录树加载成功",
+            root=root_dir,
+            dirs=[BetterGIPathingNode(**node) for node in tree],
+        )
+    except Exception as e:
+        return BetterGIPathingTreeOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            root=None,
+            dirs=[],
         )
 
 

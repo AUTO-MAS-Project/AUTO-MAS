@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
+import type { BetterGIPathingTreeOut } from '../models/BetterGIPathingTreeOut';
+import type { BetterGIScriptDirsOut } from '../models/BetterGIScriptDirsOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -73,6 +75,77 @@ export class BetterGiService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/bettergi/one-dragon/configs',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 可用自定义 JS 脚本列表
+     * 返回 BetterGI 可执行自定义 JS 脚本候选。
+     *
+     * ``label`` 为 ``manifest.json`` 的中文显示名（目录名常为英文，如
+     * ``AAA-Artifacts-Bulk-Supply`` → 「AAA狗粮批发」）；``value`` 为脚本**目录名**
+     * （BetterGI 一条龙按目录名定位任务，落库与执行都用它）。
+     * 供一条龙「添加配置组」弹窗作为候选（贴 JS 标签）选择。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiJsScriptsApiApiScriptsBettergiJsScriptsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/js-scripts',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 常用目录（脚本仓库 / JsScript / AutoPathing）
+     * 返回 BetterGI 三个常用目录的绝对路径，供「添加配置组」弹窗的打开目录按钮使用。
+     * @param scriptId
+     * @returns BetterGIScriptDirsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptDirsApiApiScriptsBettergiDirsGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIScriptDirsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/dirs',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 地图追踪目录树
+     * 返回 BetterGI 地图追踪目录树：{RootPath}/User/AutoPathing 的递归结构。
+     *
+     * 节点：``{name, dirs, files}``，``files`` 为路径文件名（不含 ``.json``、含相对目录前缀），
+     * 全局唯一。供「添加配置组」弹窗「地图追踪」标签页左树右表浏览。
+     * @param scriptId
+     * @returns BetterGIPathingTreeOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiAutoPathingTreeApiApiScriptsBettergiAutoPathingTreeGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIPathingTreeOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/auto-pathing-tree',
             query: {
                 'scriptId': scriptId,
             },

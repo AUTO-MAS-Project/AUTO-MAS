@@ -103,6 +103,59 @@ class BetterGICustomGroupsOut(OutBase):
     )
 
 
+class BetterGIOneDragonSettingsOut(OutBase):
+    """BetterGI 一条龙设置项（右栏按任务分组展示/编辑）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="一条龙设置项键值（camelCase，与 BGI 一条龙 JSON 顶层一致）",
+    )
+
+
+class BetterGIOneDragonSettingsIn(BaseModel):
+    """BetterGI 一条龙设置项写入请求"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="所属用户ID")
+    configName: str = Field(..., description="一条龙配置名")
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的设置项（camelCase 键）"
+    )
+
+
+class BetterGIPathingNode(BaseModel):
+    """BetterGI AutoPathing 目录树节点"""
+
+    name: str = Field(..., description="目录名")
+    dirs: List["BetterGIPathingNode"] = Field(
+        default_factory=list, description="子目录"
+    )
+    files: List[str] = Field(default_factory=list, description="该目录下路径文件名(不含 .json)")
+
+
+BetterGIPathingNode.model_rebuild()
+
+
+class BetterGIPathingTreeOut(OutBase):
+    """BetterGI 地图追踪目录树（{RootPath}/User/AutoPathing 的递归结构）"""
+
+    root: Optional[str] = Field(default=None, description="AutoPathing 绝对目录")
+    dirs: List[BetterGIPathingNode] = Field(
+        default_factory=list, description="顶层目录树"
+    )
+
+
+class BetterGIScriptDirsOut(OutBase):
+    """BetterGI 常用目录与可执行文件绝对路径"""
+
+    repoDir: Optional[str] = Field(default=None, description="脚本仓库检出目录")
+    jsScriptDir: Optional[str] = Field(default=None, description="JS 脚本目录")
+    autoPathingDir: Optional[str] = Field(default=None, description="地图追踪任务目录")
+    oneDragonDir: Optional[str] = Field(default=None, description="一条龙配置目录")
+    scriptGroupDir: Optional[str] = Field(default=None, description="配置组目录")
+    exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
+
+
 class MaaEndOptionsOut(OutBase):
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")

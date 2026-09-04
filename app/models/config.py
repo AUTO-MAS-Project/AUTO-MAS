@@ -3061,16 +3061,18 @@ class OkNteUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
-# BetterGI 一条龙内置配置组（按 BetterGI 默认顺序，与 tools/one_dragon.py 保持同步）
+# BetterGI 一条龙内置配置组（MAS 默认顺序，与 tools/one_dragon.py 保持同步）。
+# MAS 默认一条龙顺序：领取邮件 → 合成树脂 → 体力作战（MAS 虚拟项，不在此表）
+# → 自动幽境危战 → 自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励
 _BGI_BUILTIN_ONE_DRAGON_GROUPS = [
     "领取邮件",
     "合成树脂",
-    "自动地脉花",
-    "自动秘境",
-    "自动首领讨伐",
     "自动幽境危战",
-    "领取每日奖励",
+    "自动地脉花",
+    "自动首领讨伐",
+    "自动秘境",
     "领取尘歌壶奖励",
+    "领取每日奖励",
 ]
 
 # 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。

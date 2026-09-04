@@ -10,7 +10,8 @@
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 用户编辑页的一条龙配置改为可视化队列：左侧可拖拽排序配置组，支持一次输入多个配置组批量加入、右键移出、一键清空，并新增「体力作战」专项项（启用后自动关闭并冻结刷取类官方组，关闭后恢复） by [@TCddddd](https://github.com/TCddddd)"
+                "BetterGI专项 用户编辑页的一条龙配置改为可视化队列：左侧可拖拽排序配置组，支持一次输入多个配置组批量加入、右键移出、一键清空，并新增「体力作战」专项项（启用后自动关闭并冻结刷取类官方组，关闭后恢复） by [@TCddddd](https://github.com/TCddddd)",
+                "BetterGI专项 添加配置组弹窗加大并改为「JS脚本/地图追踪」双标签页：顶部提供自适应多行输入与两排入口按钮（在线脚本仓库 s.bettergi.com、脚本目录、任务目录、打开BGI、一条龙目录、配置组目录）；JS脚本页可搜索加入 User/JsScript 脚本、地图追踪页按 User/AutoPathing 目录树浏览路径文件，两者均点击先写入输入框再确认统一入队，并支持 Shift 区间/Ctrl 逐个多选；一条龙队列行同样支持 Shift/Ctrl 多选后可批量启停或移除（JS 归入自定义标签、路径文件带「路径」标签） by [@TCddddd](https://github.com/TCddddd)"
             ],
             "程序优化": [
                 "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -66,7 +67,8 @@
                 "MFW 项目更新检查版本时不再占用 Mirror 酱 CDK 的当日下载次数 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新在 Mirror 酱 CDK 过期、类型不符、次数用尽或被封禁时会说明原因，不再只提示失败 by [@qiyinxi](https://github.com/qiyinxi)",
                 "首页 修复活动卡片鼠标悬停在边缘时反复上下抖动的问题",
-                "BetterGI专项 修复一条龙任务跨零点被误判超时、重试后执行报告出现两轮重复、设置会话结束后 BGI GUI 残留运行时配置、切号首次启用误删已有脚本仓库、以管理员权限运行时重复弹出 UAC 授权（支持关闭管理员提权启动）、以及自定义配置组默认启用状态前后端不一致的问题 by [@TCddddd](https://github.com/TCddddd)"
+                "BetterGI专项 修复一条龙任务跨零点被误判超时、重试后执行报告出现两轮重复、设置会话结束后 BGI GUI 残留运行时配置、切号首次启用误删已有脚本仓库、以管理员权限运行时重复弹出 UAC 授权（支持关闭管理员提权启动）、以及自定义配置组默认启用状态前后端不一致的问题 by [@TCddddd](https://github.com/TCddddd)",
+                "BetterGI专项 修复开启体力作战时仍可从添加弹窗把被冻结的刷取类官方组加入一条龙，导致该组被重新启用且无法再关闭或移除的问题 by [@TCddddd](https://github.com/TCddddd)"
             ]
         },
         "v5.5.0-beta.2": {

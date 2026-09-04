@@ -510,6 +510,24 @@
                   <span class="bettergi-groups-toolbar-tip">{{ t('edit.bettergiRightClickRemove') }}</span>
                 </div>
 
+                <div v-if="hasMultiSelection" class="bettergi-groups-multi-bar">
+                  <span class="bettergi-groups-multi-count">
+                    {{ t('edit.bettergiMultiSelected', { count: multiSelectedRows.length }) }}
+                  </span>
+                  <a-space size="small">
+                    <a-button size="small" @click="batchToggleEnabled(true)">
+                      {{ t('edit.bettergiMultiEnable') }}
+                    </a-button>
+                    <a-button size="small" @click="batchToggleEnabled(false)">
+                      {{ t('edit.bettergiMultiDisable') }}
+                    </a-button>
+                    <a-button size="small" danger @click="batchRemoveSelected">
+                      <template #icon><ClearOutlined /></template>
+                      {{ t('edit.bettergiMultiRemove') }}
+                    </a-button>
+                  </a-space>
+                </div>
+
                 <draggable
                   v-model="dragonListModel"
                   :item-key="getDragonRowKey"
@@ -522,31 +540,26 @@
                   class="bettergi-groups-list"
                   @end="handleGroupDragEnd"
                 >
-                  <template #item="{ element: item }">
+                  <template #item="{ element: item, index }">
                     <div
                       class="group-row"
                       :class="{
                         'group-row-selected': isRowSelected(item),
+                        'group-row-multi': isRowMultiSelected(item),
                         'group-row-disabled': !groupsEditable || isGroupFrozen(item),
                         'group-row-frozen': isGroupFrozen(item),
                       }"
                       @contextmenu.prevent="handleRowContextMenu(item)"
+                      @click="handleRowClick(item, index, $event)"
                     >
                       <!-- 可拖拽热区：覆盖整行左 2/3（名称区），仅右键菜单/开关在热区外 -->
-                      <div
-                        class="group-row-drag-area"
-                        @click="selectConfigGroup(item)"
-                      >
+                      <div class="group-row-drag-area">
                         <HolderOutlined class="group-row-drag-handle" aria-hidden="true" />
                         <span class="group-row-name">
                           <a-tag
-                            color="default"
                             size="small"
                             class="group-row-kind-tag"
-                            :class="{
-                              'group-row-prefix-stamina': item.kind === 'stamina',
-                              'group-row-prefix-custom': item.kind === 'custom',
-                            }"
+                            :class="kindTagClass(item.kind)"
                           >
                             {{ groupPrefix(item) }}
                           </a-tag>
@@ -574,14 +587,8 @@
                   <div class="bettergi-groups-detail-header">
                     <div class="bettergi-groups-detail-title">
                       <a-tag
-                        :color="
-                          selectedGroupIdentity.kind === 'stamina'
-                            ? 'purple'
-                            : selectedGroupIdentity.kind === 'custom'
-                              ? 'blue'
-                              : 'default'
-                        "
                         size="small"
+                        :class="kindTagClass(selectedGroupIdentity.kind)"
                       >
                         {{ groupPrefix(selectedGroupIdentity) }}
                       </a-tag>
@@ -607,11 +614,86 @@
                       <span class="config-group-item-dot"></span>
                     </div>
                   </div>
-                  <p class="bettergi-groups-detail-desc">{{ groupDescText(selectedGroupIdentity) }}</p>
+
+                  <!-- 内置配置组：该任务在 BGI 一条龙里的可设置项 -->
+                  <template v-if="selectedGroupIdentity.kind === 'builtin' && groupsEditable">
+                    <div class="bettergi-groups-settings">
+                      <a-spin :spinning="dragonSettingsLoading" size="small">
+                        <div class="bettergi-groups-settings-fields">
+                          <template v-for="section in currentGroupSettingSections" :key="section.title">
+                            <div class="bettergi-setting-section-title">{{ section.title }}</div>
+                            <template v-for="field in section.fields" :key="field.key">
+                              <!-- 布尔开关 -->
+                              <div v-if="field.type === 'bool'" class="bettergi-setting-row">
+                                <span class="bettergi-setting-label">{{ field.label }}</span>
+                                <a-switch
+                                  :checked="Boolean(dragonSettings[field.key])"
+                                  @change="(checked: boolean | string | number) => updateDragonSetting(field.key, Boolean(checked))"
+                                />
+                              </div>
+                              <!-- 数字 -->
+                              <div v-else-if="field.type === 'number'" class="bettergi-setting-row">
+                                <span class="bettergi-setting-label">{{ field.label }}</span>
+                                <a-input-number
+                                  :value="Number(dragonSettings[field.key]) || 0"
+                                  :min="field.min ?? 0"
+                                  :max="field.max"
+                                  :step="field.step ?? 1"
+                                  @change="(value: number | string | null) => updateDragonSetting(field.key, Number(value) || 0)"
+                                />
+                              </div>
+                              <!-- 多选：数组字段（如尘歌壶奖励对象） -->
+                              <div v-else-if="field.type === 'multi'" class="bettergi-setting-row">
+                                <span class="bettergi-setting-label">{{ field.label }}</span>
+                                <a-select
+                                  mode="multiple"
+                                  :value="Array.isArray(dragonSettings[field.key]) ? (dragonSettings[field.key] as string[]) : []"
+                                  :options="field.options"
+                                  :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                                  option-filter-prop="label"
+                                  @change="(values: unknown) => updateDragonSetting(field.key, Array.isArray(values) ? values : [])"
+                                />
+                              </div>
+                              <!-- 下拉（可自由输入）：地区/策略等候选枚举 -->
+                              <div v-else-if="field.type === 'select'" class="bettergi-setting-row">
+                                <span class="bettergi-setting-label">{{ field.label }}</span>
+                                <a-select
+                                  :value="String(dragonSettings[field.key] ?? '')"
+                                  :options="field.options"
+                                  :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                                  show-search
+                                  allow-clear
+                                  option-filter-prop="label"
+                                  @change="(value: unknown) => updateDragonSetting(field.key, value == null ? '' : String(value))"
+                                />
+                              </div>
+                              <!-- 纯文本 -->
+                              <div v-else class="bettergi-setting-row">
+                                <span class="bettergi-setting-label">{{ field.label }}</span>
+                                <a-input
+                                  :value="String(dragonSettings[field.key] ?? '')"
+                                  :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                                  @change="(e: Event) => updateDragonSetting(field.key, (e.target as HTMLInputElement).value)"
+                                />
+                              </div>
+                            </template>
+                          </template>
+                        </div>
+                      </a-spin>
+                      <div class="bettergi-groups-settings-actions">
+                        <a-button
+                          type="primary"
+                          :loading="dragonSettingsSaving"
+                          :disabled="!dragonSettingsDirty"
+                          @click="saveDragonGroupSettings"
+                        >
+                          {{ t('edit.bettergiGroupSettingsSave') }}
+                        </a-button>
+                      </div>
+                    </div>
+                  </template>
                 </template>
-                <div v-else class="bettergi-groups-detail-empty">
-                  <a-empty :description="t('edit.bettergiGroupsEmptyRight')" />
-                </div>
+                <div v-else class="bettergi-groups-detail-empty"></div>
               </div>
             </div>
           </div>
@@ -621,45 +703,145 @@
             v-model:open="addModal.open"
             :title="t('edit.bettergiAddToDragon')"
             :ok-text="t('edit.bettergiAddToDragonOk')"
-            :ok-button-props="{ disabled: !addModal.name.trim() }"
+            :ok-button-props="{ disabled: !addModal.items.length && !addModal.draft.trim() }"
             :cancel-text="t('edit.cancel')"
+            width="920px"
+            class="add-dragon-modal"
             @ok="confirmAddToDragon"
             @cancel="addModal.open = false"
           >
-            <a-input
-              v-model:value="addModal.name"
-              :placeholder="t('edit.bettergiInputGroupNames')"
-              class="add-dragon-input"
-            />
-            <p class="add-dragon-input-tip">{{ t('edit.bettergiInputGroupNamesTip') }}</p>
-            <div class="add-dragon-candidates">
+            <!-- 顶部：标签输入（彩色气泡 + 行内输入） + 打开目录按钮 -->
+            <div class="add-dragon-input-row">
               <div
-                v-for="candidate in addModal.candidates"
-                :key="`${candidate.kind}:${candidate.key}`"
-                class="add-dragon-candidate"
-                :class="{
-                  'add-dragon-candidate-picked': candidateInInput(candidate),
-                  'add-dragon-candidate-disabled': !ALLOW_DUPLICATE_GROUPS && inDragon(candidate),
-                }"
-                @click="
-                  !ALLOW_DUPLICATE_GROUPS && inDragon(candidate)
-                    ? warnAlreadyInDragon()
-                    : pickAddCandidate(candidate)
-                "
+                class="add-dragon-tag-editor add-dragon-input"
+                :class="{ 'add-dragon-tag-editor-focus': addDraftFocused }"
+                @click="focusAddDraftInput"
               >
-                <a-tag
-                  size="small"
-                  :color="candidate.kind === 'stamina' ? 'purple' : candidate.kind === 'custom' ? 'blue' : 'default'"
-                  class="add-dragon-candidate-tag"
+                <span
+                  v-for="chip in addModal.items"
+                  :key="chip.chipUid"
+                  class="add-dragon-tag-chip"
+                  :class="kindTagClass(chip.kind)"
                 >
-                  {{ groupPrefix(candidate) }}
-                </a-tag>
-                <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
-                <a-tag v-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
-                  {{ t('edit.bettergiInQueue') }}
-                </a-tag>
+                  <span class="add-dragon-tag-chip-label">{{ groupLabel(chip) }}</span>
+                  <CloseOutlined
+                    class="add-dragon-tag-chip-remove"
+                    @click.stop="removeAddChip(chip.chipUid)"
+                  />
+                </span>
+                <input
+                  ref="addDraftInputRef"
+                  v-model="addModal.draft"
+                  class="add-dragon-tag-draft-input"
+                  :placeholder="addModal.items.length ? '' : t('edit.bettergiInputGroupNames')"
+                  @focus="addDraftFocused = true"
+                  @blur="addDraftFocused = false"
+                  @keydown="handleAddDraftKeydown"
+                />
+              </div>
+              <div class="add-dragon-dir-buttons">
+                <a-space direction="vertical" size="small" class="add-dragon-dir-col">
+                  <a-space size="small">
+                    <a-button size="small" @click="openBettergiScriptSite">
+                      <template #icon><GlobalOutlined /></template>
+                      {{ t('edit.bettergiOpenScriptRepo') }}
+                    </a-button>
+                    <a-button size="small" @click="openBettergiDir('jsScript')">
+                      <template #icon><FolderOpenOutlined /></template>
+                      {{ t('edit.bettergiOpenScriptDir') }}
+                    </a-button>
+                    <a-button size="small" @click="openBettergiDir('autoPathing')">
+                      <template #icon><FolderOpenOutlined /></template>
+                      {{ t('edit.bettergiOpenTaskDir') }}
+                    </a-button>
+                  </a-space>
+                  <a-space size="small">
+                    <a-button size="small" @click="openBettergiScheduler">
+                      <template #icon><PlayCircleOutlined /></template>
+                      {{ t('edit.bettergiOpenBgi') }}
+                    </a-button>
+                    <a-button size="small" @click="openBettergiDir('oneDragon')">
+                      <template #icon><FolderOpenOutlined /></template>
+                      {{ t('edit.bettergiOpenOneDragonDir') }}
+                    </a-button>
+                    <a-button size="small" @click="openBettergiDir('scriptGroup')">
+                      <template #icon><FolderOpenOutlined /></template>
+                      {{ t('edit.bettergiOpenScriptGroupDir') }}
+                    </a-button>
+                  </a-space>
+                </a-space>
               </div>
             </div>
+            <p class="add-dragon-input-tip">{{ t('edit.bettergiInputGroupNamesTip') }}</p>
+
+            <a-tabs v-model:activeKey="addModal.activeTab" size="small">
+              <!-- Tab1：JS脚本（现有流式候选） -->
+              <a-tab-pane key="js" :tab="t('edit.bettergiTabJsScript')">
+                <div class="add-dragon-candidates">
+                  <div
+                    v-for="(candidate, index) in addModal.candidates"
+                    :key="`${candidate.kind}:${candidate.key}`"
+                    class="add-dragon-candidate"
+                    :class="{
+                      'add-dragon-candidate-picked': isChipAdded(candidate),
+                      'add-dragon-candidate-disabled': isCandidateBlocked(candidate),
+                    }"
+                    @click="handleCandidateClick(candidate, index, $event)"
+                  >
+                    <a-tag
+                      size="small"
+                      class="add-dragon-candidate-tag"
+                      :class="kindTagClass(candidate.kind)"
+                    >
+                      {{ groupPrefix(candidate) }}
+                    </a-tag>
+                    <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
+                    <a-tag v-if="isGroupFrozen(candidate)" color="orange" size="small">
+                      {{ t('edit.bettergiGroupFrozen') }}
+                    </a-tag>
+                    <a-tag v-else-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
+                      {{ t('edit.bettergiInQueue') }}
+                    </a-tag>
+                  </div>
+                </div>
+              </a-tab-pane>
+
+              <!-- Tab2：地图追踪（AutoPathing 左树右表） -->
+              <a-tab-pane key="pathing" :tab="t('edit.bettergiTabPathing')" :force-render="true">
+                <p class="add-dragon-pathing-hint">{{ t('edit.bettergiPathingSelectHint') }}</p>
+                <div class="add-dragon-pathing-layout">
+                  <a-tree
+                    v-if="pathingTreeData.length"
+                    class="add-dragon-pathing-tree"
+                    :tree-data="pathingTreeData"
+                    :default-expanded-keys="[pathingTreeData[0]?.key]"
+                    :selected-keys="[selectedPathingKey]"
+                    @select="handlePathingSelect"
+                  />
+                  <div v-else class="add-dragon-pathing-empty">
+                    <a-empty :description="t('edit.bettergiPathingEmptyTree')" />
+                  </div>
+                  <div class="add-dragon-pathing-files">
+                    <template v-if="selectedPathingFiles.length">
+                      <div
+                        v-for="(file, index) in selectedPathingFiles"
+                        :key="file"
+                        class="add-dragon-pathing-file"
+                        @click="handlePathingFileClick(file, index, $event)"
+                      >
+                        <span class="add-dragon-pathing-file-name">{{ pathingDisplayName(file) }}</span>
+                        <a-tag size="small" :class="kindTagClass('pathing')">
+                          {{ t('edit.bettergiGroupKindPathing') }}
+                        </a-tag>
+                      </div>
+                    </template>
+                    <div v-else class="add-dragon-pathing-empty">
+                      <a-empty :description="t('edit.bettergiPathingEmptyDir')" />
+                    </div>
+                  </div>
+                </div>
+              </a-tab-pane>
+            </a-tabs>
           </a-modal>
         </a-form>
       </a-card>
@@ -764,18 +946,32 @@ import draggable from 'vuedraggable'
 import {
   ArrowLeftOutlined,
   ClearOutlined,
+  CloseOutlined,
+  FolderOpenOutlined,
+  GlobalOutlined,
   HolderOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
-import { BetterGiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
+import {
+  BetterGiService,
+  type BetterGIPathingNode,
+  type ComboBoxItem,
+  type BetterGIUserConfig,
+} from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useBettergiGuiSession } from '@/composables/useBettergiGuiSession'
 import { useBettergiCustomGroups } from '@/composables/useBettergiCustomGroups'
+import {
+  fetchOneDragonSettings,
+  saveOneDragonSettings,
+} from '@/composables/useBettergiOneDragonSettings'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import { openExternalUrl } from '@/utils/openExternal'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
@@ -807,15 +1003,17 @@ type BetterGIUserFormData = {
 
 // 一条龙内置配置组（与后端 BetterGIUserConfig.OneDragon.Groups 的默认项保持一致）。
 // value 参与后端判定，保持中文原样；只有显示名接词表。
+// 顺序为 MAS 默认一条龙顺序（体力作战插入其第 3 位，见 initDragonList）：
+// 领取邮件 → 合成树脂 → 自动幽境危战 → 自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励
 const ONE_DRAGON_GROUPS = [
   { value: '领取邮件', labelKey: 'edit.bettergiGroupMail' },
   { value: '合成树脂', labelKey: 'edit.bettergiGroupResin' },
-  { value: '自动地脉花', labelKey: 'edit.bettergiGroupLeyLine' },
-  { value: '自动秘境', labelKey: 'edit.bettergiGroupDomain' },
-  { value: '自动首领讨伐', labelKey: 'edit.bettergiGroupBoss' },
   { value: '自动幽境危战', labelKey: 'edit.bettergiGroupStygian' },
-  { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
+  { value: '自动地脉花', labelKey: 'edit.bettergiGroupLeyLine' },
+  { value: '自动首领讨伐', labelKey: 'edit.bettergiGroupBoss' },
+  { value: '自动秘境', labelKey: 'edit.bettergiGroupDomain' },
   { value: '领取尘歌壶奖励', labelKey: 'edit.bettergiGroupTeapot' },
+  { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
 ]
 
 // 切换语言时标签要跟着变，故必须是 computed 而非常量数组
@@ -994,7 +1192,8 @@ const {
 // 一条龙配置组「队列可视化」（8 内置 + 体力作战 + 自定义组）
 // ============================================================
 // 交互语义：
-//  - 左栏列表即「一条龙队列」：其中的配置组按顺序执行。默认 = 8 个官方内置组 + 体力作战（第 9 项）。
+//  - 左栏列表即「一条龙队列」：其中的配置组按顺序执行。默认顺序 =
+//    领取邮件 → 合成树脂 → 体力作战 → 自动幽境危战 → 自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励。
 //  - 行前缀 tag：内置 →「默认」；体力作战 →「专项」；自定义组 →「自定义」。
 //  - 行内胶囊开关控制是否启用（内置 ↔ Groups；自定义 ↔ CustomGroups；体力作战为本地虚拟项）。
 //  - 点击「添加配置组」：从候选（8 内置 + 体力作战 + BetterGI 现有自定义组）挑选，加入队列末尾。
@@ -1005,17 +1204,17 @@ const {
 // 配套，左栏顺序/成员作为前端队列编排（dragonList）保留，待后端支持后映射 Groups/CustomGroups。
 const STAMINA_COMBAT_KEY = '__mas_stamina_combat__'
 
-type ConfigGroupKind = 'builtin' | 'stamina' | 'custom'
+type ConfigGroupKind = 'builtin' | 'stamina' | 'custom' | 'js' | 'pathing'
 
 type ConfigGroupIdentity = {
   kind: ConfigGroupKind
-  key: string // builtin/custom: 组名字面量；stamina: STAMINA_COMBAT_KEY
+  key: string // builtin/custom/js/pathing: 组名字面量或相对路径；stamina: STAMINA_COMBAT_KEY
   /** 队列行唯一实例标识：允许同一配置组重复添加时，每行都有独立 uid（拖拽/删除按行实例） */
   uid?: number
 }
 
 // 启用体力作战时自动关闭并冻结的官方内置组（专项接管刷取）
-const STAMINA_FROZEN_BUILTINS = ['自动秘境', '自动地脉花', '自动首领讨伐']
+const STAMINA_FROZEN_BUILTINS = ['自动秘境', '自动地脉花', '自动首领讨伐', '自动幽境危战']
 
 // 重复添加配置组功能开关：开启后允许同一配置组在一条龙中多次添加（每行为独立实例）。
 // 后端"同一配置多次添加"的语义后续详说，本开关用于先行测试。
@@ -1052,20 +1251,74 @@ const groupsShowCustom = computed(
 const groupPrefix = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'builtin') return t('edit.bettergiGroupPrefixDefault')
   if (item.kind === 'stamina') return t('edit.bettergiGroupKindStamina')
+  if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
+  // JS 脚本与现有自定义组同属「自定义」来源（按需求：JS 的 tag 改为自定义）
   return t('edit.bettergiGroupKindCustom')
 }
+
+// 前缀 tag 颜色（队列行/右栏详情/候选弹窗统一走同一套）：默认=灰、专项=紫、自定义&JS=蓝、路径=绿
+const kindTagClass = (kind: ConfigGroupKind): string => {
+  if (kind === 'stamina') return 'gi-kind-tag-stamina'
+  if (kind === 'pathing') return 'gi-kind-tag-pathing'
+  if (kind === 'custom' || kind === 'js') return 'gi-kind-tag-custom'
+  return 'gi-kind-tag-default'
+}
+
+// 可加入一条龙的 BetterGI 自定义 JS 脚本候选。
+// value=脚本目录名（BetterGI 按目录名定位任务，落库/执行用它）；label=manifest 中文显示名（展示用）。
+const jsScriptOptions = ref<{ label: string; value: string }[]>([])
+
+// CustomGroups 中某名字是否命中 BetterGI JsScript 目录（来源为 JS 脚本时队列行标为 js 前缀）
+const isJsScriptName = (name: string): boolean =>
+  jsScriptOptions.value.some(o => o.value === name)
+
+// JS 目录名 → manifest 中文显示名（候选/队列展示用；找不到时回退目录名）
+const jsDisplayName = (folder: string): string =>
+  jsScriptOptions.value.find(o => o.value === folder)?.label || folder
+
+// 地图追踪目录树（BetterGIPathingNode）与常用目录/可执行文件路径的加载状态
+const pathingTreeRoot = ref('')
+const pathingTreeDirs = ref<BetterGIPathingNode[]>([])
+const bettergiDirs = ref<{
+  repoDir?: string
+  jsScriptDir?: string
+  autoPathingDir?: string
+  oneDragonDir?: string
+  scriptGroupDir?: string
+  exePath?: string
+}>({})
+// 当前选中的目录节点 key（相对路径）
+const selectedPathingKey = ref('')
+
+// 地图追踪相对路径（不含 .json）→ 展示文件名（取路径最后一段）
+const pathingDisplayName = (rel: string): string => {
+  const seg = String(rel || '').split('/').filter(Boolean).pop()
+  return seg || rel
+}
+
+// AutoPathing 目录树所有文件的相对路径集合（用于识别 pathing 行）
+const pathingFileSet = computed<Set<string>>(() => {
+  const set = new Set<string>()
+  const walk = (nodes: BetterGIPathingNode[] | undefined) => {
+    for (const n of nodes || []) {
+      for (const f of n.files || []) set.add(f)
+      walk(n.dirs)
+    }
+  }
+  walk(pathingTreeDirs.value)
+  return set
+})
+
+// CustomGroups 中某名字是否命中 AutoPathing 文件相对路径（来源为地图追踪时队列行标为 pathing 前缀）
+const isPathingName = (name: string): boolean =>
+  pathingTreeDirs.value.length > 0 && pathingFileSet.value.has(name)
 
 const groupLabel = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'builtin') return builtinGroupLabels.value[item.key] ?? item.key
   if (item.kind === 'stamina') return t('edit.bettergiGroupStamina')
+  if (item.kind === 'js') return jsDisplayName(item.key)
+  if (item.kind === 'pathing') return pathingDisplayName(item.key)
   return item.key
-}
-
-// 右栏说明文字：内置/体力作战/自定义 三类分别给不同文案
-const groupDescText = (item: ConfigGroupIdentity): string => {
-  if (item.kind === 'builtin') return t('edit.bettergiGroupCapsuleHint')
-  if (item.kind === 'stamina') return t('edit.bettergiGroupStaminaHint')
-  return t('edit.bettergiCustomGroupsDesc')
 }
 
 // 是否被体力作战冻结（启用体力作战时三个刷取内置组冻结）
@@ -1111,23 +1364,47 @@ const pushDragon = (list: ConfigGroupIdentity[], item: ConfigGroupIdentity) => {
 }
 
 // 依据用户数据初始化一条龙队列（loadUser 后调用一次，随后由增删/拖拽维护）：
-// 种子 = 8 内置（默认在列，enabled 由 Groups 表达）+ 体力作战（默认在列，默认关闭）
+// 种子 = 8 内置（默认在列，enabled 由 Groups 表达）+ 体力作战（默认在列，默认关闭）。
+// 默认顺序：领取邮件 → 合成树脂 → 体力作战 → 自动幽境危战 → 自动地脉花 →
+//           自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励
 const initDragonList = () => {
   const order: ConfigGroupIdentity[] = []
-  for (const g of ONE_DRAGON_GROUPS) pushDragon(order, { kind: 'builtin', key: g.value })
-  if (staminaInDragon.value) pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
+  for (const g of ONE_DRAGON_GROUPS) {
+    // 体力作战固定插入第 3 位：即「合成树脂」之后、「自动幽境危战」之前
+    if (staminaInDragon.value && g.value === '自动幽境危战') {
+      pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
+    }
+    pushDragon(order, { kind: 'builtin', key: g.value })
+  }
+  // 兜底：若「自动幽境危战」不在内置列表（理论不发生），体力作战追加到末尾避免丢失
+  if (staminaInDragon.value && !order.some(i => i.kind === 'stamina')) {
+    pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
+  }
   // 自定义组仅在总开关开启时并入（来自 BetterGI 现有配置 / CustomGroups）
   if (groupsShowCustom.value) {
-    for (const row of customGroupsTable.value) pushDragon(order, { kind: 'custom', key: row.name })
+    for (const row of customGroupsTable.value) {
+      const kind: ConfigGroupKind = resolveStoredRowKind(row.name)
+      pushDragon(order, { kind, key: row.name })
+    }
   }
   dragonList.value = order
+}
+
+// 由存储的自定义组名推断队列行来源类型：命中 JS 脚本目录→js；命中 AutoPathing 文件→pathing；其余→custom
+const resolveStoredRowKind = (name: string): ConfigGroupKind => {
+  if (isJsScriptName(name)) return 'js'
+  if (isPathingName(name)) return 'pathing'
+  return 'custom'
 }
 
 // 把 BetterGI 侧新增的自定义组补入队列末尾（保留用户已删除的自定义组不回来）
 const appendCustomRows = () => {
   if (!groupsShowCustom.value) return
   for (const row of customGroupsTable.value) {
-    const item: ConfigGroupIdentity = { kind: 'custom', key: row.name }
+    const item: ConfigGroupIdentity = {
+      kind: resolveStoredRowKind(row.name),
+      key: row.name,
+    }
     if (!inDragon(item)) dragonList.value.push(makeDragonRow(item))
   }
 }
@@ -1184,6 +1461,7 @@ const clearDragon = () => {
     void saveField('OneDragon.CustomGroups', '[]')
   }
   selectedGroupIdentity.value = null
+  clearMultiSelection()
 }
 
 // 行开关：内置写 Groups、体力作战本地翻转（互斥）、自定义交给 composable 持久化
@@ -1204,6 +1482,11 @@ const toggleConfigGroup = (item: ConfigGroupIdentity) => {
 const addToDragon = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value) return
   if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return
+  // 体力作战开启时刷取类官方内置组被冻结，禁止再次加入一条龙（防止把被接管的组写回后端 Groups）
+  if (item.kind === 'builtin' && isGroupFrozen(item)) {
+    message.warning(t('edit.bettergiGroupFrozenTip'))
+    return
+  }
   if (item.kind === 'builtin') {
     if (!formData.OneDragon.Groups.includes(item.key)) {
       applyGroupsPatch([...formData.OneDragon.Groups, item.key])
@@ -1259,11 +1542,342 @@ const removeFromDragon = (item: ConfigGroupIdentity) => {
   ) {
     selectedGroupIdentity.value = null
   }
+  // 被移除的行若在多选中，同步剔除
+  if (item.uid != null && multiSelectedUids.value.has(item.uid)) {
+    const next = new Set(multiSelectedUids.value)
+    next.delete(item.uid)
+    multiSelectedUids.value = next
+  }
 }
 
 // 右侧选中行：展示该配置组详情
 const selectConfigGroup = (item: ConfigGroupIdentity) => {
   selectedGroupIdentity.value = { ...item }
+}
+
+// ---- 右栏「任务设置」：内置组 → BGI 一条龙可设置字段（按任务分组）----
+// 字段 key 与 BGI 一条龙 JSON 顶层 camelCase 键一致（对应 res/templates 默认配置.json）。
+type DragonSettingField = {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'bool' | 'select' | 'multi'
+  min?: number
+  max?: number
+  step?: number
+  /** select / multi 用：候选 */
+  options?: { label: string; value: string }[]
+}
+
+type DragonSettingSection = {
+  title: string
+  fields: DragonSettingField[]
+}
+
+// BGI 常见的地区（国家/城邦）候选：合成台、冒险家协会、地脉花等共用
+const BGI_REGION_OPTIONS = [
+  { label: '蒙德', value: '蒙德' },
+  { label: '璃月', value: '璃月' },
+  { label: '稻妻', value: '稻妻' },
+  { label: '须弥', value: '须弥' },
+  { label: '枫丹', value: '枫丹' },
+  { label: '纳塔', value: '纳塔' },
+]
+
+// 地脉花类型：启示之花=经验书，藏金之花=摩拉
+const LEY_LINE_TYPE_OPTIONS = [
+  { label: '启示之花（经验书）', value: '启示之花' },
+  { label: '藏金之花（摩拉）', value: '藏金之花' },
+]
+
+// 尘歌壶进壶方式 / 尘歌壶奖励对象候选
+const SERENITEA_TP_OPTIONS = [
+  { label: '地图传送', value: '地图传送' },
+  { label: '邀请函传送', value: '邀请函传送' },
+]
+
+const SECRET_TREASURE_OPTIONS = [
+  { label: '每天重复', value: '每天重复' },
+  { label: '须臾树脂', value: '须臾树脂' },
+  { label: '祝圣精华', value: '祝圣精华' },
+  { label: '祝圣油膏', value: '祝圣油膏' },
+]
+
+// 周一到周日（BGI JSON 里的星期键前缀与展示名）
+const WEEKDAY_KEYS = [
+  { key: 'Monday', label: '周一' },
+  { key: 'Tuesday', label: '周二' },
+  { key: 'Wednesday', label: '周三' },
+  { key: 'Thursday', label: '周四' },
+  { key: 'Friday', label: '周五' },
+  { key: 'Saturday', label: '周六' },
+  { key: 'Sunday', label: '周日' },
+]
+
+// 内置组（key=中文组名）→ 分组设置 schema（字段 key 与 BGI 一条龙 JSON 顶层键一一对应）
+const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
+  合成树脂: [
+    {
+      title: '合成树脂',
+      fields: [
+        { key: 'CraftingBenchCountry', label: '合成台地区', type: 'select', options: BGI_REGION_OPTIONS },
+        { key: 'MinResinToKeep', label: '合成后保留原粹树脂', type: 'number', min: 0, max: 200 },
+      ],
+    },
+  ],
+  自动地脉花: [
+    {
+      title: '刷取设置',
+      fields: [
+        { key: 'LeyLineRunCount', label: '地脉花刷取次数', type: 'number', min: 0 },
+        { key: 'LeyLineOneDragonMode', label: '一条龙模式', type: 'bool' },
+        { key: 'LeyLineResinExhaustionMode', label: '树脂耗尽模式', type: 'bool' },
+        { key: 'LeyLineOpenModeCountMin', label: '与手动次数取小值', type: 'bool' },
+      ],
+    },
+    {
+      title: '每周运行',
+      fields: WEEKDAY_KEYS.map(({ key, label }) => ({
+        key: `LeyLineRun${key}`,
+        label: `${label}运行`,
+        type: 'bool' as const,
+      })),
+    },
+    {
+      title: '每日类型与地区',
+      fields: WEEKDAY_KEYS.flatMap(({ key, label }) => [
+        { key: `LeyLine${key}Type`, label: `${label} 地脉类型`, type: 'select' as const, options: LEY_LINE_TYPE_OPTIONS },
+        { key: `LeyLine${key}Country`, label: `${label} 地区`, type: 'select' as const, options: BGI_REGION_OPTIONS },
+      ]),
+    },
+  ],
+  自动秘境: [
+    {
+      title: '秘境配置',
+      fields: [
+        { key: 'WeeklyDomainEnabled', label: '开启每周秘境配置', type: 'bool' },
+        { key: 'PartyName', label: '进入秘境切换队伍', type: 'text' },
+        { key: 'DomainName', label: '秘境名称', type: 'text' },
+      ],
+    },
+    {
+      title: '每日秘境（周表）',
+      fields: WEEKDAY_KEYS.flatMap(({ key, label }) => [
+        { key: `${key}PartyName`, label: `${label} 队伍`, type: 'text' as const },
+        { key: `${key}DomainName`, label: `${label} 秘境`, type: 'text' as const },
+        { key: `${key}SelectedValue`, label: `${label} 奖励/次数`, type: 'text' as const },
+      ]),
+    },
+  ],
+  自动首领讨伐: [
+    {
+      title: '讨伐目标',
+      fields: [
+        { key: 'AutoBossName', label: '讨伐首领', type: 'text' },
+        { key: 'AutoBossTeamName', label: '切换队伍', type: 'text' },
+        { key: 'AutoBossStrategyName', label: '战斗策略', type: 'text' },
+      ],
+    },
+    {
+      title: '次数与树脂',
+      fields: [
+        { key: 'AutoBossSpecifyRunCount', label: '指定讨伐次数', type: 'bool' },
+        { key: 'AutoBossRunCount', label: '讨伐次数', type: 'number', min: 1 },
+        { key: 'AutoBossUseTransientResin', label: '使用须臾树脂', type: 'bool' },
+        { key: 'AutoBossUseFragileResin', label: '使用脆弱树脂', type: 'bool' },
+      ],
+    },
+    {
+      title: '战斗细节',
+      fields: [
+        { key: 'AutoBossReviveRetryCount', label: '死亡后重试次数', type: 'number', min: 0 },
+        { key: 'AutoBossReturnToStatueAfterEachRound', label: '每轮后返回七天神像', type: 'bool' },
+        { key: 'AutoBossRewardRecognitionEnabled', label: '启用奖励识别', type: 'bool' },
+        { key: 'AutoBossTimeout', label: '超时（秒）', type: 'number', min: 1 },
+      ],
+    },
+  ],
+  领取每日奖励: [
+    {
+      title: '每日奖励',
+      fields: [
+        { key: 'AdventurersGuildCountry', label: '冒险家协会地区', type: 'select', options: BGI_REGION_OPTIONS },
+        { key: 'DailyRewardPartyName', label: '领取前切换队伍（好感队）', type: 'text' },
+      ],
+    },
+  ],
+  领取尘歌壶奖励: [
+    {
+      title: '尘歌壶',
+      fields: [
+        { key: 'SereniteaPotTpType', label: '进壶方式', type: 'select', options: SERENITEA_TP_OPTIONS },
+        { key: 'SecretTreasureObjects', label: '尘歌壶奖励对象', type: 'multi', options: SECRET_TREASURE_OPTIONS },
+      ],
+    },
+  ],
+}
+
+// 当前选中内置组的设置分组（无字段返回空）
+const currentGroupSettingSections = computed<DragonSettingSection[]>(() => {
+  const sel = selectedGroupIdentity.value
+  if (!sel || sel.kind !== 'builtin') return []
+  return BUILTIN_GROUP_SETTING_SECTIONS[sel.key] || []
+})
+
+const dragonSettings = ref<Record<string, unknown>>({})
+const dragonSettingsLoading = ref(false)
+const dragonSettingsSaving = ref(false)
+const dragonSettingsDirty = ref(false)
+// 当前选中内置组是否有设置 schema
+const hasGroupSettingFields = computed<boolean>(
+  () => currentGroupSettingSections.value.some(s => s.fields.length > 0)
+)
+
+const dragonConfigName = computed<string>(() => formData.Task.OneDragonConfigName || '默认配置')
+
+// 读取该用户一条龙配置设置项（切换选中行时刷新）
+const loadDragonGroupSettings = async () => {
+  const sel = selectedGroupIdentity.value
+  if (!sel || sel.kind !== 'builtin' || !userId.value) {
+    dragonSettings.value = {}
+    dragonSettingsDirty.value = false
+    return
+  }
+  if (!hasGroupSettingFields.value) return
+  dragonSettingsLoading.value = true
+  try {
+    dragonSettings.value = await fetchOneDragonSettings(
+      scriptId,
+      userId.value,
+      dragonConfigName.value
+    )
+    dragonSettingsDirty.value = false
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsLoadFailed'))
+  } finally {
+    dragonSettingsLoading.value = false
+  }
+}
+
+// 编辑字段：仅本地待保存（等点「保存设置」统一写回）
+const updateDragonSetting = (key: string, value: unknown) => {
+  dragonSettings.value = { ...dragonSettings.value, [key]: value }
+  dragonSettingsDirty.value = true
+}
+
+// 保存：把当前全部设置项写回 per-user 一条龙副本
+const saveDragonGroupSettings = async () => {
+  const sel = selectedGroupIdentity.value
+  if (!sel || sel.kind !== 'builtin' || !userId.value) return
+  if (dragonSettingsSaving.value) return
+  dragonSettingsSaving.value = true
+  try {
+    await saveOneDragonSettings(scriptId, userId.value, dragonConfigName.value, dragonSettings.value)
+    dragonSettingsDirty.value = false
+    message.success(t('edit.bettergiGroupSettingsSaved'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsSaveFailed'))
+  } finally {
+    dragonSettingsSaving.value = false
+  }
+}
+
+// 切换选中内置组时加载该组的设置项
+watch(
+  () => selectedGroupIdentity.value?.uid,
+  () => {
+    void loadDragonGroupSettings()
+  }
+)
+
+// ---- 一条龙队列行多选（Shift 区间 / Ctrl 逐个）----
+// 多选集合按 uid 记录（允许同类多实例时互不干扰）
+const multiSelectedUids = ref<Set<number>>(new Set())
+// Shift 区间选择的锚点行 uid（普通/Ctrl 点击时更新）
+const multiAnchorUid = ref<number>(-1)
+
+// 行是否在多选中
+const isRowMultiSelected = (item: ConfigGroupIdentity): boolean =>
+  item.uid != null && multiSelectedUids.value.has(item.uid)
+
+// 当前多选中的行（按 dragonList 顺序，用于批量操作）
+const multiSelectedRows = computed<ConfigGroupIdentity[]>(() =>
+  dragonList.value.filter(i => i.uid != null && multiSelectedUids.value.has(i.uid))
+)
+
+// 是否处于多选状态（多于 1 行时展示批量操作）
+const hasMultiSelection = computed<boolean>(() => multiSelectedRows.value.length > 1)
+
+// 清空多选（单选切换/清空一条龙时调用）
+const clearMultiSelection = () => {
+  multiSelectedUids.value = new Set()
+  multiAnchorUid.value = -1
+}
+
+// 行点击：普通=单选看详情（并作为后续 Shift 区间的锚点）；
+// Ctrl=逐个切换多选；Shift=从锚点行到当前行区间多选。
+const handleRowClick = (item: ConfigGroupIdentity, index: number, event: MouseEvent) => {
+  if (!groupsEditable.value) return
+  if (item.uid == null) return
+  if (event.shiftKey) {
+    // Shift 区间选择：锚点 uid 位于锚点行；按当前队列顺序圈选锚点行到当前行
+    const anchorIndex = dragonList.value.findIndex(i => i.uid === multiAnchorUid.value)
+    if (anchorIndex < 0) {
+      // 无锚点（例如本次会话首次点击即 Shift）：以当前行为锚点，单选当前行
+      multiAnchorUid.value = item.uid
+      multiSelectedUids.value = new Set([item.uid])
+      selectConfigGroup(item)
+      return
+    }
+    const lo = Math.min(anchorIndex, index)
+    const hi = Math.max(anchorIndex, index)
+    const uids = new Set<number>()
+    for (let i = lo; i <= hi; i += 1) {
+      const uid = dragonList.value[i]?.uid
+      if (uid != null) uids.add(uid)
+    }
+    multiSelectedUids.value = uids
+    return
+  }
+  if (event.ctrlKey || event.metaKey) {
+    multiAnchorUid.value = item.uid
+    const next = new Set(multiSelectedUids.value)
+    if (next.has(item.uid)) next.delete(item.uid)
+    else next.add(item.uid)
+    multiSelectedUids.value = next
+    return
+  }
+  // 普通点击：清空多选集合，但保留当前行为后续 Shift 的锚点
+  multiSelectedUids.value = new Set()
+  multiAnchorUid.value = item.uid
+  selectConfigGroup(item)
+}
+
+// 批量启停：把选中的每行切到 target（已处于目标状态的行跳过）
+const batchToggleEnabled = (target: boolean) => {
+  for (const row of multiSelectedRows.value) {
+    if (!isGroupFrozen(row) && groupEnabled(row) !== target) {
+      toggleConfigGroup(row)
+    }
+  }
+}
+
+// 批量移除选中行（确认后逐行移除）
+const batchRemoveSelected = () => {
+  const count = multiSelectedRows.value.length
+  Modal.confirm({
+    title: t('edit.bettergiMultiRemoveTitle'),
+    content: t('edit.bettergiMultiRemoveContent', { count }),
+    okText: t('edit.bettergiMultiRemove'),
+    okButtonProps: { danger: true },
+    cancelText: t('edit.cancel'),
+    onOk: () => {
+      const rows = [...multiSelectedRows.value]
+      for (const row of rows) removeFromDragon(row)
+      clearMultiSelection()
+    },
+  })
 }
 
 // draggable 行 key：优先用 uid（允许重复时每行唯一）；无 uid 时退化用身份
@@ -1305,75 +1919,360 @@ const warnAlreadyInDragon = () => {
   message.info(t('edit.bettergiAlreadyInDragon'))
 }
 
-// ---- 添加弹窗（候选：8 内置 + 体力作战 + BetterGI 现有自定义组）----
+// 候选是否不可添加：重复开关关闭且已在队列，或被体力作战冻结的刷取内置组
+const isCandidateBlocked = (candidate: ConfigGroupIdentity): boolean =>
+  (!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)) || isGroupFrozen(candidate)
+
+// 候选点击：冻结组给出冻结提示；已在队列（重复开关关闭时）提示已加入；其余填入输入框。
+// 多选：Ctrl=逐个追加当前项；Shift=从锚点（上次普通/Ctrl 点击）到当前项的整段候选追加输入框。
+const handleCandidateClick = (
+  candidate: ConfigGroupIdentity,
+  index: number,
+  event: MouseEvent
+) => {
+  if (isGroupFrozen(candidate)) {
+    message.warning(t('edit.bettergiGroupFrozenTip'))
+    return
+  }
+  if (!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)) {
+    warnAlreadyInDragon()
+    return
+  }
+  if (event.shiftKey) {
+    const anchor = jsCandidateAnchor.value >= 0 ? jsCandidateAnchor.value : index
+    const lo = Math.min(anchor, index)
+    const hi = Math.max(anchor, index)
+    for (let i = lo; i <= hi; i += 1) {
+      const item = addModal.candidates[i]
+      if (item && !isGroupFrozen(item)) pickAddCandidate(item)
+    }
+    return
+  }
+  jsCandidateAnchor.value = index
+  pickAddCandidate(candidate)
+}
+
+// ---- 添加弹窗（候选：8 内置 + 体力作战 + JS 脚本 + BetterGI 现有自定义组）----
+// 气泡列表元素：一条龙实例身份 + 弹窗内自增 uid（用于去重展示/删除，与队列行 uid 无关）
+type AddChipItem = ConfigGroupIdentity & { chipUid: number }
+
 const addModal = reactive({
   open: false,
-  name: '',
+  items: [] as AddChipItem[],
+  draft: '',
+  activeTab: 'js' as 'js' | 'pathing',
   candidates: [] as ConfigGroupIdentity[],
 })
 
-// 组装候选项：固定 9 项 + 现有自定义组（已加入队列的项稍后在模板中禁用）
+// 弹窗气泡自增 uid 与行内输入焦点状态
+let addChipSeq = 0
+const addDraftInputRef = ref<HTMLInputElement | null>(null)
+const addDraftFocused = ref(false)
+
+const focusAddDraftInput = () => {
+  void nextTick(() => addDraftInputRef.value?.focus())
+}
+
+// 追加一个气泡（同一配置重复点击 → 生成独立实例气泡，对应重复添加语义）
+const pushAddChip = (item: ConfigGroupIdentity) => {
+  addModal.items.push({ ...item, chipUid: ++addChipSeq })
+  focusAddDraftInput()
+}
+
+// 删除指定气泡
+const removeAddChip = (chipUid: number) => {
+  addModal.items = addModal.items.filter(c => c.chipUid !== chipUid)
+}
+
+// 某候选是否已在气泡列表中（候选区 picked 高亮用）
+const isChipAdded = (candidate: ConfigGroupIdentity): boolean =>
+  addModal.items.some(c => c.kind === candidate.kind && c.key === candidate.key)
+
+// JS 候选项 Shift 区间锚点（index in addModal.candidates）
+const jsCandidateAnchor = ref(-1)
+// 地图追踪文件行 Shift 区间锚点（index in selectedPathingFiles）
+const pathingFileAnchor = ref(-1)
+
+// 加载可加入一条龙的 BetterGI 自定义 JS 脚本（实时扫描，反映玩家手工放置/订阅的脚本）
+const loadJsScripts = async () => {
+  try {
+    const resp =
+      await BetterGiService.getBettergiJsScriptsApiApiScriptsBettergiJsScriptsGet(scriptId)
+    jsScriptOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { label: string; value: string } =>
+        item.label != null && item.value != null
+      )
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// 组装候选项：固定 9 项 + JS 脚本 + 现有自定义组（已加入队列的项稍后在模板中禁用）
+// JS 脚本候选排除已出现在内置组 / 自定义组中的同名项，避免同一任务出现两个候选入口。
 const buildCandidates = () => {
   const items: ConfigGroupIdentity[] = []
-  for (const g of ONE_DRAGON_GROUPS) items.push({ kind: 'builtin', key: g.value })
+  const taken = new Set<string>()
+  for (const g of ONE_DRAGON_GROUPS) {
+    items.push({ kind: 'builtin', key: g.value })
+    taken.add(g.value)
+  }
   items.push({ kind: 'stamina', key: STAMINA_COMBAT_KEY })
+  taken.add(STAMINA_COMBAT_KEY)
   for (const row of customGroupsTable.value) {
-    if (!items.some(i => i.kind === 'custom' && i.key === row.name)) {
+    if (!taken.has(row.name)) {
       items.push({ kind: 'custom', key: row.name })
+      taken.add(row.name)
+    }
+  }
+  for (const opt of jsScriptOptions.value) {
+    if (!taken.has(opt.value)) {
+      items.push({ kind: 'js', key: opt.value })
+      taken.add(opt.value)
     }
   }
   addModal.candidates = items
 }
 
 const openAddToDragonModal = async () => {
-  addModal.name = ''
+  addModal.items = []
+  addModal.draft = ''
+  jsCandidateAnchor.value = -1
+  pathingFileAnchor.value = -1
   addModal.open = true
   await loadCustomGroupsFromBettergi()
+  await Promise.all([loadJsScripts(), loadBettergiDirs(), loadPathingTree()])
   buildCandidates()
 }
 
-// 拆分输入框内容：支持「;」「；」分隔，返回去空白的组名字面量列表
-const splitGroupNames = (raw: string): string[] =>
-  (raw || '')
-    .split(/[;；]/)
-    .map(s => s.trim())
-    .filter(Boolean)
-
-// 该候选组名是否已出现在输入框中（用于候选高亮）
-const candidateInInput = (candidate: ConfigGroupIdentity): boolean => {
-  const label = groupLabel(candidate)
-  return splitGroupNames(addModal.name).includes(label)
+// ---- 地图追踪（AutoPathing）目录树浏览 ----
+// 树数据节点：key 为「目录路径」，files 为该目录下路径文件（不含 .json、含目录前缀）
+type PathingTreeNode = {
+  key: string
+  title: string
+  files?: string[]
+  children?: PathingTreeNode[]
 }
 
-// 候选点击：把该配置组的「名称」追加进输入框并补一个分号，支持连续点击连续添加
+// 加载三个常用目录（打开按钮用）与 AutoPathing 目录树
+const loadBettergiDirs = async () => {
+  try {
+    const resp = await BetterGiService.getBettergiScriptDirsApiApiScriptsBettergiDirsGet(scriptId)
+    if (resp && resp.repoDir != null) {
+      bettergiDirs.value = {
+        repoDir: resp.repoDir,
+        jsScriptDir: resp.jsScriptDir ?? undefined,
+        autoPathingDir: resp.autoPathingDir ?? undefined,
+        oneDragonDir: resp.oneDragonDir ?? undefined,
+        scriptGroupDir: resp.scriptGroupDir ?? undefined,
+        exePath: resp.exePath ?? undefined,
+      }
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// BetterGI 官方在线脚本站（本地检出目录无法跳转其内部页面，改用网页版脚本仓库）
+const BGI_SCRIPT_SITE = 'https://s.bettergi.com/'
+
+// 打开某目录（脚本目录 / 任务目录 / 一条龙 / 配置组）；脚本仓库走在线网页
+const openBettergiDir = async (kind: 'jsScript' | 'autoPathing' | 'oneDragon' | 'scriptGroup') => {
+  if (!bettergiDirs.value.jsScriptDir) await loadBettergiDirs()
+  const target =
+    kind === 'jsScript'
+      ? bettergiDirs.value.jsScriptDir
+      : kind === 'autoPathing'
+        ? bettergiDirs.value.autoPathingDir
+        : kind === 'oneDragon'
+          ? bettergiDirs.value.oneDragonDir
+          : bettergiDirs.value.scriptGroupDir
+  if (!target) {
+    message.warning(t('edit.bettergiPathingEmptyTree'))
+    return
+  }
+  try {
+    await window.electronAPI.openFile(target)
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// 打开 BetterGI 在线脚本仓库（官方网页版）
+const openBettergiScriptSite = () => {
+  void openExternalUrl(BGI_SCRIPT_SITE)
+}
+
+// 打开 BetterGI 调度器：启动 BGI 主程序（其 GUI 内置一条龙/调度入口）
+const openBettergiScheduler = async () => {
+  if (!bettergiDirs.value.exePath) await loadBettergiDirs()
+  const exe = bettergiDirs.value.exePath
+  if (!exe) {
+    message.warning(t('edit.bettergiPathingEmptyTree'))
+    return
+  }
+  try {
+    await window.electronAPI.openFile(exe)
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// 加载 AutoPathing 目录树
+const loadPathingTree = async () => {
+  try {
+    const resp =
+      await BetterGiService.getBettergiAutoPathingTreeApiApiScriptsBettergiAutoPathingTreeGet(
+        scriptId
+      )
+    pathingTreeRoot.value = resp.root || ''
+    pathingTreeDirs.value = resp.dirs || []
+    // 默认选中第一个顶层目录，让右表立刻有内容
+    const first = resp.dirs?.[0]
+    if (first) selectedPathingKey.value = first.name
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// 把后端目录树转为 a-tree 数据（key=目录相对路径，title=目录名，files 供右表）
+const buildPathingTreeData = (
+  nodes: BetterGIPathingNode[],
+  parentKey = ''
+): PathingTreeNode[] =>
+  nodes.map(n => {
+    const key = parentKey ? `${parentKey}/${n.name}` : n.name
+    return {
+      key,
+      title: n.name,
+      files: n.files || [],
+      children: buildPathingTreeData(n.dirs || [], key),
+    }
+  })
+
+const pathingTreeData = computed<PathingTreeNode[]>(() =>
+  buildPathingTreeData(pathingTreeDirs.value)
+)
+
+// 当前选中的目录节点（展示其下文件）
+const selectedPathingNode = computed<PathingTreeNode | null>(() => {
+  const findNode = (nodes: PathingTreeNode[], key: string): PathingTreeNode | null => {
+    for (const n of nodes) {
+      if (n.key === key) return n
+      const hit = findNode(n.children || [], key)
+      if (hit) return hit
+    }
+    return null
+  }
+  return findNode(pathingTreeData.value, selectedPathingKey.value)
+})
+
+// 选中目录（含其全部子目录）下的路径文件，去重保序
+const selectedPathingFiles = computed<string[]>(() => {
+  const collect = (node: PathingTreeNode | null): string[] => {
+    if (!node) return []
+    const own = node.files || []
+    const childFiles = (node.children || []).flatMap(c => collect(c))
+    return [...new Set([...own, ...childFiles])]
+  }
+  return collect(selectedPathingNode.value)
+})
+
+const handlePathingSelect = (keys: (string | number)[]) => {
+  const first = keys[0]
+  selectedPathingKey.value = first != null ? String(first) : ''
+  // 目录切换后右侧文件列表变化，重置 Shift 区间锚点
+  pathingFileAnchor.value = -1
+}
+
+// 点击右表某路径文件：直接生成一个「路径」气泡（同文件多次点击=多个独立实例）
+const pickPathingFile = (file: string) => {
+  if (!groupsEditable.value) return
+  pushAddChip({ kind: 'pathing', key: file })
+}
+
+// 地图文件行点击：普通=填入当前文件；Ctrl=逐个；Shift=从锚点区间批量填入输入框
+const handlePathingFileClick = (file: string, index: number, event: MouseEvent) => {
+  if (!groupsEditable.value) return
+  if (event.shiftKey) {
+    const anchor = pathingFileAnchor.value >= 0 ? pathingFileAnchor.value : index
+    const lo = Math.min(anchor, index)
+    const hi = Math.max(anchor, index)
+    for (let i = lo; i <= hi; i += 1) {
+      const item = selectedPathingFiles.value[i]
+      if (item) pickPathingFile(item)
+    }
+    return
+  }
+  pathingFileAnchor.value = index
+  pickPathingFile(file)
+}
+
+// 候选点击：直接生成一个气泡（同配置重复点击=多个独立实例）
 const pickAddCandidate = (item: ConfigGroupIdentity) => {
-  const name = groupLabel(item)
-  const tailSemicolon = /[;；]$/.test(addModal.name)
-  addModal.name = `${addModal.name}${tailSemicolon ? '' : addModal.name ? ';' : ''}${name};`
+  if (!groupsEditable.value) return
+  pushAddChip(item)
 }
 
 // 按名称在候选中定位配置组（内置按 value/翻译名，自定义按组名，体力作战按展示名）
 const findCandidateByName = (name: string): ConfigGroupIdentity | undefined =>
   addModal.candidates.find(c => c.key === name || groupLabel(c) === name)
 
-// 确认：输入框内每段名称依次加入一条龙
-const confirmAddToDragon = () => {
-  const names = splitGroupNames(addModal.name)
-  if (!names.length) {
-    message.warning(t('edit.bettergiInputGroupNames'))
-    return
-  }
-  const unknown = names.filter(n => !findCandidateByName(n))
+// 输入段解析：候选优先，命中 AutoPathing 相对路径（pathingFileSet）则按「路径」加入
+const resolveInputName = (name: string): ConfigGroupIdentity | undefined => {
+  const candidate = findCandidateByName(name)
+  if (candidate) return candidate
+  if (pathingFileSet.value.has(name)) return { kind: 'pathing', key: name }
+  return undefined
+}
+
+// 拆分行内输入内容：支持「;」「；」分隔，返回去空白的组名字面量列表
+const splitGroupNames = (raw: string): string[] =>
+  (raw || '')
+    .split(/[;；]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+
+// 提交行内草稿：每段必须全部可识别才生成气泡；有未知段则阻止并提示（拼写检查）
+const commitAddDraft = (): boolean => {
+  const names = splitGroupNames(addModal.draft)
+  if (!names.length) return true
+  const unknown = names.filter(n => !resolveInputName(n))
   if (unknown.length) {
     message.warning(t('edit.bettergiGroupNamesUnknown', { names: unknown.join('、') }))
-    return
+    return false
   }
   for (const n of names) {
-    const target = findCandidateByName(n)
-    if (target) addToDragon(target)
+    const target = resolveInputName(n)
+    if (target) pushAddChip(target)
   }
-  addModal.name = ''
+  addModal.draft = ''
+  return true
+}
+
+// 行内输入按键：Enter 或「;」「；」提交草稿（拼写检查一致）；输入法组合期忽略
+const handleAddDraftKeydown = (e: KeyboardEvent) => {
+  if (e.isComposing) return
+  if (e.key === 'Enter' || e.key === ';' || e.key === '；') {
+    e.preventDefault()
+    commitAddDraft()
+  }
+}
+
+// 确认：把气泡列表逐项加入一条龙（同一气泡对应队列一个独立实例）
+const confirmAddToDragon = () => {
+  if (addModal.draft.trim() && !commitAddDraft()) return
+  if (!addModal.items.length) {
+    message.warning(t('edit.bettergiPickCandidateFirst'))
+    return
+  }
+  const items = [...addModal.items]
+  addModal.items = []
+  addModal.draft = ''
   addModal.open = false
+  for (const item of items) {
+    addToDragon({ kind: item.kind, key: item.key })
+  }
 }
 
 // ---- 监听：BetterGI 现有自定义组在总开关开启时并入队列末尾 ----
@@ -1506,6 +2405,9 @@ const loadUser = async () => {
 
 onMounted(async () => {
   if (await loadScriptInfo()) {
+    // 先加载 JsScript 候选 / AutoPathing 树 / 常用目录，
+    // initDragonList 才能把自定义组中命中脚本目录或路径文件的行标为 JS / 路径来源
+    await Promise.all([loadJsScripts(), loadBettergiDirs(), loadPathingTree()])
     await loadUser()
   }
   await loadStrategyOptions()
@@ -1906,6 +2808,30 @@ onUnmounted(() => {
   background: var(--ant-color-primary-bg);
 }
 
+.group-row-multi {
+  background: var(--ant-color-primary-bg);
+  outline: 1px solid var(--ant-color-primary);
+  outline-offset: -1px;
+  box-shadow: inset 2px 0 0 var(--ant-color-primary);
+}
+
+.bettergi-groups-multi-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--ant-color-primary-border);
+  border-radius: 8px;
+  background: var(--ant-color-primary-bg);
+}
+
+.bettergi-groups-multi-count {
+  font-size: 12px;
+  color: var(--ant-color-primary);
+}
+
 .group-row-disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -1995,11 +2921,67 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.bettergi-groups-detail-desc {
-  margin: 0 0 16px;
-  color: var(--ant-color-text-secondary);
+/* 右栏「任务设置」区 */
+.bettergi-groups-settings {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.bettergi-groups-settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.bettergi-setting-section-title {
+  margin: 4px 0 2px;
   font-size: 13px;
-  line-height: 1.7;
+  font-weight: 600;
+  color: var(--ant-color-text-secondary);
+}
+
+.bettergi-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bettergi-setting-label {
+  flex: 0 0 auto;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bettergi-setting-row :deep(.ant-input-number),
+.bettergi-setting-row :deep(.ant-select),
+.bettergi-setting-row :deep(.ant-input),
+.bettergi-setting-row :deep(.ant-input-affix-wrapper) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bettergi-setting-row :deep(.ant-input-number-input),
+.bettergi-setting-row :deep(.ant-select-selection-item),
+.bettergi-setting-row :deep(.ant-select-selection-placeholder),
+.bettergi-setting-row :deep(.ant-input) {
+  font-size: 16px;
+}
+
+.bettergi-groups-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--ant-color-border-secondary);
 }
 
 .bettergi-groups-detail-empty {
@@ -2035,29 +3017,213 @@ onUnmounted(() => {
   flex: 0 0 auto;
 }
 
-.group-row-prefix-stamina {
-  background: var(--ant-color-warning-bg);
-  color: var(--ant-color-warning);
+/* 前缀 tag 统一配色（antd 预设风格：浅色底 + 同色系深色文字）：
+   默认=灰、专项=紫、自定义&JS=蓝、路径=绿 */
+.gi-kind-tag-default {
+  background: #f0f0f0;
+  border-color: #d9d9d9;
+  color: #404040;
 }
 
-.group-row-prefix-custom {
-  background: var(--ant-color-info-bg);
-  color: var(--ant-color-info);
+.gi-kind-tag-stamina {
+  background: #f9f0ff;
+  border-color: #d3adf7;
+  color: #531dab;
+}
+
+.gi-kind-tag-custom {
+  background: #e6f4ff;
+  border-color: #91caff;
+  color: #0958d9;
+}
+
+.gi-kind-tag-pathing {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #389e0d;
 }
 
 .group-row-frozen {
   opacity: 0.6;
 }
 
+.add-dragon-modal :deep(.ant-modal-body) {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.add-dragon-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.add-dragon-input-row .add-dragon-input {
+  flex: 1 1 auto;
+  margin-bottom: 0;
+}
+
+.add-dragon-dir-buttons {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.add-dragon-dir-buttons .ant-space {
+  flex-wrap: wrap;
+}
+
 .add-dragon-input {
   margin-bottom: 8px;
 }
 
+/* 标签输入（气泡 + 行内草稿）：外观贴合 antd input，内部 chips 自动换行 */
+.add-dragon-tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 11px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  cursor: text;
+  transition: border-color 0.15s ease;
+}
+
+.add-dragon-tag-editor:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.add-dragon-tag-editor-focus {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
+}
+
+.add-dragon-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 6px 1px 10px;
+  font-size: 13px;
+  line-height: 22px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  cursor: default;
+  user-select: none;
+}
+
+.add-dragon-tag-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-dragon-tag-chip-remove {
+  flex: 0 0 auto;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 2px;
+  border-radius: 50%;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.add-dragon-tag-chip-remove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.add-dragon-tag-draft-input {
+  flex: 1 1 120px;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--ant-color-text);
+  padding: 1px 0;
+}
+
+.add-dragon-tag-draft-input::placeholder {
+  color: var(--ant-color-text-quaternary, var(--ant-color-text-tertiary));
+}
+
 .add-dragon-input-tip {
-  margin: 0 0 12px;
+  margin: 8px 0 12px;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.add-dragon-pathing-hint {
+  margin: 0 0 8px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.add-dragon-pathing-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 12px;
+  min-height: 220px;
+}
+
+.add-dragon-pathing-tree {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.add-dragon-pathing-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.add-dragon-pathing-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.add-dragon-pathing-file:hover {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.add-dragon-pathing-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-dragon-pathing-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
 }
 
 .add-dragon-candidates {

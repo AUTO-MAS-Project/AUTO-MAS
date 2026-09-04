@@ -65,6 +65,18 @@ _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
 
+# BetterGI 自定义 JS 脚本目录（{RootPath}/User/JsScript/*/manifest.json 即一个可执行脚本）
+_JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
+
+# BetterGI 地图追踪（AutoPathing）路径文件目录：{RootPath}/User/AutoPathing/**/*.json
+_AUTO_PATHING_REL_DIR = Path("User") / "AutoPathing"
+
+# BetterGI 脚本仓库（订阅/下载的自定义脚本源仓库）：{RootPath}/Repos/bettergi-scripts-list
+_REPO_REL_DIR = Path("Repos") / "bettergi-scripts-list"
+
+# BetterGI 配置组目录（{RootPath}/User/ScriptGroup/*.json，BGI 一条龙自定义组定义）
+_SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
+
 # BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗字段的只有
 # 秘境（PartyName）与首领讨伐（AutoBossTeamName/AutoBossStrategyName）；地脉花/幽境危战
 # 则由 BetterGI 在 OneDragonTaskItem 里直接从全局 AutoLeyLineOutcropConfig /
@@ -107,6 +119,98 @@ def list_auto_boss_strategies(root: Path) -> list[str]:
             if name and name not in options:
                 options.append(name)
     return options
+
+
+def list_js_scripts(root: Path) -> list[tuple[str, str]]:
+    """列出 BetterGI 可执行的自定义 JS 脚本。
+
+    返回 ``[(目录名, manifest 显示名)]``：BetterGI 一条龙按**目录名**定位并执行任务
+    （TaskDefinitions 的 value = 目录名），而目录名常为英文（如 ``AAA-Artifacts-Bulk-Supply``），
+    ``manifest.json`` 的 ``name`` 才是玩家可读的中文显示名（如「AAA狗粮批发」）。
+    候选列表应展示显示名、落库用目录名，故两者都返回。
+
+    每个脚本目录须含 ``manifest.json`` 才视为可执行脚本（BetterGI 脚本目录语义），
+    每次调用实时扫描以反映玩家手工放置/订阅更新的脚本。
+    """
+    items: list[tuple[str, str]] = []
+    js_dir = root / _JS_SCRIPT_REL_DIR
+    if js_dir.is_dir():
+        for p in sorted(js_dir.iterdir()):
+            if not p.is_dir():
+                continue
+            manifest = p / "manifest.json"
+            if not manifest.is_file():
+                continue
+            folder = p.name.strip()
+            display = folder
+            data = read_file(manifest)
+            if isinstance(data, dict) and isinstance(data.get("name"), str):
+                display = data["name"].strip() or folder
+            if folder and not any(f == folder for f, _ in items):
+                items.append((folder, display))
+    return items
+
+
+def resolve_script_dirs(root: Path) -> dict[str, str]:
+    """返回 BetterGI 常用目录与可执行文件绝对路径。
+
+    - ``repo``：脚本仓库检出目录（{RootPath}/Repos/bettergi-scripts-list，BGI 的 ScriptRepoUpdater 管理）
+    - ``jsScript``：脚本目录（{RootPath}/User/JsScript）
+    - ``autoPathing``：地图追踪任务目录（{RootPath}/User/AutoPathing）
+    - ``oneDragon``：一条龙配置目录（{RootPath}/User/OneDragon）
+    - ``scriptGroup``：配置组目录（{RootPath}/User/ScriptGroup）
+    - ``exe``：BetterGI 主程序（{RootPath}/BetterGI.exe，用于打开 BGI 调度/主界面）
+
+    目录不存在时仅返回派生路径，由调用方决定是否提示缺失；返回绝对路径便于前端直接打开。
+    """
+    return {
+        "repo": str((root / _REPO_REL_DIR).resolve()),
+        "jsScript": str((root / _JS_SCRIPT_REL_DIR).resolve()),
+        "autoPathing": str((root / _AUTO_PATHING_REL_DIR).resolve()),
+        "oneDragon": str((root / _ONE_DRAGON_REL_DIR).resolve()),
+        "scriptGroup": str((root / _SCRIPT_GROUP_REL_DIR).resolve()),
+        "exe": str((root / "BetterGI.exe").resolve()),
+    }
+
+
+def build_auto_pathing_tree(root: Path) -> tuple[str, list[dict]]:
+    """递归构建 BetterGI 地图追踪目录树（{RootPath}/User/AutoPathing）。
+
+    返回 ``(AutoPathing 绝对目录, 目录树)``；目录树节点结构：
+    ``{"name": 目录名, "dirs": [子节点...], "files": [路径文件名(不含 .json)]}``。
+    路径文件名不含 ``.json`` 且带相对目录前缀，如 ``0_0_飞萤/A01-蒙德-…``；
+    由于已确认存在跨目录同名文件，文件展示以「目录前缀 + 文件名」保证可读唯一。
+
+    Args:
+        root: BetterGI RootPath。
+
+    Returns:
+        (AutoPathing 绝对目录字符串, 顶层目录树列表)。目录不存在时返回空树。
+    """
+    base = root / _AUTO_PATHING_REL_DIR
+
+    def build(dir_path: Path) -> dict:
+        node: dict = {"name": dir_path.name, "dirs": [], "files": []}
+        if not dir_path.is_dir():
+            return node
+        for child in sorted(dir_path.iterdir(), key=lambda p: p.name):
+            if child.is_dir():
+                node["dirs"].append(build(child))
+            elif child.is_file() and child.suffix.lower() == ".json":
+                rel = child.relative_to(base)
+                rel_str = str(rel.with_suffix("")).replace("\\", "/")
+                node["files"].append(rel_str)
+        return node
+
+    tree: list[dict] = []
+    if base.is_dir():
+        for child in sorted(base.iterdir(), key=lambda p: p.name):
+            if child.is_dir():
+                tree.append(build(child))
+            # AutoPathing 根目录下均为分类目录；顶层散落的 json（极少数）直接并入虚拟节点展示
+            elif child.is_file() and child.suffix.lower() == ".json":
+                tree.append({"name": child.stem, "dirs": [], "files": [child.stem]})
+    return str(base.resolve()), tree
 
 
 def list_one_dragon_configs(root: Path) -> list[str]:
@@ -522,6 +626,164 @@ def snapshot_user_one_dragon(
         write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
 
 
+# ---- 一条龙「设置项」白名单（右栏设置，可写回 per-user 副本；排除结构字段）----
+# 结构与模板/BGI 一条龙 JSON 顶层键一致；新增 BGI 版本字段时在此追加即可。
+_ONE_DRAGON_SETTING_KEYS: tuple[str, ...] = (
+    "CraftingBenchCountry",
+    "AdventurersGuildCountry",
+    "MinResinToKeep",
+    "PartyName",
+    "DomainName",
+    "WeeklyDomainEnabled",
+    "AutoBossName",
+    "AutoBossStrategyName",
+    "AutoBossTeamName",
+    "AutoBossSpecifyRunCount",
+    "AutoBossRunCount",
+    "AutoBossUseTransientResin",
+    "AutoBossUseFragileResin",
+    "AutoBossReviveRetryCount",
+    "AutoBossReturnToStatueAfterEachRound",
+    "AutoBossRewardRecognitionEnabled",
+    "AutoBossTimeout",
+    "DailyRewardPartyName",
+    "SundayEverySelectedValue",
+    "SundayWeeklySelectedValue",
+    "SereniteaPotTpType",
+    "SecretTreasureObjects",
+    "LeyLineOneDragonMode",
+    "LeyLineRunMonday",
+    "LeyLineRunTuesday",
+    "LeyLineRunWednesday",
+    "LeyLineRunThursday",
+    "LeyLineRunFriday",
+    "LeyLineRunSaturday",
+    "LeyLineRunSunday",
+    "LeyLineMondayType",
+    "LeyLineMondayCountry",
+    "LeyLineTuesdayType",
+    "LeyLineTuesdayCountry",
+    "LeyLineWednesdayType",
+    "LeyLineWednesdayCountry",
+    "LeyLineThursdayType",
+    "LeyLineThursdayCountry",
+    "LeyLineFridayType",
+    "LeyLineFridayCountry",
+    "LeyLineSaturdayType",
+    "LeyLineSaturdayCountry",
+    "LeyLineSundayType",
+    "LeyLineSundayCountry",
+    "LeyLineRunCount",
+    "LeyLineResinExhaustionMode",
+    "LeyLineOpenModeCountMin",
+    "MondayPartyName",
+    "MondayDomainName",
+    "MondaySelectedValue",
+    "TuesdayPartyName",
+    "TuesdayDomainName",
+    "TuesdaySelectedValue",
+    "WednesdayPartyName",
+    "WednesdayDomainName",
+    "WednesdaySelectedValue",
+    "ThursdayPartyName",
+    "ThursdayDomainName",
+    "ThursdaySelectedValue",
+    "FridayPartyName",
+    "FridayDomainName",
+    "FridaySelectedValue",
+    "SaturdayPartyName",
+    "SaturdayDomainName",
+    "SaturdaySelectedValue",
+    "SundayPartyName",
+    "SundayDomainName",
+    "SundaySelectedValue",
+    "CompletionAction",
+)
+_ONE_DRAGON_SETTING_SET = frozenset(_ONE_DRAGON_SETTING_KEYS)
+
+
+def _pick_settings(config: dict[str, Any]) -> dict[str, Any]:
+    """从一条龙配置 dict 里抽取白名单设置项（含默认补全，前端渲染缺省值用）。"""
+    base = _DEFAULT_SETTING_VALUES if _DEFAULT_SETTING_VALUES else {}
+    out = dict(base)
+    for key in _ONE_DRAGON_SETTING_KEYS:
+        if key in config:
+            out[key] = config[key]
+    return out
+
+
+# 设置项默认值（BGI 模板/合理缺省；运行时 per-user 副本缺失项用模板种子补齐）
+_DEFAULT_SETTING_VALUES: dict[str, Any] = {}
+
+
+def load_setting_defaults() -> dict[str, Any]:
+    """按内置模板解析设置项默认值（模板缺失时不报错，仅返回白名单空键）。"""
+    global _DEFAULT_SETTING_VALUES
+    seed = load_seed_template()
+    _DEFAULT_SETTING_VALUES = {
+        key: seed.get(key)
+        for key in _ONE_DRAGON_SETTING_KEYS
+        if key in seed
+    }
+    return dict(_DEFAULT_SETTING_VALUES)
+
+
+def read_user_one_dragon_settings(
+    root: Path,
+    script_id: str,
+    user_id: str,
+    config_name: str,
+) -> dict[str, Any]:
+    """读取某用户一条龙配置的设置项（右栏渲染）。
+
+    种子顺序与 ``write_user_one_dragon`` 一致：per-user 副本 → BGI 实配 → 内置模板；
+    副本未生成（用户尚未运行过）时以 BGI 实配/模板为准，保证右栏显示的是将生效的值。
+    """
+    config_name = resolve_config_name(config_name)
+    config: dict[str, Any] = {}
+    copy = read_file(per_user_one_dragon_path(script_id, user_id, config_name))
+    if isinstance(copy, dict) and copy:
+        config = copy
+    else:
+        config = load_one_dragon(root, config_name) or {}
+    if not config:
+        config = load_seed_template() or {}
+    return _pick_settings(config)
+
+
+def write_user_one_dragon_settings(
+    root: Path,
+    script_id: str,
+    user_id: str,
+    config_name: str,
+    settings: dict[str, Any],
+) -> None:
+    """把右栏设置项写回 per-user 副本（不触碰 BGI 同名实配）。
+
+    副本种子：per-user 副本 → BGI 实配 → 内置模板，仅覆盖白名单键并保留结构字段；
+    运行时 ``write_user_one_dragon`` 以本副本为种子物化到 MAS 槽位，设置即生效。
+    """
+    config_name = resolve_config_name(config_name)
+    config: dict[str, Any] = {}
+    copy = read_file(per_user_one_dragon_path(script_id, user_id, config_name))
+    if isinstance(copy, dict) and copy:
+        config = copy
+    else:
+        config = load_one_dragon(root, config_name) or {}
+    if not config:
+        config = load_seed_template() or {}
+    for key, value in (settings or {}).items():
+        if key in _ONE_DRAGON_SETTING_SET:
+            config[key] = value
+    # 兜底：确保关键结构字段存在（minimal/空种子情况）
+    if not config.get("TaskDefinitions") or not config.get("TaskOrder"):
+        base = load_seed_template() or {}
+        for struct_key in ("TaskEnabledList", "TaskOrder", "TaskDefinitions"):
+            if struct_key not in config and struct_key in base:
+                config[struct_key] = base[struct_key]
+    write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
+
+
 def apply_groups(
     config: dict[str, Any],
     enabled: list[str],
@@ -631,3 +893,7 @@ def apply_groups(
     config["TaskOrder"] = new_order
     config["TaskEnabledList"] = new_enabled
     return config
+
+
+# 模块加载时预解析设置项默认值（供右栏渲染缺省值）
+load_setting_defaults()
