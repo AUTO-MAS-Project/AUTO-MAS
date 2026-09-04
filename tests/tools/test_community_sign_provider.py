@@ -45,6 +45,51 @@ class CommunitySignProviderCompatibilityTest(unittest.TestCase):
 
         implementation.assert_awaited_once_with(time_source=time_source)
 
+    def test_taygedo_community_sign_is_excluded_from_game_detail(self) -> None:
+        formatted = community_sign_provider.format_community_sign_results(
+            [
+                {
+                    "account": "账号/塔吉多",
+                    "account_uid": "account-1",
+                    "game": "幻塔社区",
+                    "platform": "塔吉多",
+                    "status": "成功",
+                    "reward": "经验10",
+                    "reason": "",
+                },
+                {
+                    "account": "账号/塔吉多",
+                    "account_uid": "account-1",
+                    "game": "异环社区",
+                    "platform": "塔吉多",
+                    "status": "已签到",
+                    "reward": "金币5",
+                    "reason": "",
+                },
+                {
+                    "account": "角色/异环",
+                    "account_uid": "account-1",
+                    "game": "异环",
+                    "platform": "塔吉多",
+                    "status": "成功",
+                    "reward": "异环币×5",
+                    "reason": "",
+                },
+                {
+                    "account": "账号/塔吉多",
+                    "account_uid": "account-1",
+                    "game": "塔吉多社区",
+                    "platform": "塔吉多",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": "凭据无效",
+                },
+            ]
+        )
+
+        games = formatted["塔吉多"][0]["games"]
+        self.assertEqual([item["game"] for item in games], ["异环"])
+
 
 if __name__ == "__main__":
     unittest.main()

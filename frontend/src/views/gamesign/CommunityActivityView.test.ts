@@ -14,6 +14,7 @@ describe('CommunityActivityView structure', () => {
     expect(source).toContain('class="activity-game-image"')
     expect(source).toContain('v-if="gameVisual(element.game).image"')
     expect(source).toContain('v-else :is="gameVisual(element.game).icon"')
+    expect(source).toContain(':class="[\'activity-card\', gameVisual(element.game).uiClass]"')
   })
 
   it('uses the i18n catalog and does not add a card-level scroll owner', () => {
@@ -28,11 +29,23 @@ describe('CommunityActivityView structure', () => {
       expect(source).toContain(`${game}:`)
     }
     expect(source.match(/image: \w+NoteImage/g)).toHaveLength(5)
+    expect(source.match(/backgroundImage: \w+NoteBackgroundImage/g)).toHaveLength(5)
+    expect(
+      source.match(/uiClass: 'activity-card--(arknights|endfield|genshin|star-rail|zenless)'/g)
+    ).toHaveLength(5)
     expect(source).toContain('@/assets/community-notes/arknights.png')
     expect(source).toContain('@/assets/community-notes/zenless.png')
+    expect(source).toContain('@/assets/community-notes/arknights-background.png')
+    expect(source).toContain('@/assets/community-notes/endfield-background.png')
+    expect(source).toContain('@/assets/community-notes/genshin-background.png')
+    expect(source).toContain('@/assets/community-notes/star-rail-background.png')
+    expect(source).toContain('@/assets/community-notes/zenless-background.png')
     expect(source).toContain("'--activity-background-image'")
     expect(source).toContain('.activity-card::before')
     expect(source).toMatch(/background-image:\s*var\(--activity-background-image\);/)
+    expect(source).toContain('opacity: 0.24;')
+    expect(source).toContain('.activity-card--endfield::before')
+    expect(source).toContain('.activity-card--zenless::before')
   })
 
   it('shows only confirmed daily progress and separates recurring information', () => {
@@ -46,6 +59,21 @@ describe('CommunityActivityView structure', () => {
     expect(source).toContain('v-if="hasTaskProgress(task)"')
     expect(source).toContain('v-if="hasResourceProgress(resource)"')
     expect(source).toContain('background-size: cover;')
+    expect(source).not.toContain('经验')
+    expect(source).toContain('activity-section--resources')
+    expect(source).toContain('grid-column: 1 / -1;')
+    expect(source).toContain('column-gap: 12px;')
+    expect(source).toContain('@media (max-width: 560px)')
+  })
+
+  it('keeps the note cards compact without clipping their confirmed data', () => {
+    expect(source).toContain('padding: 8px 12px;')
+    expect(source).toContain('min-height: 0;')
+    expect(source).toContain('padding: 8px;')
+    expect(source).toContain('padding: 6px;')
+    expect(source).toContain('margin-top: 8px;')
+    expect(source).not.toContain('min-height: 240px;')
+    expect(source).not.toContain('margin-top: auto;')
   })
 
   it('keeps one vertical page scroll owner and removes page-level gradients', () => {

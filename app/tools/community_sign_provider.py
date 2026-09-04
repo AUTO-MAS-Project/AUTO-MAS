@@ -43,6 +43,9 @@ logger = get_logger("游戏社区签到")
 
 _system_time_checked_at = 0.0
 _SYSTEM_TIME_CHECK_INTERVAL = 300.0
+_TAYGEDO_COMMUNITY_DETAIL_GAMES = frozenset(
+    ("幻塔社区", "异环社区", "塔吉多社区")
+)
 
 
 class _TimeSource(Protocol):
@@ -598,12 +601,23 @@ def merge_community_sign_results(
     return existing
 
 
+def _is_taygedo_community_detail_result(item: dict[str, object]) -> bool:
+    """判断是否为不应进入塔吉多游戏详情的社区级签到结果。"""
+
+    return (
+        str(item.get("platform") or "").strip() == "塔吉多"
+        and str(item.get("game") or "").strip()
+        in _TAYGEDO_COMMUNITY_DETAIL_GAMES
+    )
+
+
 def format_community_sign_results(
     results: list[dict[str, object]],
 ) -> dict[str, list[dict[str, object]]]:
-    """将签到结果格式化为前端可展示的结构
+    """将签到结果格式化为前端可展示的结构。
 
-    按平台分组，平台内按账号 UID 聚合
+    按平台分组，平台内按账号 UID 聚合。塔吉多社区级签到仍会执行，
+    但不作为游戏签到详情展示。
 
     Returns:
         {platform: [{account_alias, account_uid, games: [{account, game, status, reward, reason}]}]}
@@ -611,7 +625,9 @@ def format_community_sign_results(
     platforms: dict[str, dict[str, dict[str, object]]] = {}
 
     for item in results:
-        if item.get("_notification_only"):
+        if item.get("_notification_only") or _is_taygedo_community_detail_result(
+            item
+        ):
             continue
         platform = item.get("platform", "未知")
         account = str(item.get("account", "未知"))

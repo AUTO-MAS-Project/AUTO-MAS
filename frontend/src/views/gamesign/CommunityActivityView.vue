@@ -12,10 +12,15 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
+import arknightsNoteBackgroundImage from '@/assets/community-notes/arknights-background.png'
 import arknightsNoteImage from '@/assets/community-notes/arknights.png'
+import endfieldNoteBackgroundImage from '@/assets/community-notes/endfield-background.png'
 import endfieldNoteImage from '@/assets/community-notes/endfield.jpg'
+import genshinNoteBackgroundImage from '@/assets/community-notes/genshin-background.png'
 import genshinNoteImage from '@/assets/community-notes/genshin.jpg'
+import starRailNoteBackgroundImage from '@/assets/community-notes/star-rail-background.png'
 import starRailNoteImage from '@/assets/community-notes/star-rail.jpg'
+import zenlessNoteBackgroundImage from '@/assets/community-notes/zenless-background.png'
 import zenlessNoteImage from '@/assets/community-notes/zenless.png'
 import {
   useCommunityActivityApi,
@@ -25,9 +30,11 @@ import {
 
 interface GameVisual {
   accent: string
+  backgroundImage: string
   icon: Component
   image: string
   labelKey: string
+  uiClass: string
 }
 
 const { t, locale } = useI18n()
@@ -45,41 +52,53 @@ const { queryActivity } = useCommunityActivityApi()
 const GAME_VISUALS: Record<string, GameVisual> = {
   明日方舟: {
     accent: 'var(--ant-color-primary)',
+    backgroundImage: arknightsNoteBackgroundImage,
     icon: AimOutlined,
     image: arknightsNoteImage,
     labelKey: 'gamesign.activity.game.arknights',
+    uiClass: 'activity-card--arknights',
   },
   终末地: {
     accent: 'var(--ant-color-success)',
+    backgroundImage: endfieldNoteBackgroundImage,
     icon: ApiOutlined,
     image: endfieldNoteImage,
     labelKey: 'gamesign.activity.game.endfield',
+    uiClass: 'activity-card--endfield',
   },
   原神: {
     accent: '#8fe3b0',
+    backgroundImage: genshinNoteBackgroundImage,
     icon: CompassOutlined,
     image: genshinNoteImage,
     labelKey: 'gamesign.activity.game.genshin',
+    uiClass: 'activity-card--genshin',
   },
   星穹铁道: {
     accent: '#62c4e7',
+    backgroundImage: starRailNoteBackgroundImage,
     icon: RocketOutlined,
     image: starRailNoteImage,
     labelKey: 'gamesign.activity.game.starrail',
+    uiClass: 'activity-card--star-rail',
   },
   绝区零: {
     accent: '#ffd24a',
+    backgroundImage: zenlessNoteBackgroundImage,
     icon: ThunderboltOutlined,
     image: zenlessNoteImage,
     labelKey: 'gamesign.activity.game.zenless',
+    uiClass: 'activity-card--zenless',
   },
 }
 
 const DEFAULT_GAME_VISUAL: GameVisual = {
   accent: 'var(--ant-color-primary)',
+  backgroundImage: '',
   icon: AppstoreOutlined,
   image: '',
   labelKey: '',
+  uiClass: 'activity-card--default',
 }
 
 const gameVisual = (game: string) => GAME_VISUALS[game] || DEFAULT_GAME_VISUAL
@@ -99,7 +118,9 @@ const activityCardStyle = (game: string) => {
   const visual = gameVisual(game)
   return {
     '--activity-accent': visual.accent,
-    '--activity-background-image': visual.image ? `url("${visual.image}")` : 'none',
+    '--activity-background-image': visual.backgroundImage
+      ? `url("${visual.backgroundImage}")`
+      : 'none',
   } as CSSProperties
 }
 
@@ -153,8 +174,7 @@ const weeklyTasks = (snapshot: ActivitySnapshot) =>
 
 const hasTaskProgress = (task: ActivitySnapshot['tasks'][number]) => task.target > 0
 
-const hasResourceProgress = (resource: ActivitySnapshot['resources'][number]) =>
-  resource.target > 0
+const hasResourceProgress = (resource: ActivitySnapshot['resources'][number]) => resource.target > 0
 
 const formatTime = (value: string) => {
   if (!value) return ''
@@ -274,7 +294,7 @@ onMounted(() => {
       >
         <template #item="{ element }">
           <article class="activity-card-wrap" :style="activityCardStyle(element.game)">
-            <a-card :bordered="false" class="activity-card">
+            <a-card :bordered="false" :class="['activity-card', gameVisual(element.game).uiClass]">
               <div class="activity-card-header">
                 <span
                   class="activity-drag-handle"
@@ -367,7 +387,10 @@ onMounted(() => {
                   </div>
                 </section>
 
-                <section v-if="element.resources.length" class="activity-section">
+                <section
+                  v-if="element.resources.length"
+                  class="activity-section activity-section--resources"
+                >
                   <h3>{{ t('gamesign.activity.resources') }}</h3>
                   <div class="activity-list">
                     <div
@@ -418,7 +441,7 @@ onMounted(() => {
 .activity-view {
   min-height: 100%;
   box-sizing: border-box;
-  padding: 12px 16px;
+  padding: 8px 12px;
   color: var(--ant-color-text);
 }
 
@@ -426,24 +449,24 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .activity-heading {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
 .activity-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 .activity-updated,
@@ -453,14 +476,14 @@ onMounted(() => {
 }
 
 .activity-alert {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .activity-state {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 160px;
+  min-height: 120px;
 }
 
 .activity-spin {
@@ -472,13 +495,13 @@ onMounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   align-items: stretch;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
 .activity-card-wrap {
   min-width: 0;
-  min-height: 240px;
+  min-height: 0;
 }
 
 .activity-card {
@@ -506,7 +529,7 @@ onMounted(() => {
   background-size: cover;
   content: '';
   filter: saturate(0.78);
-  opacity: 0.18;
+  opacity: 0.24;
   pointer-events: none;
 }
 
@@ -522,13 +545,13 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
-  padding: 12px;
+  padding: 8px;
 }
 
 .activity-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -546,7 +569,7 @@ onMounted(() => {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  width: 18px;
   color: var(--ant-color-text-tertiary);
   cursor: grab;
 }
@@ -561,13 +584,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 1px solid color-mix(in srgb, var(--activity-accent) 55%, transparent);
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--activity-accent) 14%, transparent);
   color: var(--activity-accent);
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .activity-game-image {
@@ -586,7 +609,7 @@ onMounted(() => {
 }
 
 .activity-card-title strong {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .activity-card-title span {
@@ -605,21 +628,21 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-  margin: 8px 0;
+  gap: 3px 8px;
+  margin: 5px 0;
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .activity-identity strong {
   color: var(--ant-color-text);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .activity-summary {
-  padding: 8px;
+  padding: 6px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--ant-color-bg-container) 82%, transparent);
 }
 
@@ -633,38 +656,50 @@ onMounted(() => {
 }
 
 .activity-progress-heading {
-  margin-bottom: 6px;
-  font-size: 13px;
+  margin-bottom: 4px;
+  font-size: 12px;
 }
 
 .activity-section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .activity-section {
   min-width: 0;
 }
 
+.activity-section--resources {
+  grid-column: 1 / -1;
+}
+
 .activity-section h3 {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .activity-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+
+.activity-section--resources .activity-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+  row-gap: 2px;
 }
 
 .activity-row {
   min-width: 0;
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .activity-row-name {
@@ -680,34 +715,58 @@ onMounted(() => {
 
 .activity-row-status {
   color: var(--ant-color-text-tertiary);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 10px;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .activity-row strong {
   flex: 0 0 auto;
   color: var(--ant-color-text);
-  font-size: 12px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .activity-reason {
-  margin-top: 10px;
+  margin-top: 8px;
+  padding: 6px 8px;
 }
 
 .activity-reason :deep(.ant-alert-message) {
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .activity-card-footer {
   flex: 0 0 auto;
   flex-wrap: wrap;
-  margin-top: auto;
-  padding-top: 8px;
+  margin-top: 8px;
+  padding-top: 6px;
   color: var(--ant-color-text-tertiary);
   font-size: 11px;
+  line-height: 1.2;
+}
+
+/* 背景构图按游戏独立调整，避免人物主体被紧凑卡片裁掉。 */
+.activity-card--arknights::before {
+  background-position: center;
+}
+
+.activity-card--endfield::before {
+  background-position: 78% center;
+}
+
+.activity-card--genshin::before {
+  background-position: 68% center;
+}
+
+.activity-card--star-rail::before {
+  background-position: 72% center;
+}
+
+.activity-card--zenless::before {
+  background-position: 70% center;
 }
 
 .activity-card-ghost {
@@ -726,7 +785,7 @@ onMounted(() => {
 
 @media (max-width: 860px) {
   .activity-view {
-    padding: 12px;
+    padding: 8px;
   }
 
   .activity-heading {
@@ -736,6 +795,16 @@ onMounted(() => {
   }
 
   .activity-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .activity-section--resources {
+    grid-column: auto;
+  }
+
+  .activity-section--resources .activity-list {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -23,6 +23,22 @@ projects recorded in the development report. The source project names,
 revisions, paths, and license information are preserved here; no reference
 repository is bundled into the application.
 
+The following card background files were supplied by the requester for this
+change on 2026-09-04. Their original source and redistribution license were not
+included with the files. Copyright remains with the respective rights holders;
+redistribution permission must be confirmed before a public release.
+
+- `arknights-background.png`: SHA-256
+  `22AA487DA66082F0B932D691EA8073238752477A684751F04363211F6B620AF7`.
+- `endfield-background.png`: SHA-256
+  `C2CF843682A82B20890BF5228D9A68E5965B4DAE3C36CD951B8988FA1737B01C`.
+- `genshin-background.png`: SHA-256
+  `322F83D8731C2744F1FDBFA4DE9AFF8AE973C76F22C724D7D83877C73B9C3B48`.
+- `star-rail-background.png`: SHA-256
+  `4D6766536FC768657047218BBE885C78BD2BADEF551F8E4B44B0E9B613B6C3A7`.
+- `zenless-background.png`: SHA-256
+  `3A7A6CDBB24307A77D02D6EF5A27DB1A9E379A71A39FC6BA35E1AA4EE6137658`.
+
 The following notice is copied from `arknights-plugin` and applies to
 `arknights.png`. The pinned `A-game_checkin` revision declares MIT in
 `package.json` but does not include a separate license file or copyright
