@@ -472,125 +472,194 @@
               {{ t('edit.bettergiGroupCapsuleHint') }}
             </p>
 
-            <div class="config-group-grid">
-              <div
-                v-for="option in oneDragonGroupOptions"
-                :key="option.value"
-                class="config-group-item"
-                :class="{ disabled: !formData.Info.IfUseMasConfig }"
-                @click="toggleGroup(option.value)"
-              >
-                <span class="config-group-item-label">{{ option.label }}</span>
-                <div
-                  class="config-group-item-capsule"
-                  :class="{ active: formData.OneDragon.Groups.includes(option.value) }"
-                >
-                  <span class="config-group-item-dot"></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="custom-groups-section">
-              <div class="custom-groups-header">
-                <h3>
-                  {{ t('edit.bettergiCustomGroups') }}
-                  <a-tooltip placement="top">
-                    <template #title>
-                      <div style="max-width: 320px; white-space: normal">
-                        {{ t('edit.bettergiCustomGroupsTip1') }}
-                        <br /><br />
-                        {{ t('edit.bettergiCustomGroupsTip2a') }}
-                        <b>{{ t('edit.bettergiCustomGroupsDefaultRun') }}</b>
-                        {{ t('edit.bettergiCustomGroupsTip2b') }}
-                        <br /><br />
-                        {{ t('edit.bettergiCustomGroupsTip3') }}
-                      </div>
-                    </template>
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </h3>
-                <div class="custom-groups-toggle">
-                  <span class="custom-groups-toggle-label">{{ t('edit.enabled2') }}</span>
-                  <div
-                    class="config-group-item-capsule custom-groups-capsule"
-                    :class="{
-                      active: formData.OneDragon.IfUseCustomGroups,
-                      disabled: !formData.Info.IfUseMasConfig,
-                    }"
-                    @click="toggleCustomGroupsMaster"
-                  >
-                    <span class="config-group-item-dot"></span>
-                  </div>
-                </div>
-              </div>
-
-              <p class="section-desc custom-groups-desc">
-                {{ t('edit.bettergiCustomGroupsDesc') }}
-              </p>
-
-              <div
-                v-if="formData.OneDragon.IfUseCustomGroups && formData.Info.IfUseMasConfig"
-                class="custom-groups-body"
-              >
-                <div class="custom-groups-toolbar">
-                  <a-button size="small" type="primary" ghost @click="openCustomGroupModal">
-                    {{ t('edit.bettergiAddGroup') }}
-                  </a-button>
-                  <a-popconfirm
-                    :title="t('edit.bettergiDeleteGroupConfirm')"
-                    :disabled="selectedCustomGroupKeys.length === 0"
-                    @confirm="deleteSelectedCustomGroups"
-                  >
-                    <a-button size="small" danger :disabled="selectedCustomGroupKeys.length === 0">
-                      {{ t('edit.deleteSelected') }}
+            <div class="bettergi-groups-layout">
+              <!-- 左栏：一条龙队列（8 内置 + 体力作战 + 自定义组，可拖拽排序） -->
+              <div class="bettergi-groups-pane bettergi-groups-list-pane">
+                <div class="bettergi-groups-toolbar">
+                  <a-space size="small">
+                    <a-button
+                      type="primary"
+                      ghost
+                      size="small"
+                      :disabled="!groupsEditable"
+                      @click="openAddToDragonModal"
+                    >
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      {{ t('edit.bettergiAddToDragon') }}
                     </a-button>
-                  </a-popconfirm>
+                    <a-popconfirm
+                      :title="t('edit.bettergiClearDragonTitle')"
+                      :ok-text="t('edit.ok')"
+                      :cancel-text="t('edit.cancel')"
+                      :disabled="!groupsEditable || dragonList.length === 0"
+                      @confirm="clearDragon"
+                    >
+                      <a-button
+                        size="small"
+                        :disabled="!groupsEditable || dragonList.length === 0"
+                      >
+                        <template #icon>
+                          <ClearOutlined />
+                        </template>
+                        {{ t('edit.bettergiClearDragon') }}
+                      </a-button>
+                    </a-popconfirm>
+                  </a-space>
+                  <span class="bettergi-groups-toolbar-tip">{{ t('edit.bettergiRightClickRemove') }}</span>
                 </div>
-                <a-table
-                  :columns="customGroupColumns"
-                  :data-source="customGroupsTable"
-                  :row-selection="customGroupRowSelection"
-                  :pagination="false"
-                  size="small"
-                  :scroll="{ x: 320 }"
-                  row-key="name"
+
+                <draggable
+                  v-model="dragonListModel"
+                  :item-key="getDragonRowKey"
+                  handle=".group-row-drag-area"
+                  :animation="200"
+                  :disabled="!groupsEditable"
+                  ghost-class="group-row-ghost"
+                  chosen-class="group-row-chosen"
+                  drag-class="group-row-drag"
+                  class="bettergi-groups-list"
+                  @end="handleGroupDragEnd"
                 >
-                  <template #bodyCell="{ column, record }">
-                    <template v-if="column.key === 'enabled'">
+                  <template #item="{ element: item }">
+                    <div
+                      class="group-row"
+                      :class="{
+                        'group-row-selected': isRowSelected(item),
+                        'group-row-disabled': !groupsEditable || isGroupFrozen(item),
+                        'group-row-frozen': isGroupFrozen(item),
+                      }"
+                      @contextmenu.prevent="handleRowContextMenu(item)"
+                    >
+                      <!-- 可拖拽热区：覆盖整行左 2/3（名称区），仅右键菜单/开关在热区外 -->
                       <div
-                        class="config-group-item-capsule custom-groups-capsule"
-                        :class="{ active: record.enabled }"
-                        @click="toggleCustomGroupEnabled(record)"
+                        class="group-row-drag-area"
+                        @click="selectConfigGroup(item)"
+                      >
+                        <HolderOutlined class="group-row-drag-handle" aria-hidden="true" />
+                        <span class="group-row-name">
+                          <a-tag
+                            color="default"
+                            size="small"
+                            class="group-row-kind-tag"
+                            :class="{
+                              'group-row-prefix-stamina': item.kind === 'stamina',
+                              'group-row-prefix-custom': item.kind === 'custom',
+                            }"
+                          >
+                            {{ groupPrefix(item) }}
+                          </a-tag>
+                          <span class="group-row-label">{{ groupLabel(item) }}</span>
+                          <a-tag v-if="isGroupFrozen(item)" color="orange" size="small">
+                            {{ t('edit.bettergiGroupFrozen') }}
+                          </a-tag>
+                        </span>
+                      </div>
+                      <div
+                        class="config-group-item-capsule group-row-capsule"
+                        :class="{ active: groupEnabled(item) }"
+                        @click.stop="toggleConfigGroup(item)"
                       >
                         <span class="config-group-item-dot"></span>
                       </div>
-                    </template>
+                    </div>
                   </template>
-                </a-table>
+                </draggable>
+              </div>
+
+              <!-- 右栏：选中配置组详情 -->
+              <div class="bettergi-groups-pane bettergi-groups-detail-pane">
+                <template v-if="selectedGroupIdentity">
+                  <div class="bettergi-groups-detail-header">
+                    <div class="bettergi-groups-detail-title">
+                      <a-tag
+                        :color="
+                          selectedGroupIdentity.kind === 'stamina'
+                            ? 'purple'
+                            : selectedGroupIdentity.kind === 'custom'
+                              ? 'blue'
+                              : 'default'
+                        "
+                        size="small"
+                      >
+                        {{ groupPrefix(selectedGroupIdentity) }}
+                      </a-tag>
+                      <span class="bettergi-groups-detail-name">
+                        {{ groupLabel(selectedGroupIdentity) }}
+                      </span>
+                    </div>
+                    <a-tooltip
+                      v-if="isGroupFrozen(selectedGroupIdentity)"
+                      :title="t('edit.bettergiGroupFrozenTip')"
+                    >
+                      <a-tag color="orange">{{ t('edit.bettergiGroupFrozen') }}</a-tag>
+                    </a-tooltip>
+                    <div
+                      v-else
+                      class="config-group-item-capsule custom-groups-capsule"
+                      :class="{
+                        active: groupEnabled(selectedGroupIdentity),
+                        disabled: !groupsEditable,
+                      }"
+                      @click="toggleConfigGroup(selectedGroupIdentity)"
+                    >
+                      <span class="config-group-item-dot"></span>
+                    </div>
+                  </div>
+                  <p class="bettergi-groups-detail-desc">{{ groupDescText(selectedGroupIdentity) }}</p>
+                </template>
+                <div v-else class="bettergi-groups-detail-empty">
+                  <a-empty :description="t('edit.bettergiGroupsEmptyRight')" />
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 添加配置组弹窗 -->
+          <!-- 添加配置组弹窗（加入一条龙末尾） -->
           <a-modal
-            v-model:open="customGroupModal.open"
-            :title="t('edit.bettergiAddGroup')"
-            :ok-text="
-              customGroupModal.saving ? t('edit.bettergiAdding') : t('edit.bettergiAddAction')
-            "
-            :ok-button-props="{ disabled: customGroupModal.saving }"
-            @ok="confirmAddCustomGroup"
-            @cancel="customGroupModal.open = false"
+            v-model:open="addModal.open"
+            :title="t('edit.bettergiAddToDragon')"
+            :ok-text="t('edit.bettergiAddToDragonOk')"
+            :ok-button-props="{ disabled: !addModal.name.trim() }"
+            :cancel-text="t('edit.cancel')"
+            @ok="confirmAddToDragon"
+            @cancel="addModal.open = false"
           >
-            <a-select
-              v-model:value="customGroupModal.name"
-              :options="customGroupModal.addOptions"
-              :placeholder="t('edit.bettergiPickExistingGroup')"
-              show-search
-              allow-clear
-              style="width: 100%"
-              option-filter-prop="label"
+            <a-input
+              v-model:value="addModal.name"
+              :placeholder="t('edit.bettergiInputGroupNames')"
+              class="add-dragon-input"
             />
+            <p class="add-dragon-input-tip">{{ t('edit.bettergiInputGroupNamesTip') }}</p>
+            <div class="add-dragon-candidates">
+              <div
+                v-for="candidate in addModal.candidates"
+                :key="`${candidate.kind}:${candidate.key}`"
+                class="add-dragon-candidate"
+                :class="{
+                  'add-dragon-candidate-picked': candidateInInput(candidate),
+                  'add-dragon-candidate-disabled': !ALLOW_DUPLICATE_GROUPS && inDragon(candidate),
+                }"
+                @click="
+                  !ALLOW_DUPLICATE_GROUPS && inDragon(candidate)
+                    ? warnAlreadyInDragon()
+                    : pickAddCandidate(candidate)
+                "
+              >
+                <a-tag
+                  size="small"
+                  :color="candidate.kind === 'stamina' ? 'purple' : candidate.kind === 'custom' ? 'blue' : 'default'"
+                  class="add-dragon-candidate-tag"
+                >
+                  {{ groupPrefix(candidate) }}
+                </a-tag>
+                <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
+                <a-tag v-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
+                  {{ t('edit.bettergiInQueue') }}
+                </a-tag>
+              </div>
+            </div>
           </a-modal>
         </a-form>
       </a-card>
@@ -687,11 +756,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { message, Modal } from 'ant-design-vue'
+import draggable from 'vuedraggable'
+import {
+  ArrowLeftOutlined,
+  ClearOutlined,
+  HolderOutlined,
+  PlusOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import { BetterGiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -898,16 +975,12 @@ const loadStrategyOptions = async () => {
 const {
   table: customGroupsTable,
   selectedKeys: selectedCustomGroupKeys,
-  modal: customGroupModal,
-  columns: customGroupColumns,
-  rowSelection: customGroupRowSelection,
   syncFromForm: syncCustomGroupsFromForm,
   loadFromBettergi: loadCustomGroupsFromBettergi,
   toggleMaster: toggleCustomGroupsMaster,
-  openAdd: openCustomGroupModal,
-  confirmAdd: confirmAddCustomGroup,
   deleteSelected: deleteSelectedCustomGroups,
   toggleEnabled: toggleCustomGroupEnabled,
+  addByName: addCustomGroupByName,
 } = useBettergiCustomGroups({
   scriptId,
   oneDragon: () => formData.OneDragon,
@@ -916,6 +989,406 @@ const {
   editable: () => formData.Info.IfUseMasConfig,
   saveField,
 })
+
+// ============================================================
+// 一条龙配置组「队列可视化」（8 内置 + 体力作战 + 自定义组）
+// ============================================================
+// 交互语义：
+//  - 左栏列表即「一条龙队列」：其中的配置组按顺序执行。默认 = 8 个官方内置组 + 体力作战（第 9 项）。
+//  - 行前缀 tag：内置 →「默认」；体力作战 →「专项」；自定义组 →「自定义」。
+//  - 行内胶囊开关控制是否启用（内置 ↔ Groups；自定义 ↔ CustomGroups；体力作战为本地虚拟项）。
+//  - 点击「添加配置组」：从候选（8 内置 + 体力作战 + BetterGI 现有自定义组）挑选，加入队列末尾。
+//  - 右键某一配置组：从一条龙移除（内置移出 Groups、自定义移出 CustomGroups、体力作战移除并关闭）。
+//  - 体力作战启用互斥：开启体力作战时，自动关闭并冻结「自动秘境 / 自动地脉花 / 自动首领讨伐」；
+//    体力作战关闭或从一条龙移除后才解冻，三组可重新开启。
+// 说明：BetterGI 内置组执行顺序与队列成员最终由后端一条龙 TaskOrder 决定，本次后端顺序化尚未
+// 配套，左栏顺序/成员作为前端队列编排（dragonList）保留，待后端支持后映射 Groups/CustomGroups。
+const STAMINA_COMBAT_KEY = '__mas_stamina_combat__'
+
+type ConfigGroupKind = 'builtin' | 'stamina' | 'custom'
+
+type ConfigGroupIdentity = {
+  kind: ConfigGroupKind
+  key: string // builtin/custom: 组名字面量；stamina: STAMINA_COMBAT_KEY
+  /** 队列行唯一实例标识：允许同一配置组重复添加时，每行都有独立 uid（拖拽/删除按行实例） */
+  uid?: number
+}
+
+// 启用体力作战时自动关闭并冻结的官方内置组（专项接管刷取）
+const STAMINA_FROZEN_BUILTINS = ['自动秘境', '自动地脉花', '自动首领讨伐']
+
+// 重复添加配置组功能开关：开启后允许同一配置组在一条龙中多次添加（每行为独立实例）。
+// 后端"同一配置多次添加"的语义后续详说，本开关用于先行测试。
+const ALLOW_DUPLICATE_GROUPS = true
+
+// 队列行 uid 自增计数器
+let dragonRowSeq = 0
+
+// 当前一条龙队列（有序身份列表，顺序即执行顺序）
+const dragonList = ref<ConfigGroupIdentity[]>([])
+
+// 体力作战是否已加入一条龙（本地虚拟项，默认加入）
+const staminaInDragon = ref(true)
+// 体力作战启用开关（本地虚拟项，不落库）
+const staminaCombatEnabled = ref(false)
+// 启用体力作战前的记忆快照：记录受影响内置组原本是否启用，用于关闭体力后恢复
+const staminaFrozenSnapshot = ref<Record<string, boolean>>({})
+
+// 当前选中的队列行（右侧面板展示）
+const selectedGroupIdentity = ref<ConfigGroupIdentity | null>(null)
+
+// 内置组的显示名表（key=中文组名 value）
+const builtinGroupLabels = computed<Record<string, string>>(() =>
+  Object.fromEntries(ONE_DRAGON_GROUPS.map(g => [g.value, t(g.labelKey)]))
+)
+
+// 左侧是否可编辑/可展示列表（受「MAS 独立配置」总开关约束）
+const groupsEditable = computed(() => formData.Info.IfUseMasConfig)
+const groupsShowCustom = computed(
+  () => formData.OneDragon.IfUseCustomGroups && formData.Info.IfUseMasConfig
+)
+
+// 前缀 tag 文案
+const groupPrefix = (item: ConfigGroupIdentity): string => {
+  if (item.kind === 'builtin') return t('edit.bettergiGroupPrefixDefault')
+  if (item.kind === 'stamina') return t('edit.bettergiGroupKindStamina')
+  return t('edit.bettergiGroupKindCustom')
+}
+
+const groupLabel = (item: ConfigGroupIdentity): string => {
+  if (item.kind === 'builtin') return builtinGroupLabels.value[item.key] ?? item.key
+  if (item.kind === 'stamina') return t('edit.bettergiGroupStamina')
+  return item.key
+}
+
+// 右栏说明文字：内置/体力作战/自定义 三类分别给不同文案
+const groupDescText = (item: ConfigGroupIdentity): string => {
+  if (item.kind === 'builtin') return t('edit.bettergiGroupCapsuleHint')
+  if (item.kind === 'stamina') return t('edit.bettergiGroupStaminaHint')
+  return t('edit.bettergiCustomGroupsDesc')
+}
+
+// 是否被体力作战冻结（启用体力作战时三个刷取内置组冻结）
+const isGroupFrozen = (item: ConfigGroupIdentity): boolean =>
+  item.kind === 'builtin' &&
+  staminaCombatEnabled.value &&
+  STAMINA_FROZEN_BUILTINS.includes(item.key)
+
+const groupEnabled = (item: ConfigGroupIdentity): boolean => {
+  if (item.kind === 'builtin') return formData.OneDragon.Groups.includes(item.key)
+  if (item.kind === 'stamina') return staminaCombatEnabled.value
+  return Boolean(customGroupsTable.value.find(r => r.name === item.key)?.enabled)
+}
+
+// 队列是否包含某配置组
+const inDragon = (item: ConfigGroupIdentity): boolean =>
+  dragonList.value.some(i => i.kind === item.kind && i.key === item.key)
+
+// 同步后端内置组启用集合（当前 Groups 含 enabled 列表 + 冻结时剔除冻结项）
+const applyGroupsPatch = (next: string[]) => {
+  formData.OneDragon.Groups = next
+  void saveField('OneDragon.Groups', next)
+}
+
+// 从当前 Groups 中剔除指定内置组（冻结 / 删除共用）
+const removeBuiltinsFromGroups = (keys: string[]) => {
+  const set = new Set(keys)
+  const next = formData.OneDragon.Groups.filter(g => !set.has(g))
+  if (next.join('\u0001') !== formData.OneDragon.Groups.join('\u0001')) {
+    applyGroupsPatch(next)
+  }
+}
+
+// 生成一条带唯一 uid 的队列行实例
+const makeDragonRow = (item: ConfigGroupIdentity): ConfigGroupIdentity => ({
+  ...item,
+  uid: ++dragonRowSeq,
+})
+
+// 队列行去重辅助（仅用于初始化；允许重复时不用此函数）
+const pushDragon = (list: ConfigGroupIdentity[], item: ConfigGroupIdentity) => {
+  if (!list.some(i => i.kind === item.kind && i.key === item.key)) list.push(makeDragonRow(item))
+}
+
+// 依据用户数据初始化一条龙队列（loadUser 后调用一次，随后由增删/拖拽维护）：
+// 种子 = 8 内置（默认在列，enabled 由 Groups 表达）+ 体力作战（默认在列，默认关闭）
+const initDragonList = () => {
+  const order: ConfigGroupIdentity[] = []
+  for (const g of ONE_DRAGON_GROUPS) pushDragon(order, { kind: 'builtin', key: g.value })
+  if (staminaInDragon.value) pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
+  // 自定义组仅在总开关开启时并入（来自 BetterGI 现有配置 / CustomGroups）
+  if (groupsShowCustom.value) {
+    for (const row of customGroupsTable.value) pushDragon(order, { kind: 'custom', key: row.name })
+  }
+  dragonList.value = order
+}
+
+// 把 BetterGI 侧新增的自定义组补入队列末尾（保留用户已删除的自定义组不回来）
+const appendCustomRows = () => {
+  if (!groupsShowCustom.value) return
+  for (const row of customGroupsTable.value) {
+    const item: ConfigGroupIdentity = { kind: 'custom', key: row.name }
+    if (!inDragon(item)) dragonList.value.push(makeDragonRow(item))
+  }
+}
+
+// 供 draggable v-model 使用（纯前端顺序）
+const dragonListModel = computed<ConfigGroupIdentity[]>({
+  get: () => dragonList.value,
+  set: value => {
+    dragonList.value = value
+  },
+})
+
+// ---- 开关 ----
+// 开启/关闭体力作战（含互斥冻结/解冻 + 记忆恢复）
+const toggleStaminaCombat = () => {
+  const next = !staminaCombatEnabled.value
+  if (next) {
+    // 启用体力作战：先记忆受影响组原本的启用状态，再自动关闭（冻结）
+    staminaFrozenSnapshot.value = Object.fromEntries(
+      STAMINA_FROZEN_BUILTINS.map(name => [name, formData.OneDragon.Groups.includes(name)])
+    )
+    removeBuiltinsFromGroups(STAMINA_FROZEN_BUILTINS)
+  } else {
+    // 关闭体力作战：按记忆恢复原本开启的组（记忆为空则不误改）
+    const toRestore = STAMINA_FROZEN_BUILTINS.filter(name => staminaFrozenSnapshot.value[name])
+    if (toRestore.length) {
+      const nextGroups = [...new Set([...formData.OneDragon.Groups, ...toRestore])]
+      applyGroupsPatch(nextGroups)
+    }
+    staminaFrozenSnapshot.value = {}
+  }
+  staminaCombatEnabled.value = next
+}
+
+// 移除体力作战（右键移出）时同样按记忆恢复受影响组
+const restoreStaminaFrozen = () => {
+  const toRestore = STAMINA_FROZEN_BUILTINS.filter(name => staminaFrozenSnapshot.value[name])
+  if (toRestore.length) {
+    applyGroupsPatch([...new Set([...formData.OneDragon.Groups, ...toRestore])])
+  }
+  staminaFrozenSnapshot.value = {}
+  staminaCombatEnabled.value = false
+}
+
+// 清空整条一条龙：清掉队列、后端内置组/自定义组，并关闭体力作战（不做冻结组恢复）
+const clearDragon = () => {
+  dragonList.value = []
+  staminaInDragon.value = false
+  staminaCombatEnabled.value = false
+  staminaFrozenSnapshot.value = {}
+  applyGroupsPatch([])
+  if (formData.OneDragon.CustomGroups !== '[]') {
+    formData.OneDragon.CustomGroups = '[]'
+    void saveField('OneDragon.CustomGroups', '[]')
+  }
+  selectedGroupIdentity.value = null
+}
+
+// 行开关：内置写 Groups、体力作战本地翻转（互斥）、自定义交给 composable 持久化
+const toggleConfigGroup = (item: ConfigGroupIdentity) => {
+  if (!groupsEditable.value) return
+  if (isGroupFrozen(item)) return
+  if (item.kind === 'builtin') {
+    toggleGroup(item.key)
+  } else if (item.kind === 'stamina') {
+    toggleStaminaCombat()
+  } else {
+    const row = customGroupsTable.value.find(r => r.name === item.key)
+    if (row) toggleCustomGroupEnabled(row)
+  }
+}
+
+// ---- 添加：把配置组加入一条龙（放到队列末尾）----
+const addToDragon = (item: ConfigGroupIdentity) => {
+  if (!groupsEditable.value) return
+  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return
+  if (item.kind === 'builtin') {
+    if (!formData.OneDragon.Groups.includes(item.key)) {
+      applyGroupsPatch([...formData.OneDragon.Groups, item.key])
+    }
+  } else if (item.kind === 'stamina') {
+    staminaInDragon.value = true
+  } else {
+    // 自定义组：确保进入 CustomGroups（启用）并打开总开关
+    if (addCustomGroupByName(item.key)) {
+      if (!formData.OneDragon.IfUseCustomGroups) toggleCustomGroupsMaster()
+    } else {
+      const row = customGroupsTable.value.find(r => r.name === item.key)
+      if (row && !row.enabled) toggleCustomGroupEnabled(row)
+    }
+  }
+  // 追加到队列末尾：生成带唯一 uid 的行实例（重复开关开启时允许同一配置多次添加）
+  dragonList.value.push(makeDragonRow(item))
+}
+
+// 队列中是否仍存在同类配置组（删除某实例后判断是否还保留后端启用）
+const hasSameKindRow = (item: ConfigGroupIdentity, exceptUid?: number): boolean =>
+  dragonList.value.some(i => i.uid !== exceptUid && i.kind === item.kind && i.key === item.key)
+
+// ---- 右键删除：从一条龙移除（按行实例 uid，一次只删一行）----
+const removeFromDragon = (item: ConfigGroupIdentity) => {
+  if (!groupsEditable.value) return
+  if (item.kind === 'builtin') {
+    if (isGroupFrozen(item)) return // 冻结中不可删除
+    dragonList.value = dragonList.value.filter(i => i.uid !== item.uid)
+    if (!hasSameKindRow(item, item.uid)) {
+      removeBuiltinsFromGroups([item.key])
+    }
+  } else if (item.kind === 'stamina') {
+    dragonList.value = dragonList.value.filter(i => i.uid !== item.uid)
+    if (!hasSameKindRow(item, item.uid)) {
+      staminaInDragon.value = false
+      restoreStaminaFrozen() // 最后一个体力作战被移除：恢复受影响组
+    }
+  } else {
+    dragonList.value = dragonList.value.filter(i => i.uid !== item.uid)
+    // 仅当这是最后一个同配置实例时才从 CustomGroups 移除
+    if (!hasSameKindRow(item, item.uid)) {
+      const row = customGroupsTable.value.find(r => r.name === item.key)
+      if (row) {
+        selectedCustomGroupKeys.value = [row.name]
+        void deleteSelectedCustomGroups()
+      }
+    }
+  }
+  if (
+    selectedGroupIdentity.value &&
+    selectedGroupIdentity.value.uid === item.uid
+  ) {
+    selectedGroupIdentity.value = null
+  }
+}
+
+// 右侧选中行：展示该配置组详情
+const selectConfigGroup = (item: ConfigGroupIdentity) => {
+  selectedGroupIdentity.value = { ...item }
+}
+
+// draggable 行 key：优先用 uid（允许重复时每行唯一）；无 uid 时退化用身份
+const getDragonRowKey = (item: ConfigGroupIdentity): string =>
+  item.uid != null ? `row:${item.uid}` : `${item.kind}:${item.key}`
+
+// 行是否被选中：按 uid 精确匹配（重复同类行互不影响）
+const isRowSelected = (item: ConfigGroupIdentity): boolean => {
+  const sel = selectedGroupIdentity.value
+  if (!sel) return false
+  if (item.uid != null && sel.uid != null) return item.uid === sel.uid
+  return sel.kind === item.kind && sel.key === item.key
+}
+
+const handleGroupDragEnd = () => {
+  // 本次后端顺序化未配套：仅保留前端拖拽结果，不做后端落库
+  logger.debug(`一条龙队列顺序已调整（未落库）: ${dragonList.value.map(i => i.key).join(',')}`)
+}
+
+// 右键某一配置组 → 确认后从一条龙移除
+const handleRowContextMenu = (item: ConfigGroupIdentity) => {
+  if (!groupsEditable.value) return
+  if (isGroupFrozen(item)) {
+    message.warning(t('edit.bettergiGroupFrozenTip'))
+    return
+  }
+  Modal.confirm({
+    title: t('edit.bettergiRemoveFromDragonTitle'),
+    content: t('edit.bettergiRemoveFromDragonContent', { name: groupLabel(item) }),
+    okText: t('edit.deleteSelected'),
+    okButtonProps: { danger: true },
+    cancelText: t('edit.cancel'),
+    onOk: () => removeFromDragon(item),
+  })
+}
+
+// 候选中该项已在一条龙时的提示（替代模板内联 message）
+const warnAlreadyInDragon = () => {
+  message.info(t('edit.bettergiAlreadyInDragon'))
+}
+
+// ---- 添加弹窗（候选：8 内置 + 体力作战 + BetterGI 现有自定义组）----
+const addModal = reactive({
+  open: false,
+  name: '',
+  candidates: [] as ConfigGroupIdentity[],
+})
+
+// 组装候选项：固定 9 项 + 现有自定义组（已加入队列的项稍后在模板中禁用）
+const buildCandidates = () => {
+  const items: ConfigGroupIdentity[] = []
+  for (const g of ONE_DRAGON_GROUPS) items.push({ kind: 'builtin', key: g.value })
+  items.push({ kind: 'stamina', key: STAMINA_COMBAT_KEY })
+  for (const row of customGroupsTable.value) {
+    if (!items.some(i => i.kind === 'custom' && i.key === row.name)) {
+      items.push({ kind: 'custom', key: row.name })
+    }
+  }
+  addModal.candidates = items
+}
+
+const openAddToDragonModal = async () => {
+  addModal.name = ''
+  addModal.open = true
+  await loadCustomGroupsFromBettergi()
+  buildCandidates()
+}
+
+// 拆分输入框内容：支持「;」「；」分隔，返回去空白的组名字面量列表
+const splitGroupNames = (raw: string): string[] =>
+  (raw || '')
+    .split(/[;；]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+
+// 该候选组名是否已出现在输入框中（用于候选高亮）
+const candidateInInput = (candidate: ConfigGroupIdentity): boolean => {
+  const label = groupLabel(candidate)
+  return splitGroupNames(addModal.name).includes(label)
+}
+
+// 候选点击：把该配置组的「名称」追加进输入框并补一个分号，支持连续点击连续添加
+const pickAddCandidate = (item: ConfigGroupIdentity) => {
+  const name = groupLabel(item)
+  const tailSemicolon = /[;；]$/.test(addModal.name)
+  addModal.name = `${addModal.name}${tailSemicolon ? '' : addModal.name ? ';' : ''}${name};`
+}
+
+// 按名称在候选中定位配置组（内置按 value/翻译名，自定义按组名，体力作战按展示名）
+const findCandidateByName = (name: string): ConfigGroupIdentity | undefined =>
+  addModal.candidates.find(c => c.key === name || groupLabel(c) === name)
+
+// 确认：输入框内每段名称依次加入一条龙
+const confirmAddToDragon = () => {
+  const names = splitGroupNames(addModal.name)
+  if (!names.length) {
+    message.warning(t('edit.bettergiInputGroupNames'))
+    return
+  }
+  const unknown = names.filter(n => !findCandidateByName(n))
+  if (unknown.length) {
+    message.warning(t('edit.bettergiGroupNamesUnknown', { names: unknown.join('、') }))
+    return
+  }
+  for (const n of names) {
+    const target = findCandidateByName(n)
+    if (target) addToDragon(target)
+  }
+  addModal.name = ''
+  addModal.open = false
+}
+
+// ---- 监听：BetterGI 现有自定义组在总开关开启时并入队列末尾 ----
+watch(
+  () => customGroupsTable.value.map(r => r.name).join('\u0001'),
+  () => appendCustomRows(),
+  { immediate: true }
+)
+
+watch(
+  () => formData.Info.IfUseMasConfig,
+  () => {
+    if (!formData.Info.IfUseMasConfig) selectedGroupIdentity.value = null
+  }
+)
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'boolean') return
@@ -1019,6 +1492,8 @@ const loadUser = async () => {
     if (formData.OneDragon.IfUseCustomGroups && customGroupsTable.value.length === 0) {
       await loadCustomGroupsFromBettergi()
     }
+    // 初始化一条龙队列（8 内置 + 体力作战 + 已启用自定义组）
+    initDragonList()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error(t('edit.couldNotLoadUser'))
@@ -1351,5 +1826,294 @@ onUnmounted(() => {
   .config-group-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* 配置组「左分栏 + 拖拽」 */
+.bettergi-groups-layout {
+  display: grid;
+  grid-template-columns: 5fr 4fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.bettergi-groups-pane {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  overflow: hidden;
+}
+
+.bettergi-groups-list-pane {
+  padding-bottom: 8px;
+}
+
+.bettergi-groups-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.custom-groups-master-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text);
+  min-width: 0;
+}
+
+.bettergi-groups-list-hint {
+  padding: 8px 14px 4px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
+.bettergi-groups-list {
+  padding: 0 8px;
+}
+
+.group-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border: none;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ant-color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.group-row:last-child {
+  border-bottom: none;
+}
+
+.group-row:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
+.group-row-selected {
+  background: var(--ant-color-primary-bg);
+}
+
+.group-row-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.group-row-chosen,
+.group-row-drag {
+  cursor: grabbing;
+}
+
+.group-row-ghost {
+  opacity: 0.45;
+  background: var(--ant-color-primary-bg);
+}
+
+/* 拖拽热区：占整行左 2/3（名称区），右侧胶囊保持可点击 */
+.group-row-drag-area {
+  flex: 2 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: grab;
+}
+
+.group-row-drag-handle {
+  flex: 0 0 auto;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--ant-color-text-quaternary);
+  font-size: 15px;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.group-row-chosen .group-row-drag-area,
+.group-row-drag .group-row-drag-area {
+  cursor: grabbing;
+}
+
+.group-row-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-row-kind-tag {
+  margin-inline-end: 0;
+}
+
+.group-row-capsule {
+  flex: 0 0 auto;
+}
+
+.bettergi-groups-detail-pane {
+  min-height: 180px;
+  padding: 16px;
+}
+
+.bettergi-groups-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.bettergi-groups-detail-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.bettergi-groups-detail-name {
+  min-width: 0;
+}
+
+.bettergi-groups-detail-desc {
+  margin: 0 0 16px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.bettergi-groups-detail-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+}
+
+@media (max-width: 900px) {
+  .bettergi-groups-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bettergi-groups-toolbar-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-row-kind-tag {
+  margin-inline-end: 0;
+  flex: 0 0 auto;
+}
+
+.group-row-prefix-stamina {
+  background: var(--ant-color-warning-bg);
+  color: var(--ant-color-warning);
+}
+
+.group-row-prefix-custom {
+  background: var(--ant-color-info-bg);
+  color: var(--ant-color-info);
+}
+
+.group-row-frozen {
+  opacity: 0.6;
+}
+
+.add-dragon-input {
+  margin-bottom: 8px;
+}
+
+.add-dragon-input-tip {
+  margin: 0 0 12px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.add-dragon-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.add-dragon-candidate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 16px;
+  background: var(--ant-color-bg-container);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.add-dragon-candidate:hover {
+  border-color: var(--ant-color-primary-border);
+  background: var(--ant-color-fill-tertiary);
+}
+
+.add-dragon-candidate-picked {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.add-dragon-candidate-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.add-dragon-candidate-disabled:hover {
+  border-color: var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+}
+
+.add-dragon-candidate-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.add-dragon-candidate-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

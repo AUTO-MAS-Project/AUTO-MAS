@@ -178,6 +178,16 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     persist()
   }
 
+  /** 按名称把配置组加入自定义组（供一条龙队列「加入」复用）；已存在返回 false */
+  const addByName = (name: string): boolean => {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return false
+    if (table.value.some(r => r.name === trimmed)) return false
+    table.value.push({ name: trimmed, enabled: true })
+    persist()
+    return true
+  }
+
   return {
     table,
     selectedKeys,
@@ -191,5 +201,6 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     confirmAdd,
     deleteSelected,
     toggleEnabled,
+    addByName,
   }
 }
