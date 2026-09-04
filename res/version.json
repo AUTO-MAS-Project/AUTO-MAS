@@ -60,7 +60,8 @@
                 "HSR专项 修复脚本直控的用户在脚本结束后偶发被标记为异常的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新不再需要填写 GitHub 仓库、Tag 与资产匹配规则，改为从项目 interface.json 自动识别 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新检查版本时不再占用 Mirror 酱 CDK 的当日下载次数 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MFW 项目更新在 Mirror 酱 CDK 过期、类型不符、次数用尽或被封禁时会说明原因，不再只提示失败 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MFW 项目更新在 Mirror 酱 CDK 过期、类型不符、次数用尽或被封禁时会说明原因，不再只提示失败 by [@qiyinxi](https://github.com/qiyinxi)",
+                "首页 修复活动卡片鼠标悬停在边缘时反复上下抖动的问题"
             ]
         },
         "v5.5.0-beta.2": {
