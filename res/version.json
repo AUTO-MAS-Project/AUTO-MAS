@@ -55,7 +55,7 @@
                 "HSR专项 修复模块重试耗尽仍失败时用户被误标为「完成」的问题，调度台总览与任务报告不再把失败的代理报成成功 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 修复便携版在装有另一份 Python 3.12 的电脑上运行环境准备成功、任务一启动却报 ctypes 错误的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 修复脚本直控的用户在脚本结束后偶发被标记为异常的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 修复一条龙任务跨零点被误判超时、步骤耗时跨零点统计错误、重试后执行报告出现两轮重复、设置会话结束后 BGI GUI 残留运行时配置、首次启用切号误删已有脚本仓库、以管理员权限运行时重复弹出 UAC 授权、自定义配置组默认启用状态前后端不一致的问题"
+                "BetterGI专项 修复一条龙任务跨零点被误判超时、重试后执行报告出现两轮重复、设置会话结束后 BGI GUI 残留运行时配置、切号首次启用误删已有脚本仓库、以管理员权限运行时重复弹出 UAC 授权、以及自定义配置组默认启用状态前后端不一致的问题 by [@TCddddd](https://github.com/TCddddd)"
             ]
         },
         "v5.5.0-beta.2": {

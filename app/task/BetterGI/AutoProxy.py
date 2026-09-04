@@ -199,7 +199,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_root_path: Path | None = None
         self.script_exe_path: Path | None = None
         self.script_target_process_info: ProcessInfo | None = None
-        self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
         self._party_err_pushed = False
@@ -240,8 +239,6 @@ class AutoProxyTask(TaskExecuteBase):
             exe=str(self.script_exe_path),
             cmdline=None,
         )
-
-        self.script_log_path = self._build_log_path()
 
         self.log_time_range = (_BGI_LOG_TIME_START, _BGI_LOG_TIME_END)
         self.log_time_format = _BGI_LOG_TIME_FORMAT
@@ -522,17 +519,6 @@ class AutoProxyTask(TaskExecuteBase):
                 account_switch.scrub_switch_group(self.script_root_path)
             return False
 
-        # 更新情况：BGI 启动时先更新仓库脚本、再执行配置组；本地已有脚本则本次是增量检查。
-        # 缺失（用户误删/初次使用）时 ensure_switch_subscription 已强制重建仓库，BGI 启动即补位。
-        if script_present:
-            logger.info("切换账号脚本已存在于本地，BGI 启动时检查仓库更新")
-            await self._push_dispatch_log("切换账号脚本已就绪，随 BGI 启动检查仓库更新")
-        else:
-            logger.info("切换账号脚本本地缺失，已强制 BGI 启动时从脚本仓库重新检出")
-            await self._push_dispatch_log(
-                "切换账号脚本缺失，已重新订阅并由 BGI 启动时重新下载（若网络较慢请耐心等待）"
-            )
-
         await self._push_dispatch_log(
             f"开始切换账号: --startGroups {account_switch.GROUP_NAME}"
         )
@@ -543,6 +529,25 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 2. 杀旧进程，保证单实例下 --startGroups 由新进程执行
         await self.kill_managed_process()
+
+        # 3. 脚本缺失（用户误删/初次使用）：首轮只保证订阅就绪，交给 BGI 启动后的后台
+        # 自动更新补位；仅当上一轮 BGI 运行结束后脚本仍缺失，才清理本地仓库强制重建。
+        # 必须放在杀进程之后，避免删掉仍被上一轮 BGI 使用或正在克隆中的仓库。
+        if script_present:
+            logger.info("切换账号脚本已存在于本地，BGI 启动时检查仓库更新")
+            await self._push_dispatch_log("切换账号脚本已就绪，随 BGI 启动检查仓库更新")
+        elif account_switch.rebuild_script_repo_if_checkout_failed(
+            self.script_root_path, self.script_info.script_id
+        ):
+            await self._push_dispatch_log(
+                "切换账号脚本上一轮仍未检出，已清理本地脚本仓库，由 BGI 启动时完整重建"
+                "（若网络较慢请耐心等待）"
+            )
+        else:
+            await self._push_dispatch_log(
+                "切换账号脚本缺失，已重新订阅，等待 BGI 启动后自动下载；"
+                "本轮若因此失败，下次运行会强制重建脚本仓库"
+            )
 
         switch_success = asyncio.Event()
         switch_result = {"success": False, "started": False}
@@ -628,6 +633,13 @@ class AutoProxyTask(TaskExecuteBase):
             # 切号结束即脱敏配置组，避免明文账号/密码残留磁盘
             with suppress(Exception):
                 account_switch.scrub_switch_group(self.script_root_path)
+            # BGI 确实启动并退出过：记录脚本是否已检出，仍缺失则留下标记供下一轮
+            # 强制重建仓库；BGI 根本没起来时不记录，避免因启动失败误删用户仓库
+            if switch_result["started"]:
+                with suppress(Exception):
+                    account_switch.record_switch_checkout_result(
+                        self.script_root_path, self.script_info.script_id
+                    )
 
         if switch_result["success"]:
             await self._push_dispatch_log("切换账号完成")
@@ -732,22 +744,16 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
         # 多次重试会产生多轮 log_record，若拼成一条再解析会重复出现两轮 1/N…N/N，
-        # 故逐轮解析后优先取「成功轮」的报告，无成功轮则取最后一次尝试。
+        # 故按轮解析：成功即停止重试、成功轮最多一个，优先取它；无成功轮时取最后一个
+        # 能解析出步骤的轮次，避免末轮在打出「一条龙任务执行」前就失败而整块省略。
         # 无一条龙任务（仅配置组/未捕获到日志）时自动省略该区块。
         one_dragon_report: list[dict] | None = None
-        run_items = list(self.cur_user_item.log_record.items())
-        if run_items:
-            success_run = next(
-                (
-                    item
-                    for _, item in reversed(run_items)
-                    if item.status == "Success!"
-                ),
-                run_items[-1][1],
-            )
-            one_dragon_report = parse_one_dragon_report(
-                "".join(success_run.content)
-            )
+        runs = list(self.cur_user_item.log_record.values())
+        success_runs = [item for item in runs if item.status == "Success!"]
+        for item in reversed(success_runs or runs):
+            one_dragon_report = parse_one_dragon_report("".join(item.content))
+            if one_dragon_report:
+                break
 
         if statistic_paths:
             try:
