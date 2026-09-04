@@ -280,7 +280,7 @@ describe('RuntimeClient.run', () => {
     expect((options as { shell?: unknown }).shell).toBeUndefined()
   })
 
-  it('Runtime 以 detached 启动但保留三路 stdio 管道：宿主被强杀时靠 stdin EOF 优雅收口', async () => {
+  it('仅后端监督以 detached 启动，一次性命令保持隐藏并跟随宿主退出', async () => {
     const client = createClient()
     const child = mockSpawn()
 
@@ -289,16 +289,30 @@ describe('RuntimeClient.run', () => {
     child.close(0)
     await pending
 
-    const options = spawnMock.mock.calls[0][2] as {
+    const oneShotOptions = spawnMock.mock.calls[0][2] as {
       detached?: boolean
       stdio?: unknown
       windowsHide?: boolean
     }
-    // detached 让 Runtime 脱离 libuv 的 KILL_ON_JOB_CLOSE Job；管道不能因此退化成 ignore/inherit，
-    // NDJSON 事件流与 stdin 控制（含 EOF 隐式 shutdown）都依赖它们。
-    expect(options.detached).toBe(true)
-    expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe'])
-    expect(options.windowsHide).toBe(true)
+    expect(oneShotOptions.detached).toBe(false)
+    expect(oneShotOptions.stdio).toEqual(['pipe', 'pipe', 'pipe'])
+    expect(oneShotOptions.windowsHide).toBe(true)
+
+    const supervisedChild = mockSpawn()
+    const supervisedPending = client.run(['backend', 'supervise'])
+    const superviseOptions = spawnMock.mock.calls[1][2] as {
+      detached?: boolean
+      stdio?: unknown
+      windowsHide?: boolean
+    }
+    // 只有长期监督需要脱离 libuv 的 KILL_ON_JOB_CLOSE Job，才能在宿主被强杀时靠
+    // stdin EOF 优雅收口；管道仍不能退化成 ignore/inherit。
+    expect(superviseOptions.detached).toBe(true)
+    expect(superviseOptions.stdio).toEqual(['pipe', 'pipe', 'pipe'])
+    expect(superviseOptions.windowsHide).toBe(true)
+
+    supervisedChild.close(1)
+    await expect(supervisedPending).rejects.toMatchObject({ code: 'RUNTIME_EXITED_UNEXPECTEDLY' })
   })
 
   it('doctor 的进度事件全部透出，终态仍为成功', async () => {

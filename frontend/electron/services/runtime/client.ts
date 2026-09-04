@@ -508,16 +508,16 @@ class RuntimeSession {
 
     logger.debug(`启动 Runtime：${clientOptions.runtimePath} ${this.argv.join(' ')}`)
 
-    // detached：让 Runtime 脱离 libuv 给非 detached 子进程套的 KILL_ON_JOB_CLOSE Job。
-    // 否则宿主被强杀时 Runtime 会随 Job 一起消失，拿不到 stdin EOF，后端没有优雅清理的机会。
-    // 三路 stdio 仍是管道：NDJSON 事件与 stdin 控制都靠它们；宿主退出（正常或被强杀）时
-    // 管道随之关闭，Runtime 按契约把 stdin EOF 视为隐式 shutdown，优雅关闭后端后自行退出，
-    // 不会留下永久孤儿。不 unref：close 事件与兜底 kill 仍由本会话负责。
+    // 只有长期运行的 backend supervise 需要脱离 libuv 给普通子进程套的
+    // KILL_ON_JOB_CLOSE Job：宿主被强杀时，Runtime 才能从 stdin EOF 得知宿主消失并优雅收口。
+    // bootstrap / doctor 等一次性命令跟随宿主退出即可，也避免 Windows 为 detached 控制台程序
+    // 分配空白控制台窗口。三路 stdio 始终保留给 NDJSON 事件与 stdin 控制；不 unref。
+    const detached = command[0] === 'backend' && command[1] === 'supervise'
     this.child = spawn(clientOptions.runtimePath, this.argv, {
       cwd: clientOptions.cwd,
       env: mergeEnv(clientOptions.env),
       windowsHide: true,
-      detached: true,
+      detached,
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ChildProcessWithoutNullStreams
 
