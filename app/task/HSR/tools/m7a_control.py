@@ -26,17 +26,17 @@ from app.models.task import UserItem
 from app.utils import get_logger
 from app.utils.io import write_file
 
+from ..task_mapping import HSRTaskModule
+from . import m7a_config as m7a
+from .account_switch import HSRAccountSwitcher
+from .log_detect import detect_weekly_completion
+from .m7a_runtime import M7ARunner
 from .run_model import (
     HSRPhase,
     HSRRetryableTaskError,
     HSRRunItem,
     external_result_failure_summary,
 )
-from ..task_mapping import HSRTaskModule
-from . import m7a_config as m7a
-from .account_switch import HSRAccountSwitcher
-from .log_detect import detect_weekly_completion
-from .m7a_runtime import M7ARunner
 from .stage_runtime import (
     resolve_m7a_eow_stage,
     resolve_m7a_main_stage,

@@ -379,7 +379,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '脚本',
     Resource: '官服',
     RemainedDay: -1,
     IfUseMasConfig: true,

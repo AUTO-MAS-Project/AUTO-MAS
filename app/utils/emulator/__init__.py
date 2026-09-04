@@ -20,9 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .mumu import MumuManager
-from .ldplayer import LDManager
 from .general import GeneralDeviceManager
+from .ldplayer import LDManager
+from .mumu import MumuManager
 from .tools import search_all_emulators
 
 EMULATOR_TYPE_BOOK = {

@@ -25,8 +25,8 @@ pyautogui + DPI 适配模式，OCR 复用通用工具集 `app.tools.ocr`。
 
 流程::
 
-    拉起启动器 → 等启动器窗口 → OCR 找「开始游戏」/「更新」按钮并点击
-    （点「更新」后只点一次，等更新完成按钮变回「开始游戏」再点）
+    退出屏保 → 拉起启动器 → 等启动器窗口 → OCR 找「开始游戏」/「更新」按钮
+    并点击（点「更新」后只点一次，等更新完成按钮变回「开始游戏」再点）
     → 等 HTGame.exe 进程 + 可见窗口出现（游戏就绪，停在标题界面）
 """
 
@@ -283,6 +283,41 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
     return None
 
 
+# ── 屏保退出（对齐 ok-nte 上游开工前的 dismiss_screensaver）──────────────
+_SPI_GETSCREENSAVERRUNNING = 0x0072
+
+
+def _screensaver_running() -> bool:
+    running = ctypes.c_int(0)
+    if not ctypes.windll.user32.SystemParametersInfoW(
+        _SPI_GETSCREENSAVERRUNNING, 0, ctypes.byref(running), 0
+    ):
+        return False
+    return bool(running.value)
+
+
+def dismiss_screensaver() -> None:
+    """屏保运行时轻推鼠标将其退出（旁路：失败仅记日志，不阻断启动流程）。
+
+    屏保全屏覆盖会让窗口截图变成黑屏，OCR 找不到任何按钮；挂机定时任务几乎
+    必然带屏保运行，开工前先退出一次（对齐 ok-nte 上游 LauncherTask 行为）。
+    """
+    if not _screensaver_running():
+        return
+    logger.info("检测到屏幕保护程序正在运行，轻推鼠标退出...")
+    try:
+        x, y = pyautogui.position()
+        deadline = time.monotonic() + 10
+        offset = 50
+        while _screensaver_running() and time.monotonic() < deadline:
+            pyautogui.moveTo(x + offset, y)
+            offset = -offset
+            time.sleep(1)
+        pyautogui.moveTo(x, y)
+    except Exception as error:
+        logger.warning(f"退出屏幕保护程序失败（忽略，继续启动流程）: {error}")
+
+
 def _save_error_screenshot(launcher_hwnd: int | None) -> None:
     """保存启动失败时的原始窗口截图，便于排查 OCR 文本漂移。"""
     try:
@@ -316,7 +351,10 @@ def start_game_via_launcher(
 
     启动器自身更新按弹窗分两级处理：「全新启动器现已推出」弹窗点「立即体验」
     升级；更新完成后「更新已完成，请重新启动游戏」弹窗点「确定」重启启动器，
-    并重新等待启动器窗口后继续走「开始游戏」流程。
+    并重新等待启动器窗口后继续走「开始游戏」流程。另有「提示」类弹窗（如检测
+    到 RTSS/微星小飞机冲突）：弹窗遮罩下「开始游戏」仍可被 OCR 看到，但点击
+    会落在遮罩上被吞掉，故每轮先点「确定」/「忽略」关掉弹窗再处理按钮（对齐
+    ok-nte 上游 launcher_popup_close 的防护顺序）。
 
     游戏下载进行中（「下载中」状态行 /「暂停下载」按钮）基于下载状态动态续延等待，
     下载多久等多久；同时以百分比/速度/剩余时间构造下载进度签名，长时间无变化
@@ -336,6 +374,9 @@ def start_game_via_launcher(
     if not IS_WINDOWS:
         raise RuntimeError("OK-NTE 启动器启动仅支持 Windows 平台")
 
+    # 挂机定时任务几乎必然带屏保运行：先退出屏保，避免截图全黑导致 OCR 全盲
+    dismiss_screensaver()
+
     try:
         hwnd = _wait_launcher_hwnd(launcher_path)
         if hwnd is None:
@@ -347,6 +388,9 @@ def start_game_via_launcher(
 
         start_clicks = 0
         update_clicked = False
+        # 点「更新」后按钮是否已离开更新态（被进度 UI 取代过）：用于区分
+        # 「更新刚点完、按钮文本尚未切换」与「更新完成、按钮真正变回」
+        start_button_gone = False
         launcher_upgrade_clicked = False
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
@@ -393,9 +437,27 @@ def start_game_via_launcher(
                     _activate_window(hwnd)
                     start_clicks = 0
                     update_clicked = False
+                    start_button_gone = False
                     launcher_upgrade_clicked = False
                 time.sleep(2)
                 continue
+
+            # 弹窗三：启动器「提示」弹窗（如检测到 RTSS/微星小飞机冲突）。弹窗
+            # 以遮罩覆盖启动器，此时「开始游戏」仍可被 OCR 看到，但点击落在遮罩
+            # 上被吞掉：必须先点「确定」/「忽略」关掉弹窗，本轮不再处理开始/更新
+            # 按钮（对齐 ok-nte 上游 launcher_popup_close 的防护顺序）
+            if any(text.strip() == "提示" for text, _ in items):
+                popup_box = _find_text(items, ("确定",)) or _find_text(
+                    items, ("忽略",)
+                )
+                if popup_box is not None:
+                    on_log("检测到启动器「提示」弹窗，点击关闭...")
+                    _click_box(hwnd, popup_box, after_sleep=2)
+                    # 遮罩期「开始游戏」点击会被吞掉：关掉弹窗后重置点击预算，
+                    # 避免预算在遮罩期耗尽后按钮恢复也无预算可点
+                    start_clicks = 0
+                    time.sleep(1)
+                    continue
 
             # 游戏下载进行中：基于下载状态动态续延等待，并以下载进度签名检测卡死
             if _find_text(items, _DOWNLOAD_STATE_TEXTS) is not None:
@@ -420,6 +482,20 @@ def start_game_via_launcher(
 
             start_box = _find_text(items, ("开始游戏",))
             update_box = None if start_box else _find_text(items, ("更新",))
+            if update_clicked and start_box is None:
+                start_button_gone = True
+            if (
+                start_box is not None
+                and update_clicked
+                and start_button_gone
+            ):
+                # 更新完成后按钮已真正变回「开始游戏」（中间被进度 UI/遮罩
+                # 取代过）：重置点击预算与更新标记，允许再次点击进入游戏
+                # （更新后无重启弹窗时此处是唯一再点入口）
+                on_log("游戏更新完成，按钮已恢复「开始游戏」，继续启动...")
+                start_clicks = 0
+                update_clicked = False
+                start_button_gone = False
             if start_box is not None and start_clicks < 3:
                 on_log("点击启动器「开始游戏」")
                 _click_box(hwnd, start_box, after_sleep=3)

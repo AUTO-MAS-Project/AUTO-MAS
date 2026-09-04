@@ -69,6 +69,42 @@ export {
   InitializationResult,
 } from './initializationService'
 
+// Runtime 初始化链路（灰度开关打开后顶掉五步安装链）
+export {
+  BootstrapProgressBridge,
+  BootstrapProgressUpdate,
+  CriticalFilesCheck,
+  InitializationRunStage,
+  InitializationStage,
+  InitializationStageStatus,
+  RuntimeDoctorCheck,
+  RuntimeInitializationService,
+  RuntimeRetryMode,
+  RuntimeStageOutcome,
+  mapDoctorChecksToCriticalFiles,
+  mapMirrorSelection,
+  mapRuntimeStage,
+  toRuntimeVersion,
+} from './runtimeInitializationService'
+
+// Runtime 后端更新链路（停机 → bootstrap → 重新监督）
+export {
+  BackendUpdateController,
+  RuntimeUpdateDependencies,
+  RuntimeUpdateOutcome,
+  RuntimeUpdatePhase,
+  RuntimeUpdateProgress,
+  RuntimeUpdateRetryAction,
+  RuntimeUpdateStage,
+  cancelBackendUpdate,
+  describeRetryAction,
+  normalizeRuntimeUpdateVersion,
+  resetRuntimeUpdateSession,
+  resolveRetryActions,
+  retryBackendUpdate,
+  updateBackendViaRuntime,
+} from './runtimeUpdateService'
+
 // 后端服务
 export {
   BackendService,
@@ -76,3 +112,23 @@ export {
   BackendStartOptions,
   BackendStatusCallback,
 } from './backendService'
+
+// AUTO-MAS Runtime 客户端（NDJSON 协议 v1）
+export {
+  RuntimeClient,
+  RuntimeClientError,
+  RuntimeClientErrorCode,
+  RuntimeClientOptions,
+  RuntimeEvent,
+  RuntimeHelloEvent,
+  RuntimeLogsByOperation,
+  RuntimeProgressEvent,
+  RuntimeResultEvent,
+  RuntimeRunOptions,
+  RuntimeRunResult,
+  RuntimeStateEvent,
+  RuntimeSuperviseHandle,
+  RuntimeSuperviseOptions,
+  formatStartupLogs,
+  isRuntimeClientError,
+} from './runtime'

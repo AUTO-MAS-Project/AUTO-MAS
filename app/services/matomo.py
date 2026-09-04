@@ -22,10 +22,10 @@
 
 import asyncio
 import json
-import uuid
 import platform
 import time
-from typing import Dict, Any, Optional
+import uuid
+from typing import Any, Dict, Optional
 
 from app.utils import LazyProxy, get_logger
 

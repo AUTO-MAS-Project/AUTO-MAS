@@ -21,7 +21,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 MaaFWDocumentContent = str | list[str]
 MaaFWPipelineOverride = dict[str, Any]
 MaaFWPresetOptionValue = str | list[str] | dict[str, str]

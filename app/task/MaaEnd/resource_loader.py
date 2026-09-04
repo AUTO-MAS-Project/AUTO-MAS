@@ -29,7 +29,6 @@ import json5
 from app.utils import get_logger
 from app.utils.io import atomic_write
 
-
 logger = get_logger("MaaEnd 资源加载器")
 
 SUPPORTED_CONTROLLER_PROTOCOLS = frozenset({"Adb", "Win32"})

@@ -33,11 +33,11 @@
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
+
 from app.core import Config
 from app.models.schema import OutBase
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
-
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
 logger = get_logger("米游社扫码登录 API")

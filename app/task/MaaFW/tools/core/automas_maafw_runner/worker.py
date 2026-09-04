@@ -46,13 +46,17 @@ if __package__ in (None, ""):
     # 避免共享插件依赖覆盖项目 requirements 声明的 MaaFW 版本。
     prefer_active_venv_site_packages()
     from run_plan import MaaFWRunPlan  # type: ignore[no-redef]
-    from runner import MaaFWDeviceConfig, MaaFWRunResult, MaaFWRunner  # type: ignore[no-redef]
+    from runner import (  # type: ignore[no-redef]
+        MaaFWDeviceConfig,
+        MaaFWRunner,
+        MaaFWRunResult,
+    )
 else:
     from .environment import prefer_active_venv_site_packages
 
     prefer_active_venv_site_packages()
     from .run_plan import MaaFWRunPlan
-    from .runner import MaaFWDeviceConfig, MaaFWRunResult, MaaFWRunner
+    from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult
 
 
 def _emit(payload: dict[str, Any]) -> None:

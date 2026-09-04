@@ -70,6 +70,9 @@ let shutdownReadyReceived = false
 let closeRequestedByBackend = false
 let taskkillDone = false
 let resolveShutdownReady: ((ready: boolean) => void) | null = null
+// Runtime 监督链路：本次关闭流程开始时向主进程查一次并固定下来，正常流程与异常兜底共用，
+// 不依赖 ws_meta 协商出的 devMode（页面先于后端起来时它可能只是本地回退值）。
+let closeViaRuntime = false
 
 // 后端自动重启状态
 let restartPromise: Promise<void> | null = null
@@ -227,6 +230,40 @@ const waitForBackendExit = async (timeoutMs: number): Promise<boolean> => {
   return false
 }
 
+/** 向主进程查询本次生命周期是否走 Runtime 监督链路；IPC 失败按旧链路处理。 */
+const queryRuntimeSupervised = async (): Promise<boolean> => {
+  try {
+    const status = await window.electronAPI?.backendStatus?.()
+    return status?.runtimeSupervised === true
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`查询后端链路失败，按旧链路处理: ${errorMsg}`)
+    return false
+  }
+}
+
+/**
+ * Runtime 链路的停止：只请求 Electron 经 Runtime stdin 发 shutdown。
+ * 渲染进程自己 POST /close 会让后端被 Runtime 当作异常退出并自动重启，绝不能走那条路。
+ *
+ * @returns Electron 是否确认后端已关闭
+ */
+const stopBackendViaRuntime = async (): Promise<boolean> => {
+  logger.info('Runtime 链路：请求 Electron 经 Runtime 关闭后端')
+  try {
+    const result = await window.electronAPI?.stopBackend?.()
+    if (result?.success) {
+      logger.info('Runtime 已确认后端关闭')
+      return true
+    }
+    logger.error(`Runtime 关闭后端失败: ${result?.error ?? '后端服务 IPC 不可用'}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`Runtime 关闭后端失败: ${errorMsg}`)
+  }
+  return false
+}
+
 const killBackend = async (): Promise<void> => {
   // taskkill 幂等：整个关闭流程仅执行一次
   if (taskkillDone) return
@@ -278,6 +315,27 @@ export function disposeAppLifecycle(): void {
   logger.info('应用生命周期协调器已释放')
 }
 
+/**
+ * Runtime 监督链路的关闭：既不发 POST /close，也不等后端进程消失。
+ *
+ * 后端由 Runtime 监督，渲染进程请求 /close 只会让它被当作异常退出并自动重启；
+ * 主进程的 backendStatus 在 Runtime 存活期间恒为运行中，等它消失只会白等超时。
+ * 停止只经 Electron → Runtime stdin shutdown 完成，Runtime 给出终态后再关闭前端。
+ */
+const runRuntimeSupervisedClose = async (): Promise<void> => {
+  logger.info('Runtime 链路：后端由 Electron 经 Runtime 关闭，前端不再请求 /close')
+  // 先收掉主连接：后端关闭期间的断开不再触发任何重连或恢复判断
+  shutdownConnection('应用关闭')
+  const stopped = await stopBackendViaRuntime()
+  disposeAppLifecycle()
+  if (!stopped) {
+    logger.error('Runtime 未能确认后端关闭，等待 Electron 主进程最终兜底')
+    return
+  }
+  logger.info('后端已退出，关闭前端')
+  await window.electronAPI?.appQuit?.()
+}
+
 const runCloseFlow = async (): Promise<void> => {
   logger.info('开始执行退出并关闭后端流程')
   const { showClosingOverlay } = useAppClosing()
@@ -285,6 +343,12 @@ const runCloseFlow = async (): Promise<void> => {
 
   // 关闭流程期间停止普通自动重连；自动重启与 taskkill 互斥由 isClosing() 保证
   stopReconnect()
+
+  closeViaRuntime = await queryRuntimeSupervised()
+  if (closeViaRuntime) {
+    await runRuntimeSupervisedClose()
+    return
+  }
 
   // 先挂好 ready 等待，再发 POST /close，避免消息先于等待到达
   const readyPromise = waitForShutdownReady(CLOSE_READY_TIMEOUT)
@@ -337,6 +401,15 @@ const runBackendRequestedClose = async (): Promise<void> => {
   showClosingOverlay()
   stopReconnect()
   shutdownConnection('后端请求关闭')
+  if (await queryRuntimeSupervised()) {
+    // Runtime 链路：后端自行退出会被 Runtime 当作异常并重启，必须让 Electron 经 Runtime 收口
+    const stopped = await stopBackendViaRuntime()
+    if (!stopped) {
+      disposeAppLifecycle()
+      logger.error('Runtime 未能确认后端关闭，等待 Electron 主进程最终兜底')
+      return
+    }
+  }
   disposeAppLifecycle()
   await window.electronAPI?.appQuit?.()
 }
@@ -353,6 +426,18 @@ export function closeApp(): Promise<void> {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭流程异常: ${errorMsg}`)
     stopReconnect()
+    if (closeViaRuntime) {
+      // Runtime 链路没有 taskkill 与进程消失可等：只能再请求一次 Electron 经 Runtime 关闭
+      const stopped = await stopBackendViaRuntime()
+      shutdownConnection('关闭流程异常')
+      disposeAppLifecycle()
+      if (!stopped) {
+        logger.error('异常关闭兜底仍无法确认后端退出，等待 Electron 主进程最终兜底')
+        return
+      }
+      await window.electronAPI?.appQuit?.()
+      return
+    }
     const devMode = isBackendDevMode()
     if (!devMode) await killBackend()
     const backendExitConfirmed = devMode || (await waitForBackendExit(PROCESS_EXIT_TIMEOUT))

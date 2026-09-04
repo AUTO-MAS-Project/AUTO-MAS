@@ -1,0 +1,1 @@
+auto-mas-runtime: unknown command "nosuchcmd" for "auto-mas-runtime"

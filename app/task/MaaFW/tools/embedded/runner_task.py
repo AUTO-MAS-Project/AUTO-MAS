@@ -19,13 +19,11 @@ import psutil
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
 from app.task.general.tools import execute_script_task
-from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.constants import UTC4
 from app.task.MaaFW.tools.core.automas_maafw_controller_win32.service import (
     MaaFWWin32ControllerService,
 )
@@ -46,12 +44,14 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
-from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
+from app.task.MaaFW.tools.notify import push_notification
+from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils.constants import UTC4
+from app.utils.io import migrate_legacy_dir
 
 from .project_path import release_project_path, try_reserve_project_path
 from .runtime_route import MaaFWManagedExecutionRoute, managed_execution_route
-
 
 logger = get_logger("MaaFW 插件自动代理")
 
@@ -64,6 +64,13 @@ logger = get_logger("MaaFW 插件自动代理")
 #   screencap Default = All & ~RawByNetcat & ~MinicapDirect & ~MinicapStream = -57
 #   screencap EmulatorExtras = 1 << 6 (64)
 #   input Default = All & ~EmulatorExtras = -9；input All = ~0 = -1；EmulatorExtras = 1 << 3 (8)
+# 任务取消后等环境准备线程收尾的最长时间。Runtime 关机只给后端约 5 秒，
+# 安装线程若还在等 uv 子进程退出，超过这个值就不再等它。
+_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS = 2.0
+# 放弃等待后仍让收尾任务在后台跑完（准备恰好成功时要释放租约），
+# 这里持有强引用，免得任务对象被回收。
+_ABANDONED_PREPARATION_CLEANUPS: set[asyncio.Task[None]] = set()
+
 _ADB_SCREENCAP_DEFAULT = -57
 _ADB_SCREENCAP_EMULATOR_EXTRAS = 1 << 6
 _ADB_INPUT_DEFAULT = -9
@@ -157,6 +164,45 @@ class MaaFWAdbControlProfile:
     screencap_extra: bool
     input_extra: bool
     config: dict[str, Any]
+
+
+async def _abandon_environment_preparation(
+    prepare_task: "asyncio.Future[Any]",
+    *,
+    release: Any,
+    grace_seconds: float,
+    send_log: Any = None,
+) -> None:
+    """任务取消后有界等待环境准备收尾。
+
+    调用方已把取消令牌置位。准备若在 ``grace_seconds`` 内以异常结束（安装被
+    终止），直接返回；若恰好成功，释放拿到的租约。超过限期就不再等：收尾任务
+    继续在后台跑，准备线程随 uv 子进程被杀而尽快结束。
+    """
+
+    async def release_after_prepare() -> None:
+        try:
+            prepared_after_cancel = await prepare_task
+        except BaseException:
+            return
+        with suppress(Exception):
+            await asyncio.to_thread(release, prepared_after_cancel)
+
+    cleanup_task = asyncio.create_task(release_after_prepare())
+    try:
+        await asyncio.wait_for(asyncio.shield(cleanup_task), timeout=grace_seconds)
+    except asyncio.TimeoutError:
+        _ABANDONED_PREPARATION_CLEANUPS.add(cleanup_task)
+        cleanup_task.add_done_callback(_ABANDONED_PREPARATION_CLEANUPS.discard)
+        if send_log is not None:
+            send_log(
+                "[MaaFW Runner] 环境准备未能在 "
+                f"{grace_seconds:g} 秒内响应取消，已放弃等待"
+            )
+    except asyncio.CancelledError:
+        # 再次被取消：同样不再等，收尾留给后台任务。
+        _ABANDONED_PREPARATION_CLEANUPS.add(cleanup_task)
+        cleanup_task.add_done_callback(_ABANDONED_PREPARATION_CLEANUPS.discard)
 
 
 class _FrameworkLogWriter:
@@ -1003,6 +1049,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         def send_runner_log(message: str) -> None:
             loop.call_soon_threadsafe(self._append_log, message)
 
+        prepare_cancel_event = threading.Event()
         prepare_environment_task = asyncio.create_task(
             asyncio.to_thread(
                 service.prepare_environment,
@@ -1030,26 +1077,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # site-packages，隔离 venv 里的 maafw 因此仍然优先。
                 import_paths=[Path.cwd()],
                 send_log=send_runner_log,
+                cancel_event=prepare_cancel_event,
             )
         )
         try:
             runner_environment = await asyncio.shield(prepare_environment_task)
         except asyncio.CancelledError:
-
-            async def release_after_prepare() -> None:
-                try:
-                    prepared_after_cancel = await prepare_environment_task
-                except BaseException:
-                    return
-                with suppress(Exception):
-                    await asyncio.to_thread(
-                        service.release_environment,
-                        prepared_after_cancel,
-                    )
-
-            cleanup_task = asyncio.create_task(release_after_prepare())
-            with suppress(asyncio.CancelledError):
-                await asyncio.shield(cleanup_task)
+            # 取消要传进安装线程：置位令牌后正在跑的 uv/pip 子进程会被终止。
+            # 然后只等有限时间——后端关机时 Runtime 只给几秒，等不到就放弃，
+            # 租约释放交给后台任务或 TTL。
+            prepare_cancel_event.set()
+            await _abandon_environment_preparation(
+                prepare_environment_task,
+                release=service.release_environment,
+                grace_seconds=_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS,
+                send_log=self._append_log,
+            )
             raise
         job_path: Path | None = None
         worker_id: str | None = None
@@ -1069,7 +1112,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"v{runner_environment.maafw_version.lstrip('v')}"
                 )
             payload = service.create_job_payload(runner_plan, device_config)
-            work_dir = Path.cwd() / "runtime" / "maafw_runner_jobs"
+            work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
                 service.write_job_file, payload, work_dir
             )
@@ -1550,6 +1593,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             game_path,
             *game_arguments,
             cwd=game_path.parent,
+            breakaway=True,
         )
 
         try:
@@ -1861,6 +1905,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_info.log = "".join(self.cur_user_log.content[-80:])
         else:
             self.script_info.log = str(message)
+
+
+def _maafw_runner_jobs_dir() -> Path:
+    """MaaFW 任务 job 文件的落盘目录。
+
+    落在受保护的 ``data/`` 下，避免与 AUTO-MAS-Runtime 监督器接管的
+    ``runtime/`` 撞名；首次访问时把用户机器上已有的旧
+    ``runtime/maafw_runner_jobs`` 整体迁移过来。
+    """
+
+    new_dir = Path.cwd() / "data" / "maafw_runner_jobs"
+    migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", new_dir)
+    return new_dir
 
 
 def _find_controller(

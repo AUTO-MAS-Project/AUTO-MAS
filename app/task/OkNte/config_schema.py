@@ -38,7 +38,6 @@ from time import sleep
 from typing import Any
 from xml.etree import ElementTree
 
-
 # ─── OK-NTE 翻译文件自动加载 ─────────────────────────────────────────────────
 
 _OKNTE_CONFIG_WRITE_LOCK = Lock()

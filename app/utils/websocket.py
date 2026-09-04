@@ -28,11 +28,11 @@
 心跳使用 WebSocket 协议层 ping/pong，不使用应用层业务消息。
 """
 
-import json
 import asyncio
-from typing import Optional, Callable, Any, Awaitable, Dict
+import json
+from typing import Any, Awaitable, Callable, Dict, Optional
 
-from websockets.asyncio.client import connect, ClientConnection
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger

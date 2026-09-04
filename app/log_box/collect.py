@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
+from app.utils.expression import compile_expression
 from app.utils.LogPatternExtractor import (
     LOG_TYPE_NORMAL,
     MultiLineAggregator,
@@ -20,7 +21,6 @@ from app.utils.LogPatternExtractor import (
     apply_patterns,
     compile_regex,
 )
-from app.utils.expression import compile_expression
 
 from .logtype import LogType
 from .markers import emit, render_flush, render_push

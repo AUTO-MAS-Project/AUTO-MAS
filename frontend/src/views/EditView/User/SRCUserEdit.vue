@@ -153,7 +153,7 @@ const getDefaultSRCUserData = () => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '脚本',
     Server: 'CN-Official',
     RemainedDay: -1,
     IfScriptBeforeTask: false,

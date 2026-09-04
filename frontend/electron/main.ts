@@ -22,8 +22,10 @@ import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  checkCriticalFilesViaRuntime,
   getBackendService,
   getLocalApiEndpoint,
+  resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
@@ -46,6 +48,11 @@ import {
   setMainTelemetryEnabled,
 } from './services/sentry'
 import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
+import {
+  PersistedRuntimeLaunchMode,
+  isPersistedRuntimeLaunchMode,
+  resolveRuntimeLaunchModeDetail,
+} from './services/runtime'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
@@ -145,7 +152,18 @@ let forceKillPromise: Promise<void> | null = null
 async function forceKillRelatedProcesses(): Promise<void> {
   if (forceKillPromise) return forceKillPromise
   forceKillPromise = (async () => {
-    const result = await getBackendService().forceStopBackend()
+    const backendService = getBackendService()
+
+    // Runtime 监督链路：只向监督进程发 shutdown（有上限，超时才 kill Runtime 进程本身），
+    // 后端进程树由 Runtime 的 Job Object 收走，不再走 processManager 的全局清理。
+    if (backendService.isRuntimeSupervised()) {
+      const result = await backendService.stopBackend()
+      if (!result.success) throw new Error(result.error || '未知错误')
+      logger.info('Runtime 监督的后端已关闭')
+      return
+    }
+
+    const result = await backendService.forceStopBackend()
     if (!result.success) throw new Error(result.error || '未知错误')
     logger.info('所有相关进程已清理')
   })().finally(() => {
@@ -230,6 +248,10 @@ interface AppConfig {
   Function: {
     IfEnableTelemetry: boolean
   }
+  // Runtime 灰度开关的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
+  Runtime: {
+    LaunchMode: PersistedRuntimeLaunchMode
+  }
 
   [key: string]: unknown
 }
@@ -253,6 +275,9 @@ const defaultConfig: AppConfig = {
   },
   Function: {
     IfEnableTelemetry: true,
+  },
+  Runtime: {
+    LaunchMode: 'auto',
   },
 }
 
@@ -483,6 +508,10 @@ function finishCoordinatedQuit(): void {
 }
 
 async function shouldPreserveBackendForDevMode(): Promise<boolean> {
+  // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
+  // 否则 Electron 退出后会遗留一个没人负责的监督进程。
+  if (getBackendService().isRuntimeSupervised()) return false
+
   const backendDevMode = await getBackendService().getBackendDevMode()
   if (backendDevMode !== null) return backendDevMode
   return Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
@@ -1482,9 +1511,16 @@ ipcMain.handle('check-environment', async () => {
   return checkEnvironment(appRoot)
 })
 
+// Runtime 上下文 - 初始化界面开局问一次：走没走 Runtime、回退日志文件、可用镜像键
+ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext())
+
 // 关键文件检查 - 每次都重新检查exe文件是否存在
 ipcMain.handle('check-critical-files', async () => {
   try {
+    // Runtime 链路不再有 environment/python 这套目录，改问 Runtime doctor 要受管布局。
+    const runtimeCheck = await checkCriticalFilesViaRuntime()
+    if (runtimeCheck) return runtimeCheck
+
     const appRoot = getAppRoot()
 
     // 检查Python可执行文件
@@ -1808,6 +1844,40 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   } catch (error) {
     logger.error('保存初始化版本失败', error)
     return false
+  }
+})
+
+// Runtime 灰度开关：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
+ipcMain.handle('get-runtime-launch-mode', async () => {
+  try {
+    const config = loadConfig()
+    const persisted = isPersistedRuntimeLaunchMode(config.Runtime?.LaunchMode)
+      ? config.Runtime.LaunchMode
+      : 'auto'
+    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
+    return { persisted, mode: resolution.mode, source: resolution.source }
+  } catch (error) {
+    logger.error('读取 Runtime 启动方式失败', error)
+    return { persisted: 'auto', mode: 'off', source: 'default' }
+  }
+})
+
+ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
+  if (!isPersistedRuntimeLaunchMode(mode)) {
+    throw new TypeError(`不支持的 Runtime 启动方式: ${String(mode)}`)
+  }
+
+  try {
+    const config = loadConfig()
+    config.Runtime = { ...config.Runtime, LaunchMode: mode }
+    saveConfig(config)
+    logger.info(`Runtime 启动方式已设置为: ${mode}`)
+
+    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
+    return { persisted: mode, mode: resolution.mode, source: resolution.source }
+  } catch (error) {
+    logger.error('保存 Runtime 启动方式失败', error)
+    throw error
   }
 })
 

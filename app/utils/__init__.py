@@ -26,12 +26,14 @@ import types
 
 from .constants import *
 from .logger import get_logger
+from .paths import resource_path
 from .security import (
-    dpapi_encrypt,
     dpapi_decrypt,
+    dpapi_encrypt,
     format_exception_reason,
     sanitize_log_message,
 )
+from .supervision import is_supervised
 
 _LAZY_EXPORTS = {
     "LogMonitor": (".LogMonitor", "LogMonitor"),
@@ -133,6 +135,8 @@ __all__ = [
     "dpapi_decrypt",
     "format_exception_reason",
     "sanitize_log_message",
+    "is_supervised",
+    "resource_path",
     "strptime",
     "MumuManager",
     "LDManager",

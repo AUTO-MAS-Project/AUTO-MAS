@@ -54,6 +54,7 @@ from app.utils.LogPatternExtractor import (
     LogSignMatcher,
     compile_log_signs,
 )
+
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,

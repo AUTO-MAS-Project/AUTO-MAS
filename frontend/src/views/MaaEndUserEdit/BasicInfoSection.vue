@@ -108,7 +108,7 @@
               @change="emitSave('Info.Mode', formData.Info.Mode)"
             />
             <a-button
-              v-if="formData.Info.Mode === '简洁'"
+              v-if="formData.Info.Mode === '脚本'"
               type="default"
               size="large"
               :disabled="loading || showConfigMask"
@@ -134,7 +134,7 @@
               {{ showConfigMask ? '正在配置' : '配置' }}
             </a-button>
             <a-button
-              v-if="formData.Info.Mode !== '简洁'"
+              v-if="formData.Info.Mode !== '脚本'"
               type="default"
               size="large"
               :loading="importLoading"
@@ -264,8 +264,8 @@ defineProps<{
 }>()
 
 const modeOptions = [
-  { label: t('edit.script'), value: '简洁' },
-  { label: t('edit.user'), value: '详细' },
+  { label: t('edit.script'), value: '脚本' },
+  { label: t('edit.user'), value: '用户' },
 ]
 
 const quickConfigOptions = [

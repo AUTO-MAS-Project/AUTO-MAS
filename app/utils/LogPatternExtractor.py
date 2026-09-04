@@ -625,7 +625,7 @@ def debug_pattern(
 
     # 统一预处理：strip 每行，过滤空行（与 apply_patterns 入口 strip 行为一致，
     # 避免行尾 \r 等被正则 (.+) 配合 re.DOTALL 捕获导致调试与生产结果不一致）
-    lines = [l.strip() for l in log_text.split("\n") if l.strip()]
+    lines = [raw_line.strip() for raw_line in log_text.split("\n") if raw_line.strip()]
     if not lines:
         return (None, is_multiline, [])
 

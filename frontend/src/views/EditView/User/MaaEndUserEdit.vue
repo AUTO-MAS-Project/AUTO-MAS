@@ -168,7 +168,7 @@ const getDefaultMaaEndUserData = () => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '脚本',
     IfQuickConfig: true,
     SanityMode: 'Fixed',
     Resource: '官服',
@@ -367,7 +367,7 @@ const normalizeQuickConfig = async () => {
 
   const infoPayload: Record<string, unknown> = {}
   if (formData.Info.Mode === '自定义') {
-    formData.Info.Mode = '详细'
+    formData.Info.Mode = '用户'
     formData.Info.IfQuickConfig = false
     infoPayload.Mode = formData.Info.Mode
     infoPayload.IfQuickConfig = formData.Info.IfQuickConfig
@@ -433,7 +433,7 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const configTaskTargetId = formData.Info.Mode === '简洁' ? scriptId : userId
+    const configTaskTargetId = formData.Info.Mode === '脚本' ? scriptId : userId
     const response = await Service.addTaskApiDispatchStartPost({
       taskId: configTaskTargetId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
@@ -460,7 +460,7 @@ const handleMaaEndConfig = async () => {
     showMaaEndConfigMask.value = true
     message.success(
       t('edit.startedP0MaaendConfiguration', {
-        p0: formData.Info.Mode === '简洁' ? '脚本' : '用户',
+        p0: formData.Info.Mode === '脚本' ? '脚本' : '用户',
       })
     )
 
@@ -483,13 +483,13 @@ const handleImportMaaEndConfig = async () => {
     maaEndImportLoading.value = true
     const response = await importScriptConfigFile(
       scriptId,
-      formData.Info.Mode === '简洁' ? null : userId
+      formData.Info.Mode === '脚本' ? null : userId
     )
     if (response.code !== 200) {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
     message.success(
-      t('edit.importedP0ConfigurationFile', { p0: formData.Info.Mode === '简洁' ? '脚本' : '用户' })
+      t('edit.importedP0ConfigurationFile', { p0: formData.Info.Mode === '脚本' ? '脚本' : '用户' })
     )
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')

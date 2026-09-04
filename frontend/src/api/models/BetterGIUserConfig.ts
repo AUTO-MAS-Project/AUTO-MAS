@@ -4,10 +4,10 @@
 /* eslint-disable */
 import type { BetterGIUserConfig_Data } from './BetterGIUserConfig_Data';
 import type { BetterGIUserConfig_Info } from './BetterGIUserConfig_Info';
-import type { BetterGIUserConfig_Notify } from './BetterGIUserConfig_Notify';
 import type { BetterGIUserConfig_OneDragon } from './BetterGIUserConfig_OneDragon';
 import type { BetterGIUserConfig_Switch } from './BetterGIUserConfig_Switch';
 import type { BetterGIUserConfig_Task } from './BetterGIUserConfig_Task';
+import type { GeneralUserConfig_Notify } from './GeneralUserConfig_Notify';
 export type BetterGIUserConfig = {
     /**
      * 用户信息
@@ -32,5 +32,5 @@ export type BetterGIUserConfig = {
     /**
      * 单独通知
      */
-    Notify?: (BetterGIUserConfig_Notify | null);
+    Notify?: (GeneralUserConfig_Notify | null);
 };

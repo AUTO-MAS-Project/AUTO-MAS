@@ -39,15 +39,10 @@ from app.core.community_scheduler import (
     community_activity_flow,
 )
 from app.models.schema import (
-    ToolsGetOut,
-    ToolsConfig,
-    OutBase,
-    ToolsUpdateIn,
     GameSignAccountCreateOut,
-    GameSignAccountGroupConfig,
-    GameSignAccountGetIn,
-    GameSignAccountUpdateIn,
     GameSignAccountDeleteIn,
+    GameSignAccountGetIn,
+    GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
     CommunityActivityOut,
@@ -55,8 +50,13 @@ from app.models.schema import (
     CommunityActivityResourceOut,
     CommunityActivitySnapshotOut,
     CommunityActivityTaskOut,
+    GameSignAccountUpdateIn,
+    OutBase,
     SklandLoginIn,
     TaygedoLoginIn,
+    ToolsConfig,
+    ToolsGetOut,
+    ToolsUpdateIn,
 )
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
@@ -615,7 +615,6 @@ async def login_skland(
             validate_skland_credential,
         )
 
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
         serialized = await login_skland_with_password(
             credential.phone.strip(),
             credential.password.get_secret_value(),

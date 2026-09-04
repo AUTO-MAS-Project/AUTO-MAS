@@ -89,6 +89,7 @@ class BetterGIManager(TaskExecuteBase):
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
+                    and self.task_info.is_target_user(str(uid))
                 ]
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -133,6 +134,7 @@ class BetterGIManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
 
     async def main_task(self):
@@ -212,21 +214,15 @@ class BetterGIManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "异常"
-                ]
-                over_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "完成"
-                ]
-                wait_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "等待"
-                ]
+                error_count = sum(
+                    1 for user in self.script_info.user_list if user.status == "异常"
+                )
+                over_count = sum(
+                    1 for user in self.script_info.user_list if user.status == "完成"
+                )
+                wait_count = sum(
+                    1 for user in self.script_info.user_list if user.status == "等待"
+                )
                 task_mode = TASK_MODE_ZH[self.task_info.mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
@@ -241,12 +237,24 @@ class BetterGIManager(TaskExecuteBase):
                     "script_name": self.script_info.name or "空白",
                     "start_time": self.begin_time,
                     "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": len(over_user),
-                    "uncompleted_count": len(error_user) + len(wait_user),
+                    "completed_count": over_count,
+                    "uncompleted_count": error_count + wait_count,
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
                 }
 
+                await Notify.push_plyer(
+                    title.replace("报告", "已完成！"),
+                    (
+                        f"已完成用户数: {over_count}, "
+                        f"未完成用户数: {error_count + wait_count}"
+                    ),
+                    (
+                        f"已完成用户数: {over_count}, "
+                        f"未完成用户数: {error_count + wait_count}"
+                    ),
+                    10,
+                )
                 try:
                     push_result = await push_notification(
                         "代理结果", title, result, task_info=self.task_info

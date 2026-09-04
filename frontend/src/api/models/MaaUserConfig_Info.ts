@@ -12,9 +12,9 @@ export type MaaUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 用户配置模式
+     * 配置来源（脚本/用户）
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('脚本' | '用户' | null);
     /**
      * 关卡配置模式
      */

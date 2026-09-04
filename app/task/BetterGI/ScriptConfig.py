@@ -27,6 +27,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
+from app.utils.platform import IS_ELEVATED
 
 from .AutoProxy import _BGI_REL_EXE
 from .tools import one_dragon
@@ -122,7 +123,11 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
         # 用户独立配置：先把该用户的一条龙配置载入 BetterGI，再打开 GUI 供其修改
         self._write_one_dragon_config()
-        await self.process_manager.open_process(self.exe_path, elevated=True)
+        # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
+        await self.process_manager.open_process(
+            self.exe_path,
+            elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+        )
         await self.wait_event.wait()
 
     async def final_task(self) -> None:
@@ -133,6 +138,12 @@ class ScriptConfigTask(TaskExecuteBase):
             self._snapshot_one_dragon_config()
             logger.success("BetterGI 直控配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
+        # 快照已固化到 per-user 副本，删除 MAS 运行时槽位，避免残留到 BGI GUI
+        if self.use_mas_config:
+            with suppress(Exception):
+                one_dragon.remove_one_dragon_slot(
+                    self.root_path, self.script_info.script_id
+                )
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
@@ -140,6 +151,14 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
+        # 异常退出也先快照（固化 GUI 中已保存的编辑）再清理 MAS 运行时槽位，避免残留与丢编辑
+        if self.use_mas_config:
+            with suppress(Exception):
+                self._snapshot_one_dragon_config()
+            with suppress(Exception):
+                one_dragon.remove_one_dragon_slot(
+                    self.root_path, self.script_info.script_id
+                )
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

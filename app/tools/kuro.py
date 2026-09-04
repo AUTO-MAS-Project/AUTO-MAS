@@ -38,7 +38,6 @@ from datetime import datetime
 
 import httpx
 
-
 from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger

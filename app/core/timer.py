@@ -22,10 +22,11 @@
 import asyncio
 from datetime import datetime
 
-from app.utils.platform import IS_WINDOWS
 from app.services import Matomo
-from app.utils.constants import UTC8
 from app.utils import get_logger
+from app.utils.constants import UTC8
+from app.utils.platform import IS_WINDOWS
+
 from .config import Config
 from .community_scheduler import (
     TASK_COMMUNITY_SOURCES,
@@ -34,7 +35,6 @@ from .community_scheduler import (
     should_run_community_for_source,
 )
 from .task_manager import TaskManager
-
 
 logger = get_logger("主业务定时器")
 

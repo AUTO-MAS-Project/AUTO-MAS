@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from .service import (
-    MANIFEST_FILE_NAME,
     CHECKOUT_KIND,
     CHECKOUT_MARKER_NAME,
+    MANIFEST_FILE_NAME,
     RUN_ROOT_KIND,
     RUN_ROOT_MARKER_NAME,
     STORE_KIND,

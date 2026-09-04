@@ -20,16 +20,16 @@
 
 
 from __future__ import annotations
+
 import asyncio
 import time
 import weakref
-from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Literal
+from datetime import datetime
+from typing import List, Literal, Optional
 
 from app.runtime_tasks import RuntimeTasks
-
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -214,6 +214,31 @@ class TaskItem(ABC):
     def is_queue_task(self) -> bool:
         """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
         return self.queue_id is not None
+
+    @property
+    def target_user_id(self) -> str | None:
+        """单独运行时指定的用户ID；未指定或非自动代理时为 None。
+
+        必须带上模式判断：ScriptConfig 与 Update 模式会把 user_id 写成
+        "Default" 或被编辑的用户，那是「配置谁」而不是「只代理谁」。
+        """
+        return self.user_id if self.mode == "AutoProxy" else None
+
+    def is_target_user(self, user_id: str) -> bool:
+        """用户是否属于本次运行范围。
+
+        只用于收窄展示与执行用的 user_list，各脚本适配器持有的用户配置副本必须
+        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同脚本其它用户的配置。
+
+        Args:
+            user_id (str): 待判定的用户ID。
+
+        Returns:
+            bool: 未指定单独运行的用户时恒为 True。
+        """
+
+        target = self.target_user_id
+        return target is None or user_id == target
 
     @property
     def asdict(self) -> list:
