@@ -28,6 +28,7 @@ import {
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+import { toRunnableUserOptions } from './schedulerUserOptions'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -572,43 +573,50 @@ export function useSchedulerLogic() {
 
   // 脚本任务可以只跑其中一个用户，下拉口径与各脚本适配器一致：已启用且剩余天数不为 0
   const loadUserOptions = async (tab: SchedulerTab) => {
+    // 任务下拉还没加载完时判断不出任务类型，此时清空会把 sessionStorage 恢复出来的
+    // 选择一并抹掉，让刷新后的启动静默退化成跑全部用户。宁可什么都不做，等下拉打开时再刷。
+    if (!taskOptions.value.length) return
+
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
       tab.userOptions = []
       tab.selectedUserId = null
+      tab.userOptionsLoading = false
       return
     }
+
+    // 连续切换任务项时旧请求可能后返回；只有仍指向发起时那个脚本才允许写回状态
+    const requestedTaskId = tab.selectedTaskId
+    const isStale = () => tab.selectedTaskId !== requestedTaskId
 
     tab.userOptionsLoading = true
     try {
       const response = await Service.getUserApiScriptsUserGetPost({
-        scriptId: tab.selectedTaskId,
+        scriptId: requestedTaskId,
         userId: null,
       })
+      if (isStale()) return
       if (response.code !== 200) {
         tab.userOptions = []
         tab.selectedUserId = null
         return
       }
 
-      const options: Array<{ label: string; value: string }> = []
-      response.index.forEach(item => {
-        const info = response.data?.[item.uid]?.Info
-        if (!info?.Status || info.RemainedDay === 0) return
-        options.push({ value: item.uid, label: info.Name || item.uid })
-      })
-
+      const options = toRunnableUserOptions(response)
       tab.userOptions = options
       if (tab.selectedUserId && !options.some(item => item.value === tab.selectedUserId)) {
         tab.selectedUserId = null
       }
     } catch (error) {
+      if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本用户列表失败: ${errorMsg}`)
       tab.userOptions = []
       tab.selectedUserId = null
       message.error(t('scheduler.toast.loadScriptUsersFailed'))
     } finally {
-      tab.userOptionsLoading = false
+      if (!isStale()) {
+        tab.userOptionsLoading = false
+      }
     }
   }
 
