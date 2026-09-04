@@ -297,9 +297,7 @@ export default {
     multiLineAggregation: 'Multi-line aggregation',
     stringSplitting: 'String splitting',
     gotIt: 'Got it',
-    simple: 'Simple',
     expression: 'Expression',
-    detailed: 'Detailed',
     masManaged: 'MAS managed',
     none: 'None',
     drop: 'Drop',
@@ -375,9 +373,6 @@ export default {
     all: 'All',
     userSPasswordStored:
       "The user's password, stored only so you do not forget it; it has no other effect",
-    userConfigurationMode: 'User configuration mode',
-    simpleModeFollowsScript:
-      "Simple mode follows the script's global configuration; detailed mode follows this user's own",
     enterAccountId: 'Enter the account ID',
     goPlan: 'Go to the plan',
     pickGameServerThis: 'Pick the game server this user plays on',

@@ -11,6 +11,7 @@
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
+                "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "代码清理 统一全仓 Python 导入排序，并清理 BetterGI 只写不读的配置项与已冻结的更新开关，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "代码清理 合并各脚本重复的用户标签生成与配置模型并精简报告统计逻辑，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "代码清理 清理后端与前端遗留的无用导入、无效格式与未使用组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",

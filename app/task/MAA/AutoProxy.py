@@ -419,7 +419,7 @@ class AutoProxyTask(TaskExecuteBase):
             return "今日代理次数已达上限, 跳过该用户"
 
         if (
-            self.cur_user_config.get("Info", "Mode") == "详细"
+            self.cur_user_config.get("Info", "Mode") == "用户"
             and not (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
@@ -686,13 +686,13 @@ class AutoProxyTask(TaskExecuteBase):
             await agree_bilibili(self.maa_tasks_path, False)
 
         # 基础配置内容
-        if self.cur_user_config.get("Info", "Mode") == "简洁":
+        if self.cur_user_config.get("Info", "Mode") == "脚本":
             shutil.copytree(
                 (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
-        elif self.cur_user_config.get("Info", "Mode") == "详细":
+        elif self.cur_user_config.get("Info", "Mode") == "用户":
             shutil.copytree(
                 (
                     Path.cwd()
@@ -928,8 +928,8 @@ class AutoProxyTask(TaskExecuteBase):
             task_set["Fight"]["UseOptionalStage"] = True
             task_set["Fight"]["UseWeeklySchedule"] = False
 
-            # 简洁模式下托管的配置
-            if self.cur_user_config.get("Info", "Mode") == "简洁":
+            # 脚本模式下托管的配置
+            if self.cur_user_config.get("Info", "Mode") == "脚本":
                 task_set["Fight"]["EnableTimesLimit"] = False
                 task_set["Fight"]["EnableTargetDrop"] = False
                 fight_source = deepcopy(task_set["Fight"])

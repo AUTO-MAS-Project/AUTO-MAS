@@ -535,8 +535,8 @@ class UserIndexItem(BaseModel):
 class MaaUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Id: Optional[str] = Field(default=None, description="用户ID")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     Server: Optional[
@@ -825,8 +825,8 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式（简洁/详细）"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
@@ -1155,8 +1155,8 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="配置文件来源"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -1290,8 +1290,8 @@ class SrcUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="脚本模式"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     Server: Optional[
         Literal[
