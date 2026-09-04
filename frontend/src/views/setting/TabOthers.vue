@@ -186,6 +186,15 @@ const copyAllInfo = async () => {
               size="large"
               @blur="(e: any) => handleSettingChange('Update', 'MirrorChyanCDK', e.target.value)"
             />
+            <div class="form-hint">
+              {{ t('setting.others.cdkHint') }}
+              <a
+                href="https://mirrorchyan.com?source=automas_settings"
+                class="form-hint-link"
+                @click="handleExternalLink"
+                >{{ t('setting.others.cdkGetLink') }}</a
+              >
+            </div>
           </div>
         </a-col>
       </a-row>
@@ -297,6 +306,23 @@ const copyAllInfo = async () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.form-hint {
+  margin-top: 6px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.form-hint-link {
+  margin-left: 4px;
+  color: var(--ant-color-primary);
+  text-decoration: underline;
+}
+
+.form-hint-link:hover {
+  color: var(--ant-color-primary-hover);
 }
 
 /* Responsive grid for link cards: ensures cards expand to fill available width */

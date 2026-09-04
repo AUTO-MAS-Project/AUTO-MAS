@@ -736,7 +736,7 @@ const isMaaEndPresetSupported = (script: Script) => {
 }
 
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode === '详细'
+  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
 }
 
 const handleStartOkwwConfig = (script: Script) => {

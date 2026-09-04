@@ -40,6 +40,10 @@ export type MaaUserConfig_Task = {
      */
     IfDepotMaintain?: (boolean | null);
     /**
+     * 绿票商店
+     */
+    IfGreenTicketStore?: (boolean | null);
+    /**
      * 活动期间优先刷活动关
      */
     IfActivityFirst?: (boolean | null);

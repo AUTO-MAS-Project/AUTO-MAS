@@ -162,6 +162,11 @@ class LogMonitor:
                 # 清空会丢掉午夜前累积的全部日志，历史记录也只剩后半截。
                 read_offsets[current_path] = offset
                 current_path = resolved
+                # 刷新 strptime 的基准日期：BetterGI 这类无日期的时间格式靠
+                # last_callback_time 补日期，若切换轮次里旧文件没有新行、没有
+                # 触发回调，它仍停留在前一天，新文件首行会被归到 24 小时前，
+                # check_log 随即误判超时。必须在排空旧文件之后再刷新。
+                self.last_callback_time = datetime.now()
                 if_mtime_checked = False
                 warned_mtime_date = None
                 offset = read_offsets.get(current_path, 0)

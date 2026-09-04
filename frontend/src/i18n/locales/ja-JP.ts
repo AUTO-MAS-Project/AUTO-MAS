@@ -280,6 +280,7 @@ export default {
     maaAnnihilationStartDayHint:
       '設定した曜日になってから殲滅タスクを開始します。今週の上限に達すると以降の殲滅は自動的にスキップされます',
     maaWeekStatus: '今週の状態：',
+    maaMonthStatus: '今月の状態：',
     maaDone: '完了',
     maaNotDone: '未完了',
     maaEventFirst: 'イベントステージ優先',
@@ -305,6 +306,9 @@ export default {
     maaDaily: '日課タスク',
     maaRoguelike: '自動ローグライク',
     maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
+    maaGreenTicketStore: '緑チケット商店',
+    maaGreenTicketStoreHint:
+      '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
     maaRecruit: '自動公開求人',
     maaMall: '信用取引所',
     fixed: '固定',
@@ -318,9 +322,7 @@ export default {
     multiLineAggregation: '複数行集約',
     stringSplitting: '文字列分割',
     gotIt: '了解',
-    simple: '簡易',
     expression: '式',
-    detailed: '詳細',
     masManaged: 'MAS 管理',
     none: '選択しない',
     drop: '破棄',
@@ -396,9 +398,6 @@ export default {
     all: 'すべて',
     userSPasswordStored:
       'ユーザーのパスワードです。忘れないよう保管する目的のみで、ほかの用途はありません',
-    userConfigurationMode: 'ユーザー設定モード',
-    simpleModeFollowsScript:
-      '簡易モードではスクリプトの全体設定を、詳細モードではこのユーザー独自の設定を使います',
     enterAccountId: 'アカウント ID を入力してください',
     goPlan: 'プランへ移動',
     pickGameServerThis: 'このユーザーがプレイするゲームサーバーを選びます',
@@ -968,8 +967,6 @@ export default {
     updateScriptConfigurationFile: '選んだタイミングでスクリプトの設定ファイルを更新します',
     includeRunStatisticsNotification: '通知の本文に実行統計を含めます',
     baseConfigurationImported: '基地設定をインポートしました',
-    whenSetScriptS:
-      '入力するとスクリプト自身の MirrorChyan CDK を優先して使います。空の場合は MAS 全体の更新設定にある CDK を使います',
     fillingPathEnablesThat:
       'パスを入力するとそのエンジンが有効になります。パスを空にすると、そのエンジンは検証もスケジュールもされなくなります。',
     multiPlatform: 'マルチプラットフォーム',
@@ -1169,7 +1166,9 @@ export default {
       'MAS が公式のバージョンを確認して更新します。更新前にゲームが起動していないことを確認してください',
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
-    leaveEmptyUseGlobal: '空の場合は全体設定の MirrorChyan CDK を使います',
+    cdkTip:
+      'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
+    cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     directory: 'フォルダ',
     useExistingOkwwConfiguration:
       'Okww の既存設定をそのまま使い、細かい設定はスクリプトの GUI に任せます。',
@@ -1368,6 +1367,8 @@ export default {
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
+    useAdminLaunch: '管理者権限で起動',
+    bettergiUseAdminHint: '既定で有効（BetterGI には管理者権限が必要）。MAS が非管理者で実行されている場合、起動のたびに UAC が表示されるため、無人実行時はオフにできます。MAS が既に管理者権限の場合は再表示されません',
     bettergiRootPathSaved: 'BetterGI のルートフォルダーを保存しました',
     bettergiInvalidDirectory: '選択したフォルダーは無効です',
     bettergiExeNotFound: '選択したフォルダーに {p0} が見つかりません。BetterGI スクリプトのルートフォルダーを選択してください。',
@@ -2343,6 +2344,7 @@ export default {
       taskLabel: 'タスク：',
       modeLabel: 'モード：',
       resumePlaceholder: '指定したスクリプトから再開（既定は先頭）',
+      userPlaceholder: '指定ユーザーのみ実行（既定は全員）',
       stop: '停止',
       start: '実行',
     },
@@ -2383,6 +2385,7 @@ export default {
       batchDeleted: 'コンソールを {count} 件閉じました',
       loadQueueScriptsFailed:
         'キュー内のスクリプトを読み込めなかったため、スクリプト ID からの再開はできません',
+      loadScriptUsersFailed: 'スクリプトのユーザーを読み込めなかったため、単独実行はできません',
       needTaskAndMode: 'タスクと実行モードの両方を選んでください',
       taskStarted: 'タスクを開始しました',
       startTaskFailed: 'タスクを開始できませんでした',

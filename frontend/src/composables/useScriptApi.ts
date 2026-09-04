@@ -181,7 +181,7 @@ export function useScriptApi() {
                             ? maaUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
-                        Mode: maaUserData.Info?.Mode !== undefined ? maaUserData.Info.Mode : '简洁',
+                        Mode: maaUserData.Info?.Mode !== undefined ? maaUserData.Info.Mode : '脚本',
                         StageMode:
                           maaUserData.Info?.StageMode !== undefined
                             ? maaUserData.Info.StageMode
@@ -338,7 +338,7 @@ export function useScriptApi() {
                         Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
                         Password:
                           srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
-                        Mode: srcUserData.Info?.Mode !== undefined ? srcUserData.Info.Mode : '简洁',
+                        Mode: srcUserData.Info?.Mode !== undefined ? srcUserData.Info.Mode : '脚本',
                         Server:
                           srcUserData.Info?.Server !== undefined
                             ? srcUserData.Info.Server
@@ -525,7 +525,7 @@ export function useScriptApi() {
                         Mode:
                           maaEndUserData.Info?.Mode !== undefined
                             ? maaEndUserData.Info.Mode
-                            : '简洁',
+                            : '脚本',
                         SanityMode:
                           maaEndUserData.Info?.SanityMode !== undefined
                             ? maaEndUserData.Info.SanityMode
@@ -796,9 +796,7 @@ export function useScriptApi() {
                         Mode:
                           okwwUserData.Info?.Mode !== undefined
                             ? okwwUserData.Info.Mode
-                            : isOkwwUser
-                              ? '脚本'
-                              : '简洁',
+                            : '脚本',
                         IfQuickConfig: isOkwwUser
                           ? okwwUserData.Info?.IfQuickConfig !== undefined
                             ? okwwUserData.Info.IfQuickConfig

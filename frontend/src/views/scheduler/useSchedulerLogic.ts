@@ -28,6 +28,7 @@ import {
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+import { toRunnableUserOptions } from './schedulerUserOptions'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -93,6 +94,9 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   resumeFromScriptId: tab.resumeFromScriptId ?? null,
   resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
   resumeScriptLoading: false,
+  selectedUserId: tab.selectedUserId ?? null,
+  userOptions: tab.userOptions ? [...tab.userOptions] : [],
+  userOptionsLoading: false,
   taskId: tab.taskId,
   subscriptionIds: [],
   runningTaskLabel: tab.runningTaskLabel,
@@ -108,6 +112,8 @@ const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...getDefaultTabRuntimeState(),
   resumeScriptOptions: tab.resumeScriptOptions || [],
   resumeScriptLoading: false,
+  userOptions: tab.userOptions || [],
+  userOptionsLoading: false,
   subscriptionIds: [],
   logMode: tab.logMode || 'follow',
 })
@@ -144,6 +150,9 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
+      selectedUserId: null,
+      userOptions: [],
+      userOptionsLoading: false,
       taskId: null,
       taskQueue: [],
       userQueue: [],
@@ -336,6 +345,9 @@ export function useSchedulerLogic() {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
+      selectedUserId: null,
+      userOptions: [],
+      userOptionsLoading: false,
       taskId: options?.taskId || null,
       taskQueue: [],
       userQueue: [],
@@ -491,6 +503,12 @@ export function useSchedulerLogic() {
     return Boolean(taskOption?.label.startsWith('队列 - '))
   }
 
+  // 任务下拉里只有队列和脚本两类，所以「找得到且不是队列」即脚本任务
+  const isScriptTask = (tab: SchedulerTab) => {
+    const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
+    return Boolean(taskOption) && !isQueueTask(tab)
+  }
+
   const loadScriptLabelMap = async () => {
     try {
       const response = await Service.getScriptComboxApiInfoComboxScriptPost()
@@ -553,10 +571,60 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 脚本任务可以只跑其中一个用户，下拉口径与各脚本适配器一致：已启用且剩余天数不为 0
+  const loadUserOptions = async (tab: SchedulerTab) => {
+    // 任务下拉还没加载完时判断不出任务类型，此时清空会把 sessionStorage 恢复出来的
+    // 选择一并抹掉，让刷新后的启动静默退化成跑全部用户。宁可什么都不做，等下拉打开时再刷。
+    if (!taskOptions.value.length) return
+
+    if (!tab.selectedTaskId || !isScriptTask(tab)) {
+      tab.userOptions = []
+      tab.selectedUserId = null
+      tab.userOptionsLoading = false
+      return
+    }
+
+    // 连续切换任务项时旧请求可能后返回；只有仍指向发起时那个脚本才允许写回状态
+    const requestedTaskId = tab.selectedTaskId
+    const isStale = () => tab.selectedTaskId !== requestedTaskId
+
+    tab.userOptionsLoading = true
+    try {
+      const response = await Service.getUserApiScriptsUserGetPost({
+        scriptId: requestedTaskId,
+        userId: null,
+      })
+      if (isStale()) return
+      if (response.code !== 200) {
+        tab.userOptions = []
+        tab.selectedUserId = null
+        return
+      }
+
+      const options = toRunnableUserOptions(response)
+      tab.userOptions = options
+      if (tab.selectedUserId && !options.some(item => item.value === tab.selectedUserId)) {
+        tab.selectedUserId = null
+      }
+    } catch (error) {
+      if (isStale()) return
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`加载脚本用户列表失败: ${errorMsg}`)
+      tab.userOptions = []
+      tab.selectedUserId = null
+      message.error(t('scheduler.toast.loadScriptUsersFailed'))
+    } finally {
+      if (!isStale()) {
+        tab.userOptionsLoading = false
+      }
+    }
+  }
+
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
-    await Promise.all([loadResumeScriptOptions(tab), loadCycleQueueFlag(tab)])
+    tab.selectedUserId = null
+    await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab), loadCycleQueueFlag(tab)])
   }
 
   // 只有循环队列能选「循环运行」，先问后端拿队列类型再决定给不给这个模式
@@ -598,6 +666,9 @@ export function useSchedulerLogic() {
       }
       if (tab.resumeFromScriptId) {
         requestBody.resumeFromScriptId = tab.resumeFromScriptId
+      }
+      if (tab.selectedUserId) {
+        requestBody.userId = tab.selectedUserId
       }
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
@@ -1335,10 +1406,13 @@ export function useSchedulerLogic() {
     // 获取后端当前的电源状态
     getPowerState()
 
-    // 为已有调度台预加载恢复脚本选项，确保刷新后恢复交互可用
+    // 为已有调度台预加载恢复脚本 / 用户选项，确保刷新后恢复交互可用
     schedulerTabs.value.forEach(tab => {
-      if (tab.status !== '运行' && isQueueTask(tab)) {
+      if (tab.status === '运行') return
+      if (isQueueTask(tab)) {
         loadResumeScriptOptions(tab)
+      } else if (isScriptTask(tab)) {
+        loadUserOptions(tab)
       }
     })
 
@@ -1440,6 +1514,7 @@ export function useSchedulerLogic() {
     stopTask,
     handleTaskSelectionChange,
     loadResumeScriptOptions,
+    loadUserOptions,
 
     // 日志操作
     onLogScroll,

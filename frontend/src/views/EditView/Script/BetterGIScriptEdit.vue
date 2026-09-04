@@ -218,6 +218,20 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-form-item style="margin-bottom: 0">
+            <template #label>
+              <span class="form-label">
+                {{ t('edit.useAdminLaunch') }}
+                <a-tooltip :title="t('edit.bettergiUseAdminHint')">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </span>
+            </template>
+            <a-switch
+              v-model:checked="bettergiConfig.Run.UseAdmin"
+              @change="handleChange('Run', 'UseAdmin', bettergiConfig.Run.UseAdmin)"
+            />
+          </a-form-item>
         </div>
       </a-form>
     </a-card>
@@ -261,6 +275,7 @@ interface BetterGIRunForm {
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
+  UseAdmin: boolean
 }
 
 interface BetterGIGameForm {
@@ -286,7 +301,7 @@ const formData = reactive({
 
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10 },
+  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10, UseAdmin: true },
   Game: { Controller: '电脑端-前台', CloseOnFinish: true },
 })
 

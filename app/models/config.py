@@ -538,7 +538,7 @@ class MaaUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
@@ -666,6 +666,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
+        ## 上次完成绿票商店购买的月份
+        self.Data_GreenTicketStoreMonth = ConfigItem(
+            "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 自定义基建配置
@@ -701,6 +705,10 @@ class MaaUserConfig(ConfigBase):
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 是否每月自动购买一次绿票商店
+        self.Task_IfGreenTicketStore = ConfigItem(
+            "Task", "IfGreenTicketStore", False, BoolValidator()
         )
         ## 活动期间是否优先刷活动关
         self.Task_IfActivityFirst = ConfigItem(
@@ -961,7 +969,7 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置文件来源
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 是否启用快速配置
         self.Info_IfQuickConfig = ConfigItem(
@@ -1051,17 +1059,17 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
-        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
+        # 旧“自定义”仍等价于用户级配置且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本级配置来源，快速配置使用默认值。
         if isinstance(info_data, dict):
             if info_data.get("Mode") == "自定义":
-                info_data["Mode"] = "详细"
+                info_data["Mode"] = "用户"
                 info_data["IfQuickConfig"] = False
             elif (
                 info_data.get("Mode") in ("简洁", "详细")
                 and "SanityMode" not in info_data
             ):
-                info_data["Mode"] = "简洁"
+                info_data["Mode"] = "脚本"
                 info_data.pop("IfQuickConfig", None)
 
         task_data = data.get("Task")
@@ -1298,7 +1306,7 @@ class SrcUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -2237,6 +2245,24 @@ class MaaFWUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+def _migrate_maafw_auto_update_mode(data: dict) -> dict:
+    """兼容旧版 Update.IfAutoUpdate 布尔开关 → 三态 Update.AutoUpdateMode
+
+    旧值 False（关闭）迁移为 ``Off``，保留用户之前的关闭选择；旧值 True 交由
+    新默认 ``BeforeRun`` 生效。只在新项尚未显式写入时迁移，且不动旧键：
+    ``IfAutoUpdate`` 的 ConfigItem 还保留一个版本兼容旧配置文件。
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    update = normalized_data.get("Update")
+    if (
+        isinstance(update, dict)
+        and update.get("IfAutoUpdate") is False
+        and "AutoUpdateMode" not in update
+    ):
+        update["AutoUpdateMode"] = "Off"
+    return normalized_data
+
+
 class MaaFWConfig(ConfigBase):
     """MaaFW 项目配置"""
 
@@ -2331,30 +2357,54 @@ class MaaFWConfig(ConfigBase):
         )
 
         ## Update ----------------------------------------------------------
-        ## 是否在运行前自动更新 MaaFW 项目目录
+        ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。
+        ## 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。
+        self.Update_AutoUpdateMode = ConfigItem(
+            "Update",
+            "AutoUpdateMode",
+            "BeforeRun",
+            OptionsValidator(["Off", "BeforeRun", "AfterRun"]),
+        )
+        ## [已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off），
+        ## 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", True, BoolValidator()
         )
-        ## 更新源，留空时使用全局更新源
+        ## 更新包的下载源，由用户显式选择——**不做自动分流**。
+        ## 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定：
+        ## 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成
+        ## GitHub——用户得知道自己在从哪下载，出问题才查得动。
+        ## 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。
+        # 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**，
+        # 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被
+        # correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有
+        # 脚本会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。
         self.Update_Source = ConfigItem(
-            "Update",
-            "Source",
-            "",
-            OptionsValidator(["", "MirrorChyan", "GitHub"]),
+            "Update", "Source", "GitHub", OptionsValidator(["GitHub", "MirrorChyan"])
         )
-        ## 更新渠道，留空时使用全局更新渠道
+        ## 更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。
+        ## 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道，
+        ## 和脚本本体的版本档位是两回事，串在一起只会让人猜。
+        ## Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部
+        ## 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。
+        ## 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致：
+        ## 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
+        ## 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]，
+        ## 即 stable——这里的顺序同样不能随意调换。
         self.Update_Channel = ConfigItem(
-            "Update", "Channel", "", OptionsValidator(["", "stable", "beta"])
+            "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
         )
-        ## Mirror 酱 CDK，留空时运行前使用全局项目更新 CDK
+        ## Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是
+        ## AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜
+        ## 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。
+        ## （合并逻辑见 tools/embedded/update_credentials.py）
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
-        ## GitHub 仓库覆盖，留空时使用 interface.github
+        ## [已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json
+        ## 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_GitHubRepo = ConfigItem("Update", "GitHubRepo", "")
-        ## GitHub release tag 覆盖
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
-        ## GitHub release asset 文件名匹配模式
         self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
         ## Managed --------------------------------------------------------
@@ -2454,6 +2504,10 @@ class MaaFWConfig(ConfigBase):
         self.UserData = MultipleConfig([MaaFWUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
+        return await super().load(_migrate_maafw_auto_update_mode(data))
 
 
 class MaaPlanConfig(ConfigBase):
@@ -2665,6 +2719,21 @@ class OkwwTaskIndexValidator(OptionsValidator):
 
     def correct(self, value: Any) -> Any:
         return 7 if value == 2 else super().correct(value)
+
+
+class ScriptUserModeValidator(OptionsValidator):
+    """脚本/用户配置来源，兼容旧版“简洁/详细”。
+
+    旧配置里“简洁”即脚本级配置，“详细”即用户级配置，加载时自动归一为“脚本/用户”。
+    """
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户"])
+
+    def correct(self, value: Any) -> Any:
+        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
 
 
 class OkwwConfigModeValidator(OptionsValidator):
@@ -2905,7 +2974,7 @@ class OkNteUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -3482,6 +3551,10 @@ class BetterGIConfig(ConfigBase):
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
+        ## 是否以管理员权限启动 BetterGI。默认提权（贴近旧行为）；若 MAS 平时以非管理员
+        ## 运行、又不希望每次启动 BGI 都弹 UAC（无人值守任务尤其容易挂在授权上），可关闭。
+        ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
+        self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
 
         ## Game ------------------------------------------------------------
         ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）

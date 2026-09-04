@@ -102,7 +102,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_user_id = (
             "Default"
-            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            if self.cur_user_config.get("Info", "Mode") == "脚本"
             else self.cur_user_uid
         )
         config_file = (
@@ -443,7 +443,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_user_id = (
             "Default"
-            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            if self.cur_user_config.get("Info", "Mode") == "脚本"
             else self.cur_user_uid
         )
         maaend_config_path = (

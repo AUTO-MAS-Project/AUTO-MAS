@@ -15,7 +15,7 @@ const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
 }
 
 type MaaFWProjectUpdateSource = MaaFWScriptConfig['Update']['Source']
-type MaaFWConcreteUpdateChannel = Exclude<MaaFWScriptConfig['Update']['Channel'], ''>
+type MaaFWProjectUpdateChannel = MaaFWScriptConfig['Update']['Channel']
 
 const MAAFW_DIRECT_CONTROLLER_TYPES = ['Adb', 'Win32'] as const
 type MaaFWDirectControllerType = (typeof MAAFW_DIRECT_CONTROLLER_TYPES)[number]
@@ -25,17 +25,27 @@ export const isDirectControllerType = (
 ): controllerType is MaaFWDirectControllerType =>
   MAAFW_DIRECT_CONTROLLER_TYPES.includes(controllerType as MaaFWDirectControllerType)
 
+/**
+ * 项目更新的下载源，由用户显式选择，没有「自动」：选 Mirror 酱就得自己填 CDK，
+ * CDK 不可用时后端明确报错而不是悄悄换成 GitHub。两项须与后端
+ * MaaFWConfig.Update.Source 的 OptionsValidator 一致。
+ */
 export const updateSourceOptions = [
-  { label: '自动', value: '' },
-  { label: 'MirrorChyan', value: 'MirrorChyan' },
+  { label: 'Mirror 酱', value: 'MirrorChyan' },
   { label: 'GitHub', value: 'GitHub' },
 ] satisfies Array<{ label: string; value: MaaFWProjectUpdateSource }>
 
+/** 项目更新通道只有稳定版 / 测试版，没有「跟随全局」，也故意不开放 alpha。 */
 export const updateChannelOptions = [
-  { label: '跟随全局', value: '' as MaaFWScriptConfig['Update']['Channel'] },
-  { label: '稳定版', value: 'stable' as MaaFWConcreteUpdateChannel },
-  { label: '测试版', value: 'beta' as MaaFWConcreteUpdateChannel },
-]
+  { label: '稳定版', value: 'stable' },
+  { label: '测试版', value: 'beta' },
+] satisfies Array<{ label: string; value: MaaFWProjectUpdateChannel }>
+
+export const isMaaFWUpdateSource = (value: unknown): value is MaaFWProjectUpdateSource =>
+  updateSourceOptions.some(option => option.value === value)
+
+export const isMaaFWUpdateChannel = (value: unknown): value is MaaFWProjectUpdateChannel =>
+  updateChannelOptions.some(option => option.value === value)
 
 /**
  * MaaFW 脚本配置的默认形态。后端未返回某段时用它兜底，保证编辑页所有
@@ -74,13 +84,10 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     CloseOnFinish: true,
   },
   Update: {
-    IfAutoUpdate: true,
-    Source: '',
-    Channel: '',
+    AutoUpdateMode: 'BeforeRun',
+    Source: 'GitHub',
+    Channel: 'stable',
     MirrorChyanCDK: '',
-    GitHubRepo: '',
-    GitHubTag: '',
-    GitHubAssetPattern: '',
   },
   Managed: {
     Enabled: false,
