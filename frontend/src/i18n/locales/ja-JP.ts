@@ -1350,6 +1350,8 @@ export default {
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
+    useAdminLaunch: '管理者権限で起動',
+    bettergiUseAdminHint: '既定で有効（BetterGI には管理者権限が必要）。MAS が非管理者で実行されている場合、起動のたびに UAC が表示されるため、無人実行時はオフにできます。MAS が既に管理者権限の場合は再表示されません',
     bettergiRootPathSaved: 'BetterGI のルートフォルダーを保存しました',
     bettergiInvalidDirectory: '選択したフォルダーは無効です',
     bettergiExeNotFound: '選択したフォルダーに {p0} が見つかりません。BetterGI スクリプトのルートフォルダーを選択してください。',
