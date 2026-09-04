@@ -194,6 +194,31 @@ class TaskItem(ABC):
         return self.queue_id is not None
 
     @property
+    def target_user_id(self) -> str | None:
+        """单独运行时指定的用户ID；未指定或非自动代理时为 None。
+
+        必须带上模式判断：ScriptConfig 与 Update 模式会把 user_id 写成
+        "Default" 或被编辑的用户，那是「配置谁」而不是「只代理谁」。
+        """
+        return self.user_id if self.mode == "AutoProxy" else None
+
+    def is_target_user(self, user_id: str) -> bool:
+        """用户是否属于本次运行范围。
+
+        只用于收窄展示与执行用的 user_list，各脚本适配器持有的用户配置副本必须
+        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同脚本其它用户的配置。
+
+        Args:
+            user_id (str): 待判定的用户ID。
+
+        Returns:
+            bool: 未指定单独运行的用户时恒为 True。
+        """
+
+        target = self.target_user_id
+        return target is None or user_id == target
+
+    @property
     def asdict(self) -> list:
         """将 TaskItem 转换为字典形式"""
         return [

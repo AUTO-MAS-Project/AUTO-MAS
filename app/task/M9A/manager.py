@@ -191,7 +191,9 @@ class M9AManager(TaskExecuteBase):
         self.script_info.user_list = [
             UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
             for uid, config in self.user_config.items()
-            if config.get("Info", "Status") and config.get("Info", "RemainedDay") != 0
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
         ]
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
