@@ -4,6 +4,8 @@
 /* eslint-disable */
 import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
+import type { BetterGIOneDragonSettingsIn } from '../models/BetterGIOneDragonSettingsIn';
+import type { BetterGIOneDragonSettingsOut } from '../models/BetterGIOneDragonSettingsOut';
 import type { BetterGIPathingTreeOut } from '../models/BetterGIPathingTreeOut';
 import type { BetterGIScriptDirsOut } from '../models/BetterGIScriptDirsOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
@@ -912,6 +914,55 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 一条龙设置项（右栏按任务分组展示）
+     * 返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+     *
+     * 供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
+     * @param scriptId
+     * @param userId
+     * @param configName
+     * @returns BetterGIOneDragonSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsGet(
+        scriptId: string,
+        userId: string,
+        configName: string = '',
+    ): CancelablePromise<BetterGIOneDragonSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/one-dragon/settings',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'configName': configName,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 一条龙设置项到 per-user 副本
+     * 把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsPost(
+        requestBody: BetterGIOneDragonSettingsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/one-dragon/settings',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
