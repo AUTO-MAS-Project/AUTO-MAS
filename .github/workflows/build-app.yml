@@ -33,7 +33,7 @@ env:
   # latest：Runtime 有自己的发布节奏，本仓库的改动不应该在没有联调的情况下自动带出一个新
   # Runtime。Runtime 不自更新，只随这里构建的安装包整体升级；本仓库如有依赖 Runtime 新行为
   # 的改动（T13 系列），必须等 Runtime 一侧先发布对应版本，再手动把这个版本号提上去。
-  RUNTIME_VERSION: v0.1.0-beta.8
+  RUNTIME_VERSION: v0.1.0
 
 jobs:
 
