@@ -8,6 +8,9 @@ from .errors import UnsupportedPlatformError
 
 class CommonProcessPlatform:
     creation_flags = 0
+    # 非 Windows 没有 Job Object 概念，breakaway 位恒为 0，调用点传
+    # breakaway=True 也不会改变行为。
+    breakaway_flags = 0
     detached_flags = 0
 
     async def open_protocol(self, protocol_url: str) -> None:

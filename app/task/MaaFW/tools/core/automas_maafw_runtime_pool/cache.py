@@ -8,13 +8,18 @@ from pathlib import Path
 from typing import Any
 
 from .installer import (
-    UV_CACHE_RELATIVE_PATH,
+    AUTO_MAS_UV_CACHE_DIR_ENV,
     _clean_process_environment,
     _find_uv_executable,
+    _resolve_uv_cache_dir_with_source,
     _uv_version,
 )
 
-UV_CACHE_PRUNE_TIMEOUT_SECONDS = 300
+
+
+# prune 只在任务收尾时作为维护步骤跑，慢了就该放弃而不是拖住任务结束。
+# 真机上曾在共享缓存上卡满 300 秒，任务才得以继续。
+UV_CACHE_PRUNE_TIMEOUT_SECONDS = 60
 
 
 def prune_uv_cache(
@@ -34,7 +39,13 @@ def prune_uv_cache(
     """
 
     root = Path(pool_root).resolve()
-    cache_path = root / UV_CACHE_RELATIVE_PATH
+    cache_path, injected = _resolve_uv_cache_dir_with_source(root)
+    try:
+        relative_to_pool = cache_path.relative_to(root).as_posix()
+    except ValueError:
+        # 受监督时 cache_path 可能是 Runtime 注入的共享缓存目录，不在 pool_root
+        # 之内——不是错误，只是「相对池目录」这个概念本身不适用。
+        relative_to_pool = None
     result: dict[str, Any] = {
         "kind": "uv",
         "scope": "pool",
@@ -42,7 +53,7 @@ def prune_uv_cache(
         "attempted": False,
         "status": "preview" if dry_run else "pending",
         "cachePath": str(cache_path),
-        "relativeToPool": UV_CACHE_RELATIVE_PATH.as_posix(),
+        "relativeToPool": relative_to_pool,
         "previewExact": False,
         "observedAt": _format_time(),
     }
@@ -52,6 +63,22 @@ def prune_uv_cache(
             {
                 "status": "unsafe",
                 "error": "uv cache path is a symbolic link; prune was refused",
+                "before": _empty_stats(cache_path),
+            }
+        )
+        return result
+
+    if injected:
+        # 注入的缓存是 Runtime 主项目也在用的共享缓存，归 Runtime 管：池不能
+        # 替它 prune（会动到主项目的 wheel），也不该为此在任务收尾时等待。
+        result.update(
+            {
+                "status": "skipped",
+                "injected": True,
+                "reason": (
+                    "uv cache directory is injected by the supervisor via "
+                    f"{AUTO_MAS_UV_CACHE_DIR_ENV}; prune is left to its owner"
+                ),
                 "before": _empty_stats(cache_path),
             }
         )

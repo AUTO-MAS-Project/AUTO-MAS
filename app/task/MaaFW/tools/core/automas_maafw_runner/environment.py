@@ -30,7 +30,9 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
     install_python_runtime,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
+    MaaFWRuntimeInstallCancelled,
     host_bootstrap_python_request,
+    install_cancel_scope,
 )
 
 RUNNER_ENV_MANIFEST_NAME = ".auto_mas_maafw_runner_env.json"
@@ -101,6 +103,11 @@ class MaaFWRunnerEnvironment:
     lease_id: str | None = None
 
 
+def _raise_if_prepare_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise MaaFWRuntimeInstallCancelled("MaaFW Runner 环境准备已取消")
+
+
 def prepare_runner_environment(
     project_path: str | Path,
     *,
@@ -118,12 +125,17 @@ def prepare_runner_environment(
     import_paths: Iterable[str | Path] = (),
     send_log: Callable[[str], None] | None = None,
     progress: EnvironmentProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> MaaFWRunnerEnvironment:
     """Prepare or reuse a runner selected by canonical requirements.
 
     ``managed_env_root`` remains accepted as the legacy pool-root argument.
     Runtime identity no longer contains ``project_path``; projects with the
     same canonical requirements therefore share one worker environment.
+
+    ``cancel_event`` 置位后，正在跑的 uv/pip 安装子进程会被终止，本函数以
+    ``MaaFWRuntimeInstallCancelled`` 结束且不会持有租约；半成品 runtime 留在
+    staging 目录里被池删掉，manifest 只在安装完整成功后才写入。
     """
 
     _report_environment_progress(
@@ -351,18 +363,20 @@ def prepare_runner_environment(
         requirements: tuple[str, ...] | list[str],
         identity: dict[str, object],
     ) -> dict[str, object]:
-        return install_python_runtime(
-            environment_path,
-            requirements,
-            identity,
-            cwd=project,
-            # Runtime identity is derived from the bootstrap interpreter (this
-            # process, or the pool-managed one standing in for an embeddable
-            # host), so the created environment must use that same interpreter.
-            bootstrap_python=bootstrap_python,
-            send_log=send_log,
-        )
+        with install_cancel_scope(cancel_event):
+            return install_python_runtime(
+                environment_path,
+                requirements,
+                identity,
+                cwd=project,
+                # Runtime identity is derived from the bootstrap interpreter (this
+                # process, or the pool-managed one standing in for an embeddable
+                # host), so the created environment must use that same interpreter.
+                bootstrap_python=bootstrap_python,
+                send_log=send_log,
+            )
 
+    _raise_if_prepare_cancelled(cancel_event)
     if existing_runtime is not None:
         runtime = pool.touch(expected_runtime_id)
     else:
@@ -372,6 +386,9 @@ def prepare_runner_environment(
             metadata={"component": "automas-maafw-runner"},
             python_identity=bootstrap_python_identity,
         )
+    # 安装可能恰好在取消后一瞬间完成：runtime 已发布是好事，但本次调用不能再
+    # 拿租约，否则取消方已经放弃等待，这份租约要拖到 TTL 过期才释放。
+    _raise_if_prepare_cancelled(cancel_event)
     resolved_runtime_id = str(runtime["runtimeId"])
     _report_environment_progress(
         progress,

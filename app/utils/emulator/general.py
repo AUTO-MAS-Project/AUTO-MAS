@@ -75,7 +75,9 @@ class GeneralDeviceManager(DeviceBase):
         args, _ = self.parse_index(idx)
 
         # 启动进程
-        await self.process_managers[idx].open_process(self.emulator_path, *args)
+        await self.process_managers[idx].open_process(
+            self.emulator_path, *args, breakaway=True
+        )
 
         # 等待进程启动
         await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))

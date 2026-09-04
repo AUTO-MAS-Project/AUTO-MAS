@@ -187,6 +187,28 @@ export default {
     updateHasFinishedDownloading: '更新のダウンロードが完了しました。今すぐインストールしますか？',
     minimize: '最小化',
     backendUpdateAvailableClick: 'バックエンドの更新があります。クリックして更新してください',
+    backendUpdateDevUnsupported:
+      'バックエンドの更新があります。開発モードでは自動更新に対応していません',
+    backendUpdateTitle: 'バックエンドを {version} に更新します',
+    backendUpdateSucceeded: 'バックエンドを更新して再起動しました',
+    backendUpdateCancelled: '更新をキャンセルしました。バックエンドは元のままです',
+    backendUpdateFailedShutdown:
+      '実行中のバックエンドを停止できず、更新は開始されていません。現在のバージョンはそのまま使用できます',
+    backendUpdateFailedBootstrap:
+      'ソースまたは依存関係の同期に失敗しました。以下のいずれかの方法で再試行してください',
+    backendUpdateFailedRestart:
+      'ソースと依存関係は揃いましたが、新しいバックエンドを起動できませんでした',
+    backendUpdateUnsupportedMode: '現在のモードではバックエンドの自動更新に対応していません',
+    backendUpdateRetryWorkspaceSync: 'ソースを同期し直す',
+    backendUpdateRetryDependenciesSync: '依存関係の同期を再試行',
+    backendUpdateRetryDependenciesRebuild: '依存環境を再構築',
+    backendUpdateRetryRepair: '実行環境をまとめて修復',
+    backendUpdateRestartBackend: 'バックエンドを起動し直す',
+    backendUpdateCancelAction: '更新をキャンセル',
+    backendUpdateErrorCode: 'エラーコード',
+    backendUpdateLogPath: 'ログファイル',
+    backendUpdateContactSupport:
+      'この問題は再試行では解決できません。上記のログファイルを添えて報告してください',
     closingBackend: 'バックエンドを終了しています...',
     startingBackend: 'バックエンドを起動しています...',
     lightTheme: 'ライトテーマ',
@@ -1854,6 +1876,24 @@ export default {
   },
   init: {
     unknownStepP0: '不明なステップ: {p0}',
+    runtime: {
+      takenOver: 'ランタイムが担当',
+      preparingEnv: '実行環境を準備',
+    },
+    failure: {
+      retryOtherMirror: '別のミラーで再試行',
+      rebuildEnvironment: '環境を再構築',
+      openLog: 'ログを開く',
+      runDoctor: '診断を実行',
+      internalErrorNotice: 'ランタイム内部のエラーです。ログを添えて報告してください',
+      contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      logTitle: '失敗ログ',
+      openLogFailed: 'ログを開けませんでした: {error}',
+      doctorTitle: '実行環境の診断',
+      doctorEmpty: '診断結果に項目がありません',
+      doctorFailed: '診断の実行に失敗しました: {error}',
+      doctorRunning: '実行環境を診断しています...',
+    },
     common: {
       currentMirror: '使用中: {mirror}',
     },
@@ -2727,6 +2767,19 @@ export default {
       exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',
       devSection: '開発者向けオプション',
       openDevTools: '開発者ツールを開く',
+      runtimeLaunchMode: 'バックエンドの起動方式',
+      runtimeLaunchModeTip:
+        '段階的検証中のオプションです。バックエンドを Runtime に監督させて起動するか、従来どおりの方式にするかを選べます。アプリの再起動後に反映されます。',
+      runtimeLaunchModeAuto: '自動',
+      runtimeLaunchModeOff: '従来の方式',
+      runtimeLaunchModeDevelopment: 'Runtime が監督（development）',
+      runtimeLaunchModeManaged: 'Runtime が監督（managed）',
+      runtimeLaunchModeSourceEnv: '環境変数による強制',
+      runtimeLaunchModeSourceSetting: 'この設定項目',
+      runtimeLaunchModeSourceDefault: 'ビルドの既定値',
+      runtimeLaunchModeEffective: '現在の適用値: {mode}（適用元: {source}）',
+      runtimeLaunchModeRestartHint: 'アプリの再起動後に反映されます',
+      runtimeLaunchModeSaveFailed: 'バックエンドの起動方式の保存に失敗しました',
     },
     others: {
       updateSection: '更新',

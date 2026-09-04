@@ -12,11 +12,42 @@ import { killAllRelatedProcesses } from '../utils/processManager'
 import { MirrorService } from './mirrorService'
 import { isDevelopmentEnvironment } from './environmentService'
 import { resolveHttpPort } from './instanceConfig'
+import {
+  RUNTIME_CLIENT_ERROR_DEFINITIONS,
+  RuntimeClient,
+  RuntimeRemediation,
+  RuntimeRunResult,
+  RuntimeSuperviseHandle,
+  RuntimeSupervisedLaunchConfig,
+  createRuntimeClient,
+  formatStartupLogs,
+  isRuntimeClientError,
+  readRuntimeBaseUrl,
+  resolveRuntimeLaunchConfig,
+  resolveRuntimeLaunchMode,
+} from './runtime'
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
 const logger = getLogger('后端服务')
 const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
+
+// Runtime 链路等待 state:running 的兜底上限。正常情况下 Runtime 自己的健康超时会先给出
+// BACKEND_HEALTH_TIMEOUT，这个上限只防止 Runtime 既不就绪也不给终态时把启动流程挂死。
+const RUNTIME_READY_TIMEOUT_MS = 180000
+// 等待 Runtime 完成关闭的上限，超时由客户端 kill Runtime 进程本身，进程树由其 Job Object 收走。
+const RUNTIME_SHUTDOWN_TIMEOUT_MS = 30000
+// 启动阶段每路输出只保留最近这么多行：后端每行 DEBUG 日志都会以 log 事件到达，
+// 失败界面也只需要尾部；无上限累积会在长驻监督期间把内存吃光。
+const RUNTIME_STARTUP_LOG_LINE_LIMIT = 200
+
+/** 尾部保留固定行数的追加：超出上限时丢弃最旧的一行。 */
+function pushBoundedLine(lines: string[], message: string, limit: number): void {
+  lines.push(message)
+  if (lines.length > limit) {
+    lines.splice(0, lines.length - limit)
+  }
+}
 
 // ==================== 类型定义 ====================
 
@@ -25,6 +56,11 @@ export interface BackendStatus {
   pid?: number
   startTime?: Date
   error?: string
+  /**
+   * 本次生命周期是否走 Runtime 监督链路。渲染进程据此决定关闭方式：Runtime 链路下
+   * 后端只能由 Electron 经 Runtime stdin shutdown 停止，渲染进程不得自己 POST /close。
+   */
+  runtimeSupervised: boolean
 }
 
 export interface BackendStartOptions {
@@ -38,6 +74,23 @@ export interface BackendStartResult {
   success: boolean
   error?: string
   logs?: string
+  /** Runtime 链路的结构化结果码，供界面决定重试或修复；旧链路不产生。 */
+  code?: string
+  retryable?: boolean
+  remediation?: RuntimeRemediation[]
+}
+
+/** 渲染进程实际使用的后端地址。 */
+export interface BackendApiEndpoints {
+  local: string
+  websocket: string
+}
+
+/** 由 Runtime 下发的 baseUrl 派生 WebSocket 根地址，不自行假定端口。 */
+function deriveWebsocketEndpoint(baseUrl: string): string {
+  const url = new URL(baseUrl)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString().replace(/\/$/, '')
 }
 
 export interface BackendStopResult {
@@ -67,6 +120,9 @@ export class BackendService {
   private forceStopFlight: Promise<BackendStopResult> | null = null
   private forceStopRequested = false
   private lastKnownBackendDevMode: boolean | null = null
+  // Runtime 监督链路的句柄与就绪地址；旧链路下始终为 null。
+  private runtimeHandle: RuntimeSuperviseHandle | null = null
+  private runtimeBaseUrl: string | null = null
 
   private readonly startupHealthPath = '/api/core/health'
 
@@ -130,6 +186,13 @@ export class BackendService {
   }
 
   private async startBackendProcess(options?: BackendStartOptions): Promise<BackendStartResult> {
+    // 灰度开关打开后整条生命周期都走 Runtime 监督链路，绝不与旧链路混用：两条链路的端口、
+    // 关闭语义与进程归属都不同，中途回退只会留下无人负责的后端进程。
+    const launchConfig = resolveRuntimeLaunchConfig(this.appRoot)
+    if (launchConfig.mode !== 'off') {
+      return this.startBackendViaRuntime(launchConfig, options)
+    }
+
     // 检查是否已经在运行
     if (this.isTrackedProcessRunning()) {
       logger.info('后端服务已在运行，等待健康检查')
@@ -228,6 +291,357 @@ export class BackendService {
     }
   }
 
+  // ==================== Runtime 监督链路 ====================
+
+  /**
+   * 经 `auto-mas-runtime.exe backend supervise` 启动后端。
+   *
+   * 与旧链路的三点区别：
+   * 1. 不注入 `AUTO_MAS_DEV` / `AUTO_MAS_HTTP_PORT`：受监督后端的端口与身份由 Runtime 注入的
+   *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV=development`
+   *    与遥测开关一样由 `createRuntimeClient` 按启动模式统一注入（见 runtimeEnv.ts），只影响
+   *    后端的遥测判定；
+   * 2. 就绪以 `state:running` 事件为准，而不是解析 stdout 里的 `Uvicorn running`；
+   * 3. 后端地址取事件里的 `details.baseUrl`，不按 `resolveHttpPort()` 自行拼装。
+   *
+   * `development` 模式在 supervise 之前先跑一次 `environment ensure`：`backend supervise` 本身
+   * 不下载 uv，Runtime 根目录没种过 uv 时会直接以 `UV_EXEC_FAILED` 失败；`managed` 模式的
+   * `bootstrap` 已包含这一步，不重复。
+   */
+  private async startBackendViaRuntime(
+    config: RuntimeSupervisedLaunchConfig,
+    options?: BackendStartOptions
+  ): Promise<BackendStartResult> {
+    if (this.runtimeHandle) {
+      logger.info('Runtime 已在监督后端，跳过重复启动')
+      return { success: true }
+    }
+
+    const runtimePath = config.runtimePath
+    if (!runtimePath) {
+      // 灰度期一次生命周期只走一条链路，找不到可执行文件时直接失败展示，不回退旧链路。
+      const definition = RUNTIME_CLIENT_ERROR_DEFINITIONS.RUNTIME_NOT_FOUND
+      const message = `找不到 Runtime 可执行文件，无法以 ${config.mode} 模式启动后端`
+      logger.error(message)
+      return {
+        success: false,
+        error: message,
+        code: definition.code,
+        retryable: definition.retryable,
+        remediation: [...definition.remediation],
+      }
+    }
+
+    logger.info(
+      `经 Runtime 启动后端 - 模式: ${config.mode}, Runtime: ${runtimePath}, ` +
+        `Runtime 根目录: ${config.appRoot}${config.repo ? `, 源码目录: ${config.repo}` : ''}`
+    )
+
+    // 遥测开关（AUTO_MAS_TELEMETRY）与开发标记（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
+    // 见 runtimeEnv.ts；配置从用户数据根 dataRoot 读，development 模式下它不是 --app-root。
+    const client = createRuntimeClient({
+      runtimePath,
+      appRoot: config.appRoot,
+      dataRoot: config.dataRoot,
+      launchMode: config.mode,
+    })
+
+    if (config.mode === 'development') {
+      const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
+      if (failure) return failure
+    }
+
+    // 后端 stdout / stderr 由 Runtime 逐行包装成 log 事件转发，这里按流分开累积，
+    // 失败时组装成现有失败界面直接展示的整块文本。
+    const stdoutLines: string[] = []
+    const stderrLines: string[] = []
+    let resolveReady: (baseUrl: string) => void = () => undefined
+    const ready = new Promise<{ baseUrl: string }>(resolve => {
+      resolveReady = baseUrl => resolve({ baseUrl })
+    })
+
+    let handle: RuntimeSuperviseHandle
+    try {
+      handle = await client.supervise({
+        mode: config.mode,
+        repo: config.repo,
+        onLog: event => {
+          const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
+          pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+        },
+        onState: event => {
+          // 就绪的唯一判据是 backend.run 阶段进入 running 且带 baseUrl；其他阶段即便
+          // status 同名也不算，baseUrl 必须取自事件本身而不是自行假定端口。
+          if (event.stage !== 'backend.run' || event.status !== 'running') return
+          const baseUrl = readRuntimeBaseUrl(event.details)
+          if (!baseUrl) {
+            logger.warn('Runtime 报告 backend.run running 但未携带 baseUrl，忽略该事件')
+            return
+          }
+          resolveReady(baseUrl)
+        },
+      })
+    } catch (error) {
+      // 握手阶段的失败（可执行文件缺失、spawn 被拒、协议不匹配、参数错误）都在这里收敛。
+      return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+    }
+
+    const timeoutMs = options?.timeout || RUNTIME_READY_TIMEOUT_MS
+    let timer: NodeJS.Timeout | undefined
+    const timedOut = new Promise<'timeout'>(resolve => {
+      timer = setTimeout(() => resolve('timeout'), timeoutMs)
+      timer.unref?.()
+    })
+    const ended = handle.completion.then(
+      result => ({ result }),
+      (error: unknown) => ({ error })
+    )
+
+    let outcome: 'timeout' | { baseUrl: string } | { result: RuntimeRunResult } | { error: unknown }
+    try {
+      outcome = await Promise.race([ready, ended, timedOut])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+
+    if (outcome !== 'timeout' && 'baseUrl' in outcome) {
+      this.adoptRuntimeHandle(handle, outcome.baseUrl)
+      logger.info(`后端服务启动成功，Runtime PID: ${handle.pid}，后端地址: ${outcome.baseUrl}`)
+      return { success: true }
+    }
+
+    if (outcome === 'timeout') {
+      logger.error(`等待 Runtime 报告后端就绪超过 ${timeoutMs}ms，请求关闭 Runtime`)
+      try {
+        const settled = await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+        return this.buildRuntimeStartFailure(settled, stdoutLines, stderrLines)
+      } catch (error) {
+        return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+      }
+    }
+
+    // 就绪前拿到终态或调用侧异常：后端没起来，按失败展示。
+    const reason = 'result' in outcome ? outcome.result : outcome.error
+    return this.buildRuntimeStartFailure(reason, stdoutLines, stderrLines)
+  }
+
+  /**
+   * `development` 模式 supervise 之前的准备：创建仓外的 Runtime 根目录并种好 uv。
+   *
+   * Runtime 要求 `--app-root` 已存在，且 `backend supervise` 不下载 uv，所以先跑一次
+   * `environment ensure`（幂等：uv 已在时只做校验，很快返回；首次会下载，实测约一分钟）。
+   * 进度只记日志——development 模式在初始化界面上没有对应的段。失败时按与 supervise 失败
+   * 同形的结果返回，界面据 `code` / `remediation` 决定重试或修复。
+   *
+   * 成功返回 null，失败返回可直接交给界面的启动失败结果。
+   */
+  private async ensureDevelopmentRuntimeEnvironment(
+    client: RuntimeClient,
+    config: RuntimeSupervisedLaunchConfig
+  ): Promise<BackendStartResult | null> {
+    try {
+      fs.mkdirSync(config.appRoot, { recursive: true })
+    } catch (error) {
+      const message = `无法创建 Runtime 根目录 ${config.appRoot}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+      logger.error(message)
+      return { success: false, error: message }
+    }
+
+    logger.info('development 模式：supervise 之前先经 environment ensure 准备 uv')
+    const stdoutLines: string[] = []
+    const stderrLines: string[] = []
+    let outcome: RuntimeRunResult
+    try {
+      outcome = await client.run(['environment', 'ensure'], {
+        onProgress: event => logger.info(`Runtime ${event.stage}: ${event.message}`),
+        onState: event => logger.info(`Runtime ${event.stage}: ${event.message}`),
+        onLog: event => {
+          if (event.stream === 'stderr') {
+            stderrLines.push(event.message)
+            return
+          }
+          stdoutLines.push(event.message)
+        },
+      })
+    } catch (error) {
+      return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+    }
+
+    if (!outcome.success) {
+      return this.buildRuntimeStartFailure(outcome, stdoutLines, stderrLines)
+    }
+
+    logger.info(`uv 已就绪，开始 supervise（environment ensure 用时 ${outcome.durationMs}ms）`)
+    return null
+  }
+
+  /** 记下监督句柄与后端地址，并在 Runtime 结束时清理状态。 */
+  private adoptRuntimeHandle(handle: RuntimeSuperviseHandle, baseUrl: string): void {
+    this.runtimeHandle = handle
+    this.runtimeBaseUrl = baseUrl
+    this.startTime = new Date()
+    this.notifyStatusChange()
+
+    const onFinished = (): void => {
+      if (this.runtimeHandle !== handle) return
+      logger.info('Runtime 监督进程已结束，清理后端运行状态')
+      this.clearRuntimeState(handle)
+    }
+    void handle.completion.then(onFinished, onFinished)
+  }
+
+  private clearRuntimeState(handle: RuntimeSuperviseHandle): void {
+    if (this.runtimeHandle !== handle) return
+    this.runtimeHandle = null
+    this.runtimeBaseUrl = null
+    this.startTime = null
+    this.notifyStatusChange()
+  }
+
+  /**
+   * 把 Runtime 的失败终态或调用侧异常转成与旧链路同形的启动失败结果。
+   *
+   * `logs` 保持 `[stdout]…\n\n[stderr]…` 的整块格式，现有失败界面不需要改动；`code` /
+   * `retryable` / `remediation` 供界面判断可用操作，界面不解析日志或中文文案。
+   */
+  private buildRuntimeStartFailure(
+    reason: RuntimeRunResult | unknown,
+    stdoutLines: string[],
+    stderrLines: string[]
+  ): BackendStartResult {
+    if (isRuntimeClientError(reason)) {
+      const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.details.stderr)
+      logger.error(`Runtime 调用失败: ${reason.code} ${reason.message}`)
+      return {
+        success: false,
+        error: reason.message,
+        logs,
+        code: reason.code,
+        retryable: reason.retryable,
+        remediation: [...reason.remediation],
+      }
+    }
+
+    if (this.isRuntimeRunResult(reason)) {
+      const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.stderr)
+      const message = reason.result.message || `后端在就绪前结束（${reason.code}）`
+      logger.error(`后端服务启动失败: ${reason.code} ${message}`)
+      return {
+        success: false,
+        error: message,
+        logs,
+        code: reason.code,
+        retryable: reason.result.retryable,
+        remediation: [...reason.result.remediation],
+      }
+    }
+
+    const message = reason instanceof Error ? reason.message : String(reason)
+    logger.error(`后端服务启动失败: ${message}`)
+    return {
+      success: false,
+      error: message,
+      logs: this.formatRuntimeStartupLogs(stdoutLines, stderrLines),
+    }
+  }
+
+  private isRuntimeRunResult(value: unknown): value is RuntimeRunResult {
+    return typeof value === 'object' && value !== null && 'result' in value && 'code' in value
+  }
+
+  /** Runtime 自身的 stderr 诊断并入 `[stderr]` 块，避免后端没起来时失败界面一片空白。 */
+  private formatRuntimeStartupLogs(
+    stdoutLines: string[],
+    stderrLines: string[],
+    runtimeStderr?: string
+  ): string | undefined {
+    const diagnostics = runtimeStderr?.trimEnd()
+    const merged = diagnostics ? [...stderrLines, ...diagnostics.split(/\r?\n/)] : stderrLines
+    return formatStartupLogs(stdoutLines, merged)
+  }
+
+  /**
+   * 经 Runtime 停止后端：只向 stdin 发 shutdown，不再 taskkill python。
+   *
+   * 关闭超时由 `handle.shutdown` 兜底 kill Runtime 进程本身，后端进程树由 Runtime 的
+   * Job Object 收走，这里不触碰 processManager 的全局清理。
+   */
+  private async stopBackendViaRuntime(): Promise<BackendStopResult> {
+    const handle = this.runtimeHandle
+    if (!handle) {
+      logger.info('Runtime 链路未持有监督句柄，无需停止后端')
+      return { success: true }
+    }
+
+    logger.info(`向 Runtime 发送 shutdown，Runtime PID: ${handle.pid}`)
+    try {
+      const outcome = await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+      if (!outcome.success) {
+        logger.warn(`Runtime 关闭后端报告失败: ${outcome.code} ${outcome.result.message}`)
+      } else {
+        logger.info('Runtime 已确认后端关闭')
+      }
+      // completion 兑现即意味着 Runtime 已给出终态且进程已退出，进程树随之清理完毕。
+      this.clearRuntimeState(handle)
+      return { success: true }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      this.clearRuntimeState(handle)
+      if (this.hasRuntimeProcessExited(error)) {
+        // 关闭超时被客户端 kill、或 Runtime 没给终态就退出：进程本身已经不在了，
+        // 后端进程树随 Job Object 一并回收，对调用方而言后端已停止，不必再弹「无法安全退出」。
+        logger.warn(`Runtime 未给出关闭终态就已退出，按已停止处理: ${errorMsg}`)
+        return { success: true }
+      }
+      logger.error(`Runtime 关闭后端失败: ${errorMsg}`)
+      return { success: false, error: errorMsg }
+    }
+  }
+
+  /**
+   * 判断关闭失败是否只是「Runtime 进程已退出但没给终态」。
+   *
+   * 客户端在收到 close 时才以 RUNTIME_EXITED_UNEXPECTEDLY 收尾，退出码与信号至少有一个
+   * 非空；两者都为空说明是进程不响应结束信号后的兜底收敛，进程可能还活着，不能算已停止。
+   */
+  private hasRuntimeProcessExited(error: unknown): boolean {
+    if (!isRuntimeClientError(error) || error.code !== 'RUNTIME_EXITED_UNEXPECTEDLY') {
+      return false
+    }
+    const { exitCode, signal } = error.details
+    return (
+      (exitCode !== null && exitCode !== undefined) || (signal !== null && signal !== undefined)
+    )
+  }
+
+  /**
+   * 本次生命周期是否走 Runtime 监督链路。
+   *
+   * 已持有句柄时必然是；尚未启动成功时以灰度开关为准，避免在新链路下误用旧链路的
+   * scoped taskkill 清理。
+   */
+  isRuntimeSupervised(): boolean {
+    return this.runtimeHandle !== null || resolveRuntimeLaunchMode(this.appRoot) !== 'off'
+  }
+
+  /** Runtime 就绪后下发的后端地址；旧链路或尚未就绪时返回 null，由调用方回退原有端点。 */
+  getRuntimeApiEndpoints(): BackendApiEndpoints | null {
+    if (!this.runtimeBaseUrl) return null
+    return {
+      local: this.runtimeBaseUrl,
+      websocket: deriveWebsocketEndpoint(this.runtimeBaseUrl),
+    }
+  }
+
+  /** 后端 HTTP 根地址：Runtime 就绪后以它下发的为准，否则用镜像源服务的端点。 */
+  private resolveLocalApiEndpoint(): string {
+    return this.runtimeBaseUrl ?? this.mirrorService.getApiEndpoint('local')
+  }
+
+  // ==================== 旧链路 ====================
+
   private async prepareUntrackedBackendForStart(): Promise<boolean> {
     const apiEndpoint = this.mirrorService.getApiEndpoint('local')
     const metaUrl = `${apiEndpoint}/api/core/ws_meta`
@@ -280,7 +694,7 @@ export class BackendService {
    * 读取后端权威开发模式；暂时不可达时回退最近一次成功结果。
    */
   async getBackendDevMode(): Promise<boolean | null> {
-    const apiEndpoint = this.mirrorService.getApiEndpoint('local')
+    const apiEndpoint = this.resolveLocalApiEndpoint()
     const metaUrl = `${apiEndpoint}/api/core/ws_meta`
 
     try {
@@ -355,6 +769,10 @@ export class BackendService {
   }
 
   private async stopBackendInternal(): Promise<BackendStopResult> {
+    if (this.isRuntimeSupervised()) {
+      return this.stopBackendViaRuntime()
+    }
+
     const pid = this.backendProcess?.pid
     const hasTrackedProcess = this.isTrackedProcessRunning()
     let metaUrl: string | null = null
@@ -590,12 +1008,23 @@ export class BackendService {
    * 获取后端状态
    */
   getStatus(): BackendStatus {
+    // Runtime 链路下追踪的是监督进程，后端进程树归 Runtime 管，这里不持有它的 PID。
+    if (this.runtimeHandle) {
+      return {
+        isRunning: true,
+        pid: this.runtimeHandle.pid,
+        startTime: this.startTime || undefined,
+        runtimeSupervised: true,
+      }
+    }
+
     const isRunning = this.isTrackedProcessRunning()
 
     return {
       isRunning,
       pid: this.backendProcess?.pid,
       startTime: this.startTime || undefined,
+      runtimeSupervised: this.isRuntimeSupervised(),
     }
   }
 

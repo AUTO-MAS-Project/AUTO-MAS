@@ -184,6 +184,28 @@ export default {
     updateHasFinishedDownloading: 'The update has finished downloading. Install it now?',
     minimize: 'Minimize',
     backendUpdateAvailableClick: 'A backend update is available — click to update',
+    backendUpdateDevUnsupported:
+      'A backend update is available — automatic updates are off in development mode',
+    backendUpdateTitle: 'Updating the backend to {version}',
+    backendUpdateSucceeded: 'The backend has been updated and restarted',
+    backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
+    backendUpdateFailedShutdown:
+      'The running backend could not be stopped, so the update never started. The current version still works.',
+    backendUpdateFailedBootstrap:
+      'Syncing the source or the dependencies failed. Retry with one of the options below.',
+    backendUpdateFailedRestart:
+      'The source and the dependencies are in place, but the new backend did not start',
+    backendUpdateUnsupportedMode: 'This mode does not support updating the backend automatically',
+    backendUpdateRetryWorkspaceSync: 'Sync the source again',
+    backendUpdateRetryDependenciesSync: 'Retry the dependency sync',
+    backendUpdateRetryDependenciesRebuild: 'Rebuild the dependency environment',
+    backendUpdateRetryRepair: 'Repair the whole runtime environment',
+    backendUpdateRestartBackend: 'Start the backend again',
+    backendUpdateCancelAction: 'Cancel the update',
+    backendUpdateErrorCode: 'Error code',
+    backendUpdateLogPath: 'Log file',
+    backendUpdateContactSupport:
+      'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
     startingBackend: 'Starting the backend...',
     lightTheme: 'Light theme',
@@ -1859,6 +1881,24 @@ export default {
   },
   init: {
     unknownStepP0: 'Unknown step: {p0}',
+    runtime: {
+      takenOver: 'Handled by the runtime',
+      preparingEnv: 'Preparing the runtime environment',
+    },
+    failure: {
+      retryOtherMirror: 'Retry with another mirror',
+      rebuildEnvironment: 'Rebuild the environment',
+      openLog: 'Open the log',
+      runDoctor: 'Run diagnostics',
+      internalErrorNotice: 'This is an internal runtime error. Please report it with the log.',
+      contactSupportNotice: 'Please report this problem to the developers with the log.',
+      logTitle: 'Failure log',
+      openLogFailed: 'Could not open the log: {error}',
+      doctorTitle: 'Environment diagnostics',
+      doctorEmpty: 'Diagnostics returned no checks',
+      doctorFailed: 'Diagnostics failed: {error}',
+      doctorRunning: 'Running diagnostics...',
+    },
     common: {
       currentMirror: 'Currently using: {mirror}',
     },
@@ -2692,6 +2732,19 @@ export default {
       exportOkNte: 'Export an OK-NTE issue bundle',
       devSection: 'Developer options',
       openDevTools: 'Open DevTools',
+      runtimeLaunchMode: 'Backend launch mode',
+      runtimeLaunchModeTip:
+        'A staged-rollout option: choose whether the backend is supervised by Runtime or launched the old way. Takes effect after restarting the app.',
+      runtimeLaunchModeAuto: 'Auto',
+      runtimeLaunchModeOff: 'Legacy path',
+      runtimeLaunchModeDevelopment: 'Supervised by Runtime (development)',
+      runtimeLaunchModeManaged: 'Supervised by Runtime (managed)',
+      runtimeLaunchModeSourceEnv: 'forced by environment variable',
+      runtimeLaunchModeSourceSetting: 'this setting',
+      runtimeLaunchModeSourceDefault: 'build default',
+      runtimeLaunchModeEffective: 'Currently effective: {mode} (source: {source})',
+      runtimeLaunchModeRestartHint: 'Takes effect after restarting the app',
+      runtimeLaunchModeSaveFailed: 'Failed to save the backend launch mode',
     },
     others: {
       updateSection: 'Updates',

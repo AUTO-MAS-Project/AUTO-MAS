@@ -43,7 +43,7 @@ from maa.tasker import Tasker
 from maa.toolkit import AdbDevice, Toolkit
 
 from app.models.emulator import DeviceInfo
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 
 from .config import Config
 
@@ -70,7 +70,7 @@ class _MaaFWManager:
             encoding="utf-8",
         )
         Toolkit.init_option(Path.cwd())
-        self.resource.post_bundle(Path.cwd() / "res/MaaFW").wait()
+        self.resource.post_bundle(resource_path("MaaFW")).wait()
 
     @staticmethod
     async def do_job(job: Job | JobWithResult) -> Any:

@@ -50,11 +50,11 @@ from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
 from app.models.emulator import DeviceInfo
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 
 logger = get_logger("终末地登录")
 
-_IMAGE_ROOT = Path.cwd() / "res/MaaFW/image/EndFieldPC"
+_IMAGE_ROOT = resource_path("MaaFW", "image", "EndFieldPC")
 _TEMPLATES = {
     "logout": (
         _IMAGE_ROOT / "登出-1080p.png",

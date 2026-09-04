@@ -374,6 +374,7 @@ class AutoProxyTask(TaskExecuteBase):
                                     *str(
                                         self.script_config.get("Game", "Arguments")
                                     ).split(" "),
+                                    breakaway=True,
                                 )
                                 self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
                                 await asyncio.sleep(

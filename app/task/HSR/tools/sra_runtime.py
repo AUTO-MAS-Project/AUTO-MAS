@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
-from app.utils.io import atomic_write, read_file, write_file
+from app.utils.io import atomic_write, migrate_legacy_dir, read_file, write_file
 
 from .log_detect import (
     can_read_stream_live,
@@ -737,17 +737,19 @@ async def run_sra_config(
 
 
 def _sra_temp_path(script_uid: str, user_uid: str, module_key: str) -> Path:
+    """HSR SRA 临时配置文件路径。
+
+    落在受保护的 ``data/`` 下，避免与 AUTO-MAS-Runtime 监督器接管的
+    ``runtime/`` 撞名；首次访问时把用户机器上已有的旧
+    ``runtime/hsr/sra-config`` 整体迁移过来。
+    """
+
     from app.core import Config
 
-    return (
-        Config.config_path.parent
-        / "runtime"
-        / "hsr"
-        / "sra-config"
-        / script_uid
-        / user_uid
-        / f"{module_key}.json"
-    )
+    app_root = Config.config_path.parent
+    sra_config_dir = app_root / "data" / "hsr" / "sra-config"
+    migrate_legacy_dir(app_root / "runtime" / "hsr" / "sra-config", sra_config_dir)
+    return sra_config_dir / script_uid / user_uid / f"{module_key}.json"
 
 
 def _build_sra_base_config(name: str) -> dict:

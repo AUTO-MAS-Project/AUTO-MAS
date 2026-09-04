@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
+from app.utils import resource_path
 from app.utils.io import read_file, write_file
 
 # 8 个内置一条龙配置组：单一来源为 app/models/config.py 的 _BGI_BUILTIN_ONE_DRAGON_GROUPS，
@@ -49,7 +50,7 @@ GLOBAL_CONFIG_LOCK = threading.Lock()
 _ONE_DRAGON_REL_DIR = Path("User") / "OneDragon"
 
 # 内置种子模板（随 MAS 版本同步）
-_RES_TEMPLATE_DIR = Path.cwd() / "res" / "templates" / "BetterGI"
+_RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
 _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 
 # 空配置名的显式兜底配置名
