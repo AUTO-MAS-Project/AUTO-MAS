@@ -48,7 +48,7 @@ def detect_community_notification_format(content: str) -> NotificationBodyFormat
     return "markdown" if "**" in content else "text"
 
 
-def _result_status_text(item: dict) -> str:
+def _result_status_text(item: dict[str, object]) -> str:
     """将单条签到结果转换为模板中的短状态。"""
 
     status = str(item.get("status", "失败"))
@@ -67,7 +67,7 @@ def _result_status_text(item: dict) -> str:
     return f"签到失败-{reason}"
 
 
-def _result_account(item: dict) -> str:
+def _result_account(item: dict[str, object]) -> str:
     """返回优先使用角色名/UID 的账号标识。"""
 
     account = str(item.get("account", "") or "").strip()
@@ -77,7 +77,7 @@ def _result_account(item: dict) -> str:
     return account_uid or "未知用户"
 
 
-def _result_identity(item: dict) -> str:
+def _result_identity(item: dict[str, object]) -> str:
     """生成通知中的用户标识，森空岛优先显示游戏名和真实昵称。"""
 
     account = _result_account(item)
@@ -92,13 +92,17 @@ def _result_identity(item: dict) -> str:
     return game
 
 
-def _notification_results(results: list[dict]) -> list[dict]:
+def _notification_results(
+    results: list[dict[str, object]],
+) -> list[dict[str, object]]:
     """过滤没有实际签到角色的平台占位结果。"""
 
     return [item for item in results if not item.get("_notification_only")]
 
 
-def _ordered_platforms(grouped: dict[str, list[dict]]) -> list[str]:
+def _ordered_platforms(
+    grouped: dict[str, list[dict[str, object]]],
+) -> list[str]:
     """按通知模板固定社区顺序，并保留未知平台结果。"""
 
     return [
@@ -107,7 +111,7 @@ def _ordered_platforms(grouped: dict[str, list[dict]]) -> list[str]:
     ]
 
 
-def _format_notification_item(item: dict) -> str:
+def _format_notification_item(item: dict[str, object]) -> str:
     """格式化通知列表中的一条签到结果。"""
 
     platform = str(item.get("platform", "未知") or "未知")
@@ -124,7 +128,7 @@ def _format_notification_item(item: dict) -> str:
 
 
 def format_community_notification(
-    results: list[dict],
+    results: list[dict[str, object]],
     *,
     output_format: NotificationBodyFormat = "markdown",
 ) -> str:
@@ -134,7 +138,7 @@ def format_community_notification(
     if not results:
         return ""
 
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, list[dict[str, object]]] = {}
     for item in results:
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)
@@ -161,14 +165,14 @@ def format_community_notification(
     return "\n".join(lines)
 
 
-def format_community_task_summary(results: list[dict]) -> str:
+def format_community_task_summary(results: list[dict[str, object]]) -> str:
     """生成附加到 MAS 任务报告末尾的一行签到汇总。"""
 
     results = _notification_results(results)
     if not results:
         return ""
 
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, list[dict[str, object]]] = {}
     for item in results:
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)
@@ -252,7 +256,9 @@ async def _send_notification_channel(
     return False
 
 
-async def push_community_notification(results: list[dict]) -> list[str]:
+async def push_community_notification(
+    results: list[dict[str, object]],
+) -> list[str]:
     """推送手动或启动时触发的游戏社区结果通知。"""
     results = _notification_results(results)
     if not results:
@@ -271,7 +277,7 @@ async def push_community_notification(results: list[dict]) -> list[str]:
     )
 
     # 邮件按同一正文生成 HTML，角色名和原因均需要转义。
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, list[dict[str, object]]] = {}
     for item in results:
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)

@@ -91,7 +91,9 @@ async def community_sign_flow():
         yield
 
 
-async def run_community_sign_in(force: bool = False) -> list[dict]:
+async def run_community_sign_in(
+    force: bool = False,
+) -> list[dict[str, object]]:
     """延迟调用核心社区签到编排。"""
 
     from app.core.community_sign import run_community_sign_in as core_run

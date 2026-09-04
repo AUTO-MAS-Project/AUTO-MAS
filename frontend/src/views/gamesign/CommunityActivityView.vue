@@ -418,7 +418,7 @@ onMounted(() => {
 .activity-view {
   min-height: 100%;
   box-sizing: border-box;
-  padding: 24px;
+  padding: 12px 16px;
   color: var(--ant-color-text);
 }
 
@@ -427,8 +427,8 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
-  padding-bottom: 14px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -453,14 +453,14 @@ onMounted(() => {
 }
 
 .activity-alert {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .activity-state {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 220px;
+  min-height: 160px;
 }
 
 .activity-spin {
@@ -472,13 +472,13 @@ onMounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   align-items: stretch;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
 .activity-card-wrap {
   min-width: 0;
-  min-height: 320px;
+  min-height: 240px;
 }
 
 .activity-card {
@@ -498,7 +498,7 @@ onMounted(() => {
 
 .activity-card::before {
   position: absolute;
-  z-index: -1;
+  z-index: 0;
   inset: 0;
   background-image: var(--activity-background-image);
   background-position: center;
@@ -522,7 +522,7 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
-  padding: 16px;
+  padding: 12px;
 }
 
 .activity-card-header {
@@ -535,6 +535,8 @@ onMounted(() => {
 .activity-card-header :deep(.ant-tag) {
   flex: 0 0 auto;
   min-width: 64px;
+  display: inline-flex;
+  justify-content: center;
   margin-inline-end: 0;
   text-align: center;
 }
@@ -559,13 +561,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border: 1px solid color-mix(in srgb, var(--activity-accent) 55%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--activity-accent) 14%, transparent);
   color: var(--activity-accent);
-  font-size: 19px;
+  font-size: 17px;
 }
 
 .activity-game-image {
@@ -604,7 +606,7 @@ onMounted(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  margin: 12px 0;
+  margin: 8px 0;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
@@ -615,7 +617,7 @@ onMounted(() => {
 }
 
 .activity-summary {
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   background: color-mix(in srgb, var(--ant-color-bg-container) 82%, transparent);
@@ -638,8 +640,8 @@ onMounted(() => {
 .activity-section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .activity-section {
@@ -647,7 +649,7 @@ onMounted(() => {
 }
 
 .activity-section h3 {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   font-weight: 600;
@@ -656,7 +658,7 @@ onMounted(() => {
 .activity-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .activity-row {
@@ -691,7 +693,7 @@ onMounted(() => {
 }
 
 .activity-reason {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .activity-reason :deep(.ant-alert-message) {
@@ -703,7 +705,7 @@ onMounted(() => {
   flex: 0 0 auto;
   flex-wrap: wrap;
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 8px;
   color: var(--ant-color-text-tertiary);
   font-size: 11px;
 }
@@ -724,7 +726,7 @@ onMounted(() => {
 
 @media (max-width: 860px) {
   .activity-view {
-    padding: 16px;
+    padding: 12px;
   }
 
   .activity-heading {

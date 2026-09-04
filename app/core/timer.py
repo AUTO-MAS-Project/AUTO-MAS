@@ -220,7 +220,7 @@ class _MainTimer:
 
     async def _execute_community_sign(
         self, *, source: CommunityTriggerSource = "scheduled"
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         """执行游戏社区签到并按触发来源决定通知方式。"""
         from app.core.community_sign import (
             CommunitySignInProgressError,
@@ -286,7 +286,7 @@ class _MainTimer:
 
     async def try_community_for_task(
         self, *, source: CommunityTriggerSource | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         """执行 MAS 自动签到并返回结果。
 
         ``task`` 结果由任务完成通知汇总，``startup`` 结果独立通知。
@@ -313,7 +313,7 @@ class _MainTimer:
 
     async def try_game_sign_for_task(
         self, *, source: CommunityTriggerSource | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         """兼容旧调用方，转发到社区签到任务入口。"""
 
         return await self.try_community_for_task(source=source)

@@ -1,7 +1,7 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { GameSignService, Service, type GameSignAccountGroupConfig } from '@/api'
+import { Service, type GameSignAccountGroupConfig } from '@/api'
 
 export function useGameSignAccountApi() {
   const loading = ref(false)
@@ -107,75 +107,6 @@ export function useGameSignAccountApi() {
   }
 
   /**
-   * 发送库街区短信验证码并返回短期会话。
-   * 手机号只发送给后端和库街区，不写入配置或日志。
-   */
-  const sendKuroSmsCode = async (
-    accountId: string,
-    phone: string
-  ): Promise<{ sessionId: string; expiresIn: number; requiresVerification: boolean }> => {
-    let publicMessage = t('gamesign.toast.kuroSmsSendFailed')
-    try {
-      const response = await GameSignService.sendKuroSmsCodeApiToolsSignAccountKuroSmsSendPost({
-        accountId,
-        phone,
-      })
-      const requiresVerification =
-        Number(response.code) === 409 && response.status === 'captcha_required'
-      if (
-        (!requiresVerification &&
-          (Number(response.code) !== 200 || response.status !== 'success')) ||
-        !response.sessionId
-      ) {
-        publicMessage = response.message || publicMessage
-        throw new Error(publicMessage)
-      }
-      if (!requiresVerification) {
-        message.success(response.message || '验证码已发送')
-      }
-      return {
-        sessionId: response.sessionId,
-        expiresIn: Number(response.expiresIn) || 600,
-        requiresVerification,
-      }
-    } catch (error) {
-      logger.error('库街区短信验证码发送失败')
-      message.error(publicMessage)
-      throw error
-    }
-  }
-
-  /**
-   * 使用短期会话和短信验证码换取并保存库街区 Token。
-   * 验证码只存在于本次调用，不写入配置或日志。
-   */
-  const loginKuroSms = async (
-    accountId: string,
-    sessionId: string,
-    phone: string,
-    code: string
-  ): Promise<void> => {
-    let publicMessage = t('gamesign.toast.kuroSmsLoginFailed')
-    try {
-      const response = await GameSignService.loginKuroSmsApiToolsSignAccountKuroSmsLoginPost({
-        accountId,
-        sessionId,
-        phone,
-        code,
-      })
-      if (Number(response.code) !== 200 || response.status !== 'success') {
-        publicMessage = response.message || publicMessage
-        throw new Error(publicMessage)
-      }
-      message.success(response.message || '库街区登录成功，Token 已保存')
-    } catch (error) {
-      logger.error('库街区短信验证码登录失败')
-      message.error(publicMessage)
-      throw error
-    }
-  }
-
-  /**
    * 删除账号组
    */
   const deleteAccount = async (accountId: string): Promise<void> => {
@@ -203,8 +134,6 @@ export function useGameSignAccountApi() {
     loading,
     addAccount,
     updateAccount,
-    sendKuroSmsCode,
-    loginKuroSms,
     loginTaygedo,
     loginSkland,
     deleteAccount,

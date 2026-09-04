@@ -10,6 +10,7 @@ from app.tools.cloud_genshin import (
     CloudGenshinBusinessError,
     CloudGenshinUnavailableError,
     _prepare_cloud_genshin_credential,
+    _headers,
     build_cloud_genshin_combo_token,
     calculate_cloud_genshin_gain,
     cloud_genshin_sign_in,
@@ -59,6 +60,11 @@ class CloudGenshinContractTest(unittest.TestCase):
         self.assertEqual(format_cloud_genshin_duration(3661), "1 小时 1 分钟 1 秒")
         self.assertEqual(calculate_cloud_genshin_gain(120, 180), 60)
         self.assertEqual(calculate_cloud_genshin_gain(180, 120), 0)
+
+    def test_regular_query_headers_do_not_require_device_headers(self) -> None:
+        headers = _headers("combo-token")
+
+        self.assertEqual(headers, {"x-rpc-combo_token": "combo-token"})
 
     def test_token_validation_does_not_accept_control_or_short_values(self) -> None:
         with self.assertRaises(ValueError):

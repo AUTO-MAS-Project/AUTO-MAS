@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import type { ToolsConfig, ToolsConfig_GameSign } from '@/api'
@@ -25,18 +25,6 @@ const router = useRouter()
 
 type CommunityTab = 'sign' | 'activity'
 
-const activeTab = computed<CommunityTab>(() =>
-  route.query.tab === 'activity' ? 'activity' : 'sign'
-)
-
-const handleTabChange = (key: string | number) => {
-  const tab: CommunityTab = key === 'activity' ? 'activity' : 'sign'
-  void router.replace({
-    path: '/gamesign',
-    query: tab === 'activity' ? { tab: 'activity' } : {},
-  })
-}
-
 const { loading, getTools, updateTools } = useToolsApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
@@ -45,6 +33,7 @@ const toolsConfig = reactive<ToolsConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
+    ActivityEnabled: true,
     RunOnStartup: false,
     LastSignDate: '2000-01-01',
     Status: '-',
@@ -57,12 +46,15 @@ const editingConfig = reactive<ToolsConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
+    ActivityEnabled: true,
     RunOnStartup: false,
     LastSignDate: '2000-01-01',
     Status: '-',
     Result: '{}',
   },
 })
+
+const toolsLoaded = ref(false)
 
 // 轮询定时器
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -72,6 +64,23 @@ let statusPollFailed = false
 
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
+
+const activityEnabled = computed(
+  () => toolsLoaded.value && editingConfig.GameSign?.ActivityEnabled !== false
+)
+
+const activeTab = computed<CommunityTab>(() =>
+  route.query.tab === 'activity' && activityEnabled.value ? 'activity' : 'sign'
+)
+
+const handleTabChange = (key: string | number) => {
+  const tab: CommunityTab =
+    key === 'activity' && activityEnabled.value ? 'activity' : 'sign'
+  void router.replace({
+    path: '/gamesign',
+    query: tab === 'activity' ? { tab: 'activity' } : {},
+  })
+}
 
 const syncGameSignResult = (result: unknown) => {
   if (!isMounted || typeof result !== 'string') return
@@ -145,14 +154,17 @@ const loadTools = async () => {
       data.GameSign = {
         Enabled: false,
         NotifyEnabled: false,
+        ActivityEnabled: true,
         RunOnStartup: false,
         LastSignDate: '2000-01-01',
         Status: '-',
         Result: '{}',
       }
     }
+    data.GameSign.ActivityEnabled ??= true
     Object.assign(toolsConfig, data)
     Object.assign(editingConfig, JSON.parse(JSON.stringify(data)))
+    toolsLoaded.value = true
     logger.info('游戏社区配置加载完成')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -207,6 +219,12 @@ watch(activeTab, tab => {
   if (tab === 'sign' && isMounted) void updateStatus()
 })
 
+watch(activityEnabled, enabled => {
+  if (!enabled && route.query.tab === 'activity' && isMounted) {
+    void router.replace({ path: '/gamesign', query: {} })
+  }
+})
+
 onMounted(async () => {
   gameSignSubscriptionId = subscribe(
     { id: WS_ID_GAME_SIGN, type: WS_GAMESIGN_RESULT_UPDATED },
@@ -251,7 +269,7 @@ onUnmounted(() => {
             :on-refresh-config="refreshGameSignConfig"
           />
         </a-tab-pane>
-        <a-tab-pane key="activity" :tab="t('gamesign.nav.activity')">
+        <a-tab-pane v-if="activityEnabled" key="activity" :tab="t('gamesign.nav.activity')">
           <CommunityActivityView />
         </a-tab-pane>
       </a-tabs>

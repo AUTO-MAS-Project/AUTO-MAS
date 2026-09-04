@@ -138,7 +138,9 @@ class TaskItem(ABC):
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict] = field(default_factory=list, repr=False)
+    game_sign_results: list[dict[str, object]] = field(
+        default_factory=list, repr=False
+    )
     game_sign_summary_consumed: bool = field(default=False, repr=False)
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
@@ -146,13 +148,13 @@ class TaskItem(ABC):
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
 
     @property
-    def community_results(self) -> list[dict]:
+    def community_results(self) -> list[dict[str, object]]:
         """读取社区签到结果，底层继续使用历史任务字段。"""
 
         return self.game_sign_results
 
     @community_results.setter
-    def community_results(self, value: list[dict]) -> None:
+    def community_results(self, value: list[dict[str, object]]) -> None:
         self.game_sign_results = value
 
     @property

@@ -58,9 +58,6 @@ list/
 /skills/
 .ace-tool/
 
-# Local-only Kuro SMS capture patch
-/local/kuro-sms-capture-patch/
-
 # Local-only game community protocol and UI references
 /local/community-reference-projects/
 

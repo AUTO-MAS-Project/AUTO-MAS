@@ -780,6 +780,7 @@ class CommunityActivityParserTest(unittest.TestCase):
             arknights_resources["干员疲劳"]["status"],
             "1名干员疲劳",
         )
+        self.assertNotIn("经验", arknights_resources)
         self.assertEqual((endfield.completed, endfield.target), (100, 100))
         self.assertEqual(endfield.resources[0]["name"], "理智")
         self.assertEqual(endfield.resources[0]["current"], 80)
@@ -793,7 +794,7 @@ class CommunityActivityParserTest(unittest.TestCase):
         self.assertEqual(endfield_tasks["蚀像寻遗"]["completed"], 200000)
         self.assertEqual(endfield_tasks["蚀像寻遗"]["period"], "weekly")
 
-    def test_endfield_rejects_unconfirmed_daily_progress_shape(self) -> None:
+    def test_endfield_keeps_confirmed_resources_without_daily_progress(self) -> None:
         snapshot = self.parse(
             "终末地",
             {
@@ -808,8 +809,35 @@ class CommunityActivityParserTest(unittest.TestCase):
             platform="森空岛",
         )
 
-        self.assertEqual(snapshot.status, "unavailable")
-        self.assertIn("每日任务进度", snapshot.reason)
+        self.assertEqual(snapshot.status, "success")
+        self.assertIsNone(snapshot.completed)
+        self.assertIsNone(snapshot.target)
+        self.assertNotIn("日常活跃度", {item["name"] for item in snapshot.tasks})
+        self.assertEqual(snapshot.resources[0]["name"], "理智")
+        self.assertEqual(snapshot.resources[0]["current"], 80)
+
+    def test_zzz_omits_optional_states_without_fabricating_daily_status(self) -> None:
+        snapshot = self.parse(
+            "绝区零",
+            {
+                "retcode": 0,
+                "data": {
+                    "energy": {
+                        "progress": {"current": 180, "max": 240},
+                        "restore": 3600,
+                    }
+                },
+            },
+            platform="米游社",
+        )
+
+        self.assertEqual(snapshot.status, "success")
+        self.assertIsNone(snapshot.completed)
+        self.assertIsNone(snapshot.target)
+        task_names = {item["name"] for item in snapshot.tasks}
+        self.assertNotIn("录像店经营", task_names)
+        self.assertNotIn("刮刮卡", task_names)
+        self.assertEqual(snapshot.resources[0]["name"], "电量")
 
     def test_miyoushe_three_game_progress(self) -> None:
         genshin = self.parse(

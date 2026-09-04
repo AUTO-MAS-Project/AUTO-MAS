@@ -22,14 +22,11 @@
 
 
 import asyncio
-import json
 from datetime import datetime
 from inspect import isawaitable
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.core.community_sign import (
@@ -58,10 +55,6 @@ from app.models.schema import (
     CommunityActivityResourceOut,
     CommunityActivitySnapshotOut,
     CommunityActivityTaskOut,
-    KuroSmsSendIn,
-    KuroSmsSendOut,
-    KuroSmsVerificationIn,
-    KuroSmsLoginIn,
     SklandLoginIn,
     TaygedoLoginIn,
 )
@@ -71,132 +64,8 @@ from app.utils.security import format_exception_reason
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
-_PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task] = set()
+_PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
 _MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
-
-_KURO_SMS_VERIFICATION_PAGE = """<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <title>库街区短信验证</title>
-  <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    * { box-sizing: border-box; }
-    body {
-      min-height: 100vh; margin: 0; padding: 24px; display: grid; place-items: center;
-      color: CanvasText; background: Canvas;
-    }
-    main {
-      width: min(100%, 420px); padding: 24px; border: 1px solid GrayText;
-      border-radius: 8px;
-    }
-    h1 { margin: 0 0 12px; font-size: 20px; letter-spacing: 0; }
-    p { margin: 0 0 16px; color: GrayText; font-size: 14px; line-height: 1.6; }
-    button {
-      width: 100%; min-height: 44px; border: 0; border-radius: 6px;
-      color: white; background: #ff4d4f; font-size: 15px; cursor: pointer;
-    }
-    button:disabled { cursor: not-allowed; opacity: .55; }
-    #status {
-      min-height: 48px; margin-top: 16px; padding: 12px; border: 1px solid GrayText;
-      border-radius: 6px; font-size: 13px; line-height: 1.6;
-    }
-    #status.success { color: #389e0d; }
-    #status.error { color: #cf1322; }
-  </style>
-  <script src="https://static.geetest.com/v4/gt4.js"></script>
-</head>
-<body>
-  <main>
-    <h1>库街区短信验证</h1>
-    <p>完成安全验证后，MAS 会使用当前登录会话发送短信验证码。</p>
-    <button id="verify" type="button" disabled>正在加载验证组件</button>
-    <div id="status">验证组件加载中，请稍候。</div>
-  </main>
-  <script>
-    const sessionId = __SESSION_ID__;
-    const button = document.getElementById('verify');
-    const statusBox = document.getElementById('status');
-    let captcha = null;
-    let submitting = false;
-
-    function setStatus(message, kind = '') {
-      statusBox.textContent = message;
-      statusBox.className = kind;
-    }
-
-    async function sendSms(validation) {
-      if (submitting) return;
-      submitting = true;
-      button.disabled = true;
-      setStatus('验证通过，正在发送短信验证码。');
-      try {
-        const response = await fetch('/api/tools/sign/account/kuro/sms/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            lotNumber: String(validation.lot_number || ''),
-            captchaOutput: String(validation.captcha_output || ''),
-            passToken: String(validation.pass_token || ''),
-            genTime: String(validation.gen_time || ''),
-          }),
-        });
-        const payload = await response.json();
-        if (!response.ok || Number(payload.code) !== 200) {
-          throw new Error(payload.message || '短信验证码发送失败，请重试。');
-        }
-        button.textContent = '短信验证码已发送';
-        setStatus('短信验证码已发送，请返回游戏社区页面输入验证码。', 'success');
-      } catch (error) {
-        button.disabled = false;
-        button.textContent = '重新验证';
-        setStatus(error instanceof Error ? error.message : '短信验证码发送失败，请重试。', 'error');
-        submitting = false;
-        if (captcha && captcha.reset) captcha.reset();
-      }
-    }
-
-    if (typeof initGeetest4 !== 'function') {
-      setStatus('验证组件加载失败，请关闭窗口后重试。', 'error');
-    } else {
-      initGeetest4(
-        {
-          captchaId: '3f7e2d848ce0cb7e7d019d621e556ce2',
-          product: 'bind',
-          language: 'zho',
-          protocol: 'https://',
-          timeout: 10000,
-        },
-        instance => {
-          captcha = instance;
-          captcha
-            .onReady(() => {
-              button.disabled = false;
-              button.textContent = '验证并发送短信';
-              setStatus('验证组件已准备好。');
-            })
-            .onSuccess(() => {
-              const validation = captcha.getValidate();
-              if (validation) sendSms(validation);
-              else setStatus('未取得安全验证结果，请重试。', 'error');
-            })
-            .onFail(() => setStatus('安全验证未通过，请重试。', 'error'))
-            .onError(() => setStatus('验证组件加载失败，请关闭窗口后重试。', 'error'));
-        }
-      );
-    }
-
-    button.addEventListener('click', () => {
-      if (captcha && !submitting) captcha.showCaptcha();
-    });
-  </script>
-</body>
-</html>
-"""
-
 
 def _log_community_api_error(stage: str, error: Exception) -> None:
     """记录脱敏诊断，社区 API 不把异常细节直接返回给前端。"""
@@ -216,16 +85,9 @@ def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
         data[field] = value.strip() if isinstance(value, str) else ""
 
 
-def _build_kuro_sms_verification_page(session_id: str) -> str:
-    """构造不包含手机号、验证码或设备标识的一次性验证页。"""
-
-    return _KURO_SMS_VERIFICATION_PAGE.replace(
-        "__SESSION_ID__",
-        json.dumps(session_id),
-    )
-
-
-def _track_community_notification(task: asyncio.Task) -> None:
+def _track_community_notification(
+    task: asyncio.Task[list[str] | None],
+) -> None:
     """保留后台通知任务引用，并消费完成后的异常。"""
 
     _PENDING_COMMUNITY_NOTIFICATIONS.discard(task)
@@ -242,7 +104,9 @@ def _track_community_notification(task: asyncio.Task) -> None:
         )
 
 
-async def _dispatch_community_notification(results: list[dict]) -> list[str] | None:
+async def _dispatch_community_notification(
+    results: list[dict[str, object]],
+) -> list[str] | None:
     """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
 
     from app.tools.community_notify import push_community_notification
@@ -408,6 +272,9 @@ async def query_community_activity(
     query: CommunityActivityQueryIn = Body(...),
 ) -> CommunityActivityOut:
     """查询游戏社区日常活动，不占用签到流程锁。"""
+
+    if Config.ToolsConfig.get("GameSign", "ActivityEnabled") is False:
+        return CommunityActivityOut(status="success", data=[])
 
     snapshots = ()
     try:
@@ -666,268 +533,6 @@ async def reorder_game_sign_accounts(
             message="调整游戏社区账号组顺序失败，请稍后重试",
         )
     return OutBase()
-
-
-@router.post(
-    "/sign/account/kuro/sms/send",
-    tags=["GameSign"],
-    summary="发送库街区短信验证码",
-    response_model=KuroSmsSendOut,
-    status_code=200,
-)
-async def send_kuro_sms_code(
-    credential: KuroSmsSendIn = Body(...),
-) -> KuroSmsSendOut:
-    """发送库街区短信验证码，不保存手机号或验证码。"""
-
-    from app.tools import kuro as kuro_provider
-
-    try:
-        account_id = str(UUID(credential.accountId))
-        Config.ToolsConfig.GameSign_Accounts[UUID(account_id)]
-        session = await kuro_provider.create_kuro_sms_session(
-            account_id,
-            credential.phone,
-            proxy=Config.proxy,
-        )
-    except kuro_provider.KuroSmsCaptchaRequiredError:
-        _log_community_api_error("库街区短信发送需要安全验证", ValueError("captcha"))
-        return KuroSmsSendOut(
-            code=409,
-            status="error",
-            message="库街区当前要求完成安全验证，请先在库街区客户端或网页完成验证后重试",
-        )
-    except kuro_provider.KuroSmsRateLimitError:
-        _log_community_api_error("库街区短信发送频率受限", ValueError("rate_limit"))
-        return KuroSmsSendOut(
-            code=429,
-            status="error",
-            message="库街区短信验证码发送过于频繁，请稍后重试",
-        )
-    except kuro_provider.KuroSmsError as error:
-        _log_community_api_error("库街区短信发送失败", error)
-        return KuroSmsSendOut(
-            code=400,
-            status="error",
-            message="库街区短信验证码发送失败，请检查手机号或稍后重试",
-        )
-    except KeyError as error:
-        _log_community_api_error("库街区短信发送账号不存在", error)
-        return KuroSmsSendOut(
-            code=404,
-            status="error",
-            message="游戏社区账号不存在，请刷新账号列表后重试",
-        )
-    except ValueError as error:
-        _log_community_api_error("库街区短信发送参数无效", error)
-        return KuroSmsSendOut(
-            code=400,
-            status="error",
-            message="库街区短信验证码发送参数无效",
-        )
-    except Exception as error:
-        _log_community_api_error("库街区短信发送异常", error)
-        return KuroSmsSendOut(
-            code=500,
-            status="error",
-            message="库街区短信验证码发送失败，请检查网络或稍后重试",
-        )
-
-    return KuroSmsSendOut(
-        code=409 if session.requires_verification else 200,
-        status="captcha_required" if session.requires_verification else "success",
-        sessionId=session.session_id,
-        expiresIn=session.expires_in,
-        message=(
-            "请在 MAS 打开的库街区页面完成安全验证并获取短信验证码"
-            if session.requires_verification
-            else "验证码已发送，请输入短信验证码"
-        ),
-    )
-
-
-@router.get(
-    "/sign/account/kuro/sms/verification",
-    tags=["GameSign"],
-    summary="打开库街区短信安全验证页",
-    response_class=HTMLResponse,
-    include_in_schema=False,
-)
-async def get_kuro_sms_verification_page(
-    session_id: Annotated[
-        str,
-        Query(
-            alias="sessionId",
-            min_length=32,
-            max_length=32,
-            pattern=r"^[A-Za-z0-9_-]+$",
-        ),
-    ],
-) -> HTMLResponse:
-    """返回只服务于当前短期会话的 MAS 内安全验证页。"""
-
-    return HTMLResponse(
-        content=_build_kuro_sms_verification_page(session_id),
-        headers={
-            "Cache-Control": "no-store",
-            "Content-Security-Policy": (
-                "default-src 'self' data: blob: https:; "
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; "
-                "style-src 'self' 'unsafe-inline' https:; "
-                "connect-src 'self' https:; object-src 'none'; base-uri 'none'"
-            ),
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-        },
-    )
-
-
-@router.post(
-    "/sign/account/kuro/sms/verify",
-    tags=["GameSign"],
-    summary="提交库街区短信安全验证",
-    response_model=OutBase,
-    status_code=200,
-    include_in_schema=False,
-)
-async def verify_kuro_sms(
-    credential: KuroSmsVerificationIn = Body(...),
-) -> OutBase:
-    """提交一次性极验结果，并通过同一后端会话发送短信。"""
-
-    from app.tools import kuro as kuro_provider
-
-    try:
-        await kuro_provider.verify_kuro_sms_session(
-            credential.sessionId,
-            {
-                "lot_number": credential.lotNumber.get_secret_value(),
-                "captcha_output": credential.captchaOutput.get_secret_value(),
-                "pass_token": credential.passToken.get_secret_value(),
-                "gen_time": credential.genTime.get_secret_value(),
-            },
-            proxy=Config.proxy,
-        )
-    except kuro_provider.KuroSmsSessionError:
-        _log_community_api_error("库街区安全验证会话失效", ValueError("session"))
-        return OutBase(
-            code=410,
-            status="error",
-            message="库街区短信登录会话已失效，请返回游戏社区页面重新发送验证码",
-        )
-    except kuro_provider.KuroSmsRateLimitError:
-        _log_community_api_error("库街区安全验证频率受限", ValueError("rate_limit"))
-        return OutBase(
-            code=429,
-            status="error",
-            message="库街区短信验证码发送过于频繁，请稍后重试",
-        )
-    except kuro_provider.KuroSmsError as error:
-        _log_community_api_error("库街区安全验证失败", error)
-        return OutBase(
-            code=400,
-            status="error",
-            message="库街区安全验证未通过，请刷新验证后重试",
-        )
-    except Exception as error:
-        _log_community_api_error("库街区安全验证异常", error)
-        return OutBase(
-            code=500,
-            status="error",
-            message="库街区短信验证码发送失败，请检查网络或稍后重试",
-        )
-
-    return OutBase(message="短信验证码已发送，请返回游戏社区页面继续登录")
-
-
-@router.post(
-    "/sign/account/kuro/sms/login",
-    tags=["GameSign"],
-    summary="使用库街区短信验证码登录",
-    response_model=OutBase,
-    status_code=200,
-)
-async def login_kuro_sms(
-    credential: KuroSmsLoginIn = Body(...),
-) -> OutBase:
-    """使用一次性短信验证码换取并保存库街区 Token。"""
-
-    from app.tools import kuro as kuro_provider
-
-    try:
-        account_id = str(UUID(credential.accountId))
-        Config.ToolsConfig.GameSign_Accounts[UUID(account_id)]
-        token = await kuro_provider.login_kuro_with_sms(
-            account_id,
-            credential.sessionId,
-            credential.phone,
-            credential.code.get_secret_value(),
-            proxy=Config.proxy,
-        )
-        serialized = kuro_provider.validate_kuro_credential(token)
-        await Config.update_game_sign_account(
-            account_id,
-            {"GameSignAccount": {"KuroToken": serialized}},
-        )
-    except kuro_provider.KuroSmsCodeError:
-        _log_community_api_error("库街区短信验证码无效", ValueError("invalid_code"))
-        return OutBase(
-            code=400,
-            status="error",
-            message="库街区短信验证码错误或已过期",
-        )
-    except kuro_provider.KuroSmsSessionError:
-        _log_community_api_error("库街区短信登录会话失效", ValueError("session"))
-        return OutBase(
-            code=410,
-            status="error",
-            message="库街区短信登录会话已失效，请重新发送验证码",
-        )
-    except kuro_provider.KuroSmsVerificationRequiredError:
-        _log_community_api_error("库街区短信登录尚未验证", ValueError("captcha"))
-        return OutBase(
-            code=409,
-            status="error",
-            message="请先完成库街区安全验证并获取短信验证码",
-        )
-    except kuro_provider.KuroSmsRateLimitError:
-        _log_community_api_error("库街区短信登录频率受限", ValueError("rate_limit"))
-        return OutBase(
-            code=429,
-            status="error",
-            message="库街区短信登录请求过于频繁，请稍后重试",
-        )
-    except kuro_provider.KuroSmsError as error:
-        _log_community_api_error("库街区短信登录失败", error)
-        return OutBase(
-            code=400,
-            status="error",
-            message="库街区短信登录失败，请检查验证码或稍后重试",
-        )
-    except KeyError as error:
-        _log_community_api_error("库街区短信登录账号不存在", error)
-        return OutBase(
-            code=404,
-            status="error",
-            message="游戏社区账号不存在，请刷新账号列表后重试",
-        )
-    except ValueError as error:
-        _log_community_api_error("库街区短信登录参数无效", error)
-        return OutBase(
-            code=400,
-            status="error",
-            message="库街区短信登录参数无效",
-        )
-    except Exception as error:
-        _log_community_api_error("库街区短信登录异常", error)
-        return OutBase(
-            code=500,
-            status="error",
-            message="库街区短信登录失败，请检查网络或稍后重试",
-        )
-
-    return OutBase(message="库街区登录成功，Token 已保存")
 
 
 @router.post(

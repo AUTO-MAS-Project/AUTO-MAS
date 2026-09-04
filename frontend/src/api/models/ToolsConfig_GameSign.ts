@@ -12,6 +12,10 @@ export type ToolsConfig_GameSign = {
      */
     NotifyEnabled?: (boolean | null);
     /**
+     * 是否启用日常便笺
+     */
+    ActivityEnabled?: (boolean | null);
+    /**
      * 签到窗口起点 HH:mm
      */
     WindowStart?: (string | null);

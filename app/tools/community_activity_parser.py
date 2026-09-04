@@ -357,16 +357,19 @@ def _build_snapshot(
     progress: tuple[int, int] | None = None,
 ) -> CommunityActivitySnapshot:
     daily_items = [item for item in items if item.get("period", "daily") == "daily"]
-    if not daily_items:
+    if not daily_items and not items and not resources:
         raise ActivityResponseUnavailableError(
             f"{platform}{game}未返回可识别的每日任务进度"
         )
 
-    if progress is None:
+    if progress is None and daily_items:
         completed = sum(
             _as_int(item.get("completed")) or 0 for item in daily_items
         )
         target = sum(_as_int(item.get("target")) or 0 for item in daily_items)
+    elif progress is None:
+        completed = None
+        target = None
     else:
         completed, target = progress
     return CommunityActivitySnapshot(
@@ -710,9 +713,6 @@ def _parse_skland_arknights(
             _status_resource("干员疲劳", f"{len(tired_chars)}名干员疲劳")
         )
 
-    experience = _resource_item("经验", status.get("exp") or root.get("exp"))
-    if experience is not None:
-        resources.append(experience)
     return _build_snapshot(
         account_uid=account_uid,
         account_name=account_name,
@@ -1171,8 +1171,12 @@ def _state_task(
     complete: str,
     complete_status: str = "已完成",
     incomplete_status: str = "未完成",
-) -> dict[str, object]:
-    state = str(value or "")
+) -> dict[str, object] | None:
+    if value is None:
+        return None
+    state = str(value).strip()
+    if not state:
+        return None
     completed = int(complete in state)
     return _status_item(
         name,
@@ -1188,10 +1192,6 @@ def _parse_miyoushe_zzz(
 ) -> CommunityActivitySnapshot:
     root = _unwrap_data(payload)
     vitality = _progress_pair(root.get("vitality"))
-    if vitality is None:
-        raise ActivityResponseUnavailableError(
-            "米游社绝区零未返回可识别的今日活跃度"
-        )
     video_sale = root.get("vhs_sale")
     video_state = (
         str(video_sale.get("sale_state") or "")
@@ -1202,12 +1202,16 @@ def _parse_miyoushe_zzz(
         "SaleStateDone": "待结算",
         "SaleStateDoing": "营业中",
         "SaleStateNo": "尚未营业",
-    }.get(video_state, "状态未知")
-    items = [
-        _activity_item("今日活跃度", root.get("vitality")),
-        _status_item("录像店经营", video_status),
-        _state_task("刮刮卡", root.get("card_sign"), complete="Done"),
-    ]
+    }.get(video_state)
+    items: list[dict[str, object]] = []
+    daily_item = _activity_item("今日活跃度", root.get("vitality"), pair=vitality)
+    if daily_item is not None:
+        items.append(daily_item)
+    if video_status is not None:
+        items.append(_status_item("录像店经营", video_status))
+    card_task = _state_task("刮刮卡", root.get("card_sign"), complete="Done")
+    if card_task is not None:
+        items.append(card_task)
 
     hollow_zero = root.get("hollow_zero")
     hollow_zero = hollow_zero if isinstance(hollow_zero, Mapping) else {}

@@ -2291,7 +2291,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后返回 GameToken 兑换或 Passport 提取的 cookies。
+     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError

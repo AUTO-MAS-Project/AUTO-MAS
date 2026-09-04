@@ -61,16 +61,17 @@ GAME_ROLES_URL = f"{TAYGEDO_BASE_URL}/usercenter/api/v2/getGameRoles"
 GAME_RECORD_CARDS_URL = f"{TAYGEDO_BASE_URL}/apihub/api/getGameRecordCard"
 APP_SIGNIN_URL = f"{TAYGEDO_BASE_URL}/apihub/api/signin"
 GAME_SIGNIN_STATE_URL = f"{TAYGEDO_BASE_URL}/apihub/awapi/signin/state"
+GAME_SIGNIN_REWARDS_URL = f"{TAYGEDO_BASE_URL}/apihub/awapi/sign/rewards"
 GAME_SIGNIN_URL = f"{TAYGEDO_BASE_URL}/apihub/awapi/sign"
 CLOUD_USER_INFO_URL = "https://user.laohu.com/cloud/game/getUserInfo"
 
 DEFAULT_GAME_ID = "1289"
-TAYGEDO_GAME_IDS = ("1256", "1257", "1289")
+TAYGEDO_GAME_IDS = ("1256", "1289")
 TAYGEDO_GAME_NAMES = {
     "1256": "幻塔",
     "1289": "异环",
 }
-# 1257 的中文名称未在已核对的角色卡响应中确认；未知名称必须显式保留 ID。
+# 1257 未在已核对的角色卡响应中确认，暂不查询该游戏。
 APP_VERSION = "1.1.0"
 # 角色列表和社区接口使用 1.1.0；用户中心登录、刷新和角色卡接口使用 1.2.5。
 TAYGEDO_NATIVE_APP_VERSION = "1.2.5"
@@ -1098,14 +1099,43 @@ async def _sign_taygedo_games(
         # 角色卡是本次结果的权威名称，不能继续沿用旧凭据中的异环别名。
         role_account = f"{role_name}/{role_name}({role_id})"
         try:
-            state = await _get_game_sign_state(
-                access_token,
-                game_id,
-                client=client,
-                proxy=proxy,
+            state_result, rewards_result = await asyncio.gather(
+                _get_game_sign_state(
+                    access_token,
+                    game_id,
+                    client=client,
+                    proxy=proxy,
+                ),
+                _get_game_sign_rewards(
+                    access_token,
+                    game_id,
+                    client=client,
+                    proxy=proxy,
+                ),
+                return_exceptions=True,
             )
+            if isinstance(state_result, BaseException):
+                raise state_result
+            if not isinstance(state_result, dict):
+                raise ValueError("塔吉多游戏日常任务状态格式无效")
+            state = state_result
+            if isinstance(rewards_result, BaseException):
+                if isinstance(rewards_result, asyncio.CancelledError):
+                    raise rewards_result
+                _log_taygedo_exception(
+                    "塔吉多游戏日常任务奖励查询失败",
+                    rewards_result,
+                )
+                reward_data: dict[str, object] = {}
+            elif isinstance(rewards_result, dict):
+                reward_data = rewards_result
+            else:
+                reward_data = {}
+
+            days = _to_optional_int(state.get("days"))
             if _is_game_signed(state):
                 status = "已签到"
+                reward_day_index = days - 1 if days is not None else 0
             else:
                 status = await _submit_game_sign(
                     access_token,
@@ -1114,12 +1144,16 @@ async def _sign_taygedo_games(
                     client=client,
                     proxy=proxy,
                 )
+                reward_day_index = days if days is not None else 0
             return {
                 "account": role_account,
                 "game": game_name,
                 "platform": "塔吉多",
                 "status": status,
-                "reward": "",
+                "reward": _format_taygedo_rewards(
+                    reward_data,
+                    reward_day_index,
+                ),
                 "reason": "",
             }
         except Exception as exc:
@@ -1400,6 +1434,97 @@ def _deduplicate_game_roles(roles: list[dict[str, str]]) -> list[dict[str, str]]
     return unique
 
 
+def _reward_records(value: object) -> list[Mapping[str, object]]:
+    """读取塔吉多奖励接口已确认的列表字段。"""
+
+    if isinstance(value, Mapping):
+        nested = value.get("data")
+        if nested is not value:
+            records = _reward_records(nested)
+            if records:
+                return records
+        for key in ("rewards", "rewardList", "list", "items"):
+            entries = value.get(key)
+            if isinstance(entries, list):
+                return [
+                    entry for entry in entries if isinstance(entry, Mapping)
+                ]
+        return []
+    if isinstance(value, list):
+        return [entry for entry in value if isinstance(entry, Mapping)]
+    return []
+
+
+def _format_taygedo_rewards(
+    payload: Mapping[str, object], day_index: int
+) -> str:
+    """按签到日格式化塔吉多应用内游戏奖励。"""
+
+    rewards = _reward_records(payload)
+    if not rewards:
+        return ""
+
+    day = max(1, day_index + 1)
+    dated = [
+        reward
+        for reward in rewards
+        if any(
+            _to_optional_int(reward.get(key)) == day
+            for key in ("day", "days", "signDay")
+        )
+    ]
+    selected = (
+        dated
+        or ([rewards[day - 1]] if day <= len(rewards) else rewards)
+    )
+    parts: list[str] = []
+    for reward in selected:
+        name = next(
+            (
+                str(reward.get(key)).strip()
+                for key in ("name", "rewardName", "goodsName", "itemName")
+                if reward.get(key) not in (None, "")
+            ),
+            "",
+        )
+        if not name:
+            continue
+        raw_count = next(
+            (
+                reward.get(key)
+                for key in ("num", "count", "quantity")
+                if reward.get(key) not in (None, "")
+            ),
+            None,
+        )
+        count = (
+            None
+            if isinstance(raw_count, bool)
+            else _to_optional_int(raw_count)
+        )
+        count_text = str(count if count is not None else 1)
+        parts.append(name if count_text == "1" else f"{name}×{count_text}")
+    return "、".join(parts)
+
+
+def _format_community_reward(value: object) -> str:
+    """格式化塔吉多社区签到返回的已确认奖励字段。"""
+
+    if isinstance(value, Mapping) and isinstance(value.get("data"), Mapping):
+        value = value["data"]
+    if not isinstance(value, Mapping):
+        return ""
+
+    parts: list[str] = []
+    for key, label in (("exp", "经验"), ("goldCoin", "金币")):
+        raw_value = value.get(key)
+        if isinstance(raw_value, bool) or raw_value in (None, ""):
+            continue
+        if isinstance(raw_value, (int, float, str)):
+            parts.append(f"{label}{str(raw_value).strip()}")
+    return "、".join(parts)
+
+
 async def _get_game_sign_state(
     access_token: str,
     game_id: str,
@@ -1425,6 +1550,36 @@ async def _get_game_sign_state(
     data = _read_json(response, f"塔吉多游戏日常任务状态({game_id})")
     if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
         raise _api_error(f"塔吉多游戏日常任务状态({game_id})", response, data)
+    return data["data"]
+
+
+async def _get_game_sign_rewards(
+    access_token: str,
+    game_id: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+    proxy: str | None,
+) -> dict[str, object]:
+    """读取塔吉多应用内游戏签到奖励表。"""
+
+    if client is None:
+        async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
+            return await _get_game_sign_rewards(
+                access_token,
+                game_id,
+                client=owned_client,
+                proxy=proxy,
+            )
+
+    response = await client.get(
+        GAME_SIGNIN_REWARDS_URL,
+        params={"gameId": game_id},
+        headers=_h5_headers(access_token),
+        timeout=30.0,
+    )
+    data = _read_json(response, f"塔吉多游戏日常任务奖励({game_id})")
+    if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
+        raise _api_error(f"塔吉多游戏日常任务奖励({game_id})", response, data)
     return data["data"]
 
 
@@ -1676,11 +1831,11 @@ async def _community_sign(
                 )
                 data = _read_json(response, f"{community_name}签到")
                 message = str(data.get("msg") or data.get("message") or "").strip()
+                reward = _format_community_reward(data.get("data"))
                 if _is_code(data.get("code"), 0):
-                    # 社区签到接口会同时返回经验、塔塔币等社区奖励，签到通知不展示这些字段。
-                    return community_name, "成功", "", ""
+                    return community_name, "成功", "", reward
                 if _is_already_signed(message):
-                    return community_name, "已签到", "", ""
+                    return community_name, "已签到", "", reward
                 return (
                     community_name,
                     "失败",

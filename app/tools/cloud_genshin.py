@@ -170,37 +170,10 @@ def build_cloud_genshin_combo_token(combo_token: str, open_id: str) -> str:
     )
 
 
-def _headers(token: str, *, device_id: str = "") -> dict[str, str]:
-    resolved_device_id = device_id or str(
-        uuid.uuid3(uuid.NAMESPACE_URL, f"cloud-genshin:{token}")
-    )
-    return {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-        "Connection": "Keep-Alive",
-        "Content-Type": "application/json;charset=utf-8",
-        "Origin": "https://ys.mihoyo.com",
-        "Referer": "https://ys.mihoyo.com/",
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-        ),
-        "x-rpc-app_id": "4",
-        "x-rpc-app_version": "6.0.0",
-        "x-rpc-cg_game_biz": "hk4e_cn",
-        "x-rpc-channel": "mihoyo",
-        "x-rpc-client_type": "17",
-        "x-rpc-combo_token": token,
-        "x-rpc-cps": "mac_mihoyo",
-        "x-rpc-device_id": resolved_device_id,
-        "x-rpc-device_model": "Macintosh",
-        "x-rpc-device_name": "Apple Macintosh",
-        "x-rpc-language": "zh-cn",
-        "x-rpc-op_biz": "clgm_cn",
-        "x-rpc-sys_version": "Mac OS 10.15.7",
-        "x-rpc-vendor_id": "2",
-    }
+def _headers(token: str) -> dict[str, str]:
+    """构造普通云原神查询头；设备字段仅属于 Web 登录换凭据链路。"""
+
+    return {"x-rpc-combo_token": token}
 
 
 async def _request_json(
@@ -428,14 +401,14 @@ async def cloud_genshin_sign_in(
             proxy=resolved_proxy,
             trust_env=False,
         ) as client:
-            credential, from_miyoushe_cookie, device_id = (
+            credential, from_miyoushe_cookie, _device_id = (
                 await _prepare_cloud_genshin_credential(
                     client,
                     token,
                     proxy=resolved_proxy,
                 )
             )
-            headers = _headers(credential, device_id=device_id)
+            headers = _headers(credential)
             try:
                 before = await _query_free_time(client, headers)
                 notification_ids = await _list_notification_ids(client, headers)
