@@ -3536,6 +3536,10 @@ class BetterGIConfig(ConfigBase):
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
+        ## 是否以管理员权限启动 BetterGI。默认提权（贴近旧行为）；若 MAS 平时以非管理员
+        ## 运行、又不希望每次启动 BGI 都弹 UAC（无人值守任务尤其容易挂在授权上），可关闭。
+        ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
+        self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
 
         ## Game ------------------------------------------------------------
         ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）

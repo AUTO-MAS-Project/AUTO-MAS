@@ -423,7 +423,7 @@ class AutoProxyTask(TaskExecuteBase):
                 *self.bettergi_args,
                 target_process=self.script_target_process_info,
                 # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
-                elevated=not IS_ELEVATED,
+                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
             )
 
             # 启动日志监控（文件日志）
@@ -607,7 +607,7 @@ class AutoProxyTask(TaskExecuteBase):
                 account_switch.GROUP_NAME,
                 target_process=self.script_target_process_info,
                 # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
-                elevated=not IS_ELEVATED,
+                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
             )
             # open_process 内部 search_process 已确认目标进程存在，之后退出才算失败
             switch_result["started"] = True

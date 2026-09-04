@@ -124,7 +124,10 @@ class ScriptConfigTask(TaskExecuteBase):
         # 用户独立配置：先把该用户的一条龙配置载入 BetterGI，再打开 GUI 供其修改
         self._write_one_dragon_config()
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
-        await self.process_manager.open_process(self.exe_path, elevated=not IS_ELEVATED)
+        await self.process_manager.open_process(
+            self.exe_path,
+            elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+        )
         await self.wait_event.wait()
 
     async def final_task(self) -> None:
