@@ -53,6 +53,8 @@ from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
 
+from .launcher_start import dismiss_screensaver
+
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
     # IS_WINDOWS 检查一并惰性导入，避免非 Windows 环境在未启用切号时导入崩溃
@@ -690,6 +692,9 @@ def account_switch(
         on_log(msg)
 
     _on_log(f"开始切换异环账号：****{suffix}")
+    # 客户端已在运行时会跳过启动器流程，此处自行退屏保：挂机定时任务几乎必然
+    # 带屏保运行，避免截图全黑导致 OCR 找不到标题界面（对齐 ok-nte 上游行为）
+    dismiss_screensaver()
     try:
         hwnd = _find_game_hwnd()
         _activate_window(hwnd)

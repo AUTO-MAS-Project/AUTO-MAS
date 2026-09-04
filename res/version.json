@@ -31,6 +31,7 @@
                 "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
+                "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题",
                 "MAA专项 修复日常理智作战误用剿灭任务队列、导致计划表关卡被错误用于剿灭任务的问题",
                 "修复渲染进程崩溃后窗口永久黑屏的问题，崩溃会自动记录并重载窗口 by [@qiyinxi](https://github.com/qiyinxi)",
