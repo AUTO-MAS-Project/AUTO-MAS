@@ -140,11 +140,37 @@ def one_dragon_slot_path(root: Path) -> Path:
     return one_dragon_path(root, _MAS_ONE_DRAGON_SLOT_NAME)
 
 
-def remove_one_dragon_slot(root: Path) -> bool:
-    """删除 MAS 运行时槽位配置（幂等）。返回是否确实存在并删除了。"""
-    path = one_dragon_slot_path(root)
-    existed = path.exists()
-    path.unlink(missing_ok=True)
+def _slot_owner_path(script_id: str) -> Path:
+    """MAS 槽位占用标记：存在表示 ``{RootPath}/User/OneDragon/MAS独立配置.json``
+    当前由 MAS 写入（运行时槽位），而非用户自己的同名配置。"""
+    return Path.cwd() / "data" / script_id / ".mas_slot_owner"
+
+
+def _slot_backup_path(script_id: str) -> Path:
+    """写槽位前若该位置本是用户自己的同名配置，备份到此处；结束时恢复而非删除。"""
+    return Path.cwd() / "data" / script_id / ".mas_slot_backup.json"
+
+
+def remove_one_dragon_slot(root: Path, script_id: str) -> bool:
+    """删除 MAS 运行时槽位配置（幂等）。返回是否确实存在并删除了。
+
+    若写槽位前该位置本是用户自己的同名配置（已备份），则恢复原内容而非删除，
+    避免 MAS 运行时槽位覆盖并删掉用户配置（#498 二.2 附带窄路径）。
+    """
+    slot_path = one_dragon_slot_path(root)
+    owner_path = _slot_owner_path(script_id)
+    backup_path = _slot_backup_path(script_id)
+    if backup_path.exists():
+        # 写槽位前这里是用户自己的配置：恢复原内容，不删除
+        backup = read_file(backup_path)
+        backup_path.unlink(missing_ok=True)
+        if isinstance(backup, dict):
+            write_one_dragon(root, _MAS_ONE_DRAGON_SLOT_NAME, backup)
+        owner_path.unlink(missing_ok=True)
+        return slot_path.exists()
+    existed = slot_path.exists()
+    slot_path.unlink(missing_ok=True)
+    owner_path.unlink(missing_ok=True)
     return existed
 
 
@@ -308,7 +334,22 @@ def write_user_one_dragon(
         config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         config["AutoBossStrategyName"] = auto_boss_strategy_name
+    slot_path = one_dragon_slot_path(root)
+    owner_path = _slot_owner_path(script_id)
+    backup_path = _slot_backup_path(script_id)
+    # 槽位原本存在且非 MAS 占用（用户自己的同名配置）：备份，结束时恢复而非删除
+    if slot_path.exists() and not owner_path.exists():
+        backup = read_file(slot_path)
+        if isinstance(backup, dict):
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            write_file(backup_path, backup)
+        else:
+            backup_path.unlink(missing_ok=True)
+    else:
+        backup_path.unlink(missing_ok=True)
     write_one_dragon(root, _MAS_ONE_DRAGON_SLOT_NAME, config)
+    owner_path.parent.mkdir(parents=True, exist_ok=True)
+    owner_path.write_text(script_id, encoding="utf-8")
     write_file(user_path, config)
 
 

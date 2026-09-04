@@ -368,7 +368,9 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_root_path, self._reseed_global_config
             )
         finally:
-            one_dragon.remove_one_dragon_slot(self.script_root_path)
+            one_dragon.remove_one_dragon_slot(
+                self.script_root_path, self.script_info.script_id
+            )
             self._reseed_global_config = None
 
     async def main_task(self):

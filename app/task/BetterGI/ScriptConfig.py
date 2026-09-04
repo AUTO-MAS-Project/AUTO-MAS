@@ -141,7 +141,9 @@ class ScriptConfigTask(TaskExecuteBase):
         # 快照已固化到 per-user 副本，删除 MAS 运行时槽位，避免残留到 BGI GUI
         if self.use_mas_config:
             with suppress(Exception):
-                one_dragon.remove_one_dragon_slot(self.root_path)
+                one_dragon.remove_one_dragon_slot(
+                    self.root_path, self.script_info.script_id
+                )
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
@@ -154,7 +156,9 @@ class ScriptConfigTask(TaskExecuteBase):
             with suppress(Exception):
                 self._snapshot_one_dragon_config()
             with suppress(Exception):
-                one_dragon.remove_one_dragon_slot(self.root_path)
+                one_dragon.remove_one_dragon_slot(
+                    self.root_path, self.script_info.script_id
+                )
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
