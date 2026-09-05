@@ -1180,13 +1180,13 @@ def _find_uv_executable(bootstrap: str) -> str | None:
     if portable_uv.is_file():
         return str(portable_uv)
 
-    runtime_uv = _runtime_managed_uv_executable()
+    runtime_uv = runtime_managed_uv_executable()
     if runtime_uv is not None:
         return runtime_uv
     return shutil.which("uv")
 
 
-def _runtime_managed_uv_executable() -> str | None:
+def runtime_managed_uv_executable() -> str | None:
     """AUTO-MAS Runtime 自己装的那把固定版本 uv。
 
     受管模式下 Runtime 根目录就是应用根目录，也就是后端进程的 cwd，uv 落在
