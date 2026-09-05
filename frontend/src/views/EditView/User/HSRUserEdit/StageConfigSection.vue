@@ -166,9 +166,9 @@
       <a-col :span="12">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <a-tooltip :title="t('edit.pickDivergentUniverseStage')">
+            <a-tooltip :title="t('edit.pickEchoOfWarStage')">
               <span class="form-label">
-                {{ t('edit.divergentUniverse') }}
+                {{ t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -192,7 +192,7 @@
           <template #label>
             <a-tooltip :title="t('edit.startDayIfIt')">
               <span class="form-label">
-                {{ t('edit.divergentUniverseStartDay') }}
+                {{ t('edit.echoOfWarStartDay') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>

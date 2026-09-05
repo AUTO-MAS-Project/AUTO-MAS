@@ -782,7 +782,7 @@ export default {
     whatDoWhenSwitching: 'What to do when switching accounts',
     delete: 'Delete',
     matchPattern: 'Match pattern',
-    divergentUniverse: 'Divergent Universe',
+    echoOfWar: 'Echo of War',
     argumentsGeneratedFromTask:
       'Arguments are generated from the task configuration; -e is always appended',
     startTaskTN: 'Start task (-t N)',
@@ -936,7 +936,7 @@ export default {
     closeGameAfterTask2: 'Close the game after the task',
     taskQueue: 'Task queue',
     taskQueueConfiguration: 'Task queue configuration',
-    sanityConfiguration: 'Sanity configuration',
+    sanityConfiguration: 'Trailblaze Power',
     author: 'Author',
     useThisUserS: "Use this user's own configuration, isolated from the script configuration.",
     useSharedScriptLevel: 'Use the shared script-level configuration for every user.',
@@ -948,7 +948,7 @@ export default {
     exampleTaskDoneSuccess: "For example: task done{'|'}success{'|'}failed",
     exampleTaskRun: 'For example: task run',
     exampleTaskFinished: 'For example: task finished',
-    cavernsCorrosion: 'Caverns of Corrosion',
+    cavernsCorrosion: 'Cavern of Corrosion',
     cavernsCorrosionRelicDomains: 'Caverns of Corrosion: relic domains',
     couldNotSaveOk: 'Could not save the OK-NTE configuration',
     couldNotSaveOk2: 'Could not save the ok-ww settings',
@@ -962,7 +962,7 @@ export default {
     shareThisConfigurationConfig: 'Share this configuration on the config-sharing site',
     deleteThisTask: 'Delete this task',
     startDayIfIt:
-      'On the start day, if it is not done this week, MAS hands Divergent Universe to M7A/SRA; once the log confirms completion it is skipped for the rest of the week.',
+      'On the start day, if it is not done this week, MAS hands Echo of War to M7A/SRA; once the log confirms completion it is skipped for the rest of the week.',
     farmStages: 'Farm stages',
     daysLeft1Means:
       'Days left; -1 means unlimited, 0 means it expires today, a positive number means N days remain',
@@ -977,7 +977,7 @@ export default {
     lineMatchingThisPattern:
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
-    divergentUniverseStartDay: 'Divergent Universe start day',
+    echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
     sendStatistics: 'Send statistics',
@@ -1385,7 +1385,7 @@ export default {
     chooseWhetherMasSwitches:
       "Choose whether MAS switches between the accounts saved in the game, or MAAEND's built-in task switches by the last four digits of the account",
     pickStageFarmThis: 'Pick the stage to farm; this field is written to Stage.Channel.',
-    pickDivergentUniverseStage: 'Pick the Divergent Universe stage to run.',
+    pickEchoOfWarStage: 'Pick the Echo of War stage to run.',
     pickProjectDirectory: 'Pick the project directory',
     pickGameSOwn: "Pick the game's own exe",
     generalScriptConfiguration: 'General script configuration',

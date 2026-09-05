@@ -217,7 +217,7 @@
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">{{ t('edit.divergentUniverse') }}</span>
+                  <span class="progress-label">{{ t('edit.echoOfWar') }}</span>
                   <a-tag :color="eowCompletedThisWeek ? 'green' : 'orange'">
                     本周 {{ eowCompletedThisWeek ? '已完成' : '未完成' }}
                   </a-tag>
