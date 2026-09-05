@@ -29,13 +29,10 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
 DroppedOverrideReason = Literal["unknown", "type"]
-
-DROPPED_OVERRIDE_WARNING_KIND = "dropped_override"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,24 +48,16 @@ class DroppedOverride:
             return f"{self.key}：当前原生配置没有该字段"
         return f"{self.key}：保存的值类型与原生配置不一致"
 
-    def as_warning(self) -> str:
-        """编码成 ``HSRManagedForm.warnings`` 里的一条。
+    def asdict(self) -> dict[str, Any]:
+        """``HSRManagedForm.dropped_overrides`` 里的一条，形状对齐
+        ``HSRManagedDroppedOverride``。"""
 
-        托管表单的响应模型只有 ``warnings: list[str]`` 这一个逐表单通道，这里
-        用 JSON 字串承载结构化信息，前端按 ``kind`` 识别并还原成键与原因。
-        """
-
-        return json.dumps(
-            {
-                "kind": DROPPED_OVERRIDE_WARNING_KIND,
-                "key": self.key,
-                "reason": self.reason,
-                "value": self.value,
-                "message": self.describe(),
-            },
-            ensure_ascii=False,
-            default=str,
-        )
+        return {
+            "key": self.key,
+            "reason": self.reason,
+            "value": self.value,
+            "message": self.describe(),
+        }
 
 
 def same_value_kind(value: Any, reference: Any) -> bool:
@@ -125,7 +114,6 @@ def log_dropped_overrides(
 
 
 __all__ = [
-    "DROPPED_OVERRIDE_WARNING_KIND",
     "DroppedOverride",
     "DroppedOverrideReason",
     "log_dropped_overrides",

@@ -32,6 +32,7 @@ import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
 import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
 import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
+import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
@@ -126,7 +127,10 @@ import { request as __request } from '../core/request';
 export class Service {
     /**
      * 获取后端就绪状态
-     * 返回核心 API 与后台初始化状态。
+     * 返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
+     *
+     * version/commit 受监督且监督器注入了期望值时原样回显，否则分别回退到本地版本号
+     * 与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
      * @returns BackendHealthOut Successful Response
      * @throws ApiError
      */
@@ -1010,6 +1014,27 @@ export class Service {
         });
     }
     /**
+     * 获取 HSR 可选的 SRA 配置档案
+     * 列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。
+     * @param scriptId
+     * @returns HSRSRAProfilesOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrSraProfilesApiApiScriptsHsrSraProfilesGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<HSRSRAProfilesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/sra-profiles',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 导入 HSR 原生配置快照
      * @param requestBody
      * @returns HSRDirectConfigImportOut Successful Response
@@ -1021,6 +1046,26 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/hsr/direct-config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清除 HSR 用户的直控配置快照
+     * 清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。
+     * @param requestBody
+     * @returns HSRDirectConfigImportOut Successful Response
+     * @throws ApiError
+     */
+    public static clearHsrDirectConfigApiApiScriptsHsrDirectConfigClearPost(
+        requestBody: HSRDirectConfigImportIn,
+    ): CancelablePromise<HSRDirectConfigImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/direct-config/clear',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

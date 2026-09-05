@@ -80,6 +80,10 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     effective = list(configured)
     adapters: list[dict[str, Any]] = []
     warnings: list[str] = []
+    if "SRA" in configured:
+        fallback_note = _sra_profile_fallback_note(script_config)
+        if fallback_note:
+            warnings.append(fallback_note)
     for engine in _HSR_ENGINES:
         snapshot = _inspect_engine(script_config, engine)
         import_ready = snapshot.get("import_ready")
@@ -158,6 +162,69 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     }
 
 
+def _sra_profile_fallback_note(script_config: Any) -> str | None:
+    """脚本配置的 SRA 档案不存在时的一句提示；没有回退时为 ``None``。"""
+
+    from .sra_runtime import resolve_sra_profile_selection
+
+    try:
+        selection = resolve_sra_profile_selection(script_config)
+    except OSError:
+        return None
+    return selection.fallback_reason if selection.fallback else None
+
+
+def build_sra_profiles(script_config: Any) -> dict[str, Any]:
+    """列出 ``%APPDATA%/SRA/configs`` 下可选的 SRA 配置档案。
+
+    ``configured`` 是脚本 ``Info.SRAProfile`` 的原值（空串＝自动），``selected``
+    是本次实际生效的档案；两者不一致且 ``fallback`` 为真，说明配置的档案文件
+    已不存在。``auto_id`` 供前端把「自动」选项标成「自动（Default）」。
+    """
+
+    from .sra_runtime import (
+        _script_sra_profile_setting,
+        list_sra_profiles,
+        resolve_sra_profile_selection,
+    )
+
+    selection = resolve_sra_profile_selection(script_config)
+    auto = resolve_sra_profile_selection(
+        {"Info": {"SRAProfile": ""}}, config_root=selection.root
+    )
+    profiles = list_sra_profiles(selection.root)
+    if not selection.root.is_dir():
+        unavailable_reason: str | None = (
+            f"未找到 SRA 配置目录 {selection.root}，请先在 SRA 中保存一次设置"
+        )
+    elif not profiles:
+        unavailable_reason = (
+            f"SRA 配置目录 {selection.root} 下没有任何配置档案，"
+            "请先在 SRA 中保存一次设置"
+        )
+    else:
+        unavailable_reason = None
+    return {
+        "engine": "SRA",
+        "root": str(selection.root),
+        "available": unavailable_reason is None,
+        "unavailable_reason": unavailable_reason,
+        "configured": _script_sra_profile_setting(script_config),
+        "auto_id": auto.selected_id,
+        "selected": selection.selected_id,
+        "fallback": selection.fallback,
+        "fallback_reason": selection.fallback_reason,
+        "profiles": [
+            {
+                "id": item.stem,
+                "path": str(item),
+                "selected": item == selection.path,
+            }
+            for item in profiles
+        ],
+    }
+
+
 def build_managed_config(
     script_config: Any,
     user_config: Any | None = None,
@@ -178,6 +245,10 @@ def build_managed_config(
         module.key: {} for module in HSR_TASK_MODULES
     }
     warnings: list[str] = []
+    if "SRA" in effective_set:
+        fallback_note = _sra_profile_fallback_note(script_config)
+        if fallback_note:
+            warnings.append(fallback_note)
     for engine in effective:
         try:
             modules = list_managed_modules(engine, script_config, user_config)
@@ -317,6 +388,7 @@ async def clear_direct_config(
 __all__ = [
     "build_capabilities",
     "build_managed_config",
+    "build_sra_profiles",
     "build_stage_options",
     "clear_direct_config",
     "import_direct_config",

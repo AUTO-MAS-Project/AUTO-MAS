@@ -1427,6 +1427,37 @@ async def get_hsr_managed_config_api(
         )
 
 
+@router.get(
+    "/hsr/sra-profiles",
+    tags=["HSR"],
+    summary="获取 HSR 可选的 SRA 配置档案",
+    response_model=HSRSRAProfilesOut,
+    status_code=200,
+)
+async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfilesOut:
+    """列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。"""
+
+    try:
+        if not scriptId:
+            return HSRSRAProfilesOut(code=400, status="error", message="缺少 scriptId")
+        script_config = _hsr_script_config(scriptId)
+        from app.task.HSR.tools.api import build_sra_profiles
+
+        data = HSRSRAProfilesData(**build_sra_profiles(script_config))
+        return HSRSRAProfilesOut(
+            message=f"共 {len(data.profiles)} 份 SRA 配置档案",
+            data=data,
+        )
+    except Exception as e:
+        return HSRSRAProfilesOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
 @router.post(
     "/hsr/direct-config/import",
     tags=["HSR"],

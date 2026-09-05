@@ -462,6 +462,102 @@ def get_sra_app_data_dir() -> Path:
     return Path.home() / ".config" / "SRA"
 
 
+def _script_sra_profile_setting(script_config: Any) -> str:
+    """读脚本 ``Info.SRAProfile``；兼容 ConfigBase 与测试里的普通字典。"""
+
+    if script_config is None:
+        return ""
+    if isinstance(script_config, dict):
+        section = script_config.get("Info")
+        value = section.get("SRAProfile") if isinstance(section, dict) else None
+    else:
+        try:
+            value = script_config.get("Info", "SRAProfile")
+        except (AttributeError, KeyError, TypeError):
+            value = None
+    return str(value or "").strip()
+
+
+def list_sra_profiles(config_root: Path | None = None) -> list[Path]:
+    """``configs`` 目录下全部档案文件，按文件名稳定排序；目录不存在时为空。"""
+
+    root = (
+        Path(config_root)
+        if config_root is not None
+        else get_sra_app_data_dir() / "configs"
+    )
+    if not root.is_dir():
+        return []
+    return sorted(
+        (item for item in root.glob("*.json") if item.is_file()),
+        key=lambda item: item.name.casefold(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SRAProfileSelection:
+    """一次 SRA 档案选择的完整结果。
+
+    ``resolve_sra_profile`` 只交回 ``(selected_id, path)``；需要向用户解释
+    「配置的档案不存在、已回退」的调用方（能力快照、托管表单、档案列表端点、
+    运行前检查）改用本结构，``fallback`` 为真时 ``fallback_reason`` 是现成的
+    一句人话。
+    """
+
+    root: Path
+    requested_id: str
+    selected_id: str
+    path: Path
+    fallback: bool = False
+    fallback_reason: str | None = None
+
+
+def _auto_sra_profile(root: Path) -> tuple[str, Path]:
+    """原有的自动选择：优先 ``Default.json``，否则按文件名排序取第一份。"""
+
+    default_path = root / "Default.json"
+    if default_path.is_file():
+        return "Default", default_path
+    candidates = list_sra_profiles(root)
+    if candidates:
+        selected = candidates[0]
+        return selected.stem, selected
+    return "Default", default_path
+
+
+def resolve_sra_profile_selection(
+    script_config: Any,
+    *,
+    config_root: Path | None = None,
+) -> SRAProfileSelection:
+    """按脚本 ``Info.SRAProfile`` 选档案；配了但文件不存在时回退并记下原因。"""
+
+    root = (
+        Path(config_root)
+        if config_root is not None
+        else get_sra_app_data_dir() / "configs"
+    )
+    requested = _script_sra_profile_setting(script_config)
+    if requested:
+        requested_path = root / f"{requested}.json"
+        if requested_path.is_file():
+            return SRAProfileSelection(root, requested, requested, requested_path)
+        auto_id, auto_path = _auto_sra_profile(root)
+        return SRAProfileSelection(
+            root,
+            requested,
+            auto_id,
+            auto_path,
+            fallback=True,
+            fallback_reason=(
+                f"脚本配置的 SRA 配置档案「{requested}」不存在（{requested_path}），"
+                f"已改用「{auto_id}」"
+            ),
+        )
+    auto_id, auto_path = _auto_sra_profile(root)
+    return SRAProfileSelection(root, "", auto_id, auto_path)
+
+
 def resolve_sra_profile(
     script_config: Any,
     *,
@@ -469,31 +565,14 @@ def resolve_sra_profile(
 ) -> tuple[str, Path]:
     """Resolve the one SRA native profile shared by inspect, forms and runtime.
 
-    The conventional ``Default.json`` is preferred when present; otherwise
-    the first profile in stable filename order is selected.
+    The script's ``Info.SRAProfile`` wins when that file exists.  Otherwise the
+    conventional ``Default.json`` is preferred when present, else the first
+    profile in stable filename order is selected.  Callers that need to tell
+    the user about a fallback use :func:`resolve_sra_profile_selection`.
     """
 
-    root = (
-        Path(config_root)
-        if config_root is not None
-        else get_sra_app_data_dir() / "configs"
-    )
-    default_path = root / "Default.json"
-    if default_path.is_file():
-        return "Default", default_path
-
-    candidates = (
-        sorted(
-            (item for item in root.glob("*.json") if item.is_file()),
-            key=lambda item: item.name.casefold(),
-        )
-        if root.is_dir()
-        else []
-    )
-    if candidates:
-        selected = candidates[0]
-        return selected.stem, selected
-    return "Default", default_path
+    selection = resolve_sra_profile_selection(script_config, config_root=config_root)
+    return selection.selected_id, selection.path
 
 
 def disable_sra_windows_notifications() -> Path:

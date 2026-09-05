@@ -190,7 +190,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { RightOutlined } from '@ant-design/icons-vue'
 import {
-  parseHSRDroppedOverrides,
+  getHSRDroppedOverrides,
   type HSRDroppedOverride,
   type HSRDroppedOverrideReason,
   type HSREngine,
@@ -259,7 +259,7 @@ const selectedForm = computed(() => {
 })
 
 const droppedOverridesOf = (task: HSRManagedTask, engine = mappedEngine(task)) =>
-  engine ? parseHSRDroppedOverrides(task.forms?.[engine]?.warnings) : []
+  engine ? getHSRDroppedOverrides(task.forms?.[engine]) : []
 
 const selectedDroppedOverrides = computed<HSRDroppedOverride[]>(() =>
   selectedTask.value ? droppedOverridesOf(selectedTask.value, selectedEngine.value) : []

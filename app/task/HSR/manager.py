@@ -80,6 +80,7 @@ from .tools.sra_runtime import (
     disable_sra_windows_notifications,
     get_sra_app_data_dir,
     load_sra_native_config,
+    resolve_sra_profile_selection,
 )
 from .tools.stage_runtime import resolve_configured_daily_stages
 
@@ -463,6 +464,10 @@ class HSRManager(TaskExecuteBase):
             if m7a_needed:
                 load_m7a_native_config(script_config)
             if sra_needed:
+                # 脚本配置的档案不存在时 resolve 会静默回退；运行日志里要说清。
+                profile = resolve_sra_profile_selection(script_config)
+                if profile.fallback and profile.fallback_reason:
+                    self._append_log(profile.fallback_reason)
                 load_sra_native_config(script_config)
         except (FileNotFoundError, OSError, ValueError) as exc:
             return f"HSR 原生配置不可用：{exc}"

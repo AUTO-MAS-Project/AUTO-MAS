@@ -19,6 +19,7 @@ from .m7a_config import (
     managed_modules_for_key,
     overlay_m7a_managed_options,
 )
+from .managed_overlay import DroppedOverride
 from .native_control import _script_path
 from .sra_runtime import (
     discover_sra_managed_options,
@@ -58,8 +59,9 @@ class HSRManagedField:
 class HSRManagedModule:
     """一个引擎下一个模块的托管表单。
 
-    ``warnings`` 里每条都是 ``DroppedOverride.as_warning()`` 编出来的 JSON 字串，
-    记录该模块被忽略的 ``Managed.Options`` 覆盖键；前端据此提示并提供清理入口。
+    ``warnings`` 只放人类可读的表单级提示（如三月七助手缺配置说明文件）；
+    ``dropped_overrides`` 记录该模块被忽略的 ``Managed.Options`` 覆盖键，
+    前端据此提示并提供清理入口。
     """
 
     key: str
@@ -67,11 +69,13 @@ class HSRManagedModule:
     fields: tuple[HSRManagedField, ...]
     source: str
     warnings: tuple[str, ...] = ()
+    dropped_overrides: tuple[DroppedOverride, ...] = ()
 
     def asdict(self) -> dict[str, Any]:
         data = asdict(self)
         data["fields"] = [item.asdict() for item in self.fields]
         data["warnings"] = list(self.warnings)
+        data["dropped_overrides"] = [item.asdict() for item in self.dropped_overrides]
         return data
 
 
@@ -342,7 +346,7 @@ def list_sra_managed_modules(
                 "SRA",
                 fields,
                 str(source),
-                warnings=tuple(item.as_warning() for item in dropped),
+                dropped_overrides=dropped,
             )
         )
     return tuple(result)
@@ -467,8 +471,8 @@ def list_m7a_managed_modules(
             "M7A",
             tuple(fields),
             str(source),
-            warnings=module_warnings
-            + tuple(item.as_warning() for item in overlay_by_module[key][1]),
+            warnings=module_warnings,
+            dropped_overrides=tuple(overlay_by_module[key][1]),
         )
         for key, fields in buckets.items()
     )

@@ -6,6 +6,7 @@ import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
 import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
 import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
+import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -90,6 +91,27 @@ export class HsrService {
         });
     }
     /**
+     * 获取 HSR 可选的 SRA 配置档案
+     * 列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。
+     * @param scriptId
+     * @returns HSRSRAProfilesOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrSraProfilesApiApiScriptsHsrSraProfilesGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<HSRSRAProfilesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/sra-profiles',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 导入 HSR 原生配置快照
      * @param requestBody
      * @returns HSRDirectConfigImportOut Successful Response
@@ -101,6 +123,26 @@ export class HsrService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/hsr/direct-config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清除 HSR 用户的直控配置快照
+     * 清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。
+     * @param requestBody
+     * @returns HSRDirectConfigImportOut Successful Response
+     * @throws ApiError
+     */
+    public static clearHsrDirectConfigApiApiScriptsHsrDirectConfigClearPost(
+        requestBody: HSRDirectConfigImportIn,
+    ): CancelablePromise<HSRDirectConfigImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/direct-config/clear',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
