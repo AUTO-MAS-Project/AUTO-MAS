@@ -104,6 +104,25 @@ jobs:
           }
         shell: pwsh
 
+      - name: 校验 Runtime 后台更新协议
+        shell: pwsh
+        run: |
+          $runtimeExe = Join-Path '${{ github.workspace }}' 'runtime/auto-mas-runtime.exe'
+          foreach ($probe in @(
+            @{ Arguments = @('workspace', 'stage', '--version', 'invalid') },
+            @{ Arguments = @('bootstrap', '--version', 'invalid', '--if-needed') }
+          )) {
+            $probeArguments = $probe.Arguments
+            $output = @(& $runtimeExe --app-root $env:RUNNER_TEMP --output ndjson --protocol 1 @probeArguments)
+            $exitCode = $LASTEXITCODE
+            $result = $output | ForEach-Object { $_ | ConvertFrom-Json } |
+              Where-Object { $_.type -eq 'result' } | Select-Object -Last 1
+            if ($exitCode -ne 2 -or -not $result -or $result.code -ne 'INVALID_VERSION') {
+              throw 'RUNTIME_VERSION 必须指向包含 T13.13 后台更新能力的已发布 Runtime。'
+            }
+          }
+          exit 0
+
       - name: 构建应用程序
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

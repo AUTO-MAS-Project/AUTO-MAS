@@ -17,6 +17,7 @@ import {
   RuntimeClient,
   RuntimeRemediation,
   RuntimeRunResult,
+  RuntimeRunControl,
   RuntimeSuperviseHandle,
   RuntimeSupervisedLaunchConfig,
   createRuntimeClient,
@@ -26,6 +27,7 @@ import {
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
 } from './runtime'
+import { resolveRuntimeTargetVersion } from './runtimeInitializationService'
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
@@ -98,6 +100,14 @@ export interface BackendStopResult {
   error?: string
 }
 
+export interface RuntimeBackendUpdateCheck {
+  updateAvailable: boolean
+  staged?: boolean
+  currentCommit?: string
+  remoteCommit?: string
+  error?: string
+}
+
 export type BackendStatusCallback = (status: BackendStatus) => void
 
 // ==================== 后端服务管理类 ====================
@@ -123,6 +133,11 @@ export class BackendService {
   // Runtime 监督链路的句柄与就绪地址；旧链路下始终为 null。
   private runtimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeBaseUrl: string | null = null
+  private runtimeStopping = false
+  private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
+  private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
+  private readonly runtimeCommands = new Set<RuntimeRunControl>()
+  private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
 
   private readonly startupHealthPath = '/api/core/health'
 
@@ -305,8 +320,8 @@ export class BackendService {
    * 3. 后端地址取事件里的 `details.baseUrl`，不按 `resolveHttpPort()` 自行拼装。
    *
    * `development` 模式在 supervise 之前先跑一次 `environment ensure`：`backend supervise` 本身
-   * 不下载 uv，Runtime 根目录没种过 uv 时会直接以 `UV_EXEC_FAILED` 失败；`managed` 模式的
-   * `bootstrap` 已包含这一步，不重复。
+   * 不下载 uv，Runtime 根目录没种过 uv 时会直接以 `UV_EXEC_FAILED` 失败。managed 每次启动
+   * 先 bootstrap，消费已暂存的同分支更新，并在新进程启动前同步依赖。
    */
   private async startBackendViaRuntime(
     config: RuntimeSupervisedLaunchConfig,
@@ -316,6 +331,10 @@ export class BackendService {
       logger.info('Runtime 已在监督后端，跳过重复启动')
       return { success: true }
     }
+    if (this.stopFlight || this.forceStopRequested) {
+      return { success: false, error: '正在关闭后端，取消启动' }
+    }
+    this.runtimeStopping = false
 
     const runtimePath = config.runtimePath
     if (!runtimePath) {
@@ -349,6 +368,29 @@ export class BackendService {
     if (config.mode === 'development') {
       const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
       if (failure) return failure
+    } else {
+      try {
+        const current = await this.runRuntimePreparation(client, ['workspace', 'check'])
+        if (!current.success) return this.buildRuntimeStartFailure(current, [], [])
+        const details = current.result.details
+        const version =
+          details.healthy === true && typeof details.version === 'string'
+            ? details.version
+            : resolveRuntimeTargetVersion()
+        const prepared = await this.runRuntimePreparation(client, [
+          'bootstrap',
+          '--version',
+          version,
+          '--if-needed',
+        ])
+        if (!prepared.success) return this.buildRuntimeStartFailure(prepared, [], [])
+        this.runtimeUpdateReady = null
+      } catch (error) {
+        return this.buildRuntimeStartFailure(error, [], [])
+      }
+    }
+    if (this.runtimeStopping) {
+      return { success: false, error: '正在关闭后端，取消启动' }
     }
 
     // 后端 stdout / stderr 由 Runtime 逐行包装成 log 事件转发，这里按流分开累积，
@@ -755,7 +797,11 @@ export class BackendService {
    */
   stopBackend(): Promise<BackendStopResult> {
     if (this.stopFlight) return this.stopFlight
-    const operation = this.enqueueOperation(() => this.stopBackendInternal())
+    const cancelled = this.cancelRuntimePreparations()
+    const operation = this.enqueueOperation(async () => {
+      await cancelled
+      return this.stopBackendInternal()
+    })
     this.stopFlight = operation
     void operation.then(
       () => {
@@ -769,6 +815,7 @@ export class BackendService {
   }
 
   private async stopBackendInternal(): Promise<BackendStopResult> {
+    await this.cancelRuntimePreparations()
     if (this.isRuntimeSupervised()) {
       return this.stopBackendViaRuntime()
     }
@@ -939,7 +986,9 @@ export class BackendService {
   forceStopBackend(): Promise<BackendStopResult> {
     this.forceStopRequested = true
     if (this.forceStopFlight) return this.forceStopFlight
+    const cancelled = this.cancelRuntimePreparations()
     const operation = this.enqueueOperation(async () => {
+      await cancelled
       logger.warn('强制结束后端相关进程')
       try {
         await killAllRelatedProcesses(this.appRoot)
@@ -1025,6 +1074,137 @@ export class BackendService {
       pid: this.backendProcess?.pid,
       startTime: this.startTime || undefined,
       runtimeSupervised: this.isRuntimeSupervised(),
+    }
+  }
+
+  /** 检查 managed 受管仓库的同分支远端 Commit，并在后台准备可供下次启动启用的更新。 */
+  checkRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
+    if (this.runtimeStopping || this.startFlight) return Promise.resolve({ updateAvailable: false })
+    if (this.runtimeUpdateReady) return Promise.resolve(this.runtimeUpdateReady)
+    if (this.runtimeUpdateFlight) return this.runtimeUpdateFlight
+    const operation = this.prepareRuntimeBackendUpdate()
+      .then(result => {
+        if (result.staged) this.runtimeUpdateReady = result
+        if (result.error) logger.debug(`后台后端更新未完成: ${result.error}`)
+        return result
+      })
+      .finally(() => {
+        this.runtimeUpdateFlight = null
+      })
+    this.runtimeUpdateFlight = operation
+    return operation
+  }
+
+  private async prepareRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
+    const config = resolveRuntimeLaunchConfig(this.appRoot)
+    if (config.mode !== 'managed' || !config.runtimePath) return { updateAvailable: false }
+    try {
+      const client = createRuntimeClient({
+        runtimePath: config.runtimePath,
+        appRoot: config.appRoot,
+        dataRoot: config.dataRoot,
+        launchMode: config.mode,
+      })
+      const outcome = await this.runRuntimePreparation(client, ['workspace', 'check', '--remote'])
+      if (!outcome.success) {
+        return { updateAvailable: false, error: `${outcome.code}: ${outcome.result.message}` }
+      }
+      const details = outcome.result.details
+      const updateAvailable = details.updateAvailable === true
+      if (updateAvailable) {
+        const version = typeof details.version === 'string' ? details.version : undefined
+        if (!version) {
+          return {
+            updateAvailable: true,
+            staged: false,
+            currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+            remoteCommit:
+              typeof details.remoteCommit === 'string' ? details.remoteCommit : undefined,
+            error: 'Runtime 远端检查未返回当前版本',
+          }
+        }
+        const stageOutcome = await this.runRuntimePreparation(client, [
+          'workspace',
+          'stage',
+          '--version',
+          version,
+        ])
+        if (!stageOutcome.success) {
+          return {
+            updateAvailable: true,
+            staged: false,
+            currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+            remoteCommit:
+              typeof details.remoteCommit === 'string' ? details.remoteCommit : undefined,
+            error: `${stageOutcome.code}: ${stageOutcome.result.message}`,
+          }
+        }
+        return {
+          updateAvailable,
+          staged: stageOutcome.result.details.staged === true,
+          currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+          remoteCommit:
+            typeof stageOutcome.result.details.commit === 'string'
+              ? stageOutcome.result.details.commit
+              : undefined,
+        }
+      }
+      return {
+        updateAvailable,
+        staged: false,
+        currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+        remoteCommit: typeof details.remoteCommit === 'string' ? details.remoteCommit : undefined,
+      }
+    } catch (error) {
+      return {
+        updateAvailable: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  /** 跟踪一次性准备命令，使退出时的取消覆盖握手和下载两个阶段。 */
+  private async runRuntimePreparation(
+    client: RuntimeClient,
+    args: string[]
+  ): Promise<RuntimeRunResult> {
+    if (this.runtimeStopping) throw new Error('应用正在关闭，取消后端准备')
+    let control: RuntimeRunControl | undefined
+    const operation = client.run(args, {
+      onStarted: started => {
+        control = started
+        this.runtimeCommands.add(started)
+        if (this.runtimeStopping) started.kill()
+      },
+      onProgress: event => logger.debug(`Runtime ${event.stage}: ${event.message}`),
+    })
+    this.runtimeRuns.add(operation)
+    try {
+      return await operation
+    } finally {
+      this.runtimeRuns.delete(operation)
+      if (control) this.runtimeCommands.delete(control)
+    }
+  }
+
+  private async cancelRuntimePreparations(): Promise<void> {
+    this.runtimeStopping = true
+    if (this.runtimeRuns.size === 0) return
+    for (const control of this.runtimeCommands) {
+      try {
+        control.cancel()
+      } catch {
+        control.kill()
+      }
+    }
+    const timer = setTimeout(() => {
+      for (const control of this.runtimeCommands) control.kill()
+    }, 5000)
+    timer.unref?.()
+    try {
+      await Promise.allSettled([...this.runtimeRuns])
+    } finally {
+      clearTimeout(timer)
     }
   }
 

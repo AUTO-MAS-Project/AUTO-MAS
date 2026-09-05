@@ -12,7 +12,7 @@ import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV, RuntimeClient } from './runtime'
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 // resolveRuntimeLaunchMode 的构建默认值这一级要读 app.isPackaged；本文件全部用例都显式
 // 设置 RUNTIME_MODE_ENV 走环境变量这一级，isPackaged 固定 false 即可，不需要逐用例切换。
-vi.mock('electron', () => ({ app: { isPackaged: false } }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getVersion: () => 'v5.5.0-beta.3' } }))
 vi.mock('../utils/processManager', () => ({
   killAllRelatedProcesses: vi.fn(async () => undefined),
 }))
@@ -225,6 +225,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   delete process.env[RUNTIME_MODE_ENV]
   delete process.env[RUNTIME_EXE_ENV]
@@ -690,18 +691,28 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
-  it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
+  it('启动前按当前后端版本 bootstrap，完成后才 supervise', async () => {
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
     const service = createService()
     mockSpawn()
+    const run = vi
+      .spyOn(RuntimeClient.prototype, 'run')
+      .mockResolvedValueOnce({
+        success: true,
+        result: { details: { healthy: true, version: 'v10.0.0' } },
+      } as never)
+      .mockResolvedValueOnce({ success: true } as never)
 
     const pending = service.startBackend()
-    // managed 的 bootstrap 已包含 uv 准备，第一次 spawn 直接就是 supervise。
     const child = await waitForSpawn()
     child.stdout.feed(helloLine + runningStateLine)
 
     expect(await pending).toEqual({ success: true })
+    expect(run.mock.calls.map(call => call[0])).toEqual([
+      ['workspace', 'check'],
+      ['bootstrap', '--version', 'v10.0.0', '--if-needed'],
+    ])
     expect(spawnMock).toHaveBeenCalledTimes(1)
     expect(spawnedArgs().slice(0, 2)).toEqual(['--app-root', appRoot])
     expect(spawnedArgs().slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
@@ -711,5 +722,110 @@ describe('managed 模式', () => {
 
     child.stdout.feed(stoppedResultLine)
     child.close(0)
+  })
+
+  it('启动准备失败时不启动后端', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const run = vi
+      .spyOn(RuntimeClient.prototype, 'run')
+      .mockResolvedValueOnce({
+        success: true,
+        result: { details: { healthy: true, version: 'v10.0.0' } },
+      } as never)
+      .mockRejectedValueOnce(new Error('dependency failure'))
+    const result = await createService().startBackend()
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('dependency failure')
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('后台同分支更新', () => {
+  beforeEach(() => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+  })
+
+  it.each([
+    { success: false, code: 'MUTATION_IN_PROGRESS', staged: false },
+    { success: true, code: 'OK', staged: false },
+    { success: true, code: 'OK', staged: true },
+  ])('只按 stage 成功结果通知就绪：$success/$staged', async expected => {
+    const run = vi
+      .spyOn(RuntimeClient.prototype, 'run')
+      .mockResolvedValueOnce({
+        success: true,
+        result: {
+          details: {
+            version: 'v5.5.0-beta.3',
+            commit: 'old',
+            remoteCommit: 'new',
+            updateAvailable: true,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        success: expected.success,
+        code: expected.code,
+        result: { message: 'test', details: { staged: expected.staged, commit: 'prepared' } },
+      } as never)
+    const result = await createService().checkRuntimeBackendUpdate()
+    expect(result.staged).toBe(expected.staged)
+    expect(run).toHaveBeenCalledTimes(2)
+    if (expected.staged) expect(result.remoteCommit).toBe('prepared')
+  })
+
+  it('重复检查共享一次在途操作，准备完成后不重复下载', async () => {
+    let resolveCheck!: (value: never) => void
+    const run = vi
+      .spyOn(RuntimeClient.prototype, 'run')
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveCheck = resolve
+          })
+      )
+      .mockResolvedValueOnce({
+        success: true,
+        result: { details: { staged: true, commit: 'prepared' } },
+      } as never)
+    const service = createService()
+    const first = service.checkRuntimeBackendUpdate()
+    const second = service.checkRuntimeBackendUpdate()
+    expect(first).toBe(second)
+    resolveCheck({
+      success: true,
+      result: { details: { version: 'v5.5.0-beta.3', updateAvailable: true } },
+    } as never)
+    await first
+    expect((await service.checkRuntimeBackendUpdate()).staged).toBe(true)
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('关闭时取消检查并禁止启动下一段下载', async () => {
+    let resolveCheck!: (value: never) => void
+    const cancel = vi.fn(() => {
+      resolveCheck({
+        success: false,
+        code: 'OPERATION_CANCELLED',
+        result: { message: 'cancelled', details: {} },
+      } as never)
+      return 'cancel-id'
+    })
+    const run = vi.spyOn(RuntimeClient.prototype, 'run').mockImplementationOnce(
+      (_args, options) =>
+        new Promise(resolve => {
+          resolveCheck = resolve
+          options?.onStarted?.({ cancel, kill: vi.fn(), sendControl: vi.fn(), pid: 1 })
+        })
+    )
+    const service = createService()
+    const check = service.checkRuntimeBackendUpdate()
+    expect(await service.stopBackend()).toEqual({ success: true })
+    expect((await check).staged).not.toBe(true)
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(run).toHaveBeenCalledOnce()
   })
 })
