@@ -69,7 +69,52 @@ export interface HSRManagedEngineForm {
   engine: HSREngine
   fields: HSRManagedField[]
   source?: string | null
+  /**
+   * 后端逐表单只有这一条 string[] 通道；每条是一段 JSON，见
+   * `parseHSRDroppedOverrides`。
+   */
   warnings?: string[]
+}
+
+export type HSRDroppedOverrideReason = 'unknown' | 'type'
+
+/** 一条被后端忽略的 Managed.Options 覆盖值（原生配置里没有该键，或类型对不上）。 */
+export interface HSRDroppedOverride {
+  key: string
+  reason: HSRDroppedOverrideReason
+  value: unknown
+  message: string
+}
+
+const DROPPED_OVERRIDE_WARNING_KIND = 'dropped_override'
+
+/**
+ * 从表单 warnings 里还原被忽略的覆盖键。后端 `DroppedOverride.as_warning()`
+ * 把每条编成 `{"kind":"dropped_override","key":…,"reason":…,"value":…,"message":…}`；
+ * 解析不出来的条目按普通文本忽略，不影响表单渲染。
+ */
+export const parseHSRDroppedOverrides = (
+  warnings?: readonly string[] | null
+): HSRDroppedOverride[] => {
+  const result: HSRDroppedOverride[] = []
+  for (const raw of warnings ?? []) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+    const record = parsed as Record<string, unknown>
+    if (record.kind !== DROPPED_OVERRIDE_WARNING_KIND || typeof record.key !== 'string') continue
+    result.push({
+      key: record.key,
+      reason: record.reason === 'type' ? 'type' : 'unknown',
+      value: record.value,
+      message: typeof record.message === 'string' ? record.message : '',
+    })
+  }
+  return result
 }
 
 export interface HSRManagedTask extends HSRTaskCapability {

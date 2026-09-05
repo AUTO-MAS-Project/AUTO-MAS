@@ -608,7 +608,21 @@ export default {
     win32ControlMethodCan:
       'Win32 の制御方式では起動と検出を分けられます。起動対象はプログラムを立ち上げるだけで、検出対象が実際のゲームウィンドウを特定します。',
     yamlFiles: 'YAML ファイル',
-    importFromSourceConfiguration2: '元の設定から一括インポート',
+    resetManagedOverrides: '元の設定にリセット',
+    resetManagedOverridesHint:
+      'MAS で変更した上書き値をすべて破棄し、現在の SRA / 三月なのかアシスタントの設定を読み直します',
+    resetManagedOverridesConfirmTitle: '元の設定にリセットしますか？',
+    resetManagedOverridesConfirmDesc:
+      'このユーザーが MAS で変更した上書き値（全モジュール・全項目）をすべて削除し、以後は現在の SRA / 三月なのかアシスタントの設定どおりに表示・実行します。元の設定ファイル自体は変更されません。この操作は取り消せません。',
+    invalidOverridesCount: '無効な上書き {n} 件',
+    invalidManagedOverridesTitle:
+      '保存済みの上書き値 {n} 件が現在の元の設定では無効です。実行時は無視され、元の設定の値が使われます',
+    invalidManagedOverrideUnknown: '現在の元の設定にこの項目はもうありません',
+    invalidManagedOverrideType: '保存された値の型が現在の元の設定と一致しません',
+    invalidManagedOverrideSaved: '保存された値：{value}',
+    clearInvalidManagedOverrides: '無効な上書きを削除',
+    clearInvalidManagedOverridesConfirm:
+      'このユーザーの MAS 設定から無効な上書き {n} 件を削除しますか？元の設定ファイルは変更されません。',
     matchesOnly: '一致した行のみ表示',
     never: 'しない',
     sanityScriptChangedPick: '理性タスクのスクリプトが変わりました。ステージを選び直してください。',
@@ -885,7 +899,8 @@ export default {
     pcControllersOnlySeconds: 'PC 側のコントローラーのみ設定が必要です。単位は秒',
     cutFromKeywordEnd:
       'キーワードから行末までを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
-    couldNotImportFrom: '元の設定からインポートできませんでした',
+    couldNotResetManagedOverrides: '元の設定にリセットできませんでした',
+    couldNotClearInvalidManagedOverrides: '無効な上書きを削除できませんでした',
     cutFromStartLine:
       '行頭からキーワードまでを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
     launchGameBeforeTask: 'タスク前にゲームを起動',
@@ -992,7 +1007,9 @@ export default {
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
     interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
-    importedFromCurrentSra: '現在の SRA / 三月なのかアシスタントの設定からインポートしました',
+    managedOverridesReset:
+      '上書き値をすべて削除しました。現在の SRA / 三月なのかアシスタントの設定どおりに表示・実行します',
+    invalidManagedOverridesCleared: '無効な上書き {n} 件を削除しました',
     scriptLevelMaaendConfiguration: 'スクリプト単位の MaaEnd 設定を開始しました',
     gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',

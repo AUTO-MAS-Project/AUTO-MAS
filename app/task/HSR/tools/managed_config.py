@@ -17,13 +17,13 @@ from typing import Any
 from .m7a_config import (
     load_m7a_native_config,
     managed_modules_for_key,
-    resolve_managed_options,
+    overlay_m7a_managed_options,
 )
 from .native_control import _script_path
 from .sra_runtime import (
     discover_sra_managed_options,
     load_sra_native_config,
-    resolve_sra_managed_options,
+    overlay_sra_managed_options,
 )
 
 
@@ -56,6 +56,12 @@ class HSRManagedField:
 
 @dataclass(frozen=True, slots=True)
 class HSRManagedModule:
+    """一个引擎下一个模块的托管表单。
+
+    ``warnings`` 里每条都是 ``DroppedOverride.as_warning()`` 编出来的 JSON 字串，
+    记录该模块被忽略的 ``Managed.Options`` 覆盖键；前端据此提示并提供清理入口。
+    """
+
     key: str
     engine: str
     fields: tuple[HSRManagedField, ...]
@@ -65,6 +71,7 @@ class HSRManagedModule:
     def asdict(self) -> dict[str, Any]:
         data = asdict(self)
         data["fields"] = [item.asdict() for item in self.fields]
+        data["warnings"] = list(self.warnings)
         return data
 
 
@@ -222,7 +229,9 @@ def list_sra_managed_modules(
     result: list[HSRManagedModule] = []
     for module_key in ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"):
         values, _section_name = discover_sra_managed_options(module_key, script_config)
-        effective = resolve_sra_managed_options(module_key, script_config, user_config)
+        effective, dropped = overlay_sra_managed_options(
+            module_key, script_config, user_config
+        )
         fields = tuple(
             _field(
                 key,
@@ -247,7 +256,15 @@ def list_sra_managed_modules(
             )
             for key, value in values.items()
         )
-        result.append(HSRManagedModule(module_key, "SRA", fields, str(source)))
+        result.append(
+            HSRManagedModule(
+                module_key,
+                "SRA",
+                fields,
+                str(source),
+                warnings=tuple(item.as_warning() for item in dropped),
+            )
+        )
     return tuple(result)
 
 
@@ -332,14 +349,14 @@ def list_m7a_managed_modules(
         key: []
         for key in ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars")
     }
-    effective_by_module = {
-        module_key: resolve_managed_options(payload, user_config, module_key)
+    overlay_by_module = {
+        module_key: overlay_m7a_managed_options(payload, user_config, module_key)
         for module_key in buckets
     }
     for key, value in payload.items():
         modules = managed_modules_for_key(str(key))
         for module_key in modules:
-            effective = effective_by_module[module_key]
+            effective = overlay_by_module[module_key][0]
             buckets[module_key].append(
                 _field(
                     str(key),
@@ -353,7 +370,13 @@ def list_m7a_managed_modules(
                 )
             )
     return tuple(
-        HSRManagedModule(key, "M7A", tuple(fields), str(source))
+        HSRManagedModule(
+            key,
+            "M7A",
+            tuple(fields),
+            str(source),
+            warnings=tuple(item.as_warning() for item in overlay_by_module[key][1]),
+        )
         for key, fields in buckets.items()
     )
 

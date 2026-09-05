@@ -610,7 +610,23 @@ export default {
     win32ControlMethodCan:
       'The Win32 control method can split launching from detection: the launch target only starts the program, and the detect target finds the real game window.',
     yamlFiles: 'YAML files',
-    importFromSourceConfiguration2: 'Import from the source configuration',
+    resetManagedOverrides: 'Reset to the source configuration',
+    resetManagedOverridesHint:
+      'Discards every override you changed in MAS and re-reads the current SRA / March7th Assistant configuration',
+    resetManagedOverridesConfirmTitle: 'Reset to the source configuration?',
+    resetManagedOverridesConfirmDesc:
+      'This deletes every override this user changed in MAS (all modules, all fields); everything will then be shown and run from the current SRA / March7th Assistant configuration. The source configuration file itself is not modified. This cannot be undone.',
+    invalidOverridesCount: '{n} stale overrides',
+    invalidManagedOverridesTitle:
+      '{n} saved overrides are no longer valid for the current source configuration; they are ignored at run time and the source values are used instead',
+    invalidManagedOverrideUnknown:
+      'This field no longer exists in the current source configuration',
+    invalidManagedOverrideType:
+      'The saved value type does not match the current source configuration',
+    invalidManagedOverrideSaved: 'Saved value: {value}',
+    clearInvalidManagedOverrides: 'Remove stale overrides',
+    clearInvalidManagedOverridesConfirm:
+      'Remove these {n} stale overrides from this user’s MAS configuration? The source configuration file is not modified.',
     matchesOnly: 'Matches only',
     never: 'Never',
     sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
@@ -885,7 +901,8 @@ export default {
     pcControllersOnlySeconds: 'PC controllers only, in seconds',
     cutFromKeywordEnd:
       'Cut from the keyword to the end of the line; tick "include" to remove the keyword too, otherwise keep it',
-    couldNotImportFrom: 'Could not import from the source configuration',
+    couldNotResetManagedOverrides: 'Could not reset to the source configuration',
+    couldNotClearInvalidManagedOverrides: 'Could not remove the stale overrides',
     cutFromStartLine:
       'Cut from the start of the line to the keyword; tick "include" to remove the keyword too, otherwise keep it',
     launchGameBeforeTask: 'Launch the game before the task',
@@ -993,7 +1010,9 @@ export default {
     noOkWwSettings: 'No ok-ww settings have been generated yet',
     interfaceJsonHasNot: 'interface.json has not been read yet',
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
-    importedFromCurrentSra: 'Imported from the current SRA / March7th Assistant configuration',
+    managedOverridesReset:
+      'All overrides removed; showing and running from the current SRA / March7th Assistant configuration',
+    invalidManagedOverridesCleared: 'Removed {n} stale overrides',
     scriptLevelMaaendConfiguration: 'Script-level MaaEnd configuration started',
     gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',

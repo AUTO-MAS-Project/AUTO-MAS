@@ -180,10 +180,11 @@
               :task-switch="formData.TaskSwitch"
               :saving="isSaving"
               :loading="managedConfigLoading"
-              @import-source="handleManagedSourceImport"
+              @reset-overrides="handleManagedOverridesReset"
               @task-toggle="handleTaskSwitchToggle"
               @mapping-change="handleManagedMappingChange"
               @field-change="handleManagedFieldChange"
+              @clear-invalid-overrides="handleManagedInvalidOverridesClear"
             />
           </div>
           <div v-else class="control-mode-content">
@@ -569,15 +570,42 @@ const loadManagedConfig = async () => {
   }
 }
 
-const handleManagedSourceImport = async () => {
+// 「重置为源配置」：清空这个用户在 MAS 里的全部 Managed.Options 覆盖值，
+// 之后表单和运行都按 SRA / 三月七助手当前配置走。确认弹窗在子组件里。
+const handleManagedOverridesReset = async () => {
   if (!userId || managedConfigLoading.value || isSaving.value) return
   const saved = await handleFieldSave('Managed.Options', {})
   if (!saved) {
-    message.error(t('edit.couldNotImportFrom'))
+    message.error(t('edit.couldNotResetManagedOverrides'))
     return
   }
   await loadManagedConfig()
-  message.success(t('edit.importedFromCurrentSra'))
+  message.success(t('edit.managedOverridesReset'))
+}
+
+// 只剔掉后端报告为失效（原生配置里已没有、或类型对不上）的覆盖键，其余保留。
+const handleManagedInvalidOverridesClear = async (
+  engine: HSREngine,
+  task: string,
+  keys: string[]
+) => {
+  if (!userId || managedConfigLoading.value || isSaving.value || keys.length === 0) return
+  const options = { ...(formData.Managed?.Options ?? {}) }
+  const engineOptions = { ...(options[engine] ?? {}) }
+  const taskOptions = { ...(engineOptions[task] ?? {}) }
+  for (const key of keys) delete taskOptions[key]
+  if (Object.keys(taskOptions).length > 0) engineOptions[task] = taskOptions
+  else delete engineOptions[task]
+  if (Object.keys(engineOptions).length > 0) options[engine] = engineOptions
+  else delete options[engine]
+  formData.Managed = { ...(formData.Managed ?? {}), Options: options }
+  const saved = await handleFieldSave('Managed.Options', options)
+  if (!saved) {
+    message.error(t('edit.couldNotClearInvalidManagedOverrides'))
+    return
+  }
+  await loadManagedConfig()
+  message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
 }
 
 const handleControlModeChange = async (value: string | number) => {

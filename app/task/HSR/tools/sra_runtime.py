@@ -39,6 +39,11 @@ from .log_detect import (
     emit_process_output,
     has_failure_output,
 )
+from .managed_overlay import (
+    DroppedOverride,
+    log_dropped_overrides,
+    overlay_managed_options,
+)
 from .stage_runtime import (
     get_sra_native_stage,
     read_native_main_stage,
@@ -150,18 +155,20 @@ def discover_sra_managed_options(
     return options, section_name
 
 
-def _same_value_kind(value: Any, reference: Any) -> bool:
-    if isinstance(reference, bool):
-        return isinstance(value, bool)
-    if isinstance(reference, int):
-        return isinstance(value, int) and not isinstance(value, bool)
-    if isinstance(reference, float):
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if isinstance(reference, list):
-        return isinstance(value, list)
-    if isinstance(reference, dict):
-        return isinstance(value, dict)
-    return isinstance(value, str) if isinstance(reference, str) else True
+def overlay_sra_managed_options(
+    module_key: str,
+    script_config: Any,
+    user_config: Any,
+) -> tuple[dict[str, Any], tuple[DroppedOverride, ...]]:
+    """Overlay a user's Managed.Options on native SRA values.
+
+    原生配置里已不存在或类型对不上的覆盖键逐个丢弃、回退到原生值，并作为
+    第二个返回值交给表单与运行日志，不再整体抛错。
+    """
+
+    native, _section_name = discover_sra_managed_options(module_key, script_config)
+    overrides = _managed_options(user_config, module_key)
+    return overlay_managed_options(native, overrides)
 
 
 def resolve_sra_managed_options(
@@ -171,18 +178,9 @@ def resolve_sra_managed_options(
 ) -> dict[str, Any]:
     """Return native SRA values overlaid with a user's Managed.Options."""
 
-    native, _section_name = discover_sra_managed_options(module_key, script_config)
-    overrides = _managed_options(user_config, module_key)
-    unknown = sorted(set(overrides).difference(native))
-    if unknown:
-        raise ValueError(
-            f"SRA {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}"
-        )
-    effective = dict(native)
-    for key, value in overrides.items():
-        if not _same_value_kind(value, native[key]):
-            raise ValueError(f"SRA {module_key}.{key} 的值类型与原生配置不一致")
-        effective[key] = value
+    effective, _dropped = overlay_sra_managed_options(
+        module_key, script_config, user_config
+    )
     return effective
 
 
@@ -193,7 +191,10 @@ def _apply_managed_options(
     user_config: Any,
 ) -> None:
     _native, section_name = discover_sra_managed_options(module_key, script_config)
-    effective = resolve_sra_managed_options(module_key, script_config, user_config)
+    effective, dropped = overlay_sra_managed_options(
+        module_key, script_config, user_config
+    )
+    log_dropped_overrides(logger, "SRA", module_key, dropped)
     section = config.get(section_name)
     if not isinstance(section, dict):
         raise ValueError(f"SRA 临时配置缺少 {section_name} 对象")

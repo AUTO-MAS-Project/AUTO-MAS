@@ -27,7 +27,8 @@
                 "Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 移除脚本页的「游戏启动参数」，窗口大小统一由「1920×1080 窗口模式」开关临时改写注册表、任务结束后恢复，旧配置中的该项会在下次保存时自动清除 by [@qiyinxi](https://github.com/qiyinxi)",
                 "通用脚本 未填写「配置路径」时改为在任务开始前直接提示，不再跑起来后才报出难懂的错误 by [@qiyinxi](https://github.com/qiyinxi)",
-                "HSR专项 脚本直控不再要求先导入配置快照，默认直接使用 SRA / 三月七助手当前的配置运行；导入快照改为可选，仅在同一脚本下多个用户需要各跑一套配置时使用，并可一键改回使用脚本当前配置"
+                "HSR专项 脚本直控不再要求先导入配置快照，默认直接使用 SRA / 三月七助手当前的配置运行；导入快照改为可选，仅在同一脚本下多个用户需要各跑一套配置时使用，并可一键改回使用脚本当前配置",
+                "HSR专项 MAS 管控任务的「一键从源配置导入」改名为「重置为源配置」并增加二次确认，明确该操作会清除用户在 MAS 里改过的全部覆盖配置、重新读取 SRA / 三月七助手当前配置"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -59,6 +60,7 @@
                 "MAA专项 修复 MAA 更新至 v6.14 后代理时不再按用户填写的账号执行账号切换的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW与OK-NTE专项 修复多用户切换时误复用正在退出的旧游戏窗口导致任务被中止的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "OK-NTE专项 修复体力不足以刷满目标时任务报告误显「剩余体力: 0」的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "HSR专项 修复 SRA / 三月七助手升级或更换配置后，单个失效的 MAS 覆盖配置项会让该引擎全部任务表单一起消失、运行时任务直接失败的问题，现在只忽略失效项并在用户页提示、可一键清理",
                 "BetterGI专项 修复设置会话无法接收完成和错误事件的问题",
                 "HSR专项 修复任务配置的文本与 JSON 项在输入时被清空、导致只有数字项能填写的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",

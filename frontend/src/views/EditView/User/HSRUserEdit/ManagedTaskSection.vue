@@ -2,9 +2,24 @@
   <div class="managed-task-section">
     <div class="section-header section-header-with-action">
       <h3>{{ t('edit.tasksManagedByMas') }}</h3>
-      <a-button :loading="loading" @click="emit('importSource')">{{
-        t('edit.importFromSourceConfiguration2')
-      }}</a-button>
+      <div class="section-header-action">
+        <a-typography-text type="secondary" class="reset-hint">
+          {{ t('edit.resetManagedOverridesHint') }}
+        </a-typography-text>
+        <a-popconfirm
+          :title="t('edit.resetManagedOverridesConfirmTitle')"
+          :description="t('edit.resetManagedOverridesConfirmDesc')"
+          :ok-text="t('edit.ok')"
+          :cancel-text="t('edit.cancel')"
+          ok-type="danger"
+          :disabled="loading || saving"
+          @confirm="emit('resetOverrides')"
+        >
+          <a-button danger :loading="loading" :disabled="saving">
+            {{ t('edit.resetManagedOverrides') }}
+          </a-button>
+        </a-popconfirm>
+      </div>
     </div>
     <a-alert
       v-for="warning in snapshot?.warnings || []"
@@ -38,6 +53,9 @@
                 <div class="task-row-title">
                   <span>{{ task.name }}</span>
                   <a-tag color="default">{{ phaseLabel(task.phase) }}</a-tag>
+                  <a-tag v-if="droppedOverridesOf(task).length" color="warning">
+                    {{ t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
+                  </a-tag>
                 </div>
                 <div class="task-row-summary">{{ taskSummary(task) }}</div>
               </div>
@@ -97,6 +115,47 @@
               <a-typography-text type="secondary" class="source-line">
                 读取自：{{ selectedForm.source }}
               </a-typography-text>
+              <a-alert
+                v-if="selectedDroppedOverrides.length"
+                type="warning"
+                show-icon
+                class="panel-alert"
+                :message="
+                  t('edit.invalidManagedOverridesTitle', { n: selectedDroppedOverrides.length })
+                "
+              >
+                <template #description>
+                  <ul class="dropped-list">
+                    <li v-for="item in selectedDroppedOverrides" :key="item.key">
+                      <code>{{ item.key }}</code>
+                      <span>{{ droppedReasonLabel(item.reason) }}</span>
+                      <span class="dropped-value">
+                        {{
+                          t('edit.invalidManagedOverrideSaved', {
+                            value: formatOverrideValue(item.value),
+                          })
+                        }}
+                      </span>
+                    </li>
+                  </ul>
+                  <a-popconfirm
+                    :title="
+                      t('edit.clearInvalidManagedOverridesConfirm', {
+                        n: selectedDroppedOverrides.length,
+                      })
+                    "
+                    :ok-text="t('edit.ok')"
+                    :cancel-text="t('edit.cancel')"
+                    ok-type="danger"
+                    :disabled="saving"
+                    @confirm="handleClearInvalidOverrides"
+                  >
+                    <a-button size="small" danger :disabled="saving">
+                      {{ t('edit.clearInvalidManagedOverrides') }}
+                    </a-button>
+                  </a-popconfirm>
+                </template>
+              </a-alert>
               <DynamicManagedFields
                 :fields="selectedForm.fields"
                 :disabled="saving"
@@ -118,10 +177,13 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { RightOutlined } from '@ant-design/icons-vue'
-import type {
-  HSREngine,
-  HSRManagedConfigSnapshot,
-  HSRManagedTask,
+import {
+  parseHSRDroppedOverrides,
+  type HSRDroppedOverride,
+  type HSRDroppedOverrideReason,
+  type HSREngine,
+  type HSRManagedConfigSnapshot,
+  type HSRManagedTask,
 } from '@/composables/useHSRPluginApi'
 import DynamicManagedFields from './DynamicManagedFields.vue'
 
@@ -135,10 +197,13 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  importSource: []
+  /** 清空这个用户的全部 Managed.Options 覆盖值，重新按源配置读取。 */
+  resetOverrides: []
   taskToggle: [task: string, enabled: boolean]
   mappingChange: [task: string, engine: HSREngine]
   fieldChange: [engine: HSREngine, task: string, key: string, value: unknown]
+  /** 只从 Managed.Options 里剔掉后端报告为失效的键。 */
+  clearInvalidOverrides: [engine: HSREngine, task: string, keys: string[]]
 }>()
 
 const selectedTaskKey = ref('')
@@ -180,6 +245,27 @@ const selectedForm = computed(() => {
   const engine = selectedEngine.value
   return task && engine ? task.forms?.[engine] : undefined
 })
+
+const droppedOverridesOf = (task: HSRManagedTask, engine = mappedEngine(task)) =>
+  engine ? parseHSRDroppedOverrides(task.forms?.[engine]?.warnings) : []
+
+const selectedDroppedOverrides = computed<HSRDroppedOverride[]>(() =>
+  selectedTask.value ? droppedOverridesOf(selectedTask.value, selectedEngine.value) : []
+)
+
+const droppedReasonLabel = (reason: HSRDroppedOverrideReason) =>
+  reason === 'type' ? t('edit.invalidManagedOverrideType') : t('edit.invalidManagedOverrideUnknown')
+
+const formatOverrideValue = (value: unknown) =>
+  typeof value === 'string' ? value : JSON.stringify(value)
+
+const handleClearInvalidOverrides = () => {
+  const task = selectedTask.value
+  const engine = selectedEngine.value
+  const keys = selectedDroppedOverrides.value.map(item => item.key)
+  if (!task || !engine || keys.length === 0) return
+  emit('clearInvalidOverrides', engine, task.key, keys)
+}
 
 const engineOptions = computed(() =>
   selectedTask.value
@@ -252,9 +338,42 @@ const handleFieldChange = (key: string, value: unknown) => {
   background: var(--ant-color-primary);
 }
 
+.section-header-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reset-hint {
+  max-width: 360px;
+  font-size: 12px;
+  text-align: right;
+}
+
 .snapshot-warning,
 .panel-alert {
   margin-bottom: 12px;
+}
+
+.dropped-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.dropped-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.dropped-list code {
+  font-size: 12px;
+}
+
+.dropped-value {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 
 .task-editor-layout {
