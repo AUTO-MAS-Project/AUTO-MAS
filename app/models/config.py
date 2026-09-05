@@ -3887,10 +3887,6 @@ class GlobalConfig(ConfigBase):
         self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
             "Notify", "OpenClawWeixinTargetUserId", ""
         )
-        ## 微信 Claw 会话上下文 Token（由 getupdates 自动取得）
-        self.Notify_OpenClawWeixinContextToken = ConfigItem(
-            "Notify", "OpenClawWeixinContextToken", "", EncryptValidator()
-        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码

@@ -229,8 +229,10 @@ class OpenClawQQManager:
     def __init__(self) -> None:
         self._sessions: dict[str, _QrSession] = {}
         self._session_lock = asyncio.Lock()
+        self._session_generation = 0
         self._config_lock = asyncio.Lock()
         self._send_lock = asyncio.Lock()
+        self._credential_lock = asyncio.Lock()
         self._hooks_bound = False
         self._runtime_credentials: _RuntimeCredentials | None = None
         self._secret_storage_available: bool | None = None
@@ -255,6 +257,7 @@ class OpenClawQQManager:
 
         async with self._session_lock:
             self._sessions.clear()
+            self._session_generation += 1
         self._invalidate_access_token()
 
     async def _on_enabled_changed(self, enabled: Any) -> None:
@@ -317,31 +320,39 @@ class OpenClawQQManager:
 
         async with self._session_lock:
             self._sessions.clear()
+            self._session_generation += 1
+            generation = self._session_generation
             aes_key = secrets.token_bytes(32)
-            response = await self._request_json(
-                "POST",
-                f"{PORTAL_BASE_URL}/lite/create_bind_task",
-                body={"key": base64.b64encode(aes_key).decode("ascii")},
-                headers=_headers(),
-                timeout=QR_REQUEST_TIMEOUT_SECONDS,
-            )
-            if _business_code(response) not in (None, 0):
-                raise RuntimeError(f"QQ 二维码创建失败：{_business_message(response)}")
-            data = response.get("data")
-            task_id = (
-                str(data.get("task_id") or "").strip() if isinstance(data, dict) else ""
-            )
-            if not task_id:
-                raise RuntimeError("QQ 二维码响应缺少绑定任务")
 
-            session_id = uuid.uuid4().hex
-            qr_url = f"{QR_CONNECT_URL}?task_id={quote(task_id, safe='')}&_wv=2"
+        # 二维码接口可能等待十几秒；网络请求必须在会话锁外执行，
+        # 否则关闭二维码、重新绑定和解绑都会被阻塞。
+        response = await self._request_json(
+            "POST",
+            f"{PORTAL_BASE_URL}/lite/create_bind_task",
+            body={"key": base64.b64encode(aes_key).decode("ascii")},
+            headers=_headers(),
+            timeout=QR_REQUEST_TIMEOUT_SECONDS,
+        )
+        if _business_code(response) not in (None, 0):
+            raise RuntimeError(f"QQ 二维码创建失败：{_business_message(response)}")
+        data = response.get("data")
+        task_id = (
+            str(data.get("task_id") or "").strip() if isinstance(data, dict) else ""
+        )
+        if not task_id:
+            raise RuntimeError("QQ 二维码响应缺少绑定任务")
+
+        session_id = uuid.uuid4().hex
+        qr_url = f"{QR_CONNECT_URL}?task_id={quote(task_id, safe='')}&_wv=2"
+        async with self._session_lock:
+            if generation != self._session_generation:
+                raise RuntimeError("QQ 二维码登录会话已关闭，请重新生成")
             self._sessions[session_id] = _QrSession(
                 task_id=task_id,
                 aes_key=aes_key,
                 created_at=monotonic(),
             )
-            return QrStartResult(session_id=session_id, qr_url=qr_url)
+        return QrStartResult(session_id=session_id, qr_url=qr_url)
 
     async def check_login(self, session_id: str) -> QrCheckResult:
         """轮询扫码绑定任务，完成后保存官方机器人凭据。"""
@@ -361,98 +372,147 @@ class OpenClawQQManager:
                     state="expired",
                     message="二维码已过期，请重新生成",
                 )
+            generation = self._session_generation
+            task_id = session.task_id
+            aes_key = session.aes_key
 
-            try:
-                response = await self._request_json(
-                    "POST",
-                    f"{PORTAL_BASE_URL}/lite/poll_bind_result",
-                    body={"task_id": session.task_id},
-                    headers=_headers(),
-                    timeout=QR_REQUEST_TIMEOUT_SECONDS,
-                )
-            except RuntimeError as exc:
-                # 轮询失败通常是临时网络问题，让前端继续轮询并展示原因。
-                return QrCheckResult(
-                    session_id=session_id,
-                    state="waiting",
-                    message=str(exc),
-                )
+        # 状态查询同样可能等待网络响应，不能在会话锁内轮询。
+        try:
+            response = await self._request_json(
+                "POST",
+                f"{PORTAL_BASE_URL}/lite/poll_bind_result",
+                body={"task_id": task_id},
+                headers=_headers(),
+                timeout=QR_REQUEST_TIMEOUT_SECONDS,
+            )
+        except RuntimeError as exc:
+            # 轮询失败通常是临时网络问题，让前端继续轮询并展示原因。
+            return QrCheckResult(
+                session_id=session_id,
+                state="waiting",
+                message=str(exc),
+            )
 
-            if _business_code(response) not in (None, 0):
+        async with self._session_lock:
+            if (
+                generation != self._session_generation
+                or self._sessions.get(session_id) is not session
+            ):
                 return QrCheckResult(
                     session_id=session_id,
                     state="error",
-                    message=f"查询 QQ 登录状态失败：{_business_message(response)}",
-                )
-            data = response.get("data")
-            data = data if isinstance(data, dict) else {}
-            status = _as_int(data.get("status"))
-            if status in (None, 0):
-                return QrCheckResult(
-                    session_id=session_id,
-                    state="waiting",
-                    message="请使用 QQ 扫描二维码",
-                )
-            if status == 1:
-                return QrCheckResult(
-                    session_id=session_id,
-                    state="scanned",
-                    message="已扫码，正在确认登录",
-                )
-            if status == 3:
-                self._sessions.pop(session_id, None)
-                return QrCheckResult(
-                    session_id=session_id,
-                    state="expired",
-                    message="二维码已过期，请重新生成",
-                )
-            if status != 2:
-                return QrCheckResult(
-                    session_id=session_id,
-                    state="error",
-                    message=f"QQ 登录返回未知状态：{status}",
+                    message="二维码登录会话已关闭，请重新生成",
                 )
 
-            app_id = str(data.get("bot_appid") or "").strip()
-            encrypted_secret = str(data.get("bot_encrypt_secret") or "").strip()
-            user_openid = str(data.get("user_openid") or "").strip()
-            if not app_id or not encrypted_secret or not user_openid:
-                self._sessions.pop(session_id, None)
-                return QrCheckResult(
-                    session_id=session_id,
-                    state="error",
-                    message="登录确认响应缺少 QQ 机器人凭据，请重新扫码",
-                )
-            try:
-                client_secret = _decrypt_client_secret(
-                    encrypted_secret, session.aes_key
-                )
-                await self._save_credentials(
+        if _business_code(response) not in (None, 0):
+            return QrCheckResult(
+                session_id=session_id,
+                state="error",
+                message=f"查询 QQ 登录状态失败：{_business_message(response)}",
+            )
+        data = response.get("data")
+        data = data if isinstance(data, dict) else {}
+        status = _as_int(data.get("status"))
+        if status in (None, 0):
+            return QrCheckResult(
+                session_id=session_id,
+                state="waiting",
+                message="请使用 QQ 扫描二维码",
+            )
+        if status == 1:
+            return QrCheckResult(
+                session_id=session_id,
+                state="scanned",
+                message="已扫码，正在确认登录",
+            )
+        if status == 3:
+            async with self._session_lock:
+                if (
+                    generation == self._session_generation
+                    and self._sessions.get(session_id) is session
+                ):
+                    self._sessions.pop(session_id, None)
+            return QrCheckResult(
+                session_id=session_id,
+                state="expired",
+                message="二维码已过期，请重新生成",
+            )
+        if status != 2:
+            return QrCheckResult(
+                session_id=session_id,
+                state="error",
+                message=f"QQ 登录返回未知状态：{status}",
+            )
+
+        app_id = str(data.get("bot_appid") or "").strip()
+        encrypted_secret = str(data.get("bot_encrypt_secret") or "").strip()
+        user_openid = str(data.get("user_openid") or "").strip()
+        if not app_id or not encrypted_secret or not user_openid:
+            async with self._session_lock:
+                if (
+                    generation == self._session_generation
+                    and self._sessions.get(session_id) is session
+                ):
+                    self._sessions.pop(session_id, None)
+            return QrCheckResult(
+                session_id=session_id,
+                state="error",
+                message="登录确认响应缺少 QQ 机器人凭据，请重新扫码",
+            )
+        try:
+            client_secret = _decrypt_client_secret(encrypted_secret, aes_key)
+            async with self._send_lock, self._credential_lock:
+                async with self._session_lock:
+                    if (
+                        generation != self._session_generation
+                        or self._sessions.get(session_id) is not session
+                    ):
+                        return QrCheckResult(
+                            session_id=session_id,
+                            state="error",
+                            message="二维码登录会话已关闭，请重新生成",
+                        )
+                    self._sessions.pop(session_id, None)
+                await self._save_credentials_locked(
                     app_id=app_id,
                     client_secret=client_secret,
                     user_openid=user_openid,
                 )
-            except (ValueError, RuntimeError) as exc:
-                self._sessions.pop(session_id, None)
+        except (ValueError, RuntimeError) as exc:
+            async with self._session_lock:
+                if (
+                    generation == self._session_generation
+                    and self._sessions.get(session_id) is session
+                ):
+                    self._sessions.pop(session_id, None)
+            return QrCheckResult(
+                session_id=session_id,
+                state="error",
+                message=f"QQ 登录凭据处理失败：{exc}",
+            )
+
+        async with self._session_lock:
+            if generation != self._session_generation:
                 return QrCheckResult(
                     session_id=session_id,
                     state="error",
-                    message=f"QQ 登录凭据处理失败：{exc}",
+                    message="二维码登录会话已关闭，请重新生成",
                 )
-
-            self._sessions.pop(session_id, None)
-            return QrCheckResult(
-                session_id=session_id,
-                state="connected",
-                connected=True,
-                message="QQ 官方机器人扫码绑定成功",
-            )
+        return QrCheckResult(
+            session_id=session_id,
+            state="connected",
+            connected=True,
+            message="QQ 官方机器人扫码绑定成功",
+        )
 
     async def unbind(self) -> None:
         """解除绑定并清理本地保存的 QQ 协议状态。"""
 
-        async with self._session_lock, self._send_lock:
+        # 先在锁内使所有正在进行的二维码请求失效，再在锁外清理配置。
+        async with self._session_lock:
             self._sessions.clear()
+            self._session_generation += 1
+        async with self._send_lock, self._credential_lock:
             self._runtime_credentials = None
             self._invalidate_access_token()
             values = {
@@ -556,6 +616,18 @@ class OpenClawQQManager:
     ) -> None:
         """保存扫码返回的凭据，非 Windows 只保留本次运行所需数据。"""
 
+        async with self._send_lock, self._credential_lock:
+            await self._save_credentials_locked(
+                app_id=app_id,
+                client_secret=client_secret,
+                user_openid=user_openid,
+            )
+
+    async def _save_credentials_locked(
+        self, *, app_id: str, client_secret: str, user_openid: str
+    ) -> None:
+        """在发送与凭据锁已取得时保存扫码返回的凭据。"""
+
         normalized = _RuntimeCredentials(
             app_id=app_id.strip(),
             client_secret=client_secret.strip(),
@@ -566,8 +638,7 @@ class OpenClawQQManager:
             "OpenClawQQAppId": normalized.app_id,
             "OpenClawQQTargetOpenId": normalized.user_openid,
         }
-        # 与发送互斥，防止旧账号正在换取的令牌覆盖新账号缓存。
-        async with self._send_lock, self._config_lock:
+        async with self._config_lock:
             if self._can_persist_secrets():
                 try:
                     await Config.update(

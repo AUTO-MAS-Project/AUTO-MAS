@@ -96,7 +96,7 @@ async def start_login() -> OpenClawWeixinQrStartOut:
 async def check_login(
     body: OpenClawWeixinQrCheckIn = Body(...),
 ) -> OpenClawWeixinQrCheckOut:
-    """查询二维码状态；确认后自动保存账号并启动上下文轮询。"""
+    """查询二维码状态；确认后自动保存账号凭据。"""
 
     try:
         result = await openclaw_weixin_manager.check_login(
@@ -137,4 +137,3 @@ async def unbind() -> OutBase:
             message=f"解除微信绑定失败: {type(exc).__name__}: {exc}",
         )
     return OutBase(message="微信 Claw 已解除绑定")
-

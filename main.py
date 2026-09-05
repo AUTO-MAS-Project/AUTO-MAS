@@ -295,7 +295,7 @@ def main():
                     await ArknightWin32Toolkit.init()
                 await MainTimer.start()
 
-                # 微信 Claw 扫码绑定后需要后台长轮询，以自动维护发送所需的会话上下文。
+                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
                 from app.services.openclaw_qq import openclaw_qq_manager
                 from app.services.openclaw_weixin import openclaw_weixin_manager
 
