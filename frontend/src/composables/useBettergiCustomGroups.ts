@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import type { TableColumnsType } from 'ant-design-vue'
-import { BettergiService } from '@/api'
+import { BetterGiService } from '@/api'
 
 const logger = window.electronAPI.getLogger('BetterGI自定义配置组')
 
@@ -78,7 +78,8 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     if (!Array.isArray(arr)) return []
     return arr
       .filter((x): x is Record<string, unknown> => !!x && typeof x.name === 'string')
-      .map(x => ({ name: x.name as string, enabled: Boolean(x.enabled) }))
+      // enabled 缺失时与后端 parse_custom_groups 默认一致视为启用（仅显式 false 禁用）
+      .map(x => ({ name: x.name as string, enabled: x.enabled !== false }))
   }
 
   const syncFromForm = () => {
@@ -96,7 +97,7 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const fetchBettergiGroups = async (): Promise<BettergiCustomGroupRow[]> => {
     try {
       const resp =
-        await BettergiService.getBettergiOneDragonCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
+        await BetterGiService.getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
           scriptId,
           configName(),
           masConfig()

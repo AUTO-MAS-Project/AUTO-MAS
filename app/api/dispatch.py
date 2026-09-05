@@ -24,8 +24,8 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config, TaskManager
-from app.services import System
 from app.models.schema import *
+from app.services import System
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
@@ -70,6 +70,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             mode=task.mode,
             id=task.taskId,
             resume_from_script_id=task.resumeFromScriptId,
+            user_id=task.userId,
         )
     except Exception as e:
         return TaskCreateOut(

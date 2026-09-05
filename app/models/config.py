@@ -20,58 +20,60 @@
 
 
 import asyncio
-import uuid
-import json
 import calendar
+import json
+import uuid
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from app.utils.constants import (
-    UTC4,
-    UTC8,
-    MATERIALS_MAP,
-    RESOURCE_STAGE_INFO,
+    CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
+    MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_WITH_AB,
     MAAEND_TASKS,
-    MAAEND_SANITY_TASK_TYPES,
+    MATERIALS_MAP,
     PLAN_CONSUMER_VALUES,
+    RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
+    UTC4,
+    UTC8,
 )
+
 from . import schema as schema_model
 from .ConfigBase import (
-    ConfigBase,
-    ValidatorBase,
-    MultipleConfig,
-    ConfigItem,
-    MultipleUIDValidator,
-    TypedMultipleUIDValidator,
+    AdvancedArgumentValidator,
+    ArgumentValidator,
     BoolValidator,
-    OptionsValidator,
-    MultipleOptionsValidator,
-    RangeValidator,
-    StringValidator,
-    VirtualConfigValidator,
-    FileValidator,
-    FolderValidator,
+    ConfigBase,
+    ConfigItem,
+    DateTimeValidator,
     EmulatorPathValidator,
     EncryptValidator,
-    UUIDValidator,
-    DateTimeValidator,
+    FileValidator,
+    FolderValidator,
     JSONValidator,
+    KeyValidator,
+    MultipleConfig,
+    MultipleOptionsValidator,
+    MultipleUIDValidator,
+    OptionsValidator,
+    RangeValidator,
+    StringValidator,
+    TypedMultipleUIDValidator,
     URLValidator,
     UserNameValidator,
-    KeyValidator,
-    ArgumentValidator,
-    AdvancedArgumentValidator,
+    UUIDValidator,
+    ValidatorBase,
+    VirtualConfigValidator,
 )
 from .schema import TagItem
 
@@ -316,6 +318,62 @@ class QueueItem(ConfigBase):
             MultipleUIDValidator("-", self.related_config, "ScriptConfig"),
         )
 
+        ## Schedule --------------------------------------------------------
+        ## 是否参与循环调度
+        self.Schedule_Enabled = ConfigItem("Schedule", "Enabled", True, BoolValidator())
+        ## 循环调度模式: fixed_time 为固定时间, interval 为间隔
+        self.Schedule_Mode = ConfigItem(
+            "Schedule",
+            "Mode",
+            "fixed_time",
+            OptionsValidator(["fixed_time", "interval"]),
+        )
+        ## 固定时间模式的执行周期
+        self.Schedule_Days = ConfigItem(
+            "Schedule",
+            "Days",
+            list(calendar.day_name),
+            MultipleOptionsValidator(list(calendar.day_name)),
+        )
+        ## 固定时间模式的执行时间
+        self.Schedule_Time = ConfigItem(
+            "Schedule", "Time", "00:00", DateTimeValidator("%H:%M")
+        )
+        ## 间隔模式的间隔分钟数
+        self.Schedule_IntervalMinutes = ConfigItem(
+            "Schedule", "IntervalMinutes", 480, RangeValidator(1, 10080)
+        )
+        ## 间隔模式的计时基准: start 为上次开始, finish 为上次结束
+        self.Schedule_IntervalAnchor = ConfigItem(
+            "Schedule",
+            "IntervalAnchor",
+            "start",
+            OptionsValidator(["start", "finish"]),
+        )
+        ## 下次运行时间, 空值哨兵表示由调度器按模式推算
+        self.Schedule_NextRunAt = ConfigItem(
+            "Schedule",
+            "NextRunAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次循环开始时间
+        self.Data_LastCycleStartedAt = ConfigItem(
+            "Data",
+            "LastCycleStartedAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 上次循环结束时间
+        self.Data_LastCycleFinishedAt = ConfigItem(
+            "Data",
+            "LastCycleFinishedAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
         super().__init__()
 
 
@@ -358,6 +416,10 @@ class QueueConfig(ConfigBase):
             "StartUpMode",
             "Never",
             OptionsValidator(["Never", "Always", "DailyFirst"]),
+        )
+        ## 是否为循环队列: 定时与循环互斥, 循环队列按队列项各自的周期持续运行
+        self.Info_CycleEnabled = ConfigItem(
+            "Info", "CycleEnabled", False, BoolValidator()
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -411,6 +473,55 @@ class QueueConfig(ConfigBase):
         return await super().load(data)
 
 
+def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
+    """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
+    if (
+        datetime.strptime(config.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+        == datetime.now(tz=UTC4).date()
+    ):
+        return {
+            "text": f"{label}：已代理{config.get('Data', 'ProxyTimes')}次",
+            "color": "green",
+        }
+    return {"text": f"{label}：未代理", "color": "orange"}
+
+
+def _tag_remained_days(config: ConfigBase) -> dict:
+    """剩余天数标签。"""
+    remained_day = config.get("Info", "RemainedDay")
+    if remained_day == -1:
+        tag_color = "gold"
+    elif remained_day == 0:
+        tag_color = "red"
+    elif remained_day <= 3:
+        tag_color = "orange"
+    elif remained_day <= 7:
+        tag_color = "yellow"
+    elif remained_day <= 30:
+        tag_color = "blue"
+    else:
+        tag_color = "green"
+    return {
+        "text": (
+            f"剩余天数：{remained_day}天"
+            if remained_day >= 0
+            else "剩余天数：无期限"
+        ),
+        "color": tag_color,
+    }
+
+
+def _tag_notes(config: ConfigBase) -> dict:
+    """备注标签。"""
+    notes = config.get("Info", "Notes")
+    return {
+        "text": (
+            f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+        ),
+        "color": "pink",
+    }
+
+
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
 
@@ -427,7 +538,7 @@ class MaaUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
@@ -555,6 +666,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
+        ## 上次完成绿票商店购买的月份
+        self.Data_GreenTicketStoreMonth = ConfigItem(
+            "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 自定义基建配置
@@ -590,6 +705,10 @@ class MaaUserConfig(ConfigBase):
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 是否每月自动购买一次绿票商店
+        self.Task_IfGreenTicketStore = ConfigItem(
+            "Task", "IfGreenTicketStore", False, BoolValidator()
         )
         ## 活动期间是否优先刷活动关
         self.Task_IfActivityFirst = ConfigItem(
@@ -686,43 +805,10 @@ class MaaUserConfig(ConfigBase):
         tags = []
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 基建模式标签
         infrast_mode = self.get("Info", "InfrastMode")
@@ -777,15 +863,7 @@ class MaaUserConfig(ConfigBase):
             )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -891,7 +969,7 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置文件来源
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 是否启用快速配置
         self.Info_IfQuickConfig = ConfigItem(
@@ -981,17 +1059,17 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
-        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
+        # 旧“自定义”仍等价于用户级配置且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本级配置来源，快速配置使用默认值。
         if isinstance(info_data, dict):
             if info_data.get("Mode") == "自定义":
-                info_data["Mode"] = "详细"
+                info_data["Mode"] = "用户"
                 info_data["IfQuickConfig"] = False
             elif (
                 info_data.get("Mode") in ("简洁", "详细")
                 and "SanityMode" not in info_data
             ):
-                info_data["Mode"] = "简洁"
+                info_data["Mode"] = "脚本"
                 info_data.pop("IfQuickConfig", None)
 
         task_data = data.get("Task")
@@ -1043,43 +1121,10 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 理智任务标签
         if self.get("Task", "IfSanity"):
@@ -1122,15 +1167,7 @@ class MaaEndUserConfig(ConfigBase):
                 )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1269,7 +1306,7 @@ class SrcUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -1534,43 +1571,10 @@ class SrcUserConfig(ConfigBase):
         tags = []
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 关卡信息标签
         tags.append(
@@ -1593,15 +1597,7 @@ class SrcUserConfig(ConfigBase):
         )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1842,43 +1838,10 @@ class HSRUserConfig(ConfigBase):
         tags.append({"text": f"服务器：{server_label}", "color": "blue"})
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         now = datetime.now(tz=UTC8)
         iso_year, iso_week, _ = now.isocalendar()
@@ -1912,15 +1875,8 @@ class HSRUserConfig(ConfigBase):
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2095,53 +2051,12 @@ class M9AUserConfig(ConfigBase):
         tags = []
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2318,54 +2233,34 @@ class MaaFWUserConfig(ConfigBase):
         if not self.get("Data", "IfPassCheck"):
             tags.append({"text": "人工排查未通过", "color": "red"})
 
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+        # 任务代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self, "任务"))
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
+
+
+def _migrate_maafw_auto_update_mode(data: dict) -> dict:
+    """兼容旧版 Update.IfAutoUpdate 布尔开关 → 三态 Update.AutoUpdateMode
+
+    旧值 False（关闭）迁移为 ``Off``，保留用户之前的关闭选择；旧值 True 交由
+    新默认 ``BeforeRun`` 生效。只在新项尚未显式写入时迁移，且不动旧键：
+    ``IfAutoUpdate`` 的 ConfigItem 还保留一个版本兼容旧配置文件。
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    update = normalized_data.get("Update")
+    if (
+        isinstance(update, dict)
+        and update.get("IfAutoUpdate") is False
+        and "AutoUpdateMode" not in update
+    ):
+        update["AutoUpdateMode"] = "Off"
+    return normalized_data
 
 
 class MaaFWConfig(ConfigBase):
@@ -2462,30 +2357,54 @@ class MaaFWConfig(ConfigBase):
         )
 
         ## Update ----------------------------------------------------------
-        ## 是否在运行前自动更新 MaaFW 项目目录
+        ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。
+        ## 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。
+        self.Update_AutoUpdateMode = ConfigItem(
+            "Update",
+            "AutoUpdateMode",
+            "BeforeRun",
+            OptionsValidator(["Off", "BeforeRun", "AfterRun"]),
+        )
+        ## [已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off），
+        ## 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", True, BoolValidator()
         )
-        ## 更新源，留空时使用全局更新源
+        ## 更新包的下载源，由用户显式选择——**不做自动分流**。
+        ## 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定：
+        ## 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成
+        ## GitHub——用户得知道自己在从哪下载，出问题才查得动。
+        ## 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。
+        # 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**，
+        # 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被
+        # correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有
+        # 脚本会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。
         self.Update_Source = ConfigItem(
-            "Update",
-            "Source",
-            "",
-            OptionsValidator(["", "MirrorChyan", "GitHub"]),
+            "Update", "Source", "GitHub", OptionsValidator(["GitHub", "MirrorChyan"])
         )
-        ## 更新渠道，留空时使用全局更新渠道
+        ## 更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。
+        ## 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道，
+        ## 和脚本本体的版本档位是两回事，串在一起只会让人猜。
+        ## Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部
+        ## 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。
+        ## 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致：
+        ## 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
+        ## 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]，
+        ## 即 stable——这里的顺序同样不能随意调换。
         self.Update_Channel = ConfigItem(
-            "Update", "Channel", "", OptionsValidator(["", "stable", "beta"])
+            "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
         )
-        ## Mirror 酱 CDK，留空时运行前使用全局项目更新 CDK
+        ## Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是
+        ## AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜
+        ## 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。
+        ## （合并逻辑见 tools/embedded/update_credentials.py）
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
-        ## GitHub 仓库覆盖，留空时使用 interface.github
+        ## [已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json
+        ## 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_GitHubRepo = ConfigItem("Update", "GitHubRepo", "")
-        ## GitHub release tag 覆盖
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
-        ## GitHub release asset 文件名匹配模式
         self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
         ## Managed --------------------------------------------------------
@@ -2585,6 +2504,10 @@ class MaaFWConfig(ConfigBase):
         self.UserData = MultipleConfig([MaaFWUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
+        return await super().load(_migrate_maafw_auto_update_mode(data))
 
 
 class MaaPlanConfig(ConfigBase):
@@ -2777,54 +2700,13 @@ class GeneralUserConfig(ConfigBase):
         tags = []
 
         # 任务代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self, "任务"))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2837,6 +2719,21 @@ class OkwwTaskIndexValidator(OptionsValidator):
 
     def correct(self, value: Any) -> Any:
         return 7 if value == 2 else super().correct(value)
+
+
+class ScriptUserModeValidator(OptionsValidator):
+    """脚本/用户配置来源，兼容旧版“简洁/详细”。
+
+    旧配置里“简洁”即脚本级配置，“详细”即用户级配置，加载时自动归一为“脚本/用户”。
+    """
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户"])
+
+    def correct(self, value: Any) -> Any:
+        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
 
 
 class OkwwConfigModeValidator(OptionsValidator):
@@ -3024,39 +2921,11 @@ class OkwwUserConfig(ConfigBase):
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -3105,7 +2974,7 @@ class OkNteUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "脚本", ScriptUserModeValidator()
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -3183,39 +3052,11 @@ class OkNteUserConfig(ConfigBase):
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -3338,10 +3179,6 @@ class BetterGIUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
-        self.Data_LastOneDragonConfig = ConfigItem(
-            "Data", "LastOneDragonConfig", ""
-        )
-
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -3391,39 +3228,11 @@ class BetterGIUserConfig(ConfigBase):
         config_name = self.get("Task", "OneDragonConfigName") or "未设置"
         tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -3689,6 +3498,8 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
+        # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
+        # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
@@ -3699,6 +3510,10 @@ class OkNteConfig(ConfigBase):
         )
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
         )
 
         ## Run -------------------------------------------------------------
@@ -3736,6 +3551,10 @@ class BetterGIConfig(ConfigBase):
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
+        ## 是否以管理员权限启动 BetterGI。默认提权（贴近旧行为）；若 MAS 平时以非管理员
+        ## 运行、又不希望每次启动 BGI 都弹 UAC（无人值守任务尤其容易挂在授权上），可关闭。
+        ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
+        self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
 
         ## Game ------------------------------------------------------------
         ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）

@@ -24,6 +24,8 @@ working/logs/ok-script.log 实际输出吻合，无需前置翻译——日志�
   - "✅ 成功: 节点" = 成功
   - "⏭ 跳过: 节点" = 跳过（如互斥组未选中项）
   - "❌ 失败: 节点" = 失败
+  - "NO_REWARD" = 当日活跃度奖励已领取（无可领取项），resolve 据此把
+    「日常领取」的失败降级为「⏭ 跳过: 日常领取（当日已领取）」
 状态优先级 失败 > 跳过 > 成功；节点顺序按最后一次出现排列。体力相关行
 （CUR/UNITS/CONSUME 标记）不进入节点聚合，resolve 据此追加一行「⚡ 剩余体力」。
 """
@@ -45,6 +47,9 @@ OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     (r"任务失败: (.+)", r'"❌ 失败: " + $((?:任务失败: )(.+))'),
     # 跳过列表：收尾 info_set skipped ['a', 'b']，解析为逐个「⏭ 跳过: 节点」
     (r"info_set skipped \[(.*)\]", r'"SKIP:" + $((?:info_set skipped \[)(.*)\])'),
+    # 当日已领取特征：活跃度面板正常打开但找不到亮起的领取按钮（无可领取项）；
+    # resolve 据此把「日常领取」的失败降级为跳过（与成败判定的豁免保持一致）
+    (r"无法找到活跃度奖励领取框", r'"NO_REWARD"'),
     # 体力追踪：当前体力 + 刷本实际消耗；resolve 按「最后当前体力 − 其后消耗」算剩余
     (r"当前体力 (\d+)", r'"CUR:" + $((?:当前体力 )(\d+))'),
     # 异象界域：双倍/单倍次数（两捕获组换行拼接为 D\nS）
@@ -56,6 +61,11 @@ OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
 
 # 状态优先级：失败 > 跳过 > 成功
 _OKNTE_STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
+
+# 「日常领取」节点名别名（私有副本）：节点行（任务完成/失败）用上游原始名，而
+# info_set success/failed 列表经 tr() 翻译，英文环境产出 "Daily Claim"；
+# AutoProxy 的成败判定豁免对同一组别名有独立副本，修改时须两处同步
+_OKNTE_DAILY_CLAIM_NODES = ("日常领取", "Daily Claim")
 
 
 def _oknte_parse_skip_list(payload: str) -> list[str]:
@@ -88,6 +98,7 @@ def oknte_resolve(
     cur_stamina: int | None = None
     consumed_after_cur: int = 0
     stamina_ts: float = 0.0
+    daily_claim_no_reward = False
 
     def _mark(status: str, node: str, ts: float) -> None:
         rank = _OKNTE_STATUS_RANK[status]
@@ -105,6 +116,9 @@ def oknte_resolve(
         elif text.startswith("SKIP:"):
             for node in _oknte_parse_skip_list(text[len("SKIP:"):]):
                 _mark("⏭ 跳过", node, ts)
+        elif text == "NO_REWARD":
+            # 当日活跃度奖励已领取（无可领取项）：不产出节点，仅记标记
+            daily_claim_no_reward = True
         elif text.startswith("CUR:"):
             try:
                 cur_stamina = int(text[len("CUR:"):])
@@ -139,10 +153,21 @@ def oknte_resolve(
             # 误判为成功（当前规则均输出显式标记，命中此处说明规则输出异常）
             continue
 
-    result = [
-        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
-        for node in order
-    ]
+    result = []
+    for node in order:
+        status = states[node][1]
+        # 当日活跃度奖励已领取：上游因找不到领取框把「日常领取」标为失败，
+        # 推送降级为跳过（成败判定层同步豁免）
+        if (
+            daily_claim_no_reward
+            and node in _OKNTE_DAILY_CLAIM_NODES
+            and status == "❌ 失败"
+        ):
+            result.append(
+                (LogType.NORMAL, f"⏭ 跳过: {node}（当日已领取）", ts_of[node])
+            )
+        else:
+            result.append((LogType.NORMAL, f"{status}: {node}", ts_of[node]))
     # 规则均产出普通类型，节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤。
     # 剩余体力 = 最后读到的当前体力 − 其后刷本消耗；无消耗（体力不足直接退出）时
     # 即最后一次当前体力。

@@ -21,7 +21,7 @@
 通过 BetterGI 的脚本仓库（ScriptRepoUpdater）管理「切换账号多模式」脚本，不再随
 MAS 内置冻结副本：MAS 只写订阅清单，由 BetterGI 把脚本更新到
 ``User/JsScript/SwitchAccountMultipleMode``。切号/一条龙的「运行前先同步更新、更新完成
-再执行」特性当前已冻结（见 ``_UPDATE_REPO_BEFORE_RUN``，仅保留后台自动更新与误删恢复）。
+再执行」特性当前已冻结停用（仅保留后台自动更新与误删恢复）。
 MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，供
 ``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
 
@@ -29,20 +29,22 @@ MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，�
 - 自动更新: ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 三个开关（两个自动更新开关 +
   ``selectedChannelName = "CNB"`` 固定仓库渠道为 BetterGI 官方 cnb.cool 镜像，无需境外源）
 - 检出目标: ``{RootPath}/User/JsScript/SwitchAccountMultipleMode``
-- 误删恢复/初次使用: 脚本本地缺失时删除中央仓库副本
-  ``{RootPath}/Repos/bettergi-scripts-list``，BGI 下次启动完整重建并重新检出已订阅脚本。
-  因为 ``OnDeleteScript`` 只删脚本目录、不取消订阅，BGI 每次更新都会对已订阅脚本无条件
-  重检出，即便仓库「已是最新」也会把误删后的目录补回来。
+- 误删恢复/初次使用: 脚本本地缺失时只保证订阅就绪，交给 BGI 启动后的后台自动更新补位
+  （``OnDeleteScript`` 只删脚本目录、不取消订阅，BGI 对已订阅脚本无条件重检出）。
+  仅当上一轮 BGI 运行结束后脚本仍缺失（MAS 侧记录的检出失败标记，见
+  ``record_switch_checkout_result``），下一轮才删除中央仓库副本
+  ``{RootPath}/Repos/bettergi-scripts-list`` 强制完整重建；首次启用不会删用户已有仓库。
 
 账号密码来源：MAS 用户配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
 下拉列表模式下由 MAS 负责把完整手机号/邮箱转换为游戏下拉列表显示的打码形式。
 """
 
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 from app.utils.io import read_file, write_file
 
 from .one_dragon import GLOBAL_CONFIG_LOCK
@@ -57,7 +59,7 @@ _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
 _SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
 
 # 内置资源目录（随 MAS 版本同步；含配置组模板，脚本本体不再内置）
-_RES_TEMPLATE_DIR = Path.cwd() / "res" / "templates" / "BetterGI"
+_RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
 
 # 切换账号脚本在 BetterGI 脚本仓库中的相对路径（repo 下），"js" 前缀映射到 User/JsScript
 _SCRIPT_REPO_PATH = "js/SwitchAccountMultipleMode"
@@ -69,9 +71,9 @@ _SCRIPT_FOLDER_NAME = "SwitchAccountMultipleMode"
 #   订阅清单: {RootPath}/User/Subscriptions/bettergi-scripts-list.json = ["js/..."]
 _REPO_FOLDER_NAME = "bettergi-scripts-list"
 
-# BetterGI 中央脚本仓库本地副本: {RootPath}/Repos/bettergi-scripts-list（桌面元数据缓存）。
-# 用户误删脚本 / 初次使用脚本缺失时，删掉它可在 BGI 下次启动触发完整重建，从而把
-# 检出的脚本连同缺失的切换账号脚本一起拉回来。
+# BetterGI 中央脚本仓库本地副本: {RootPath}/Repos/bettergi-scripts-list（真实 git 克隆）。
+# 只在「上一轮 BGI 运行后切换账号脚本仍缺失」时删掉它，逼 BGI 下次启动完整重建；
+# 里面还有用户其他已订阅脚本，不能在首次使用的正常路径上删除。
 _REPO_REL_DIR = Path("Repos") / _REPO_FOLDER_NAME
 _SUBSCRIPTION_REL_DIR = Path("User") / "Subscriptions"
 # BetterGI 主配置: {RootPath}/User/config.json，ScriptConfig 段开启自动更新
@@ -160,6 +162,15 @@ def switch_script_dir(root_path: Path) -> Path:
     return root_path / _JS_SCRIPT_REL_DIR / _SCRIPT_FOLDER_NAME
 
 
+def _checkout_failed_marker(script_id: str) -> Path:
+    """「上一轮 BGI 运行后切换账号脚本仍缺失」标记文件路径。
+
+    放在 MAS 自有数据目录 ``data/{script_id}/``（与 ``per_user_one_dragon_path`` 同根），
+    不进 BGI 目录树：BGI 会枚举 ``User/JsScript`` 找脚本，且 BGI 重装不应丢失该状态。
+    """
+    return Path.cwd() / "data" / script_id / ".bettergi_switch_checkout_failed"
+
+
 def _ensure_script_subscription(root_path: Path) -> Path:
     """合并订阅清单，返回订阅文件路径。
 
@@ -176,20 +187,12 @@ def _ensure_script_subscription(root_path: Path) -> Path:
     return sub_path
 
 
-# 「命令行运行前先同步更新脚本仓库、更新完成后再执行任务」特性开关。
-# 暂时冻结：当前发现该特性已无必要——每次 CLI 启动前的同步更新会拖慢启动，
-# 且切号脚本已能通过后台自动更新（autoUpdateSubscribedScripts）与误删恢复补位。
-# 若日后出现脚本缺失却未被后台拉回等真实 bug，再把本常量置 True 重新启用。
-_UPDATE_REPO_BEFORE_RUN = False
-
-
 def _ensure_auto_update_on_cli(root_path: Path) -> Path:
     """配置 BetterGI 脚本仓库自动更新并把渠道固定为 CNB，返回主配置文件路径。
 
     ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 置：
-    - ``autoUpdateBeforeCommandLineRun = _UPDATE_REPO_BEFORE_RUN``：命令行启动
-      （切号/一条龙）是否先同步更新仓库脚本再执行。当前冻结停用（False），
-      届时若重新启用改回 True。
+    - ``autoUpdateBeforeCommandLineRun = false``：命令行启动
+      （切号/一条龙）是否先同步更新仓库脚本再执行，当前冻结停用。
     - ``autoUpdateSubscribedScripts = true``：普通启动时也后台更新已订阅脚本（兜底）
     - ``selectedChannelName = "CNB"``：脚本仓库固定从 BetterGI 官方 cnb.cool 镜像
       ``https://cnb.cool/bettergi/bettergi-scripts-list`` 拉取/更新。CNB 本就是
@@ -206,33 +209,27 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
         if not isinstance(script_cfg, dict):
             legacy = config.get("ScriptConfig")  # 兼容历史 PascalCase 键，合并后弃用
             script_cfg = legacy if isinstance(legacy, dict) else {}
-        script_cfg["autoUpdateBeforeCommandLineRun"] = _UPDATE_REPO_BEFORE_RUN
+        script_cfg["autoUpdateBeforeCommandLineRun"] = False
         script_cfg["autoUpdateSubscribedScripts"] = True
         script_cfg["selectedChannelName"] = "CNB"
         config.pop("ScriptConfig", None)
         config["scriptConfig"] = script_cfg
         write_file(config_path, config)
     logger.info(
-        f"已配置 BetterGI 脚本仓库自动更新(运行时预更新={'启用' if _UPDATE_REPO_BEFORE_RUN else '已冻结'})"
-        f"，渠道 CNB: {config_path}"
+        "已配置 BetterGI 脚本仓库自动更新(运行时预更新=已冻结)，渠道 CNB: "
+        f"{config_path}"
     )
     return config_path
 
 
 def ensure_switch_subscription(root_path: Path) -> bool:
-    """确保切换账号脚本被订阅，缺失时强制重建，返回脚本本地是否已就绪。
+    """确保切换账号脚本被订阅，返回脚本本地是否已就绪。本函数不删除任何东西。
 
     BGI 负责按订阅更新仓库脚本（运行前同步更新已冻结，改走后台
-    ``autoUpdateSubscribedScripts``），故这里只需保证订阅就绪即可，
-    删除/初次使用两种情况都会被 BGI 自动重新检出：
-
-    - 覆盖式写入订阅清单（``js/SwitchAccountMultipleMode``）并开启自动更新，
-      保留用户已有订阅项与其余配置。BGI 更新逻辑对每个已订阅路径无条件重检出，
-      即使仓库「已是最新」也会补回被误删的脚本目录。
-    - 若切换账号脚本当前本地缺失（用户误删、或初次使用从未检出），删除本地中央
-      仓库副本 ``Repos/bettergi-scripts-list``，强制 BGI 下次启动完整重建仓库并
-      重检出全部已订阅脚本，确定性地把缺失的切号脚本拉回来，避免依赖 BGI 磁盘
-      缓存快捷路径导致一直不补位。
+    ``autoUpdateSubscribedScripts``），这里只覆盖式写入订阅清单
+    （``js/SwitchAccountMultipleMode``）并开启自动更新，保留用户已有订阅项与其余配置。
+    脚本缺失（用户误删/初次使用）时交给 BGI 启动后自动补位；是否需要强制重建仓库由
+    ``rebuild_script_repo_if_checkout_failed`` 在杀掉旧 BGI 进程之后单独决定。
 
     Returns:
         切换账号脚本当前是否已存在于本地（帮助日志判断是已就绪还是将现拉取）。
@@ -240,16 +237,63 @@ def ensure_switch_subscription(root_path: Path) -> bool:
     try:
         _ensure_script_subscription(root_path)
         _ensure_auto_update_on_cli(root_path)
-        if not switch_script_dir(root_path).is_dir():
-            # 脚本缺失（用户误删/初次使用）：清掉本地仓库，逼 BGI 下次启动整体重建
-            repo_dir = root_path / _REPO_REL_DIR
-            if repo_dir.is_dir():
-                shutil.rmtree(repo_dir, ignore_errors=True)
-                logger.info(f"切换账号脚本缺失，已清理本地脚本仓库强制重建: {repo_dir}")
     except Exception as e:
         logger.opt(exception=True).warning(f"切换账号脚本仓库订阅设置失败: {e}")
         raise
-    return switch_script_dir(root_path).is_dir()
+    present = switch_script_dir(root_path).is_dir()
+    if not present:
+        logger.info("切换账号脚本本地缺失，等待 BGI 启动后按订阅自动补位")
+    return present
+
+
+def rebuild_script_repo_if_checkout_failed(root_path: Path, script_id: str) -> bool:
+    """上一轮 BGI 运行后脚本仍缺失时，删除本地中央仓库副本强制 BGI 完整重建。
+
+    只看 MAS 自有目录里的检出失败标记（由 ``record_switch_checkout_result`` 在上一轮
+    切号结束后写入），首次启用不会触发；调用方须在杀掉旧 BGI 进程之后再调用，
+    避免删掉仍被使用或正在克隆中的仓库。无论是否真的删了目录，标记都会清除，
+    下一轮重新计数。
+
+    Returns:
+        本次是否执行了强制重建（用于向调度台说明本轮要完整重建仓库）。
+    """
+    marker = _checkout_failed_marker(script_id)
+    if switch_script_dir(root_path).is_dir():
+        marker.unlink(missing_ok=True)
+        return False
+    if not marker.exists():
+        return False
+    repo_dir = root_path / _REPO_REL_DIR
+    if repo_dir.is_dir():
+        shutil.rmtree(repo_dir, ignore_errors=True)
+        logger.warning(
+            f"上一轮 BGI 运行后切换账号脚本仍缺失，已清理本地脚本仓库强制重建: {repo_dir}"
+        )
+    else:
+        logger.warning(
+            "上一轮 BGI 运行后切换账号脚本仍缺失，本地脚本仓库也不存在，等待 BGI 重新克隆"
+        )
+    marker.unlink(missing_ok=True)
+    return True
+
+
+def record_switch_checkout_result(root_path: Path, script_id: str) -> bool:
+    """切号结束（BGI 已退出）后记录脚本是否已检出，返回脚本当前是否存在。
+
+    仍缺失说明 BGI 这一轮没有把脚本补回来（后台更新未完成、渠道不通、
+    仓库损坏等），写下标记供下一轮 ``rebuild_script_repo_if_checkout_failed`` 判断；
+    已存在则清除标记。
+    """
+    marker = _checkout_failed_marker(script_id)
+    if switch_script_dir(root_path).is_dir():
+        marker.unlink(missing_ok=True)
+        return True
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+    logger.warning(
+        "本轮 BGI 运行后切换账号脚本仍缺失，已记录标记，下一轮将强制重建脚本仓库"
+    )
+    return False
 
 
 def write_switch_group(

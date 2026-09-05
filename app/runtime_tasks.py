@@ -11,7 +11,6 @@ import logging
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-
 logger = logging.getLogger("AUTO-MAS运行时后台任务")
 T = TypeVar("T")
 
@@ -22,10 +21,6 @@ class OwnedTaskRegistry:
     def __init__(self) -> None:
         self._tasks: set[asyncio.Task[Any]] = set()
         self._closing = False
-
-    @property
-    def task_count(self) -> int:
-        return len(self._tasks)
 
     def spawn(
         self, coroutine: Coroutine[Any, Any, T], *, name: str

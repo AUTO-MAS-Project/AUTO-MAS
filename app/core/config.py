@@ -43,10 +43,10 @@ if TYPE_CHECKING:
 from jinja2 import Environment, FileSystemLoader
 
 from app.models.config import (
-    BetterGIConfig,
-    BetterGIUserConfig,
     CLASS_BOOK,
     PLAN_BOOK,
+    BetterGIConfig,
+    BetterGIUserConfig,
     EmulatorConfig,
     GameSignAccountGroup,
     GeneralConfig,
@@ -76,7 +76,7 @@ from app.models.config import (
     Webhook,
 )
 from app.models.schema import PlanComboxConsumer
-from app.utils import get_logger
+from app.utils import get_logger, is_supervised, resource_path
 from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
     RESOURCE_STAGE_DATE_TEXT,
@@ -87,6 +87,7 @@ from app.utils.constants import (
     UTC8,
 )
 from app.utils.io import write_file
+from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
@@ -284,13 +285,15 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        # 正在循环运行的队列，供配置改动前的安全检查使用
+        self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
         self._inject_truststore()
 
         self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+            loader=FileSystemLoader(str(resource_path("html")))
         )
 
     @staticmethod
@@ -347,7 +350,9 @@ class AppConfig(GlobalConfig):
             try:
                 from git import Repo
 
-                self._repo = Repo(Path.cwd())
+                # .git 随源码走：受 AUTO-MAS-Runtime 监督时源码在 <app-root>/repo/，
+                # 工作目录（app-root）下没有仓库，不能再按 Path.cwd() 打开
+                self._repo = Repo(SOURCE_ROOT)
             except Exception as e:
                 logger.warning(f"Git仓库初始化失败: {e}")
                 self._repo = None
@@ -692,20 +697,6 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
-                if (Path.cwd() / "config/ScriptConfig.json").exists():
-                    data = (Path.cwd() / "config/ScriptConfig.json").read_text(
-                        encoding="utf-8"
-                    )
-                    data.replace("IfWakeUp", "IfStartUp")
-                    data.replace("IfAutoRoguelike", "IfRoguelike")
-                    data.replace("IfBase", "IfInfrast")
-                    data.replace("IfCombat", "IfFight")
-                    data.replace("IfMission", "IfAward")
-                    data.replace("IfRecruiting", "IfRecruit")
-                    (Path.cwd() / "config/ScriptConfig.json").write_text(
-                        data, encoding="utf-8"
-                    )
-
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
                 db.commit()
@@ -715,7 +706,19 @@ class AppConfig(GlobalConfig):
             logger.success("数据文件版本更新完成")
 
     async def get_git_version(self) -> tuple[bool, str, str]:
-        """获取Git版本信息，如果Git不可用则返回默认值"""
+        """获取Git版本信息，如果Git不可用则返回默认值。
+
+        受 AUTO-MAS-Runtime 监督时后端不是更新主体：更新由 Runtime 整体替换
+        repo/ 完成、不在旧仓库上 fetch，比对远端分支判定“需要更新”没有意义，
+        一律视为最新。managed 模式直接回显 Runtime 从校验过的仓库注入的 HEAD，
+        不依赖 Runtime 布局里并不存在的 git 命令行；development 模式无注入
+        身份，仍从源码目录读取 Git 信息用于展示。
+        """
+
+        supervised = is_supervised()
+        expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "")
+        if supervised and expected_commit:
+            return True, expected_commit, "unknown"
 
         def _get_git_info():
 
@@ -749,7 +752,7 @@ class AppConfig(GlobalConfig):
         is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
             None, _get_git_info
         )
-        return is_latest, commit_hash, commit_time
+        return is_latest or supervised, commit_hash, commit_time
 
     async def add_script(
         self,
@@ -865,6 +868,15 @@ class AppConfig(GlobalConfig):
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+
+        # 删脚本会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
+        # 结构一变就会跑错脚本，两轮之间脚本没锁也要拦住。
+        for queue_uid, queue in self.QueueConfig.items():
+            if any(
+                item.get("Info", "ScriptId") == str(uid)
+                for item in queue.QueueItem.values()
+            ):
+                self._ensure_cycle_safe(queue_uid, "删除它引用的脚本")
 
         # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
@@ -1511,6 +1523,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        # 队列名、完成后操作这类字段改了不影响正在跑的循环，放行；
+        # 只有循环开关本身不能在运行中动。
+        if "CycleEnabled" in data.get("Info", {}):
+            self._ensure_cycle_safe(queue_uid, "切换循环开关")
 
         await self.QueueConfig[queue_uid].update(data)
 
@@ -1519,7 +1535,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "删除")
+
+        await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -1613,6 +1632,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
 
@@ -1627,6 +1647,10 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        # 循环调度参数每轮都会重读，运行中改没问题；换脚本会让任务的脚本列表
+        # 与队列对不上号，必须拦住。
+        if "Info" in data:
+            self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
@@ -1637,6 +1661,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
@@ -1646,10 +1671,29 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "调整队列项顺序")
 
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
+        """拦住会打乱正在运行的循环的改动。
+
+        任务的脚本列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
+        排序、换脚本都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
+        周期都不受影响。
+        """
+
+        if queue_uid not in self.running_cycle_queue_ids:
+            return
+
+        queue_name = (
+            self.QueueConfig[queue_uid].get("Info", "Name")
+            if queue_uid in self.QueueConfig
+            else str(queue_uid)
+        )
+        raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法{action}")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""

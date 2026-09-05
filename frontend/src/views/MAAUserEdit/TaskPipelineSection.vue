@@ -23,6 +23,37 @@
 
     <div class="task-list">
       <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
+      <!-- 绿票商店：任务链只认主界面、跑完也停在商店页，所以自己占一次启动，排在剿灭之前 -->
+      <PipelineRow
+        :name="t('edit.maaGreenTicketStore')"
+        :summary="greenTicketStoreSummary"
+        :checked="formData.Task.IfGreenTicketStore"
+        :disabled="loading"
+        :hint="t('edit.maaGreenTicketStoreHint')"
+        @change="emitSave('Task.IfGreenTicketStore', $event)"
+      >
+        <div class="detail-inline">
+          <a-tag :color="greenTicketStoreDoneThisMonth ? 'success' : 'warning'">
+            {{ t('edit.maaMonthStatus') }}
+            {{ greenTicketStoreDoneThisMonth ? t('edit.maaDone') : t('edit.maaNotDone') }}
+          </a-tag>
+          <a-button
+            size="small"
+            :disabled="loading"
+            @click="emitSave('Data.GreenTicketStoreMonth', null)"
+          >
+            {{ t('edit.resetState') }}
+          </a-button>
+          <a-button
+            size="small"
+            :disabled="loading"
+            @click="emitSave('Data.GreenTicketStoreMonth', currentMonthMarker)"
+          >
+            {{ t('edit.markAsDone2') }}
+          </a-button>
+        </div>
+      </PipelineRow>
+
       <PipelineRow
         :name="t('edit.maaAnnihilation')"
         :summary="annihilationSummary"
@@ -285,7 +316,7 @@ import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
-import { currentWeekMarker } from './weekMarker'
+import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
@@ -394,6 +425,16 @@ const depotSummary = computed(() =>
     formData.value.Task.DepotMaintainPlans
   )
 )
+
+const greenTicketStoreDoneThisMonth = computed(
+  () => formData.value.Data?.GreenTicketStoreMonth === currentMonthMarker
+)
+
+const greenTicketStoreSummary = computed(() => {
+  if (!formData.value.Task.IfGreenTicketStore) return ''
+  const status = greenTicketStoreDoneThisMonth.value ? t('edit.maaDone') : t('edit.maaNotDone')
+  return `${t('edit.maaMonthStatus')} ${status}`
+})
 </script>
 
 <style scoped>

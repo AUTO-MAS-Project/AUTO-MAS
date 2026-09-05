@@ -117,6 +117,7 @@ class OkwwManager(TaskExecuteBase):
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
+                    and self.task_info.is_target_user(str(uid))
                 ]
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -181,6 +182,7 @@ class OkwwManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
 
         # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
@@ -341,21 +343,15 @@ class OkwwManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "异常"
-                ]
-                over_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "完成"
-                ]
-                wait_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "等待"
-                ]
+                error_count = sum(
+                    1 for user in self.script_info.user_list if user.status == "异常"
+                )
+                over_count = sum(
+                    1 for user in self.script_info.user_list if user.status == "完成"
+                )
+                wait_count = sum(
+                    1 for user in self.script_info.user_list if user.status == "等待"
+                )
                 task_mode = TASK_MODE_ZH[self.task_info.mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
@@ -367,7 +363,7 @@ class OkwwManager(TaskExecuteBase):
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，
                 # push_log 为空，自然只有结果行。
-                has_uncompleted = len(error_user) + len(wait_user) > 0
+                has_uncompleted = error_count + wait_count > 0
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
@@ -380,8 +376,8 @@ class OkwwManager(TaskExecuteBase):
                     "script_name": self.script_info.name or "空白",
                     "start_time": self.begin_time,
                     "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": len(over_user),
-                    "uncompleted_count": len(error_user) + len(wait_user),
+                    "completed_count": over_count,
+                    "uncompleted_count": error_count + wait_count,
                     "result": task_result,
                     "game_sign_summary": has_game_sign_summary,
                 }

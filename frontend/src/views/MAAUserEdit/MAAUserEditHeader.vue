@@ -18,7 +18,7 @@
 
     <a-space size="middle">
       <a-button
-        v-if="userMode !== '简洁' && !showMaaConfigMask"
+        v-if="userMode !== '脚本' && !showMaaConfigMask"
         type="primary"
         ghost
         size="large"
@@ -31,7 +31,7 @@
         {{ t('edit.maaConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode !== '简洁' && showMaaConfigMask"
+        v-if="userMode !== '脚本' && showMaaConfigMask"
         type="default"
         size="large"
         disabled

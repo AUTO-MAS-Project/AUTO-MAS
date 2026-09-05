@@ -26,15 +26,15 @@ from pathlib import Path
 import psutil
 
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
+
 from .config import (
     is_src_config_available,
     read_src_installation_id,
     validate_src_installation,
 )
 from .poor_yaml import poor_yaml_read
-
 
 logger = get_logger("SRC 进程清理")
 

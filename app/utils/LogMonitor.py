@@ -21,15 +21,15 @@
 
 import asyncio
 import time
+from contextlib import suppress
+from copy import copy
+from datetime import date, datetime
+from pathlib import Path
+from typing import Awaitable, Callable, Literal
 
 import aiofiles
-from contextlib import suppress
-from datetime import datetime, timedelta, date
-from copy import copy
-from pathlib import Path
-from typing import Callable, Literal, Awaitable
 
-from .constants import TIME_FIELDS, ANSI_ESCAPE_RE
+from .constants import ANSI_ESCAPE_RE, TIME_FIELDS
 from .logger import get_logger
 from .tools import decode_bytes
 

@@ -12,7 +12,6 @@ from typing import Any
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
-
 IDENTITY_SCHEMA_VERSION = 1
 RUNTIME_ID_PREFIX = "maafw-runtime-"
 FALLBACK_REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")

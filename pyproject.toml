@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.5.0b2"
+version = "5.5.0b3"
 description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -55,7 +55,9 @@ extend-exclude = [
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
 
-ignore = ["E501"]
+# F403/F405 为架构性模式：schema 公共模型经 `from ... import *` 星号导出、
+# utils 经 __getattr__ 惰性导出，均属有意设计，不作为待修问题统计。
+ignore = ["E501", "F403", "F405"]
 
 [tool.ruff.lint.isort]
 # 将项目内部模块与第三方依赖正确分组。

@@ -32,8 +32,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
+from app.utils.constants import EMULATOR_PATH_BOOK
 
 logger = get_logger("模拟器管理工具")
 
@@ -61,10 +61,6 @@ def _normalize_fs_path_candidate(raw: str) -> str:
         root = os.environ.get("SystemRoot", r"C:\Windows").rstrip("\\/")
         s = root + s[len(sr) :]
     return s.strip()
-
-
-def _executable_name_set(config: Dict) -> Set[str]:
-    return {x.lower() for x in (config.get("executables") or []) if x}
 
 
 def _emulator_brand_keyword_rows() -> List[Tuple[str, List[str]]]:

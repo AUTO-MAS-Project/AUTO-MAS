@@ -111,6 +111,7 @@
   <div class="scripts-header">
     <div class="header-left">
       <h1 class="page-title">{{ t('scripts.title') }}</h1>
+      <DocLink :url="MAS_DOC_URLS.scripts" />
       <a-input
         v-model:value="scriptSearchKeyword"
         allow-clear
@@ -653,7 +654,8 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { openExternalUrl } from '@/utils/openExternal'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS, openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
 

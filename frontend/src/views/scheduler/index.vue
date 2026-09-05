@@ -81,16 +81,22 @@
               v-model:selected-task-id="tab.selectedTaskId"
               v-model:selected-mode="tab.selectedMode"
               v-model:resume-from-script-id="tab.resumeFromScriptId"
+              v-model:selected-user-id="tab.selectedUserId"
               v-model:running-task-label="tab.runningTaskLabel"
               v-model:running-mode-label="tab.runningModeLabel"
               :resume-script-options="tab.resumeScriptOptions || []"
               :resume-script-loading="tab.resumeScriptLoading"
+              :user-options="tab.userOptions || []"
+              :user-options-loading="tab.userOptionsLoading"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
+              :is-cycle-queue="tab.isCycleQueue"
+              :cycle-next-list="tab.cycleNextList || []"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
               @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
+              @refresh-users="() => loadUserOptions(tab)"
               @start="onStartTaskClick(tab)"
               @stop="stopTask(tab)"
               @refresh-tasks="loadTaskOptions"
@@ -175,6 +181,7 @@ const {
   stopTask,
   handleTaskSelectionChange,
   loadResumeScriptOptions,
+  loadUserOptions,
 
   // 日志操作
   onLogScroll,

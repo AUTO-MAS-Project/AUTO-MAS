@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { WSTaskCyclePreviewData } from './WSTaskCyclePreviewData';
 import type { WSTaskScriptIdentityData } from './WSTaskScriptIdentityData';
 import type { WSTaskScriptInfoData } from './WSTaskScriptInfoData';
 /**
@@ -13,9 +14,13 @@ export type TaskRuntimeSnapshotItem = {
      */
     taskId: string;
     /**
-     * 任务模式
+     * 脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行
      */
     mode: TaskRuntimeSnapshotItem.mode;
+    /**
+     * 是否为循环运行任务
+     */
+    isCycle?: boolean;
     /**
      * 调度队列 ID
      */
@@ -41,13 +46,17 @@ export type TaskRuntimeSnapshotItem = {
      */
     task_info?: Array<WSTaskScriptInfoData>;
     /**
+     * 循环运行的待运行条目, 仅循环任务非空
+     */
+    cycleNextList?: Array<WSTaskCyclePreviewData>;
+    /**
      * 当前脚本日志
      */
     log?: string;
 };
 export namespace TaskRuntimeSnapshotItem {
     /**
-     * 任务模式
+     * 脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行
      */
     export enum mode {
         AUTO_PROXY = 'AutoProxy',

@@ -20,19 +20,20 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
-import time
-import json
 import asyncio
-import zipfile
-import httpx
-import aiofiles
+import json
+import re
 import subprocess
+import time
+import zipfile
 from dataclasses import dataclass
-from packaging import version
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import aiofiles
+import httpx
+from packaging import version
 
 from app.core.ws import Publisher, protocol
 from app.models.schema import (
@@ -41,9 +42,10 @@ from app.models.schema import (
     WSUpdateFailedData,
     WSUpdateProgressData,
 )
-from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils import LazyProxy, ProcessRunner, get_logger
+from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.platform.process import platform_process
+
 from .system import System
 
 logger = get_logger("更新服务")

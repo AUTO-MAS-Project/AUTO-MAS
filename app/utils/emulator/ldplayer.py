@@ -20,22 +20,23 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import psutil
 import asyncio
+import json
+
+import psutil
 
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
-    import win32gui
     import keyboard
-from datetime import datetime, timedelta
+    import win32gui
 import time
-from pydantic import BaseModel
 from pathlib import Path
 
-from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
+from pydantic import BaseModel
+
 from app.models.config import EmulatorConfig
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")
@@ -198,6 +199,7 @@ class LDManager(DeviceBase):
             *(["--packagename", f'"{package_name}"'] if package_name else []),
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         # 参考命令 dnconsole.exe launch --index 0
 
@@ -245,6 +247,7 @@ class LDManager(DeviceBase):
             idx,
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
         # 参考命令 dnconsole.exe quit --index 0
 
@@ -350,6 +353,7 @@ class LDManager(DeviceBase):
             "list2",
             timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
+            breakaway=True,
         )
 
         if result.returncode != 0:

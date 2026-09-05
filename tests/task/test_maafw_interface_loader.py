@@ -3,8 +3,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import app.core
-
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model,

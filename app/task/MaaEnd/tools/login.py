@@ -32,12 +32,18 @@ from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 
 from app.utils.platform import IS_WINDOWS
+
+if TYPE_CHECKING:
+    import pyautogui
+    import win32api
+    import win32con
+    import win32gui
 
 if IS_WINDOWS:
     # pyautogui 在无图形会话(如无 DISPLAY 的 Linux)导入即失败，
@@ -50,11 +56,11 @@ from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
 from app.models.emulator import DeviceInfo
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 
 logger = get_logger("终末地登录")
 
-_IMAGE_ROOT = Path.cwd() / "res/MaaFW/image/EndFieldPC"
+_IMAGE_ROOT = resource_path("MaaFW", "image", "EndFieldPC")
 _TEMPLATES = {
     "logout": (
         _IMAGE_ROOT / "登出-1080p.png",
@@ -329,8 +335,21 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
     masked_id = f"***{account_id[-4:]}"
     account_list_top: int | None = None
     selector_expanded = False
+    last_ocr_accounts: tuple[OCRItem, ...] | None = None
 
-    async for frame in _poll_frames(hwnd, 30, activate=False):
+    # 仅记录当前阶段的超时信息，不参与账号选择状态判断。
+    step_name = "识别登录表单中的目标账号或账号选择器"
+    step_timeout = 45
+    step_deadline = asyncio.get_running_loop().time() + step_timeout
+
+    async for frame in _poll_frames(hwnd, 90, activate=False):
+        if asyncio.get_running_loop().time() >= step_deadline:
+            message = (
+                f"终末地登录{step_name}超时（{step_timeout}秒），目标账号: {masked_id}"
+            )
+            logger.warning(message)
+            raise RuntimeError(message)
+
         # 下拉框展开后，从“最近”底部扫描到屏幕底部，避免固定 ROI 截断后面的账号。
         recent: Box | None = None
         if selector_expanded and account_list_top is not None:
@@ -339,6 +358,12 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
                 frame,
                 (0, account_list_top, _FRAME_WIDTH, _FRAME_HEIGHT),
             )
+            ocr_accounts = tuple((text, box) for text, box in ocr_items if "*" in text)
+            if ocr_accounts != last_ocr_accounts:
+                logger.info(
+                    f"登录下拉框 OCR 账号列表: {ocr_accounts or '未识别到掩码账号'}"
+                )
+                last_ocr_accounts = ocr_accounts
         else:
             ocr_items = await asyncio.to_thread(_read_text, frame, _LOGIN_FORM_ROI)
             recent = next((box for text, box in ocr_items if "最近" in text), None)
@@ -363,6 +388,9 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
             logger.info(f"在登录下拉框中选择账号: {masked_id}")
             await asyncio.to_thread(_click_box, hwnd, target, activate=False)
             selector_expanded = False
+            step_name = "确认目标账号已在登录表单中选中"
+            step_timeout = 15
+            step_deadline = asyncio.get_running_loop().time() + step_timeout
             continue
 
         if not selector_expanded and target is not None and login_button is not None:
@@ -377,8 +405,16 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
             logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
             await asyncio.to_thread(_click_box, hwnd, recent, activate=False)
             selector_expanded = True
+            step_name = "扫描登录下拉框中的目标账号"
+            step_timeout = 25
+            step_deadline = asyncio.get_running_loop().time() + step_timeout
 
-    raise RuntimeError(f"登录表单中未找到目标账号: {masked_id}")
+    message = (
+        f"终末地登录流程超时（当前步骤：{step_name}，总预算 "
+        f"90秒），目标账号: {masked_id}"
+    )
+    logger.warning(message)
+    raise RuntimeError(message)
 
 
 async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
@@ -399,7 +435,7 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
     try:
         await _open_login_form(hwnd)
         await _submit_login_form(hwnd, id)
-        await _wait_template(hwnd, "logout", 120, "登录确认超时")
+        await _wait_template(hwnd, "logout", 120, "登录确认超时：未检测到已登录界面")
     except Exception:
         await asyncio.to_thread(_save_error_screenshot, hwnd)
         raise

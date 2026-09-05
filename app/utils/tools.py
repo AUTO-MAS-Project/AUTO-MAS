@@ -22,7 +22,9 @@
 
 import time
 
-from app.utils.platform.common.process_runner import decode_bytes
+from app.utils.platform.common.process_runner import (
+    decode_bytes,  # noqa: F401  # 兼容 re-export：io.py/LogMonitor.py 经 .tools 导入
+)
 
 
 def busy_wait(ms: float) -> None:

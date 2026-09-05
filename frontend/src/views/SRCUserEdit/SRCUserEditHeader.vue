@@ -18,7 +18,7 @@
 
     <a-space size="middle">
       <a-button
-        v-if="userMode !== '简洁' && !showSrcConfigMask"
+        v-if="userMode !== '脚本' && !showSrcConfigMask"
         type="primary"
         ghost
         size="large"
@@ -31,7 +31,7 @@
         {{ t('edit.srcConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode !== '简洁' && showSrcConfigMask"
+        v-if="userMode !== '脚本' && showSrcConfigMask"
         type="default"
         size="large"
         disabled

@@ -22,11 +22,12 @@
 
 
 import asyncio
+
 from fastapi import APIRouter, Body, Query
 
 from app.core import Config
-from app.services import Updater
 from app.models.schema import *
+from app.services import Updater
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
 

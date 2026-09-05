@@ -28,15 +28,30 @@ from pathlib import Path
 from typing import Literal
 
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4, UTC8
+
 from .task_mapping import HSR_TASK_MODULES, get_assigned_script
+from .tools import push_notification
+from .tools.account_switch import (
+    HSR_GAME_PROCESS_NAME,
+    HSR_GAME_READY_DELAY_SECONDS,
+    HSRAccountSwitcher,
+    is_game_management_enabled,
+    resolve_game_executable_path,
+    stop_external_processes,
+    user_needs_account_switch,
+)
+from .tools.log_detect import detect_echo_of_war_completion
 from .tools.m7a_control import HSRM7AControl
+from .tools.m7a_runtime import M7ARunner
+from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
+from .tools.native_control import resolve_configured_engines, resolve_script_path
 from .tools.run_model import (
     CompletionWriteback,
     HSRLoginPlan,
@@ -49,20 +64,6 @@ from .tools.run_model import (
     external_result_failure_summary,
 )
 from .tools.sra_control import HSRSRAControl
-from .tools.account_switch import (
-    HSRAccountSwitcher,
-    HSR_GAME_PROCESS_NAME,
-    HSR_GAME_READY_DELAY_SECONDS,
-    is_game_management_enabled,
-    stop_external_processes,
-    resolve_game_executable_path,
-    user_needs_account_switch,
-)
-from .tools import push_notification
-from .tools.log_detect import detect_echo_of_war_completion
-from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_configured_engines, resolve_script_path
-from .tools.m7a_runtime import M7ARunner
 from .tools.sra_runtime import cleanup_sra_temp_config
 from .tools.stage_runtime import (
     get_sra_native_stage,
@@ -1515,8 +1516,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
             ]
             if _daily_items and len(_daily_failed) < len(_daily_items):
                 self._queue_daily_proxy_completion(uid, user_name)
-            self._finish_current_user_log(status)
+            # 结束当前用户日志会清空用户上下文，每轮只能调用一次；
+            # 用户状态必须在这一次里定好，否则后续补写全部失效。
             if not failed_items:
+                self._finish_current_user_log(status)
                 return
 
             if attempt < retry_limit:
@@ -1529,10 +1532,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
                     f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
                 )
-                self._finish_current_user_log(
-                    "HSR 用户任务本轮失败，等待补跑",
-                    user_status="运行",
-                )
+                self._finish_current_user_log(status, user_status="运行")
                 current_items = self._build_retry_queue_items(
                     failed_items,
                     user_item=user_item,
@@ -1544,10 +1544,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     temp_files=self.temp_files,
                 )
             else:
-                self._finish_current_user_log(
-                    "HSR 用户任务重试失败",
-                    user_status="异常",
-                )
+                self._finish_current_user_log(status, user_status="异常")
                 for failed_item in failed_items:
                     if failed_item.module_key == "StartGame":
                         continue

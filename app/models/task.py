@@ -20,16 +20,16 @@
 
 
 from __future__ import annotations
+
 import asyncio
 import time
 import weakref
-from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Literal
+from datetime import datetime
+from typing import List, Literal, Optional
 
 from app.runtime_tasks import RuntimeTasks
-
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -122,6 +122,9 @@ class ScriptItem:
 class TaskItem(ABC):
     """任务信息基类，管理任务的信息和脚本列表"""
 
+    # 脚本执行模式。循环运行不占用这个字段：各脚本适配器都按 mode 分派任务类
+    # （METHOD_BOOK）并有近百处 == "AutoProxy" 的分支，循环里的每一轮本就是自动
+    # 代理，写成 "CycleRun" 会让所有适配器 KeyError 或走错分支。循环与否见 is_cycle。
     mode: Literal["AutoProxy", "ScriptConfig", "Update"]  # 任务模式
     task_id: str  # 任务唯一标识符
     queue_id: str | None  # 执行的队列ID
@@ -130,6 +133,10 @@ class TaskItem(ABC):
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
+    cycle_next_list: List[dict] = field(
+        default_factory=list, repr=False
+    )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
     game_sign_results: list[dict] = field(default_factory=list, repr=False)
     game_sign_summary_consumed: bool = field(default=False, repr=False)
@@ -185,6 +192,31 @@ class TaskItem(ABC):
     def is_queue_task(self) -> bool:
         """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
         return self.queue_id is not None
+
+    @property
+    def target_user_id(self) -> str | None:
+        """单独运行时指定的用户ID；未指定或非自动代理时为 None。
+
+        必须带上模式判断：ScriptConfig 与 Update 模式会把 user_id 写成
+        "Default" 或被编辑的用户，那是「配置谁」而不是「只代理谁」。
+        """
+        return self.user_id if self.mode == "AutoProxy" else None
+
+    def is_target_user(self, user_id: str) -> bool:
+        """用户是否属于本次运行范围。
+
+        只用于收窄展示与执行用的 user_list，各脚本适配器持有的用户配置副本必须
+        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同脚本其它用户的配置。
+
+        Args:
+            user_id (str): 待判定的用户ID。
+
+        Returns:
+            bool: 未指定单独运行的用户时恒为 True。
+        """
+
+        target = self.target_user_id
+        return target is None or user_id == target
 
     @property
     def asdict(self) -> list:

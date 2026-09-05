@@ -55,9 +55,9 @@ export type OkNteUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 用户配置模式（简洁/详细）
+     * 配置来源（脚本/用户）
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('脚本' | '用户' | null);
     /**
      * 游戏资源
      */

@@ -15,7 +15,7 @@ export type OkNteConfig_Game = {
      */
     Type?: ('Client' | 'URL' | null);
     /**
-     * 游戏程序路径
+     * 游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）
      */
     Path?: (string | null);
     /**
@@ -46,5 +46,9 @@ export type OkNteConfig_Game = {
      * 任务结束后是否关闭游戏
      */
     CloseOnFinish?: (boolean | null);
+    /**
+     * 运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）
+     */
+    AccountSwitch?: (boolean | null);
 };
 

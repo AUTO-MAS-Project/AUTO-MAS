@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 RUNTIME_POOL_SERVICE = "maafw.runtime_pool.v1"
 
 

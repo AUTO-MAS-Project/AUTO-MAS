@@ -400,8 +400,55 @@ class QueueItem_Info(BaseModel):
     )
 
 
+class QueueItem_Schedule(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否参与循环调度")
+    Mode: Optional[Literal["fixed_time", "interval"]] = Field(
+        default=None, description="循环调度模式, 固定时间或间隔"
+    )
+    Days: Optional[
+        List[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ]
+    ] = Field(default=None, description="固定时间模式的执行周期, 可多选")
+    Time: Optional[str] = Field(
+        default=None, description="固定时间模式的执行时间, 格式为HH:MM"
+    )
+    IntervalMinutes: Optional[int] = Field(
+        default=None, description="间隔模式的间隔分钟数"
+    )
+    IntervalAnchor: Optional[Literal["start", "finish"]] = Field(
+        default=None, description="间隔模式的计时基准, 上次开始或上次结束"
+    )
+    NextRunAt: Optional[str] = Field(
+        default=None, description="下次运行时间, 格式为YYYY-MM-DD HH:MM:SS"
+    )
+
+
+class QueueItem_Data(BaseModel):
+    LastCycleStartedAt: Optional[str] = Field(
+        default=None, description="上次循环开始时间"
+    )
+    LastCycleFinishedAt: Optional[str] = Field(
+        default=None, description="上次循环结束时间"
+    )
+
+
 class QueueItem(BaseModel):
     Info: Optional[QueueItem_Info] = Field(default=None, description="队列项")
+    Schedule: Optional[QueueItem_Schedule] = Field(
+        default=None, description="队列项的循环调度配置"
+    )
+    Data: Optional[QueueItem_Data] = Field(
+        default=None, description="队列项的循环运行数据"
+    )
 
 
 class TimeSet_Info(BaseModel):
@@ -431,6 +478,9 @@ class QueueConfig_Info(BaseModel):
     TimeEnabled: Optional[bool] = Field(default=None, description="是否启用定时")
     StartUpMode: Optional[Literal["Never", "Always", "DailyFirst"]] = Field(
         default=None, description="启动时运行模式"
+    )
+    CycleEnabled: Optional[bool] = Field(
+        default=None, description="是否为循环队列, 与定时互斥"
     )
     AfterAccomplish: Optional[
         Literal[
@@ -485,8 +535,8 @@ class UserIndexItem(BaseModel):
 class MaaUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Id: Optional[str] = Field(default=None, description="用户ID")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     Server: Optional[
@@ -545,6 +595,9 @@ class MaaUserConfig_Data(BaseModel):
     AnnihilationCompletedWeek: Optional[str] = Field(
         default=None, description="剿灭达到周上限时的 ISO 周"
     )
+    GreenTicketStoreMonth: Optional[str] = Field(
+        default=None, description="上次完成绿票商店购买的月份"
+    )
     LastResVersion: Optional[str] = Field(
         default=None, description="上次成功代理时服务端的游戏资源版本"
     )
@@ -560,6 +613,7 @@ class MaaUserConfig_Task(BaseModel):
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
+    IfGreenTicketStore: Optional[bool] = Field(default=None, description="绿票商店")
     IfActivityFirst: Optional[bool] = Field(
         default=None, description="活动期间优先刷活动关"
     )
@@ -771,8 +825,8 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式（简洁/详细）"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
@@ -823,29 +877,11 @@ class BetterGIUserConfig_Switch(BaseModel):
     )
 
 
-class BetterGIUserConfig_Info(BaseModel):
+class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     """BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）"""
 
-    Name: Optional[str] = Field(default=None, description="用户名")
-    Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    IfScriptBeforeTask: Optional[bool] = Field(
-        default=None, description="是否在任务前执行脚本"
-    )
-    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
-    IfScriptAfterTask: Optional[bool] = Field(
-        default=None, description="是否在任务后执行脚本"
-    )
-    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
-    Notes: Optional[str] = Field(default=None, description="备注")
-    Tag: Optional[str] = Field(
-        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
-    )
-    IfUseMasConfig: Optional[bool] = Field(
-        default=None, description="是否使用用户独立一条龙配置"
-    )
 
 
 class BetterGIUserConfig_OneDragon(BaseModel):
@@ -878,13 +914,6 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
     LastProxyStatus: Optional[str] = Field(
         default=None, description="上次代理状态（未知/成功/失败）"
     )
-    LastOneDragonConfig: Optional[str] = Field(
-        default=None, description="上次运行的一条龙配置名"
-    )
-
-
-class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
-    """BetterGI 用户通知（复用通用字段）"""
 
 
 class BetterGIUserConfig(BaseModel):
@@ -893,7 +922,7 @@ class BetterGIUserConfig(BaseModel):
     Switch: Optional[BetterGIUserConfig_Switch] = Field(default=None, description="切换账号配置")
     OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(default=None, description="一条龙配置")
     Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[BetterGIUserConfig_Notify] = Field(default=None, description="单独通知")
+    Notify: Optional[GeneralUserConfig_Notify] = Field(default=None, description="单独通知")
 
 
 class GeneralConfig_Info(BaseModel):
@@ -1072,7 +1101,9 @@ class OkNteConfig_Game(BaseModel):
     Type: Optional[Literal["Client", "URL"]] = Field(
         default=None, description="类型: PC端, URL协议"
     )
-    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Path: Optional[str] = Field(
+        default=None, description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）"
+    )
     URL: Optional[str] = Field(default=None, description="自定义协议URL")
     ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
@@ -1085,6 +1116,9 @@ class OkNteConfig_Game(BaseModel):
     )
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭游戏"
+    )
+    AccountSwitch: Optional[bool] = Field(
+        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
     )
 
 
@@ -1099,14 +1133,6 @@ class OkNteConfig(BaseModel):
     Run: Optional[OkNteConfig_Run] = Field(default=None, description="运行配置")
 
 
-class BetterGIConfig_Info(GeneralConfig_Info):
-    """BetterGI 脚本基础信息（复用通用字段）"""
-
-
-class BetterGIConfig_Run(GeneralConfig_Run):
-    """BetterGI 运行配置（复用通用字段）"""
-
-
 class BetterGIConfig_Game(BaseModel):
     """BetterGI 游戏配置"""
 
@@ -1119,8 +1145,8 @@ class BetterGIConfig_Game(BaseModel):
 
 
 class BetterGIConfig(BaseModel):
-    Info: Optional[BetterGIConfig_Info] = Field(default=None, description="脚本基础信息")
-    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 
@@ -1129,8 +1155,8 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="配置文件来源"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -1264,8 +1290,8 @@ class SrcUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="脚本模式"
+    Mode: Optional[Literal["脚本", "用户"]] = Field(
+        default=None, description="配置来源（脚本/用户）"
     )
     Server: Optional[
         Literal[
@@ -2038,24 +2064,32 @@ class MaaFWConfig_Game(BaseModel):
 
 
 class MaaFWConfig_Update(BaseModel):
+    AutoUpdateMode: Optional[Literal["Off", "BeforeRun", "AfterRun"]] = Field(
+        default=None,
+        description="项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后",
+    )
     IfAutoUpdate: Optional[bool] = Field(
-        default=None, description="是否在运行前自动更新 MaaFW 项目"
+        default=None,
+        description="[已废弃] 旧布尔开关，加载时迁移为 AutoUpdateMode，运行流程不再读取",
     )
-    Source: Optional[Literal["", "MirrorChyan", "GitHub"]] = Field(
-        default=None, description="项目更新源，留空时使用全局更新源"
+    Source: Optional[Literal["MirrorChyan", "GitHub"]] = Field(
+        default=None,
+        description="项目更新包下载源：Mirror 酱（需自行填写 CDK）/ GitHub",
     )
-    Channel: Optional[Literal["", "stable", "beta"]] = Field(
-        default=None, description="项目更新渠道，留空时使用全局更新渠道"
+    Channel: Optional[Literal["stable", "beta"]] = Field(
+        default=None, description="项目更新渠道：稳定版 / 测试版"
     )
     MirrorChyanCDK: Optional[str] = Field(
-        default=None, description="Mirror 酱 CDK，留空时使用全局项目更新 CDK"
+        default=None, description="Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填"
     )
-    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库覆盖")
+    GitHubRepo: Optional[str] = Field(
+        default=None, description="[已废弃] GitHub 仓库覆盖，改为从 interface.json 推导"
+    )
     GitHubTag: Optional[str] = Field(
-        default=None, description="GitHub release tag 覆盖"
+        default=None, description="[已废弃] GitHub release tag 覆盖"
     )
     GitHubAssetPattern: Optional[str] = Field(
-        default=None, description="GitHub release asset 文件名匹配模式"
+        default=None, description="[已废弃] GitHub release asset 文件名匹配模式"
     )
 
 
@@ -2374,7 +2408,25 @@ class MaaFWProjectUpdateData(BaseModel):
         default=None, description="interface 声明的当前项目版本"
     )
     latestVersion: Optional[str] = Field(default=None, description="发现的最新项目版本")
-    source: Optional[str] = Field(default=None, description="更新包来源")
+    source: Optional[str] = Field(
+        default=None, description="实际更新包来源：mirrorchyan / github；未下载时为空"
+    )
+    versionName: Optional[str] = Field(
+        default=None, description="Mirror 酱返回的最新版本名；查版本失败时为空"
+    )
+    cdkStatus: Optional[str] = Field(
+        default=None,
+        description="CDK 状态：ok / absent / expired / invalid / quota / mismatched / blocked",
+    )
+    cdkMessage: Optional[str] = Field(
+        default=None, description="CDK 状态对应的用户提示；ok / absent 时为空"
+    )
+    cdkExpiredTime: Optional[int] = Field(
+        default=None, description="Mirror 酱返回的 CDK 过期时间（unix 秒），仅 ok 时有"
+    )
+    skippedReason: Optional[str] = Field(
+        default=None, description="未执行更新的原因（无 rid、已最新、锁被占等）"
+    )
 
 
 class MaaFWProjectUpdateOut(OutBase):
@@ -3021,12 +3073,17 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
-        ..., description="任务模式"
+    mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
+        ...,
+        description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行",
     )
     resumeFromScriptId: str | None = Field(
         default=None,
         description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
+    )
+    userId: str | None = Field(
+        default=None,
+        description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
     )
 
 
@@ -3087,11 +3144,25 @@ class WSTaskScriptInfoData(BaseModel):
     )
 
 
+class WSTaskCyclePreviewData(BaseModel):
+    """循环运行的一个待运行条目。"""
+
+    queueItemId: str = Field(..., description="队列项 ID")
+    scriptId: str = Field(..., description="脚本 ID")
+    scriptName: str = Field(..., description="脚本名称")
+    nextRunAt: str = Field(..., description="下次运行时间, 格式为YYYY-MM-DD HH:MM:SS")
+    isDue: bool = Field(default=False, description="是否已到运行时间")
+    isRunning: bool = Field(default=False, description="是否正在运行")
+
+
 class WSTaskInfoUpdatedData(BaseModel):
     """任务信息全量快照 (type=task.info.updated)。"""
 
     task_info: List[WSTaskScriptInfoData] = Field(
         default_factory=list, description="任务脚本与用户状态"
+    )
+    cycleNextList: List[WSTaskCyclePreviewData] = Field(
+        default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
     )
 
 
@@ -3113,8 +3184,9 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
     taskId: str = Field(..., description="任务 ID")
     mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
-        ..., description="任务模式"
+        ..., description="脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行"
     )
+    isCycle: bool = Field(default=False, description="是否为循环运行任务")
     queueId: Optional[str] = Field(default=None, description="调度队列 ID")
     scriptId: Optional[str] = Field(default=None, description="脚本 ID")
     userId: Optional[str] = Field(default=None, description="用户 ID")
@@ -3124,6 +3196,9 @@ class TaskRuntimeSnapshotItem(BaseModel):
     )
     task_info: List[WSTaskScriptInfoData] = Field(
         default_factory=list, description="任务脚本与用户状态"
+    )
+    cycleNextList: List[WSTaskCyclePreviewData] = Field(
+        default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
     )
     log: str = Field(default="", description="当前脚本日志")
 
@@ -3152,8 +3227,8 @@ class WSTaskCreatedData(BaseModel):
     """新任务创建通知数据 (id=TaskManager, type=task.created)"""
 
     taskId: str = Field(..., description="新任务ID")
-    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
-        ..., description="任务模式"
+    mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
+        ..., description="任务模式, 与创建请求一致"
     )
     scripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="任务关联的脚本静态标识"

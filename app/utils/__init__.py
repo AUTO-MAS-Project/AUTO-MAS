@@ -26,12 +26,14 @@ import types
 
 from .constants import *
 from .logger import get_logger
+from .paths import resource_path
 from .security import (
-    dpapi_encrypt,
     dpapi_decrypt,
+    dpapi_encrypt,
     format_exception_reason,
     sanitize_log_message,
 )
+from .supervision import is_supervised
 
 _LAZY_EXPORTS = {
     "LogMonitor": (".LogMonitor", "LogMonitor"),
@@ -42,8 +44,6 @@ _LAZY_EXPORTS = {
     "ProcessResult": (".ProcessManager", "ProcessResult"),
     "is_process_running": (".ProcessManager", "is_process_running"),
     "is_process_alive": (".ProcessManager", "is_process_alive"),
-    "activate_window_by_pid": (".ProcessManager", "activate_window_by_pid"),
-    "has_visible_window": (".ProcessManager", "has_visible_window"),
     "RegexMatcher": (".LogPatternExtractor", "RegexMatcher"),
     "MultiLineAggregator": (".LogPatternExtractor", "MultiLineAggregator"),
     "compile_regex": (".LogPatternExtractor", "compile_regex"),
@@ -60,7 +60,6 @@ _LAZY_EXPORTS = {
     "decode_bytes": (".tools", "decode_bytes"),
     "busy_wait": (".tools", "busy_wait"),
     "WebSocketClient": (".websocket", "WebSocketClient"),
-    "create_ws_client": (".websocket", "create_ws_client"),
 }
 
 
@@ -136,6 +135,8 @@ __all__ = [
     "dpapi_decrypt",
     "format_exception_reason",
     "sanitize_log_message",
+    "is_supervised",
+    "resource_path",
     "strptime",
     "MumuManager",
     "LDManager",
@@ -144,7 +145,6 @@ __all__ = [
     "decode_bytes",
     "busy_wait",
     "WebSocketClient",
-    "create_ws_client",
     "RegexMatcher",
     "MultiLineAggregator",
     "compile_regex",

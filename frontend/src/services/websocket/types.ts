@@ -82,16 +82,28 @@ export interface WSTaskScriptInfoData {
   userList: WSTaskUserInfoData[]
 }
 
-export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update'
+export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun'
 
 export interface WSTaskScriptIdentityData {
   scriptId: string
   scriptType: string
 }
 
+/** 循环运行的一个待运行条目 */
+export interface WSTaskCyclePreviewData {
+  queueItemId: string
+  scriptId: string
+  scriptName: string
+  nextRunAt: string
+  isDue: boolean
+  isRunning: boolean
+}
+
 /** 任务信息快照 (type=task.info.updated) */
 export interface WSTaskInfoUpdatedData {
   task_info: WSTaskScriptInfoData[]
+  /** 循环运行的待运行条目，仅循环任务非空 */
+  cycleNextList?: WSTaskCyclePreviewData[]
 }
 
 /** 当前任务日志 (type=task.log.updated) */
@@ -130,7 +142,7 @@ export interface WSPowerSignData {
 
 /** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */
 export interface WSMaaFWEnvPrepareProgressData {
-  /** resolving / creating_runtime / installing_runtime / runtime_ready / reused / log / ready / failed */
+  /** resolving / installing_python / creating_runtime / installing_runtime / runtime_ready / reused / log / ready / failed */
   stage: string
   /** running / success / failed */
   status: string

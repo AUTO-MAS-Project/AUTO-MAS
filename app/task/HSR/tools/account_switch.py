@@ -28,15 +28,14 @@ from typing import Any, Callable
 from app.services.system import System
 from app.utils import ProcessInfo, get_logger, is_process_running
 
+from .game_resolution import HSRGameResolutionOverride
+from .log_detect import has_screenshot_window_unavailable_output
 from .sra_runtime import (
     SRACommandResult,
     build_sra_start_game_config,
     run_sra_single_task,
     write_sra_temp_config,
 )
-from .game_resolution import HSRGameResolutionOverride
-from .log_detect import has_screenshot_window_unavailable_output
-
 
 logger = get_logger("HSR 切号")
 

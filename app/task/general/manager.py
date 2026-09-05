@@ -233,6 +233,7 @@ class GeneralManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
@@ -311,22 +312,22 @@ class GeneralManager(TaskExecuteBase):
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_user = [
-                u.name for u in self.script_info.user_list if u.status == "异常"
-            ]
-            over_user = [
-                u.name for u in self.script_info.user_list if u.status == "完成"
-            ]
-            wait_user = [
-                u.name for u in self.script_info.user_list if u.status == "等待"
-            ]
+            error_count = sum(
+                1 for u in self.script_info.user_list if u.status == "异常"
+            )
+            over_count = sum(
+                1 for u in self.script_info.user_list if u.status == "完成"
+            )
+            wait_count = sum(
+                1 for u in self.script_info.user_list if u.status == "等待"
+            )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             # 按用户交错组装「用户结果行 + 该用户进程信息」：
             # 多账号任务时各用户信息归属清晰，不再全部平铺。
             # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
             # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
-            has_uncompleted = len(error_user) + len(wait_user) > 0
+            has_uncompleted = error_count + wait_count > 0
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
@@ -339,8 +340,8 @@ class GeneralManager(TaskExecuteBase):
                 "script_name": self.script_info.name or "空白",
                 "start_time": self.begin_time,
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": len(over_user),
-                "uncompleted_count": len(error_user) + len(wait_user),
+                "completed_count": over_count,
+                "uncompleted_count": error_count + wait_count,
                 "result": task_result,
                 "game_sign_summary": has_game_sign_summary,
             }

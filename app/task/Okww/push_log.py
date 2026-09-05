@@ -24,18 +24,17 @@ import re
 from pathlib import Path
 
 from app.log_box.logtype import LogType
+from app.utils import resource_path
 
 # ok-ww 自带翻译文件相对路径（从 RootPath 派生，不硬编码绝对路径）
 OKWW_REL_I18N_PO = "data/apps/ok-ww/repo/i18n/zh_CN/LC_MESSAGES/ok.po"
 
 
 def _okww_supplement_po() -> Path:
-    """AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，运行时以工作目录解析，
-    随打包资源分发，不依赖源码树路径；.po 为可读源码，可直接维护）。
-
-    在调用时求值而非 import 时，避免依赖模块 import 时刻的工作目录。
+    """AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，按源码位置解析，不随
+    工作目录变化；.po 为可读源码，可直接维护）。
     """
-    return Path.cwd() / "res" / "i18n" / "okww.po"
+    return resource_path("i18n", "okww.po")
 
 
 # 推送规则：(匹配正则, 提取表达式 [, 日志类型])；匹配与提取均在翻译后行。

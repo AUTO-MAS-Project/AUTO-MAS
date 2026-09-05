@@ -23,13 +23,13 @@ import asyncio
 from datetime import datetime
 from typing import Literal
 
-from app.utils.platform import IS_WINDOWS
 from app.services import Matomo
-from app.utils.constants import UTC8
 from app.utils import get_logger
+from app.utils.constants import UTC8
+from app.utils.platform import IS_WINDOWS
+
 from .config import Config
 from .task_manager import TaskManager
-
 
 logger = get_logger("主业务定时器")
 
@@ -165,6 +165,10 @@ class _MainTimer:
         curday = datetime.now().strftime("%A")
 
         for uid, queue in Config.QueueConfig.items():
+            # 循环队列由队列项各自的周期驱动，定时设置对它不生效
+            if queue.get("Info", "CycleEnabled"):
+                continue
+
             if not queue.get("Info", "TimeEnabled"):
                 continue
 

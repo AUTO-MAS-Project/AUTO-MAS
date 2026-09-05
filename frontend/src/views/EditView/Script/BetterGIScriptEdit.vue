@@ -15,6 +15,7 @@
     </div>
 
     <a-space size="middle">
+      <DocLink :url="MAS_DOC_URLS.scripts" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -217,6 +218,20 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-form-item style="margin-bottom: 0">
+            <template #label>
+              <span class="form-label">
+                {{ t('edit.useAdminLaunch') }}
+                <a-tooltip :title="t('edit.bettergiUseAdminHint')">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </span>
+            </template>
+            <a-switch
+              v-model:checked="bettergiConfig.Run.UseAdmin"
+              @change="handleChange('Run', 'UseAdmin', bettergiConfig.Run.UseAdmin)"
+            />
+          </a-form-item>
         </div>
       </a-form>
     </a-card>
@@ -224,6 +239,8 @@
 </template>
 
 <script setup lang="ts">
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -258,6 +275,7 @@ interface BetterGIRunForm {
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
+  UseAdmin: boolean
 }
 
 interface BetterGIGameForm {
@@ -283,7 +301,7 @@ const formData = reactive({
 
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10 },
+  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10, UseAdmin: true },
   Game: { Controller: '电脑端-前台', CloseOnFinish: true },
 })
 

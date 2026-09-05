@@ -1,5 +1,6 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
+import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
@@ -38,6 +39,7 @@ export const getQueueStatusColor = (status: string): string => {
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
   { labelKey: 'scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
+  { labelKey: 'scheduler.mode.cycleRun', value: TaskCreateIn.mode.CYCLE_RUN },
 ]
 
 export const getTaskModeOptions = (supportedModes?: string[] | null) => {
@@ -86,6 +88,10 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
+  // 脚本任务单独运行的目标用户；为空表示按脚本自身筛选跑全部用户
+  selectedUserId?: string | null
+  userOptions?: Array<{ label: string; value: string }>
+  userOptionsLoading?: boolean
   taskId: string | null
   subscriptionIds?: string[]
   taskQueue: QueueItem[]
@@ -103,4 +109,8 @@ export interface SchedulerTab {
   runningModeLabel?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
+  // 所选任务是否为循环队列，决定是否给出「循环运行」模式
+  isCycleQueue?: boolean
+  // 循环运行的待运行条目预览
+  cycleNextList?: WSTaskCyclePreviewData[]
 }

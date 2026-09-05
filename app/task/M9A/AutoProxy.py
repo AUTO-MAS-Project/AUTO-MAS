@@ -20,29 +20,30 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import uuid
 import asyncio
-import time
+import json
 import re
-from pathlib import Path
+import time
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.config import M9AConfig, M9AUserConfig
-from app.models.emulator import DeviceInfo, DeviceBase
+from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4
-from .tools import push_notification
 from app.task.general.tools import execute_script_task
-from .tools.notify import M9ALogAnalyzer
+from app.utils import LogMonitor, ProcessManager, get_logger
+from app.utils.constants import UTC4
+from app.utils.io import read_file, write_file
+
 from .task_loader import M9ATaskLoader
+from .tools import push_notification
+from .tools.notify import M9ALogAnalyzer
 
 logger = get_logger("M9A 自动代理")
 
@@ -727,7 +728,7 @@ class AutoProxyTask(TaskExecuteBase):
             err_log = getattr(self.script_info, "_m9a_err_log", [])
             err_suffix = f"（{err_log[-1]}）" if err_log else ""
             logger.warning(f"虚拟用户: 更新超时（10分钟）{err_suffix}")
-            self.cur_user_log.status = f"M9A 更新超时"
+            self.cur_user_log.status = "M9A 更新超时"
             self.wait_event.set()
             return
 

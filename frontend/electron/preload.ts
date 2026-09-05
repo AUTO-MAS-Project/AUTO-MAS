@@ -90,6 +90,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitializedVersion: (version: string) =>
     ipcRenderer.invoke('set-initialized-version', version),
 
+  // Runtime 灰度开关：持久化设置 + 当前生效值与来源
+  getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
+  setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
+
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: unknown) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
@@ -127,6 +131,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportLogs: () => ipcRenderer.invoke('log:export'),
   exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
   exportOkwwIssueReport: () => ipcRenderer.invoke('okww:exportIssueReport'),
+  exportOkNteIssueReport: () => ipcRenderer.invoke('oknte:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
@@ -223,21 +228,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 初始化 API ====================
 
   // 单步初始化API
+  // rebuild 对应界面「重建环境」按钮，只在 Runtime 链路下有意义（走 repair / dependencies rebuild）
   initMirrors: () => ipcRenderer.invoke('init-mirrors'),
-  installPython: (selectedMirror?: string) => ipcRenderer.invoke('install-python', selectedMirror),
-  installPip: (selectedMirror?: string) => ipcRenderer.invoke('install-pip', selectedMirror),
-  installGit: (selectedMirror?: string) => ipcRenderer.invoke('install-git', selectedMirror),
-  pullRepository: (targetBranch?: string, selectedMirror?: string) =>
-    ipcRenderer.invoke('pull-repository', targetBranch, selectedMirror),
-  installDependencies: (selectedMirror?: string) =>
-    ipcRenderer.invoke('install-dependencies', selectedMirror),
+  installPython: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-python', selectedMirror, rebuild),
+  installPip: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-pip', selectedMirror, rebuild),
+  installGit: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-git', selectedMirror, rebuild),
+  pullRepository: (targetBranch?: string, selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('pull-repository', targetBranch, selectedMirror, rebuild),
+  installDependencies: (selectedMirror?: string, rebuild?: boolean) =>
+    ipcRenderer.invoke('install-dependencies', selectedMirror, rebuild),
   getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
+  getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
 
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
   getApiEndpoints: () => ipcRenderer.invoke('get-api-endpoints'),
 
-  // 完整初始化流程（保留用于兼容）
+  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
   initialize: (targetBranch?: string, startBackend?: boolean) =>
     ipcRenderer.invoke('initialize', targetBranch, startBackend),
 
@@ -249,6 +259,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendStop: () => ipcRenderer.invoke('backend-stop'),
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
+
+  // Runtime 链路的后端更新（启动模式复用上面的 getRuntimeLaunchMode）
+  updateBackendViaRuntime: (targetVersion: string) =>
+    ipcRenderer.invoke('update-backend-via-runtime', targetVersion),
+  retryBackendUpdate: (action: string) => ipcRenderer.invoke('retry-backend-update', action),
+  cancelBackendUpdate: () => ipcRenderer.invoke('cancel-backend-update'),
+  onBackendUpdateProgress: (callback: (progress: unknown) => void) => {
+    ipcRenderer.on('backend-update-progress', (_, progress) => callback(progress))
+  },
+  removeBackendUpdateProgressListener: () => {
+    ipcRenderer.removeAllListeners('backend-update-progress')
+  },
 
   // 清理资源
   cleanup: () => ipcRenderer.invoke('cleanup'),
@@ -289,7 +311,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('dependency-progress')
   },
 
-  // 监听初始化进度（保留用于兼容）
+  // 监听完整初始化进度
   onInitializationProgress: (callback: (progress: unknown) => void) => {
     ipcRenderer.on('initialization-progress', (_, progress) => callback(progress))
   },

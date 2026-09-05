@@ -24,28 +24,28 @@ from ctypes import c_void_p
 from pathlib import Path
 from typing import Any
 
-
-from maa.tasker import Tasker
 from maa.context import Context
-from maa.toolkit import Toolkit, AdbDevice
-from maa.resource import Resource
-from maa.custom_action import CustomAction
 
 # from maa.define import LoggingLevelEnum
 from maa.controller import (
     AdbController,
-    Win32Controller,
-    MaaAdbScreencapMethodEnum,
-    MaaAdbInputMethodEnum,
-    MaaWin32ScreencapMethodEnum,
-    MaaWin32InputMethodEnum,
-    JobWithResult,
     Job,
+    JobWithResult,
+    MaaAdbInputMethodEnum,
+    MaaAdbScreencapMethodEnum,
+    MaaWin32InputMethodEnum,
+    MaaWin32ScreencapMethodEnum,
+    Win32Controller,
 )
+from maa.custom_action import CustomAction
+from maa.resource import Resource
+from maa.tasker import Tasker
+from maa.toolkit import AdbDevice, Toolkit
+
+from app.models.emulator import DeviceInfo
+from app.utils import get_logger, resource_path
 
 from .config import Config
-from app.models.emulator import DeviceInfo
-from app.utils import get_logger
 
 logger = get_logger("MaaFW管理")
 
@@ -70,7 +70,7 @@ class _MaaFWManager:
             encoding="utf-8",
         )
         Toolkit.init_option(Path.cwd())
-        self.resource.post_bundle(Path.cwd() / "res/MaaFW").wait()
+        self.resource.post_bundle(resource_path("MaaFW")).wait()
 
     @staticmethod
     async def do_job(job: Job | JobWithResult) -> Any:
@@ -90,44 +90,7 @@ class _MaaFWManager:
             if isinstance(result, JobWithResult):
                 raise RuntimeError(f"任务执行失败, 执行信息: {result.get()}")
             elif isinstance(result, Job):
-                raise RuntimeError(f"任务执行失败")
-
-    async def get_win32_tasker(
-        self,
-        hwnd: c_void_p | int | None,
-        screencap_method: int = MaaWin32ScreencapMethodEnum.FramePool,
-        mouse_method: int = MaaWin32InputMethodEnum.Seize,
-        keyboard_method: int = MaaWin32InputMethodEnum.Seize,
-    ) -> Tasker:
-        """
-        创建一个连接 Win32 的 MaaFW 任务管理器
-
-        Args:
-            hwnd(c_void_p | int | None): 目标窗口的句柄，可以是整数或 ctypes 的 c_void_p 类型，如果为 None 则 MaaFW 将尝试自动查找窗口
-            screencap_method(int): 使用的屏幕捕获方法，默认为 MaaWin32ScreencapMethodEnum.FramePool
-            mouse_method(int): 使用的鼠标输入方法，默认为 MaaWin32InputMethodEnum.Seize
-            keyboard_method(int): 使用的键盘输入方法，默认为 MaaWin32InputMethodEnum.Seize
-        Returns:
-            Tasker: 已连接的 MaaFW 任务管理器实例
-        Raises:
-            RuntimeError: 如果无法连接到指定窗口或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
-        """
-
-        logger.info(
-            f"正在连接窗口: {hwnd}, 使用的屏幕捕获方法: {screencap_method}, 鼠标输入方法: {mouse_method}, 键盘输入方法: {keyboard_method}"
-        )
-
-        controller = Win32Controller(
-            hwnd, screencap_method, mouse_method, keyboard_method
-        )
-        await self.do_job(controller.post_connection())
-
-        tasker = Tasker()
-        tasker.bind(self.resource, controller)
-        if not tasker.inited:
-            raise RuntimeError("无法初始化 MaaFW tasker")
-
-        return tasker
+                raise RuntimeError("任务执行失败")
 
     @staticmethod
     async def convert_adb(raw_info: DeviceInfo) -> AdbDevice:
@@ -243,54 +206,6 @@ class _MaaFWManager:
             raise RuntimeError("无法初始化 MaaFW tasker")
 
         return tasker
-
-    async def reconnect_adb_tasker(
-        self,
-        tasker: Tasker,
-        device_info: DeviceInfo,
-        screencap_methods: int = MaaAdbScreencapMethodEnum.Default,
-        input_methods: int = MaaAdbInputMethodEnum.Default,
-        config: dict[str, Any] = {},
-    ) -> Tasker:
-        """
-        重新连接一个 ADB 的 MaaFW 任务管理器
-
-        Args:
-            tasker(Tasker): 需要重新连接的 MaaFW 任务管理器实例
-            device_info(DeviceInfo): 包含设备信息的对象
-            screencap_methods(int): 屏幕捕获方法，默认为 MaaAdbScreencapMethodEnum.Default
-            input_methods(int): 输入方法，默认为 MaaAdbInputMethodEnum.Default
-            config(dict[str, Any]): 其他配置项，默认为空字典
-        Returns:
-            Tasker: 已连接的 MaaFW 任务管理器实例
-        Raises:
-            RuntimeError: 如果无法连接到指定设备或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
-        """
-
-        adb_device = await self.convert_adb(device_info)
-
-        logger.info(
-            f"正在重新连接设备: {device_info.title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
-        )
-
-        controller = AdbController(
-            adb_device.adb_path,
-            adb_device.address,
-            screencap_methods,
-            input_methods,
-            config,
-        )
-        await self.do_job(controller.post_connection())
-
-        if tasker.inited:
-            await self.do_job(tasker.post_stop())
-        tasker.bind(self.resource, controller)
-
-        if not tasker.inited:
-            raise RuntimeError("无法初始化 MaaFW tasker")
-
-        return tasker
-
 
 MaaFWManager = _MaaFWManager()
 

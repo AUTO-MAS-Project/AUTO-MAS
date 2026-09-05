@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.task.MaaFW.tools.core.automas_maafw_agent_env.models import (
     MaaFWAgentCommandPlan,
 )
-from pydantic import BaseModel, ConfigDict, Field
-
 
 MaaFWControllerType = Literal["Adb", "Win32"]
 

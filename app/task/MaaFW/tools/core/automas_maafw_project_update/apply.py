@@ -15,13 +15,11 @@ from typing import Any, Callable, Mapping
 
 from .contracts import (
     ArtifactType,
-    RESERVED_PROJECT_DIRS,
     is_within,
     project_fingerprint,
     safe_relative_path,
 )
 from .state import DEFAULT_OPERATION_ROOT, UpdateOperationStore, project_lock
-
 
 ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024

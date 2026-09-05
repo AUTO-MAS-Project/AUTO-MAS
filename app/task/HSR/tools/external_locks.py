@@ -16,7 +16,6 @@ from typing import Any
 from .native_control import resolve_script_path
 from .sra_runtime import get_sra_app_data_dir
 
-
 _PATH_LOCKS: dict[str, asyncio.Lock] = {}
 
 

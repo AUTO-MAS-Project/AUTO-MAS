@@ -377,8 +377,6 @@ def redeem_code_fingerprint(engine: str, script_config: Any) -> str:
         _source, payload = load_sra_native_config(script_config)
         value = (payload.get("receiveRewards") or {}).get("redeemCodes")
     elif normalized == "M7A":
-        raw_root = _script_path(script_config, "M7A")
-        source = Path(raw_root) / "config.yaml"
         payload = load_m7a_native_config(script_config)
         value = payload.get("redemption_code")
     else:

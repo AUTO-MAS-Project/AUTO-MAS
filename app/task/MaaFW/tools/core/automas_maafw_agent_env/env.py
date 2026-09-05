@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
-from .planner import MaaFWAgentEnvError, venv_python_exe
-
+from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
 AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
 AGENT_ENV_MANIFEST_NAME = ".auto_mas_agent_env.json"
@@ -298,7 +297,13 @@ def _prepare_isolated_venv_env(
 
 
 def _is_valid_venv_path(venv_path: Path) -> bool:
-    return venv_python_exe(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    if not (
+        venv_python_exe(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    ):
+        return False
+    # 文件都在不代表能用：引导用的基解释器（受管模式下常是 sys.executable
+    # 所在的监督器管理 venv）事后被删掉重建过的话，这个 venv 也已经失效。
+    return not venv_base_python_missing(venv_path)
 
 
 def _ensure_isolated_venv(
@@ -385,6 +390,12 @@ def _should_rebuild_isolated_venv(
     project_path: Path,
     log: Callable[[str], None],
 ) -> bool:
+    if venv_path.exists() and venv_base_python_missing(venv_path):
+        log(
+            f"[Python环境] 隔离 venv 的基解释器已不存在（pyvenv.cfg 的 home 已"
+            f"失效），将重建: {venv_path}"
+        )
+        return True
     if venv_path.exists() and not _is_valid_venv_path(venv_path):
         log("[Python环境] 隔离 venv 不完整，将重建")
         return True
@@ -685,6 +696,15 @@ def _python_supports_venv(python: str) -> bool:
 
 
 def _find_uv_executable() -> str | None:
+    # 受管模式（AUTO-MAS-Runtime 监督后端）下没有便携 Python，监督器改为
+    # 用 AUTO_MAS_UV_EXE 注入它已校验过的 uv 路径，也不会把这个 uv 加进
+    # PATH——优先信它，找不到再退回便携路径与 PATH 查找。
+    configured_uv = os.environ.get("AUTO_MAS_UV_EXE")
+    if configured_uv:
+        configured_path = Path(configured_uv)
+        if configured_path.is_file():
+            return str(configured_path.resolve())
+
     portable_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if portable_uv.is_file():
         return str(portable_uv)

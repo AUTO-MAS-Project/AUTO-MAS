@@ -27,7 +27,6 @@ import zipfile
 from contextlib import closing
 from pathlib import Path
 
-
 _DATABASE_FILES = {
     "data/data.db",
     "data/data.db-journal",

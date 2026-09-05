@@ -9,6 +9,7 @@
  */
 export default {
   common: {
+    viewPageDocs: 'このページのドキュメントを表示',
     language: '言語',
     languageTip: 'インターフェースの表示言語',
     languageSaveFailed: '言語設定の保存に失敗しました。元の言語に戻しました。',
@@ -186,6 +187,28 @@ export default {
     updateHasFinishedDownloading: '更新のダウンロードが完了しました。今すぐインストールしますか？',
     minimize: '最小化',
     backendUpdateAvailableClick: 'バックエンドの更新があります。クリックして更新してください',
+    backendUpdateDevUnsupported:
+      'バックエンドの更新があります。開発モードでは自動更新に対応していません',
+    backendUpdateTitle: 'バックエンドを {version} に更新します',
+    backendUpdateSucceeded: 'バックエンドを更新して再起動しました',
+    backendUpdateCancelled: '更新をキャンセルしました。バックエンドは元のままです',
+    backendUpdateFailedShutdown:
+      '実行中のバックエンドを停止できず、更新は開始されていません。現在のバージョンはそのまま使用できます',
+    backendUpdateFailedBootstrap:
+      'ソースまたは依存関係の同期に失敗しました。以下のいずれかの方法で再試行してください',
+    backendUpdateFailedRestart:
+      'ソースと依存関係は揃いましたが、新しいバックエンドを起動できませんでした',
+    backendUpdateUnsupportedMode: '現在のモードではバックエンドの自動更新に対応していません',
+    backendUpdateRetryWorkspaceSync: 'ソースを同期し直す',
+    backendUpdateRetryDependenciesSync: '依存関係の同期を再試行',
+    backendUpdateRetryDependenciesRebuild: '依存環境を再構築',
+    backendUpdateRetryRepair: '実行環境をまとめて修復',
+    backendUpdateRestartBackend: 'バックエンドを起動し直す',
+    backendUpdateCancelAction: '更新をキャンセル',
+    backendUpdateErrorCode: 'エラーコード',
+    backendUpdateLogPath: 'ログファイル',
+    backendUpdateContactSupport:
+      'この問題は再試行では解決できません。上記のログファイルを添えて報告してください',
     closingBackend: 'バックエンドを終了しています...',
     startingBackend: 'バックエンドを起動しています...',
     lightTheme: 'ライトテーマ',
@@ -257,6 +280,7 @@ export default {
     maaAnnihilationStartDayHint:
       '設定した曜日になってから殲滅タスクを開始します。今週の上限に達すると以降の殲滅は自動的にスキップされます',
     maaWeekStatus: '今週の状態：',
+    maaMonthStatus: '今月の状態：',
     maaDone: '完了',
     maaNotDone: '未完了',
     maaEventFirst: 'イベントステージ優先',
@@ -282,6 +306,9 @@ export default {
     maaDaily: '日課タスク',
     maaRoguelike: '自動ローグライク',
     maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
+    maaGreenTicketStore: '緑チケット商店',
+    maaGreenTicketStoreHint:
+      '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
     maaRecruit: '自動公開求人',
     maaMall: '信用取引所',
     fixed: '固定',
@@ -295,9 +322,7 @@ export default {
     multiLineAggregation: '複数行集約',
     stringSplitting: '文字列分割',
     gotIt: '了解',
-    simple: '簡易',
     expression: '式',
-    detailed: '詳細',
     masManaged: 'MAS 管理',
     none: '選択しない',
     drop: '破棄',
@@ -373,9 +398,6 @@ export default {
     all: 'すべて',
     userSPasswordStored:
       'ユーザーのパスワードです。忘れないよう保管する目的のみで、ほかの用途はありません',
-    userConfigurationMode: 'ユーザー設定モード',
-    simpleModeFollowsScript:
-      '簡易モードではスクリプトの全体設定を、詳細モードではこのユーザー独自の設定を使います',
     enterAccountId: 'アカウント ID を入力してください',
     goPlan: 'プランへ移動',
     pickGameServerThis: 'このユーザーがプレイするゲームサーバーを選びます',
@@ -945,8 +967,6 @@ export default {
     updateScriptConfigurationFile: '選んだタイミングでスクリプトの設定ファイルを更新します',
     includeRunStatisticsNotification: '通知の本文に実行統計を含めます',
     baseConfigurationImported: '基地設定をインポートしました',
-    whenSetScriptS:
-      '入力するとスクリプト自身の MirrorChyan CDK を優先して使います。空の場合は MAS 全体の更新設定にある CDK を使います',
     fillingPathEnablesThat:
       'パスを入力するとそのエンジンが有効になります。パスを空にすると、そのエンジンは検証もスケジュールもされなくなります。',
     multiPlatform: 'マルチプラットフォーム',
@@ -960,7 +980,7 @@ export default {
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
     importedFromCurrentSra: '現在の SRA / 三月なのかアシスタントの設定からインポートしました',
     scriptLevelMaaendConfiguration: 'スクリプト単位の MaaEnd 設定を開始しました',
-    gamePathMatchedHtgame: 'ゲームのパスを HTGame.exe に自動で合わせました',
+    gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
     turnThisOffWhen:
       'スクリプト直接制御でクラウドゲームを使う場合は、このスイッチをオフにすることをおすすめします',
@@ -1146,7 +1166,9 @@ export default {
       'MAS が公式のバージョンを確認して更新します。更新前にゲームが起動していないことを確認してください',
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
-    leaveEmptyUseGlobal: '空の場合は全体設定の MirrorChyan CDK を使います',
+    cdkTip:
+      'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
+    cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     directory: 'フォルダ',
     useExistingOkwwConfiguration:
       'Okww の既存設定をそのまま使い、細かい設定はスクリプトの GUI に任せます。',
@@ -1255,6 +1277,8 @@ export default {
     pickGameExecutable: 'ゲームの実行ファイルを選択してください',
     pickGameRootDirectory:
       'ゲームのルートフォルダを選択してください（HTGame.exe は自動で照合されます）',
+    pickGameLauncherDirectory:
+      'ゲームのルートフォルダを選択してください（NTEGame.exe は自動で照合されます）',
     pickGameExecutable2: 'ゲームの実行ファイルを選択してください',
     pickScriptSMain: 'スクリプトのメインプログラムを選択してください',
     pickScriptRootDirectory2: 'スクリプトのルートフォルダを選択してください',
@@ -1343,6 +1367,8 @@ export default {
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
+    useAdminLaunch: '管理者権限で起動',
+    bettergiUseAdminHint: '既定で有効（BetterGI には管理者権限が必要）。MAS が非管理者で実行されている場合、起動のたびに UAC が表示されるため、無人実行時はオフにできます。MAS が既に管理者権限の場合は再表示されません',
     bettergiRootPathSaved: 'BetterGI のルートフォルダーを保存しました',
     bettergiInvalidDirectory: '選択したフォルダーは無効です',
     bettergiExeNotFound: '選択したフォルダーに {p0} が見つかりません。BetterGI スクリプトのルートフォルダーを選択してください。',
@@ -1535,7 +1561,6 @@ export default {
     newUserName: 'ユーザー {n}',
     section: {
       settings: 'ログインボーナス設定',
-      doc: 'Skland のログインボーナス設定ドキュメントを開く',
       signAll: 'すべて受け取る',
       noticeTitle: '機能の説明とプライバシーについて',
       toolDesc: 'このツールは各コミュニティの認証情報を管理し',
@@ -1851,6 +1876,24 @@ export default {
   },
   init: {
     unknownStepP0: '不明なステップ: {p0}',
+    runtime: {
+      takenOver: 'ランタイムが担当',
+      preparingEnv: '実行環境を準備',
+    },
+    failure: {
+      retryOtherMirror: '別のミラーで再試行',
+      rebuildEnvironment: '環境を再構築',
+      openLog: 'ログを開く',
+      runDoctor: '診断を実行',
+      internalErrorNotice: 'ランタイム内部のエラーです。ログを添えて報告してください',
+      contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      logTitle: '失敗ログ',
+      openLogFailed: 'ログを開けませんでした: {error}',
+      doctorTitle: '実行環境の診断',
+      doctorEmpty: '診断結果に項目がありません',
+      doctorFailed: '診断の実行に失敗しました: {error}',
+      doctorRunning: '実行環境を診断しています...',
+    },
     common: {
       currentMirror: '使用中: {mirror}',
     },
@@ -2175,6 +2218,12 @@ export default {
     always: 'はい',
     never: 'いいえ',
     dailyFirst: '1 日の初回起動時のみ',
+    cycleType: 'キューの種類',
+    cycleTypeTip:
+      '定時キューは設定時刻にキュー全体を実行し、循環キューは各タスクの周期で実行し続けます',
+    typeTimed: '定時キュー',
+    typeCycle: '循環キュー',
+    cycleLocked: '循環実行中のため、キューの種類とタスクの追加・削除・並び替えは停止するまで変更できません',
     scheduled: '定時実行',
     scheduledTip: '設定した時刻にこのキューを自動実行します',
     yes: 'はい',
@@ -2202,6 +2251,17 @@ export default {
       selectScript: 'スクリプトを選択してください',
       deleteConfirm: 'このタスクを削除しますか？',
     },
+    cycle: {
+      colConfig: '循環設定',
+      modeFixed: '時刻指定',
+      modeInterval: '間隔',
+      minuteUnit: '分',
+      anchorStart: '前回の開始から',
+      anchorFinish: '前回の終了から',
+      nextRun: '次回実行',
+      notScheduled: '未定',
+      runOnce: '今すぐ 1 回実行',
+    },
     time: {
       cardTitle: 'スケジュール一覧',
       add: 'スケジュールを追加',
@@ -2224,6 +2284,7 @@ export default {
     toast: {
       unknownError: '不明なエラー',
       scriptUpdateFailed: 'スクリプトを更新できませんでした: {error}',
+      scheduleUpdateFailed: '循環設定の更新に失敗しました: {error}',
       updateScriptFailed: 'スクリプトを更新できませんでした: {error}',
       addTaskFailed: 'タスクを追加できませんでした: {error}',
       addTaskFailed2: 'タスクを追加できませんでした: {error}',
@@ -2260,6 +2321,12 @@ export default {
     tabName: 'コンソール {n}',
     mode: {
       autoProxy: '自動代行',
+      cycleRun: '循環実行',
+    },
+    cycle: {
+      nextTitle: '次の実行',
+      running: '実行中',
+      due: '実行待ち',
     },
     power: {
       noAction: '何もしない',
@@ -2277,6 +2344,7 @@ export default {
       taskLabel: 'タスク：',
       modeLabel: 'モード：',
       resumePlaceholder: '指定したスクリプトから再開（既定は先頭）',
+      userPlaceholder: '指定ユーザーのみ実行（既定は全員）',
       stop: '停止',
       start: '実行',
     },
@@ -2317,6 +2385,7 @@ export default {
       batchDeleted: 'コンソールを {count} 件閉じました',
       loadQueueScriptsFailed:
         'キュー内のスクリプトを読み込めなかったため、スクリプト ID からの再開はできません',
+      loadScriptUsersFailed: 'スクリプトのユーザーを読み込めなかったため、単独実行はできません',
       needTaskAndMode: 'タスクと実行モードの両方を選んでください',
       taskStarted: 'タスクを開始しました',
       startTaskFailed: 'タスクを開始できませんでした',
@@ -2692,10 +2761,25 @@ export default {
         'MAS が復旧できない問題に遭遇する前に、このバックアップを書き出しておいてください。保存しておけば安心して再インストールでき、重要なデータが失われることはありません。',
       logSection: 'MAS 本体のログ書き出し',
       exportLog: 'ログのアーカイブを書き出す',
-      maaEndSection: 'MaaEnd のログパッケージ',
       exportMaaEnd: 'MaaEnd の問題報告パッケージを書き出す',
+      issueSection: '専用の問題報告パッケージ',
+      exportOkww: 'OK-WW の問題報告パッケージを書き出す',
+      exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',
       devSection: '開発者向けオプション',
       openDevTools: '開発者ツールを開く',
+      runtimeLaunchMode: 'バックエンドの起動方式',
+      runtimeLaunchModeTip:
+        '段階的検証中のオプションです。バックエンドを Runtime に監督させて起動するか、従来どおりの方式にするかを選べます。アプリの再起動後に反映されます。',
+      runtimeLaunchModeAuto: '自動',
+      runtimeLaunchModeOff: '従来の方式',
+      runtimeLaunchModeDevelopment: 'Runtime が監督（development）',
+      runtimeLaunchModeManaged: 'Runtime が監督（managed）',
+      runtimeLaunchModeSourceEnv: '環境変数による強制',
+      runtimeLaunchModeSourceSetting: 'この設定項目',
+      runtimeLaunchModeSourceDefault: 'ビルドの既定値',
+      runtimeLaunchModeEffective: '現在の適用値: {mode}（適用元: {source}）',
+      runtimeLaunchModeRestartHint: 'アプリの再起動後に反映されます',
+      runtimeLaunchModeSaveFailed: 'バックエンドの起動方式の保存に失敗しました',
     },
     others: {
       updateSection: '更新',

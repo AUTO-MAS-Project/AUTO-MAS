@@ -20,22 +20,28 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import os
 import subprocess
 import time
-import psutil
-import asyncio
-
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from pathlib import Path
 
+import psutil
+
+from app.utils import get_logger
 from app.utils.platform import window
 from app.utils.platform.common.errors import UnsupportedPlatformError
 from app.utils.platform.process import platform_process
 
-from .process_runner import ProcessResult, ProcessRunner
+from .process_runner import (  # noqa: F401  # 兼容 re-export：ProcessManager.py 经本模块再导出
+    ProcessResult,
+    ProcessRunner,
+    create_subprocess,
+)
+
+logger = get_logger("进程管理")
 
 
 @dataclass
@@ -90,39 +96,6 @@ def is_process_alive(process_name: str) -> bool:
             if proc.info.get("name") == process_name:
                 return True
     return False
-
-
-def has_visible_window(pid: int) -> bool:
-    """指定进程是否已经拥有可见窗口。
-
-    用作「程序起来了没有」的就绪判据：进程创建远早于窗口出现，只看进程在不在
-    会把还在加载的游戏当成已就绪。
-    """
-
-    for hwnd in window.get_window_handles(pid):
-        with suppress(Exception):
-            if window.is_visible(hwnd):
-                return True
-    return False
-
-
-def activate_window_by_pid(
-    pid: int, window_title: str | None = None, window_class_name: str | None = None
-) -> bool:
-    """按 pid 把窗口置前。
-
-    给「只有 pid、不该为此造一个 ProcessManager」的调用方用：ProcessManager 代表
-    「本次由我方启动并持有的进程」，为了点一下窗口就 new 一个，会让持有关系失真
-    （也会污染按实例计数的测试）。
-    """
-
-    hwnd = window.get_main_window_handle(pid, window_title, window_class_name)
-    if hwnd is None:
-        return False
-    try:
-        return window.activate_window(hwnd)
-    except Exception:
-        return False
 
 
 def get_window_handles(pid: int) -> list[int]:
@@ -206,6 +179,7 @@ class ProcessManager:
         stderr: int = asyncio.subprocess.DEVNULL,
         null_stream_to_pipe: bool = False,
         elevated: bool = False,
+        breakaway: bool = False,
     ) -> None:
         """
         启动子进程并跟踪目标进程
@@ -220,6 +194,7 @@ class ProcessManager:
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
             null_stream_to_pipe (bool): 若为 True, 将设为 DEVNULL 的 stdout/stderr 替换为一条自动销毁输出的标准流管道。
             elevated (bool): 若为 True 且在 Windows 上, 以管理员权限启动进程（触发 UAC），此时不直接持有子进程句柄，依赖 target_process 追踪。
+            breakaway (bool): 若为 True 且在 Windows 上, 让子进程脱离监督器的 Job Object（CREATE_BREAKAWAY_FROM_JOB）。只给游戏/模拟器这类不该随后端退出的进程用, 脚本本体、MAA、agent 等保持默认 False。
         """
 
         if await self.is_running():
@@ -260,14 +235,14 @@ class ProcessManager:
                 stderr = asyncio.subprocess.PIPE
                 drain_streams.append("stderr")
 
-        self.process = await asyncio.create_subprocess_exec(
+        self.process = await create_subprocess(
             program,
             *args,
+            breakaway=breakaway,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            creationflags=platform_process.creation_flags,
         )
 
         # 启动协程消费管道流以防止阻塞

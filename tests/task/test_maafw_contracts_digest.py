@@ -2,8 +2,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import app.core
-
 from app.task.MaaFW.tools.core.automas_maafw_project_update.contracts import (
     artifact_id_for,
     canonical_json,

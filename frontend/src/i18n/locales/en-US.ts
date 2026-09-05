@@ -7,6 +7,7 @@
  */
 export default {
   common: {
+    viewPageDocs: 'View this page docs',
     language: 'Language',
     languageTip: 'Interface display language',
     languageSaveFailed: 'Failed to save the language setting; reverted to the previous one.',
@@ -183,6 +184,28 @@ export default {
     updateHasFinishedDownloading: 'The update has finished downloading. Install it now?',
     minimize: 'Minimize',
     backendUpdateAvailableClick: 'A backend update is available — click to update',
+    backendUpdateDevUnsupported:
+      'A backend update is available — automatic updates are off in development mode',
+    backendUpdateTitle: 'Updating the backend to {version}',
+    backendUpdateSucceeded: 'The backend has been updated and restarted',
+    backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
+    backendUpdateFailedShutdown:
+      'The running backend could not be stopped, so the update never started. The current version still works.',
+    backendUpdateFailedBootstrap:
+      'Syncing the source or the dependencies failed. Retry with one of the options below.',
+    backendUpdateFailedRestart:
+      'The source and the dependencies are in place, but the new backend did not start',
+    backendUpdateUnsupportedMode: 'This mode does not support updating the backend automatically',
+    backendUpdateRetryWorkspaceSync: 'Sync the source again',
+    backendUpdateRetryDependenciesSync: 'Retry the dependency sync',
+    backendUpdateRetryDependenciesRebuild: 'Rebuild the dependency environment',
+    backendUpdateRetryRepair: 'Repair the whole runtime environment',
+    backendUpdateRestartBackend: 'Start the backend again',
+    backendUpdateCancelAction: 'Cancel the update',
+    backendUpdateErrorCode: 'Error code',
+    backendUpdateLogPath: 'Log file',
+    backendUpdateContactSupport:
+      'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
     startingBackend: 'Starting the backend...',
     lightTheme: 'Light theme',
@@ -254,6 +277,7 @@ export default {
     maaAnnihilationStartDayHint:
       'Annihilation only starts once this weekday is reached; once the weekly cap is hit, later runs are skipped.',
     maaWeekStatus: 'This week:',
+    maaMonthStatus: 'This month:',
     maaDone: 'done',
     maaNotDone: 'not done',
     maaEventFirst: 'Event stages first',
@@ -279,6 +303,9 @@ export default {
     maaDaily: 'Daily tasks',
     maaRoguelike: 'Integrated Strategies',
     maaRoguelikeHint: 'A long run may be mistaken for a timeout',
+    maaGreenTicketStore: 'Green Ticket Store',
+    maaGreenTicketStoreHint:
+      'Starts its own MAA session once a month, before annihilation, buying everything on the 1st floor plus Headhunting Permits and Recruitment Permits on the 2nd floor. Skipped once bought this month, and a failure does not affect the later tasks. Requires MAA v6.3.0 or newer',
     maaRecruit: 'Auto recruit',
     maaMall: 'Credit store',
     fixed: 'Fixed',
@@ -292,9 +319,7 @@ export default {
     multiLineAggregation: 'Multi-line aggregation',
     stringSplitting: 'String splitting',
     gotIt: 'Got it',
-    simple: 'Simple',
     expression: 'Expression',
-    detailed: 'Detailed',
     masManaged: 'MAS managed',
     none: 'None',
     drop: 'Drop',
@@ -370,9 +395,6 @@ export default {
     all: 'All',
     userSPasswordStored:
       "The user's password, stored only so you do not forget it; it has no other effect",
-    userConfigurationMode: 'User configuration mode',
-    simpleModeFollowsScript:
-      "Simple mode follows the script's global configuration; detailed mode follows this user's own",
     enterAccountId: 'Enter the account ID',
     goPlan: 'Go to the plan',
     pickGameServerThis: 'Pick the game server this user plays on',
@@ -945,8 +967,6 @@ export default {
     updateScriptConfigurationFile: 'Update the script configuration file at the chosen moment',
     includeRunStatisticsNotification: 'Include run statistics in the notification',
     baseConfigurationImported: 'Base configuration imported',
-    whenSetScriptS:
-      "When set, the script's own MirrorChyan CDK takes priority; leave empty to use the CDK from the global update settings",
     fillingPathEnablesThat:
       'Filling in a path enables that engine; clearing it stops the engine from being checked or scheduled.',
     multiPlatform: 'Multi-platform',
@@ -960,7 +980,7 @@ export default {
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
     importedFromCurrentSra: 'Imported from the current SRA / March7th Assistant configuration',
     scriptLevelMaaendConfiguration: 'Script-level MaaEnd configuration started',
-    gamePathMatchedHtgame: 'Game path matched to HTGame.exe automatically',
+    gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
     turnThisOffWhen:
       'Turn this off when the script controls the game directly and you use cloud gaming',
@@ -1145,7 +1165,30 @@ export default {
       'MAS checks the official version and updates it; make sure the game is not running first',
     leaveEmptySkipTrailing: 'Leave empty to skip trailing removal',
     leaveEmptySkipLeading: 'Leave empty to skip leading removal',
-    leaveEmptyUseGlobal: 'Leave empty to use the global MirrorChyan CDK',
+    autoUpdateMode: 'Auto update',
+    autoUpdateModeTip:
+      'Before run: check and update the project before every run; After run: update once the run finishes. A failed update never blocks the run.',
+    autoUpdateModeOff: 'Off',
+    autoUpdateModeBeforeRun: 'Before run',
+    autoUpdateModeAfterRun: 'After run',
+    updateSource: 'Update source',
+    updateSourceTip:
+      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
+    updateChannel: 'Update channel',
+    cdkTip:
+      "Used only for this script's project updates and unrelated to the CDK in global settings; required when MirrorChyan is the update source",
+    cdkPlaceholder: 'Enter the MirrorChyan CDK',
+    cdkHint: 'Required when MirrorChyan is the update source; get one on the MirrorChyan site',
+    cdkGetLink: 'Get a MirrorChyan CDK',
+    cdkMissingForMirror:
+      'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
+    updateResultVersion: 'Latest version',
+    updateResultSource: 'Download source',
+    sourceMirrorChyan: 'MirrorChyan',
+    sourceGithub: 'GitHub',
+    cdkStatusIssue:
+      'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
+    cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
     directory: 'Directory',
     useExistingOkwwConfiguration:
       'Use the existing Okww configuration and leave the complex settings to the script GUI.',
@@ -1251,6 +1294,8 @@ export default {
     pickStarRailInstall: 'Pick the Star Rail install directory (contains StarRail.exe)',
     pickGameExecutable: 'Pick the game executable',
     pickGameRootDirectory: 'Pick the game root directory (HTGame.exe is matched automatically)',
+    pickGameLauncherDirectory:
+      'Pick the game root directory (NTEGame.exe is matched automatically)',
     pickGameExecutable2: 'Pick the game executable',
     pickScriptSMain: "Pick the script's main program file",
     pickScriptRootDirectory2: 'Pick the script root directory',
@@ -1338,6 +1383,8 @@ export default {
     bettergiCloseGameOnFinishHint: 'Whether to close the game once the task has finished running',
     bettergiRetryLimitHint: 'Give up once this many attempts have failed',
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',
+    useAdminLaunch: 'Launch with administrator privileges',
+    bettergiUseAdminHint: 'On by default (BetterGI needs admin rights). If MAS runs without admin, each launch triggers a UAC prompt — turn this off for unattended tasks. When MAS itself is already elevated, keeping it on never re-prompts',
     bettergiRootPathSaved: 'BetterGI root folder saved',
     bettergiInvalidDirectory: 'That folder is not valid',
     bettergiExeNotFound: '{p0} was not found in that folder. Pick the full BetterGI script root folder.',
@@ -1521,7 +1568,6 @@ export default {
     newUserName: 'User {n}',
     section: {
       settings: 'Check-in settings',
-      doc: 'Open the Skland check-in docs',
       signAll: 'Check in everywhere',
       noticeTitle: 'What this does, and your privacy',
       toolDesc:
@@ -1835,6 +1881,24 @@ export default {
   },
   init: {
     unknownStepP0: 'Unknown step: {p0}',
+    runtime: {
+      takenOver: 'Handled by the runtime',
+      preparingEnv: 'Preparing the runtime environment',
+    },
+    failure: {
+      retryOtherMirror: 'Retry with another mirror',
+      rebuildEnvironment: 'Rebuild the environment',
+      openLog: 'Open the log',
+      runDoctor: 'Run diagnostics',
+      internalErrorNotice: 'This is an internal runtime error. Please report it with the log.',
+      contactSupportNotice: 'Please report this problem to the developers with the log.',
+      logTitle: 'Failure log',
+      openLogFailed: 'Could not open the log: {error}',
+      doctorTitle: 'Environment diagnostics',
+      doctorEmpty: 'Diagnostics returned no checks',
+      doctorFailed: 'Diagnostics failed: {error}',
+      doctorRunning: 'Running diagnostics...',
+    },
     common: {
       currentMirror: 'Currently using: {mirror}',
     },
@@ -2156,6 +2220,12 @@ export default {
     always: 'Yes',
     never: 'No',
     dailyFirst: 'First launch each day',
+    cycleType: 'Queue type',
+    cycleTypeTip:
+      'A scheduled queue runs as a whole at set times; a cycle queue keeps running, each task on its own schedule',
+    typeTimed: 'Scheduled queue',
+    typeCycle: 'Cycle queue',
+    cycleLocked: 'This queue is cycling; its type and task list are locked until it stops',
     scheduled: 'Run on schedule',
     scheduledTip: 'Run this queue automatically at the configured times',
     yes: 'Yes',
@@ -2183,6 +2253,17 @@ export default {
       selectScript: 'Select a script',
       deleteConfirm: 'Delete this task?',
     },
+    cycle: {
+      colConfig: 'Cycle schedule',
+      modeFixed: 'Fixed time',
+      modeInterval: 'Interval',
+      minuteUnit: 'min',
+      anchorStart: 'From last start',
+      anchorFinish: 'From last finish',
+      nextRun: 'Next run',
+      notScheduled: 'Not scheduled yet',
+      runOnce: 'Run once now',
+    },
     time: {
       cardTitle: 'Schedules',
       add: 'Add schedule',
@@ -2205,6 +2286,7 @@ export default {
     toast: {
       unknownError: 'Unknown error',
       scriptUpdateFailed: 'Could not update the script: {error}',
+      scheduleUpdateFailed: 'Failed to update cycle schedule: {error}',
       updateScriptFailed: 'Could not update the script: {error}',
       addTaskFailed: 'Could not add the task: {error}',
       addTaskFailed2: 'Could not add the task: {error}',
@@ -2238,7 +2320,12 @@ export default {
     emptyTabs: 'No consoles',
     mainTab: 'Main console',
     tabName: 'Console {n}',
-    mode: { autoProxy: 'Auto run' },
+    mode: { autoProxy: 'Auto run', cycleRun: 'Cycle run' },
+    cycle: {
+      nextTitle: 'Up next',
+      running: 'Running',
+      due: 'Due',
+    },
     power: {
       noAction: 'Do nothing',
       shutdown: 'Shut down',
@@ -2255,6 +2342,7 @@ export default {
       taskLabel: 'Task:',
       modeLabel: 'Mode:',
       resumePlaceholder: 'Resume from a specific script (defaults to the first)',
+      userPlaceholder: 'Run one user only (defaults to all)',
       stop: 'Stop',
       start: 'Run',
     },
@@ -2293,6 +2381,7 @@ export default {
       noIdleTabs: 'No idle consoles to close',
       batchDeleted: 'Closed {count} consoles',
       loadQueueScriptsFailed: 'Could not load the queue scripts — cannot resume by script ID',
+      loadScriptUsersFailed: 'Could not load the script users — cannot run a single user',
       needTaskAndMode: 'Pick both a task and a mode',
       taskStarted: 'Task started',
       startTaskFailed: 'Could not start the task',
@@ -2637,10 +2726,25 @@ export default {
         'Export this backup before MAS runs into something unrecoverable. Once saved you can reinstall safely — important data will not be lost.',
       logSection: 'MAS log export',
       exportLog: 'Export a log archive',
-      maaEndSection: 'MaaEnd log bundle',
       exportMaaEnd: 'Export a MaaEnd issue bundle',
+      issueSection: 'Specialized issue bundles',
+      exportOkww: 'Export an OK-WW issue bundle',
+      exportOkNte: 'Export an OK-NTE issue bundle',
       devSection: 'Developer options',
       openDevTools: 'Open DevTools',
+      runtimeLaunchMode: 'Backend launch mode',
+      runtimeLaunchModeTip:
+        'A staged-rollout option: choose whether the backend is supervised by Runtime or launched the old way. Takes effect after restarting the app.',
+      runtimeLaunchModeAuto: 'Auto',
+      runtimeLaunchModeOff: 'Legacy path',
+      runtimeLaunchModeDevelopment: 'Supervised by Runtime (development)',
+      runtimeLaunchModeManaged: 'Supervised by Runtime (managed)',
+      runtimeLaunchModeSourceEnv: 'forced by environment variable',
+      runtimeLaunchModeSourceSetting: 'this setting',
+      runtimeLaunchModeSourceDefault: 'build default',
+      runtimeLaunchModeEffective: 'Currently effective: {mode} (source: {source})',
+      runtimeLaunchModeRestartHint: 'Takes effect after restarting the app',
+      runtimeLaunchModeSaveFailed: 'Failed to save the backend launch mode',
     },
     others: {
       updateSection: 'Updates',
@@ -2662,6 +2766,9 @@ export default {
       cdkSite: 'the MirrorChyan site',
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
+      cdkHint:
+        'Used only for updating MAS itself; MaaFW script project updates take their own CDK on the script edit page',
+      cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',
       siteDesc: 'Latest releases and a feature tour',

@@ -132,8 +132,8 @@ def test_activity_fight_preserves_native_options() -> None:
     assert result["IsInventoryTarget"] is False
     assert result["EnableTimesLimit"] is False
     assert result["IsDrGrandet"] is True
-    assert result["UseExpiringMedicine"] is False
-    assert result["UseExpireMedicineForActivity"] is False
+    assert result["UseExpiringMedicine"] is True
+    assert result["UseExpireMedicineForActivity"] is True
     assert result["UseStoneAllowSave"] is True
     assert result["Nested"] == {"value": 1}
     assert source_task["Nested"] == {"value": 1}

@@ -30,7 +30,6 @@ from typing import Any, Mapping
 
 import yaml
 
-
 M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
     {
         "power_enable",

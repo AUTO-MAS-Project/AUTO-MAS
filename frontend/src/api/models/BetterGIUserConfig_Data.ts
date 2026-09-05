@@ -18,8 +18,5 @@ export type BetterGIUserConfig_Data = {
      * 上次代理状态（未知/成功/失败）
      */
     LastProxyStatus?: (string | null);
-    /**
-     * 上次运行的一条龙配置名
-     */
-    LastOneDragonConfig?: (string | null);
 };
+

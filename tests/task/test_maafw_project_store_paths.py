@@ -8,18 +8,17 @@ import unittest
 from pathlib import Path
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.task.MaaFW.tools.core.automas_maafw_project_store import (
     CHECKOUT_KIND,
     CHECKOUT_MARKER_NAME,
     MANIFEST_FILE_NAME,
-    MaaFWProjectStoreError,
-    MaaFWProjectStoreService,
     RUN_ROOT_KIND,
     RUN_ROOT_MARKER_NAME,
     STORE_KIND,
     STORE_MARKER_NAME,
     STORE_SCHEMA_VERSION,
+    MaaFWProjectStoreError,
+    MaaFWProjectStoreService,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_store.service import (
     _looks_like_local_path,

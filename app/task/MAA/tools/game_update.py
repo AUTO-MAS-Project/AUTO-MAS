@@ -41,7 +41,7 @@ from typing import Literal
 import aiofiles
 import httpx
 
-from app.utils import get_logger, ProcessRunner
+from app.utils import ProcessRunner, get_logger
 from app.utils.constants import (
     ARKNIGHTS_OFFICIAL_APK_URL,
     ARKNIGHTS_VERSION_API_SERVER,

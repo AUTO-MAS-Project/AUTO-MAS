@@ -28,11 +28,11 @@
 心跳使用 WebSocket 协议层 ping/pong，不使用应用层业务消息。
 """
 
-import json
 import asyncio
-from typing import Optional, Callable, Any, Awaitable, Dict
+import json
+from typing import Any, Awaitable, Callable, Dict, Optional
 
-from websockets.asyncio.client import connect, ClientConnection
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger
@@ -712,7 +712,7 @@ class WSClientManager:
                 # 认证已在 on_connect 回调中自动处理
                 return True
             else:
-                self._logger.warning(f"Koishi 系统客户端连接失败，将在后台持续重连")
+                self._logger.warning("Koishi 系统客户端连接失败，将在后台持续重连")
                 return False
 
         except Exception as e:
@@ -743,29 +743,3 @@ class WSClientManager:
 
 # 全局管理器实例
 ws_client_manager = WSClientManager()
-
-
-# 便捷函数：创建并连接客户端
-async def create_ws_client(
-    host: str = "localhost",
-    port: int = 5140,
-    path: str = "/ws",
-    use_ssl: bool = False,
-    **kwargs,
-) -> WebSocketClient:
-    """
-    创建 WebSocket 客户端实例
-
-    Args:
-        host: 服务器主机地址
-        port: 服务器端口
-        path: WebSocket 路径
-        use_ssl: 是否使用 SSL
-        **kwargs: 传递给 WebSocketClient 的其他参数
-
-    Returns:
-        WebSocketClient: 客户端实例
-    """
-    protocol = "wss" if use_ssl else "ws"
-    url = f"{protocol}://{host}:{port}{path}"
-    return WebSocketClient(url=url, **kwargs)
