@@ -1344,9 +1344,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 if bool(getattr(result, "success", True)):
                     if item.on_success is not None:
                         item.on_success(result)
-                    # 历战余响独立项的最终结果由 on_success 按日志判定，
-                    # 这里再记一次会把「未完成」覆盖成「完成」。
-                    if item.module_key not in ("StartGame", "EchoOfWar"):
+                    # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
+                    # 并记满「完成 / 未完成」两条分支；这里再兜底记一次「完成」，
+                    # 会因后写入为准把「未完成」覆盖成「完成」。
+                    if item.module_key not in (
+                        "StartGame",
+                        "EchoOfWar",
+                        "DivergentUniverse",
+                        "CurrencyWars",
+                    ):
                         self._record_module_result(
                             user_id=item.user_id,
                             user_name=item.user_name,

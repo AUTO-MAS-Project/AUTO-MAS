@@ -69,6 +69,15 @@ def _on_m7a_weekly_success(
             reason=reason,
         )
         return
+    record_module_result(
+        user_id=uid,
+        user_name=user_name,
+        module_key=module_key,
+        module_name=module_name,
+        script="M7A",
+        status="completed",
+        reason=reason,
+    )
     queue_weekly_completion(uid, user_name, module_name)
 
 
