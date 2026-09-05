@@ -45,6 +45,17 @@ class OutBase(BaseModel):
     message: str = Field(default="操作成功", description="操作消息")
 
 
+class BackendHealthOut(OutBase):
+    ready: bool = Field(default=True, description="后端是否已完成启动")
+    backgroundStatus: Literal[
+        "starting", "running", "ready", "failed", "cancelled"
+    ] = Field(default="ready", description="后台初始化状态")
+    backgroundError: Optional[str] = Field(default=None, description="后台初始化错误")
+    protocol: int = Field(..., description="Runtime 协议版本")
+    version: str = Field(..., description="后端版本")
+    commit: str = Field(..., description="受管仓库 Commit")
+
+
 class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 

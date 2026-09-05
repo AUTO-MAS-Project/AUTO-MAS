@@ -53,18 +53,6 @@ class WebSocketMetaOut(BaseModel):
 HEALTH_PROTOCOL_VERSION = 1
 
 
-class BackendHealthOut(BaseModel):
-    """后端核心服务与后台初始化状态。"""
-
-    ready: bool = Field(description="核心 API 是否可用")
-    backgroundStatus: str = Field(description="后台初始化状态")
-    backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
-    protocol: int = Field(description="后端自身支持的健康检查协议版本")
-    version: str = Field(description="后端版本号")
-    commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
-
-
-
 def _resolve_injected_identity(env_name: str) -> str | None:
     """受监督时读取监督器注入的期望身份值。
 
@@ -82,17 +70,23 @@ def _resolve_injected_identity(env_name: str) -> str | None:
     response_model=BackendHealthOut,
     status_code=200,
 )
-async def get_health(request: Request) -> BackendHealthOut:
+async def get_health(request: Request = None) -> BackendHealthOut:
     """返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
 
     version/commit 受监督且监督器注入了期望值时原样回显，否则分别回退到本地版本号
     与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
     """
 
+    background_status = "ready"
+    background_error = None
+    if request is not None:
+        background_status = getattr(request.app.state, "background_status", "starting")
+        background_error = getattr(request.app.state, "background_error", None)
+
     return BackendHealthOut(
         ready=True,
-        backgroundStatus=getattr(request.app.state, "background_status", "starting"),
-        backgroundError=getattr(request.app.state, "background_error", None),
+        backgroundStatus=background_status,
+        backgroundError=background_error,
         protocol=HEALTH_PROTOCOL_VERSION,
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,

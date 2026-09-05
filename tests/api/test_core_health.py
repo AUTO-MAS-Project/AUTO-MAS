@@ -20,6 +20,32 @@ def _get_health() -> core_api.BackendHealthOut:
     return asyncio.run(core_api.get_health(_make_request()))
 
 
+def test_health_route_is_registered() -> None:
+    route = next(
+        (route for route in core_api.router.routes if route.path == "/api/core/health"),
+        None,
+    )
+
+    assert route is not None
+    assert "GET" in route.methods
+
+
+def test_direct_health_call_uses_runtime_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTO_MAS_SUPERVISED", "1")
+    monkeypatch.setenv("AUTO_MAS_RUNTIME_PROTOCOL", "1")
+    monkeypatch.setenv("AUTO_MAS_EXPECTED_VERSION", "v9.9.9-alpha.1")
+    monkeypatch.setenv("AUTO_MAS_EXPECTED_COMMIT", "0" * 40)
+
+    result = asyncio.run(core_api.get_health())
+
+    assert result.ready
+    assert result.backgroundStatus == "ready"
+    assert result.backgroundError is None
+    assert result.protocol == 1
+    assert result.version == "v9.9.9-alpha.1"
+    assert result.commit == "0" * 40
+
+
 def test_supervised_with_full_identity_echoes_injected_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
