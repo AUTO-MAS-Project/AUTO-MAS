@@ -47,6 +47,7 @@
                 "HSR专项 修复 MAS 管控任务的文本与 JSON 配置项在输入过程中被重渲染清空、导致只有数字项能填写的问题（如货币战争的首领/投资重开条件、策略文件、开拓者名称） by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送因漏传通知用户配置参数而失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "游戏签到 修复通知返回值改为 DispatchResult 后未同步两处消费方、开启签到通知时执行签到必报 TypeError 的问题（手动签到接口返回 500，慢渠道后台通知路径丢失日志） by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "BetterGI专项 修复任务跨过本地午夜后仍监控前一天日志文件、导致后续状态误判的问题 by [@Craun718](https://github.com/Craun718)",
                 "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复账号切换在游戏启动阶段定位不到窗口、或界面尚未进入可执行登录态就误操作而失败的问题，改为分段进展续延等待：先轮询窗口就绪，再等待界面进入「登录页/已登录主菜单」（游戏内长时间更新/加载时持续顺延，长时间无进展才判失败），兼容低性能设备启动延迟 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "OK-WW专项 账号切换未能回到登录界面时立即报错并说明原因，不再误报已就绪后在错误画面上继续选号失败 by [@AthenaHibou](https://github.com/AthenaHibou)",

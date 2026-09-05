@@ -278,7 +278,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示尚未接管
         self._reseed_global_config: dict | None = None
 
-    def _build_log_path(self) -> Path:
+    def _resolve_log_file_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
         return (
             self.script_root_path
@@ -433,7 +433,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 避免固定路径在午夜后读不到新日志行而误判超时
             await asyncio.sleep(1)
             await self.log_monitor.start_monitor_file(
-                self._build_log_path, self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
 
             self.wait_event.clear()
@@ -616,7 +616,7 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(1)
             # 传可调用对象：跨零点时自动切换到当日新日志，避免误判超时
             await switch_monitor.start_monitor_file(
-                self._build_log_path, datetime.now()
+                self._resolve_log_file_path, datetime.now()
             )
 
             try:
