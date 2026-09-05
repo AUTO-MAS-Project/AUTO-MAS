@@ -36,6 +36,26 @@ export type GlobalConfig_Notify = {
      */
     KoishiToken?: (string | null);
     /**
+     * 是否启用微信（OpenClaw/iLink协议）通知
+     */
+    IfOpenClawWeixin?: (boolean | null);
+    /**
+     * 微信（OpenClaw/iLink协议）服务器地址
+     */
+    OpenClawWeixinServerAddress?: (string | null);
+    /**
+     * 微信（OpenClaw/iLink协议）Bot Token
+     */
+    OpenClawWeixinBotToken?: (string | null);
+    /**
+     * 微信（OpenClaw/iLink协议）目标用户 ID
+     */
+    OpenClawWeixinTargetUserId?: (string | null);
+    /**
+     * 微信（OpenClaw/iLink协议）会话上下文 Token
+     */
+    OpenClawWeixinContextToken?: (string | null);
+    /**
      * SMTP服务器地址
      */
     SMTPServerAddress?: (string | null);

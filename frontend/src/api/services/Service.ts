@@ -126,7 +126,10 @@ import { request as __request } from '../core/request';
 export class Service {
     /**
      * 获取后端就绪状态
-     * 返回核心 API 与后台初始化状态。
+     * 返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
+     *
+     * version/commit 受监督且监督器注入了期望值时原样回显，否则分别回退到本地版本号
+     * 与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
      * @returns BackendHealthOut Successful Response
      * @throws ApiError
      */

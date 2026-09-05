@@ -3850,6 +3850,29 @@ class GlobalConfig(ConfigBase):
         )
         ## Koishi Token
         self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
+        ## 是否启用微信（OpenClaw/iLink 协议）通知
+        self.Notify_IfOpenClawWeixin = ConfigItem(
+            "Notify", "IfOpenClawWeixin", False, BoolValidator()
+        )
+        ## 微信（OpenClaw/iLink 协议）服务器地址
+        self.Notify_OpenClawWeixinServerAddress = ConfigItem(
+            "Notify",
+            "OpenClawWeixinServerAddress",
+            "https://ilinkai.weixin.qq.com",
+            URLValidator(),
+        )
+        ## 微信（OpenClaw/iLink 协议）Bot Token
+        self.Notify_OpenClawWeixinBotToken = ConfigItem(
+            "Notify", "OpenClawWeixinBotToken", "", EncryptValidator()
+        )
+        ## 微信（OpenClaw/iLink 协议）目标用户 ID
+        self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
+            "Notify", "OpenClawWeixinTargetUserId", ""
+        )
+        ## 微信（OpenClaw/iLink 协议）会话上下文 Token
+        self.Notify_OpenClawWeixinContextToken = ConfigItem(
+            "Notify", "OpenClawWeixinContextToken", "", EncryptValidator()
+        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码

@@ -101,6 +101,12 @@ class NotifyPayload:
         return f"{self.title}\n\n{self.signed_text}"
 
     @property
+    def openclaw_weixin_content(self) -> str:
+        """返回微信（iLink）正文。"""
+
+        return f"{self.title}\n\n{self.signed_text}"
+
+    @property
     def system_content(self) -> str:
         """返回系统通知正文。"""
 
@@ -117,6 +123,7 @@ class NotifyTarget:
     serverchan_key: str | None = None
     webhooks: Iterable[tuple[str, Any]] = ()
     koishi: bool = False
+    openclaw_weixin: bool = False
     empty_policy: EmptyPolicy = "send"
 
 
@@ -166,6 +173,7 @@ def global_target(
         ),
         webhooks=_webhooks(Config.Notify_CustomWebhooks),
         koishi=bool(Config.get("Notify", "IfKoishiSupport")),
+        openclaw_weixin=bool(Config.get("Notify", "IfOpenClawWeixin")),
         empty_policy=empty_policy,
     )
 
@@ -257,6 +265,8 @@ def target_channel_names(target: NotifyTarget) -> tuple[str, ...]:
     )
     if target.koishi:
         names.append(f"{target.name} Koishi")
+    if target.openclaw_weixin:
+        names.append(f"{target.name} 微信（iLink）")
     return tuple(names)
 
 
@@ -410,6 +420,15 @@ async def dispatch(
             await attempt(
                 f"{target.name} Koishi",
                 lambda: Notify.send_koishi(payload.koishi_content),
+            )
+
+        if target.openclaw_weixin:
+            await attempt(
+                f"{target.name} 微信（iLink）",
+                lambda: Notify.send_openclaw_weixin(
+                    title=payload.title,
+                    content=payload.openclaw_weixin_content,
+                ),
             )
 
     return DispatchResult(

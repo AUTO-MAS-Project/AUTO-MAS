@@ -338,6 +338,21 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="Koishi服务器地址"
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
+    IfOpenClawWeixin: Optional[bool] = Field(
+        default=None, description="是否启用微信（OpenClaw/iLink协议）通知"
+    )
+    OpenClawWeixinServerAddress: Optional[str] = Field(
+        default=None, description="微信（OpenClaw/iLink协议）服务器地址"
+    )
+    OpenClawWeixinBotToken: Optional[str] = Field(
+        default=None, description="微信（OpenClaw/iLink协议）Bot Token"
+    )
+    OpenClawWeixinTargetUserId: Optional[str] = Field(
+        default=None, description="微信（OpenClaw/iLink协议）目标用户 ID"
+    )
+    OpenClawWeixinContextToken: Optional[str] = Field(
+        default=None, description="微信（OpenClaw/iLink协议）会话上下文 Token"
+    )
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
     FromAddress: Optional[str] = Field(default=None, description="邮件发送地址")
