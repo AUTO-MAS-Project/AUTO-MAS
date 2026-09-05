@@ -154,8 +154,19 @@ def resolve_python_interpreter(
     uv_executable = _find_uv_executable(sys.executable)
     if uv_executable is None:
         if allow_install:
+            # 这条是便携版用户唯一能看到的说明，必须写清放哪儿、以及不想下载时的替代做法。
+            # 取 _find_uv_executable 的第一候选（解释器同级）：便携版是
+            # environment\python\uv.exe，源码开发是 .venv\Scripts\uv.exe，两种布局都成立。
+            portable_uv = Path(sys.executable).resolve().parent / "uv.exe"
             raise RuntimeError(
-                "MaaFW runtime requires a different Python ABI, but uv was not found"
+                "未找到 uv，无法为 MFW 项目创建隔离运行环境"
+                "（随包 Python 是精简发行版，不含创建环境所需的组件）。"
+                "二选一，改完重启 AUTO-MAS："
+                "① 从 github.com/astral-sh/uv/releases 下载 "
+                f"uv-x86_64-pc-windows-msvc.zip，把里面的 uv.exe 放到 {portable_uv}"
+                "（或设环境变量 AUTO_MAS_UV_EXE 指向已有的 uv.exe）；"
+                "② 本机已装完整 Python 3.12 的话，设环境变量 AUTO_MAS_PYTHON_EXE "
+                "指向它的 python.exe，这样不必再下载一份 Python。"
             )
         return None
 
