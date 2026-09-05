@@ -151,6 +151,236 @@ def list_js_scripts(root: Path) -> list[tuple[str, str]]:
     return items
 
 
+def list_script_groups(root: Path) -> list[str]:
+    """列出 BetterGI 配置组候选：{RootPath}/User/ScriptGroup/*.json 的文件名。
+
+    配置组是 BetterGI 一条龙可引用的自定义任务组定义（BetterGI GUI 的「配置组」，
+    文件名即组名，与一条龙 TaskDefinitions 的引用名一致，如「锄地一条龙」、
+    「每日秘境DHXYHO」）。每次调用实时扫描，以反映 BGI 侧手工新增/删除的配置组。
+    """
+    names: list[str] = []
+    sg_dir = root / _SCRIPT_GROUP_REL_DIR
+    if sg_dir.is_dir():
+        for p in sorted(sg_dir.glob("*.json"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def read_script_group(root: Path, name: str) -> dict[str, Any]:
+    """读取某个配置组 json 全文（{RootPath}/User/ScriptGroup/{name}.json）。
+
+    配置组 json 的结构：``{index, name, config, projects: [...]}``，其中
+    ``projects`` 为组内脚本项目数组（每项含 name/folderName/index/type/status/
+    schedule/runNum/allowJsNotification/allowJsHTTPHash/jsScriptSettingsObject）。
+    文件不存在或非法时返回空 dict。
+    """
+    sg_dir = root / _SCRIPT_GROUP_REL_DIR
+    path = sg_dir / f"{resolve_script_group_name(name)}.json"
+    data = read_file(path)
+    return data if isinstance(data, dict) else {}
+
+
+def write_script_group(root: Path, name: str, data: dict[str, Any]) -> Path:
+    """把配置组 json 全文写回 {RootPath}/User/ScriptGroup/{name}.json。
+
+    同步顶层 ``name``（组名即文件名）与 ``index`` 之外的结构字段一律原样保留；
+    ``data`` 传入的 projects 数组将整体替换（顺序即 BGI 执行顺序）。
+    """
+    name = resolve_script_group_name(name)
+    data = dict(data or {})
+    data["name"] = name
+    sg_dir = root / _SCRIPT_GROUP_REL_DIR
+    sg_dir.mkdir(parents=True, exist_ok=True)
+    out_path = sg_dir / f"{name}.json"
+    write_file(out_path, data)
+    return out_path
+
+
+def resolve_script_group_name(name: str) -> str:
+    """解析配置组名：去首尾空白，拒绝路径穿越与空名。"""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("配置组名不能为空")
+    if any(c in name for c in ("/", "\\", "..")):
+        raise ValueError(f"配置组名非法: {name!r}")
+    return name
+
+
+def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
+    """读取某个 JsScript 脚本目录的 settings.json UI 定义（用于双击弹窗渲染）。
+
+    BetterGI 每个可执行 JS 脚本目录（{RootPath}/User/JsScript/{folder}/）下有
+    ``settings.json``：以数组声明脚本设置项的表单（name/type/label/options/default，
+    支持 select / input-text / checkbox / multi-checkbox / separator）。
+    目录缺失或文件非法返回空列表。
+    """
+    folder = (folder or "").strip()
+    if not folder or any(c in folder for c in ("/", "\\", "..")):
+        return []
+    js_dir = root / _JS_SCRIPT_REL_DIR / folder
+    settings = js_dir / "settings.json"
+    data = read_file(settings)
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return []
+
+
+def read_script_readme(root: Path, folder: str) -> str:
+    """读取某个 JsScript 脚本目录的 README（脚本说明，用于双击弹窗「脚本说明」标签）。
+
+    BetterGI 可执行脚本目录（{RootPath}/User/JsScript/{folder}/）通常带 ``README.md``
+    说明脚本用法/注意事项。大小写不敏感匹配常见命名；返回纯文本，缺失返回空串。
+    """
+    folder = (folder or "").strip()
+    if not folder or any(c in folder for c in ("/", "\\", "..")):
+        return ""
+    js_dir = root / _JS_SCRIPT_REL_DIR / folder
+    if not js_dir.is_dir():
+        return ""
+    for name in ("README.md", "readme.md", "Readme.md", "README.txt", "readme.txt"):
+        candidate = js_dir / name
+        if candidate.is_file():
+            try:
+                text = candidate.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            return (text or "").strip()
+    return ""
+
+
+def per_user_script_group_path(script_id: str, user_id: str, name: str) -> Path:
+    """某用户的配置组 json 副本路径 ``data/{script_id}/{user_id}/ScriptGroup/{name}.json``。
+
+    BetterGI 的配置组（``User/ScriptGroup/*.json``）是 BGI 全局共享文件；在「用户独立
+    配置」语义下，MAS 把该用户对配置组的编辑（项目顺序 / 各项目 jsScriptSettingsObject）
+    落在 per-user 副本，BGI 同名实配全程零接触（种子：per-user 副本 → BGI 实配）。
+    """
+    return (
+        Path.cwd()
+        / "data"
+        / script_id
+        / user_id
+        / "ScriptGroup"
+        / f"{resolve_script_group_name(name)}.json"
+    )
+
+
+def read_user_script_group(
+    root: Path, script_id: str, user_id: str, name: str
+) -> dict[str, Any]:
+    """读取某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+
+    供右栏「配置组项目编辑」渲染与编辑：副本缺失/未生成时回退 BGI 实配，
+    保证展示的是用户当前可编辑的内容（首次编辑时即以实配为底稿）。
+    """
+    name = resolve_script_group_name(name)
+    copy = read_file(per_user_script_group_path(script_id, user_id, name))
+    if isinstance(copy, dict) and copy:
+        return copy
+    return read_script_group(root, name)
+
+
+def write_user_script_group(
+    root: Path, script_id: str, user_id: str, name: str, config: dict[str, Any]
+) -> Path:
+    """把用户编辑后的配置组 json 写回 per-user 副本（不触碰 BGI 同名实配）。
+
+    ``config`` 传入的是完整配置组 json（含 projects 数组顺序与每项的
+    jsScriptSettingsObject）；写前同步 ``name`` 字段。缺目录自动补建。
+    """
+    name = resolve_script_group_name(name)
+    config = dict(config or {})
+    config["name"] = name
+    out_path = per_user_script_group_path(script_id, user_id, name)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_file(out_path, config)
+    return out_path
+
+
+# 官方传送点资源：tp.json 内可刷秘境（每周秘境/自动秘境）的类型名
+# BlessDomain=圣遗物、ForgeryDomain=武器素材、MasteryDomain=天赋素材
+_TP_DOMAIN_TYPES = ("BlessDomain", "ForgeryDomain", "MasteryDomain")
+
+
+def scan_domain_catalog(root: Path) -> tuple[str, list[dict[str, Any]]]:
+    """扫描每周秘境可选的秘境目录，返回 ``(来源说明, 秘境列表)``。
+
+    **以官方传送点 ``GameTask/AutoTrackPath/Assets/tp.json`` 为唯一权威来源**：
+    BetterGI 前端每周秘境下拉的秘境候选与其奖励物品列表，正来自 tp.json 中
+    Bless/Forgery/Mastery 三类 Domain 点的 ``name/country/rewards`` 字段
+    （BetterGI 运行时也按同名字典定位秘境传送点）。不依赖任何用户脚本资产
+    （AutoDomainCustomizable 等删除后不受影响）。
+
+    返回项结构：``{name, region, category, rewards}``；
+    ``rewards`` 为该秘境奖励物品数组（顺序与 BGI 前端展示/领奖档位 1/2/3 一致，
+    即 rewards[0]=领奖序号 1、rewards[1]=2、rewards[2]=3；圣遗物本为两件套装）。
+    """
+
+    tp_candidates = [
+        root / "GameTask" / "AutoTrackPath" / "Assets" / "tp.json",
+        root / "GameTask" / "AutoTrackPath" / "Assets" / "TP.json",
+    ]
+    for tp_path in tp_candidates:
+        if not tp_path.is_file():
+            continue
+        items = _parse_tp_domain_names(tp_path)
+        if items:
+            return str(tp_path), items
+    return "", []
+
+
+def _parse_tp_domain_names(tp_path: Path) -> list[dict[str, Any]]:
+    """从官方 tp.json 提取可刷的秘境（Bless/Forgery/Mastery 三类）及其奖励物品。
+
+    tp.json 结构：``{data: [{points: [{type, name, country, rewards: [...], ...}]}]}``。
+    仅收集目标类型且 name 非空、去重（同名多次出现时只列一次）；
+    ``rewards`` 为纯物品名数组（顺序即 BGI 前端展示顺序，圣遗物为两件套装）。
+    """
+
+    raw = read_file(tp_path)
+    if not isinstance(raw, dict):
+        return []
+    data = raw.get("data")
+    if not isinstance(data, list):
+        return []
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for scene in data:
+        if not isinstance(scene, dict):
+            continue
+        points = scene.get("points")
+        if not isinstance(points, list):
+            continue
+        for pt in points:
+            if not isinstance(pt, dict):
+                continue
+            if pt.get("type") not in _TP_DOMAIN_TYPES:
+                continue
+            name = str(pt.get("name") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            rewards_raw = pt.get("rewards")
+            rewards: list[str] = []
+            if isinstance(rewards_raw, list):
+                rewards = [
+                    str(r).strip()
+                    for r in rewards_raw
+                    if isinstance(r, str) and str(r).strip()
+                ]
+            out.append(
+                {
+                    "name": name,
+                    "region": str(pt.get("country") or "").strip(),
+                    "category": str(pt.get("type") or "").strip(),
+                    "rewards": rewards,
+                }
+            )
+    return out
+
+
 def resolve_script_dirs(root: Path) -> dict[str, str]:
     """返回 BetterGI 常用目录与可执行文件绝对路径。
 
@@ -603,6 +833,127 @@ def restore_global_battle_config(
         if changed:
             for leaf in _ALL_GLOBAL_LEAVES:
                 _prune_empty_ancestors(config, leaf)
+            write_file(_global_config_path(root), config)
+
+
+# ---- 自动秘境「秘境刷取配置」：BetterGI 全局 config.json 段白名单 ----
+# 领奖树脂设定 / 分解圣遗物 / 启用奖励识别 在 BGI 中存于全局 config.json
+# （`autoDomainConfig` 段 + `autoArtifactSalvageConfig` 段，camelCase 键），
+# 不属于 per-user 一条龙 JSON。此处只管理右栏「秘境刷取配置」标签暴露的白名单键，
+# 其余同段字段（战斗延迟、移动方式等进阶项）不在右栏覆盖、原样保留。
+# 结构: 段名(camelCase) -> 该段允许读写的叶子键 -> 类型转换函数(读/写用)。
+_GLOBAL_DOMAIN_CONFIG_SEGMENT = "autoDomainConfig"
+_GLOBAL_ARTIFACT_SALVAGE_SEGMENT = "autoArtifactSalvageConfig"
+
+# 领奖树脂设定弹窗（SpecifyResinUse 模式开关）可编辑的 4 个次数
+_GLOBAL_DOMAIN_RESIN_COUNT_KEYS = (
+    "originalResinUseCount",
+    "condensedResinUseCount",
+    "transientResinUseCount",
+    "fragileResinUseCount",
+)
+# 秘境刷取配置暴露的白名单（段名 -> 叶子键集合）
+_GLOBAL_DOMAIN_SETTING_LEAVES: dict[str, frozenset[str]] = {
+    _GLOBAL_DOMAIN_CONFIG_SEGMENT: frozenset(
+        (
+            "specifyResinUse",  # 模式切换：先用浓缩后原粹 / 按下方配置数量使用
+            *_GLOBAL_DOMAIN_RESIN_COUNT_KEYS,
+            "autoArtifactSalvage",  # 分解圣遗物开关
+            "rewardRecognitionEnabled",  # 启用奖励识别
+        )
+    ),
+    _GLOBAL_ARTIFACT_SALVAGE_SEGMENT: frozenset(("maxArtifactStar",)),  # 分解最高星级
+}
+# 扁平键（前端直接使用的小写键）→ 所属段
+_GLOBAL_DOMAIN_LEAF_SEGMENT: dict[str, str] = {
+    leaf: segment
+    for segment, leaves in _GLOBAL_DOMAIN_SETTING_LEAVES.items()
+    for leaf in leaves
+}
+
+
+def _coerce_domain_leaf(segment: str, key: str, value: Any) -> Any:
+    """把 config.json 读出的值规整为前端可用类型（右栏渲染用）。"""
+    if value is None:
+        return None
+    if segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key == "specifyResinUse":
+        return bool(value)
+    if segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key == "autoArtifactSalvage":
+        return bool(value)
+    if segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key == "rewardRecognitionEnabled":
+        return bool(value)
+    if segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+    return value
+
+
+def read_global_domain_settings(root: Path) -> dict[str, Any]:
+    """读取 BetterGI 全局 config.json 的秘境刷取配置白名单键（扁平键值对）。
+
+    config.json 可能缺失整段（全新安装），此时返回默认值（false/0/"4"），
+    避免前端对 undefined 渲染报错；缺失键也以默认值兜底。
+    """
+    default_values: dict[str, Any] = {
+        "specifyResinUse": False,
+        "originalResinUseCount": 0,
+        "condensedResinUseCount": 0,
+        "transientResinUseCount": 0,
+        "fragileResinUseCount": 0,
+        "autoArtifactSalvage": False,
+        "rewardRecognitionEnabled": False,
+        "maxArtifactStar": "4",
+    }
+    with GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        return dict(default_values)
+    out = dict(default_values)
+    for key in default_values:
+        segment = _GLOBAL_DOMAIN_LEAF_SEGMENT[key]
+        seg_data = config.get(segment)
+        if isinstance(seg_data, dict) and key in seg_data:
+            out[key] = _coerce_domain_leaf(segment, key, seg_data[key])
+    return out
+
+
+def write_global_domain_settings(root: Path, settings: dict[str, Any]) -> None:
+    """把右栏秘境刷取配置写回 BetterGI 全局 config.json 的白名单键。
+
+    只更新白名单叶子，保留同段其余字段（战斗延迟/移动等进阶项不受影响）；
+    空 settings 不触写。写入值做类型规整（bool/int/str）以防前端字符串化误写。
+    """
+    if not settings:
+        return
+    with GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            config = {}
+        changed = False
+        for key, value in settings.items():
+            segment = _GLOBAL_DOMAIN_LEAF_SEGMENT.get(key)
+            if segment is None:
+                continue  # 非白名单键直接忽略，避免污染 config.json
+            seg_data = config.get(segment)
+            if not isinstance(seg_data, dict):
+                seg_data = {}
+                config[segment] = seg_data
+            if segment == _GLOBAL_ARTIFACT_SALVAGE_SEGMENT:
+                norm = str(value) if value is not None else "4"
+            elif segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS:
+                try:
+                    norm = int(value)
+                except (TypeError, ValueError):
+                    norm = 0
+            else:
+                norm = bool(value)
+            if seg_data.get(key) == norm:
+                continue
+            seg_data[key] = norm
+            changed = True
+        if changed:
             write_file(_global_config_path(root), config)
 
 

@@ -2,7 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BetterGIDomainCatalogOut } from '../models/BetterGIDomainCatalogOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
+import type { BetterGIScriptGroupDetailOut } from '../models/BetterGIScriptGroupDetailOut';
+import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSaveIn';
+import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
+import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
+import type { BetterGIGlobalDomainSettingsIn } from '../models/BetterGIGlobalDomainSettingsIn';
+import type { BetterGIGlobalDomainSettingsOut } from '../models/BetterGIGlobalDomainSettingsOut';
 import type { BetterGIOneDragonSettingsIn } from '../models/BetterGIOneDragonSettingsIn';
 import type { BetterGIOneDragonSettingsOut } from '../models/BetterGIOneDragonSettingsOut';
 import type { BetterGIPathingTreeOut } from '../models/BetterGIPathingTreeOut';
@@ -84,6 +91,75 @@ export class BetterGiService {
         });
     }
     /**
+     * 获取 BetterGI 全局 config.json 的秘境刷取配置段
+     * 返回 BetterGI 全局 config.json 的秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
+     *
+     * 该段存于 BGI 全局主配置（autoDomainConfig/autoArtifactSalvageConfig，camelCase），
+     * 不随用户/一条龙配置组切换，故只按 scriptId 定位 RootPath 后读取。
+     * @param scriptId
+     * @returns BetterGIGlobalDomainSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIGlobalDomainSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/global-domain/settings',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 全局 config.json 的秘境刷取配置段
+     * 把右栏秘境刷取配置写回 BetterGI 全局 config.json 的白名单键。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsPost(
+        requestBody: BetterGIGlobalDomainSettingsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/global-domain/settings',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 每周秘境候选与每秘境三档奖励物
+     * 返回 BetterGI 每周秘境可选秘境目录与分档奖励物。
+     *
+     * 秘境名以官方传送点 tp.json（GameTask/AutoTrackPath/Assets）为准；
+     * 产出表 Genshin_Domains_SC_Live_Source.json（用户 JS 脚本目录下）仅补三档奖励物名。
+     * 供「每周秘境」表格的秘境/奖励下拉联动使用（奖励仍按 BGI 语义存 0~3 序号）。
+     * @param scriptId
+     * @returns BetterGIDomainCatalogOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiDomainCatalogApiApiScriptsBettergiDomainCatalogGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIDomainCatalogOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/domain-catalog',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      *
@@ -155,6 +231,134 @@ export class BetterGiService {
             url: '/api/scripts/bettergi/js-scripts',
             query: {
                 'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 可用配置组列表
+     * 返回 BetterGI 配置组候选：{RootPath}/User/ScriptGroup*.json 的文件名。
+     *
+     * BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
+     * ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
+     * 的引用名一致。供「添加配置组」弹窗「配置组」标签页展示。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptGroupsApiApiScriptsBettergiScriptGroupsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-groups',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 配置组 json 详情（per-user 副本优先）
+     * 返回某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+     *
+     * 右栏「配置组」标签页选中 scriptgroup 时，据此列出其 json 内 ``projects`` 的
+     * 每个项目；也供 JS/路径等单项目组展示（项目名=组名）。
+     * @param scriptId
+     * @param userId
+     * @param name
+     * @returns BetterGIScriptGroupDetailOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptGroupDetailApiApiScriptsBettergiScriptGroupDetailGet(
+        scriptId: string,
+        userId: string,
+        name: string,
+    ): CancelablePromise<BetterGIScriptGroupDetailOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-group/detail',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'name': name,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 配置组 json 到 per-user 副本
+     * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
+     * 该用户的 per-user 副本。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(
+        requestBody: BetterGIScriptGroupSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/script-group/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 某 JsScript 脚本目录的 settings.json UI 定义
+     * 返回某脚本目录（User/JsScript/{folder}/）的 settings.json UI 定义数组。
+     *
+     * 双击配置组内某项目（其 folderName 即脚本目录名）时，前端据此渲染设置弹窗表单。
+     * @param scriptId
+     * @param folder
+     * @returns BetterGIScriptSettingsUiOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptSettingsUiApiApiScriptsBettergiScriptSettingsUiGet(
+        scriptId: string,
+        folder: string,
+    ): CancelablePromise<BetterGIScriptSettingsUiOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-settings-ui',
+            query: {
+                'scriptId': scriptId,
+                'folder': folder,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 某 JsScript 脚本目录的 README 内容
+     * 返回某脚本目录（User/JsScript/{folder}/）的 README 纯文本。
+     *
+     * 双击配置组内某项目设置弹窗的「脚本说明」标签页展示。
+     * @param scriptId
+     * @param folder
+     * @returns BetterGIScriptReadmeOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptReadmeApiApiScriptsBettergiScriptReadmeGet(
+        scriptId: string,
+        folder: string,
+    ): CancelablePromise<BetterGIScriptReadmeOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-readme',
+            query: {
+                'scriptId': scriptId,
+                'folder': folder,
             },
             errors: {
                 422: `Validation Error`,

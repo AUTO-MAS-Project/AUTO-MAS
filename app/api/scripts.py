@@ -1356,6 +1356,118 @@ async def save_bettergi_one_dragon_settings_api(
 
 
 @router.get(
+    "/bettergi/global-domain/settings",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 全局 config.json 的秘境刷取配置段",
+    response_model=BetterGIGlobalDomainSettingsOut,
+    status_code=200,
+)
+async def get_bettergi_global_domain_settings_api(
+    scriptId: str,
+) -> BetterGIGlobalDomainSettingsOut:
+    """返回 BetterGI 全局 config.json 的秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
+
+    该段存于 BGI 全局主配置（autoDomainConfig/autoArtifactSalvageConfig，camelCase），
+    不随用户/一条龙配置组切换，故只按 scriptId 定位 RootPath 后读取。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        data = one_dragon.read_global_domain_settings(root)
+        return BetterGIGlobalDomainSettingsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 项秘境刷取配置",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGIGlobalDomainSettingsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
+
+
+@router.post(
+    "/bettergi/global-domain/settings",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 全局 config.json 的秘境刷取配置段",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_global_domain_settings_api(
+    req: BetterGIGlobalDomainSettingsIn = Body(...),
+) -> OutBase:
+    """把右栏秘境刷取配置写回 BetterGI 全局 config.json 的白名单键。"""
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        one_dragon.write_global_domain_settings(root, req.settings)
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存 {len(req.settings)} 项秘境刷取配置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/domain-catalog",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 每周秘境候选与每秘境三档奖励物",
+    response_model=BetterGIDomainCatalogOut,
+    status_code=200,
+)
+async def get_bettergi_domain_catalog_api(
+    scriptId: str,
+) -> BetterGIDomainCatalogOut:
+    """返回 BetterGI 每周秘境可选秘境目录与分档奖励物。
+
+    数据源：产出表（User/JsScript/**/Genshin_Domains_SC_Live_Source.json）优先，
+    缺失时回退官方传送点 tp.json 的域名（无奖励物）；两者都没有时返回空目录。
+    供「每周秘境」表格的秘境/奖励下拉联动使用（奖励仍按 BGI 语义存 0~3 序号）。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        source, items = one_dragon.scan_domain_catalog(root)
+        data = [BetterGIDomainCatalogItem(**item) for item in items]
+        return BetterGIDomainCatalogOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个秘境",
+            data=data,
+            source=source or None,
+        )
+    except Exception as e:
+        return BetterGIDomainCatalogOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+            source=None,
+        )
+
+
+@router.get(
     "/bettergi/one-dragon/custom-groups",
     tags=["BetterGI"],
     summary="获取 BetterGI 一条龙自定义配置组",
@@ -1469,6 +1581,204 @@ async def get_bettergi_js_scripts_api(scriptId: str) -> ComboBoxOut:
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
+        )
+
+
+@router.get(
+    "/bettergi/script-groups",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 可用配置组列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_script_groups_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 配置组候选：{RootPath}/User/ScriptGroup/*.json 的文件名。
+
+    BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
+    ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
+    的引用名一致。每次调用实时扫描，供「添加配置组」弹窗「配置组」标签页展示。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_script_groups(root)
+        data = [ComboBoxItem(label=name, value=name) for name in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个配置组",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/bettergi/script-group/detail",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 配置组 json 详情（per-user 副本优先）",
+    response_model=BetterGIScriptGroupDetailOut,
+    status_code=200,
+)
+async def get_bettergi_script_group_detail_api(
+    scriptId: str, userId: str, name: str
+) -> BetterGIScriptGroupDetailOut:
+    """返回某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+
+    右栏「配置组」标签页选中 scriptgroup 时，据此列出其 json 内 ``projects`` 的
+    每个项目；也供 JS/路径等单项目组展示（项目名=组名）。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        data = one_dragon.read_user_script_group(root, scriptId, userId, name)
+        if not data:
+            return BetterGIScriptGroupDetailOut(
+                code=404,
+                status="error",
+                message=f"配置组 {name} 不存在或内容为空",
+                data={},
+            )
+        return BetterGIScriptGroupDetailOut(
+            code=200,
+            status="success",
+            message=f"配置组 {name} 读取成功",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGIScriptGroupDetailOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
+
+
+@router.post(
+    "/bettergi/script-group/save",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 配置组 json 到 per-user 副本",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_script_group_api(
+    req: BetterGIScriptGroupSaveIn = Body(...),
+) -> OutBase:
+    """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
+    该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+
+    不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+    """
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        projects = (req.data or {}).get("projects")
+        if not isinstance(projects, list):
+            raise ValueError("projects 必须为数组（按执行顺序的项目列表）")
+        out = one_dragon.write_user_script_group(
+            root, req.scriptId, req.userId, req.name, req.data
+        )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存配置组 {req.name}（共 {len(projects)} 个项目）到用户配置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/script-settings-ui",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 某 JsScript 脚本目录的 settings.json UI 定义",
+    response_model=BetterGIScriptSettingsUiOut,
+    status_code=200,
+)
+async def get_bettergi_script_settings_ui_api(
+    scriptId: str, folder: str
+) -> BetterGIScriptSettingsUiOut:
+    """返回某脚本目录（User/JsScript/{folder}/）的 settings.json UI 定义数组。
+
+    双击配置组内某项目（其 folderName 即脚本目录名）时，前端据此渲染设置弹窗表单。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        ui = one_dragon.list_script_settings_ui(root, folder)
+        return BetterGIScriptSettingsUiOut(
+            code=200,
+            status="success",
+            message=f"脚本 {folder} 共 {len(ui)} 个设置项",
+            data=ui,
+        )
+    except Exception as e:
+        return BetterGIScriptSettingsUiOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/bettergi/script-readme",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 某 JsScript 脚本目录的 README 内容",
+    response_model=BetterGIScriptReadmeOut,
+    status_code=200,
+)
+async def get_bettergi_script_readme_api(
+    scriptId: str, folder: str
+) -> BetterGIScriptReadmeOut:
+    """返回某脚本目录（User/JsScript/{folder}/）的 README 纯文本。
+
+    双击配置组内某项目设置弹窗的「脚本说明」标签页展示。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        text = one_dragon.read_script_readme(root, folder)
+        return BetterGIScriptReadmeOut(
+            code=200,
+            status="success",
+            message="已读取脚本说明" if text else "该脚本无说明文件",
+            data=text,
+        )
+    except Exception as e:
+        return BetterGIScriptReadmeOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data="",
         )
 
 

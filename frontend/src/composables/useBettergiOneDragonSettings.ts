@@ -1,7 +1,11 @@
 // BetterGI 一条龙「设置项」读写（右栏按任务分组展示/编辑）
 // 通过 OpenAPI 生成的 BetterGiService 类型化调用（后端新增接口后需重新 yarn openapi）。
 import { BetterGiService } from '@/api'
-import type { BetterGIOneDragonSettingsIn } from '@/api'
+import type {
+  BetterGIDomainCatalogItem,
+  BetterGIGlobalDomainSettingsIn,
+  BetterGIOneDragonSettingsIn,
+} from '@/api'
 
 const logger = window.electronAPI.getLogger('BetterGI一条龙设置')
 
@@ -42,6 +46,67 @@ export const saveOneDragonSettings = async (
       )
     if (resp.code !== 200) {
       throw new Error(resp.message || 'BetterGI 一条龙设置保存失败')
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    throw e instanceof Error ? e : new Error(String(e))
+  }
+}
+
+/**
+ * 读取 BetterGI 全局 config.json 的秘境刷取配置段（领奖树脂/分解圣遗物/奖励识别）。
+ * 该段不随用户/一条龙配置组切换，故只按 scriptId 定位 RootPath。
+ */
+export const fetchGlobalDomainSettings = async (
+  scriptId: string
+): Promise<Record<string, unknown>> => {
+  const resp = await BetterGiService.getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
+    scriptId
+  )
+  if (resp.code !== 200) {
+    throw new Error(resp.message || 'BetterGI 秘境刷取配置请求失败')
+  }
+  return (resp.data || {}) as Record<string, unknown>
+}
+
+/**
+ * 读取 BetterGI 每周秘境秘境候选目录（产出表/tp.json 扫描，含每秘境三档奖励物）。
+ * 失败时返回空数组并由调用方决定降级行为（表格仍可手动填写秘境名）。
+ */
+export const fetchDomainCatalog = async (
+  scriptId: string
+): Promise<BetterGIDomainCatalogItem[]> => {
+  try {
+    const resp =
+      await BetterGiService.getBettergiDomainCatalogApiApiScriptsBettergiDomainCatalogGet(
+        scriptId
+      )
+    if (resp.code !== 200) {
+      logger.warn(resp.message || 'BetterGI 秘境目录请求失败')
+      return []
+    }
+    return Array.isArray(resp.data) ? resp.data : []
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    return []
+  }
+}
+
+/**
+ * 把右栏秘境刷取配置写回 BetterGI 全局 config.json 的白名单键。
+ */
+export const saveGlobalDomainSettings = async (
+  scriptId: string,
+  settings: Record<string, unknown>
+): Promise<void> => {
+  const body: BetterGIGlobalDomainSettingsIn = { scriptId, settings }
+  try {
+    const resp =
+      await BetterGiService.saveBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsPost(
+        body
+      )
+    if (resp.code !== 200) {
+      throw new Error(resp.message || 'BetterGI 秘境刷取配置保存失败')
     }
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))

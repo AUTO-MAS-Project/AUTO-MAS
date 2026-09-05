@@ -123,6 +123,86 @@ class BetterGIOneDragonSettingsIn(BaseModel):
     )
 
 
+class BetterGIGlobalDomainSettingsOut(OutBase):
+    """BetterGI 全局 config.json 的「秘境刷取配置」段（autoDomainConfig/autoArtifactSalvageConfig）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "秘境刷取配置键值（camelCase 扁平键：specifyResinUse/originalResinUseCount/"
+            "condensedResinUseCount/transientResinUseCount/fragileResinUseCount/"
+            "autoArtifactSalvage/maxArtifactStar/rewardRecognitionEnabled）"
+        ),
+    )
+
+
+class BetterGIGlobalDomainSettingsIn(BaseModel):
+    """BetterGI 全局 config.json 的秘境刷取配置写入请求"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的秘境刷取配置键值（camelCase 扁平键）"
+    )
+
+
+class BetterGIDomainCatalogItem(BaseModel):
+    """BetterGI 每周秘境可选秘境目录项（来源：官方 tp.json 权威，产出表补奖励名）"""
+
+    name: str = Field(..., description="秘境名称（与 BGI 传送点/每周秘境 DomainName 一致）")
+    region: str = Field(default="", description="所在地区")
+    category: str = Field(default="", description="tp.json 的 domain type（BlessDomain/ForgeryDomain/MasteryDomain）")
+    rewards: List[str] = Field(
+        default_factory=list,
+        description="三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；产出表缺失或圣遗物时为空数组）",
+    )
+
+
+class BetterGIDomainCatalogOut(OutBase):
+    """BetterGI 每周秘境秘境候选 + 每秘境三档奖励物"""
+
+    data: List[BetterGIDomainCatalogItem] = Field(
+        default_factory=list, description="秘境目录列表"
+    )
+    source: Optional[str] = Field(default=None, description="数据来源文件绝对路径（缺省为空）")
+
+
+class BetterGIScriptGroupDetailOut(OutBase):
+    """BetterGI 配置组 json 详情（per-user 副本 → BGI 实配）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="配置组 json 内容（含 name/index/config/projects，projects 为执行顺序）",
+    )
+
+
+class BetterGIScriptGroupSaveIn(BaseModel):
+    """BetterGI 配置组 json 写入请求（保存到 per-user 副本，不触碰 BGI 同名实配）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="所属用户ID")
+    name: str = Field(..., description="配置组名（文件名）")
+    data: Dict[str, Any] = Field(
+        default_factory=dict, description="要保存的完整配置组 json（projects 数组为新顺序与各项目设置）"
+    )
+
+
+class BetterGIScriptSettingsUiOut(OutBase):
+    """BetterGI 某 JsScript 脚本目录 settings.json 的 UI 定义（双击项目设置弹窗渲染用）"""
+
+    data: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="settings.json UI 定义数组（name/type/label/options/default）",
+    )
+
+
+class BetterGIScriptReadmeOut(OutBase):
+    """BetterGI 某 JsScript 脚本目录的 README 内容（双击弹窗「脚本说明」标签展示用）"""
+
+    data: str = Field(
+        default="", description="README 纯文本内容（缺失时为空字符串）"
+    )
+
+
 class BetterGIPathingNode(BaseModel):
     """BetterGI AutoPathing 目录树节点"""
 
