@@ -3852,6 +3852,41 @@ class GlobalConfig(ConfigBase):
         )
         ## Koishi Token
         self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
+        ## 是否启用微信 Claw 通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawWeixin = ConfigItem(
+            "Notify", "IfOpenClawWeixin", False, BoolValidator()
+        )
+        ## 是否启用 QQ 官方机器人通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawQQ = ConfigItem(
+            "Notify", "IfOpenClawQQ", False, BoolValidator()
+        )
+        ## QQ 官方机器人应用 ID（由扫码登录响应返回）
+        self.Notify_OpenClawQQAppId = ConfigItem("Notify", "OpenClawQQAppId", "")
+        ## QQ 官方机器人客户端密钥（由扫码登录响应返回）
+        self.Notify_OpenClawQQClientSecret = ConfigItem(
+            "Notify", "OpenClawQQClientSecret", "", EncryptValidator()
+        )
+        ## QQ 官方机器人目标用户 OpenID（由扫码登录响应返回）
+        self.Notify_OpenClawQQTargetOpenId = ConfigItem(
+            "Notify", "OpenClawQQTargetOpenId", ""
+        )
+        self.Notify_OpenClawWeixinServerAddress = ConfigItem(
+            "Notify",
+            "OpenClawWeixinServerAddress",
+            "https://ilinkai.weixin.qq.com",
+            URLValidator(schemes=["https"]),
+        )
+        self.Notify_OpenClawWeixinBotToken = ConfigItem(
+            "Notify", "OpenClawWeixinBotToken", "", EncryptValidator()
+        )
+        ## 微信 Claw 账号 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinAccountId = ConfigItem(
+            "Notify", "OpenClawWeixinAccountId", ""
+        )
+        ## 微信 Claw 用户 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
+            "Notify", "OpenClawWeixinTargetUserId", ""
+        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码

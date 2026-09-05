@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
+import ClawBinding from './components/ClawBinding.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -352,6 +353,44 @@ const handleWebhookChange = async () => {
           </div>
         </a-col>
       </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>{{ t('setting.notify.openclawWeixinSection') }}</h3>
+        <a
+          href="https://github.com/Tencent/openclaw-weixin"
+          class="section-doc-link"
+          :title="t('setting.notify.openclawWeixinDoc')"
+          @click="handleExternalLink"
+        >
+          {{ t('common.doc') }}
+        </a>
+      </div>
+      <ClawBinding
+        channel="weixin"
+        :enabled="!!settings.Notify?.IfOpenClawWeixin"
+        :on-change="value => handleSettingChange('Notify', 'IfOpenClawWeixin', value)"
+      />
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>{{ t('setting.notify.openclawQqSection') }}</h3>
+        <a
+          href="https://bot.q.qq.com/wiki/"
+          class="section-doc-link"
+          :title="t('setting.notify.openclawQqDoc')"
+          @click="handleExternalLink"
+        >
+          {{ t('common.doc') }}
+        </a>
+      </div>
+      <ClawBinding
+        channel="qq"
+        :enabled="!!settings.Notify?.IfOpenClawQQ"
+        :on-change="value => handleSettingChange('Notify', 'IfOpenClawQQ', value)"
+      />
     </div>
 
     <div class="form-section">
