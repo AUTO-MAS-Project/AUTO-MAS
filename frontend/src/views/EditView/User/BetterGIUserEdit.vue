@@ -1652,15 +1652,17 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
   ],
   自动秘境: [
     {
-      title: '秘境配置',
+      title: '秘境刷取配置',
       fields: [
-        { key: 'WeeklyDomainEnabled', label: '开启每周秘境配置', type: 'bool' },
+        { key: 'WeeklyDomainEnabled', label: '每周秘境配置（开） / 每日秘境配置（关）', type: 'bool' },
         { key: 'PartyName', label: '进入秘境切换队伍', type: 'text' },
         { key: 'DomainName', label: '秘境名称', type: 'text' },
+        { key: 'SundayEverySelectedValue', label: '周日或限时（每日模式选择序号）', type: 'text' },
+        { key: 'SundayWeeklySelectedValue', label: '默认（每周模式选择序号）', type: 'text' },
       ],
     },
     {
-      title: '每日秘境（周表）',
+      title: '每周秘境（周表）',
       fields: WEEKDAY_KEYS.flatMap(({ key, label }) => [
         { key: `${key}PartyName`, label: `${label} 队伍`, type: 'text' as const },
         { key: `${key}DomainName`, label: `${label} 秘境`, type: 'text' as const },
@@ -1716,11 +1718,18 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
   ],
 }
 
-// 当前选中内置组的设置分组（无字段返回空）
+// 完成后操作：一条龙 JSON 顶层公共字段（BGI 界面为独立"完成后操作"卡，非某任务专属）
+const COMPLETION_ACTION_SECTION: DragonSettingSection = {
+  title: '完成后操作',
+  fields: [{ key: 'CompletionAction', label: '任务完成后执行的操作', type: 'text' }],
+}
+
+// 当前选中内置组的设置分组（无字段返回空）；每条内置龙都追加公共「完成后操作」
 const currentGroupSettingSections = computed<DragonSettingSection[]>(() => {
   const sel = selectedGroupIdentity.value
   if (!sel || sel.kind !== 'builtin') return []
-  return BUILTIN_GROUP_SETTING_SECTIONS[sel.key] || []
+  const own = BUILTIN_GROUP_SETTING_SECTIONS[sel.key] || []
+  return [...own, COMPLETION_ACTION_SECTION]
 })
 
 const dragonSettings = ref<Record<string, unknown>>({})
