@@ -222,24 +222,6 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.commandLineArgumentsAdded')">
-                    <span class="form-label">
-                      {{ t('edit.gameLaunchArguments') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="hsrConfig.Game.Arguments"
-                  :placeholder="t('edit.enterLaunchArguments')"
-                  size="large"
-                  @blur="handleChange('Game', 'Arguments', hsrConfig.Game.Arguments)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="6">
-              <a-form-item>
-                <template #label>
                   <a-tooltip :title="t('edit.writtenCurrentUserS')">
                     <span class="form-label">
                       {{ t('edit.run1920x1080WindowedMode') }}
@@ -258,7 +240,7 @@
                 </div>
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :lg="6">
+            <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.runsOncePerUser')">
@@ -403,7 +385,6 @@ const hsrConfig = reactive<HSRConfigData>({
   Game: {
     Enabled: true,
     Path: '',
-    Arguments: '',
     WaitTime: 60,
     ForceResolution1920x1080: false,
     RedeemCodesOnlyWhenChanged: true,
@@ -456,9 +437,6 @@ const refreshScript = async () => {
     if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
     if (cfg.Game) {
       Object.assign(hsrConfig.Game, cfg.Game)
-      if (hsrConfig.Game.Arguments === undefined || hsrConfig.Game.Arguments === null) {
-        hsrConfig.Game.Arguments = ''
-      }
       if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
         hsrConfig.Game.Enabled = true
       }

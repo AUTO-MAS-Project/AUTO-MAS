@@ -950,7 +950,6 @@ export default {
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
-    commandLineArgumentsAdded: 'Command line arguments added when launching Star Rail',
     howLongWaitAfter2: 'How long to wait after the game launches',
     howLongWaitReal:
       'How long to wait for the real game process/window after the target launches, in seconds',
@@ -1132,7 +1131,6 @@ export default {
     channel: 'Channel',
     gameExecutable: 'Game executable',
     pathGameExecutable: 'Path to the game executable',
-    gameLaunchArguments: 'Game launch arguments',
     gameLaunchArgumentsNot: 'Game launch arguments (not the OK-NTE arguments)',
     gameLaunchArgumentsNot2: 'Game launch arguments (not the ok-ww arguments)',
     gameLauncher: 'Game launcher',
