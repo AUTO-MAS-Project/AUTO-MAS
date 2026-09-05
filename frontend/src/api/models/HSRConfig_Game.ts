@@ -12,10 +12,6 @@ export type HSRConfig_Game = {
      */
     Path?: (string | null);
     /**
-     * 游戏启动参数
-     */
-    Arguments?: (string | null);
-    /**
      * 等待时间（秒）
      */
     WaitTime?: (number | null);
