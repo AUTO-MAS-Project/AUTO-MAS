@@ -3850,26 +3850,28 @@ class GlobalConfig(ConfigBase):
         )
         ## Koishi Token
         self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
-        ## 是否启用微信（OpenClaw/iLink 协议）通知
+        ## 是否启用微信 Claw 通知（凭据由扫码登录流程管理）
         self.Notify_IfOpenClawWeixin = ConfigItem(
             "Notify", "IfOpenClawWeixin", False, BoolValidator()
         )
-        ## 微信（OpenClaw/iLink 协议）服务器地址
         self.Notify_OpenClawWeixinServerAddress = ConfigItem(
             "Notify",
             "OpenClawWeixinServerAddress",
             "https://ilinkai.weixin.qq.com",
-            URLValidator(),
+            URLValidator(schemes=["https"]),
         )
-        ## 微信（OpenClaw/iLink 协议）Bot Token
         self.Notify_OpenClawWeixinBotToken = ConfigItem(
             "Notify", "OpenClawWeixinBotToken", "", EncryptValidator()
         )
-        ## 微信（OpenClaw/iLink 协议）目标用户 ID
+        ## 微信 Claw 账号 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinAccountId = ConfigItem(
+            "Notify", "OpenClawWeixinAccountId", ""
+        )
+        ## 微信 Claw 用户 ID（由二维码登录响应返回）
         self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
             "Notify", "OpenClawWeixinTargetUserId", ""
         )
-        ## 微信（OpenClaw/iLink 协议）会话上下文 Token
+        ## 微信 Claw 会话上下文 Token（由 getupdates 自动取得）
         self.Notify_OpenClawWeixinContextToken = ConfigItem(
             "Notify", "OpenClawWeixinContextToken", "", EncryptValidator()
         )

@@ -1,5 +1,8 @@
 import base64
 
+from app.utils.platform.common.errors import UnsupportedPlatformError
+
+_SECRET_STORAGE_PROBE = "AUTO-MAS secret storage probe"
 
 
 def _win32crypt():
@@ -35,3 +38,21 @@ def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
         base64.b64decode(note), entropy, None, None, 0
     )
     return decrypted[1].decode("utf-8")
+
+
+def supports_secret_storage() -> bool:
+    """检测 Windows DPAPI 是否可供当前进程使用。"""
+
+    try:
+        encrypted = dpapi_encrypt(_SECRET_STORAGE_PROBE)
+        return bool(encrypted and dpapi_decrypt(encrypted) == _SECRET_STORAGE_PROBE)
+    except Exception:
+        return False
+
+
+def is_secret_storage_error(error: BaseException) -> bool:
+    """判断异常是否表示平台不支持密文存储。"""
+
+    return isinstance(error, UnsupportedPlatformError) and getattr(
+        error, "capability", None
+    ) == "secret"

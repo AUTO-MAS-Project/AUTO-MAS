@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
+import WeixinBinding from './components/WeixinBinding.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -358,7 +359,7 @@ const handleWebhookChange = async () => {
       <div class="section-header">
         <h3>{{ t('setting.notify.openclawWeixinSection') }}</h3>
         <a
-          href="https://github.com/Tencent/openclaw-weixin#backend-api-protocol"
+          href="https://github.com/Tencent/openclaw-weixin"
           class="section-doc-link"
           :title="t('setting.notify.openclawWeixinDoc')"
           @click="handleExternalLink"
@@ -366,117 +367,10 @@ const handleWebhookChange = async () => {
           {{ t('common.doc') }}
         </a>
       </div>
-      <a-alert
-        type="info"
-        show-icon
-        :message="t('setting.notify.openclawWeixinSetupHint')"
-        class="openclaw-weixin-hint"
+      <WeixinBinding
+        :enabled="!!settings.Notify?.IfOpenClawWeixin"
+        :on-change="value => handleSettingChange('Notify', 'IfOpenClawWeixin', value)"
       />
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.notify.openclawWeixinEnable') }}</span>
-              <a-tooltip :title="t('setting.notify.openclawWeixinTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Notify?.IfOpenClawWeixin"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Notify', 'IfOpenClawWeixin', checked)
-              "
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.notify.openclawWeixinServerAddress') }}</span>
-              <a-tooltip :title="t('setting.notify.openclawWeixinServerAddressTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input
-              :value="settings.Notify?.OpenClawWeixinServerAddress"
-              :disabled="!settings.Notify?.IfOpenClawWeixin"
-              :placeholder="t('setting.notify.openclawWeixinServerAddressPlaceholder')"
-              size="large"
-              @blur="
-                (e: any) =>
-                  handleSettingChange('Notify', 'OpenClawWeixinServerAddress', e.target.value)
-              "
-            />
-          </div>
-        </a-col>
-      </a-row>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.notify.openclawWeixinBotToken') }}</span>
-              <a-tooltip :title="t('setting.notify.openclawWeixinBotTokenTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input-password
-              :value="settings.Notify?.OpenClawWeixinBotToken"
-              :disabled="!settings.Notify?.IfOpenClawWeixin"
-              :placeholder="t('setting.notify.openclawWeixinBotTokenPlaceholder')"
-              size="large"
-              @blur="
-                (e: any) => handleSettingChange('Notify', 'OpenClawWeixinBotToken', e.target.value)
-              "
-            />
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.notify.openclawWeixinTargetUserId') }}</span>
-              <a-tooltip :title="t('setting.notify.openclawWeixinTargetUserIdTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input
-              :value="settings.Notify?.OpenClawWeixinTargetUserId"
-              :disabled="!settings.Notify?.IfOpenClawWeixin"
-              :placeholder="t('setting.notify.openclawWeixinTargetUserIdPlaceholder')"
-              size="large"
-              @blur="
-                (e: any) => handleSettingChange('Notify', 'OpenClawWeixinTargetUserId', e.target.value)
-              "
-            />
-          </div>
-        </a-col>
-      </a-row>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.notify.openclawWeixinContextToken') }}</span>
-              <a-tooltip :title="t('setting.notify.openclawWeixinContextTokenTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input-password
-              :value="settings.Notify?.OpenClawWeixinContextToken"
-              :disabled="!settings.Notify?.IfOpenClawWeixin"
-              :placeholder="t('setting.notify.openclawWeixinContextTokenPlaceholder')"
-              size="large"
-              @blur="
-                (e: any) =>
-                  handleSettingChange('Notify', 'OpenClawWeixinContextToken', e.target.value)
-              "
-            />
-          </div>
-        </a-col>
-      </a-row>
     </div>
 
     <div class="form-section">

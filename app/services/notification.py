@@ -21,13 +21,10 @@
 
 
 import asyncio
-import base64
 import ipaddress
 import json
 import re
-import secrets
 import smtplib
-import uuid
 from datetime import datetime
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
@@ -55,10 +52,6 @@ SMTP_TIMEOUT_SECONDS = 15
 # 数组，超长会抛 ValueError，且各留一位给结尾空字符，因此推送前先截断。
 PLYER_TITLE_LIMIT = 63
 PLYER_MESSAGE_LIMIT = 255
-
-# 当前公开 iLink 协议使用的默认网关与客户端标识。
-OPENCLAW_WEIXIN_DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com"
-OPENCLAW_WEIXIN_CLIENT_VERSION = "132104"  # 2.4.8: 0x00MMNNPP
 
 
 def clip_notify_text(text: str, limit: int) -> str:
@@ -254,87 +247,22 @@ class Notification:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
     async def send_openclaw_weixin(self, title: str, content: str) -> None:
-        """通过微信公开的 OpenClaw/iLink HTTP 协议推送一条文本通知。
+        """通过微信 Claw 通道推送通知。
 
-        这是通知渠道的最小单账号实现：账号登录与会话上下文由配置提供，
-        AUTO-MAS 不启动 OpenClaw 进程，也不负责二维码登录流程。
+        登录凭据和会话上下文由扫码登录管理器维护，通知层不读取或暴露协议
+        细节；长文本拆分、业务错误和上下文失效也由管理器统一处理。
 
         Args:
             title: 通知标题。
             content: 已渲染的通知正文。
 
         Raises:
-            ValueError: 微信协议配置不完整时抛出。
+            ValueError: 尚未绑定微信账号时抛出。
             RuntimeError: 网关返回 HTTP 或业务错误时抛出。
         """
+        from app.services.openclaw_weixin import openclaw_weixin_manager
 
-        bot_token = str(Config.get("Notify", "OpenClawWeixinBotToken") or "").strip()
-        target_user_id = str(
-            Config.get("Notify", "OpenClawWeixinTargetUserId") or ""
-        ).strip()
-        context_token = str(
-            Config.get("Notify", "OpenClawWeixinContextToken") or ""
-        ).strip()
-        base_url = str(
-            Config.get("Notify", "OpenClawWeixinServerAddress")
-            or OPENCLAW_WEIXIN_DEFAULT_BASE_URL
-        ).strip().rstrip("/")
-
-        if not bot_token:
-            raise ValueError("微信（iLink）通知 Bot Token 不能为空")
-        if not target_user_id:
-            raise ValueError("微信（iLink）通知目标用户 ID 不能为空")
-        if not base_url:
-            raise ValueError("微信（iLink）通知服务器地址不能为空")
-        if not context_token:
-            logger.warning("微信（iLink）通知未配置 Context Token，将尝试无上下文发送")
-
-        message = {
-            "from_user_id": "",
-            "to_user_id": target_user_id,
-            "client_id": f"auto-mas-{uuid.uuid4().hex}",
-            "message_type": 2,
-            "message_state": 2,
-            "item_list": [{"type": 1, "text_item": {"text": content}}],
-        }
-        if context_token:
-            message["context_token"] = context_token
-
-        headers = {
-            "Content-Type": "application/json",
-            "AuthorizationType": "ilink_bot_token",
-            "Authorization": f"Bearer {bot_token}",
-            "X-WECHAT-UIN": base64.b64encode(
-                str(secrets.randbits(32)).encode("ascii")
-            ).decode("ascii"),
-            "iLink-App-Id": "bot",
-            "iLink-App-ClientVersion": OPENCLAW_WEIXIN_CLIENT_VERSION,
-        }
-        request_body = {
-            "msg": message,
-            "base_info": {
-                "channel_version": "AUTO-MAS",
-                "bot_agent": "AUTO-MAS",
-            },
-        }
-        url = f"{base_url}/ilink/bot/sendmessage"
-
-        async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
-            response = await client.post(url=url, json=request_body, headers=headers)
-            response.raise_for_status()
-            try:
-                result = response.json()
-            except ValueError as exc:
-                raise RuntimeError("微信（iLink）通知响应不是合法 JSON") from exc
-            if not isinstance(result, dict):
-                raise RuntimeError("微信（iLink）通知响应格式无效")
-
-        ret = result.get("ret", 0)
-        if ret not in (None, 0):
-            errmsg = result.get("errmsg") or "未知错误"
-            raise RuntimeError(f"微信（iLink）通知发送失败（ret={ret}）：{errmsg}")
-
-        logger.success(f"微信（iLink）通知推送成功: {title}")
+        await openclaw_weixin_manager.send(title=title, content=content)
 
     async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
         """

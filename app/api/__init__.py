@@ -27,6 +27,7 @@ from .emulator import router as emulator_router
 from .history import router as history_router
 from .info import router as info_router
 from .ocr import router as ocr_router
+from .openclaw_weixin import router as openclaw_weixin_router
 from .plan import router as plan_router
 from .queue import router as queue_router
 from .scripts import router as scripts_router
@@ -53,5 +54,6 @@ __all__ = [
     "setting_router",
     "update_router",
     "ocr_router",
+    "openclaw_weixin_router",
     "qr_login_router",
 ]

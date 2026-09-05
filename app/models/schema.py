@@ -339,19 +339,7 @@ class GlobalConfig_Notify(BaseModel):
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
     IfOpenClawWeixin: Optional[bool] = Field(
-        default=None, description="是否启用微信（OpenClaw/iLink协议）通知"
-    )
-    OpenClawWeixinServerAddress: Optional[str] = Field(
-        default=None, description="微信（OpenClaw/iLink协议）服务器地址"
-    )
-    OpenClawWeixinBotToken: Optional[str] = Field(
-        default=None, description="微信（OpenClaw/iLink协议）Bot Token"
-    )
-    OpenClawWeixinTargetUserId: Optional[str] = Field(
-        default=None, description="微信（OpenClaw/iLink协议）目标用户 ID"
-    )
-    OpenClawWeixinContextToken: Optional[str] = Field(
-        default=None, description="微信（OpenClaw/iLink协议）会话上下文 Token"
+        default=None, description="是否启用微信 Claw 通知"
     )
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
@@ -361,6 +349,44 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
+
+
+class OpenClawWeixinQrStartOut(OutBase):
+    """微信 Claw 二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawWeixinQrCheckIn(BaseModel):
+    """微信 Claw 二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+    verifyCode: Optional[str] = Field(
+        default=None, max_length=32, description="微信要求时输入的配对码"
+    )
+
+
+class OpenClawWeixinQrCheckOut(OutBase):
+    """微信 Claw 二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+    contextReady: bool = Field(
+        default=False, description="是否已取得可用于通知的会话上下文"
+    )
+
+
+class OpenClawWeixinStatusOut(OutBase):
+    """微信 Claw 通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
+    connected: bool = Field(default=False, description="是否已绑定微信账号")
+    state: str = Field(default="disconnected", description="当前连接状态")
+    contextReady: bool = Field(
+        default=False, description="是否已取得可用于通知的会话上下文"
+    )
 
 
 class GlobalConfig_Update(BaseModel):
