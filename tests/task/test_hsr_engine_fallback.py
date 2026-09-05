@@ -32,6 +32,40 @@ from app.task.HSR.tools.run_model import HSRRuntimeState
 
 DAILY = HSR_TASK_MODULE_MAP["Daily"]
 
+# 体力模块的关卡预检要求所指派引擎名下至少选了一个副本；本文件只关心引擎归属，
+# 给两个引擎各放一个主关卡，让预检放行。
+DAILY_STAGES = json.dumps(
+    {
+        "version": 2,
+        "byEngine": {
+            "SRA": {
+                "engine": "SRA",
+                "stages": {
+                    "CalyxGolden": {
+                        "engine": "SRA",
+                        "label": "测试关卡",
+                        "sra": {"id": "calyx_golden_1", "level": 1},
+                    }
+                },
+            },
+            "M7A": {
+                "engine": "M7A",
+                "stages": {
+                    "CalyxGolden": {
+                        "engine": "M7A",
+                        "label": "测试关卡",
+                        "m7a": {
+                            "instanceType": "拟造花萼（金）",
+                            "instanceName": "测试",
+                        },
+                    }
+                },
+            },
+        },
+    },
+    ensure_ascii=False,
+)
+
 
 def make_m7a_root(root: Path) -> Path:
     """造一份能过 check() 的最小 M7A 安装。"""
@@ -74,7 +108,10 @@ async def build_script(
 
     _, user_cfg = await script_config.UserData.add(HSRUserConfig)
     await user_cfg.update(
-        {"Info": {"Name": "hsr-m7a", "Status": True, "RemainedDay": -1}}
+        {
+            "Info": {"Name": "hsr-m7a", "Status": True, "RemainedDay": -1},
+            "Stage": {"ScriptStage": DAILY_STAGES},
+        }
     )
 
     task_info = TaskInfo(

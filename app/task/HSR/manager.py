@@ -40,8 +40,15 @@ from app.tools.game_sign_notify import (
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
 
-from .AutoProxy import HSRAutoProxyTask
-from .task_mapping import HSR_TASK_MODULES, get_assigned_script, script_supports
+from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
+from .task_mapping import (
+    ENGINE_DISPLAY_NAMES,
+    HSR_TASK_MODULES,
+    describe_script_fallback,
+    get_assigned_script,
+    resolve_script_assignment,
+    script_supports,
+)
 from .tools import push_notification
 from .tools.account_switch import (
     HSRAccountSwitcher,
@@ -59,6 +66,7 @@ from .tools.external_locks import (
     resolve_external_lock_paths,
 )
 from .tools.m7a_config import load_m7a_native_config
+from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
     get_user_direct_config,
     has_user_direct_snapshot,
@@ -73,6 +81,7 @@ from .tools.sra_runtime import (
     get_sra_app_data_dir,
     load_sra_native_config,
 )
+from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 调度器")
 
@@ -340,6 +349,9 @@ class HSRManager(TaskExecuteBase):
         managed_user_count = 0
         managed_users_with_credentials = 0
         enabled_module_keys: set[str] = set()
+        # (用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置可用性
+        # 确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
+        daily_stage_checks: list[tuple[HSRUserConfig, str, str]] = []
 
         for uid, user_config in script_config.UserData.items():
             if not user_config.get("Info", "Status"):
@@ -397,12 +409,18 @@ class HSRManager(TaskExecuteBase):
             for module in HSR_TASK_MODULES:
                 if user_config.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
-                    assigned = get_assigned_script(
+                    assignment = resolve_script_assignment(
                         module,
                         script_config,
                         user_config=user_config,
                         effective_engines=effective_engines,
                     )
+                    assigned = assignment.script
+                    fallback_note = describe_script_fallback(module, assignment)
+                    if fallback_note:
+                        self._append_log(f"用户「{user_name}」{fallback_note}")
+                    if module.key == "Daily":
+                        daily_stage_checks.append((user_config, user_name, assigned))
                     if assigned == "SRA":
                         sra_needed = True
                     if assigned == "M7A":
@@ -449,6 +467,13 @@ class HSRManager(TaskExecuteBase):
         except (FileNotFoundError, OSError, ValueError) as exc:
             return f"HSR 原生配置不可用：{exc}"
 
+        for user_config, user_name, assigned in daily_stage_checks:
+            stage_error = self._precheck_daily_stages(
+                script_config, user_config, user_name, assigned
+            )
+            if stage_error:
+                return stage_error
+
         if sra_available:
             return self._validate_sra_user_credentials(
                 script_config,
@@ -456,6 +481,60 @@ class HSRManager(TaskExecuteBase):
             )
 
         return "Pass"
+
+    def _precheck_daily_stages(
+        self,
+        script_config: HSRConfig,
+        user_config: HSRUserConfig,
+        user_name: str,
+        assigned: str,
+    ) -> str | None:
+        """把体力模块「引擎名下没配关卡」的跳过判定提前到预检。
+
+        口径与 ``HSRAutoProxyTask._resolve_daily_runnable_parts`` 完全一致：
+        SRA 开了「使用培养目标」或活动双倍、M7A 开了培养目标或任一活动时，副本由
+        脚本自己决定，缺主关卡是正常的，不拦。只在该引擎下主关卡和历战余响关卡
+        都没有——即体力模块无论哪天都会被整个跳过——时返回错误；只影响当天的
+        两种跳过（今天不需要历战余响、历战余响未配关卡）只写日志，不阻断其他模块。
+        """
+
+        engine_name = ENGINE_DISPLAY_NAMES.get(assigned, assigned)
+        try:
+            values: dict[str, object] = {}
+            for module in list_managed_modules(assigned, script_config, user_config):
+                if module.key == "Daily":
+                    values = {field.key: field.value for field in module.fields}
+                    break
+        except (OSError, ValueError, TypeError):
+            values = {}
+        cultivation_enabled, activity_enabled = resolve_daily_native_modes(
+            assigned, values
+        )
+        main_configured, eow_configured = resolve_configured_daily_stages(
+            user_config, assigned
+        )
+        if cultivation_enabled or activity_enabled:
+            main_configured = True
+        daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(user_config)
+
+        if not main_configured and not eow_configured:
+            return (
+                f"用户「{user_name}」的体力模块由 {engine_name} 执行，"
+                f"但 {engine_name} 下未选择体力副本和历战余响关卡。"
+                "副本按执行引擎分别保存，切换引擎后需要重新选择；"
+                "或在该引擎中开启「培养目标」由脚本自行决定副本"
+            )
+        if not main_configured and not daily_eow_enabled:
+            self._append_log(
+                f"用户「{user_name}」{engine_name} 下未选择体力副本，"
+                "今日不需要历战余响，体力模块将跳过"
+            )
+        if daily_eow_enabled and not eow_configured:
+            self._append_log(
+                f"用户「{user_name}」本周需要历战余响，但 {engine_name} 下未选择"
+                "历战余响关卡，历战余响将跳过"
+            )
+        return None
 
     @staticmethod
     def _is_executable_user(user_config) -> bool:

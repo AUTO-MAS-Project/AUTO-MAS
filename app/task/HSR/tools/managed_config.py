@@ -112,8 +112,13 @@ def _field(
     )
 
 
+# 键集合来自已安装 SRA 的 TasksConfig（trailblazePower / receiveRewards /
+# cosmicStrife 三节，见 discover_sra_managed_options 的过滤规则）。被过滤掉的
+# enabled / tasklist / redeemCodes 也给了名称，免得 SRA 改了过滤口径后退化成裸键。
 _SRA_LABELS = {
-    "replenish.enabled": "使用开拓力补充",
+    "enabled": "启用该任务",
+    "tasklist": "自定义副本清单",
+    "replenish.enabled": "自动补充开拓力",
     "replenish.times": "补充次数",
     "replenish.way": "补充方式",
     "useAssistant": "使用支援角色",
@@ -125,16 +130,18 @@ _SRA_LABELS = {
     "activity.realmOfTheStrange.level": "异器盈界：侵蚀隧洞",
     "redeemCodes": "兑换码",
     "pointRewards.enabled": "领取积分奖励",
+    "divergentUniverse.enabled": "执行差分宇宙",
     "divergentUniverse.mode": "演算类别",
     "divergentUniverse.runtimes": "运行次数",
     "divergentUniverse.useTechnique": "使用秘技",
+    "currencyWars.enabled": "执行货币战争",
     "currencyWars.mode": "博弈类别",
     "currencyWars.difficulty": "难度",
     "currencyWars.policy": "策略来源",
-    "currencyWars.reroll.bossAffixes": "首领词条重开条件",
-    "currencyWars.reroll.bossNames": "首领名称重开条件",
-    "currencyWars.reroll.investEnvironments": "投资环境重开条件",
-    "currencyWars.reroll.investStrategies": "投资策略重开条件",
+    "currencyWars.reroll.bossAffixes": "刷开局：首领词条条件",
+    "currencyWars.reroll.bossNames": "刷开局：首领名称条件",
+    "currencyWars.reroll.investEnvironments": "刷开局：投资环境条件",
+    "currencyWars.reroll.investStrategies": "刷开局：投资策略条件",
     "currencyWars.runtimes": "运行次数",
     "currencyWars.strategy": "策略文件",
     "currencyWars.strategyIndex": "策略序号",
@@ -149,10 +156,80 @@ _SRA_REWARD_LABELS = (
     "巡星之礼",
     "兑换码奖励",
 )
+_SRA_REROLL_ONLY = "仅「博弈类别」为「刷开局」时生效。"
+# 说明只写能从 SRA 源码（tasks/CosmicStrifeTask.py、tasks/currency_wars/RerollStart.py、
+# tasks/TrailblazePowerTask.py）里确认的格式；拿不准的一律指回 SRA 内的同名设置。
+_SRA_DESCRIPTIONS = {
+    "enabled": "该开关由 MAS 在运行时按任务开关自动设置，此处的值不生效。",
+    "tasklist": (
+        "SRA 原生的自定义副本清单。MAS 运行时会按本页「体力配置」里选择的副本"
+        "重新生成，此处的值不生效。"
+    ),
+    "replenish.enabled": "开拓力不足时自动补充；补充资源与次数见「补充方式」「补充次数」。",
+    "replenish.times": "自动补充开拓力的次数上限，0 表示不补充。",
+    "replenish.way": "补充开拓力时消耗的资源。",
+    "useAssistant": "战斗时借用支援角色。",
+    "useBuildTarget": (
+        "开启后由 SRA 按游戏内「培养目标」自动决定要刷的副本，"
+        "本页「体力配置」里选择的体力副本将被忽略。"
+    ),
+    "activity.enabled": (
+        "检测到双倍活动时改刷下方指定的活动关卡；开启后即使未选择体力副本也会运行。"
+    ),
+    "redeemCodes": "多个兑换码用空格分隔。",
+    "pointRewards.enabled": "差分宇宙结束后领取积分奖励。",
+    "divergentUniverse.mode": "常规演算或周期演算。",
+    "divergentUniverse.runtimes": "本次运行差分宇宙的局数。",
+    "divergentUniverse.useTechnique": "进入战斗前释放秘技。",
+    "currencyWars.mode": (
+        "标准博弈、超频博弈会打完整局；「刷开局」只按下方四个重开条件反复重开，"
+        "直到开局满足条件为止，不会打完整局。"
+    ),
+    "currencyWars.difficulty": "以最低难度还是最高难度进入。",
+    "currencyWars.policy": "由 SRA 维护，格式见 SRA 内的同名设置。",
+    "currencyWars.reroll.bossAffixes": (
+        _SRA_REROLL_ONLY + "多个词条用空格分隔；词条前加 ! 表示出现该词条就重开，"
+        "例如「削韧 !加速」。留空表示不限。"
+    ),
+    "currencyWars.reroll.bossNames": (
+        _SRA_REROLL_ONLY + "按第一、二、三位面的顺序填写首领名称，用分号分隔，"
+        "例如「首领A;首领B;首领C」；某个位面留空表示不限。"
+    ),
+    "currencyWars.reroll.investEnvironments": (
+        _SRA_REROLL_ONLY
+        + "多个环境用空格分隔；环境前加 ? 表示可选（出现即可，不强制）。留空表示不限。"
+    ),
+    "currencyWars.reroll.investStrategies": (
+        _SRA_REROLL_ONLY + "按阶段顺序填写投资策略，用分号分隔，例如「策略1;策略2」；"
+        "某个阶段留空表示不限。"
+    ),
+    "currencyWars.runtimes": "本次运行货币战争的局数；刷开局模式下为重开次数上限。",
+    "currencyWars.strategy": (
+        "SRA 使用的货币战争攻略文件，通常是 SRA 目录下 tasks/currency_wars/strategies"
+        " 内的 json 文件路径；建议在 SRA 中选好后再导入，不要手填。"
+    ),
+    "currencyWars.strategyIndex": "由 SRA 维护的策略序号，一般无需修改；格式见 SRA 内的同名设置。",
+    "currencyWars.username": "游戏内显示的开拓者名称，SRA 用它在货币战争里识别自己的角色，必填。",
+}
+# 只给有依据的边界：次数、序号都是非负整数；没有可靠上界的不设上界，免得挡住用户。
+_SRA_RANGES: dict[str, tuple[float | None, float | None]] = {
+    # 活动关卡序号平时是下拉（0 = 不刷）；SRA 关卡表读不到时退化成数字框，至少别让填负数。
+    "activity.gardenOfPlenty.level1": (0, None),
+    "activity.gardenOfPlenty.level2": (0, None),
+    "activity.planarFissure.level": (0, None),
+    "activity.realmOfTheStrange.level": (0, None),
+    "replenish.times": (0, None),
+    "divergentUniverse.runtimes": (0, None),
+    "currencyWars.runtimes": (0, None),
+    "currencyWars.strategyIndex": (0, None),
+}
+# 选项含义按 SRA 源码：TrailblazePowerTask.replenish 里 way 0/1/2 依次为
+# 后备开拓力 / 燃料 / 星琼；CosmicStrifeTask 里 mode 0/1/2 依次为标准 / 超频 / 刷开局。
 _SRA_SELECTS = {
     "replenish.way": (
-        HSRManagedFieldOption(0, "燃料"),
-        HSRManagedFieldOption(1, "星琼"),
+        HSRManagedFieldOption(0, "后备开拓力"),
+        HSRManagedFieldOption(1, "燃料"),
+        HSRManagedFieldOption(2, "星琼"),
     ),
     "divergentUniverse.mode": (
         HSRManagedFieldOption(0, "常规演算"),
@@ -161,6 +238,7 @@ _SRA_SELECTS = {
     "currencyWars.mode": (
         HSRManagedFieldOption(0, "标准博弈"),
         HSRManagedFieldOption(1, "超频博弈"),
+        HSRManagedFieldOption(2, "刷开局"),
     ),
     "currencyWars.difficulty": (
         HSRManagedFieldOption(0, "最低难度"),
@@ -247,12 +325,14 @@ def list_sra_managed_modules(
                 description=(
                     _SRA_ACTIVITY_STAGE_DESCRIPTION
                     if key in _SRA_ACTIVITY_STAGE_CATEGORIES
-                    else ""
+                    else _SRA_DESCRIPTIONS.get(key, "")
                 ),
                 options=activity_stage_options.get(
                     key,
                     _SRA_SELECTS.get(key, ()),
                 ),
+                minimum=_SRA_RANGES.get(key, (None, None))[0],
+                maximum=_SRA_RANGES.get(key, (None, None))[1],
             )
             for key, value in values.items()
         )
@@ -296,9 +376,12 @@ _M7A_SELECTS = {
         HSRManagedFieldOption("seele", "希儿策略"),
     ),
 }
+# 上界来自 config.example.yaml 注释里写明的取值范围；其余只给非负下界。
 _M7A_RANGES: dict[str, tuple[float | None, float | None]] = {
     "build_target_ornament_weekly_count": (0, 7),
     "weekly_divergent_level": (1, 6),
+    "borrow_scroll_times": (0, None),
+    "power_limit": (0, None),
 }
 
 
@@ -344,7 +427,16 @@ def list_m7a_managed_modules(
     if not source.is_file():
         raise FileNotFoundError(f"三月七助手原生配置不存在：{source}")
     payload = load_m7a_native_config(script_config)
-    comments = _load_m7a_comments(root / "assets" / "config" / "config.example.yaml")
+    example_path = root / "assets" / "config" / "config.example.yaml"
+    comments = _load_m7a_comments(example_path)
+    module_warnings: tuple[str, ...] = ()
+    if not comments:
+        # 字段名称与说明都取自这份带注释的样例；缺了只能退化成原始键名，
+        # 要让用户知道为什么表单看起来像一堆变量名。
+        module_warnings = (
+            f"未找到三月七助手的配置说明文件 {example_path}，"
+            "配置项只能显示原始键名、没有说明；请检查三月七助手安装是否完整",
+        )
     buckets: dict[str, list[HSRManagedField]] = {
         key: []
         for key in ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars")
@@ -375,7 +467,8 @@ def list_m7a_managed_modules(
             "M7A",
             tuple(fields),
             str(source),
-            warnings=tuple(item.as_warning() for item in overlay_by_module[key][1]),
+            warnings=module_warnings
+            + tuple(item.as_warning() for item in overlay_by_module[key][1]),
         )
         for key, fields in buckets.items()
     )

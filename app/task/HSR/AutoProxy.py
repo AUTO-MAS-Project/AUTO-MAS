@@ -22,6 +22,7 @@
 
 import asyncio
 import uuid
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -36,7 +37,11 @@ from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4, UTC8
 
-from .task_mapping import HSR_TASK_MODULES, get_assigned_script
+from .task_mapping import (
+    HSR_TASK_MODULES,
+    describe_script_fallback,
+    resolve_script_assignment,
+)
 from .tools import push_notification
 from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
@@ -65,13 +70,7 @@ from .tools.run_model import (
 )
 from .tools.sra_control import HSRSRAControl
 from .tools.sra_runtime import cleanup_sra_temp_config
-from .tools.stage_runtime import (
-    get_sra_native_stage,
-    read_native_main_stage,
-    read_native_stage,
-    resolve_m7a_eow_stage,
-    resolve_m7a_main_stage,
-)
+from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
 
@@ -84,6 +83,34 @@ MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(module.key for module in HSR_TASK_MODULES if module.category == phase)
     for phase in ("daily", "weekly")
 }
+
+
+def resolve_daily_native_modes(
+    assigned_script: str, values: Mapping[str, object]
+) -> tuple[bool, bool]:
+    """从体力模块的托管值里读出 (培养目标已开, 活动双倍已开)。
+
+    这两种模式下脚本自己决定副本，MAS 里没选体力主关卡是正常的；自动代理的
+    跳过判定与任务预检都以此为准。
+    """
+
+    if assigned_script == "SRA":
+        return bool(values.get("useBuildTarget", False)), bool(
+            values.get("activity.enabled", False)
+        )
+    activity_enabled = bool(values.get("activity_enable", False)) and any(
+        bool(value)
+        for key, value in values.items()
+        if key.startswith("activity_")
+        and key.endswith("_enable")
+        and key
+        not in {
+            "activity_enable",
+            "activity_dailycheckin_enable",
+            "activity_journey_highlights_notification_enable",
+        }
+    )
+    return bool(values.get("build_target_enable", False)), activity_enabled
 
 
 def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
@@ -673,23 +700,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="Daily",
             user_cfg=user_cfg,
         )
-        if assigned_script == "SRA":
-            return bool(values.get("useBuildTarget", False)), bool(
-                values.get("activity.enabled", False)
-            )
-        activity_enabled = bool(values.get("activity_enable", False)) and any(
-            bool(value)
-            for key, value in values.items()
-            if key.startswith("activity_")
-            and key.endswith("_enable")
-            and key
-            not in {
-                "activity_enable",
-                "activity_dailycheckin_enable",
-                "activity_journey_highlights_notification_enable",
-            }
-        )
-        return bool(values.get("build_target_enable", False)), activity_enabled
+        return resolve_daily_native_modes(assigned_script, values)
 
     def _resolve_redeem_code_policy(
         self,
@@ -747,20 +758,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             user_cfg=user_cfg,
         )
 
-        if assigned_script == "SRA":
-            main_configured = (
-                get_sra_native_stage(read_native_main_stage(user_cfg, "SRA"))
-                is not None
-            )
-            eow_configured = (
-                get_sra_native_stage(
-                    read_native_stage(user_cfg, "ScriptEchoOfWar", "SRA")
-                )
-                is not None
-            )
-        else:
-            main_configured = resolve_m7a_main_stage(user_cfg) is not None
-            eow_configured = resolve_m7a_eow_stage(user_cfg) is not None
+        main_configured, eow_configured = resolve_configured_daily_stages(
+            user_cfg, assigned_script
+        )
 
         if cultivation_enabled or native_activity_enabled:
             main_configured = True
@@ -807,12 +807,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not user_cfg.get("TaskSwitch", module.key):
                 continue
 
-            assigned = get_assigned_script(
+            assignment = resolve_script_assignment(
                 module,
                 self.script_config,
                 user_config=user_cfg,
                 effective_engines=effective_engines,
             )
+            assigned = assignment.script
+            fallback_note = describe_script_fallback(module, assignment)
+            if fallback_note:
+                self._append_log(f"用户「{user_name}」{fallback_note}")
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True
             redeem_code_fingerprint: str | None = None

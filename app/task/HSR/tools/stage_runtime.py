@@ -133,6 +133,31 @@ def resolve_m7a_eow_stage(user_config: Any) -> str | None:
     return None
 
 
+def resolve_configured_daily_stages(user_config: Any, engine: str) -> tuple[bool, bool]:
+    """返回指定引擎名下 (是否配置了体力主关卡, 是否配置了历战余响关卡)。
+
+    关卡按引擎分桶保存，这里只看 ``engine`` 自己那一份。自动代理决定体力模块
+    是否跳过与任务预检共用这一处判定，避免两边口径漂移。
+    """
+
+    normalized = str(engine or "").strip().upper()
+    if normalized == "SRA":
+        main_configured = (
+            get_sra_native_stage(read_native_main_stage(user_config, "SRA")) is not None
+        )
+        eow_configured = (
+            get_sra_native_stage(
+                read_native_stage(user_config, "ScriptEchoOfWar", "SRA")
+            )
+            is not None
+        )
+        return main_configured, eow_configured
+    return (
+        resolve_m7a_main_stage(user_config) is not None,
+        resolve_m7a_eow_stage(user_config) is not None,
+    )
+
+
 def _get_m7a_native_stage(data: dict[str, Any] | None) -> tuple[str, str] | None:
     if not _matches_native_engine(data, "M7A"):
         return None

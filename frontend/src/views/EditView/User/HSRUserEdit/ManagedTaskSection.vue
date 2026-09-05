@@ -93,7 +93,11 @@
               <a-tag :color="engineColor(selectedEngine)">{{ engineLabel(selectedEngine) }}</a-tag>
             </div>
 
-            <a-form-item v-if="engineOptions.length > 1" :label="t('edit.engine')">
+            <a-form-item
+              v-if="engineOptions.length > 1"
+              :label="t('edit.engine')"
+              :extra="t('edit.hsrEngineSwitchHint')"
+            >
               <a-segmented
                 :value="selectedEngine"
                 :options="engineOptions"
@@ -112,6 +116,14 @@
             />
 
             <template v-if="selectedForm">
+              <a-alert
+                v-for="warning in selectedForm.warnings || []"
+                :key="warning"
+                type="warning"
+                show-icon
+                :message="warning"
+                class="panel-alert"
+              />
               <a-typography-text type="secondary" class="source-line">
                 读取自：{{ selectedForm.source }}
               </a-typography-text>

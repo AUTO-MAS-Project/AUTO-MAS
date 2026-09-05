@@ -17,6 +17,7 @@ MAS 用户写回。
 """
 
 import asyncio
+import json
 import tempfile
 import unittest
 import uuid
@@ -28,6 +29,40 @@ from app.core.task_manager import TaskInfo
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import ScriptItem
 from app.task.HSR.manager import HSRManager
+
+# 体力模块的关卡预检要求所指派引擎名下至少选了一个副本；本文件只关心引擎归属，
+# 给两个引擎各放一个主关卡，让预检放行。
+DAILY_STAGES = json.dumps(
+    {
+        "version": 2,
+        "byEngine": {
+            "SRA": {
+                "engine": "SRA",
+                "stages": {
+                    "CalyxGolden": {
+                        "engine": "SRA",
+                        "label": "测试关卡",
+                        "sra": {"id": "calyx_golden_1", "level": 1},
+                    }
+                },
+            },
+            "M7A": {
+                "engine": "M7A",
+                "stages": {
+                    "CalyxGolden": {
+                        "engine": "M7A",
+                        "label": "测试关卡",
+                        "m7a": {
+                            "instanceType": "拟造花萼（金）",
+                            "instanceName": "测试",
+                        },
+                    }
+                },
+            },
+        },
+    },
+    ensure_ascii=False,
+)
 
 
 async def build_script(*, m7a_root, sra_root, game_exe, users):
@@ -52,7 +87,7 @@ async def build_script(*, m7a_root, sra_root, game_exe, users):
         if with_credentials:
             info["Id"] = f"{name}@example.com"
             info["Password"] = "pw-" + name
-        await user_cfg.update({"Info": info})
+        await user_cfg.update({"Info": info, "Stage": {"ScriptStage": DAILY_STAGES}})
 
     task_info = TaskInfo(
         mode="AutoProxy",

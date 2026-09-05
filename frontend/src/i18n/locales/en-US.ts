@@ -630,6 +630,10 @@ export default {
     matchesOnly: 'Matches only',
     never: 'Never',
     sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
+    hsrEngineSwitchHint:
+      'Switching the engine swaps in the native options and stages of that engine. Values changed under the current engine are not carried over, but they are kept and come back when you switch back.',
+    hsrStageMissingForEngine:
+      'The trailblaze power engine is now {engine}, and no stage is selected under it. Stages are stored per engine, so stages picked under the other engine are not carried over — pick them again. Switching back restores the previous selection.',
     howUseThis: 'How to use this',
     whenSavingMasEncrypts:
       'When saving, MAS encrypts the account password. Without SRA configured, or when the SRA module is unused, the password is not used for account switching.',

@@ -12,6 +12,13 @@
       :message="t('edit.sanityScriptChangedPick')"
     />
     <a-alert
+      v-if="currentEngineStageMissing"
+      type="warning"
+      show-icon
+      style="margin-bottom: 8px"
+      :message="t('edit.hsrStageMissingForEngine', { engine: dailyEngine })"
+    />
+    <a-alert
       v-if="stageOptionsError && !stageOptionsLoading"
       type="error"
       show-icon
@@ -408,6 +415,25 @@ const selectedDynamicOptionForChannel = (channel: ActiveChannel) => {
   if (!category || !payload) return null
   return findDynamicOption(payload?.value, [category])
 }
+
+// 另一引擎名下已经存了副本，而当前引擎名下一个主关卡也没有——这是刚切换体力
+// 执行引擎后的典型状态；旧格式（无 byEngine 容器）的不匹配由 nativeEngineMismatch 负责。
+const otherEngineHasStages = computed(() => {
+  for (const raw of [props.formData.Stage.ScriptStage, props.formData.Stage.ScriptEchoOfWar]) {
+    const byEngine = parseObject(parseObject(raw)?.byEngine)
+    if (!byEngine) continue
+    for (const engine of ['SRA', 'M7A'] as const) {
+      if (engine !== props.dailyEngine && parseObject(byEngine[engine])) return true
+    }
+  }
+  return false
+})
+
+const currentEngineStageMissing = computed(() => {
+  if (nativeEngineMismatch.value) return false
+  const hasMain = activeChannels.some(channel => getPayloadForChannel(channel) !== null)
+  return !hasMain && otherEngineHasStages.value
+})
 
 const dynamicOptionsForChannel = (channel: ActiveChannel) => {
   const category = dynamicCategoryByChannel.value[channel]
