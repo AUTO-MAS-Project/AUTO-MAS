@@ -476,13 +476,18 @@ class HSRAutoProxyTask(TaskExecuteBase):
         eow_enabled: bool,
         result: object,
         script: Literal["M7A", "SRA"],
+        dedicated_run: bool = False,
     ) -> None:
         """外部脚本确认历战余响完成后，登记完成态。"""
 
         if not eow_enabled:
             return
 
-        completed, reason = detect_echo_of_war_completion(result, script)
+        completed, reason = detect_echo_of_war_completion(
+            result,
+            script,
+            dedicated_run=dedicated_run,
+        )
         if not completed:
             self._record_module_result(
                 user_id=user_id,
@@ -844,6 +849,27 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
 
             if assigned == "SRA":
+                # 培养目标模式由 SRA 原生识别决定副本，塞进 tasklist 的周本不一定
+                # 被执行（2.20.0 之前更是完全不读 tasklist），单独跑一次保证周本。
+                if module.key == "Daily" and module_daily_eow_enabled:
+                    cultivation_enabled, _ = self._daily_native_modes(
+                        assigned_script=assigned,
+                        user_cfg=user_cfg,
+                    )
+                    if cultivation_enabled:
+                        items.append(
+                            self._sra_control.create_echo_of_war_item(
+                                user_item=user_item,
+                                user_cfg=user_cfg,
+                                user_name=user_name,
+                                uid=uid,
+                                phase=phase,
+                                sra_exe_path=sra_exe_path,
+                                script_id=script_id,
+                                temp_files=temp_files,
+                            )
+                        )
+                        module_daily_eow_enabled = False
                 item = self._sra_control.create_module_item(
                     user_item=user_item,
                     user_cfg=user_cfg,
@@ -1318,7 +1344,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 if bool(getattr(result, "success", True)):
                     if item.on_success is not None:
                         item.on_success(result)
-                    if item.module_key != "StartGame":
+                    # 历战余响独立项的最终结果由 on_success 按日志判定，
+                    # 这里再记一次会把「未完成」覆盖成「完成」。
+                    if item.module_key not in ("StartGame", "EchoOfWar"):
                         self._record_module_result(
                             user_id=item.user_id,
                             user_name=item.user_name,

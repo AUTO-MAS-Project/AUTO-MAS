@@ -34,6 +34,7 @@ from app.utils import ProcessManager, decode_bytes, get_logger
 from app.utils.io import atomic_write, migrate_legacy_dir, read_file, write_file
 
 from .log_detect import (
+    HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
     can_read_stream_live,
     emit_process_output,
     has_failure_output,
@@ -818,6 +819,7 @@ def _native_stage_to_sra_tp_item(
     field: str,
     run_times: int,
     count: int = 1,
+    auto_detect: bool = SRA_TRAILBLAZE_POWER_AUTO_DETECT,
 ) -> dict | None:
     """把 Stage.ScriptStage / ScriptEchoOfWar 转成 SRA tasklist item。"""
 
@@ -839,7 +841,7 @@ def _native_stage_to_sra_tp_item(
         "levelName": label,
         "count": count,
         "runtimes": run_times,
-        "autoDetect": SRA_TRAILBLAZE_POWER_AUTO_DETECT,
+        "autoDetect": auto_detect,
     }
 
 
@@ -859,19 +861,83 @@ def _build_sra_trailblaze_tasklist(
 
     if eow_enabled:
         # SRA autoDetect 路径不读取 RunTimes，这里只保留结构占位。
-        native_eow = _native_stage_to_sra_tp_item(user_config, "ScriptEchoOfWar", 1)
-        if native_eow is None:
-            raise RuntimeError(
-                "本周需要执行历战余响，但 Stage.ScriptEchoOfWar 缺少 SRA 原生"
-                "历战余响字段；请在体力配置中重新选择历战余响"
-            )
-        eow_item = native_eow
+        eow_item = _require_sra_echo_of_war_item(
+            user_config,
+            auto_detect=SRA_TRAILBLAZE_POWER_AUTO_DETECT,
+            count=1,
+        )
 
     if eow_item is not None:
         tasklist.append(eow_item)
     if main_item is not None:
         tasklist.append(main_item)
     return tasklist
+
+
+def _require_sra_echo_of_war_item(
+    user_config,
+    *,
+    auto_detect: bool,
+    count: int,
+) -> dict:
+    """取历战余响的 SRA tasklist item；缺少原生字段时直接报错。"""
+
+    item = _native_stage_to_sra_tp_item(
+        user_config,
+        "ScriptEchoOfWar",
+        1,
+        count=count,
+        auto_detect=auto_detect,
+    )
+    if item is None:
+        raise RuntimeError(
+            "本周需要执行历战余响，但 Stage.ScriptEchoOfWar 缺少 SRA 原生"
+            "历战余响字段；请在体力配置中重新选择历战余响"
+        )
+    return item
+
+
+def build_sra_echo_of_war_config(
+    script_config,
+    user_config,
+    name: str = "_mas_temp_EchoOfWar",
+) -> dict:
+    """构造只跑历战余响的 SRA TrailblazePowerTask 配置。
+
+    培养目标模式下 SRA 由原生识别决定副本，只有培养目标材料正好出自历战余响
+    才会排上周本；2.20.0 之前的 SRA 在该模式下还完全不读 tasklist。周本因此
+    单独跑一次手动副本，不依赖培养目标内容与 SRA 版本。
+
+    Args:
+        script_config: HSR 脚本配置，用于沿用用户的原生体力选项。
+        user_config: HSR 用户配置，提供历战余响关卡。
+        name: 写入 SRA 临时配置的配置名。
+
+    Returns:
+        只启用 trailblazePower、tasklist 仅含历战余响的 SRA TasksConfig。
+
+    Raises:
+        RuntimeError: 用户未配置 SRA 原生历战余响关卡。
+    """
+
+    eow_item = _require_sra_echo_of_war_item(
+        user_config,
+        auto_detect=False,
+        count=HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
+    )
+    config = _build_sra_base_config(name)
+    _apply_managed_options(config, "Daily", script_config, user_config)
+    trailblaze = config["trailblazePower"]
+    trailblaze["enabled"] = True
+    # 本次只为周本而跑：关掉培养目标识别与活动检测，避免顺带消耗体力；
+    # 补充体力仍按体力模块的口径统一关闭。
+    trailblaze["useBuildTarget"] = False
+    trailblaze["activity.enabled"] = False
+    trailblaze["replenish.enabled"] = False
+    trailblaze["replenish.way"] = 0
+    trailblaze["replenish.times"] = 0
+    trailblaze["tasklist"] = [eow_item]
+    return config
 
 
 def _resolve_sra_currency_wars_strategy(script_config) -> str:
