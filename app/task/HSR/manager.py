@@ -38,7 +38,7 @@ from app.tools.game_sign_notify import (
     finalize_task_game_sign_notification,
 )
 from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
+from app.utils.constants import TASK_MODE_ZH, UTC4
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
@@ -257,7 +257,11 @@ class HSRManager(TaskExecuteBase):
         text = str(message).strip()
         if not text:
             return
-        now_text = datetime.now(tz=UTC8).strftime("%H:%M:%S")
+        # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
+        # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
+        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
+        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         for line in text.splitlines():
             line = line.strip()
             if line:
