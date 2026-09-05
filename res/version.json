@@ -26,7 +26,8 @@
                 "MaaEnd专项 清理不再需要的 MFW 资源 by [@HarcoChen](https://github.com/HarcoChen)",
                 "Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 移除脚本页的「游戏启动参数」，窗口大小统一由「1920×1080 窗口模式」开关临时改写注册表、任务结束后恢复，旧配置中的该项会在下次保存时自动清除 by [@qiyinxi](https://github.com/qiyinxi)",
-                "通用脚本 未填写「配置路径」时改为在任务开始前直接提示，不再跑起来后才报出难懂的错误 by [@qiyinxi](https://github.com/qiyinxi)"
+                "通用脚本 未填写「配置路径」时改为在任务开始前直接提示，不再跑起来后才报出难懂的错误 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 脚本直控不再要求先导入配置快照，默认直接使用 SRA / 三月七助手当前的配置运行；导入快照改为可选，仅在同一脚本下多个用户需要各跑一套配置时使用，并可一键改回使用脚本当前配置"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",

@@ -352,7 +352,8 @@ export default {
     srcConfigurationFailedP0: 'SRC configuration failed: {p0}',
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
-    nativeP0ConfigurationWas: 'The native {p0} configuration was imported for this user',
+    nativeP0ConfigurationWas:
+      'The current {p0} configuration was pinned as a snapshot for this user',
     couldNotImportP0: 'Could not import the {p0} configuration: {p1}',
     p0MustSitUnder: '{p0} must sit under the script root directory or AppData',
     p0HasNoMatch: '{p0} has no match pattern, so it was saved as disabled',
@@ -626,8 +627,6 @@ export default {
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     saved: 'Saved',
-    enabledScriptNeedsUser:
-      'An enabled script needs a user snapshot imported before the task start check passes.',
     turnAutomaticRelicSalvage:
       'Turn on automatic relic salvage in game, so a full bag does not interrupt relic farming.',
     thisScriptDeclaresNo: 'This script declares no version, so updates cannot be checked',
@@ -651,13 +650,31 @@ export default {
     restoreOriginalRegistryValue: 'Restore the original registry value afterwards',
     scriptDirectControlIgnores:
       "Script-direct control ignores this user's account, sanity stages, and MAS task switches.",
+    directLiveConfigTitle: "Using the script's current configuration (recommended)",
+    directLiveConfigHint:
+      'Runs whatever is currently saved in {p0}; changes made in the script take effect immediately, no import needed.',
+    directSnapshotTitle: 'Pinned to a configuration snapshot for this user',
+    directSnapshotMeta: 'Pinned at {p0} - source {p1}',
+    directSnapshotStaleHint:
+      'The snapshot does not follow later changes made in the script; re-pin it to update, or switch back to the current configuration.',
+    directPinSnapshot: 'Pin the current configuration as a snapshot (optional)',
+    directRepinSnapshot: 'Re-pin to the current configuration',
+    directUseLiveConfig: "Switch back to the script's current configuration",
+    directSnapshotCleared: "{p0} now uses the script's current configuration",
+    couldNotClearP0: 'Could not clear the {p0} snapshot: {p1}',
+    directEngineSra: 'SRA',
+    directEngineM7a: 'March7th Assistant',
+    directEngineDescSra:
+      "Runs SRA's currently selected profile; users with a pinned snapshot run the snapshot instead.",
+    directEngineDescM7a:
+      "Runs March7th Assistant's current config.yaml; users with a pinned snapshot run the snapshot instead.",
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
     pathScriptConfigurationFile: 'Path to the script configuration file',
     expressionGuide: 'Expression guide',
     thisModuleNotEnabled:
       'This module is not enabled for this user; the configuration is saved but will not run this time.',
     finishNativeSetupSra:
-      'Finish the native setup in SRA / March7th Assistant first, then import it here. MAS only launches the game, tracks and stops the script process, and cleans up afterwards.',
+      "Script-direct control runs whatever is currently saved in SRA / March7th Assistant, so finish the setup in the script's own UI first. MAS only launches the game, tracks and stops the script process, and cleans up afterwards. Pin a snapshot only when several users under the same script each need their own configuration.",
     enableAtLeastOne: 'Enable at least one direct-control script.',
     pickConfigurationFile: 'Pick a configuration file',
     pickConfigurationFolder: 'Pick a configuration folder',
@@ -840,7 +857,6 @@ export default {
     okWwSettingsSaved: 'ok-ww settings saved',
     okWwPath: 'ok-ww path',
     originalUiRecommended: '- the original UI is recommended',
-    importFromSourceConfiguration: 'Import from the source configuration',
     applyPreset: 'Apply a preset',
     march7thPath: 'March7th path',
     uploadFailedCheckYour: 'Upload failed — check your connection and try again',

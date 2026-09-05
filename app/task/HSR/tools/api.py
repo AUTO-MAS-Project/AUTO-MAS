@@ -256,9 +256,46 @@ async def import_direct_config(
         lease.release()
 
 
+async def clear_direct_config(
+    script_config: Any,
+    engine: str,
+    *,
+    script_id: str,
+    user_id: str,
+    update_user: Callable[[str, str, dict[str, Any]], Awaitable[Any]],
+) -> dict[str, Any]:
+    """Drop one user's imported snapshot so direct control falls back to the
+    script's live native config.
+
+    与 :func:`import_direct_config` 对称：只清空 ``Direct.{engine}Config`` 及其
+    元数据，不碰任何外部文件，因此不需要外部路径锁。返回形状与导入结果一致，
+    ``source`` / ``imported_at`` 为空、``size`` 为 0 表示当前已无快照。
+    """
+
+    normalized = _normalize_engine(engine)
+    await update_user(
+        script_id,
+        user_id,
+        {
+            "Direct": {
+                f"{normalized}Config": "",
+                f"{normalized}ImportedAt": "",
+                f"{normalized}Source": "",
+            }
+        },
+    )
+    return {
+        "engine": normalized,
+        "source": None,
+        "imported_at": None,
+        "size": 0,
+    }
+
+
 __all__ = [
     "build_capabilities",
     "build_managed_config",
     "build_stage_options",
+    "clear_direct_config",
     "import_direct_config",
 ]

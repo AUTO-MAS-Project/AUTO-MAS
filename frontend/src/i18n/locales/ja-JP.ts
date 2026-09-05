@@ -355,7 +355,7 @@ export default {
     srcConfigurationFailedP0: 'SRC の設定に失敗しました: {p0}',
     okWwSetupFailed: 'ok-ww の設定に失敗しました: {p0}',
     p0NotValidJson: '{p0} は有効な JSON ではありません',
-    nativeP0ConfigurationWas: '{p0} のネイティブ設定をこのユーザーにインポートしました',
+    nativeP0ConfigurationWas: '{p0} の現在の設定をこのユーザーのスナップショットとして固定しました',
     couldNotImportP0: '{p0} の設定をインポートできませんでした：{p1}',
     p0MustSitUnder: '{p0}はスクリプトのルートフォルダまたは AppData 配下である必要があります',
     p0HasNoMatch: '{p0}にマッチ用の正規表現が未入力のため、無効として保存しました',
@@ -625,8 +625,6 @@ export default {
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     saved: '保存済み',
-    enabledScriptNeedsUser:
-      '有効なスクリプトは、ユーザースナップショットをインポートしないとタスク開始時のチェックを通りません。',
     turnAutomaticRelicSalvage:
       '遺物周回でバッグがいっぱいになって中断しないよう、ゲーム内で遺物の自動分解を有効にしておくことをおすすめします。',
     thisScriptDeclaresNo:
@@ -651,13 +649,31 @@ export default {
     restoreOriginalRegistryValue: '終了後にレジストリの値を元に戻す',
     scriptDirectControlIgnores:
       'スクリプト直接制御では、このユーザーのアカウント・理性ステージ・MAS のタスク設定は参照されません。',
+    directLiveConfigTitle: 'スクリプトの現在の設定を使用（推奨）',
+    directLiveConfigHint:
+      '実行時に {p0} で現在保存されている設定をそのまま読み込みます。スクリプト側の変更はすぐに反映され、インポートは不要です。',
+    directSnapshotTitle: 'このユーザー用の設定スナップショットに固定済み',
+    directSnapshotMeta: '{p0} に固定 ・ 取得元 {p1}',
+    directSnapshotStaleHint:
+      'スナップショットはスクリプト側のその後の変更に追従しません。更新するには再度固定するか、現在の設定を使う状態に戻してください。',
+    directPinSnapshot: '現在の設定をスナップショットとして固定（任意）',
+    directRepinSnapshot: '現在の設定で再固定',
+    directUseLiveConfig: 'スクリプトの現在の設定を使う状態に戻す',
+    directSnapshotCleared: '{p0} はスクリプトの現在の設定を使うようになりました',
+    couldNotClearP0: '{p0} のスナップショットを削除できませんでした：{p1}',
+    directEngineSra: 'SRA',
+    directEngineM7a: '三月なのかアシスタント',
+    directEngineDescSra:
+      'SRA で現在選択中の設定ファイルを実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
+    directEngineDescM7a:
+      '三月なのかアシスタントの現在の config.yaml を実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
     pathFolderHoldingScript: 'スクリプトの設定ファイルが置かれているフォルダのパス',
     pathScriptConfigurationFile: 'スクリプトの設定ファイルのパス',
     expressionGuide: '式のガイド',
     thisModuleNotEnabled:
       'このユーザーではこのモジュールが有効になっていません。設定は保存されますが、今回は実行されません。',
     finishNativeSetupSra:
-      '先に SRA / 三月なのかアシスタント側でネイティブ設定を済ませてから、ここでインポートしてください。MAS はゲームの起動、スクリプトプロセスの追跡・停止、後片付けのみを担当します。',
+      'スクリプト直接制御は、SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。先にスクリプト自身の画面で設定を済ませてください。MAS はゲームの起動、スクリプトプロセスの追跡・停止、後片付けのみを担当します。同じスクリプトの複数ユーザーがそれぞれ別の設定で動く必要がある場合だけ、設定をスナップショットとして固定してください。',
     enableAtLeastOne: '直接制御するスクリプトを 1 つ以上有効にしてください。',
     pickConfigurationFile: '設定ファイルを選択してください',
     pickConfigurationFolder: '設定フォルダを選択してください',
@@ -841,7 +857,6 @@ export default {
     okWwSettingsSaved: 'ok-ww の設定を保存しました',
     okWwPath: 'ok-ww のパス',
     originalUiRecommended: '・元の UI の利用をおすすめします',
-    importFromSourceConfiguration: '元の設定から一括インポート',
     applyPreset: 'プリセットを適用',
     march7thPath: '三月なのかのパス',
     uploadFailedCheckYour:

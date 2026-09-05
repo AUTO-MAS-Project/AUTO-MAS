@@ -267,10 +267,26 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 清掉该用户的直控快照，直控回到直接使用脚本当前配置。 */
+  const clearDirectConfig = async (
+    scriptId: string,
+    userId: string,
+    engine: HSREngine
+  ): Promise<HSRDirectConfigImportResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/clear'), {
+        scriptId,
+        userId,
+        engine,
+      })
+    )
+  }
+
   return {
     getCapabilities,
     getStageOptions,
     getManagedConfig,
     importDirectConfig,
+    clearDirectConfig,
   }
 }

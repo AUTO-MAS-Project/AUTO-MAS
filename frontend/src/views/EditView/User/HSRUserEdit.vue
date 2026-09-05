@@ -199,8 +199,10 @@
               :direct="formData.Direct"
               :saving="isSaving"
               :importing-engine="importingDirectEngine"
+              :clearing-engine="clearingDirectEngine"
               @toggle="handleDirectEngineToggle"
               @import-config="handleDirectConfigImport"
+              @clear-config="handleDirectConfigClear"
             />
           </div>
 
@@ -416,6 +418,7 @@ const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
 const managedConfigLoading = ref(false)
 const importingDirectEngine = ref<HSREngine | null>(null)
+const clearingDirectEngine = ref<HSREngine | null>(null)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
@@ -647,6 +650,28 @@ const handleDirectConfigImport = async (engine: HSREngine) => {
     )
   } finally {
     importingDirectEngine.value = null
+  }
+}
+
+// 与 handleDirectConfigImport 对称：清掉快照后直控回到直接使用脚本当前配置
+const handleDirectConfigClear = async (engine: HSREngine) => {
+  if (!userId || clearingDirectEngine.value || importingDirectEngine.value) return
+  clearingDirectEngine.value = engine
+  try {
+    await hsrPluginApi.clearDirectConfig(scriptId, userId, engine)
+    if (!formData.Direct) formData.Direct = {}
+    formData.Direct[`${engine}ImportedAt`] = ''
+    formData.Direct[`${engine}Source`] = ''
+    message.success(t('edit.directSnapshotCleared', { p0: engine }))
+  } catch (error) {
+    message.error(
+      t('edit.couldNotClearP0', {
+        p0: engine,
+        p1: error instanceof Error ? error.message : String(error),
+      })
+    )
+  } finally {
+    clearingDirectEngine.value = null
   }
 }
 

@@ -1471,6 +1471,45 @@ async def import_hsr_direct_config_api(
 
 
 @router.post(
+    "/hsr/direct-config/clear",
+    tags=["HSR"],
+    summary="清除 HSR 用户的直控配置快照",
+    response_model=HSRDirectConfigImportOut,
+    status_code=200,
+)
+async def clear_hsr_direct_config_api(
+    request: HSRDirectConfigImportIn = Body(...),
+) -> HSRDirectConfigImportOut:
+    """清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。"""
+
+    from app.task.HSR.tools.api import clear_direct_config
+
+    try:
+        script_config = _hsr_script_config(request.scriptId)
+        _hsr_user_config(script_config, request.userId)
+
+        result = await clear_direct_config(
+            script_config,
+            request.engine,
+            script_id=request.scriptId,
+            user_id=request.userId,
+            update_user=Config.update_user,
+        )
+        return HSRDirectConfigImportOut(
+            message=f"{request.engine} 已改回使用脚本当前配置",
+            data=HSRDirectConfigImportData(**result),
+        )
+    except (KeyError, TypeError, ValueError) as e:
+        return HSRDirectConfigImportOut(
+            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except OSError as e:
+        return HSRDirectConfigImportOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
     "/oknte/configs/list",
     tags=["OKNTE"],
     summary="获取 OK-NTE 配置文件列表及 schema",
