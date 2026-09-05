@@ -1418,8 +1418,7 @@ export default {
     bettergiPickExeDir: 'Pick the folder that contains BetterGI.exe',
     bettergiPickExeDirPlaceholder: 'Pick the folder that contains BetterGI.exe',
     bettergiPathRequired: 'Pick the BetterGI path',
-    bettergiControllerHint:
-      'How the game is controlled. Cloud Genshin and desktop clone are not implemented yet, so only PC foreground works for now',
+    bettergiControllerHint: 'How the game is controlled. Cloud Genshin and desktop clone are not implemented yet, so only PC foreground works for now',
     bettergiControllerForeground: 'PC - foreground',
     bettergiControllerCloud: 'PC - Cloud Genshin (not implemented)',
     bettergiControllerDesktopClone: 'PC - desktop clone (not implemented)',
@@ -1428,58 +1427,43 @@ export default {
     bettergiRetryLimitHint: 'Give up once this many attempts have failed',
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',
     useAdminLaunch: 'Launch with administrator privileges',
-    bettergiUseAdminHint:
-      'On by default (BetterGI needs admin rights). If MAS runs without admin, each launch triggers a UAC prompt — turn this off for unattended tasks. When MAS itself is already elevated, keeping it on never re-prompts',
+    bettergiUseAdminHint: 'On by default (BetterGI needs admin rights). If MAS runs without admin, each launch triggers a UAC prompt — turn this off for unattended tasks. When MAS itself is already elevated, keeping it on never re-prompts',
     bettergiRootPathSaved: 'BetterGI root folder saved',
     bettergiInvalidDirectory: 'That folder is not valid',
-    bettergiExeNotFound:
-      '{p0} was not found in that folder. Pick the full BetterGI script root folder.',
+    bettergiExeNotFound: '{p0} was not found in that folder. Pick the full BetterGI script root folder.',
     bettergiNotBettergiScript: 'This script is not a BetterGI script',
     bettergiConfigure: 'Configure BetterGI',
-    bettergiMasConfigTooltip:
-      'Per-user mode: this opens BetterGI. Edit the MAS独立配置 profile on its One Dragon page; it is read back into this user when you save and exit.',
+    bettergiMasConfigTooltip: 'Per-user mode: this opens BetterGI. Edit the MAS独立配置 profile on its One Dragon page; it is read back into this user when you save and exit.',
     bettergiConfiguringTitle: 'BetterGI setup in progress',
     bettergiConfiguringDesc: 'Finish your changes in the BetterGI window.',
     bettergiConfiguringDesc2: 'When you are done, click Save settings to end this session.',
-    bettergiUserNameHint:
-      'Name used to tell users apart. Users sharing a name are counted as one in statistics',
+    bettergiUserNameHint: 'Name used to tell users apart. Users sharing a name are counted as one in statistics',
     bettergiAccount: 'Account',
     bettergiEnterAccount: 'Enter the account',
-    bettergiAccountHint:
-      'Used for account switching; leave empty if you do not need it. In dropdown mode enter the full phone number or email and MAS masks it the way the game displays it',
+    bettergiAccountHint: 'Used for account switching; leave empty if you do not need it. In dropdown mode enter the full phone number or email and MAS masks it the way the game displays it',
     bettergiAccountUid: 'Account UID',
     bettergiEnterUid: 'Enter the UID (recommended when switching accounts)',
-    bettergiUidHint:
-      'Optional, but recommended for account switching: when it already matches before switching, the switch is skipped',
-    bettergiPasswordHint:
-      'With no password, account switching uses the in-game dropdown. Fill it in if switching needs a password login',
-    bettergiEnterPasswordPlaceholder:
-      'Enter the password (leave empty to switch accounts via the dropdown)',
+    bettergiUidHint: 'Optional, but recommended for account switching: when it already matches before switching, the switch is skipped',
+    bettergiPasswordHint: 'With no password, account switching uses the in-game dropdown. Fill it in if switching needs a password login',
+    bettergiEnterPasswordPlaceholder: 'Enter the password (leave empty to switch accounts via the dropdown)',
     bettergiGameServer: 'Game server',
-    bettergiGameServerHint:
-      'The server this account lives on: CN official, Bilibili, Asia, Europe, America, or TW/HK/MO',
+    bettergiGameServerHint: 'The server this account lives on: CN official, Bilibili, Asia, Europe, America, or TW/HK/MO',
     bettergiServerCn: 'CN official',
     bettergiServerBili: 'Bilibili',
     bettergiServerAsia: 'Asia',
     bettergiServerEurope: 'Europe',
     bettergiServerAmerica: 'America',
     bettergiServerTwHkMo: 'TW/HK/MO',
-    bettergiTaskConfigHint:
-      "Tick the built-in One Dragon groups to run. Under script-controlled mode BetterGI's own settings decide, and this section is read-only",
-    bettergiDirectModeAlert:
-      'Currently in script-controlled mode, so task settings are read-only. Switch to per-user config to give this user their own One Dragon setup here.',
+    bettergiTaskConfigHint: "Tick the built-in One Dragon groups to run. Under script-controlled mode BetterGI's own settings decide, and this section is read-only",
+    bettergiDirectModeAlert: 'Currently in script-controlled mode, so task settings are read-only. Switch to per-user config to give this user their own One Dragon setup here.',
     bettergiSwitchToMasConfig: 'Switch to per-user config',
     bettergiMasConfigHowTo: 'How to use per-user config',
-    bettergiMasConfigHowTo1a:
-      "This user's One Dragon runs on a per-user profile: MAS launches from the MAS独立配置 slot. To adjust the tasks, click Configure BetterGI at the top right, then on its One Dragon page pick and edit the profile named",
+    bettergiMasConfigHowTo1a: "This user's One Dragon runs on a per-user profile: MAS launches from the MAS独立配置 slot. To adjust the tasks, click Configure BetterGI at the top right, then on its One Dragon page pick and edit the profile named",
     bettergiMasConfigSlotName: 'MAS独立配置',
-    bettergiMasConfigHowTo1b:
-      '. MAS reads it back into this user after you save and exit. Leave your own One Dragon profiles (such as 默认配置) alone: per-user config only reads the MAS独立配置 slot, so your real profiles are neither read nor affected.',
-    bettergiMasConfigHowTo2:
-      "Battle party and battle strategy below: leave them empty to keep BetterGI's current settings (an empty strategy means picking automatically from the party). Once filled in, they apply to the four combat tasks in One Dragon (ley line blossoms, domains, boss runs and Stygian Onslaught), replacing BetterGI's defaults for those tasks.",
+    bettergiMasConfigHowTo1b: '. MAS reads it back into this user after you save and exit. Leave your own One Dragon profiles (such as 默认配置) alone: per-user config only reads the MAS独立配置 slot, so your real profiles are neither read nor affected.',
+    bettergiMasConfigHowTo2: "Battle party and battle strategy below: leave them empty to keep BetterGI's current settings (an empty strategy means picking automatically from the party). Once filled in, they apply to the four combat tasks in One Dragon (ley line blossoms, domains, boss runs and Stygian Onslaught), replacing BetterGI's defaults for those tasks.",
     bettergiOneDragonName: 'One Dragon profile',
-    bettergiOneDragonNameHint:
-      "Required. Matches the profile name saved (or to be saved) on BetterGI's One Dragon page; defaults to 默认配置",
+    bettergiOneDragonNameHint: "Required. Matches the profile name saved (or to be saved) on BetterGI's One Dragon page; defaults to 默认配置",
     bettergiPickOneDragonName: 'Pick a One Dragon profile',
     bettergiDailyRewardParty: 'Reward pickup party',
     bettergiEnterDailyRewardParty: 'Enter the reward pickup party',
@@ -1489,8 +1473,7 @@ export default {
     bettergiBattleStrategy: 'Battle strategy',
     bettergiEnterBattleStrategy: 'Enter the battle strategy',
     bettergiBattleStrategyHint: 'Leave empty to fall back to picking automatically from the party',
-    bettergiGroupCapsuleHint:
-      'Each pill toggles a task group: ticked groups run, unticked ones do not.',
+    bettergiGroupCapsuleHint: 'Each pill toggles a task group: ticked groups run, unticked ones do not.',
     bettergiGroupMail: 'Collect mail',
     bettergiGroupResin: 'Craft resin',
     bettergiGroupLeyLine: 'Ley line blossoms',
@@ -1500,17 +1483,12 @@ export default {
     bettergiGroupDailyReward: 'Daily rewards',
     bettergiGroupTeapot: 'Serenitea Pot rewards',
     bettergiCustomGroups: 'Custom groups',
-    bettergiCustomGroupsTip1:
-      "Source: the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones (added from BetterGI's One Dragon page). These are not the task-group pills below.",
-    bettergiCustomGroupsTip2a:
-      'How it works (this table is only a switch): groups that exist in One Dragon but are not listed here',
+    bettergiCustomGroupsTip1: "Source: the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones (added from BetterGI's One Dragon page). These are not the task-group pills below.",
+    bettergiCustomGroupsTip2a: 'How it works (this table is only a switch): groups that exist in One Dragon but are not listed here',
     bettergiCustomGroupsDefaultRun: 'run by default',
-    bettergiCustomGroupsTip2b:
-      '. Groups added to this table follow their own row switch: on runs, off does not.',
-    bettergiCustomGroupsTip3:
-      'Add group picks from your existing BetterGI profile (the MAS独立配置 slot under per-user mode) which groups to manage here. Groups left out stay in One Dragon and are never dropped because of this table.',
-    bettergiCustomGroupsDesc:
-      'These come from the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones. The table is only a switch: groups present in One Dragon but absent here run by default, while listed groups follow their row switch (on runs, off does not).',
+    bettergiCustomGroupsTip2b: '. Groups added to this table follow their own row switch: on runs, off does not.',
+    bettergiCustomGroupsTip3: 'Add group picks from your existing BetterGI profile (the MAS独立配置 slot under per-user mode) which groups to manage here. Groups left out stay in One Dragon and are never dropped because of this table.',
+    bettergiCustomGroupsDesc: 'These come from the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones. The table is only a switch: groups present in One Dragon but absent here run by default, while listed groups follow their row switch (on runs, off does not).',
     bettergiAddGroup: 'Add group',
     bettergiDeleteGroupConfirm: 'Remove the selected groups?',
     bettergiAdding: 'Adding...',
@@ -1527,8 +1505,7 @@ export default {
     bettergiConnectFailed: 'BetterGI setup connection failed: {p0}',
     bettergiSessionFailed: 'BetterGI setup failed: {p0}',
     bettergiSessionOpened: 'BetterGI setup opened',
-    bettergiSessionTimeoutWarn:
-      'The BetterGI setup session is about to time out and will be saved in 30 seconds',
+    bettergiSessionTimeoutWarn: 'The BetterGI setup session is about to time out and will be saved in 30 seconds',
     bettergiSettingsSaved: 'BetterGI settings saved',
     bettergiSettingsSaveFailed: 'Could not save the BetterGI settings',
   },
