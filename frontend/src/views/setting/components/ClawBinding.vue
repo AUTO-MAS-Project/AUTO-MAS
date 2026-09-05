@@ -2,14 +2,16 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { useQqBinding } from '../useQqBinding'
+import { useClawBinding, type ClawChannel } from '../useClawBinding'
 
 const props = defineProps<{
+  channel: ClawChannel
   enabled: boolean
   onChange: (enabled: boolean) => Promise<void>
 }>()
 const { t } = useI18n()
 const {
+  label,
   status,
   statusLoading,
   statusError,
@@ -20,11 +22,13 @@ const {
   qrDataUrl,
   state,
   hint,
+  verifyCode,
   loadStatus,
   close,
   start,
+  submitCode,
   unbind,
-} = useQqBinding(props.onChange)
+} = useClawBinding(props.channel, props.onChange)
 const saving = ref(false)
 const setEnabled = async (value: boolean | string | number) => {
   saving.value = true
@@ -38,16 +42,16 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
 </script>
 
 <template>
-  <a-space direction="vertical" :size="16" class="qq-binding">
+  <a-space direction="vertical" :size="16" class="claw-binding">
     <a-typography-paragraph type="secondary" class="binding-hint">
-      {{ t('setting.notify.openclawQqSetupHint') }}
+      {{ label('SetupHint') }}
     </a-typography-paragraph>
     <a-alert v-if="statusError" type="error" show-icon :message="statusError">
       <template #action>
         <a-button
           size="small"
           :loading="statusLoading"
-          :aria-label="t('setting.notify.openclawQqStatusRetry')"
+          :aria-label="label('StatusRetry')"
           @click="loadStatus"
         >
           <ReloadOutlined />
@@ -58,15 +62,13 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
       <a-space :size="8">
         <a-spin v-if="statusLoading" size="small" />
         <a-tag v-else-if="status" :color="status.connected ? 'success' : 'default'">
-          {{
-            t(`setting.notify.${status.connected ? 'openclawQqBound' : 'openclawQqUnbound'}`)
-          }}
+          {{ label(status.connected ? 'Bound' : 'Unbound') }}
         </a-tag>
-        <span>{{ t('setting.notify.openclawQqEnable') }}</span>
+        <span>{{ label('Enable') }}</span>
         <a-switch
           :checked="props.enabled && !!status?.connected"
           :loading="saving"
-          :aria-label="t('setting.notify.openclawQqEnable')"
+          :aria-label="label('Enable')"
           :disabled="!status?.connected || statusLoading || unbinding"
           @change="setEnabled"
         />
@@ -78,23 +80,17 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
           @click="start"
         >
           <template #icon><QrcodeOutlined /></template>
-          {{ t(`setting.notify.${status?.connected ? 'openclawQqRebind' : 'openclawQqBind'}`) }}
+          {{ label(status?.connected ? 'Rebind' : 'Bind') }}
         </a-button>
-        <a-popconfirm
-          v-if="status?.connected"
-          :title="t('setting.notify.openclawQqUnbindConfirm')"
-          @confirm="unbind"
-        >
-          <a-button danger :loading="unbinding">{{
-            t('setting.notify.openclawQqUnbind')
-          }}</a-button>
+        <a-popconfirm v-if="status?.connected" :title="label('UnbindConfirm')" @confirm="unbind">
+          <a-button danger :loading="unbinding">{{ label('Unbind') }}</a-button>
         </a-popconfirm>
       </a-space>
     </div>
   </a-space>
   <a-modal
     :open="open"
-    :title="t('setting.notify.openclawQqLoginTitle')"
+    :title="label('LoginTitle')"
     :width="400"
     :z-index="900"
     :footer="null"
@@ -108,12 +104,12 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
         <CheckCircleOutlined v-else-if="state === 'connected'" class="qr-success" />
         <a-button v-else-if="failed" type="primary" @click="start">
           <template #icon><ReloadOutlined /></template>
-          {{ t('setting.notify.openclawQqQrRetry') }}
+          {{ label('QrRetry') }}
         </a-button>
         <img
           v-else-if="qrDataUrl"
           :src="qrDataUrl"
-          :alt="t('setting.notify.openclawQqQrAlt')"
+          :alt="label('QrAlt')"
           width="240"
           height="240"
         />
@@ -125,6 +121,30 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
         role="status"
         class="qr-hint"
       />
+      <a-form
+        v-if="props.channel === 'weixin' && state === 'need_verify_code'"
+        layout="vertical"
+        class="qr-hint"
+        @finish="submitCode"
+      >
+        <a-form-item :label="label('VerifyCodePlaceholder')">
+          <a-input
+            v-model:value="verifyCode"
+            maxlength="32"
+            autocomplete="one-time-code"
+            :disabled="checking"
+          />
+        </a-form-item>
+        <a-button
+          type="primary"
+          html-type="submit"
+          block
+          :loading="checking"
+          :disabled="!verifyCode.trim()"
+        >
+          {{ label('VerifyCodeSubmit') }}
+        </a-button>
+      </a-form>
       <a-button v-if="state === 'connected'" type="primary" block @click="close">{{
         t('common.confirm')
       }}</a-button>
@@ -133,7 +153,7 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
 </template>
 
 <style scoped>
-.qq-binding,
+.claw-binding,
 .qr-hint {
   width: 100%;
 }

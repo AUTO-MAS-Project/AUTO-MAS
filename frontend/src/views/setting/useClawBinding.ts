@@ -2,13 +2,37 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import QRCode from 'qrcode'
-import { QqService, type OpenClawQQStatusOut, type OutBase } from '@/api'
+import { ClawService, QqService, type OutBase, type OpenClawWeixinStatusOut } from '@/api'
 
 const POLL_INTERVAL = 2000
 
-export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>) {
+const CHANNELS = {
+  weixin: {
+    prefix: 'openclawWeixin',
+    status: ClawService.getStatusApiSettingOpenclawWeixinStatusPost,
+    start: ClawService.startLoginApiSettingOpenclawWeixinLoginStartPost,
+    check: ClawService.checkLoginApiSettingOpenclawWeixinLoginCheckPost,
+    unbind: ClawService.unbindApiSettingOpenclawWeixinUnbindPost,
+  },
+  qq: {
+    prefix: 'openclawQq',
+    status: QqService.getStatusApiSettingOpenclawQqStatusPost,
+    start: QqService.startLoginApiSettingOpenclawQqLoginStartPost,
+    check: QqService.checkLoginApiSettingOpenclawQqLoginCheckPost,
+    unbind: QqService.unbindApiSettingOpenclawQqUnbindPost,
+  },
+}
+
+export type ClawChannel = keyof typeof CHANNELS
+
+export function useClawBinding(
+  channel: ClawChannel,
+  onBoundChange: (enabled: boolean) => Promise<void>
+) {
+  const api = CHANNELS[channel]
   const { t } = useI18n()
-  const status = ref<OpenClawQQStatusOut | null>(null)
+  const label = (key: string) => t(`setting.notify.${api.prefix}${key}`)
+  const status = ref<OpenClawWeixinStatusOut | null>(null)
   const statusLoading = ref(false)
   const statusError = ref('')
   const unbinding = ref(false)
@@ -18,30 +42,26 @@ export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>)
   const qrDataUrl = ref('')
   const state = ref('idle')
   const hint = ref('')
+  const verifyCode = ref('')
   let sessionId = ''
   let runId = 0
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const checkResponse = (result: OutBase) => {
-    if (result.code !== 200)
-      throw new Error(result.message || t('setting.notify.openclawQqQrError'))
+    if (result.code !== 200) throw new Error(result.message || label('QrError'))
   }
 
   const loadStatus = async () => {
     statusLoading.value = true
     statusError.value = ''
     try {
-      const result = await QqService.getStatusApiSettingOpenclawQqStatusPost()
+      const result = await api.status()
       checkResponse(result)
       status.value = result
       // 后端发现凭据不完整时同时关闭旧的通知开关，避免继续向失效渠道投递。
       if (result.enabled && !result.connected) {
-        try {
-          await onBoundChange(false)
-          status.value = { ...result, enabled: false }
-        } catch (error) {
-          statusError.value = String(error)
-        }
+        await onBoundChange(false)
+        status.value = { ...result, enabled: false }
       }
     } catch (error) {
       // 查询失败时清空旧状态，避免新的错误仍沿用上一次的「已绑定」。
@@ -54,26 +74,26 @@ export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>)
 
   const close = () => {
     runId++
-    if (timer) clearTimeout(timer)
-    timer = undefined
+    clearTimeout(timer)
     open.value = false
     loading.value = checking.value = false
-    sessionId = qrDataUrl.value = ''
+    sessionId = qrDataUrl.value = verifyCode.value = ''
     state.value = 'idle'
     hint.value = ''
   }
 
-  const poll = async (id: number) => {
+  const poll = async (id: number, code?: string) => {
     if (id !== runId || checking.value) return
     checking.value = true
     try {
-      const result = await QqService.checkLoginApiSettingOpenclawQqLoginCheckPost({
+      const result = await api.check({
         sessionId,
+        ...(code ? { verifyCode: code } : {}),
       })
       if (id !== runId) return
       checkResponse(result)
       state.value = result.connected ? 'connected' : result.state || 'waiting'
-      hint.value = result.message || t('setting.notify.openclawQqQrWaiting')
+      hint.value = result.message || label('QrWaiting')
       if (state.value === 'connected') {
         await onBoundChange(true)
         await loadStatus()
@@ -94,19 +114,18 @@ export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>)
     const id = runId
     open.value = loading.value = true
     state.value = 'loading'
-    hint.value = t('setting.notify.openclawQqQrLoading')
+    hint.value = label('QrLoading')
     try {
-      const result = await QqService.startLoginApiSettingOpenclawQqLoginStartPost()
+      const result = await api.start()
       if (id !== runId) return
       checkResponse(result)
-      if (!result.sessionId || !result.qrUrl)
-        throw new Error(t('setting.notify.openclawQqQrInvalid'))
+      if (!result.sessionId || !result.qrUrl) throw new Error(label('QrInvalid'))
       const dataUrl = await QRCode.toDataURL(result.qrUrl, { width: 240, margin: 2 })
       if (id !== runId) return
       sessionId = result.sessionId
       qrDataUrl.value = dataUrl
       state.value = 'waiting'
-      hint.value = t('setting.notify.openclawQqQrWaiting')
+      hint.value = label('QrWaiting')
       void poll(id)
     } catch (error) {
       if (id !== runId) return
@@ -117,13 +136,17 @@ export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>)
     }
   }
 
+  const submitCode = () => {
+    if (verifyCode.value.trim()) void poll(runId, verifyCode.value.trim())
+  }
+
   const unbind = async () => {
     unbinding.value = true
     try {
-      checkResponse(await QqService.unbindApiSettingOpenclawQqUnbindPost())
+      checkResponse(await api.unbind())
       await onBoundChange(false)
       await loadStatus()
-      message.success(t('setting.notify.openclawQqUnbindSuccess'))
+      message.success(label('UnbindSuccess'))
     } catch (error) {
       message.error(String(error))
     } finally {
@@ -135,6 +158,7 @@ export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>)
   onBeforeUnmount(close)
 
   return {
+    label,
     status,
     statusLoading,
     statusError,
@@ -145,9 +169,11 @@ export function useQqBinding(onBoundChange: (enabled: boolean) => Promise<void>)
     qrDataUrl,
     state,
     hint,
+    verifyCode,
     loadStatus,
     close,
     start,
+    submitCode,
     unbind,
   }
 }

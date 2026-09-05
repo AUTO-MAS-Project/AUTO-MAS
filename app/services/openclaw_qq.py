@@ -61,12 +61,9 @@ USER_AGENT = "AUTO-MAS QQ Official Bot"
 class _QrSession:
     """内存中的一次 QQ 官方机器人二维码登录会话。"""
 
-    session_id: str
     task_id: str
     aes_key: bytes
-    qr_url: str
     created_at: float
-    state: str = "waiting"
 
     @property
     def expired(self) -> bool:
@@ -234,7 +231,6 @@ class OpenClawQQManager:
         self._session_lock = asyncio.Lock()
         self._config_lock = asyncio.Lock()
         self._send_lock = asyncio.Lock()
-        self._token_lock = asyncio.Lock()
         self._hooks_bound = False
         self._runtime_credentials: _RuntimeCredentials | None = None
         self._secret_storage_available: bool | None = None
@@ -341,10 +337,8 @@ class OpenClawQQManager:
             session_id = uuid.uuid4().hex
             qr_url = f"{QR_CONNECT_URL}?task_id={quote(task_id, safe='')}&_wv=2"
             self._sessions[session_id] = _QrSession(
-                session_id=session_id,
                 task_id=task_id,
                 aes_key=aes_key,
-                qr_url=qr_url,
                 created_at=monotonic(),
             )
             return QrStartResult(session_id=session_id, qr_url=qr_url)
@@ -394,14 +388,12 @@ class OpenClawQQManager:
             data = data if isinstance(data, dict) else {}
             status = _as_int(data.get("status"))
             if status in (None, 0):
-                session.state = "waiting"
                 return QrCheckResult(
                     session_id=session_id,
                     state="waiting",
                     message="请使用 QQ 扫描二维码",
                 )
             if status == 1:
-                session.state = "scanned"
                 return QrCheckResult(
                     session_id=session_id,
                     state="scanned",
@@ -459,19 +451,19 @@ class OpenClawQQManager:
     async def unbind(self) -> None:
         """解除绑定并清理本地保存的 QQ 协议状态。"""
 
-        async with self._session_lock:
+        async with self._session_lock, self._send_lock:
             self._sessions.clear()
-        self._runtime_credentials = None
-        self._invalidate_access_token()
-        values = {
-            "IfOpenClawQQ": False,
-            "OpenClawQQAppId": "",
-            "OpenClawQQTargetOpenId": "",
-        }
-        if self._can_persist_secrets():
-            values["OpenClawQQClientSecret"] = ""
-        async with self._config_lock:
-            await Config.update({"Notify": values})
+            self._runtime_credentials = None
+            self._invalidate_access_token()
+            values = {
+                "IfOpenClawQQ": False,
+                "OpenClawQQAppId": "",
+                "OpenClawQQTargetOpenId": "",
+            }
+            if self._can_persist_secrets():
+                values["OpenClawQQClientSecret"] = ""
+            async with self._config_lock:
+                await Config.update({"Notify": values})
 
     async def send(self, title: str, content: str) -> None:
         """通过官方 C2C 接口发送通知，长文本自动拆分。"""
@@ -535,29 +527,25 @@ class OpenClawQQManager:
         if self._access_token and self._access_token_expires_at > now + 60:
             return self._access_token
 
-        async with self._token_lock:
-            now = monotonic()
-            if self._access_token and self._access_token_expires_at > now + 60:
-                return self._access_token
-            response = await self._request_json(
-                "POST",
-                TOKEN_URL,
-                body={"appId": app_id, "clientSecret": client_secret},
-                headers=_headers(),
-                timeout=API_REQUEST_TIMEOUT_SECONDS,
+        response = await self._request_json(
+            "POST",
+            TOKEN_URL,
+            body={"appId": app_id, "clientSecret": client_secret},
+            headers=_headers(),
+            timeout=API_REQUEST_TIMEOUT_SECONDS,
+        )
+        code = _business_code(response)
+        if code not in (None, 0):
+            raise RuntimeError(
+                f"QQ access_token 获取失败：{_business_message(response)}"
             )
-            code = _business_code(response)
-            if code not in (None, 0):
-                raise RuntimeError(
-                    f"QQ access_token 获取失败：{_business_message(response)}"
-                )
-            access_token = str(response.get("access_token") or "").strip()
-            if not access_token:
-                raise RuntimeError("QQ access_token 响应缺少访问令牌")
-            expires_in = _as_int(response.get("expires_in")) or 7200
-            self._access_token = access_token
-            self._access_token_expires_at = monotonic() + max(60, expires_in)
-            return access_token
+        access_token = str(response.get("access_token") or "").strip()
+        if not access_token:
+            raise RuntimeError("QQ access_token 响应缺少访问令牌")
+        expires_in = _as_int(response.get("expires_in")) or 7200
+        self._access_token = access_token
+        self._access_token_expires_at = monotonic() + max(60, expires_in)
+        return access_token
 
     def _invalidate_access_token(self) -> None:
         self._access_token = ""
@@ -573,59 +561,37 @@ class OpenClawQQManager:
             client_secret=client_secret.strip(),
             user_openid=user_openid.strip(),
         )
-        if not self._can_persist_secrets():
-            self._runtime_credentials = normalized
-            async with self._config_lock:
-                await Config.update(
-                    {
-                        "Notify": {
-                            "IfOpenClawQQ": True,
-                            "OpenClawQQAppId": normalized.app_id,
-                            "OpenClawQQTargetOpenId": normalized.user_openid,
+        values = {
+            "IfOpenClawQQ": True,
+            "OpenClawQQAppId": normalized.app_id,
+            "OpenClawQQTargetOpenId": normalized.user_openid,
+        }
+        # 与发送互斥，防止旧账号正在换取的令牌覆盖新账号缓存。
+        async with self._send_lock, self._config_lock:
+            if self._can_persist_secrets():
+                try:
+                    await Config.update(
+                        {
+                            "Notify": {
+                                **values,
+                                "OpenClawQQClientSecret": normalized.client_secret,
+                            }
                         }
-                    }
-                )
-            self._invalidate_access_token()
-            logger.warning(
-                "当前平台不支持 Windows DPAPI，QQ 凭据仅保存在本次运行内；"
-                "应用重启后需要重新扫码"
-            )
-            return
-
-        async with self._config_lock:
-            try:
-                await Config.update(
-                    {
-                        "Notify": {
-                            "IfOpenClawQQ": True,
-                            "OpenClawQQAppId": normalized.app_id,
-                            "OpenClawQQClientSecret": normalized.client_secret,
-                            "OpenClawQQTargetOpenId": normalized.user_openid,
-                        }
-                    }
-                )
-            except Exception as exc:
-                if not platform_secret.is_secret_storage_error(exc):
-                    raise
-                self._secret_storage_available = False
-                self._runtime_credentials = normalized
-                await Config.update(
-                    {
-                        "Notify": {
-                            "IfOpenClawQQ": True,
-                            "OpenClawQQAppId": normalized.app_id,
-                            "OpenClawQQTargetOpenId": normalized.user_openid,
-                        }
-                    }
-                )
+                    )
+                except Exception as exc:
+                    if not platform_secret.is_secret_storage_error(exc):
+                        raise
+                    self._secret_storage_available = False
+            if not self._can_persist_secrets():
+                await Config.update({"Notify": values})
                 logger.warning(
                     "当前平台不支持 Windows DPAPI，QQ 凭据仅保存在本次运行内；"
                     "应用重启后需要重新扫码"
                 )
-                self._invalidate_access_token()
-                return
-        self._runtime_credentials = None
-        self._invalidate_access_token()
+            self._runtime_credentials = (
+                None if self._can_persist_secrets() else normalized
+            )
+            self._invalidate_access_token()
 
     async def _request_json(
         self,

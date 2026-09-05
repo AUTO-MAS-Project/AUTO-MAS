@@ -2,8 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
-import QqBinding from './components/QqBinding.vue'
-import WeixinBinding from './components/WeixinBinding.vue'
+import ClawBinding from './components/ClawBinding.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -368,7 +367,8 @@ const handleWebhookChange = async () => {
           {{ t('common.doc') }}
         </a>
       </div>
-      <WeixinBinding
+      <ClawBinding
+        channel="weixin"
         :enabled="!!settings.Notify?.IfOpenClawWeixin"
         :on-change="value => handleSettingChange('Notify', 'IfOpenClawWeixin', value)"
       />
@@ -386,7 +386,8 @@ const handleWebhookChange = async () => {
           {{ t('common.doc') }}
         </a>
       </div>
-      <QqBinding
+      <ClawBinding
+        channel="qq"
         :enabled="!!settings.Notify?.IfOpenClawQQ"
         :on-change="value => handleSettingChange('Notify', 'IfOpenClawQQ', value)"
       />
