@@ -167,6 +167,44 @@
             </a-col>
           </a-row>
 
+          <a-row :gutter="24">
+            <a-col :span="12" :offset="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.sraProfileTooltip')">
+                    <span class="form-label">
+                      {{ t('edit.sraProfile') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  :value="hsrConfig.Info.SRAProfile || ''"
+                  :options="sraProfileOptions"
+                  :disabled="Boolean(sraProfileDisabledReason)"
+                  :loading="sraProfilesLoading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleSraProfileChange"
+                />
+                <a-typography-text
+                  v-if="sraProfileDisabledReason"
+                  type="secondary"
+                  class="field-hint"
+                >
+                  {{ sraProfileDisabledReason }}
+                </a-typography-text>
+                <a-typography-text
+                  v-else-if="sraProfiles?.fallback && sraProfiles.fallback_reason"
+                  type="warning"
+                  class="field-hint"
+                >
+                  {{ sraProfiles.fallback_reason }}
+                </a-typography-text>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :xs="24" :lg="16">
               <a-form-item>
@@ -342,6 +380,7 @@ import {
   useHSRPluginApi,
   type HSRCapabilitySnapshot,
   type HSREngine,
+  type HSRSRAProfilesSnapshot,
 } from '@/composables/useHSRPluginApi'
 import type { HSRConfig_Info, HSRConfig_Game, HSRConfig_Run } from '@/api'
 import type { HSRScriptConfig } from '@/types/script'
@@ -376,12 +415,17 @@ const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
 )
 
+// SRA 配置档案：%APPDATA%/SRA/configs 下的多份 json，脚本选一份供托管表单、直控与导入快照共用。
+const sraProfiles = ref<HSRSRAProfilesSnapshot | null>(null)
+const sraProfilesLoading = ref(false)
+const sraProfilesError = ref('')
+
 const formData = reactive({
   infoName: '',
 })
 
 const hsrConfig = reactive<HSRConfigData>({
-  Info: { Name: '', M7APath: '', SRAPath: '' },
+  Info: { Name: '', M7APath: '', SRAPath: '', SRAProfile: '' },
   Game: {
     Enabled: true,
     Path: '',
@@ -403,6 +447,7 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
   'Info.Name',
   'Info.M7APath',
   'Info.SRAPath',
+  'Info.SRAProfile',
   'Game.Path',
 ])
 
@@ -417,6 +462,7 @@ const handleChange = async (category: string, key: string, value: any): Promise<
     if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
       await refreshScript()
       await loadCapabilities()
+      await loadSraProfiles()
     }
     return true
   } catch (error) {
@@ -582,6 +628,57 @@ const clearPath = async (key: string) => {
   }
 }
 
+const loadSraProfiles = async () => {
+  if (!hsrConfig.Info.SRAPath) {
+    sraProfiles.value = null
+    sraProfilesError.value = ''
+    return
+  }
+  sraProfilesLoading.value = true
+  try {
+    sraProfiles.value = await hsrPluginApi.getSraProfiles(scriptId)
+    sraProfilesError.value = ''
+  } catch (error) {
+    sraProfiles.value = null
+    sraProfilesError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    sraProfilesLoading.value = false
+  }
+}
+
+// 「自动」始终可选，其余选项来自档案目录；已配置但文件已不存在的档案也列出来，
+// 否则下拉会显示成一个空值，用户看不出自己配过什么。
+const sraProfileOptions = computed(() => {
+  const snapshot = sraProfiles.value
+  const options = [
+    { value: '', label: t('edit.sraProfileAuto', { name: snapshot?.auto_id || 'Default' }) },
+    ...(snapshot?.profiles ?? []).map(profile => ({ value: profile.id, label: profile.id })),
+  ]
+  const configured = hsrConfig.Info.SRAProfile || ''
+  if (configured && !options.some(option => option.value === configured)) {
+    options.push({ value: configured, label: configured })
+  }
+  return options
+})
+
+const sraProfileDisabledReason = computed(() => {
+  if (!hsrConfig.Info.SRAPath) return t('edit.sraProfileNeedPath')
+  if (sraProfilesError.value) {
+    return t('edit.sraProfileLoadFailed', { reason: sraProfilesError.value })
+  }
+  const snapshot = sraProfiles.value
+  if (snapshot && !snapshot.available) return snapshot.unavailable_reason || ''
+  return ''
+})
+
+const handleSraProfileChange = async (value: unknown) => {
+  const next = typeof value === 'string' ? value : ''
+  const previous = hsrConfig.Info.SRAProfile || ''
+  hsrConfig.Info.SRAProfile = next
+  const saved = await handleChange('Info', 'SRAProfile', next)
+  if (!saved) hsrConfig.Info.SRAProfile = previous
+}
+
 const loadCapabilities = async () => {
   try {
     capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
@@ -619,6 +716,7 @@ onMounted(async () => {
     }
     await refreshScript()
     await loadCapabilities()
+    await loadSraProfiles()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
@@ -679,6 +777,12 @@ onMounted(async () => {
   color: var(--ant-color-text-secondary);
   font-size: 14px;
   margin: 4px 0 12px 0;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
 }
 
 .game-toggle-option {

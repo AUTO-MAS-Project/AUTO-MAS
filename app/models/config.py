@@ -231,6 +231,25 @@ class MaaEndPlanKeyValidator(ValidatorBase):
         return normalize_maaend_plan_key(value)
 
 
+class SRAProfileValidator(ValidatorBase):
+    """SRA 配置档案名验证器：只接受能直接拼成文件名的档案 id，空串表示自动。"""
+
+    _FORBIDDEN = frozenset('\\/:*?"<>|')
+
+    def validate(self, value):
+        if not isinstance(value, str):
+            return False
+        if value == "":
+            return True
+        stripped = value.strip()
+        if stripped != value or stripped in {".", ".."}:
+            return False
+        return not any(ch in self._FORBIDDEN or ord(ch) < 32 for ch in value)
+
+    def correct(self, value):
+        return value if self.validate(value) else ""
+
+
 class EmulatorConfig(ConfigBase):
     """模拟器配置"""
 
@@ -1899,6 +1918,10 @@ class HSRConfig(ConfigBase):
         self.Info_M7APath = ConfigItem("Info", "M7APath", "", FolderValidator())
         ## SRA 路径
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
+        ## SRA 配置档案（%APPDATA%\SRA\configs 下的文件名，不含扩展名；空串表示自动）
+        self.Info_SRAProfile = ConfigItem(
+            "Info", "SRAProfile", "", SRAProfileValidator()
+        )
 
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏启停、进程监测和窗口操作

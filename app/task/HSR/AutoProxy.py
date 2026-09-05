@@ -22,6 +22,7 @@
 
 import asyncio
 import uuid
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -36,7 +37,11 @@ from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4, UTC8
 
-from .task_mapping import HSR_TASK_MODULES, get_assigned_script
+from .task_mapping import (
+    HSR_TASK_MODULES,
+    describe_script_fallback,
+    resolve_script_assignment,
+)
 from .tools import push_notification
 from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
@@ -54,6 +59,7 @@ from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
 from .tools.native_control import resolve_configured_engines, resolve_script_path
 from .tools.run_model import (
     CompletionWriteback,
+    HSRGameExitedError,
     HSRLoginPlan,
     HSRModuleResult,
     HSRModuleResultStatus,
@@ -65,15 +71,13 @@ from .tools.run_model import (
 )
 from .tools.sra_control import HSRSRAControl
 from .tools.sra_runtime import cleanup_sra_temp_config
-from .tools.stage_runtime import (
-    get_sra_native_stage,
-    read_native_main_stage,
-    read_native_stage,
-    resolve_m7a_eow_stage,
-    resolve_m7a_main_stage,
-)
+from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
+
+# 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
+HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
+HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
 
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
@@ -84,6 +88,34 @@ MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(module.key for module in HSR_TASK_MODULES if module.category == phase)
     for phase in ("daily", "weekly")
 }
+
+
+def resolve_daily_native_modes(
+    assigned_script: str, values: Mapping[str, object]
+) -> tuple[bool, bool]:
+    """从体力模块的托管值里读出 (培养目标已开, 活动双倍已开)。
+
+    这两种模式下脚本自己决定副本，MAS 里没选体力主关卡是正常的；自动代理的
+    跳过判定与任务预检都以此为准。
+    """
+
+    if assigned_script == "SRA":
+        return bool(values.get("useBuildTarget", False)), bool(
+            values.get("activity.enabled", False)
+        )
+    activity_enabled = bool(values.get("activity_enable", False)) and any(
+        bool(value)
+        for key, value in values.items()
+        if key.startswith("activity_")
+        and key.endswith("_enable")
+        and key
+        not in {
+            "activity_enable",
+            "activity_dailycheckin_enable",
+            "activity_journey_highlights_notification_enable",
+        }
+    )
+    return bool(values.get("build_target_enable", False)), activity_enabled
 
 
 def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
@@ -160,7 +192,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         text = str(message).strip()
         if not text:
             return
-        now_text = datetime.now(tz=UTC8).strftime("%H:%M:%S")
+        # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
+        # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
+        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
+        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         appended_lines: list[str] = []
         for line in text.splitlines():
             line = line.strip()
@@ -673,23 +709,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="Daily",
             user_cfg=user_cfg,
         )
-        if assigned_script == "SRA":
-            return bool(values.get("useBuildTarget", False)), bool(
-                values.get("activity.enabled", False)
-            )
-        activity_enabled = bool(values.get("activity_enable", False)) and any(
-            bool(value)
-            for key, value in values.items()
-            if key.startswith("activity_")
-            and key.endswith("_enable")
-            and key
-            not in {
-                "activity_enable",
-                "activity_dailycheckin_enable",
-                "activity_journey_highlights_notification_enable",
-            }
-        )
-        return bool(values.get("build_target_enable", False)), activity_enabled
+        return resolve_daily_native_modes(assigned_script, values)
 
     def _resolve_redeem_code_policy(
         self,
@@ -747,20 +767,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             user_cfg=user_cfg,
         )
 
-        if assigned_script == "SRA":
-            main_configured = (
-                get_sra_native_stage(read_native_main_stage(user_cfg, "SRA"))
-                is not None
-            )
-            eow_configured = (
-                get_sra_native_stage(
-                    read_native_stage(user_cfg, "ScriptEchoOfWar", "SRA")
-                )
-                is not None
-            )
-        else:
-            main_configured = resolve_m7a_main_stage(user_cfg) is not None
-            eow_configured = resolve_m7a_eow_stage(user_cfg) is not None
+        main_configured, eow_configured = resolve_configured_daily_stages(
+            user_cfg, assigned_script
+        )
 
         if cultivation_enabled or native_activity_enabled:
             main_configured = True
@@ -807,12 +816,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not user_cfg.get("TaskSwitch", module.key):
                 continue
 
-            assigned = get_assigned_script(
+            assignment = resolve_script_assignment(
                 module,
                 self.script_config,
                 user_config=user_cfg,
                 effective_engines=effective_engines,
             )
+            assigned = assignment.script
+            fallback_note = describe_script_fallback(module, assignment)
+            if fallback_note:
+                self._append_log(f"用户「{user_name}」{fallback_note}")
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True
             redeem_code_fingerprint: str | None = None
@@ -1252,17 +1265,21 @@ class HSRAutoProxyTask(TaskExecuteBase):
         phase_items: list[HSRRunItem],
         item_index: int,
         failures: list[HSRRunItem],
+        reason: str,
     ) -> list[HSRRunItem]:
-        """返回当前项之后尚未执行且尚未标记失败的队列项。"""
+        """返回当前项之后尚未执行且尚未标记失败的队列项，并写入未执行原因。"""
 
         remaining = list(phase_items[item_index + 1 :])
         for later_phase in phases[phase_index + 1 :]:
             remaining.extend(item for item in items if item.phase == later_phase)
-        return [
+        skipped = [
             candidate
             for candidate in remaining
             if all(candidate is not failed for failed in failures)
         ]
+        for candidate in skipped:
+            candidate.last_error = reason
+        return skipped
 
     async def _run_queue_items(
         self,
@@ -1305,7 +1322,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         f"用户「{item.user_name}」模块「{item.module_name}」执行失败："
                         f"{item.last_error}"
                     )
+                    abort_reason: str | None = None
                     if item.module_key == "StartGame":
+                        abort_reason = HSR_ABORT_REASON_LOGIN_FAILED
+                    elif isinstance(e, HSRGameExitedError):
+                        # 游戏已经没了，再启动后续模块只会白跑一次并再记一条失败。
+                        abort_reason = HSR_ABORT_REASON_GAME_EXITED
+                    if abort_reason is not None:
                         remaining = self._remaining_items_after(
                             items,
                             phases=phases,
@@ -1313,9 +1336,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             phase_items=phase_items,
                             item_index=item_index,
                             failures=failures,
+                            reason=abort_reason,
                         )
-                        for candidate in remaining:
-                            candidate.last_error = "SRA 登录/切号失败，当前阶段未执行"
+                        if remaining:
+                            self._append_log(
+                                f"用户「{item.user_name}」{abort_reason}"
+                                f"（共 {len(remaining)} 项）"
+                            )
                         failures.extend(remaining)
                         return failures
                     continue
@@ -1334,9 +1361,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             phase_items=phase_items,
                             item_index=item_index,
                             failures=failures,
+                            reason=HSR_ABORT_REASON_LOGIN_FAILED,
                         )
-                        for candidate in remaining:
-                            candidate.last_error = "SRA 登录/切号失败，当前阶段未执行"
                         failures.extend(remaining)
                         return failures
                     continue
@@ -1344,9 +1370,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 if bool(getattr(result, "success", True)):
                     if item.on_success is not None:
                         item.on_success(result)
-                    # 历战余响独立项的最终结果由 on_success 按日志判定，
-                    # 这里再记一次会把「未完成」覆盖成「完成」。
-                    if item.module_key not in ("StartGame", "EchoOfWar"):
+                    # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
+                    # 并记满「完成 / 未完成」两条分支；这里再兜底记一次「完成」，
+                    # 会因后写入为准把「未完成」覆盖成「完成」。
+                    if item.module_key not in (
+                        "StartGame",
+                        "EchoOfWar",
+                        "DivergentUniverse",
+                        "CurrencyWars",
+                    ):
                         self._record_module_result(
                             user_id=item.user_id,
                             user_name=item.user_name,
@@ -1376,9 +1408,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         phase_items=phase_items,
                         item_index=item_index,
                         failures=failures,
+                        reason=HSR_ABORT_REASON_LOGIN_FAILED,
                     )
-                    for candidate in remaining:
-                        candidate.last_error = "SRA 登录/切号失败，当前阶段未执行"
                     failures.extend(remaining)
                     return failures
 
@@ -1394,6 +1425,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
             while not run_task.done():
                 await asyncio.sleep(1)
+                # 睡醒后先复查任务态：外部脚本可能在这 1 秒里先关掉游戏再自行
+                # 退出，此时任务已经完成，不能再拿「游戏进程不在」去取消它。
+                if run_task.done():
+                    break
                 if self.runtime.game_transitioning:
                     continue
                 if not is_process_running(HSR_GAME_PROCESS_NAME):
@@ -1401,7 +1436,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     run_task.cancel()
                     with suppress(BaseException):
                         await run_task
-                    raise HSRRetryableTaskError(
+                    raise HSRGameExitedError(
                         "检测到星穹铁道进程已退出，已终止当前外部脚本；"
                         "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
                     )

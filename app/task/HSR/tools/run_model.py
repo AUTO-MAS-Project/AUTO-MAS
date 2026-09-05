@@ -110,6 +110,14 @@ class HSRRetryableTaskError(RuntimeError):
         self.result = result
 
 
+class HSRGameExitedError(HSRRetryableTaskError):
+    """游戏进程在外部脚本运行中途退出，当前阶段的剩余模块不应继续。
+
+    继承 ``HSRRetryableTaskError`` 以保持既有的本轮末尾补跑语义；
+    ``_run_queue_items`` 按类型识别它，不靠错误文案匹配。
+    """
+
+
 @dataclass
 class HSRRuntimeState:
     """HSR 单次运行中跨用户共享的外部脚本状态。"""

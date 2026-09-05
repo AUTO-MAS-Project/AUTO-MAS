@@ -64,12 +64,45 @@ export interface HSRManagedField {
   readonly?: boolean
 }
 
+export type HSRDroppedOverrideReason = 'unknown' | 'type'
+
+/** 一条被后端忽略的 Managed.Options 覆盖值（原生配置里没有该键，或类型对不上）。 */
+export interface HSRDroppedOverride {
+  key: string
+  reason: HSRDroppedOverrideReason
+  value: unknown
+  message: string
+}
+
 export interface HSRManagedEngineForm {
   key?: string
   engine: HSREngine
   fields: HSRManagedField[]
   source?: string | null
+  /** 表单级人类可读提示（如三月七助手缺少配置说明文件）。 */
   warnings?: string[]
+  /** 在当前源配置中失效、运行时会被忽略的覆盖值；对应后端 `HSRManagedForm.dropped_overrides`。 */
+  dropped_overrides?: HSRDroppedOverride[]
+}
+
+/**
+ * 读出一个表单里被忽略的覆盖键。字段已经是结构化的，这里只做防御性归一：
+ * 缺 key 的条目丢掉，未知 reason 归为 unknown，message 缺失时补空串。
+ */
+export const getHSRDroppedOverrides = (
+  form?: Pick<HSRManagedEngineForm, 'dropped_overrides'> | null
+): HSRDroppedOverride[] => {
+  const result: HSRDroppedOverride[] = []
+  for (const item of form?.dropped_overrides ?? []) {
+    if (!item || typeof item !== 'object' || typeof item.key !== 'string') continue
+    result.push({
+      key: item.key,
+      reason: item.reason === 'type' ? 'type' : 'unknown',
+      value: item.value,
+      message: typeof item.message === 'string' ? item.message : '',
+    })
+  }
+  return result
 }
 
 export interface HSRManagedTask extends HSRTaskCapability {
@@ -81,6 +114,27 @@ export interface HSRManagedConfigSnapshot {
   tasks: HSRManagedTask[]
   task_mapping: Record<string, HSREngine>
   warnings: string[]
+}
+
+/** 一份可选的 SRA 配置档案（%APPDATA%/SRA/configs 下的一个 json）。 */
+export interface HSRSRAProfile {
+  id: string
+  path: string
+  selected: boolean
+}
+
+/** 后端 `/hsr/sra-profiles` 的响应；`configured` 为空串表示脚本用自动选择。 */
+export interface HSRSRAProfilesSnapshot {
+  engine: 'SRA'
+  root: string
+  available: boolean
+  unavailable_reason?: string | null
+  configured: string
+  auto_id: string
+  selected: string
+  fallback: boolean
+  fallback_reason?: string | null
+  profiles: HSRSRAProfile[]
 }
 
 export interface HSRDirectConfigImportResult {
@@ -253,6 +307,15 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 列出脚本可选的 SRA 配置档案，并标出当前生效的那份。 */
+  const getSraProfiles = async (scriptId: string): Promise<HSRSRAProfilesSnapshot> => {
+    return requestPluginData(
+      axios.get<PluginEnvelope<HSRSRAProfilesSnapshot>>(url('/sra-profiles'), {
+        params: { scriptId },
+      })
+    )
+  }
+
   const importDirectConfig = async (
     scriptId: string,
     userId: string,
@@ -267,10 +330,27 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 清掉该用户的直控快照，直控回到直接使用脚本当前配置。 */
+  const clearDirectConfig = async (
+    scriptId: string,
+    userId: string,
+    engine: HSREngine
+  ): Promise<HSRDirectConfigImportResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/clear'), {
+        scriptId,
+        userId,
+        engine,
+      })
+    )
+  }
+
   return {
     getCapabilities,
     getStageOptions,
     getManagedConfig,
+    getSraProfiles,
     importDirectConfig,
+    clearDirectConfig,
   }
 }

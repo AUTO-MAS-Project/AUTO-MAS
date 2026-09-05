@@ -57,6 +57,15 @@ def _on_sra_weekly_success(
             reason=reason,
         )
         return
+    record_module_result(
+        user_id=uid,
+        user_name=user_name,
+        module_key=module_key,
+        module_name=module_name,
+        script="SRA",
+        status="completed",
+        reason=reason,
+    )
     queue_weekly_completion(uid, user_name, module_name)
 
 

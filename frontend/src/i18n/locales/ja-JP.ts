@@ -355,7 +355,7 @@ export default {
     srcConfigurationFailedP0: 'SRC の設定に失敗しました: {p0}',
     okWwSetupFailed: 'ok-ww の設定に失敗しました: {p0}',
     p0NotValidJson: '{p0} は有効な JSON ではありません',
-    nativeP0ConfigurationWas: '{p0} のネイティブ設定をこのユーザーにインポートしました',
+    nativeP0ConfigurationWas: '{p0} の現在の設定をこのユーザーのスナップショットとして固定しました',
     couldNotImportP0: '{p0} の設定をインポートできませんでした：{p1}',
     p0MustSitUnder: '{p0}はスクリプトのルートフォルダまたは AppData 配下である必要があります',
     p0HasNoMatch: '{p0}にマッチ用の正規表現が未入力のため、無効として保存しました',
@@ -608,10 +608,28 @@ export default {
     win32ControlMethodCan:
       'Win32 の制御方式では起動と検出を分けられます。起動対象はプログラムを立ち上げるだけで、検出対象が実際のゲームウィンドウを特定します。',
     yamlFiles: 'YAML ファイル',
-    importFromSourceConfiguration2: '元の設定から一括インポート',
+    resetManagedOverrides: '元の設定にリセット',
+    resetManagedOverridesHint:
+      'MAS で変更した上書き値をすべて破棄し、現在の SRA / 三月なのかアシスタントの設定を読み直します',
+    resetManagedOverridesConfirmTitle: '元の設定にリセットしますか？',
+    resetManagedOverridesConfirmDesc:
+      'このユーザーが MAS で変更した上書き値（全モジュール・全項目）をすべて削除し、以後は現在の SRA / 三月なのかアシスタントの設定どおりに表示・実行します。元の設定ファイル自体は変更されません。この操作は取り消せません。',
+    invalidOverridesCount: '無効な上書き {n} 件',
+    invalidManagedOverridesTitle:
+      '保存済みの上書き値 {n} 件が現在の元の設定では無効です。実行時は無視され、元の設定の値が使われます',
+    invalidManagedOverrideUnknown: '現在の元の設定にこの項目はもうありません',
+    invalidManagedOverrideType: '保存された値の型が現在の元の設定と一致しません',
+    invalidManagedOverrideSaved: '保存された値：{value}',
+    clearInvalidManagedOverrides: '無効な上書きを削除',
+    clearInvalidManagedOverridesConfirm:
+      'このユーザーの MAS 設定から無効な上書き {n} 件を削除しますか？元の設定ファイルは変更されません。',
     matchesOnly: '一致した行のみ表示',
     never: 'しない',
     sanityScriptChangedPick: '理性タスクのスクリプトが変わりました。ステージを選び直してください。',
+    hsrEngineSwitchHint:
+      '実行エンジンを切り替えると、そのエンジン固有のネイティブ設定項目とステージに切り替わります。現在のエンジンで変更した値は引き継がれませんが保持され、戻すと再び表示されます。',
+    hsrStageMissingForEngine:
+      '現在の開拓力エンジンは {engine} で、このエンジンではまだステージが選ばれていません。ステージはエンジンごとに保存されるため、別のエンジンで選んだステージは引き継がれません。選び直してください。元のエンジンに戻すと以前の選択が復元されます。',
     howUseThis: '使い方',
     whenSavingMasEncrypts:
       '保存時に MAS がアカウントのパスワードを暗号化します。SRA が未設定、または SRA モジュールを使わない場合、パスワードはアカウント切り替えに使われません。',
@@ -625,8 +643,6 @@ export default {
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     saved: '保存済み',
-    enabledScriptNeedsUser:
-      '有効なスクリプトは、ユーザースナップショットをインポートしないとタスク開始時のチェックを通りません。',
     turnAutomaticRelicSalvage:
       '遺物周回でバッグがいっぱいになって中断しないよう、ゲーム内で遺物の自動分解を有効にしておくことをおすすめします。',
     thisScriptDeclaresNo:
@@ -651,13 +667,31 @@ export default {
     restoreOriginalRegistryValue: '終了後にレジストリの値を元に戻す',
     scriptDirectControlIgnores:
       'スクリプト直接制御では、このユーザーのアカウント・理性ステージ・MAS のタスク設定は参照されません。',
+    directLiveConfigTitle: 'スクリプトの現在の設定を使用（推奨）',
+    directLiveConfigHint:
+      '実行時に {p0} で現在保存されている設定をそのまま読み込みます。スクリプト側の変更はすぐに反映され、インポートは不要です。',
+    directSnapshotTitle: 'このユーザー用の設定スナップショットに固定済み',
+    directSnapshotMeta: '{p0} に固定 ・ 取得元 {p1}',
+    directSnapshotStaleHint:
+      'スナップショットはスクリプト側のその後の変更に追従しません。更新するには再度固定するか、現在の設定を使う状態に戻してください。',
+    directPinSnapshot: '現在の設定をスナップショットとして固定（任意）',
+    directRepinSnapshot: '現在の設定で再固定',
+    directUseLiveConfig: 'スクリプトの現在の設定を使う状態に戻す',
+    directSnapshotCleared: '{p0} はスクリプトの現在の設定を使うようになりました',
+    couldNotClearP0: '{p0} のスナップショットを削除できませんでした：{p1}',
+    directEngineSra: 'SRA',
+    directEngineM7a: '三月なのかアシスタント',
+    directEngineDescSra:
+      'SRA で現在選択中の設定ファイルを実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
+    directEngineDescM7a:
+      '三月なのかアシスタントの現在の config.yaml を実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
     pathFolderHoldingScript: 'スクリプトの設定ファイルが置かれているフォルダのパス',
     pathScriptConfigurationFile: 'スクリプトの設定ファイルのパス',
     expressionGuide: '式のガイド',
     thisModuleNotEnabled:
       'このユーザーではこのモジュールが有効になっていません。設定は保存されますが、今回は実行されません。',
     finishNativeSetupSra:
-      '先に SRA / 三月なのかアシスタント側でネイティブ設定を済ませてから、ここでインポートしてください。MAS はゲームの起動、スクリプトプロセスの追跡・停止、後片付けのみを担当します。',
+      'スクリプト直接制御は、SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。先にスクリプト自身の画面で設定を済ませてください。MAS はゲームの起動、スクリプトプロセスの追跡・停止、後片付けのみを担当します。同じスクリプトの複数ユーザーがそれぞれ別の設定で動く必要がある場合だけ、設定をスナップショットとして固定してください。',
     enableAtLeastOne: '直接制御するスクリプトを 1 つ以上有効にしてください。',
     pickConfigurationFile: '設定ファイルを選択してください',
     pickConfigurationFolder: '設定フォルダを選択してください',
@@ -745,7 +779,7 @@ export default {
     whatDoWhenSwitching: 'アカウント切り替え時に実行する動作',
     delete: '削除',
     matchPattern: 'マッチ用の正規表現',
-    divergentUniverse: '歴戦余韻',
+    echoOfWar: '歴戦余韻',
     argumentsGeneratedFromTask: '引数はタスク設定から自動生成され、常に -e が付きます',
     startTaskTN: 'タスクを開始（-t N）',
     commandLineArgumentsUsed: 'ゲーム起動時のコマンドライン引数',
@@ -826,6 +860,12 @@ export default {
     okNteConfiguration: 'OK-NTE の設定',
     howPcGameLaunched: 'PC 版ゲームの起動方式',
     sraPath: 'SRA のパス',
+    sraProfile: 'SRA 設定プロファイル',
+    sraProfileTooltip:
+      'SRA は設定を %APPDATA%/SRA/configs 配下の複数のプロファイルとして保存します。ここで選んだものが MAS 管理フォームの表示、スクリプト直接制御の実行、スナップショット取り込みの元になります。「自動」は Default を優先し、なければファイル名順の先頭を使います',
+    sraProfileAuto: '自動（{name}）',
+    sraProfileNeedPath: '先に SRA のパスを設定してください',
+    sraProfileLoadFailed: 'SRA 設定プロファイルを読み取れませんでした：{reason}',
     srcScriptConfiguration: 'SRC スクリプト設定',
     srcPath: 'SRC のパス',
     srcPathSelected: 'SRC のパスを選択しました',
@@ -841,7 +881,6 @@ export default {
     okWwSettingsSaved: 'ok-ww の設定を保存しました',
     okWwPath: 'ok-ww のパス',
     originalUiRecommended: '・元の UI の利用をおすすめします',
-    importFromSourceConfiguration: '元の設定から一括インポート',
     applyPreset: 'プリセットを適用',
     march7thPath: '三月なのかのパス',
     uploadFailedCheckYour:
@@ -870,7 +909,8 @@ export default {
     pcControllersOnlySeconds: 'PC 側のコントローラーのみ設定が必要です。単位は秒',
     cutFromKeywordEnd:
       'キーワードから行末までを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
-    couldNotImportFrom: '元の設定からインポートできませんでした',
+    couldNotResetManagedOverrides: '元の設定にリセットできませんでした',
+    couldNotClearInvalidManagedOverrides: '無効な上書きを削除できませんでした',
     cutFromStartLine:
       '行頭からキーワードまでを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
     launchGameBeforeTask: 'タスク前にゲームを起動',
@@ -894,7 +934,7 @@ export default {
     closeGameAfterTask2: 'タスク終了後にゲームを終了',
     taskQueue: 'タスクキュー',
     taskQueueConfiguration: 'タスクキューの設定',
-    sanityConfiguration: '理性の設定',
+    sanityConfiguration: '開拓力の設定',
     author: '作者',
     useThisUserS: 'このユーザー専用の設定を使い、スクリプトの設定とは切り離します。',
     useSharedScriptLevel: 'スクリプト単位の共有設定を、すべてのユーザーで使います。',
@@ -934,7 +974,7 @@ export default {
     lineMatchingThisPattern:
       'この正規表現に一致した行を範囲の終わりとします（その行を含む）。空の場合は終わりを限定しません',
     singleRunTimeLimit: '1 回の実行時間の上限（分）',
-    divergentUniverseStartDay: '歴戦余韻の開始日',
+    echoOfWarStartDay: '歴戦余韻の開始日',
     trailingKeyword: '末尾を切るキーワード',
     reportIssueGo: 'でフィードバックするか、こちらへ：',
     sendStatistics: '統計情報を送信',
@@ -977,7 +1017,9 @@ export default {
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
     interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
-    importedFromCurrentSra: '現在の SRA / 三月なのかアシスタントの設定からインポートしました',
+    managedOverridesReset:
+      '上書き値をすべて削除しました。現在の SRA / 三月なのかアシスタントの設定どおりに表示・実行します',
+    invalidManagedOverridesCleared: '無効な上書き {n} 件を削除しました',
     scriptLevelMaaendConfiguration: 'スクリプト単位の MaaEnd 設定を開始しました',
     gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
@@ -1323,7 +1365,7 @@ export default {
     chooseWhetherMasSwitches:
       'ゲーム内に保存済みのアカウントを MAS が切り替えるか、MAAEND の内蔵タスクがアカウント末尾 4 桁で切り替えるかを選びます',
     pickStageFarmThis: '周回するステージを選びます。この項目は Stage.Channel に書き込まれます。',
-    pickDivergentUniverseStage: '挑戦する歴戦余韻のステージを選びます。',
+    pickEchoOfWarStage: '挑戦する歴戦余韻のステージを選びます。',
     pickProjectDirectory: 'プロジェクトフォルダを選択',
     pickGameSOwn: 'ゲーム本体の exe を選択',
     generalScriptConfiguration: '汎用スクリプト設定',

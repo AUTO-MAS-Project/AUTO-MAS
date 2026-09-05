@@ -180,10 +180,11 @@
               :task-switch="formData.TaskSwitch"
               :saving="isSaving"
               :loading="managedConfigLoading"
-              @import-source="handleManagedSourceImport"
+              @reset-overrides="handleManagedOverridesReset"
               @task-toggle="handleTaskSwitchToggle"
               @mapping-change="handleManagedMappingChange"
               @field-change="handleManagedFieldChange"
+              @clear-invalid-overrides="handleManagedInvalidOverridesClear"
             />
           </div>
           <div v-else class="control-mode-content">
@@ -199,8 +200,10 @@
               :direct="formData.Direct"
               :saving="isSaving"
               :importing-engine="importingDirectEngine"
+              :clearing-engine="clearingDirectEngine"
               @toggle="handleDirectEngineToggle"
               @import-config="handleDirectConfigImport"
+              @clear-config="handleDirectConfigClear"
             />
           </div>
 
@@ -214,7 +217,7 @@
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">{{ t('edit.divergentUniverse') }}</span>
+                  <span class="progress-label">{{ t('edit.echoOfWar') }}</span>
                   <a-tag :color="eowCompletedThisWeek ? 'green' : 'orange'">
                     本周 {{ eowCompletedThisWeek ? '已完成' : '未完成' }}
                   </a-tag>
@@ -416,6 +419,7 @@ const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
 const managedConfigLoading = ref(false)
 const importingDirectEngine = ref<HSREngine | null>(null)
+const clearingDirectEngine = ref<HSREngine | null>(null)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
@@ -566,15 +570,42 @@ const loadManagedConfig = async () => {
   }
 }
 
-const handleManagedSourceImport = async () => {
+// 「重置为源配置」：清空这个用户在 MAS 里的全部 Managed.Options 覆盖值，
+// 之后表单和运行都按 SRA / 三月七助手当前配置走。确认弹窗在子组件里。
+const handleManagedOverridesReset = async () => {
   if (!userId || managedConfigLoading.value || isSaving.value) return
   const saved = await handleFieldSave('Managed.Options', {})
   if (!saved) {
-    message.error(t('edit.couldNotImportFrom'))
+    message.error(t('edit.couldNotResetManagedOverrides'))
     return
   }
   await loadManagedConfig()
-  message.success(t('edit.importedFromCurrentSra'))
+  message.success(t('edit.managedOverridesReset'))
+}
+
+// 只剔掉后端报告为失效（原生配置里已没有、或类型对不上）的覆盖键，其余保留。
+const handleManagedInvalidOverridesClear = async (
+  engine: HSREngine,
+  task: string,
+  keys: string[]
+) => {
+  if (!userId || managedConfigLoading.value || isSaving.value || keys.length === 0) return
+  const options = { ...(formData.Managed?.Options ?? {}) }
+  const engineOptions = { ...(options[engine] ?? {}) }
+  const taskOptions = { ...(engineOptions[task] ?? {}) }
+  for (const key of keys) delete taskOptions[key]
+  if (Object.keys(taskOptions).length > 0) engineOptions[task] = taskOptions
+  else delete engineOptions[task]
+  if (Object.keys(engineOptions).length > 0) options[engine] = engineOptions
+  else delete options[engine]
+  formData.Managed = { ...(formData.Managed ?? {}), Options: options }
+  const saved = await handleFieldSave('Managed.Options', options)
+  if (!saved) {
+    message.error(t('edit.couldNotClearInvalidManagedOverrides'))
+    return
+  }
+  await loadManagedConfig()
+  message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
 }
 
 const handleControlModeChange = async (value: string | number) => {
@@ -647,6 +678,28 @@ const handleDirectConfigImport = async (engine: HSREngine) => {
     )
   } finally {
     importingDirectEngine.value = null
+  }
+}
+
+// 与 handleDirectConfigImport 对称：清掉快照后直控回到直接使用脚本当前配置
+const handleDirectConfigClear = async (engine: HSREngine) => {
+  if (!userId || clearingDirectEngine.value || importingDirectEngine.value) return
+  clearingDirectEngine.value = engine
+  try {
+    await hsrPluginApi.clearDirectConfig(scriptId, userId, engine)
+    if (!formData.Direct) formData.Direct = {}
+    formData.Direct[`${engine}ImportedAt`] = ''
+    formData.Direct[`${engine}Source`] = ''
+    message.success(t('edit.directSnapshotCleared', { p0: engine }))
+  } catch (error) {
+    message.error(
+      t('edit.couldNotClearP0', {
+        p0: engine,
+        p1: error instanceof Error ? error.message : String(error),
+      })
+    )
+  } finally {
+    clearingDirectEngine.value = null
   }
 }
 

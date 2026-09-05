@@ -1427,6 +1427,37 @@ async def get_hsr_managed_config_api(
         )
 
 
+@router.get(
+    "/hsr/sra-profiles",
+    tags=["HSR"],
+    summary="获取 HSR 可选的 SRA 配置档案",
+    response_model=HSRSRAProfilesOut,
+    status_code=200,
+)
+async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfilesOut:
+    """列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。"""
+
+    try:
+        if not scriptId:
+            return HSRSRAProfilesOut(code=400, status="error", message="缺少 scriptId")
+        script_config = _hsr_script_config(scriptId)
+        from app.task.HSR.tools.api import build_sra_profiles
+
+        data = HSRSRAProfilesData(**build_sra_profiles(script_config))
+        return HSRSRAProfilesOut(
+            message=f"共 {len(data.profiles)} 份 SRA 配置档案",
+            data=data,
+        )
+    except Exception as e:
+        return HSRSRAProfilesOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
 @router.post(
     "/hsr/direct-config/import",
     tags=["HSR"],
@@ -1461,6 +1492,45 @@ async def import_hsr_direct_config_api(
             code=409, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError, RuntimeError) as e:
+        return HSRDirectConfigImportOut(
+            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except OSError as e:
+        return HSRDirectConfigImportOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
+    "/hsr/direct-config/clear",
+    tags=["HSR"],
+    summary="清除 HSR 用户的直控配置快照",
+    response_model=HSRDirectConfigImportOut,
+    status_code=200,
+)
+async def clear_hsr_direct_config_api(
+    request: HSRDirectConfigImportIn = Body(...),
+) -> HSRDirectConfigImportOut:
+    """清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。"""
+
+    from app.task.HSR.tools.api import clear_direct_config
+
+    try:
+        script_config = _hsr_script_config(request.scriptId)
+        _hsr_user_config(script_config, request.userId)
+
+        result = await clear_direct_config(
+            script_config,
+            request.engine,
+            script_id=request.scriptId,
+            user_id=request.userId,
+            update_user=Config.update_user,
+        )
+        return HSRDirectConfigImportOut(
+            message=f"{request.engine} 已改回使用脚本当前配置",
+            data=HSRDirectConfigImportData(**result),
+        )
+    except (KeyError, TypeError, ValueError) as e:
         return HSRDirectConfigImportOut(
             code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
