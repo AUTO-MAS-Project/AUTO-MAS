@@ -261,3 +261,109 @@ describe('useAppLifecycle 断开提示', () => {
     expect(modalError).not.toHaveBeenCalled()
   })
 })
+describe('useAppLifecycle 后端有意重启', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    devMode = false
+    connectionStateRef.value = 'idle'
+    vi.stubGlobal('window', {
+      electronAPI: {
+        getLogger: () => logger,
+        backendStatus: vi.fn(async () => ({ isRunning: false })),
+      },
+      setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
+      clearTimeout: (id: number) => clearTimeout(id),
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('有意重启期间断开不提示、不查后端、不自行恢复，状态记为启动中', async () => {
+    const connection = await import('@/services/websocket/connection')
+    const mod = await loadLifecycle()
+    const { backendStatus } = mod.useAppLifecycle()
+
+    mod.beginIntentionalBackendRestart('测试')
+    emitDisconnected()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(notificationWarning).not.toHaveBeenCalled()
+    expect(modalWarning).not.toHaveBeenCalled()
+    // 后端由更新流程负责拉起：不查进程状态，也不触发自动重启
+    expect(window.electronAPI.backendStatus).not.toHaveBeenCalled()
+    expect(connection.reconnectNow).not.toHaveBeenCalled()
+    expect(backendStatus.value).toBe('starting')
+  })
+
+  it('有意重启期间一轮重连失败不升级模态框，只按短间隔继续重连', async () => {
+    const connection = await import('@/services/websocket/connection')
+    const mod = await loadLifecycle()
+
+    mod.beginIntentionalBackendRestart('测试')
+    emitDisconnected()
+    await emitCycleFailed()
+
+    expect(modalWarning).not.toHaveBeenCalled()
+    expect(notificationWarning).not.toHaveBeenCalled()
+    expect(window.electronAPI.backendStatus).not.toHaveBeenCalled()
+    expect(connection.scheduleReconnect).toHaveBeenCalledWith(3000)
+  })
+
+  it('后端重新连上即结束窗口，之后的断开恢复正常提示与恢复', async () => {
+    const mod = await loadLifecycle()
+
+    mod.beginIntentionalBackendRestart('测试')
+    emitDisconnected()
+    expect(notificationWarning).not.toHaveBeenCalled()
+
+    await emitConnected()
+    emitDisconnected()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(notificationWarning).toHaveBeenCalledTimes(1)
+    expect(window.electronAPI.backendStatus).toHaveBeenCalled()
+  })
+
+  it('流程异常时显式结束窗口，断开立即恢复正常提示', async () => {
+    const mod = await loadLifecycle()
+
+    mod.beginIntentionalBackendRestart('测试')
+    mod.endIntentionalBackendRestart('流程异常中断')
+    emitDisconnected()
+
+    expect(notificationWarning).toHaveBeenCalledTimes(1)
+  })
+
+  it('窗口超时未结束时自动解除，不会让后续事故永远静默', async () => {
+    vi.useFakeTimers()
+    const mod = await loadLifecycle()
+
+    mod.beginIntentionalBackendRestart('测试')
+    emitDisconnected()
+    expect(notificationWarning).not.toHaveBeenCalled()
+
+    // 兜底时限为 10 分钟
+    vi.advanceTimersByTime(600000)
+    emitDisconnected()
+
+    expect(notificationWarning).toHaveBeenCalledTimes(1)
+  })
+
+  it('关闭流程作废未结束的有意重启窗口', async () => {
+    vi.useFakeTimers()
+    const mod = await loadLifecycle()
+
+    mod.beginIntentionalBackendRestart('测试')
+    void mod.closeApp()
+    await Promise.resolve()
+
+    // 关闭流程优先：断开走关闭分支，既不提示也不再被有意重启窗口拦截
+    emitDisconnected()
+    await Promise.resolve()
+    expect(notificationWarning).not.toHaveBeenCalled()
+    expect(modalWarning).not.toHaveBeenCalled()
+  })
+})

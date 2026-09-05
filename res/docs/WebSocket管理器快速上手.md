@@ -114,6 +114,7 @@ unsubscribe(subscriptionId) // 幂等
 - 常驻订阅：`backend.shutdown.ready`、`frontend.close.requested`、`power.countdown.updated/cancelled`，在建立连接前注册，重连不重复注册，页面切换不取消
 - `closeApp()`：退出并关闭后端 —— POST `/api/core/close` → 等待 `backend.shutdown.ready`（30 秒超时）→ 等待后端进程退出 → 超时才 taskkill → 关闭前端；关闭流程期间禁止自动重连与自动重启
 - 异常断开：连接层一轮重连（5 次退避）失败后，由协调器查询后端进程状态 —— 进程已死则自动重启后端（上限 3 次，超限弹窗提示重启应用），进程存活则延迟继续重连
+- 有意重启后端：标题栏「更新后端」在关闭后端前调用 `beginIntentionalBackendRestart()`，窗口期内的断开按计划内处理（不提示、不自动重启后端、一轮重连失败也不升级弹窗），由后端重新连上、进入关闭流程或 10 分钟兜底超时结束；后端由初始化流程负责重新拉起，协调器不得插手，否则会 taskkill 后与它抢同一个进程
 
 ## 连接状态
 
