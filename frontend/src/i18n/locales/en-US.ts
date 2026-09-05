@@ -950,7 +950,6 @@ export default {
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
-    commandLineArgumentsAdded: 'Command line arguments added when launching Star Rail',
     howLongWaitAfter2: 'How long to wait after the game launches',
     howLongWaitReal:
       'How long to wait for the real game process/window after the target launches, in seconds',
@@ -1132,7 +1131,6 @@ export default {
     channel: 'Channel',
     gameExecutable: 'Game executable',
     pathGameExecutable: 'Path to the game executable',
-    gameLaunchArguments: 'Game launch arguments',
     gameLaunchArgumentsNot: 'Game launch arguments (not the OK-NTE arguments)',
     gameLaunchArgumentsNot2: 'Game launch arguments (not the ok-ww arguments)',
     gameLauncher: 'Game launcher',
@@ -2232,6 +2230,10 @@ export default {
     no: 'No',
     afterDone: 'When finished',
     afterDoneTip: 'What to do after the queue completes',
+    afterDoneDelay: 'Delay',
+    afterDoneDelayTip:
+      'Wait this long after the queue completes before running the action; 0 means no wait. The 60-second countdown still runs before it, so you can still cancel.',
+    afterDoneDelayUnit: 'min',
     actionPlaceholder: 'Select an action',
     action: {
       NoAction: 'Do nothing',

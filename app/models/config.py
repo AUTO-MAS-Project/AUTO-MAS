@@ -439,6 +439,10 @@ class QueueConfig(ConfigBase):
                 ]
             ),
         )
+        ## 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+        self.Info_AfterAccomplishDelay = ConfigItem(
+            "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次定时启动时间
@@ -1901,8 +1905,6 @@ class HSRConfig(ConfigBase):
         self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 游戏启动参数
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 启动游戏时临时覆盖 1920×1080 注册表分辨率

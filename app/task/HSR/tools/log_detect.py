@@ -43,7 +43,12 @@ HSR_EOW_REMAINING_COUNT_RE = re.compile(
     r"本周[「\"]?历战余响[」\"；:：]?\s*剩余次数[:：]\s*(\d+)\s*/\s*3"
 )
 HSR_EOW_M7A_START_RE = re.compile(r"开始刷历战余响.*?每轮包含\s*(\d+)\s*次")
+# 「将执行 N 次」只在 SRA 体力自动分配路径打印，手动副本任务没有这行。
 HSR_EOW_SRA_PLAN_RE = re.compile(r"任务\s+历战余响.*?将执行\s*(\d+)\s*次")
+HSR_EOW_SRA_DONE_MARKER = "任务完成：历战余响"
+# SRA 打不过或点不中关卡时也会打印「任务完成」，只有战斗失败会单独留痕；
+# 排除同样含该子串的「退出战斗失败」，那只是收尾点击没成功。
+HSR_EOW_SRA_BATTLE_FAILED_RE = re.compile(r"(?<!退出)战斗失败")
 
 HSR_ENGLISH_FAILURE_RE = re.compile(
     r"(Traceback \(most recent call last\):|Failed to execute script|"
@@ -227,8 +232,19 @@ def result_text(result: object) -> str:
     return "\n".join(part for part in (output, error) if part)
 
 
-def detect_echo_of_war_completion(result: object, script: str) -> tuple[bool, str]:
-    """根据 M7A/SRA 输出判断本周历战余响是否已完成。"""
+def detect_echo_of_war_completion(
+    result: object,
+    script: str,
+    dedicated_run: bool = False,
+) -> tuple[bool, str]:
+    """根据 M7A/SRA 输出判断本周历战余响是否已完成。
+
+    Args:
+        result: 外部脚本执行结果。
+        script: 本次执行的引擎。
+        dedicated_run: 本次外部脚本只按 3 连战跑了历战余响一项。SRA 手动副本
+            任务不打印体力分配计划，这时以任务完成日志作为完成依据。
+    """
 
     text = result_text(result)
     if not text:
@@ -272,13 +288,14 @@ def detect_echo_of_war_completion(result: object, script: str) -> tuple[bool, st
         return False, "外部脚本日志显示历战余响未完成或体力不足"
 
     sra_attempts = _parse_max_int(HSR_EOW_SRA_PLAN_RE, text)
-    if (
-        str(script).upper() == "SRA"
-        and sra_attempts is not None
-        and sra_attempts >= HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT
-        and "任务完成：历战余响" in text
-    ):
-        return True, f"SRA 日志显示历战余响已执行 {sra_attempts} 次"
+    if str(script).upper() == "SRA" and HSR_EOW_SRA_DONE_MARKER in text:
+        if (
+            sra_attempts is not None
+            and sra_attempts >= HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT
+        ):
+            return True, f"SRA 日志显示历战余响已执行 {sra_attempts} 次"
+        if dedicated_run and not HSR_EOW_SRA_BATTLE_FAILED_RE.search(text):
+            return True, "SRA 单独执行历战余响完成，本周次数已一次挑战用尽"
 
     return False, "未从外部脚本日志确认历战余响已完成"
 

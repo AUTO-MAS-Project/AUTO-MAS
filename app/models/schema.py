@@ -567,6 +567,9 @@ class QueueConfig_Info(BaseModel):
             "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
+    AfterAccomplishDelay: Optional[int] = Field(
+        default=None, ge=0, le=1440, description="完成后操作的延时时长(分钟)"
+    )
 
 
 class QueueConfig(BaseModel):
@@ -1571,7 +1574,6 @@ class HSRConfig_Info(BaseModel):
 class HSRConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
-    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
     ForceResolution1920x1080: Optional[bool] = Field(
         default=None, description="是否强制 1920x1080"

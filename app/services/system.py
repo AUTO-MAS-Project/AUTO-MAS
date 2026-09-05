@@ -64,7 +64,12 @@ class _SystemHandler:
     def get_power_countdown_snapshot(self) -> PowerCountdownSnapshot:
         """返回当前电源倒计时的 HTTP 初始快照。"""
 
-        active = bool(self.power_task is not None and not self.power_task.done())
+        # 延时阶段 remaining 为 0, 此时只是在等待, 不该被当作倒计时推给前端
+        active = bool(
+            self.power_task is not None
+            and not self.power_task.done()
+            and self.current_power_remaining > 0
+        )
         return PowerCountdownSnapshot(
             active=active,
             operation=self.current_power_operation if active else None,
@@ -170,11 +175,15 @@ class _SystemHandler:
             "KillSelf",
             "Logoff",
         ],
+        delay: int = 0,
     ) -> None:
-        """电源任务：逐秒推送倒计时状态，归零后执行电源操作"""
+        """电源任务：先静默等待队列设定的延时，再逐秒推送倒计时状态，归零后执行电源操作"""
 
         self.current_power_operation = power_sign
         try:
+            if delay > 0:
+                # 延时阶段保持静默：不推送倒计时，调度中心的电源标志仍显示待执行操作
+                await asyncio.sleep(delay)
             for remaining in range(self.countdown, 0, -1):
                 self.current_power_remaining = remaining
                 await Publisher.send(
@@ -201,11 +210,15 @@ class _SystemHandler:
 
         if self.power_task is None or self.power_task.done():
             power_sign = Config.power_sign
+            delay = Config.power_delay
             self._power_cancelled_event_task = None
-            power_task = asyncio.create_task(self._power_task(power_sign))
+            power_task = asyncio.create_task(self._power_task(power_sign, delay))
             self.power_task = power_task
-            logger.info(f"电源任务已启动, {self.countdown}秒后执行: {power_sign}")
+            logger.info(
+                f"电源任务已启动, {delay + self.countdown}秒后执行: {power_sign}"
+            )
             Config.power_sign = "NoAction"
+            Config.power_delay = 0
         else:
             logger.warning("已有电源任务在运行, 请勿重复启动")
 
@@ -220,6 +233,12 @@ class _SystemHandler:
         await Publisher.send(
             id=protocol.ID_MAIN, type=protocol.POWER_COUNTDOWN_CANCELLED
         )
+
+    async def cancel_pending_power_task(self) -> None:
+        """存在待执行的电源任务时取消它，没有则跳过。"""
+
+        if self.power_task is not None and not self.power_task.done():
+            await self.cancel_power_task()
 
     async def cancel_power_task(self):
         """取消电源任务"""

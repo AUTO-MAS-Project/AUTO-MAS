@@ -907,7 +907,6 @@ export default {
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
     waitAfterLaunchSeconds: '启动后等待时间（秒）',
     launchMode: '启动方式',
-    commandLineArgumentsAdded: '启动星穹铁道时附加的命令行参数',
     howLongWaitAfter2: '启动游戏后等待的时间',
     howLongWaitReal: '启动目标后等待实际游戏进程/窗口出现的时间，单位秒',
     extraArgumentsUsedWhen: '启动脚本任务时需要添加的附加命令，详细语法参见官网文档',
@@ -1066,7 +1065,6 @@ export default {
     channel: '渠道',
     gameExecutable: '游戏可执行文件',
     pathGameExecutable: '游戏可执行文件的路径',
-    gameLaunchArguments: '游戏启动参数',
     gameLaunchArgumentsNot: '游戏启动参数（非 OK-NTE 启动参数）',
     gameLaunchArgumentsNot2: '游戏启动参数（非 ok-ww 启动参数）',
     gameLauncher: '游戏启动器',
@@ -2140,6 +2138,10 @@ export default {
     no: '否',
     afterDone: '完成后操作',
     afterDoneTip: '队列完成后执行的操作',
+    afterDoneDelay: '延时执行',
+    afterDoneDelayTip:
+      '队列完成后先等待这段时间再执行完成后操作，0 表示不等待；执行前仍有 60 秒倒计时可取消',
+    afterDoneDelayUnit: '分钟',
     actionPlaceholder: '请选择操作',
     action: {
       NoAction: '无操作',
