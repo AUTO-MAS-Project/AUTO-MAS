@@ -391,6 +391,13 @@ export interface ElectronAPI {
     /** 本次生命周期是否走 Runtime 监督链路；true 时后端只能由 Electron 经 Runtime 停止。 */
     runtimeSupervised?: boolean
   }>
+  checkRuntimeBackendUpdate: () => Promise<{
+    updateAvailable: boolean
+    staged?: boolean
+    currentCommit?: string
+    remoteCommit?: string
+    error?: string
+  }>
 
   // Runtime 链路的后端更新（启动模式统一走上面的 getRuntimeLaunchMode）
   updateBackendViaRuntime: (targetVersion: string) => Promise<RuntimeUpdateOutcome>
@@ -426,6 +433,8 @@ export interface ElectronAPI {
       status?: 'started' | 'running' | 'completed' | 'failed'
       /** 本条进度来自哪条链路；旧链路不产生，按 off 处理。 */
       runtimeMode?: RuntimeInitMode
+      /** 当前阶段没有可靠总量，应展示持续活动状态而不是精确百分比。 */
+      indeterminate?: boolean
     }) => void
   ) => void
   removeInitializationProgressListener?: () => void
