@@ -9,7 +9,8 @@
                 "OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、自动点击开始游戏（替代直启客户端避免卡界面，兼容旧客户端路径与启动器更新流程），失败均留存诊断截图，并新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)",
-                "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)"
+                "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
+                "通知系统 新增微信Claw通知接口"
             ],
             "程序优化": [
                 "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
