@@ -36,9 +36,9 @@
         <a-col :xs="24" :lg="12" class="task-list-column">
           <div class="column-header">
             <span>{{ t('edit.taskModule') }}</span>
-            <a-typography-text type="secondary"
-              >动态 {{ snapshot.tasks.length }} 项</a-typography-text
-            >
+            <a-typography-text type="secondary">{{
+              t('edit.hsrDynamicTaskCount', { n: snapshot.tasks.length })
+            }}</a-typography-text>
           </div>
           <div class="task-list">
             <button
@@ -125,7 +125,7 @@
                 class="panel-alert"
               />
               <a-typography-text type="secondary" class="source-line">
-                读取自：{{ selectedForm.source }}
+                {{ t('edit.hsrReadFrom', { source: selectedForm.source }) }}
               </a-typography-text>
               <a-alert
                 v-if="selectedDroppedOverrides.length"
@@ -288,18 +288,27 @@ const engineOptions = computed(() =>
     : []
 )
 
-const phaseLabel = (phase: string) => (phase === 'weekly' ? '周常' : '日常')
+const phaseLabel = (phase: string) => (phase === 'weekly' ? t('edit.weekly') : t('edit.daily'))
 const engineLabel = (engine?: HSREngine) =>
-  engine === 'M7A' ? '三月七' : engine === 'SRA' ? 'SRA' : '不可用'
+  engine === 'M7A'
+    ? t('edit.directEngineM7a')
+    : engine === 'SRA'
+      ? 'SRA'
+      : t('edit.hsrEngineUnavailable')
 const engineColor = (engine?: HSREngine) =>
   engine === 'M7A' ? 'purple' : engine === 'SRA' ? 'blue' : 'default'
 
 const taskSummary = (task: HSRManagedTask) => {
   const engine = mappedEngine(task)
   const form = engine ? task.forms?.[engine] : undefined
-  if (!form) return '未读取到原生配置'
+  if (!form) return t('edit.hsrNativeConfigNotLoaded')
   const enabled = form.fields.filter(field => field.type === 'boolean' && field.value).length
-  return `${props.taskSwitch[task.key] ? '已启用' : '未启用'} · ${form.fields.length} 项配置${enabled ? ` · ${enabled} 个开关已开` : ''}`
+  const parts = [
+    props.taskSwitch[task.key] ? t('edit.hsrTaskEnabled') : t('edit.hsrTaskNotEnabled'),
+    t('edit.hsrTaskFieldCount', { n: form.fields.length }),
+  ]
+  if (enabled) parts.push(t('edit.hsrTaskSwitchesOn', { n: enabled }))
+  return parts.join(' · ')
 }
 
 const handleEngineChange = (value: string | number) => {
