@@ -25,7 +25,8 @@
                 "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与配置组件接入词表，切换界面语言即时生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 清理不再需要的 MFW 资源 by [@HarcoChen](https://github.com/HarcoChen)",
                 "Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退 by [@qiyinxi](https://github.com/qiyinxi)",
-                "HSR专项 移除脚本页的「游戏启动参数」，窗口大小统一由「1920×1080 窗口模式」开关临时改写注册表、任务结束后恢复，旧配置中的该项会在下次保存时自动清除 by [@qiyinxi](https://github.com/qiyinxi)"
+                "HSR专项 移除脚本页的「游戏启动参数」，窗口大小统一由「1920×1080 窗口模式」开关临时改写注册表、任务结束后恢复，旧配置中的该项会在下次保存时自动清除 by [@qiyinxi](https://github.com/qiyinxi)",
+                "通用脚本 未填写「配置路径」时改为在任务开始前直接提示，不再跑起来后才报出难懂的错误"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",

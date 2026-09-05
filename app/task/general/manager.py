@@ -89,6 +89,12 @@ class GeneralManager(TaskExecuteBase):
             )
         ):
             return "开启追踪子进程后, 需至少填写一项追踪进程信息！"
+        # 配置路径为空时 Path("") 等价于 Path(".")，后续的快照与清理会落到
+        # 程序自身的工作目录上，必须在任务开始前拦下
+        if not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Script", "ConfigPath"
+        ):
+            return "未填写配置路径, 请检查脚本配置中的配置路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Game", "Enabled"
         ):
