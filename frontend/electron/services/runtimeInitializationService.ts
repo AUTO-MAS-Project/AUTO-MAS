@@ -231,6 +231,8 @@ export interface BootstrapProgressUpdate {
   status: InitializationStageStatus
   progress: number
   message: string
+  /** Runtime 没有可靠总量时为 true，界面改用持续活动进度而不是展示伪百分比。 */
+  indeterminate?: boolean
 }
 
 /** bootstrap 实际经过的三个界面段，按现有界面的固定先后顺序排列。 */
@@ -246,7 +248,7 @@ export const RUNTIME_TAKEOVER_STAGES: readonly InitializationRunStage[] = ['mirr
 export const RUNTIME_TAKEOVER_MESSAGE = '由 Runtime 接管'
 export const RUNTIME_DEVELOPMENT_SKIP_MESSAGE = '由 Runtime development 模式接管，跳过'
 
-/** 段刚开始时的粗略进度。Runtime 不给细粒度百分比时段内一直停在这个值。 */
+/** 兼容旧消费方的段起始值；indeterminate=true 时界面不得把它显示成精确百分比。 */
 const STAGE_STARTED_PROGRESS = 10
 
 /**
@@ -257,9 +259,9 @@ const STAGE_STARTED_PROGRESS = 10
  * `python.*` 都映射到 `python` 段，直接按事件重开段会让界面从「拉取源码」倒退回
  * 「安装 Python」。落后于当前段的事件仍会展示 Runtime 自己的文案，只是挂在当前段上。
  *
- * 进度百分比只用 Runtime 真给的 `percent`：实测整条成功 bootstrap 的 73 条 progress
- * 事件没有一条带 `percent` / `current` / `total`，依赖同步阶段更是一条 progress 都没有，
- * 所以这里不编造段内百分比，段开始 10%、段结束 100%。
+ * 进度百分比只用 Runtime 真给的 `percent`：没有可靠总量时用 `indeterminate` 明确告诉
+ * 界面展示持续活动状态。`progress=10` 只为兼容仍要求数字的旧消费方，不再作为精确百分比
+ * 呈现；这样既保留当前 IPC 形状，也不会让长耗时阶段看起来卡死在 10%。
  */
 export class BootstrapProgressBridge {
   private index = -1
@@ -275,7 +277,13 @@ export class BootstrapProgressBridge {
   /** 进入 bootstrap：三个没有对应物的段立刻各发一个完成。 */
   takeOver(): void {
     for (const stage of RUNTIME_TAKEOVER_STAGES) {
-      this.emit({ stage, status: 'completed', progress: 100, message: RUNTIME_TAKEOVER_MESSAGE })
+      this.emit({
+        stage,
+        status: 'completed',
+        progress: 100,
+        message: RUNTIME_TAKEOVER_MESSAGE,
+        indeterminate: false,
+      })
     }
   }
 
@@ -294,8 +302,9 @@ export class BootstrapProgressBridge {
       this.emit({
         stage: RUNTIME_BOOTSTRAP_STAGE_ORDER[target],
         status: 'started',
-        progress: STAGE_STARTED_PROGRESS,
+        progress: percent === undefined ? STAGE_STARTED_PROGRESS : clampPercent(percent),
         message,
+        indeterminate: percent === undefined,
       })
       return
     }
@@ -305,6 +314,7 @@ export class BootstrapProgressBridge {
       status: 'running',
       progress: percent === undefined ? STAGE_STARTED_PROGRESS : clampPercent(percent),
       message,
+      indeterminate: percent === undefined,
     })
   }
 
@@ -320,7 +330,7 @@ export class BootstrapProgressBridge {
   fail(stage: InitializationRunStage, message: string): void {
     if (this.closed) return
     this.closed = true
-    this.emit({ stage, status: 'failed', progress: 0, message })
+    this.emit({ stage, status: 'failed', progress: 0, message, indeterminate: false })
   }
 
   /**
@@ -337,6 +347,7 @@ export class BootstrapProgressBridge {
         status: 'completed',
         progress: 100,
         message,
+        indeterminate: false,
       })
     }
   }
@@ -806,6 +817,7 @@ export function emitDevelopmentSkipProgress(
       status: 'completed',
       progress: 100,
       message: RUNTIME_DEVELOPMENT_SKIP_MESSAGE,
+      indeterminate: false,
     })
   }
 }

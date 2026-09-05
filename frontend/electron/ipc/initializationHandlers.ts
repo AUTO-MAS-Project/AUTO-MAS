@@ -521,6 +521,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return backend.getStatus()
   })
 
+  ipcMain.handle('check-runtime-backend-update', async () => {
+    return getBackendService().checkRuntimeBackendUpdate()
+  })
+
   // ==================== Runtime 链路的后端更新 ====================
 
   // 标题栏更新入口走哪条链路由 `get-runtime-launch-mode` 决定（off 走原有下载安装包流程，

@@ -13,6 +13,7 @@ const logger = window.electronAPI.getLogger('版本服务')
 // ========== 标题栏版本信息相关 ==========
 export const updateInfo = ref<UpdateCheckOut | null>(null)
 export const backendUpdateInfo = ref<VersionOut | null>(null)
+export const runtimeBackendUpdateAvailable = ref(false)
 
 const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 分钟
 let titlebarPollTimer: number | null = null
@@ -45,6 +46,20 @@ export const getBackendVersion = async () => {
   }
 }
 
+export const checkRuntimeBackendUpdate = async () => {
+  try {
+    const result = await window.electronAPI.checkRuntimeBackendUpdate?.()
+    if (result?.staged === true) runtimeBackendUpdateAvailable.value = true
+    else if (result && !result.error) runtimeBackendUpdateAvailable.value = false
+    return result
+  } catch (error) {
+    logger.debug(
+      `Runtime 后端更新检查失败: ${error instanceof Error ? error.message : String(error)}`
+    )
+    return null
+  }
+}
+
 /**
  * 执行一次标题栏版本信息检查
  */
@@ -53,7 +68,11 @@ const pollTitlebarVersionOnce = async () => {
   isTitlebarPolling.value = true
 
   try {
-    const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
+    const [appRes, backendRes, runtimeRes] = await Promise.allSettled([
+      getAppVersion(),
+      getBackendVersion(),
+      checkRuntimeBackendUpdate(),
+    ])
 
     if (appRes.status === 'rejected') {
       const errorMsg =
@@ -64,6 +83,9 @@ const pollTitlebarVersionOnce = async () => {
       const errorMsg =
         backendRes.reason instanceof Error ? backendRes.reason.message : String(backendRes.reason)
       logger.error(`获取后端版本失败: ${errorMsg}`)
+    }
+    if (runtimeRes.status === 'rejected') {
+      logger.debug(`Runtime 后端更新检查失败: ${String(runtimeRes.reason)}`)
     }
   } finally {
     isTitlebarPolling.value = false
