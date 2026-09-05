@@ -1907,9 +1907,13 @@ class HSRConfig(ConfigBase):
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
-        self.Game_ForceResolution1920x1080 = ConfigItem(
-            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        ## 启动游戏时临时覆盖的注册表分辨率，空字符串表示不修改
+        self.Game_ForcedResolution = ConfigItem(
+            "Game",
+            "ForcedResolution",
+            "",
+            HSRForcedResolutionValidator(),
+            legacy_name="ForceResolution1920x1080",
         )
         ## 仅在原生兑换码内容变化时执行兑换
         self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
@@ -2748,6 +2752,22 @@ class OkwwConfigModeValidator(OptionsValidator):
 
     def correct(self, value: Any) -> Any:
         return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+
+
+class HSRForcedResolutionValidator(OptionsValidator):
+    """HSR 临时分辨率覆盖，空字符串表示不改注册表。
+
+    兼容旧版布尔开关 ForceResolution1920x1080：旧值 True 归一为 1920x1080，
+    False 归一为不修改。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(["", "1920x1080", "1280x720"])
+
+    def correct(self, value: Any) -> Any:
+        if isinstance(value, bool):
+            return "1920x1080" if value else ""
+        return super().correct(value)
 
 
 def _migrate_push_log_mode(data: dict) -> None:

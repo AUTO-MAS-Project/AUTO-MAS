@@ -16,9 +16,9 @@ export type HSRConfig_Game = {
      */
     WaitTime?: (number | null);
     /**
-     * 是否强制 1920x1080
+     * 临时覆盖的注册表分辨率，空字符串表示不修改
      */
-    ForceResolution1920x1080?: (boolean | null);
+    ForcedResolution?: (string | null);
     /**
      * 仅在兑换码变化时执行兑换
      */

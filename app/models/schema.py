@@ -1502,8 +1502,8 @@ class HSRConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
-    ForceResolution1920x1080: Optional[bool] = Field(
-        default=None, description="是否强制 1920x1080"
+    ForcedResolution: Optional[str] = Field(
+        default=None, description="临时覆盖的注册表分辨率，空字符串表示不修改"
     )
     RedeemCodesOnlyWhenChanged: Optional[bool] = Field(
         default=None, description="仅在兑换码变化时执行兑换"

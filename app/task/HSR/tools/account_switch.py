@@ -92,13 +92,21 @@ def resolve_game_executable_path(script_config: Any) -> Path:
     return path / HSR_GAME_PROCESS_NAME
 
 
-def _force_resolution_enabled(script_config: Any) -> bool:
-    """读取脚本页的临时 1920×1080 开关；旧配置缺字段时保持关闭。"""
+def _forced_resolution(script_config: Any) -> tuple[int, int] | None:
+    """读取脚本页选择的临时分辨率；选「不修改」或旧配置缺字段时返回 None。"""
 
     try:
-        return bool(script_config.get("Game", "ForceResolution1920x1080"))
+        raw = str(script_config.get("Game", "ForcedResolution") or "").strip()
     except (AttributeError, KeyError, TypeError, ValueError):
-        return False
+        return None
+    if not raw:
+        return None
+
+    width, _, height = raw.partition("x")
+    try:
+        return int(width), int(height)
+    except ValueError:
+        return None
 
 
 def prepare_game_resolution_if_needed(
@@ -108,23 +116,28 @@ def prepare_game_resolution_if_needed(
 ) -> None:
     """在 MAS 启动游戏前临时写入注册表分辨率覆盖。"""
 
-    if not is_game_management_enabled(script_config) or not _force_resolution_enabled(
-        script_config
-    ):
+    if not is_game_management_enabled(script_config):
+        return
+    resolution = _forced_resolution(script_config)
+    if resolution is None:
         return
 
     override = runtime.game_resolution_override
     if override is None:
-        override = HSRGameResolutionOverride()
+        override = HSRGameResolutionOverride(*resolution)
         first_apply = override.apply()
         runtime.game_resolution_override = override
     else:
         first_apply = override.apply()
 
+    # 用生效中的覆盖对象取分辨率，任务中途改配置也不会写出对不上的日志。
+    width, height = override.resolution
     if first_apply:
-        append_log("已临时把星铁注册表设为 1920×1080 窗口模式；游戏关闭后将恢复原值")
+        append_log(
+            f"已临时把星铁注册表设为 {width}×{height} 窗口模式；游戏关闭后将恢复原值"
+        )
     else:
-        append_log("重新启动游戏前已再次应用临时 1920×1080 窗口模式")
+        append_log(f"重新启动游戏前已再次应用临时 {width}×{height} 窗口模式")
 
 
 def restore_game_resolution_if_needed(
@@ -392,13 +405,11 @@ class HSRAccountSwitcher:
         self.runtime.game_exe_path = game_exe_path
         process_name = HSR_GAME_PROCESS_NAME
         if process_name and is_process_running(process_name):
-            if (
-                _force_resolution_enabled(self.script_config)
-                and self.runtime.game_resolution_override is None
-            ):
+            resolution = _forced_resolution(self.script_config)
+            if resolution is not None and self.runtime.game_resolution_override is None:
                 self._append_log(
                     "检测到游戏已在运行，本轮不会中途修改分辨率；"
-                    "请关闭游戏后重新执行以应用 1920×1080"
+                    f"请关闭游戏后重新执行以应用 {resolution[0]}×{resolution[1]}"
                 )
             self._append_log(f"检测到游戏进程已在运行（{process_name}），跳过重复启动")
             await self._wait_after_game_process_detected(process_name)

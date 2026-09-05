@@ -648,7 +648,7 @@ export default {
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
     seconds: 'seconds',
-    restoreOriginalRegistryValue: 'Restore the original registry value afterwards',
+    doNotChangeResolution: 'Do not change',
     scriptDirectControlIgnores:
       "Script-direct control ignores this user's account, sanity stages, and MAS task switches.",
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
@@ -1303,7 +1303,7 @@ export default {
     pathSelected: 'Path selected',
     invalidPath: 'Invalid path',
     updateAutomaticallyBeforeRun: 'Update automatically before a run',
-    run1920x1080WindowedMode: 'Run in 1920x1080 windowed mode',
+    temporaryWindowResolution: 'Temporary window resolution',
     runMode: 'Run mode',
     couldNotSaveRun: 'Could not save the run mode — try again',
     runTimeoutMinutes2: 'Run timeout (minutes)',

@@ -648,7 +648,7 @@ export default {
     clear: 'クリア',
     switchAccountDirectly: 'そのままアカウントを切り替える',
     seconds: '秒',
-    restoreOriginalRegistryValue: '終了後にレジストリの値を元に戻す',
+    doNotChangeResolution: '変更しない',
     scriptDirectControlIgnores:
       'スクリプト直接制御では、このユーザーのアカウント・理性ステージ・MAS のタスク設定は参照されません。',
     pathFolderHoldingScript: 'スクリプトの設定ファイルが置かれているフォルダのパス',
@@ -1286,7 +1286,7 @@ export default {
     pathSelected: 'パスを選択しました',
     invalidPath: 'パスが無効です',
     updateAutomaticallyBeforeRun: '実行前に自動更新',
-    run1920x1080WindowedMode: '実行時に 1920×1080 のウィンドウモードにする',
+    temporaryWindowResolution: '実行時の一時ウィンドウ解像度',
     runMode: '実行モード',
     couldNotSaveRun: '実行モードを保存できませんでした。もう一度お試しください',
     runTimeoutMinutes2: '実行のタイムアウト（分）',

@@ -224,20 +224,20 @@
                 <template #label>
                   <a-tooltip :title="t('edit.writtenCurrentUserS')">
                     <span class="form-label">
-                      {{ t('edit.run1920x1080WindowedMode') }}
+                      {{ t('edit.temporaryWindowResolution') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <div class="game-toggle-option">
-                  <a-switch
-                    :checked="hsrConfig.Game.ForceResolution1920x1080"
-                    @change="handleGameResolutionChange"
-                  />
-                  <a-typography-text type="secondary">{{
-                    t('edit.restoreOriginalRegistryValue')
-                  }}</a-typography-text>
-                </div>
+                <a-select
+                  :value="hsrConfig.Game.ForcedResolution"
+                  size="large"
+                  @change="handleGameResolutionChange"
+                >
+                  <a-select-option value="">{{ t('edit.doNotChangeResolution') }}</a-select-option>
+                  <a-select-option value="1920x1080">1920 × 1080</a-select-option>
+                  <a-select-option value="1280x720">1280 × 720</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :xs="24" :lg="12">
@@ -354,7 +354,7 @@ type HSRConfigData = {
   Info: HSRConfig_Info
   Game: HSRConfig_Game & {
     Enabled?: boolean | null
-    ForceResolution1920x1080?: boolean | null
+    ForcedResolution?: string | null
     RedeemCodesOnlyWhenChanged?: boolean | null
   }
   Run: HSRConfig_Run
@@ -386,7 +386,7 @@ const hsrConfig = reactive<HSRConfigData>({
     Enabled: true,
     Path: '',
     WaitTime: 60,
-    ForceResolution1920x1080: false,
+    ForcedResolution: '',
     RedeemCodesOnlyWhenChanged: true,
   },
   Run: {
@@ -444,10 +444,10 @@ const refreshScript = async () => {
         hsrConfig.Game.WaitTime = 60
       }
       if (
-        hsrConfig.Game.ForceResolution1920x1080 === undefined ||
-        hsrConfig.Game.ForceResolution1920x1080 === null
+        hsrConfig.Game.ForcedResolution === undefined ||
+        hsrConfig.Game.ForcedResolution === null
       ) {
-        hsrConfig.Game.ForceResolution1920x1080 = false
+        hsrConfig.Game.ForcedResolution = ''
       }
       if (
         hsrConfig.Game.RedeemCodesOnlyWhenChanged === undefined ||
@@ -506,9 +506,9 @@ const handleGameEnabledChange = async (value: boolean | string | number) => {
 
 const handleGameResolutionChange = async (value: boolean | string | number) => {
   if (isInitializing.value || isSaving.value) return
-  const enabled = Boolean(value)
-  hsrConfig.Game.ForceResolution1920x1080 = enabled
-  const saved = await handleChange('Game', 'ForceResolution1920x1080', enabled)
+  const resolution = String(value ?? '')
+  hsrConfig.Game.ForcedResolution = resolution
+  const saved = await handleChange('Game', 'ForcedResolution', resolution)
   if (!saved) await refreshScript()
 }
 

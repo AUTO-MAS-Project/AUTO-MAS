@@ -1,4 +1,4 @@
-"""临时把本地星穹铁道分辨率固定为 1920×1080，并可靠恢复注册表。"""
+"""临时把本地星穹铁道分辨率固定为指定值，并可靠恢复注册表。"""
 
 from __future__ import annotations
 
@@ -44,7 +44,14 @@ class _RegistryValueSnapshot:
 class HSRGameResolutionOverride:
     """在 MAS 启动游戏前临时写入分辨率，结束时恢复全部原值和类型。"""
 
-    def __init__(self, registry_module: Any | None = None) -> None:
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        registry_module: Any | None = None,
+    ) -> None:
+        self._width = width
+        self._height = height
         self._registry = registry_module if registry_module is not None else _winreg
         self._snapshots: dict[str, dict[str, _RegistryValueSnapshot]] = {}
         self._active = False
@@ -53,6 +60,10 @@ class HSRGameResolutionOverride:
     @property
     def active(self) -> bool:
         return self._active
+
+    @property
+    def resolution(self) -> tuple[int, int]:
+        return self._width, self._height
 
     @property
     def target_count(self) -> int:
@@ -148,8 +159,12 @@ class HSRGameResolutionOverride:
         access = registry.KEY_QUERY_VALUE | registry.KEY_SET_VALUE
         for path, snapshots in self._snapshots.items():
             with registry.OpenKey(registry.HKEY_CURRENT_USER, path, 0, access) as key:
-                registry.SetValueEx(key, _WIDTH_VALUE, 0, registry.REG_DWORD, 1920)
-                registry.SetValueEx(key, _HEIGHT_VALUE, 0, registry.REG_DWORD, 1080)
+                registry.SetValueEx(
+                    key, _WIDTH_VALUE, 0, registry.REG_DWORD, self._width
+                )
+                registry.SetValueEx(
+                    key, _HEIGHT_VALUE, 0, registry.REG_DWORD, self._height
+                )
                 registry.SetValueEx(key, _USE_NATIVE_VALUE, 0, registry.REG_DWORD, 0)
                 registry.SetValueEx(
                     key,
@@ -159,8 +174,9 @@ class HSRGameResolutionOverride:
                     self._pc_resolution_payload(snapshots),
                 )
 
-    @staticmethod
-    def _pc_resolution_payload(snapshots: dict[str, _RegistryValueSnapshot]) -> bytes:
+    def _pc_resolution_payload(
+        self, snapshots: dict[str, _RegistryValueSnapshot]
+    ) -> bytes:
         payload: dict[str, Any] = {}
         original = snapshots.get(_PC_RESOLUTION_VALUE)
         if original is not None and isinstance(original.value, bytes):
@@ -172,8 +188,8 @@ class HSRGameResolutionOverride:
             except (UnicodeDecodeError, json.JSONDecodeError):
                 pass
 
-        payload["width"] = 1920
-        payload["height"] = 1080
+        payload["width"] = self._width
+        payload["height"] = self._height
         payload["isFullScreen"] = False
         return (
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
