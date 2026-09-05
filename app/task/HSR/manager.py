@@ -468,11 +468,7 @@ class HSRManager(TaskExecuteBase):
             return f"HSR 原生配置不可用：{exc}"
 
         for user_config, user_name, assigned in daily_stage_checks:
-            stage_error = self._precheck_daily_stages(
-                script_config, user_config, user_name, assigned
-            )
-            if stage_error:
-                return stage_error
+            self._precheck_daily_stages(script_config, user_config, user_name, assigned)
 
         if sra_available:
             return self._validate_sra_user_credentials(
@@ -488,14 +484,17 @@ class HSRManager(TaskExecuteBase):
         user_config: HSRUserConfig,
         user_name: str,
         assigned: str,
-    ) -> str | None:
-        """把体力模块「引擎名下没配关卡」的跳过判定提前到预检。
+    ) -> None:
+        """把体力模块「引擎名下没配关卡」的跳过判定提前到预检，只提示不阻断。
 
         口径与 ``HSRAutoProxyTask._resolve_daily_runnable_parts`` 完全一致：
         SRA 开了「使用培养目标」或活动双倍、M7A 开了培养目标或任一活动时，副本由
-        脚本自己决定，缺主关卡是正常的，不拦。只在该引擎下主关卡和历战余响关卡
-        都没有——即体力模块无论哪天都会被整个跳过——时返回错误；只影响当天的
-        两种跳过（今天不需要历战余响、历战余响未配关卡）只写日志，不阻断其他模块。
+        脚本自己决定，缺主关卡是正常的，不提示。
+
+        这里刻意只写日志、不返回错误：``TaskSwitch.Daily`` 默认开启，新建用户在配
+        好副本之前天然处于「该引擎下一个关卡都没选」的状态，若据此中止整个任务，
+        一个还没配完的用户会连带让同脚本下其他用户全部跑不了。用户在编辑页已经
+        能看到「当前引擎下未选择副本」的提示，这里再在开跑前复述一次即可。
         """
 
         engine_name = ENGINE_DISPLAY_NAMES.get(assigned, assigned)
@@ -518,12 +517,13 @@ class HSRManager(TaskExecuteBase):
         daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(user_config)
 
         if not main_configured and not eow_configured:
-            return (
+            self._append_log(
                 f"用户「{user_name}」的体力模块由 {engine_name} 执行，"
-                f"但 {engine_name} 下未选择体力副本和历战余响关卡。"
+                f"但 {engine_name} 下未选择体力副本和历战余响关卡，体力模块本轮不会执行。"
                 "副本按执行引擎分别保存，切换引擎后需要重新选择；"
                 "或在该引擎中开启「培养目标」由脚本自行决定副本"
             )
+            return
         if not main_configured and not daily_eow_enabled:
             self._append_log(
                 f"用户「{user_name}」{engine_name} 下未选择体力副本，"
@@ -534,7 +534,6 @@ class HSRManager(TaskExecuteBase):
                 f"用户「{user_name}」本周需要历战余响，但 {engine_name} 下未选择"
                 "历战余响关卡，历战余响将跳过"
             )
-        return None
 
     @staticmethod
     def _is_executable_user(user_config) -> bool:
