@@ -1,4 +1,4 @@
-﻿import { exec, spawn } from 'child_process'
+import { spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -6,9 +6,11 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  type MenuItemConstructorOptions,
   nativeImage,
   nativeTheme,
   Notification,
+  powerMonitor,
   screen,
   shell,
   Tray,
@@ -20,27 +22,71 @@ import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
-  cleanupInitializationResources,
+  checkCriticalFilesViaRuntime,
+  getBackendService,
   getLocalApiEndpoint,
+  resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
+import {
+  canElectronExitImmediately,
+  canRequestRendererClose,
+  markForceQuitFailed,
+} from './quitCoordinationState'
+import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { createOkwwIssueReport } from './services/okwwIssueReportService'
+import { createOkNteIssueReport } from './services/okNteIssueReportService'
+import {
+  captureMainRendererCrash,
+  configureMainSentry,
+  recordMainCount,
+  recordMainStartup,
+  setMainTelemetryEnabled,
+} from './services/sentry'
+import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
+import {
+  PersistedRuntimeLaunchMode,
+  isPersistedRuntimeLaunchMode,
+  resolveRuntimeLaunchModeDetail,
+} from './services/runtime'
 import AdmZip = require('adm-zip')
+
+// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
 
 const logger = getLogger('主进程')
-const STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+M'
+const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
 interface ApiResult {
   code?: number
   message?: string
 }
+
+// 托盘菜单项类型
+type TrayAction = 'show' | 'hide' | 'startTask' | 'stopAll' | 'restartApp' | 'quit'
+
+interface TrayItem {
+  id: string
+  label: string
+  action: TrayAction
+  // 仅 action === 'startTask' 时有效：要启动的队列/脚本 ID
+  taskId?: string
+}
+
+// 默认托盘菜单项（与旧版硬编码菜单保持一致）
+const DEFAULT_TRAY_ITEMS: TrayItem[] = [
+  { id: 'show', label: '显示窗口', action: 'show' },
+  { id: 'hide', label: '隐藏窗口', action: 'hide' },
+  { id: 'quit', label: '退出', action: 'quit' },
+]
 
 function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -99,30 +145,31 @@ function registerStopAllTasksShortcut(): void {
   }
 }
 
-// 强制清理相关进程的函数
-async function forceKillRelatedProcesses(): Promise<void> {
-  try {
-    const { killAllRelatedProcesses } = await import('./utils/processManager')
-    await killAllRelatedProcesses()
-    logger.info('所有相关进程已清理')
-  } catch (error) {
-    logger.error(`清理进程时出错: ${error}`)
+let forceKillPromise: Promise<void> | null = null
 
-    // 备用清理方法
-    if (process.platform === 'win32') {
-      return new Promise(resolve => {
-        // 使用更简单的命令强制结束相关进程
-        exec(`taskkill /f /im python.exe`, error => {
-          if (error) {
-            logger.warn(`备用清理方法失败: ${error.message}`)
-          } else {
-            logger.info('备用清理方法执行成功')
-          }
-          resolve()
-        })
-      })
+// 强制清理也通过唯一 BackendService 队列执行，避免与 start/stop/restart 并发。
+// 仅限定范围强杀本应用相关进程，绝不使用 taskkill /im python.exe 全量误杀。
+async function forceKillRelatedProcesses(): Promise<void> {
+  if (forceKillPromise) return forceKillPromise
+  forceKillPromise = (async () => {
+    const backendService = getBackendService()
+
+    // Runtime 监督链路：只向监督进程发 shutdown（有上限，超时才 kill Runtime 进程本身），
+    // 后端进程树由 Runtime 的 Job Object 收走，不再走 processManager 的全局清理。
+    if (backendService.isRuntimeSupervised()) {
+      const result = await backendService.stopBackend()
+      if (!result.success) throw new Error(result.error || '未知错误')
+      logger.info('Runtime 监督的后端已关闭')
+      return
     }
-  }
+
+    const result = await backendService.forceStopBackend()
+    if (!result.success) throw new Error(result.error || '未知错误')
+    logger.info('所有相关进程已清理')
+  })().finally(() => {
+    forceKillPromise = null
+  })
+  return forceKillPromise
 }
 
 // 检查是否以管理员权限运行
@@ -169,8 +216,14 @@ function restartAsAdmin(): void {
 }
 
 let tray: Tray | null = null
-let isQuitting = false
+let coordinatedQuit = false
+let forceQuitInProgress = false
+let quitRequestInFlight = false
+let relaunchAfterQuit = false
+let quitFallbackTimer: NodeJS.Timeout | null = null
+const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
+let rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
@@ -183,6 +236,7 @@ interface AppConfig {
     location: string
     maximized: boolean
     size: string
+    TrayItems?: TrayItem[]
   }
   Start: {
     IfMinimizeDirectly: boolean
@@ -194,8 +248,12 @@ interface AppConfig {
   Function: {
     IfEnableTelemetry: boolean
   }
+  // Runtime 灰度开关的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
+  Runtime: {
+    LaunchMode: PersistedRuntimeLaunchMode
+  }
 
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // 默认配置
@@ -217,6 +275,9 @@ const defaultConfig: AppConfig = {
   },
   Function: {
     IfEnableTelemetry: true,
+  },
+  Runtime: {
+    LaunchMode: 'auto',
   },
 }
 
@@ -264,6 +325,8 @@ function saveConfig(config: AppConfig) {
   }
 }
 
+configureMainSentry(loadConfig().Function?.IfEnableTelemetry !== false)
+
 // 创建托盘
 function createTray() {
   if (tray) return
@@ -301,65 +364,116 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon)
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: '显示窗口',
-      click: () => {
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) {
-            mainWindow.restore()
-          }
-          mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      },
-    },
-    {
-      label: '隐藏窗口',
-      click: () => {
-        if (mainWindow) {
-          const currentConfig = loadConfig()
-          if (currentConfig.UI.IfToTray) {
-            mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-          }
-          mainWindow.hide()
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isQuitting = true
-        app.quit()
-      },
-    },
-  ])
-
-  tray.setContextMenu(contextMenu)
   tray.setToolTip('AUTO-MAS')
+
+  // 从配置读取托盘菜单项，未配置时回落到默认菜单
+  const currentConfig = loadConfig()
+  const trayItems = currentConfig.UI.TrayItems
+  const items = trayItems?.length ? trayItems : DEFAULT_TRAY_ITEMS
+  rebuildTrayMenu(items)
 
   // 双击托盘图标显示/隐藏窗口
   tray.on('double-click', () => {
-    if (mainWindow) {
-      const currentConfig = loadConfig()
-      if (mainWindow.isVisible()) {
-        if (currentConfig.UI.IfToTray) {
-          mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
-        }
-        mainWindow.hide()
-      } else {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore()
-        }
-        mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
-        mainWindow.show()
-        mainWindow.focus()
-      }
+    if (!mainWindow) return
+    if (mainWindow.isVisible()) {
+      hideMainWindow()
+    } else {
+      showMainWindow()
     }
   })
+}
+
+// 显示主窗口
+function showMainWindow(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+// 隐藏主窗口
+function hideMainWindow(): void {
+  if (!mainWindow) return
+  const currentConfig = loadConfig()
+  if (currentConfig.UI.IfToTray) {
+    mainWindow.setSkipTaskbar(true) // 隐藏任务栏图标
+  }
+  mainWindow.hide()
+}
+
+// 重建托盘右键菜单
+function rebuildTrayMenu(items: TrayItem[]): void {
+  if (!tray) return
+
+  // 空列表时回落到默认菜单，避免托盘右键菜单为空
+  const effectiveItems = items.length ? items : DEFAULT_TRAY_ITEMS
+
+  const menuItems: MenuItemConstructorOptions[] = []
+  effectiveItems.forEach((item, index) => {
+    // 在「退出」前插入分隔线，保持与旧版菜单一致的视觉区分
+    if (item.action === 'quit' && index > 0) {
+      menuItems.push({ type: 'separator' })
+    }
+    menuItems.push({
+      label: item.label,
+      click: () => handleTrayAction(item),
+    })
+  })
+
+  tray.setContextMenu(Menu.buildFromTemplate(menuItems))
+}
+
+// 执行托盘菜单项动作
+function handleTrayAction(item: TrayItem): void {
+  switch (item.action) {
+    case 'show':
+      showMainWindow()
+      break
+    case 'hide':
+      hideMainWindow()
+      break
+    case 'stopAll':
+      void stopAllTasksByShortcut()
+      break
+    case 'startTask':
+      // 一键启动指定任务：需携带任务 ID 转发给渲染进程，由调度台新建任务并启动
+      if (item.taskId) {
+        requestTrayAction('startTask', item.taskId, item.label)
+      } else {
+        logger.warn('托盘启动任务缺少 taskId，忽略')
+      }
+      break
+    case 'restartApp':
+    case 'quit':
+      // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
+      requestTrayAction(item.action === 'restartApp' ? 'restart' : 'quit')
+      break
+  }
+}
+
+// 请求渲染进程处理托盘动作：启动需读取任务 ID 新建调度台，退出/重启由渲染进程按运行状态弹统一确认窗
+function requestTrayAction(
+  action: 'quit' | 'restart' | 'startTask',
+  taskId?: string,
+  label?: string
+): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tray-action-request', { action, taskId, label })
+  } else {
+    // 无主窗口时无法弹确认窗/新建调度台，仅退出与重启可直接执行；
+    // renderer 不可用时 requestRendererClose 自动落入最终强杀兜底
+    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出/重启')
+    if (action === 'restart') {
+      relaunchAfterQuit = true
+      requestRendererClose('托盘重启（无主窗口）')
+    } else if (action === 'quit') {
+      requestRendererClose('托盘退出（无主窗口）')
+    }
+    // startTask 依赖渲染进程新建调度台，无窗口时忽略
+  }
 }
 
 // 销毁托盘
@@ -368,6 +482,99 @@ function destroyTray() {
     tray.destroy()
     tray = null
   }
+}
+
+// ==================== 协调退出 ====================
+
+function clearQuitFallback(): void {
+  if (quitFallbackTimer) {
+    clearTimeout(quitFallbackTimer)
+    quitFallbackTimer = null
+  }
+}
+
+function finishCoordinatedQuit(): void {
+  if (coordinatedQuit) return
+  coordinatedQuit = true
+  quitRequestInFlight = false
+  clearQuitFallback()
+  if (saveWindowStateTimeout) {
+    clearTimeout(saveWindowStateTimeout)
+    saveWindowStateTimeout = null
+  }
+  destroyTray()
+  if (relaunchAfterQuit) app.relaunch()
+  app.quit()
+}
+
+async function shouldPreserveBackendForDevMode(): Promise<boolean> {
+  // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
+  // 否则 Electron 退出后会遗留一个没人负责的监督进程。
+  if (getBackendService().isRuntimeSupervised()) return false
+
+  const backendDevMode = await getBackendService().getBackendDevMode()
+  if (backendDevMode !== null) return backendDevMode
+  return Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
+}
+
+async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
+  if (forceQuitInProgress || coordinatedQuit) return
+  forceQuitInProgress = true
+  clearQuitFallback()
+  logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
+
+  // Electron 开发进程可能复用由开发者单独启动的后端；renderer 失联时也不能误杀。
+  if (await shouldPreserveBackendForDevMode()) {
+    logger.info('开发模式最终兜底：保留后端，仅关闭 Electron 前端')
+    finishCoordinatedQuit()
+    return
+  }
+
+  try {
+    await forceKillRelatedProcesses()
+    // forceStopBackend 只有在 scoped taskkill 已复查全部 PID 后才返回 success。
+    finishCoordinatedQuit()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`最终强制清理失败: ${errorMsg}`)
+    const retryableState = markForceQuitFailed({
+      coordinatedQuit,
+      forceQuitInProgress,
+      quitRequestInFlight,
+    })
+    forceQuitInProgress = retryableState.forceQuitInProgress
+    quitRequestInFlight = retryableState.quitRequestInFlight
+    dialog.showErrorBox(
+      'AUTO-MAS 无法安全退出',
+      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
+    )
+    if ((!mainWindow || mainWindow.isDestroyed()) && app.isReady()) {
+      try {
+        createWindow()
+      } catch (windowError) {
+        const windowErrorMsg =
+          windowError instanceof Error ? windowError.message : String(windowError)
+        logger.error(`强制清理失败后重建窗口失败: ${windowErrorMsg}`)
+      }
+    }
+  }
+}
+
+function requestRendererClose(reason: string): void {
+  if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
+    return
+  const win = mainWindow
+  if (!win || win.isDestroyed()) {
+    void forceQuitAfterRendererTimeout(`${reason}（renderer 不可用）`)
+    return
+  }
+
+  quitRequestInFlight = true
+  logger.info(`请求 renderer 执行协调退出: ${reason}`)
+  win.webContents.send('app-close-requested')
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
+  }, RENDERER_QUIT_FALLBACK_MS)
 }
 
 // 更新托盘状态
@@ -533,6 +740,52 @@ function createWindow() {
   mainWindow = win
   lastWindowActivity = null
 
+  // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
+  let keepHiddenAfterRecovery = false
+
+  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
+  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
+  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const decision = decideRendererRecovery({
+      reason: details.reason,
+      exitCode: details.exitCode,
+      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+      isWindowDestroyed: win.isDestroyed(),
+      now: Date.now(),
+      previousCrashes: rendererCrashes,
+    })
+    rendererCrashes = decision.crashes
+
+    if (decision.action === 'ignore') {
+      logger.info(decision.detail)
+      return
+    }
+
+    logger.error(decision.detail)
+    captureMainRendererCrash({
+      reason: details.reason,
+      exitCode: details.exitCode,
+      crashCount: decision.crashCount,
+      action: decision.action,
+      detail: decision.detail,
+    })
+
+    if (decision.action === 'give-up') return
+
+    keepHiddenAfterRecovery = !win.isVisible()
+    win.webContents.reload()
+  })
+
+  win.on('unresponsive', () => {
+    logger.warn('渲染进程无响应（主线程卡住），等待其自行恢复')
+    recordMainCount('auto_mas.app.renderer.unresponsive', { component: 'electron-main' })
+  })
+
+  win.on('responsive', () => {
+    logger.info('渲染进程已恢复响应')
+  })
+
   // Electron 在最大化窗口最小化后会让 isMaximized() 返回 false，单独记住恢复目标状态。
   let restoreToMaximized = Boolean(config.UI.maximized)
   win.on('maximize', () => {
@@ -550,6 +803,14 @@ function createWindow() {
 
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
+    // 崩溃前窗口就在托盘里，恢复后保持隐藏，不要打断用户。
+    if (keepHiddenAfterRecovery) {
+      keepHiddenAfterRecovery = false
+      notifyWindowActivity('background')
+      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      return
+    }
+
     // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
     if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
@@ -648,15 +909,24 @@ function createWindow() {
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
     const currentConfig = loadConfig()
+    const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
-    if (!isQuitting && currentConfig.UI.IfToTray) {
+    if (!canElectronExitImmediately(quitState)) {
       event.preventDefault()
-      win.hide()
-      win.setSkipTaskbar(true)
-      updateTrayVisibility(currentConfig)
-      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      if (forceQuitInProgress) {
+        logger.warn('强制清理仍在进行，暂不允许窗口提前关闭')
+        return
+      }
+      if (currentConfig.UI.IfToTray && !quitRequestInFlight) {
+        win.hide()
+        win.setSkipTaskbar(true)
+        updateTrayVisibility(currentConfig)
+        logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      } else {
+        requestRendererClose('窗口关闭')
+      }
     } else {
-      // 立即保存窗口状态，不使用防抖
+      // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
       if (!win.isDestroyed()) {
         try {
           const config = loadConfig()
@@ -687,19 +957,6 @@ function createWindow() {
     screen.removeListener('display-removed', handleDisplayConfigurationChanged)
     // 置空模块级引用
     mainWindow = null
-
-    // 如果是正在退出，立即执行进程清理
-    if (isQuitting) {
-      logger.info('窗口关闭，执行最终清理')
-      setTimeout(async () => {
-        try {
-          await forceKillRelatedProcesses()
-        } catch {
-          logger.error('最终清理失败')
-        }
-        process.exit(0)
-      }, 100)
-    }
   })
 
   win.on('minimize', () => {
@@ -782,6 +1039,8 @@ function createWindow() {
 
   // 等待窗口准备完成后再初始化托盘和处理启动配置
   win.webContents.once('did-finish-load', () => {
+    recordMainStartup()
+
     // 重新加载配置以确保获取最新配置
     const currentConfig = loadConfig()
 
@@ -921,6 +1180,9 @@ ipcMain.handle('log:export', async () => {
       if (stat.isFile()) {
         zip.addLocalFile(filePath)
         logger.info(`添加文件到压缩包: ${file}`)
+      } else if (stat.isDirectory() && file === 'maaend-login') {
+        zip.addLocalFolder(filePath, 'maaend-login')
+        logger.info('添加 MaaEnd 登录错误截图到压缩包')
       }
     }
 
@@ -942,13 +1204,70 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
-ipcMain.handle('maaend:exportIssueReport', async () => {
+function registerIssueReportExporter(
+  ipcChannel: string,
+  title: string,
+  fileNamePrefix: string,
+  create: (
+    appRoot: string,
+    zipPath: string
+  ) => { success: boolean; message?: string; zipPath?: string; error?: string }
+): void {
+  ipcMain.handle(ipcChannel, async () => {
+    try {
+      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title,
+        defaultPath: `${fileNamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
+
+      return create(getAppRoot(), result.filePath)
+    } catch (error) {
+      logger.error(`${title}失败:`, error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+  })
+}
+
+registerIssueReportExporter(
+  'maaend:exportIssueReport',
+  '导出 MaaEnd 问题包',
+  'MaaEnd-logs',
+  createMaaEndIssueReport
+)
+registerIssueReportExporter(
+  'okww:exportIssueReport',
+  '导出 OK-WW 问题包',
+  'OK-WW-logs',
+  createOkwwIssueReport
+)
+registerIssueReportExporter(
+  'oknte:exportIssueReport',
+  '导出 OK-NTE 问题包',
+  'OK-NTE-logs',
+  createOkNteIssueReport
+)
+
+ipcMain.handle('data:backup', async () => {
+  let partialPath: string | undefined
+
   try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: '窗口未初始化' }
+    }
 
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出 MaaEnd 问题包',
-      defaultPath: `MaaEnd-logs-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+      title: '导出数据备份',
+      defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
       filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
     })
 
@@ -956,13 +1275,47 @@ ipcMain.handle('maaend:exportIssueReport', async () => {
       return { success: false, error: '用户取消' }
     }
 
-    return createMaaEndIssueReport(getAppRoot(), result.filePath)
-  } catch (error) {
-    logger.error('导出 MaaEnd 问题包失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
+    const zipPath = result.filePath
+    partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
+    const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
+      method: 'GET',
+    })
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+      )
     }
+    if (!response.body) {
+      throw new Error('后端未返回备份文件内容')
+    }
+
+    const file = await fs.promises.open(partialPath, 'wx')
+    try {
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        await file.write(chunk)
+      }
+    } finally {
+      await file.close()
+    }
+
+    await fs.promises.rename(partialPath, zipPath)
+    partialPath = undefined
+    logger.info(`数据备份已导出: ${zipPath}`)
+
+    return {
+      success: true,
+      message: '数据备份导出成功',
+      zipPath,
+    }
+  } catch (error) {
+    if (partialPath) {
+      await fs.promises.unlink(partialPath).catch(() => undefined)
+    }
+
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`导出数据备份失败: ${errorMsg}`)
+    return { success: false, error: errorMsg }
   }
 })
 
@@ -1029,10 +1382,7 @@ ipcMain.handle('window-maximize', () => {
 })
 
 ipcMain.handle('window-close', () => {
-  if (mainWindow) {
-    isQuitting = true
-    mainWindow.close()
-  }
+  requestRendererClose('renderer 请求关闭窗口')
 })
 
 ipcMain.handle('get-window-activity', () => {
@@ -1066,15 +1416,13 @@ ipcMain.handle('window-focus', () => {
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
-  isQuitting = true
-  app.relaunch()
-  app.exit(0)
+  relaunchAfterQuit = true
+  requestRendererClose('应用重启')
 })
 
-// 添加强制退出处理器
+// renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
-  isQuitting = true
-  app.quit()
+  finishCoordinatedQuit()
 })
 
 // 添加进程管理相关的 IPC 处理器
@@ -1163,9 +1511,16 @@ ipcMain.handle('check-environment', async () => {
   return checkEnvironment(appRoot)
 })
 
+// Runtime 上下文 - 初始化界面开局问一次：走没走 Runtime、回退日志文件、可用镜像键
+ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext())
+
 // 关键文件检查 - 每次都重新检查exe文件是否存在
 ipcMain.handle('check-critical-files', async () => {
   try {
+    // Runtime 链路不再有 environment/python 这套目录，改问 Runtime doctor 要受管布局。
+    const runtimeCheck = await checkCriticalFilesViaRuntime()
+    if (runtimeCheck) return runtimeCheck
+
     const appRoot = getAppRoot()
 
     // 检查Python可执行文件
@@ -1275,7 +1630,7 @@ ipcMain.handle('get-theme-info', async () => {
 })
 
 // 获取应用路径
-ipcMain.handle('get-app-path', async (_event, name: any) => {
+ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPath>[0]) => {
   try {
     return app.getPath(name)
   } catch {
@@ -1343,6 +1698,9 @@ ipcMain.handle('save-config', async (_event, config) => {
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
+      if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
+        rebuildTrayMenu(config.UI.TrayItems)
+      }
     }
   } catch (error) {
     logger.error('保存配置文件失败')
@@ -1365,6 +1723,29 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     return true
   } catch (error) {
     logger.error('更新托盘设置失败')
+    throw error
+  }
+})
+
+// 更新托盘自定义菜单项
+ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
+  try {
+    const currentConfig = loadConfig()
+    currentConfig.UI = { ...currentConfig.UI, TrayItems: trayItems }
+    saveConfig(currentConfig)
+
+    // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
+    try {
+      if (tray) destroyTray()
+      updateTrayVisibility(currentConfig)
+    } catch (refreshError) {
+      logger.error('刷新托盘菜单失败', refreshError)
+    }
+
+    logger.info('托盘菜单项已更新')
+    return true
+  } catch (error) {
+    logger.error('更新托盘菜单项失败')
     throw error
   }
 })
@@ -1396,6 +1777,7 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
 
     // 保存到前端配置文件
     saveConfig(currentConfig)
+    setMainTelemetryEnabled(currentConfig.Function?.IfEnableTelemetry !== false)
 
     // 更新托盘状态
     updateTrayVisibility(currentConfig)
@@ -1465,6 +1847,40 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   }
 })
 
+// Runtime 灰度开关：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
+ipcMain.handle('get-runtime-launch-mode', async () => {
+  try {
+    const config = loadConfig()
+    const persisted = isPersistedRuntimeLaunchMode(config.Runtime?.LaunchMode)
+      ? config.Runtime.LaunchMode
+      : 'auto'
+    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
+    return { persisted, mode: resolution.mode, source: resolution.source }
+  } catch (error) {
+    logger.error('读取 Runtime 启动方式失败', error)
+    return { persisted: 'auto', mode: 'off', source: 'default' }
+  }
+})
+
+ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
+  if (!isPersistedRuntimeLaunchMode(mode)) {
+    throw new TypeError(`不支持的 Runtime 启动方式: ${String(mode)}`)
+  }
+
+  try {
+    const config = loadConfig()
+    config.Runtime = { ...config.Runtime, LaunchMode: mode }
+    saveConfig(config)
+    logger.info(`Runtime 启动方式已设置为: ${mode}`)
+
+    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
+    return { persisted: mode, mode: resolution.mode, source: resolution.source }
+  } catch (error) {
+    logger.error('保存 Runtime 启动方式失败', error)
+    throw error
+  }
+})
+
 // 管理员权限相关
 ipcMain.handle('check-admin', () => {
   return isRunningAsAdmin()
@@ -1498,90 +1914,28 @@ app.on('second-instance', () => {
   }
 })
 
+// GPU 进程崩溃同样会让窗口变黑，此前同样不会在日志里留下任何痕迹。
+app.on('child-process-gone', (_event, details) => {
+  if (details.reason === 'clean-exit') return
+  logger.error(
+    `子进程异常退出: type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}`
+  )
+})
+
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
 })
 
-app.on('before-quit', async event => {
-  // 只处理一次，避免多重触发
-  if (!isQuitting) {
-    event.preventDefault()
-    isQuitting = true
-
-    logger.info('应用准备退出')
-
-    // 清理定时器
-    if (saveWindowStateTimeout) {
-      clearTimeout(saveWindowStateTimeout)
-      saveWindowStateTimeout = null
-    }
-
-    // 清理托盘
-    destroyTray()
-
-    // 清理初始化资源
-    try {
-      await cleanupInitializationResources()
-      logger.info('初始化资源清理完成')
-    } catch {
-      logger.error('资源清理失败')
-    }
-
-    // 立即开始强制清理，不等待优雅关闭
-    logger.info('开始强制清理所有相关进程')
-
-    try {
-      // 并行执行多种清理方法
-      const cleanupPromises = [
-        // 方法1: 使用我们的进程管理器
-        forceKillRelatedProcesses(),
-
-        // 方法2: 直接使用 taskkill 和 PowerShell 命令
-        new Promise<void>(resolve => {
-          if (process.platform === 'win32') {
-            const appRoot = getAppRoot()
-            const escapedAppRoot = appRoot.replace(/\\/g, '\\\\')
-            const commands = [
-              `taskkill /f /im python.exe`,
-              // 使用 PowerShell 代替 wmic
-              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${escapedAppRoot}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-            ]
-
-            let completed = 0
-            commands.forEach(cmd => {
-              exec(cmd, () => {
-                completed++
-                if (completed === commands.length) {
-                  resolve()
-                }
-              })
-            })
-
-            // 2秒超时
-            setTimeout(resolve, 2000)
-          } else {
-            resolve()
-          }
-        }),
-      ]
-
-      // 最多等待3秒
-      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
-      await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
-
-      logger.info('进程清理完成')
-    } catch {
-      logger.error('进程清理时出错')
-    }
-
-    logger.info('应用强制退出')
-
-    // 使用 process.exit 而不是 app.exit，更加强制
-    setTimeout(() => {
-      process.exit(0)
-    }, 500)
+app.on('before-quit', event => {
+  if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
+    return
   }
+  event.preventDefault()
+  if (forceQuitInProgress) {
+    logger.warn('强制清理仍在进行，暂不允许 Electron 提前退出')
+    return
+  }
+  requestRendererClose('Electron before-quit')
 })
 
 app.whenReady().then(async () => {
@@ -1609,14 +1963,23 @@ app.whenReady().then(async () => {
     logger.info('应用以管理员权限运行')
   }
 
+  powerMonitor.on('resume', () => {
+    logger.info('主进程检测到系统恢复，通知 renderer 检查后端连接')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('system-resumed')
+    }
+  })
+
   createWindow()
 })
 
-app.on('window-all-closed', async () => {
+app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    isQuitting = true
-
-    app.quit()
+    if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
+      app.quit()
+    } else if (!forceQuitInProgress) {
+      void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
+    }
   }
 })
 

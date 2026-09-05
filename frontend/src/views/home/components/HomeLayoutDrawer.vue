@@ -1,7 +1,7 @@
 <template>
   <a-drawer
     :open="open"
-    title="自定义首页"
+    :title="t('home.layout.title')"
     :width="360"
     :mask="false"
     :root-style="drawerRootStyle"
@@ -24,8 +24,8 @@
             class="home-layout-drag-handle"
             role="button"
             tabindex="0"
-            aria-label="拖拽排序"
-            title="拖拽排序"
+            :aria-label="t('home.layout.drag')"
+            :title="t('home.layout.drag')"
           >
             <MenuOutlined />
           </span>
@@ -33,16 +33,29 @@
           <a-switch
             size="small"
             :checked="module.visible"
-            :aria-label="`${module.title}显示状态`"
+            :aria-label="t('home.layout.visibility', { name: module.title })"
             @change="onVisibilityChange(module.key, $event)"
           />
         </div>
       </template>
     </draggable>
+
+    <a-divider style="margin: 16px 0" />
+
+    <div class="home-layout-extra">
+      <span class="home-layout-title">{{ t('home.layout.scrollHint') }}</span>
+      <a-switch
+        size="small"
+        :checked="!scrollHintHidden"
+        :aria-label="t('home.layout.scrollHintVisibility')"
+        @change="emit('scroll-hint-change', !$event)"
+      />
+    </div>
   </a-drawer>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { CSSProperties } from 'vue'
 import { MenuOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -55,7 +68,10 @@ defineOptions({
 interface Props {
   open: boolean
   modules: HomeModuleDescriptor[]
+  scrollHintHidden: boolean
 }
+
+const { t } = useI18n()
 
 defineProps<Props>()
 
@@ -68,6 +84,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
   reorder: [order: HomeModuleKey[]]
   'visibility-change': [key: HomeModuleKey, visible: boolean]
+  'scroll-hint-change': [hidden: boolean]
 }>()
 
 const onReorder = (modules: HomeModuleDescriptor[]) => {
@@ -137,5 +154,15 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
 
 .home-layout-ghost {
   opacity: 0.35;
+}
+
+.home-layout-extra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
 }
 </style>

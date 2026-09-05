@@ -40,6 +40,10 @@ export type MaaUserConfig_Task = {
      */
     IfDepotMaintain?: (boolean | null);
     /**
+     * 绿票商店
+     */
+    IfGreenTicketStore?: (boolean | null);
+    /**
      * 活动期间优先刷活动关
      */
     IfActivityFirst?: (boolean | null);
@@ -47,6 +51,10 @@ export type MaaUserConfig_Task = {
      * 优先刷取的活动关卡序号
      */
     ActivityStageIndex?: (number | null);
+    /**
+     * 活动关优先任务吃理智药数量
+     */
+    ActivityMedicineNumb?: (number | null);
     /**
      * 库存保持计划 JSON
      */

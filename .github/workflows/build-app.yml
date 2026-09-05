@@ -28,6 +28,13 @@ permissions:
   contents: write
   actions: write
 
+env:
+  # AUTO-MAS-Project/AUTO-MAS-Runtime 的发布版本，随桌面安装包一起分发。钉死具体版本、不追
+  # latest：Runtime 有自己的发布节奏，本仓库的改动不应该在没有联调的情况下自动带出一个新
+  # Runtime。Runtime 不自更新，只随这里构建的安装包整体升级；本仓库如有依赖 Runtime 新行为
+  # 的改动（T13 系列），必须等 Runtime 一侧先发布对应版本，再手动把这个版本号提上去。
+  RUNTIME_VERSION: v0.1.1
+
 jobs:
 
   build:
@@ -42,32 +49,123 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: '20'
 
+      - name: 下载并校验 Runtime 可执行文件
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $runtimeDir = Join-Path "${{ github.workspace }}" 'runtime'
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+          $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
+
+          gh release download $env:RUNTIME_VERSION `
+            -R AUTO-MAS-Project/AUTO-MAS-Runtime `
+            -D $runtimeDir `
+            -p $exeName `
+            -p 'SHA256SUMS.txt' `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+          }
+
+          Push-Location $runtimeDir
+          try {
+            $sumsLine = Select-String -Path 'SHA256SUMS.txt' -Pattern ([regex]::Escape($exeName)) |
+              Select-Object -First 1
+            if (-not $sumsLine) {
+              throw "SHA256SUMS.txt 中找不到 $exeName 对应的记录"
+            }
+            $expectedHash = ($sumsLine.Line -split '\s+')[0].ToUpperInvariant()
+            $actualHash = (Get-FileHash -Path $exeName -Algorithm SHA256).Hash.ToUpperInvariant()
+
+            Write-Host "期望哈希: $expectedHash"
+            Write-Host "实际哈希: $actualHash"
+
+            if ($actualHash -ne $expectedHash) {
+              throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配，可能下载损坏或被篡改"
+            }
+
+            # 校验通过后改成稳定文件名，Electron 侧固定按 auto-mas-runtime.exe 定位
+            # （见 frontend/electron/services/runtime/launchConfig.ts）。
+            Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
+            Remove-Item 'SHA256SUMS.txt'
+            Write-Host "Runtime $env:RUNTIME_VERSION 校验通过：$runtimeDir\auto-mas-runtime.exe"
+          } finally {
+            Pop-Location
+          }
+        shell: pwsh
+
+      - name: 校验 Runtime 后台更新协议
+        shell: pwsh
+        run: |
+          $runtimeExe = Join-Path '${{ github.workspace }}' 'runtime/auto-mas-runtime.exe'
+          foreach ($probe in @(
+            @{ Arguments = @('workspace', 'stage', '--version', 'invalid') },
+            @{ Arguments = @('bootstrap', '--version', 'invalid', '--if-needed') }
+          )) {
+            $probeArguments = $probe.Arguments
+            $output = @(& $runtimeExe --app-root $env:RUNNER_TEMP --output ndjson --protocol 1 @probeArguments)
+            $exitCode = $LASTEXITCODE
+            $result = $output | ForEach-Object { $_ | ConvertFrom-Json } |
+              Where-Object { $_.type -eq 'result' } | Select-Object -Last 1
+            if ($exitCode -ne 2 -or -not $result -or $result.code -ne 'INVALID_VERSION') {
+              throw 'RUNTIME_VERSION 必须指向包含 T13.13 后台更新能力的已发布 Runtime。'
+            }
+          }
+          exit 0
+
       - name: 构建应用程序
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
           cd frontend
           corepack enable
           corepack prepare yarn@4.9.1 --activate
           yarn install
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
+            throw '缺少 GitHub Actions secret: SENTRY_AUTH_TOKEN'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_ORG)) {
+            throw '缺少 GitHub Actions variable: SENTRY_ORG'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_PROJECT)) {
+            throw '缺少 GitHub Actions variable: SENTRY_PROJECT'
+          }
           yarn build
           Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
         shell: pwsh
 
+      - name: 放入 Runtime 可执行文件
+        run: |
+          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
+          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
+          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
+          # 两者会一起带上它。
+          $target = 'frontend\dist\win-unpacked\resources'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
+        shell: pwsh
+
       - name: 上传未签名主程序
         id: upload-unsigned-main-program
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with: 
             name: AUTO-MAS
             path: AUTO-MAS.exe
 
       - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@v2.0
+        uses: signpath/github-action-submit-signing-request@v2.3
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
@@ -197,7 +295,7 @@ jobs:
 
       - name: 缓存完整环境
         id: cache-environment
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: environment.zip
           key: environment-zip
@@ -219,7 +317,7 @@ jobs:
 
       - name: 上传未签名安装程序
         id: upload-unsigned-setup-program
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: AUTO-MAS-Unsigned-Setup
           path: |
@@ -227,7 +325,7 @@ jobs:
             AUTO-MAS-Full-Setup.exe
 
       - name: 签名安装程序
-        uses: signpath/github-action-submit-signing-request@v2.0
+        uses: signpath/github-action-submit-signing-request@v2.3
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
@@ -249,7 +347,7 @@ jobs:
         shell: pwsh
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: build-artifacts
           path: AUTO-MAS-*-x64.zip
@@ -261,10 +359,10 @@ jobs:
     needs: build
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           name: build-artifacts
           path: artifacts
@@ -289,7 +387,7 @@ jobs:
           git push origin "$TAG_NAME"
 
       - name: 发布发行版
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
@@ -324,6 +422,44 @@ jobs:
           files: artifacts/*
           prerelease: ${{ needs.build.outputs.is_prerelease }}
 
+      - name: 标记 Sentry 生产部署
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if (-not $env:SENTRY_AUTH_TOKEN -or -not $env:SENTRY_ORG -or -not $env:SENTRY_PROJECT) {
+            Write-Warning '缺少 Sentry 配置，跳过部署登记。'
+            exit 0
+          }
+          $releaseVersion = "auto-mas@$env:VERSION_TAG"
+          $encodedOrg = [Uri]::EscapeDataString($env:SENTRY_ORG)
+          $encodedRelease = [Uri]::EscapeDataString($releaseVersion)
+          $releaseUrl = "https://github.com/$env:REPOSITORY/releases/tag/$env:VERSION_TAG"
+          $payload = @{
+            environment = 'production'
+            name = "GitHub Release $env:VERSION_TAG"
+            url = $releaseUrl
+            projects = @($env:SENTRY_PROJECT)
+          } | ConvertTo-Json
+          $headers = @{
+            Authorization = "Bearer $env:SENTRY_AUTH_TOKEN"
+          }
+          # 登记部署失败不应影响已经发布的 Release。
+          try {
+            Invoke-RestMethod `
+              -Method Post `
+              -Uri "https://sentry.io/api/0/organizations/$encodedOrg/releases/$encodedRelease/deploys/" `
+              -Headers $headers `
+              -ContentType 'application/json' `
+              -Body $payload | Out-Null
+          } catch {
+            Write-Warning "登记 Sentry 部署失败，不影响发布：$($_.Exception.Message)"
+          }
+        shell: pwsh
+
   cnb:
     name: 发布 CNB 发行版
     runs-on: ubuntu-latest
@@ -332,10 +468,10 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.x'
 
@@ -365,7 +501,7 @@ jobs:
 
     steps:
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           name: build-artifacts
           path: .

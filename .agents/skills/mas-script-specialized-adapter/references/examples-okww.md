@@ -1,129 +1,75 @@
-# 案例：OK-WW / Okww 专项适配
+# 案例：Okww（鸣潮 / OK-WW）
 
-本案例描述当前 `dev` 的 Okww 实现。维护 Okww 或复用 ok-script 架构时，以代码和专项测试为准，不沿用旧版本的表单化配置编辑器方案。
+Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -e` 启动，配置方案是两条并行且都有效的路（对照表见 [SKILL.md](../SKILL.md#ok-script-家族两种并行范式)）。Okww 走**固定字段 + 仅 ScriptConfig 遮罩调本体 GUI**；不要给 Okww 加 OkNte 那套 REST 动态表单，也不要用 Okww 标准判 OkNte 违规。
 
-## 架构事实
+具体字段、路径、函数名现场读 `app/task/Okww/` 确认。本文件只记推不出来的部分。
 
-| 维度 | 当前实现 |
+## 产品决策（读代码看不出为什么）
+
+- **只支持官方资源与官方启动器，不接管 WeGame 侧**。Electron 发现、前端保存、后端解析都不得回退到 WeGame 路径。这是产品决定，不是尚未实现。
+- 前端只存**官方启动器完整路径**，由后端读启动器缓存解析真实客户端 exe——**启动器路径与游戏进程路径职责分离**，不要在前端直接存客户端路径。
+- MAS 任务只开放 `1`（DailyTask）与 `7`（MultiAccountDailyTask）；旧值 `2` 读取时纠正为 `7`。
+
+## 三态来源 + 快速配置覆盖层
+
+`Info.Mode` 三态只决定**脚本配置 owner**：
+
+| 来源 | 配置归属 |
 | --- | --- |
-| 上游形态 | ok-script 发行物 `ok-ww.exe`，本体提供 GUI |
-| 自动运行 | `ok-ww.exe -t N -e` |
-| MAS 任务 | `1 = DailyTask`、`7 = MultiAccountDailyTask`；旧值 `2` 自动纠正为 `7` |
-| 配置 UI | `ScriptConfig.py` 无参数启动本体 GUI，前端用 WebSocket 遮罩会话控制保存 |
-| 配置归属 | 简洁：`data/{scriptId}/Default/ConfigFile`；详细：`data/{scriptId}/{userId}/ConfigFile` |
-| 运行时配置 | 配置副本写入 `data/apps/ok-ww/working/configs`，任务结束后恢复原目录 |
-| 路径发现 | Electron 从 Windows 卸载信息发现 ok-ww，并发现鸣潮官方启动器或 WeGame |
-| 游戏控制 | `Game.Enabled` 为总开关：任务前启动或接管，结束、失败和异常时关闭 |
-| 判态 | 内置 fatal 日志 + `Window closed exit_event.is_set` 成功标记 |
+| 脚本 | `data/{scriptId}/Default/ConfigFile`，所有用户共用 |
+| 用户 | `data/{scriptId}/{userId}/ConfigFile`，用户独立 |
+| 直控 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置** |
 
-## 关键调用链
+`Info.IfQuickConfig` 是**独立覆盖层**，不是第四种来源：开启时仅用快速配置面板的高频字段覆盖当前脚本配置；关闭时使用来源配置中的完整任务设置。
 
-### 自动代理
+旧值 `简洁` / `详细` 读取时迁移为 `脚本` / `用户`，**迁移不得改变用户实际生效的来源**。
 
-1. `OkwwManager.check()` 校验模式和用户列表。
-2. `OkwwManager.prepare()` 锁定脚本配置、复制用户配置、备份 OK-WW working 配置目录。
-3. `AutoProxyTask.check()` 校验根目录、游戏启动器、次数限制，并初始化用户配置目录。
-4. `AutoProxyTask.set_okww()`：
-   - 设置 `app.json` 的 `auto_start`、`current_profile`、`update_method`。
-   - 将 MAS 配置原子同步到 working 配置目录。
-   - 覆盖 `DailyTask.json` 的 MAS 管理字段和 `Basic Options.json` 的退出设置。
-5. 使用 `-t {TaskIndex} -e` 启动，并监控 `ok-script.log`。
-6. `final_task()` 保存历史日志和用户运行结果；Manager 解锁、写回用户数据并恢复 working 配置。
+配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；直控不得为了"字段齐全"复制脚本全量配置。
 
-### 配置会话
+## 哨兵契约
 
-- 脚本列表的“配置 ok-ww”以脚本 ID 启动 `ScriptConfig`，目标为共享 `Default` 配置。
-- 用户编辑页以用户 ID 启动 `ScriptConfig`，按 `Info.Mode` 选择共享或用户独立配置。
-- `ScriptConfigTask` 启动前将 MAS 配置复制到 working 目录；用户点击“保存设置”后停止任务，再将 working 配置原子复制回 MAS 目录。
-- Manager 始终负责备份和恢复 OK-WW 原 working 配置，避免配置会话污染本体原状态。
-- 前端遮罩必须处理启动失败、WebSocket 错误、任务完成、主动保存、超时和组件卸载；清理 UI 订阅不能替代停止后端任务。
+有效 ok-ww 根目录必须**同时**存在 `ok-ww.exe` 与 `data/apps/ok-ww/app.json`。
 
-## 路径契约
+**只校验 exe 会把不完整安装保存为看似有效的路径**——自动发现、手动选择、前端保存、后端 `check()` 四处必须用同一组哨兵。
 
-### ok-ww 根目录
+## 判态与清理
 
-有效根目录必须同时存在：
+判态顺序：内置 fatal 日志 → `Window closed exit_event.is_set` 视为成功 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
 
-```text
-ok-ww.exe
-data/apps/ok-ww/app.json
-```
+进程清理至少覆盖：ProcessManager 管理的进程、`ok-ww.exe`、`data/apps/ok-ww/python/pythonw.exe`、`Game.Enabled` 时解析出的客户端进程。**每步独立捕获异常**，一个失败不阻断后续。
 
-自动发现、手动选择、前端保存和后端 `check()` 必须使用同一组哨兵。只校验 exe 会把不完整安装保存为看似有效的路径。
+## 账号切换（MAS 强制切号）
 
-### 鸣潮启动器
+游戏配置区 `Game.AccountSwitch`（是/否，默认否）控制游戏启动后是否由 MAS 按
+用户手机号后 4 位强制切换登录账号；开关依赖 `Game.Enabled`（未启用游戏配置
+则不生效），用户未填写手机号时跳过不切换。
 
-- 前端保存 `launcher.exe` 或 `wegame.exe` 的完整路径。
-- 官方启动器由后端读取 `kr_game_cache/kr_game_temp.bin`，解析实际 `Client-Win64-Shipping.exe`。
-- WeGame 由后端从卸载信息解析实际客户端路径。
-- 启动前若客户端已运行，只接管进程，不重复启动。
+OCR 走共享工具 `app/tools/ocr.py`（用法见 [ocr-tools.md](./ocr-tools.md)），
+交互层在 `app/task/Okww/tools/account_switch.py`：
 
-## 配置与运行字段
+- 判据要点：弹窗「确认登出」按钮按文本精确定位，**排除说明文本「确认登出账号？」**，
+  且不认裸「退出」（主菜单右侧有退出游戏按钮）。
+- 切换失败留 OCR 文本 + 原图截图到 `debug/okww-account-switch/`，经
+  `handle_pre_okww_error` 走调度台报错 + 通知 + 重试，不回退静默。
 
-### 用户配置
+## 陷阱
 
-- `Info.Mode`：`简洁` / `详细`
-- `Info.Resource`：`官服` / `国际服`，映射到 OK-WW `China` / `Global` profile
-- `Task.TaskIndex`：仅 `1` / `7`
-- DailyTask 高频字段：体力用途、无音区/凝素序号、材料、梦魇巢穴、附加任务
-- `Info.IfScriptBeforeTask` / `Info.IfScriptAfterTask`：复用 General 的前后脚本能力
-
-### 脚本配置
-
-- `Info.RootPath`
-- `Game.Enabled`、`Game.Path`、`Game.Arguments`、`Game.WaitTime`
-- `Run.ProxyTimesLimit`、`Run.RunTimesLimit`、`Run.RunTimeLimit`
-
-审查时以 UI 与运行时实际消费字段为准。`LaunchBeforeTask` 等仅存在于兼容 config/schema、但未被当前 UI 或任务逻辑读取的字段，不得写成现行功能；移除前仍需评估旧配置兼容。
-
-## 日志与进程
-
-判态顺序：
-
-1. 命中内置 fatal 日志，标记异常。
-2. 命中 `Window closed exit_event.is_set`，标记成功。
-3. 未见成功标记而进程退出，标记异常。
-4. 日志长期无变化超过 `RunTimeLimit`，标记超时。
-
-进程清理至少覆盖：
-
-- ProcessManager 管理的进程
-- `ok-ww.exe`
-- `data/apps/ok-ww/python/pythonw.exe`
-- `Game.Enabled` 时解析出的鸣潮客户端进程
-
-每个清理操作独立捕获异常，避免一个失败阻断后续清理。
-
-## 实现规范（Okww 必遵守）
-
-- 所有 RootPath 派生路径集中在 Okww 任务模块；前端只保留选择时必需的哨兵常量。
-- JSON 更新和目录同步使用临时路径 + `replace` / `rename`。
-- `final_task` 与 `on_crash` 共用 Manager 的 working 配置恢复逻辑。
-- 生命周期后期才可用的属性在 `__init__` 显式声明为 Optional；不要用 `hasattr` 代替状态建模。
-- 脚本配置锁必须先解锁，再将任务副本写回 `UserData` 并保存。
-- 配置会话只有后端任务结束后才能提示“已保存”。
-- 手动路径选择失败时恢复旧值，并显示可操作的错误原因。
-- 不添加 `config_schema.py`、Okww 配置 REST API 或前端 JSON 表单编辑器，除非产品明确重新采用该方案。
-- 不手改 OpenAPI 生成文件。
+- **兼容字段不等于现行功能**：`LaunchBeforeTask` 等仅存在于 config/schema、未被当前 UI 或任务逻辑读取的字段，不得写成现行功能；移除前仍要评估旧配置兼容。`Game.Enabled` 才是当前的游戏启停总开关。
+- 客户端已运行时只接管进程，不重复启动。
+- **配置会话只有后端任务结束后才能提示"已保存"**；清理 UI 订阅不能替代停止后端任务。遮罩必须处理启动失败、WebSocket 错误、任务完成、主动保存、超时、组件卸载六条路径。
+- Manager 始终负责备份与恢复本体原 working 配置，避免配置会话污染脚本原状态。
+- 手动路径选择失败时恢复旧值并显示可操作原因。
+- 所有 RootPath 派生路径集中在任务模块，前端只留选择时必需的哨兵常量。
 
 ## 审查清单
 
-- [ ] `OkwwManager` 同时支持 `AutoProxy` 与 `ScriptConfig`
-- [ ] 脚本级和用户级配置入口传入正确目标 ID
-- [ ] 简洁/详细模式映射到正确配置 owner
-- [ ] 自动发现与手动选择校验同一组 ok-ww 哨兵
-- [ ] 启动器路径与实际游戏进程路径职责分离
+- [ ] Manager 同时支持 `AutoProxy` 与 `ScriptConfig`；脚本级与用户级入口传对目标 ID
+- [ ] 三态映射到正确 owner；旧简洁/详细迁移不改变实际来源
+- [ ] 快速配置开关真实控制是否覆盖高频字段
+- [ ] 直控直接读脚本原配置，任务前后保留原配置快照
+- [ ] 自动发现与手动选择校验同一组哨兵
+- [ ] 启动器路径与客户端进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile
-- [ ] working 配置在成功、失败、取消、异常时都能恢复
-- [ ] 配置会话离开页面或超时时会停止任务并释放锁
-- [ ] schema、前端表单与运行时字段没有虚假功能分支
-- [ ] 成功日志、进程提前退出和超时均有专项测试
-- [ ] 手动路径选择与配置会话生命周期有前端测试
-
-## 最小验证
-
-```powershell
-python -m pytest tests/test_okww_game_launch.py tests/test_okww_launcher_config.py tests/test_okww_user_config_init.py -q
-cd frontend
-yarn test okwwPathDiscoveryService.test.ts
-```
+- [ ] working 配置在成功、失败、取消、异常四条路径都恢复
+- [ ] 配置会话离开页面或超时会停止任务并释放锁
+- [ ] schema、表单、运行时三者无虚假功能分支

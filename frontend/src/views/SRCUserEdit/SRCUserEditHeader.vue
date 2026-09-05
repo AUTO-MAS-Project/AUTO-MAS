@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
+          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/src`" class="breadcrumb-link">
@@ -17,32 +17,46 @@
     </div>
 
     <a-space size="middle">
-      <a-button v-if="userMode !== '简洁' && !showSrcConfigMask" type="primary" ghost size="large"
-        :loading="srcConfigLoading" @click="$emit('handleSRCConfig')">
+      <a-button
+        v-if="userMode !== '脚本' && !showSrcConfigMask"
+        type="primary"
+        ghost
+        size="large"
+        :loading="srcConfigLoading"
+        @click="$emit('handleSRCConfig')"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
-        SRC配置
+        {{ t('edit.srcConfiguration') }}
       </a-button>
-      <a-button v-if="userMode !== '简洁' && showSrcConfigMask" type="default" size="large" disabled
-        style="color: #52c41a; border-color: #52c41a">
+      <a-button
+        v-if="userMode !== '脚本' && showSrcConfigMask"
+        type="default"
+        size="large"
+        disabled
+        style="color: #52c41a; border-color: #52c41a"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
-        正在配置
+        {{ t('edit.configuring') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 defineProps<{
   scriptId: string

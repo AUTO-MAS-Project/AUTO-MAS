@@ -23,9 +23,9 @@
 
 from fastapi import APIRouter, Body
 
+from app.api.ws_command import ws_command
 from app.core import Config
 from app.models.schema import *
-from app.api.ws_command import ws_command
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 
@@ -54,7 +54,7 @@ async def add_queue() -> QueueCreateOut:
     return QueueCreateOut(queueId=str(uid), data=data)
 
 
-@ws_command("queue.get")
+@ws_command("queue.get", params=QueueGetIn)
 @router.post(
     "/get",
     tags=["Get"],
@@ -262,8 +262,18 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
 )
 async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
 
-    uid, config = await Config.add_queue_item(item.queueId)
-    data = QueueItem(**(await config.toDict()))
+    try:
+        uid, config = await Config.add_queue_item(item.queueId)
+        data = QueueItem(**(await config.toDict()))
+    except Exception as e:
+        # 循环运行中的队列会拒绝增删队列项，原因要带回给前端提示
+        return QueueItemCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            queueItemId="",
+            data=QueueItem(**{}),
+        )
     return QueueItemCreateOut(queueItemId=str(uid), data=data)
 
 

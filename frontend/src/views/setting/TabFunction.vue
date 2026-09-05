@@ -1,14 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
 
-const {
-  settings,
-  historyRetentionOptions,
-  voiceTypeOptions,
-  handleSettingChange,
-} = defineProps<{
+const { t } = useI18n()
+
+const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange } = defineProps<{
   settings: GlobalConfig
   historyRetentionOptions: { label: string; value: number }[]
   voiceTypeOptions: { label: string; value: string }[]
@@ -19,37 +17,46 @@ const {
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>启动配置</h3>
+        <h3>{{ t('setting.func.startupSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">开机自启</span>
-              <a-tooltip title="在系统启动时自动启动应用">
+              <span class="form-label">{{ t('setting.func.autoStart') }}</span>
+              <a-tooltip :title="t('setting.func.autoStartTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Start?.IfSelfStart" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)">
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+            <a-select
+              :value="settings.Start?.IfSelfStart"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">启动后直接最小化</span>
-              <a-tooltip title="启动后直接最小化">
+              <span class="form-label">{{ t('setting.func.startMinimized') }}</span>
+              <a-tooltip :title="t('setting.func.startMinimizedTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Start?.IfMinimizeDirectly" size="large" style="width: 100%" @change="
-              (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
-            ">
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+            <a-select
+              :value="settings.Start?.IfMinimizeDirectly"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
+              "
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -58,50 +65,63 @@ const {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>功能设置</h3>
+        <h3>{{ t('setting.func.featureSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">历史记录保留时间</span>
-              <a-tooltip title="超过该时间的历史记录将被自动清理">
+              <span class="form-label">{{ t('setting.func.retention') }}</span>
+              <a-tooltip :title="t('setting.func.retentionTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.HistoryRetentionTime" :options="historyRetentionOptions" size="large"
-              style="width: 100%" @change="
+            <a-select
+              :value="settings.Function?.HistoryRetentionTime"
+              :options="historyRetentionOptions"
+              size="large"
+              style="width: 100%"
+              @change="
                 (value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)
-              " />
+              "
+            />
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">静默模式</span>
-              <a-tooltip title="启用后将各代理窗口置于后台运行，减少对前台的干扰。反馈问题、故障排查时，请关闭此功能以便检查相关窗口情况。">
+              <span class="form-label">{{ t('setting.func.silent') }}</span>
+              <a-tooltip :title="t('setting.func.silentTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfSilence" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)">
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+            <a-select
+              :value="settings.Function?.IfSilence"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">运行时阻止系统休眠</span>
-              <a-tooltip title="程序运行时阻止系统进入休眠状态，不影响电脑进入熄屏">
+              <span class="form-label">{{ t('setting.func.preventSleep') }}</span>
+              <a-tooltip :title="t('setting.func.preventSleepTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfAllowSleep" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)">
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+            <a-select
+              :value="settings.Function?.IfAllowSleep"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -110,38 +130,56 @@ const {
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">匿名遥测</span>
-              <a-tooltip title="发送经脱敏的错误与性能数据，帮助定位问题；关闭后前后端均不再发送">
+              <span class="form-label">{{ t('setting.func.telemetry') }}</span>
+              <a-tooltip :title="t('setting.func.telemetryTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch :checked="settings.Function?.IfEnableTelemetry !== false" checked-children="已开启"
-              un-checked-children="已关闭" style="width: auto; align-self: flex-start"
-              @change="(checked: boolean) => handleSettingChange('Function', 'IfEnableTelemetry', checked)" />
+            <a-select
+              :value="settings.Function?.IfEnableTelemetry !== false"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Function', 'IfEnableTelemetry', checked)
+              "
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">托管Bilibili游戏隐私政策</span>
+              <span class="form-label">{{ t('setting.func.biliPolicy') }}</span>
               <a-tooltip>
                 <template #title>
                   <div style="max-width: 300px">
-                    <p>
-                      开启本项即代表您已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替您处理相关弹窗：
-                    </p>
+                    <p>{{ t('setting.func.biliIntro') }}</p>
                     <ul style="margin: 8px 0; padding-left: 16px">
                       <li>
-                        <a href="https://www.bilibili.com/protocal/licence.html" class="tooltip-link"
-                          @click="handleExternalLink">《哔哩哔哩弹幕网用户使用协议》</a>
+                        <a
+                          href="https://www.bilibili.com/protocal/licence.html"
+                          class="tooltip-link"
+                          @click="handleExternalLink"
+                          >{{ t('setting.func.biliTerms') }}</a
+                        >
                       </li>
                       <li>
-                        <a href="https://www.bilibili.com/blackboard/privacy-pc.html" class="tooltip-link"
-                          @click="handleExternalLink">《哔哩哔哩隐私政策》</a>
+                        <a
+                          href="https://www.bilibili.com/blackboard/privacy-pc.html"
+                          class="tooltip-link"
+                          @click="handleExternalLink"
+                          >{{ t('setting.func.biliPrivacy') }}</a
+                        >
                       </li>
                       <li>
-                        <a href="https://game.bilibili.com/yhxy" class="tooltip-link"
-                          @click="handleExternalLink">《哔哩哔哩游戏中心用户协议》</a>
+                        <a
+                          href="https://game.bilibili.com/yhxy"
+                          class="tooltip-link"
+                          @click="handleExternalLink"
+                          >{{ t('setting.func.biliGame') }}</a
+                        >
                       </li>
                     </ul>
                   </div>
@@ -149,30 +187,35 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Function?.IfAgreeBilibili" size="large" style="width: 100%" @change="
-              (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
-            ">
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+            <a-select
+              :value="settings.Function?.IfAgreeBilibili"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
+              "
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">屏蔽模拟器广告</span>
+              <span class="form-label">{{ t('setting.func.blockAds') }}</span>
               <a-tooltip>
                 <template #title>
                   <div style="max-width: 300px">
-                    <p>
-                      屏蔽部分模拟器广告，支持的广告类型如下：
-                    </p>
+                    <p>{{ t('setting.func.blockAdsIntro') }}</p>
                     <ul style="margin: 8px 0; padding-left: 16px">
                       <li>
-                        <strong>MuMu模拟器</strong>：启动时广告
+                        <strong>{{ t('emulator.type.mumu') }}</strong
+                        >: {{ t('setting.func.blockAdsMumu') }}
                       </li>
                       <li>
-                        <strong>雷电模拟器</strong>：启动时广告、桌面广告
+                        <strong>{{ t('emulator.type.ldplayer') }}</strong
+                        >: {{ t('setting.func.blockAdsLd') }}
                       </li>
                     </ul>
                   </div>
@@ -186,8 +229,8 @@ const {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)"
             >
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -196,34 +239,44 @@ const {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>语音配置</h3>
+        <h3>{{ t('setting.func.voiceSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">启用语音提示</span>
-              <a-tooltip title="开启后将在特定时刻播放语音提示">
+              <span class="form-label">{{ t('setting.func.voiceEnable') }}</span>
+              <a-tooltip :title="t('setting.func.voiceEnableTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Voice?.Enabled" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)">
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+            <a-select
+              :value="settings.Voice?.Enabled"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">语音类型</span>
-              <a-tooltip title="选择语音提示的详细程度">
+              <span class="form-label">{{ t('setting.func.voiceType') }}</span>
+              <a-tooltip :title="t('setting.func.voiceTypeTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Voice?.Type" :options="voiceTypeOptions" :disabled="!settings.Voice?.Enabled"
-              size="large" style="width: 100%" @change="(value: any) => handleSettingChange('Voice', 'Type', value)" />
+            <a-select
+              :value="settings.Voice?.Type"
+              :options="voiceTypeOptions"
+              :disabled="!settings.Voice?.Enabled"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
+            />
           </div>
         </a-col>
       </a-row>

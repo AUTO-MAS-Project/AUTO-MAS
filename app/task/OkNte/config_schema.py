@@ -26,14 +26,21 @@ OK-NTE 配置文件 Schema 定义
 """
 
 from __future__ import annotations
-from typing import Any
-from pathlib import Path
+
+import json
 import re
 import struct
+from copy import deepcopy
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import Lock
+from time import sleep
+from typing import Any
 from xml.etree import ElementTree
 
-
 # ─── OK-NTE 翻译文件自动加载 ─────────────────────────────────────────────────
+
+_OKNTE_CONFIG_WRITE_LOCK = Lock()
 
 _PO_ENTRY_RE = re.compile(
     r'^msgid\s+"((?:[^"\\]|\\.)*)"\s*\nmsgstr\s+"((?:[^"\\]|\\.)*)"',
@@ -77,9 +84,7 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
         def read_strings(table_offset: int) -> list[str]:
             strings: list[str] = []
             for i in range(n_strings):
-                length, offset = struct.unpack_from(
-                    fmt, data, table_offset + i * 8
-                )
+                length, offset = struct.unpack_from(fmt, data, table_offset + i * 8)
                 if length > 0:
                     s = data[offset : offset + length]
                     strings.append(s.decode("utf-8", errors="replace"))
@@ -171,7 +176,343 @@ _FALLBACK_LABELS: dict[str, str] = {
     "No": "否",
     "Auto": "自动",
     "None": "无",
+    "Routine Items": "日常任务流程",
+    "daily_anomaly": "异象界域",
+    "daily_anomaly_hunter": "异象追猎",
+    "coffee": "一咖舍",
+    "daily_claim": "日常领取",
+    "cinema_date": "影院约会",
+    "fountain": "喷泉签到",
+    "furniture": "异象家具",
+    "gift": "羁遇赠礼",
 }
+
+
+# ─── 新版 DailyRoutine 默认值与旧版 DailyTask 迁移 ────────────────────────
+
+DAILY_ROUTINE_TASK_FILE = "DailyRoutineTask.json"
+DAILY_ROUTINE_CONFIGS_FILE = "DailyRoutineTaskConfigs.json"
+LEGACY_DAILY_TASK_FILE = "DailyTask.json"
+
+DAILY_ROUTINE_ITEMS: list[dict[str, Any]] = [
+    {
+        "id": "daily_anomaly",
+        "label": "异象界域",
+        "enabled": True,
+        "exclusiveGroup": "daily_anomaly",
+    },
+    {
+        "id": "daily_anomaly_hunter",
+        "label": "异象追猎",
+        "enabled": False,
+        "exclusiveGroup": "daily_anomaly",
+    },
+    {"id": "coffee", "label": "一咖舍", "enabled": False, "exclusiveGroup": None},
+    {"id": "daily_claim", "label": "日常领取", "enabled": True, "exclusiveGroup": None},
+    {
+        "id": "cinema_date",
+        "label": "影院约会",
+        "enabled": False,
+        "exclusiveGroup": None,
+    },
+    {"id": "fountain", "label": "喷泉签到", "enabled": False, "exclusiveGroup": None},
+    {"id": "furniture", "label": "异象家具", "enabled": False, "exclusiveGroup": None},
+    {"id": "gift", "label": "羁遇赠礼", "enabled": False, "exclusiveGroup": None},
+]
+
+DAILY_ROUTINE_ITEM_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "id": item["id"],
+        "label": item["label"],
+        "exclusiveGroup": item["exclusiveGroup"],
+        "defaultEnabled": item["enabled"],
+    }
+    for item in DAILY_ROUTINE_ITEMS
+]
+
+DEFAULT_CONFIG_DATA: dict[str, dict[str, Any]] = {
+    DAILY_ROUTINE_TASK_FILE: {
+        "Routine Items": [
+            {"id": item["id"], "enabled": item["enabled"]}
+            for item in DAILY_ROUTINE_ITEMS
+        ],
+        "Exit After Task": True,
+    },
+    DAILY_ROUTINE_CONFIGS_FILE: {
+        "daily_anomaly": {
+            "目标消耗体力": 180,
+            "任务类型": "经验与甲硬币",
+            "具体奖励目标": "角色经验",
+            "异能材料序号": 1,
+            "弧盘材料序号": 1,
+            "空幕序号": 1,
+            "循环模式": "停用",
+            "循环序列": [],
+        },
+        "daily_anomaly_hunter": {
+            "目标消耗体力": 180,
+            "追猎目标": "音霸魔王",
+        },
+        "coffee": {
+            "模式": "领取/补货",
+            "领取收益": True,
+            "补货货物": True,
+            "购买货物送货上门": True,
+            "优化商品": False,
+            "补货时长": "auto",
+            "商品位数量": "auto",
+            "价格表": "auto",
+        },
+        "daily_claim": {
+            "邮件": True,
+            "活跃度奖励": True,
+            "环期任务奖励": True,
+        },
+        "cinema_date": {
+            "约会目标": "",
+        },
+        "fountain": {
+            "签到方式": "签到",
+        },
+        "furniture": {},
+        "gift": {},
+    },
+    "CoffeeTask.json": {
+        "模式": "领取/补货",
+        "领取收益": True,
+        "补货货物": True,
+        "购买货物送货上门": True,
+        "优化商品": False,
+        "补货时长": "auto",
+        "商品位数量": "auto",
+        "价格表": "auto",
+    },
+}
+
+
+def _deep_merge_config(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """合并配置默认值，保留用户已有字段。"""
+
+    result = deepcopy(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge_config(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+
+def merge_oknte_config_data(
+    existing_data: dict[str, Any],
+    update_data: dict[str, Any],
+) -> dict[str, Any]:
+    """深合并前端提交的 OK-NTE 配置更新。"""
+
+    return _deep_merge_config(existing_data, update_data)
+
+
+def _normalize_daily_routine_items(raw_items: Any) -> list[dict[str, Any]]:
+    """按新版 ok-nte 的日常任务项结构补齐缺失项并处理互斥组。"""
+
+    entries = {item["id"]: item for item in DAILY_ROUTINE_ITEMS}
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    if isinstance(raw_items, list):
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            task_id = raw_item.get("id")
+            if task_id not in entries or task_id in seen:
+                continue
+            normalized.append(
+                {"id": task_id, "enabled": bool(raw_item.get("enabled", False))}
+            )
+            seen.add(task_id)
+
+    for item in DAILY_ROUTINE_ITEMS:
+        if item["id"] not in seen:
+            normalized.append({"id": item["id"], "enabled": bool(item["enabled"])})
+
+    enabled_groups: set[str] = set()
+    for item in normalized:
+        exclusive_group = entries[item["id"]].get("exclusiveGroup")
+        if not exclusive_group or not item["enabled"]:
+            continue
+        if exclusive_group in enabled_groups:
+            item["enabled"] = False
+        else:
+            enabled_groups.add(exclusive_group)
+
+    return normalized
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"OK-NTE 配置文件必须是 JSON 对象: {path}")
+    return data
+
+
+def _write_oknte_config_data(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+            json.dump(data, tmp_file, ensure_ascii=False, indent=4)
+        for retry in range(5):
+            try:
+                tmp_path.replace(path)
+                break
+            except PermissionError:
+                if retry == 4:
+                    raise
+                sleep(0.02 * (retry + 1))
+    finally:
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
+
+
+def write_oknte_config_data(path: Path, data: dict[str, Any]) -> None:
+    """原子写入 OK-NTE JSON 配置。"""
+
+    with _OKNTE_CONFIG_WRITE_LOCK:
+        _write_oknte_config_data(path, data)
+
+
+def update_oknte_config_data(
+    path: Path,
+    update_data: dict[str, Any],
+) -> dict[str, Any]:
+    """在同一写锁内读取、深合并并保存 OK-NTE 配置。"""
+
+    with _OKNTE_CONFIG_WRITE_LOCK:
+        existing_data = _read_json_object(path)
+        merged_data = merge_oknte_config_data(existing_data, update_data)
+        _write_oknte_config_data(path, merged_data)
+    return merged_data
+
+
+def _daily_routine_items_from_legacy(legacy: dict[str, Any]) -> list[dict[str, Any]]:
+    items = _normalize_daily_routine_items(
+        DEFAULT_CONFIG_DATA[DAILY_ROUTINE_TASK_FILE]["Routine Items"]
+    )
+    item_by_id = {item["id"]: item for item in items}
+
+    if "副本类型" in legacy:
+        item_by_id["daily_anomaly"]["enabled"] = legacy["副本类型"] != "不执行"
+    elif "完成每日活跃度" in legacy:
+        item_by_id["daily_anomaly"]["enabled"] = bool(legacy["完成每日活跃度"])
+
+    claim_keys = ("领取邮件", "领取活跃度奖励", "领取环期任务奖励")
+    if any(key in legacy for key in claim_keys):
+        item_by_id["daily_claim"]["enabled"] = any(
+            bool(legacy.get(key, True)) for key in claim_keys
+        )
+
+    coffee_mode = legacy.get("一咖舍任务", "不执行")
+    item_by_id["coffee"]["enabled"] = coffee_mode != "不执行"
+    item_by_id["cinema_date"]["enabled"] = bool(legacy.get("影院约会", False))
+    item_by_id["fountain"]["enabled"] = legacy.get("喷泉签到", "不执行") != "不执行"
+    item_by_id["furniture"]["enabled"] = bool(legacy.get("异象家具", False))
+    item_by_id["gift"]["enabled"] = bool(legacy.get("羁遇赠礼", False))
+
+    return _normalize_daily_routine_items(items)
+
+
+def _daily_routine_configs_from_legacy(legacy: dict[str, Any]) -> dict[str, Any]:
+    configs = deepcopy(DEFAULT_CONFIG_DATA[DAILY_ROUTINE_CONFIGS_FILE])
+
+    for key in (
+        "任务类型",
+        "具体奖励目标",
+        "异能材料序号",
+        "弧盘材料序号",
+        "空幕序号",
+        "目标消耗体力",
+        "循环模式",
+        "循环序列",
+    ):
+        if key in legacy:
+            configs["daily_anomaly"][key] = deepcopy(legacy[key])
+
+    if "循环模式" not in legacy and "自动循环项目" in legacy:
+        configs["daily_anomaly"]["循环模式"] = (
+            "自动循环序号/目标" if legacy["自动循环项目"] else "停用"
+        )
+
+    coffee_mode = legacy.get("一咖舍任务")
+    if coffee_mode == "运行一咖舍自动化":
+        configs["coffee"]["模式"] = "自动化"
+    elif coffee_mode == "领取/补货一咖舍":
+        configs["coffee"]["模式"] = "领取/补货"
+
+    legacy_claim_map = {
+        "邮件": "领取邮件",
+        "活跃度奖励": "领取活跃度奖励",
+        "环期任务奖励": "领取环期任务奖励",
+    }
+    for new_key, old_key in legacy_claim_map.items():
+        if old_key in legacy:
+            configs["daily_claim"][new_key] = bool(legacy[old_key])
+
+    if "约会目标" in legacy:
+        configs["cinema_date"]["约会目标"] = legacy["约会目标"]
+    fountain_mode = legacy.get("喷泉签到")
+    if fountain_mode and fountain_mode != "不执行":
+        configs["fountain"]["签到方式"] = fountain_mode
+
+    return configs
+
+
+def ensure_oknte_daily_routine_configs(config_dir: Path) -> None:
+    """补齐新版 ok-nte DailyRoutine 配置，并从旧 DailyTask 配置迁移初值。"""
+
+    legacy_data = _read_json_object(config_dir / LEGACY_DAILY_TASK_FILE)
+    routine_path = config_dir / DAILY_ROUTINE_TASK_FILE
+    routine_configs_path = config_dir / DAILY_ROUTINE_CONFIGS_FILE
+
+    routine_default = deepcopy(DEFAULT_CONFIG_DATA[DAILY_ROUTINE_TASK_FILE])
+    if legacy_data and not routine_path.is_file():
+        routine_default["Routine Items"] = _daily_routine_items_from_legacy(legacy_data)
+    current_routine_data = _read_json_object(routine_path)
+    routine_data = _deep_merge_config(routine_default, current_routine_data)
+    routine_data["Routine Items"] = _normalize_daily_routine_items(
+        routine_data.get("Routine Items")
+    )
+    if routine_data != current_routine_data:
+        write_oknte_config_data(routine_path, routine_data)
+
+    routine_configs_default = deepcopy(DEFAULT_CONFIG_DATA[DAILY_ROUTINE_CONFIGS_FILE])
+    if legacy_data and not routine_configs_path.is_file():
+        routine_configs_default = _daily_routine_configs_from_legacy(legacy_data)
+    current_routine_configs_data = _read_json_object(routine_configs_path)
+    routine_configs_data = _deep_merge_config(
+        routine_configs_default,
+        current_routine_configs_data,
+    )
+    if routine_configs_data != current_routine_configs_data:
+        write_oknte_config_data(routine_configs_path, routine_configs_data)
+
+    for filename, default_data in DEFAULT_CONFIG_DATA.items():
+        if filename in (DAILY_ROUTINE_TASK_FILE, DAILY_ROUTINE_CONFIGS_FILE):
+            continue
+        path = config_dir / filename
+        current_data = _read_json_object(path)
+        merged_data = _deep_merge_config(default_data, current_data)
+        if merged_data != current_data:
+            write_oknte_config_data(path, merged_data)
 
 
 # ─── 手工维护：下拉 / 多选的可选项列表 ───────────────────────────────────
@@ -182,16 +523,58 @@ _FALLBACK_LABELS: dict[str, str] = {
 
 SELECT_OPTIONS: dict[str, dict[str, list[str]]] = {
     # ── 任务配置 ──
+    DAILY_ROUTINE_CONFIGS_FILE: {
+        "任务类型": ["经验与甲硬币", "异能升级材料", "弧盘突破材料", "空幕"],
+        "具体奖励目标": ["角色经验", "弧盘经验", "甲硬币"],
+        "循环模式": ["停用", "自动循环序号/目标", "自定义循环"],
+        "循环序列": [
+            "角色经验",
+            "弧盘经验",
+            "甲硬币",
+            "异能升级材料: 1",
+            "异能升级材料: 2",
+            "异能升级材料: 3",
+            "异能升级材料: 4",
+            "异能升级材料: 5",
+            "弧盘突破材料: 1",
+            "弧盘突破材料: 2",
+            "弧盘突破材料: 3",
+            "弧盘突破材料: 4",
+            "弧盘突破材料: 5",
+            "空幕: 1",
+            "空幕: 2",
+            "空幕: 3",
+            "空幕: 4",
+            "空幕: 5",
+            "空幕: 6",
+        ],
+        "追猎目标": [
+            "音霸魔王",
+            "无首铁驭",
+            "塞润尼缇",
+            "黑之书",
+            "海囚",
+            "围巢鸟",
+            "斑蝶",
+        ],
+        "模式": ["领取/补货", "自动化"],
+        "补货时长": ["auto", "2小时", "4小时", "8小时", "24小时"],
+        "商品位数量": ["auto", "1", "2", "3", "4", "5"],
+        "价格表": ["auto", "disabled"],
+        "签到方式": ["签到", "捞币"],
+    },
     "DailyTask.json": {
         "任务类型": ["经验与甲硬币", "异能升级材料", "弧盘突破材料", "空幕"],
         "具体奖励目标": ["角色经验", "弧盘经验", "甲硬币"],
         "一咖舍任务": ["不执行", "领取/补货一咖舍", "运行一咖舍自动化"],
+        "喷泉签到": ["不执行", "签到", "捞币"],
     },
     "AnomalyTask.json": {
         "任务类型": ["经验与甲硬币", "异能升级材料", "弧盘突破材料", "空幕"],
         "具体奖励目标": ["角色经验", "弧盘经验", "甲硬币"],
     },
     "CoffeeTask.json": {
+        "模式": ["领取/补货", "自动化"],
         "补货时长": ["auto", "2小时", "4小时", "8小时", "24小时"],
         "商品位数量": ["auto", "1", "2", "3", "4", "5"],
         "价格表": ["auto", "disabled"],
@@ -227,24 +610,11 @@ def _get_select_options(filename: str, field_name: str) -> list[str] | None:
 
 CONFIG_GROUPS = {
     "任务配置": [
-        "LauncherTask.json",
-        "DailyTask.json",
-        "CoffeeTask.json",
-        "FishingTask.json",
-        "AnomalyTask.json",
-        "RhythmTask.json",
-        "OwnerSelectionTask.json",
-        "AutoHeistTask.json",
-        "DarkTask.json",
-        "DiagnosisTask.json",
+        DAILY_ROUTINE_TASK_FILE,
+        DAILY_ROUTINE_CONFIGS_FILE,
     ],
     "触发配置": [
         "AutoCombatTask.json",
-        "AutoLoginTask.json",
-        "FastTravelTask.json",
-        "HeistTask.json",
-        "SkipDialogTask.json",
-        "SoundTriggerTask.json",
     ],
     "全局配置": [
         "Game Hotkey Config.json",
@@ -256,15 +626,27 @@ CONFIG_GROUPS = {
 
 CONFIG_DISPLAY_NAMES: dict[str, str] = {
     "LauncherTask.json": "启动游戏",
-    "DailyTask.json": "日常任务",
-    "CoffeeTask.json": "一咖舍自动化",
+    DAILY_ROUTINE_TASK_FILE: "日常任务流程",
+    DAILY_ROUTINE_CONFIGS_FILE: "日常子任务配置",
+    LEGACY_DAILY_TASK_FILE: "旧版日常任务",
+    "CoffeeTask.json": "一咖舍",
     "FishingTask.json": "自动钓鱼",
     "AnomalyTask.json": "异象界域",
+    "AnomalyHunter.json": "异象追猎",
     "RhythmTask.json": "自动音游",
-    "OwnerSelectionTask.json": "业主选拔",
+    "OwnerSelectionTask.json": "店长特供",
     "AutoHeistTask.json": "自动粉爪大劫案",
+    "BagelAITools.json": "呗果智能体",
+    "WhirlwindTask.json": "自动小旋风",
+    "DSDFarmTask.json": "九百九十九夜",
+    "CombatDetectionTestTask.json": "自动战斗检测诊断",
     "DarkTask.json": "暗域任务",
     "DiagnosisTask.json": "诊断",
+    "DailyClaimTask.json": "日常领取",
+    "GiftTask.json": "羁遇赠礼",
+    "FountainTask.json": "喷泉签到",
+    "FurnitureTask.json": "异象家具",
+    "CinemaDateTask.json": "影院约会",
     "AutoCombatTask.json": "自动战斗触发",
     "AutoLoginTask.json": "自动登录触发",
     "FastTravelTask.json": "快速传送触发",
@@ -279,19 +661,29 @@ CONFIG_DISPLAY_NAMES: dict[str, str] = {
 
 TASK_INDEX_MAP: dict[str, int] = {
     "LauncherTask.json": 1,
-    "DailyTask.json": 2,
-    "CoffeeTask.json": 3,
-    "FishingTask.json": 4,
-    "AnomalyTask.json": 5,
+    DAILY_ROUTINE_TASK_FILE: 2,
+    "FishingTask.json": 3,
+    "AnomalyTask.json": 4,
+    "AnomalyHunter.json": 5,
     "RhythmTask.json": 6,
     "OwnerSelectionTask.json": 7,
     "AutoHeistTask.json": 8,
-    "DarkTask.json": 9,
-    "DiagnosisTask.json": 11,
+    "BagelAITools.json": 9,
+    "WhirlwindTask.json": 10,
+    "DSDFarmTask.json": 11,
+    "CombatDetectionTestTask.json": 12,
+    "DiagnosisTask.json": 13,
+    "DailyClaimTask.json": 14,
+    "GiftTask.json": 15,
+    "CoffeeTask.json": 16,
+    "FountainTask.json": 17,
+    "FurnitureTask.json": 18,
+    "CinemaDateTask.json": 19,
 }
 
 
 # ─── JSON 字段自动发现 ────────────────────────────────────────────────────
+
 
 def _infer_field_type(value: Any) -> str:
     """从 JSON 值推断前端字段类型。"""
@@ -303,6 +695,8 @@ def _infer_field_type(value: Any) -> str:
         return "float"
     if isinstance(value, list):
         return "list"
+    if isinstance(value, dict):
+        return "object"
     return "string"
 
 
@@ -328,7 +722,41 @@ def build_fields_for_config(
     3. 若字段在翻译中有映射 → 用翻译作为 label
     4. SELECT_OPTIONS 中定义但 JSON 中没有的字段 → 也加入（新字段，值为 None）
     """
+    if filename == DAILY_ROUTINE_CONFIGS_FILE:
+        json_data = _deep_merge_config(
+            DEFAULT_CONFIG_DATA[DAILY_ROUTINE_CONFIGS_FILE],
+            json_data,
+        )
+        fields: list[dict[str, Any]] = []
+        for item in DAILY_ROUTINE_ITEMS:
+            task_id = item["id"]
+            value = json_data.get(task_id, {})
+            child_fields = build_fields_for_config(
+                f"{DAILY_ROUTINE_CONFIGS_FILE}::{task_id}",
+                value if isinstance(value, dict) else {},
+                option_labels,
+            )
+            if not child_fields:
+                continue
+            fields.append(
+                {
+                    "name": task_id,
+                    "type": "object",
+                    "label": item["label"],
+                    "description": "",
+                    "value": value,
+                    "options": None,
+                    "children": child_fields,
+                    "itemDefinitions": None,
+                    "min": None,
+                    "max": None,
+                    "step": None,
+                }
+            )
+        return fields
+
     seen: set[str] = set()
+    default_data = DEFAULT_CONFIG_DATA.get(filename, {})
 
     def _is_internal(name: str) -> bool:
         """OK-NTE 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
@@ -336,7 +764,24 @@ def build_fields_for_config(
 
     def make_field(name: str, raw_value: Any) -> dict[str, Any]:
         seen.add(name)
-        opts = _get_select_options(filename, name)
+        real_filename, _sep, _nested_group = filename.partition("::")
+        opts = _get_select_options(real_filename, name)
+
+        if real_filename == DAILY_ROUTINE_TASK_FILE and name == "Routine Items":
+            value = _normalize_daily_routine_items(raw_value)
+            return {
+                "name": name,
+                "type": "routine_items",
+                "label": _translate(name, option_labels),
+                "description": "",
+                "value": value,
+                "options": None,
+                "children": None,
+                "itemDefinitions": DAILY_ROUTINE_ITEM_DEFINITIONS,
+                "min": None,
+                "max": None,
+                "step": None,
+            }
 
         if opts is not None:
             # 下拉或多选
@@ -348,6 +793,8 @@ def build_fields_for_config(
                 "description": "",
                 "value": raw_value,
                 "options": opts,
+                "children": None,
+                "itemDefinitions": None,
                 "min": None,
                 "max": None,
                 "step": None,
@@ -362,11 +809,14 @@ def build_fields_for_config(
             "description": "",
             "value": raw_value,
             "options": None,
+            "children": None,
+            "itemDefinitions": None,
             "min": None,
             "max": None,
             "step": None,
         }
 
+    json_data = _deep_merge_config(default_data, json_data)
     fields = [
         make_field(k, v)
         for k, v in json_data.items()
@@ -374,15 +824,16 @@ def build_fields_for_config(
     ]
 
     # 补充：SELECT_OPTIONS 中有定义但 JSON 中没有的字段（OK-NTE 新增配置项）
-    known_options = SELECT_OPTIONS.get(filename, {})
+    known_options = {} if "::" in filename else SELECT_OPTIONS.get(filename, {})
     for name in known_options:
         if name not in seen and not _is_internal(name):
-            fields.append(make_field(name, None))
+            fields.append(make_field(name, default_data.get(name)))
 
     return fields
 
 
 # ─── API 辅助函数 ─────────────────────────────────────────────────────────
+
 
 def get_all_config_info() -> list[dict[str, Any]]:
     """获取所有配置文件的元信息（用于前端列表展示）。"""
@@ -390,12 +841,17 @@ def get_all_config_info() -> list[dict[str, Any]]:
     for group_name, filenames in CONFIG_GROUPS.items():
         for filename in filenames:
             # 字段数量 = JSON 中已有的 + SELECT_OPTIONS 中新增的
-            field_count = len(SELECT_OPTIONS.get(filename, {}))
-            result.append({
-                "filename": filename,
-                "displayName": CONFIG_DISPLAY_NAMES.get(filename, filename),
-                "group": group_name,
-                "taskIndex": TASK_INDEX_MAP.get(filename),
-                "fieldCount": max(field_count, 1),  # 至少 1，避免显示 0
-            })
+            field_count = max(
+                len(DEFAULT_CONFIG_DATA.get(filename, {})),
+                len(SELECT_OPTIONS.get(filename, {})),
+            )
+            result.append(
+                {
+                    "filename": filename,
+                    "displayName": CONFIG_DISPLAY_NAMES.get(filename, filename),
+                    "group": group_name,
+                    "taskIndex": TASK_INDEX_MAP.get(filename),
+                    "fieldCount": max(field_count, 1),  # 至少 1，避免显示 0
+                }
+            )
     return result

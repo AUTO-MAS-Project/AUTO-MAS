@@ -24,8 +24,10 @@ import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
+import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
+import type { PowerCountdownSnapshot } from '../models/PowerCountdownSnapshot';
 import type { PowerOut } from '../models/PowerOut';
 import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
@@ -35,11 +37,13 @@ import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
+import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
@@ -104,13 +108,21 @@ export class GetService {
     }
     /**
      * 获取可选计划下拉框信息
+     * @param requestBody
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
-    public static getPlanComboxApiInfoComboxPlanPost(): CancelablePromise<ComboBoxOut> {
+    public static getPlanComboxApiInfoComboxPlanPost(
+        requestBody: PlanComboxIn,
+    ): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/plan',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -417,6 +429,30 @@ export class GetService {
         });
     }
     /**
+     * 获取运行中任务初始快照
+     * 返回当前运行任务；WS 只承载后续状态、日志与完成事件。
+     * @returns TaskRuntimeSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getTaskRuntimeSnapshotApiDispatchRuntimeSnapshotGet(): CancelablePromise<TaskRuntimeSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/runtime-snapshot',
+        });
+    }
+    /**
+     * 获取电源倒计时初始快照
+     * 返回当前倒计时；WS 只承载后续逐秒更新与取消事件。
+     * @returns PowerCountdownSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getPowerCountdownSnapshotApiDispatchPowerCountdownSnapshotGet(): CancelablePromise<PowerCountdownSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/power/countdown-snapshot',
+        });
+    }
+    /**
      * 获取电源标志
      * @returns PowerOut Successful Response
      * @throws ApiError
@@ -478,6 +514,18 @@ export class GetService {
         });
     }
     /**
+     * 导出数据备份
+     * 导出数据、配置与历史记录。
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static backupDataApiSettingBackupGet(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/backup',
+        });
+    }
+    /**
      * 查询配置
      * 查询配置
      * @returns SettingGetOut Successful Response
@@ -506,6 +554,18 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取更新下载初始快照
+     * 返回当前下载权威状态；WS 只承载后续进度与终态事件。
+     * @returns UpdateDownloadSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getUpdateDownloadStatusApiUpdateDownloadStatusGet(): CancelablePromise<UpdateDownloadSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/download/status',
         });
     }
     /**

@@ -1,6 +1,6 @@
 <template>
   <a-card class="command-card">
-    <section class="command-panel" aria-label="调度快速启动">
+    <section class="command-panel" :aria-label="t('home.command.aria')">
       <div class="command-main">
         <ParticlesBg
           class="command-particles"
@@ -33,7 +33,7 @@
         <div class="scheduler-content">
           <div class="launcher-header">
             <div>
-              <div class="launcher-title">快速开始</div>
+              <div class="launcher-title">{{ t('home.command.title') }}</div>
             </div>
           </div>
 
@@ -44,7 +44,7 @@
               :options="schedulerTaskOptions"
               :loading="schedulerTasksLoading"
               size="large"
-              placeholder="选择任务"
+              :placeholder="t('home.command.placeholder')"
               @dropdown-visible-change="$emit('dropdown-visible-change', $event)"
             />
             <a-button
@@ -58,7 +58,7 @@
               <template #icon>
                 <PlayCircleOutlined />
               </template>
-              开始
+              {{ t('home.command.start') }}
             </a-button>
           </div>
         </div>
@@ -68,12 +68,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { PlayCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
 import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import ParticlesBg from '@/components/inspira/ParticlesBg.vue'
 import { useTheme } from '@/composables/useTheme'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   isBootstrapping: boolean

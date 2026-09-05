@@ -3,7 +3,7 @@
     <div v-if="taskData.length === 0" class="empty-state">
       <div class="empty-content">
         <div class="empty-image-container">
-          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="t('comp.noData2')" class="empty-image" />
         </div>
       </div>
     </div>
@@ -21,7 +21,7 @@
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
-              {{ script.status }}
+              {{ statusLabel(script.status) }}
             </a-tag>
           </div>
         </div>
@@ -30,15 +30,19 @@
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
           <div v-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
-              <span class="no-users-text">暂无用户</span>
+              <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
             </div>
           </div>
-          <div v-for="(user, index) in script.user_list" :key="`user-${script.script_id}-${user.user_id}`"
-            class="user-item" :class="{ 'last-item': index === script.user_list.length - 1 }">
+          <div
+            v-for="(user, index) in script.user_list"
+            :key="`user-${script.script_id}-${user.user_id}`"
+            class="user-item"
+            :class="{ 'last-item': index === script.user_list.length - 1 }"
+          >
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
-                {{ user.status }}
+                {{ statusLabel(user.status) }}
               </a-tag>
             </div>
           </div>
@@ -49,10 +53,17 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
+import { useStatusLabel } from '@/i18n/status'
+
+const { t } = useI18n()
+
 const logger = window.electronAPI.getLogger('任务树组件')
+
+const statusLabel = useStatusLabel()
 
 interface User {
   user_id: string
@@ -145,8 +156,10 @@ watch(
   (newData, oldData) => {
     const newScriptCount = newData?.length ?? 0
     const oldScriptCount = oldData?.length ?? 0
-    const newUserCount = newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
-    const oldUserCount = oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const newUserCount =
+      newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const oldUserCount =
+      oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
 
     if (newScriptCount !== oldScriptCount || newUserCount !== oldUserCount) {
       logger.debug(
@@ -192,13 +205,6 @@ defineExpose({
   height: 100%;
 }
 
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-}
-
 .task-tree {
   width: 100%;
   display: flex;
@@ -223,17 +229,21 @@ defineExpose({
 .script-header {
   cursor: pointer;
   padding: 12px 16px;
-  background: linear-gradient(135deg,
-      var(--ant-color-fill-quaternary) 0%,
-      var(--ant-color-fill-tertiary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-fill-quaternary) 0%,
+    var(--ant-color-fill-tertiary) 100%
+  );
   /* 保留hover过渡，但减少时间 */
   transition: background 0.1s ease;
 }
 
 .script-header:hover {
-  background: linear-gradient(135deg,
-      var(--ant-color-fill-tertiary) 0%,
-      var(--ant-color-fill-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-fill-tertiary) 0%,
+    var(--ant-color-fill-secondary) 100%
+  );
 }
 
 .script-content {
@@ -271,10 +281,6 @@ defineExpose({
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   font-weight: normal;
-}
-
-.status-tag {
-  flex-shrink: 0;
 }
 
 .user-list {
@@ -328,168 +334,6 @@ defineExpose({
   color: var(--ant-color-text);
   word-break: break-word;
   font-weight: 500;
-}
-
-/* 深色模式适配 */
-[data-theme='dark'] .script-card,
-.dark .script-card {
-  background: #1f1f1f;
-  border-color: #424242;
-}
-
-[data-theme='dark'] .script-card:hover,
-.dark .script-card:hover {
-  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
-  border-color: #1890ff;
-}
-
-[data-theme='dark'] .script-header,
-.dark .script-header {
-  background: linear-gradient(135deg, #262626 0%, #303030 100%);
-}
-
-[data-theme='dark'] .script-header:hover,
-.dark .script-header:hover {
-  background: linear-gradient(135deg, #303030 0%, #383838 100%);
-}
-
-[data-theme='dark'] .script-name,
-.dark .script-name {
-  color: #ffffff;
-}
-
-[data-theme='dark'] .user-count,
-.dark .user-count {
-  color: #8c8c8c;
-}
-
-[data-theme='dark'] .user-list,
-.dark .user-list {
-  background: #141414;
-}
-
-[data-theme='dark'] .no-users-content,
-.dark .no-users-content {
-  background: #262626;
-  border-color: #424242;
-}
-
-[data-theme='dark'] .no-users-text,
-.dark .no-users-text {
-  color: #8c8c8c;
-}
-
-[data-theme='dark'] .user-item,
-.dark .user-item {
-  border-bottom-color: #424242;
-}
-
-[data-theme='dark'] .user-content:hover,
-.dark .user-content:hover {
-  background: #262626;
-}
-
-[data-theme='dark'] .user-name,
-.dark .user-name {
-  color: #ffffff;
-}
-
-[data-theme='dark'] .expand-icon,
-.dark .expand-icon {
-  color: #1890ff;
-}
-
-[data-theme='dark'] .expand-icon:hover,
-.dark .expand-icon:hover {
-  color: #40a9ff;
-}
-
-/* 浅色模式适配 */
-[data-theme='light'] .script-card,
-.light .script-card,
-.script-card {
-  background: #ffffff;
-  border-color: #d9d9d9;
-}
-
-[data-theme='light'] .script-card:hover,
-.light .script-card:hover,
-.script-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-color: #1890ff;
-}
-
-[data-theme='light'] .script-header,
-.light .script-header,
-.script-header {
-  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-}
-
-[data-theme='light'] .script-header:hover,
-.light .script-header:hover,
-.script-header:hover {
-  background: linear-gradient(135deg, #f5f5f5 0%, #f0f0f0 100%);
-}
-
-[data-theme='light'] .script-name,
-.light .script-name,
-.script-name {
-  color: #262626;
-}
-
-[data-theme='light'] .user-count,
-.light .user-count,
-.user-count {
-  color: #8c8c8c;
-}
-
-[data-theme='light'] .user-list,
-.light .user-list,
-.user-list {
-  background: #fafafa;
-}
-
-[data-theme='light'] .no-users-content,
-.light .no-users-content,
-.no-users-content {
-  background: #f5f5f5;
-  border-color: #d9d9d9;
-}
-
-[data-theme='light'] .no-users-text,
-.light .no-users-text,
-.no-users-text {
-  color: #8c8c8c;
-}
-
-[data-theme='light'] .user-item,
-.light .user-item,
-.user-item {
-  border-bottom-color: #f0f0f0;
-}
-
-[data-theme='light'] .user-content:hover,
-.light .user-content:hover,
-.user-content:hover {
-  background: #f5f5f5;
-}
-
-[data-theme='light'] .user-name,
-.light .user-name,
-.user-name {
-  color: #262626;
-}
-
-[data-theme='light'] .expand-icon,
-.light .expand-icon,
-.expand-icon {
-  color: #1890ff;
-}
-
-[data-theme='light'] .expand-icon:hover,
-.light .expand-icon:hover,
-.expand-icon:hover {
-  color: #40a9ff;
 }
 
 /* 响应式设计 */

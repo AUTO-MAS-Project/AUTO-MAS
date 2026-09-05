@@ -22,6 +22,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import IntEnum
+from pathlib import Path
 
 
 class DeviceStatus(IntEnum):
@@ -43,7 +44,6 @@ class DeviceStatus(IntEnum):
 
 @dataclass
 class DeviceInfo:
-
     title: str
     status: DeviceStatus
     adb_address: str
@@ -106,6 +106,15 @@ class DeviceBase(ABC):
         ...
 
     @abstractmethod
+    async def list_devices(self) -> dict[str, str]:
+        """获取可选设备实例。
+
+        Returns:
+            dict[str, str]: 设备索引与显示名称的映射。
+        """
+        ...
+
+    @abstractmethod
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         """
         获取设备信息
@@ -135,3 +144,14 @@ class DeviceBase(ABC):
             设备状态
         """
         ...
+
+    def get_adb_path(self) -> Path | None:
+        """
+        获取该模拟器自带的 adb 可执行文件路径
+
+        Returns
+        -------
+        Path | None
+            自带 adb 的路径; 返回 ``None`` 表示该模拟器不自带 adb, 调用方应回退到系统 adb
+        """
+        return None

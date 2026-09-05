@@ -21,39 +21,80 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+import asyncio
 from datetime import datetime
 from inspect import isawaitable
 from uuid import UUID
 
+from fastapi import APIRouter, Body
+
 from app.core import Config
+from app.core.notify import DispatchResult
 from app.models.schema import (
-    ToolsGetOut,
-    ToolsConfig,
-    OutBase,
-    ToolsUpdateIn,
     GameSignAccountCreateOut,
-    GameSignAccountGroupConfig,
-    GameSignAccountGetIn,
-    GameSignAccountUpdateIn,
     GameSignAccountDeleteIn,
+    GameSignAccountGetIn,
+    GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
+    GameSignAccountUpdateIn,
+    OutBase,
     SklandLoginIn,
     TaygedoLoginIn,
+    ToolsConfig,
+    ToolsGetOut,
+    ToolsUpdateIn,
 )
 from app.utils.constants import UTC8
+from app.utils.logger import get_logger
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
+logger = get_logger("游戏签到 API")
+_PENDING_GAME_SIGN_NOTIFICATIONS: set[asyncio.Task] = set()
 
 
-def _has_game_sign_credential(account: object, field: str) -> bool:
-    """读取签到凭据时兼容未包含新增字段的旧账号对象。"""
+def _track_game_sign_notification(task: asyncio.Task) -> None:
+    """保留后台通知任务引用，并消费完成后的异常。"""
+
+    _PENDING_GAME_SIGN_NOTIFICATIONS.discard(task)
+    if task.cancelled():
+        return
+    try:
+        result = task.result()
+    except Exception as exc:
+        logger.warning(f"后台游戏签到通知发送失败: {exc}")
+        return
+    if result.failed:
+        logger.warning(f"后台游戏签到通知部分失败: {'、'.join(result.failed)}")
+
+
+async def _dispatch_game_sign_notification(
+    results: list[dict],
+) -> DispatchResult | None:
+    """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
+
+    from app.tools.game_sign_notify import push_game_sign_notification
+
+    task = asyncio.create_task(push_game_sign_notification(results))
+    _PENDING_GAME_SIGN_NOTIFICATIONS.add(task)
+    task.add_done_callback(_track_game_sign_notification)
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=0.1)
+    except asyncio.TimeoutError:
+        logger.info("签到结果已落盘，通知渠道仍在后台发送")
+        return None
+    except Exception as exc:
+        logger.warning(f"签到完成，但通知服务异常: {exc}")
+        return DispatchResult(failed=("通知服务",))
+
+
+def _get_game_sign_field(account: object, field: str, default=None):
+    """读取签到账号字段时兼容未包含新增字段的旧账号对象。"""
 
     try:
-        return bool(account.get("GameSignAccount", field))  # type: ignore[attr-defined]
+        return account.get("GameSignAccount", field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
-        return False
+        return default
 
 
 @router.post(
@@ -114,9 +155,11 @@ async def manual_game_sign() -> OutBase:
             GameSignInProgressError,
             format_sign_results,
             game_sign_flow,
+            has_game_sign_credentials,
             run_all_sign_in,
         )
 
+        # 流程锁覆盖签到和结果落盘，通知在锁外发送，避免慢渠道阻塞后续操作。
         async with game_sign_flow():
             results = await run_all_sign_in(force=True)
 
@@ -131,30 +174,28 @@ async def manual_game_sign() -> OutBase:
             today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
             all_signed = True
             for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                has_credentials = any(
-                    _has_game_sign_credential(account, field)
-                    for field in (
-                        "MiyousheToken",
-                        "KuroToken",
-                        "SklandToken",
-                        "TaygedoToken",
-                    )
-                )
-                if account.get("GameSignAccount", "Enabled") and has_credentials:
-                    if account.get("GameSignAccount", "LastSignDate") != today:
+                has_credentials = has_game_sign_credentials(account)
+                if _get_game_sign_field(account, "Enabled") and has_credentials:
+                    if _get_game_sign_field(account, "LastSignDate") != today:
                         all_signed = False
                         break
             if all_signed:
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-            if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-                from app.tools.game_sign_notify import push_game_sign_notification
-
-                failed_channels = await push_game_sign_notification(results)
-                if failed_channels:
-                    return OutBase(
-                        status="warning",
-                        message=f"签到完成，但部分通知发送失败：{'、'.join(failed_channels)}",
-                    )
+        warning_messages = []
+        if any(
+            result.get("status") not in ("成功", "已签到")
+            and not result.get("_completed")
+            for result in results
+        ):
+            warning_messages.append("签到未全部完成，请查看签到结果")
+        if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+            notify_result = await _dispatch_game_sign_notification(results)
+            if notify_result and notify_result.failed:
+                warning_messages.append(
+                    f"部分通知发送失败：{'、'.join(notify_result.failed)}"
+                )
+        if warning_messages:
+            return OutBase(status="warning", message="；".join(warning_messages))
 
     except GameSignInProgressError as e:
         return OutBase(code=409, status="error", message=str(e))
@@ -261,6 +302,18 @@ async def update_game_sign_account(
     try:
         # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
         flat_data = account.data.model_dump(exclude_unset=True)
+        skland_token = flat_data.get("SklandToken")
+        if isinstance(skland_token, str) and skland_token.strip():
+            from app.tools.skland import validate_skland_credential
+
+            try:
+                validate_skland_credential(skland_token)
+            except ValueError as exc:
+                return OutBase(
+                    code=400,
+                    status="error",
+                    message=f"森空岛凭据无效：{exc}",
+                )
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:
@@ -347,7 +400,7 @@ async def login_taygedo(
             not str(persisted.get(field) or "").strip()
             for field in ("accessToken", "refreshToken", "uid")
         ):
-            raise ValueError("濉斿悏澶氱櫥褰曟湭杩斿洖瀹屾暣 Token")
+            raise ValueError("塔吉多登录未返回完整 Token")
         await Config.update_game_sign_account(
             credential.accountId,
             {
@@ -384,16 +437,15 @@ async def login_skland(
     try:
         from app.tools.skland import (
             login_skland_with_password,
-            parse_skland_credential,
+            validate_skland_credential,
         )
 
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
         serialized = await login_skland_with_password(
             credential.phone.strip(),
             credential.password.get_secret_value(),
             proxy=Config.proxy,
         )
-        parsed = parse_skland_credential(serialized)
+        parsed = validate_skland_credential(serialized)
         if any(
             not str(parsed.get(field) or "").strip()
             for field in ("oauthToken", "token", "cred")

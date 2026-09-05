@@ -20,20 +20,24 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
-import json
-import shlex
-import win32gui
 import asyncio
-import keyboard
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any
+import json
+import re
+import shlex
 
-from app.utils.ProcessManager import ProcessManager
-from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import keyboard
+    import win32gui
+import time
+from pathlib import Path
+from typing import Any, Dict
+
 from app.models.config import EmulatorConfig
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import get_logger
+from app.utils.ProcessManager import ProcessManager
 
 logger = get_logger("通用模拟器管理")
 
@@ -71,7 +75,9 @@ class GeneralDeviceManager(DeviceBase):
         args, _ = self.parse_index(idx)
 
         # 启动进程
-        await self.process_managers[idx].open_process(self.emulator_path, *args)
+        await self.process_managers[idx].open_process(
+            self.emulator_path, *args, breakaway=True
+        )
 
         # 等待进程启动
         await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
@@ -89,10 +95,8 @@ class GeneralDeviceManager(DeviceBase):
         await self.process_managers[idx].kill()
 
         # 等待进程完全停止
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             if not await self.process_managers[idx].is_running():
                 return DeviceStatus.OFFLINE
 
@@ -110,6 +114,9 @@ class GeneralDeviceManager(DeviceBase):
         else:
             return DeviceStatus.OFFLINE
 
+    async def list_devices(self) -> dict[str, str]:
+        return {}
+
     async def getInfo(self, idx: str | None) -> Dict[str, DeviceInfo]:
 
         data = {}
@@ -125,16 +132,16 @@ class GeneralDeviceManager(DeviceBase):
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
 
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
+
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
-
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
             # 检查窗口可见性是否符合预期
             if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)

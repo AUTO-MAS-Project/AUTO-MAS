@@ -11,18 +11,20 @@
     <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
+        <!-- eslint-disable vue/no-v-html 更新说明来自 MAS 后端 markdown，属可信内容 -->
         <div
           ref="markdownContentRef"
           class="markdown-content"
           v-html="renderMarkdown(updateContent)"
         ></div>
+        <!-- eslint-enable vue/no-v-html -->
       </div>
 
       <!-- 操作按钮 -->
       <div class="update-footer">
         <div class="update-actions">
-          <a-button @click="handleCancel">暂不更新</a-button>
-          <a-button type="primary" @click="handleDownload"> 下载更新 </a-button>
+          <a-button @click="handleCancel">{{ t('comp.notNow') }}</a-button>
+          <a-button type="primary" @click="handleDownload">{{ t('comp.downloadUpdate') }}</a-button>
         </div>
       </div>
     </div>
@@ -33,10 +35,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('更新模态框')
 
 // Props 定义

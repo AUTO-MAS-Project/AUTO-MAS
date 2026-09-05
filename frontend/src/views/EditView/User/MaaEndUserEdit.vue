@@ -6,20 +6,20 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
           </div>
-          <h2 class="mask-title">正在进行 MaaEnd 配置</h2>
+          <h2 class="mask-title">{{ t('edit.maaendConfigurationProgress') }}</h2>
           <p class="mask-description">
-            当前正在为这个用户打开 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。
+            {{ t('edit.maaendConfigurationWindowOpen') }}
             <br />
-            配置完成后，点击“保存配置”结束本次会话。
+            {{ t('edit.clickSaveConfigurationWhen') }}
           </p>
           <div class="mask-actions">
             <a-button
-              v-if="maaEndWebsocketId"
+              v-if="maaEndTaskId"
               type="primary"
               size="large"
               @click="handleSaveMaaEndConfig"
             >
-              保存配置
+              {{ t('edit.saveConfiguration') }}
             </a-button>
           </div>
         </div>
@@ -43,7 +43,7 @@
           class="config-form"
         >
           <BasicInfoSection
-            :form-data="formData"
+            v-model:form-data="formData"
             :loading="loading"
             :resource-options="resourceOptions"
             :preset-supported="presetSupported"
@@ -63,13 +63,19 @@
             :essence-location-options="essenceLocationOptions"
             :options-loading="maaEndOptionsLoading"
             :options-loaded="maaEndOptionsLoaded"
+            :is-plan-mode="isSanityPlanMode"
+            :sanity-mode-options="sanityModeOptions"
+            :plan-mode-config="planModeConfig"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
           />
-          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
-          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
-          <NotifyConfigSection
-            :form-data="formData"
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
+          <UserNotifyConfig
+            v-model="formData.Notify"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
@@ -82,24 +88,40 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
+import { usePlanApi } from '@/composables/usePlanApi'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
+import {
+  MAAEND_PLAN_WEEKDAY_KEYS,
+  maaEndPlanKeyToSanityConfig,
+  type MaaEndSanityConfig,
+} from '@/utils/maaEndProtocolSpace'
+import { getWeekdayInTimezone } from '@/utils/dateUtils'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '@/views/MaaEndUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
@@ -107,6 +129,7 @@ const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
+const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -126,11 +149,18 @@ const presetSupported = ref(true)
 const maaEndConfigLoading = ref(false)
 const maaEndImportLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
-const maaEndSubscriptionId = ref<string | null>(null)
-const maaEndWebsocketId = ref<string | null>(null)
+const maaEndSubscriptionIds = ref<string[]>([])
+const maaEndTaskId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
+const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.fixed'), value: 'Fixed' },
+])
+const planModeConfig = ref<MaaEndSanityConfig | null>(null)
+// 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
+let sanityPlanLoadVersion = 0
+const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -138,7 +168,7 @@ const getDefaultMaaEndUserData = () => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '脚本',
     IfQuickConfig: true,
     SanityMode: 'Fixed',
     Resource: '官服',
@@ -147,8 +177,6 @@ const getDefaultMaaEndUserData = () => ({
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
-    IfSkland: false,
-    SklandToken: '',
     Notes: '',
     Tag: '',
   },
@@ -187,9 +215,7 @@ const getDefaultMaaEndUserData = () => ({
   },
   Data: {
     LastProxyDate: '',
-    LastSklandDate: '',
     ProxyTimes: 0,
-    IfPassCheck: false,
   },
 })
 
@@ -205,8 +231,8 @@ const formData = reactive({
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 1, max: 50, message: '用户名长度应为 1-50 个字符', trigger: 'blur' },
+    { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
+    { min: 1, max: 50, message: t('edit.usernameMustBe12'), trigger: 'blur' },
   ],
 }))
 
@@ -288,12 +314,60 @@ const loadMaaEndOptions = async () => {
   }
 }
 
+const loadSanityModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MAAEND,
+    })
+    if (response?.code === 200 && response.data) {
+      sanityModeOptions.value = response.data
+        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
+        .map(item => ({ label: item.label, value: item.value }))
+    }
+  } catch (error) {
+    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+const loadSanityPlan = async (planId: string) => {
+  const version = ++sanityPlanLoadVersion
+
+  if (!planId || planId === 'Fixed') {
+    planModeConfig.value = null
+    return
+  }
+
+  try {
+    const response = await getPlans(planId)
+    // 已切换到其他计划表：丢弃过期响应，避免旧数据覆盖当前 UI
+    if (version !== sanityPlanLoadVersion || formData.Info.SanityMode !== planId) {
+      return
+    }
+    const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
+    const planIndex = response.index?.find(item => item.uid === planId)
+    if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
+      planModeConfig.value = null
+      return
+    }
+    const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
+    const info = planData.Info as Record<string, unknown> | undefined
+    const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
+    planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
+  } catch (error) {
+    if (version !== sanityPlanLoadVersion) {
+      return
+    }
+    planModeConfig.value = null
+    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 const normalizeQuickConfig = async () => {
   if (!userId) return
 
   const infoPayload: Record<string, unknown> = {}
   if (formData.Info.Mode === '自定义') {
-    formData.Info.Mode = '详细'
+    formData.Info.Mode = '用户'
     formData.Info.IfQuickConfig = false
     infoPayload.Mode = formData.Info.Mode
     infoPayload.IfQuickConfig = formData.Info.IfQuickConfig
@@ -342,11 +416,11 @@ const loadUserData = async () => {
 }
 
 const cleanupConfigSession = () => {
-  if (maaEndSubscriptionId.value) {
-    unsubscribe(maaEndSubscriptionId.value)
-    maaEndSubscriptionId.value = null
+  for (const subscriptionId of maaEndSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  maaEndWebsocketId.value = null
+  maaEndSubscriptionIds.value = []
+  maaEndTaskId.value = null
   showMaaEndConfigMask.value = false
   if (maaEndConfigTimeout) {
     window.clearTimeout(maaEndConfigTimeout)
@@ -359,7 +433,7 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const configTaskTargetId = formData.Info.Mode === '简洁' ? scriptId : userId
+    const configTaskTargetId = formData.Info.Mode === '脚本' ? scriptId : userId
     const response = await Service.addTaskApiDispatchStartPost({
       taskId: configTaskTargetId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
@@ -369,32 +443,31 @@ const handleMaaEndConfig = async () => {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
     }
 
-    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+    const subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(t('edit.maaendConfigurationErrorP0', { p0: data.message }))
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
         cleanupConfigSession()
-        return
-      }
+      }),
+    ]
 
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupConfigSession()
-      }
-    })
-
-    maaEndSubscriptionId.value = subscriptionId
-    maaEndWebsocketId.value = response.taskId
+    maaEndSubscriptionIds.value = subscriptionIds
+    maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success(`已启动 ${formData.Info.Mode === '简洁' ? '脚本' : '用户'} MaaEnd 配置`)
+    message.success(
+      t('edit.startedP0MaaendConfiguration', {
+        p0: formData.Info.Mode === '脚本' ? '脚本' : '用户',
+      })
+    )
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
         cleanupConfigSession()
-        message.info('MaaEnd 配置会话已超时断开')
+        message.info(t('edit.maaendConfigurationSessionTimed'))
       },
       30 * 60 * 1000
     )
@@ -410,12 +483,14 @@ const handleImportMaaEndConfig = async () => {
     maaEndImportLoading.value = true
     const response = await importScriptConfigFile(
       scriptId,
-      formData.Info.Mode === '简洁' ? null : userId
+      formData.Info.Mode === '脚本' ? null : userId
     )
     if (response.code !== 200) {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
-    message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
+    message.success(
+      t('edit.importedP0ConfigurationFile', { p0: formData.Info.Mode === '脚本' ? '脚本' : '用户' })
+    )
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
   } finally {
@@ -425,17 +500,17 @@ const handleImportMaaEndConfig = async () => {
 
 const handleSaveMaaEndConfig = async () => {
   try {
-    if (!maaEndWebsocketId.value) {
+    if (!maaEndTaskId.value) {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }
 
     cleanupConfigSession()
-    message.success('MaaEnd 配置已保存')
+    message.success(t('edit.maaendConfigurationSaved'))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存配置失败')
   }
@@ -449,6 +524,7 @@ const handleCancel = () => {
 onMounted(async () => {
   await loadScriptInfo()
   await loadMaaEndOptions()
+  await loadSanityModeOptions()
 
   if (isEdit.value) {
     await loadUserData()
@@ -460,15 +536,23 @@ onMounted(async () => {
       isEdit.value = true
       await normalizeQuickConfig()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       router.push('/scripts')
       return
     }
   }
 
   await nextTick()
+  await loadSanityPlan(formData.Info.SanityMode)
   isInitializing.value = false
 })
+
+watch(
+  () => formData.Info.SanityMode,
+  value => {
+    void loadSanityPlan(value)
+  }
+)
 </script>
 
 <style scoped>

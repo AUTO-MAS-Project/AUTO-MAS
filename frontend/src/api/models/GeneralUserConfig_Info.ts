@@ -16,6 +16,10 @@ export type GeneralUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
+     * 是否使用用户独立脚本配置
+     */
+    IfUseMasConfig?: (boolean | null);
+    /**
      * 是否在任务前执行脚本
      */
     IfScriptBeforeTask?: (boolean | null);

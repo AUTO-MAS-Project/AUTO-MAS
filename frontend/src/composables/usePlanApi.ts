@@ -1,8 +1,10 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getPlanCreateType, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 const logger = window.electronAPI.getLogger('计划API')
 
@@ -18,7 +20,7 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取计划失败: ${errorMsg}`)
-      message.error('获取计划失败')
+      message.error(t('misc.couldNotLoadPlan'))
       throw error
     } finally {
       loading.value = false
@@ -26,13 +28,15 @@ export function usePlanApi() {
   }
 
   // 创建计划
-  const createPlan = async (type: string) => {
+  const createPlan = async (type: PlanConfigType) => {
     loading.value = true
     try {
-      if (type === 'MaaPlanConfig') {
-        type = 'MaaPlan'
+      const createType = getPlanCreateType(type)
+      if (!createType) {
+        throw new Error(t('misc.unsupportedPlanTypeP0', { p0: type }))
       }
-      const params: PlanCreateIn = { type }
+
+      const params: PlanCreateIn = { type: createType }
       const response = await Service.addPlanApiPlanAddPost(params)
 
       // 播放添加计划成功音频
@@ -43,7 +47,7 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`创建计划失败: ${errorMsg}`)
-      message.error('创建计划失败')
+      message.error(t('misc.couldNotCreatePlan'))
       throw error
     } finally {
       loading.value = false
@@ -51,7 +55,7 @@ export function usePlanApi() {
   }
 
   // 更新计划
-  const updatePlan = async (planId: string, data: Record<string, Record<string, any>>) => {
+  const updatePlan = async (planId: string, data: PlanUpdateIn['data']) => {
     loading.value = true
     try {
       const params: PlanUpdateIn = { planId, data }
@@ -60,7 +64,7 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新计划失败: ${errorMsg}`)
-      message.error('更新计划失败')
+      message.error(t('misc.couldNotUpdatePlan'))
       throw error
     } finally {
       loading.value = false
@@ -82,7 +86,7 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`删除计划失败: ${errorMsg}`)
-      message.error('删除计划失败')
+      message.error(t('misc.couldNotDeletePlan'))
       throw error
     } finally {
       loading.value = false
@@ -100,7 +104,7 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`重新排序失败: ${errorMsg}`)
-      message.error('重新排序失败')
+      message.error(t('misc.couldNotReorder'))
       throw error
     } finally {
       loading.value = false

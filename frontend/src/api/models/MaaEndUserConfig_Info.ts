@@ -20,9 +20,9 @@ export type MaaEndUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 配置文件来源
+     * 配置来源（脚本/用户）
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('脚本' | '用户' | null);
     /**
      * 是否启用快速配置
      */
@@ -59,14 +59,6 @@ export type MaaEndUserConfig_Info = {
      * 备注
      */
     Notes?: (string | null);
-    /**
-     * 是否启用森空岛签到
-     */
-    IfSkland?: (boolean | null);
-    /**
-     * SklandToken
-     */
-    SklandToken?: (string | null);
     /**
      * 用户标签信息
      */

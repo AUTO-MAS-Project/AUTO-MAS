@@ -1,3 +1,4 @@
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import type { HomeLayoutConfig, HomeModuleDescriptor, HomeModuleKey } from '@/types/home'
@@ -10,17 +11,14 @@ export const defaultHomeModuleOrder: HomeModuleKey[] = [
   'satellite',
   'proxy',
   'endfield',
+  'starrail',
+  'genshin',
+  'zenless',
+  'wutheringwaves',
+  'nte',
+  'reverse1999',
   'arknights',
 ]
-
-export const moduleTitleMap: Record<HomeModuleKey, string> = {
-  command: '快速开始',
-  quick: '常用入口',
-  satellite: '卫星环绕',
-  proxy: '代理状态',
-  endfield: '终末地活动信息',
-  arknights: '明日方舟活动信息',
-}
 
 const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
   return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
@@ -40,6 +38,7 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   return {
     moduleOrder: [...configuredOrder, ...missingModules],
     hiddenModules: normalizeModuleKeys(config.hiddenModules),
+    hideScrollHint: config.hideScrollHint === true,
   }
 }
 
@@ -50,16 +49,19 @@ export const useHomeLayout = () => {
   const layoutDrawerOpen = ref(false)
   const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
   const hiddenHomeModules = ref<HomeModuleKey[]>([])
+  const scrollHintHidden = ref(false)
   let saveQueue = Promise.resolve()
 
   const currentLayout = (): HomeLayoutConfig => ({
     moduleOrder: [...homeModuleOrder.value],
     hiddenModules: [...hiddenHomeModules.value],
+    hideScrollHint: scrollHintHidden.value,
   })
 
   const applyLayout = (layout: HomeLayoutConfig) => {
     homeModuleOrder.value = [...layout.moduleOrder]
     hiddenHomeModules.value = [...layout.hiddenModules]
+    scrollHintHidden.value = layout.hideScrollHint === true
   }
 
   const logWarning = (message: string, error: unknown) => {
@@ -71,6 +73,7 @@ export const useHomeLayout = () => {
     const snapshot: HomeLayoutConfig = {
       moduleOrder: [...layout.moduleOrder],
       hiddenModules: [...layout.hiddenModules],
+      hideScrollHint: layout.hideScrollHint === true,
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
     saveQueue = saveTask.catch(error => {
@@ -134,10 +137,17 @@ export const useHomeLayout = () => {
     return queueLayoutSave(currentLayout())
   }
 
+  const setScrollHintHidden = (hidden: boolean) => {
+    scrollHintHidden.value = hidden
+    return queueLayoutSave(currentLayout())
+  }
+
+  const { t } = useI18n()
+
   const homeModules = computed<HomeModuleDescriptor[]>(() =>
     homeModuleOrder.value.map(key => ({
       key,
-      title: moduleTitleMap[key],
+      title: t(`home.module.${key}`),
       visible: isHomeModuleShown(key),
     }))
   )
@@ -147,10 +157,12 @@ export const useHomeLayout = () => {
     layoutDrawerOpen,
     homeModuleOrder,
     hiddenHomeModules,
+    scrollHintHidden,
     homeModules,
     loadHomeLayout,
     reorderHomeModules,
     setHomeModuleShown,
+    setScrollHintHidden,
     isHomeModuleShown,
     isHomeModuleVisible,
   }

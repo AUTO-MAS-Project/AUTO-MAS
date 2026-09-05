@@ -2,7 +2,7 @@
   <div class="date-sidebar">
     <div class="sidebar-header">
       <CalendarOutlined />
-      <span>日期列表</span>
+      <span>{{ t('history.dateList') }}</span>
     </div>
     <div class="date-list">
       <a-collapse
@@ -35,19 +35,22 @@
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-        <span class="empty-text">暂无数据</span>
+        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
+        <span class="empty-text">{{ t('history.empty') }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { HistoryData } from '@/api'
 import { CalendarOutlined, RightOutlined, UserOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 import { formatHistoryGroupLabel } from '@/utils/dateDisplay'
 import type { HistoryDateGroup } from '../useHistoryLogic.ts'
+
+const { t } = useI18n()
 
 interface Props {
   historyData: HistoryDateGroup[]
@@ -240,8 +243,6 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   font-size: 13px;
   color: var(--ant-color-text-secondary);
 }
-
-
 </style>
 
 <style>

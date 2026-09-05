@@ -21,11 +21,11 @@
 #   Contact: DLmaster_361@163.com
 
 
+
 from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
-from app.services.endfield_activity import endfield_activity_service
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
@@ -65,7 +65,7 @@ async def get_git_version() -> VersionOut:
     status_code=200,
 )
 async def get_stage_combox(
-    stage: GetStageIn = Body(..., description="关卡号类型")
+    stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
     try:
@@ -127,10 +127,10 @@ async def get_task_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_plan_combox() -> ComboBoxOut:
+async def get_plan_combox(plan: PlanComboxIn = Body(...)) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_plan_combox()
+        raw_data = await Config.get_plan_combox(plan.consumer)
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(
@@ -258,7 +258,6 @@ async def get_web_config() -> InfoOut:
     status_code=200,
 )
 async def get_overview() -> InfoOut:
-    endfield_overview = await endfield_activity_service.get_overview()
     try:
         stage_by_server = {
             server: await Config.get_stage_info("Info", server=server)
@@ -277,13 +276,15 @@ async def get_overview() -> InfoOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data={"Stage": [], "Proxy": [], "Endfield": endfield_overview},
+            data={
+                "Stage": [],
+                "Proxy": [],
+            },
         )
     return InfoOut(
         data={
             "Stage": stage_by_server["Official"],
             "StageByServer": stage_by_server,
             "Proxy": proxy,
-            "Endfield": endfield_overview,
         }
     )

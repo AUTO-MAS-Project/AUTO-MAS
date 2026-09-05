@@ -1,14 +1,36 @@
 <template>
-  <a-modal v-model:open="visible" title="系统公告" :width="800" :footer="null" :closable="false" :mask-closable="false"
-    class="notice-modal">
+  <a-modal
+    v-model:open="visible"
+    :title="t('comp.announcement')"
+    :width="800"
+    :footer="null"
+    :closable="false"
+    :mask-closable="false"
+    class="notice-modal"
+  >
     <div v-if="notices.length > 0" class="notice-container">
       <!-- 公告标签页 - 竖直布局 -->
-      <a-tabs v-model:active-key="activeNoticeKey" tab-position="left" class="notice-tabs"
-        :tab-bar-style="{ width: '200px' }">
-        <a-tab-pane v-for="(content, title) in noticeData" :key="title" :tab="title" class="notice-tab-pane">
+      <a-tabs
+        v-model:active-key="activeNoticeKey"
+        tab-position="left"
+        class="notice-tabs"
+        :tab-bar-style="{ width: '200px' }"
+      >
+        <a-tab-pane
+          v-for="(content, title) in noticeData"
+          :key="title"
+          :tab="title"
+          class="notice-tab-pane"
+        >
           <div class="notice-content">
-            <div ref="markdownContentRef" class="markdown-content" @click="handleLinkClick"
-              v-html="renderMarkdown(content)"></div>
+            <!-- eslint-disable vue/no-v-html 公告内容来自 MAS 后端 markdown，属可信内容 -->
+            <div
+              ref="markdownContentRef"
+              class="markdown-content"
+              @click="handleLinkClick"
+              v-html="renderMarkdown(content)"
+            ></div>
+            <!-- eslint-enable vue/no-v-html -->
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -20,8 +42,13 @@
         </div>
 
         <div class="notice-actions">
-          <a-button type="primary" :loading="confirming" class="confirm-button" @click="confirmNotices">
-            我知道了
+          <a-button
+            type="primary"
+            :loading="confirming"
+            class="confirm-button"
+            @click="confirmNotices"
+          >
+            {{ t('comp.gotIt') }}
           </a-button>
         </div>
       </div>
@@ -30,11 +57,14 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('公告模态框')
 
@@ -95,7 +125,7 @@ const confirmNotices = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`确认公告失败: ${errorMsg}`)
-    message.error('确认公告失败，请重试')
+    message.error(t('comp.couldNotConfirmAnnouncement'))
   } finally {
     confirming.value = false
   }
@@ -114,7 +144,7 @@ const handleLinkClick = async (event: MouseEvent) => {
           const result = await window.electronAPI.openUrl(url)
           if (!result.success) {
             logger.error(`打开链接失败: ${String(result.error)}`)
-            message.error('打开链接失败，请手动复制链接地址')
+            message.error(t('comp.couldNotOpenLink'))
           }
         } else {
           // 如果不在Electron环境中，使用普通的window.open
@@ -123,7 +153,7 @@ const handleLinkClick = async (event: MouseEvent) => {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`打开链接失败: ${errorMsg}`)
-        message.error('打开链接失败，请手动复制链接地址')
+        message.error(t('comp.couldNotOpenLink'))
       }
     }
   }

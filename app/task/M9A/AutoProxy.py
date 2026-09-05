@@ -20,26 +20,30 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import uuid
 import asyncio
+import json
 import re
+import time
+import uuid
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, timedelta
 
 from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import M9AConfig, M9AUserConfig
-from app.models.emulator import DeviceInfo, DeviceBase
+from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.io import read_file, write_file
-from app.utils.constants import UTC4,UTC8
-from .tools import push_notification
 from app.task.general.tools import execute_script_task
-from .tools.notify import M9ALogAnalyzer
+from app.utils import LogMonitor, ProcessManager, get_logger
+from app.utils.constants import UTC4
+from app.utils.io import read_file, write_file
+
 from .task_loader import M9ATaskLoader
+from .tools import push_notification
+from .tools.notify import M9ALogAnalyzer
 
 logger = get_logger("M9A 自动代理")
 
@@ -86,8 +90,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 初始化路径
         self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
         self.m9a_config_path = self.m9a_root_path / "config"
-        today_date = datetime.now().strftime("%Y%m%d")
-        self.m9a_log_path = self.m9a_root_path / f"logs/log-{today_date}.log"
+        self.m9a_logs_dir = self.m9a_root_path / "logs"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
@@ -104,17 +107,28 @@ class AutoProxyTask(TaskExecuteBase):
         self._m9a_failure_signal_seen = False
         self._m9a_failure_quiet_task: asyncio.Task | None = None
 
+    def _resolve_log_file_path(self) -> Path:
+        """按当前本地日期解析 M9A 日志路径。
+
+        M9A 每天写一个 ``logs/log-YYYYMMDD.log``。路径必须在监控循环里按需
+        重算，否则任务跨过本地午夜后 M9A 写入新文件，监控仍盯着旧文件，
+        读不到新行并最终误判为超时。
+        """
+
+        today_date = datetime.now().strftime("%Y%m%d")
+        return self.m9a_logs_dir / f"log-{today_date}.log"
+
     async def check(self) -> str:
 
         if self.is_virtual_update_user:
             return "Pass"
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
+        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
+        if (
+            self.task_info.is_queue_task
+            and self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -130,7 +144,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
-
+        self.log_start_at = time.monotonic()
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -146,12 +160,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -160,7 +175,11 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
         self.run_complete = False
-        retry_limit = 1 if self.is_virtual_update_user else self.script_config.get("Run", "RunTimesLimit")
+        retry_limit = (
+            1
+            if self.is_virtual_update_user
+            else self.script_config.get("Run", "RunTimesLimit")
+        )
         for i in range(retry_limit):
             logger.info(
                 f"用户 {self.cur_user_item.name} 自动代理模式 - 尝试次数: {i + 1}/{retry_limit}"
@@ -169,9 +188,10 @@ class AutoProxyTask(TaskExecuteBase):
             self._m9a_failed_task_names.clear()
             self._m9a_failure_signal_seen = False
             self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = (
-                self.cur_user_log
-            ) = LogRecord()
+            self.log_start_at = time.monotonic()
+            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
+                LogRecord()
+            )
 
             if self.is_virtual_update_user:
                 queue = []
@@ -191,10 +211,14 @@ class AutoProxyTask(TaskExecuteBase):
 
                 queue = self._filter_queue_for_run(queue)
                 if not queue:
-                    logger.info(f"用户 {self.cur_user_uid} 的目标任务均已完成，跳过 M9A 启动")
+                    logger.info(
+                        f"用户 {self.cur_user_uid} 的目标任务均已完成，跳过 M9A 启动"
+                    )
                     self.run_complete = True
                     self.skip_proxy_count = True
-                    self.cur_user_log.content = ["所有目标任务已完成，本次跳过 M9A 启动"]
+                    self.cur_user_log.content = [
+                        "所有目标任务已完成，本次跳过 M9A 启动"
+                    ]
                     self.cur_user_log.status = "Success!"
                     break
 
@@ -215,11 +239,15 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     self.emulator_opened = True
             except Exception as e:
-                logger.opt(exception=True).warning(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
-                await Config.send_websocket_message(
+                logger.opt(exception=True).warning(
+                    f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}"
+                )
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"启动模拟器时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"启动模拟器时出现异常: {e}"
+                    ),
                 )
                 self.cur_user_log.content = [
                     "模拟器启动失败, M9A 未实际运行, 无日志记录"
@@ -262,15 +290,15 @@ class AutoProxyTask(TaskExecuteBase):
             # 等待 M9A 处理日志文件与初始化
             logger.info("等待 M9A 初始化...")
             await asyncio.sleep(5)
-            
+
             # 检查 M9A 进程是否还在运行
             if not await self.m9a_process_manager.is_running():
                 logger.warning("M9A 进程启动后立即退出，可能是 ADB 连接或模拟器问题")
                 raise RuntimeError("M9A 进程启动失败，请检查模拟器和 ADB 连接")
-            
+
             logger.info("M9A 进程正常运行中...")
             await self.m9a_log_monitor.start_monitor_file(
-                self.m9a_log_path, self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()
@@ -283,9 +311,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.cur_user_log.status == "Success!":
                 logger.info(f"用户: {self.cur_user_uid} - M9A进程完成代理任务")
-                self.script_info.log = (
-                    "检测到 M9A 完成代理任务\n正在等待相关程序结束"
-                )
+                self.script_info.log = "检测到 M9A 完成代理任务\n正在等待相关程序结束"
                 self.run_complete = True
                 # 执行任务后脚本
                 if self.cur_user_config.get("Info", "IfScriptAfterTask"):
@@ -298,9 +324,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
-                self.script_info.log = (
-                    f"{self.cur_user_log.status}\n正在中止相关程序"
-                )
+                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
                 await self.m9a_process_manager.kill()
                 self.m9a_started = False
@@ -320,7 +344,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_item.name}出现异常",
                     "异常",
                     3,
-                )        
+                )
 
                 await asyncio.sleep(3)
 
@@ -333,7 +357,9 @@ class AutoProxyTask(TaskExecuteBase):
 
     def _load_user_queue(self) -> tuple[list, str | None]:
         queue = self.cur_user_config.get("Task", "Queue")
-        logger.info(f"用户 {self.cur_user_uid} 的任务队列(原始): {queue}, 类型: {type(queue)}")
+        logger.info(
+            f"用户 {self.cur_user_uid} 的任务队列(原始): {queue}, 类型: {type(queue)}"
+        )
 
         if isinstance(queue, str):
             try:
@@ -406,14 +432,17 @@ class AutoProxyTask(TaskExecuteBase):
             if (
                 entry == LUCIDSCAPE_ENTRY
                 and self.script_config.get("Run", "IfSleepDreamMonthlyOnce")
-                and self.cur_user_config.get("Data", "LastLucidscapeMonth") == current_month
+                and self.cur_user_config.get("Data", "LastLucidscapeMonth")
+                == current_month
             ):
                 logger.info(f"自动醒梦本月已完成，跳过任务: {task_name}")
                 continue
 
             filtered_queue.append(queue_item)
 
-        logger.info(f"用户 {self.cur_user_uid} 将执行 {len(filtered_queue)} 个任务: {filtered_queue}")
+        logger.info(
+            f"用户 {self.cur_user_uid} 将执行 {len(filtered_queue)} 个任务: {filtered_queue}"
+        )
         return filtered_queue
 
     def _collect_completed_task_entries(self) -> set[str]:
@@ -441,7 +470,13 @@ class AutoProxyTask(TaskExecuteBase):
         if LUCIDSCAPE_ENTRY in completed_entries:
             await self.cur_user_config.set("Data", "LastLucidscapeMonth", current_month)
 
-    async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo, resource: str = "官服", account: str = ""):
+    async def write_m9a_config(
+        self,
+        queue: list,
+        emulator_info: DeviceInfo,
+        resource: str = "官服",
+        account: str = "",
+    ):
         """向 M9A 目录写入运行配置文件，并保存 debug 备份"""
         logger.info("开始配置 M9A 运行参数")
 
@@ -465,7 +500,7 @@ class AutoProxyTask(TaskExecuteBase):
                     emulator_index=emulator_index,
                     emulator_manager=self.emulator_manager,
                     resource=resource,
-                    account=account
+                    account=account,
                 )
         except Exception as e:
             logger.warning(f"构建 M9A 配置失败: {e}")
@@ -478,7 +513,7 @@ class AutoProxyTask(TaskExecuteBase):
         # Debug 备份：保存到 data/script_id 目录，按 testN.json 递增，保留最近 5 个
         debug_dir = Path("data") / self.script_info.script_id
         debug_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # 查找现有 test*.json 文件，获取下一个编号
         existing_tests = list(debug_dir.glob("test*.json"))
         test_numbers = []
@@ -486,14 +521,14 @@ class AutoProxyTask(TaskExecuteBase):
             match = re.search(r"test(\d+)\.json", test_file.name)
             if match:
                 test_numbers.append(int(match.group(1)))
-        
+
         next_num = max(test_numbers) + 1 if test_numbers else 1
         backup_path = debug_dir / f"test{next_num}.json"
-        
+
         # 保存备份
         write_file(backup_path, config)
         logger.info(f"Debug 备份已保存：{backup_path}")
-        
+
         # 清理旧备份，只保留最近 5 个
         existing_tests = list(debug_dir.glob("test*.json"))
         test_files_with_num = []
@@ -501,7 +536,7 @@ class AutoProxyTask(TaskExecuteBase):
             match = re.search(r"test(\d+)\.json", test_file.name)
             if match:
                 test_files_with_num.append((int(match.group(1)), test_file))
-        
+
         # 按编号排序，删除最旧的
         test_files_with_num.sort(key=lambda x: x[0])
         if len(test_files_with_num) > 5:
@@ -512,7 +547,6 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.debug(f"已删除旧备份文件：{file_path}")
                 except Exception as e:
                     logger.warning(f"删除旧备份文件失败 {file_path}: {e}")
-
 
     @staticmethod
     def _extract_failed_task_names(log: str) -> set[str]:
@@ -530,11 +564,11 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def _wait_for_failure_quiet_period(self) -> None:
         while not self.wait_event.is_set():
-            idle_seconds = (
-                datetime.now() - self.m9a_log_monitor.latest_time
-            ).total_seconds()
+            idle_seconds = self.m9a_log_monitor.seconds_since_progress()
             if idle_seconds >= M9A_FAILURE_QUIET_SECONDS:
-                failed_tasks = "、".join(sorted(self._m9a_failed_task_names)) or "未知任务"
+                failed_tasks = (
+                    "、".join(sorted(self._m9a_failed_task_names)) or "未知任务"
+                )
                 self.cur_user_log.status = f"M9A 任务失败: {failed_tasks}"
                 self.script_info.log = (
                     f"{self.cur_user_log.status}\n"
@@ -577,15 +611,17 @@ class AutoProxyTask(TaskExecuteBase):
                 "New version detected",
             ]
             if any(kw in log for kw in version_keywords):
-                if not getattr(self.script_info, '_m9a_has_new_version', False):
+                if not getattr(self.script_info, "_m9a_has_new_version", False):
                     self.script_info._m9a_has_new_version = True
                     logger.info("在首个用户日志中检测到 M9A 新版本提示！")
 
-            version_match = re.search(r'当前资源版本：v([\d.]+)', log)
-            if version_match and not getattr(self.script_info, '_m9a_current_version', None):
+            version_match = re.search(r"当前资源版本：v([\d.]+)", log)
+            if version_match and not getattr(
+                self.script_info, "_m9a_current_version", None
+            ):
                 self.script_info._m9a_current_version = version_match.group(1)
 
-            version_match = re.search(r'最新资源版本：v([\d.]+)', log)
+            version_match = re.search(r"最新资源版本：v([\d.]+)", log)
             if version_match:
                 self.script_info._m9a_latest_version = version_match.group(1)
 
@@ -612,8 +648,8 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "M9A 进程已异常结束"
             else:
                 self.cur_user_log.status = "M9A 进程已结束"
-        elif datetime.now() - latest_time > timedelta(
-            minutes=self.script_config.get("Run", "RunTimeLimit")
+        elif self.is_log_stalled(
+            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "M9A 进程超时"
         else:
@@ -631,11 +667,11 @@ class AutoProxyTask(TaskExecuteBase):
     async def _check_virtual_user_log(self, log: str):
 
         if "获取资源包下载信息失败" in log:
-            reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
+            reason_match = re.search(r"原因=(.+?)(?:\n|$)", log)
             reason = reason_match.group(1).strip() if reason_match else "未知原因"
             logger.warning(f"虚拟用户: M9A 资源更新失败 - {reason}")
             self.cur_user_log.status = f"M9A 更新失败: {reason}"
-            if not hasattr(self.script_info, '_m9a_err_log'):
+            if not hasattr(self.script_info, "_m9a_err_log"):
                 self.script_info._m9a_err_log = []
             self.script_info._m9a_err_log.append("获取资源包下载信息失败")
             self.wait_event.set()
@@ -644,19 +680,19 @@ class AutoProxyTask(TaskExecuteBase):
         if "文件操作失败" in log and "远程主机强迫关闭了一个现有的连接" in log:
             logger.warning("虚拟用户: M9A 更新下载失败 - 网络连接中断")
             self.cur_user_log.status = "M9A 更新失败: 网络连接中断"
-            if not hasattr(self.script_info, '_m9a_err_log'):
+            if not hasattr(self.script_info, "_m9a_err_log"):
                 self.script_info._m9a_err_log = []
             self.script_info._m9a_err_log.append("网络连接中断")
             self.wait_event.set()
             return
 
         if "HTTP 请求失败" in log:
-            reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
+            reason_match = re.search(r"原因=(.+?)(?:\n|$)", log)
             reason = reason_match.group(1).strip() if reason_match else "HTTP 请求失败"
-            reason = re.sub(r'[（(][^）)]*[）)]$', '', reason).strip().rstrip('.')
+            reason = re.sub(r"[（(][^）)]*[）)]$", "", reason).strip().rstrip(".")
             logger.warning(f"虚拟用户: M9A HTTP 请求失败 - {reason}")
             self.cur_user_log.status = f"M9A 更新失败: {reason}"
-            if not hasattr(self.script_info, '_m9a_err_log'):
+            if not hasattr(self.script_info, "_m9a_err_log"):
                 self.script_info._m9a_err_log = []
             self.script_info._m9a_err_log.append("HTTP 请求失败")
             self.wait_event.set()
@@ -666,45 +702,49 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("虚拟用户: M9A 准备重启应用更新")
             self.script_info._m9a_restart_triggered = True
 
-        if "[ERR]" in log and not getattr(self.script_info, '_m9a_restart_triggered', False):
+        if "[ERR]" in log and not getattr(
+            self.script_info, "_m9a_restart_triggered", False
+        ):
             err_content = log.split("[ERR]", 1)[1].strip() if "[ERR]" in log else ""
             if err_content:
-                err_content = re.sub(r'\[src=[^\]]+\]', '', err_content)
-                err_content = re.sub(r'\[cfg=[^\]]+\]', '', err_content)
-                err_content = re.sub(r'\[inst=[^\]]+\]', '', err_content)
-                err_content = re.sub(r'\[op=[^\]]+\]', '', err_content)
-                err_content = ' '.join(err_content.split())
-                err_content = err_content.strip().rstrip('.')
+                err_content = re.sub(r"\[src=[^\]]+\]", "", err_content)
+                err_content = re.sub(r"\[cfg=[^\]]+\]", "", err_content)
+                err_content = re.sub(r"\[inst=[^\]]+\]", "", err_content)
+                err_content = re.sub(r"\[op=[^\]]+\]", "", err_content)
+                err_content = " ".join(err_content.split())
+                err_content = err_content.strip().rstrip(".")
                 if err_content:
                     logger.warning(f"虚拟用户: M9A 运行错误 - {err_content}")
-                    if not hasattr(self.script_info, '_m9a_err_log'):
+                    if not hasattr(self.script_info, "_m9a_err_log"):
                         self.script_info._m9a_err_log = []
-                    short_err = err_content.split(' at ')[0].strip()
+                    short_err = err_content.split(" at ")[0].strip()
                     if len(short_err) > 80:
-                        short_err = short_err[:77] + '...'
+                        short_err = short_err[:77] + "..."
                     self.script_info._m9a_err_log.append(short_err)
 
-        elapsed = (datetime.now() - self.log_start_time).total_seconds()
+        elapsed = time.monotonic() - self.log_start_at
         if elapsed > 600:
             self.script_info._m9a_timeout = True
-            err_log = getattr(self.script_info, '_m9a_err_log', [])
+            err_log = getattr(self.script_info, "_m9a_err_log", [])
             err_suffix = f"（{err_log[-1]}）" if err_log else ""
             logger.warning(f"虚拟用户: 更新超时（10分钟）{err_suffix}")
-            self.cur_user_log.status = f"M9A 更新超时"
+            self.cur_user_log.status = "M9A 更新超时"
             self.wait_event.set()
             return
 
         if not await self.m9a_process_manager.is_running():
-            if getattr(self.script_info, '_m9a_restart_triggered', False):
+            if getattr(self.script_info, "_m9a_restart_triggered", False):
                 logger.info("虚拟用户: M9A 更新成功（进程已正常重启退出）")
                 self.script_info._m9a_update_success = True
                 self.cur_user_log.status = "Success!"
                 self.wait_event.set()
                 return
             else:
-                err_log = getattr(self.script_info, '_m9a_err_log', [])
+                err_log = getattr(self.script_info, "_m9a_err_log", [])
                 err_suffix = f"（{err_log[-1]}）" if err_log else ""
-                logger.warning(f"虚拟用户: M9A 进程异常退出（未触发重启信号）{err_suffix}")
+                logger.warning(
+                    f"虚拟用户: M9A 进程异常退出（未触发重启信号）{err_suffix}"
+                )
                 self.cur_user_log.status = f"M9A 进程异常结束{err_suffix}"
                 self.wait_event.set()
                 return
@@ -737,7 +777,9 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.success(f"虚拟用户 {self.cur_user_uid} M9A 自动更新完成")
             else:
                 self.cur_user_item.status = "异常"
-                logger.warning(f"虚拟用户 {self.cur_user_uid} M9A 自动更新异常: {self.cur_user_log.status}")
+                logger.warning(
+                    f"虚拟用户 {self.cur_user_uid} M9A 自动更新异常: {self.cur_user_log.status}"
+                )
             logger.info("虚拟用户任务结束")
             return
 
@@ -765,12 +807,13 @@ class AutoProxyTask(TaskExecuteBase):
         # 保存历史记录并合并统计信息
         user_logs_list = []
         user_log_records = []
-        for t, log_item in sorted(self.cur_user_item.log_record.items(), key=lambda item: item[0]):
-
+        for t, log_item in sorted(
+            self.cur_user_item.log_record.items(), key=lambda item: item[0]
+        ):
             if log_item.status == "M9A 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,
@@ -793,9 +836,7 @@ class AutoProxyTask(TaskExecuteBase):
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         statistics["user_result"] = (
-            "代理任务全部完成"
-            if self.run_complete
-            else self.cur_user_item.result
+            "代理任务全部完成" if self.run_complete else self.cur_user_item.result
         )
 
         # 分析运行日志，获取任务详情
@@ -814,7 +855,7 @@ class AutoProxyTask(TaskExecuteBase):
             if self.run_complete:
                 # 正常完成
                 self.cur_user_item.status = "完成"
-                
+
                 if not self.skip_proxy_count:
                     # 如果是第一次代理，减少剩余天数
                     if (
@@ -829,12 +870,13 @@ class AutoProxyTask(TaskExecuteBase):
 
                     # 增加代理次数
                     await self.cur_user_config.set(
-                        "Data", "ProxyTimes",
-                        self.cur_user_config.get("Data", "ProxyTimes") + 1
+                        "Data",
+                        "ProxyTimes",
+                        self.cur_user_config.get("Data", "ProxyTimes") + 1,
                     )
 
                 logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-                
+
                 # 发送桌面通知
                 await Notify.push_plyer(
                     "成功完成一个自动代理任务！",
@@ -845,7 +887,9 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 # 未检测到正常完成标志，置为异常
                 self.cur_user_item.status = "异常"
-                logger.warning(f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}")
+                logger.warning(
+                    f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}"
+                )
                 logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
 
         try:
@@ -857,24 +901,25 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error", message=f"推送通知时出现异常: {e}"
+                ),
             )
-
 
     async def build_config(
         self,
         queue: list[dict],
-        task_loader: 'M9ATaskLoader',
+        task_loader: "M9ATaskLoader",
         emulator_info: DeviceInfo | None = None,
         emulator_id: str | None = None,
         script_config: M9AConfig | None = None,
         emulator_index: str | None = None,
-        emulator_manager = None,
+        emulator_manager=None,
         resource: str = "官服",
-        account: str = ""
+        account: str = "",
     ) -> dict:
         config = None
 
@@ -900,17 +945,16 @@ class AutoProxyTask(TaskExecuteBase):
                     "ScreencapMethods": 0,
                     "InputMethods": 0,
                     "Config": "{}",
-                    "AgentPath": "./MaaAgentBinary"
+                    "AgentPath": "./MaaAgentBinary",
                 },
                 "ResourceOptionItems": {},
                 "CurrentControllerName": "ADB",
-                "Connect.Address": ""
+                "Connect.Address": "",
             }
 
         all_tasks = task_loader.get_all_tasks_with_entry()
         config["CurrentTasks"] = [
-            f"{task['name']}<|||>{task['entry']}"
-            for task in all_tasks
+            f"{task['name']}<|||>{task['entry']}" for task in all_tasks
         ]
         logger.info(f"M9A CurrentTasks：共 {len(config['CurrentTasks'])} 个任务")
 
@@ -919,14 +963,18 @@ class AutoProxyTask(TaskExecuteBase):
         # 自动添加启动游戏（队列首）
         startup_def = task_loader.get_full_definition("启动游戏")
         if startup_def:
-            config["TaskItems"].append(self._build_task_item(startup_def, default_check=True))
+            config["TaskItems"].append(
+                self._build_task_item(startup_def, default_check=True)
+            )
 
         # 如果官服且填写了账号信息，插入切换账号
         if resource == "官服" and account:
             switch_account_def = task_loader.get_full_definition("切换账号")
             if switch_account_def:
-                switch_item = self._build_task_item(switch_account_def, default_check=True)
-                for opt in (switch_item.get("option") or []):
+                switch_item = self._build_task_item(
+                    switch_account_def, default_check=True
+                )
+                for opt in switch_item.get("option") or []:
                     if opt.get("name") == "目标账号(可选)":
                         opt["data"] = {"账号": account}
                 config["TaskItems"].append(switch_item)
@@ -951,13 +999,17 @@ class AutoProxyTask(TaskExecuteBase):
                 skipped_standalone += 1
                 continue
 
-            item = self._build_task_item(task_def, default_check=True, user_options=task_options)
+            item = self._build_task_item(
+                task_def, default_check=True, user_options=task_options
+            )
             config["TaskItems"].append(item)
 
         # 自动添加关闭游戏（队列尾）
         close_def = task_loader.get_full_definition("关闭游戏")
         if close_def:
-            config["TaskItems"].append(self._build_task_item(close_def, default_check=True))
+            config["TaskItems"].append(
+                self._build_task_item(close_def, default_check=True)
+            )
 
         logger.info(
             f"M9A TaskItems：共 {len(config['TaskItems'])} 个任务项"
@@ -967,7 +1019,11 @@ class AutoProxyTask(TaskExecuteBase):
         if emulator_id and script_config and emulator_index and emulator_manager:
             try:
                 adb_device_config = await self._build_adb_device_config(
-                    emulator_info, emulator_id, script_config, emulator_index, emulator_manager
+                    emulator_info,
+                    emulator_id,
+                    script_config,
+                    emulator_index,
+                    emulator_manager,
                 )
                 if adb_device_config:
                     config["AdbDevice"] = adb_device_config
@@ -1007,49 +1063,50 @@ class AutoProxyTask(TaskExecuteBase):
             except Exception:
                 pass
 
-        config.update({
-            "BeforeTask": "None",
-            "AfterTask": "None",
-            "CurrentTasks": [
-                "启动游戏<|||>StartUp",
-                "关闭游戏<|||>Close1999"
-            ],
-            "TaskItems": [
-                {
-                    "name": "启动游戏",
-                    "entry": "StartUp",
-                    "default_check": False,
-                    "controller": ["ADB"]
-                },
-                {
-                    "name": "关闭游戏",
-                    "entry": "Close1999",
-                    "default_check": False,
-                    "controller": ["ADB"]
-                }
-            ],
-            "Resource": config.get("Resource", "官服"),
-            "InstanceName": "MAS-Update",
-            "AutoConnectAfterRefresh": False,
-            "AutoDetectOnConnectionFailed": False,
-            "ContinueRunningWhenError": False,
-            "RememberAdb": False,
-            "RetryOnDisconnected": False,
-            "AllowAdbRestart": False,
-            "AllowAdbHardRestart": False,
-            "AdbControlScreenCapType": "None",
-            "AdbControlInputType": "None",
-            "CurrentControllerName": "ADB",
-            "UI.LiveView.RefreshRate": 10.0,
-            "UI.LiveView.EnableLiveView": True,
-            "AgentTcpMode": True,
-        })
+        config.update(
+            {
+                "BeforeTask": "None",
+                "AfterTask": "None",
+                "CurrentTasks": ["启动游戏<|||>StartUp", "关闭游戏<|||>Close1999"],
+                "TaskItems": [
+                    {
+                        "name": "启动游戏",
+                        "entry": "StartUp",
+                        "default_check": False,
+                        "controller": ["ADB"],
+                    },
+                    {
+                        "name": "关闭游戏",
+                        "entry": "Close1999",
+                        "default_check": False,
+                        "controller": ["ADB"],
+                    },
+                ],
+                "Resource": config.get("Resource", "官服"),
+                "InstanceName": "MAS-Update",
+                "AutoConnectAfterRefresh": False,
+                "AutoDetectOnConnectionFailed": False,
+                "ContinueRunningWhenError": False,
+                "RememberAdb": False,
+                "RetryOnDisconnected": False,
+                "AllowAdbRestart": False,
+                "AllowAdbHardRestart": False,
+                "AdbControlScreenCapType": "None",
+                "AdbControlInputType": "None",
+                "CurrentControllerName": "ADB",
+                "UI.LiveView.RefreshRate": 10.0,
+                "UI.LiveView.EnableLiveView": True,
+                "AgentTcpMode": True,
+            }
+        )
 
         logger.info("虚拟用户 M9A 配置构建完成")
         return config
 
     @staticmethod
-    def _build_option_list(option_names: list[str], option_definitions: dict) -> list[dict]:
+    def _build_option_list(
+        option_names: list[str], option_definitions: dict
+    ) -> list[dict]:
         options = []
         for opt_name in option_names:
             opt_item = {"name": opt_name, "index": 0}
@@ -1064,9 +1121,7 @@ class AutoProxyTask(TaskExecuteBase):
                     elif default_case:
                         selected_cases = list(default_case)
                     else:
-                        selected_cases = [
-                            c["name"] for c in cases if "name" in c
-                        ]
+                        selected_cases = [c["name"] for c in cases if "name" in c]
                     opt_item["selected_cases"] = selected_cases
 
                     sub_option_names = []
@@ -1089,7 +1144,11 @@ class AutoProxyTask(TaskExecuteBase):
                         if sub_opts:
                             opt_item["sub_options"] = sub_opts
 
-            if isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
+            if (
+                isinstance(opt_def, dict)
+                and opt_def.get("type") == "input"
+                and "inputs" in opt_def
+            ):
                 data = {}
                 for input_def in opt_def["inputs"]:
                     input_name = input_def.get("name")
@@ -1104,7 +1163,9 @@ class AutoProxyTask(TaskExecuteBase):
         return options
 
     @staticmethod
-    def _build_option_list_from_user(user_options: list[dict], option_definitions: dict) -> list[dict]:
+    def _build_option_list_from_user(
+        user_options: list[dict], option_definitions: dict
+    ) -> list[dict]:
         options = []
         for user_opt in user_options:
             opt_name = user_opt.get("name")
@@ -1138,7 +1199,10 @@ class AutoProxyTask(TaskExecuteBase):
                     elif user_selected_cases:
                         sub_option_names = []
                         for case in cases:
-                            if case.get("name") in user_selected_cases and "option" in case:
+                            if (
+                                case.get("name") in user_selected_cases
+                                and "option" in case
+                            ):
                                 sub_option_names.extend(case["option"])
                         sub_opts = AutoProxyTask._build_option_list(
                             list(dict.fromkeys(sub_option_names)), option_definitions
@@ -1156,11 +1220,19 @@ class AutoProxyTask(TaskExecuteBase):
                         if sub_opts:
                             opt_item["sub_options"] = sub_opts
 
-            user_data = user_opt.get("data") if "data" in user_opt else user_opt.get("input_values")
+            user_data = (
+                user_opt.get("data")
+                if "data" in user_opt
+                else user_opt.get("input_values")
+            )
 
             if user_data is not None:
                 opt_item["data"] = user_data
-            elif isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
+            elif (
+                isinstance(opt_def, dict)
+                and opt_def.get("type") == "input"
+                and "inputs" in opt_def
+            ):
                 data = {}
                 for input_def in opt_def["inputs"]:
                     input_name = input_def.get("name")
@@ -1174,7 +1246,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         return options
 
-    def _build_task_item(self, task_def: dict, default_check: bool = True, user_options: list | None = None) -> dict:
+    def _build_task_item(
+        self,
+        task_def: dict,
+        default_check: bool = True,
+        user_options: list | None = None,
+    ) -> dict:
         item = {
             "name": task_def["name"],
             "entry": task_def["entry"],
@@ -1192,13 +1269,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         if user_options is not None and "_option_definitions" in task_def:
             item["option"] = self._build_option_list_from_user(
-                user_options,
-                task_def["_option_definitions"]
+                user_options, task_def["_option_definitions"]
             )
         elif "option" in task_def and "_option_definitions" in task_def:
             item["option"] = self._build_option_list(
-                task_def["option"],
-                task_def["_option_definitions"]
+                task_def["option"], task_def["_option_definitions"]
             )
 
         if "pipeline_override" in task_def:
@@ -1212,7 +1287,7 @@ class AutoProxyTask(TaskExecuteBase):
         emulator_id: str,
         script_config: M9AConfig,
         emulator_index: str,
-        emulator_manager
+        emulator_manager,
     ) -> dict | None:
         try:
             emulator_uid = uuid.UUID(emulator_id)
@@ -1241,7 +1316,7 @@ class AutoProxyTask(TaskExecuteBase):
         emulator_info: DeviceInfo,
         emulator_path: Path,
         emulator_index: str,
-        emulator_manager
+        emulator_manager,
     ) -> dict:
         logger.info("构建雷电模拟器 AdbDevice 配置")
 
@@ -1250,7 +1325,9 @@ class AutoProxyTask(TaskExecuteBase):
             devices = await emulator_manager.get_device_info(emulator_index)
             if emulator_index in devices:
                 ld_player_device = devices[emulator_index]
-                logger.info(f"成功获取雷电模拟器设备信息: idx={ld_player_device.idx}, pid={ld_player_device.pid}")
+                logger.info(
+                    f"成功获取雷电模拟器设备信息: idx={ld_player_device.idx}, pid={ld_player_device.pid}"
+                )
         except Exception as e:
             logger.warning(f"获取雷电模拟器设备信息失败: {e}")
 
@@ -1265,7 +1342,7 @@ class AutoProxyTask(TaskExecuteBase):
             "enable": True,
             "index": idx,
             "path": str(emulator_root).replace("\\", "/"),
-            "pid": pid
+            "pid": pid,
         }
 
         config_json = json.dumps({"extras": {"ld": ld_extras}}, ensure_ascii=False)
@@ -1277,14 +1354,11 @@ class AutoProxyTask(TaskExecuteBase):
             "ScreencapMethods": 64,
             "InputMethods": 18446744073709551607,
             "Config": config_json,
-            "AgentPath": "./MaaAgentBinary"
+            "AgentPath": "./MaaAgentBinary",
         }
 
     def _build_mumu_config(
-        self,
-        emulator_info: DeviceInfo,
-        emulator_path: Path,
-        emulator_index: str
+        self, emulator_info: DeviceInfo, emulator_path: Path, emulator_index: str
     ) -> dict:
         logger.info("构建 MuMu 模拟器 AdbDevice 配置")
 
@@ -1295,7 +1369,7 @@ class AutoProxyTask(TaskExecuteBase):
         mumu_extras = {
             "enable": True,
             "index": int(emulator_index),
-            "path": str(emulator_root).replace("\\", "/")
+            "path": str(emulator_root).replace("\\", "/"),
         }
 
         config_json = json.dumps({"extras": {"mumu": mumu_extras}}, ensure_ascii=False)
@@ -1307,7 +1381,7 @@ class AutoProxyTask(TaskExecuteBase):
             "ScreencapMethods": 64,
             "InputMethods": 18446744073709551607,
             "Config": config_json,
-            "AgentPath": "./MaaAgentBinary"
+            "AgentPath": "./MaaAgentBinary",
         }
 
     def _build_attempt_task_details(
@@ -1326,7 +1400,9 @@ class AutoProxyTask(TaskExecuteBase):
                 analysis = M9ALogAnalyzer.parse_lines(record["content"])
                 detail_text = M9ALogAnalyzer.build_notification_text(analysis)
             except Exception as e:
-                logger.opt(exception=True).warning(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
+                logger.opt(exception=True).warning(
+                    f"解析第 {index} 次 M9A 尝试日志失败: {e}"
+                )
                 analysis = None
                 detail_text = ""
             analyses.append(analysis)
@@ -1338,7 +1414,9 @@ class AutoProxyTask(TaskExecuteBase):
             status = record["status"] or "-"
             if not detail_text:
                 detail_text = "未解析到任务详情"
-            detail_blocks.append(f"第 {index} 次尝试（{start_time}，{status}）\n{detail_text}")
+            detail_blocks.append(
+                f"第 {index} 次尝试（{start_time}，{status}）\n{detail_text}"
+            )
 
         if final_success:
             merged_tasks = {}
@@ -1360,8 +1438,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )

@@ -1,14 +1,11 @@
 <template>
   <div class="direct-control-section">
-    <div class="section-header"><h3>脚本直控</h3></div>
-    <a-alert
-      type="info"
-      show-icon
-      message="请先在 SRA / 三月七助手中完成原生配置，再一键导入；MAS 只负责启动游戏、跟踪/停止脚本进程和最终清理。"
-      class="direct-alert"
-    />
+    <div class="section-header">
+      <h3>{{ t('edit.scriptDirectControl') }}</h3>
+    </div>
+    <a-alert type="info" show-icon :message="t('edit.finishNativeSetupSra')" class="direct-alert" />
 
-    <a-empty v-if="availableEngines.length === 0" description="当前没有可用的 SRA / 三月七助手" />
+    <a-empty v-if="availableEngines.length === 0" :description="t('edit.noSraMarch7thAssistant')" />
     <div v-else class="engine-grid">
       <div v-for="engine in availableEngines" :key="engine" class="engine-card">
         <div class="engine-card-header">
@@ -19,8 +16,8 @@
           <a-switch
             :checked="Boolean(control[engine])"
             :disabled="saving"
-            checked-children="执行"
-            un-checked-children="跳过"
+            :checked-children="t('edit.run')"
+            :un-checked-children="t('edit.skip2')"
             @change="emit('toggle', engine, Boolean($event))"
           />
         </div>
@@ -43,7 +40,7 @@
             :loading="importingEngine === engine"
             @click="emit('importConfig', engine)"
           >
-            一键从源配置导入
+            {{ t('edit.importFromSourceConfiguration') }}
           </a-button>
         </a-space>
       </div>
@@ -53,14 +50,14 @@
       v-if="selectedEngines.length === 0"
       type="warning"
       show-icon
-      message="请至少启用一个直控脚本。"
+      :message="t('edit.enableAtLeastOne')"
       class="direct-alert bottom-alert"
     />
     <a-alert
       v-else-if="selectedEngines.some(engine => !importedAt(engine))"
       type="warning"
       show-icon
-      message="已启用的脚本必须先导入用户快照，任务启动检查才会通过。"
+      :message="t('edit.enabledScriptNeedsUser')"
       class="direct-alert bottom-alert"
     />
 
@@ -68,8 +65,8 @@
       <div class="mask-copy">
         <LockOutlined />
         <div>
-          <strong>MAS 管控配置已停用</strong>
-          <span>任务开关、账号、体力副本和动态选项在脚本直控模式下都不会生效。</span>
+          <strong>{{ t('edit.masManagedConfigurationOff') }}</strong>
+          <span>{{ t('edit.taskSwitchesAccountsSanity') }}</span>
         </div>
       </div>
     </div>
@@ -77,10 +74,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { CheckCircleOutlined, InfoCircleOutlined, LockOutlined } from '@ant-design/icons-vue'
 import type { HSREngine } from '@/composables/useHSRPluginApi'
-import type { HSRUserConfigData } from '@/views/HSRUserEdit/types'
+import type { HSRUserConfigData } from './types'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   availableEngines: HSREngine[]
@@ -115,25 +115,17 @@ const source = (engine: HSREngine) =>
 
 .section-header {
   margin-bottom: 12px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  margin: 0;
   font-size: 18px;
-  font-weight: 700;
 }
 
 .section-header h3::before {
-  width: 4px;
   height: 20px;
-  border-radius: 2px;
   background: var(--ant-color-primary);
-  content: '';
 }
 
 .direct-alert {

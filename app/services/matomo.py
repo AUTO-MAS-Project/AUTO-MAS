@@ -21,17 +21,18 @@
 
 
 import asyncio
-import aiohttp
 import json
-import uuid
 import platform
 import time
-from typing import Dict, Any, Optional
+import uuid
+from typing import Any, Dict, Optional
 
-from app.core import Config
-from app.utils import get_logger
+from app.utils import LazyProxy, get_logger
 
 logger = get_logger("信息上报")
+
+# 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
+Config = LazyProxy("app.core", "Config")
 
 
 class _MatomoHandler:
@@ -48,6 +49,9 @@ class _MatomoHandler:
         """获取HTTP会话"""
 
         if self.session is None or self.session.closed:
+            # aiohttp 导入约 105ms，延迟到首次上报时
+            import aiohttp
+
             timeout = aiohttp.ClientTimeout(total=10)
             self.session = aiohttp.ClientSession(timeout=timeout)
         return self.session

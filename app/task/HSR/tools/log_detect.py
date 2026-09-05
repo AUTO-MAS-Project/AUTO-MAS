@@ -23,7 +23,6 @@
 import re
 from typing import Callable
 
-
 M7A_COMPLETION_MARKERS: tuple[str, ...] = ("停止运行",)
 
 HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT = 3
@@ -39,9 +38,7 @@ HSR_EOW_COMPLETE_MARKERS: tuple[str, ...] = (
     "体力计划已完成：历战余响",
     "历战余响尚未刷新",
 )
-HSR_EOW_REWARD_COUNT_RE = re.compile(
-    r"历战余响本周可领取奖励次数[:：]\s*(\d+)\s*/\s*3"
-)
+HSR_EOW_REWARD_COUNT_RE = re.compile(r"历战余响本周可领取奖励次数[:：]\s*(\d+)\s*/\s*3")
 HSR_EOW_REMAINING_COUNT_RE = re.compile(
     r"本周[「\"]?历战余响[」\"；:：]?\s*剩余次数[:：]\s*(\d+)\s*/\s*3"
 )
@@ -63,11 +60,13 @@ HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     "未识别到战斗按钮",
     "MemoryOfChaos 主循环失败",
     # ---- SRA 货币战争 final_failure（参考 HSR-外部脚本日志语义审计.md 2.5）----
-    "[页面定位] 检测超时",            # CurrencyWars.py:159
-    "等待挑战结束超时",               # CurrencyWars.py:708
-    "货币战争开拓者名称为空",         # CosmicStrifeTask.py:34
-    "旷宇纷争-货币战争任务失败",      # CosmicStrifeTask.py:63
+    "[页面定位] 检测超时",  # CurrencyWars.py:159
+    "等待挑战结束超时",  # CurrencyWars.py:708
+    "货币战争开拓者名称为空",  # CosmicStrifeTask.py:34
+    "旷宇纷争-货币战争任务失败",  # CosmicStrifeTask.py:63
     "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:50
+    # ---- M7A 切换游戏界面失败（对应日志「发生错误 无法切换到指定游戏界面」）----
+    "无法切换到指定游戏界面",
 )
 HSR_BENIGN_FAILURE_MARKERS: tuple[str, ...] = (
     "未找到匹配文字",
@@ -113,27 +112,27 @@ HSR_SCREENSHOT_WINDOW_UNAVAILABLE_MARKERS: tuple[str, ...] = (
 
 # ===== 模块级 final marker（审计 HSR-外部脚本日志语义审计.md §4.3）=====
 HSR_DAILY_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "每日实训尚未刷新",                # daily.py:40/69
-    "每日实训未开启",                  # daily.py:42/71
+    "每日实训尚未刷新",  # daily.py:40/69
+    "每日实训未开启",  # daily.py:42/71
     "清体力未开启，跳过历战余响和清体力",  # daily.py:63
 )
 HSR_DAILY_FINAL_SUCCESS_SRA: tuple[str, ...] = (
-    "任务完成：领取每日实训奖励",      # ReceiveRewardsTask.py:230
-    "任务完成：领取邮件",              # ReceiveRewardsTask.py:146
-    "任务完成：领取派遣奖励",          # ReceiveRewardsTask.py:198
-    "任务完成：巡星之礼",              # ReceiveRewardsTask.py:173
-    "任务完成：签证奖励",              # ReceiveRewardsTask.py:100
-    "任务完成：领取兑换码",            # ReceiveRewardsTask.py:132
-    "完成任务：领取无名勋礼奖励",      # ReceiveRewardsTask.py:255
-    "没有可领取的奖励",                # ReceiveRewardsTask.py:94/97/99
+    "任务完成：领取每日实训奖励",  # ReceiveRewardsTask.py:230
+    "任务完成：领取邮件",  # ReceiveRewardsTask.py:146
+    "任务完成：领取派遣奖励",  # ReceiveRewardsTask.py:198
+    "任务完成：巡星之礼",  # ReceiveRewardsTask.py:173
+    "任务完成：签证奖励",  # ReceiveRewardsTask.py:100
+    "任务完成：领取兑换码",  # ReceiveRewardsTask.py:132
+    "完成任务：领取无名勋礼奖励",  # ReceiveRewardsTask.py:255
+    "没有可领取的奖励",  # ReceiveRewardsTask.py:94/97/99
 )
 
 HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "已达到最高积分 12000，记录时间",   # divergent_universe.py:120
+    "已达到最高积分 12000，记录时间",  # divergent_universe.py:120
     "已达到最高积分 14000，记录时间",
     "已达到最高积分 18000，记录时间",
     "检测到积分奖励已由邮件发放，跳过积分检查",  # divergent_universe.py:104
-    "「差分宇宙」积分奖励尚未刷新",     # daily.py:149
+    "「差分宇宙」积分奖励尚未刷新",  # daily.py:149
 )
 # SRA 差分宇宙和货币战争共用同一个 CosmicStrifeTask，都会打出
 # 「旷宇纷争任务全部完成」。两个集合中同时存在该 marker 是预期行为，
@@ -141,20 +140,21 @@ HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
 # sra_overrides（task_mapping.py）确保同一轮只启用其中一个，
 # 调用方传入的 module_key 决定查哪组 marker。
 HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str, ...] = (
-    "Mission accomplished",            # DivergentUniverse.py:39
-    "当前积分奖励: 18000/18000",       # DivergentUniverse.py:216
-    "旷宇纷争任务全部完成",            # CosmicStrifeTask.py:25  ⚠️需配合 sra_overrides
+    "Mission accomplished",  # DivergentUniverse.py:39
+    "当前积分奖励: 18000/18000",  # DivergentUniverse.py:216
+    "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:25  ⚠️需配合 sra_overrides
 )
 
 HSR_CURRENCY_WARS_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "已达到最高积分 18000，记录时间",   # currency_wars.py:266
-    "「货币战争」积分奖励尚未刷新",     # daily.py:131
+    "已达到最高积分 18000，记录时间",  # currency_wars.py:266
+    "「货币战争」积分奖励尚未刷新",  # daily.py:131
 )
 HSR_CURRENCY_WARS_FINAL_SUCCESS_SRA: tuple[str, ...] = (
-    "旷宇纷争任务全部完成",            # CosmicStrifeTask.py:65  ⚠️需配合 sra_overrides
-    "达到终止状态：主界面",            # CurrencyWars.py:790
-    "达到终止状态：游戏结束",          # CurrencyWars.py:790
+    "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:65  ⚠️需配合 sra_overrides
+    "达到终止状态：主界面",  # CurrencyWars.py:790
+    "达到终止状态：游戏结束",  # CurrencyWars.py:790
 )
+
 
 def emit_process_output(
     log_callback: Callable[[str], None] | None,
@@ -199,9 +199,8 @@ def has_failure_output(*texts: str) -> bool:
                 continue
             if any(marker in line for marker in HSR_BENIGN_FAILURE_MARKERS):
                 continue
-            if (
-                has_noninteractive_eof
-                and any(marker in line for marker in HSR_EOF_FAILURE_LINE_MARKERS)
+            if has_noninteractive_eof and any(
+                marker in line for marker in HSR_EOF_FAILURE_LINE_MARKERS
             ):
                 continue
             if HSR_ENGLISH_FAILURE_RE.search(line):
@@ -263,8 +262,7 @@ def detect_echo_of_war_completion(result: object, script: str) -> tuple[bool, st
                 f"已覆盖剩余 {remaining} 次历战余响"
             )
         return False, (
-            f"外部脚本日志显示历战余响仍需 {remaining} 次，"
-            "本次未确认全部完成"
+            f"外部脚本日志显示历战余响仍需 {remaining} 次，本次未确认全部完成"
         )
 
     if any(marker in text for marker in HSR_EOW_COMPLETE_MARKERS):

@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
+          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/general`" class="breadcrumb-link">
@@ -17,25 +17,36 @@
     </div>
 
     <a-space size="middle">
-      <a-button v-if="!showGeneralConfigMask" type="primary" ghost size="large" :loading="generalConfigLoading"
-        @click="handleGeneralConfig">
+      <a-button
+        v-if="!showGeneralConfigMask"
+        type="primary"
+        ghost
+        size="large"
+        :loading="generalConfigLoading"
+        @click="handleGeneralConfig"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
-        通用配置
+        {{ t('edit.generalConfiguration') }}
       </a-button>
-      <a-button v-if="showGeneralConfigMask" type="default" size="large" disabled
-        style="color: #52c41a; border-color: #52c41a">
+      <a-button
+        v-if="showGeneralConfigMask"
+        type="default"
+        size="large"
+        disabled
+        style="color: #52c41a; border-color: #52c41a"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
-        正在配置
+        {{ t('edit.configuring') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
@@ -47,15 +58,20 @@
         <div class="mask-icon">
           <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
         </div>
-        <h2 class="mask-title">正在进行通用配置</h2>
+        <h2 class="mask-title">{{ t('edit.generalConfigurationProgress') }}</h2>
         <p class="mask-description">
-          当前正在进行该用户的通用配置，请在配置界面完成相关设置。
+          {{ t('edit.generalConfigurationThisUser') }}
           <br />
           配置完成后，请点击"保存配置"按钮来结束配置会话。
         </p>
         <div class="mask-actions">
-          <a-button v-if="generalWebsocketId" type="primary" size="large" @click="handleSaveGeneralConfig">
-            保存配置
+          <a-button
+            v-if="generalTaskId"
+            type="primary"
+            size="large"
+            @click="handleSaveGeneralConfig"
+          >
+            {{ t('edit.saveConfiguration') }}
           </a-button>
         </div>
       </div>
@@ -68,145 +84,122 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item name="userName" required>
                 <template #label>
-                  <a-tooltip title="用于识别用户的显示名称">
+                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
                     <span class="form-label">
-                      用户名
+                      {{ t('edit.username') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
-                  class="modern-input" @blur="handleFieldSave('userName', formData.userName)" />
+                <a-input
+                  v-model:value="formData.userName"
+                  :placeholder="t('edit.enterUsername')"
+                  :disabled="loading"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleFieldSave('userName', formData.userName)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="status">
                 <template #label>
-                  <a-tooltip title="是否启用该用户">
+                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
                     <span class="form-label">
-                      启用状态
+                      {{ t('edit.enabled') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Status" size="large"
-                  @change="handleFieldSave('Info.Status', formData.Info.Status)">
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                <a-select
+                  v-model:value="formData.Info.Status"
+                  size="large"
+                  @change="handleFieldSave('Info.Status', formData.Info.Status)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="remainedDay">
                 <template #label>
-                  <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                  <a-tooltip :title="t('edit.daysLeftAccount1')">
                     <span class="form-label">
-                      剩余天数
+                      {{ t('edit.daysLeft') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="-1"
-                  :disabled="loading" size="large" style="width: 100%"
-                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)" />
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="-1"
+                  :max="9999"
+                  placeholder="-1"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+                />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <!-- 占位列 -->
+            <a-col :span="24">
+              <GeneralConfigModeSelector
+                :model-value="formData.Info.IfUseMasConfig"
+                :disabled="loading"
+                :saving="configModeSaving"
+                @change="handleConfigModeChange"
+              />
             </a-col>
           </a-row>
 
           <a-form-item name="notes">
             <template #label>
-              <a-tooltip title="为用户添加备注信息">
+              <a-tooltip :title="t('edit.addNoteAboutThis')">
                 <span class="form-label">
-                  备注
+                  {{ t('edit.note') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading"
-              class="modern-input" @blur="handleFieldSave('Info.Notes', formData.Info.Notes)" />
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              :placeholder="t('edit.enterNote3')"
+              :rows="4"
+              :disabled="loading"
+              class="modern-input"
+              @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
+            />
           </a-form-item>
         </div>
 
         <!-- 额外脚本 -->
-        <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+        <ExtraScriptSection
+          v-model:form-data="formData"
+          :loading="loading"
+          @save="handleFieldSave"
+        />
 
-        <!-- 通知配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>通知配置</h3>
-          </div>
-          <a-row :gutter="24" align="middle">
-            <a-col :span="6">
-              <span style="font-weight: 500">启用通知</span>
-            </a-col>
-            <a-col :span="18">
-              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading"
-                @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)" />
-              <span class="switch-description">启用后将发送任务通知</span>
-            </a-col>
-          </a-row>
-
-          <!-- 发送统计 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <span style="font-weight: 500">通知内容</span>
-            </a-col>
-            <a-col :span="18">
-              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)">统计信息
-              </a-checkbox>
-            </a-col>
-          </a-row>
-
-          <!-- 邮件通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfSendMail" :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)">邮件通知
-              </a-checkbox>
-            </a-col>
-            <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
-                style="width: 100%" @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)" />
-            </a-col>
-          </a-row>
-
-          <!-- Server酱通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfServerChan" :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)">Server酱
-              </a-checkbox>
-            </a-col>
-            <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="请输入SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
-                style="width: 100%" @blur="handleFieldSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)" />
-            </a-col>
-          </a-row>
-
-          <!-- 自定义 Webhook 通知 -->
-          <div style="margin-top: 16px">
-            <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" @change="handleWebhookChange" />
-          </div>
-        </div>
+        <UserNotifyConfig
+          v-model="formData.Notify"
+          :loading="loading"
+          :script-id="scriptId"
+          :user-id="userId"
+          @save="handleFieldSave"
+        />
       </a-form>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -215,10 +208,19 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
-import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -243,8 +245,9 @@ const scriptName = ref('')
 
 // 通用配置相关
 const generalConfigLoading = ref(false)
-const generalSubscriptionId = ref<string | null>(null)
-const generalWebsocketId = ref<string | null>(null)
+const configModeSaving = ref(false)
+const generalSubscriptionIds = ref<string[]>([])
+const generalTaskId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
@@ -256,6 +259,7 @@ const getDefaultGeneralUserData = () => ({
     Notes: '',
     Status: true,
     RemainedDay: -1,
+    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
     ScriptBeforeTask: '',
@@ -270,7 +274,6 @@ const getDefaultGeneralUserData = () => ({
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '2000-01-01',
@@ -290,8 +293,8 @@ const formData = reactive({
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
+      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -351,6 +354,38 @@ const handleFieldSave = async (key: string, value: any) => {
   }
 }
 
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'boolean') return
+  if (
+    isInitializing.value ||
+    configModeSaving.value ||
+    !userId ||
+    formData.Info.IfUseMasConfig === value
+  ) {
+    return
+  }
+
+  const previousValue = formData.Info.IfUseMasConfig
+  formData.Info.IfUseMasConfig = value
+  configModeSaving.value = true
+
+  try {
+    const saved = await updateUser(scriptId, userId, {
+      Info: { IfUseMasConfig: value },
+    })
+
+    if (!saved) {
+      formData.Info.IfUseMasConfig = previousValue
+      return
+    }
+
+    await loadUserData()
+    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+  } finally {
+    configModeSaving.value = false
+  }
+}
+
 // 保存完整用户数据（仅用于特殊批量操作）
 const _saveFullUserData = async () => {
   if (isInitializing.value || isSaving.value || !userId) return
@@ -391,13 +426,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error('脚本不存在')
+      message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error('加载脚本信息失败')
+    message.error(t('edit.couldNotLoadScript2'))
   }
 }
 
@@ -417,13 +452,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error('创建用户失败')
+    message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -457,22 +492,21 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error('用户不存在')
+        message.error(t('edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error('获取用户数据失败')
+      message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error('加载用户数据失败')
+    message.error(t('edit.couldNotLoadUser2'))
   }
 }
 
 const handleGeneralConfig = async () => {
-
   try {
     generalConfigLoading.value = true
 
@@ -480,10 +514,12 @@ const handleGeneralConfig = async () => {
     showGeneralConfigMask.value = true
 
     // 如果已有连接，先断开并清理
-    if (generalSubscriptionId.value) {
-      unsubscribe(generalSubscriptionId.value)
-      generalSubscriptionId.value = null
-      generalWebsocketId.value = null
+    if (generalSubscriptionIds.value.length > 0) {
+      for (const subscriptionId of generalSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
+      }
+      generalSubscriptionIds.value = []
+      generalTaskId.value = null
       showGeneralConfigMask.value = false
       configTimedOut.value = false
       if (generalConfigTimeout) {
@@ -502,88 +538,75 @@ const handleGeneralConfig = async () => {
     if (response && response.taskId) {
       const wsId = response.taskId
 
-      logger.debug(`订阅 websocketId: ${wsId}`)
+      logger.debug(`订阅 taskId: ${wsId}`)
 
       // 订阅 websocket
-      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          logger.error(`用户 ${formData.userName} 通用配置错误: ${wsMessage.data}`)
-          message.error(`通用配置连接失败: ${wsMessage.data}`)
-          unsubscribe(subscriptionId)
-          generalSubscriptionId.value = null
-          generalWebsocketId.value = null
-          showGeneralConfigMask.value = false
-          configTimedOut.value = false
-          if (generalConfigTimeout) {
-            window.clearTimeout(generalConfigTimeout)
-            generalConfigTimeout = null
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            logger.error(`用户 ${formData.userName} 通用配置异常: ${data.message}`)
+            message.error(t('edit.generalConfigurationFailedP0', { p0: data.message }))
           }
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(`用户 ${formData.userName} 通用配置异常: ${wsMessage.data.Error}`)
-          message.error(`通用配置失败: ${wsMessage.data.Error}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+        }),
+        // 处理任务结束消息
+        subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
-            message.success(`用户 ${formData.userName} 的配置已完成`)
+          if (data.outcome === 'success') {
+            message.success(t('edit.configurationUserP0Done', { p0: formData.userName }))
           }
           // 清理连接
-          unsubscribe(subscriptionId)
-          generalSubscriptionId.value = null
-          generalWebsocketId.value = null
+          for (const subscriptionId of generalSubscriptionIds.value) {
+            unsubscribe(subscriptionId)
+          }
+          generalSubscriptionIds.value = []
+          generalTaskId.value = null
           showGeneralConfigMask.value = false
           configTimedOut.value = false
           if (generalConfigTimeout) {
             window.clearTimeout(generalConfigTimeout)
             generalConfigTimeout = null
           }
-        }
-      })
+        }),
+      ]
 
-      generalSubscriptionId.value = subscriptionId
-      generalWebsocketId.value = wsId
+      generalSubscriptionIds.value = subscriptionIds
+      generalTaskId.value = wsId
       showGeneralConfigMask.value = true
       configTimedOut.value = false
-      message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
+      message.success(t('edit.startedGeneralSetupUser', { p0: formData.userName }))
 
       // 设置 30 分钟超时自动断开
       generalConfigTimeout = window.setTimeout(
         async () => {
-          if (generalSubscriptionId.value && generalWebsocketId.value) {
+          if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
             // 超时后自动保存配置
-            message.warning(`用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`)
+            message.warning(t('edit.configurationSessionUserP02', { p0: formData.userName }))
             logger.warn('配置会话已超时，自动执行保存操作')
 
             try {
-              const websocketId = generalWebsocketId.value
-              const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+              const taskId = generalTaskId.value
+              const response = await Service.stopTaskApiDispatchStopPost({ taskId })
 
               if (response && response.code === 200) {
-                if (generalSubscriptionId.value) {
-                  unsubscribe(generalSubscriptionId.value)
-                  generalSubscriptionId.value = null
+                for (const subscriptionId of generalSubscriptionIds.value) {
+                  unsubscribe(subscriptionId)
                 }
-                generalWebsocketId.value = null
+                generalSubscriptionIds.value = []
+                generalTaskId.value = null
                 showGeneralConfigMask.value = false
                 configTimedOut.value = false
-                message.success('配置会话超时，已自动保存配置')
+                message.success(t('edit.configurationSessionTimedOut'))
               } else {
                 message.error(response?.message || '自动保存配置失败，请手动保存')
               }
             } catch (error) {
               const errorMsg = error instanceof Error ? error.message : String(error)
               logger.error(`超时自动保存配置失败: ${errorMsg}`)
-              message.error('自动保存配置失败，请手动保存')
+              message.error(t('edit.automaticSaveFailedSave'))
               // 失败时保留按钮让用户手动操作
               configTimedOut.value = true
             }
@@ -599,7 +622,7 @@ const handleGeneralConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动通用配置失败: ${errorMsg}`)
-    message.error('启动通用配置失败')
+    message.error(t('edit.couldNotStartGeneral'))
     showGeneralConfigMask.value = false
   } finally {
     generalConfigLoading.value = false
@@ -608,47 +631,43 @@ const handleGeneralConfig = async () => {
 
 const handleSaveGeneralConfig = async () => {
   try {
-    const websocketId = generalWebsocketId.value
-    if (!websocketId) {
-      message.error('未找到活动的配置会话')
+    const taskId = generalTaskId.value
+    if (!taskId) {
+      message.error(t('edit.noActiveConfigurationSession'))
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response && response.code === 200) {
-      if (generalSubscriptionId.value) {
-        unsubscribe(generalSubscriptionId.value)
-        generalSubscriptionId.value = null
+      for (const subscriptionId of generalSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
       }
-      generalWebsocketId.value = null
+      generalSubscriptionIds.value = []
+      generalTaskId.value = null
       showGeneralConfigMask.value = false
       configTimedOut.value = false
       if (generalConfigTimeout) {
         window.clearTimeout(generalConfigTimeout)
         generalConfigTimeout = null
       }
-      message.success('用户的通用配置已保存')
+      message.success(t('edit.generalConfigurationThisUser2'))
     } else {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存通用配置失败: ${errorMsg}`)
-    message.error('保存通用配置失败')
+    message.error(t('edit.couldNotSaveGeneral'))
   }
 }
 
-// 处理 Webhook 变化
-const handleWebhookChange = () => {
-  // Webhook 有自己的保存逻辑，这里只记录日志
-  logger.info(`User webhooks changed: ${JSON.stringify(formData.Notify.CustomWebhooks)}`)
-}
-
 const handleCancel = () => {
-  if (generalSubscriptionId.value) {
-    unsubscribe(generalSubscriptionId.value)
-    generalSubscriptionId.value = null
-    generalWebsocketId.value = null
+  if (generalSubscriptionIds.value.length > 0) {
+    for (const subscriptionId of generalSubscriptionIds.value) {
+      unsubscribe(subscriptionId)
+    }
+    generalSubscriptionIds.value = []
+    generalTaskId.value = null
     showGeneralConfigMask.value = false
     configTimedOut.value = false
     if (generalConfigTimeout) {
@@ -661,7 +680,7 @@ const handleCancel = () => {
 
 onMounted(() => {
   if (!scriptId) {
-    message.error('缺少脚本ID参数')
+    message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }

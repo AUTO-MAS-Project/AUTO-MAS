@@ -19,19 +19,19 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
-import shutil
 import asyncio
+import shutil
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
 logger = get_logger("MaaEnd 脚本设置")
@@ -53,7 +53,10 @@ def normalize_maaend_config(
         for instance in instances:
             if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
                 return instance
-            if isinstance(instance, dict) and instance.get("id") == last_active_instance_id:
+            if (
+                isinstance(instance, dict)
+                and instance.get("id") == last_active_instance_id
+            ):
                 return instance
 
         for instance in instances:
@@ -146,14 +149,6 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         maaend_set = read_file(maaend_set_path)
-        maaend_template_path = (
-            Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
-        )
-        template_config = (
-            read_file(maaend_template_path)
-            if maaend_template_path.exists()
-            else None
-        )
         maaend_set = normalize_maaend_config(
             maaend_set,
             self.script_config.get("Game", "ControllerType"),
@@ -182,8 +177,8 @@ class ScriptConfigTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"脚本设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
         )

@@ -6,19 +6,19 @@
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedTaskId"
-            placeholder="选择任务项"
+            :placeholder="t('scheduler.control.taskPlaceholder')"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
             :disabled="disabled"
             size="large"
             @change="onTaskChange"
-            @dropdownVisibleChange="onDropdownVisibleChange"
+            @dropdown-visible-change="onDropdownVisibleChange"
           />
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedMode"
-            placeholder="选择模式"
+            :placeholder="t('scheduler.control.modePlaceholder')"
             style="width: 120px"
             :disabled="disabled"
             size="large"
@@ -29,17 +29,17 @@
               :key="option.value"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ t(option.labelKey) }}
             </a-select-option>
           </a-select>
           <div v-else class="running-info">
             <span class="info-item">
-              <span class="label">任务：</span>
+              <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
             </span>
             <span class="divider">|</span>
             <span class="info-item">
-              <span class="label">模式：</span>
+              <span class="label">{{ t('scheduler.control.modeLabel') }}</span>
               <span class="value">{{ runningModeLabel }}</span>
             </span>
           </div>
@@ -47,9 +47,22 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-select
+            v-if="status !== '运行' && showUserSelect"
+            v-model:value="localSelectedUserId"
+            :placeholder="t('scheduler.control.userPlaceholder')"
+            style="width: 260px"
+            :loading="userOptionsLoading"
+            :options="userOptions || []"
+            :disabled="disabled"
+            allow-clear
+            size="large"
+            @change="onUserChange"
+            @dropdown-visible-change="onUserDropdownVisibleChange"
+          />
+          <a-select
             v-if="status !== '运行' && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
-            placeholder="从指定脚本继续（默认第一个）"
+            :placeholder="t('scheduler.control.resumePlaceholder')"
             style="width: 260px"
             :loading="resumeScriptLoading"
             :options="resumeScriptOptions || []"
@@ -57,7 +70,7 @@
             allow-clear
             size="large"
             @change="onResumeScriptChange"
-            @dropdownVisibleChange="onResumeDropdownVisibleChange"
+            @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"
@@ -72,8 +85,31 @@
               <StopOutlined v-if="status === '运行'" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? '停止任务' : '开始执行' }}
+            {{ status === '运行' ? t('scheduler.control.stop') : t('scheduler.control.start') }}
           </a-button>
+        </a-space>
+      </div>
+
+      <!-- 循环运行的下轮预览 -->
+      <div v-if="cyclePreview.length" class="cycle-preview">
+        <span class="cycle-preview-label">{{ t('scheduler.cycle.nextTitle') }}</span>
+        <a-space size="small" wrap>
+          <a-tag
+            v-for="item in cyclePreview"
+            :key="item.queueItemId"
+            :color="item.isRunning ? 'blue' : item.isDue ? 'orange' : 'default'"
+          >
+            {{ item.scriptName }}
+            <span class="cycle-preview-time">
+              {{
+                item.isRunning
+                  ? t('scheduler.cycle.running')
+                  : item.isDue
+                    ? t('scheduler.cycle.due')
+                    : item.nextRunAt
+              }}
+            </span>
+          </a-tag>
         </a-space>
       </div>
     </div>
@@ -81,11 +117,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import { type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
+import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+
+const { t } = useI18n()
 
 interface Props {
   selectedTaskId: string | null
@@ -93,12 +133,17 @@ interface Props {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
+  selectedUserId?: string | null
+  userOptions?: Array<{ label: string; value: string }>
+  userOptionsLoading?: boolean
   taskOptions: ComboBoxItem[]
   taskOptionsLoading: boolean
   status: SchedulerStatus
   disabled?: boolean
   runningTaskLabel?: string
   runningModeLabel?: string
+  isCycleQueue?: boolean
+  cycleNextList?: WSTaskCyclePreviewData[]
 }
 
 interface Emits {
@@ -106,6 +151,7 @@ interface Emits {
 
   (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
   (e: 'update:resumeFromScriptId', value: string | null): void
+  (e: 'update:selectedUserId', value: string | null): void
 
   (e: 'start'): void
 
@@ -118,6 +164,7 @@ interface Emits {
   (e: 'refresh-tasks'): void
   (e: 'task-changed', value: string | null): void
   (e: 'refresh-resume-scripts'): void
+  (e: 'refresh-users'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -125,8 +172,13 @@ const props = withDefaults(defineProps<Props>(), {
   resumeFromScriptId: null,
   resumeScriptOptions: () => [],
   resumeScriptLoading: false,
+  selectedUserId: null,
+  userOptions: () => [],
+  userOptionsLoading: false,
   runningTaskLabel: '',
   runningModeLabel: '',
+  isCycleQueue: false,
+  cycleNextList: () => [],
 })
 
 const emit = defineEmits<Emits>()
@@ -135,9 +187,16 @@ const emit = defineEmits<Emits>()
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
+const localSelectedUserId = ref(props.selectedUserId ?? null)
 
-// 模式选项
-const modeOptions = TASK_MODE_OPTIONS
+// 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
+const modeOptions = computed(() =>
+  getTaskModeOptions(props.isCycleQueue ? null : [TaskCreateIn.mode.AUTO_PROXY])
+)
+
+const cyclePreview = computed(() =>
+  props.status === '运行' ? (props.cycleNextList ?? []) : []
+)
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
@@ -149,9 +208,23 @@ const showResumeScriptSelect = computed(() => {
   return Boolean(taskOption?.label.startsWith('队列 - '))
 })
 
+// 用户下拉只在脚本任务且有可运行用户时出现；不选即按脚本自身筛选跑全部用户
+const showUserSelect = computed(() => (props.userOptions?.length ?? 0) > 0)
+
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
 // const runningModeLabel = ref('')
+
+// 刷新页面时任务选项还没加载完，运行态文案会先落成裸 ID；选项到了再补成名称
+watch(
+  () => props.taskOptions,
+  options => {
+    if (props.status !== '运行' || !props.selectedTaskId) return
+    if (props.runningTaskLabel && props.runningTaskLabel !== props.selectedTaskId) return
+    const taskOption = options.find(opt => opt.value === props.selectedTaskId)
+    if (taskOption?.label) emit('update:runningTaskLabel', taskOption.label)
+  }
+)
 
 // 监听状态变化，记录运行时的文本信息
 watch(
@@ -162,8 +235,8 @@ watch(
       const taskLabel = taskOption?.label || props.selectedTaskId || ''
       emit('update:runningTaskLabel', taskLabel)
 
-      const modeOption = modeOptions.find(opt => opt.value === props.selectedMode)
-      const modeLabel = modeOption?.label || props.selectedMode || ''
+      const modeOption = modeOptions.value.find(opt => opt.value === props.selectedMode)
+      const modeLabel = modeOption ? t(modeOption.labelKey) : props.selectedMode || ''
       emit('update:runningModeLabel', modeLabel)
     }
   }
@@ -186,10 +259,25 @@ watch(
   { immediate: true }
 )
 
+watch(modeOptions, options => {
+  if (options.some(option => option.value === localSelectedMode.value)) return
+  const nextMode = options[0]?.value ?? null
+  localSelectedMode.value = nextMode
+  emit('update:selectedMode', nextMode)
+})
+
 watch(
   () => props.resumeFromScriptId,
   newVal => {
     localResumeFromScriptId.value = newVal ?? null
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.selectedUserId,
+  newVal => {
+    localSelectedUserId.value = newVal ?? null
   },
   { immediate: true }
 )
@@ -210,6 +298,14 @@ const onResumeScriptChange = (value: string | undefined) => {
 
 const onResumeDropdownVisibleChange = (open: boolean) => {
   if (open) emit('refresh-resume-scripts')
+}
+
+const onUserChange = (value: string | undefined) => {
+  emit('update:selectedUserId', value ?? null)
+}
+
+const onUserDropdownVisibleChange = (open: boolean) => {
+  if (open) emit('refresh-users')
 }
 
 // 合并的按钮事件处理
@@ -233,7 +329,7 @@ const onDropdownVisibleChange = (open: boolean) => {
 .task-control {
   margin-bottom: 16px;
   border-radius: 12px;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
@@ -248,6 +344,25 @@ const onDropdownVisibleChange = (open: boolean) => {
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+.cycle-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.cycle-preview-label {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.cycle-preview-time {
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
 }
 
 .control-spacer {

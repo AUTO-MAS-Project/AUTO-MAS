@@ -29,25 +29,38 @@ import ctypes
 import time
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
-import pyautogui
-import win32api
-import win32con
-import win32gui
+
+from app.utils.platform import IS_WINDOWS
+
+if TYPE_CHECKING:
+    import pyautogui
+    import win32api
+    import win32con
+    import win32gui
+
+if IS_WINDOWS:
+    # pyautogui 在无图形会话(如无 DISPLAY 的 Linux)导入即失败，
+    # 且下方使用它的函数均为 Windows 专属路径，随 win32 一并惰性导入
+    import pyautogui
+    import win32api
+    import win32con
+    import win32gui
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
 from app.models.emulator import DeviceInfo
-from app.utils import get_logger
+from app.utils import get_logger, resource_path
 
 logger = get_logger("终末地登录")
 
-_IMAGE_ROOT = Path.cwd() / "res/MaaFW/image/EndFieldPC"
+_IMAGE_ROOT = resource_path("MaaFW", "image", "EndFieldPC")
 _TEMPLATES = {
     "logout": (
         _IMAGE_ROOT / "登出-1080p.png",
@@ -73,20 +86,28 @@ _TEMPLATES = {
 
 Box = tuple[int, int, int, int]
 OCRItem = tuple[str, Box]
-# 多显示器适配
-_user32 = ctypes.windll.user32
-_user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-_user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+_FRAME_WIDTH = 1920
+_FRAME_HEIGHT = 1080
+_LOGIN_FORM_ROI: Box = (480, 270, 1440, 810)
+
+
+@lru_cache(maxsize=1)
+def _user32_dpi_api():
+    user32 = ctypes.windll.user32
+    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    return user32
 
 
 @contextmanager
 def _per_monitor_dpi():
-    previous = _user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    user32 = _user32_dpi_api()
+    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     try:
         yield
     finally:
         if previous:
-            _user32.SetThreadDpiAwarenessContext(previous)
+            user32.SetThreadDpiAwarenessContext(previous)
 
 
 @lru_cache(maxsize=1)
@@ -109,7 +130,9 @@ def _activate_window(hwnd: int) -> None:
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+        else win32con.SW_SHOW
+        if not win32gui.IsWindowVisible(hwnd)
+        else None
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
@@ -133,7 +156,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
     return width, height
 
 
-def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
+def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
     with _per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
@@ -141,7 +164,7 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
         virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
         virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        screenshot = pyautogui.screenshot(allScreens=True).crop(
+        return pyautogui.screenshot(allScreens=True).crop(
             (
                 left - virtual_left,
                 top - virtual_top,
@@ -150,8 +173,29 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
             )
         )
 
-    screenshot = screenshot.resize((1920, 1080), Image.Resampling.LANCZOS)
+
+def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
+    screenshot = _capture_window_image(hwnd, activate=activate)
+    screenshot = screenshot.resize(
+        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
+    )
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+
+
+def _save_error_screenshot(hwnd: int) -> None:
+    """保存登录失败时未缩放、未标注的游戏窗口截图。"""
+
+    try:
+        screenshot_dir = Path.cwd() / "debug/maaend-login"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = screenshot_dir / (
+            f"login-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
+        )
+        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
+        logger.warning(f"终末地登录错误截图已保存: {screenshot_path}")
+    except Exception as error:
+        # 截图是诊断旁路，失败时不能覆盖原始登录异常
+        logger.warning(f"终末地登录错误截图保存失败: {error}")
 
 
 def _find_template(frame: np.ndarray, name: str) -> Box | None:
@@ -198,8 +242,8 @@ def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
         x, y, box_width, box_height = box
-        client_x = round((x + box_width / 2) * width / 1920)
-        client_y = round((y + box_height / 2) * height / 1080)
+        client_x = round((x + box_width / 2) * width / _FRAME_WIDTH)
+        client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
     original_position = pyautogui.position()
@@ -218,7 +262,7 @@ def _press_escape(hwnd: int) -> None:
 
 
 def _login_form_visible(frame: np.ndarray) -> bool:
-    texts = [text for text, _ in _read_text(frame, (480, 270, 1440, 810))]
+    texts = [text for text, _ in _read_text(frame, _LOGIN_FORM_ROI)]
     return "登录" in texts and any(
         "最近" in text or "其他账号登录" in text for text in texts
     )
@@ -263,7 +307,12 @@ async def _open_login_form(hwnd: int) -> None:
 
         for name, confirm, message, error in (
             ("logout", "logout_confirm", "正在登出当前终末地账号", "确认登出超时"),
-            ("main_out", "main_out_confirm", "正在退出终末地主界面", "确认退出终末地主界面超时"),
+            (
+                "main_out",
+                "main_out_confirm",
+                "正在退出终末地主界面",
+                "确认退出终末地主界面超时",
+            ),
         ):
             if (match := _find_template(frame, name)) is None:
                 continue
@@ -286,16 +335,40 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
     masked_id = f"***{account_id[-4:]}"
     account_list_top: int | None = None
     selector_expanded = False
+    last_ocr_accounts: tuple[OCRItem, ...] | None = None
 
-    async for frame in _poll_frames(hwnd, 30, activate=False):
-        ocr_items = await asyncio.to_thread(
-            _read_text, frame, (480, 270, 1440, 810)
-        )
-        recent = next(
-            (box for text, box in ocr_items if "最近" in text), None
-        )
-        if recent is not None:
-            account_list_top = recent[1] + recent[3]
+    # 仅记录当前阶段的超时信息，不参与账号选择状态判断。
+    step_name = "识别登录表单中的目标账号或账号选择器"
+    step_timeout = 45
+    step_deadline = asyncio.get_running_loop().time() + step_timeout
+
+    async for frame in _poll_frames(hwnd, 90, activate=False):
+        if asyncio.get_running_loop().time() >= step_deadline:
+            message = (
+                f"终末地登录{step_name}超时（{step_timeout}秒），目标账号: {masked_id}"
+            )
+            logger.warning(message)
+            raise RuntimeError(message)
+
+        # 下拉框展开后，从“最近”底部扫描到屏幕底部，避免固定 ROI 截断后面的账号。
+        recent: Box | None = None
+        if selector_expanded and account_list_top is not None:
+            ocr_items = await asyncio.to_thread(
+                _read_text,
+                frame,
+                (0, account_list_top, _FRAME_WIDTH, _FRAME_HEIGHT),
+            )
+            ocr_accounts = tuple((text, box) for text, box in ocr_items if "*" in text)
+            if ocr_accounts != last_ocr_accounts:
+                logger.info(
+                    f"登录下拉框 OCR 账号列表: {ocr_accounts or '未识别到掩码账号'}"
+                )
+                last_ocr_accounts = ocr_accounts
+        else:
+            ocr_items = await asyncio.to_thread(_read_text, frame, _LOGIN_FORM_ROI)
+            recent = next((box for text, box in ocr_items if "最近" in text), None)
+            if recent is not None:
+                account_list_top = recent[1] + recent[3]
 
         target = next(
             (
@@ -304,29 +377,25 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
                 if account_id[-4:] in text
                 and (
                     not selector_expanded
-                    or (
-                        account_list_top is not None
-                        and box[1] >= account_list_top
-                    )
+                    or (account_list_top is not None and box[1] >= account_list_top)
                 )
             ),
             None,
         )
-        login_button = next(
-            (box for text, box in ocr_items if text == "登录"), None
-        )
+        login_button = next((box for text, box in ocr_items if text == "登录"), None)
 
         if selector_expanded and target is not None:
             logger.info(f"在登录下拉框中选择账号: {masked_id}")
             await asyncio.to_thread(_click_box, hwnd, target, activate=False)
             selector_expanded = False
+            step_name = "确认目标账号已在登录表单中选中"
+            step_timeout = 15
+            step_deadline = asyncio.get_running_loop().time() + step_timeout
             continue
 
         if not selector_expanded and target is not None and login_button is not None:
             logger.info(f"登录表单已选中目标账号: {masked_id}")
-            await asyncio.to_thread(
-                _click_box, hwnd, login_button, activate=False
-            )
+            await asyncio.to_thread(_click_box, hwnd, login_button, activate=False)
             logger.info("已点击终末地登录按钮")
             return
 
@@ -336,12 +405,22 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
             logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
             await asyncio.to_thread(_click_box, hwnd, recent, activate=False)
             selector_expanded = True
+            step_name = "扫描登录下拉框中的目标账号"
+            step_timeout = 25
+            step_deadline = asyncio.get_running_loop().time() + step_timeout
 
-    raise RuntimeError(f"登录表单中未找到目标账号: {masked_id}")
+    message = (
+        f"终末地登录流程超时（当前步骤：{step_name}，总预算 "
+        f"90秒），目标账号: {masked_id}"
+    )
+    logger.warning(message)
+    raise RuntimeError(message)
 
 
 async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
     """切换到终末地客户端已保存的最近账号。"""
+    if not IS_WINDOWS:
+        raise RuntimeError("终末地账号切换仅支持 Windows 平台")
     if emulator_info is not None:
         raise RuntimeError("终末地模拟器登录暂未实现")
     if len(id) < 4:
@@ -353,9 +432,13 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
 
     masked_id = f"***{id[-4:]}"
     logger.info(f"开始切换终末地账号: {masked_id}")
-    await _open_login_form(hwnd)
-    await _submit_login_form(hwnd, id)
-    await _wait_template(hwnd, "logout", 120, "登录确认超时")
+    try:
+        await _open_login_form(hwnd)
+        await _submit_login_form(hwnd, id)
+        await _wait_template(hwnd, "logout", 120, "登录确认超时：未检测到已登录界面")
+    except Exception:
+        await asyncio.to_thread(_save_error_screenshot, hwnd)
+        raise
 
     logger.success(f"终末地账号切换成功: {masked_id}")
     return True

@@ -1,13 +1,13 @@
 <template>
   <div class="task-queue-section">
     <div class="section-header">
-      <h3>任务队列配置</h3>
+      <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
     </div>
-    
+
     <a-row :gutter="24" class="task-queue-layout">
       <a-col :span="12" class="left-column">
         <div class="column-header">
-          <span>任务队列</span>
+          <span>{{ t('edit.taskQueue') }}</span>
           <a-dropdown v-model:visible="addTaskDropdownVisible" trigger="click">
             <a-button type="primary" size="middle" :loading="loading">
               <template #icon><PlusOutlined /></template>
@@ -22,7 +22,7 @@
             </template>
           </a-dropdown>
         </div>
-        
+
         <div class="task-list">
           <!-- 预设模板区域（队列为空时显示） -->
           <div v-if="localTaskQueue.length === 0" class="preset-section">
@@ -44,23 +44,30 @@
                 </div>
 
                 <div class="preset-tasks-preview">
-                  <div class="task-chip" v-for="(item, idx) in matchedTasks" :key="idx">
+                  <div v-for="(item, idx) in matchedTasks" :key="idx" class="task-chip">
                     <span class="task-dot" :class="{ 'task-dot-miss': !item.matched }"></span>
-                    <span class="task-name" :class="{ 'task-name-miss': !item.matched }">{{ item.name }}</span>
+                    <span class="task-name" :class="{ 'task-name-miss': !item.matched }">{{
+                      item.name
+                    }}</span>
                     <CheckCircleFilled v-if="item.matched" class="task-check" />
                     <CloseCircleFilled v-else class="task-check task-check-miss" />
                   </div>
                 </div>
 
                 <div class="preset-actions">
-                  <a-button type="primary" size="large" block :loading="addingFromPreset"
+                  <a-button
+                    type="primary"
+                    size="large"
+                    block
+                    :loading="addingFromPreset"
                     :disabled="matchedCount === 0"
-                    @click="addFromPreset">
+                    @click="addFromPreset"
+                  >
                     <template #icon><ThunderboltOutlined /></template>
                     一键添加 {{ matchedCount }} 个任务
                   </a-button>
                   <p v-if="matchedCount < dailyPreset.taskNames.length" class="preset-hint">
-                    部分任务未找到对应脚本，已自动跳过
+                    {{ t('edit.someTasksHadNo') }}
                   </p>
                 </div>
               </div>
@@ -110,33 +117,38 @@
           </draggable>
         </div>
       </a-col>
-      
+
       <a-col :span="12" class="right-column">
         <div class="column-header">
-          <span>任务配置</span>
+          <span>{{ t('edit.taskConfiguration') }}</span>
         </div>
-        
-        <div class="task-config" v-if="selectedTaskIndex !== null && taskQueue[selectedTaskIndex]">
+
+        <div v-if="selectedTaskIndex !== null && taskQueue[selectedTaskIndex]" class="task-config">
           <div class="selected-task-name">
             {{ getQueuedTaskLabel(taskQueue[selectedTaskIndex]) }}
           </div>
-          
+
           <TaskOptionRenderer
             :task-options="taskQueue[selectedTaskIndex].options"
             :option-definitions="getOptionDefinitions(selectedTaskIndex)"
             @update="handleOptionUpdate"
           />
-          
-          <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteSelectedTask">
-            <a-button danger block style="margin-top: 24px; height: 40px; font-size: 14px;">
+
+          <a-popconfirm
+            :title="t('edit.deleteThisTask2')"
+            :ok-text="t('edit.ok')"
+            :cancel-text="t('edit.cancel')"
+            @confirm="deleteSelectedTask"
+          >
+            <a-button danger block style="margin-top: 24px; height: 40px; font-size: 14px">
               <template #icon><DeleteOutlined /></template>
-              删除此任务
+              {{ t('edit.deleteThisTask') }}
             </a-button>
           </a-popconfirm>
         </div>
-        
-        <div class="no-selection" v-else>
-          <Empty description="请从左侧选择一个任务进行配置" />
+
+        <div v-else class="no-selection">
+          <Empty :description="t('edit.pickTaskLeftConfigure')" />
         </div>
       </a-col>
     </a-row>
@@ -144,13 +156,24 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { PlusOutlined, UpOutlined, DownOutlined, DeleteOutlined, ThunderboltOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons-vue'
+import {
+  PlusOutlined,
+  UpOutlined,
+  DownOutlined,
+  DeleteOutlined,
+  ThunderboltOutlined,
+  CheckCircleFilled,
+  CloseCircleFilled,
+} from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import type { M9ATaskQueueItem, M9ATaskOption } from '@/types/script'
 import TaskOptionRenderer from './TaskOptionRenderer.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('M9A任务队列')
 
@@ -174,7 +197,7 @@ const isDragging = ref(false)
 // 预设模板常量
 const dailyPreset = {
   name: '日常-长草',
-  description: '无活动或换完商店时使用，进行常规刷取',
+  description: t('edit.usedWhenThereNo'),
   taskNames: [
     '收取荒原',
     '每日心相（意志解析）',
@@ -219,7 +242,9 @@ const getDefaultCaseIndex = (optDef: any) => {
   if (!optDef || !Array.isArray(optDef.cases) || typeof optDef.default_case !== 'string') {
     return 0
   }
-  const defaultIndex = optDef.cases.findIndex((caseItem: any) => caseItem.name === optDef.default_case)
+  const defaultIndex = optDef.cases.findIndex(
+    (caseItem: any) => caseItem.name === optDef.default_case
+  )
   return defaultIndex >= 0 ? defaultIndex : 0
 }
 
@@ -241,23 +266,23 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
   const options: M9ATaskOption[] = []
   const optionNames = taskDef.option || []
   const optionDefs = taskDef._option_definitions || {}
-  
+
   for (const optName of optionNames) {
     const optItem: M9ATaskOption = { name: optName, index: 0 }
-    
+
     const optDef = optionDefs[optName]
     if (optDef) {
       if (optDef.type === 'checkbox') {
         optItem.selected_cases = getDefaultCaseNames(optDef)
         const subOptionNames = Array.isArray(optDef.cases)
           ? optDef.cases
-            .filter((caseItem: any) => optItem.selected_cases?.includes(caseItem.name))
-            .flatMap((caseItem: any) => Array.isArray(caseItem.option) ? caseItem.option : [])
+              .filter((caseItem: any) => optItem.selected_cases?.includes(caseItem.name))
+              .flatMap((caseItem: any) => (Array.isArray(caseItem.option) ? caseItem.option : []))
           : []
         if (subOptionNames.length > 0) {
           const subOpts = buildDefaultOptions({
             option: Array.from(new Set(subOptionNames)),
-            _option_definitions: optionDefs
+            _option_definitions: optionDefs,
           })
           if (subOpts.length > 0) {
             optItem.sub_options = subOpts
@@ -282,7 +307,7 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
         if (currentCase.option) {
           const subOpts = buildDefaultOptions({
             option: currentCase.option,
-            _option_definitions: optionDefs
+            _option_definitions: optionDefs,
           })
           if (subOpts.length > 0) {
             optItem.sub_options = subOpts
@@ -290,23 +315,25 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
         }
       }
     }
-    
+
     options.push(optItem)
   }
-  
+
   return options
 }
 
 const loadAvailableTasks = async () => {
   try {
     logger.info(`loadAvailableTasks called, scriptId: ${props.scriptId}`)
-    const response = await Service.getM9AAvailableTasksApiScriptsM9ATasksAvailablePost(props.scriptId)
+    const response = await Service.getM9AAvailableTasksApiScriptsM9ATasksAvailablePost(
+      props.scriptId
+    )
     logger.info(`API response: ${JSON.stringify(response)}`)
-    
+
     if (response && response.code === 200 && response.data) {
       availableTasks.value = []
       taskDefinitions.value = {}
-      
+
       const RESERVED_ENTRIES = ['StartUp', 'Close1999', 'SwitchAccount']
 
       response.data.forEach((task: any) => {
@@ -318,13 +345,13 @@ const loadAvailableTasks = async () => {
           taskDefinitions.value[task.name] = task
         }
       })
-      
+
       logger.info(`availableTasks set to: ${JSON.stringify(availableTasks.value)}`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载可用任务失败: ${errorMsg}`)
-    message.error('加载可用任务失败')
+    message.error(t('edit.couldNotLoadAvailable'))
   }
 }
 
@@ -334,7 +361,7 @@ const handleAddTask = ({ key }: { key: string }) => {
   if (taskDef) {
     const newTask: M9ATaskQueueItem = {
       name: key,
-      options: buildDefaultOptions(taskDef)
+      options: buildDefaultOptions(taskDef),
     }
     const newQueue = [...localTaskQueue.value, newTask]
     emit('update:taskQueue', newQueue)
@@ -363,7 +390,7 @@ const addFromPreset = () => {
     }
 
     emit('update:taskQueue', newQueue)
-    message.success(`成功添加 ${validTasks.length} 个任务`)
+    message.success(t('edit.addedP0Tasks', { p0: validTasks.length }))
   } finally {
     addingFromPreset.value = false
   }
@@ -426,7 +453,7 @@ const handleOptionUpdate = (newOptions: M9ATaskOption[]) => {
     const newQueue = [...localTaskQueue.value]
     newQueue[selectedTaskIndex.value] = {
       ...newQueue[selectedTaskIndex.value],
-      options: newOptions
+      options: newOptions,
     }
     emit('update:taskQueue', newQueue)
   }
@@ -442,7 +469,7 @@ const onDragEnd = () => {
 
 watch(
   () => props.taskQueue,
-  (newQueue) => {
+  newQueue => {
     if (!isDragging.value) {
       localTaskQueue.value = [...newQueue]
     }

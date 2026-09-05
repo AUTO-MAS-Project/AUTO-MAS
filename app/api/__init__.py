@@ -22,18 +22,17 @@
 
 
 from .core import router as core_router
-from .info import router as info_router
-from .scripts import router as scripts_router
-from .plan import router as plan_router
-from .emulator import router as emulator_router
-from .queue import router as queue_router
 from .dispatch import router as dispatch_router
+from .emulator import router as emulator_router
 from .history import router as history_router
-from .tools import router as tools_router
-from .setting import router as setting_router
-from .update import router as update_router
+from .info import router as info_router
 from .ocr import router as ocr_router
-from .ws_debug import router as ws_debug_router
+from .plan import router as plan_router
+from .queue import router as queue_router
+from .scripts import router as scripts_router
+from .setting import router as setting_router
+from .tools import router as tools_router
+from .update import router as update_router
 
 # 可选补丁：米游社扫码登录（可安全删除以下 2 行及 app/api/qr_login.py）
 try:
@@ -54,6 +53,5 @@ __all__ = [
     "setting_router",
     "update_router",
     "ocr_router",
-    "ws_debug_router",
     "qr_login_router",
 ]

@@ -24,8 +24,16 @@ export type MaaConfig_Run = {
      */
     RoutineTimeLimit?: (number | null);
     /**
-     * 剿灭避免无代理卡浪费理智
+     * 启动 MAA 前检查游戏更新
      */
-    AnnihilationAvoidWaste?: (boolean | null);
+    IfCheckGameUpdate?: (boolean | null);
+    /**
+     * 自动下载并安装游戏安装包（仅官服）
+     */
+    IfAutoInstallGameApk?: (boolean | null);
+    /**
+     * 游戏更新超时限制
+     */
+    GameUpdateTimeLimit?: (number | null);
 };
 

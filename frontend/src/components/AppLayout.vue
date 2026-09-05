@@ -40,7 +40,7 @@
     <a-layout style="flex: 1; min-width: 0">
       <a-layout-content class="content-area">
         <router-view v-slot="{ Component, route: currentRoute }">
-          <keep-alive :include="['Scheduler']">
+          <keep-alive :include="['SchedulerPage']">
             <component :is="Component" :key="currentRoute.path" />
           </keep-alive>
         </router-view>
@@ -50,10 +50,11 @@
 </template>
 
 <script lang="ts" setup>
+import { useI18n } from 'vue-i18n'
 import {
-  ApiOutlined,
   BugOutlined,
   CalendarOutlined,
+  CarryOutOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FileTextOutlined,
@@ -69,6 +70,8 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
 
+const { t } = useI18n()
+
 const SIDER_WIDTH = 160
 
 const router = useRouter()
@@ -79,45 +82,48 @@ const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 // 工具：生成菜单项
 const icon = (Comp: any) => () => h(Comp)
 
-// 判断是否为开发环境
-const isDevelopment = computed(() => {
-  return (
-    process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
-    window.location.hostname === 'localhost'
-  )
-})
+// 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
+// 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
+// 生产环境走 loadFile（file:// 协议，hostname 为空）不会命中，但用 vite preview
+// 预览生产构建时会命中，导致菜单显示了实际不存在的路由。
+const isDevelopment = computed(() => import.meta.env.DEV)
 
-const mainMenuItems = [
-  { key: '/home', label: '主页', icon: icon(HomeOutlined) },
-  { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
-  { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
-  { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
-  { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
-  { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
-]
+const mainMenuItems = computed(() => [
+  { key: '/home', label: t('comp.home'), icon: icon(HomeOutlined) },
+  { key: '/scripts', label: t('comp.scripts'), icon: icon(FileTextOutlined) },
+  { key: '/plans', label: t('comp.plans'), icon: icon(CalendarOutlined) },
+  { key: '/emulators', label: t('comp.emulators'), icon: icon(DatabaseOutlined) },
+  { key: '/queue', label: t('comp.queue'), icon: icon(UnorderedListOutlined) },
+  { key: '/scheduler', label: t('comp.scheduler'), icon: icon(ControlOutlined) },
+])
 
 // 开发环境专用菜单项
-const devMenuItems = [
-  { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
-  { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
-  { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
-  { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
+const devMenuItems = computed(() => [
+  { key: '/TestRouter', label: t('comp.testRoute'), icon: icon(SettingOutlined) },
+  { key: '/OCRdev', label: t('comp.ocrTest'), icon: icon(SettingOutlined) },
+  { key: '/OverlayMaskDev', label: t('comp.overlayEasterEggTest'), icon: icon(SettingOutlined) },
   ...(import.meta.env.DEV
-    ? [{ key: '/update-download-dev', label: '更新下载测试', icon: icon(BugOutlined) }]
+    ? [
+        {
+          key: '/update-download-dev',
+          label: t('comp.updateDownloadTest'),
+          icon: icon(BugOutlined),
+        },
+      ]
     : []),
-]
+])
 
-const bottomMenuItems = [
-  { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
-  { key: '/tools', label: '工具', icon: icon(ToolOutlined) },
-  { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
-]
+const bottomMenuItems = computed(() => [
+  { key: '/gamesign', label: t('comp.checkIns'), icon: icon(CarryOutOutlined) },
+  { key: '/history', label: t('comp.history'), icon: icon(HistoryOutlined) },
+  { key: '/tools', label: t('comp.tools'), icon: icon(ToolOutlined) },
+  { key: '/settings', label: t('comp.settings'), icon: icon(SettingOutlined) },
+])
 
 const allItems = computed(() => [
-  ...mainMenuItems,
-  ...(isDevelopment.value ? devMenuItems : []),
-  ...bottomMenuItems,
+  ...mainMenuItems.value,
+  ...(isDevelopment.value ? devMenuItems.value : []),
+  ...bottomMenuItems.value,
 ])
 
 // 选中项：根据当前路径前缀匹配
@@ -146,7 +152,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
       path: '/update-download-dev',
       name: 'UpdateDownloadDev',
       component: () => import('@/views/UpdateDownloadDev.vue'),
-      meta: { title: '更新下载测试', skipGuard: true },
+      meta: { title: t('comp.updateDownloadTest'), skipGuard: true },
     })
   }
 

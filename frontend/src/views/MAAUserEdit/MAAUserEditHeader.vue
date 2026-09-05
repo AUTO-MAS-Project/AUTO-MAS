@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts">脚本管理</router-link>
+          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/maa`" class="breadcrumb-link">
@@ -11,14 +11,14 @@
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          {{ isEdit ? '编辑用户' : '添加用户' }}
+          {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
     <a-space size="middle">
       <a-button
-        v-if="userMode !== '简洁' && !showMaaConfigMask"
+        v-if="userMode !== '脚本' && !showMaaConfigMask"
         type="primary"
         ghost
         size="large"
@@ -28,10 +28,10 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        MAA配置
+        {{ t('edit.maaConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode !== '简洁' && showMaaConfigMask"
+        v-if="userMode !== '脚本' && showMaaConfigMask"
         type="default"
         size="large"
         disabled
@@ -40,20 +40,23 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        正在配置
+        {{ t('edit.configuring') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 defineProps<{
   scriptId: string

@@ -7,86 +7,126 @@
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
           </div>
-          <h2 class="mask-title">正在进行MAA配置</h2>
+          <h2 class="mask-title">{{ t('edit.maaConfigurationProgress') }}</h2>
           <p class="mask-description">
-            当前正在配置该用户的 MAA，请在 MAA 配置界面完成相关设置。
+            {{ t('edit.maaConfigurationThisUser') }}
             <br />
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button v-if="maaWebsocketId" type="primary" size="large" @click="handleSaveMAAConfig">
-              保存配置
+            <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
+              {{ t('edit.saveConfiguration') }}
             </a-button>
           </div>
         </div>
       </div>
     </teleport>
     <!-- 头部组件 -->
-    <MAAUserEditHeader :script-id="scriptId" :script-name="scriptName" :is-edit="isEdit" :user-mode="formData.Info.Mode"
-      :maa-config-loading="maaConfigLoading" :show-maa-config-mask="showMAAConfigMask" :loading="loading"
-      @handle-m-a-a-config="handleMAAConfig" @handle-cancel="handleCancel" />
+    <MAAUserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      :user-mode="formData.Info.Mode"
+      :maa-config-loading="maaConfigLoading"
+      :show-maa-config-mask="showMAAConfigMask"
+      :loading="loading"
+      @handle-m-a-a-config="handleMAAConfig"
+      @handle-cancel="handleCancel"
+    />
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <!-- 基本信息组件 -->
-          <BasicInfoSection :form-data="formData" :loading="loading" :server-options="serverOptions"
-            :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
-            :infrastructure-options="infrastructureOptions"
-            :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
-            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
-
-          <!-- 关卡配置组件 -->
-          <StageConfigSection :form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
-            :stage-options="stageOptions" :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
-            :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
-            :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
-            :display-stage3="displayStage3" :display-stage-remain="displayStageRemain"
-            :medicine-numb-tooltip="medicineNumbTooltip" :series-numb-tooltip="seriesNumbTooltip"
-            :stage-tooltip="stageTooltip" :stage1-tooltip="stage1Tooltip" :stage2-tooltip="stage2Tooltip"
-            :stage3-tooltip="stage3Tooltip" :stage-remain-tooltip="stageRemainTooltip"
-            @update-medicine-numb="updateMedicineNumb" @update-series-numb="updateSeriesNumb"
-            @update-stage="updateStage" @update-stage1="updateStage1" @update-stage2="updateStage2"
-            @update-stage3="updateStage3" @update-stage-remain="updateStageRemain"
-            @handle-add-custom-stage="addCustomStage" @handle-add-custom-stage1="addCustomStage1"
-            @handle-add-custom-stage2="addCustomStage2" @handle-add-custom-stage3="addCustomStage3"
-            @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
-
-          <!-- 任务配置组件 -->
-          <TaskConfigSection
-            v-model:activity-first="formData.Task.IfActivityFirst"
-            v-model:activity-stage-index="formData.Task.ActivityStageIndex"
-            :form-data="formData"
+          <BasicInfoSection
+            v-model:form-data="formData"
             :loading="loading"
+            :server-options="serverOptions"
+            @save="handleFieldSave"
+          />
+
+          <!-- 任务配置：明确区分剿灭与日常的两次 MAA 启动 -->
+          <TaskPipelineSection
+            v-model:form-data="formData"
+            :loading="loading"
+            :is-plan-mode="isPlanMode"
+            :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-index="displayActivityStageIndex"
+            :depot-item-options="depotItemOptions"
+            :depot-item-options-loading="depotItemOptionsLoading"
+            :depot-item-options-error="depotItemOptionsError"
+            :fight-summary="fightSummary"
+            :is-edit="isEdit"
+            :infrastructure-importing="infrastructureImporting"
+            :infrastructure-options="infrastructureOptions"
+            :infrastructure-options-loading="infrastructureOptionsLoading"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @save="handleFieldSave"
-          />
-
-          <!-- 库存保持配置组件 -->
-          <DepotMaintainConfigSection
-            v-if="!isPlanMode"
-            v-model:enabled="formData.Task.IfDepotMaintain"
-            :form-data="formData"
-            :loading="loading"
-            :stage-options="stageOptions"
-            :item-options="depotItemOptions"
-            :item-options-loading="depotItemOptionsLoading"
-            :item-options-error="depotItemOptionsError"
-            @save="handleFieldSave"
-          />
-
-          <!-- 森空岛配置组件 -->
-          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          >
+            <template #fight-detail>
+              <StageConfigSection
+                v-model:form-data="formData"
+                :loading="loading"
+                :stage-mode-options="stageModeOptions"
+                :stage-options="stageOptions"
+                :stage-remain-options="stageRemainOptions"
+                :is-plan-mode="isPlanMode"
+                :display-medicine-numb="displayMedicineNumb"
+                :display-series-numb="displaySeriesNumb"
+                :display-stage="displayStage"
+                :display-stage1="displayStage1"
+                :display-stage2="displayStage2"
+                :display-stage3="displayStage3"
+                :display-stage-remain="displayStageRemain"
+                :medicine-numb-tooltip="medicineNumbTooltip"
+                :series-numb-tooltip="seriesNumbTooltip"
+                :stage-tooltip="stageTooltip"
+                :stage1-tooltip="stage1Tooltip"
+                :stage2-tooltip="stage2Tooltip"
+                :stage3-tooltip="stage3Tooltip"
+                :stage-remain-tooltip="stageRemainTooltip"
+                @update-medicine-numb="updateMedicineNumb"
+                @update-series-numb="updateSeriesNumb"
+                @update-stage="updateStage"
+                @update-stage1="updateStage1"
+                @update-stage2="updateStage2"
+                @update-stage3="updateStage3"
+                @update-stage-remain="updateStageRemain"
+                @handle-add-custom-stage="addCustomStage"
+                @handle-add-custom-stage1="addCustomStage1"
+                @handle-add-custom-stage2="addCustomStage2"
+                @handle-add-custom-stage3="addCustomStage3"
+                @handle-add-custom-stage-remain="addCustomStageRemain"
+                @save="handleFieldSave"
+              />
+            </template>
+          </TaskPipelineSection>
 
           <!-- 额外脚本组件 -->
-          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
-            @save="handleFieldSave" />
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            show-six-star
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -94,6 +134,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -103,7 +144,14 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 import type { HomeOverviewResponse } from '@/types/home.ts'
@@ -114,21 +162,16 @@ const logger = window.electronAPI.getLogger('MAA用户编辑')
 import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
-import TaskConfigSection from '@/views/MAAUserEdit/TaskConfigSection.vue'
-import DepotMaintainConfigSection from '@/views/MAAUserEdit/DepotMaintainConfigSection.vue'
-import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
+import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
+import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  error: userError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -143,7 +186,7 @@ let fieldSavePromise: Promise<boolean> | null = null
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
   if (!errorMsg || errorMsg.includes('HTTP error')) {
-    message.error('用户配置保存失败，请检查后端连接后重试')
+    message.error(t('edit.couldNotSaveUser'))
   }
   logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
 }
@@ -158,13 +201,12 @@ const scriptName = ref('')
 
 // MAA配置相关
 const maaConfigLoading = ref(false)
-const maaSubscriptionId = ref<string | null>(null)
-const maaWebsocketId = ref<string | null>(null)
+const maaSubscriptionIds = ref<string[]>([])
+const maaTaskId = ref<string | null>(null)
 const showMAAConfigMask = ref(false)
 let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
-const infrastructureConfigPath = ref('')
 const infrastructureImporting = ref(false)
 const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
 const infrastructureOptionsLoading = ref(false)
@@ -185,7 +227,7 @@ const serverOptions = [
 ]
 
 // 关卡选项
-const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
+const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
 const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
@@ -214,7 +256,7 @@ const isCustomStage = (value: string) => {
 }
 
 // 关卡配置模式选项
-const stageModeOptions = ref<any[]>([{ label: '固定', value: 'Fixed' }])
+const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }])
 
 // 计划模式状态
 const isPlanMode = computed(() => {
@@ -403,8 +445,7 @@ const getPlanCurrentConfig = (planData: any) => {
     logger.debug(`计划表周模式调试: 
       东4区星期几: ${todayWeekday},
       星期: ${today},
-      计划数据: ${JSON.stringify(planData)}`
-    )
+      计划数据: ${JSON.stringify(planData)}`)
 
     // 优先使用今天的配置，如果没有或为空则使用ALL配置
     const todayConfig = planData[today]
@@ -439,7 +480,7 @@ const getDefaultMAAUserData = () => ({
     SeriesNumb: '0',
     Notes: '',
     Status: true,
-    Mode: '简洁',
+    Mode: '脚本',
     InfrastMode: 'Normal',
     InfrastName: '',
     InfrastIndex: '',
@@ -450,8 +491,6 @@ const getDefaultMAAUserData = () => ({
     Stage_2: '',
     Stage_3: '',
     Stage_Remain: '',
-    IfSkland: false,
-    SklandToken: '',
   },
   Task: {
     IfStartUp: true,
@@ -463,8 +502,10 @@ const getDefaultMAAUserData = () => ({
     IfReclamation: false,
     IfRoguelike: false,
     IfDepotMaintain: false,
+    IfGreenTicketStore: false,
     IfActivityFirst: false,
     ActivityStageIndex: 1,
+    ActivityMedicineNumb: 0,
     DepotMaintainPlans: '[]',
   },
   Notify: {
@@ -477,12 +518,9 @@ const getDefaultMAAUserData = () => ({
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CustomWebhooks: [],
   },
   Data: {
-    IfPassCheck: false,
     LastProxyDate: '',
-    LastSklandDate: '',
     ProxyTimes: 0,
   },
 })
@@ -503,12 +541,27 @@ const displayActivityStageIndex = computed(() => {
     : activityStageOptions.value[0]?.value
 })
 
+// 折叠态摘要：不展开也能确认当前生效的关卡配置
+const fightSummary = computed(() =>
+  summarizeFight({
+    enabled: formData.Task.IfFight,
+    planLabel: isPlanMode.value
+      ? stageModeOptions.value.find(option => option.value === formData.Info.StageMode)?.label ||
+        formData.Info.StageMode
+      : '',
+    stage: displayStage.value,
+    series: displaySeriesNumb.value,
+    medicine: displayMedicineNumb.value ?? 0,
+    remain: displayStageRemain.value,
+  })
+)
+
 // 表单验证规则
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
+      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -576,12 +629,15 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
         const parts = pendingKey.split('.')
         let userData: Record<string, any> = {}
         let current = userData
+        let localTarget: any = formData
 
         for (let i = 0; i < parts.length - 1; i++) {
           current[parts[i]] = {}
           current = current[parts[i]]
+          localTarget = localTarget[parts[i]]
         }
         current[parts[parts.length - 1]] = pendingValue
+        localTarget[parts[parts.length - 1]] = pendingValue
 
         // 特殊处理：userName 和 userId 需要同步到 Info
         if (pendingKey === 'userName') {
@@ -661,13 +717,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error('脚本不存在')
+      message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error('加载脚本信息失败')
+    message.error(t('edit.couldNotLoadScript2'))
   }
 }
 
@@ -687,13 +743,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error('创建用户失败')
+    message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -734,17 +790,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error('用户不存在')
+        message.error(t('edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error('获取用户数据失败')
+      message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error('加载用户数据失败')
+    message.error(t('edit.couldNotLoadUser2'))
   }
 }
 
@@ -828,7 +884,9 @@ const loadDepotItemOptions = async () => {
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MAA,
+    })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }
@@ -842,15 +900,15 @@ const loadStageModeOptions = async () => {
 // 选择并导入基建配置文件
 const selectAndImportInfrastructureConfig = async () => {
   if (!isEdit.value) {
-    message.warning('请先保存用户后再导入配置')
+    message.warning(t('edit.saveUserBeforeImporting'))
     return
   }
 
   try {
     // 选择文件
     const path = await window.electronAPI?.selectFile([
-      { name: 'JSON 文件', extensions: ['json'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('edit.jsonFiles'), extensions: ['json'] },
+      { name: t('edit.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
@@ -870,18 +928,18 @@ const selectAndImportInfrastructureConfig = async () => {
         // 清空 InfrastIndex，等待用户从下拉框中选择
         formData.Info.InfrastIndex = ''
 
-        message.success('基建配置导入成功')
+        message.success(t('edit.baseConfigurationImported'))
 
         // 重新加载基建配置选项
         await loadInfrastructureOptions()
       } else {
-        message.error('基建配置导入失败')
+        message.error(t('edit.couldNotImportBase'))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`基建配置导入失败: ${errorMsg}`)
-    message.error('基建配置导入失败')
+    message.error(t('edit.couldNotImportBase'))
   } finally {
     infrastructureImporting.value = false
   }
@@ -895,13 +953,13 @@ const loadInfrastructureOptions = async () => {
     infrastructureOptionsLoading.value = true
     const result = await Service.getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost({
       scriptId: scriptId,
-      userId: userId
+      userId: userId,
     })
 
     if (result && result.code === 200 && result.data) {
       infrastructureOptions.value = result.data.map((item: any) => ({
         label: item.label,
-        value: item.value
+        value: item.value,
       }))
     }
   } catch (error) {
@@ -913,15 +971,16 @@ const loadInfrastructureOptions = async () => {
 }
 
 const handleMAAConfig = async () => {
-
   try {
     maaConfigLoading.value = true
 
     // 如果已有连接，先断开
-    if (maaSubscriptionId.value) {
-      unsubscribe(maaSubscriptionId.value)
-      maaSubscriptionId.value = null
-      maaWebsocketId.value = null
+    if (maaSubscriptionIds.value.length > 0) {
+      for (const subscriptionId of maaSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
+      }
+      maaSubscriptionIds.value = []
+      maaTaskId.value = null
       showMAAConfigMask.value = false
       if (maaConfigTimeout) {
         window.clearTimeout(maaConfigTimeout)
@@ -939,69 +998,61 @@ const handleMAAConfig = async () => {
       const wsId = response.taskId
 
       // 订阅 websocket
-      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-        if (wsMessage.type === 'error') {
-          logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:${wsMessage.data}`
-          )
-          message.error(`MAA配置连接失败: ${wsMessage.data}`)
-          unsubscribe(subscriptionId)
-          maaSubscriptionId.value = null
-          maaWebsocketId.value = null
-          showMAAConfigMask.value = false
-          if (maaConfigTimeout) {
-            window.clearTimeout(maaConfigTimeout)
-            maaConfigTimeout = null
+      const subscriptionIds = [
+        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+        subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskNoticeData
+          if (data.level === 'error') {
+            logger.error(
+              `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${data.message}`
+            )
+            message.error(t('edit.maaConfigurationFailedP0', { p0: data.message }))
           }
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${wsMessage.data.Error}`
-          )
-          message.error(`MAA配置失败: ${wsMessage.data.Error}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
-          logger.info(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`
-          )
+        }),
+        // 处理任务结束消息
+        subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          const data = wsMessage.data as unknown as WSTaskCompletedData
+          logger.info(`用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`)
           // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
-            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+          if (data.outcome === 'success') {
+            message.success(
+              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           // 清理连接
-          unsubscribe(subscriptionId)
-          maaSubscriptionId.value = null
-          maaWebsocketId.value = null
+          for (const subscriptionId of maaSubscriptionIds.value) {
+            unsubscribe(subscriptionId)
+          }
+          maaSubscriptionIds.value = []
+          maaTaskId.value = null
           showMAAConfigMask.value = false
           if (maaConfigTimeout) {
             window.clearTimeout(maaConfigTimeout)
             maaConfigTimeout = null
           }
-        }
-      })
+        }),
+      ]
 
-      maaSubscriptionId.value = subscriptionId
-      maaWebsocketId.value = wsId
+      maaSubscriptionIds.value = subscriptionIds
+      maaTaskId.value = wsId
       showMAAConfigMask.value = true
-      message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
+      message.success(
+        t('edit.startedMaaSetupUser', { p0: formData.Info?.Name || formData.userName })
+      )
 
       // 设置 30 分钟超时自动断开
       maaConfigTimeout = window.setTimeout(
         () => {
-          if (maaSubscriptionId.value) {
-            unsubscribe(maaSubscriptionId.value)
-            maaSubscriptionId.value = null
-            maaWebsocketId.value = null
+          if (maaSubscriptionIds.value.length > 0) {
+            for (const subscriptionId of maaSubscriptionIds.value) {
+              unsubscribe(subscriptionId)
+            }
+            maaSubscriptionIds.value = []
+            maaTaskId.value = null
             showMAAConfigMask.value = false
-            message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
+            message.info(
+              t('edit.configurationSessionUserP0', { p0: formData.Info?.Name || formData.userName })
+            )
           }
           maaConfigTimeout = null
         },
@@ -1013,7 +1064,7 @@ const handleMAAConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动MAA配置失败: ${errorMsg}`)
-    message.error('启动MAA配置失败')
+    message.error(t('edit.couldNotStartMaa'))
   } finally {
     maaConfigLoading.value = false
   }
@@ -1021,32 +1072,32 @@ const handleMAAConfig = async () => {
 
 const handleSaveMAAConfig = async () => {
   try {
-    const websocketId = maaWebsocketId.value
-    if (!websocketId) {
-      message.error('未找到活动的配置会话')
+    const taskId = maaTaskId.value
+    if (!taskId) {
+      message.error(t('edit.noActiveConfigurationSession'))
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response && response.code === 200) {
-      if (maaSubscriptionId.value) {
-        unsubscribe(maaSubscriptionId.value)
-        maaSubscriptionId.value = null
+      for (const subscriptionId of maaSubscriptionIds.value) {
+        unsubscribe(subscriptionId)
       }
-      maaWebsocketId.value = null
+      maaSubscriptionIds.value = []
+      maaTaskId.value = null
       showMAAConfigMask.value = false
       if (maaConfigTimeout) {
         window.clearTimeout(maaConfigTimeout)
         maaConfigTimeout = null
       }
-      message.success('用户的配置已保存')
+      message.success(t('edit.configurationThisUserWas'))
     } else {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存MAA配置失败: ${errorMsg}`)
-    message.error('保存MAA配置失败')
+    message.error(t('edit.couldNotSaveMaa'))
   }
 }
 
@@ -1081,7 +1132,7 @@ const addStageToOptions = (stageName: string) => {
   // 检查是否已存在
   const exists = stageOptions.value.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(`关卡 "${trimmedName}" 已存在`)
+    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
     return false
   }
 
@@ -1092,14 +1143,14 @@ const addStageToOptions = (stageName: string) => {
     isCustom: true,
   })
 
-  message.success(`自定义关卡 "${trimmedName}" 添加成功`)
+  message.success(t('edit.customStageP0Added', { p0: trimmedName }))
   return true
 }
 
 // 添加主关卡
 const addCustomStage = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1111,7 +1162,7 @@ const addCustomStage = (stageName: string) => {
 // 添加备选关卡-1
 const addCustomStage1 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1123,7 +1174,7 @@ const addCustomStage1 = (stageName: string) => {
 // 添加备选关卡-2
 const addCustomStage2 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1135,7 +1186,7 @@ const addCustomStage2 = (stageName: string) => {
 // 添加备选关卡-3
 const addCustomStage3 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1147,7 +1198,7 @@ const addCustomStage3 = (stageName: string) => {
 // 添加剩余理智关卡
 const addCustomStageRemain = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -1160,10 +1211,12 @@ const handleCancel = async () => {
   const pendingSave = fieldSavePromise
   if (pendingSave && !(await pendingSave)) return
 
-  if (maaSubscriptionId.value) {
-    unsubscribe(maaSubscriptionId.value)
-    maaSubscriptionId.value = null
-    maaWebsocketId.value = null
+  if (maaSubscriptionIds.value.length > 0) {
+    for (const subscriptionId of maaSubscriptionIds.value) {
+      unsubscribe(subscriptionId)
+    }
+    maaSubscriptionIds.value = []
+    maaTaskId.value = null
   }
   router.push('/scripts')
 }
@@ -1209,7 +1262,7 @@ watch(
 // 初始化加载
 onMounted(() => {
   if (!scriptId) {
-    message.error('缺少脚本ID参数')
+    message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
@@ -1255,20 +1308,22 @@ onMounted(() => {
             fullPlanData.value = planData
             logger.debug('fullPlanData.value已更新')
 
-            logger.info(`计划配置加载成功:${JSON.stringify({
-              planId: newStageMode,
-              currentConfig: JSON.parse(JSON.stringify(currentConfig)),
-              planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
-            })}`)
+            logger.info(
+              `计划配置加载成功:${JSON.stringify({
+                planId: newStageMode,
+                currentConfig: JSON.parse(JSON.stringify(currentConfig)),
+                planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
+              })}`
+            )
 
             // 从stageModeOptions中查找对应的计划名称
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
             const planName = planOption ? planOption.label : newStageMode
 
-            message.success(`已切换到计划模式：${planName}`)
+            message.success(t('edit.switchedPlanModeP0', { p0: planName }))
           } else {
             logger.warn(`计划配置响应不完整: ${JSON.stringify({ response, newStageMode })}`)
-            message.warning('计划配置加载失败，请检查计划是否存在')
+            message.warning(t('edit.couldNotLoadPlan'))
             planModeConfig.value = null
           }
         } catch (error) {
@@ -1280,7 +1335,7 @@ onMounted(() => {
             name: error instanceof Error ? error.name : error?.constructor?.name,
           }
           logger.error(`加载计划配置失败: ${JSON.stringify(errorInfo)}`)
-          message.error('加载计划配置时发生错误')
+          message.error(t('edit.somethingWentWrongLoading'))
           planModeConfig.value = null
         }
       }

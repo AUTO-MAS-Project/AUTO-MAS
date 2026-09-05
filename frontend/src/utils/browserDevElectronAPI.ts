@@ -1,10 +1,11 @@
 import type { ElectronAPI } from '@/types/electron'
+import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
 
 type BrowserDevWindow = Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }
 type Logger = ReturnType<ElectronAPI['getLogger']>
 
-const BACKEND_HTTP_ENDPOINT = 'http://localhost:36163'
-const BACKEND_WS_ENDPOINT = 'ws://localhost:36163'
+const BACKEND_HTTP_ENDPOINT = getDefaultHttpEndpoint()
+const BACKEND_WS_ENDPOINT = getDefaultWebSocketEndpoint()
 const CONFIG_KEY = 'app-config'
 const INITIALIZED_VERSION_KEY = 'app-initialized-version'
 

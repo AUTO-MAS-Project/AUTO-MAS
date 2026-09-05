@@ -23,7 +23,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 4. Match nearby naming, logging tone, comment style, and result contracts.
 5. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
 6. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
-7. Before completing a user-visible feature or fix, add its `res/version.json` entry under the next unreleased version; treat the entry as part of the implementation rather than a reminder.
+7. Before completing a user-visible feature or fix, add its `res/version.json` entry under the next unreleased version; treat the entry as part of the implementation rather than a reminder. Add exactly one entry per PR, written as one concise sentence summarizing the PR's significance; condense all changes into that sentence.
 
 ## Commit Lenses
 1. `e541fa5f`: small cleanup.

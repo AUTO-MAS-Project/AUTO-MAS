@@ -21,8 +21,8 @@
 
 
 import re
-import base64
-import win32crypt
+
+from app.utils.platform import secret
 
 
 def sanitize_log_message(message: str) -> str:
@@ -60,6 +60,32 @@ def sanitize_log_message(message: str) -> str:
     return sanitized_message
 
 
+def format_exception_reason(
+    error: BaseException,
+    *,
+    stage: str,
+    include_message: bool = True,
+) -> str:
+    """生成不为空且不包含 URL 查询参数的异常原因。"""
+
+    exception_name = type(error).__name__
+    message = sanitize_log_message(str(error).strip()) if include_message else ""
+    message = re.sub(
+        r"(https?://[^\s?#]+)[?#][^\s]*",
+        r"\1",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if not message:
+        if "timeout" in exception_name.lower():
+            message = "请求超时"
+        elif include_message:
+            message = "未提供异常详情"
+        else:
+            message = "程序内部异常"
+    return f"{stage}（{exception_name}）：{message}"
+
+
 def dpapi_encrypt(
     note: str, description: None | str = None, entropy: None | bytes = None
 ) -> str:
@@ -78,11 +104,11 @@ def dpapi_encrypt(
 
     if note == "":
         return ""
-
-    encrypted = win32crypt.CryptProtectData(
-        note.encode("utf-8"), description, entropy, None, None, 0
+    return secret.dpapi_encrypt(
+        note,
+        description,
+        entropy,
     )
-    return base64.b64encode(encrypted).decode("utf-8")
 
 
 def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
@@ -99,8 +125,4 @@ def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
 
     if note == "":
         return ""
-
-    decrypted = win32crypt.CryptUnprotectData(
-        base64.b64decode(note), entropy, None, None, 0
-    )
-    return decrypted[1].decode("utf-8")
+    return secret.dpapi_decrypt(note, entropy)

@@ -33,9 +33,9 @@
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
+
 from app.core import Config
 from app.models.schema import OutBase
-
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
 
@@ -55,7 +55,9 @@ class QrCheckIn(BaseModel):
 
 
 class QrCheckOut(OutBase):
-    status: str = Field(default="", description="Init/Scanned/Confirmed/Expired/Canceled/Error")
+    status: str = Field(
+        default="", description="Init/Scanned/Confirmed/Expired/Canceled/Error"
+    )
     cookies_str: str = Field(default="", description="确认后返回的完整 cookie 字符串")
 
 
@@ -71,6 +73,7 @@ class QrSaveIn(BaseModel):
 async def qr_create() -> QrCreateOut:
     try:
         from app.tools.miyoushe_qr import create_qr_login
+
         result = await create_qr_login()
     except Exception as e:
         return QrCreateOut(code=500, status="error", message=str(e))
@@ -83,9 +86,14 @@ async def qr_create() -> QrCreateOut:
             status="error",
             message=error if isinstance(error, str) else "创建二维码失败",
         )
-    if not all(isinstance(result.get(key), str) and result[key] for key in ("ticket", "qr_url", "device")):
+    if not all(
+        isinstance(result.get(key), str) and result[key]
+        for key in ("ticket", "qr_url", "device")
+    ):
         return QrCreateOut(code=500, status="error", message="二维码服务返回数据不完整")
-    return QrCreateOut(ticket=result["ticket"], qr_url=result["qr_url"], device=result["device"])
+    return QrCreateOut(
+        ticket=result["ticket"], qr_url=result["qr_url"], device=result["device"]
+    )
 
 
 @router.post("/check", summary="轮询扫码状态", response_model=QrCheckOut)
@@ -93,6 +101,7 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
     """轮询状态，确认后返回从 Passport 响应提取的 cookies。"""
     try:
         from app.tools.miyoushe_qr import check_qr_status
+
         result = await check_qr_status(body.ticket, body.device)
     except Exception as e:
         return QrCheckOut(code=500, status="error", message=str(e))
@@ -127,8 +136,14 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
 @router.post("/save", summary="保存 cookie 到账号配置", response_model=OutBase)
 async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
     try:
-        data = {"GameSignAccount": {"MiyousheToken": body.cookie}}
+        from app.tools.miyoushe import validate_miyoushe_cookie
+
+        cookie = body.cookie.strip()
+        validate_miyoushe_cookie(cookie)
+        data = {"GameSignAccount": {"MiyousheToken": cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
+    except ValueError as e:
+        return OutBase(code=400, status="error", message=f"米游社 Token 无效：{e}")
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase(message="米游社 Token 已保存")

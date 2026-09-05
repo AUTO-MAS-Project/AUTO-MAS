@@ -1,7 +1,11 @@
 [project]
 name = "auto-mas"
-version = "9.9.9-alpha.1"
-requires-python = "==3.12.*"
+version = "5.5.0b3"
+description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "AUTO-MAS Team" }]
 dependencies = [
     "loguru==0.7.3",
     "fastapi==0.116.1",
@@ -15,13 +19,13 @@ dependencies = [
     "plyer==2.1.0",
     "psutil==7.0.0",
     "jinja2==3.1.6",
-    "pywin32==310",
-    "keyboard==0.13.5",
+    "pywin32==310; sys_platform == 'win32'",
+    "keyboard==0.13.5; sys_platform == 'win32'",
     "pycryptodome==3.23.0",
     "truststore==0.10.1",
     "pillow==12.1.1",
     "packaging==25.0",
-    "rapidocr-onnxruntime==1.2.3",
+    "rapidocr_onnxruntime==1.2.3",
     "pygetwindow==0.0.9",
     "pyautogui==0.9.54",
     "pynput==1.8.1",
@@ -33,10 +37,32 @@ dependencies = [
     "json5==0.14.0",
     "pyyaml==6.0.3",
     "sentry-sdk==2.66.1",
-    "tomli-w==1.2.0",
+    "tomli_w==1.2.0",
     "tzdata==2026.3",
 ]
 
-[tool.uv]
-package = false
-environments = ["sys_platform == 'win32'"]
+[project.urls]
+Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-exclude = [
+    "frontend",
+    "res",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+# F403/F405 为架构性模式：schema 公共模型经 `from ... import *` 星号导出、
+# utils 经 __getattr__ 惰性导出，均属有意设计，不作为待修问题统计。
+ignore = ["E501", "F403", "F405"]
+
+[tool.ruff.lint.isort]
+# 将项目内部模块与第三方依赖正确分组。
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

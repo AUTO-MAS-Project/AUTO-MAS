@@ -7,14 +7,13 @@
 
 import { ref } from 'vue'
 import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
+import { requestUpdateCheck } from './useUpdateChecker'
 const logger = window.electronAPI.getLogger('版本服务')
-
-// 获取版本号
-const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // ========== 标题栏版本信息相关 ==========
 export const updateInfo = ref<UpdateCheckOut | null>(null)
 export const backendUpdateInfo = ref<VersionOut | null>(null)
+export const runtimeBackendUpdateAvailable = ref(false)
 
 const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 分钟
 let titlebarPollTimer: number | null = null
@@ -24,82 +23,102 @@ const isTitlebarPolling = ref(false)
  * 获取前端版本和更新信息（用于标题栏显示）
  */
 const getAppVersion = async () => {
-    try {
-        const ver = await Service.checkUpdateApiUpdateCheckPost({
-            current_version: version,
-            if_force: false,
-        })
-        updateInfo.value = ver
-        return ver
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`获取前端版本失败: ${errorMsg}`)
-        return null
-    }
+  try {
+    const ver = await requestUpdateCheck(false)
+    updateInfo.value = ver
+    return ver
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取前端版本失败: ${errorMsg}`)
+    return null
+  }
 }
 
 /**
  * 获取后端版本信息（用于标题栏显示）
  */
 export const getBackendVersion = async () => {
-    try {
-        backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`获取后端版本失败: ${errorMsg}`)
-    }
+  try {
+    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取后端版本失败: ${errorMsg}`)
+  }
+}
+
+export const checkRuntimeBackendUpdate = async () => {
+  try {
+    const result = await window.electronAPI.checkRuntimeBackendUpdate?.()
+    if (result?.staged === true) runtimeBackendUpdateAvailable.value = true
+    else if (result && !result.error) runtimeBackendUpdateAvailable.value = false
+    return result
+  } catch (error) {
+    logger.debug(
+      `Runtime 后端更新检查失败: ${error instanceof Error ? error.message : String(error)}`
+    )
+    return null
+  }
 }
 
 /**
  * 执行一次标题栏版本信息检查
  */
 const pollTitlebarVersionOnce = async () => {
-    if (isTitlebarPolling.value) return
-    isTitlebarPolling.value = true
+  if (isTitlebarPolling.value) return
+  isTitlebarPolling.value = true
 
-    try {
-        const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
+  try {
+    const [appRes, backendRes, runtimeRes] = await Promise.allSettled([
+      getAppVersion(),
+      getBackendVersion(),
+      checkRuntimeBackendUpdate(),
+    ])
 
-        if (appRes.status === 'rejected') {
-            const errorMsg = appRes.reason instanceof Error ? appRes.reason.message : String(appRes.reason)
-            logger.error(`获取前端版本失败: ${errorMsg}`)
-        }
-        if (backendRes.status === 'rejected') {
-            const errorMsg = backendRes.reason instanceof Error ? backendRes.reason.message : String(backendRes.reason)
-            logger.error(`获取后端版本失败: ${errorMsg}`)
-        }
-    } finally {
-        isTitlebarPolling.value = false
+    if (appRes.status === 'rejected') {
+      const errorMsg =
+        appRes.reason instanceof Error ? appRes.reason.message : String(appRes.reason)
+      logger.error(`获取前端版本失败: ${errorMsg}`)
     }
+    if (backendRes.status === 'rejected') {
+      const errorMsg =
+        backendRes.reason instanceof Error ? backendRes.reason.message : String(backendRes.reason)
+      logger.error(`获取后端版本失败: ${errorMsg}`)
+    }
+    if (runtimeRes.status === 'rejected') {
+      logger.debug(`Runtime 后端更新检查失败: ${String(runtimeRes.reason)}`)
+    }
+  } finally {
+    isTitlebarPolling.value = false
+  }
 }
 
 /**
  * 启动标题栏版本信息定时检查（10分钟一次）
  */
-export const startTitlebarVersionCheck = async () => {
-    if (titlebarPollTimer) {
-        logger.warn('标题栏版本检查定时器已存在，跳过启动')
-        return
-    }
+export const startTitlebarVersionCheck = () => {
+  if (titlebarPollTimer) {
+    logger.warn('标题栏版本检查定时器已存在，跳过启动')
+    return
+  }
 
-    logger.info('启动标题栏版本信息定时检查（每10分钟）')
+  logger.info('启动标题栏版本信息定时检查（每10分钟）')
 
-    // 立即执行一次
-    await pollTitlebarVersionOnce()
+  // 首次检查在后台执行，不阻塞应用进入主页
+  void pollTitlebarVersionOnce()
 
-    // 启动定时器
-    titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
+  // 启动定时器
+  titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
 }
 
 /**
  * 停止标题栏版本信息定时检查
  */
 export const stopTitlebarVersionCheck = () => {
-    if (titlebarPollTimer) {
-        clearInterval(titlebarPollTimer)
-        titlebarPollTimer = null
-        logger.info('停止标题栏版本信息定时检查')
-    }
+  if (titlebarPollTimer) {
+    clearInterval(titlebarPollTimer)
+    titlebarPollTimer = null
+    logger.info('停止标题栏版本信息定时检查')
+  }
 }
 
 // ========== 版本更新检查相关（4小时）==========

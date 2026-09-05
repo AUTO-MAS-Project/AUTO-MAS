@@ -7,11 +7,7 @@
       class="statistics-tabs"
       size="small"
     >
-      <a-tab-pane
-        v-for="option in availableStatistics"
-        :key="option.value"
-        :tab="option.label"
-      />
+      <a-tab-pane v-for="option in availableStatistics" :key="option.value" :tab="option.label" />
     </a-tabs>
 
     <div class="card-content">
@@ -21,9 +17,9 @@
           v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
           class="stat-section"
         >
-          <div class="section-header">
+          <div class="stat-section-header">
             <TeamOutlined class="section-icon" />
-            <span class="section-title">公招统计</span>
+            <span class="section-title">{{ t('history.stats.recruit') }}</span>
           </div>
           <div class="stat-items">
             <template v-for="(count, star, index) in recruitStatistics" :key="star">
@@ -48,9 +44,9 @@
 
         <!-- 掉落统计 -->
         <div v-if="dropStatistics && Object.keys(dropStatistics).length > 0" class="stat-section">
-          <div class="section-header">
+          <div class="stat-section-header">
             <GiftOutlined class="section-icon" />
-            <span class="section-title">掉落统计</span>
+            <span class="section-title">{{ t('history.stats.drops') }}</span>
           </div>
           <div class="drop-container">
             <div class="drop-stages">
@@ -82,24 +78,28 @@
 
       <template v-else-if="activeStatistics === 'maaend' && hasMaaEndStatistics">
         <div v-if="pullCountStatistics" class="stat-section">
-          <div class="section-header">
+          <div class="stat-section-header">
             <BarChartOutlined class="section-icon" />
-            <span class="section-title">抽数统计</span>
+            <span class="section-title">{{ t('history.stats.pulls') }}</span>
           </div>
           <div class="pull-count-items">
             <div class="pull-count-item primary">
-              <span>当前池可用</span>
+              <span>{{ t('history.stats.currentAvailable') }}</span>
               <strong>{{ pullCountStatistics.current_pool_total }}</strong>
-              <span>抽</span>
+              <span>{{ t('history.stats.pullUnit') }}</span>
             </div>
             <div class="pull-count-item">
-              <span>下版本总计</span>
+              <span>{{ t('history.stats.nextTotal') }}</span>
               <strong>{{ pullCountStatistics.next_pool_total }}</strong>
-              <span>抽</span>
+              <span>{{ t('history.stats.pullUnit') }}</span>
             </div>
             <div class="pull-count-item compact">
-              <span>资源 {{ pullCountStatistics.resource_pulls }} 抽</span>
-              <span>凭证 {{ pullCountStatistics.carry_over_pulls }} 抽</span>
+              <span>{{
+                t('history.stats.resourcePulls', { n: pullCountStatistics.resource_pulls })
+              }}</span>
+              <span>{{
+                t('history.stats.voucherPulls', { n: pullCountStatistics.carry_over_pulls })
+              }}</span>
             </div>
           </div>
         </div>
@@ -111,9 +111,9 @@
         />
 
         <div v-if="hasMatrixStatistics" class="stat-section">
-          <div class="section-header">
+          <div class="stat-section-header">
             <InboxOutlined class="section-icon" />
-            <span class="section-title">基质统计</span>
+            <span class="section-title">{{ t('history.stats.matrix') }}</span>
           </div>
           <div
             v-if="matrixStatistics && Object.keys(matrixStatistics).length > 0"
@@ -142,22 +142,25 @@
               </a-popover>
             </div>
           </div>
-          <div v-else class="matrix-empty">无合适的基质</div>
+          <div v-else class="matrix-empty">{{ t('history.stats.noMatrix') }}</div>
         </div>
       </template>
 
       <!-- 空状态 -->
       <div v-else class="empty-stats">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { BarChartOutlined, GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
+
+const { t } = useI18n()
 
 interface Props {
   recruitStatistics: Record<string, number> | null
@@ -218,7 +221,6 @@ watch(
   },
   { immediate: true }
 )
-
 </script>
 
 <style scoped>
@@ -270,7 +272,7 @@ watch(
   min-width: 0;
 }
 
-.section-header {
+.stat-section-header {
   display: flex;
   align-items: center;
   gap: 8px;

@@ -42,13 +42,18 @@ import httpx
 
 from app.core import Config
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 logger = get_logger("米游社扫码登录")
 
 # ---- Passport QR 登录 API（对齐 genshin.py） ----
 
-CREATE_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
-CHECK_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+CREATE_QRCODE_URL = (
+    "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
+)
+CHECK_QRCODE_URL = (
+    "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+)
 
 # ---- 请求头（对齐 genshin.py QRCODE_HEADERS） ----
 
@@ -103,7 +108,14 @@ def _is_expired_message(message: object) -> bool:
     message = message.lower()
     return any(
         hint in message
-        for hint in ("expired", "expire", "invalid qr", "二维码已过期", "二维码失效", "二维码无效")
+        for hint in (
+            "expired",
+            "expire",
+            "invalid qr",
+            "二维码已过期",
+            "二维码失效",
+            "二维码无效",
+        )
     )
 
 
@@ -152,6 +164,7 @@ async def create_qr_login(proxy: str | None = None) -> dict:
         {ticket, qr_url, device} 或 {error}
     """
     from uuid import uuid4
+
     device = str(uuid4())
 
     try:
@@ -163,33 +176,51 @@ async def create_qr_login(proxy: str | None = None) -> dict:
                 timeout=30.0,
             )
             data = resp.json()
-        logger.debug(f"QR create 响应: {data}")
-
         if not isinstance(data, dict):
+            logger.error("创建二维码响应格式无效")
             return {"error": "服务器返回空响应，无法创建二维码"}
+
+        qr_data = data.get("data")
+        data_keys = sorted(qr_data) if isinstance(qr_data, dict) else []
+        logger.debug(
+            f"QR create 响应: retcode={data.get('retcode')}, data_keys={data_keys}"
+        )
 
         if data.get("retcode") != 0:
             message = data.get("message")
-            return {"error": message if isinstance(message, str) and message else "创建二维码失败"}
+            return {
+                "error": message
+                if isinstance(message, str) and message
+                else "创建二维码失败"
+            }
 
-        qr_data = data.get("data")
         if not isinstance(qr_data, dict):
+            logger.error("创建二维码数据格式无效")
             return {"error": "服务器返回空响应，无法创建二维码"}
         qr_url = qr_data.get("url", "")
         ticket = qr_data.get("ticket", "")
 
         if not qr_url or not ticket:
-            return {"error": f"返回数据缺少 url 或 ticket: {qr_data}"}
+            logger.error("创建二维码响应缺少必要字段")
+            return {"error": "返回数据缺少二维码 url 或 ticket"}
 
-        logger.info(f"QR 创建成功, ticket={ticket[:8]}...")
+        logger.info("QR 创建成功")
         return {"ticket": ticket, "qr_url": qr_url, "device": device}
-    except Exception as e:
-        logger.error(f"创建扫码登录失败: {e}")
-        return {"error": str(e)}
+    except (httpx.HTTPError, OSError) as e:
+        logger.warning(format_exception_reason(e, stage="创建扫码登录网络请求失败"))
+        return {"error": "创建二维码网络请求失败，请检查网络或代理设置"}
+    except ValueError:
+        logger.exception("创建扫码登录响应解析异常")
+        return {"error": "二维码响应解析失败"}
+    except Exception:
+        logger.exception("创建扫码登录程序异常")
+        return {"error": "创建二维码失败，请稍后重试"}
 
 
 async def check_qr_status(
-    ticket: str, device: str, proxy: str | None = None,
+    ticket: str,
+    device: str,
+    proxy: str | None = None,
 ) -> dict:
     """轮询扫码登录状态
 
@@ -235,6 +266,7 @@ async def check_qr_status(
         if qr_data is None:
             return {"status": "Expired", "message": QR_EXPIRED_MESSAGE}
         if not isinstance(qr_data, dict):
+            logger.error("二维码状态响应格式无效")
             return {"status": "Error", "error": "二维码状态响应格式无效"}
 
         status = qr_data.get("status")
@@ -268,16 +300,23 @@ async def check_qr_status(
             if status == "Expired":
                 return {"status": status, "message": QR_EXPIRED_MESSAGE}
             return {"status": status, "message": "登录已取消"}
+        logger.error("收到未知扫码状态")
         return {
             "status": "Error",
             "error": f"未知扫码状态: {status}",
         }
-    except ValueError as e:
-        logger.error(f"解析扫码状态 JSON 失败: {e}")
+    except (httpx.HTTPError, OSError) as e:
+        logger.warning(format_exception_reason(e, stage="查询扫码状态网络请求失败"))
+        return {
+            "status": "Error",
+            "error": "查询二维码状态网络请求失败，请检查网络或代理设置",
+        }
+    except ValueError:
+        logger.exception("解析扫码状态 JSON 失败")
         return {"status": "Error", "error": "响应解析失败"}
-    except Exception as e:
-        logger.error(f"查询扫码状态失败: {e}")
-        return {"status": "Error", "error": str(e)}
+    except Exception:
+        logger.exception("查询扫码状态程序异常")
+        return {"status": "Error", "error": "查询二维码状态失败，请稍后重试"}
 
 
 def _extract_cookie_payload(payload: object) -> dict[str, str]:
@@ -304,7 +343,8 @@ def _extract_cookie_payload(payload: object) -> dict[str, str]:
 
 
 def _extract_cookies_from_headers(
-    resp: httpx.Response, payload: object = None,
+    resp: httpx.Response,
+    payload: object = None,
 ) -> str:
     """从响应头的 Set-Cookie 中提取 stoken 等 cookies
 
@@ -361,11 +401,3 @@ def _parse_cookie_string(cookie_str: str) -> dict[str, str]:
     return cookies
 
 
-async def exchange_stoken(
-    game_token: str, uid: str, proxy: str | None = None,
-) -> dict:
-    """兼容接口：Passport 模式下此函数不被调用，cookies 直接从响应头获取。
-
-    保留此函数以兼容 API 路由层的调用。
-    """
-    return {"error": "Passport 模式不需要 exchange_stoken，请直接使用 cookies_str"}

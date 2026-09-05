@@ -30,7 +30,6 @@ from typing import Any, Mapping
 
 import yaml
 
-
 M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
     {
         "power_enable",
@@ -49,7 +48,11 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
 def managed_modules_for_key(key: str) -> tuple[str, ...]:
     """Map a native M7A key to the MAS module that may override it."""
 
-    if key in M7A_MANAGED_STAGE_KEYS or key.endswith("_timestamp") or key == "last_run_timestamp":
+    if (
+        key in M7A_MANAGED_STAGE_KEYS
+        or key.endswith("_timestamp")
+        or key == "last_run_timestamp"
+    ):
         return ()
     if key.startswith("weekly_divergent_"):
         return () if key == "weekly_divergent_enable" else ("DivergentUniverse",)
@@ -131,13 +134,16 @@ def resolve_managed_options(
     overrides = _user_managed_options(user_config, module_key)
     unknown = sorted(set(overrides).difference(native))
     if unknown:
-        raise ValueError(f"M7A {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}")
+        raise ValueError(
+            f"M7A {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}"
+        )
     effective = dict(native)
     for key, value in overrides.items():
         if not _same_value_kind(value, native[key]):
             raise ValueError(f"M7A {module_key}.{key} 的值类型与原生配置不一致")
         effective[key] = value
     return effective
+
 
 _EOW_WEEKDAY_MAP: dict[str, int] = {
     "Monday": 1,
@@ -216,47 +222,51 @@ M7A_NOTIFICATION_PATCH_WHITELIST: frozenset[str] = frozenset(
 )
 
 
-M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset({
-    "daily_enable",
-    "daily_material_enable",
-    "daily_himeko_try_enable",
-    "daily_memory_one_enable",
-    "activity_enable",
-    "activity_dailycheckin_enable",
-    "activity_gardenofplenty_enable",
-    "activity_realmofthestrange_enable",
-    "activity_planarfissure_enable",
-    "activity_journey_highlights_notification_enable",
-    "reward_enable",
-    "reward_dispatch_enable",
-    "reward_mail_enable",
-    "reward_assist_enable",
-    "reward_quest_enable",
-    "reward_srpass_enable",
-    "reward_redemption_code_enable",
-    "reward_achievement_enable",
-    "reward_message_enable",
-    "redemption_code",
-    "power_enable",
-    "echo_of_war_enable",
-    "echo_of_war_timestamp",
-    "build_target_enable",
-    "build_target_scheme",
-    "build_target_ornament_weekly_count",
-    "build_target_use_user_instance_when_only_erosion_and_ornament",
-    "instance_type",
-    "instance_names",
-    "instance_names_challenge_count",
-    "use_reserved_trailblaze_power",
-    "use_fuel",
-    "echo_of_war_start_day_of_week",
-    "cloud_game_enable",
-})
+M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "daily_enable",
+        "daily_material_enable",
+        "daily_himeko_try_enable",
+        "daily_memory_one_enable",
+        "activity_enable",
+        "activity_dailycheckin_enable",
+        "activity_gardenofplenty_enable",
+        "activity_realmofthestrange_enable",
+        "activity_planarfissure_enable",
+        "activity_journey_highlights_notification_enable",
+        "reward_enable",
+        "reward_dispatch_enable",
+        "reward_mail_enable",
+        "reward_assist_enable",
+        "reward_quest_enable",
+        "reward_srpass_enable",
+        "reward_redemption_code_enable",
+        "reward_achievement_enable",
+        "reward_message_enable",
+        "redemption_code",
+        "power_enable",
+        "echo_of_war_enable",
+        "echo_of_war_timestamp",
+        "build_target_enable",
+        "build_target_scheme",
+        "build_target_ornament_weekly_count",
+        "build_target_use_user_instance_when_only_erosion_and_ornament",
+        "instance_type",
+        "instance_names",
+        "instance_names_challenge_count",
+        "use_reserved_trailblaze_power",
+        "use_fuel",
+        "echo_of_war_start_day_of_week",
+        "cloud_game_enable",
+    }
+)
 
-M7A_DAILY_DEEP_MERGE_KEYS: frozenset[str] = frozenset({
-    "instance_names",
-    "instance_names_challenge_count",
-})
+M7A_DAILY_DEEP_MERGE_KEYS: frozenset[str] = frozenset(
+    {
+        "instance_names",
+        "instance_names_challenge_count",
+    }
+)
 
 
 def build_m7a_daily_patch(
@@ -269,9 +279,7 @@ def build_m7a_daily_patch(
 ) -> dict:
     """构造 M7A routine patch from native config plus Managed.Options."""
     eow_enabled = bool(daily_eow_enabled)
-    native_options = resolve_m7a_managed_options(
-        script_config, user_config, "Daily"
-    )
+    native_options = resolve_m7a_managed_options(script_config, user_config, "Daily")
     cultivation_enabled = bool(native_options.get("build_target_enable", False))
 
     # 配置不完整时直接报错，避免刷错副本。
@@ -363,9 +371,7 @@ def build_m7a_daily_patch(
         patch["build_target_enable"] = True
         patch["build_target_scheme"] = scheme
         patch["build_target_ornament_weekly_count"] = ornament_count
-        patch[
-            "build_target_use_user_instance_when_only_erosion_and_ornament"
-        ] = bool(
+        patch["build_target_use_user_instance_when_only_erosion_and_ornament"] = bool(
             native_options.get(
                 "build_target_use_user_instance_when_only_erosion_and_ornament",
                 False,
@@ -518,14 +524,17 @@ def build_receive_rewards_patch(
         )
     )
     rewards = {
-        "reward_dispatch_enable": bool(native_options.get("reward_dispatch_enable", True)),
+        "reward_dispatch_enable": bool(
+            native_options.get("reward_dispatch_enable", True)
+        ),
         "reward_mail_enable": bool(native_options.get("reward_mail_enable", True)),
         "reward_assist_enable": bool(native_options.get("reward_assist_enable", True)),
         "reward_quest_enable": bool(native_options.get("reward_quest_enable", True)),
         "reward_srpass_enable": bool(native_options.get("reward_srpass_enable", True)),
         "reward_redemption_code_enable": bool(
             native_options.get("reward_redemption_code_enable", True)
-        ) and bool(redeem_codes_enabled),
+        )
+        and bool(redeem_codes_enabled),
         "reward_achievement_enable": bool(
             native_options.get("reward_achievement_enable", False)
         ),
@@ -566,12 +575,14 @@ def build_receive_rewards_patch(
     )
     # 动态原生选项应用后重新收紧 ReceiveRewards 的运行边界；尤其不能让
     # “兑换码仅配置变化时执行”的本轮禁用判定被原生配置重新打开。
-    patch.update({
-        "power_enable": False,
-        "echo_of_war_enable": False,
-        "build_target_enable": False,
-        "cloud_game_enable": False,
-    })
+    patch.update(
+        {
+            "power_enable": False,
+            "echo_of_war_enable": False,
+            "build_target_enable": False,
+            "cloud_game_enable": False,
+        }
+    )
     patch["reward_redemption_code_enable"] = bool(
         patch.get("reward_redemption_code_enable")
     ) and bool(redeem_codes_enabled)
@@ -696,47 +707,51 @@ def build_currency_wars_patch(
     )
 
 
-M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset({
-    "weekly_divergent_enable",
-    "weekly_divergent_type",
-    "weekly_divergent_level",
-    "weekly_divergent_bonus_enable",
-    "weekly_divergent_stable_mode",
-    "currencywars_enable",
-    "currencywars_type",
-    "currencywars_rank_difficulty",
-    "currencywars_strategy",
-    "currencywars_strategy_restart_on_special_tags",
-    "currencywars_fast_mode",
-    "currencywars_remembrance_trailblazer_name",
-    "currencywars_bonus_enable",
-    "instance_names",
-    "cloud_game_enable",
-})
+M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "weekly_divergent_enable",
+        "weekly_divergent_type",
+        "weekly_divergent_level",
+        "weekly_divergent_bonus_enable",
+        "weekly_divergent_stable_mode",
+        "currencywars_enable",
+        "currencywars_type",
+        "currencywars_rank_difficulty",
+        "currencywars_strategy",
+        "currencywars_strategy_restart_on_special_tags",
+        "currencywars_fast_mode",
+        "currencywars_remembrance_trailblazer_name",
+        "currencywars_bonus_enable",
+        "instance_names",
+        "cloud_game_enable",
+    }
+)
 
 
-M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset({
-    "power_enable",
-    "echo_of_war_enable",
-    "build_target_enable",
-    "daily_enable",
-    "daily_material_enable",
-    "daily_himeko_try_enable",
-    "daily_memory_one_enable",
-    "activity_enable",
-    "activity_dailycheckin_enable",
-    "activity_gardenofplenty_enable",
-    "activity_realmofthestrange_enable",
-    "activity_planarfissure_enable",
-    "activity_journey_highlights_notification_enable",
-    "reward_enable",
-    "reward_dispatch_enable",
-    "reward_mail_enable",
-    "reward_assist_enable",
-    "reward_quest_enable",
-    "reward_srpass_enable",
-    "reward_redemption_code_enable",
-    "reward_achievement_enable",
-    "reward_message_enable",
-    "cloud_game_enable",
-})
+M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "power_enable",
+        "echo_of_war_enable",
+        "build_target_enable",
+        "daily_enable",
+        "daily_material_enable",
+        "daily_himeko_try_enable",
+        "daily_memory_one_enable",
+        "activity_enable",
+        "activity_dailycheckin_enable",
+        "activity_gardenofplenty_enable",
+        "activity_realmofthestrange_enable",
+        "activity_planarfissure_enable",
+        "activity_journey_highlights_notification_enable",
+        "reward_enable",
+        "reward_dispatch_enable",
+        "reward_mail_enable",
+        "reward_assist_enable",
+        "reward_quest_enable",
+        "reward_srpass_enable",
+        "reward_redemption_code_enable",
+        "reward_achievement_enable",
+        "reward_message_enable",
+        "cloud_game_enable",
+    }
+)

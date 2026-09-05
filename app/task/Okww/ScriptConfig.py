@@ -22,9 +22,10 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from app.core import Config
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
@@ -34,6 +35,7 @@ from .AutoProxy import (
     _OKWW_REL_EXE,
     _OKWW_REL_PYTHONW,
     _configure_okww_launcher,
+    _okww_config_mode,
     _okww_mas_config_dir,
     _update_json,
 )
@@ -65,20 +67,28 @@ class ScriptConfigTask(TaskExecuteBase):
         self.exe_path = self.root_path / _OKWW_REL_EXE
         self.script_config_path = self.root_path / _OKWW_REL_CONFIG_DIR
         target_user_id = self.cur_user_item.user_id
-        mode = "简洁"
+        mode = "脚本"
         self.resource: str | None = None
         if target_user_id != "Default":
             target_user_config = self.user_config[uuid.UUID(target_user_id)]
-            mode = str(target_user_config.get("Info", "Mode") or "简洁")
+            mode = _okww_config_mode(target_user_config.get("Info", "Mode"))
             self.resource = str(target_user_config.get("Info", "Resource"))
-        self.mas_config_dir = _okww_mas_config_dir(
-            self.script_info.script_id, target_user_id, mode
+        self.use_mas_config = mode != "直控"
+        self.mas_config_dir = (
+            _okww_mas_config_dir(self.script_info.script_id, target_user_id, mode)
+            if self.use_mas_config
+            else None
         )
 
     async def main_task(self) -> None:
         await self._kill_processes()
         _configure_okww_launcher(self.root_path, self.resource)
-        if self.mas_config_dir.is_dir() and any(self.mas_config_dir.iterdir()):
+        if (
+            self.use_mas_config
+            and self.mas_config_dir
+            and self.mas_config_dir.is_dir()
+            and any(item.is_file() for item in self.mas_config_dir.rglob("*"))
+        ):
             temporary_path = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
             )
@@ -94,10 +104,12 @@ class ScriptConfigTask(TaskExecuteBase):
     async def final_task(self) -> None:
         self.wait_event.set()
         await self._kill_processes()
-        if not self.crashed:
+        if not self.crashed and self.use_mas_config and self.mas_config_dir:
             _configure_okww_launcher(self.root_path, self.resource)
             if not self.script_config_path.is_dir():
-                raise FileNotFoundError("未找到 OK-WW 配置目录，请先在 OK-WW 中保存设置")
+                raise FileNotFoundError(
+                    "未找到 OK-WW 配置目录，请先在 OK-WW 中保存设置"
+                )
             _update_json(
                 self.script_config_path / "Basic Options.json",
                 {"Exit App when Game Exits": True},
@@ -112,6 +124,9 @@ class ScriptConfigTask(TaskExecuteBase):
             temporary_path.rename(self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
             self.cur_user_item.status = "完成"
+        elif not self.crashed:
+            logger.success("OK-WW 直控配置已由脚本原生 GUI 保存")
+            self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
@@ -119,10 +134,12 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"OK-WW 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-WW 设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-WW 设置任务出现异常: {e}"
+            ),
         )
 
     async def _kill_processes(self) -> None:

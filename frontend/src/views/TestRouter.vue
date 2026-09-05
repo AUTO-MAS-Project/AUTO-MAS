@@ -21,12 +21,22 @@
     </div>
 
     <!-- 应用对话框 -->
-    <Modal v-model:open="isModalOpen" :title="modalTitle" :closable="false" :maskClosable="false" :keyboard="true"
-      centered>
+    <Modal
+      v-model:open="isModalOpen"
+      :title="modalTitle"
+      :closable="false"
+      :mask-closable="false"
+      :keyboard="true"
+      centered
+    >
       <p class="modal-message">{{ modalMessage }}</p>
       <template #footer>
-        <Button v-for="(option, index) in modalOptions" :key="index" :type="index === 0 ? 'primary' : 'default'"
-          @click="handleChoice(index === 0)">
+        <Button
+          v-for="(option, index) in modalOptions"
+          :key="index"
+          :type="index === 0 ? 'primary' : 'default'"
+          @click="handleChoice(index === 0)"
+        >
           {{ option }}
         </Button>
       </template>
@@ -37,7 +47,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
-
 
 defineOptions({
   name: 'TestRouterView',
@@ -167,7 +176,7 @@ p {
 .modal-message {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text-secondary, #595959);
+  color: var(--ant-color-text-secondary);
   margin: 0;
   word-wrap: break-word;
   white-space: pre-wrap;
@@ -193,38 +202,36 @@ p {
 }
 
 .result p.success {
-  color: #52c41a;
+  color: var(--ant-color-success);
 }
 
 .result p.cancel {
-  color: #ff4d4f;
+  color: var(--ant-color-error);
 }
 
-/* ��ɫģʽ֧�� */
-@media (prefers-color-scheme: dark) {
-  h2 {
-    color: #ffffff;
-  }
+/* 深色模式支持（跟随应用主题 html.dark） */
+html.dark h2 {
+  color: #ffffff;
+}
 
-  .test-section {
-    background: #1f1f1f;
-    border-color: #434343;
-  }
+html.dark .test-section {
+  background: #1f1f1f;
+  border-color: #434343;
+}
 
-  h3 {
-    color: #c9cdd4;
-  }
+html.dark h3 {
+  color: #c9cdd4;
+}
 
-  p {
-    color: #a6adb4;
-  }
+html.dark p {
+  color: #a6adb4;
+}
 
-  .result {
-    background: #2a2a2a;
-  }
+html.dark .result {
+  background: #2a2a2a;
+}
 
-  .result h4 {
-    color: #ffffff;
-  }
+html.dark .result h4 {
+  color: #ffffff;
 }
 </style>

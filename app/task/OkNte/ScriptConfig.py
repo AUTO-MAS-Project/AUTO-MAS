@@ -21,9 +21,10 @@ import shutil
 from contextlib import suppress
 from pathlib import Path
 
-from app.core import Config
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
@@ -153,17 +154,21 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"OK-NTE GUI 配置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_oknte_process()
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-NTE GUI 配置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-NTE GUI 配置任务出现异常: {e}"
+            ),
         )
 
     async def _kill_oknte_process(self) -> None:
         try:
             await self.oknte_process_manager.kill()
         except Exception as e:
-            logger.opt(exception=True).warning(f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}")
+            logger.opt(exception=True).warning(
+                f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}"
+            )
 
         try:
             await System.kill_process(self.script_exe_path)

@@ -20,7 +20,7 @@ export interface NetworkOperationProgress {
 export type NetworkOperationCallback = (
   mirror: MirrorSource,
   onProgress: (progress: NetworkOperationProgress) => void
-) => Promise<{ success: boolean; result?: any; error?: string }>
+) => Promise<{ success: boolean; result?: unknown; error?: string }>
 
 export interface MirrorRotationProgress {
   currentMirror: MirrorSource
@@ -44,7 +44,7 @@ export class MirrorRotationService {
     operation: NetworkOperationCallback,
     onProgress?: MirrorRotationProgressCallback,
     preferredMirrorName?: string
-  ): Promise<{ success: boolean; result?: any; error?: string; usedMirror?: MirrorSource }> {
+  ): Promise<{ success: boolean; result?: unknown; error?: string; usedMirror?: MirrorSource }> {
     logger.info('=== 开始镜像源轮替 ===')
     logger.info(`可用镜像源数量: ${mirrors.length}`)
     if (preferredMirrorName) {

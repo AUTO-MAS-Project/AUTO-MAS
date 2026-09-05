@@ -54,40 +54,46 @@ Follow this order.
    Reuse `WeeklyPlanConfig` only if the new type has the same `Info + ALL + weekdays` shape.
 2. Add backend schema
    Create the matching Pydantic schema item/info classes in `app/models/schema.py`.
-   Extend `PlanConfigType`, `PlanCreateType`, and `PlanConfigData`.
+   Extend all four aliases: `PlanConfigType`, `PlanCreateType`, `PlanConfigData`, and `PlanComboxConsumer`.
    Keep `model_config = ConfigDict(extra="forbid")` on schedule config models.
-3. Register in `PLAN_BOOK`
+3. Add the consumer constant
+   Append the new consumer string to `PLAN_CONSUMER_VALUES` in `app/utils/constants.py`.
+   `PLAN_BOOK` does not hold consumer literals directly; it indexes this tuple (`PLAN_CONSUMER_VALUES[0]`, `[1]`, ...), so a new type has nothing to reference until the tuple grows.
+   This tuple and the `PlanComboxConsumer` literal in `app/models/schema.py` are two independent hardcoded lists of the same values with no generated link. Update both, and keep them in the same order — existing `PLAN_BOOK` entries reference the tuple positionally, so inserting rather than appending silently repoints existing plan types at the wrong consumer.
+4. Register in `PLAN_BOOK`
    Add `create_type`, `config_class`, `schema_class`, `consumer`, `script_class`, and `field_name`.
    This is the backend source of truth for plan CRUD, deletion reference cleanup, and combobox filtering.
-4. Wire the user consumer
+5. Wire the user consumer
    Add or extend the user config field that stores the selected plan ID.
    Use type-specific validation or runtime type checks before dereferencing the plan as a concrete class.
    When deleting a plan, `field_name` should be reset only for the bound consumer type.
-5. Add frontend descriptor
+6. Add frontend descriptor
    Register the type in `frontend/src/utils/planTypeRegistry.ts`.
    Use generated OpenAPI enum values from `@/api`.
    Point `tableComponent` to the type-specific table component.
-6. Add frontend table
+7. Add frontend table
    Create a dedicated table component under `frontend/src/views/plan/tables/`.
    Keep per-type field logic in the table or a type-specific utility/composable.
    Do not build a generic field renderer unless multiple real schedule types share the same behavior.
-7. Regenerate OpenAPI client
+8. Regenerate OpenAPI client
    Never edit generated files under `frontend/src/api/` by hand.
    Ask the developer to run the project API generation command after backend schema changes.
+   Frontend plan types derive from generated OpenAPI (`PlanIndexItem.type`, `PlanCreateIn.type`), so the registry cannot see a new type until regeneration runs.
 
 ## Review Checklist
 Use this checklist for plan schedule PRs.
 
 1. `PLAN_BOOK` is the only backend registration source for supported plan config classes.
-2. `PlanConfigType`, `PlanCreateType`, and `PlanConfigData` match registered backend types.
-3. Plan CRUD does not default unknown types to `MaaPlan`.
-4. Consumer comboboxes only return plans of the matching config class.
-5. Deleting a plan only clears the matching user reference field.
-6. Frontend type labels, default names, create types, and table components come from `planTypeRegistry.ts`.
-7. Unknown plan types fail clearly instead of rendering as a different known type.
-8. Type-specific table behavior stays in the type-specific table or nearby type-specific utility.
-9. No plan schedule types are redefined in `script.ts` or generated OpenAPI files.
-10. New fallback paths are justified by production compatibility needs, not by non-production leftovers.
+2. `PlanConfigType`, `PlanCreateType`, `PlanConfigData`, and `PlanComboxConsumer` match registered backend types.
+3. `PLAN_CONSUMER_VALUES` in `app/utils/constants.py` and the `PlanComboxConsumer` literal agree in both content and order, and existing `PLAN_BOOK` positional indexes still point at their original consumers.
+4. Plan CRUD does not default unknown types to `MaaPlan`.
+5. Consumer comboboxes only return plans of the matching config class.
+6. Deleting a plan only clears the matching user reference field.
+7. Frontend type labels, default names, create types, and table components come from `planTypeRegistry.ts`.
+8. Unknown plan types fail clearly instead of rendering as a different known type.
+9. Type-specific table behavior stays in the type-specific table or nearby type-specific utility.
+10. No plan schedule types are redefined in `script.ts` or generated OpenAPI files.
+11. New fallback paths are justified by production compatibility needs, not by non-production leftovers.
 
 ## Avoid
 1. Do not add `GeneralPlan`, `CustomPlan`, or placeholder mappings without a complete backend, frontend, and user consumption path.

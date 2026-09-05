@@ -2,9 +2,12 @@
  * 计划表名称管理工具函数
  */
 
+import { getPlanTypeDescriptor } from './planTypeRegistry'
+
 export interface PlanNameValidationResult {
   isValid: boolean
-  message?: string
+  /** 词表 key，由调用方解析 */
+  messageKey?: string
 }
 
 /**
@@ -14,13 +17,7 @@ export interface PlanNameValidationResult {
  * @returns 唯一的计划表名称
  */
 export function generateUniquePlanName(planType: string, existingNames: string[]): string {
-  const baseNames = {
-    MaaPlanConfig: '新 MAA 计划表',
-    GeneralPlan: '新通用计划表',
-    CustomPlan: '新自定义计划表',
-  } as Record<string, string>
-
-  const baseName = baseNames[planType] || '新计划表'
+  const baseName = getPlanTypeDescriptor(planType)?.defaultName || '新计划表'
 
   // 如果基础名称没有被使用，直接返回
   if (!existingNames.includes(baseName)) {
@@ -53,37 +50,31 @@ export function validatePlanName(
 ): PlanNameValidationResult {
   // 检查名称是否为空
   if (!newName || !newName.trim()) {
-    return { isValid: false, message: '计划表名称不能为空' }
+    return { isValid: false, messageKey: 'plan.toast.nameEmpty' }
   }
 
   const trimmedName = newName.trim()
 
   // 检查名称长度
   if (trimmedName.length > 50) {
-    return { isValid: false, message: '计划表名称不能超过50个字符' }
+    return { isValid: false, messageKey: 'plan.toast.nameTooLong' }
   }
 
   // 检查是否与其他计划表重名（排除当前名称）
   const isDuplicate = existingNames.some(name => name === trimmedName && name !== currentName)
 
   if (isDuplicate) {
-    return { isValid: false, message: '计划表名称已存在，请使用其他名称' }
+    return { isValid: false, messageKey: 'plan.toast.nameDuplicate' }
   }
 
   return { isValid: true }
 }
 
 /**
- * 获取计划表类型的显示标签
+ * 获取计划表类型显示标签的词表 key
  * @param planType 计划表类型
- * @returns 显示标签
+ * @returns 词表 key
  */
-export function getPlanTypeLabel(planType: string): string {
-  const labels = {
-    MaaPlanConfig: 'MAA计划表',
-    GeneralPlan: '通用计划表',
-    CustomPlan: '自定义计划表',
-  } as Record<string, string>
-
-  return labels[planType] || '计划表'
+export function getPlanTypeLabelKey(planType: string): string {
+  return getPlanTypeDescriptor(planType)?.displayNameKey || 'plan.typeFallback'
 }

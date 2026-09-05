@@ -1,32 +1,46 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>额外脚本</h3>
+      <h3>{{ t('comp.extraScripts') }}</h3>
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
-        <a-tooltip title="在任务执行前运行自定义脚本">
+        <a-tooltip :title="t('comp.runCustomScriptBefore')">
           <span class="form-label">
-            任务前执行脚本
+            {{ t('comp.runScriptBeforeTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default"
-            @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)" />
+          <a-switch
+            v-model:checked="formData.Info.IfScriptBeforeTask"
+            :disabled="loading"
+            size="default"
+            @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)"
+          />
         </a-col>
         <a-col :span="20">
           <a-input-group compact class="path-input-group">
-            <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请选择脚本文件"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" class="path-input" readonly />
-            <a-button size="large" :disabled="loading || !formData.Info.IfScriptBeforeTask" class="path-button"
-              @click="selectScriptBeforeTask">
+            <a-input
+              v-model:value="formData.Info.ScriptBeforeTask"
+              :placeholder="t('comp.pickScriptFile')"
+              :disabled="loading || !formData.Info.IfScriptBeforeTask"
+              size="large"
+              class="path-input"
+              readonly
+            />
+            <a-button
+              size="large"
+              :disabled="loading || !formData.Info.IfScriptBeforeTask"
+              class="path-button"
+              @click="selectScriptBeforeTask"
+            >
               <template #icon>
                 <FileOutlined />
               </template>
-              选择文件
+              {{ t('comp.pickFile') }}
             </a-button>
           </a-input-group>
         </a-col>
@@ -34,28 +48,42 @@
     </a-form-item>
     <a-form-item name="scriptAfterTask">
       <template #label>
-        <a-tooltip title="在任务执行后运行自定义脚本">
+        <a-tooltip :title="t('comp.runCustomScriptAfter')">
           <span class="form-label">
-            任务后执行脚本
+            {{ t('comp.runScriptAfterTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default"
-            @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)" />
+          <a-switch
+            v-model:checked="formData.Info.IfScriptAfterTask"
+            :disabled="loading"
+            size="default"
+            @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)"
+          />
         </a-col>
         <a-col :span="20">
           <a-input-group compact class="path-input-group">
-            <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请选择脚本文件"
-              :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" class="path-input" readonly />
-            <a-button size="large" :disabled="loading || !formData.Info.IfScriptAfterTask" class="path-button"
-              @click="selectScriptAfterTask">
+            <a-input
+              v-model:value="formData.Info.ScriptAfterTask"
+              :placeholder="t('comp.pickScriptFile')"
+              :disabled="loading || !formData.Info.IfScriptAfterTask"
+              size="large"
+              class="path-input"
+              readonly
+            />
+            <a-button
+              size="large"
+              :disabled="loading || !formData.Info.IfScriptAfterTask"
+              class="path-button"
+              @click="selectScriptAfterTask"
+            >
               <template #icon>
                 <FileOutlined />
               </template>
-              选择文件
+              {{ t('comp.pickFile') }}
             </a-button>
           </a-input-group>
         </a-col>
@@ -65,13 +93,16 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 
+const { t } = useI18n()
+
 const logger = window.electronAPI.getLogger('额外脚本配置')
 
-const props = defineProps<{
-  formData: any
+const formData = defineModel<any>('formData', { required: true })
+defineProps<{
   loading: boolean
 }>()
 
@@ -86,40 +117,40 @@ const emitSave = (key: string, value: any) => {
 const selectScriptBeforeTask = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: t('comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
+      { name: t('comp.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
-      props.formData.Info.ScriptBeforeTask = path[0]
-      message.success('任务前脚本路径选择成功')
+      formData.value.Info.ScriptBeforeTask = path[0]
+      message.success(t('comp.preTaskScriptPath'))
       emitSave('Info.ScriptBeforeTask', path[0])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择任务前脚本失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('comp.couldNotPickFile'))
   }
 }
 
 const selectScriptAfterTask = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
-      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
-      { name: '所有文件', extensions: ['*'] },
+      { name: t('comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: t('comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
+      { name: t('comp.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
-      props.formData.Info.ScriptAfterTask = path[0]
-      message.success('任务后脚本路径选择成功')
+      formData.value.Info.ScriptAfterTask = path[0]
+      message.success(t('comp.postTaskScriptPath'))
       emitSave('Info.ScriptAfterTask', path[0])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择任务后脚本失败: ${errorMsg}`)
-    message.error('选择文件失败')
+    message.error(t('comp.couldNotPickFile'))
   }
 }
 </script>
@@ -132,28 +163,6 @@ const selectScriptAfterTask = async () => {
 .section-header {
   margin-bottom: 24px;
   padding-bottom: 12px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -190,7 +199,7 @@ const selectScriptAfterTask = async () => {
 
 .path-input-group:focus-within {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
 }
 
 .path-input {

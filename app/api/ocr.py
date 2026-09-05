@@ -21,15 +21,26 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field
-from typing import Optional
 import base64
 from io import BytesIO
+from typing import TYPE_CHECKING, Optional
 
-from app.utils.OCR.OCRtool import OCRTool
-from app.utils import get_logger
+from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
+
 from app.models.schema import OutBase
+from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.utils.OCR.OCRtool import OCRTool as OCRTool
+
+
+def _ocr_tool() -> "type[OCRTool]":
+    # OCRtool 依赖 cv2/pyautogui/rapidocr (约 200ms)，延迟到首次请求时导入
+    from app.utils.OCR.OCRtool import OCRTool
+
+    return OCRTool
+
 
 logger = get_logger("OCR API")
 
@@ -159,10 +170,7 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
         OCRScreenshotOut: 包含Base64编码的截图和区域信息
     """
     try:
-        # 初始化OCRTool
-        ocr_tool = OCRTool(
-            width=params.aspect_ratio_width, height=params.aspect_ratio_height
-        )
+        OCRTool = _ocr_tool()
 
         # 获取截图区域（如果没有提供自定义区域）
         if params.region is None:
@@ -234,6 +242,7 @@ async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreensh
         ADBScreenshotOut: 包含Base64编码的截图和设备信息
     """
     try:
+        OCRTool = _ocr_tool()
         # 使用 OCRTool 通过 ADB 获取截图
         screenshot_image = OCRTool.get_screenshot_with_adb(
             adb_path=params.adb_path,
@@ -319,6 +328,7 @@ async def check_image(params: CheckImageIn = Body(...)) -> CheckImageOut:
         CheckImageOut: 包含查找结果和尝试次数
     """
     try:
+        OCRTool = _ocr_tool()
         # 设置全局窗口标题
         OCRTool.set_title(params.window_title)
 
@@ -374,6 +384,7 @@ async def check_image_any(params: CheckImageAnyIn = Body(...)) -> CheckImageOut:
         CheckImageOut: 包含查找结果和尝试次数
     """
     try:
+        OCRTool = _ocr_tool()
         # 设置全局窗口标题
         OCRTool.set_title(params.window_title)
 
@@ -429,6 +440,7 @@ async def check_image_all(params: CheckImageAllIn = Body(...)) -> CheckImageOut:
         CheckImageOut: 包含查找结果和尝试次数
     """
     try:
+        OCRTool = _ocr_tool()
         # 设置全局窗口标题
         OCRTool.set_title(params.window_title)
 
@@ -485,6 +497,7 @@ async def click_image(params: ClickImageIn = Body(...)) -> ClickOut:
         ClickOut: 包含点击结果和尝试次数
     """
     try:
+        OCRTool = _ocr_tool()
         # 设置全局窗口标题
         OCRTool.set_title(params.window_title)
 
@@ -539,6 +552,7 @@ async def click_text(params: ClickTextIn = Body(...)) -> ClickOut:
         ClickOut: 包含点击结果和尝试次数
     """
     try:
+        OCRTool = _ocr_tool()
         # 设置全局窗口标题
         OCRTool.set_title(params.window_title)
 

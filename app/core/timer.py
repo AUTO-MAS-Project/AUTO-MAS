@@ -20,26 +20,19 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-import json
 from datetime import datetime
 from typing import Literal
 
 from app.services import Matomo
-from app.MaaFW import ArknightWin32Toolkit
-from app.utils.constants import UTC8
 from app.utils import get_logger
+from app.utils.constants import UTC8
+from app.utils.platform import IS_WINDOWS
+
 from .config import Config
 from .task_manager import TaskManager
 
-
 logger = get_logger("主业务定时器")
 
-_GAME_SIGN_TOKEN_FIELDS = (
-    "MiyousheToken",
-    "KuroToken",
-    "SklandToken",
-    "TaygedoToken",
-)
 GameSignSource = Literal[
     "scheduled",
     "startup",
@@ -59,13 +52,9 @@ def _has_pending_game_sign_account(account, today: str) -> bool:
 
     if not account.get("GameSignAccount", "Enabled"):
         return False
-    def has_token(field: str) -> bool:
-        try:
-            return bool(account.get("GameSignAccount", field))
-        except (AttributeError, KeyError):
-            return False
+    from app.tools.game_sign import has_game_sign_credentials
 
-    if not any(has_token(field) for field in _GAME_SIGN_TOKEN_FIELDS):
+    if not has_game_sign_credentials(account):
         return False
     return account.get("GameSignAccount", "LastSignDate") != today
 
@@ -80,7 +69,6 @@ def _all_game_sign_accounts_signed(accounts, today: str) -> bool:
 
 
 class _MainTimer:
-
     def __init__(self):
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
@@ -98,11 +86,8 @@ class _MainTimer:
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.started = True
 
-        if (
-            Config.ToolsConfig.get("GameSign", "Enabled")
-            and (
-                Config.ToolsConfig.get("GameSign", "RunOnStartup")
-            )
+        if Config.ToolsConfig.get("GameSign", "Enabled") and (
+            Config.ToolsConfig.get("GameSign", "RunOnStartup")
         ):
             self.schedule_game_sign_for_startup()
 
@@ -110,6 +95,9 @@ class _MainTimer:
 
     async def stop(self):
         """停止定时器"""
+
+        if not self.started:
+            return
 
         tasks = [
             task
@@ -122,19 +110,23 @@ class _MainTimer:
         ]
         for task in tasks:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-            logger.info("主业务定时器已关闭")
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info("主业务定时器已关闭")
+        finally:
+            self.started = False
 
     async def second_task(self):
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
 
         while True:
-
             await self.timed_start()
 
-            if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+            if IS_WINDOWS and Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+
                 await ArknightWin32Toolkit.scheduled_task()
 
             await asyncio.sleep(1)
@@ -145,7 +137,6 @@ class _MainTimer:
         logger.info("每小时定期任务启动")
 
         while True:
-
             if (
                 datetime.strptime(
                     Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
@@ -174,6 +165,9 @@ class _MainTimer:
         curday = datetime.now().strftime("%A")
 
         for uid, queue in Config.QueueConfig.items():
+            # 循环队列由队列项各自的周期驱动，定时设置对它不生效
+            if queue.get("Info", "CycleEnabled"):
+                continue
 
             if not queue.get("Info", "TimeEnabled"):
                 continue
@@ -206,9 +200,7 @@ class _MainTimer:
 
         if not (
             Config.ToolsConfig.get("GameSign", "Enabled")
-            and (
-                Config.ToolsConfig.get("GameSign", "RunOnStartup")
-            )
+            and (Config.ToolsConfig.get("GameSign", "RunOnStartup"))
         ):
             return
 
@@ -247,6 +239,7 @@ class _MainTimer:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
+            # 流程锁覆盖签到和结果落盘，通知在锁外发送。
             async with game_sign_flow():
                 logger.info("开始执行游戏社区签到")
                 results = await run_all_sign_in(force=False)
@@ -270,21 +263,24 @@ class _MainTimer:
                 ):
                     await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
 
-                logger.success("游戏社区签到执行完成")
+            logger.success("游戏社区签到执行完成")
 
-                # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-                if (
-                    source not in _TASK_GAME_SIGN_SOURCES
-                    and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
-                ):
-                    from app.tools.game_sign_notify import push_game_sign_notification
+            # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
+            if source not in _TASK_GAME_SIGN_SOURCES and Config.ToolsConfig.get(
+                "GameSign", "NotifyEnabled"
+            ):
+                from app.tools.game_sign_notify import push_game_sign_notification
 
-                    failed_channels = await push_game_sign_notification(results)
-                    if failed_channels:
+                try:
+                    result = await push_game_sign_notification(results)
+                except Exception as exc:
+                    logger.warning(f"游戏签到完成，但通知服务异常: {exc}")
+                else:
+                    if result.failed:
                         logger.warning(
-                            f"游戏签到结果通知部分失败: {'、'.join(failed_channels)}"
+                            f"游戏签到结果通知部分失败: {'、'.join(result.failed)}"
                         )
-                return results
+            return results
 
         except GameSignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")
@@ -316,9 +312,7 @@ class _MainTimer:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         # 快速检查：是否没有待处理账号
-        if _all_game_sign_accounts_signed(
-            Config.ToolsConfig.GameSign_Accounts, today
-        ):
+        if _all_game_sign_accounts_signed(Config.ToolsConfig.GameSign_Accounts, today):
             return []
 
         return await self._execute_game_sign(source=source)

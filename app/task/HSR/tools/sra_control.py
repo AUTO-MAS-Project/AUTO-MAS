@@ -22,10 +22,10 @@ from typing import Callable
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 
-from .run_model import HSRPhase, HSRRunItem
 from ..task_mapping import HSRTaskModule
 from .account_switch import HSRAccountSwitcher, resolve_sra_start_mode
 from .log_detect import detect_weekly_completion
+from .run_model import HSRPhase, HSRRunItem
 from .sra_runtime import (
     build_sra_module_config,
     build_sra_tasklist_description,
@@ -210,9 +210,13 @@ class HSRSRAControl:
 
         on_success = None
         if module.key == "Daily":
-            on_success = (
-                lambda result, uid=uid, user_name=user_name,
-                daily_eow_enabled=daily_eow_enabled:
+
+            def on_success(
+                result,
+                uid=uid,
+                user_name=user_name,
+                daily_eow_enabled=daily_eow_enabled,
+            ):
                 self._queue_eow_completion(
                     uid,
                     user_name,
@@ -220,11 +224,16 @@ class HSRSRAControl:
                     result,
                     "SRA",
                 )
-            )
+
         elif module.key in ("DivergentUniverse", "CurrencyWars"):
-            on_success = (
-                lambda result, uid=uid, user_name=user_name,
-                module_name=module.name, module_key=module.key:
+
+            def on_success(
+                result,
+                uid=uid,
+                user_name=user_name,
+                module_name=module.name,
+                module_key=module.key,
+            ):
                 _on_sra_weekly_success(
                     result,
                     uid,
@@ -234,7 +243,6 @@ class HSRSRAControl:
                     self._queue_weekly_completion,
                     self._record_module_result,
                 )
-            )
 
         return HSRRunItem(
             user_item=user_item,

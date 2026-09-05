@@ -2,8 +2,8 @@
   <div class="log-timestamp-selector">
     <!-- 切换视图模式 -->
     <a-radio-group v-model:value="viewMode" style="margin-bottom: 16px" @change="onViewModeChange">
-      <a-radio-button value="input">输入框模式</a-radio-button>
-      <a-radio-button value="visual">可视化选择模式</a-radio-button>
+      <a-radio-button value="input">{{ t('comp.textInput') }}</a-radio-button>
+      <a-radio-button value="visual">{{ t('comp.visualSelection') }}</a-radio-button>
     </a-radio-group>
 
     <!-- 输入框模式 -->
@@ -12,9 +12,9 @@
         <a-col :span="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
-              <a-tooltip title="脚本日志时间戳起始位置">
+              <a-tooltip :title="t('comp.logTimestampStartPosition')">
                 <span class="form-label">
-                  日志时间戳起始位置
+                  {{ t('comp.logTimestampStart') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
@@ -24,7 +24,6 @@
               :min="1"
               :max="9999"
               size="large"
-              class="modern-number-input"
               style="width: 100%"
               @blur="handleChange('Script', 'LogTimeStart', formData.logTimeStart)"
             />
@@ -33,9 +32,9 @@
         <a-col :span="12">
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
-              <a-tooltip title="脚本日志时间戳结束位置">
+              <a-tooltip :title="t('comp.logTimestampEndPosition')">
                 <span class="form-label">
-                  日志时间戳结束位置
+                  {{ t('comp.logTimestampEnd') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
@@ -45,7 +44,6 @@
               :min="1"
               :max="9999"
               size="large"
-              class="modern-number-input"
               style="width: 100%"
               @blur="handleChange('Script', 'LogTimeEnd', formData.logTimeEnd)"
             />
@@ -58,14 +56,14 @@
     <div v-else-if="viewMode === 'visual'">
       <div class="visual-mode-container">
         <div class="log-preview-header">
-          <span>日志预览 (使用鼠标文本选择功能选择时间戳区域)</span>
+          <span>{{ t('comp.logPreviewSelectTimestamp') }}</span>
           <a-button
             type="primary"
             :loading="loadingPreview"
             :disabled="!logFilePath"
             @click="loadLogFile"
           >
-            加载日志
+            {{ t('comp.loadLog') }}
           </a-button>
         </div>
 
@@ -101,7 +99,7 @@
             <span v-if="selectedText">(内容: "{{ selectedText }}")</span>
           </div>
           <a-button type="primary" :disabled="!selection.valid" @click="applySelection">
-            应用选择
+            {{ t('comp.appSelection') }}
           </a-button>
         </div>
       </div>
@@ -110,22 +108,26 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('日志时间戳选择器')
 
 interface Props {
-  formData: {
-    logTimeStart?: number
-    logTimeEnd?: number
-    logFilePath?: string
-  }
   logFilePath?: string
   handleChange: (_section: string, _key: string, _value: any) => void
   rules: Record<string, any>
 }
 
+const formData = defineModel<{
+  logTimeStart?: number
+  logTimeEnd?: number
+  logFilePath?: string
+}>('formData', { required: true })
 const props = defineProps<Props>()
 
 // 视图模式 ('input' 或 'visual')
@@ -148,7 +150,7 @@ const selection = reactive({
 
 // 监听formData的变化，确保选择状态与表单数据同步
 watch(
-  () => props.formData.logTimeStart,
+  () => formData.value.logTimeStart,
   newVal => {
     if (newVal !== undefined && newVal !== null) {
       selection.startPos = newVal - 1 // 转换为0索引
@@ -158,7 +160,7 @@ watch(
 )
 
 watch(
-  () => props.formData.logTimeEnd,
+  () => formData.value.logTimeEnd,
   newVal => {
     if (newVal !== undefined && newVal !== null) {
       selection.endPos = newVal - 1 // 转换为0索引
@@ -173,9 +175,9 @@ const onViewModeChange = (e: any) => {
 
   if (mode === 'visual') {
     // 切换到可视化模式时，将表单数据同步到选择状态
-    selection.startPos = props.formData.logTimeStart ? props.formData.logTimeStart - 1 : 0
-    selection.endPos = props.formData.logTimeEnd ? props.formData.logTimeEnd - 1 : 0
-    selection.valid = !!props.formData.logTimeStart && !!props.formData.logTimeEnd
+    selection.startPos = formData.value.logTimeStart ? formData.value.logTimeStart - 1 : 0
+    selection.endPos = formData.value.logTimeEnd ? formData.value.logTimeEnd - 1 : 0
+    selection.valid = !!formData.value.logTimeStart && !!formData.value.logTimeEnd
   }
   // 切换到输入模式时不需要特别处理，因为 formData 是通过 props 绑定的，
   // watch 会自动同步 selection 到 formData 的变化
@@ -274,7 +276,7 @@ const loadLogFile = async () => {
   const targetPath = props.logFilePath
 
   if (!targetPath || targetPath.trim() === '') {
-    message.warning('请先选择日志文件路径')
+    message.warning(t('comp.pickLogFilePath'))
     return
   }
 
@@ -287,7 +289,7 @@ const loadLogFile = async () => {
       const content = await window.electronAPI.readFile(targetPath)
 
       if (!content) {
-        message.warning('日志文件为空或无法读取')
+        message.warning(t('comp.logFileEmptyCould'))
         return
       }
 
@@ -298,14 +300,14 @@ const loadLogFile = async () => {
       logLines.value = logLines.value.filter(line => line.trim() !== '').slice(0, 50) // 进一步过滤并限制行数
     } else {
       // 如果没有Electron API可用，显示错误信息
-      message.error('无法访问文件系统，请在Electron环境中使用此功能')
+      message.error(t('comp.fileSystemUnavailableUse'))
       return
     }
 
-    message.success(`日志文件加载成功，共加载 ${logLines.value.length} 行`)
+    message.success(t('comp.logFileLoadedP0', { p0: logLines.value.length }))
   } catch (error) {
     logger.error(`加载日志文件失败: ${String(error)}`)
-    message.error('加载日志文件失败: ' + (error as Error).message)
+    message.error(t('comp.couldNotLoadLog') + (error as Error).message)
   } finally {
     loadingPreview.value = false
   }
@@ -314,7 +316,7 @@ const loadLogFile = async () => {
 // 应用选择
 const applySelection = async () => {
   if (!selection.valid) {
-    message.warning('请先选择有效的日志时间戳范围')
+    message.warning(t('comp.pickValidLogTimestamp'))
     return
   }
 
@@ -325,7 +327,7 @@ const applySelection = async () => {
   await props.handleChange('Script', 'LogTimeStart', startPos)
   await props.handleChange('Script', 'LogTimeEnd', endPos)
 
-  message.success(`已应用选择：起始位置 ${startPos}，结束位置 ${endPos}`)
+  message.success(t('comp.selectionAppliedStartP0', { p0: startPos, p1: endPos }))
 }
 </script>
 

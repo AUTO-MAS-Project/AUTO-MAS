@@ -10,7 +10,7 @@
 | `SCRIPT_BOOK`、`USER_BOOK`、`task_manager` 分支 | `app/core/`、`app/models/config.py` |
 | `TYPE_BOOK["XxxConfig"]` → 展示文案 | `app/utils/constants.py`（否则调度 `combox/task` KeyError） |
 | 后端改 schema 后 `yarn openapi` | `frontend/`；**禁止**手改 `src/api/models/*` |
-| OpenAPI 生效 | 重启后端 → `openapi.json` **文本**含新类型名（勿只靠 PowerShell 对象键）→ 确认 36163 为当前 `main.py` |
+| OpenAPI 生效 | 重启后端 → `openapi.json` **文本**含新类型名（勿只靠 PowerShell 对象键）→ 确认开发环境端口 36164 为当前 `main.py`（正式版占 36163） |
 
 ## 2. 前端表面
 
@@ -48,21 +48,23 @@
 |------|------|
 | `ProcessInfo` | 至少一项非空（ok-script 默认 `pythonw.exe` + `{RootPath}/data/apps/ok-ww/python/pythonw.exe`） |
 
-## 4. 简洁 / 详细（架构线选型决定）
+## 4. 配置来源（架构线选型决定）
 
-部分架构线**无**简洁/详细区分，取决于专项设计决策：
+配置来源模式由架构线和专项 owner 决定，并不是所有专项都必须实现脚本/用户/直控三态：
 
 | 架构线 | 模式区分 | 配置落盘 |
 |--------|----------|----------|
-| Okww（ok-script） | 简洁/详细 | 简洁→`Default/`；详细→`{userId}/` |
-| General | 简洁/详细 | 简洁→`Default/`；详细→`{userId}/` |
-| MaaEnd | 简洁/详细 | 同上 |
+| Okww（ok-script） | 脚本/用户/直控 | 脚本→`Default/`；用户→`{userId}/`；直控直接读取脚本原配置 |
+| General | 用户/直控 | 用户→`{userId}/`；直控直接读取脚本原配置 |
+| MaaEnd | 脚本/用户 | 同上 |
 | M9A | **无** | 队列 JSON，不套用此模式 |
 
 **规则**：
-- 如有简洁/详细：配置初始化、AutoProxy 和 ScriptConfig 必须使用同一 owner 规则。
-- 共享配置可提供脚本级入口，独立配置可提供用户级入口；先核对真实调用链，不机械隐藏按钮。
-- 如无简洁/详细：配置入口不得伪造 owner 分支。
+- 如果专项采用三态，三态只决定脚本配置 owner；快速配置是独立覆盖层，仅由快速配置面板控制高频字段覆盖范围。
+- 如有脚本/用户/直控：配置初始化、AutoProxy 和 ScriptConfig 必须使用同一来源规则；直控不得为了“字段齐全”复制脚本全量配置。
+- 共享脚本配置可提供脚本级入口，独立脚本配置可提供用户级入口；先核对真实调用链，不机械隐藏按钮。
+- 如无脚本/用户/直控：配置入口不得伪造 owner 分支。
+- **来源更名副作用（MAA/SRC/MaaEnd/OkNte）**：旧值「简洁/详细」已更名为「脚本/用户」，语义等价（简洁=脚本级、详细=用户级）。旧值在加载时经 `ScriptUserModeValidator` 自动归一为「脚本/用户」并**落盘改写**；**回滚代码不会撤销已落盘的值**——若回滚到旧版，旧代码会把「脚本/用户」当作非法值兜底为「简洁」，原本「用户」来源的用户会被静默改为「脚本」来源。排查「用户配置来源意外变成脚本」时先核对是否回滚过代码。
 
 ## 5. 架构线选型（实现前只读）
 

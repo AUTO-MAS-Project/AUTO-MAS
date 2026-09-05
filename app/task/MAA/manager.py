@@ -20,33 +20,32 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import shutil
-from pathlib import Path
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config, EmulatorManager
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
-from app.services import Notify
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
-from .tools import push_notification
-from .AutoProxy import AutoProxyTask
-from .ManualReview import ManualReviewTask
-from .ScriptConfig import ScriptConfigTask
+from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
 
+from .AutoProxy import AutoProxyTask
+from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
 
 logger = get_logger("MAA 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
-    "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
 
@@ -156,6 +155,7 @@ class MaaManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
@@ -166,10 +166,10 @@ class MaaManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -199,8 +199,7 @@ class MaaManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["AutoProxy", "ManualReview"]:
-
+        if self.task_info.mode in ["AutoProxy"]:
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
@@ -209,15 +208,15 @@ class MaaManager(TaskExecuteBase):
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_user = [
-                u.name for u in self.script_info.user_list if u.status == "异常"
-            ]
-            over_user = [
-                u.name for u in self.script_info.user_list if u.status == "完成"
-            ]
-            wait_user = [
-                u.name for u in self.script_info.user_list if u.status == "等待"
-            ]
+            error_count = sum(
+                1 for u in self.script_info.user_list if u.status == "异常"
+            )
+            over_count = sum(
+                1 for u in self.script_info.user_list if u.status == "完成"
+            )
+            wait_count = sum(
+                1 for u in self.script_info.user_list if u.status == "等待"
+            )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             task_result = append_task_game_sign_summary(
@@ -229,28 +228,31 @@ class MaaManager(TaskExecuteBase):
                 "script_name": self.script_info.name or "空白",
                 "start_time": self.begin_time,
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": len(over_user),
-                "uncompleted_count": len(error_user) + len(wait_user),
+                "completed_count": over_count,
+                "uncompleted_count": error_count + wait_count,
                 "result": task_result,
                 "game_sign_summary": has_game_sign_summary,
             }
 
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                10,
-            )
             try:
-                await push_notification("代理结果", title, result, None)
-                if has_game_sign_summary:
-                    mark_task_game_sign_summary_consumed(self.task_info)
+                push_result = await push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
+                )
+                finalize_task_game_sign_notification(
+                    self.task_info, has_game_sign_summary, push_result
+                )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         # 还原配置
@@ -265,8 +267,8 @@ class MaaManager(TaskExecuteBase):
 
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MAA任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"MAA任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"MAA任务出现异常: {e}"),
         )

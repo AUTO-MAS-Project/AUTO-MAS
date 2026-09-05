@@ -1,78 +1,33 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts">脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/oknte`" class="breadcrumb-link">
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            {{ isEdit ? '编辑用户' : '添加用户' }}
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button
-          v-if="!showOkNteConfigMask"
-          type="primary"
-          ghost
-          size="large"
-          :loading="oknteConfigLoading"
-          :disabled="pageLoading || !activeUserId"
-          @click="handleOkNteConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          配置 OK-NTE
-        </a-button>
-        <a-button
-          v-if="showOkNteConfigMask"
-          type="default"
-          size="large"
-          disabled
-          class="configuring-button"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          正在配置
-        </a-button>
-        <a-button size="large" class="cancel-button" @click="handleCancel">
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          返回
-        </a-button>
-      </a-space>
-    </div>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="oknte"
+      config-label="配置 OK-NTE"
+      :config-loading="oknteConfigLoading"
+      :config-active="showOkNteConfigMask"
+      :config-disabled="pageLoading || !activeUserId"
+      @config="handleOkNteConfig"
+      @cancel="handleCancel"
+    />
 
     <teleport to="body">
       <div v-if="showOkNteConfigMask" class="oknte-config-mask">
         <div class="mask-content">
           <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
           </div>
-          <h2 class="mask-title">正在进行 OK-NTE 配置</h2>
+          <h2 class="mask-title">{{ t('edit.okNteConfigurationProgress') }}</h2>
           <p class="mask-description">
-            当前正在进行该用户的 OK-NTE GUI 配置，请在 OK-NTE 界面完成相关设置。
+            {{ t('edit.okNteGuiConfiguration') }}
             <br />
-            配置完成后，请点击“保存配置”按钮来结束配置会话。
+            {{ t('edit.clickSaveConfigurationWhen2') }}
           </p>
           <div class="mask-actions">
-            <a-button
-              v-if="oknteWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveOkNteConfig"
-            >
-              保存配置
+            <a-button v-if="oknteTaskId" type="primary" size="large" @click="handleSaveOkNteConfig">
+              {{ t('edit.saveConfiguration') }}
             </a-button>
           </div>
         </div>
@@ -84,7 +39,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>基本信息</h3>
+              <h3>{{ t('edit.basicInfo') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -92,17 +47,16 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      用户名
-                      <a-tooltip title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计">
+                      {{ t('edit.username') }}
+                      <a-tooltip :title="t('edit.nameUsedTellUsers')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.userName"
-                    placeholder="请输入用户名"
+                    :placeholder="t('edit.enterUsername')"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Name', formData.userName)"
                   />
                 </a-form-item>
@@ -111,8 +65,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      启用状态
-                      <a-tooltip title="是否启用该用户">
+                      {{ t('edit.enabled') }}
+                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -120,11 +74,10 @@
                   <a-select
                     v-model:value="formData.Info.Status"
                     size="large"
-                    class="modern-select"
                     @change="saveField('Info.Status', formData.Info.Status)"
                   >
-                    <a-select-option :value="true">是</a-select-option>
-                    <a-select-option :value="false">否</a-select-option>
+                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -135,17 +88,16 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      账号
-                      <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号">
+                      {{ t('edit.account') }}
+                      <a-tooltip :title="t('edit.usedSwitchAccountsLeave')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    placeholder="请输入账号"
+                    :placeholder="t('edit.enterAccount')"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
                 </a-form-item>
@@ -154,17 +106,16 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      密码
-                      <a-tooltip title="PC 端需要切换账号时必须填写">
+                      {{ t('edit.password') }}
+                      <a-tooltip :title="t('edit.requiredWhenSwitchingAccounts')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    placeholder="请输入密码"
+                    :placeholder="t('edit.enterPassword')"
                     size="large"
-                    class="modern-input"
                     @blur="saveField('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
@@ -176,17 +127,16 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      游戏资源
-                      <a-tooltip title="选择当前用户使用的游戏资源">
+                      {{ t('edit.gameResource') }}
+                      <a-tooltip :title="t('edit.pickGameResourceThis')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
-                    placeholder="请选择资源"
+                    :placeholder="t('edit.pickResource')"
                     size="large"
-                    class="modern-select"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
                   />
@@ -196,8 +146,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      剩余天数
-                      <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                      {{ t('edit.daysLeft') }}
+                      <a-tooltip :title="t('edit.daysLeftAccount1')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -214,20 +164,44 @@
               </a-col>
             </a-row>
 
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      节点详情推送
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        title="选择该用户关键节点在任务报告中的呈现方式：关闭 = 不采集；逐条 = 每条带上采集时间，一行一条；汇总 = 按成功/失败/跳过各合并为一行"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Notify.PushLogMode"
+                    size="large"
+                    class="modern-select"
+                    :options="pushLogModeOptions"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
             <a-form-item>
               <template #label>
                 <span class="form-label">
-                  备注
-                  <a-tooltip title="为用户添加备注信息">
+                  {{ t('edit.note') }}
+                  <a-tooltip :title="t('edit.addNoteAboutThis')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </span>
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
-                placeholder="请输入备注"
+                :placeholder="t('edit.enterNote')"
                 :rows="4"
-                class="modern-input"
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
             </a-form-item>
@@ -235,7 +209,7 @@
 
           <div class="form-section">
             <div class="section-header">
-              <h3>任务配置</h3>
+              <h3>{{ t('edit.taskConfiguration') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -243,8 +217,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      启动任务（-t N）
-                      <a-tooltip title="任务序号与 OK-NTE 任务列表一致">
+                      {{ t('edit.startTaskTN') }}
+                      <a-tooltip :title="t('edit.taskNumbersMatchOk')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -268,18 +242,13 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      当前启动参数
-                      <a-tooltip title="参数由任务配置自动生成，固定追加 -e">
+                      {{ t('edit.currentLaunchArguments') }}
+                      <a-tooltip :title="t('edit.argumentsGeneratedFromTask')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input
-                    :value="currentStartupArguments"
-                    size="large"
-                    readonly
-                    class="modern-input"
-                  />
+                  <a-input :value="currentStartupArguments" size="large" readonly />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -300,83 +269,13 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>通知配置</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">启用通知</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">通知内容</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  统计信息
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  邮件通知
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  placeholder="请输入收件邮箱"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  Server酱
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  placeholder="请输入 SENDKEY"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="activeUserId"
+            @save="saveField"
+          />
         </a-form>
       </a-card>
     </div>
@@ -384,17 +283,27 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Service, type OkNteUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import WebhookManager from '@/components/WebhookManager.vue'
-import OkNteConfigEditor from '@/views/OkNteUserEdit/OkNteConfigEditor.vue'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
+import UserEditHeader from '@/components/UserEditHeader.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('OK-NTE用户编辑')
 const route = useRoute()
@@ -413,41 +322,73 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 const oknteConfigLoading = ref(false)
-const oknteSubscriptionId = ref<string | null>(null)
-const oknteWebsocketId = ref<string | null>(null)
+const oknteSubscriptionIds = ref<string[]>([])
+const oknteTaskId = ref<string | null>(null)
 const showOkNteConfigMask = ref(false)
 const oknteConfigRefreshToken = ref(0)
 let oknteConfigTimeout: number | null = null
 
-/** OK-NTE 已适配任务（-t 1..11）；上游 DailyTask 是 -t 2 */
-const OKNTE_MAX_TASK_INDEX = 11
+/** OK-NTE 已适配任务（-t 1..19）；新版上游 DailyRoutineTask 是 -t 2 */
+const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+]
 
 const oknteTaskOptions = [
   { label: '1 - LauncherTask（启动游戏）', value: 1 },
-  { label: '2 - DailyTask（日常任务）', value: 2 },
-  { label: '3 - CoffeeTask（一咖舍自动化）', value: 3 },
-  { label: '4 - FishingTask（自动钓鱼）', value: 4 },
-  { label: '5 - AnomalyTask（异象界域）', value: 5 },
+  { label: '2 - DailyRoutineTask（日常任务）', value: 2 },
+  { label: '3 - FishingTask（自动钓鱼）', value: 3 },
+  { label: '4 - AnomalyTask（异象界域）', value: 4 },
+  { label: '5 - AnomalyHunter（异象追猎）', value: 5 },
   { label: '6 - RhythmTask（自动音游）', value: 6 },
-  { label: '7 - OwnerSelectionTask（业主选拔）', value: 7 },
+  { label: '7 - OwnerSelectionTask（店长特供）', value: 7 },
   { label: '8 - AutoHeistTask（自动粉爪大劫案）', value: 8 },
-  { label: '9 - DarkTask（暗域任务）', value: 9 },
-  { label: '10 - BagelAITools（呗果智能体）', value: 10 },
-  { label: '11 - DiagnosisTask（诊断）', value: 11 },
+  { label: '9 - BagelAITools（呗果智能体）', value: 9 },
+  { label: '10 - WhirlwindTask（自动小旋风）', value: 10 },
+  { label: '11 - DSDFarmTask（九百九十九夜）', value: 11 },
+  { label: '12 - CombatDetectionTestTask（自动战斗检测诊断）', value: 12 },
+  { label: '13 - DiagnosisTask（诊断）', value: 13 },
+  { label: '14 - DailyClaimTask（日常领取）', value: 14 },
+  { label: '15 - GiftTask（羁遇赠礼）', value: 15 },
+  { label: '16 - CoffeeTask（一咖舍）', value: 16 },
+  { label: '17 - FountainTask（喷泉签到）', value: 17 },
+  { label: '18 - FurnitureTask（异象家具）', value: 18 },
+  { label: '19 - CinemaDateTask（影院约会）', value: 19 },
 ]
 
-const getDefaultUserData = () => ({
+type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
+
+type OkNteNotifyForm = FormSection<NonNullable<OkNteUserConfig['Notify']>>
+
+type OkNteUserFormData = {
+  userName: string
+  Info: FormSection<NonNullable<OkNteUserConfig['Info']>>
+  Task: FormSection<NonNullable<OkNteUserConfig['Task']>>
+  Notify: OkNteNotifyForm
+  Data: FormSection<NonNullable<OkNteUserConfig['Data']>>
+}
+
+const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
   Info: {
     Name: '',
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '脚本',
     Resource: '官服',
     RemainedDay: -1,
+    IfUseMasConfig: true,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
+    Tag: '',
   },
   Task: {
     TaskIndex: 2,
@@ -455,32 +396,34 @@ const getDefaultUserData = () => ({
   },
   Notify: {
     Enabled: false,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',
     IfServerChan: false,
     ServerChanKey: '',
-    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    LastProxyStatus: '',
+    LastTaskIndex: 0,
   },
 })
 
-const formData = reactive({
+const formData = reactive<OkNteUserFormData>({
   userName: '',
-  ...(getDefaultUserData() as unknown as OkNteUserConfig),
+  ...getDefaultUserData(),
 })
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 2} -e`)
 
 const clearOkNteConfigSession = () => {
-  if (oknteSubscriptionId.value) {
-    unsubscribe(oknteSubscriptionId.value)
-    oknteSubscriptionId.value = null
+  for (const subscriptionId of oknteSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
   }
-  oknteWebsocketId.value = null
+  oknteSubscriptionIds.value = []
+  oknteTaskId.value = null
   showOkNteConfigMask.value = false
   if (oknteConfigTimeout) {
     window.clearTimeout(oknteConfigTimeout)
@@ -559,7 +502,7 @@ const handleTaskIndexChange = async (value: number) => {
 
 const handleOkNteConfig = async () => {
   if (!userId) {
-    message.error('请先创建用户后再配置 OK-NTE')
+    message.error(t('edit.createUserBeforeConfiguring'))
     return
   }
 
@@ -581,39 +524,35 @@ const handleOkNteConfig = async () => {
     }
 
     const wsId = response.taskId
-    const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
-      if (wsMessage.type === 'error') {
-        logger.error(`用户 ${formData.userName} OK-NTE 配置连接失败: ${wsMessage.data}`)
-        message.error(`OK-NTE 配置连接失败: ${wsMessage.data}`)
-        clearOkNteConfigSession()
-        return
-      }
-
-      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-        logger.error(`用户 ${formData.userName} OK-NTE 配置异常: ${wsMessage.data.Error}`)
-        message.error(`OK-NTE 配置失败: ${wsMessage.data.Error}`)
-        return
-      }
-
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+    const subscriptionIds = [
+      // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
+      subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          logger.error(`用户 ${formData.userName} OK-NTE 配置异常: ${data.message}`)
+          message.error(t('edit.okNteConfigurationFailed', { p0: data.message }))
+        }
+      }),
+      // 处理任务结束消息
+      subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskCompletedData
         logger.info(`用户 ${formData.userName} OK-NTE 配置任务已结束`)
-        const result = String(wsMessage.data.Accomplish || '')
-        if (!result.includes('异常') && !result.includes('错误')) {
+        if (data.outcome === 'success') {
           refreshOkNteConfigEditor()
-          message.success(`用户 ${formData.userName} 的 OK-NTE 配置已完成`)
+          message.success(t('edit.okNteConfigurationUser', { p0: formData.userName }))
         }
         clearOkNteConfigSession()
-      }
-    })
+      }),
+    ]
 
-    oknteSubscriptionId.value = subscriptionId
-    oknteWebsocketId.value = wsId
-    message.success(`已开始配置用户 ${formData.userName} 的 OK-NTE 设置`)
+    oknteSubscriptionIds.value = subscriptionIds
+    oknteTaskId.value = wsId
+    message.success(t('edit.startedOkNteSetup', { p0: formData.userName }))
 
     oknteConfigTimeout = window.setTimeout(
       async () => {
-        if (oknteWebsocketId.value) {
-          message.warning('OK-NTE 配置会话已超时，正在自动保存配置')
+        if (oknteTaskId.value) {
+          message.warning(t('edit.okNteConfigurationSession'))
           await handleSaveOkNteConfig()
         }
       },
@@ -621,7 +560,7 @@ const handleOkNteConfig = async () => {
     )
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error('启动 OK-NTE 配置失败')
+    message.error(t('edit.couldNotStartOk'))
     showOkNteConfigMask.value = false
   } finally {
     oknteConfigLoading.value = false
@@ -629,24 +568,24 @@ const handleOkNteConfig = async () => {
 }
 
 const handleSaveOkNteConfig = async () => {
-  const websocketId = oknteWebsocketId.value
-  if (!websocketId) {
-    message.error('未找到活动的 OK-NTE 配置会话')
+  const taskId = oknteTaskId.value
+  if (!taskId) {
+    message.error(t('edit.noActiveOkNte'))
     return
   }
 
   try {
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response?.code === 200) {
       refreshOkNteConfigEditor()
       clearOkNteConfigSession()
-      message.success('用户的 OK-NTE 配置已保存')
+      message.success(t('edit.okNteConfigurationThis'))
     } else {
       message.error(response?.message || '保存 OK-NTE 配置失败')
     }
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error('保存 OK-NTE 配置失败')
+    message.error(t('edit.couldNotSaveOk'))
   }
 }
 
@@ -665,7 +604,7 @@ const loadUser = async () => {
     }
     const resp = await getUsers(scriptId, userId)
     const userIndex = resp?.index?.find(i => i.uid === userId)
-    const data = resp?.data?.[userId]
+    const data = resp?.data?.[userId] as OkNteUserConfig | undefined
     if (!userIndex || !data) {
       throw new Error('用户不存在或加载失败')
     }
@@ -685,7 +624,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error('加载用户失败')
+    message.error(t('edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
@@ -710,33 +649,6 @@ onMounted(async () => {
   background: var(--ant-color-bg-layout);
 }
 
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.configuring-button {
-  color: #52c41a;
-  border-color: #52c41a;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -751,33 +663,6 @@ onMounted(async () => {
   padding: 32px;
 }
 
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -788,20 +673,6 @@ onMounted(async () => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
-.modern-select {
-  width: 100%;
-}
-
-.modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
 }
 
 .oknte-config-mask {
@@ -854,12 +725,6 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .user-edit-container {
     padding: 16px;
-  }
-
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
   }
 
   .config-card :deep(.ant-card-body) {

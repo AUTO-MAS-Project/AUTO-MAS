@@ -22,32 +22,32 @@
 
 
 from __future__ import annotations
-import os
-import json
-import uuid
-import shlex
-import inspect
-import asyncio
-import pyautogui
-import win32com.client
-from copy import deepcopy
-from urllib.parse import urlparse
-from datetime import datetime
-from contextlib import suppress
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
-from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
-from app.utils.io import write_file
+import asyncio
+import inspect
+import json
+import os
+import shlex
+import uuid
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
+from urllib.parse import urlparse
+
+from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
 from app.utils.constants import (
-    RESERVED_NAMES,
-    ILLEGAL_CHARS,
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
-    FORBIDDEN_PATH_PREFIXES,
     FORBIDDEN_PATH_EXACT,
+    FORBIDDEN_PATH_PREFIXES,
+    ILLEGAL_CHARS,
+    KEYBOARD_KEYS,
+    RESERVED_NAMES,
 )
+from app.utils.io import write_file
 
 logger = get_logger("配置基类")
 
@@ -82,7 +82,6 @@ class RangeValidator(ValidatorBase):
     def __init__(self, min: int | float, max: int | float):
         self.min = min
         self.max = max
-        self.range = (min, max)
 
     def validate(self, value):
         if not isinstance(value, (int, float)):
@@ -151,7 +150,10 @@ class MultipleUIDValidator(ValidatorBase):
     """多配置管理类UID验证器"""
 
     def __init__(
-        self, default: Any, related_config: dict[str, MultipleConfig], config_name: str
+        self,
+        default: Any,
+        related_config: dict[str, MultipleConfig],
+        config_name: str,
     ):
         self.default = default
         self.related_config = related_config
@@ -166,14 +168,40 @@ class MultipleUIDValidator(ValidatorBase):
             uid = uuid.UUID(value)
         except (TypeError, ValueError):
             return False
-        if uid in self.related_config.get(self.config_name, {}):
-            return True
-        return False
+        config = self.related_config.get(self.config_name, {})
+        return uid in config
 
     def correct(self, value):
         if self.validate(value):
             return value
         return self.default
+
+
+class TypedMultipleUIDValidator(MultipleUIDValidator):
+    """多配置管理类UID验证器（额外校验引用配置的类型）
+
+    用于 MultipleConfig 中同一定位键下存在多种配置类型（如 PlanConfig
+    同时存放 MaaPlanConfig 与 MaaEndPlanConfig）的场景，保证配置层
+    invariant：UID 不仅存在，且指向的配置类型符合预期。
+    """
+
+    def __init__(
+        self,
+        default: Any,
+        related_config: dict[str, MultipleConfig],
+        config_name: str,
+        expected_type: type,
+    ):
+        super().__init__(default, related_config, config_name)
+        self.expected_type = expected_type
+
+    def validate(self, value):
+        if value == self.default:
+            return True
+        if not super().validate(value):
+            return False
+        config = self.related_config.get(self.config_name, {})
+        return isinstance(config[uuid.UUID(value)], self.expected_type)
 
 
 class DateTimeValidator(ValidatorBase):
@@ -221,7 +249,7 @@ class JSONValidator(ValidatorBase):
 
     def correct(self, value):
         return (
-            value if self.validate(value) else ("{ }" if self.type == dict else "[ ]")
+            value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
         )
 
 
@@ -234,7 +262,7 @@ class EncryptValidator(ValidatorBase):
         try:
             dpapi_decrypt(value)
             return True
-        except:
+        except Exception:
             return False
 
     def correct(self, value: Any) -> Any:
@@ -315,6 +343,8 @@ class FileValidator(ValidatorBase):
             value = Path(value).resolve().as_posix()
         if Path(value).suffix == ".lnk":
             try:
+                import win32com.client
+
                 shell = win32com.client.Dispatch("WScript.Shell")
                 shortcut = shell.CreateShortcut(value)
                 value = shortcut.TargetPath
@@ -412,6 +442,8 @@ class EmulatorPathValidator(FileValidator):
         if Path(value).suffix.lower() != ".lnk":
             return value
         try:
+            import win32com.client
+
             shell = win32com.client.Dispatch("WScript.Shell")
             shortcut = shell.CreateShortcut(value)
             target = getattr(shortcut, "TargetPath", "") or ""
@@ -524,7 +556,7 @@ class KeyValidator(ValidatorBase):
         self.default = default
 
     def validate(self, value: Any) -> bool:
-        return value in pyautogui.KEYBOARD_KEYS
+        return value in KEYBOARD_KEYS
 
     def correct(self, value: Any) -> Any:
         return value if self.validate(value) else self.default
@@ -579,7 +611,6 @@ class URLValidator(ValidatorBase):
 
 
 class ArgumentValidator(ValidatorBase):
-
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -595,7 +626,6 @@ class ArgumentValidator(ValidatorBase):
 
 
 class AdvancedArgumentValidator(ValidatorBase):
-
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -689,7 +719,7 @@ class ConfigItem:
         # deepcopy new value
         try:
             self.value = deepcopy(value)
-        except:
+        except Exception:
             self.value = value
 
         if isinstance(self.validator, EncryptValidator):
@@ -738,7 +768,7 @@ class ConfigItem:
             槽函数，接收新值作为参数，支持同步和异步函数
         """
         if not callable(slot):
-            raise TypeError(f"槽函数必须是可调用对象")
+            raise TypeError("槽函数必须是可调用对象")
 
         if slot not in self._slots:
             self._slots.append(slot)
@@ -754,10 +784,6 @@ class ConfigItem:
         """
         if slot in self._slots:
             self._slots.remove(slot)
-
-    def unbind_all(self):
-        """断开所有槽函数连接"""
-        self._slots.clear()
 
     @logger.catch
     async def _emit_signal(self, value: Any) -> None:
@@ -923,7 +949,7 @@ class ConfigBase(ABC):
             for name, item in info.items():
                 try:
                     item.setValue(working_data[group][name])
-                except:
+                except Exception:
                     if item.legacy_group_name is not None:
                         with suppress(Exception):
                             item.setValue(
@@ -968,7 +994,7 @@ class ConfigBase(ABC):
 
         return self._config_item_index[group][name].getValue()
 
-    async def set(self, group: str, name: str, value: Any):
+    async def set(self, group: str, name: str, value: Any, commit: bool = True) -> bool:
         """
         设置配置项的值
 
@@ -980,6 +1006,13 @@ class ConfigBase(ABC):
             配置项名称
         value: Any
             配置项新值
+        commit: bool
+            是否立即提交（保存到磁盘）, 批量写入时传 False 并在最后统一提交
+
+        Returns
+        -------
+        bool
+            值是否真正发生了变化
         """
 
         if not self._config_item_index.get(group, {}).get(name):
@@ -990,9 +1023,31 @@ class ConfigBase(ABC):
 
         is_changed = self._config_item_index[group][name].setValue(value)
         if not is_changed:
-            return
+            return False
 
-        await self._commit_changes()
+        if commit:
+            await self._commit_changes()
+
+        return True
+
+    async def update(self, data: dict[str, dict[str, Any]]) -> None:
+        """
+        批量设置配置项, 全部写入后只提交一次
+
+        Parameters
+        ----------
+        data: dict[str, dict[str, Any]]
+            形如 ``{分组名: {配置项名: 新值}}`` 的配置数据
+        """
+
+        is_changed = False
+        for group, items in data.items():
+            for name, value in items.items():
+                if await self.set(group, name, value, commit=False):
+                    is_changed = True
+
+        if is_changed:
+            await self._commit_changes()
 
     def bind(self, group: str, name: str, slot: Callable[[Any], Any]):
         """

@@ -22,7 +22,7 @@ export function useSettingsApi() {
       }
 
       return response.data
-    } catch (err: any) {
+    } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取设置失败'
       error.value = errorMsg
       if (err instanceof Error && !err.message.includes('HTTP error')) {
@@ -52,7 +52,7 @@ export function useSettingsApi() {
       }
 
       return true
-    } catch (err: any) {
+    } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '设置修改失败'
       error.value = errorMsg
       if (err instanceof Error && !err.message.includes('HTTP error')) {

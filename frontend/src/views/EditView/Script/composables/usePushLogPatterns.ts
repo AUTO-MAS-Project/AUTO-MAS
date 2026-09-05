@@ -1,0 +1,357 @@
+import { translate as t } from '@/i18n'
+import { computed, nextTick, ref, watch, type Ref } from 'vue'
+import { message } from 'ant-design-vue'
+
+export type PushLogPatternType = 'split' | 'regex' | 'multiline'
+
+export interface PushLogPattern {
+  type: PushLogPatternType
+  /** 规则标题（供分享站展示/说明），留空时前端按 规则1/规则2 兜底 */
+  name?: string
+  /** 单条规则启用/停用开关：停用时保留配置但不参与采集 */
+  enabled?: boolean
+  /** 日志类型：普通 = 任何推送报告均包含；失败 = 仅在存在未完成用户的报告中包含 */
+  logType?: string
+  // split
+  match?: string
+  head?: string
+  headInclude?: boolean
+  tail?: string
+  tailInclude?: boolean
+  // regex
+  extract?: string
+  // multiline
+  start?: string
+  end?: string
+  maxLines?: number
+  /** 运行时唯一标识，仅用于前端列表渲染，不参与序列化 */
+  _uid?: string
+}
+
+const LOG_TYPE_NORMAL = '普通'
+const LOG_TYPE_ERROR = '失败'
+
+export const normalizePatternType = (raw: unknown): PushLogPatternType => {
+  if (raw === 'split') return 'split'
+  if (raw === 'multiline') return 'multiline'
+  return 'regex'
+}
+
+/** 日志类型归一：仅接受 普通/失败（旧值「错误」「异常」归一为「失败」），其余回退 普通 */
+export const normalizeLogType = (raw: unknown): string => {
+  return raw === LOG_TYPE_ERROR || raw === '错误' || raw === '异常'
+    ? LOG_TYPE_ERROR
+    : LOG_TYPE_NORMAL
+}
+
+export const getDefaultPatternName = (idx: number): string => `规则${idx + 1}`
+
+let uidCounter = 0
+const newUid = (): string => `pattern_${Date.now()}_${++uidCounter}`
+
+const defaultSplitPattern = (): PushLogPattern => ({
+  _uid: newUid(),
+  type: 'split',
+  enabled: true,
+  logType: LOG_TYPE_NORMAL,
+  match: '',
+  head: '',
+  headInclude: false,
+  tail: '',
+  tailInclude: false,
+})
+
+const defaultRegexPattern = (): PushLogPattern => ({
+  _uid: newUid(),
+  type: 'regex',
+  enabled: true,
+  logType: LOG_TYPE_NORMAL,
+  match: '',
+  extract: '',
+})
+
+const defaultMultilinePattern = (): PushLogPattern => ({
+  _uid: newUid(),
+  type: 'multiline',
+  enabled: true,
+  logType: LOG_TYPE_NORMAL,
+  start: '',
+  end: '',
+  extract: '',
+  maxLines: 50,
+})
+
+export const createPattern = (type: PushLogPatternType): PushLogPattern => {
+  if (type === 'split') return defaultSplitPattern()
+  if (type === 'multiline') return defaultMultilinePattern()
+  return defaultRegexPattern()
+}
+
+export const parsePushLogPatterns = (json: string): PushLogPattern[] => {
+  if (!json) return []
+  try {
+    const items = JSON.parse(json)
+    if (!Array.isArray(items)) return []
+    return items
+      .filter((item: unknown) => item && typeof item === 'object')
+      .map((item: Record<string, unknown>) => {
+        const type = normalizePatternType(item.type)
+        const enabled = item.enabled === false ? false : true
+        const name =
+          typeof item.name === 'string' && item.name.trim() ? item.name.trim() : undefined
+        const logType = normalizeLogType(item.logType)
+
+        if (type === 'split') {
+          return {
+            _uid: newUid(),
+            type: 'split',
+            name,
+            enabled,
+            logType,
+            match: typeof item.match === 'string' ? item.match : '',
+            head: typeof item.head === 'string' ? item.head : '',
+            headInclude: !!item.headInclude,
+            tail: typeof item.tail === 'string' ? item.tail : '',
+            tailInclude: !!item.tailInclude,
+          }
+        }
+        if (type === 'regex') {
+          return {
+            _uid: newUid(),
+            type: 'regex',
+            name,
+            enabled,
+            logType,
+            match: typeof item.match === 'string' ? item.match : '',
+            extract: typeof item.extract === 'string' ? item.extract : '',
+          }
+        }
+        return {
+          _uid: newUid(),
+          type: 'multiline',
+          name,
+          enabled,
+          logType,
+          start: typeof item.start === 'string' ? item.start : '',
+          end: typeof item.end === 'string' ? item.end : '',
+          extract: typeof item.extract === 'string' ? item.extract : '',
+          maxLines: typeof item.maxLines === 'number' ? item.maxLines : 50,
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+/** 规则是否具备后端编译所需的必填字段（与后端 _compile_* 的条件一致）：
+ * - split 需匹配关键字；regex 需匹配正则；multiline 需起始正则。
+ * 停用（enabled=false）时保留配置不参与采集，视为可保存，不做字段要求。 */
+const ruleHasRequiredField = (p: PushLogPattern): boolean => {
+  if (p.enabled === false) return true
+  if (p.type === 'split') return !!(p.match || '').trim()
+  if (p.type === 'regex') return !!(p.match || '').trim()
+  if (p.type === 'multiline') return !!(p.start || '').trim()
+  return false
+}
+
+const ruleDisplayName = (p: PushLogPattern, idx: number): string =>
+  (p.name || '').trim() || `规则${idx + 1}`
+
+export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => {
+  const cleaned: PushLogPattern[] = []
+  for (const p of patterns) {
+    const enabled = p.enabled === false ? false : true
+    const name = p.name?.trim() || undefined
+    const logType = normalizeLogType(p.logType)
+
+    if (p.type === 'split') {
+      const match = (p.match || '').trim()
+      const head = (p.head || '').trim()
+      const tail = (p.tail || '').trim()
+      // 匹配关键字留空则该规则不生效（与后端 _compile_split 对齐）
+      if (enabled && !match) continue
+      cleaned.push({
+        type: 'split',
+        name,
+        enabled,
+        logType,
+        match,
+        head,
+        headInclude: !!p.headInclude,
+        tail,
+        tailInclude: !!p.tailInclude,
+      })
+    } else if (p.type === 'regex') {
+      const match = (p.match || '').trim()
+      const extract = (p.extract || '').trim()
+      // 匹配正则留空则该规则不生效（与后端 _compile_regex_matcher 对齐）
+      if (enabled && !match) continue
+      cleaned.push({ type: 'regex', name, enabled, logType, match, extract })
+    } else {
+      const start = (p.start || '').trim()
+      const end = (p.end || '').trim()
+      const extract = (p.extract || '').trim()
+      // 起始正则留空则该规则不生效（与后端 _compile_multiline_matcher 对齐）
+      if (enabled && !start) continue
+      cleaned.push({
+        type: 'multiline',
+        name,
+        enabled,
+        logType,
+        start,
+        end,
+        extract,
+        maxLines: p.maxLines || 50,
+      })
+    }
+  }
+  return JSON.stringify(cleaned)
+}
+
+/**
+ * 类型切换时保留可复用字段，减少用户重复输入。
+ * - match / start 语义相近：regex.match -> multiline.start
+ * - extract 在 regex / multiline 之间通用
+ */
+export const migratePatternOnTypeChange = (
+  oldPattern: PushLogPattern,
+  newType: PushLogPatternType
+): PushLogPattern => {
+  const base: PushLogPattern = {
+    _uid: oldPattern._uid || newUid(),
+    type: newType,
+    name: oldPattern.name,
+    enabled: oldPattern.enabled === false ? false : true,
+    logType: normalizeLogType(oldPattern.logType),
+  }
+
+  if (newType === 'split') {
+    return {
+      ...base,
+      match: oldPattern.match || '',
+      head: '',
+      headInclude: false,
+      tail: '',
+      tailInclude: false,
+    }
+  }
+
+  if (newType === 'regex') {
+    return {
+      ...base,
+      match: oldPattern.match || oldPattern.start || '',
+      extract: oldPattern.extract || '',
+    }
+  }
+
+  return {
+    ...base,
+    start: oldPattern.start || oldPattern.match || '',
+    end: '',
+    extract: oldPattern.extract || '',
+    maxLines: oldPattern.maxLines || 50,
+  }
+}
+
+export interface UsePushLogPatternsOptions {
+  patternsJson: Ref<string>
+  onChange?: (json: string) => void
+}
+
+export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
+  const { patternsJson, onChange } = options
+  // 默认不展示任何规则卡片，首次点击「添加规则」后才出现，避免未开启推送采集时看到空卡片
+  const patterns = ref<PushLogPattern[]>([])
+
+  const syncFromJson = () => {
+    const parsed = parsePushLogPatterns(patternsJson.value || '')
+    patterns.value = parsed
+  }
+
+  // 标记本次 patternsJson 回写来自本地 save，watcher 需跳过以防已添加的空规则被立即移除
+  let localEcho = false
+  const emitJson = (json: string) => {
+    localEcho = true
+    onChange?.(json)
+    nextTick(() => {
+      localEcho = false
+    })
+  }
+
+  /**
+   * 保存当前规则到 json。结构性操作（新增/删除/排序）时传入 { warn: false }，
+   * 避免新建空规则或删空规则在用户尚未编辑时立即弹出「缺必填字段」的提示；
+   * 仅在实际字段编辑时对缺必填字段的启用规则给出可见提示。
+   */
+  const save = (options: { warn?: boolean } = {}) => {
+    const json = serializePushLogPatterns(patterns.value)
+    if (options.warn !== false) {
+      // 启用中的规则缺少必填字段（后端编译时会跳过），保存配置与运行采集不一致，
+      // 这里给出可见提示而非静默失效
+      const dropped = patterns.value
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
+        .map(({ p, i }) => ruleDisplayName(p, i))
+      if (dropped.length > 0) {
+        message.warning(t('edit.p0MissingRequiredField', { p0: dropped.join('、') }))
+      }
+    }
+    emitJson(json)
+  }
+
+  watch(
+    patternsJson,
+    () => {
+      // 本次回写来自本地 save 同步写回的 v-model（nextTick 内），跳过防止刚添加的空规则被立即移除
+      if (localEcho) return
+      // 异步保存后父组件 refreshScript 会回写后端序列化结果：若该值与当前本地规则的序列化结果
+      // 等价（空/待编辑规则会被 serialize 暂时剔除），说明仅是本地 save 的回显而非外部改动，
+      // 应保留本地尚未落盘的空规则卡片，避免刚添加的空规则被异步刷新清掉
+      if ((patternsJson.value || '') === serializePushLogPatterns(patterns.value)) {
+        return
+      }
+      syncFromJson()
+    },
+    { immediate: true }
+  )
+
+  const addPattern = (type: PushLogPatternType) => {
+    patterns.value.push(createPattern(type))
+    save({ warn: false })
+  }
+
+  const removePattern = (idx: number) => {
+    patterns.value.splice(idx, 1)
+    save({ warn: false })
+  }
+
+  const updatePatternType = (idx: number, newType: PushLogPatternType) => {
+    const old = patterns.value[idx]
+    if (!old || old.type === newType) return
+    patterns.value[idx] = migratePatternOnTypeChange(old, newType)
+    save({ warn: false })
+  }
+
+  const onPatternFieldChange = () => {
+    save()
+  }
+
+  const reorderPatterns = (newOrder: PushLogPattern[]) => {
+    patterns.value = newOrder
+    save({ warn: false })
+  }
+
+  const activePatternCount = computed(() => patterns.value.filter(p => p.enabled !== false).length)
+
+  return {
+    patterns,
+    activePatternCount,
+    addPattern,
+    removePattern,
+    updatePatternType,
+    onPatternFieldChange,
+    reorderPatterns,
+    save,
+    syncFromJson,
+  }
+}

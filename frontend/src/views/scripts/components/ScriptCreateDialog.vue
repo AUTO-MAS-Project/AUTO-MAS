@@ -9,15 +9,22 @@
     :z-index="900"
     :footer="null"
     class="script-create-dialog"
-    title="新建脚本"
+    :title="t('scripts.create.title')"
     @cancel="handleCancel"
   >
     <div class="create-layout">
       <section class="step-content">
         <template v-if="currentStep === 'type'">
-          <StepHeading title="选择脚本类型" description="按名称、游戏或脚本框架快速查找。" />
+          <StepHeading
+            :title="t('scripts.create.typeHeading')"
+            :description="t('scripts.create.typeHeadingDesc')"
+          />
           <div class="list-toolbar single">
-            <a-input v-model:value="typeKeyword" allow-clear placeholder="搜索脚本类型">
+            <a-input
+              v-model:value="typeKeyword"
+              allow-clear
+              :placeholder="t('scripts.create.typeSearch')"
+            >
               <template #prefix><SearchOutlined /></template>
             </a-input>
           </div>
@@ -28,7 +35,7 @@
           >
             <section v-if="typeSections.general.length" class="type-section">
               <div class="type-section-heading">
-                <span class="type-section-title">通用脚本</span>
+                <span class="type-section-title">{{ t('scripts.create.groupGeneral') }}</span>
               </div>
               <label
                 v-for="option in typeSections.general"
@@ -48,7 +55,7 @@
               class="type-section specialized-section"
             >
               <div class="type-section-heading">
-                <span class="type-section-title">专项适配</span>
+                <span class="type-section-title">{{ t('scripts.create.groupSpecialized') }}</span>
               </div>
               <div class="type-grid">
                 <label
@@ -66,50 +73,53 @@
               </div>
             </section>
           </a-radio-group>
-          <a-empty v-else description="未找到匹配的脚本类型">
-            <a-button @click="clearTypeFilters">清空搜索</a-button>
+          <a-empty v-else :description="t('scripts.create.noTypeMatch')">
+            <a-button @click="clearTypeFilters">{{ t('scripts.clearSearch') }}</a-button>
           </a-empty>
         </template>
 
         <template v-else-if="currentStep === 'config'">
           <template v-if="configView === 'choice'">
             <StepHeading
-              title="选择配置来源"
-              description="通用脚本可以从模板开始，也可以完全自定义。"
+              :title="t('scripts.create.sourceHeading')"
+              :description="t('scripts.create.sourceHeadingDesc')"
             />
             <a-radio-group v-model:value="selectedConfigMode" class="choice-list">
               <label :class="['choice-row', { selected: selectedConfigMode === 'template' }]">
                 <a-radio value="template" />
                 <span class="choice-icon"><DatabaseOutlined /></span>
                 <span class="choice-copy">
-                  <span class="choice-title">从模板创建</span>
-                  <span class="choice-description">选择社区模板，快速获得一套基础配置</span>
+                  <span class="choice-title">{{ t('scripts.create.fromTemplate') }}</span>
+                  <span class="choice-description">{{ t('scripts.create.fromTemplateDesc') }}</span>
                 </span>
               </label>
               <label :class="['choice-row', { selected: selectedConfigMode === 'custom' }]">
                 <a-radio value="custom" />
                 <span class="choice-icon"><SettingOutlined /></span>
                 <span class="choice-copy">
-                  <span class="choice-title">自定义配置</span>
-                  <span class="choice-description">创建空白通用脚本，在编辑页逐项配置</span>
+                  <span class="choice-title">{{ t('scripts.create.custom') }}</span>
+                  <span class="choice-description">{{ t('scripts.create.customDesc') }}</span>
                 </span>
               </label>
             </a-radio-group>
           </template>
 
           <template v-else>
-            <StepHeading title="选择配置模板" description="搜索并选择一个模板作为初始配置。" />
+            <StepHeading
+              :title="t('scripts.create.templateHeading')"
+              :description="t('scripts.create.templateHeadingDesc')"
+            />
             <div class="list-toolbar single">
               <a-input
                 v-model:value="templateKeyword"
                 allow-clear
-                placeholder="搜索模板名称、作者或描述"
+                :placeholder="t('scripts.create.templateSearch')"
               >
                 <template #prefix><SearchOutlined /></template>
               </a-input>
-              <a-button :loading="templateLoading" @click="emit('request-templates')"
-                >重新加载</a-button
-              >
+              <a-button :loading="templateLoading" @click="emit('request-templates')">{{
+                t('scripts.create.reload')
+              }}</a-button>
             </div>
             <a-alert
               v-if="templateError"
@@ -119,11 +129,13 @@
               class="template-alert"
             >
               <template #action>
-                <a-button size="small" @click="emit('request-templates')">重试</a-button>
+                <a-button size="small" @click="emit('request-templates')">{{
+                  t('scripts.create.retry')
+                }}</a-button>
               </template>
             </a-alert>
             <div v-if="templateLoading" class="template-loading-state">
-              <a-spin size="large" tip="正在加载配置模板..." />
+              <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
             </div>
             <a-radio-group
               v-else-if="filteredTemplates.length"
@@ -141,8 +153,14 @@
                 <span class="choice-copy">
                   <span class="choice-title">{{ template.configName }}</span>
                   <span class="template-meta">
-                    <span><UserOutlined /> {{ template.author || '未知作者' }}</span>
-                    <span><ClockCircleOutlined /> {{ template.createTime || '未知时间' }}</span>
+                    <span
+                      ><UserOutlined />
+                      {{ template.author || t('scripts.template.unknownAuthor') }}</span
+                    >
+                    <span
+                      ><ClockCircleOutlined />
+                      {{ template.createTime || t('scripts.template.unknownTime') }}</span
+                    >
                   </span>
                   <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
                   <span
@@ -157,29 +175,42 @@
             </a-radio-group>
             <a-empty
               v-else
-              :description="templateKeyword ? '未找到匹配的模板' : '暂无可用模板'"
+              :description="
+                templateKeyword
+                  ? t('scripts.create.noTemplateMatch')
+                  : t('scripts.create.noTemplates')
+              "
             >
-              <a-button v-if="templateKeyword" @click="templateKeyword = ''">清空搜索</a-button>
-              <a-button v-else @click="chooseCustomConfig">改为自定义配置</a-button>
+              <a-button v-if="templateKeyword" @click="templateKeyword = ''">{{
+                t('scripts.clearSearch')
+              }}</a-button>
+              <a-button v-else @click="chooseCustomConfig">{{
+                t('scripts.create.switchToCustom')
+              }}</a-button>
             </a-empty>
           </template>
         </template>
 
         <template v-else>
           <StepHeading
-            title="确认创建脚本"
-            description="确认以下信息后再创建，避免产生错误实例。"
+            :title="t('scripts.create.confirmHeading')"
+            :description="t('scripts.create.confirmHeadingDesc')"
           />
           <a-descriptions bordered :column="1" class="confirm-summary">
-            <a-descriptions-item label="创建方式"> 创建全新脚本 </a-descriptions-item>
-            <a-descriptions-item label="脚本类型">
-              {{ getTypeOption(selectedType).title }}
+            <a-descriptions-item :label="t('scripts.create.labelMode')">
+              {{ t('scripts.create.modeNew') }}
             </a-descriptions-item>
-            <a-descriptions-item v-if="selectedType === 'General'" label="配置来源">
+            <a-descriptions-item :label="t('scripts.create.labelType')">
+              {{ t(getTypeOption(selectedType).titleKey) }}
+            </a-descriptions-item>
+            <a-descriptions-item
+              v-if="selectedType === 'General'"
+              :label="t('scripts.create.labelSource')"
+            >
               {{
                 selectedConfigMode === 'custom'
-                  ? '自定义配置'
-                  : `模板：${selectedTemplate?.configName}`
+                  ? t('scripts.create.custom')
+                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.configName })
               }}
             </a-descriptions-item>
           </a-descriptions>
@@ -190,10 +221,10 @@
     <div class="dialog-footer">
       <a-button :disabled="!canGoBack || submitting" @click="handleBack">
         <template #icon><ArrowLeftOutlined /></template>
-        返回
+        {{ t('scripts.create.back') }}
       </a-button>
       <a-space>
-        <a-button :disabled="submitting" @click="handleCancel">取消</a-button>
+        <a-button :disabled="submitting" @click="handleCancel">{{ t('common.cancel') }}</a-button>
         <a-button type="primary" :loading="submitting" :disabled="nextDisabled" @click="handleNext">
           {{ primaryButtonText }}
         </a-button>
@@ -203,6 +234,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import {
   ArrowLeftOutlined,
@@ -226,6 +258,8 @@ import {
   type CreateStepKey,
   type ScriptCreateRequest,
 } from './scriptCreateFlow'
+
+const { t } = useI18n()
 
 const StepHeading = defineComponent({
   props: { title: { type: String, required: true }, description: { type: String, required: true } },
@@ -270,8 +304,16 @@ const canGoBack = computed(
     currentStepIndex.value > 0 ||
     (currentStep.value === 'config' && configView.value === 'templates')
 )
+// title/description 随语言变，先解析再过滤，别名匹配仍走 keywords
+const typeOptions = computed(() =>
+  SCRIPT_TYPE_OPTIONS.map(option => ({
+    ...option,
+    title: t(option.titleKey),
+    description: t(option.descriptionKey),
+  }))
+)
 const filteredTypes = computed(() =>
-  filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, typeKeyword.value)
+  filterScriptTypeOptions(typeOptions.value, typeKeyword.value, t)
 )
 const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
 const filteredTemplates = computed(() => {
@@ -294,14 +336,16 @@ const nextDisabled = computed(() => {
   return false
 })
 const primaryButtonText = computed(() => {
-  if (currentStep.value === 'type' && selectedType.value !== 'General') return '创建并配置'
+  if (currentStep.value === 'type' && selectedType.value !== 'General') {
+    return t('scripts.create.createAndConfigure')
+  }
   if (currentStep.value === 'config' && selectedConfigMode.value === 'custom') {
-    return '创建并配置'
+    return t('scripts.create.createAndConfigure')
   }
   if (currentStep.value === 'config' && configView.value === 'templates') {
-    return '使用模板创建'
+    return t('scripts.create.createFromTemplate')
   }
-  return '下一步'
+  return t('scripts.create.next')
 })
 
 watch(
@@ -376,7 +420,7 @@ const chooseCustomConfig = () => {
   configView.value = 'choice'
 }
 
-const parseMarkdown = (text: string) => md.render(text || '暂无描述信息')
+const parseMarkdown = (text: string) => md.render(text || t('scripts.noDescription'))
 
 const handleTemplateDescriptionClick = (event: MouseEvent) => {
   const link = (event.target as HTMLElement | null)?.closest('a')

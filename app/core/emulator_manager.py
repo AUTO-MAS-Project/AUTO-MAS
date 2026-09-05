@@ -20,22 +20,22 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
-import shutil
 import asyncio
+import shutil
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Dict, Literal
 
-from .config import Config
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
-from app.utils import ProcessRunner, EMULATOR_TYPE_BOOK
+from app.models.schema import WSTaskNoticeData
+from app.utils import EMULATOR_TYPE_BOOK, ProcessRunner, get_logger
 from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
 
-from app.utils import get_logger
-
+from .config import Config
+from .ws import Publisher, protocol
 
 logger = get_logger("模拟器管理")
 
@@ -51,7 +51,6 @@ class _EmulatorManager:
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
         if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
-
             # 设置模拟器广告
             with suppress(Exception):
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
@@ -103,10 +102,12 @@ class _EmulatorManager:
             elif operate == "show":
                 await temp_emulator.setVisible(index, True)
         except Exception as e:
-            await Config.send_websocket_message(
-                id="EmulatorManager",
-                type="Info",
-                data={"error": f"模拟器操作失败: {str(e)}"},
+            await Publisher.send(
+                id=protocol.ID_EMULATOR_MANAGER,
+                type=protocol.EMULATOR_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error", message=f"模拟器操作失败: {str(e)}"
+                ),
             )
 
     async def get_status(

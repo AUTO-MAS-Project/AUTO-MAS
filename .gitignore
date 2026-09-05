@@ -11,9 +11,12 @@ logs/
 .venv
 list/
 
+# 本地开发环境标记（模板见 .env.example）
+.env
+
 # IDE and editors
-.vscode/
 .idea/
+.vscode
 *.swp
 *.swo
 .DS_Store
@@ -70,6 +73,11 @@ list/
 
 # Test artifacts
 /test-results/
+
+# Local dev scripts & logs (本地测试用例，与代码逻辑无关)
+/dev.bat
+/.dev-logs/
+/.dev/
 
 res/docs/ok-series-common-script-report.md
 

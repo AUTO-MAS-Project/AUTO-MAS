@@ -14,7 +14,7 @@
           <template #icon>
             <EditOutlined />
           </template>
-          编辑布局
+          {{ t('home.editLayout') }}
         </a-button>
         <a-button
           type="primary"
@@ -26,7 +26,7 @@
           <template #icon>
             <BellOutlined />
           </template>
-          查看公告
+          {{ t('home.viewNotice') }}
         </a-button>
       </div>
     </div>
@@ -40,11 +40,13 @@
     <HomeLayoutDrawer
       v-model:open="layoutDrawerOpen"
       :modules="homeModules"
+      :scroll-hint-hidden="scrollHintHidden"
       @reorder="reorderHomeModules"
       @visibility-change="setHomeModuleShown"
+      @scroll-hint-change="setScrollHintHidden"
     />
 
-    <div v-if="layoutReady && !isBootstrapping" class="home-content">
+    <div v-if="layoutReady" class="home-content">
       <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
@@ -74,9 +76,9 @@
 
           <HomeEndfieldOverview
             v-else-if="moduleKey === 'endfield'"
-            :loading="loading"
-            :overview="endfieldData"
-            @refresh="fetchOverviewData"
+            :loading="endfieldSource.loading.value"
+            :overview="endfieldSource.overview.value"
+            @refresh="endfieldSource.refresh"
           />
 
           <HomeArknightsOverview
@@ -88,27 +90,94 @@
             @refresh="fetchOverviewData"
             @clear-error="clearOverviewError"
           />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'starrail'"
+            :title="t('home.module.starrail')"
+            accent="#62c4e7"
+            :empty-text="t('home.empty.starrail')"
+            :loading="starRailSource.loading.value"
+            :overview="starRailSource.overview.value"
+            @refresh="starRailSource.refresh"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'genshin'"
+            :title="t('home.module.genshin')"
+            accent="#8fe3b0"
+            :empty-text="t('home.empty.genshin')"
+            :loading="genshinSource.loading.value"
+            :overview="genshinSource.overview.value"
+            @refresh="genshinSource.refresh"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'zenless'"
+            :title="t('home.module.zenless')"
+            accent="#ffd24a"
+            :empty-text="t('home.empty.zenless')"
+            :loading="zenlessSource.loading.value"
+            :overview="zenlessSource.overview.value"
+            @refresh="zenlessSource.refresh"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'wutheringwaves'"
+            :title="t('home.module.wutheringwaves')"
+            accent="#7aa2ff"
+            :empty-text="t('home.empty.wutheringwaves')"
+            :loading="wutheringWavesSource.loading.value"
+            :overview="wutheringWavesSource.overview.value"
+            @refresh="wutheringWavesSource.refresh"
+          />
+
+          <HomeSraActivityOverview
+            v-else-if="moduleKey === 'nte'"
+            :title="t('home.module.nte')"
+            accent="#c9a7ff"
+            :empty-text="t('home.empty.nte')"
+            :loading="nevernessToEvernessSource.loading.value"
+            :overview="nevernessToEvernessSource.overview.value"
+            @refresh="nevernessToEvernessSource.refresh"
+          />
+
+          <HomeReverse1999Overview
+            v-else-if="moduleKey === 'reverse1999'"
+            :loading="reverse1999Source.loading.value"
+            :overview="reverse1999Source.overview.value"
+          />
         </section>
       </template>
     </div>
+
+    <HomeScrollHint v-if="!scrollHintHidden" />
+    <HomeBackToTop />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, watch } from 'vue'
 import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
+import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
 import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
+import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
+import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
+import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
+import { useSraActivitySource } from '@/views/home/useSraActivitySource'
+import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
+import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 
@@ -123,9 +192,11 @@ const {
   layoutDrawerOpen,
   homeModuleOrder,
   homeModules,
+  scrollHintHidden,
   loadHomeLayout,
   reorderHomeModules,
   setHomeModuleShown,
+  setScrollHintHidden,
   isHomeModuleVisible,
 } = useHomeLayout()
 const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfirmed, showNotice } =
@@ -144,26 +215,37 @@ const {
 const {
   loading,
   error,
+  hasSnapshot,
   activityData,
   resourceData,
   proxyData,
-  endfieldData,
   clearOverviewError,
   fetchOverviewData,
 } = useHomeOverview()
 
+const { t } = useI18n()
+
+// 首页全前端化：SRA 五张活动卡直连公开接口，独立快照/失败态，不再依赖聚合接口
+const starRailSource = useSraActivitySource('sr', t('home.module.starrail'))
+const genshinSource = useSraActivitySource('ys', t('home.module.genshin'))
+const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
+const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
+const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
+const reverse1999Source = useReverse1999ActivitySource()
+const endfieldSource = useEndfieldActivitySource()
+
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) {
-    return '早上好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.morning')
   } else if (hour >= 11 && hour < 14) {
-    return '中午好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.noon')
   } else if (hour >= 14 && hour < 18) {
-    return '下午好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.afternoon')
   } else if (hour >= 18 && hour < 23) {
-    return '晚上好！欢迎使用 AUTO-MAS'
+    return t('home.greeting.evening')
   } else {
-    return '夜深了，欢迎使用 AUTO-MAS'
+    return t('home.greeting.night')
   }
 })
 
@@ -177,7 +259,10 @@ onMounted(async () => {
   await loadHomeLayout()
 
   if (isBootstrapping.value) {
-    loading.value = true
+    // 已有快照时直接展示内容，刷新不再用骨架遮挡；无快照时显示加载态
+    if (!hasSnapshot.value) {
+      loading.value = true
+    }
     noticeLoading.value = true
 
     const stopWatching = watch(isBootstrapping, bootstrapping => {

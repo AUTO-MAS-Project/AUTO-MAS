@@ -17,7 +17,7 @@ describe('ScriptCreateDialog structure', () => {
 
   it('centers template loading in a sized state container', () => {
     expect(source).toContain('<div v-if="templateLoading" class="template-loading-state">')
-    expect(source).toContain('<a-spin size="large" tip="正在加载配置模板..." />')
+    expect(source).toContain('<a-spin size="large" :tip="t(\'scripts.create.templateLoading\')" />')
     expect(source).toContain('min-height: 240px;')
     expect(source).not.toContain('<a-spin :spinning="templateLoading">')
   })

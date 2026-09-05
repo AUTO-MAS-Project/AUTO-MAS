@@ -32,8 +32,9 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'AUTO-MAS-Project'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0

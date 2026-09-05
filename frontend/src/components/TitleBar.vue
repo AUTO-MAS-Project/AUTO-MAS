@@ -9,6 +9,10 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
+          <span v-if="isBootstrapping" class="startup-status">
+            <LoadingOutlined />
+            {{ t('comp.backendStarting') }}
+          </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
           </span>
@@ -20,11 +24,27 @@
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
           <span
-            v-if="backendUpdateInfo?.if_need_update"
+            v-if="backendUpdateInfo?.if_need_update && isRuntimeDevelopment"
+            class="update-hint disabled"
+            :title="t('comp.backendUpdateDevUnsupported')"
+          >
+            {{ t('comp.backendUpdateDevUnsupported') }}
+          </span>
+          <span
+            v-else-if="
+              runtimeBackendUpdateAvailable ||
+              (backendUpdateInfo?.if_need_update && !isRuntimeManaged)
+            "
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
-            检测到后端更新，点击以更新后端
+            {{
+              t(
+                runtimeBackendUpdateAvailable
+                  ? 'comp.backendUpdateReady'
+                  : 'comp.backendUpdateAvailableClick'
+              )
+            }}
           </span>
         </span>
       </div>
@@ -36,7 +56,11 @@
     <!-- 右侧：窗口控制按钮 -->
     <div class="title-bar-right">
       <div class="window-controls">
-        <button class="control-button minimize-button" title="最小化" @click="minimizeWindow">
+        <button
+          class="control-button minimize-button"
+          :title="t('comp.minimize')"
+          @click="minimizeWindow"
+        >
           <MinusOutlined />
         </button>
         <button
@@ -49,34 +73,120 @@
         <button
           v-if="!hideCloseButton"
           class="control-button close-button"
-          title="关闭"
+          :title="t('comp.close')"
           @click="closeWindow"
         >
           <CloseOutlined />
         </button>
       </div>
     </div>
+
+    <!-- Runtime 链路的后端更新进度与失败处置 -->
+    <a-modal
+      v-model:open="updateModalVisible"
+      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
+      :width="620"
+      :footer="null"
+      :mask-closable="false"
+      :closable="!updateRunning"
+      :z-index="9999"
+      centered
+      @cancel="closeUpdateModal"
+    >
+      <div class="backend-update-body">
+        <template v-if="updateRunning">
+          <a-progress :percent="updateOverallPercent" :show-info="false" :stroke-width="8" />
+          <p class="backend-update-message">
+            <LoadingOutlined />
+            {{ updateCurrentMessage }}
+          </p>
+          <div class="backend-update-actions">
+            <a-button danger :loading="updateCancelling" @click="cancelUpdate">
+              {{ t('comp.backendUpdateCancelAction') }}
+            </a-button>
+          </div>
+        </template>
+
+        <template v-else-if="updateOutcome">
+          <a-alert
+            :type="updateAlertType"
+            :message="updateAlertMessage"
+            :description="updateOutcome.error"
+            show-icon
+          />
+          <p v-if="updateOutcome.code" class="backend-update-meta">
+            {{ t('comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
+          </p>
+          <p v-if="updateOutcome.logPath" class="backend-update-meta">
+            {{ t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
+          </p>
+          <pre v-if="updateOutcome.logs" class="backend-update-logs">{{ updateOutcome.logs }}</pre>
+          <p v-if="updateActions.showContactSupport" class="backend-update-meta">
+            {{ t('comp.backendUpdateContactSupport') }}
+          </p>
+
+          <div class="backend-update-actions">
+            <a-button
+              v-for="action in updateActions.retryActions"
+              :key="action"
+              type="primary"
+              @click="retryUpdate(action)"
+            >
+              {{ retryActionLabel(action) }}
+            </a-button>
+            <a-button
+              v-if="updateActions.showRestartBackend"
+              type="primary"
+              :loading="updateRestartingBackend"
+              @click="restartBackendAfterUpdate"
+            >
+              {{ t('comp.backendUpdateRestartBackend') }}
+            </a-button>
+            <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
+          </div>
+        </template>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useAppClosing } from '@/composables/useAppClosing'
+import { useI18n } from 'vue-i18n'
+import { closeApp } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
-import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import {
+  updateInfo,
+  backendUpdateInfo,
+  runtimeBackendUpdateAvailable,
+} from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
-import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
+import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
+import {
+  BorderOutlined,
+  CloseOutlined,
+  LoadingOutlined,
+  MinusOutlined,
+} from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+import type { RuntimeUpdateRetryAction } from '@/types/electron'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
-const { resetInitializationStatus } = useAppInitialization()
+const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
+const { startTaskById } = useSchedulerLogic()
+let removeTrayActionListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -84,6 +194,59 @@ const {
   progressPercent,
   open: openDownloadModal,
 } = useUpdateDownload()
+
+const {
+  ensureLaunchMode,
+  isRuntimeManaged,
+  isRuntimeDevelopment,
+  modalVisible: updateModalVisible,
+  running: updateRunning,
+  cancelling: updateCancelling,
+  restartingBackend: updateRestartingBackend,
+  targetVersion: updateTargetVersion,
+  currentMessage: updateCurrentMessage,
+  overallPercent: updateOverallPercent,
+  outcome: updateOutcome,
+  start: startRuntimeUpdate,
+  retry: retryUpdate,
+  cancel: cancelUpdate,
+  restartBackend: restartBackendAfterUpdate,
+  close: closeUpdateModal,
+} = useBackendRuntimeUpdate()
+
+const updateAlertType = computed(() => {
+  const result = updateOutcome.value
+  if (!result) return 'info'
+  if (result.success) return 'success'
+  return result.cancelled ? 'warning' : 'error'
+})
+
+// 三类失败结局各有各的后果，文案不能共用一句「更新失败」。
+const updateAlertMessage = computed(() => {
+  const result = updateOutcome.value
+  if (!result) return ''
+  if (result.success) return t('comp.backendUpdateSucceeded')
+  if (result.cancelled) return t('comp.backendUpdateCancelled')
+  if (result.unsupported) return t('comp.backendUpdateUnsupportedMode')
+
+  if (result.phase === 'shutdown') return t('comp.backendUpdateFailedShutdown')
+  if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
+  return t('comp.backendUpdateFailedBootstrap')
+})
+
+// 不可重试（retryable=false / INTERNAL_ERROR / contact-support）时一个重试按钮都不给。
+const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.value))
+
+// 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
+const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
+  'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
+  'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
+  'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
+  repair: t('comp.backendUpdateRetryRepair'),
+}))
+
+const retryActionLabel = (action: RuntimeUpdateRetryAction): string =>
+  retryActionLabels.value[action]
 
 const downloadHint = computed(() => {
   if (downloadStatus.value === 'completed') return '下载完成，点击安装'
@@ -115,7 +278,6 @@ const hasRunningTasks = (): boolean => {
 }
 
 const { isDark } = useTheme()
-const { showClosingOverlay } = useAppClosing()
 const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
@@ -128,15 +290,38 @@ const handleAppUpdateClick = () => {
   showUpdateModal(updateInfo.value.update_info || {}, updateInfo.value.latest_version || '')
 }
 
+/**
+ * Runtime 链路的目标版本。
+ *
+ * `/api/update/check` 返回的 `latest_version` 就是发布标签；还没查到时退回应用自身版本，
+ * 主进程会再做一次规范化与合法性校验。
+ */
+const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_version || version
+
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
   Modal.confirm({
-    title: '重启后端以更新',
-    content: '即将更新后端，这需要重启后端程序，您当前正在运行的任务将会被中断。确认继续？',
-    okText: '确认',
-    cancelText: '取消',
+    title: t('comp.restartBackendUpdate'),
+    content: t(
+      runtimeBackendUpdateAvailable.value
+        ? 'comp.backendUpdateReadyConfirm'
+        : 'comp.backendAboutUpdateWhich'
+    ),
+    okText: t('comp.confirm'),
+    cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
+      // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
+      if (isRuntimeManaged.value && runtimeBackendUpdateAvailable.value) {
+        await window.electronAPI.appRestart()
+        return
+      }
+      // 跨版本更新仍走完整的 Runtime 更新编排。
+      if (isRuntimeManaged.value) {
+        await startRuntimeUpdate(resolveRuntimeUpdateVersion())
+        return
+      }
+
       try {
         logger.info('开始更新后端')
 
@@ -193,17 +378,11 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作
+// 执行实际的关闭操作：交给生命周期协调器执行"退出并关闭后端"流程
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-
-    // 显示关闭遮罩
-    showClosingOverlay()
-
-    // 直接关闭窗口，后台清理由主进程处理
-    logger.info('正在退出应用...')
-    await window.electronAPI?.appQuit()
+    await closeApp()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
@@ -214,10 +393,10 @@ const closeWindow = async () => {
   // 检查是否有运行中的队列任务
   if (hasRunningTasks()) {
     Modal.confirm({
-      title: '确认关闭',
-      content: '队列正在运行中，确认关闭AUTO-MAS吗？',
-      okText: '确认关闭',
-      cancelText: '取消',
+      title: t('comp.confirmExit'),
+      content: t('comp.queueStillRunningClose'),
+      okText: t('comp.confirmExit'),
+      cancelText: t('comp.cancel'),
       okType: 'danger',
       centered: true,
       onOk: () => {
@@ -230,7 +409,75 @@ const closeWindow = async () => {
   }
 }
 
+// 托盘触发退出：与窗口关闭按钮走同一套确认流程
+const handleTrayQuit = () => {
+  if (hasRunningTasks()) {
+    // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
+    window.electronAPI?.windowFocus?.()
+    Modal.confirm({
+      title: t('comp.confirmExit'),
+      content: t('comp.queueStillRunningClose'),
+      okText: t('comp.confirmExit'),
+      cancelText: t('comp.cancel'),
+      okType: 'danger',
+      centered: true,
+      onOk: () => {
+        doCloseWindow()
+      },
+    })
+  } else {
+    void doCloseWindow()
+  }
+}
+
+// 托盘触发重启：统一确认窗风格（与关闭确认一致）
+const handleTrayRestart = () => {
+  // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
+  window.electronAPI?.windowFocus?.()
+  Modal.confirm({
+    title: t('comp.confirmRestart'),
+    content: t('comp.restartingAutoMasStops'),
+    okText: t('comp.confirmRestart'),
+    cancelText: t('comp.cancel'),
+    okType: 'danger',
+    centered: true,
+    onOk: async () => {
+      await window.electronAPI?.appRestart()
+    },
+  })
+}
+
+// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
+const handleTrayStartTask = (taskId?: string, label?: string) => {
+  if (!taskId) {
+    logger.warn('托盘启动任务缺少任务 ID，忽略')
+    return
+  }
+  void startTaskById(taskId, label)
+}
+
+// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+const handleTrayActionRequest = (request: {
+  action: 'quit' | 'restart' | 'startTask'
+  taskId?: string
+  label?: string
+}) => {
+  if (request.action === 'restart') {
+    handleTrayRestart()
+  } else if (request.action === 'quit') {
+    handleTrayQuit()
+  } else {
+    handleTrayStartTask(request.taskId, request.label)
+  }
+}
+
 onMounted(async () => {
+  // 监听托盘动作请求（启动任务 / 退出 / 重启）
+  removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+
+  // 后端更新入口按启动链路分流，模式一个生命周期只查一次
+  await ensureLaunchMode()
+
   try {
     const config = await window.electronAPI?.loadConfig()
     syncUiPreferences(config?.UI)
@@ -245,6 +492,11 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取窗口状态失败: ${errorMsg}`)
   }
+})
+
+onBeforeUnmount(() => {
+  removeTrayActionListener?.()
+  removeTrayActionListener = undefined
 })
 </script>
 
@@ -336,6 +588,14 @@ onMounted(async () => {
 
 .title-bar-dark .title-text {
   color: #fff;
+}
+
+.startup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  color: var(--ant-color-primary);
 }
 
 .title-bar-dark .version-text {
@@ -449,6 +709,57 @@ onMounted(async () => {
 
 .update-hint.clickable:active {
   transform: scale(0.98);
+}
+
+/* development 模式下 Runtime 不管理源码，入口只展示不可点 */
+.update-hint.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.update-hint.disabled:hover {
+  transform: none;
+  filter: none;
+}
+
+.backend-update-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backend-update-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+}
+
+.backend-update-meta {
+  margin: 0;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.backend-update-logs {
+  max-height: 220px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--ant-color-fill-quaternary);
+  border-radius: 6px;
+}
+
+.backend-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .update-hint:hover {

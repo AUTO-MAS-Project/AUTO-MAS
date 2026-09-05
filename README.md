@@ -58,9 +58,9 @@ The software stores multiple configurations for multiple scripts and implements 
 - **分发：** AUTO-MAS 允许任何人自由分发本软件，包括进行商业活动牟利。若为直接分发本软件，必须遵循 AGPL 向接收者提供本软件项目地址、完整的软件源码与 AGPL 协议原文（件）；若为修改软件后进行分发，必须遵循 AGPL 向接收者提供本软件项目地址、修改前的完整软件源码副本与 AGPL 协议原文（件），违反者可能会被追究法律责任。使用本项目进行商业活动的，必须自行建立客户社群，自行向客户提供售后服务，不得将客户引导到由 AUTO-MAS 项目组维护运营的官方社群。利用开源社群资源牟利的，将被列入黑名单并进行公示。
 - **传播：** AUTO-MAS 原则上允许传播者自由传播本软件，但无论在何种传播过程中，不得删除原有版权声明，不得隐瞒 AUTO-MAS Team 的存在。由于软件性质，AUTO-MAS Team 不希望发现任何人在游戏官方媒体（包括官方媒体账号与官方社区等）或游戏相关内容（包括同好群、线下活动与游戏内容讨论等）下提及 AUTO-MAS 或相关自动化软件，希望各位理解。
 - **衍生：** AUTO-MAS 允许任何人对软件本体或软件部分代码进行二次开发或利用。但依据AGPL，相关成果再次分发时也必须使用AGPL或兼容的协议开源。
-- **图像：** `AUTO-MAS 图标` 并不适用开源协议，著作权归 [NARINpopo](https://space.bilibili.com/1877154) 画师所有，商业使用权归 [DLmaster (@DLmaster361)](https://github.com/DLmaster361) 所有，软件用户仅拥有非商业使用权。不得以开源协议已授权为由在未经授权的情况下使用 `AUTO-MAS 图标`，不得在未经授权的情况下将 `AUTO-MAS 图标` 用于任何商业用途。
+- **图像与美术资源：** 本软件图像、图标、插画及其他美术资源**不适用**代码开源许可。完整权属清单、再分发义务、第三方合规模板与商业授权联系方式，见 [图像与美术资源许可协议](https://doc.auto-mas.top/disclosure/assets-license)。该协议构成发行物的不可分割组成部分，再分发或单独使用相关资源时不得剥离。
 
-以上细则是本项目对AGPL的相关补充与强调。未提及的以 AGPL 为准，发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
+以上细则是本项目对AGPL的相关补充与强调。未提及的以 AGPL 为准；就图像与美术资源而言，以在线协议为准；其余条款发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
 
 The development team commits to never actively modifying the game client or its configuration files. This project is open-sourced under the AGPL license, with the following clarifications:
 
@@ -69,9 +69,9 @@ The development team commits to never actively modifying the game client or its 
 - **Distribution**: Anyone may freely redistribute this software, including for commercial profit. Direct redistribution requires providing recipients with the project URL, full source code, and a copy of the AGPL license text as mandated by the AGPL. Modified redistributions must additionally include the original unmodified source code. Violators may face legal action. Commercial users must establish their own customer communities and provide their own after-sales support—they may not redirect customers to the official AUTO-MAS community. Those exploiting the open-source community for profit will be blacklisted and publicly disclosed.
 - **Promotion**: Redistribution is generally permitted, provided that original copyright notices remain intact and the existence of the AUTO-MAS Team is not concealed. Due to the nature of this software, the AUTO-MAS Team requests that no one mention AUTO-MAS or related automation tools in official game media (including official accounts and communities) or game-related content (such as fan groups, offline events, or gameplay discussions). Your understanding is appreciated.
 - **Derivative Works**: Anyone may create derivative works based on the software or parts of its code. However, per the AGPL, any redistributed derivatives must also be open-sourced under the AGPL or a compatible license.
-- **Artwork**: The `AUTO-MAS icon` is not covered by open-source licenses. Copyright belongs to artist [NARINpopo](https://space.bilibili.com/1877154), and commercial usage rights belong to [DLmaster (@DLmaster361)](https://github.com/DLmaster361). Users are granted non-commercial use only. Unauthorized use of the icon—whether claiming open-source license coverage or for commercial purposes—is strictly prohibited.
+- **Artwork and Visual Assets:** Images, icons, illustrations, and other visual assets of this software are **not** covered by the code open-source license. For the full ownership inventory, redistribution duties, third-party compliance templates, and commercial authorization contacts, see the [Visual Assets License Agreement](https://doc.auto-mas.top/disclosure/assets-license). That Agreement is an inseparable part of any distribution and must not be stripped when redistributing or using the assets alone.
 
-These terms supplement and emphasize specific aspects of the AGPL. Where unspecified, the AGPL governs; in case of conflict, these terms prevail. For clarification, please open an Issue. In disputes involving unaddressed matters, the AUTO-MAS Team reserves final interpretation rights.
+These terms supplement and emphasize specific aspects of the AGPL. Where unspecified, the AGPL governs; for visual assets, the online Agreement governs; for other conflicts, these terms prevail. For clarification, please open an Issue. In disputes involving unaddressed matters, the AUTO-MAS Team reserves final interpretation rights.
 
 ## 使用方法 / How to Use
 
@@ -82,6 +82,16 @@ These terms supplement and emphasize specific aspects of the AGPL. Where unspeci
 Visit the official AUTO-MAS documentation site for user guides and additional project information
 
 - [Official Documentation](https://doc.auto-mas.top)
+
+## 参与贡献 / Contributing
+
+如需参与项目开发或提交贡献，请先阅读开发与贡献指南：
+
+- [开发与贡献指南](https://doc.auto-mas.top/developer/)
+
+To participate in development or contribute to the project, please read the development and contribution guide first:
+
+- [Development and Contribution Guide](https://doc.auto-mas.top/developer/)
 
 ## 代码签名策略 / Code Signing Policy
 
