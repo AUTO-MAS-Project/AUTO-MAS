@@ -5,7 +5,7 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="hsr"
-      :current-label="isEdit ? '编辑 HSR 用户' : '添加 HSR 用户'"
+      :current-label="isEdit ? t('edit.editHsrUser') : t('edit.addHsrUser')"
       :logo-src="hsrLogo"
       @cancel="handleCancel"
     />
@@ -39,7 +39,7 @@
                   <template #label>
                     <a-tooltip :title="t('edit.thisNameAlsoWritten')">
                       <span class="form-label"
-                        >用户名 <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.username') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -109,7 +109,7 @@
                   <template #label>
                     <a-tooltip :title="t('edit.daysLeft1Means')">
                       <span class="form-label"
-                        >剩余天数 <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -219,13 +219,17 @@
                 <div class="progress-group">
                   <span class="progress-label">{{ t('edit.echoOfWar') }}</span>
                   <a-tag :color="eowCompletedThisWeek ? 'green' : 'orange'">
-                    本周 {{ eowCompletedThisWeek ? '已完成' : '未完成' }}
+                    {{ eowCompletedThisWeek ? t('edit.hsrWeekDone') : t('edit.hsrWeekNotDone') }}
                   </a-tag>
                   <span
                     v-if="hasValidCompletionDate(formData.Data.EchoOfWarLastCompletionDate)"
                     class="date-hint"
                   >
-                    最近完成：{{ formData.Data.EchoOfWarLastCompletionDate }}
+                    {{
+                      t('edit.hsrLastCompleted', {
+                        date: formData.Data.EchoOfWarLastCompletionDate,
+                      })
+                    }}
                   </span>
                 </div>
               </a-col>
@@ -247,13 +251,19 @@
                 <div class="progress-group">
                   <span class="progress-label">{{ t('edit.weekly') }}</span>
                   <a-tag :color="formData.Data.WeeklyCompletedThisWeek ? 'green' : 'orange'">
-                    本周 {{ formData.Data.WeeklyCompletedThisWeek ? '已完成' : '未完成' }}
+                    {{
+                      formData.Data.WeeklyCompletedThisWeek
+                        ? t('edit.hsrWeekDone')
+                        : t('edit.hsrWeekNotDone')
+                    }}
                   </a-tag>
                   <span
                     v-if="hasValidCompletionDate(formData.Data.WeeklyLastCompletionDate)"
                     class="date-hint"
                   >
-                    最近完成：{{ formData.Data.WeeklyLastCompletionDate }}
+                    {{
+                      t('edit.hsrLastCompleted', { date: formData.Data.WeeklyLastCompletionDate })
+                    }}
                   </span>
                 </div>
               </a-col>
@@ -424,7 +434,9 @@ const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
 
-const serverOptions = [{ value: 'CN-Official', label: '官服' }]
+const serverOptions = computed(() => [
+  { value: 'CN-Official', label: t('edit.hsrServerCnOfficial') },
+])
 const controlModeOptions = [
   { value: 'managed', label: t('edit.masManaged') },
   { value: 'direct', label: t('edit.scriptDirectControl') },
