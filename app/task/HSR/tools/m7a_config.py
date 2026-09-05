@@ -224,6 +224,17 @@ M7A_NOTIFICATION_PATCH_WHITELIST: frozenset[str] = frozenset(
     M7A_NOTIFICATION_DISABLE_PATCH
 )
 
+# M7A 的 after_finish 取值是字符串 "None"（config.example.yaml 里的字面量），
+# 不是 YAML null；其余取值（Exit / Loop / Shutdown / Sleep / Hibernate / Restart /
+# Logoff / TurnOffDisplay / RunScript）都会先无条件关掉游戏，托管模式下必须钉死。
+M7A_FINISH_ACTION_NONE: str = "None"
+M7A_FINISH_ACTION_DISABLE_PATCH: dict[str, Any] = {
+    "after_finish": M7A_FINISH_ACTION_NONE,
+}
+M7A_FINISH_ACTION_PATCH_WHITELIST: frozenset[str] = frozenset(
+    M7A_FINISH_ACTION_DISABLE_PATCH
+)
+
 
 M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
     {
@@ -395,6 +406,14 @@ def with_disabled_notifications(patch: Mapping[str, Any]) -> dict[str, Any]:
 
     merged = dict(patch)
     merged.update(M7A_NOTIFICATION_DISABLE_PATCH)
+    return merged
+
+
+def with_disabled_finish_action(patch: Mapping[str, Any]) -> dict[str, Any]:
+    """叠加 M7A 任务完成后操作关闭字段，避免它替 MAS 关游戏或关机。"""
+
+    merged = dict(patch)
+    merged.update(M7A_FINISH_ACTION_DISABLE_PATCH)
     return merged
 
 

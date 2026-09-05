@@ -59,6 +59,7 @@ from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
 from .tools.native_control import resolve_configured_engines, resolve_script_path
 from .tools.run_model import (
     CompletionWriteback,
+    HSRGameExitedError,
     HSRLoginPlan,
     HSRModuleResult,
     HSRModuleResultStatus,
@@ -73,6 +74,10 @@ from .tools.sra_runtime import cleanup_sra_temp_config
 from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
+
+# 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
+HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
+HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
 
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
@@ -1260,17 +1265,21 @@ class HSRAutoProxyTask(TaskExecuteBase):
         phase_items: list[HSRRunItem],
         item_index: int,
         failures: list[HSRRunItem],
+        reason: str,
     ) -> list[HSRRunItem]:
-        """返回当前项之后尚未执行且尚未标记失败的队列项。"""
+        """返回当前项之后尚未执行且尚未标记失败的队列项，并写入未执行原因。"""
 
         remaining = list(phase_items[item_index + 1 :])
         for later_phase in phases[phase_index + 1 :]:
             remaining.extend(item for item in items if item.phase == later_phase)
-        return [
+        skipped = [
             candidate
             for candidate in remaining
             if all(candidate is not failed for failed in failures)
         ]
+        for candidate in skipped:
+            candidate.last_error = reason
+        return skipped
 
     async def _run_queue_items(
         self,
@@ -1313,7 +1322,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         f"用户「{item.user_name}」模块「{item.module_name}」执行失败："
                         f"{item.last_error}"
                     )
+                    abort_reason: str | None = None
                     if item.module_key == "StartGame":
+                        abort_reason = HSR_ABORT_REASON_LOGIN_FAILED
+                    elif isinstance(e, HSRGameExitedError):
+                        # 游戏已经没了，再启动后续模块只会白跑一次并再记一条失败。
+                        abort_reason = HSR_ABORT_REASON_GAME_EXITED
+                    if abort_reason is not None:
                         remaining = self._remaining_items_after(
                             items,
                             phases=phases,
@@ -1321,9 +1336,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             phase_items=phase_items,
                             item_index=item_index,
                             failures=failures,
+                            reason=abort_reason,
                         )
-                        for candidate in remaining:
-                            candidate.last_error = "SRA 登录/切号失败，当前阶段未执行"
+                        if remaining:
+                            self._append_log(
+                                f"用户「{item.user_name}」{abort_reason}"
+                                f"（共 {len(remaining)} 项）"
+                            )
                         failures.extend(remaining)
                         return failures
                     continue
@@ -1342,9 +1361,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             phase_items=phase_items,
                             item_index=item_index,
                             failures=failures,
+                            reason=HSR_ABORT_REASON_LOGIN_FAILED,
                         )
-                        for candidate in remaining:
-                            candidate.last_error = "SRA 登录/切号失败，当前阶段未执行"
                         failures.extend(remaining)
                         return failures
                     continue
@@ -1390,9 +1408,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         phase_items=phase_items,
                         item_index=item_index,
                         failures=failures,
+                        reason=HSR_ABORT_REASON_LOGIN_FAILED,
                     )
-                    for candidate in remaining:
-                        candidate.last_error = "SRA 登录/切号失败，当前阶段未执行"
                     failures.extend(remaining)
                     return failures
 
@@ -1408,6 +1425,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
             while not run_task.done():
                 await asyncio.sleep(1)
+                # 睡醒后先复查任务态：外部脚本可能在这 1 秒里先关掉游戏再自行
+                # 退出，此时任务已经完成，不能再拿「游戏进程不在」去取消它。
+                if run_task.done():
+                    break
                 if self.runtime.game_transitioning:
                     continue
                 if not is_process_running(HSR_GAME_PROCESS_NAME):
@@ -1415,7 +1436,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     run_task.cancel()
                     with suppress(BaseException):
                         await run_task
-                    raise HSRRetryableTaskError(
+                    raise HSRGameExitedError(
                         "检测到星穹铁道进程已退出，已终止当前外部脚本；"
                         "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
                     )

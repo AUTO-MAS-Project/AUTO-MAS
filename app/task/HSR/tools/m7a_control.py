@@ -136,10 +136,14 @@ class HSRM7AControl:
     ) -> None:
         """把 MAS 模板 patch 直接写入 M7A config.yaml。"""
 
-        effective_patch = m7a.with_disabled_notifications(patch)
+        effective_patch = m7a.with_disabled_finish_action(
+            m7a.with_disabled_notifications(patch)
+        )
         effective_whitelist = (
-            whitelist if whitelist is not None else m7a.M7A_DAILY_PATCH_WHITELIST
-        ) | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
+            (whitelist if whitelist is not None else m7a.M7A_DAILY_PATCH_WHITELIST)
+            | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
+            | m7a.M7A_FINISH_ACTION_PATCH_WHITELIST
+        )
         current_config = (
             yaml.safe_load(config_path.read_text(encoding="utf-8-sig")) or {}
         )
