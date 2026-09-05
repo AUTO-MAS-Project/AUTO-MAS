@@ -494,6 +494,9 @@ class QueueConfig_Info(BaseModel):
             "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
+    AfterAccomplishDelay: Optional[int] = Field(
+        default=None, ge=0, le=1440, description="完成后操作的延时时长(分钟)"
+    )
 
 
 class QueueConfig(BaseModel):

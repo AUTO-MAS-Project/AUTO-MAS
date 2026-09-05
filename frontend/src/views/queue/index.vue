@@ -111,7 +111,7 @@
 
         <!-- 队列开关配置 -->
         <div class="config-section">
-          <a-row :gutter="24">
+          <a-row :gutter="[24, 24]">
             <a-col :span="6">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
@@ -189,6 +189,27 @@
                   :placeholder="t('queue.actionPlaceholder')"
                   size="large"
                   @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
+                />
+              </div>
+            </a-col>
+            <a-col :span="6">
+              <div class="form-item-vertical">
+                <div class="form-label-wrapper">
+                  <span class="form-label">{{ t('queue.afterDoneDelay') }}</span>
+                  <a-tooltip :title="t('queue.afterDoneDelayTip')">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </div>
+                <a-input-number
+                  v-model:value="currentAfterAccomplishDelay"
+                  :min="0"
+                  :max="1440"
+                  :precision="0"
+                  :disabled="currentAfterAccomplish === 'NoAction'"
+                  :addon-after="t('queue.afterDoneDelayUnit')"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleAfterAccomplishDelayBlur"
                 />
               </div>
             </a-col>
@@ -272,6 +293,7 @@ const cycleRunning = computed(() =>
 )
 // 新增：完成后操作状态
 const currentAfterAccomplish = ref<string>('NoAction')
+const currentAfterAccomplishDelay = ref<number>(0)
 // 队列名称编辑状态
 const isEditingQueueName = ref<boolean>(false)
 
@@ -386,6 +408,7 @@ const loadQueueData = async (queueId: string) => {
       currentCycleEnabled.value = queueData.Info?.CycleEnabled ?? false
       // 更新完成后操作状态 - 从API响应中获取
       currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
+      currentAfterAccomplishDelay.value = queueData.Info?.AfterAccomplishDelay ?? 0
       await new Promise(resolve => setTimeout(resolve, 50))
       if (!isMounted) return
 
@@ -572,6 +595,13 @@ const handleConfigChange = async (key: string, value: any) => {
   await handleSaveChange(key, value)
 }
 
+// 延时输入框失焦时保存，清空输入得到的 null 按 0 处理
+const handleAfterAccomplishDelayBlur = async () => {
+  const delay = currentAfterAccomplishDelay.value ?? 0
+  currentAfterAccomplishDelay.value = delay
+  await handleConfigChange('AfterAccomplishDelay', delay)
+}
+
 // 添加队列
 const handleAddQueue = async () => {
   try {
@@ -682,6 +712,7 @@ const refreshQueueConfig = async () => {
         currentStartUpMode.value = queueData.Info.StartUpMode ?? 'Never'
         currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
         currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
+        currentAfterAccomplishDelay.value = queueData.Info.AfterAccomplishDelay ?? 0
 
         // 更新队列列表中的名称
         const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)

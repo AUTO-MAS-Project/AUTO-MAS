@@ -439,6 +439,10 @@ class QueueConfig(ConfigBase):
                 ]
             ),
         )
+        ## 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+        self.Info_AfterAccomplishDelay = ConfigItem(
+            "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次定时启动时间

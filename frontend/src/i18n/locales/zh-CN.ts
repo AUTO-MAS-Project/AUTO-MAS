@@ -2140,6 +2140,10 @@ export default {
     no: '否',
     afterDone: '完成后操作',
     afterDoneTip: '队列完成后执行的操作',
+    afterDoneDelay: '延时执行',
+    afterDoneDelayTip:
+      '队列完成后先等待这段时间再执行完成后操作，0 表示不等待；执行前仍有 60 秒倒计时可取消',
+    afterDoneDelayUnit: '分钟',
     actionPlaceholder: '请选择操作',
     action: {
       NoAction: '无操作',

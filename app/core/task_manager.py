@@ -781,9 +781,12 @@ class Task(TaskExecuteBase):
             and self.task_info.queue_id is not None
         ):
             if Config.power_sign == "NoAction":
-                Config.power_sign = Config.QueueConfig[
-                    uuid.UUID(self.task_info.queue_id)
-                ].get("Info", "AfterAccomplish")
+                queue_config = Config.QueueConfig[uuid.UUID(self.task_info.queue_id)]
+                Config.power_sign = queue_config.get("Info", "AfterAccomplish")
+                # 队列可为完成后操作单独设定延时, 延时期间不弹出倒计时窗口
+                Config.power_delay = (
+                    queue_config.get("Info", "AfterAccomplishDelay") * 60
+                )
                 await Publisher.send(
                     id=protocol.ID_MAIN,
                     type=protocol.POWER_SIGN_UPDATED,
@@ -1145,6 +1148,7 @@ class _TaskManager:
                 self._stopping_all = True
                 # 主动停止全部任务时，禁止触发队列完成后的电源操作
                 Config.power_sign = "NoAction"
+                Config.power_delay = 0
                 try:
                     if System.power_task is not None and not System.power_task.done():
                         await System.cancel_power_task()
@@ -1163,6 +1167,7 @@ class _TaskManager:
                 finally:
                     # final_task 可能重新写入 AfterAccomplish，主动停止全部任务时必须丢弃。
                     Config.power_sign = "NoAction"
+                    Config.power_delay = 0
                     self._stopping_all = False
             await Publisher.send(
                 id=protocol.ID_MAIN,

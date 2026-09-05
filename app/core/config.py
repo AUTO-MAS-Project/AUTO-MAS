@@ -284,6 +284,8 @@ class AppConfig(GlobalConfig):
             "KillSelf",
             "Logoff",
         ] = "NoAction"
+        # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
+        self.power_delay: int = 0
         self.temp_task: List[asyncio.Task] = []
         # 正在循环运行的队列，供配置改动前的安全检查使用
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
