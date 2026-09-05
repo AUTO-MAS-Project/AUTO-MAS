@@ -2138,6 +2138,11 @@ export default {
     emulator: 'Emulator',
     checkingBackendRecoveringAutomatically:
       'Checking the backend and recovering automatically. Task state resyncs from the HTTP snapshot once the connection is back.',
+    devBackendReconnecting:
+      'Dev mode: the backend is managed by you. The app keeps reconnecting and this notice goes away once it is back.',
+    anotherWindowTookOverBackend: 'Another window took over the backend connection',
+    thisWindowStoppedReconnecting:
+      'This window stopped reconnecting so the two windows do not keep replacing each other.',
     couldNotAddAccount: 'Could not add the account group',
     gotIt: 'Got it',
     continueDownload: 'Continue the download',
