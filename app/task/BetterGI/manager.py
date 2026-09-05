@@ -25,10 +25,9 @@ from app.core import Config
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -257,9 +256,14 @@ class BetterGIManager(TaskExecuteBase):
                     10,
                 )
                 try:
-                    await push_notification("代理结果", title, result)
-                    if has_game_sign_summary:
-                        mark_task_game_sign_summary_consumed(self.task_info)
+                    push_result = await push_notification(
+                        "代理结果", title, result, task_info=self.task_info
+                    )
+                    finalize_task_game_sign_notification(
+                        self.task_info,
+                        has_game_sign_summary,
+                        push_result,
+                    )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Config.send_websocket_message(

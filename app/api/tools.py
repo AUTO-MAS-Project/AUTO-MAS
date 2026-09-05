@@ -29,7 +29,15 @@ from uuid import UUID
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.core.notify import DispatchResult
+from app.core.community_sign import (
+    CommunitySignInProgressError,
+    community_sign_flow,
+    run_community_sign_in,
+)
+from app.core.community_scheduler import (
+    CommunityActivityInProgressError,
+    community_activity_flow,
+)
 from app.models.schema import (
     GameSignAccountCreateOut,
     GameSignAccountDeleteIn,
@@ -37,6 +45,11 @@ from app.models.schema import (
     GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
+    CommunityActivityOut,
+    CommunityActivityQueryIn,
+    CommunityActivityResourceOut,
+    CommunityActivitySnapshotOut,
+    CommunityActivityTaskOut,
     GameSignAccountUpdateIn,
     OutBase,
     SklandLoginIn,
@@ -47,54 +60,80 @@ from app.models.schema import (
 )
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
-logger = get_logger("游戏签到 API")
-_PENDING_GAME_SIGN_NOTIFICATIONS: set[asyncio.Task] = set()
+logger = get_logger("游戏社区 API")
+_PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
+_MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
+
+def _log_community_api_error(stage: str, error: Exception) -> None:
+    """记录脱敏诊断，社区 API 不把异常细节直接返回给前端。"""
+
+    logger.warning(
+        format_exception_reason(error, stage=stage, include_message=False)
+    )
 
 
-def _track_game_sign_notification(task: asyncio.Task) -> None:
+def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
+    """规范历史设备字段；残缺旧值由 provider 自动设备链路接管。"""
+
+    for field in _MIYOUSHE_DEVICE_FIELDS:
+        if field not in data:
+            continue
+        value = data.get(field)
+        data[field] = value.strip() if isinstance(value, str) else ""
+
+
+def _track_community_notification(
+    task: asyncio.Task[list[str] | None],
+) -> None:
     """保留后台通知任务引用，并消费完成后的异常。"""
 
-    _PENDING_GAME_SIGN_NOTIFICATIONS.discard(task)
+    _PENDING_COMMUNITY_NOTIFICATIONS.discard(task)
     if task.cancelled():
         return
     try:
-        result = task.result()
+        failed_channels = task.result()
     except Exception as exc:
-        logger.warning(f"后台游戏签到通知发送失败: {exc}")
+        _log_community_api_error("后台游戏社区通知发送失败", exc)
         return
-    if result.failed:
-        logger.warning(f"后台游戏签到通知部分失败: {'、'.join(result.failed)}")
+    if failed_channels:
+        logger.warning(
+            f"后台游戏社区通知部分失败: {'、'.join(failed_channels)}"
+        )
 
 
-async def _dispatch_game_sign_notification(
-    results: list[dict],
-) -> DispatchResult | None:
+async def _dispatch_community_notification(
+    results: list[dict[str, object]],
+) -> list[str] | None:
     """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
 
-    from app.tools.game_sign_notify import push_game_sign_notification
+    from app.tools.community_notify import push_community_notification
 
-    task = asyncio.create_task(push_game_sign_notification(results))
-    _PENDING_GAME_SIGN_NOTIFICATIONS.add(task)
-    task.add_done_callback(_track_game_sign_notification)
+    task = asyncio.create_task(push_community_notification(results))
+    _PENDING_COMMUNITY_NOTIFICATIONS.add(task)
+    task.add_done_callback(_track_community_notification)
     try:
         return await asyncio.wait_for(asyncio.shield(task), timeout=0.1)
     except asyncio.TimeoutError:
         logger.info("签到结果已落盘，通知渠道仍在后台发送")
         return None
     except Exception as exc:
-        logger.warning(f"签到完成，但通知服务异常: {exc}")
-        return DispatchResult(failed=("通知服务",))
+        _log_community_api_error("游戏社区通知服务异常", exc)
+        return ["通知服务"]
 
 
-def _get_game_sign_field(account: object, field: str, default=None):
-    """读取签到账号字段时兼容未包含新增字段的旧账号对象。"""
+def _get_community_account_field(account: object, field: str, default=None):
+    """读取社区账号字段时兼容未包含新增字段的旧账号对象。"""
 
     try:
         return account.get("GameSignAccount", field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return default
+
+
+_get_game_sign_field = _get_community_account_field
 
 
 @router.post(
@@ -110,10 +149,11 @@ async def get_tools() -> ToolsGetOut:
     try:
         data = await Config.get_tools()
     except Exception as e:
+        _log_community_api_error("读取工具配置失败", e)
         return ToolsGetOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="读取工具配置失败，请稍后重试",
             data=ToolsConfig(**{}),
         )
     return ToolsGetOut(data=ToolsConfig(**data))
@@ -134,8 +174,11 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
         await Config.update_tools(data)
 
     except Exception as e:
+        _log_community_api_error("更新工具配置失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="更新工具配置失败，请稍后重试",
         )
     return OutBase()
 
@@ -151,22 +194,21 @@ async def manual_game_sign() -> OutBase:
     """手动触发游戏社区签到"""
 
     try:
-        from app.tools.game_sign import (
-            GameSignInProgressError,
-            format_sign_results,
-            game_sign_flow,
-            has_game_sign_credentials,
-            run_all_sign_in,
+        from app.tools.community import (
+            format_community_sign_results,
+            has_community_credentials,
         )
 
         # 流程锁覆盖签到和结果落盘，通知在锁外发送，避免慢渠道阻塞后续操作。
-        async with game_sign_flow():
-            results = await run_all_sign_in(force=True)
+        async with community_sign_flow():
+            results = await run_community_sign_in(force=True)
 
             # 格式化并存储结果
-            formatted = format_sign_results(results)
+            formatted = format_community_sign_results(results)
             # 合并结果（手动签到按 account_uid 替换旧数据）
-            result_update = Config.update_game_sign_results(formatted, replace=True)
+            result_update = Config.update_community_results(
+                formatted, replace=True
+            )
             if isawaitable(result_update):
                 await result_update
 
@@ -174,9 +216,14 @@ async def manual_game_sign() -> OutBase:
             today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
             all_signed = True
             for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                has_credentials = has_game_sign_credentials(account)
-                if _get_game_sign_field(account, "Enabled") and has_credentials:
-                    if _get_game_sign_field(account, "LastSignDate") != today:
+                has_credentials = has_community_credentials(account)
+                if (
+                    _get_community_account_field(account, "Enabled")
+                    and has_credentials
+                ):
+                    if _get_community_account_field(
+                        account, "LastSignDate"
+                    ) != today:
                         all_signed = False
                         break
             if all_signed:
@@ -189,43 +236,138 @@ async def manual_game_sign() -> OutBase:
         ):
             warning_messages.append("签到未全部完成，请查看签到结果")
         if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-            notify_result = await _dispatch_game_sign_notification(results)
-            if notify_result and notify_result.failed:
+            failed_channels = await _dispatch_community_notification(results)
+            if failed_channels:
                 warning_messages.append(
-                    f"部分通知发送失败：{'、'.join(notify_result.failed)}"
+                    f"部分通知发送失败：{'、'.join(failed_channels)}"
                 )
         if warning_messages:
             return OutBase(status="warning", message="；".join(warning_messages))
 
-    except GameSignInProgressError as e:
-        return OutBase(code=409, status="error", message=str(e))
-    except Exception as e:
+    except CommunitySignInProgressError as e:
+        _log_community_api_error("游戏社区签到并发冲突", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=409,
+            status="error",
+            message="游戏社区签到正在执行，请稍后重试",
+        )
+    except Exception as e:
+        _log_community_api_error("游戏社区签到失败", e)
+        return OutBase(
+            code=500,
+            status="error",
+            message="游戏社区签到失败，请稍后重试",
         )
     return OutBase(message="签到完成")
 
 
-# ==================== 游戏签到账号组 CRUD ====================
+@router.post(
+    "/community/activity/query",
+    tags=["Community"],
+    summary="查询游戏社区日常活跃度",
+    response_model=CommunityActivityOut,
+    status_code=200,
+)
+async def query_community_activity(
+    query: CommunityActivityQueryIn = Body(...),
+) -> CommunityActivityOut:
+    """查询游戏社区日常活动，不占用签到流程锁。"""
+
+    if Config.ToolsConfig.get("GameSign", "ActivityEnabled") is False:
+        return CommunityActivityOut(status="success", data=[])
+
+    snapshots = ()
+    try:
+        from app.core.community_activity import (
+            build_configured_community_activity_failures,
+            collect_configured_community_activity,
+        )
+
+        async with community_activity_flow():
+            snapshots = await collect_configured_community_activity(
+                query.accountIds,
+                proxy=Config.proxy,
+            )
+    except CommunityActivityInProgressError as exc:
+        _log_community_api_error("游戏社区日常查询并发冲突", exc)
+        return CommunityActivityOut(
+            code=409,
+            status="error",
+            message="游戏社区日常查询正在执行，请稍后重试",
+        )
+    except ValueError as exc:
+        _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
+        return CommunityActivityOut(
+            code=400,
+            status="error",
+            message="游戏社区日常查询参数或凭据无效",
+        )
+    except Exception as exc:
+        _log_community_api_error("游戏社区日常查询失败", exc)
+        snapshots = build_configured_community_activity_failures(
+            query.accountIds,
+        )
+        if not snapshots:
+            return CommunityActivityOut(
+                code=500,
+                status="error",
+                message="游戏社区日常查询失败，请稍后重试",
+            )
+
+    return CommunityActivityOut(
+        status="warning" if any(
+            snapshot.status != "success" for snapshot in snapshots
+        ) else "success",
+        message="部分游戏日常查询失败" if any(
+            snapshot.status == "failed" for snapshot in snapshots
+        ) else "",
+        data=[
+            CommunityActivitySnapshotOut(
+                account=snapshot.account,
+                accountUid=snapshot.account_uid,
+                game=snapshot.game,
+                platform=snapshot.platform,
+                status=snapshot.status,
+                completed=snapshot.completed,
+                target=snapshot.target,
+                tasks=[CommunityActivityTaskOut(**dict(task)) for task in snapshot.tasks],
+                resources=[
+                    CommunityActivityResourceOut(**dict(resource))
+                    for resource in snapshot.resources
+                ],
+                reason=snapshot.reason,
+                updatedAt=snapshot.updated_at,
+                roleName=snapshot.role_name,
+                roleUid=snapshot.role_uid,
+                server=snapshot.server,
+                source=snapshot.source,
+            )
+            for snapshot in snapshots
+        ]
+    )
+
+
+# ==================== 游戏社区账号组 CRUD ====================
 
 
 @router.post(
     "/sign/account/list",
     tags=["GameSign"],
-    summary="获取所有游戏签到账号组",
+    summary="获取所有游戏社区账号组",
     response_model=GameSignAccountsListOut,
     status_code=200,
 )
 async def list_game_sign_accounts() -> GameSignAccountsListOut:
-    """获取所有游戏签到账号组"""
+    """获取所有游戏社区账号组"""
 
     try:
         data = await Config.get_game_sign_accounts()
     except Exception as e:
+        _log_community_api_error("获取游戏社区账号组失败", e)
         return GameSignAccountsListOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="获取游戏社区账号组失败，请稍后重试",
             data={},
         )
     return GameSignAccountsListOut(data=data)
@@ -234,12 +376,12 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
 @router.post(
     "/sign/account/add",
     tags=["GameSign"],
-    summary="添加游戏签到账号组",
+    summary="添加游戏社区账号组",
     response_model=GameSignAccountCreateOut,
     status_code=200,
 )
 async def add_game_sign_account() -> GameSignAccountCreateOut:
-    """添加游戏签到账号组"""
+    """添加游戏社区账号组"""
 
     try:
         uid, config = await Config.add_game_sign_account()
@@ -249,10 +391,11 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
         data = GameSignAccountGroupConfig(**flat)
         # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
+        _log_community_api_error("添加游戏社区账号组失败", e)
         return GameSignAccountCreateOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="添加游戏社区账号组失败，请稍后重试",
             accountId="",
             data=GameSignAccountGroupConfig(**{}),
         )
@@ -262,14 +405,14 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
 @router.post(
     "/sign/account/get",
     tags=["GameSign"],
-    summary="获取游戏签到账号组详情",
+    summary="获取游戏社区账号组详情",
     response_model=GameSignAccountCreateOut,
     status_code=200,
 )
 async def get_game_sign_account(
     account: GameSignAccountGetIn = Body(...),
 ) -> GameSignAccountCreateOut:
-    """获取游戏签到账号组详情"""
+    """获取游戏社区账号组详情"""
 
     try:
         raw = await Config.get_game_sign_account(account.accountId)
@@ -277,10 +420,11 @@ async def get_game_sign_account(
         flat = raw.get("GameSignAccount", raw)
         account_data = GameSignAccountGroupConfig(**flat)
     except Exception as e:
+        _log_community_api_error("获取游戏社区账号组详情失败", e)
         return GameSignAccountCreateOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message="获取游戏社区账号组详情失败，请稍后重试",
             accountId=account.accountId,
             data=GameSignAccountGroupConfig(**{}),
         )
@@ -290,18 +434,19 @@ async def get_game_sign_account(
 @router.post(
     "/sign/account/update",
     tags=["GameSign"],
-    summary="更新游戏签到账号组配置",
+    summary="更新游戏社区账号组配置",
     response_model=OutBase,
     status_code=200,
 )
 async def update_game_sign_account(
     account: GameSignAccountUpdateIn = Body(...),
 ) -> OutBase:
-    """更新游戏签到账号组配置"""
+    """更新游戏社区账号组配置"""
 
     try:
         # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
         flat_data = account.data.model_dump(exclude_unset=True)
+        _normalize_miyoushe_device_fields(flat_data)
         skland_token = flat_data.get("SklandToken")
         if isinstance(skland_token, str) and skland_token.strip():
             from app.tools.skland import validate_skland_credential
@@ -309,16 +454,35 @@ async def update_game_sign_account(
             try:
                 validate_skland_credential(skland_token)
             except ValueError as exc:
+                _log_community_api_error("森空岛凭据校验失败", exc)
                 return OutBase(
                     code=400,
                     status="error",
-                    message=f"森空岛凭据无效：{exc}",
+                    message="森空岛凭据格式无效，请检查后重试",
+                )
+        cloud_genshin_token = flat_data.get("CloudGenshinToken")
+        if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():
+            from app.tools.cloud_genshin import validate_cloud_genshin_token
+
+            try:
+                flat_data["CloudGenshinToken"] = validate_cloud_genshin_token(
+                    cloud_genshin_token
+                )
+            except ValueError as exc:
+                _log_community_api_error("云原神凭据校验失败", exc)
+                return OutBase(
+                    code=400,
+                    status="error",
+                    message="云原神 combo token 格式无效，请检查后重试",
                 )
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
     except Exception as e:
+        _log_community_api_error("更新游戏社区账号组失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="更新游戏社区账号组失败，请稍后重试",
         )
     return OutBase()
 
@@ -326,20 +490,23 @@ async def update_game_sign_account(
 @router.post(
     "/sign/account/delete",
     tags=["GameSign"],
-    summary="删除游戏签到账号组",
+    summary="删除游戏社区账号组",
     response_model=OutBase,
     status_code=200,
 )
 async def delete_game_sign_account(
     account: GameSignAccountDeleteIn = Body(...),
 ) -> OutBase:
-    """删除游戏签到账号组"""
+    """删除游戏社区账号组"""
 
     try:
         await Config.delete_game_sign_account(account.accountId)
     except Exception as e:
+        _log_community_api_error("删除游戏社区账号组失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="删除游戏社区账号组失败，请稍后重试",
         )
     return OutBase()
 
@@ -347,20 +514,23 @@ async def delete_game_sign_account(
 @router.post(
     "/sign/account/reorder",
     tags=["GameSign"],
-    summary="调整游戏签到账号组顺序",
+    summary="调整游戏社区账号组顺序",
     response_model=OutBase,
     status_code=200,
 )
 async def reorder_game_sign_accounts(
     account: GameSignAccountReorderIn = Body(...),
 ) -> OutBase:
-    """调整游戏签到账号组顺序"""
+    """调整游戏社区账号组顺序"""
 
     try:
         await Config.reorder_game_sign_accounts(account.order)
     except Exception as e:
+        _log_community_api_error("调整游戏社区账号组顺序失败", e)
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=500,
+            status="error",
+            message="调整游戏社区账号组顺序失败，请稍后重试",
         )
     return OutBase()
 
@@ -410,9 +580,14 @@ async def login_taygedo(
             },
         )
     except ValueError as e:
-        return OutBase(code=400, status="error", message=f"塔吉多登录失败：{e}")
-    except Exception:
-        # 不把请求对象、异常堆栈或上游响应内容写入日志，避免泄露密码。
+        _log_community_api_error("塔吉多登录校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="塔吉多登录失败，请检查账号、密码或凭据格式",
+        )
+    except Exception as e:
+        _log_community_api_error("塔吉多登录失败", e)
         return OutBase(
             code=500,
             status="error",
@@ -456,9 +631,14 @@ async def login_skland(
             {"GameSignAccount": {"SklandToken": serialized}},
         )
     except ValueError as e:
-        return OutBase(code=400, status="error", message=f"森空岛登录失败：{e}")
-    except Exception:
-        # 不把请求对象、异常堆栈或上游响应内容写入日志，避免泄露密码。
+        _log_community_api_error("森空岛登录校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="森空岛登录失败，请检查手机号、密码或凭据格式",
+        )
+    except Exception as e:
+        _log_community_api_error("森空岛登录失败", e)
         return OutBase(
             code=500,
             status="error",

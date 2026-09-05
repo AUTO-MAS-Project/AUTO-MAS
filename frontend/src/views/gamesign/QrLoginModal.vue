@@ -23,16 +23,24 @@
 
       <!-- 状态提示 -->
       <div v-if="status !== 'loading'" class="qr-status">
-        <span v-if="status === 'waiting'" class="qr-status-primary"> ⏳ {{ statusText }} </span>
+        <span v-if="status === 'waiting'" class="qr-status-primary">
+          <ClockCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
         <span v-else-if="status === 'scanned'" class="qr-status-warning">
-          📱 {{ statusText }}
+          <MobileOutlined class="qr-status-icon" />{{ statusText }}
         </span>
         <span v-else-if="status === 'exchanging'" class="qr-status-primary">
-          ⚙️ {{ statusText }}
+          <SettingOutlined class="qr-status-icon" />{{ statusText }}
         </span>
-        <span v-else-if="status === 'done'" class="qr-status-success"> ✅ {{ statusText }} </span>
-        <span v-else-if="status === 'expired'" class="qr-status-error"> ⚠️ {{ statusText }} </span>
-        <span v-else-if="status === 'error'" class="qr-status-error"> ❌ {{ statusText }} </span>
+        <span v-else-if="status === 'done'" class="qr-status-success">
+          <CheckCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'expired'" class="qr-status-error">
+          <WarningOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'error'" class="qr-status-error">
+          <CloseCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
       </div>
 
       <div v-if="status === 'waiting' || status === 'scanned'" class="qr-hint">
@@ -51,7 +59,15 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
+  MobileOutlined,
+  ReloadOutlined,
+  SettingOutlined,
+  WarningOutlined,
+} from '@ant-design/icons-vue'
 import type { QrLoginStatus } from './useQrLogin'
 
 const { t } = useI18n()
@@ -105,6 +121,10 @@ const emit = defineEmits<{
 
 .qr-status-primary {
   color: var(--ant-color-primary);
+}
+
+.qr-status-icon {
+  margin-right: 4px;
 }
 
 .qr-status-warning {

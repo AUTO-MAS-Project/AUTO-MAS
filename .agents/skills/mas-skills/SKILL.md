@@ -40,7 +40,7 @@ Use these skills as needed:
 8. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
 9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
 10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
-11. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
+11. `mas-community`: community-tool semantics across credentials, role discovery, daily activity, sign scheduling, notifications, provider capability evidence, and compatibility migration.
 
 ## Global Constraints
 Apply these constraints before selecting or combining sub-skills.
@@ -79,8 +79,8 @@ Use `mas-script-specialized-adapter` first, then combine `mas-module-boundary`, 
 Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.
 11. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
 Use `mas-plan-schedule`.
-12. Task mentions game community sign-in, `app/tools/game_sign*`, a sign-in platform such as Skland/Miyoushe/Kuro/Taygedo, sign-in credentials or QR login, or sign-in result and notification behavior:
-Use `mas-game-sign`.
+12. Task mentions community plugins/tools, role discovery, daily activity or memo, provider capability references, community notification aggregation, community sign-in flows, or migration from `game_sign` semantics:
+Use `mas-community`.
 
 ## Combined Execution Order
 When multiple concerns appear, apply this order:
@@ -95,9 +95,9 @@ When multiple concerns appear, apply this order:
 8. `mas-api-contract`
 9. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
 10. `mas-plan-schedule`
-11. `mas-game-sign`
+11. `mas-community`
 
-Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last because they constrain credential handling and external request behavior inside an already-placed module.
+Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and community rules apply last because they constrain credentials, external requests, scheduling, and compatibility inside an already-placed module.
 
 ## Output Requirements
 When using this hub:

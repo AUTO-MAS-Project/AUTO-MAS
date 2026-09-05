@@ -140,5 +140,3 @@ async def execute_ws_command(
             "message": f"执行失败: {type(e).__name__}: {str(e)}",
             "code": 500,
         }
-
-

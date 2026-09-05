@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { GameSignAccountGroupConfig } from './GameSignAccountGroupConfig';
 /**
- * 游戏签到账号组创建响应
+ * 游戏社区账号组创建响应
  */
 export type GameSignAccountCreateOut = {
     /**

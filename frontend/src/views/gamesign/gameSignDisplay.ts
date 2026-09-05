@@ -1,5 +1,5 @@
 /**
- * 游戏签到标签云的纯展示逻辑。
+ * 游戏社区标签云的纯展示逻辑。
  *
  * 这里全部是纯函数，不依赖 Vue 响应式和后端接口，方便单测覆盖。
  * TabGameSign 的标签云（各社区已签/失败/风控状态）完全由这些函数推导，
@@ -46,6 +46,7 @@ export interface PlatformTag {
 export interface SignAccount {
   uid: string
   MiyousheToken?: string
+  CloudGenshinToken?: string
   KuroToken?: string
   SklandToken?: string
   TaygedoToken?: string
@@ -108,7 +109,7 @@ export const hasPlatformToken = (
 ): boolean => {
   switch (platform) {
     case '米游社':
-      return !!account.MiyousheToken
+      return !!(account.MiyousheToken || account.CloudGenshinToken)
     case '库街区':
       return !!account.KuroToken
     case '森空岛':

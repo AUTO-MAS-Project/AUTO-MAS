@@ -58,6 +58,9 @@ list/
 /skills/
 .ace-tool/
 
+# Local-only game community protocol and UI references
+/local/community-reference-projects/
+
 # Plugin workspace (external plugin sources stay ignored)
 /plugins/*
 !/plugins/auto_mas_core/

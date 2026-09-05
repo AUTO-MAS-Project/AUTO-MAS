@@ -31,4 +31,3 @@ export type BetterGIUserConfig_OneDragon = {
      */
     CustomGroups?: (string | null);
 };
-

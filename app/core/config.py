@@ -87,6 +87,7 @@ from app.utils.constants import (
     UTC8,
 )
 from app.utils.io import write_file
+from app.utils.community import next_community_account_name
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
@@ -99,7 +100,7 @@ GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
 
 
 def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str, Any]:
-    """读取当天的游戏签到结果快照。"""
+    """读取当天的游戏社区结果快照。"""
 
     if not path.exists():
         return {}
@@ -107,7 +108,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        logger.warning(f"读取游戏签到结果快照失败: {e}")
+        logger.warning(f"读取游戏社区结果快照失败: {e}")
         return {}
 
     if not isinstance(payload, dict) or payload.get("date") != result_date:
@@ -115,7 +116,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 
     result = payload.get("result")
     if not isinstance(result, dict):
-        logger.warning("游戏签到结果快照格式无效，已忽略")
+        logger.warning("游戏社区结果快照格式无效，已忽略")
         return {}
     return result
 
@@ -123,7 +124,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏签到结果快照（走 ``app.utils.io.write_file``）。"""
+    """原子保存游戏社区结果快照（走 ``app.utils.io.write_file``）。"""
 
     if path is None:
         return
@@ -131,7 +132,7 @@ def _save_game_sign_result_snapshot(
     try:
         write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
-        logger.warning(f"保存游戏签到结果快照失败: {e}")
+        logger.warning(f"保存游戏社区结果快照失败: {e}")
 
 
 def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
@@ -289,6 +290,7 @@ class AppConfig(GlobalConfig):
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
+        self._community_account_add_lock = asyncio.Lock()
 
         self._inject_truststore()
 
@@ -370,12 +372,12 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
-        # 游戏签到：连接账号组 MultipleConfig
+        # 游戏社区：连接账号组 MultipleConfig
         await self.ToolsConfig.GameSign_Accounts.connect(
             self.config_path / "GameSignAccounts.json"
         )
 
-        # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
+        # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
             self.config_path / GAME_SIGN_RESULT_FILENAME,
@@ -1707,17 +1709,17 @@ class AppConfig(GlobalConfig):
 
         return await self.ToolsConfig.toDict()
 
-    async def update_game_sign_results(
+    async def update_community_results(
         self, formatted: dict[str, Any], *, replace: bool = False
     ) -> None:
-        """合并、持久化并广播游戏签到结果。
+        """合并、持久化并广播游戏社区结果。
 
         Args:
             formatted: 已按平台和账号分组的签到结果。
             replace: 是否按账号 UID 替换已有结果。
         """
 
-        from app.tools.game_sign import merge_sign_results
+        from app.tools.community_sign_provider import merge_community_sign_results
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         existing = (
@@ -1725,7 +1727,9 @@ class AppConfig(GlobalConfig):
             if self._game_sign_result_date == today
             else {}
         )
-        result = merge_sign_results(existing, formatted, replace=replace)
+        result = merge_community_sign_results(
+            existing, formatted, replace=replace
+        )
         self.ToolsConfig._game_sign_result_data = result
         self._game_sign_result_date = today
         _save_game_sign_result_snapshot(
@@ -1746,7 +1750,14 @@ class AppConfig(GlobalConfig):
                 ),
             )
         except Exception as e:
-            logger.warning(f"广播游戏签到结果失败: {e}")
+            logger.warning(f"广播游戏社区结果失败: {e}")
+
+    async def update_game_sign_results(
+        self, formatted: dict[str, Any], *, replace: bool = False
+    ) -> None:
+        """兼容旧调用方，转发到社区结果更新入口。"""
+
+        await self.update_community_results(formatted, replace=replace)
 
     async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新工具设置"""
@@ -1757,31 +1768,42 @@ class AppConfig(GlobalConfig):
 
         logger.success("工具设置更新成功")
 
-    # ==================== 游戏签到账号组 CRUD ====================
+    # ==================== 游戏社区账号组 CRUD ====================
 
     async def get_game_sign_accounts(
         self, *, if_decrypt: bool = True
     ) -> Dict[str, Any]:
-        """获取所有游戏签到账号组"""
+        """获取所有游戏社区账号组"""
 
-        logger.debug("获取所有游戏签到账号组")
+        logger.debug("获取所有游戏社区账号组")
 
         return await self.ToolsConfig.GameSign_Accounts.toDict(if_decrypt=if_decrypt)
 
     async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
-        """添加游戏签到账号组"""
+        """添加游戏社区账号组"""
 
-        logger.info("添加游戏签到账号组")
+        logger.info("添加游戏社区账号组")
 
-        uid, config = await self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
-        return uid, config
+        async with self._community_account_add_lock:
+            existing_names = []
+            for account in self.ToolsConfig.GameSign_Accounts.values():
+                try:
+                    existing_names.append(account.get("GameSignAccount", "Name"))
+                except (AttributeError, KeyError):
+                    continue
+            account_name = next_community_account_name(existing_names)
+            uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+                GameSignAccountGroup
+            )
+            await config.set("GameSignAccount", "Name", account_name)
+            return uid, config
 
     async def get_game_sign_account(
         self, account_id: str, *, if_decrypt: bool = True
     ) -> Dict[str, Any]:
-        """获取游戏签到账号组详情"""
+        """获取游戏社区账号组详情"""
 
-        logger.debug(f"获取游戏签到账号组: {account_id}")
+        logger.debug(f"获取游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
         return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
@@ -1789,7 +1811,7 @@ class AppConfig(GlobalConfig):
         )
 
     def _clear_game_sign_account_results(self, account_id: str) -> None:
-        """清除指定游戏签到账号的结果。"""
+        """清除指定游戏社区账号的结果。"""
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         result = self.ToolsConfig._game_sign_result_data
@@ -1821,15 +1843,15 @@ class AppConfig(GlobalConfig):
     async def update_game_sign_account(
         self, account_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
-        """更新游戏签到账号组配置"""
+        """更新游戏社区账号组配置"""
 
-        logger.info(f"更新游戏签到账号组: {account_id}")
+        logger.info(f"更新游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        from app.tools.game_sign import GAME_SIGN_TOKEN_FIELDS
+        from app.tools.community_sign_provider import COMMUNITY_TOKEN_FIELDS
 
-        credential_fields = set(GAME_SIGN_TOKEN_FIELDS)
+        credential_fields = set(COMMUNITY_TOKEN_FIELDS)
         credential_changed = False
 
         for group, items in data.items():
@@ -1847,18 +1869,18 @@ class AppConfig(GlobalConfig):
             self._clear_game_sign_account_results(account_id)
 
     async def delete_game_sign_account(self, account_id: str) -> None:
-        """删除游戏签到账号组"""
+        """删除游戏社区账号组"""
 
-        logger.info(f"删除游戏签到账号组: {account_id}")
+        logger.info(f"删除游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
         await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
         self._clear_game_sign_account_results(account_id)
 
     async def reorder_game_sign_accounts(self, order: list[str]) -> None:
-        """调整游戏签到账号组顺序"""
+        """调整游戏社区账号组顺序"""
 
-        logger.info("调整游戏签到账号组顺序")
+        logger.info("调整游戏社区账号组顺序")
 
         await self.ToolsConfig.GameSign_Accounts.setOrder([uuid.UUID(_) for _ in order])
 

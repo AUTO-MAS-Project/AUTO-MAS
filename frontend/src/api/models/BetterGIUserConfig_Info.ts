@@ -55,4 +55,3 @@ export type BetterGIUserConfig_Info = {
      */
     Password?: (string | null);
 };
-

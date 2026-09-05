@@ -34,4 +34,3 @@ export type BetterGIUserConfig = {
      */
     Notify?: (GeneralUserConfig_Notify | null);
 };
-

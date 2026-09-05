@@ -19,4 +19,3 @@ export type BetterGIConfig = {
      */
     Game?: (BetterGIConfig_Game | null);
 };
-

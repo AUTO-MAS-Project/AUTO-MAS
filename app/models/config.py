@@ -3577,7 +3577,7 @@ class BetterGIConfig(ConfigBase):
 
 
 class GameSignAccountGroup(ConfigBase):
-    """游戏签到账号组配置"""
+    """游戏社区账号组配置"""
 
     def __init__(self) -> None:
 
@@ -3588,6 +3588,18 @@ class GameSignAccountGroup(ConfigBase):
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceId = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceId", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceFp = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceFp", "", EncryptValidator()
+        )
+        ## GameSignAccount - 云原神 combo token (DPAPI 加密)
+        self.CloudGenshinToken = ConfigItem(
+            "GameSignAccount", "CloudGenshinToken", "", EncryptValidator()
         )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
@@ -3653,6 +3665,10 @@ class ToolsConfig(ConfigBase):
         ## GameSign - 签到后发送通知
         self.GameSign_NotifyEnabled = ConfigItem(
             "GameSign", "NotifyEnabled", False, BoolValidator()
+        )
+        ## GameSign - 启用日常便笺
+        self.GameSign_ActivityEnabled = ConfigItem(
+            "GameSign", "ActivityEnabled", True, BoolValidator()
         )
         ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowStart = ConfigItem(
@@ -3739,14 +3755,14 @@ class ToolsConfig(ConfigBase):
         ]
 
     def game_sign_status(self) -> str:
-        """游戏签到状态标签"""
+        """游戏社区状态标签"""
 
         if not self.get("GameSign", "Enabled"):
             return TagItem(text="未启用", color="gray").model_dump_json()
         return TagItem(text="已启用", color="green").model_dump_json()
 
     def game_sign_result(self) -> str:
-        """游戏签到结果 JSON"""
+        """游戏社区结果 JSON"""
 
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 

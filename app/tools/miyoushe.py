@@ -37,6 +37,7 @@ import string
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Dict
 
 import httpx
@@ -64,12 +65,61 @@ PASSPORT_COOKIE_URL = (
 )
 
 # DS 签名 Salt（对齐 MihoyoBBSTools）
-SALT_WEB = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"  # web 端 salt（游戏签到 GET 请求）
+SALT_WEB = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"  # web 端 salt（游戏社区 GET 请求）
 SALT_DATA = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"  # 有 body/query 的请求（x6）
 
 # 验证码重试配置
 CAPTCHA_MAX_RETRIES = 3
 CAPTCHA_RETRY_DELAY = (6, 15)  # 秒，随机范围
+
+
+@dataclass(frozen=True)
+class MiyousheSessionCapabilities:
+    """米游社会话的脱敏能力状态，不包含任何凭据值。"""
+
+    has_uid: bool
+    has_cookie_token: bool
+    has_stoken: bool
+    has_stoken_v2: bool
+    has_mid: bool
+
+    @property
+    def activity_missing_fields(self) -> tuple[str, ...]:
+        """返回实时便笺缺失的必要凭据字段名。"""
+
+        missing = []
+        if not self.has_stoken_v2:
+            missing.append("stoken_v2")
+        if not self.has_mid:
+            missing.append("mid")
+        return tuple(missing)
+
+    @property
+    def activity_ready(self) -> bool:
+        """是否具备实时便笺所需的 v2 stoken 能力。"""
+
+        return self.has_uid and not self.activity_missing_fields
+
+    @property
+    def activity_reason(self) -> str:
+        """返回可展示但不含凭据值的受限原因。"""
+
+        missing = self.activity_missing_fields
+        if not self.has_uid:
+            return "米游社凭据缺少 UID 字段"
+        if not missing:
+            return ""
+        return f"米游社实时便笺需要完整的 {' 和 '.join(missing)}，当前凭据能力受限"
+
+
+@dataclass(frozen=True)
+class MiyousheSession:
+    """一次米游社运行使用的内存会话。"""
+
+    cookies: dict[str, str] = field(repr=False)
+    uid: str
+    device_id: str = field(repr=False)
+    capabilities: MiyousheSessionCapabilities
 
 
 class _SignOutcome(tuple):
@@ -79,7 +129,7 @@ class _SignOutcome(tuple):
     ``outcome["status"]`` 时仍会得到签到结果字段。
     """
 
-    def __new__(cls, result: dict, cookie: str):
+    def __new__(cls, result: dict[str, object], cookie: str):
         return super().__new__(cls, (result, cookie))
 
     def __getitem__(self, key):
@@ -159,7 +209,7 @@ GAME_CONFIG = {
     },
 }
 
-# 通用请求头（对齐 MihoyoBBSTools 游戏签到 headers）
+# 通用请求头（对齐 MihoyoBBSTools 游戏社区 headers）
 BASE_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Origin": "https://webstatic.mihoyo.com",
@@ -213,7 +263,7 @@ def _log_miyoushe_exception(stage: str, error: Exception) -> str:
     return reason
 
 
-def _safe_json_parse(response: httpx.Response) -> dict:
+def _safe_json_parse(response: httpx.Response) -> dict[str, object]:
     """安全解析 API 响应 JSON
 
     当响应为空或非 JSON 时（通常是风控拦截），抛出 _RiskControlError。
@@ -257,10 +307,26 @@ def _build_cookie_str(cookies: Dict[str, str]) -> str:
     return "; ".join(f"{k}={v}" for k, v in cookies.items())
 
 
+def merge_miyoushe_cookie_update(cookie: str, updated_cookie: str) -> str:
+    """合并刷新结果，避免新增 Cookie 字段时丢失原始认证字段。"""
+    current = _parse_cookie(cookie)
+    refreshed = _parse_cookie(updated_cookie)
+    if not refreshed:
+        return cookie
+    if not current:
+        return updated_cookie
+
+    merged = current.copy()
+    for key, value in refreshed.items():
+        if value:
+            merged[key] = value
+    return _build_cookie_str(merged)
+
+
 def _generate_ds(body: str = "", query: str = "") -> str:
     """生成 DS (Dynamic Secret) 签名
 
-    对齐 MihoyoBBSTools：游戏签到 GET 请求使用 SALT_WEB，
+    对齐 MihoyoBBSTools：游戏社区 GET 请求使用 SALT_WEB，
     POST 请求（有 body）使用 SALT_DATA。
 
     Args:
@@ -350,18 +416,41 @@ def _ensure_auth_aliases(cookies: Dict[str, str]) -> None:
             cookies[target] = cookies[source]
 
 
-def validate_miyoushe_cookie(cookie: str) -> None:
-    """校验米游社凭据包含签到所需的 UID 和认证字段。"""
+def prepare_miyoushe_session(cookie: str) -> MiyousheSession:
+    """统一解析米游社 Cookie、认证别名、设备 ID 和脱敏能力。"""
 
     cookies = _parse_cookie(cookie)
     _ensure_auth_aliases(cookies)
-    if not _get_stuid(cookies):
+    uid = _get_stuid(cookies)
+    stoken = str(cookies.get("stoken") or "").strip()
+    stoken_v2 = str(cookies.get("stoken_v2") or "").strip()
+    capabilities = MiyousheSessionCapabilities(
+        has_uid=bool(uid),
+        has_cookie_token=bool(cookies.get("cookie_token")),
+        has_stoken=bool(stoken),
+        has_stoken_v2=bool(stoken_v2 or stoken.startswith("v2_")),
+        has_mid=bool(cookies.get("mid")),
+    )
+    return MiyousheSession(
+        cookies=cookies,
+        uid=uid,
+        device_id=_generate_device_id(cookie),
+        capabilities=capabilities,
+    )
+
+
+def validate_miyoushe_cookie(cookie: str) -> None:
+    """校验米游社凭据包含签到所需的 UID 和认证字段。"""
+
+    session = prepare_miyoushe_session(cookie)
+    cookies = session.cookies
+    if not session.capabilities.has_uid:
         raise ValueError("Cookie 缺少 UID 字段")
-    if cookies.get("cookie_token"):
+    if session.capabilities.has_cookie_token:
         return
-    if cookies.get("stoken") and cookies.get("mid"):
+    if session.capabilities.has_stoken and session.capabilities.has_mid:
         return
-    if cookies.get("stoken"):
+    if session.capabilities.has_stoken:
         raise ValueError("stoken Cookie 缺少 mid 字段")
     raise ValueError("Cookie 缺少认证字段 (cookie_token 或 stoken)")
 
@@ -369,7 +458,7 @@ def validate_miyoushe_cookie(cookie: str) -> None:
 # ==================== Token 派生 ====================
 
 
-async def _derive_cookie_token(
+async def derive_miyoushe_cookie_token(
     stoken: str,
     mid: str,
     stuid: str,
@@ -431,9 +520,11 @@ async def miyoushe_sign_in(
     cookie: str,
     proxy: str | None = None,
     *,
+    account_name: str = "",
+    account_uid: str = "",
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
-) -> list[dict]:
-    """米游社游戏签到
+) -> list[dict[str, object]]:
+    """米游社社区签到
 
     支持多种 cookie 认证策略：
     1. cookie_token + UID → 直接使用
@@ -444,6 +535,8 @@ async def miyoushe_sign_in(
     Args:
         cookie: cookie 字符串，至少包含 UID 字段 + (cookie_token 或 stoken)
         proxy: 代理地址
+        account_name: AUTO-MAS 账号组别名
+        account_uid: AUTO-MAS 账号组 UUID
         on_credential_update: 凭据被替换后的可选回写回调
 
     Returns:
@@ -460,9 +553,10 @@ async def miyoushe_sign_in(
         except Exception as e:
             _log_miyoushe_exception("米游社凭据回写失败", e)
 
-    cookies = _parse_cookie(cookie)
-    _ensure_auth_aliases(cookies)
-    stuid = _get_stuid(cookies)
+    session = prepare_miyoushe_session(cookie)
+    cookies = dict(session.cookies)
+    stuid = session.uid
+    device_id = session.device_id
 
     if not stuid:
         logger.warning("Cookie 缺少 UID 字段 (stuid/ltuid/account_id)")
@@ -490,7 +584,7 @@ async def miyoushe_sign_in(
         # 策略 3: stoken_v2 + mid，派生 cookie_token
         logger.info("缺少 cookie_token，尝试从 stoken 派生")
         try:
-            derived_token, derived_uid = await _derive_cookie_token(
+            derived_token, derived_uid = await derive_miyoushe_cookie_token(
                 cookies["stoken"],
                 cookies["mid"],
                 stuid,
@@ -547,13 +641,31 @@ async def miyoushe_sign_in(
     _ensure_uid_aliases(effective_cookies, stuid)
     effective_cookie = _build_cookie_str(effective_cookies)
 
+    # 米游币是账号级任务，不依赖任何游戏角色；复用本轮已经补齐的 Cookie
+    # 和稳定设备 ID，并把结果并入同一社区结果链。
+    from .miyoushe_coin import run_miyoushe_coin_tasks
+
+    results.append(
+        await run_miyoushe_coin_tasks(
+            effective_cookies,
+            account_name=account_name or stuid,
+            account_uid=account_uid,
+            device_id=device_id,
+            proxy=proxy,
+        )
+    )
+
     # 获取游戏角色列表
     try:
-        roles = await _get_game_roles(effective_cookie, proxy=proxy)
+        roles = await _get_game_roles(
+            effective_cookie,
+            proxy=proxy,
+            device_id=device_id,
+        )
     except _RiskControlError:
         logger.warning("获取米游社游戏角色被风控")
         await report_credential_update()
-        return [
+        results.append(
             {
                 "account": f"{stuid}/米游社",
                 "game": "米游社",
@@ -562,11 +674,12 @@ async def miyoushe_sign_in(
                 "reward": "",
                 "reason": "账号被风控，接口返回异常",
             }
-        ]
+        )
+        return results
     except Exception as e:
         reason = _log_miyoushe_exception("获取米游社游戏角色失败", e)
         await report_credential_update()
-        return [
+        results.append(
             {
                 "account": f"{stuid}/米游社",
                 "game": "米游社",
@@ -575,14 +688,15 @@ async def miyoushe_sign_in(
                 "reward": "",
                 "reason": reason,
             }
-        ]
+        )
+        return results
 
     if not roles:
         logger.warning("未找到米游社绑定的游戏角色")
         await report_credential_update()
         return results
 
-    # 逐游戏签到
+    # 逐游戏执行社区签到
     for index, role in enumerate(roles):
         game_biz = role.get("game_biz", "")
         region = role.get("region", "")
@@ -606,6 +720,7 @@ async def miyoushe_sign_in(
                 region,
                 game_uid,
                 proxy=proxy,
+                device_id=device_id,
             )
             if is_signed:
                 results.append(
@@ -645,6 +760,7 @@ async def miyoushe_sign_in(
                 game_uid,
                 account,
                 proxy=proxy,
+                device_id=device_id,
             )
             results.append(sign_result)
             # cookie_token 过期被刷新后，同一轮后续游戏复用新 cookie，
@@ -693,7 +809,8 @@ async def _get_game_roles(
     cookie: str,
     *,
     proxy: str | None = None,
-) -> list[dict]:
+    device_id: str = "",
+) -> list[dict[str, object]]:
     """获取游戏角色列表
 
     兼容两种 API 返回结构：
@@ -702,7 +819,7 @@ async def _get_game_roles(
     """
     headers = BASE_HEADERS.copy()
     headers["DS"] = _generate_ds()
-    headers["x-rpc-device_id"] = _generate_device_id(cookie)
+    headers["x-rpc-device_id"] = device_id or _generate_device_id(cookie)
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
     async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
@@ -741,17 +858,18 @@ async def _get_game_roles(
 
 async def _check_sign_info(
     cookie: str,
-    game_cfg: dict,
+    game_cfg: dict[str, object],
     region: str,
     uid: str,
     *,
     proxy: str | None = None,
+    device_id: str = "",
 ) -> bool:
     """检查今日是否已签到"""
     headers = BASE_HEADERS.copy()
     query = f"lang=zh-cn&act_id={game_cfg['act_id']}&region={region}&uid={uid}"
     headers["DS"] = _generate_ds(query=query)
-    headers["x-rpc-device_id"] = _generate_device_id(cookie)
+    headers["x-rpc-device_id"] = device_id or _generate_device_id(cookie)
     headers.update(game_cfg.get("extra_headers", {}))
 
     url = f"{game_cfg.get('info_url', INFO_URL)}?{query}"
@@ -776,13 +894,14 @@ async def _check_sign_info(
 
 async def _do_sign(
     cookie: str,
-    game_cfg: dict,
+    game_cfg: dict[str, object],
     region: str,
     uid: str,
     account: str = "",
     *,
     proxy: str | None = None,
-) -> tuple[dict, str]:
+    device_id: str = "",
+) -> tuple[dict[str, object], str]:
     """执行签到（含验证码重试）
 
     当签到返回极验（Geetest）验证码时，自动重试最多 CAPTCHA_MAX_RETRIES 次。
@@ -813,7 +932,7 @@ async def _do_sign(
     for attempt in range(CAPTCHA_MAX_RETRIES + 1):
         headers = BASE_HEADERS.copy()
         headers["DS"] = _generate_ds(body=body)
-        headers["x-rpc-device_id"] = _generate_device_id(cookie)
+        headers["x-rpc-device_id"] = device_id or _generate_device_id(cookie)
         headers.update(game_cfg.get("extra_headers", {}))
 
         resolved_proxy = proxy if proxy is not None else Config.proxy
@@ -879,7 +998,7 @@ async def _do_sign(
                     f"尝试用 stoken 刷新"
                 )
                 try:
-                    new_token, new_uid = await _derive_cookie_token(
+                    new_token, new_uid = await derive_miyoushe_cookie_token(
                         parsed["stoken"],
                         parsed["mid"],
                         stuid,

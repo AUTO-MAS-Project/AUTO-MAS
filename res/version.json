@@ -99,7 +99,8 @@
                 "MaaFW专项 运行日志改为记录实际加载的 MaaFramework 版本与来源，并在原生库与 Python 绑定版本不一致时给出警告 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)",
+                "游戏社区统一五款游戏的账号、签到、便笺与通知体验，补全便笺信息和背景并采用紧凑的分游戏卡片，新增米游币任务、云原神时长签到与绝区零免配置便笺，隐藏塔吉多社区级签到详情，并移除不可用的库街区短信登录入口"
             ],
             "开发流程": [
                 "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -150,7 +151,8 @@
             "程序优化": [
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)"
+                "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)",
+                "重构 WebSocket 通信子系统，统一前后端实时消息协议并收紧连接与关闭流程 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "开发流程": [
                 "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"

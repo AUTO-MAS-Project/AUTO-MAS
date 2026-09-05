@@ -4,13 +4,17 @@
 /* eslint-disable */
 export type ToolsConfig_GameSign = {
     /**
-     * 是否启用游戏签到
+     * 是否启用游戏社区
      */
     Enabled?: (boolean | null);
     /**
      * 签到后是否发送通知
      */
     NotifyEnabled?: (boolean | null);
+    /**
+     * 是否启用日常便笺
+     */
+    ActivityEnabled?: (boolean | null);
     /**
      * 签到窗口起点 HH:mm
      */

@@ -25,9 +25,9 @@
 可安全删除本文件，不会影响任何已有功能。
 删除后同时移除 main.py 中的 include_router 调用。
 
-流程（Passport 模式）:
+流程（Passport App 优先，Passport Web 兼容回退；旧 GameToken ticket 仅兼容）:
   1. /create  → 生成二维码 (ticket, qr_url, device)
-  2. /check   → 轮询状态 (Init/Scanned/Confirmed)，确认后返回 cookies_str
+  2. /check   → 轮询状态 (Init/Scanned/Confirmed)，确认后返回完整 cookies_str
   3. /save    → 将 cookies 保存到账号配置
 """
 
@@ -36,8 +36,19 @@ from pydantic import BaseModel, Field
 
 from app.core import Config
 from app.models.schema import OutBase
+from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
+logger = get_logger("米游社扫码登录 API")
+
+
+def _log_qr_error(stage: str, error: Exception) -> None:
+    """记录脱敏诊断，二维码接口不向前端透传异常细节。"""
+
+    logger.warning(
+        format_exception_reason(error, stage=stage, include_message=False)
+    )
 
 
 # ---- 请求/响应模型 ----
@@ -76,7 +87,12 @@ async def qr_create() -> QrCreateOut:
 
         result = await create_qr_login()
     except Exception as e:
-        return QrCreateOut(code=500, status="error", message=str(e))
+        _log_qr_error("创建米游社二维码失败", e)
+        return QrCreateOut(
+            code=500,
+            status="error",
+            message="二维码创建失败，请稍后重试",
+        )
     if not isinstance(result, dict):
         return QrCreateOut(code=500, status="error", message="二维码服务返回格式无效")
     error = result.get("error")
@@ -84,7 +100,7 @@ async def qr_create() -> QrCreateOut:
         return QrCreateOut(
             code=500,
             status="error",
-            message=error if isinstance(error, str) else "创建二维码失败",
+            message="二维码创建失败，请稍后重试",
         )
     if not all(
         isinstance(result.get(key), str) and result[key]
@@ -98,13 +114,18 @@ async def qr_create() -> QrCreateOut:
 
 @router.post("/check", summary="轮询扫码状态", response_model=QrCheckOut)
 async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
-    """轮询状态，确认后返回从 Passport 响应提取的 cookies。"""
+    """轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。"""
     try:
         from app.tools.miyoushe_qr import check_qr_status
 
         result = await check_qr_status(body.ticket, body.device)
     except Exception as e:
-        return QrCheckOut(code=500, status="error", message=str(e))
+        _log_qr_error("查询米游社二维码状态失败", e)
+        return QrCheckOut(
+            code=500,
+            status="error",
+            message="二维码状态查询失败，请稍后重试",
+        )
     if not isinstance(result, dict):
         return QrCheckOut(code=500, status="error", message="二维码状态响应格式无效")
     error = result.get("error")
@@ -115,7 +136,11 @@ async def qr_check(body: QrCheckIn = Body(...)) -> QrCheckOut:
         return QrCheckOut(
             code=500,
             status=error_status,
-            message=error if isinstance(error, str) else "查询二维码状态失败",
+            message=(
+                "二维码已失效，请重新获取"
+                if error_status == "expired"
+                else "二维码状态查询失败，请稍后重试"
+            ),
         )
     status = result.get("status")
     if not isinstance(status, str):
@@ -138,12 +163,23 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
     try:
         from app.tools.miyoushe import validate_miyoushe_cookie
 
-        cookie = body.cookie.strip()
+        # 全量 Cookie 可能包含服务端兼容字段，保存路径不得重建或裁剪。
+        cookie = body.cookie
         validate_miyoushe_cookie(cookie)
         data = {"GameSignAccount": {"MiyousheToken": cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
     except ValueError as e:
-        return OutBase(code=400, status="error", message=f"米游社 Token 无效：{e}")
+        _log_qr_error("保存米游社 Token 校验失败", e)
+        return OutBase(
+            code=400,
+            status="error",
+            message="米游社 Token 格式无效，请检查后重试",
+        )
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        _log_qr_error("保存米游社 Token 失败", e)
+        return OutBase(
+            code=500,
+            status="error",
+            message="米游社 Token 保存失败，请稍后重试",
+        )
     return OutBase(message="米游社 Token 已保存")

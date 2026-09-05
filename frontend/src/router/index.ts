@@ -287,7 +287,22 @@ const routes = [
     path: '/gamesign',
     name: 'GameSign',
     component: () => import('../views/gamesign/index.vue'),
-    meta: { title: '游戏签到' },
+    meta: { title: '游戏社区' },
+  },
+  {
+    path: '/gamesign/sign',
+    name: 'CommunityToolSign',
+    redirect: '/gamesign',
+    meta: { title: '游戏社区' },
+  },
+  {
+    path: '/gamesign/activity',
+    name: 'CommunityToolActivity',
+    redirect: {
+      path: '/gamesign',
+      query: { tab: 'activity' },
+    },
+    meta: { title: '游戏社区' },
   },
   {
     path: '/tools',

@@ -7,6 +7,8 @@ import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut'
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CommunityActivityOut } from '../models/CommunityActivityOut';
+import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
@@ -1843,8 +1845,28 @@ export class Service {
         });
     }
     /**
-     * 获取所有游戏签到账号组
-     * 获取所有游戏签到账号组
+     * 查询游戏社区日常活跃度
+     * 查询游戏社区日常活动，不占用签到流程锁。
+     * @param requestBody
+     * @returns CommunityActivityOut Successful Response
+     * @throws ApiError
+     */
+    public static queryCommunityActivityApiToolsCommunityActivityQueryPost(
+        requestBody: CommunityActivityQueryIn,
+    ): CancelablePromise<CommunityActivityOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/community/activity/query',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取所有游戏社区账号组
+     * 获取所有游戏社区账号组
      * @returns GameSignAccountsListOut Successful Response
      * @throws ApiError
      */
@@ -1855,8 +1877,8 @@ export class Service {
         });
     }
     /**
-     * 添加游戏签到账号组
-     * 添加游戏签到账号组
+     * 添加游戏社区账号组
+     * 添加游戏社区账号组
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
      */
@@ -1867,8 +1889,8 @@ export class Service {
         });
     }
     /**
-     * 获取游戏签到账号组详情
-     * 获取游戏签到账号组详情
+     * 获取游戏社区账号组详情
+     * 获取游戏社区账号组详情
      * @param requestBody
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
@@ -1887,8 +1909,8 @@ export class Service {
         });
     }
     /**
-     * 更新游戏签到账号组配置
-     * 更新游戏签到账号组配置
+     * 更新游戏社区账号组配置
+     * 更新游戏社区账号组配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1907,8 +1929,8 @@ export class Service {
         });
     }
     /**
-     * 删除游戏签到账号组
-     * 删除游戏签到账号组
+     * 删除游戏社区账号组
+     * 删除游戏社区账号组
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1927,8 +1949,8 @@ export class Service {
         });
     }
     /**
-     * 调整游戏签到账号组顺序
-     * 调整游戏签到账号组顺序
+     * 调整游戏社区账号组顺序
+     * 调整游戏社区账号组顺序
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2269,7 +2291,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
+     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError

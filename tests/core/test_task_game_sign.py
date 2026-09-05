@@ -34,7 +34,7 @@ class TaskGameSignSourceTest(unittest.IsolatedAsyncioTestCase):
                 task.prepare = AsyncMock()
 
                 with patch(
-                    "app.core.timer.MainTimer.try_game_sign_for_task",
+                    "app.core.timer.MainTimer.try_community_for_task",
                     new=AsyncMock(return_value=[]),
                 ) as sign_for_task:
                     await task.main_task()

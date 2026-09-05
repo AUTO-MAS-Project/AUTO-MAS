@@ -31,10 +31,10 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    finalize_task_game_sign_notification,
+from app.tools.community_notify import (
+    append_task_community_summary,
 )
+from app.tools.game_sign_notify import finalize_task_game_sign_notification
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -219,10 +219,10 @@ class MaaManager(TaskExecuteBase):
             )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            task_result = append_task_game_sign_summary(
+            task_result = append_task_community_summary(
                 self.task_info, self.script_info.result
             )
-            has_game_sign_summary = task_result != self.script_info.result
+            has_community_summary = task_result != self.script_info.result
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -231,7 +231,7 @@ class MaaManager(TaskExecuteBase):
                 "completed_count": over_count,
                 "uncompleted_count": error_count + wait_count,
                 "result": task_result,
-                "game_sign_summary": has_game_sign_summary,
+                "game_sign_summary": has_community_summary,
             }
 
             try:
@@ -243,7 +243,7 @@ class MaaManager(TaskExecuteBase):
                     task_info=self.task_info,
                 )
                 finalize_task_game_sign_notification(
-                    self.task_info, has_game_sign_summary, push_result
+                    self.task_info, has_community_summary, push_result
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

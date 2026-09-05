@@ -15,4 +15,3 @@ export type BetterGIConfig_Game = {
      */
     CloseOnFinish?: (boolean | null);
 };
-

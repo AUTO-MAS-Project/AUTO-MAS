@@ -31,4 +31,3 @@ export type WSTaskCyclePreviewData = {
      */
     isRunning?: boolean;
 };
-

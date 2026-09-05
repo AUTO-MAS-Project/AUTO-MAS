@@ -9,9 +9,9 @@ def build_skland_sign_results(
     *,
     account_name: str,
     account_uid: str,
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """将森空岛返回值归一化为游戏社区签到结果。"""
-    results = []
+    results: list[dict[str, object]] = []
     status_mapping = {
         "成功": "成功",
         "重复": "已签到",
