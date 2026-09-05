@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { useWeixinBinding } from '../useWeixinBinding'
+import { useQqBinding } from '../useQqBinding'
 
 const props = defineProps<{
   enabled: boolean
@@ -20,13 +20,11 @@ const {
   qrDataUrl,
   state,
   hint,
-  verifyCode,
   loadStatus,
   close,
   start,
-  submitCode,
   unbind,
-} = useWeixinBinding(props.onChange)
+} = useQqBinding(props.onChange)
 const saving = ref(false)
 const setEnabled = async (value: boolean | string | number) => {
   saving.value = true
@@ -40,16 +38,16 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
 </script>
 
 <template>
-  <a-space direction="vertical" :size="16" class="weixin-binding">
+  <a-space direction="vertical" :size="16" class="qq-binding">
     <a-typography-paragraph type="secondary" class="binding-hint">
-      {{ t('setting.notify.openclawWeixinSetupHint') }}
+      {{ t('setting.notify.openclawQqSetupHint') }}
     </a-typography-paragraph>
     <a-alert v-if="statusError" type="error" show-icon :message="statusError">
       <template #action>
         <a-button
           size="small"
           :loading="statusLoading"
-          :aria-label="t('setting.notify.openclawWeixinStatusRetry')"
+          :aria-label="t('setting.notify.openclawQqStatusRetry')"
           @click="loadStatus"
         >
           <ReloadOutlined />
@@ -61,16 +59,14 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
         <a-spin v-if="statusLoading" size="small" />
         <a-tag v-else-if="status" :color="status.connected ? 'success' : 'default'">
           {{
-            t(
-              `setting.notify.${status.connected ? 'openclawWeixinBound' : 'openclawWeixinUnbound'}`
-            )
+            t(`setting.notify.${status.connected ? 'openclawQqBound' : 'openclawQqUnbound'}`)
           }}
         </a-tag>
-        <span>{{ t('setting.notify.openclawWeixinEnable') }}</span>
+        <span>{{ t('setting.notify.openclawQqEnable') }}</span>
         <a-switch
           :checked="props.enabled && !!status?.connected"
           :loading="saving"
-          :aria-label="t('setting.notify.openclawWeixinEnable')"
+          :aria-label="t('setting.notify.openclawQqEnable')"
           :disabled="!status?.connected || statusLoading || unbinding"
           @change="setEnabled"
         />
@@ -82,17 +78,15 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
           @click="start"
         >
           <template #icon><QrcodeOutlined /></template>
-          {{
-            t(`setting.notify.${status?.connected ? 'openclawWeixinRebind' : 'openclawWeixinBind'}`)
-          }}
+          {{ t(`setting.notify.${status?.connected ? 'openclawQqRebind' : 'openclawQqBind'}`) }}
         </a-button>
         <a-popconfirm
           v-if="status?.connected"
-          :title="t('setting.notify.openclawWeixinUnbindConfirm')"
+          :title="t('setting.notify.openclawQqUnbindConfirm')"
           @confirm="unbind"
         >
           <a-button danger :loading="unbinding">{{
-            t('setting.notify.openclawWeixinUnbind')
+            t('setting.notify.openclawQqUnbind')
           }}</a-button>
         </a-popconfirm>
       </a-space>
@@ -100,7 +94,7 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
   </a-space>
   <a-modal
     :open="open"
-    :title="t('setting.notify.openclawWeixinLoginTitle')"
+    :title="t('setting.notify.openclawQqLoginTitle')"
     :width="400"
     :z-index="900"
     :footer="null"
@@ -114,12 +108,12 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
         <CheckCircleOutlined v-else-if="state === 'connected'" class="qr-success" />
         <a-button v-else-if="failed" type="primary" @click="start">
           <template #icon><ReloadOutlined /></template>
-          {{ t('setting.notify.openclawWeixinQrRetry') }}
+          {{ t('setting.notify.openclawQqQrRetry') }}
         </a-button>
         <img
           v-else-if="qrDataUrl"
           :src="qrDataUrl"
-          :alt="t('setting.notify.openclawWeixinQrAlt')"
+          :alt="t('setting.notify.openclawQqQrAlt')"
           width="240"
           height="240"
         />
@@ -131,30 +125,6 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
         role="status"
         class="qr-hint"
       />
-      <a-form
-        v-if="state === 'need_verify_code'"
-        layout="vertical"
-        class="qr-hint"
-        @finish="submitCode"
-      >
-        <a-form-item :label="t('setting.notify.openclawWeixinVerifyCodePlaceholder')">
-          <a-input
-            v-model:value="verifyCode"
-            maxlength="32"
-            autocomplete="one-time-code"
-            :disabled="checking"
-          />
-        </a-form-item>
-        <a-button
-          type="primary"
-          html-type="submit"
-          block
-          :loading="checking"
-          :disabled="!verifyCode.trim()"
-        >
-          {{ t('setting.notify.openclawWeixinVerifyCodeSubmit') }}
-        </a-button>
-      </a-form>
       <a-button v-if="state === 'connected'" type="primary" block @click="close">{{
         t('common.confirm')
       }}</a-button>
@@ -163,7 +133,7 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
 </template>
 
 <style scoped>
-.weixin-binding,
+.qq-binding,
 .qr-hint {
   width: 100%;
 }

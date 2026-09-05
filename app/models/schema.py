@@ -341,6 +341,9 @@ class GlobalConfig_Notify(BaseModel):
     IfOpenClawWeixin: Optional[bool] = Field(
         default=None, description="是否启用微信 Claw 通知"
     )
+    IfOpenClawQQ: Optional[bool] = Field(
+        default=None, description="是否启用 QQ 官方机器人通知"
+    )
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
     FromAddress: Optional[str] = Field(default=None, description="邮件发送地址")
@@ -387,6 +390,35 @@ class OpenClawWeixinStatusOut(OutBase):
     contextReady: bool = Field(
         default=False, description="是否已取得可用于通知的会话上下文"
     )
+
+
+class OpenClawQQQrStartOut(OutBase):
+    """QQ 官方机器人二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawQQQrCheckIn(BaseModel):
+    """QQ 官方机器人二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+
+
+class OpenClawQQQrCheckOut(OutBase):
+    """QQ 官方机器人二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawQQStatusOut(OutBase):
+    """QQ 官方机器人通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
+    connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
+    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class GlobalConfig_Update(BaseModel):

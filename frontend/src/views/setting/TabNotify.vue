@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
+import QqBinding from './components/QqBinding.vue'
 import WeixinBinding from './components/WeixinBinding.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -370,6 +371,24 @@ const handleWebhookChange = async () => {
       <WeixinBinding
         :enabled="!!settings.Notify?.IfOpenClawWeixin"
         :on-change="value => handleSettingChange('Notify', 'IfOpenClawWeixin', value)"
+      />
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>{{ t('setting.notify.openclawQqSection') }}</h3>
+        <a
+          href="https://bot.q.qq.com/wiki/"
+          class="section-doc-link"
+          :title="t('setting.notify.openclawQqDoc')"
+          @click="handleExternalLink"
+        >
+          {{ t('common.doc') }}
+        </a>
+      </div>
+      <QqBinding
+        :enabled="!!settings.Notify?.IfOpenClawQQ"
+        :on-change="value => handleSettingChange('Notify', 'IfOpenClawQQ', value)"
       />
     </div>
 

@@ -40,6 +40,10 @@ export type GlobalConfig_Notify = {
      */
     IfOpenClawWeixin?: (boolean | null);
     /**
+     * 是否启用 QQ 官方机器人通知
+     */
+    IfOpenClawQQ?: (boolean | null);
+    /**
      * SMTP服务器地址
      */
     SMTPServerAddress?: (string | null);

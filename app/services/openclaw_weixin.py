@@ -312,13 +312,19 @@ class OpenClawWeixinManager:
         """返回绑定状态，不回传 Token、用户 ID 或上下文内容。"""
 
         token, user_id, _ = self._credentials()
+        account_id = self._account_id()
         enabled = self._enabled()
-        # 旧版手工配置没有 AccountId；Token + 用户 ID 仍可继续使用并在下一次扫码时补全。
-        connected = bool(token and (self._account_id() or user_id))
-        context_ready = bool(self._context_token())
+        # 只有能直接发送消息的凭据才算已绑定；仅有 Bot Token/账号 ID 时，
+        # send() 仍会因为缺少收件人而失败，不能让前端显示为已绑定。
+        connected = bool(token and user_id)
+        context_ready = bool(token and user_id and self._context_token())
         if not connected:
             state = "disconnected"
-            message = "请扫码绑定微信"
+            message = (
+                "微信绑定信息不完整，请重新扫码绑定"
+                if token or account_id or user_id
+                else "请扫码绑定微信"
+            )
         else:
             # 主动通知允许在没有上下文令牌时发送；上下文令牌只用于复用会话，
             # 由后台收到消息后自动缓存，不应变成用户必须填写的配置项。
@@ -472,12 +478,12 @@ class OpenClawWeixinManager:
                 bot_token = str(response.get("bot_token") or "").strip()
                 account_id = str(response.get("ilink_bot_id") or "").strip()
                 user_id = str(response.get("ilink_user_id") or "").strip()
-                if not bot_token or not account_id:
+                if not bot_token or not account_id or not user_id:
                     self._sessions.pop(session_id, None)
                     return QrCheckResult(
                         session_id=session_id,
                         state="error",
-                        message="登录确认响应缺少账号凭据，请重新扫码",
+                        message="登录确认响应缺少账号或收件人信息，请重新扫码",
                     )
                 await self._save_credentials(
                     token=bot_token,
@@ -505,7 +511,13 @@ class OpenClawWeixinManager:
     async def unbind(self) -> None:
         """解除绑定并清理所有协议层状态。"""
 
-        await self._stop_updates_task()
+        await self._clear_binding_state(stop_updates=True)
+
+    async def _clear_binding_state(self, *, stop_updates: bool) -> None:
+        """清理二维码、凭据和配置中的绑定信息。"""
+
+        if stop_updates:
+            await self._stop_updates_task()
         async with self._session_lock:
             self._sessions.clear()
         self._runtime_credentials = None
@@ -522,6 +534,10 @@ class OpenClawWeixinManager:
                     "OpenClawWeixinContextToken": "",
                 }
             )
+        # 会话轮询在自身检测到失效时会走这里；先摘掉任务引用，避免
+        # IfOpenClawWeixin 的异步配置钩子尝试等待当前任务自身。
+        if self._updates_task is asyncio.current_task():
+            self._updates_task = None
         async with self._config_lock:
             await Config.update({"Notify": config_values})
         self._updates_buf = ""
@@ -532,7 +548,11 @@ class OpenClawWeixinManager:
         async with self._send_lock:
             token, user_id, base_url = self._credentials()
             if not token or not user_id:
-                raise ValueError("请先在通知设置中扫码绑定微信")
+                await self._invalidate_binding(
+                    stop_updates=True,
+                    reason="微信绑定信息不完整",
+                )
+                raise ValueError("微信绑定信息不完整，请重新扫码绑定")
             if self._enabled():
                 self._start_updates_task()
 
@@ -576,6 +596,10 @@ class OpenClawWeixinManager:
                     error_code = _error_code(result)
                 if error_code not in (None, 0):
                     if error_code in {-2, -14}:
+                        await self._invalidate_binding(
+                            stop_updates=True,
+                            reason="微信登录状态已失效",
+                        )
                         raise RuntimeError("微信登录状态已失效，请重新扫码绑定")
                     errmsg = result.get("errmsg") or "未知错误"
                     raise RuntimeError(
@@ -592,6 +616,9 @@ class OpenClawWeixinManager:
         base_url: Any,
     ) -> None:
         """将扫码结果保存到内部配置项，不进入公开设置 schema。"""
+
+        if not token.strip() or not account_id.strip() or not user_id.strip():
+            raise ValueError("微信登录确认响应缺少账号或收件人信息")
 
         normalized = _RuntimeCredentials(
             token=token.strip(),
@@ -637,6 +664,18 @@ class OpenClawWeixinManager:
             )
         self._runtime_credentials = None
         self._updates_buf = ""
+
+    async def _invalidate_binding(
+        self, *, stop_updates: bool, reason: str
+    ) -> None:
+        """清理已失效的绑定，让状态接口与实际可发送能力一致。"""
+
+        try:
+            await self._clear_binding_state(stop_updates=stop_updates)
+        except Exception as exc:
+            logger.warning(f"{reason}，清理本地绑定状态失败: {exc}")
+        else:
+            logger.warning(f"{reason}，已清理微信绑定状态")
 
     async def _clear_context_token(self) -> None:
         if self._runtime_credentials is not None:
@@ -693,7 +732,10 @@ class OpenClawWeixinManager:
                 if error_code == -14:
                     self._updates_buf = ""
                     await self._clear_context_token()
-                    logger.warning("微信 iLink 会话已过期，请重新扫码绑定")
+                    await self._invalidate_binding(
+                        stop_updates=False,
+                        reason="微信 iLink 会话已过期",
+                    )
                     return
                 elif error_code not in (None, 0):
                     raise RuntimeError(
