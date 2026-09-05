@@ -26,6 +26,7 @@ class FakeConfig:
 def test_save_credentials_storage_modes(monkeypatch, persistent, fail_secret):
     config = FakeConfig()
     config.fail_secret = fail_secret
+    config.values["IfOpenClawQQ"] = False
     monkeypatch.setattr(qq, "Config", config)
     manager = qq.OpenClawQQManager()
     manager._secret_storage_available = persistent
@@ -35,7 +36,7 @@ def test_save_credentials_storage_modes(monkeypatch, persistent, fail_secret):
             app_id="new-app", client_secret="secret", user_openid="user"
         )
     )
-    assert config.values["IfOpenClawQQ"] is True
+    assert config.values["IfOpenClawQQ"] is False
     assert manager._access_token == ""
     if persistent and not fail_secret:
         assert config.values["OpenClawQQClientSecret"] == "secret"
@@ -101,3 +102,48 @@ def test_token_cache_reused_until_expiry():
         assert manager._request_json.await_count == 2
 
     asyncio.run(run())
+
+
+def test_message_sequence_increments_and_wraps():
+    manager = qq.OpenClawQQManager()
+    manager._msg_seq = qq.MESSAGE_SEQUENCE_MAX - 1
+
+    assert manager._next_msg_seq() == qq.MESSAGE_SEQUENCE_MAX
+    assert manager._next_msg_seq() == 1
+
+
+def test_send_uses_a_new_message_sequence_for_each_notification():
+    manager = qq.OpenClawQQManager()
+    manager._credentials = lambda: ("app", "secret", "user")
+    manager._send_message_with_token = AsyncMock()
+
+    async def run():
+        await manager.send("标题", "第一条")
+        await manager.send("标题", "第二条")
+
+    asyncio.run(run())
+    bodies = [
+        call.kwargs["body"]
+        for call in manager._send_message_with_token.await_args_list
+    ]
+    assert [body["msg_seq"] for body in bodies] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("status_code", "state"),
+    [(503, "waiting"), (404, "error")],
+)
+def test_qr_http_errors_have_retryable_states(status_code, state):
+    manager = qq.OpenClawQQManager()
+    manager._sessions["session"] = qq._QrSession(
+        task_id="task",
+        aes_key=b"0" * 32,
+        created_at=qq.monotonic(),
+    )
+    manager._request_json = AsyncMock(
+        side_effect=qq.RemoteHTTPError(status_code, f"HTTP {status_code}")
+    )
+
+    result = asyncio.run(manager.check_login("session"))
+
+    assert result.state == state

@@ -85,3 +85,25 @@ it('submits a nonempty WeChat pairing code and pauses automatic polling', async 
   expect(mocks.weixin.check).toHaveBeenLastCalledWith({ sessionId: 'wx', verifyCode: '1234' })
   flow.close()
 })
+
+it('defaults to enabled only for the first binding, not for a rebind', async () => {
+  mocks.weixin.start.mockResolvedValue({ code: 200, sessionId: 'wx', qrUrl: 'qr' })
+  mocks.weixin.check.mockResolvedValue({ code: 200, state: 'connected', connected: true })
+  mocks.weixin.status.mockResolvedValue({
+    code: 200,
+    enabled: true,
+    connected: true,
+    state: 'connected',
+  })
+  const onChange = vi.fn().mockResolvedValue(undefined)
+  const flow = useClawBinding('weixin', onChange)
+
+  await flow.start()
+  await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
+  expect(onChange).toHaveBeenCalledWith(true)
+
+  await flow.start()
+  await vi.waitFor(() => expect(mocks.weixin.check).toHaveBeenCalledTimes(2))
+  expect(onChange).toHaveBeenCalledTimes(1)
+  flow.close()
+})

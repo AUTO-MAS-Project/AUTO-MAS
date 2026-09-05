@@ -30,9 +30,5 @@ export type OpenClawWeixinStatusOut = {
      * 当前连接状态
      */
     state?: string;
-    /**
-     * 是否已取得可用于通知的会话上下文
-     */
-    contextReady?: boolean;
 };
 

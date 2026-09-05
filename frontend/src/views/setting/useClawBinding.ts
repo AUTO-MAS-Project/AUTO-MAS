@@ -46,6 +46,8 @@ export function useClawBinding(
   let sessionId = ''
   let runId = 0
   let timer: ReturnType<typeof setTimeout> | undefined
+  let isBound = false
+  let enableAfterBind = false
 
   const checkResponse = (result: OutBase) => {
     if (result.code !== 200) throw new Error(result.message || label('QrError'))
@@ -58,6 +60,7 @@ export function useClawBinding(
       const result = await api.status()
       checkResponse(result)
       status.value = result
+      isBound = !!result.connected
       // 后端发现凭据不完整时同时关闭旧的通知开关，避免继续向失效渠道投递。
       if (result.enabled && !result.connected) {
         await onBoundChange(false)
@@ -95,7 +98,9 @@ export function useClawBinding(
       state.value = result.connected ? 'connected' : result.state || 'waiting'
       hint.value = result.message || label('QrWaiting')
       if (state.value === 'connected') {
-        await onBoundChange(true)
+        // 首次绑定默认启用；重新绑定只替换凭据，保留用户原来的开关状态。
+        if (enableAfterBind) await onBoundChange(true)
+        isBound = true
         await loadStatus()
       } else if (['waiting', 'scanned'].includes(state.value)) {
         timer = setTimeout(() => void poll(id), POLL_INTERVAL)
@@ -110,6 +115,8 @@ export function useClawBinding(
   }
 
   const start = async () => {
+    isBound ||= status.value?.connected === true
+    enableAfterBind = !isBound
     close()
     const id = runId
     open.value = loading.value = true
@@ -144,6 +151,7 @@ export function useClawBinding(
     unbinding.value = true
     try {
       checkResponse(await api.unbind())
+      isBound = false
       await onBoundChange(false)
       await loadStatus()
       message.success(label('UnbindSuccess'))

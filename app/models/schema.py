@@ -376,9 +376,6 @@ class OpenClawWeixinQrCheckOut(OutBase):
     sessionId: str = Field(default="", description="二维码登录会话 ID")
     state: str = Field(default="", description="二维码状态")
     connected: bool = Field(default=False, description="是否已完成账号绑定")
-    contextReady: bool = Field(
-        default=False, description="是否已取得可用于通知的会话上下文"
-    )
 
 
 class OpenClawWeixinStatusOut(OutBase):
@@ -387,9 +384,6 @@ class OpenClawWeixinStatusOut(OutBase):
     enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
     connected: bool = Field(default=False, description="是否已绑定微信账号")
     state: str = Field(default="disconnected", description="当前连接状态")
-    contextReady: bool = Field(
-        default=False, description="是否已取得可用于通知的会话上下文"
-    )
 
 
 class OpenClawQQQrStartOut(OutBase):

@@ -58,7 +58,6 @@ async def get_status() -> OpenClawWeixinStatusOut:
         enabled=state.enabled,
         connected=state.connected,
         state=state.state,
-        contextReady=state.context_ready,
         message=state.message,
     )
 
@@ -115,7 +114,6 @@ async def check_login(
         sessionId=result.session_id,
         state=result.state,
         connected=result.connected,
-        contextReady=result.context_ready,
         message=result.message,
     )
 

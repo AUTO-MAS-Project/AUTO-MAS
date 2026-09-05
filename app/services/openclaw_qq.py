@@ -54,6 +54,7 @@ QR_SESSION_TTL_SECONDS = 5 * 60
 QR_REQUEST_TIMEOUT_SECONDS = 15
 API_REQUEST_TIMEOUT_SECONDS = 15
 TEXT_CHUNK_LIMIT = 3800
+MESSAGE_SEQUENCE_MAX = 0xFFFFFFFF
 USER_AGENT = "AUTO-MAS QQ Official Bot"
 
 
@@ -77,6 +78,14 @@ class _RuntimeCredentials:
     app_id: str
     client_secret: str
     user_openid: str
+
+
+class RemoteHTTPError(RuntimeError):
+    """远端返回明确 HTTP 状态码的请求错误。"""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -238,6 +247,7 @@ class OpenClawQQManager:
         self._secret_storage_available: bool | None = None
         self._access_token = ""
         self._access_token_expires_at = 0.0
+        self._msg_seq = 0
 
     def bind_config_hooks(self) -> None:
         """绑定通知开关变化，关闭时立即丢弃本地访问令牌。"""
@@ -385,8 +395,21 @@ class OpenClawQQManager:
                 headers=_headers(),
                 timeout=QR_REQUEST_TIMEOUT_SECONDS,
             )
+        except RemoteHTTPError as exc:
+            if 500 <= exc.status_code < 600:
+                # 5xx 通常是临时服务异常，让前端继续轮询并展示原因。
+                return QrCheckResult(
+                    session_id=session_id,
+                    state="waiting",
+                    message=str(exc),
+                )
+            return QrCheckResult(
+                session_id=session_id,
+                state="error",
+                message=str(exc),
+            )
         except RuntimeError as exc:
-            # 轮询失败通常是临时网络问题，让前端继续轮询并展示原因。
+            # 网络错误、超时等没有明确 HTTP 状态码，允许前端重试。
             return QrCheckResult(
                 session_id=session_id,
                 state="waiting",
@@ -537,7 +560,11 @@ class OpenClawQQManager:
             for index, chunk in enumerate(chunks, start=1):
                 if len(chunks) > 1:
                     chunk = f"[{index}/{len(chunks)}]\n{chunk}"
-                body = {"msg_type": 0, "msg_seq": index, "content": chunk}
+                body = {
+                    "msg_type": 0,
+                    "msg_seq": self._next_msg_seq(),
+                    "content": chunk,
+                }
                 await self._send_message_with_token(
                     app_id=app_id,
                     client_secret=client_secret,
@@ -545,6 +572,12 @@ class OpenClawQQManager:
                     body=body,
                 )
             logger.success(f"QQ官方机器人通知推送成功: {title}")
+
+    def _next_msg_seq(self) -> int:
+        """为每条 QQ 消息分配递增序号，避免不同通知重复使用同一序号。"""
+
+        self._msg_seq = (self._msg_seq % MESSAGE_SEQUENCE_MAX) + 1
+        return self._msg_seq
 
     async def _send_message_with_token(
         self,
@@ -634,7 +667,6 @@ class OpenClawQQManager:
             user_openid=user_openid.strip(),
         )
         values = {
-            "IfOpenClawQQ": True,
             "OpenClawQQAppId": normalized.app_id,
             "OpenClawQQTargetOpenId": normalized.user_openid,
         }
@@ -686,8 +718,9 @@ class OpenClawQQManager:
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
-            raise RuntimeError(
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}）"
+            raise RemoteHTTPError(
+                exc.response.status_code,
+                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}）",
             ) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError("QQ 官方机器人网络请求失败") from exc

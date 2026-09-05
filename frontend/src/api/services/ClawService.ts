@@ -37,7 +37,7 @@ export class ClawService {
     }
     /**
      * 查询微信 Claw 登录状态
-     * 查询二维码状态；确认后自动保存账号并启动上下文轮询。
+     * 查询二维码状态；确认后自动保存账号凭据。
      * @param requestBody
      * @returns OpenClawWeixinQrCheckOut Successful Response
      * @throws ApiError

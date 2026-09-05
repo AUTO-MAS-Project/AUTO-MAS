@@ -30,9 +30,5 @@ export type OpenClawWeixinQrCheckOut = {
      * 是否已完成账号绑定
      */
     connected?: boolean;
-    /**
-     * 是否已取得可用于通知的会话上下文
-     */
-    contextReady?: boolean;
 };
 

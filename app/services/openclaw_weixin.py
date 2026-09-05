@@ -25,7 +25,7 @@
 用户只参与二维码登录。Bot Token、账号/用户 ID 都是协议层状态，
 由本模块取得并保存，不作为设置页字段暴露给用户。
 
-通知通道只在扫码或发送通知时请求 iLink，不在后台保持 getupdates 长轮询；
+通知通道只在扫码或发送通知时请求 iLink，不在后台保持消息长轮询；
 通知发送不需要会话上下文。
 """
 
@@ -104,7 +104,6 @@ class QrCheckResult:
     state: str
     message: str
     connected: bool = False
-    context_ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -114,8 +113,15 @@ class WeixinStatus:
     enabled: bool
     connected: bool
     state: str
-    context_ready: bool
     message: str
+
+
+class RemoteHTTPError(RuntimeError):
+    """远端返回明确 HTTP 状态码的请求错误。"""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        super().__init__(message)
 
 
 def split_text(text: str, limit: int = TEXT_CHUNK_LIMIT) -> list[str]:
@@ -283,10 +289,6 @@ class OpenClawWeixinManager:
             return self._runtime_credentials.account_id
         return str(self._config_value("OpenClawWeixinAccountId") or "").strip()
 
-    def _has_token(self) -> bool:
-        token, _, _ = self._credentials()
-        return bool(token)
-
     def status(self) -> WeixinStatus:
         """返回绑定状态，不回传 Token、用户 ID 或上下文内容。"""
 
@@ -296,8 +298,6 @@ class OpenClawWeixinManager:
         # 只有能直接发送消息的凭据才算已绑定；仅有 Bot Token/账号 ID 时，
         # send() 仍会因为缺少收件人而失败，不能让前端显示为已绑定。
         connected = bool(token and user_id)
-        # 主动通知不需要 getupdates 提供会话上下文；字段保留用于兼容旧版 API。
-        context_ready = False
         if not connected:
             state = "disconnected"
             message = (
@@ -313,7 +313,6 @@ class OpenClawWeixinManager:
             enabled=enabled,
             connected=connected,
             state=state,
-            context_ready=context_ready,
             message=message,
         )
 
@@ -325,15 +324,8 @@ class OpenClawWeixinManager:
             self._sessions.clear()
             self._session_generation += 1
             generation = self._session_generation
-            old_token, old_user_id, _ = self._credentials()
-            # 已绑定时点击“重新绑定”应真正进入新的扫码流程；仅在旧配置不完整
-            # 时携带旧 Token，让服务端仍可识别历史绑定并返回 binded_redirect。
-            local_token_list = (
-                []
-                if old_token and (self._account_id() or old_user_id)
-                else ([old_token] if old_token else [])
-            )
-            body = {"local_token_list": local_token_list}
+            # 每次扫码都要求服务端返回完整凭据；本地残缺 Token 不参与新会话。
+            body = {"local_token_list": []}
 
         # 二维码接口可能等待十几秒；网络请求必须在会话锁外执行，
         # 否则关闭二维码、重新绑定和解绑都会被阻塞。
@@ -395,6 +387,18 @@ class OpenClawWeixinManager:
                 body=None,
                 token=None,
                 timeout=QR_STATUS_TIMEOUT_SECONDS,
+            )
+        except RemoteHTTPError as exc:
+            if 500 <= exc.status_code < 600:
+                return QrCheckResult(
+                    session_id=session_id,
+                    state="waiting",
+                    message=str(exc),
+                )
+            return QrCheckResult(
+                session_id=session_id,
+                state="error",
+                message=str(exc),
             )
         except RuntimeError as exc:
             return QrCheckResult(
@@ -510,12 +514,11 @@ class OpenClawWeixinManager:
                         message="二维码登录会话已关闭，请重新生成",
                     )
                 self._sessions.pop(session_id, None)
-            if self._has_token():
+            if self.status().connected:
                 return QrCheckResult(
                     session_id=session_id,
                     state="connected",
                     connected=True,
-                    context_ready=self.status().context_ready,
                     message="微信已绑定，无需重复登录",
                 )
             return QrCheckResult(
@@ -575,7 +578,6 @@ class OpenClawWeixinManager:
                 session_id=session_id,
                 state="connected",
                 connected=True,
-                context_ready=self.status().context_ready,
                 message="微信扫码绑定成功",
             )
 
@@ -716,7 +718,6 @@ class OpenClawWeixinManager:
                 await Config.update(
                     {
                         "Notify": {
-                            "IfOpenClawWeixin": True,
                             "OpenClawWeixinAccountId": normalized.account_id,
                             "OpenClawWeixinTargetUserId": normalized.user_id,
                             "OpenClawWeixinServerAddress": normalized.base_url,
@@ -733,7 +734,6 @@ class OpenClawWeixinManager:
             await Config.update(
                 {
                     "Notify": {
-                        "IfOpenClawWeixin": True,
                         "OpenClawWeixinBotToken": normalized.token,
                         "OpenClawWeixinAccountId": normalized.account_id,
                         "OpenClawWeixinTargetUserId": normalized.user_id,
@@ -776,8 +776,9 @@ class OpenClawWeixinManager:
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
             # 不把二维码或会话令牌所在的完整 URL 带回前端或写入日志。
-            raise RuntimeError(
-                f"微信 iLink HTTP 请求失败（状态码 {exc.response.status_code}）"
+            raise RemoteHTTPError(
+                exc.response.status_code,
+                f"微信 iLink HTTP 请求失败（状态码 {exc.response.status_code}）",
             ) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError("微信 iLink 网络请求失败") from exc
