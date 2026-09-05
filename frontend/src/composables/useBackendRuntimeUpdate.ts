@@ -18,6 +18,10 @@ import type {
   RuntimeUpdateStage,
 } from '@/types/electron'
 import { reconnectNow } from '@/services/websocket/connection'
+import {
+  beginIntentionalBackendRestart,
+  endIntentionalBackendRestart,
+} from '@/composables/useAppLifecycle'
 import { getBackendVersion } from './useVersionService'
 
 const logger = window.electronAPI.getLogger('后端更新')
@@ -110,6 +114,9 @@ async function settle(result: RuntimeUpdateOutcome): Promise<void> {
   cancelling.value = false
   detachProgressListener()
   if (result.success) await refreshAfterUpdate()
+  // 成功路径上 refreshAfterUpdate 的 reconnectNow 通常已经结束了窗口，这里兜住失败
+  // 与取消：后端可能真的没起来，得把事故路径还给协调器。
+  endIntentionalBackendRestart('Runtime 后端更新结束')
 }
 
 export function useBackendRuntimeUpdate() {
@@ -133,6 +140,11 @@ export function useBackendRuntimeUpdate() {
     running.value = true
     attachProgressListener()
 
+    // Runtime 更新同样是「先停后端，再 workspace sync，最后重新监督」。停机期间的断开
+    // 属于计划内：协调器若按事故处理，会在 sync 期间把后端重新拉起来，而 sync 发现后端
+    // 仍在跑就会失败——它和 Runtime 命令不共用 backendService 的串行队列，拦不住。
+    beginIntentionalBackendRestart('Runtime 后端更新')
+
     logger.info(`开始经 Runtime 更新后端到 ${version}`)
     try {
       await settle(await window.electronAPI.updateBackendViaRuntime(version))
@@ -150,6 +162,9 @@ export function useBackendRuntimeUpdate() {
     cancelling.value = false
     running.value = true
     attachProgressListener()
+
+    // 单步重试同样会走停机与源码替换，理由同 start()
+    beginIntentionalBackendRestart(`Runtime 后端更新重试: ${action}`)
 
     logger.info(`重试后端更新: ${action}`)
     try {

@@ -143,7 +143,11 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { closeApp } from '@/composables/useAppLifecycle'
+import {
+  beginIntentionalBackendRestart,
+  closeApp,
+  endIntentionalBackendRestart,
+} from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
@@ -300,6 +304,9 @@ const handleBackendUpdateClick = () => {
         return
       }
 
+      // 关后端到初始化流程重新拉起它之间的断开是计划内的：先打好标记，
+      // 否则生命周期协调器会当成事故——提示用户断线，并 taskkill 后抢着起一个后端
+      beginIntentionalBackendRestart('标题栏触发后端更新')
       try {
         logger.info('开始更新后端')
 
@@ -330,6 +337,8 @@ const handleBackendUpdateClick = () => {
         await router.push('/initialization')
         logger.info('已跳转到初始化页面')
       } catch (error) {
+        // 没能走到初始化页：后端不会有人再拉起它，交回协调器按事故处理
+        endIntentionalBackendRestart('后端更新流程异常中断')
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`更新后端失败: ${errorMsg}`)
       }
