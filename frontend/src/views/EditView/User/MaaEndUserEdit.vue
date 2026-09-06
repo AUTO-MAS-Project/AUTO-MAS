@@ -56,18 +56,6 @@
             @script-config="handleScriptConfig"
             @mode-change="handleConfigModeChange"
           />
-          <DeliveryConfigSection
-            v-if="formData.Info.IfQuickConfig"
-            :form-data="formData"
-            :loading="loading"
-            @save="handleFieldSave"
-          />
-          <AutoCollectConfigSection
-            v-if="formData.Info.IfQuickConfig"
-            :form-data="formData"
-            :loading="loading"
-            @save="handleFieldSave"
-          />
           <TaskConfigSection
             v-if="formData.Info.IfQuickConfig"
             :form-data="formData"
@@ -81,6 +69,18 @@
             :plan-mode-config="planModeConfig"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
+          />
+          <AutoCollectConfigSection
+            v-if="formData.Info.IfQuickConfig"
+            :form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
+          <DeliveryConfigSection
+            v-if="formData.Info.IfQuickConfig"
+            :form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
           />
           <ExtraScriptSection
             v-model:form-data="formData"
