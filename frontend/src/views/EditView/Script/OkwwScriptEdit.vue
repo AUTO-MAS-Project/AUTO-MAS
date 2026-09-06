@@ -512,7 +512,6 @@ interface OkwwRunForm {
 
 interface OkwwScriptConfigForm {
   Info: OkwwInfoForm
-  Script: Record<string, never>
   Game: OkwwGameForm
   Run: OkwwRunForm
 }
@@ -529,7 +528,6 @@ const formData = reactive({
 
 const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Script: {},
   Game: {
     Enabled: false,
     AccountSwitch: false,
@@ -838,7 +836,6 @@ const loadScript = async () => {
     formData.name = detail.name
     const config = detail.config as Partial<OkwwScriptConfigForm>
     Object.assign(okwwConfig.Info, config.Info || {})
-    Object.assign(okwwConfig.Script, config.Script || {})
     Object.assign(okwwConfig.Game, config.Game || {})
     Object.assign(okwwConfig.Run, config.Run || {})
     if (okwwConfig.Game.Path && okwwConfig.Game.Path !== '.') {

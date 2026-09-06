@@ -322,13 +322,6 @@ class AutoProxyTask(TaskExecuteBase):
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
-    def _okww_mas_config_dir(self) -> Path:
-        return _okww_mas_config_dir(
-            self.script_info.script_id,
-            str(self.cur_user_uid),
-            _okww_config_mode(self.cur_user_config.get("Info", "Mode")),
-        )
-
     def _apply_mas_overrides(self) -> None:
         _update_json(
             self.script_config_path / "Basic Options.json",
@@ -370,7 +363,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
-            mas_config_dir = self._okww_mas_config_dir()
+            mas_config_dir = _okww_mas_config_dir(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                config_mode,
+            )
             tmp_dst = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
             )

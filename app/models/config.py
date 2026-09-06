@@ -1702,6 +1702,20 @@ class HSRUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 用户标签信息（虚拟字段，供前端显示）
@@ -3407,8 +3421,6 @@ class GeneralConfig(ConfigBase):
 class OkwwConfig(ConfigBase):
     """OK-WW 配置（ok-script 线）"""
 
-    related_config: dict[str, MultipleConfig] = {}
-
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -3420,10 +3432,6 @@ class OkwwConfig(ConfigBase):
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        ## 兼容旧配置：游戏启动由 Enabled 统一控制
-        self.Game_LaunchBeforeTask = ConfigItem(
-            "Game", "LaunchBeforeTask", False, BoolValidator()
-        )
         ## 鸣潮启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 鸣潮启动参数
@@ -4045,7 +4053,6 @@ class GlobalConfig(ConfigBase):
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
