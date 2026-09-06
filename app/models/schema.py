@@ -1082,21 +1082,10 @@ class GeneralConfig(BaseModel):
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
-class OkwwConfig_Info(GeneralConfig_Info):
-    """OK-WW 脚本基础信息（复用通用字段）"""
-
-
-class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
-
-
 class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
     Enabled: Optional[bool] = Field(default=None, description="游戏相关功能是否启用")
-    LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏"
-    )
     Path: Optional[str] = Field(default=None, description="游戏启动器路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
@@ -1111,15 +1100,10 @@ class OkwwConfig_Game(BaseModel):
     )
 
 
-class OkwwConfig_Run(GeneralConfig_Run):
-    """OK-WW 运行配置（复用通用字段）"""
-
-
 class OkwwConfig(BaseModel):
-    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
-    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
-    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
+    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
 class OkNteConfig_Info(GeneralConfig_Info):
