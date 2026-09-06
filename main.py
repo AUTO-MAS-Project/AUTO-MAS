@@ -248,7 +248,7 @@ def main():
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、ArknightWin32、主定时器。
+            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -283,6 +283,7 @@ def main():
                 await Config.get_stage()
                 await Config.clean_old_history()
                 await Config.clean_maafw_agent_venvs()
+                await Config.clean_debug_diagnostics()
 
                 if IS_WINDOWS:
                     for adapter in (
