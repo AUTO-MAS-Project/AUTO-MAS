@@ -1,0 +1,5 @@
+feat(bettergi): 幽境危战右栏任务设置面板与队列交互细化
+
+- 基于 BGI 全局 config.json 物化/还原幽境危战刷取策略与树脂次数设置
+- 队列行启停开关、批量操作与标签展示细化
+- 同步 res/version.json changelog

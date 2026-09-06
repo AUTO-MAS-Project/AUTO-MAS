@@ -137,11 +137,35 @@ class BetterGIGlobalDomainSettingsOut(OutBase):
 
 
 class BetterGIGlobalDomainSettingsIn(BaseModel):
-    """BetterGI 全局 config.json 的秘境刷取配置写入请求"""
+    """BetterGI 秘境刷取配置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
+    userId: Optional[str] = Field(default="", description="所属用户ID（空=写 BGI 全局实配）")
     settings: Dict[str, Any] = Field(
         default_factory=dict, description="要覆盖写入的秘境刷取配置键值（camelCase 扁平键）"
+    )
+
+
+class BetterGIGlobalStygianSettingsOut(OutBase):
+    """BetterGI 全局 config.json 的「自动幽境危战」段（autoStygianOnslaughtConfig）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "幽境危战设置键值（camelCase 扁平键：bossNum/fightTeamName/strategyName/"
+            "specifyResinUse/originalResinUseCount/condensedResinUseCount/"
+            "transientResinUseCount/fragileResinUseCount/autoArtifactSalvage）"
+        ),
+    )
+
+
+class BetterGIGlobalStygianSettingsIn(BaseModel):
+    """BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: Optional[str] = Field(default="", description="所属用户ID（空=写 BGI 全局实配）")
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的幽境危战设置键值（camelCase 扁平键）"
     )
 
 

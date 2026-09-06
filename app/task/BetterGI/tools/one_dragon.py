@@ -22,9 +22,14 @@ BetterGI 一条龙配置以独立 JSON 文件保存于 ``{RootPath}/User/OneDrag
 （``Name`` 字段 == 文件名）。每个配置组以「组名」标识（``TaskDefinitions`` 的 value），
 UUID 是每实例随机生成的临时标识，因此本模块按组名识别与切换，新组用 ``uuid.uuid4()`` 生成。
 
-MAS 只管理 8 个内置配置组（按组名对其 enabled 置 true/false，组定义保留、可逆），
-其余自定义组（用户自建 ScriptGroup）本轮不管理、原样保留，其启用与否由 BetterGI 内部
-配置决定；除三个组列表外的所有设置字段（队伍/秘境/地脉花/首领讨伐等）一律原样保留。
+「用户独立配置」模式下（``Info.IfUseMasConfig=True``）：
+- 配置名固定为 MAS 专属槽位「MAS独立配置」，per-user 副本路径固定
+  ``data/{script_id}/{user_id}/OneDragon/MAS独立配置.json``，BGI 同名实配全程零接触。
+- 种子顺序为 per-user 副本 → 内置模板（不回退 BGI 实配，实配不是权威源）。
+- 自定义配置组（per-user ScriptGroup 副本）在运行时以 ``MAS-{user短id}-{原名}`` 前缀名
+  物化到 BGI ``User/ScriptGroup`` 并同步改写槽位 ``TaskDefinitions`` 引用；运行结束删除，
+  BGI 本体目录平时保持干净（``remove_materialized_script_groups``）。
+非独立模式（``IfUseMasConfig=False``）保持直控 BGI 所选实配，本模块的独立槽位逻辑不生效。
 """
 
 import json
@@ -267,6 +272,23 @@ def per_user_script_group_path(script_id: str, user_id: str, name: str) -> Path:
     )
 
 
+def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
+    """列出某用户 per-user ScriptGroup 副本的文件名（不含 ``.json``）。
+
+    副本是 MAS 在「用户独立配置」语义下保存的用户编辑内容，与 BGI 实配目录
+    （``User/ScriptGroup/*.json``）相对独立；前端把两者并集视为「该用户可编辑的
+    配置组」，据此把复制自 JS/路径等来源的自建副本识别为 scriptgroup 行。
+    """
+    names: list[str] = []
+    sg_dir = per_user_script_group_path(script_id, user_id, "_").parent
+    if sg_dir.is_dir():
+        for p in sorted(sg_dir.glob("*.json"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
 def read_user_script_group(
     root: Path, script_id: str, user_id: str, name: str
 ) -> dict[str, Any]:
@@ -489,12 +511,17 @@ def _slot_backup_path(script_id: str) -> Path:
 def remove_one_dragon_slot(root: Path, script_id: str) -> bool:
     """删除 MAS 运行时槽位配置（幂等）。返回是否确实存在并删除了。
 
-    若写槽位前该位置本是用户自己的同名配置（已备份），则恢复原内容而非删除，
-    避免 MAS 运行时槽位覆盖并删掉用户配置（#498 二.2 附带窄路径）。
+    仅当槽位确为 MAS 本轮写入时删除（owner 标记或写前备份存在）；若两标记都不存在，
+    说明该位置是用户自己的同名配置（本轮未物化），一律保留不触碰，避免误删用户文件。
+    若写槽位前该位置本是用户自己的同名配置（已备份到 ``_slot_backup_path``），
+    则恢复原内容而非删除（#498 二.2 附带窄路径）。
     """
     slot_path = one_dragon_slot_path(root)
     owner_path = _slot_owner_path(script_id)
     backup_path = _slot_backup_path(script_id)
+    if not owner_path.exists() and not backup_path.exists():
+        # 本轮未物化过：该文件属于用户自己（或本不存在），不删除
+        return False
     if backup_path.exists():
         # 写槽位前这里是用户自己的配置：恢复原内容，不删除
         backup = read_file(backup_path)
@@ -535,13 +562,8 @@ def parse_custom_groups(raw: Any) -> list[dict[str, Any]]:
     ]
 
 
-def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
-    """列出某一条龙配置里的自定义配置组（非内置 8 组），按 ``TaskOrder`` 相对顺序。
-
-    供前端「自定义配置组」表格自动加载：读取 BetterGI 现有配置，返回
-    ``[{"name": ..., "enabled": ...}, ...]``。
-    """
-    config = load_one_dragon(root, config_name)
+def _custom_groups_from_config(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """从一条龙配置 dict 抽取自定义配置组（非内置 8 组），按 ``TaskOrder`` 相对顺序。"""
     defs: dict[str, str] = config.get("TaskDefinitions") or {}
     enabled_map: dict[str, bool] = config.get("TaskEnabledList") or {}
     order: list[str] = list(config.get("TaskOrder") or [])
@@ -560,6 +582,28 @@ def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
             seen.add(name)
             items.append({"name": name, "enabled": bool(enabled_map.get(uid, True))})
     return items
+
+
+def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
+    """列出某一条龙配置（BGI 实配）里的自定义配置组。
+
+    供「非独立模式」/直控场景读取 BGI 现有配置返回
+    ``[{"name": ..., "enabled": ...}, ...]``。
+    """
+    return _custom_groups_from_config(load_one_dragon(root, config_name))
+
+
+def list_user_custom_groups(
+    root: Path, script_id: str, user_id: str, config_name: str
+) -> list[dict[str, Any]]:
+    """列出某用户 per-user 一条龙副本里的自定义配置组（独立模式权威源）。
+
+    读取源与 ``read_user_one_dragon_settings`` 一致（副本 → 内置模板），
+    保证表格展示的是将写入槽位的组（含自定义组开关状态）。
+    """
+    return _custom_groups_from_config(
+        _seed_user_one_dragon_config(root, script_id, user_id, config_name)
+    )
 
 
 def one_dragon_path(root: Path, name: str) -> Path:
@@ -620,55 +664,150 @@ def per_user_one_dragon_path(script_id: str, user_id: str, config_name: str) -> 
     )
 
 
+def _mas_user_short_id(user_id: str) -> str:
+    """用户短标识：取 UUID 十六进制前 8 位，供物化文件名前缀避让使用。"""
+    short = (user_id or "").replace("-", "")[:8]
+    return short or "user"
+
+
+def materialize_user_script_groups(
+    root: Path,
+    script_id: str,
+    user_id: str,
+    config: dict[str, Any],
+) -> list[Path]:
+    """把用户独立配置的自定义配置组物化到 BGI User/ScriptGroup（前缀避让）。
+
+    仅物化**存在 per-user ScriptGroup 副本**（``data/{script}/{user}/ScriptGroup/{原名}.json``）
+    的组：以 ``MAS-{user短id}-{原名}.json`` 写入 BGI，并把 ``config`` 的
+    ``TaskDefinitions`` 中该组引用同步改写为前缀名。BGI 原有同名文件零接触
+    （前缀不同绝不覆盖）。无副本的组（引用 BGI 已有配置组 / JS 脚本 / 路径等）
+    原样保留名字，交由 BGI 自身解析。
+
+    Returns:
+        本次物化写入的文件路径列表（供运行结束删除）。
+    """
+    created: list[Path] = []
+    defs = config.get("TaskDefinitions")
+    if not isinstance(defs, dict):
+        return created
+    rename: dict[str, str] = {}
+    seen: set[str] = set()
+    for name in defs.values():
+        if not isinstance(name, str) or not name:
+            continue
+        if name in _BUILTIN_ONE_DRAGON_GROUPS or name in seen:
+            continue
+        seen.add(name)
+        copy = read_file(per_user_script_group_path(script_id, user_id, name))
+        if not (isinstance(copy, dict) and copy):
+            continue  # 无 MAS 副本：引用 BGI 已有组/JS/路径，原样保留
+        prefixed = f"MAS-{_mas_user_short_id(user_id)}-{name}"
+        copy["name"] = prefixed
+        out_path = root / _SCRIPT_GROUP_REL_DIR / f"{prefixed}.json"
+        write_file(out_path, copy)
+        created.append(out_path)
+        rename[name] = prefixed
+    if rename:
+        for uid, name in defs.items():
+            if isinstance(name, str) and name in rename:
+                defs[uid] = rename[name]
+    return created
+
+
+def remove_materialized_script_groups(root: Path, created: list[Path]) -> None:
+    """删除本次运行物化到 BGI User/ScriptGroup 的前缀组文件（幂等）。"""
+    for p in created or []:
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def cleanup_leftover_mas_groups(root: Path, script_id: str, user_id: str) -> int:
+    """清理该用户历史残留的 MAS 物化配置组文件（``User/ScriptGroup/MAS-{短id}-*.json``）。
+
+    进程被强杀等异常场景会留下前缀物化文件（无 owner 标记可循），此函数按用户短 id
+    前缀扫描删除，只命中 MAS 专属前缀，绝不触碰 BGI 本体文件。返回删除数量。
+    """
+    short = _mas_user_short_id(user_id)
+    removed = 0
+    sg_dir = root / _SCRIPT_GROUP_REL_DIR
+    if sg_dir.is_dir():
+        for p in sg_dir.glob(f"MAS-{short}-*.json"):
+            try:
+                p.unlink(missing_ok=True)
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def write_user_one_dragon(
     root: Path,
     script_id: str,
     user_id: str,
-    config_name: str,
     groups: list[str],
     daily_reward_party_name: str = "",
     party_name: str = "",
     auto_boss_strategy_name: str = "",
     custom_groups: list[dict[str, Any]] | None = None,
     manage_custom_groups: bool = False,
-) -> None:
+) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
-    种子优先级：per-user 副本 → BetterGI 现有配置 → 内置模板。
-    关键：物化结果写入 MAS 专属槽位 ``{RootPath}/User/OneDragon/MAS独立配置.json``（据此启动，
-    运行后由 ``remove_one_dragon_slot`` 删除），而 **不写入用户所选名的 BGI 实配**——BGI 同名
-    配置全程零接触，不会被覆盖成用户独立配置的样子。per-user 缓存仍以用户所选名 key。
+    仅「用户独立配置」模式（``IfUseMasConfig=True``）调用；配置名固定为
+    「MAS独立配置」：
+    - per-user 副本固定 ``data/{script}/{user}/OneDragon/MAS独立配置.json``；
+    - 种子优先级：per-user 副本 → 内置模板（**不回退 BGI 实配**，BGI 同名实配零接触，
+      首次启用按纯内置模板开始，历史副本不再生效但保留在磁盘）；
+    - 物化结果写入 MAS 专属槽位 ``{RootPath}/User/OneDragon/MAS独立配置.json``（据此启动，
+      运行后由 ``remove_one_dragon_slot`` 删除）；
+    - 入列的自定义配置组（含禁用，凡在 per-user ScriptGroup 副本中有定义的组）一并
+      以 ``MAS-{短id}-{原名}`` 前缀物化到 BGI ``User/ScriptGroup``，并同步改写槽位
+      ``TaskDefinitions`` 引用；BGI 本体原有同名文件绝不覆盖。
 
-    非组字段（领取奖励队伍/战斗队伍/战斗策略）仅在非空时覆盖配置（留空不覆盖）；
-    其中「战斗队伍/战斗策略」会落到秘境 ``PartyName`` 与首领讨伐的
-    ``AutoBossTeamName`` / ``AutoBossStrategyName``（秘境策略仍走全局
+    非组字段（领取奖励队伍/战斗队伍/战斗策略）作为**运行时覆盖层**：仅在非空时写入
+    BGI 槽位（留空则保持 BetterGI 现有设置），**只物化到槽位、不回写 per-user 副本**
+    ——否则曾填写过的值会沉淀在副本中，之后清空（留空）仍被当作旧值继续执行，无法
+    回退到 BetterGI 现有设置。其中「战斗队伍/战斗策略」会落到秘境 ``PartyName`` 与
+    首领讨伐的 ``AutoBossTeamName`` / ``AutoBossStrategyName``（秘境策略仍走全局
     ``autoFightConfig``）；地脉花/幽境危战/以及秘境策略另外经
-    ``apply_global_battle_team`` / ``apply_global_battle_strategy`` 补写全局 config.json。
+    ``apply_global_battle_team`` / ``apply_global_battle_strategy`` 补写全局 config.json
+    （同样只在非空时写，留空保留 BGI 现有值）。
     ``manage_custom_groups`` 开启时按 ``custom_groups``（name→enabled）管理自定义组，
     否则自定义组原样保留（由 BetterGI 内部决定）。
+
+    Returns:
+        本次物化到 BGI 的配置组文件路径列表（供调用方在运行结束后
+        ``remove_materialized_script_groups`` + ``remove_one_dragon_slot`` 清理）。
     """
-    config_name = resolve_config_name(config_name)
+    config_name = _MAS_ONE_DRAGON_SLOT_NAME
     user_path = per_user_one_dragon_path(script_id, user_id, config_name)
 
     config = read_file(user_path)
     if not config or not isinstance(config, dict):
-        # 缓存缺失/为空时（read_file 对不存在返回 {}）回退到 BGI 实配：否则种子退化为
-        # 仅 8 个内置组的空模板，用户现有自定义配置组会整体丢失、重启后落到一条龙末尾。
-        config = load_one_dragon(root, config_name)
-    if not config:
+        # 缓存缺失/为空：以纯内置模板开始（不回退 BGI 实配，实配不是权威源）
         config = load_seed_template()
 
     config = apply_groups(
         config, groups, custom_groups=custom_groups, manage_customs=manage_custom_groups
     )
+    # 副本只保存一条龙结构与组开关（不含顶部快捷覆盖，避免清空后残留旧值）
+    write_file(user_path, config)
+    slot_config = dict(config)
+    # 顶部快捷覆盖只作用于运行时槽位：非空才写，留空则槽位维持副本（BetterGI 现有）值
     if daily_reward_party_name:
-        config["DailyRewardPartyName"] = daily_reward_party_name
+        slot_config["DailyRewardPartyName"] = daily_reward_party_name
     if party_name:
-        config["PartyName"] = party_name
+        slot_config["PartyName"] = party_name
         # 一条龙自动首领讨伐从 AutoBossTeamName 取队伍（OneDragonTaskItem.cs）
-        config["AutoBossTeamName"] = party_name
+        slot_config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
-        config["AutoBossStrategyName"] = auto_boss_strategy_name
+        slot_config["AutoBossStrategyName"] = auto_boss_strategy_name
+
+    materialized = materialize_user_script_groups(root, script_id, user_id, slot_config)
+
     slot_path = one_dragon_slot_path(root)
     owner_path = _slot_owner_path(script_id)
     backup_path = _slot_backup_path(script_id)
@@ -682,10 +821,10 @@ def write_user_one_dragon(
             backup_path.unlink(missing_ok=True)
     else:
         backup_path.unlink(missing_ok=True)
-    write_one_dragon(root, _MAS_ONE_DRAGON_SLOT_NAME, config)
+    write_one_dragon(root, _MAS_ONE_DRAGON_SLOT_NAME, slot_config)
     owner_path.parent.mkdir(parents=True, exist_ok=True)
     owner_path.write_text(script_id, encoding="utf-8")
-    write_file(user_path, config)
+    return materialized
 
 
 def _global_config_path(root: Path) -> Path:
@@ -800,7 +939,7 @@ def snapshot_global_battle_config(
         if not isinstance(config, dict):
             config = {}
         snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
-        for leaf in _ALL_GLOBAL_LEAVES:
+        for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
             cur: Any = config
             present = True
             for key in leaf:
@@ -826,12 +965,12 @@ def restore_global_battle_config(
         if not isinstance(config, dict):
             return
         changed = False
-        for leaf in _ALL_GLOBAL_LEAVES:
+        for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
             existed, value = snapshot.get(leaf, (False, None))
             if _restore_leaf(config, leaf, existed, value):
                 changed = True
         if changed:
-            for leaf in _ALL_GLOBAL_LEAVES:
+            for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
                 _prune_empty_ancestors(config, leaf)
             write_file(_global_config_path(root), config)
 
@@ -870,6 +1009,49 @@ _GLOBAL_DOMAIN_LEAF_SEGMENT: dict[str, str] = {
     for segment, leaves in _GLOBAL_DOMAIN_SETTING_LEAVES.items()
     for leaf in leaves
 }
+# domain 白名单叶子（段名, 键）二元组：运行时按用户物化后需随队伍/策略一起快照还原
+_GLOBAL_DOMAIN_LEAVES: tuple[tuple[str, str], ...] = tuple(
+    (segment, key)
+    for segment, keys in _GLOBAL_DOMAIN_SETTING_LEAVES.items()
+    for key in keys
+)
+# ---- 自动幽境危战「刷取策略 / 次数与树脂」：BetterGI 全局 config.json 段白名单 ----
+# BGI 中 autoStygianOnslaughtConfig 段（camelCase 键）承载幽境危战的刷取战场（bossNum）、
+# 战斗队伍（fightTeamName）、战斗策略（strategyName）与树脂消耗策略。与「自动秘境」
+# 的 globalDomain 机制一致：右栏幽境面板的键存于 per-user 副本，运行时物化到 BGI 全局
+# config.json 的 autoStygianOnslaughtConfig 段（运行结束快照还原）。
+# 其中 fightTeamName/strategyName 的叶子已由 _GLOBAL_TEAM_LEAVES / _GLOBAL_STRATEGY_LEAVES
+# 纳入快照（顶部「通用战斗队伍/策略」在非空时覆盖这两个键；留空则保留面板/BGI 现有值），
+# 故本段补充快照的叶子只需其余独有键；白名单（副本读写）则含全部面板键。
+_GLOBAL_STYGIAN_SEGMENT = "autoStygianOnslaughtConfig"
+# 幽境面板「次数与树脂」可编辑的树脂次数（与 domain 段同键，但分属不同段）
+_GLOBAL_STYGIAN_RESIN_COUNT_KEYS = (
+    "originalResinUseCount",
+    "condensedResinUseCount",
+    "transientResinUseCount",
+    "fragileResinUseCount",
+)
+# 幽境面板暴露的白名单键（扁平，与副本存储一致）
+_GLOBAL_STYGIAN_SETTING_KEYS: frozenset[str] = frozenset(
+    (
+        "bossNum",  # 刷取战场：1/2/3
+        "fightTeamName",  # 战斗队伍
+        "strategyName",  # 战斗策略
+        "specifyResinUse",  # false=刷取至树脂耗尽 / true=按下方指定次数
+        "autoArtifactSalvage",  # 任务结束后自动分解圣遗物
+        *_GLOBAL_STYGIAN_RESIN_COUNT_KEYS,
+    )
+)
+# 幽境段需随运行快照还原的叶子（fightTeamName/strategyName 已含在 _ALL_GLOBAL_LEAVES）
+_GLOBAL_STYGIAN_EXTRA_LEAVES: tuple[tuple[str, str], ...] = tuple(
+    (_GLOBAL_STYGIAN_SEGMENT, key)
+    for key in sorted(_GLOBAL_STYGIAN_SETTING_KEYS)
+    if key not in ("fightTeamName", "strategyName")
+)
+# 运行时临时补写并需快照/还原的 config.json 叶子全集 = 队伍/策略 + 秘境刷取 + 幽境
+_ALL_RUNTIME_GLOBAL_LEAVES = (
+    _ALL_GLOBAL_LEAVES + _GLOBAL_DOMAIN_LEAVES + _GLOBAL_STYGIAN_EXTRA_LEAVES
+)
 
 
 def _coerce_domain_leaf(segment: str, key: str, value: Any) -> Any:
@@ -957,24 +1139,236 @@ def write_global_domain_settings(root: Path, settings: dict[str, Any]) -> None:
             write_file(_global_config_path(root), config)
 
 
-def snapshot_user_one_dragon(
-    root: Path,
-    script_id: str,
-    user_id: str,
-    config_name: str,
-    read_name: str | None = None,
-) -> None:
-    """回读 BetterGI 现有一条龙配置为 per-user 副本（捕获 GUI 中改的设置）。
+def per_user_global_domain_path(script_id: str, user_id: str) -> Path:
+    """某用户的秘境刷取配置副本路径 ``data/{script_id}/{user_id}/GlobalDomain/settings.json``。
 
-    ``read_name`` 指定实际读取的配置名：独立模式下用户编辑的是 MAS 槽位「MAS独立配置」，
-    而 per-user 缓存 key 仍是用户所选名 ``config_name``，故读取源与缓存 key 解耦。
-    缺省 ``read_name=None`` 时与 ``config_name`` 相同（直控/旧行为）。
+    BGI 的秘境刷取段（``autoDomainConfig`` / ``autoArtifactSalvageConfig``）存在于全局
+    ``config.json``，本身是脚本级共享；在「用户独立配置」语义下，MAS 把该用户编辑的
+    白名单值落在 per-user 副本，运行时才物化到 BGI 全局 config.json（运行结束还原），
+    使不同用户的秘境刷取设置互不覆盖。
     """
-    config_name = resolve_config_name(config_name)
-    source_name = resolve_config_name(read_name or config_name)
-    config = load_one_dragon(root, source_name)
-    if config:
-        write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
+    return (
+        Path.cwd()
+        / "data"
+        / script_id
+        / user_id
+        / "GlobalDomain"
+        / "settings.json"
+    )
+
+
+def read_user_global_domain_settings(
+    root: Path, script_id: str, user_id: str
+) -> dict[str, Any]:
+    """读取某用户的秘境刷取配置（per-user 副本为权威源，缺失键兜底 BGI 全局/默认）。
+
+    以 BGI 全局实配（含默认值兜底）为底稿，再用该用户副本覆盖其上：副本缺失/为空时
+    结果即 BGI 现状（首次展示反映实配）；副本键值优先（用户保存后的隔离值），新增白名单
+    键在未保存前仍回退全局，避免旧副本缺键导致前端 undefined。
+    """
+    base = read_global_domain_settings(root)
+    copy = read_file(per_user_global_domain_path(script_id, user_id))
+    if isinstance(copy, dict) and copy:
+        base.update({k: v for k, v in copy.items() if k in _GLOBAL_DOMAIN_LEAF_SEGMENT})
+    return base
+
+
+def write_user_global_domain_settings(
+    script_id: str, user_id: str, settings: dict[str, Any]
+) -> Path:
+    """把右栏秘境刷取配置写回 per-user 副本（不触碰 BGI 全局 config.json）。
+
+    只保留白名单扁平键；运行时 ``apply_user_global_domain_settings`` 负责物化到 BGI。
+    """
+    out: dict[str, Any] = {}
+    for key, value in (settings or {}).items():
+        if key in _GLOBAL_DOMAIN_LEAF_SEGMENT:
+            out[key] = value
+    out_path = per_user_global_domain_path(script_id, user_id)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_file(out_path, out)
+    return out_path
+
+
+def apply_user_global_domain_settings(
+    root: Path, script_id: str, user_id: str
+) -> bool:
+    """把某用户 per-user 副本的秘境刷取配置物化到 BGI 全局 config.json。
+
+    仅在副本存在且非空时写入；写入前调用方应已快照（``snapshot_global_battle_config``
+    现在覆盖 domain 白名单叶子），运行结束后由 ``restore_global_battle_config`` 还原。
+    返回是否实际触写了 BGI config.json。
+    """
+    copy = read_file(per_user_global_domain_path(script_id, user_id))
+    if not (isinstance(copy, dict) and copy):
+        return False
+    write_global_domain_settings(root, copy)
+    return True
+
+
+# ---- 自动幽境危战（autoStygianOnslaughtConfig 段）读写 ----
+# 段默认值（与 BGI AutoStygianOnslaughtConfig.cs 一致）：刷取战场默认 1、次数均为 0、
+# 开关均为 false、队伍/策略留空（空值不覆盖 BGI 现有/顶部通用值）。
+def _default_stygian_settings() -> dict[str, Any]:
+    return {
+        "bossNum": 1,
+        "fightTeamName": "",
+        "strategyName": "",
+        "specifyResinUse": False,
+        "autoArtifactSalvage": False,
+        "originalResinUseCount": 0,
+        "condensedResinUseCount": 0,
+        "transientResinUseCount": 0,
+        "fragileResinUseCount": 0,
+    }
+
+
+def _coerce_stygian_leaf(key: str, value: Any) -> Any:
+    """把 config.json 读出的幽境段值规整为前端可用类型（右栏渲染用）。"""
+    if value is None:
+        return None
+    if key == "bossNum":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 1
+    if key in _GLOBAL_STYGIAN_RESIN_COUNT_KEYS:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+    if key in ("specifyResinUse", "autoArtifactSalvage"):
+        return bool(value)
+    return value
+
+
+def read_global_stygian_settings(root: Path) -> dict[str, Any]:
+    """读取 BetterGI 全局 config.json 的幽境危战段白名单键（扁平键值对）。
+
+    config.json 可能缺失整段（全新安装），此时返回默认值（bossNum=1/false/0），
+    避免前端对 undefined 渲染报错；缺失键也以默认值兜底。
+    """
+    defaults = _default_stygian_settings()
+    with GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+    if not isinstance(config, dict):
+        return defaults
+    out = dict(defaults)
+    seg_data = config.get(_GLOBAL_STYGIAN_SEGMENT)
+    if isinstance(seg_data, dict):
+        for key in defaults:
+            if key in seg_data:
+                out[key] = _coerce_stygian_leaf(key, seg_data[key])
+    return out
+
+
+def write_global_stygian_settings(root: Path, settings: dict[str, Any]) -> None:
+    """把右栏幽境危战设置写回 BetterGI 全局 config.json 的 autoStygianOnslaughtConfig 段。
+
+    只更新白名单叶子，保留同段其余字段；空 settings 不触写。
+    - 队伍/策略留空（空串/纯空白）不写入：保留 BGI 现有值 / 由顶部通用字段接管；
+    - 其余键做类型规整（int/bool），防止前端字符串化误写。
+    """
+    if not settings:
+        return
+    with GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            config = {}
+        seg_data = config.get(_GLOBAL_STYGIAN_SEGMENT)
+        if not isinstance(seg_data, dict):
+            seg_data = {}
+            config[_GLOBAL_STYGIAN_SEGMENT] = seg_data
+        changed = False
+        for key, value in settings.items():
+            if key not in _GLOBAL_STYGIAN_SETTING_KEYS:
+                continue  # 非白名单键直接忽略，避免污染 config.json
+            if key in ("fightTeamName", "strategyName"):
+                text = str(value or "").strip()
+                if not text:
+                    continue  # 留空不覆盖 BGI 现有/顶部通用值
+                norm: Any = text
+            elif key == "bossNum":
+                try:
+                    norm = int(value)
+                except (TypeError, ValueError):
+                    norm = 1
+            elif key in _GLOBAL_STYGIAN_RESIN_COUNT_KEYS:
+                try:
+                    norm = int(value)
+                except (TypeError, ValueError):
+                    norm = 0
+            else:
+                norm = bool(value)
+            if seg_data.get(key) == norm:
+                continue
+            seg_data[key] = norm
+            changed = True
+        if changed:
+            write_file(_global_config_path(root), config)
+
+
+def per_user_global_stygian_path(script_id: str, user_id: str) -> Path:
+    """某用户的幽境危战配置副本路径 ``data/{script_id}/{user_id}/GlobalStygian/settings.json``。
+
+    语义同 ``per_user_global_domain_path``：BGI 的幽境段存于全局 config.json（脚本级共享），
+    「用户独立配置」下 MAS 把该用户编辑的白名单值落在 per-user 副本，运行时才物化到 BGI
+    （运行结束还原），使不同用户的幽境设置互不覆盖。
+    """
+    return (
+        Path.cwd()
+        / "data"
+        / script_id
+        / user_id
+        / "GlobalStygian"
+        / "settings.json"
+    )
+
+
+def read_user_global_stygian_settings(
+    root: Path, script_id: str, user_id: str
+) -> dict[str, Any]:
+    """读取某用户的幽境危战设置（per-user 副本为权威源，缺失键兜底 BGI 全局/默认）。"""
+    base = read_global_stygian_settings(root)
+    copy = read_file(per_user_global_stygian_path(script_id, user_id))
+    if isinstance(copy, dict) and copy:
+        base.update(
+            {k: v for k, v in copy.items() if k in _GLOBAL_STYGIAN_SETTING_KEYS}
+        )
+    return base
+
+
+def write_user_global_stygian_settings(
+    script_id: str, user_id: str, settings: dict[str, Any]
+) -> Path:
+    """把右栏幽境危战设置写回 per-user 副本（不触碰 BGI 全局 config.json）。
+
+    只保留白名单扁平键；运行时 ``apply_user_global_stygian_settings`` 负责物化到 BGI。
+    """
+    out: dict[str, Any] = {}
+    for key, value in (settings or {}).items():
+        if key in _GLOBAL_STYGIAN_SETTING_KEYS:
+            out[key] = value
+    out_path = per_user_global_stygian_path(script_id, user_id)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_file(out_path, out)
+    return out_path
+
+
+def apply_user_global_stygian_settings(
+    root: Path, script_id: str, user_id: str
+) -> bool:
+    """把某用户 per-user 副本的幽境危战设置物化到 BGI 全局 config.json。
+
+    仅在副本存在且非空时写入；写入前调用方应已快照（``snapshot_global_battle_config``
+    现在覆盖幽境白名单叶子），运行结束后由 ``restore_global_battle_config`` 还原。
+    返回是否实际触写了 BGI config.json。
+    """
+    copy = read_file(per_user_global_stygian_path(script_id, user_id))
+    if not (isinstance(copy, dict) and copy):
+        return False
+    write_global_stygian_settings(root, copy)
+    return True
 
 
 # ---- 一条龙「设置项」白名单（右栏设置，可写回 per-user 副本；排除结构字段）----
@@ -1079,6 +1473,32 @@ def load_setting_defaults() -> dict[str, Any]:
     return dict(_DEFAULT_SETTING_VALUES)
 
 
+def _seed_user_one_dragon_config(
+    root: Path,
+    script_id: str,
+    user_id: str,
+    config_name: str,
+) -> dict[str, Any]:
+    """读取用户一条龙配置的种子：per-user 副本优先。
+
+    - 固定槽位名（MAS独立配置，用户独立模式）：副本缺失时以纯内置模板开始，
+      不回退 BGI 实配（实配不是权威源，避免把 BGI 同名用户配置当底稿）。
+    - 其它配置名（非独立模式直控）：副本缺失时回退 BGI 实配 → 内置模板（旧行为）。
+    """
+    config_name = resolve_config_name(config_name)
+    config: dict[str, Any] = {}
+    copy = read_file(per_user_one_dragon_path(script_id, user_id, config_name))
+    if isinstance(copy, dict) and copy:
+        config = copy
+    elif config_name == _MAS_ONE_DRAGON_SLOT_NAME:
+        config = {}
+    else:
+        config = load_one_dragon(root, config_name) or {}
+    if not config:
+        config = load_seed_template() or {}
+    return config
+
+
 def read_user_one_dragon_settings(
     root: Path,
     script_id: str,
@@ -1087,19 +1507,10 @@ def read_user_one_dragon_settings(
 ) -> dict[str, Any]:
     """读取某用户一条龙配置的设置项（右栏渲染）。
 
-    种子顺序与 ``write_user_one_dragon`` 一致：per-user 副本 → BGI 实配 → 内置模板；
-    副本未生成（用户尚未运行过）时以 BGI 实配/模板为准，保证右栏显示的是将生效的值。
+    种子顺序与 ``write_user_one_dragon`` 一致（见 ``_seed_user_one_dragon_config``）；
+    独立模式固定名副本缺失时以内置模板为准，保证右栏显示的是将生效的值。
     """
-    config_name = resolve_config_name(config_name)
-    config: dict[str, Any] = {}
-    copy = read_file(per_user_one_dragon_path(script_id, user_id, config_name))
-    if isinstance(copy, dict) and copy:
-        config = copy
-    else:
-        config = load_one_dragon(root, config_name) or {}
-    if not config:
-        config = load_seed_template() or {}
-    return _pick_settings(config)
+    return _pick_settings(_seed_user_one_dragon_config(root, script_id, user_id, config_name))
 
 
 def write_user_one_dragon_settings(
@@ -1111,18 +1522,11 @@ def write_user_one_dragon_settings(
 ) -> None:
     """把右栏设置项写回 per-user 副本（不触碰 BGI 同名实配）。
 
-    副本种子：per-user 副本 → BGI 实配 → 内置模板，仅覆盖白名单键并保留结构字段；
-    运行时 ``write_user_one_dragon`` 以本副本为种子物化到 MAS 槽位，设置即生效。
+    副本种子见 ``_seed_user_one_dragon_config``：独立模式固定名副本缺失时以纯内置模板
+    为底稿，仅覆盖白名单键并保留结构字段；运行时 ``write_user_one_dragon`` 以本副本为
+    种子物化到 MAS 槽位，设置即生效。
     """
-    config_name = resolve_config_name(config_name)
-    config: dict[str, Any] = {}
-    copy = read_file(per_user_one_dragon_path(script_id, user_id, config_name))
-    if isinstance(copy, dict) and copy:
-        config = copy
-    else:
-        config = load_one_dragon(root, config_name) or {}
-    if not config:
-        config = load_seed_template() or {}
+    config = _seed_user_one_dragon_config(root, script_id, user_id, config_name)
     for key, value in (settings or {}).items():
         if key in _ONE_DRAGON_SETTING_SET:
             config[key] = value
@@ -1132,6 +1536,7 @@ def write_user_one_dragon_settings(
         for struct_key in ("TaskEnabledList", "TaskOrder", "TaskDefinitions"):
             if struct_key not in config and struct_key in base:
                 config[struct_key] = base[struct_key]
+    config_name = resolve_config_name(config_name)
     write_file(per_user_one_dragon_path(script_id, user_id, config_name), config)
 
 

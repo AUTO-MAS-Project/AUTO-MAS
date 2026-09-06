@@ -152,8 +152,9 @@
               </a-table>
             </div>
             <div v-else class="bettergi-groups-settings-fields">
-              <!-- 布尔开关（invert=true 时界面勾选与存储取反） -->
-              <div v-for="field in section.fields" :key="field.key">
+              <!-- 布尔开关（invert=true 时界面勾选与存储取反）。
+                   key 用 id||key：同一数据 key 可派生互斥双开关等界面字段（id 去重） -->
+              <div v-for="field in section.fields" :key="field.id || field.key">
                 <div v-if="field.type === 'bool'" class="bettergi-setting-row" v-show="!field.hideWhenDisabled || !fieldLocked(field)"
                   :class="{ 'bettergi-setting-locked': fieldLocked(field) }">
                   <span class="bettergi-setting-label">
@@ -338,6 +339,7 @@
         :sections="sections"
         :dragon-settings="dragonSettings"
         :global-domain-settings="globalDomainSettings"
+        :global-stygian-settings="globalStygianSettings"
         :domain-catalog="domainCatalog"
         :boss-catalog="bossCatalog"
         @update="(field, value) => emit('update', field, value)"
@@ -527,7 +529,10 @@ type DragonSettingField = {
   searchable?: boolean
   help?: string
   invert?: boolean
-  source?: 'dragon' | 'globalDomain'
+  /** dragon=一条龙 per-user 副本；globalDomain=全局 config.json 秘境段；globalStygian=全局 config.json 幽境段 */
+  source?: 'dragon' | 'globalDomain' | 'globalStygian'
+  /** 供模板 v-for key 去重：同一数据 key 可派生出多个界面字段（如互斥双开关） */
+  id?: string
   masterKey?: string
   masterValue?: unknown
   masterInvert?: boolean
@@ -565,6 +570,8 @@ const props = withDefaults(
     sections: DragonSettingSection[]
     dragonSettings: Record<string, unknown>
     globalDomainSettings?: Record<string, unknown>
+    /** 全局 config.json 幽境危战段设置（autoStygianOnslaughtConfig，source: 'globalStygian'） */
+    globalStygianSettings?: Record<string, unknown>
     loading?: boolean
     saving?: boolean
     dirty?: boolean
@@ -577,6 +584,7 @@ const props = withDefaults(
   }>(),
   {
     globalDomainSettings: () => ({}),
+    globalStygianSettings: () => ({}),
     loading: false,
     saving: false,
     dirty: false,
@@ -832,11 +840,12 @@ const clearWeeklyTable = (section: DragonSettingSection): void => {
 const zoomed = ref(false)
 const zoomTitle = computed(() => t('edit.bettergiGroupSettingsTitle'))
 
-// 读取字段当前值：一条龙字段走 per-user 副本；globalDomain 走全局 config.json 段
-const fieldValue = (field: DragonSettingField): unknown =>
-  field.source === 'globalDomain'
-    ? props.globalDomainSettings?.[field.key]
-    : props.dragonSettings[field.key]
+// 读取字段当前值：一条龙字段走 per-user 副本；globalDomain/globalStygian 走全局 config.json 段
+const fieldValue = (field: DragonSettingField): unknown => {
+  if (field.source === 'globalDomain') return props.globalDomainSettings?.[field.key]
+  if (field.source === 'globalStygian') return props.globalStygianSettings?.[field.key]
+  return props.dragonSettings[field.key]
+}
 
 // 下拉展示值归一：BGI 奖励序号等字段历史值 "0" 与空串同义（默认），
 // 当候选里只有 value="" 的「默认」项时，把存量的 "0" 归一为空串显示。
@@ -855,7 +864,9 @@ const fieldLocked = (field: DragonSettingField): boolean => {
   const master =
     field.source === 'globalDomain'
       ? props.globalDomainSettings?.[field.masterKey]
-      : props.dragonSettings[field.masterKey]
+      : field.source === 'globalStygian'
+        ? props.globalStygianSettings?.[field.masterKey]
+        : props.dragonSettings[field.masterKey]
   const hit = master === field.masterValue
   return field.masterInvert ? hit : !hit
 }

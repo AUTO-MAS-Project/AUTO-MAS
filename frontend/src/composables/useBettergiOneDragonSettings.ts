@@ -4,6 +4,7 @@ import { BetterGiService } from '@/api'
 import type {
   BetterGIDomainCatalogItem,
   BetterGIGlobalDomainSettingsIn,
+  BetterGIGlobalStygianSettingsIn,
   BetterGIOneDragonSettingsIn,
 } from '@/api'
 
@@ -54,19 +55,66 @@ export const saveOneDragonSettings = async (
 }
 
 /**
- * 读取 BetterGI 全局 config.json 的秘境刷取配置段（领奖树脂/分解圣遗物/奖励识别）。
- * 该段不随用户/一条龙配置组切换，故只按 scriptId 定位 RootPath。
+ * 读取秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
+ * userId 非空时读该用户 per-user 副本（副本缺失回退 BGI 全局实配），空时读 BGI 全局 config.json。
  */
 export const fetchGlobalDomainSettings = async (
-  scriptId: string
+  scriptId: string,
+  userId?: string
 ): Promise<Record<string, unknown>> => {
   const resp = await BetterGiService.getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
-    scriptId
+    scriptId,
+    userId || undefined
   )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 秘境刷取配置请求失败')
   }
   return (resp.data || {}) as Record<string, unknown>
+}
+
+/**
+ * 读取自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
+ * userId 非空时读该用户 per-user 副本（副本缺失回退 BGI 全局实配），空时读 BGI 全局 config.json。
+ */
+export const fetchGlobalStygianSettings = async (
+  scriptId: string,
+  userId?: string
+): Promise<Record<string, unknown>> => {
+  const resp = await BetterGiService.getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
+    scriptId,
+    userId || undefined
+  )
+  if (resp.code !== 200) {
+    throw new Error(resp.message || 'BetterGI 幽境危战设置请求失败')
+  }
+  return (resp.data || {}) as Record<string, unknown>
+}
+
+/**
+ * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+ */
+export const saveGlobalStygianSettings = async (
+  scriptId: string,
+  userId: string | undefined,
+  settings: Record<string, unknown>
+): Promise<void> => {
+  const body: BetterGIGlobalStygianSettingsIn = {
+    scriptId,
+    userId: userId || '',
+    settings,
+  }
+  try {
+    const resp =
+      await BetterGiService.saveBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsPost(
+        body
+      )
+    if (resp.code !== 200) {
+      throw new Error(resp.message || 'BetterGI 幽境危战设置保存失败')
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    throw e instanceof Error ? e : new Error(String(e))
+  }
 }
 
 /**
@@ -93,13 +141,18 @@ export const fetchDomainCatalog = async (
 }
 
 /**
- * 把右栏秘境刷取配置写回 BetterGI 全局 config.json 的白名单键。
+ * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
  */
 export const saveGlobalDomainSettings = async (
   scriptId: string,
+  userId: string | undefined,
   settings: Record<string, unknown>
 ): Promise<void> => {
-  const body: BetterGIGlobalDomainSettingsIn = { scriptId, settings }
+  const body: BetterGIGlobalDomainSettingsIn = {
+    scriptId,
+    userId: userId || '',
+    settings,
+  }
   try {
     const resp =
       await BetterGiService.saveBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsPost(

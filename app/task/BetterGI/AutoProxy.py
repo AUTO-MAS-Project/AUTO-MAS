@@ -248,8 +248,15 @@ class AutoProxyTask(TaskExecuteBase):
             self.check_log,
         )
 
-        self.one_dragon_config = one_dragon.resolve_config_name(
-            str(self.cur_user_config.get("Task", "OneDragonConfigName") or "")
+        # 「用户独立配置」开启时：一条龙配置名固定为 MAS 专属槽位「MAS独立配置」，
+        # 忽略用户旧所选名（Task.OneDragonConfigName 冻结不用），BGI 同名实配全程零接触；
+        # 关闭时维持现状：直控 BGI 所选实配、MAS 不干预。
+        self.one_dragon_config = (
+            one_dragon.launch_slot_name()
+            if self.use_mas_config
+            else one_dragon.resolve_config_name(
+                str(self.cur_user_config.get("Task", "OneDragonConfigName") or "")
+            )
         )
         self.one_dragon_groups = list(
             self.cur_user_config.get("OneDragon", "Groups") or []
@@ -260,23 +267,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_custom_groups = one_dragon.parse_custom_groups(
             self.cur_user_config.get("OneDragon", "CustomGroups") or ""
         )
-        # 「用户独立配置」开启时，per-user 配置落到 MAS 专属槽位并据此启动，BGI 同名的
-        # 用户实配全程零接触。若用户恰好把配置命名为槽位名，退化为直连（防自伤）。
-        self.use_mas_launch_slot = (
-            self.use_mas_config
-            and one_dragon.launch_slot_name() != self.one_dragon_config
-        )
-        self.launch_config_name = (
-            one_dragon.launch_slot_name()
-            if self.use_mas_launch_slot
-            else self.one_dragon_config
-        )
+        self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
 
         self.run_book = False
 
         # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示尚未接管
         self._reseed_global_config: dict | None = None
+        # 本次物化到 BGI User/ScriptGroup 的前缀配置组文件（运行结束删除）
+        self._materialized_script_groups: list[Path] = []
 
     def _build_log_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
@@ -294,15 +293,18 @@ class AutoProxyTask(TaskExecuteBase):
         await asyncio.sleep(0)
 
     def _write_one_dragon_config(self) -> None:
-        """用户独立配置模式下，把组开关应用到一条龙配置并写回 BetterGI。"""
+        """用户独立配置模式下，把组开关应用到一条龙配置并物化到 BGI（槽位 + 前缀配置组）。
+
+        物化的配置组文件路径记录在 ``self._materialized_script_groups``，
+        由 ``_restore_one_dragon_config`` 在结束后删除。
+        """
         if not self.use_mas_config:
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
-        one_dragon.write_user_one_dragon(
+        self._materialized_script_groups = one_dragon.write_user_one_dragon(
             self.script_root_path,
             self.script_info.script_id,
             self.cur_user_item.user_id,
-            self.one_dragon_config,
             self.one_dragon_groups,
             daily_reward_party_name=str(
                 self.cur_user_config.get("OneDragon", "DailyRewardPartyName") or ""
@@ -314,30 +316,33 @@ class AutoProxyTask(TaskExecuteBase):
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
         )
+        # 幽境危战面板设置（刷取战场/树脂策略等）先物化到 config.json 的
+        # autoStygianOnslaughtConfig 段；随后顶部「通用战斗队伍/策略」非空会覆盖同段的
+        # fightTeamName/strategyName（顶部优先），留空则保留面板/BGI 现有值。
+        one_dragon.apply_user_global_stygian_settings(
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+        )
         # 通用战斗队伍/策略补写进全局 config.json（秘境/地脉花/幽境危战读取段）
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
         one_dragon.apply_global_battle_strategy(
             self.script_root_path,
             str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
         )
-        logger.info(
-            f"已写入用户 {self.cur_user_item.name} 的一条龙配置: {self.one_dragon_config}"
-        )
-
-    def _snapshot_one_dragon_config(self) -> None:
-        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。
-
-        独立模式下读取源是 MAS 槽位 ``launch_config_name``（用户在 BGI GUI 里编辑的就是这份），
-        缓存 key 仍是用户所选名 ``one_dragon_config``，供下一轮 ``write_user_one_dragon`` 种子。
-        """
-        if not self.use_mas_config:
-            return
-        one_dragon.snapshot_user_one_dragon(
+        # 秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）：有 per-user 副本则物化到
+        # BGI config.json 的 autoDomainConfig/autoArtifactSalvageConfig 段（运行结束还原）
+        if one_dragon.apply_user_global_domain_settings(
             self.script_root_path,
             self.script_info.script_id,
             self.cur_user_item.user_id,
-            self.one_dragon_config,
-            read_name=self.launch_config_name,
+        ):
+            logger.info(
+                f"已物化用户 {self.cur_user_item.name} 的秘境刷取配置到全局 config.json"
+            )
+        logger.info(
+            f"已写入用户 {self.cur_user_item.name} 的独立一条龙配置（槽位 "
+            f"{one_dragon.launch_slot_name()}），物化配置组 {len(self._materialized_script_groups)} 个"
         )
 
     def _backup_one_dragon_config(self) -> None:
@@ -345,32 +350,42 @@ class AutoProxyTask(TaskExecuteBase):
 
         独立配置模式下 per-user 配置落到 MAS 专属槽位，不写 BGI 同名实配；BGI 那套
         一条龙文件无需备份。全局 config.json 的队伍/策略叶子（地脉花/幽境危战/秘境读段）
-        仍需运行时临时补写、结束还原，故这里先快照。
+        仍需运行时临时补写、结束还原，故这里先快照。同时清理上一轮强杀可能残留的
+        前缀物化组（只命中 MAS-{短id}-*，不碰 BGI 本体）。
         """
         if not self.use_mas_config:
             return
+        one_dragon.cleanup_leftover_mas_groups(
+            self.script_root_path, self.script_info.script_id, self.cur_user_item.user_id
+        )
         self._reseed_global_config = one_dragon.snapshot_global_battle_config(
             self.script_root_path
         )
 
     def _restore_one_dragon_config(self) -> None:
-        """运行/异常结束后还原全局 config.json 队伍/策略叶子，并删除 MAS 运行时槽位。
+        """运行/异常结束后还原现场：删除物化配置组文件、还原 config.json 叶子、删槽位。
 
-        仅在本次确接管过（``_reseed_global_config`` 非 None）时生效；还原一次后置 None
-        保证幂等，避免 final_task 与 on_crash 相继触发时重复覆盖。槽位文件在 ``finally``
-        中无条件删除（幂等），使 BGI GUI 不残留 MAS 运行时配置。
+        仅在「用户独立配置」模式下生效（非独立模式 MAS 不写槽位/物化文件，绝不触碰
+        BGI 目录）：删除物化的前缀配置组文件与槽位是幂等执行；只有真正接管过全局
+        config.json 队伍/策略叶子（``_reseed_global_config`` 非 None）才还原叶子。
+        各步置空后再次调用即安全，避免 final_task 与 on_crash 相继触发时重复操作。
         """
-        if self._reseed_global_config is None:
+        if not self.use_mas_config:
             return
         try:
-            # 还原全局 config.json 队伍/策略叶子字段（秘境/地脉花/幽境危战读取段）
-            one_dragon.restore_global_battle_config(
-                self.script_root_path, self._reseed_global_config
+            one_dragon.remove_materialized_script_groups(
+                self.script_root_path, self._materialized_script_groups
             )
-        finally:
+            self._materialized_script_groups = []
             one_dragon.remove_one_dragon_slot(
                 self.script_root_path, self.script_info.script_id
             )
+            if self._reseed_global_config is not None:
+                # 还原全局 config.json 队伍/策略叶子字段（秘境/地脉花/幽境危战读取段）
+                one_dragon.restore_global_battle_config(
+                    self.script_root_path, self._reseed_global_config
+                )
+        finally:
             self._reseed_global_config = None
 
     async def main_task(self):
@@ -786,10 +801,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self._persist_user_run_result()
 
-        # 用户独立配置：回读 BetterGI 现有配置，捕获运行中/GUI 里改的设置，固化到 per-user 副本
-        self._snapshot_one_dragon_config()
-
-        # 快照已完成，再把现场还原为覆盖前的副本，避免污染其它用户
+        # 用户独立配置：任务配置以 MAS 前端为准，不回读 BGI；仅还原现场（删物化组/槽位）
         self._restore_one_dragon_config()
 
     async def _persist_user_run_result(self) -> None:

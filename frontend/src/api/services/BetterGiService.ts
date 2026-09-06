@@ -10,6 +10,8 @@ import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettin
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
 import type { BetterGIGlobalDomainSettingsIn } from '../models/BetterGIGlobalDomainSettingsIn';
 import type { BetterGIGlobalDomainSettingsOut } from '../models/BetterGIGlobalDomainSettingsOut';
+import type { BetterGIGlobalStygianSettingsIn } from '../models/BetterGIGlobalStygianSettingsIn';
+import type { BetterGIGlobalStygianSettingsOut } from '../models/BetterGIGlobalStygianSettingsOut';
 import type { BetterGIOneDragonSettingsIn } from '../models/BetterGIOneDragonSettingsIn';
 import type { BetterGIOneDragonSettingsOut } from '../models/BetterGIOneDragonSettingsOut';
 import type { BetterGIPathingTreeOut } from '../models/BetterGIPathingTreeOut';
@@ -92,22 +94,25 @@ export class BetterGiService {
     }
     /**
      * 获取 BetterGI 全局 config.json 的秘境刷取配置段
-     * 返回 BetterGI 全局 config.json 的秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
+     * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
-     * 该段存于 BGI 全局主配置（autoDomainConfig/autoArtifactSalvageConfig，camelCase），
-     * 不随用户/一条龙配置组切换，故只按 scriptId 定位 RootPath 后读取。
+     * userId 非空时读该用户 per-user 副本（副本缺失回退 BGI 全局实配），
+     * 空时（直控模式）读 BGI 全局 config.json。
      * @param scriptId
+     * @param userId
      * @returns BetterGIGlobalDomainSettingsOut Successful Response
      * @throws ApiError
      */
     public static getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
         scriptId: string,
+        userId?: string,
     ): CancelablePromise<BetterGIGlobalDomainSettingsOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/bettergi/global-domain/settings',
             query: {
                 'scriptId': scriptId,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -115,8 +120,8 @@ export class BetterGiService {
         });
     }
     /**
-     * 保存 BetterGI 全局 config.json 的秘境刷取配置段
-     * 把右栏秘境刷取配置写回 BetterGI 全局 config.json 的白名单键。
+     * 保存秘境刷取配置到 per-user 副本（userId 空=写 BGI 全局 config.json）
+     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -127,6 +132,53 @@ export class BetterGiService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/bettergi/global-domain/settings',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 全局 config.json 的自动幽境危战设置段
+     * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
+     *
+     * userId 非空时读该用户 per-user 副本（副本缺失回退 BGI 全局实配），
+     * 空时（直控模式）读 BGI 全局 config.json。
+     * @param scriptId
+     * @param userId
+     * @returns BetterGIGlobalStygianSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
+        scriptId: string,
+        userId?: string,
+    ): CancelablePromise<BetterGIGlobalStygianSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/global-stygian/settings',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 全局 config.json 的自动幽境危战设置段
+     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsPost(
+        requestBody: BetterGIGlobalStygianSettingsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/global-stygian/settings',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -174,6 +226,7 @@ export class BetterGiService {
      */
     public static getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
         scriptId: string,
+        userId: string = '',
         configName: string = '',
         useMasConfig: boolean = false,
     ): CancelablePromise<BetterGICustomGroupsOut> {
@@ -182,6 +235,7 @@ export class BetterGiService {
             url: '/api/scripts/bettergi/one-dragon/custom-groups',
             query: {
                 'scriptId': scriptId,
+                'userId': userId,
                 'configName': configName,
                 'useMasConfig': useMasConfig,
             },
@@ -239,23 +293,27 @@ export class BetterGiService {
     }
     /**
      * 获取 BetterGI 可用配置组列表
-     * 返回 BetterGI 配置组候选：{RootPath}/User/ScriptGroup*.json 的文件名。
+     * 返回 BetterGI 配置组候选：{RootPath}/User/ScriptGroup*.json 的文件名；
+     * userId 非空时并集该用户的 per-user ScriptGroup 副本名。
      *
      * BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
      * ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
      * 的引用名一致。供「添加配置组」弹窗「配置组」标签页展示。
      * @param scriptId
+     * @param userId
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
     public static getBettergiScriptGroupsApiApiScriptsBettergiScriptGroupsGet(
         scriptId: string,
+        userId?: string,
     ): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/bettergi/script-groups',
             query: {
                 'scriptId': scriptId,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,

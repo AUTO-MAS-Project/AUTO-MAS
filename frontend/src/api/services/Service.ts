@@ -983,6 +983,7 @@ export class Service {
      */
     public static getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
         scriptId: string,
+        userId: string = '',
         configName: string = '',
         useMasConfig: boolean = false,
     ): CancelablePromise<BetterGICustomGroupsOut> {
@@ -991,6 +992,7 @@ export class Service {
             url: '/api/scripts/bettergi/one-dragon/custom-groups',
             query: {
                 'scriptId': scriptId,
+                'userId': userId,
                 'configName': configName,
                 'useMasConfig': useMasConfig,
             },

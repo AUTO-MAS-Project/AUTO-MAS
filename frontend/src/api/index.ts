@@ -22,6 +22,8 @@ export type { BetterGIScriptSettingsUiOut } from './models/BetterGIScriptSetting
 export type { BetterGIScriptReadmeOut } from './models/BetterGIScriptReadmeOut';
 export type { BetterGIGlobalDomainSettingsIn } from './models/BetterGIGlobalDomainSettingsIn';
 export type { BetterGIGlobalDomainSettingsOut } from './models/BetterGIGlobalDomainSettingsOut';
+export type { BetterGIGlobalStygianSettingsIn } from './models/BetterGIGlobalStygianSettingsIn';
+export type { BetterGIGlobalStygianSettingsOut } from './models/BetterGIGlobalStygianSettingsOut';
 export type { BetterGIOneDragonSettingsIn } from './models/BetterGIOneDragonSettingsIn';
 export type { BetterGIOneDragonSettingsOut } from './models/BetterGIOneDragonSettingsOut';
 export type { BetterGIPathingNode } from './models/BetterGIPathingNode';

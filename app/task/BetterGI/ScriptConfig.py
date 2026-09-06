@@ -72,57 +72,28 @@ class ScriptConfigTask(TaskExecuteBase):
             return None
         return self.user_config[uuid.UUID(self.cur_user_item.user_id)]
 
-    def _write_one_dragon_config(self) -> None:
-        """用户独立配置模式下，把该用户组开关写入一条龙配置并载入 BetterGI。"""
+    def _cleanup_leftover_slot(self) -> None:
+        """清理上一轮残留的 MAS 运行时槽位/物化组（若存在；安全幂等，不误删用户文件）。"""
         if not self.use_mas_config:
             return
-        target = self._target_user_config()
-        if target is None:
-            return
-        one_dragon.write_user_one_dragon(
-            self.root_path,
-            self.script_info.script_id,
-            self.cur_user_item.user_id,
-            str(target.get("Task", "OneDragonConfigName") or ""),
-            list(target.get("OneDragon", "Groups") or []),
-            custom_groups=one_dragon.parse_custom_groups(
-                target.get("OneDragon", "CustomGroups") or ""
-            ),
-            manage_custom_groups=bool(target.get("OneDragon", "IfUseCustomGroups")),
-        )
-
-    def _snapshot_one_dragon_config(self) -> None:
-        """把 BetterGI 现有的一条龙配置回读为 per-user 副本（捕获 GUI 中改的设置）。
-
-        独立模式下 ``write_user_one_dragon`` 物化到 MAS 槽位，用户在 BGI GUI 里编辑的就是
-        槽位，故读取源改为槽位名，per-user 缓存 key 仍是用户所选名。
-        """
-        if not self.use_mas_config:
-            return
-        target = self._target_user_config()
-        if target is None:
-            return
-        config_name = str(target.get("Task", "OneDragonConfigName") or "")
-        read_name = (
-            one_dragon.launch_slot_name()
-            if one_dragon.launch_slot_name()
-            != one_dragon.resolve_config_name(config_name)
-            else config_name
-        )
-        one_dragon.snapshot_user_one_dragon(
-            self.root_path,
-            self.script_info.script_id,
-            self.cur_user_item.user_id,
-            config_name,
-            read_name=read_name,
-        )
+        with suppress(Exception):
+            # 按用户短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-*，不碰 BGI 本体）
+            one_dragon.cleanup_leftover_mas_groups(
+                self.root_path, self.script_info.script_id, self.cur_user_item.user_id
+            )
+        with suppress(Exception):
+            # 仅删除确由 MAS 写入的槽位（owner/backup 标记校验在函数内）
+            one_dragon.remove_one_dragon_slot(
+                self.root_path, self.script_info.script_id
+            )
 
     async def main_task(self) -> None:
         await self._kill_processes()
         logger.info(f"启动 BetterGI 设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
-        # 用户独立配置：先把该用户的一条龙配置载入 BetterGI，再打开 GUI 供其修改
-        self._write_one_dragon_config()
+        # 任务配置以 MAS 前端为准：GUI 直控只打开 BGI 供查看游戏/程序环境，
+        # 不再预置一条龙槽位，也不在结束后回读（MAS 前端是唯一编辑入口）。
+        self._cleanup_leftover_slot()
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
         await self.process_manager.open_process(
             self.exe_path,
@@ -134,16 +105,9 @@ class ScriptConfigTask(TaskExecuteBase):
         self.wait_event.set()
         await self._kill_processes()
         if not self.crashed:
-            # 用户独立配置：回读 BetterGI 现有配置，保存 GUI 中修改的设置
-            self._snapshot_one_dragon_config()
-            logger.success("BetterGI 直控配置已由脚本原生 GUI 保存")
+            logger.success("BetterGI 直控配置已打开（任务配置请以 MAS 前端为准）")
             self.cur_user_item.status = "完成"
-        # 快照已固化到 per-user 副本，删除 MAS 运行时槽位，避免残留到 BGI GUI
-        if self.use_mas_config:
-            with suppress(Exception):
-                one_dragon.remove_one_dragon_slot(
-                    self.root_path, self.script_info.script_id
-                )
+        self._cleanup_leftover_slot()
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
@@ -151,14 +115,7 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
-        # 异常退出也先快照（固化 GUI 中已保存的编辑）再清理 MAS 运行时槽位，避免残留与丢编辑
-        if self.use_mas_config:
-            with suppress(Exception):
-                self._snapshot_one_dragon_config()
-            with suppress(Exception):
-                one_dragon.remove_one_dragon_slot(
-                    self.root_path, self.script_info.script_id
-                )
+        self._cleanup_leftover_slot()
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
