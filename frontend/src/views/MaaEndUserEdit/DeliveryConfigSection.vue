@@ -15,12 +15,16 @@
               </a-tooltip>
             </span>
           </template>
-          <a-switch v-model:checked="enabled" :disabled="loading" @change="handleEnabledChange" />
+          <a-switch
+            v-model:checked="formData.Task.IfSeizeDeliveryJobs"
+            :disabled="loading"
+            @change="handleEnabledChange"
+          />
         </a-form-item>
       </a-col>
     </a-row>
 
-    <a-row v-if="enabled" :gutter="24">
+    <a-row v-if="formData.Task.IfSeizeDeliveryJobs" :gutter="24">
       <a-col :span="8">
         <a-form-item name="SeizeDeliveryJobsReward">
           <template #label>
@@ -32,12 +36,13 @@
             </span>
           </template>
           <a-input-number
-            v-model:value="reward"
+            v-model:value="formData.Task.SeizeDeliveryJobsReward"
             :min="0"
             :step="0.1"
             :disabled="loading"
             style="width: 100%"
             @change="handleRewardChange"
+            @blur="handleRewardBlur"
           />
         </a-form-item>
       </a-col>
@@ -45,7 +50,7 @@
       <a-col :span="8">
         <a-form-item name="SeizeDeliveryJobsCommissionSource" label="委托接收点">
           <a-select
-            v-model:value="commissionSource"
+            v-model:value="formData.Task.SeizeDeliveryJobsCommissionSource"
             :options="MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS"
             :disabled="loading"
             @change="handleCommissionSourceChange"
@@ -57,7 +62,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS,
@@ -69,54 +73,33 @@ const props = defineProps<{
   loading: boolean
 }>()
 
+const formData = props.formData
+
 const emit = defineEmits<{
   save: [key: string, value: any]
 }>()
-
-const enabled = ref(Boolean(props.formData.Task.IfSeizeDeliveryJobs))
-const reward = ref<number>(Number(props.formData.Task.SeizeDeliveryJobsReward ?? 15.9))
-const commissionSource = ref<MaaEndDeliveryCommissionSource>(
-  props.formData.Task.SeizeDeliveryJobsCommissionSource ?? 'Unlimited'
-)
-
-watch(
-  () => props.formData.Task.IfSeizeDeliveryJobs,
-  value => {
-    enabled.value = Boolean(value)
-  }
-)
-
-watch(
-  () => props.formData.Task.SeizeDeliveryJobsReward,
-  value => {
-    reward.value = Number(value ?? 15.9)
-  }
-)
-
-watch(
-  () => props.formData.Task.SeizeDeliveryJobsCommissionSource,
-  value => {
-    commissionSource.value = value ?? 'Unlimited'
-  }
-)
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
 
 const handleEnabledChange = (value: boolean) => {
-  enabled.value = value
+  formData.Task.IfSeizeDeliveryJobs = value
   emitSave('Task.IfSeizeDeliveryJobs', value)
 }
 
 const handleRewardChange = (value: number | string | null) => {
   const normalizedValue = Number(value)
-  reward.value = Number.isFinite(normalizedValue) && normalizedValue >= 0 ? normalizedValue : 15.9
-  emitSave('Task.SeizeDeliveryJobsReward', reward.value)
+  formData.Task.SeizeDeliveryJobsReward =
+    Number.isFinite(normalizedValue) && normalizedValue >= 0 ? normalizedValue : 15.9
+}
+
+const handleRewardBlur = () => {
+  emitSave('Task.SeizeDeliveryJobsReward', formData.Task.SeizeDeliveryJobsReward)
 }
 
 const handleCommissionSourceChange = (value: MaaEndDeliveryCommissionSource) => {
-  commissionSource.value = value
+  formData.Task.SeizeDeliveryJobsCommissionSource = value
   emitSave('Task.SeizeDeliveryJobsCommissionSource', value)
 }
 </script>

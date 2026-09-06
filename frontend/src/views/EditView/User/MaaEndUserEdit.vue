@@ -142,15 +142,15 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const { addUser, updateUser, getUsers } = useUserApi()
 const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const isInitializing = ref(true)
-const isSaving = ref(false)
-const loading = computed(() => isInitializing.value || userLoading.value)
+// 保存请求不再驱动整页 loading，避免每次自动保存都让表单快速闪动。
+const loading = computed(() => isInitializing.value)
 const maaEndOptionsLoading = ref(false)
 const maaEndOptionsLoaded = ref(false)
 
@@ -270,6 +270,10 @@ interface FieldChange {
   value: any
 }
 
+// 保存中的后续修改按字段合并，避免输入过程中被前一个请求丢弃或重复发送旧值。
+const pendingFieldSaves = new Map<string, any>()
+let fieldSavePromise: Promise<boolean> | null = null
+
 const formData = reactive({
   userName: '',
   ...getDefaultMaaEndUserData(),
@@ -301,31 +305,55 @@ const setNestedValue = (target: Record<string, any>, path: string, value: any) =
 }
 
 const saveUserFields = async (changes: FieldChange[]) => {
-  if (isInitializing.value || isSaving.value || !userId || !changes.length) return
+  if (isInitializing.value || !userId || !changes.length) return false
 
-  isSaving.value = true
-  try {
-    const userData: Record<string, any> = {}
-
-    changes.forEach(change => {
-      if (change.key === 'userName') {
-        syncUserName()
-        setNestedValue(userData, 'Info.Name', formData.Info.Name)
-        return
-      }
-
-      setNestedValue(userData, change.key, change.value)
-    })
-
-    await updateUser(scriptId, userId, userData)
-  } catch (error) {
-    logger.error(`保存用户字段失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    isSaving.value = false
+  for (const change of changes) {
+    pendingFieldSaves.set(change.key, change.value)
   }
+  if (fieldSavePromise) return fieldSavePromise
+
+  const savePromise = (async (): Promise<boolean> => {
+    try {
+      while (pendingFieldSaves.size > 0) {
+        const userData: Record<string, any> = {}
+        const currentChanges = Array.from(pendingFieldSaves.entries())
+        pendingFieldSaves.clear()
+
+        currentChanges.forEach(([key, value]) => {
+          if (key === 'userName') {
+            syncUserName()
+            setNestedValue(userData, 'Info.Name', formData.Info.Name)
+            return
+          }
+
+          setNestedValue(userData, key, value)
+        })
+
+        if (!(await updateUser(scriptId, userId, userData))) {
+          pendingFieldSaves.clear()
+          return false
+        }
+      }
+      return true
+    } catch (error) {
+      pendingFieldSaves.clear()
+      logger.error(`保存用户字段失败: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    } finally {
+      fieldSavePromise = null
+    }
+  })()
+  fieldSavePromise = savePromise
+  return savePromise
 }
 
 const handleFieldSave = async (key: string, value: any) => {
+  if (key === 'userName') {
+    formData.userName = value
+    syncUserName()
+  } else {
+    setNestedValue(formData, key, value)
+  }
   await saveUserFields([{ key, value }])
 }
 
@@ -336,6 +364,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
 }
 
 const handleFieldsSave = async (changes: FieldChange[]) => {
+  changes.forEach(change => setNestedValue(formData, change.key, change.value))
   await saveUserFields(changes)
 }
 

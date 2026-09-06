@@ -44,6 +44,7 @@
                 "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "修复BUG": [
+                "MaaEnd专项 修复修改送货配置时页面快速刷新、导致输入过程不稳定的问题",
                 "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "修复同时打开两个前端窗口时互相抢占后端连接、每隔几秒断线并反复弹出提示的问题：后开的窗口接管连接，先开的窗口停止重连并只提示一次 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复与后端断开连接时立即弹出阻塞式弹窗的问题：改为右上角非阻塞提示并在重连成功后自动收起，生产模式仅在整轮重连失败后才升级为弹窗，开发模式下开发者手动重启后端不再被弹窗打断 by [@qiyinxi](https://github.com/qiyinxi)",
