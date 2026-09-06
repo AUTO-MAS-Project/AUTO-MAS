@@ -118,7 +118,7 @@ export const saveGlobalStygianSettings = async (
 }
 
 /**
- * 读取 BetterGI 每周秘境秘境候选目录（产出表/tp.json 扫描，含每秘境三档奖励物）。
+ * 读取 BetterGI 每周秘境秘境候选目录（官方 tp.json 扫描，含每秘境三档奖励物）。
  * 失败时返回空数组并由调用方决定降级行为（表格仍可手动填写秘境名）。
  */
 export const fetchDomainCatalog = async (

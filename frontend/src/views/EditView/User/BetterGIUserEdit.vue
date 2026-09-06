@@ -1373,8 +1373,9 @@ const {
 //  - 右键某一配置组：从一条龙移除（内置移出 Groups、自定义移出 CustomGroups、体力作战移除并关闭）。
 //  - 体力作战启用互斥：开启体力作战时，自动关闭并冻结「自动秘境 / 自动地脉花 / 自动首领讨伐」；
 //    体力作战关闭或从一条龙移除后才解冻，三组可重新开启。
-// 说明：BetterGI 内置组执行顺序与队列成员最终由后端一条龙 TaskOrder 决定，本次后端顺序化尚未
-// 配套，左栏顺序/成员作为前端队列编排（dragonList）保留，待后端支持后映射 Groups/CustomGroups。
+// 说明：队列顺序与成员（含重复实例）持久化在 OneDragon.Queue（JSON 数组，元素
+// {kind, name}），运行时后端按队列顺序重建一条龙 TaskOrder；行启停仍由
+// Groups / CustomGroups 承载，体力作战为本地虚拟项不落库。
 const STAMINA_COMBAT_KEY = '__mas_stamina_combat__'
 
 type ConfigGroupKind = 'builtin' | 'stamina' | 'custom' | 'js' | 'pathing' | 'scriptgroup'
@@ -1550,31 +1551,85 @@ const pushDragon = (list: ConfigGroupIdentity[], item: ConfigGroupIdentity) => {
   if (!list.some(i => i.kind === item.kind && i.key === item.key)) list.push(makeDragonRow(item))
 }
 
+// 队列是否已初始化（初始化前的 appendCustomRows 不落库，避免把半成品队列写回）
+let dragonListReady = false
+
+// 读取已持久化的一条龙队列（OneDragon.Queue：JSON 数组，元素 {kind, name}）。
+// 生成 API 模型重新生成前该字段尚无类型声明，这里做宽松读取；缺失/非法按未持久化处理。
+const readStoredQueue = (): ConfigGroupIdentity[] => {
+  const raw = (formData.OneDragon as unknown as Record<string, unknown>).Queue
+  if (typeof raw !== 'string') return []
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(data)) return []
+  const builtinNames = new Set(ONE_DRAGON_GROUPS.map(g => g.value))
+  const rows: ConfigGroupIdentity[] = []
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const rec = entry as Record<string, unknown>
+    const name = typeof rec.name === 'string' ? rec.name.trim() : ''
+    if (!name) continue
+    if (name === STAMINA_COMBAT_KEY) continue // 体力作战为本地虚拟项，不入持久化队列
+    let kind: ConfigGroupKind
+    if (builtinNames.has(name)) {
+      kind = 'builtin' // 后端也会把内置组名强制归一为 builtin，这里双保险
+    } else if (rec.kind === 'js' || rec.kind === 'pathing' || rec.kind === 'scriptgroup') {
+      kind = rec.kind
+    } else {
+      kind = resolveStoredRowKind(name)
+    }
+    rows.push(makeDragonRow({ kind, key: name }))
+  }
+  return rows
+}
+
+// 把当前队列顺序/成员落库（体力作战行不持久化；运行时后端按此重建 TaskOrder）
+const persistDragonQueue = () => {
+  if (!dragonListReady || !groupsEditable.value) return
+  const entries = dragonList.value
+    .filter(i => i.kind !== 'stamina')
+    .map(i => ({ kind: i.kind, name: i.key }))
+  void saveField('OneDragon.Queue', JSON.stringify(entries))
+}
+
 // 依据用户数据初始化一条龙队列（loadUser 后调用一次，随后由增删/拖拽维护）：
-// 种子 = 8 内置（默认在列，enabled 由 Groups 表达）+ 体力作战（默认在列，默认关闭）。
+// 已持久化队列优先（顺序与成员、含重复实例原样恢复）；否则种子 =
+// 8 内置（默认在列，enabled 由 Groups 表达）+ 体力作战（默认在列，默认关闭）。
 // 默认顺序：领取邮件 → 合成树脂 → 体力作战 → 自动幽境危战 → 自动地脉花 →
 //           自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励
 const initDragonList = () => {
-  const order: ConfigGroupIdentity[] = []
-  for (const g of ONE_DRAGON_GROUPS) {
-    // 体力作战固定插入第 3 位：即「合成树脂」之后、「自动幽境危战」之前
-    if (staminaInDragon.value && g.value === '自动幽境危战') {
+  const stored = readStoredQueue()
+  if (stored.length) {
+    dragonList.value = stored
+  } else {
+    const order: ConfigGroupIdentity[] = []
+    for (const g of ONE_DRAGON_GROUPS) {
+      // 体力作战固定插入第 3 位：即「合成树脂」之后、「自动幽境危战」之前
+      if (staminaInDragon.value && g.value === '自动幽境危战') {
+        pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
+      }
+      pushDragon(order, { kind: 'builtin', key: g.value })
+    }
+    // 兜底：若「自动幽境危战」不在内置列表（理论不发生），体力作战追加到末尾避免丢失
+    if (staminaInDragon.value && !order.some(i => i.kind === 'stamina')) {
       pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
     }
-    pushDragon(order, { kind: 'builtin', key: g.value })
-  }
-  // 兜底：若「自动幽境危战」不在内置列表（理论不发生），体力作战追加到末尾避免丢失
-  if (staminaInDragon.value && !order.some(i => i.kind === 'stamina')) {
-    pushDragon(order, { kind: 'stamina', key: STAMINA_COMBAT_KEY })
-  }
-  // 自定义组仅在总开关开启时并入（来自 BetterGI 现有配置 / CustomGroups）
-  if (groupsShowCustom.value) {
-    for (const row of customGroupsTable.value) {
-      const kind: ConfigGroupKind = resolveStoredRowKind(row.name)
-      pushDragon(order, { kind, key: row.name })
+    // 自定义组仅在总开关开启时并入（来自 BetterGI 现有配置 / CustomGroups）
+    if (groupsShowCustom.value) {
+      for (const row of customGroupsTable.value) {
+        const kind: ConfigGroupKind = resolveStoredRowKind(row.name)
+        pushDragon(order, { kind, key: row.name })
+      }
     }
+    dragonList.value = order
   }
-  dragonList.value = order
+  dragonListReady = true
+  // 持久化队列里没有、而 BetterGI 侧新增的自定义组仍补入队列末尾
+  appendCustomRows()
 }
 
 // 由存储的自定义组名推断队列行来源类型：命中 JS 脚本目录→js；命中 AutoPathing 文件→pathing；
@@ -1588,14 +1643,19 @@ const resolveStoredRowKind = (name: string): ConfigGroupKind => {
 
 // 把 BetterGI 侧新增的自定义组补入队列末尾（保留用户已删除的自定义组不回来）
 const appendCustomRows = () => {
-  if (!groupsShowCustom.value) return
+  if (!dragonListReady || !groupsShowCustom.value) return
+  let appended = false
   for (const row of customGroupsTable.value) {
     const item: ConfigGroupIdentity = {
       kind: resolveStoredRowKind(row.name),
       key: row.name,
     }
-    if (!inDragon(item)) dragonList.value.push(makeDragonRow(item))
+    if (!inDragon(item)) {
+      dragonList.value.push(makeDragonRow(item))
+      appended = true
+    }
   }
+  if (appended) persistDragonQueue()
 }
 
 // 供 draggable v-model 使用（纯前端顺序）
@@ -1651,6 +1711,7 @@ const clearDragon = () => {
   }
   selectedGroupIdentity.value = null
   clearMultiSelection()
+  persistDragonQueue()
 }
 
 // 行开关：内置写 Groups、体力作战本地翻转（互斥）、自定义交给 composable 持久化
@@ -1693,6 +1754,7 @@ const addToDragon = (item: ConfigGroupIdentity) => {
   }
   // 追加到队列末尾：生成带唯一 uid 的行实例（重复开关开启时允许同一配置多次添加）
   dragonList.value.push(makeDragonRow(item))
+  persistDragonQueue()
 }
 
 // 队列中是否仍存在同类配置组（删除某实例后判断是否还保留后端启用）
@@ -1737,6 +1799,7 @@ const removeFromDragon = (item: ConfigGroupIdentity) => {
     next.delete(item.uid)
     multiSelectedUids.value = next
   }
+  persistDragonQueue()
 }
 
 // 右侧选中行：展示该配置组详情
@@ -2158,7 +2221,7 @@ const projectEditorDisplayName = computed<string>(() => {
   return sel ? groupLabel(sel) : ''
 })
 
-// 每周秘境秘境候选目录（产出表/tp.json 扫描；只随 scriptId，不随用户/配置组）
+// 每周秘境秘境候选目录（官方 tp.json 扫描；只随 scriptId，不随用户/配置组）
 const domainCatalog = ref<BetterGIDomainCatalogItem[]>([])
 // 当前组是否需要周表秘境目录（仅「自动秘境」的每周秘境表格模式需要）
 const needDomainCatalog = computed<boolean>(() =>
@@ -2422,8 +2485,9 @@ const isRowSelected = (item: ConfigGroupIdentity): boolean => {
 }
 
 const handleGroupDragEnd = () => {
-  // 本次后端顺序化未配套：仅保留前端拖拽结果，不做后端落库
-  logger.debug(`一条龙队列顺序已调整（未落库）: ${dragonList.value.map(i => i.key).join(',')}`)
+  // 拖拽结果按行实例顺序持久化到 OneDragon.Queue，运行时后端据此重建 TaskOrder
+  persistDragonQueue()
+  logger.debug(`一条龙队列顺序已调整: ${dragonList.value.map(i => i.key).join(',')}`)
 }
 
 // 右键某一配置组 → 确认后从一条龙移除

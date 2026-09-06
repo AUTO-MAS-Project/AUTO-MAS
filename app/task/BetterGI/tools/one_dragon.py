@@ -255,6 +255,45 @@ def read_script_readme(root: Path, folder: str) -> str:
     return ""
 
 
+def _validate_script_id(script_id: str) -> str:
+    """校验脚本 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
+
+    返回 strip 后的 ``script_id``；不合法抛 ``ValueError``（防目录穿越/越权读写）。
+    """
+    value = str(script_id or "").strip()
+    try:
+        uuid.UUID(value)
+    except ValueError as e:
+        raise ValueError(f"非法的脚本 ID: {script_id!r}") from e
+    return value
+
+
+def _validate_user_id(user_id: str) -> str:
+    """校验用户 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
+
+    MAS 的 BetterGI 用户 id 恒为 UUID；不合法抛 ``ValueError``
+    （防目录穿越/越权读写其他用户或脚本目录）。
+    """
+    value = str(user_id or "").strip()
+    try:
+        uuid.UUID(value)
+    except ValueError as e:
+        raise ValueError(f"非法的用户 ID: {user_id!r}") from e
+    return value
+
+
+def _validate_file_stem(name: str) -> str:
+    """校验配置名可安全作为文件名主干：不含路径分隔符/盘符/``..``。
+
+    返回 strip 后的名字；不合法抛 ``ValueError``（configName 来自前端请求，
+    需防 ``../`` 等穿越出 per-user 目录）。
+    """
+    value = str(name or "").strip()
+    if not value or any(ch in value for ch in ("/", "\\", ":")) or ".." in value:
+        raise ValueError(f"非法的配置名: {name!r}")
+    return value
+
+
 def per_user_script_group_path(script_id: str, user_id: str, name: str) -> Path:
     """某用户的配置组 json 副本路径 ``data/{script_id}/{user_id}/ScriptGroup/{name}.json``。
 
@@ -265,10 +304,10 @@ def per_user_script_group_path(script_id: str, user_id: str, name: str) -> Path:
     return (
         Path.cwd()
         / "data"
-        / script_id
-        / user_id
+        / _validate_script_id(script_id)
+        / _validate_user_id(user_id)
         / "ScriptGroup"
-        / f"{resolve_script_group_name(name)}.json"
+        / f"{_validate_file_stem(resolve_script_group_name(name))}.json"
     )
 
 
@@ -499,13 +538,18 @@ def one_dragon_slot_path(root: Path) -> Path:
 
 def _slot_owner_path(script_id: str) -> Path:
     """MAS 槽位占用标记：存在表示 ``{RootPath}/User/OneDragon/MAS独立配置.json``
-    当前由 MAS 写入（运行时槽位），而非用户自己的同名配置。"""
-    return Path.cwd() / "data" / script_id / ".mas_slot_owner"
+    当前由 MAS 写入（运行时槽位），而非用户自己的同名配置。
+
+    ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行（调度与使用方式保证），
+    owner/backup 因此只按脚本维度记录；若未来允许同脚本并发任务，槽位/备份/
+    前缀物化/全局叶子快照会产生竞态，需按任务维度隔离。
+    """
+    return Path.cwd() / "data" / _validate_script_id(script_id) / ".mas_slot_owner"
 
 
 def _slot_backup_path(script_id: str) -> Path:
     """写槽位前若该位置本是用户自己的同名配置，备份到此处；结束时恢复而非删除。"""
-    return Path.cwd() / "data" / script_id / ".mas_slot_backup.json"
+    return Path.cwd() / "data" / _validate_script_id(script_id) / ".mas_slot_backup.json"
 
 
 def remove_one_dragon_slot(root: Path, script_id: str) -> bool:
@@ -562,6 +606,42 @@ def parse_custom_groups(raw: Any) -> list[dict[str, Any]]:
     ]
 
 
+def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
+    """解析前端保存的一条龙队列 JSON（字符串或已是列表），非法时返回空列表。
+
+    元素归一为 ``{"kind", "name"}``：``name`` 命中内置 8 组时 ``kind`` 强制为
+    ``builtin``，否则保留前端给的 kind（js/pathing/scriptgroup/custom，仅供展示，
+    运行时统一按自定义组名处理）。空名与非字典项丢弃；**允许同名条目重复**
+    （对应可视化队列的重复实例，每个实例是独立 uid）。
+    """
+    if isinstance(raw, list):
+        data = raw
+    elif isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, list):
+            return []
+    else:
+        return []
+    out: list[dict[str, str]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        if name in _BUILTIN_ONE_DRAGON_GROUPS:
+            kind = "builtin"
+        else:
+            kind = str(item.get("kind", "")).strip()
+            if kind not in ("js", "pathing", "scriptgroup", "custom"):
+                kind = "custom"
+        out.append({"kind": kind, "name": name})
+    return out
+
+
 def _custom_groups_from_config(config: dict[str, Any]) -> list[dict[str, Any]]:
     """从一条龙配置 dict 抽取自定义配置组（非内置 8 组），按 ``TaskOrder`` 相对顺序。"""
     defs: dict[str, str] = config.get("TaskDefinitions") or {}
@@ -608,7 +688,7 @@ def list_user_custom_groups(
 
 def one_dragon_path(root: Path, name: str) -> Path:
     """一条龙配置文件的绝对路径。"""
-    return root / _ONE_DRAGON_REL_DIR / f"{resolve_config_name(name)}.json"
+    return root / _ONE_DRAGON_REL_DIR / f"{_validate_file_stem(resolve_config_name(name))}.json"
 
 
 def load_one_dragon(root: Path, name: str) -> dict[str, Any]:
@@ -657,10 +737,10 @@ def per_user_one_dragon_path(script_id: str, user_id: str, config_name: str) -> 
     return (
         Path.cwd()
         / "data"
-        / script_id
-        / user_id
+        / _validate_script_id(script_id)
+        / _validate_user_id(user_id)
         / "OneDragon"
-        / f"{resolve_config_name(config_name)}.json"
+        / f"{_validate_file_stem(resolve_config_name(config_name))}.json"
     )
 
 
@@ -729,6 +809,9 @@ def cleanup_leftover_mas_groups(root: Path, script_id: str, user_id: str) -> int
 
     进程被强杀等异常场景会留下前缀物化文件（无 owner 标记可循），此函数按用户短 id
     前缀扫描删除，只命中 MAS 专属前缀，绝不触碰 BGI 本体文件。返回删除数量。
+
+    ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行；并发任务下此清理会删掉
+    其他运行实例正在使用的物化文件（见 ``_slot_owner_path`` 的说明）。
     """
     short = _mas_user_short_id(user_id)
     removed = 0
@@ -753,8 +836,13 @@ def write_user_one_dragon(
     auto_boss_strategy_name: str = "",
     custom_groups: list[dict[str, Any]] | None = None,
     manage_custom_groups: bool = False,
+    queue: list[dict[str, Any]] | None = None,
 ) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
+
+    ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行（调度与使用方式保证）；
+    槽位/owner/backup/前缀物化组/全局 config.json 叶子快照均按脚本维度共享，
+    若未来允许同脚本并发任务，需先按任务维度隔离（见 ``_slot_owner_path``）。
 
     仅「用户独立配置」模式（``IfUseMasConfig=True``）调用；配置名固定为
     「MAS独立配置」：
@@ -791,7 +879,11 @@ def write_user_one_dragon(
         config = load_seed_template()
 
     config = apply_groups(
-        config, groups, custom_groups=custom_groups, manage_customs=manage_custom_groups
+        config,
+        groups,
+        custom_groups=custom_groups,
+        manage_customs=manage_custom_groups,
+        queue=queue,
     )
     # 副本只保存一条龙结构与组开关（不含顶部快捷覆盖，避免清空后残留旧值）
     write_file(user_path, config)
@@ -1150,8 +1242,8 @@ def per_user_global_domain_path(script_id: str, user_id: str) -> Path:
     return (
         Path.cwd()
         / "data"
-        / script_id
-        / user_id
+        / _validate_script_id(script_id)
+        / _validate_user_id(user_id)
         / "GlobalDomain"
         / "settings.json"
     )
@@ -1318,8 +1410,8 @@ def per_user_global_stygian_path(script_id: str, user_id: str) -> Path:
     return (
         Path.cwd()
         / "data"
-        / script_id
-        / user_id
+        / _validate_script_id(script_id)
+        / _validate_user_id(user_id)
         / "GlobalStygian"
         / "settings.json"
     )
@@ -1545,6 +1637,7 @@ def apply_groups(
     enabled: list[str],
     custom_groups: list[dict[str, Any]] | None = None,
     manage_customs: bool = False,
+    queue: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """按组名切换一条龙配置的组开关，保留其余设置。
 
@@ -1558,6 +1651,12 @@ def apply_groups(
       覆盖自定义组启用状态：入表组按表状态、未入表（但 BetterGI 文件里存在）组保持原
       启用状态、入表且启用但配置缺失时补建。
 
+    队列顺序（可视化编排）：``queue`` 非空时（``parse_one_dragon_queue`` 的产物）按其
+    顺序重建 ``TaskOrder``/``TaskDefinitions``——每个队列条目生成独立 uid（同名条目即
+    重复实例），内置组 enabled 取按钮开关、自定义组 enabled 取管理表/旧状态；不在队列
+    里的旧自定义组兜底追加到末尾，避免静默丢失。``queue`` 为空/非法时保持旧行为
+    （沿用副本 ``TaskOrder`` 相对顺序，不重排）。
+
     应用到当前运行的配置（``Name`` 指向哪个就写哪个），不局限于某一份命名。
 
     Args:
@@ -1565,6 +1664,7 @@ def apply_groups(
         enabled: 按钮打开的 8 个内置组名列表。
         custom_groups: 自定义配置组管理列表（name→enabled），仅 ``manage_customs`` 时使用。
         manage_customs: 是否管理自定义组开关。
+        queue: 可视化队列（有序条目），见 ``parse_one_dragon_queue``；空时回退旧行为。
 
     Returns:
         修改后的配置 dict（浅拷贝，原 ``config`` 不变）。
@@ -1585,48 +1685,69 @@ def apply_groups(
     old_enabled: dict[str, bool] = config.get("TaskEnabledList") or {}
     old_order: list[str] = list(config.get("TaskOrder") or [])
     name_by_uid = {uid: n for uid, n in old_defs.items() if n}
+    # name -> (首个旧 uid, 旧启用状态)：队列模式按名取旧启用状态
+    old_by_name: dict[str, tuple[str, bool]] = {}
+    for uid in old_order:
+        name = name_by_uid.get(uid)
+        if name and name not in old_by_name:
+            old_by_name[name] = (uid, bool(old_enabled.get(uid, True)))
 
+    def _custom_enabled_for(name: str) -> bool:
+        old = old_by_name.get(name)
+        old_on = bool(old[1]) if old else True
+        if manage_customs:
+            # 入表按表状态；未入表保持 BetterGI 原启用状态，避免误开用户已关闭的组
+            return custom_enabled[name] if name in custom_enabled else old_on
+        return old_on
+
+    queue_entries = [e for e in (queue or []) if isinstance(e, dict)]
     new_defs: dict[str, str] = {}
     new_order: list[str] = []
     new_enabled: dict[str, bool] = {}
     present_builtin: set[str] = set()
 
-    # 单遍扫描旧顺序：内置组按按钮开关置 enabled，自定义组按管理表/原样保留，保持相对顺序
-    for uid in old_order:
-        name = name_by_uid.get(uid)
-        if not name or uid in new_defs:
-            continue
-        if name in _BUILTIN_ONE_DRAGON_GROUPS:
-            present_builtin.add(name)
+    if queue_entries:
+        # 队列模式：按可视化队列顺序重建（允许同名重复实例，各占独立 uid）
+        for entry in queue_entries:
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            uid = str(uuid.uuid4())
             new_defs[uid] = name
             new_order.append(uid)
-            new_enabled[uid] = name in selected_set
-        else:  # 自定义组
-            new_defs[uid] = name
-            new_order.append(uid)
-            if manage_customs:
-                # 入表按表状态；未入表保持 BetterGI 原启用状态，避免误开用户已关闭的组
-                new_enabled[uid] = (
-                    custom_enabled[name]
-                    if name in custom_enabled
-                    else bool(old_enabled.get(uid, True))
-                )
+            if name in _BUILTIN_ONE_DRAGON_GROUPS:
+                present_builtin.add(name)
+                new_enabled[uid] = name in selected_set
             else:
-                new_enabled[uid] = bool(old_enabled.get(uid, True))
+                new_enabled[uid] = _custom_enabled_for(name)
+    else:
+        # 旧行为：单遍扫描旧顺序，内置组按按钮开关置 enabled，自定义组按管理表/原样保留
+        for uid in old_order:
+            name = name_by_uid.get(uid)
+            if not name or uid in new_defs:
+                continue
+            if name in _BUILTIN_ONE_DRAGON_GROUPS:
+                present_builtin.add(name)
+                new_defs[uid] = name
+                new_order.append(uid)
+                new_enabled[uid] = name in selected_set
+            else:  # 自定义组
+                new_defs[uid] = name
+                new_order.append(uid)
+                new_enabled[uid] = _custom_enabled_for(name)
 
-    # 兜底：未出现在 TaskOrder 的自定义组不丢失
+    # 兜底：不在队列/旧顺序里的自定义组不丢失（按名去重，追加到末尾）
+    covered_names = set(new_defs.values())
     for uid, name in old_defs.items():
-        if name and name not in _BUILTIN_ONE_DRAGON_GROUPS and uid not in new_defs:
+        if (
+            name
+            and name not in _BUILTIN_ONE_DRAGON_GROUPS
+            and name not in covered_names
+        ):
+            covered_names.add(name)
             new_defs[uid] = name
             new_order.append(uid)
-            if manage_customs:
-                new_enabled[uid] = (
-                    custom_enabled[name]
-                    if name in custom_enabled
-                    else bool(old_enabled.get(uid, True))
-                )
-            else:
-                new_enabled[uid] = bool(old_enabled.get(uid, True))
+            new_enabled[uid] = _custom_enabled_for(name)
 
     # 按钮 ON 但配置缺失的内置组：补建并启用
     for name in selected:

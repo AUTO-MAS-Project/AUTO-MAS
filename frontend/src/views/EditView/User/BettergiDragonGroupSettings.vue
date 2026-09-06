@@ -577,7 +577,7 @@ const props = withDefaults(
     dirty?: boolean
     /** true 表示当前渲染在放大弹窗内（不再展示放大按钮/保存区，由外层接管） */
     embedded?: boolean
-    /** BetterGI 每周秘境秘境候选 + 每秘境三档奖励物（后端扫描产出表/tp.json） */
+    /** BetterGI 每周秘境秘境候选 + 每秘境三档奖励物（后端扫描官方 tp.json） */
     domainCatalog?: BetterGIDomainCatalogItem[]
     /** 讨伐首领目录（地区 → 首领，随 schema 由父组件静态传入；供二级连列弹窗） */
     bossCatalog?: BetterGIBossCatalogItem[]

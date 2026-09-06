@@ -3191,6 +3191,12 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_CustomGroups = ConfigItem(
             "OneDragon", "CustomGroups", "[]", JSONValidator(list)
         )
+        ## 一条龙队列（可视化编排）：JSON 数组字符串，按执行顺序存储，元素为
+        ## {"kind": str, "name": str}（kind ∈ builtin/js/pathing/scriptgroup/custom，
+        ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
+        ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
+        ## （按副本 TaskOrder 相对顺序，不重排）。
+        self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）

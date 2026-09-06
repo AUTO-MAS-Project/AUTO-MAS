@@ -78,6 +78,19 @@ def _bettergi_script_config(script_id: str):
     return script_config
 
 
+def _bettergi_user_id(script_config, user_id: str) -> uuid.UUID:
+    """解析并校验 ``userId`` 属于该 BetterGI 脚本（防越权读写与路径穿越）。
+
+    per-user 数据按 ``data/{script}/{user}/...`` 落盘，``userId`` 必须是合法 UUID 且
+    真实存在于该脚本的 ``UserData`` 中，否则抛 ``ValueError``（由路由层转 400）。
+    """
+
+    uid = uuid.UUID(user_id)
+    if uid not in script_config.UserData:
+        raise ValueError("BetterGI 用户不存在，请刷新后重试")
+    return uid
+
+
 def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
     user_config = script_config.UserData[uuid.UUID(user_id)]
     return user_config
@@ -1299,6 +1312,7 @@ async def get_bettergi_one_dragon_settings_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
+        _bettergi_user_id(script_config, userId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
@@ -1335,6 +1349,7 @@ async def save_bettergi_one_dragon_settings_api(
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
+        _bettergi_user_id(script_config, req.userId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
@@ -1374,6 +1389,8 @@ async def get_bettergi_global_domain_settings_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
+        if userId:
+            _bettergi_user_id(script_config, userId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
@@ -1416,6 +1433,7 @@ async def save_bettergi_global_domain_settings_api(
         from app.task.BetterGI.tools import one_dragon
 
         if req.userId:
+            _bettergi_user_id(script_config, req.userId)
             one_dragon.write_user_global_domain_settings(
                 req.scriptId, req.userId, req.settings
             )
@@ -1454,6 +1472,8 @@ async def get_bettergi_global_stygian_settings_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
+        if userId:
+            _bettergi_user_id(script_config, userId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
@@ -1496,6 +1516,7 @@ async def save_bettergi_global_stygian_settings_api(
         from app.task.BetterGI.tools import one_dragon
 
         if req.userId:
+            _bettergi_user_id(script_config, req.userId)
             one_dragon.write_user_global_stygian_settings(
                 req.scriptId, req.userId, req.settings
             )
@@ -1527,8 +1548,8 @@ async def get_bettergi_domain_catalog_api(
 ) -> BetterGIDomainCatalogOut:
     """返回 BetterGI 每周秘境可选秘境目录与分档奖励物。
 
-    数据源：产出表（User/JsScript/**/Genshin_Domains_SC_Live_Source.json）优先，
-    缺失时回退官方传送点 tp.json 的域名（无奖励物）；两者都没有时返回空目录。
+    数据源：官方传送点 tp.json（GameTask/AutoTrackPath/Assets/tp.json）中
+    Bless/Forgery/Mastery 三类 Domain 点（含奖励物）；tp.json 缺失或为空时返回空目录。
     供「每周秘境」表格的秘境/奖励下拉联动使用（奖励仍按 BGI 语义存 0~3 序号）。
     """
 
@@ -1582,6 +1603,7 @@ async def get_bettergi_custom_groups_api(
         if useMasConfig:
             if not userId:
                 raise ValueError("用户独立配置下必须提供 userId")
+            _bettergi_user_id(script_config, userId)
             items = one_dragon.list_user_custom_groups(
                 root, scriptId, userId, one_dragon.launch_slot_name()
             )
@@ -1706,6 +1728,7 @@ async def get_bettergi_script_groups_api(
 
         names = one_dragon.list_script_groups(root)
         if userId:
+            _bettergi_user_id(script_config, userId)
             copy_names = one_dragon.list_user_script_group_names(scriptId, userId)
             merged: list[str] = []
             for name in (*copy_names, *names):
@@ -1747,6 +1770,7 @@ async def get_bettergi_script_group_detail_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
+        _bettergi_user_id(script_config, userId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
@@ -1792,6 +1816,7 @@ async def save_bettergi_script_group_api(
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
+        _bettergi_user_id(script_config, req.userId)
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 

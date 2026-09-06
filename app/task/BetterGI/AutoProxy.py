@@ -267,6 +267,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_custom_groups = one_dragon.parse_custom_groups(
             self.cur_user_config.get("OneDragon", "CustomGroups") or ""
         )
+        # 可视化队列（有序条目，含重复实例）：决定运行时 TaskOrder 重建顺序；
+        # 为空/非法时 write_user_one_dragon 回退旧行为（沿用副本 TaskOrder 相对顺序）
+        self.one_dragon_queue = one_dragon.parse_one_dragon_queue(
+            self.cur_user_config.get("OneDragon", "Queue") or ""
+        )
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
 
@@ -315,6 +320,7 @@ class AutoProxyTask(TaskExecuteBase):
             ),
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
+            queue=self.one_dragon_queue,
         )
         # 幽境危战面板设置（刷取战场/树脂策略等）先物化到 config.json 的
         # autoStygianOnslaughtConfig 段；随后顶部「通用战斗队伍/策略」非空会覆盖同段的
@@ -876,8 +882,11 @@ class AutoProxyTask(TaskExecuteBase):
     async def _close_game(self) -> None:
         """任务结束后关闭原神游戏进程。
 
-        按进程名逐一尝试：先优雅关闭（发送 WM_CLOSE），等待短暂时间后
-        再强制结束残留进程，覆盖官服/B服/国际服/云原神等客户端。
+        按进程名逐一强制结束（含子进程），覆盖官服/B服/国际服/云原神等客户端。
+        游戏对 WM_CLOSE 无响应：taskkill 不带 /F 的「优雅关闭」会一直等待进程
+        退出直至 60s 超时抛异常，反而跳过后续的强制关闭（旧实现的游戏残留根因），
+        故这里直接 /F 结束。taskkill 非零返回（拒绝访问/进程不存在）必须落日志，
+        否则关闭失败在收尾里完全无痕、无法排查。
         """
         if not self.script_config.get("Game", "CloseOnFinish"):
             return
@@ -886,14 +895,21 @@ class AutoProxyTask(TaskExecuteBase):
         for name in _BGI_GAME_PROCESS_NAMES:
             image = f"{name}.exe"
             try:
-                # 先优雅关闭（taskkill 不带 /F 会向 GUI 窗口发送 WM_CLOSE）
-                graceful = await ProcessRunner.run_process(
-                    "taskkill", "/IM", image, "/T"
-                )
-                if graceful.returncode == 0:
-                    await asyncio.sleep(_BGI_GAME_CLOSE_WAIT_SECONDS)
-                # 再强制结束仍残留的进程（含子进程）
-                await ProcessRunner.run_process("taskkill", "/IM", image, "/F", "/T")
+                result = await ProcessRunner.run_process("taskkill", "/IM", image, "/F", "/T")
+                if result.returncode != 0:
+                    reason = (result.stderr or result.stdout or "").strip()
+                    if "没有找到进程" in reason or "not found" in reason.lower():
+                        continue  # 该名称的客户端本就未运行，属正常
+                    logger.warning(f"关闭游戏进程 {image} 失败: {reason}")
+                    if "拒绝访问" in reason or "access" in reason.lower():
+                        await self._push_dispatch_log(
+                            "关闭游戏失败：游戏以管理员权限运行，MAS 无权结束。"
+                            "请以管理员身份运行 AUTO-MAS，或将游戏与 BetterGI 改为普通权限启动"
+                        )
+                    else:
+                        await self._push_dispatch_log(
+                            f"关闭游戏进程 {image} 失败: {reason}"
+                        )
             except Exception as e:
                 logger.warning(f"关闭游戏进程 {image} 失败: {e}")
         await self._push_dispatch_log("游戏进程已关闭")

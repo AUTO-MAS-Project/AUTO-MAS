@@ -10,8 +10,7 @@
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 用户编辑页的一条龙配置改为可视化队列：左侧可拖拽排序配置组，支持一次输入多个配置组批量加入、右键移出、一键清空，队列行支持启停开关与多选后批量启停或移除（内置组显示「默认」标签、JS 归入自定义标签、路径文件带「路径」标签） by [@TCddddd](https://github.com/TCddddd)",
-                "BetterGI专项 添加配置组弹窗加大并改为「JS脚本/地图追踪」双标签页：顶部提供自适应多行输入与两排入口按钮（在线脚本仓库 s.bettergi.com、脚本目录、任务目录、打开BGI、一条龙目录、配置组目录）；JS脚本页可搜索加入 User/JsScript 脚本、地图追踪页按 User/AutoPathing 目录树浏览路径文件，两者均点击先写入输入框再确认统一入队，并支持 Shift 区间/Ctrl 逐个多选 by [@TCddddd](https://github.com/TCddddd)",
+                "BetterGI专项 用户编辑页一条龙配置改为可视化队列：左栏队列可拖拽排序并按所排顺序执行，支持批量加入、右键移出、一键清空、行启停与多选批量操作，添加配置组弹窗扩为「JS脚本/地图追踪」双标签页 by [@TCddddd](https://github.com/TCddddd)",
                 "调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)",
                 "通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)"

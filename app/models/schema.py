@@ -170,14 +170,14 @@ class BetterGIGlobalStygianSettingsIn(BaseModel):
 
 
 class BetterGIDomainCatalogItem(BaseModel):
-    """BetterGI 每周秘境可选秘境目录项（来源：官方 tp.json 权威，产出表补奖励名）"""
+    """BetterGI 每周秘境可选秘境目录项（来源：官方 tp.json，唯一数据源）"""
 
     name: str = Field(..., description="秘境名称（与 BGI 传送点/每周秘境 DomainName 一致）")
     region: str = Field(default="", description="所在地区")
     category: str = Field(default="", description="tp.json 的 domain type（BlessDomain/ForgeryDomain/MasteryDomain）")
     rewards: List[str] = Field(
         default_factory=list,
-        description="三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；产出表缺失或圣遗物时为空数组）",
+        description="三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；圣遗物秘境为套装两件）",
     )
 
 
@@ -1132,6 +1132,11 @@ class BetterGIUserConfig_OneDragon(BaseModel):
     CustomGroups: Optional[Union[str, List]] = Field(
         default=None,
         description="自定义配置组 JSON 列表字符串，元素含 name/enabled",
+    )
+    Queue: Optional[str] = Field(
+        default=None,
+        description="一条龙可视化队列 JSON 数组字符串（按执行顺序），元素为 {kind, name}；"
+        "kind ∈ builtin/js/pathing/scriptgroup/custom，允许同名重复实例",
     )
 
 
