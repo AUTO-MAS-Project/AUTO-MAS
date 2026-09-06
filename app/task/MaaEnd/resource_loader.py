@@ -63,6 +63,7 @@ class MaaEndResourceLoader:
         self._options: dict[str, Any] = {}
         self._tasks_loaded = False
         self._load_all_resources()
+        self._resource_signature = self._current_signature()
 
     @classmethod
     def get_cached(
@@ -76,7 +77,17 @@ class MaaEndResourceLoader:
         with cls._cache_lock:
             cached = cls._loader_cache.get(root_path)
             if cached is not None and not force_reload:
-                return cached
+                if cached._current_signature() == cached._resource_signature:
+                    return cached
+
+                logger.info(f"MaaEnd 源文件资源缓存已失效，重新解析：{root_path}")
+                try:
+                    loader = cls(root_path, file_cache=cached._file_cache)
+                except Exception as error:
+                    raise ValueError(f"MaaEnd 文件不完整: {error}") from error
+                cls._loader_cache[root_path] = loader
+                loader._save_disk_cache()
+                return loader
 
             if force_reload:
                 cls._loader_cache.pop(root_path, None)
@@ -97,14 +108,9 @@ class MaaEndResourceLoader:
 
     @classmethod
     def get_loaded(cls, root_path: Path) -> "MaaEndResourceLoader":
-        """直接读取已经载入进程内存的资源。"""
+        """读取并校验已经载入进程内存的资源。"""
 
-        root_path = root_path.resolve()
-        with cls._cache_lock:
-            loader = cls._loader_cache.get(root_path)
-        if loader is None:
-            return cls.get_cached(root_path)
-        return loader
+        return cls.get_cached(root_path)
 
     @classmethod
     def _disk_cache_path(cls, root_path: Path) -> Path:
@@ -259,7 +265,25 @@ class MaaEndResourceLoader:
                 self._tasks.extend(task for task in tasks if isinstance(task, dict))
 
             self._tasks_loaded = True
+            self._resource_signature = self._current_signature()
             self._save_disk_cache()
+
+    def _current_signature(self) -> tuple:
+        interface_path = (self.root_path / "interface.json").resolve()
+        paths = set(self._file_cache)
+        paths.add(interface_path)
+        paths.update(
+            (interface_path.parent / relative_path).resolve()
+            for relative_path in self._interface["languages"].values()
+        )
+        paths.update(
+            (interface_path.parent / relative_path).resolve()
+            for relative_path in self._interface["import"]
+        )
+        return tuple(
+            self._file_signature(path)
+            for path in sorted(paths, key=lambda item: str(item))
+        )
 
     def _get_locale(self, language: str) -> dict[str, str]:
         language = _normalize_language(language)
