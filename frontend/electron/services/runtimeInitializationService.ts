@@ -489,8 +489,8 @@ export class RuntimeInitializationService {
   /**
    * 单步重试。
    *
-   * - 用户选了镜像源：镜像是全局选项，只能整条 `bootstrap` 重跑（映射不到就不传
-   *   `--mirror`，用 Runtime 自己的默认轮换）；
+   * - 用户选了镜像源：普通重试走整条 `bootstrap`，显式重建仍走重建命令并携带镜像
+   *   （映射不到就不传 `--mirror`，用 Runtime 自己的默认轮换）；
    * - 没选镜像源：走该段对应的下层命令，处置强度按 `mode` 决定。
    *
    * `mirror` / `pip` / `git` 三段在新链路没有对应物，直接按成功返回。
@@ -515,8 +515,10 @@ export class RuntimeInitializationService {
       return { success: true }
     }
 
-    if (mirrorKey?.trim()) {
-      const mirror = mapMirrorSelection(this.mirrorService, stage, mirrorKey)
+    const mirror = mirrorKey?.trim()
+      ? mapMirrorSelection(this.mirrorService, stage, mirrorKey)
+      : null
+    if (mirrorKey?.trim() && mode !== 'rebuild') {
       if (!mirror) {
         logger.info(`镜像源 ${mirrorKey} 在 Runtime 目录里没有对应源，按默认轮换重跑 bootstrap`)
       }
@@ -530,7 +532,7 @@ export class RuntimeInitializationService {
     }
 
     const bridge = new BootstrapProgressBridge(onProgress)
-    const outcome = await this.execute(command, null, bridge)
+    const outcome = await this.execute(command, mirror, bridge)
     if (outcome.success) {
       onProgress({ stage, status: 'completed', progress: 100, message: '完成' })
     } else {

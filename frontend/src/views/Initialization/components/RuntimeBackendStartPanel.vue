@@ -99,6 +99,7 @@ import { CheckCircleFilled, ClockCircleOutlined, LoadingOutlined } from '@ant-de
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import type { RuntimeFailureFields } from '@/types/electron'
 
 interface Props {
   showSkipButton?: boolean
@@ -113,7 +114,7 @@ withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'update:status': [status: 'waiting' | 'starting' | 'running' | 'success' | 'failed']
   complete: []
-  error: [error: string]
+  error: [error: string, failure: RuntimeFailureFields]
   skip: []
 }>()
 
@@ -163,12 +164,14 @@ async function startBackend() {
   wsConnected.value = false
   pollingStarted.value = false
   backendProgress.value = 10
+  let failure: RuntimeFailureFields = {}
 
   try {
     statusMessage.value = t('init.backend.starting')
     const result = await window.electronAPI.backendStart()
 
     if (!result.success) {
+      failure = result
       backendLogs.value = result.logs || ''
       throw new Error(result.error || t('init.backend.failedTitle'))
     }
@@ -218,7 +221,7 @@ async function startBackend() {
     status.value = 'failed'
     emit('update:status', 'failed')
     errorMessage.value = errorMessageValue
-    emit('error', errorMessageValue)
+    emit('error', errorMessageValue, failure)
     queueScrollLogToBottom()
   }
 }

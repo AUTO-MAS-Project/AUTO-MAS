@@ -210,7 +210,8 @@ export function useInitializationFlow() {
     } else {
       state.status = 'processing'
       state.message = progress.message || t('init.msg.running')
-      if (progress.progress !== undefined) {
+      // 旧安装器切换阶段时会发送 0，保留已经展示的进度。
+      if (progress.progress !== undefined && (progress.progress > 0 || state.progress === 0)) {
         state.progress = Math.min(100, Math.max(0, Math.round(progress.progress)))
       }
       state.progressIndeterminate = progress.indeterminate ?? progress.progress === undefined
@@ -452,7 +453,7 @@ export function useInitializationFlow() {
     resetFailureState(state)
 
     logger.info(`重试 ${step.key}${rebuild ? '（重建环境）' : ''}`)
-    if (await executeStep(step.key)) await continueAfterCurrentStep()
+    if (await executeStep(step.key, rebuild)) await continueAfterCurrentStep()
   }
 
   function handleBackendStatusChange(
@@ -474,10 +475,21 @@ export function useInitializationFlow() {
     await handleLocalEnterApp()
   }
 
-  function handleBackendError(errorMessage: string) {
+  async function handleBackendError(errorMessage: string, failure: RuntimeFailureFields = {}) {
     const state = stepStates.value.backend
     state.status = 'failed'
     state.message = errorMessage
+
+    if (
+      runtimeMode.value !== 'off' &&
+      (failure.code === 'DEPENDENCY_SYNC_FAILED' || failure.code === 'ENVIRONMENT_BROKEN')
+    ) {
+      // 启动时应用后台更新也可能需要修复依赖，复用安装阶段的失败处置。
+      state.status = 'waiting'
+      currentStepIndex.value = steps.findIndex(step => step.key === 'dependency')
+      markStepFailed('dependency', errorMessage, failure)
+      await loadMirrorConfigs()
+    }
   }
 
   function clearCountdown() {
