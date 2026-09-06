@@ -177,7 +177,7 @@ export const useHomeQuickStart = () => {
           modeLabel: '自动代理',
         })
         message.success(t('home.quickStart.started'))
-        navigateTo('/scheduler')
+        await navigateTo('/scheduler')
         void playSound('task_started')
       } else {
         message.error(response.message || t('home.quickStart.startFailed'))
