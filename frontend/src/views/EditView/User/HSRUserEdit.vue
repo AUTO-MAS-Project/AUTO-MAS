@@ -284,6 +284,13 @@
             </a-row>
           </div>
 
+          <!-- 额外脚本组件 -->
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="isSaving"
+            @save="handleFieldSave"
+          />
+
           <UserNotifyConfig
             v-model="formData.Notify"
             :loading="isSaving"
@@ -306,6 +313,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import hsrLogo from '@/assets/hsr.png'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
@@ -365,6 +373,10 @@ const formData = reactive<HSRUserConfigData>({
     Password: '',
     Server: 'CN-Official',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
   },
   Stage: {
