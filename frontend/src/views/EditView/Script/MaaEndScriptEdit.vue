@@ -485,6 +485,7 @@ const rules = {
 
 const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
+const defaultMaaEndController = 'Win32-Front'
 
 const booleanOptions = [
   { label: t('edit.yes'), value: true },
@@ -560,6 +561,17 @@ const loadMaaEndOptions = async () => {
 
     controllerOptions.value = response.controllers
     controllerProtocols.value = response.controllerTypes
+
+    if (!maaEndConfig.Game.ControllerType) {
+      const defaultController =
+        response.controllers.find(item => item.value === defaultMaaEndController)?.value ??
+        response.controllers.find(
+          item => item.value && response.controllerTypes[item.value] === 'Win32',
+        )?.value
+      if (defaultController) {
+        await handleControllerTypeChange(defaultController)
+      }
+    }
   } finally {
     maaEndOptionsLoading.value = false
   }
