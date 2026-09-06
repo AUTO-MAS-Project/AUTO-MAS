@@ -41,7 +41,8 @@
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
                 "BetterGI专项 清理未达提交规范的测试文件及其格式、静态检查问题，并移除误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)"
+                "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)",
+                "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
             ],
             "修复BUG": [
                 "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
