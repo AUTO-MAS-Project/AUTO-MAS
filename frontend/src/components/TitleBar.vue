@@ -31,11 +31,20 @@
             {{ t('comp.backendUpdateDevUnsupported') }}
           </span>
           <span
-            v-else-if="backendUpdateInfo?.if_need_update"
+            v-else-if="
+              runtimeBackendUpdateAvailable ||
+              (backendUpdateInfo?.if_need_update && !isRuntimeManaged)
+            "
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
-            {{ t('comp.backendUpdateAvailableClick') }}
+            {{
+              t(
+                runtimeBackendUpdateAvailable
+                  ? 'comp.backendUpdateReady'
+                  : 'comp.backendUpdateAvailableClick'
+              )
+            }}
           </span>
         </span>
       </div>
@@ -149,7 +158,11 @@ import {
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
-import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import {
+  updateInfo,
+  backendUpdateInfo,
+  runtimeBackendUpdateAvailable,
+} from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
@@ -293,12 +306,21 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 const handleBackendUpdateClick = () => {
   Modal.confirm({
     title: t('comp.restartBackendUpdate'),
-    content: t('comp.backendAboutUpdateWhich'),
+    content: t(
+      runtimeBackendUpdateAvailable.value
+        ? 'comp.backendUpdateReadyConfirm'
+        : 'comp.backendAboutUpdateWhich'
+    ),
     okText: t('comp.confirm'),
     cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
-      // Runtime 监督链路下走「停机 → bootstrap → 重新监督」，不再跳初始化页整包更新。
+      // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
+      if (isRuntimeManaged.value && runtimeBackendUpdateAvailable.value) {
+        await window.electronAPI.appRestart()
+        return
+      }
+      // 跨版本更新仍走完整的 Runtime 更新编排。
       if (isRuntimeManaged.value) {
         await startRuntimeUpdate(resolveRuntimeUpdateVersion())
         return
