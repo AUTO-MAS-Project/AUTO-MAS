@@ -1225,8 +1225,9 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None,
+        description="配置来源（脚本共享、用户独立、脚本直控）",
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -1280,7 +1281,13 @@ class MaaEndUserConfig_Task(BaseModel):
     IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
     IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
     IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    SeizeDeliveryJobsReward: Optional[float] = Field(
+        default=None, ge=0, description="抢委托送货最低接取价格（万）"
+    )
+    SeizeDeliveryJobsCommissionSource: Optional[
+        Literal["Unlimited", "WulingCity", "TestArea"]
+    ] = Field(default=None, description="抢委托送货委托接收点")
+    IfSeizeDeliveryJobs: Optional[bool] = Field(default=None, description="抢委托送货")
     IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
     IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
     IfEnvironmentMonitoring: Optional[bool] = Field(

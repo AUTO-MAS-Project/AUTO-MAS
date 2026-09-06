@@ -736,7 +736,11 @@ const isMaaEndPresetSupported = (script: Script) => {
 }
 
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
+  return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
+}
+
+const handleSaveMaaEndConfig = (script: Script) => {
+  emit('saveMaaEndConfig', script)
 }
 
 const handleStartOkwwConfig = (script: Script) => {

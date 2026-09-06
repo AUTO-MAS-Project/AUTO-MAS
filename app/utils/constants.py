@@ -64,6 +64,15 @@ MAA_MODE_TIME_LIMIT_BOOK = {
 }
 """MAA运行模式对应的超时配置项：绿票商店只买一次商店，复用日常时限"""
 
+MAAEND_RUN_MOOD_BOOK = {"Delivery": "送货", "Routine": "日常"}
+"""MaaEnd 自动代理运行模式映射表"""
+
+MAAEND_DELIVERY_TASK = "SeizeDeliveryJobs"
+"""MaaEnd 送货阶段使用的任务名称"""
+
+MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
+"""MaaEnd 抢委托送货的委托接收点选项"""
+
 MAA_TASKS = [
     "StartUp",
     "DepotMaintain",
@@ -330,7 +339,6 @@ MAAEND_TASK_GROUPS = {
         "tasks": (
             ("VisitFriends", "拜访好友"),
             ("CreditShoppingN2", "信用点购物"),
-            ("SeizeEntrustTask", "抢委托"),
         ),
     },
     "Frontend": {
@@ -362,7 +370,7 @@ MAAEND_TASKS = tuple(
     for group in MAAEND_TASK_GROUPS.values()
     for task_name, _ in group["tasks"]
 )
-"""MaaEnd托管任务列表"""
+"""MaaEnd快速控制任务列表（不含独立送货任务）"""
 
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",

@@ -1,0 +1,248 @@
+"""专项配置片段。
+
+将本文件中的两个 ConfigBase 子类复制到 ``app/models/config.py``，并复用该文件
+已有的 ConfigItem、Validator、MultipleConfig、Webhook 和 UTC4 imports。模板只放
+真实运行时会被 AutoProxy/ScriptConfig 消费的字段；专项字段必须同时出现在 schema、
+前端表单和任务逻辑中。
+"""
+
+
+class XxxUserConfig(ConfigBase):
+    """专项用户配置：从 General 用户配置开始，再加入专项字段。"""
+
+    def __init__(self) -> None:
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数，-1 表示无限
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 是否使用用户独立脚本配置；关闭时直接使用脚本原配置
+        self.Info_IfUseMasConfig = ConfigItem(
+            "Info", "IfUseMasConfig", True, BoolValidator()
+        )
+        ## 是否在任务前执行自定义脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        ## 任务前脚本路径
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 是否在任务后执行自定义脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        ## 任务后脚本路径
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        ## 用户备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户列表展示标签
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Task ------------------------------------------------------------
+        # TODO(specialized): 增加专项任务字段，并在 AutoProxy/前端真正消费。
+        # self.Task_Example = ConfigItem(
+        #     "Task", "Example", False, BoolValidator()
+        # )
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 当日代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 邮件收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否发送 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成用户列表需要的简短状态标签。"""
+        tags = []
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
+            tags.append(
+                {"text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次", "color": "green"}
+            )
+        else:
+            tags.append({"text": "任务：未代理", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            color = "gold"
+        elif remained_day == 0:
+            color = "red"
+        elif remained_day <= 3:
+            color = "orange"
+        elif remained_day <= 7:
+            color = "yellow"
+        elif remained_day <= 30:
+            color = "blue"
+        else:
+            color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {"text": f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}...", "color": "pink"}
+        )
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class XxxConfig(ConfigBase):
+    """专项脚本配置：保留 General 运行基线。"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+        ## Info ------------------------------------------------------------
+        ## 脚本显示名称
+        self.Info_Name = ConfigItem("Info", "Name", "新专项脚本")
+        ## 脚本根目录
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
+
+        ## Script ----------------------------------------------------------
+        ## 脚本主程序
+        self.Script_ScriptPath = ConfigItem(
+            "Script", "ScriptPath", "", FileValidator()
+        )
+        ## 通用启动参数；专项参数在 AutoProxy 中构造
+        self.Script_Arguments = ConfigItem(
+            "Script", "Arguments", "", AdvancedArgumentValidator()
+        )
+        ## 是否追踪目标进程
+        self.Script_IfTrackProcess = ConfigItem(
+            "Script", "IfTrackProcess", False, BoolValidator()
+        )
+        ## 目标进程名称
+        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
+        ## 目标进程可执行文件
+        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
+        ## 目标进程命令行
+        self.Script_TrackProcessCmdline = ConfigItem(
+            "Script", "TrackProcessCmdline", "", ArgumentValidator()
+        )
+        ## 脚本配置文件或目录
+        self.Script_ConfigPath = ConfigItem(
+            "Script", "ConfigPath", "", FileValidator()
+        )
+        ## 配置路径类型
+        self.Script_ConfigPathMode = ConfigItem(
+            "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
+        )
+        ## 脚本配置回写时机
+        self.Script_UpdateConfigMode = ConfigItem(
+            "Script",
+            "UpdateConfigMode",
+            "Never",
+            OptionsValidator(["Never", "Success", "Failure", "Always"]),
+        )
+        ## 日志文件路径
+        self.Script_LogPath = ConfigItem("Script", "LogPath", "", FileValidator())
+        ## 动态日志文件名格式；固定文件名可留空
+        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
+        ## 日志时间戳在日志行中的起止位置
+        self.Script_LogTimeStart = ConfigItem(
+            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
+        )
+        self.Script_LogTimeEnd = ConfigItem(
+            "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
+        )
+        ## 日志时间戳格式
+        self.Script_LogTimeFormat = ConfigItem(
+            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
+        )
+        ## 成功日志关键词，多个关键词用 | 分隔
+        self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
+        ## 失败日志关键词，多个关键词用 | 分隔
+        self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+
+        ## Game ------------------------------------------------------------
+        ## 是否由 MAS 启动游戏或模拟器
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## Emulator / Client / URL
+        self.Game_Type = ConfigItem(
+            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client", "URL"])
+        )
+        ## PC 游戏或启动器路径
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## URL 协议
+        self.Game_URL = ConfigItem("Game", "URL", "")
+        ## URL/客户端进程名称
+        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 启动等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
+        ## 是否强制关闭游戏
+        self.Game_IfForceClose = ConfigItem(
+            "Game", "IfForceClose", False, BoolValidator()
+        )
+        ## 模拟器实例关系
+        self.Game_EmulatorId = ConfigItem(
+            "Game", "EmulatorId", "-", MultipleUIDValidator("-", self.related_config, "EmulatorConfig")
+        )
+        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
+
+        ## Task ------------------------------------------------------------
+        # TODO(specialized): 增加脚本实际需要的专项级配置。
+
+        ## Run -------------------------------------------------------------
+        ## 单用户每日代理次数上限，0 表示不限制
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 单用户尝试次数
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 无新日志的超时分钟数
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([XxxUserConfig])
+
+        super().__init__()

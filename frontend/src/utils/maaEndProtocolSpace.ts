@@ -2,6 +2,15 @@ import type { ComboBoxItem } from '@/api'
 
 // Frontend mirror of app/utils/constants.py. Keep fixed protocol-space values in sync
 // with the backend; AutoEssence locations come from MaaEnd's dynamic resource API.
+export const MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS = [
+  { label: '不限', value: 'Unlimited' },
+  { label: '武陵城', value: 'WulingCity' },
+  { label: '试验园区', value: 'TestArea' },
+] as const
+
+export type MaaEndDeliveryCommissionSource =
+  (typeof MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS)[number]['value']
+
 export const PROTOCOL_SPACE_OPTIONS = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
@@ -115,7 +124,6 @@ export const MAAEND_TASK_GROUPS = [
     tasks: [
       { name: 'VisitFriends', label: '🤝 拜访好友' },
       { name: 'CreditShoppingN2', label: '🛍️ 信用点购物' },
-      { name: 'SeizeEntrustTask', label: '🌆 抢委托' },
     ],
   },
   {

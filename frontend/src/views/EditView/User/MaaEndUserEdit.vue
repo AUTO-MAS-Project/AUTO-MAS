@@ -54,6 +54,13 @@
             @configure="handleMaaEndConfig"
             @import-config="handleImportMaaEndConfig"
             @script-config="handleScriptConfig"
+            @mode-change="handleConfigModeChange"
+          />
+          <DeliveryConfigSection
+            v-if="formData.Info.IfQuickConfig"
+            :form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
           />
           <TaskConfigSection
             v-if="formData.Info.IfQuickConfig"
@@ -117,6 +124,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
+import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -187,6 +195,8 @@ const getDefaultMaaEndUserData = () => ({
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
     AutoEssenceSpecifiedLocation: '',
+    SeizeDeliveryJobsReward: 15.9,
+    SeizeDeliveryJobsCommissionSource: 'Unlimited',
     IfSanity: true,
     IfAutoUseSpMedication: true,
     IfDijiangRewards: true,
@@ -196,7 +206,7 @@ const getDefaultMaaEndUserData = () => ({
     IfAutoStockStaple: true,
     IfVisitFriends: true,
     IfCreditShoppingN2: true,
-    IfSeizeEntrustTask: true,
+    IfSeizeDeliveryJobs: true,
     IfAutoEcoFarm: true,
     IfAutoSell: true,
     IfEnvironmentMonitoring: true,
@@ -204,6 +214,7 @@ const getDefaultMaaEndUserData = () => ({
     IfTrialOfSwordmancy: true,
     IfDailyRewards: true,
     IfResourceRecycleStation: true,
+    IfPullCountCalculator: false,
   },
   Notify: {
     Enabled: false,
@@ -281,6 +292,12 @@ const saveUserFields = async (changes: FieldChange[]) => {
 
 const handleFieldSave = async (key: string, value: any) => {
   await saveUserFields([{ key, value }])
+}
+
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value
+  await handleFieldSave('Info.Mode', value)
 }
 
 const handleFieldsSave = async (changes: FieldChange[]) => {
@@ -433,9 +450,8 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const configTaskTargetId = formData.Info.Mode === '脚本' ? scriptId : userId
     const response = await Service.addTaskApiDispatchStartPost({
-      taskId: configTaskTargetId,
+      taskId: userId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
@@ -458,9 +474,15 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionIds.value = subscriptionIds
     maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
+    const configTarget =
+      formData.Info.Mode === '直控'
+        ? '脚本直控'
+        : formData.Info.Mode === '用户'
+          ? '用户独立'
+          : '脚本共享'
     message.success(
       t('edit.startedP0MaaendConfiguration', {
-        p0: formData.Info.Mode === '脚本' ? '脚本' : '用户',
+        p0: configTarget,
       })
     )
 
@@ -481,6 +503,9 @@ const handleMaaEndConfig = async () => {
 const handleImportMaaEndConfig = async () => {
   try {
     maaEndImportLoading.value = true
+    if (formData.Info.Mode === '直控') {
+      throw new Error('脚本直控直接使用 MaaEnd 原有配置，无需导入')
+    }
     const response = await importScriptConfigFile(
       scriptId,
       formData.Info.Mode === '脚本' ? null : userId
@@ -488,8 +513,9 @@ const handleImportMaaEndConfig = async () => {
     if (response.code !== 200) {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
+    const importTarget = formData.Info.Mode === '脚本' ? '脚本共享' : '用户独立'
     message.success(
-      t('edit.importedP0ConfigurationFile', { p0: formData.Info.Mode === '脚本' ? '脚本' : '用户' })
+      t('edit.importedP0ConfigurationFile', { p0: importTarget })
     )
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')

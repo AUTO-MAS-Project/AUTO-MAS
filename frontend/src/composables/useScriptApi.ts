@@ -608,10 +608,18 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfCreditShoppingN2 != null
                             ? maaEndUserData.Task.IfCreditShoppingN2
                             : true,
-                        IfSeizeEntrustTask:
-                          maaEndUserData.Task?.IfSeizeEntrustTask != null
-                            ? maaEndUserData.Task.IfSeizeEntrustTask
+                        IfSeizeDeliveryJobs:
+                          maaEndUserData.Task?.IfSeizeDeliveryJobs != null
+                            ? maaEndUserData.Task.IfSeizeDeliveryJobs
                             : true,
+                        SeizeDeliveryJobsReward:
+                          maaEndUserData.Task?.SeizeDeliveryJobsReward != null
+                            ? maaEndUserData.Task.SeizeDeliveryJobsReward
+                            : 15.9,
+                        SeizeDeliveryJobsCommissionSource:
+                          maaEndUserData.Task?.SeizeDeliveryJobsCommissionSource != null
+                            ? maaEndUserData.Task.SeizeDeliveryJobsCommissionSource
+                            : 'Unlimited',
                         IfAutoEcoFarm:
                           maaEndUserData.Task?.IfAutoEcoFarm != null
                             ? maaEndUserData.Task.IfAutoEcoFarm
@@ -640,6 +648,10 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfResourceRecycleStation != null
                             ? maaEndUserData.Task.IfResourceRecycleStation
                             : true,
+                        IfPullCountCalculator:
+                          maaEndUserData.Task?.IfPullCountCalculator != null
+                            ? maaEndUserData.Task.IfPullCountCalculator
+                            : false,
                       },
                       Notify: {
                         Enabled:

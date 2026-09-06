@@ -1,0 +1,123 @@
+"""专项 schema 片段。
+
+将这些模型复制到 ``app/models/schema.py``，并在文件底部所有相关 union、index
+和 API response model 中加入 XxxConfig/XxxUserConfig。schema 只描述数据契约，
+不要在这里加入路径检查、进程启动或日志判态。
+"""
+
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class XxxUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数，-1 表示无限")
+    IfUseMasConfig: Optional[bool] = Field(
+        default=None, description="是否使用用户独立脚本配置"
+    )
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签 JSON 字符串")
+
+    # TODO(specialized): 加入专项用户字段，并同步前端 BasicInfoSection。
+
+
+class XxxUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+
+
+class XxxUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="邮件收件地址")
+    IfServerChan: Optional[bool] = Field(
+        default=None, description="是否使用 Server 酱"
+    )
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class XxxUserConfig(BaseModel):
+    Info: Optional[XxxUserConfig_Info] = Field(default=None, description="用户信息")
+    Data: Optional[XxxUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[XxxUserConfig_Notify] = Field(
+        default=None, description="用户通知"
+    )
+
+
+class XxxConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="脚本名称")
+    RootPath: Optional[str] = Field(default=None, description="脚本根目录")
+
+
+class XxxConfig_Script(BaseModel):
+    ScriptPath: Optional[str] = Field(default=None, description="脚本主程序路径")
+    Arguments: Optional[str] = Field(default=None, description="通用启动参数")
+    IfTrackProcess: Optional[bool] = Field(
+        default=None, description="是否追踪目标进程"
+    )
+    TrackProcessName: Optional[str] = Field(default=None, description="目标进程名称")
+    TrackProcessExe: Optional[str] = Field(default=None, description="目标进程路径")
+    TrackProcessCmdline: Optional[str] = Field(
+        default=None, description="目标进程命令行"
+    )
+    ConfigPath: Optional[str] = Field(default=None, description="配置文件或目录")
+    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
+        default=None, description="配置路径类型"
+    )
+    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
+        Field(default=None, description="用户配置回写时机")
+    )
+    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
+    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
+    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳起点")
+    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳终点")
+    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
+    SuccessLog: Optional[str] = Field(default=None, description="成功日志关键词")
+    ErrorLog: Optional[str] = Field(default=None, description="失败日志关键词")
+
+
+class XxxConfig_Game(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 启动游戏")
+    Type: Optional[Literal["Emulator", "Client", "URL"]] = Field(
+        default=None, description="游戏启动类型"
+    )
+    Path: Optional[str] = Field(default=None, description="游戏或启动器路径")
+    URL: Optional[str] = Field(default=None, description="游戏 URL 协议")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏启动等待秒数")
+    IfForceClose: Optional[bool] = Field(default=None, description="是否强制关闭游戏")
+    EmulatorId: Optional[str] = Field(default=None, description="模拟器 ID")
+    EmulatorIndex: Optional[str] = Field(default=None, description="模拟器实例索引")
+
+
+class XxxConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数上限")
+    RunTimesLimit: Optional[int] = Field(default=None, description="单用户重试次数")
+    RunTimeLimit: Optional[int] = Field(default=None, description="日志无变化超时分钟")
+
+
+class XxxConfig_Task(BaseModel):
+    # TODO(specialized): 加入真实专项任务字段，并确保每个字段都有运行时消费者。
+    pass
+
+
+class XxxConfig(BaseModel):
+    Info: Optional[XxxConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[XxxConfig_Script] = Field(default=None, description="脚本配置")
+    Game: Optional[XxxConfig_Game] = Field(default=None, description="游戏配置")
+    Task: Optional[XxxConfig_Task] = Field(default=None, description="专项任务配置")
+    Run: Optional[XxxConfig_Run] = Field(default=None, description="运行配置")
