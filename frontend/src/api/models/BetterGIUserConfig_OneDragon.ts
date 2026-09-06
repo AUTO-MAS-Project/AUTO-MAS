@@ -30,5 +30,9 @@ export type BetterGIUserConfig_OneDragon = {
      * 自定义配置组 JSON 列表字符串，元素含 name/enabled
      */
     CustomGroups?: (string | null);
+    /**
+     * 一条龙可视化队列 JSON 数组字符串（按执行顺序），元素为 {kind, name}；kind ∈ builtin/js/pathing/scriptgroup/custom，允许同名重复实例
+     */
+    Queue?: (string | null);
 };
 

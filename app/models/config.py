@@ -3100,16 +3100,18 @@ class OkNteUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
-# BetterGI 一条龙内置配置组（按 BetterGI 默认顺序，与 tools/one_dragon.py 保持同步）
+# BetterGI 一条龙内置配置组（MAS 默认顺序，与 tools/one_dragon.py 保持同步）。
+# 「体力作战」为 MAS 前端预留的虚拟项（尚未开展制作，前端默认隐藏，不在此表），
+# 恢复展示后在 initDragonList 插入「合成树脂」之后；此处仅列 BetterGI 官方内置 8 组。
 _BGI_BUILTIN_ONE_DRAGON_GROUPS = [
     "领取邮件",
     "合成树脂",
-    "自动地脉花",
-    "自动秘境",
-    "自动首领讨伐",
     "自动幽境危战",
-    "领取每日奖励",
+    "自动地脉花",
+    "自动首领讨伐",
+    "自动秘境",
     "领取尘歌壶奖励",
+    "领取每日奖励",
 ]
 
 # 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。
@@ -3189,6 +3191,12 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_CustomGroups = ConfigItem(
             "OneDragon", "CustomGroups", "[]", JSONValidator(list)
         )
+        ## 一条龙队列（可视化编排）：JSON 数组字符串，按执行顺序存储，元素为
+        ## {"kind": str, "name": str}（kind ∈ builtin/js/pathing/scriptgroup/custom，
+        ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
+        ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
+        ## （按副本 TaskOrder 相对顺序，不重排）。
+        self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）
@@ -3264,7 +3272,11 @@ class BetterGIUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append({"text": f"上次：{last_status}", "color": "green"})
 
-        config_name = self.get("Task", "OneDragonConfigName") or "未设置"
+        # 用户独立配置：一条龙固定走「MAS独立配置」槽位（名称冻结），仅直控模式显示所选实配名
+        if self.get("Info", "IfUseMasConfig"):
+            config_name = "MAS独立配置"
+        else:
+            config_name = self.get("Task", "OneDragonConfigName") or "未设置"
         tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
 
         # 剩余天数标签

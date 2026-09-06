@@ -15,12 +15,14 @@ export interface BettergiCustomGroupRow {
 export interface BettergiCustomGroupOptions {
   /** 所在脚本，用于从 BetterGI 现有配置读取自定义组 */
   scriptId: string
+  /** 当前编辑用户 id（用户独立配置读取 per-user 副本必需） */
+  userId: () => string
   /** 父组件表单 OneDragon 区块的读取器——须是 getter，父组件在 loadUser 时会整体替换
    *  formData.OneDragon，若传静态引用则本 composable 一直读写失效的旧对象，开关不再生效 */
   oneDragon: () => { CustomGroups: string | any[]; IfUseCustomGroups: boolean }
   /** 一条龙配置名（Task.OneDragonConfigName），决定从 BetterGI 哪份配置读取自定义组 */
   configName: () => string
-  /** 用户独立配置（Info.IfUseMasConfig）：为 true 时改读 MAS 槽位「MAS独立配置」而非同名实配 */
+  /** 用户独立配置（Info.IfUseMasConfig）：为 true 时读取该用户 per-user 副本（固定槽位名） */
   masConfig: () => boolean
   /** 是否处于「脚本直控配置」之外（可编辑）。为 true 时允许交互 */
   editable: () => boolean
@@ -36,7 +38,15 @@ export interface BettergiCustomGroupOptions {
  */
 export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
   const { t } = useI18n()
-  const { scriptId, oneDragon: getOneDragon, configName, masConfig, editable, saveField } = options
+  const {
+    scriptId,
+    userId,
+    oneDragon: getOneDragon,
+    configName,
+    masConfig,
+    editable,
+    saveField,
+  } = options
   const oneDragon = () => getOneDragon()
 
   const table = ref<BettergiCustomGroupRow[]>([])
@@ -99,6 +109,7 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
       const resp =
         await BetterGiService.getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
           scriptId,
+          userId(),
           configName(),
           masConfig()
         )
@@ -179,6 +190,16 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     persist()
   }
 
+  /** 按名称把配置组加入自定义组（供一条龙队列「加入」复用）；已存在返回 false */
+  const addByName = (name: string): boolean => {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return false
+    if (table.value.some(r => r.name === trimmed)) return false
+    table.value.push({ name: trimmed, enabled: true })
+    persist()
+    return true
+  }
+
   return {
     table,
     selectedKeys,
@@ -192,5 +213,6 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     confirmAdd,
     deleteSelected,
     toggleEnabled,
+    addByName,
   }
 }
