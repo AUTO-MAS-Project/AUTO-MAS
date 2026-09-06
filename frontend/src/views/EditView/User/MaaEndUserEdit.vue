@@ -62,6 +62,12 @@
             :loading="loading"
             @save="handleFieldSave"
           />
+          <AutoCollectConfigSection
+            v-if="formData.Info.IfQuickConfig"
+            :form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
           <TaskConfigSection
             v-if="formData.Info.IfQuickConfig"
             :form-data="formData"
@@ -125,6 +131,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
+import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -197,6 +204,34 @@ const getDefaultMaaEndUserData = () => ({
     AutoEssenceSpecifiedLocation: '',
     SeizeDeliveryJobsReward: 15.9,
     SeizeDeliveryJobsCommissionSource: 'Unlimited',
+    AutoCollectMode: 'Distributed',
+    AutoCollectRoutes: [
+      'Route1',
+      'Route2',
+      'Route3',
+      'Route4',
+      'Route5',
+      'Route6',
+      'Route7',
+      'Route8',
+      'Route9',
+      'Route10',
+      'Route11',
+      'Route12',
+      'Route13',
+      'Route14',
+      'Route15',
+    ],
+    AutoCollectCommonRoutes: [
+      'CommonRoute1',
+      'CommonRoute2',
+      'CommonRoute3',
+      'CommonRoute4',
+      'CommonRoute5',
+      'CommonRoute6',
+      'CommonRoute7',
+      'CommonRoute8',
+    ],
     IfSanity: true,
     IfAutoUseSpMedication: true,
     IfDijiangRewards: true,

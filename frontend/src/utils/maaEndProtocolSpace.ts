@@ -11,6 +11,55 @@ export const MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS = [
 export type MaaEndDeliveryCommissionSource =
   (typeof MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS)[number]['value']
 
+export const MAAEND_AUTO_COLLECT_MODE_OPTIONS = [
+  {
+    labelKey: 'edit.maaEndAutoCollectModeDistributed',
+    value: 'Distributed',
+  },
+  {
+    labelKey: 'edit.maaEndAutoCollectModeConcentrated',
+    value: 'Concentrated',
+  },
+] as const
+
+export type MaaEndAutoCollectMode =
+  (typeof MAAEND_AUTO_COLLECT_MODE_OPTIONS)[number]['value']
+
+export const MAAEND_AUTO_COLLECT_ROUTE_OPTIONS = [
+  { value: 'Route1', labelKey: 'edit.maaEndAutoCollectRoute1' },
+  { value: 'Route2', labelKey: 'edit.maaEndAutoCollectRoute2' },
+  { value: 'Route3', labelKey: 'edit.maaEndAutoCollectRoute3' },
+  { value: 'Route4', labelKey: 'edit.maaEndAutoCollectRoute4' },
+  { value: 'Route5', labelKey: 'edit.maaEndAutoCollectRoute5' },
+  { value: 'Route6', labelKey: 'edit.maaEndAutoCollectRoute6' },
+  { value: 'Route7', labelKey: 'edit.maaEndAutoCollectRoute7' },
+  { value: 'Route8', labelKey: 'edit.maaEndAutoCollectRoute8' },
+  { value: 'Route9', labelKey: 'edit.maaEndAutoCollectRoute9' },
+  { value: 'Route10', labelKey: 'edit.maaEndAutoCollectRoute10' },
+  { value: 'Route11', labelKey: 'edit.maaEndAutoCollectRoute11' },
+  { value: 'Route12', labelKey: 'edit.maaEndAutoCollectRoute12' },
+  { value: 'Route13', labelKey: 'edit.maaEndAutoCollectRoute13' },
+  { value: 'Route14', labelKey: 'edit.maaEndAutoCollectRoute14' },
+  { value: 'Route15', labelKey: 'edit.maaEndAutoCollectRoute15' },
+] as const
+
+export type MaaEndAutoCollectRoute =
+  (typeof MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)[number]['value']
+
+export const MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS = [
+  { value: 'CommonRoute1', labelKey: 'edit.maaEndAutoCollectCommonRoute1' },
+  { value: 'CommonRoute2', labelKey: 'edit.maaEndAutoCollectCommonRoute2' },
+  { value: 'CommonRoute3', labelKey: 'edit.maaEndAutoCollectCommonRoute3' },
+  { value: 'CommonRoute4', labelKey: 'edit.maaEndAutoCollectCommonRoute4' },
+  { value: 'CommonRoute5', labelKey: 'edit.maaEndAutoCollectCommonRoute5' },
+  { value: 'CommonRoute6', labelKey: 'edit.maaEndAutoCollectCommonRoute6' },
+  { value: 'CommonRoute7', labelKey: 'edit.maaEndAutoCollectCommonRoute7' },
+  { value: 'CommonRoute8', labelKey: 'edit.maaEndAutoCollectCommonRoute8' },
+] as const
+
+export type MaaEndAutoCollectCommonRoute =
+  (typeof MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS)[number]['value']
+
 export const PROTOCOL_SPACE_OPTIONS = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
@@ -133,7 +182,6 @@ export const MAAEND_TASK_GROUPS = [
       { name: 'AutoEcoFarm', label: '🌾 生态农场' },
       { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
-      { name: 'AutoCollect', label: '🧺 自动采集' },
       { name: 'TrialOfSwordmancy', label: '🗡️ 选剑演武' },
     ],
   },

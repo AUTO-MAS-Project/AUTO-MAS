@@ -64,14 +64,46 @@ MAA_MODE_TIME_LIMIT_BOOK = {
 }
 """MAA运行模式对应的超时配置项：绿票商店只买一次商店，复用日常时限"""
 
-MAAEND_RUN_MOOD_BOOK = {"Delivery": "送货", "Routine": "日常"}
+MAAEND_RUN_MOOD_BOOK = {
+    "Delivery": "送货",
+    "Routine": "日常",
+    "AutoCollect": "自动采集",
+}
 """MaaEnd 自动代理运行模式映射表"""
 
 MAAEND_DELIVERY_TASK = "SeizeDeliveryJobs"
 """MaaEnd 送货阶段使用的任务名称"""
 
+MAAEND_AUTO_COLLECT_TASK = "AutoCollect"
+"""MaaEnd 自动采集阶段使用的任务名称"""
+
 MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
 """MaaEnd 抢委托送货的委托接收点选项"""
+
+MAAEND_AUTO_COLLECT_MODES = ("Distributed", "Concentrated")
+"""MaaEnd 自动采集的三日周期模式"""
+
+MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS = tuple(
+    f"AutoCollectSchedule{weekday}"
+    for weekday in (
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    )
+)
+"""MaaEnd 自动采集任务的星期计划选项"""
+
+MAAEND_AUTO_COLLECT_ROUTE_OPTIONS = {
+    "AutoCollectRoutes": tuple(f"Route{index}" for index in range(1, 16)),
+    "AutoCollectCommonRoutes": tuple(
+        f"CommonRoute{index}" for index in range(1, 9)
+    ),
+}
+"""MaaEnd 自动采集两类路线选项"""
 
 MAA_TASKS = [
     "StartUp",
@@ -347,7 +379,6 @@ MAAEND_TASK_GROUPS = {
             ("AutoEcoFarm", "生态农场"),
             ("AutoSell", "售卖弹性物资"),
             ("EnvironmentMonitoring", "环境监测"),
-            ("AutoCollect", "自动采集"),
             ("TrialOfSwordmancy", "选剑演武"),
         ),
     },
@@ -370,7 +401,7 @@ MAAEND_TASKS = tuple(
     for group in MAAEND_TASK_GROUPS.values()
     for task_name, _ in group["tasks"]
 )
-"""MaaEnd快速控制任务列表（不含独立送货任务）"""
+"""MaaEnd快速控制任务列表（不含独立送货和自动采集阶段）"""
 
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",

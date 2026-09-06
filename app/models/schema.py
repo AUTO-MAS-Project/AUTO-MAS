@@ -1245,6 +1245,35 @@ class MaaEndUserConfig_Info(BaseModel):
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
 
+MaaEndAutoCollectRoute = Literal[
+    "Route1",
+    "Route2",
+    "Route3",
+    "Route4",
+    "Route5",
+    "Route6",
+    "Route7",
+    "Route8",
+    "Route9",
+    "Route10",
+    "Route11",
+    "Route12",
+    "Route13",
+    "Route14",
+    "Route15",
+]
+MaaEndAutoCollectCommonRoute = Literal[
+    "CommonRoute1",
+    "CommonRoute2",
+    "CommonRoute3",
+    "CommonRoute4",
+    "CommonRoute5",
+    "CommonRoute6",
+    "CommonRoute7",
+    "CommonRoute8",
+]
+
+
 class MaaEndUserConfig_Task(BaseModel):
     SanityTaskType: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
@@ -1294,6 +1323,15 @@ class MaaEndUserConfig_Task(BaseModel):
         default=None, description="环境监测"
     )
     IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    AutoCollectMode: Optional[Literal["Distributed", "Concentrated"]] = Field(
+        default=None, description="自动采集路线安排：分散或集中"
+    )
+    AutoCollectRoutes: Optional[list[MaaEndAutoCollectRoute]] = Field(
+        default=None, description="自动采集区域资源路线"
+    )
+    AutoCollectCommonRoutes: Optional[list[MaaEndAutoCollectCommonRoute]] = Field(
+        default=None, description="自动采集通用资源路线"
+    )
     IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(

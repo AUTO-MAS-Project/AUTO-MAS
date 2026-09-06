@@ -32,6 +32,9 @@ from typing import Any, Callable
 from app.utils.constants import (
     CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
+    MAAEND_AUTO_COLLECT_MODES,
+    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+    MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_COMMISSION_SOURCES,
     MAAEND_DELIVERY_TASK,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
@@ -144,6 +147,36 @@ def init_maaend_task_config(config) -> None:
         config,
         f"Task_If{MAAEND_DELIVERY_TASK}",
         ConfigItem("Task", f"If{MAAEND_DELIVERY_TASK}", True, BoolValidator()),
+    )
+
+    ## 独立自动采集任务
+    config.Task_IfAutoCollect = ConfigItem(
+        "Task", f"If{MAAEND_AUTO_COLLECT_TASK}", True, BoolValidator()
+    )
+    ## 自动采集路线安排：分散为三日轮换，集中为每三日执行一次
+    config.Task_AutoCollectMode = ConfigItem(
+        "Task",
+        "AutoCollectMode",
+        "Distributed",
+        OptionsValidator(list(MAAEND_AUTO_COLLECT_MODES)),
+    )
+    ## 自动采集区域资源路线
+    config.Task_AutoCollectRoutes = ConfigItem(
+        "Task",
+        "AutoCollectRoutes",
+        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"]),
+        MultipleOptionsValidator(
+            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"])
+        ),
+    )
+    ## 自动采集通用资源路线
+    config.Task_AutoCollectCommonRoutes = ConfigItem(
+        "Task",
+        "AutoCollectCommonRoutes",
+        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"]),
+        MultipleOptionsValidator(
+            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"])
+        ),
     )
 
     for task_name in MAAEND_TASKS:

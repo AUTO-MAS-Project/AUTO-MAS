@@ -13,6 +13,9 @@ import type {
 } from '@/api'
 import type {
   AutoEssenceLocation,
+  MaaEndAutoCollectCommonRoute,
+  MaaEndAutoCollectMode,
+  MaaEndAutoCollectRoute,
   MaaEndDeliveryCommissionSource,
   MaaEndTaskSwitch,
   ProtocolSpaceTaskValue,
@@ -140,8 +143,12 @@ export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & 
 }
 
 export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+  IfAutoCollect: boolean
   SeizeDeliveryJobsReward: number
   SeizeDeliveryJobsCommissionSource: MaaEndDeliveryCommissionSource
+  AutoCollectMode: MaaEndAutoCollectMode
+  AutoCollectRoutes: MaaEndAutoCollectRoute[]
+  AutoCollectCommonRoutes: MaaEndAutoCollectCommonRoute[]
   SanityTaskType: SanityTaskType
   OperatorProgression: ProtocolSpaceTaskValue
   WeaponProgression: ProtocolSpaceTaskValue

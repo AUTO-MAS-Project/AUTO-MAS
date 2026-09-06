@@ -37,6 +37,10 @@ from app.services import Notify, System
 from app.task.general.tools import execute_script_task
 from app.utils import LogMonitor, ProcessManager, get_logger, is_process_running
 from app.utils.constants import (
+    MAAEND_AUTO_COLLECT_MODES,
+    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+    MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS,
+    MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_RUN_MOOD_BOOK,
     MAAEND_TASKS,
@@ -57,7 +61,7 @@ _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
 
 
 def _task_enabled_for_mode(task_name: object, enabled: object, mode: str) -> bool:
-    """按送货/日常阶段筛选 MaaEnd 任务。"""
+    """按送货/日常/自动采集阶段筛选 MaaEnd 任务。"""
 
     name = str(task_name)
     if mode == "Delivery":
@@ -65,9 +69,47 @@ def _task_enabled_for_mode(task_name: object, enabled: object, mode: str) -> boo
             MAAEND_DELIVERY_TASK,
             _MAAEND_ACCOUNT_SWITCH_TASK,
         }
+    if mode == "AutoCollect":
+        return bool(enabled) and name in {
+            MAAEND_AUTO_COLLECT_TASK,
+            _MAAEND_ACCOUNT_SWITCH_TASK,
+        }
     if mode == "Routine":
-        return bool(enabled) and name != MAAEND_DELIVERY_TASK
+        return bool(enabled) and name not in {
+            MAAEND_DELIVERY_TASK,
+            MAAEND_AUTO_COLLECT_TASK,
+        }
     raise ValueError(f"未知 MaaEnd 运行模式: {mode}")
+
+
+def _select_auto_collect_routes(
+    mode: str,
+    routes: list[str],
+    common_routes: list[str],
+    now: datetime,
+) -> dict[str, list[str]]:
+    """按东四区日期选择本轮需要执行的自动采集路线。"""
+
+    cycle_index = now.date().toordinal() % 3
+
+    def select_routes(option_name: str, selected: list[str]) -> list[str]:
+        selected_set = set(selected)
+        return [
+            route
+            for index, route in enumerate(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS[option_name])
+            if route in selected_set
+            and (
+                mode == "Concentrated" and cycle_index == 0
+                or mode == "Distributed" and index % 3 == cycle_index
+            )
+        ]
+
+    return {
+        "AutoCollectRoutes": select_routes("AutoCollectRoutes", routes),
+        "AutoCollectCommonRoutes": select_routes(
+            "AutoCollectCommonRoutes", common_routes
+        ),
+    }
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -102,7 +144,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_dict: dict[str, dict[str, bool]] | None = None
         self.unique_task: dict[str, str] = {}
         self.maaend_config_file: Path | None = None
-        self.delivery_stage_enabled = False
+        self.account_switch_mode: str | None = None
+        self.auto_collect_run_at: datetime | None = None
+        self.auto_collect_routes: dict[str, list[str]] = {
+            option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
+        }
 
     async def check(self) -> str:
 
@@ -168,10 +214,27 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
         )
 
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            auto_collect_mode = self.cur_user_config.get("Task", "AutoCollectMode")
+            if auto_collect_mode not in MAAEND_AUTO_COLLECT_MODES:
+                auto_collect_mode = MAAEND_AUTO_COLLECT_MODES[0]
+            self.auto_collect_run_at = datetime.now(tz=UTC4)
+            self.auto_collect_routes = _select_auto_collect_routes(
+                auto_collect_mode,
+                list(self.cur_user_config.get("Task", "AutoCollectRoutes") or []),
+                list(
+                    self.cur_user_config.get("Task", "AutoCollectCommonRoutes") or []
+                ),
+                self.auto_collect_run_at,
+            )
+
         mode_enabled = {
             mode: self._mode_has_enabled_tasks(mode) for mode in MAAEND_RUN_MOOD_BOOK
         }
-        self.delivery_stage_enabled = mode_enabled["Delivery"]
+        self.account_switch_mode = next(
+            (mode for mode, enabled in mode_enabled.items() if enabled),
+            None,
+        )
         self.run_book = {mode: not enabled for mode, enabled in mode_enabled.items()}
 
     def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
@@ -213,6 +276,11 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             if mode == "Delivery":
                 return bool(self.cur_user_config.get("Task", "IfSeizeDeliveryJobs"))
+            if mode == "AutoCollect":
+                return bool(
+                    self.cur_user_config.get("Task", "IfAutoCollect")
+                    and any(self.auto_collect_routes.values())
+                )
             return any(
                 bool(self.cur_user_config.get("Task", f"If{task_name}"))
                 for task_name in MAAEND_TASKS
@@ -228,12 +296,19 @@ class AutoProxyTask(TaskExecuteBase):
                 and bool(task.get("enabled", False))
                 for task in tasks
             )
+        if mode == "AutoCollect":
+            return any(
+                str(task.get("taskName", "")) == MAAEND_AUTO_COLLECT_TASK
+                and bool(task.get("enabled", False))
+                for task in tasks
+            )
         return any(
             _task_enabled_for_mode(
                 task.get("taskName"), task.get("enabled", False), mode
             )
             for task in tasks
             if not str(task.get("taskName", "")).startswith("__MXU_")
+            and str(task.get("taskName", "")) != _MAAEND_ACCOUNT_SWITCH_TASK
         )
 
     async def main_task(self):
@@ -706,6 +781,11 @@ class AutoProxyTask(TaskExecuteBase):
                         task_enabled = self.cur_user_config.get(
                             "Task", f"If{MAAEND_DELIVERY_TASK}"
                         )
+                    elif task_name_value == MAAEND_AUTO_COLLECT_TASK:
+                        task_enabled = bool(
+                            self.cur_user_config.get("Task", "IfAutoCollect")
+                            and any(self.auto_collect_routes.values())
+                        )
                     elif task_name_value in MAAEND_TASKS:
                         task_enabled = self.cur_user_config.get(
                             "Task", f"If{task_name_value}"
@@ -716,8 +796,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 if (
                     task_name_value == _MAAEND_ACCOUNT_SWITCH_TASK
-                    and self.mode == "Routine"
-                    and self.delivery_stage_enabled
+                    and self.mode != self.account_switch_mode
                 ):
                     task_enabled = False
 
@@ -767,6 +846,17 @@ class AutoProxyTask(TaskExecuteBase):
                         "Task", "SeizeDeliveryJobsCommissionSource"
                     ),
                 }
+            elif if_quick_config and task_name_value == MAAEND_AUTO_COLLECT_TASK:
+                task.setdefault("optionValues", {})
+                task["optionValues"]["AutoCollectSchedule"] = {
+                    "type": "checkbox",
+                    "caseNames": list(MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS),
+                }
+                for option_name, route_names in self.auto_collect_routes.items():
+                    task["optionValues"][option_name] = {
+                        "type": "checkbox",
+                        "caseNames": route_names,
+                    }
             elif (
                 if_quick_config
                 and task_name_value == target_task_name
