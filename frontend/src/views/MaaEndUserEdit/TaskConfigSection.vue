@@ -1,13 +1,5 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.taskConfiguration') }}</h3>
-      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
-        <template #icon><CalendarOutlined /></template>
-        {{ t('edit.goPlan') }}
-      </a-button>
-    </div>
-
+  <div>
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
       <div class="task-group-sidebar">
         <button
@@ -153,9 +145,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
-import { navigateTo } from '@/router'
 import {
   MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -352,10 +343,6 @@ const showRewardGroupSelect = computed(
       : rewardGroupEnabled.value)
 )
 
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
-}
-
 const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
   emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
 }
@@ -478,23 +465,6 @@ watch(
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.mode-notice {
-  margin-bottom: 16px;
-}
-
 .task-switch-layout {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
@@ -583,28 +553,6 @@ watch(
 .task-switch-label {
   color: var(--ant-color-text);
   font-size: 14px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.plans-button {
-  padding-inline: 0;
 }
 
 .plan-mode-display {

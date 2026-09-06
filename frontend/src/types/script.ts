@@ -13,6 +13,10 @@ import type {
 } from '@/api'
 import type {
   AutoEssenceLocation,
+  MaaEndAutoCollectCommonRoute,
+  MaaEndAutoCollectMode,
+  MaaEndAutoCollectRoute,
+  MaaEndDeliveryCommissionSource,
   MaaEndTaskSwitch,
   ProtocolSpaceTaskValue,
   RewardSetOption,
@@ -134,9 +138,17 @@ export interface SRCScriptConfig {
   }
 }
 
-export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean>
+export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
+  IfSeizeDeliveryJobs: boolean
+}
 
 export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+  IfAutoCollect: boolean
+  SeizeDeliveryJobsReward: number
+  SeizeDeliveryJobsCommissionSource: MaaEndDeliveryCommissionSource
+  AutoCollectMode: MaaEndAutoCollectMode
+  AutoCollectRoutes: MaaEndAutoCollectRoute[]
+  AutoCollectCommonRoutes: MaaEndAutoCollectCommonRoute[]
   SanityTaskType: SanityTaskType
   OperatorProgression: ProtocolSpaceTaskValue
   WeaponProgression: ProtocolSpaceTaskValue

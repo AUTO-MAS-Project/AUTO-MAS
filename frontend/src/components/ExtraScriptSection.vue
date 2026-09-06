@@ -1,6 +1,6 @@
 <template>
   <div class="form-section">
-    <div class="section-header">
+    <div v-if="!hideSectionHeader" class="section-header">
       <h3>{{ t('comp.extraScripts') }}</h3>
     </div>
     <a-form-item name="scriptBeforeTask">
@@ -104,6 +104,8 @@ const logger = window.electronAPI.getLogger('额外脚本配置')
 const formData = defineModel<any>('formData', { required: true })
 defineProps<{
   loading: boolean
+  // 卡片化页面（如 MaaEnd 用户编辑页）由外层卡片提供标题时隐藏内部标题
+  hideSectionHeader?: boolean
 }>()
 
 const emit = defineEmits<{
