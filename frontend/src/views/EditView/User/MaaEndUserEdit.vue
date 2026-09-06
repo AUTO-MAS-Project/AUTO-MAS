@@ -34,68 +34,105 @@
     />
 
     <div class="user-edit-content">
-      <a-card class="config-card">
+      <div class="page-layout">
         <a-form
           ref="formRef"
           :model="formData"
           :rules="rules"
           layout="vertical"
-          class="config-form"
+          class="config-form sections-column"
         >
-          <BasicInfoSection
-            v-model:form-data="formData"
-            :loading="loading"
-            :resource-options="resourceOptions"
-            :preset-supported="presetSupported"
-            :config-loading="maaEndConfigLoading"
-            :import-loading="maaEndImportLoading"
-            :show-config-mask="showMaaEndConfigMask"
-            @save="handleFieldSave"
-            @configure="handleMaaEndConfig"
-            @import-config="handleImportMaaEndConfig"
-            @script-config="handleScriptConfig"
-            @mode-change="handleConfigModeChange"
-          />
-          <TaskConfigSection
-            v-if="formData.Info.IfQuickConfig"
-            :form-data="formData"
-            :loading="loading"
-            :if-quick-config="formData.Info.IfQuickConfig"
-            :essence-location-options="essenceLocationOptions"
-            :options-loading="maaEndOptionsLoading"
-            :options-loaded="maaEndOptionsLoaded"
-            :is-plan-mode="isSanityPlanMode"
-            :sanity-mode-options="sanityModeOptions"
-            :plan-mode-config="planModeConfig"
-            @save="handleFieldSave"
-            @save-batch="handleFieldsSave"
-          />
-          <AutoCollectConfigSection
-            v-if="formData.Info.IfQuickConfig"
-            :form-data="formData"
-            :loading="loading"
-            @save="handleFieldSave"
-          />
-          <DeliveryConfigSection
-            v-if="formData.Info.IfQuickConfig"
-            :form-data="formData"
-            :loading="loading"
-            @save="handleFieldSave"
-          />
-          <ExtraScriptSection
-            v-model:form-data="formData"
-            :loading="loading"
-            @save="handleFieldSave"
-          />
-          <UserNotifyConfig
-            v-model="formData.Notify"
-            :loading="loading"
-            :script-id="scriptId"
-            :user-id="userId"
-            @save="handleFieldSave"
-          />
+          <a-card id="section-basic" class="section-card">
+            <template #title>{{ t('edit.basicInfo') }}</template>
+            <BasicInfoSection
+              v-model:form-data="formData"
+              :loading="loading"
+              :resource-options="resourceOptions"
+              :preset-supported="presetSupported"
+              :config-loading="maaEndConfigLoading"
+              :import-loading="maaEndImportLoading"
+              :show-config-mask="showMaaEndConfigMask"
+              @save="handleFieldSave"
+              @configure="handleMaaEndConfig"
+              @import-config="handleImportMaaEndConfig"
+              @script-config="handleScriptConfig"
+              @mode-change="handleConfigModeChange"
+            />
+          </a-card>
+
+          <a-card v-if="formData.Info.IfQuickConfig" id="section-task" class="section-card">
+            <template #title>{{ t('edit.taskConfiguration') }}</template>
+            <template #extra>
+              <a-button
+                v-if="isSanityPlanMode"
+                type="link"
+                class="plans-button"
+                @click="handleGoToPlans"
+              >
+                <template #icon><CalendarOutlined /></template>
+                {{ t('edit.goPlan') }}
+              </a-button>
+            </template>
+            <TaskConfigSection
+              :form-data="formData"
+              :loading="loading"
+              :if-quick-config="formData.Info.IfQuickConfig"
+              :essence-location-options="essenceLocationOptions"
+              :options-loading="maaEndOptionsLoading"
+              :options-loaded="maaEndOptionsLoaded"
+              :is-plan-mode="isSanityPlanMode"
+              :sanity-mode-options="sanityModeOptions"
+              :plan-mode-config="planModeConfig"
+              @save="handleFieldSave"
+              @save-batch="handleFieldsSave"
+            />
+          </a-card>
+
+          <a-card v-if="formData.Info.IfQuickConfig" id="section-collect" class="section-card">
+            <template #title>{{ t('edit.maaEndAutoCollectConfig') }}</template>
+            <AutoCollectConfigSection
+              :form-data="formData"
+              :loading="loading"
+              @save="handleFieldSave"
+            />
+          </a-card>
+
+          <a-card v-if="formData.Info.IfQuickConfig" id="section-delivery" class="section-card">
+            <template #title>{{ t('edit.maaEndDeliveryConfig') }}</template>
+            <DeliveryConfigSection
+              :form-data="formData"
+              :loading="loading"
+              @save="handleFieldSave"
+            />
+          </a-card>
+
+          <a-card id="section-script" class="section-card">
+            <template #title>{{ t('comp.extraScripts') }}</template>
+            <ExtraScriptSection
+              v-model:form-data="formData"
+              :loading="loading"
+              hide-section-header
+              @save="handleFieldSave"
+            />
+          </a-card>
+
+          <a-card id="section-notify" class="section-card">
+            <template #title>{{ t('edit.notificationSettings') }}</template>
+            <UserNotifyConfig
+              v-model="formData.Notify"
+              :loading="loading"
+              :script-id="scriptId"
+              :user-id="userId"
+              hide-section-header
+              @save="handleFieldSave"
+            />
+          </a-card>
         </a-form>
-      </a-card>
+
+        <aside class="anchor-sidebar">
+          <a-anchor :items="anchorItems" :affix="false" :offset-top="96" />
+        </aside>
+      </div>
     </div>
   </div>
 </template>
@@ -105,11 +142,12 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { SettingOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
+import { navigateTo } from '@/router'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -176,6 +214,23 @@ const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
 let sanityPlanLoadVersion = 0
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
+
+// 锚点目录随「接管具体任务配置」开关增减，与条件渲染的卡片保持一致
+const anchorItems = computed(() => {
+  const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
+  if (formData.Info.IfQuickConfig) {
+    items.push(
+      { key: 'task', href: '#section-task', title: t('edit.taskConfiguration') },
+      { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
+      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') }
+    )
+  }
+  items.push(
+    { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
+    { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
+  )
+  return items
+})
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -371,6 +426,10 @@ const handleFieldsSave = async (changes: FieldChange[]) => {
 const handleScriptConfig = () => {
   cleanupConfigSession()
   router.push(`/scripts/${scriptId}/edit/maaend`)
+}
+
+const handleGoToPlans = () => {
+  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
 }
 
 const loadScriptInfo = async () => {
@@ -653,17 +712,51 @@ watch(
 }
 
 .user-edit-content {
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
 }
 
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+.page-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 176px;
+  gap: 24px;
+  align-items: start;
 }
 
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
+.sections-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-card {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  scroll-margin-top: 32px;
+}
+
+.section-card :deep(.ant-card-body) {
+  padding: 24px;
+}
+
+.plans-button {
+  padding-inline: 0;
+}
+
+.anchor-sidebar {
+  position: sticky;
+  top: 32px;
+}
+
+@media (max-width: 1100px) {
+  .page-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .anchor-sidebar {
+    display: none;
+  }
 }
 
 .maaend-config-mask {
@@ -713,7 +806,7 @@ watch(
     padding: 16px;
   }
 
-  .config-card :deep(.ant-card-body) {
+  .section-card :deep(.ant-card-body) {
     padding: 20px;
   }
 }

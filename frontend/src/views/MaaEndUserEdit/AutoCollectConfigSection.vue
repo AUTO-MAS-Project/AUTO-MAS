@@ -1,9 +1,5 @@
 <template>
   <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.maaEndAutoCollectConfig') }}</h3>
-    </div>
-
     <a-row :gutter="24" align="middle">
       <a-col :span="6">
         <a-form-item name="IfAutoCollect">
@@ -15,59 +11,113 @@
               </a-tooltip>
             </span>
           </template>
-          <a-switch
-            v-model:checked="enabled"
+          <a-switch v-model:checked="enabled" :disabled="loading" @change="handleEnabledChange" />
+        </a-form-item>
+      </a-col>
+      <a-col v-if="enabled" :span="8">
+        <a-form-item name="AutoCollectMode">
+          <template #label>
+            <span class="form-label">
+              {{ t('edit.maaEndAutoCollectMode') }}
+              <a-tooltip :title="modeHint">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-select
+            v-model:value="mode"
+            :options="modeOptions"
             :disabled="loading"
-            @change="handleEnabledChange"
+            size="large"
+            @change="handleModeChange"
           />
         </a-form-item>
       </a-col>
     </a-row>
 
     <template v-if="enabled">
-      <a-row :gutter="24">
-        <a-col :span="8">
-          <a-form-item name="AutoCollectMode">
-            <template #label>
-              <span class="form-label">
-                {{ t('edit.maaEndAutoCollectMode') }}
-                <a-tooltip :title="modeHint">
-                  <QuestionCircleOutlined class="help-icon" />
-                </a-tooltip>
+      <a-form-item :label="t('edit.maaEndAutoCollectRoutes')">
+        <div class="route-panel-list">
+          <div v-for="panel in regionPanels" :key="panel.key" class="route-panel">
+            <div class="route-panel-header">
+              <span class="route-panel-name">{{ panel.label }}</span>
+              <span class="route-panel-count">
+                {{
+                  t('edit.maaEndRouteSelectedCount', {
+                    n: panelSelectedCount(panel),
+                    m: panel.options.length,
+                  })
+                }}
               </span>
-            </template>
-            <a-select
-              v-model:value="mode"
-              :options="modeOptions"
-              :disabled="loading"
-              @change="handleModeChange"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <a-form-item :label="t('edit.maaEndAutoCollectRoutes')">
+              <span class="route-panel-actions">
+                <a-button
+                  type="link"
+                  size="small"
+                  :disabled="loading"
+                  @click="handleSelectAll(panel)"
+                >
+                  {{ t('edit.maaEndRouteSelectAll') }}
+                </a-button>
+                <a-button
+                  type="link"
+                  size="small"
+                  :disabled="loading"
+                  @click="handleClear(panel)"
+                >
+                  {{ t('edit.maaEndRouteClear') }}
+                </a-button>
+              </span>
+            </div>
             <a-checkbox-group
-              v-model:value="routes"
+              :value="panelValues(panel)"
               class="route-checkbox-group"
               :disabled="loading"
-              @change="handleRoutesChange"
+              @change="handleRegionChange(panel, $event)"
             >
               <a-checkbox
-                v-for="option in routeOptions"
+                v-for="option in panel.options"
                 :key="option.value"
                 :value="option.value"
               >
                 {{ option.label }}
               </a-checkbox>
             </a-checkbox-group>
-          </a-form-item>
-        </a-col>
+          </div>
+        </div>
+      </a-form-item>
 
-        <a-col :span="12">
-          <a-form-item :label="t('edit.maaEndAutoCollectCommonRoutes')">
+      <a-form-item>
+        <div class="route-panel-list">
+          <div class="route-panel">
+            <div class="route-panel-header">
+              <span class="route-panel-name">{{ t('edit.maaEndAutoCollectCommonRoutes') }}</span>
+              <span class="route-panel-count">
+                {{
+                  t('edit.maaEndRouteSelectedCount', {
+                    n: commonSelectedCount,
+                    m: commonRouteOptions.length,
+                  })
+                }}
+              </span>
+              <span class="route-panel-actions">
+                <a-button
+                  type="link"
+                  size="small"
+                  :disabled="loading"
+                  @click="handleCommonSelectAll"
+                >
+                  {{ t('edit.maaEndRouteSelectAll') }}
+                </a-button>
+                <a-button
+                  type="link"
+                  size="small"
+                  :disabled="loading"
+                  @click="handleCommonClear"
+                >
+                  {{ t('edit.maaEndRouteClear') }}
+                </a-button>
+              </span>
+            </div>
             <a-checkbox-group
               v-model:value="commonRoutes"
               class="route-checkbox-group"
@@ -82,9 +132,9 @@
                 {{ option.label }}
               </a-checkbox>
             </a-checkbox-group>
-          </a-form-item>
-        </a-col>
-      </a-row>
+          </div>
+        </div>
+      </a-form-item>
     </template>
   </div>
 </template>
@@ -97,8 +147,10 @@ import {
   MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS,
   MAAEND_AUTO_COLLECT_MODE_OPTIONS,
   MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+  MAAEND_AUTO_COLLECT_ROUTE_REGIONS,
   type MaaEndAutoCollectCommonRoute,
   type MaaEndAutoCollectMode,
+  type MaaEndAutoCollectRegionKey,
   type MaaEndAutoCollectRoute,
 } from '@/utils/maaEndProtocolSpace'
 
@@ -146,6 +198,7 @@ const routeOptions = computed(() =>
   MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => ({
     value: option.value,
     label: t(option.labelKey),
+    regionKey: option.regionKey,
   }))
 )
 const commonRouteOptions = computed(() =>
@@ -159,6 +212,74 @@ const modeHint = computed(() =>
     ? t('edit.maaEndAutoCollectModeConcentratedHint')
     : t('edit.maaEndAutoCollectModeDistributedHint')
 )
+
+interface RegionPanel {
+  key: MaaEndAutoCollectRegionKey
+  label: string
+  options: Array<{ value: MaaEndAutoCollectRoute; label: string }>
+}
+
+const regionPanels = computed<RegionPanel[]>(() =>
+  MAAEND_AUTO_COLLECT_ROUTE_REGIONS.map(regionKey => ({
+    key: regionKey,
+    label: t(regionKey),
+    options: routeOptions.value.filter(option => option.regionKey === regionKey),
+  }))
+)
+
+const panelValues = (panel: RegionPanel) =>
+  panel.options.filter(option => routes.value.includes(option.value)).map(option => option.value)
+
+const panelSelectedCount = (panel: RegionPanel) => panelValues(panel).length
+
+const commonSelectedCount = computed(
+  () =>
+    commonRouteOptions.value.filter(option => commonRoutes.value.includes(option.value)).length
+)
+
+// 区域勾选结果与其余区域已选合并后按选项源顺序重组，保证保存的始终是完整有序数组
+const applyRegionValues = (panel: RegionPanel, values: Array<string | number>) => {
+  const regionValueSet = new Set<string>(panel.options.map(option => option.value))
+  const nextSet = new Set<string>([
+    ...routes.value.filter(value => !regionValueSet.has(value)),
+    ...values.map(String),
+  ])
+  routes.value = MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => option.value).filter(value =>
+    nextSet.has(value)
+  )
+  emit('save', 'Task.AutoCollectRoutes', routes.value)
+}
+
+const handleRegionChange = (panel: RegionPanel, values: Array<string | number>) => {
+  applyRegionValues(panel, values)
+}
+
+const handleSelectAll = (panel: RegionPanel) => {
+  applyRegionValues(
+    panel,
+    panel.options.map(option => option.value)
+  )
+}
+
+const handleClear = (panel: RegionPanel) => {
+  applyRegionValues(panel, [])
+}
+
+const applyCommonRoutes = (values: MaaEndAutoCollectCommonRoute[]) => {
+  const nextSet = new Set<string>(values)
+  commonRoutes.value = MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option =>
+    option.value
+  ).filter(value => nextSet.has(value))
+  emit('save', 'Task.AutoCollectCommonRoutes', commonRoutes.value)
+}
+
+const handleCommonSelectAll = () => {
+  applyCommonRoutes(commonRouteOptions.value.map(option => option.value))
+}
+
+const handleCommonClear = () => {
+  applyCommonRoutes([])
+}
 
 watch(
   () => props.formData.Task?.IfAutoCollect,
@@ -200,11 +321,6 @@ const handleModeChange = (value: MaaEndAutoCollectMode) => {
   emit('save', 'Task.AutoCollectMode', value)
 }
 
-const handleRoutesChange = (value: Array<string | number>) => {
-  routes.value = normalizeRoutes(value, MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)
-  emit('save', 'Task.AutoCollectRoutes', routes.value)
-}
-
 const handleCommonRoutesChange = (value: Array<string | number>) => {
   commonRoutes.value = normalizeRoutes(value, MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS)
   emit('save', 'Task.AutoCollectCommonRoutes', commonRoutes.value)
@@ -212,34 +328,6 @@ const handleCommonRoutesChange = (value: Array<string | number>) => {
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .form-label {
   display: inline-flex;
   align-items: center;
@@ -252,10 +340,47 @@ const handleCommonRoutesChange = (value: Array<string | number>) => {
   cursor: help;
 }
 
+.route-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.route-panel {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 12px 16px 16px;
+}
+
+.route-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.route-panel-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.route-panel-count {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.route-panel-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
 .route-checkbox-group {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px 16px;
+  gap: 8px 16px;
   width: 100%;
 }
 </style>

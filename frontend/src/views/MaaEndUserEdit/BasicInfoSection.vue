@@ -1,9 +1,5 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
-    </div>
-
+  <div>
     <a-row :gutter="24">
       <a-col :span="12">
         <a-form-item name="userName" required>
@@ -20,7 +16,6 @@
             :placeholder="t('edit.enterUsername')"
             :disabled="loading"
             size="large"
-            class="modern-input"
             @blur="emitSave('userName', formData.userName)"
           />
         </a-form-item>
@@ -98,7 +93,10 @@
           @change="$emit('modeChange', $event)"
         />
       </a-col>
-      <a-col :span="12">
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="24">
         <a-form-item :label="t('edit.configurationSource')">
           <div class="config-source-control">
             <a-button
@@ -141,7 +139,10 @@
           </div>
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -160,10 +161,8 @@
           />
         </a-form-item>
       </a-col>
-    </a-row>
 
-    <a-row :gutter="24">
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -183,7 +182,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -220,7 +219,6 @@
         :placeholder="t('edit.enterNote')"
         :rows="4"
         :disabled="loading"
-        class="modern-input"
         @blur="emitSave('Info.Notes', formData.Info.Notes)"
       />
     </a-form-item>
@@ -300,37 +298,10 @@ const currentConfigModeLabel = computed(() => {
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
 .config-source-control {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -343,10 +314,5 @@ const currentConfigModeLabel = computed(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
 }
 </style>
