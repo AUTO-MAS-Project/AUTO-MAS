@@ -2,19 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GeneralConfig_Info } from './GeneralConfig_Info';
+import type { GeneralConfig_Run } from './GeneralConfig_Run';
 import type { OkwwConfig_Game } from './OkwwConfig_Game';
-import type { OkwwConfig_Info } from './OkwwConfig_Info';
-import type { OkwwConfig_Run } from './OkwwConfig_Run';
-import type { OkwwConfig_Script } from './OkwwConfig_Script';
 export type OkwwConfig = {
     /**
      * 脚本基础信息
      */
-    Info?: (OkwwConfig_Info | null);
-    /**
-     * 脚本配置
-     */
-    Script?: (OkwwConfig_Script | null);
+    Info?: (GeneralConfig_Info | null);
     /**
      * 游戏配置
      */
@@ -22,6 +17,6 @@ export type OkwwConfig = {
     /**
      * 运行配置
      */
-    Run?: (OkwwConfig_Run | null);
+    Run?: (GeneralConfig_Run | null);
 };
 

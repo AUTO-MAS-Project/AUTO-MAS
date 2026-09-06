@@ -11,10 +11,6 @@ export type OkwwConfig_Game = {
      */
     Enabled?: (boolean | null);
     /**
-     * 任务开始前是否由 MAS 启动游戏
-     */
-    LaunchBeforeTask?: (boolean | null);
-    /**
      * 游戏启动器路径
      */
     Path?: (string | null);

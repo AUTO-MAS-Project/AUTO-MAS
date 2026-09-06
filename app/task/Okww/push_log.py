@@ -37,12 +37,10 @@ def _okww_supplement_po() -> Path:
     return resource_path("i18n", "okww.po")
 
 
-# 推送规则：(匹配正则, 提取表达式 [, 日志类型])；匹配与提取均在翻译后行。
+# 推送规则：(匹配正则, 提取表达式)；匹配与提取均在翻译后行。
 # 提取表达式输出状态标记（裸节点名 / "状态: 节点"），由 okww_resolve 解析。
 # 顺序敏感：先约电台失败须在成功前（"先约电台已结束" 含 "先约电台"）。
-# 第三项日志类型可选：省略时走 LogCollect.collect 的默认 LogType.NORMAL；
-# 需要非普通（如 LogType.FAIL）时才补第三项。
-OKWW_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
+OKWW_PUSH_RULES: list[tuple[str, str]] = [
     # ── 开始/动作标记（后处理默认解析为成功）──
     (r"ok:OK start", r'"启动"'),
     (r"opened gray_book_boss", r'"梦魇巢穴"'),
