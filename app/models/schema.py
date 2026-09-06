@@ -136,10 +136,16 @@ class EmulatorConfigIndexItem(BaseModel):
 
 class EmulatorConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="模拟器名称")
-    Type: Optional[Literal["general", "mumu", "ldplayer"]] = Field(
+    Type: Optional[Literal["general", "mumu", "ldplayer", "emulator2"]] = Field(
         default=None, description="模拟器类型"
     )
     Path: Optional[str] = Field(default=None, description="模拟器路径")
+    Paths: Optional[str] = Field(
+        default=None, description="Emulator 2.0 纳管的模拟器路径列表（JSON）"
+    )
+    Slots: Optional[str] = Field(
+        default=None, description="Emulator 2.0 的设备号槽位表（JSON）"
+    )
     BossKey: Optional[str] = Field(default=None, description="老板键快捷键配置")
     MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间（秒）")
     ForceKillOnClose: Optional[bool] = Field(
@@ -2995,6 +3001,250 @@ class EmulatorSearchResult(BaseModel):
 class EmulatorSearchOut(OutBase):
     emulators: List[EmulatorSearchResult] = Field(
         default_factory=list, description="搜索到的模拟器列表"
+    )
+
+
+# ---- Emulator 2.0 ----------------------------------------------------------
+# 一条配置纳管多条模拟器路径, 实例合并成一张设备表。设备号由本配置统一编排,
+# 脚本绑定用的就是它; 模拟器自己的实例索引另外给出, 两者不一定对得上。
+
+
+class Emulator2SearchIn(BaseModel):
+    emulatorId: Optional[str] = Field(
+        default=None, description="配置ID, 携带时会标出已添加过的路径"
+    )
+
+
+class Emulator2SearchItem(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    version: str = Field(default="", description="探测到的版本号")
+    installPath: str = Field(..., description="安装目录")
+    alias: str = Field(default="", description="安装别名, 默认取目录名")
+    supported: bool = Field(..., description="能否加入 Emulator 2.0")
+    reason: str = Field(
+        ...,
+        description=(
+            "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
+            "unsupported 暂不支持 / already_added 已添加 / "
+            "not_found 找不到模拟器程序 / probe_failed 版本认不出"
+        ),
+    )
+    instanceCount: Optional[int] = Field(default=None, description="实例数量")
+
+
+class Emulator2SearchOut(OutBase):
+    emulators: List[Emulator2SearchItem] = Field(
+        default_factory=list, description="搜索结果, 不可添加的也会列出并说明原因"
+    )
+
+
+class Emulator2DevicesIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+
+
+class Emulator2PathAddIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    installPath: str = Field(..., description="模拟器安装目录")
+    alias: Optional[str] = Field(default=None, description="安装别名")
+
+
+class Emulator2SlotAssignment(BaseModel):
+    slot: str = Field(..., description="设备号")
+    nativeIndex: str = Field(..., description="模拟器自己的实例索引")
+
+
+class Emulator2PathAddOut(OutBase):
+    ok: bool = Field(default=False, description="是否添加成功")
+    reason: str = Field(default="", description="失败原因枚举, 与搜索结果同一套")
+    pathId: str = Field(default="", description="路径标识, 由安装目录派生")
+    alias: str = Field(default="", description="安装别名")
+    type: str = Field(default="", description="模拟器类型")
+    version: str = Field(default="", description="探测到的版本号")
+    assignedSlots: List[Emulator2SlotAssignment] = Field(
+        default_factory=list, description="本次新分配的设备号"
+    )
+    revivedSlots: List[str] = Field(
+        default_factory=list, description="重新添加同一路径时沿用的原设备号"
+    )
+
+
+class Emulator2PathRemoveIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    pathId: str = Field(..., description="路径标识")
+
+
+class Emulator2AffectedScript(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    name: str = Field(..., description="脚本名称")
+    slot: str = Field(..., description="绑定的设备号")
+    running: bool = Field(default=False, description="是否正在运行")
+
+
+class Emulator2PathRemovePreviewOut(OutBase):
+    slots: List[str] = Field(default_factory=list, description="将会失效的设备号")
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="受影响的脚本"
+    )
+
+
+class Emulator2PathRemoveOut(OutBase):
+    ok: bool = Field(default=False, description="是否移除成功")
+    tombstonedSlots: List[str] = Field(
+        default_factory=list,
+        description="已失效并保留的设备号, 不会再分配给其他设备",
+    )
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="受影响的脚本"
+    )
+
+
+class Emulator2InstanceCreateIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    pathId: str = Field(..., description="在哪条模拟器安装下新建")
+    name: Optional[str] = Field(default=None, description="新实例名称, 留空由模拟器自己命名")
+
+
+class Emulator2InstanceCreateOut(OutBase):
+    ok: bool = Field(default=False, description="是否新建成功")
+    reason: str = Field(default="", description="失败原因枚举")
+    slot: str = Field(default="", description="新实例分到的设备号")
+    nativeIndex: str = Field(default="", description="模拟器自己的实例索引")
+
+
+class Emulator2InstanceDeleteIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要删除的设备号")
+
+
+class Emulator2InstanceDeletePreviewOut(OutBase):
+    ok: bool = Field(default=False, description="设备号是否有效")
+    reason: str = Field(default="", description="失败原因枚举")
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="绑定了该设备号的脚本"
+    )
+
+
+class Emulator2InstanceDeleteOut(OutBase):
+    ok: bool = Field(default=False, description="是否删除成功")
+    reason: str = Field(default="", description="失败原因枚举")
+
+
+class Emulator2SettingField(BaseModel):
+    """一个设置项的值和它的来历。
+
+    ``state`` 必须四态分开：``.config`` 里没有 ``cpuCount`` 的实例照样跑在雷电默认的
+    6 核上，把「默认值」显示成「已保存」就是在声称用户设过一个他没设过的值。
+    """
+
+    value: Optional[int] = Field(default=None, description="当前值, 未设置时为 null")
+    state: str = Field(
+        default="unset",
+        description="saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出",
+    )
+
+
+class Emulator2SettingsIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slot: str = Field(..., description="设备号")
+
+
+class Emulator2SettingsOut(OutBase):
+    slot: str = Field(default="", description="设备号")
+    settings: Dict[str, Emulator2SettingField] = Field(
+        default_factory=dict, description="四项设置的当前值与状态"
+    )
+
+
+class Emulator2SettingsApplyIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slot: str = Field(..., description="设备号")
+    changes: Dict[str, int] = Field(
+        ..., description="要写入的字段; 只提交用户改过的, 其余键原样保留"
+    )
+    expected: Dict[str, Optional[int]] = Field(
+        default_factory=dict,
+        description="表单打开时看到的值; 对不上说明文件被改过, 拒绝覆盖",
+    )
+
+
+class Emulator2SettingsApplyOut(OutBase):
+    ok: bool = Field(default=False, description="是否写入成功")
+    conflicts: List[str] = Field(
+        default_factory=list, description="编辑期间被改动的字段名"
+    )
+    applied: Dict[str, int] = Field(
+        default_factory=dict, description="真正落盘的字段"
+    )
+
+
+class Emulator2StableModeIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slots: List[str] = Field(
+        default_factory=list, description="要处理的设备号; 留空表示全部"
+    )
+
+
+class Emulator2SettingsApplyAllIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    changes: Dict[str, int] = Field(..., description="要写到全部实例上的字段")
+
+
+class Emulator2BatchResult(BaseModel):
+    slot: str = Field(..., description="设备号")
+    ok: bool = Field(default=False, description="该设备是否写入成功")
+    message: str = Field(default="", description="失败原因")
+
+
+class Emulator2SettingsApplyAllOut(OutBase):
+    results: List[Emulator2BatchResult] = Field(
+        default_factory=list, description="逐台结果"
+    )
+    okCount: int = Field(default=0, description="成功台数")
+    failCount: int = Field(default=0, description="失败台数")
+
+
+class Emulator2PathItem(BaseModel):
+    pathId: str = Field(..., description="路径标识")
+    installPath: str = Field(..., description="安装目录")
+    alias: str = Field(default="", description="安装别名")
+    type: str = Field(default="", description="模拟器类型")
+    version: str = Field(default="", description="版本号")
+    slots: List[str] = Field(default_factory=list, description="该路径占用的设备号")
+
+
+class Emulator2DeviceItem(BaseModel):
+    slot: str = Field(..., description="设备号, 脚本绑定用它")
+    pathId: str = Field(..., description="所属路径标识")
+    alias: str = Field(default="", description="所属安装的别名")
+    realType: str = Field(
+        default="", description="设备的真实模拟器类型, 不是配置的类型"
+    )
+    nativeIndex: str = Field(..., description="模拟器自己的实例索引")
+    availability: str = Field(
+        default="ok",
+        description="ok 正常 / missing 这次没枚举到 / unavailable 该安装暂时不可达",
+    )
+    title: str = Field(default="", description="实例名称")
+    status: int = Field(default=5, description="设备状态码")
+    adbAddress: str = Field(default="", description="ADB 地址")
+    settings: Dict[str, Emulator2SettingField] = Field(
+        default_factory=dict,
+        description="已保存设置, 下次启动使用; 不是运行中实例的当前配置",
+    )
+    stableMode: bool = Field(
+        default=False, description="稳定模式是否已生效(所有干扰项都处在安全状态)"
+    )
+    stableUnsafe: List[str] = Field(
+        default_factory=list, description="还没进入安全状态的项"
+    )
+
+
+class Emulator2DevicesOut(OutBase):
+    paths: List[Emulator2PathItem] = Field(
+        default_factory=list, description="已纳管的模拟器路径"
+    )
+    devices: List[Emulator2DeviceItem] = Field(
+        default_factory=list, description="合并后的设备列表"
     )
 
 

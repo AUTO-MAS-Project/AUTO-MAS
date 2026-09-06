@@ -268,6 +268,9 @@ class EmulatorConfig(ConfigBase):
                     "general",
                     "mumu",
                     "ldplayer",
+                    # Emulator 2.0: 一条配置管多条模拟器路径, 路径写在 Info_Paths,
+                    # Info_Path 保持空串(EmulatorPathValidator 允许空串)
+                    "emulator2",
                     # "nox",  # 以下都是骗你的, 根本没有写~~
                     # "memu",
                     # "blueStacks",
@@ -279,6 +282,13 @@ class EmulatorConfig(ConfigBase):
         self.Info_Path = ConfigItem(
             "Info", "Path", "", EmulatorPathValidator(self.Info_Type)
         )
+        ## Emulator 2.0 纳管的模拟器路径列表
+        ## [{"pathId", "installPath", "alias", "type", "version"}]
+        self.Info_Paths = ConfigItem("Info", "Paths", "[]", JSONValidator(list))
+        ## Emulator 2.0 的设备号槽位表
+        ## [{"slot", "pathId", "nativeIndex", "state": "active"|"tombstone"}]
+        ## 槽位号在本配置内单调递增分配, 移除路径写墓碑, 号码永不复用
+        self.Info_Slots = ConfigItem("Info", "Slots", "[]", JSONValidator(list))
         ## 老板键快捷键配置
         self.Info_BossKey = ConfigItem(
             "Info", "BossKey", "[ ]", JSONValidator(list), legacy_group="Data"

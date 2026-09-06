@@ -797,6 +797,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         emulator_id = self.script_config.get("Emulator", "Id")
         if emulator_id == "-":
             return None
+
+        # 一条配置可以纳管多个模拟器安装, 那种情况下持久化的 Info.Path 是空的,
+        # 得先问管理器这个设备号落在哪条安装上。
+        emulator_index = self.script_config.get("Emulator", "Index")
+        with suppress(Exception):
+            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
+            if resolve_device is not None and emulator_index not in ("", "-"):
+                device_ref = resolve_device(emulator_index)
+                if device_ref is not None and device_ref.manager_path:
+                    return Path(device_ref.manager_path).parent / "adb.exe"
+
         with suppress(Exception):
             emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
             emulator_path = Path(emulator_config.get("Info", "Path"))
@@ -815,9 +826,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return self._cached_adb_profile
 
         try:
-            emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
-            emulator_type = str(emulator_config.get("Info", "Type") or "")
-            emulator_path = Path(emulator_config.get("Info", "Path"))
+            # 先问管理器这个设备号的真实归属。持久化的 Info.Type 在纳管多个安装时
+            # 不等于设备的真实类型, 直接读它会让雷电专用截图被跳过——而雷电上普通
+            # ADB 截图取不到游戏的 GPU 渲染层, 识别会全程无命中。
+            native_index = emulator_index
+            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
+            device_ref = resolve_device(emulator_index) if resolve_device else None
+            if device_ref is not None:
+                emulator_type = device_ref.emulator_type
+                emulator_path = Path(device_ref.manager_path)
+                native_index = device_ref.native_index
+            else:
+                emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
+                emulator_type = str(emulator_config.get("Info", "Type") or "")
+                emulator_path = Path(emulator_config.get("Info", "Path"))
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
@@ -828,6 +850,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 config = await self._build_ldplayer_adb_controller_config(
                     emulator_path,
                     emulator_index,
+                    native_index,
                 )
                 self._cached_adb_profile = MaaFWAdbControlProfile(
                     emulator_type,
@@ -840,6 +863,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 config = self._build_mumu_adb_controller_config(
                     emulator_path,
                     emulator_index,
+                    native_index,
                 )
                 self._cached_adb_profile = MaaFWAdbControlProfile(
                     emulator_type,
@@ -926,9 +950,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self,
         emulator_path: Path,
         emulator_index: str,
+        native_index: str | None = None,
     ) -> dict[str, Any]:
         emulator_root = emulator_path.parent
-        index = int(emulator_index)
+        # 兜底必须用原生索引: 雷电 extras 的 index 与 ADB 序列号都按它算,
+        # 纳管多个安装时设备号与原生索引不是一回事。
+        index = int(native_index if native_index is not None else emulator_index)
         pid = 0
 
         # get_device_info 仅存在于部分模拟器管理器（雷电有，MuMu 无），
@@ -965,11 +992,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _build_mumu_adb_controller_config(
         emulator_path: Path,
         emulator_index: str,
+        native_index: str | None = None,
     ) -> dict[str, Any]:
         emulator_root = emulator_path.parent.parent
+        # 与雷电分支同口径: MuMu extras 的 index 也按原生索引算,
+        # 纳管多个安装时设备号与原生索引不是一回事。
         mumu_config: dict[str, Any] = {
             "enable": True,
-            "index": int(emulator_index),
+            "index": int(native_index if native_index is not None else emulator_index),
             "path": str(emulator_root).replace("\\", "/"),
         }
         for library in (

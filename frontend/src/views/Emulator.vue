@@ -18,6 +18,7 @@ import {
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
+import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 const { t } = useI18n()
 
@@ -49,10 +50,14 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
 
 // 模拟器类型映射
 // label 随语言变，所以必须是 computed；常量数组在切换语言后不会更新
+const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
+
 const emulatorTypeOptions = computed(() => [
   { value: 'general', label: t('emulator.type.general') },
   { value: 'mumu', label: t('emulator.type.mumu') },
   { value: 'ldplayer', label: t('emulator.type.ldplayer') },
+  // Emulator 2.0: 一条配置纳管多条模拟器路径, 实例合并成一张设备表
+  { value: 'emulator2', label: t('emulator.type.emulator2') },
   // { value: 'nox', label: '夜神模拟器' },
   // { value: 'memu', label: '逍遥模拟器' },
   // { value: 'blueStacks', label: 'BlueStacks' },
@@ -919,7 +924,11 @@ const handleBossKeyInputChange = (uuid: string) => {
                         @change="handleSaveChange(element.uid, 'type', $event)"
                       />
                     </a-descriptions-item>
-                    <a-descriptions-item :label="t('emulator.pathLabel')" :span="2">
+                    <a-descriptions-item
+                      v-if="!isEmulator2(element.uid)"
+                      :label="t('emulator.pathLabel')"
+                      :span="2"
+                    >
                       <a-input
                         v-model:value="getEditingData(element.uid).path"
                         :placeholder="t('emulator.pathPlaceholder')"
@@ -961,7 +970,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                         "
                       />
                     </a-descriptions-item>
-                    <a-descriptions-item>
+                    <a-descriptions-item v-if="!isEmulator2(element.uid)">
                       <template #label>
                         <span>{{ t('emulator.bossKeyLabel') }}</span>
                         <a-tooltip :title="t('emulator.bossKeyTip')">
@@ -1026,7 +1035,12 @@ const handleBossKeyInputChange = (uuid: string) => {
               </div>
 
               <!-- 设备列表区域 -->
-              <div class="devices-panel">
+              <!-- Emulator 2.0：多路径 + 合并设备表 -->
+              <div v-if="isEmulator2(element.uid)" class="devices-panel">
+                <Emulator2Panel :emulator-id="element.uid" />
+              </div>
+
+              <div v-else class="devices-panel">
                 <div class="panel-header">
                   <h4 class="panel-title">{{ t('emulator.deviceList') }}</h4>
                 </div>
