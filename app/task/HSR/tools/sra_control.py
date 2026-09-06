@@ -24,9 +24,10 @@ from app.models.task import UserItem
 
 from ..task_mapping import HSRTaskModule
 from .account_switch import HSRAccountSwitcher, resolve_sra_start_mode
-from .log_detect import detect_weekly_completion
+from .log_detect import HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT, detect_weekly_completion
 from .run_model import HSRPhase, HSRRunItem
 from .sra_runtime import (
+    build_sra_echo_of_war_config,
     build_sra_module_config,
     build_sra_tasklist_description,
     write_sra_temp_config,
@@ -56,6 +57,15 @@ def _on_sra_weekly_success(
             reason=reason,
         )
         return
+    record_module_result(
+        user_id=uid,
+        user_name=user_name,
+        module_key=module_key,
+        module_name=module_name,
+        script="SRA",
+        status="completed",
+        reason=reason,
+    )
     queue_weekly_completion(uid, user_name, module_name)
 
 
@@ -70,7 +80,7 @@ class HSRSRAControl:
         append_log: Callable[[str], None],
         phase_timeout_seconds: Callable[[HSRPhase], int],
         module_timeout_seconds: Callable[[str], int],
-        queue_eow_completion: Callable[[str, str, bool, object, str], None],
+        queue_eow_completion: Callable[..., None],
         queue_weekly_completion: Callable[[str, str, str], None],
         record_module_result: Callable[..., None],
     ) -> None:
@@ -256,5 +266,67 @@ class HSRSRAControl:
             description=description,
             timeout_seconds=timeout_seconds,
             run=run_sra_module,
+            on_success=on_success,
+        )
+
+    def create_echo_of_war_item(
+        self,
+        *,
+        user_item: UserItem,
+        user_cfg: HSRUserConfig,
+        user_name: str,
+        uid: str,
+        phase: HSRPhase,
+        sra_exe_path: Path,
+        script_id: str,
+        temp_files: list[Path],
+    ) -> HSRRunItem:
+        """创建只跑历战余响的 SRA 队列项，排在体力模块之前先占用周本次数。"""
+
+        timeout_seconds = self._module_timeout_seconds("Daily")
+        cfg = build_sra_echo_of_war_config(self.script_config, user_cfg)
+        temp_path = write_sra_temp_config(cfg, script_id, uid, "EchoOfWar")
+        temp_files.append(temp_path)
+
+        eow_item = cfg["trailblazePower"]["tasklist"][0]
+        level_name = eow_item.get("levelName") or eow_item.get("id")
+        description = (
+            f"SRA TrailblazePowerTask：单独执行历战余响 {level_name} "
+            f"x{HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT}"
+        )
+
+        async def run_sra_echo_of_war():
+            return await self.run_sra_task(
+                sra_exe_path,
+                "TrailblazePowerTask",
+                temp_path,
+                user_name,
+                "历战余响",
+                timeout_seconds=timeout_seconds,
+                module_key="EchoOfWar",
+            )
+
+        def on_success(result, uid=uid, user_name=user_name):
+            self._queue_eow_completion(
+                uid,
+                user_name,
+                True,
+                result,
+                "SRA",
+                dedicated_run=True,
+            )
+
+        return HSRRunItem(
+            user_item=user_item,
+            user_cfg=user_cfg,
+            user_name=user_name,
+            user_id=uid,
+            phase=phase,
+            module_key="EchoOfWar",
+            module_name="历战余响",
+            script="SRA",
+            description=description,
+            timeout_seconds=timeout_seconds,
+            run=run_sra_echo_of_war,
             on_success=on_success,
         )

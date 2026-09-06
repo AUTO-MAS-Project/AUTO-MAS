@@ -3,7 +3,7 @@ import sys
 import pytest
 
 from app.services.platform.power import power
-from app.utils.platform import IS_WINDOWS, window
+from app.utils.platform import IS_WINDOWS, secret, window
 from app.utils.platform.common.errors import UnsupportedPlatformError
 from app.utils.platform.common.process import get_main_window_handle, get_window_handles
 from app.utils.platform.process import platform_process
@@ -14,6 +14,7 @@ pytestmark = pytest.mark.skipif(IS_WINDOWS, reason="仅验证非 Windows 公共�
 def test_common_entries_do_not_load_windows_dependencies() -> None:
     assert platform_process.creation_flags == 0
     assert power.supported_actions == frozenset()
+    assert secret.supports_secret_storage() is False
     assert {"win32gui", "win32crypt"}.isdisjoint(sys.modules)
 
 

@@ -30,6 +30,16 @@ from typing import Any, Mapping
 
 import yaml
 
+from app.utils import get_logger
+
+from .managed_overlay import (
+    DroppedOverride,
+    log_dropped_overrides,
+    overlay_managed_options,
+)
+
+logger = get_logger("HSR M7A 配置")
+
 M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
     {
         "power_enable",
@@ -105,26 +115,16 @@ def _user_managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
     return dict(module) if isinstance(module, dict) else {}
 
 
-def _same_value_kind(value: Any, reference: Any) -> bool:
-    if isinstance(reference, bool):
-        return isinstance(value, bool)
-    if isinstance(reference, int):
-        return isinstance(value, int) and not isinstance(value, bool)
-    if isinstance(reference, float):
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if isinstance(reference, list):
-        return isinstance(value, list)
-    if isinstance(reference, dict):
-        return isinstance(value, dict)
-    return isinstance(value, str) if isinstance(reference, str) else True
-
-
-def resolve_managed_options(
+def overlay_m7a_managed_options(
     native_config: Mapping[str, Any],
     user_config: Any,
     module_key: str,
-) -> dict[str, Any]:
-    """Overlay one user's dynamic values onto fields discovered in config.yaml."""
+) -> tuple[dict[str, Any], tuple[DroppedOverride, ...]]:
+    """Overlay one user's dynamic values onto fields discovered in config.yaml.
+
+    原生配置里已不存在或类型对不上的覆盖键逐个丢弃、回退到原生值，并作为
+    第二个返回值交给表单与运行日志，不再整体抛错。
+    """
 
     native = {
         str(key): value
@@ -132,16 +132,19 @@ def resolve_managed_options(
         if module_key in managed_modules_for_key(str(key))
     }
     overrides = _user_managed_options(user_config, module_key)
-    unknown = sorted(set(overrides).difference(native))
-    if unknown:
-        raise ValueError(
-            f"M7A {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}"
-        )
-    effective = dict(native)
-    for key, value in overrides.items():
-        if not _same_value_kind(value, native[key]):
-            raise ValueError(f"M7A {module_key}.{key} 的值类型与原生配置不一致")
-        effective[key] = value
+    return overlay_managed_options(native, overrides)
+
+
+def resolve_managed_options(
+    native_config: Mapping[str, Any],
+    user_config: Any,
+    module_key: str,
+) -> dict[str, Any]:
+    """Return native M7A values overlaid with a user's Managed.Options."""
+
+    effective, _dropped = overlay_m7a_managed_options(
+        native_config, user_config, module_key
+    )
     return effective
 
 
@@ -219,6 +222,17 @@ M7A_NOTIFICATION_DISABLE_PATCH: dict[str, Any] = {
 }
 M7A_NOTIFICATION_PATCH_WHITELIST: frozenset[str] = frozenset(
     M7A_NOTIFICATION_DISABLE_PATCH
+)
+
+# M7A 的 after_finish 取值是字符串 "None"（config.example.yaml 里的字面量），
+# 不是 YAML null；其余取值（Exit / Loop / Shutdown / Sleep / Hibernate / Restart /
+# Logoff / TurnOffDisplay / RunScript）都会先无条件关掉游戏，托管模式下必须钉死。
+M7A_FINISH_ACTION_NONE: str = "None"
+M7A_FINISH_ACTION_DISABLE_PATCH: dict[str, Any] = {
+    "after_finish": M7A_FINISH_ACTION_NONE,
+}
+M7A_FINISH_ACTION_PATCH_WHITELIST: frozenset[str] = frozenset(
+    M7A_FINISH_ACTION_DISABLE_PATCH
 )
 
 
@@ -395,6 +409,14 @@ def with_disabled_notifications(patch: Mapping[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def with_disabled_finish_action(patch: Mapping[str, Any]) -> dict[str, Any]:
+    """叠加 M7A 任务完成后操作关闭字段，避免它替 MAS 关游戏或关机。"""
+
+    merged = dict(patch)
+    merged.update(M7A_FINISH_ACTION_DISABLE_PATCH)
+    return merged
+
+
 def merge_whitelist(
     current_config: Mapping[str, Any] | None,
     patch: Mapping[str, Any],
@@ -491,7 +513,8 @@ def _apply_managed_patch(
     native = load_m7a_native_config(script_config)
     if not native:
         return patch
-    effective = resolve_managed_options(native, user_config, module_key)
+    effective, dropped = overlay_m7a_managed_options(native, user_config, module_key)
+    log_dropped_overrides(logger, "M7A", module_key, dropped)
     protected = M7A_MANAGED_STAGE_KEYS
     for key, value in effective.items():
         if key in whitelist and key not in protected:

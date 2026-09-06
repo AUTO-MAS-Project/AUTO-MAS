@@ -786,9 +786,15 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
         seen_task_names: set[str] = set()
         for preset_task in preset.task or []:
             if preset_task.name in seen_task_names:
-                raise MaaFWInterfaceLoadError(
-                    f"preset {preset.name} 中存在重复任务: {preset_task.name}"
+                # MXU 会把 __MXU_RANDOM_START__ 这类客户端伪任务写进 preset，同一个
+                # preset 里出现多次是正常的。消费端 build_interface_preset_snapshot
+                # 本来就只认第一次出现，这里跟着忽略即可，不该让整份 interface 读不出来。
+                logger.warning(
+                    "MaaFW ProjectInterface preset 中存在重复任务，已忽略后一次：%s.%s",
+                    preset.name,
+                    preset_task.name,
                 )
+                continue
             seen_task_names.add(preset_task.name)
 
             task = task_name_map.get(preset_task.name)

@@ -89,21 +89,18 @@ class LogMonitor:
 
     async def monitor_file(
         self,
-        log_file_path: Path | Callable[[], Path],
+        log_file_path_resolver: Callable[[], Path],
         log_start_time: datetime,
         bak_log_path: Path | None = None,
     ):
         """监控日志文件
 
-        ``log_file_path`` 允许传入可调用对象，每轮循环重新解析。用于监控
-        按日期滚动的日志（如 M9A 的 ``logs/log-YYYYMMDD.log``）：任务跨过
-        本地午夜时，被监控脚本会写入新文件，固定路径会导致再也读不到新行。
+        ``log_file_path_resolver`` 每轮循环重新解析路径。用于监控按日期滚动
+        的日志（如 M9A 的 ``logs/log-YYYYMMDD.log``）：任务跨过本地午夜时，
+        被监控脚本会写入新文件，固定路径会导致再也读不到新行。
         """
 
-        resolve_path = (
-            log_file_path if callable(log_file_path) else (lambda: log_file_path)
-        )
-        current_path = resolve_path()
+        current_path = log_file_path_resolver()
         logger.info(f"开始监控日志文件: {current_path}")
 
         await self.update_latest_timestamp("", if_init=True)
@@ -121,7 +118,7 @@ class LogMonitor:
         while True:
             # 日志按日期滚动（如 M9A 的 log-YYYYMMDD.log）时切换到新文件。
             try:
-                resolved = resolve_path()
+                resolved = log_file_path_resolver()
             except Exception as e:
                 # 解析器异常不应让监控任务静默死亡，否则调用方会永久挂起
                 logger.warning(f"日志路径解析失败，沿用当前路径: {e}")
@@ -424,7 +421,7 @@ class LogMonitor:
 
     async def start_monitor_file(
         self,
-        log_file_path: Path | Callable[[], Path],
+        log_file_path_resolver: Callable[[], Path],
         start_time: datetime,
         bak_log_path: Path | None = None,
     ) -> None:
@@ -432,12 +429,12 @@ class LogMonitor:
         开始监控日志文件
 
         Args:
-            log_file_path (Path | Callable[[], Path]): 日志文件路径；传入可调用
-                对象时每轮循环重新解析，用于按日期滚动的日志
+            log_file_path_resolver (Callable[[], Path]): 返回日志文件路径的方法；
+                每轮循环重新解析，用于按日期滚动的日志
             start_time (datetime): 日志时间戳起始时间
         """
 
-        probe_path = log_file_path() if callable(log_file_path) else log_file_path
+        probe_path = log_file_path_resolver()
         if probe_path.is_dir():
             raise ValueError(f"日志文件不能是目录: {probe_path}")
 
@@ -445,7 +442,7 @@ class LogMonitor:
             await self.stop()
 
         self.task = asyncio.create_task(
-            self.monitor_file(log_file_path, start_time, bak_log_path)
+            self.monitor_file(log_file_path_resolver, start_time, bak_log_path)
         )
         logger.info(f"日志文件监控已启动: {probe_path}")
 

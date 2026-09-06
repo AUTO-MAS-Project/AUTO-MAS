@@ -32,6 +32,8 @@ from app.core.notify import (
     global_target,
     target_channel_names,
 )
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏签到通知")
@@ -228,7 +230,7 @@ def append_task_game_sign_summary(task_info: object, result: str) -> str:
 async def dispatch_task_report(
     payload: NotifyPayload,
     targets: list[NotifyTarget],
-    task_info: object,
+    task_info: object | None,
     *,
     summary_text: str = "",
     attempts: int = 1,
@@ -244,9 +246,11 @@ async def dispatch_task_report(
 
     delivered = set(getattr(task_info, "game_sign_summary_delivered", ()))
     if not summary_text:
-        return await dispatch(
+        result = await dispatch(
             payload, targets, attempts=attempts, retry_delay=retry_delay
         )
+        await _publish_task_notification_failure(task_info, result)
+        return result
 
     channels = [
         channel for target in targets for channel in target_channel_names(target)
@@ -278,13 +282,40 @@ async def dispatch_task_report(
     else:
         without_summary = DispatchResult()
 
-    setattr(task_info, "game_sign_summary_delivered", delivered)
-    setattr(task_info, "game_sign_summary_pending", with_summary.failed)
-    return DispatchResult(
+    if task_info is not None:
+        setattr(task_info, "game_sign_summary_delivered", delivered)
+        setattr(task_info, "game_sign_summary_pending", with_summary.failed)
+    result = DispatchResult(
         attempted=with_summary.attempted + without_summary.attempted,
         succeeded=with_summary.succeeded + without_summary.succeeded,
         failed=with_summary.failed + without_summary.failed,
     )
+    await _publish_task_notification_failure(task_info, result)
+    return result
+
+
+async def _publish_task_notification_failure(
+    task_info: object | None, result: DispatchResult
+) -> None:
+    """把任务报告的渠道失败同步提示到当前任务页面。"""
+
+    if not result.failed or task_info is None:
+        return
+    task_id = getattr(task_info, "task_id", None)
+    if not task_id:
+        return
+
+    failed_channels = tuple(dict.fromkeys(result.failed))
+    title = "部分通知发送失败" if result.succeeded else "通知发送失败"
+    message = f"{title}：{'、'.join(failed_channels)}"
+    try:
+        await Publisher.send(
+            id=str(task_id),
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"发送通知失败提示到前端时出现异常: {exc}")
 
 
 async def push_game_sign_notification(results: list[dict]) -> DispatchResult:

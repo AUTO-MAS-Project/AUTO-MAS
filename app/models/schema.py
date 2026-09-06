@@ -495,6 +495,12 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="Koishi服务器地址"
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
+    IfOpenClawWeixin: Optional[bool] = Field(
+        default=None, description="是否启用微信 Claw 通知"
+    )
+    IfOpenClawQQ: Optional[bool] = Field(
+        default=None, description="是否启用 QQ 官方机器人通知"
+    )
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
     FromAddress: Optional[str] = Field(default=None, description="邮件发送地址")
@@ -503,6 +509,67 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
+
+
+class OpenClawWeixinQrStartOut(OutBase):
+    """微信 Claw 二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawWeixinQrCheckIn(BaseModel):
+    """微信 Claw 二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+    verifyCode: Optional[str] = Field(
+        default=None, max_length=32, description="微信要求时输入的配对码"
+    )
+
+
+class OpenClawWeixinQrCheckOut(OutBase):
+    """微信 Claw 二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawWeixinStatusOut(OutBase):
+    """微信 Claw 通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
+    connected: bool = Field(default=False, description="是否已绑定微信账号")
+    state: str = Field(default="disconnected", description="当前连接状态")
+
+
+class OpenClawQQQrStartOut(OutBase):
+    """QQ 官方机器人二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawQQQrCheckIn(BaseModel):
+    """QQ 官方机器人二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+
+
+class OpenClawQQQrCheckOut(OutBase):
+    """QQ 官方机器人二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawQQStatusOut(OutBase):
+    """QQ 官方机器人通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
+    connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
+    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class GlobalConfig_Update(BaseModel):
@@ -651,6 +718,9 @@ class QueueConfig_Info(BaseModel):
             "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
+    AfterAccomplishDelay: Optional[int] = Field(
+        default=None, ge=0, le=1440, description="完成后操作的延时时长(分钟)"
+    )
 
 
 class QueueConfig(BaseModel):
@@ -1650,12 +1720,15 @@ class HSRConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="HSR 脚本名称")
     M7APath: Optional[str] = Field(default=None, description="M7A 路径")
     SRAPath: Optional[str] = Field(default=None, description="SRA 路径")
+    SRAProfile: Optional[str] = Field(
+        default=None,
+        description="SRA 配置档案 id（%APPDATA%/SRA/configs 下的文件名，不含扩展名）；空串表示自动",
+    )
 
 
 class HSRConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
-    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
     ForceResolution1920x1080: Optional[bool] = Field(
         default=None, description="是否强制 1920x1080"
@@ -1944,12 +2017,29 @@ class HSRManagedField(BaseModel):
     readonly: bool = Field(default=False, description="是否只读")
 
 
+class HSRManagedDroppedOverride(BaseModel):
+    key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
+    reason: Literal["unknown", "type"] = Field(
+        ...,
+        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+    )
+    value: Any = Field(default=None, description="用户保存的覆盖值")
+    message: str = Field(default="", description="人类可读说明")
+
+
 class HSRManagedForm(BaseModel):
     key: Optional[str] = Field(default=None, description="任务键")
     engine: Literal["M7A", "SRA"] = Field(..., description="表单引擎")
     fields: List[HSRManagedField] = Field(default_factory=list, description="表单字段")
     source: Optional[str] = Field(default=None, description="字段来源")
-    warnings: List[str] = Field(default_factory=list, description="表单警告")
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="表单级人类可读提示（如缺少配置说明文件），不含失效覆盖记录",
+    )
+    dropped_overrides: List[HSRManagedDroppedOverride] = Field(
+        default_factory=list,
+        description="在当前原生配置中失效、运行时会被忽略的 Managed.Options 覆盖值",
+    )
 
 
 class HSRManagedTask(BaseModel):
@@ -1979,6 +2069,35 @@ class HSRManagedConfigData(BaseModel):
 
 class HSRManagedConfigOut(OutBase):
     data: Optional[HSRManagedConfigData] = Field(default=None, description="托管配置")
+
+
+class HSRSRAProfile(BaseModel):
+    id: str = Field(..., description="档案 id（文件名，不含扩展名）")
+    path: str = Field(..., description="档案文件路径")
+    selected: bool = Field(default=False, description="是否为当前生效的档案")
+
+
+class HSRSRAProfilesData(BaseModel):
+    engine: Literal["SRA"] = Field(default="SRA", description="原生脚本引擎")
+    root: str = Field(..., description="档案目录（%APPDATA%/SRA/configs）")
+    available: bool = Field(
+        default=False, description="档案目录是否可读且至少有一份档案"
+    )
+    unavailable_reason: Optional[str] = Field(default=None, description="不可用原因")
+    configured: str = Field(default="", description="脚本配置的档案 id；空串表示自动")
+    auto_id: str = Field(..., description="自动模式会选中的档案 id")
+    selected: str = Field(..., description="当前实际生效的档案 id")
+    fallback: bool = Field(
+        default=False, description="配置的档案不存在、已回退到自动选择"
+    )
+    fallback_reason: Optional[str] = Field(default=None, description="回退说明")
+    profiles: List[HSRSRAProfile] = Field(default_factory=list, description="可选档案")
+
+
+class HSRSRAProfilesOut(OutBase):
+    data: Optional[HSRSRAProfilesData] = Field(
+        default=None, description="SRA 配置档案列表"
+    )
 
 
 class HSRDirectConfigImportIn(BaseModel):

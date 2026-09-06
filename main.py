@@ -248,7 +248,7 @@ def main():
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、ArknightWin32、主定时器。
+            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -283,6 +283,7 @@ def main():
                 await Config.get_stage()
                 await Config.clean_old_history()
                 await Config.clean_maafw_agent_venvs()
+                await Config.clean_debug_diagnostics()
 
                 if IS_WINDOWS:
                     for adapter in (
@@ -294,6 +295,13 @@ def main():
 
                     await ArknightWin32Toolkit.init()
                 await MainTimer.start()
+
+                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                from app.services.openclaw_qq import openclaw_qq_manager
+                from app.services.openclaw_weixin import openclaw_weixin_manager
+
+                await openclaw_weixin_manager.start()
+                await openclaw_qq_manager.start()
 
                 # 初始化 Koishi 系统客户端（如果已启用）
                 if Config.get("Notify", "IfKoishiSupport"):
@@ -352,6 +360,11 @@ def main():
                 await System.cancel_power_task()
 
             await MainTimer.stop()
+            from app.services.openclaw_qq import openclaw_qq_manager
+            from app.services.openclaw_weixin import openclaw_weixin_manager
+
+            await openclaw_weixin_manager.stop()
+            await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
@@ -385,6 +398,8 @@ def main():
         setting_router,
         update_router,
         ocr_router,
+        openclaw_qq_router,
+        openclaw_weixin_router,
         qr_login_router,
     )
 
@@ -415,6 +430,8 @@ def main():
     app.include_router(setting_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
+    app.include_router(openclaw_qq_router)
+    app.include_router(openclaw_weixin_router)
 
     # 可选补丁：米游社扫码登录
     if qr_login_router is not None:

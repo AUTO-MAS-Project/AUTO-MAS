@@ -352,7 +352,8 @@ export default {
     srcConfigurationFailedP0: 'SRC configuration failed: {p0}',
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
-    nativeP0ConfigurationWas: 'The native {p0} configuration was imported for this user',
+    nativeP0ConfigurationWas:
+      'The current {p0} configuration was pinned as a snapshot for this user',
     couldNotImportP0: 'Could not import the {p0} configuration: {p1}',
     p0MustSitUnder: '{p0} must sit under the script root directory or AppData',
     p0HasNoMatch: '{p0} has no match pattern, so it was saved as disabled',
@@ -609,10 +610,47 @@ export default {
     win32ControlMethodCan:
       'The Win32 control method can split launching from detection: the launch target only starts the program, and the detect target finds the real game window.',
     yamlFiles: 'YAML files',
-    importFromSourceConfiguration2: 'Import from the source configuration',
+    resetManagedOverrides: 'Reset to the source configuration',
+    resetManagedOverridesHint:
+      'Discards every override you changed in MAS and re-reads the current SRA / March7th Assistant configuration',
+    resetManagedOverridesConfirmTitle: 'Reset to the source configuration?',
+    resetManagedOverridesConfirmDesc:
+      'This deletes every override this user changed in MAS (all modules, all fields); everything will then be shown and run from the current SRA / March7th Assistant configuration. The source configuration file itself is not modified. This cannot be undone.',
+    invalidOverridesCount: '{n} stale overrides',
+    invalidManagedOverridesTitle:
+      '{n} saved overrides are no longer valid for the current source configuration; they are ignored at run time and the source values are used instead',
+    invalidManagedOverrideUnknown:
+      'This field no longer exists in the current source configuration',
+    invalidManagedOverrideType:
+      'The saved value type does not match the current source configuration',
+    invalidManagedOverrideSaved: 'Saved value: {value}',
+    clearInvalidManagedOverrides: 'Remove stale overrides',
+    clearInvalidManagedOverridesConfirm:
+      'Remove these {n} stale overrides from this user’s MAS configuration? The source configuration file is not modified.',
     matchesOnly: 'Matches only',
     never: 'Never',
     sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
+    hsrEngineSwitchHint:
+      'Switching the engine swaps in the native options and stages of that engine. Values changed under the current engine are not carried over, but they are kept and come back when you switch back.',
+    hsrStageMissingForEngine:
+      'The trailblaze power engine is now {engine}, and no stage is selected under it. Stages are stored per engine, so stages picked under the other engine are not carried over — pick them again. Switching back restores the previous selection.',
+    editHsrUser: 'Edit the HSR user',
+    addHsrUser: 'Add an HSR user',
+    hsrServerCnOfficial: 'CN official',
+    hsrWeekDone: 'Done this week',
+    hsrWeekNotDone: 'Not done this week',
+    hsrLastCompleted: 'Last completed: {date}',
+    hsrDynamicTaskCount: '{n} dynamic modules',
+    hsrReadFrom: 'Read from: {source}',
+    daily: 'Daily',
+    hsrEngineUnavailable: 'Unavailable',
+    hsrNativeConfigNotLoaded: 'Native configuration not loaded',
+    hsrTaskEnabled: 'Enabled',
+    hsrTaskNotEnabled: 'Not enabled',
+    hsrTaskFieldCount: '{n} options',
+    hsrTaskSwitchesOn: '{n} switches on',
+    hsrRepickStage: 'Pick the stage again',
+    notConfigured: 'Not configured',
     howUseThis: 'How to use this',
     whenSavingMasEncrypts:
       'When saving, MAS encrypts the account password. Without SRA configured, or when the SRA module is unused, the password is not used for account switching.',
@@ -626,8 +664,6 @@ export default {
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     saved: 'Saved',
-    enabledScriptNeedsUser:
-      'An enabled script needs a user snapshot imported before the task start check passes.',
     turnAutomaticRelicSalvage:
       'Turn on automatic relic salvage in game, so a full bag does not interrupt relic farming.',
     thisScriptDeclaresNo: 'This script declares no version, so updates cannot be checked',
@@ -651,13 +687,31 @@ export default {
     restoreOriginalRegistryValue: 'Restore the original registry value afterwards',
     scriptDirectControlIgnores:
       "Script-direct control ignores this user's account, sanity stages, and MAS task switches.",
+    directLiveConfigTitle: "Using the script's current configuration (recommended)",
+    directLiveConfigHint:
+      'Runs whatever is currently saved in {p0}; changes made in the script take effect immediately, no import needed.',
+    directSnapshotTitle: 'Pinned to a configuration snapshot for this user',
+    directSnapshotMeta: 'Pinned at {p0} - source {p1}',
+    directSnapshotStaleHint:
+      'The snapshot does not follow later changes made in the script; re-pin it to update, or switch back to the current configuration.',
+    directPinSnapshot: 'Pin the current configuration as a snapshot (optional)',
+    directRepinSnapshot: 'Re-pin to the current configuration',
+    directUseLiveConfig: "Switch back to the script's current configuration",
+    directSnapshotCleared: "{p0} now uses the script's current configuration",
+    couldNotClearP0: 'Could not clear the {p0} snapshot: {p1}',
+    directEngineSra: 'SRA',
+    directEngineM7a: 'March7th Assistant',
+    directEngineDescSra:
+      "Runs SRA's currently selected profile; users with a pinned snapshot run the snapshot instead.",
+    directEngineDescM7a:
+      "Runs March7th Assistant's current config.yaml; users with a pinned snapshot run the snapshot instead.",
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
     pathScriptConfigurationFile: 'Path to the script configuration file',
     expressionGuide: 'Expression guide',
     thisModuleNotEnabled:
       'This module is not enabled for this user; the configuration is saved but will not run this time.',
     finishNativeSetupSra:
-      'Finish the native setup in SRA / March7th Assistant first, then import it here. MAS only launches the game, tracks and stops the script process, and cleans up afterwards.',
+      "Script-direct control runs whatever is currently saved in SRA / March7th Assistant, so finish the setup in the script's own UI first. MAS only launches the game, tracks and stops the script process, and cleans up afterwards. Pin a snapshot only when several users under the same script each need their own configuration.",
     enableAtLeastOne: 'Enable at least one direct-control script.',
     pickConfigurationFile: 'Pick a configuration file',
     pickConfigurationFolder: 'Pick a configuration folder',
@@ -745,7 +799,7 @@ export default {
     whatDoWhenSwitching: 'What to do when switching accounts',
     delete: 'Delete',
     matchPattern: 'Match pattern',
-    divergentUniverse: 'Divergent Universe',
+    echoOfWar: 'Echo of War',
     argumentsGeneratedFromTask:
       'Arguments are generated from the task configuration; -e is always appended',
     startTaskTN: 'Start task (-t N)',
@@ -825,6 +879,12 @@ export default {
     okNteConfiguration: 'OK-NTE configuration',
     howPcGameLaunched: 'How the PC game is launched',
     sraPath: 'SRA path',
+    sraProfile: 'SRA config profile',
+    sraProfileTooltip:
+      'SRA saves its settings as profiles under %APPDATA%/SRA/configs. The one chosen here is what the MAS-managed form reflects, what direct control runs with, and what a snapshot import copies. "Auto" prefers Default, otherwise the first profile by file name',
+    sraProfileAuto: 'Auto ({name})',
+    sraProfileNeedPath: 'Set the SRA path first',
+    sraProfileLoadFailed: 'Could not read the SRA config profiles: {reason}',
     srcScriptConfiguration: 'SRC script configuration',
     srcPath: 'SRC path',
     srcPathSelected: 'SRC path selected',
@@ -840,7 +900,6 @@ export default {
     okWwSettingsSaved: 'ok-ww settings saved',
     okWwPath: 'ok-ww path',
     originalUiRecommended: '- the original UI is recommended',
-    importFromSourceConfiguration: 'Import from the source configuration',
     applyPreset: 'Apply a preset',
     march7thPath: 'March7th path',
     uploadFailedCheckYour: 'Upload failed — check your connection and try again',
@@ -869,7 +928,8 @@ export default {
     pcControllersOnlySeconds: 'PC controllers only, in seconds',
     cutFromKeywordEnd:
       'Cut from the keyword to the end of the line; tick "include" to remove the keyword too, otherwise keep it',
-    couldNotImportFrom: 'Could not import from the source configuration',
+    couldNotResetManagedOverrides: 'Could not reset to the source configuration',
+    couldNotClearInvalidManagedOverrides: 'Could not remove the stale overrides',
     cutFromStartLine:
       'Cut from the start of the line to the keyword; tick "include" to remove the keyword too, otherwise keep it',
     launchGameBeforeTask: 'Launch the game before the task',
@@ -893,7 +953,7 @@ export default {
     closeGameAfterTask2: 'Close the game after the task',
     taskQueue: 'Task queue',
     taskQueueConfiguration: 'Task queue configuration',
-    sanityConfiguration: 'Sanity configuration',
+    sanityConfiguration: 'Trailblaze Power',
     author: 'Author',
     useThisUserS: "Use this user's own configuration, isolated from the script configuration.",
     useSharedScriptLevel: 'Use the shared script-level configuration for every user.',
@@ -905,7 +965,7 @@ export default {
     exampleTaskDoneSuccess: "For example: task done{'|'}success{'|'}failed",
     exampleTaskRun: 'For example: task run',
     exampleTaskFinished: 'For example: task finished',
-    cavernsCorrosion: 'Caverns of Corrosion',
+    cavernsCorrosion: 'Cavern of Corrosion',
     cavernsCorrosionRelicDomains: 'Caverns of Corrosion: relic domains',
     couldNotSaveOk: 'Could not save the OK-NTE configuration',
     couldNotSaveOk2: 'Could not save the ok-ww settings',
@@ -919,7 +979,7 @@ export default {
     shareThisConfigurationConfig: 'Share this configuration on the config-sharing site',
     deleteThisTask: 'Delete this task',
     startDayIfIt:
-      'On the start day, if it is not done this week, MAS hands Divergent Universe to M7A/SRA; once the log confirms completion it is skipped for the rest of the week.',
+      'On the start day, if it is not done this week, MAS hands Echo of War to M7A/SRA; once the log confirms completion it is skipped for the rest of the week.',
     farmStages: 'Farm stages',
     daysLeft1Means:
       'Days left; -1 means unlimited, 0 means it expires today, a positive number means N days remain',
@@ -934,7 +994,7 @@ export default {
     lineMatchingThisPattern:
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
-    divergentUniverseStartDay: 'Divergent Universe start day',
+    echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
     sendStatistics: 'Send statistics',
@@ -950,7 +1010,6 @@ export default {
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
-    commandLineArgumentsAdded: 'Command line arguments added when launching Star Rail',
     howLongWaitAfter2: 'How long to wait after the game launches',
     howLongWaitReal:
       'How long to wait for the real game process/window after the target launches, in seconds',
@@ -978,7 +1037,9 @@ export default {
     noOkWwSettings: 'No ok-ww settings have been generated yet',
     interfaceJsonHasNot: 'interface.json has not been read yet',
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
-    importedFromCurrentSra: 'Imported from the current SRA / March7th Assistant configuration',
+    managedOverridesReset:
+      'All overrides removed; showing and running from the current SRA / March7th Assistant configuration',
+    invalidManagedOverridesCleared: 'Removed {n} stale overrides',
     scriptLevelMaaendConfiguration: 'Script-level MaaEnd configuration started',
     gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
@@ -996,7 +1057,7 @@ export default {
       'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Hooks run before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
     masTakesOverStarting: 'MAS takes over starting and stopping the game',
     collectsKeyMomentsFrom:
-      'Choose how this user\'s key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status',
+      "Choose how this user's key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status",
     beforeLaunchingGameRun:
       'Before launching the game for a run, MAS checks the official version and updates it; when off the game is launched directly',
     overridesCurrentScriptConfiguration:
@@ -1132,7 +1193,6 @@ export default {
     channel: 'Channel',
     gameExecutable: 'Game executable',
     pathGameExecutable: 'Path to the game executable',
-    gameLaunchArguments: 'Game launch arguments',
     gameLaunchArgumentsNot: 'Game launch arguments (not the OK-NTE arguments)',
     gameLaunchArgumentsNot2: 'Game launch arguments (not the ok-ww arguments)',
     gameLauncher: 'Game launcher',
@@ -1342,7 +1402,7 @@ export default {
     chooseWhetherMasSwitches:
       "Choose whether MAS switches between the accounts saved in the game, or MAAEND's built-in task switches by the last four digits of the account",
     pickStageFarmThis: 'Pick the stage to farm; this field is written to Stage.Channel.',
-    pickDivergentUniverseStage: 'Pick the Divergent Universe stage to run.',
+    pickEchoOfWarStage: 'Pick the Echo of War stage to run.',
     pickProjectDirectory: 'Pick the project directory',
     pickGameSOwn: "Pick the game's own exe",
     generalScriptConfiguration: 'General script configuration',
@@ -2179,6 +2239,11 @@ export default {
     emulator: 'Emulator',
     checkingBackendRecoveringAutomatically:
       'Checking the backend and recovering automatically. Task state resyncs from the HTTP snapshot once the connection is back.',
+    devBackendReconnecting:
+      'Dev mode: the backend is managed by you. The app keeps reconnecting and this notice goes away once it is back.',
+    anotherWindowTookOverBackend: 'Another window took over the backend connection',
+    thisWindowStoppedReconnecting:
+      'This window stopped reconnecting so the two windows do not keep replacing each other.',
     couldNotAddAccount: 'Could not add the account group',
     gotIt: 'Got it',
     continueDownload: 'Continue the download',
@@ -2333,6 +2398,10 @@ export default {
     no: 'No',
     afterDone: 'When finished',
     afterDoneTip: 'What to do after the queue completes',
+    afterDoneDelay: 'Delay',
+    afterDoneDelayTip:
+      'Wait this long after the queue completes before running the action; 0 means no wait. The 60-second countdown still runs before it, so you can still cancel.',
+    afterDoneDelayUnit: 'min',
     actionPlaceholder: 'Select an action',
     action: {
       NoAction: 'Do nothing',
@@ -2817,6 +2886,53 @@ export default {
       koishiWsTip: 'Koishi WebSocket server address; ws:// and wss:// are both supported',
       koishiTokenTip: 'Koishi access token',
       koishiTokenPlaceholder: 'Enter the Koishi token',
+      openclawWeixinSection: 'WeChat Claw notifications',
+      openclawWeixinDoc: 'Open the WeChat Claw guide',
+      openclawWeixinEnable: 'Enable WeChat notifications',
+      openclawWeixinTip: 'Receive task notifications through the bound WeChat Claw account',
+      openclawWeixinSetupHint:
+        'Select “Bind with QR code” and scan it with WeChat. Login details are saved automatically.',
+      openclawWeixinBind: 'Bind with QR code',
+      openclawWeixinRebind: 'Bind again',
+      openclawWeixinUnbind: 'Unbind',
+      openclawWeixinUnbindConfirm: 'Unbinding clears the saved WeChat login on this device. Continue?',
+      openclawWeixinStatusRetry: 'Refresh binding status',
+      openclawWeixinBound: 'Bound',
+      openclawWeixinUnbound: 'Not bound',
+      openclawWeixinBindSuccess: 'WeChat Claw bound successfully',
+      openclawWeixinUnbindSuccess: 'WeChat Claw unbound',
+      openclawWeixinUnbindFailed: 'Failed to unbind WeChat Claw',
+      openclawWeixinLoginTitle: 'Bind WeChat Claw with QR code',
+      openclawWeixinQrAlt: 'WeChat Claw login QR code',
+      openclawWeixinQrLoading: 'Getting a QR code…',
+      openclawWeixinQrWaiting: 'Scan the QR code with WeChat',
+      openclawWeixinQrInvalid: 'The QR code response was invalid. Try again later.',
+      openclawWeixinQrError: 'QR-code login failed. Try again later.',
+      openclawWeixinQrRetry: 'Get a new QR code',
+      openclawWeixinVerifyCodePlaceholder: 'Enter the pairing code shown by WeChat',
+      openclawWeixinVerifyCodeSubmit: 'Confirm pairing code',
+      openclawQqSection: 'QQ Official Bot notifications',
+      openclawQqDoc: 'Open the QQ Official Bot guide',
+      openclawQqEnable: 'Enable QQ notifications',
+      openclawQqTip: 'Push notifications through the QQ Official Bot',
+      openclawQqSetupHint:
+        'Select “Bind with QR code” and scan it with QQ. Login details are saved automatically.',
+      openclawQqBind: 'Bind with QR code',
+      openclawQqRebind: 'Bind again',
+      openclawQqUnbind: 'Unbind',
+      openclawQqUnbindConfirm: 'Unbinding clears the saved QQ login on this device. Continue?',
+      openclawQqStatusRetry: 'Refresh binding status',
+      openclawQqBound: 'Bound',
+      openclawQqUnbound: 'Not bound',
+      openclawQqBindSuccess: 'QQ Official Bot bound successfully',
+      openclawQqUnbindSuccess: 'QQ Official Bot unbound',
+      openclawQqLoginTitle: 'Bind QQ Official Bot with QR code',
+      openclawQqQrAlt: 'QQ Official Bot login QR code',
+      openclawQqQrLoading: 'Getting a QR code…',
+      openclawQqQrWaiting: 'Scan the QR code with QQ',
+      openclawQqQrInvalid: 'The QR code response was invalid. Try again later.',
+      openclawQqQrError: 'QR-code login failed. Try again later.',
+      openclawQqQrRetry: 'Get a new QR code',
       webhookSection: 'Custom webhooks',
       webhookDoc: 'Open the custom webhook configuration docs',
     },

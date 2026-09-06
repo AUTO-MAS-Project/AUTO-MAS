@@ -70,12 +70,20 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     exposed by this host.
     """
 
-    from app.task.HSR.task_mapping import HSR_TASK_MODULES
+    from app.task.HSR.task_mapping import (
+        HSR_TASK_MODULES,
+        describe_script_fallback,
+        resolve_script_assignment,
+    )
 
     configured = _configured_engines(script_config)
     effective = list(configured)
     adapters: list[dict[str, Any]] = []
     warnings: list[str] = []
+    if "SRA" in configured:
+        fallback_note = _sra_profile_fallback_note(script_config)
+        if fallback_note:
+            warnings.append(fallback_note)
     for engine in _HSR_ENGINES:
         snapshot = _inspect_engine(script_config, engine)
         import_ready = snapshot.get("import_ready")
@@ -128,6 +136,16 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
                 "strategies": _task_strategies(module, task_engines),
             }
         )
+        # 脚本级 TaskMapping 指到了没配路径的引擎时，第四级回落会静默换引擎；
+        # 这里把它写进快照警告，编辑页顶部能看到。
+        fallback_note = describe_script_fallback(
+            module,
+            resolve_script_assignment(
+                module, script_config, effective_engines=tuple(effective)
+            ),
+        )
+        if fallback_note:
+            warnings.append(fallback_note)
     return {
         "revision": "old-dev",
         "available": bool(configured),
@@ -144,13 +162,80 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     }
 
 
+def _sra_profile_fallback_note(script_config: Any) -> str | None:
+    """脚本配置的 SRA 档案不存在时的一句提示；没有回退时为 ``None``。"""
+
+    from .sra_runtime import resolve_sra_profile_selection
+
+    try:
+        selection = resolve_sra_profile_selection(script_config)
+    except OSError:
+        return None
+    return selection.fallback_reason if selection.fallback else None
+
+
+def build_sra_profiles(script_config: Any) -> dict[str, Any]:
+    """列出 ``%APPDATA%/SRA/configs`` 下可选的 SRA 配置档案。
+
+    ``configured`` 是脚本 ``Info.SRAProfile`` 的原值（空串＝自动），``selected``
+    是本次实际生效的档案；两者不一致且 ``fallback`` 为真，说明配置的档案文件
+    已不存在。``auto_id`` 供前端把「自动」选项标成「自动（Default）」。
+    """
+
+    from .sra_runtime import (
+        _script_sra_profile_setting,
+        list_sra_profiles,
+        resolve_sra_profile_selection,
+    )
+
+    selection = resolve_sra_profile_selection(script_config)
+    auto = resolve_sra_profile_selection(
+        {"Info": {"SRAProfile": ""}}, config_root=selection.root
+    )
+    profiles = list_sra_profiles(selection.root)
+    if not selection.root.is_dir():
+        unavailable_reason: str | None = (
+            f"未找到 SRA 配置目录 {selection.root}，请先在 SRA 中保存一次设置"
+        )
+    elif not profiles:
+        unavailable_reason = (
+            f"SRA 配置目录 {selection.root} 下没有任何配置档案，"
+            "请先在 SRA 中保存一次设置"
+        )
+    else:
+        unavailable_reason = None
+    return {
+        "engine": "SRA",
+        "root": str(selection.root),
+        "available": unavailable_reason is None,
+        "unavailable_reason": unavailable_reason,
+        "configured": _script_sra_profile_setting(script_config),
+        "auto_id": auto.selected_id,
+        "selected": selection.selected_id,
+        "fallback": selection.fallback,
+        "fallback_reason": selection.fallback_reason,
+        "profiles": [
+            {
+                "id": item.stem,
+                "path": str(item),
+                "selected": item == selection.path,
+            }
+            for item in profiles
+        ],
+    }
+
+
 def build_managed_config(
     script_config: Any,
     user_config: Any | None = None,
 ) -> dict[str, Any]:
     """Discover managed forms and merge script/user engine assignments."""
 
-    from app.task.HSR.task_mapping import HSR_TASK_MODULES, get_assigned_script
+    from app.task.HSR.task_mapping import (
+        HSR_TASK_MODULES,
+        describe_script_fallback,
+        resolve_script_assignment,
+    )
 
     from .managed_config import list_managed_modules
 
@@ -160,6 +245,10 @@ def build_managed_config(
         module.key: {} for module in HSR_TASK_MODULES
     }
     warnings: list[str] = []
+    if "SRA" in effective_set:
+        fallback_note = _sra_profile_fallback_note(script_config)
+        if fallback_note:
+            warnings.append(fallback_note)
     for engine in effective:
         try:
             modules = list_managed_modules(engine, script_config, user_config)
@@ -176,12 +265,16 @@ def build_managed_config(
         ]
         if not task_engines:
             continue
-        task_mapping[module.key] = get_assigned_script(
+        assignment = resolve_script_assignment(
             module,
             script_config,
             user_config=user_config,
             effective_engines=tuple(effective),
         )
+        task_mapping[module.key] = assignment.script
+        fallback_note = describe_script_fallback(module, assignment)
+        if fallback_note:
+            warnings.append(fallback_note)
 
     tasks: list[dict[str, Any]] = []
     for module in HSR_TASK_MODULES:
@@ -256,9 +349,47 @@ async def import_direct_config(
         lease.release()
 
 
+async def clear_direct_config(
+    script_config: Any,
+    engine: str,
+    *,
+    script_id: str,
+    user_id: str,
+    update_user: Callable[[str, str, dict[str, Any]], Awaitable[Any]],
+) -> dict[str, Any]:
+    """Drop one user's imported snapshot so direct control falls back to the
+    script's live native config.
+
+    与 :func:`import_direct_config` 对称：只清空 ``Direct.{engine}Config`` 及其
+    元数据，不碰任何外部文件，因此不需要外部路径锁。返回形状与导入结果一致，
+    ``source`` / ``imported_at`` 为空、``size`` 为 0 表示当前已无快照。
+    """
+
+    normalized = _normalize_engine(engine)
+    await update_user(
+        script_id,
+        user_id,
+        {
+            "Direct": {
+                f"{normalized}Config": "",
+                f"{normalized}ImportedAt": "",
+                f"{normalized}Source": "",
+            }
+        },
+    )
+    return {
+        "engine": normalized,
+        "source": None,
+        "imported_at": None,
+        "size": 0,
+    }
+
+
 __all__ = [
     "build_capabilities",
     "build_managed_config",
+    "build_sra_profiles",
     "build_stage_options",
+    "clear_direct_config",
     "import_direct_config",
 ]

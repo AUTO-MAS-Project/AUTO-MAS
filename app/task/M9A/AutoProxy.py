@@ -107,7 +107,7 @@ class AutoProxyTask(TaskExecuteBase):
         self._m9a_failure_signal_seen = False
         self._m9a_failure_quiet_task: asyncio.Task | None = None
 
-    def _resolve_m9a_log_path(self) -> Path:
+    def _resolve_log_file_path(self) -> Path:
         """按当前本地日期解析 M9A 日志路径。
 
         M9A 每天写一个 ``logs/log-YYYYMMDD.log``。路径必须在监控循环里按需
@@ -298,7 +298,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info("M9A 进程正常运行中...")
             await self.m9a_log_monitor.start_monitor_file(
-                self._resolve_m9a_log_path, self.log_start_time
+                self._resolve_log_file_path, self.log_start_time
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()

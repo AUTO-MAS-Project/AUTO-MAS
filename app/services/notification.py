@@ -246,6 +246,42 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
+    async def send_openclaw_weixin(self, title: str, content: str) -> None:
+        """通过微信 Claw 通道推送通知。
+
+        登录凭据和会话上下文由扫码登录管理器维护，通知层不读取或暴露协议
+        细节；长文本拆分、业务错误和上下文失效也由管理器统一处理。
+
+        Args:
+            title: 通知标题。
+            content: 已渲染的通知正文。
+
+        Raises:
+            ValueError: 尚未绑定微信账号时抛出。
+            RuntimeError: 网关返回 HTTP 或业务错误时抛出。
+        """
+        from app.services.openclaw_weixin import openclaw_weixin_manager
+
+        await openclaw_weixin_manager.send(title=title, content=content)
+
+    async def send_openclaw_qq(self, title: str, content: str) -> None:
+        """通过 QQ 官方机器人通道推送通知。
+
+        登录凭据由扫码登录管理器维护，通知层不读取或暴露协议细节；长文本
+        拆分、业务错误和访问令牌刷新也由管理器统一处理。
+
+        Args:
+            title: 通知标题。
+            content: 已渲染的通知正文。
+
+        Raises:
+            ValueError: 尚未绑定 QQ 官方机器人时抛出。
+            RuntimeError: 官方接口返回 HTTP 或业务错误时抛出。
+        """
+        from app.services.openclaw_qq import openclaw_qq_manager
+
+        await openclaw_qq_manager.send(title=title, content=content)
+
     async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
         """
         Webhook 推送通知

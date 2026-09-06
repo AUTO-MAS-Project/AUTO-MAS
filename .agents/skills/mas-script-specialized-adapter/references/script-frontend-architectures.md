@@ -46,7 +46,7 @@
 | MXU（MaaEnd） | `mxu-*.json` 可设 autoRun 类字段；必要时对照壳 CLI | 常 ScriptConfig 拉起本体会话；日常字段走 Section |
 | MAA | 依 MAA 文档，常见 ScriptConfig 路径 | ScriptConfig 调本体 + 关卡/plan Section |
 | SRC | 依 SRC.exe / Alas 文档 | 多为大表单 + Section 写映射配置 |
-| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染，直控导入加密快照 |
+| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染，直控默认直接用脚本当前配置、加密快照仅为可选覆盖 |
 | General | 先最小 `open_process` + 日志，再按上游补 argv | 通用路径与简单字段 |
 
 **实施顺序建议**：先用 `General` 验证对接可行 → 再新增专项 `ScriptType` 承载默认值与 UI → 最后删掉 General 页的临时预设入口。

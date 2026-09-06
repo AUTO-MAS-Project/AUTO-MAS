@@ -2,9 +2,24 @@
   <div class="managed-task-section">
     <div class="section-header section-header-with-action">
       <h3>{{ t('edit.tasksManagedByMas') }}</h3>
-      <a-button :loading="loading" @click="emit('importSource')">{{
-        t('edit.importFromSourceConfiguration2')
-      }}</a-button>
+      <div class="section-header-action">
+        <a-typography-text type="secondary" class="reset-hint">
+          {{ t('edit.resetManagedOverridesHint') }}
+        </a-typography-text>
+        <a-popconfirm
+          :title="t('edit.resetManagedOverridesConfirmTitle')"
+          :description="t('edit.resetManagedOverridesConfirmDesc')"
+          :ok-text="t('edit.ok')"
+          :cancel-text="t('edit.cancel')"
+          ok-type="danger"
+          :disabled="loading || saving"
+          @confirm="emit('resetOverrides')"
+        >
+          <a-button danger :loading="loading" :disabled="saving">
+            {{ t('edit.resetManagedOverrides') }}
+          </a-button>
+        </a-popconfirm>
+      </div>
     </div>
     <a-alert
       v-for="warning in snapshot?.warnings || []"
@@ -21,9 +36,9 @@
         <a-col :xs="24" :lg="12" class="task-list-column">
           <div class="column-header">
             <span>{{ t('edit.taskModule') }}</span>
-            <a-typography-text type="secondary"
-              >动态 {{ snapshot.tasks.length }} 项</a-typography-text
-            >
+            <a-typography-text type="secondary">{{
+              t('edit.hsrDynamicTaskCount', { n: snapshot.tasks.length })
+            }}</a-typography-text>
           </div>
           <div class="task-list">
             <button
@@ -38,6 +53,9 @@
                 <div class="task-row-title">
                   <span>{{ task.name }}</span>
                   <a-tag color="default">{{ phaseLabel(task.phase) }}</a-tag>
+                  <a-tag v-if="droppedOverridesOf(task).length" color="warning">
+                    {{ t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
+                  </a-tag>
                 </div>
                 <div class="task-row-summary">{{ taskSummary(task) }}</div>
               </div>
@@ -75,7 +93,11 @@
               <a-tag :color="engineColor(selectedEngine)">{{ engineLabel(selectedEngine) }}</a-tag>
             </div>
 
-            <a-form-item v-if="engineOptions.length > 1" :label="t('edit.engine')">
+            <a-form-item
+              v-if="engineOptions.length > 1"
+              :label="t('edit.engine')"
+              :extra="t('edit.hsrEngineSwitchHint')"
+            >
               <a-segmented
                 :value="selectedEngine"
                 :options="engineOptions"
@@ -94,9 +116,58 @@
             />
 
             <template v-if="selectedForm">
+              <a-alert
+                v-for="warning in selectedForm.warnings || []"
+                :key="warning"
+                type="warning"
+                show-icon
+                :message="warning"
+                class="panel-alert"
+              />
               <a-typography-text type="secondary" class="source-line">
-                读取自：{{ selectedForm.source }}
+                {{ t('edit.hsrReadFrom', { source: selectedForm.source }) }}
               </a-typography-text>
+              <a-alert
+                v-if="selectedDroppedOverrides.length"
+                type="warning"
+                show-icon
+                class="panel-alert"
+                :message="
+                  t('edit.invalidManagedOverridesTitle', { n: selectedDroppedOverrides.length })
+                "
+              >
+                <template #description>
+                  <ul class="dropped-list">
+                    <li v-for="item in selectedDroppedOverrides" :key="item.key">
+                      <code>{{ item.key }}</code>
+                      <span>{{ droppedReasonLabel(item.reason) }}</span>
+                      <span class="dropped-value">
+                        {{
+                          t('edit.invalidManagedOverrideSaved', {
+                            value: formatOverrideValue(item.value),
+                          })
+                        }}
+                      </span>
+                    </li>
+                  </ul>
+                  <a-popconfirm
+                    :title="
+                      t('edit.clearInvalidManagedOverridesConfirm', {
+                        n: selectedDroppedOverrides.length,
+                      })
+                    "
+                    :ok-text="t('edit.ok')"
+                    :cancel-text="t('edit.cancel')"
+                    ok-type="danger"
+                    :disabled="saving"
+                    @confirm="handleClearInvalidOverrides"
+                  >
+                    <a-button size="small" danger :disabled="saving">
+                      {{ t('edit.clearInvalidManagedOverrides') }}
+                    </a-button>
+                  </a-popconfirm>
+                </template>
+              </a-alert>
               <DynamicManagedFields
                 :fields="selectedForm.fields"
                 :disabled="saving"
@@ -118,10 +189,13 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { RightOutlined } from '@ant-design/icons-vue'
-import type {
-  HSREngine,
-  HSRManagedConfigSnapshot,
-  HSRManagedTask,
+import {
+  getHSRDroppedOverrides,
+  type HSRDroppedOverride,
+  type HSRDroppedOverrideReason,
+  type HSREngine,
+  type HSRManagedConfigSnapshot,
+  type HSRManagedTask,
 } from '@/composables/useHSRPluginApi'
 import DynamicManagedFields from './DynamicManagedFields.vue'
 
@@ -135,10 +209,13 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  importSource: []
+  /** 清空这个用户的全部 Managed.Options 覆盖值，重新按源配置读取。 */
+  resetOverrides: []
   taskToggle: [task: string, enabled: boolean]
   mappingChange: [task: string, engine: HSREngine]
   fieldChange: [engine: HSREngine, task: string, key: string, value: unknown]
+  /** 只从 Managed.Options 里剔掉后端报告为失效的键。 */
+  clearInvalidOverrides: [engine: HSREngine, task: string, keys: string[]]
 }>()
 
 const selectedTaskKey = ref('')
@@ -181,6 +258,27 @@ const selectedForm = computed(() => {
   return task && engine ? task.forms?.[engine] : undefined
 })
 
+const droppedOverridesOf = (task: HSRManagedTask, engine = mappedEngine(task)) =>
+  engine ? getHSRDroppedOverrides(task.forms?.[engine]) : []
+
+const selectedDroppedOverrides = computed<HSRDroppedOverride[]>(() =>
+  selectedTask.value ? droppedOverridesOf(selectedTask.value, selectedEngine.value) : []
+)
+
+const droppedReasonLabel = (reason: HSRDroppedOverrideReason) =>
+  reason === 'type' ? t('edit.invalidManagedOverrideType') : t('edit.invalidManagedOverrideUnknown')
+
+const formatOverrideValue = (value: unknown) =>
+  typeof value === 'string' ? value : JSON.stringify(value)
+
+const handleClearInvalidOverrides = () => {
+  const task = selectedTask.value
+  const engine = selectedEngine.value
+  const keys = selectedDroppedOverrides.value.map(item => item.key)
+  if (!task || !engine || keys.length === 0) return
+  emit('clearInvalidOverrides', engine, task.key, keys)
+}
+
 const engineOptions = computed(() =>
   selectedTask.value
     ? availableEngines(selectedTask.value).map(engine => ({
@@ -190,18 +288,27 @@ const engineOptions = computed(() =>
     : []
 )
 
-const phaseLabel = (phase: string) => (phase === 'weekly' ? '周常' : '日常')
+const phaseLabel = (phase: string) => (phase === 'weekly' ? t('edit.weekly') : t('edit.daily'))
 const engineLabel = (engine?: HSREngine) =>
-  engine === 'M7A' ? '三月七' : engine === 'SRA' ? 'SRA' : '不可用'
+  engine === 'M7A'
+    ? t('edit.directEngineM7a')
+    : engine === 'SRA'
+      ? 'SRA'
+      : t('edit.hsrEngineUnavailable')
 const engineColor = (engine?: HSREngine) =>
   engine === 'M7A' ? 'purple' : engine === 'SRA' ? 'blue' : 'default'
 
 const taskSummary = (task: HSRManagedTask) => {
   const engine = mappedEngine(task)
   const form = engine ? task.forms?.[engine] : undefined
-  if (!form) return '未读取到原生配置'
+  if (!form) return t('edit.hsrNativeConfigNotLoaded')
   const enabled = form.fields.filter(field => field.type === 'boolean' && field.value).length
-  return `${props.taskSwitch[task.key] ? '已启用' : '未启用'} · ${form.fields.length} 项配置${enabled ? ` · ${enabled} 个开关已开` : ''}`
+  const parts = [
+    props.taskSwitch[task.key] ? t('edit.hsrTaskEnabled') : t('edit.hsrTaskNotEnabled'),
+    t('edit.hsrTaskFieldCount', { n: form.fields.length }),
+  ]
+  if (enabled) parts.push(t('edit.hsrTaskSwitchesOn', { n: enabled }))
+  return parts.join(' · ')
 }
 
 const handleEngineChange = (value: string | number) => {
@@ -252,9 +359,42 @@ const handleFieldChange = (key: string, value: unknown) => {
   background: var(--ant-color-primary);
 }
 
+.section-header-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reset-hint {
+  max-width: 360px;
+  font-size: 12px;
+  text-align: right;
+}
+
 .snapshot-warning,
 .panel-alert {
   margin-bottom: 12px;
+}
+
+.dropped-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.dropped-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.dropped-list code {
+  font-size: 12px;
+}
+
+.dropped-value {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 
 .task-editor-layout {
