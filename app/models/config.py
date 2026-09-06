@@ -32,6 +32,11 @@ from typing import Any, Callable
 from app.utils.constants import (
     CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
+    MAAEND_AUTO_COLLECT_MODES,
+    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_DELIVERY_COMMISSION_SOURCES,
+    MAAEND_DELIVERY_TASK,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
@@ -124,6 +129,54 @@ def init_maaend_task_config(config) -> None:
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
         StringValidator(),
+    )
+
+    ## 抢委托送货最低接取价格（万）
+    config.Task_SeizeDeliveryJobsReward = ConfigItem(
+        "Task", "SeizeDeliveryJobsReward", 15.9, RangeValidator(0, 9999)
+    )
+    ## 抢委托送货委托接收点
+    config.Task_SeizeDeliveryJobsCommissionSource = ConfigItem(
+        "Task",
+        "SeizeDeliveryJobsCommissionSource",
+        "Unlimited",
+        OptionsValidator(list(MAAEND_DELIVERY_COMMISSION_SOURCES)),
+    )
+    ## 独立送货任务
+    setattr(
+        config,
+        f"Task_If{MAAEND_DELIVERY_TASK}",
+        ConfigItem("Task", f"If{MAAEND_DELIVERY_TASK}", True, BoolValidator()),
+    )
+
+    ## 独立自动采集任务
+    config.Task_IfAutoCollect = ConfigItem(
+        "Task", f"If{MAAEND_AUTO_COLLECT_TASK}", True, BoolValidator()
+    )
+    ## 自动采集路线安排：分散为三日轮换，集中为每三日执行一次
+    config.Task_AutoCollectMode = ConfigItem(
+        "Task",
+        "AutoCollectMode",
+        "Distributed",
+        OptionsValidator(list(MAAEND_AUTO_COLLECT_MODES)),
+    )
+    ## 自动采集区域资源路线
+    config.Task_AutoCollectRoutes = ConfigItem(
+        "Task",
+        "AutoCollectRoutes",
+        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"]),
+        MultipleOptionsValidator(
+            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"])
+        ),
+    )
+    ## 自动采集通用资源路线
+    config.Task_AutoCollectCommonRoutes = ConfigItem(
+        "Task",
+        "AutoCollectCommonRoutes",
+        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"]),
+        MultipleOptionsValidator(
+            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"])
+        ),
     )
 
     for task_name in MAAEND_TASKS:
@@ -973,6 +1026,18 @@ class MaaConfig(ConfigBase):
         super().__init__()
 
 
+class MaaEndConfigModeValidator(OptionsValidator):
+    """兼容旧版来源名称，统一为脚本/用户/直控。"""
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户", "自定义": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户", "直控"])
+
+    def correct(self, value: Any) -> Any:
+        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+
+
 class MaaEndUserConfig(ConfigBase):
     """MaaEnd用户配置"""
 
@@ -991,9 +1056,7 @@ class MaaEndUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置文件来源
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", MaaEndConfigModeValidator())
         ## 是否启用快速配置
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
@@ -1094,7 +1157,6 @@ class MaaEndUserConfig(ConfigBase):
             ):
                 info_data["Mode"] = "脚本"
                 info_data.pop("IfQuickConfig", None)
-
         task_data = data.get("Task")
         if isinstance(task_data, dict):
             _normalize_maaend_sanity_task_type(task_data)

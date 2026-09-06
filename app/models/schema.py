@@ -1209,8 +1209,9 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None,
+        description="配置来源（脚本共享、用户独立、脚本直控）",
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -1226,6 +1227,35 @@ class MaaEndUserConfig_Info(BaseModel):
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+MaaEndAutoCollectRoute = Literal[
+    "Route1",
+    "Route2",
+    "Route3",
+    "Route4",
+    "Route5",
+    "Route6",
+    "Route7",
+    "Route8",
+    "Route9",
+    "Route10",
+    "Route11",
+    "Route12",
+    "Route13",
+    "Route14",
+    "Route15",
+]
+MaaEndAutoCollectCommonRoute = Literal[
+    "CommonRoute1",
+    "CommonRoute2",
+    "CommonRoute3",
+    "CommonRoute4",
+    "CommonRoute5",
+    "CommonRoute6",
+    "CommonRoute7",
+    "CommonRoute8",
+]
 
 
 class MaaEndUserConfig_Task(BaseModel):
@@ -1264,13 +1294,28 @@ class MaaEndUserConfig_Task(BaseModel):
     IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
     IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
     IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    SeizeDeliveryJobsReward: Optional[float] = Field(
+        default=None, ge=0, description="抢委托送货最低接取价格（万）"
+    )
+    SeizeDeliveryJobsCommissionSource: Optional[
+        Literal["Unlimited", "WulingCity", "TestArea"]
+    ] = Field(default=None, description="抢委托送货委托接收点")
+    IfSeizeDeliveryJobs: Optional[bool] = Field(default=None, description="抢委托送货")
     IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
     IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
     IfEnvironmentMonitoring: Optional[bool] = Field(
         default=None, description="环境监测"
     )
     IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    AutoCollectMode: Optional[Literal["Distributed", "Concentrated"]] = Field(
+        default=None, description="自动采集路线安排：分散或集中"
+    )
+    AutoCollectRoutes: Optional[list[MaaEndAutoCollectRoute]] = Field(
+        default=None, description="自动采集区域资源路线"
+    )
+    AutoCollectCommonRoutes: Optional[list[MaaEndAutoCollectCommonRoute]] = Field(
+        default=None, description="自动采集通用资源路线"
+    )
     IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(
