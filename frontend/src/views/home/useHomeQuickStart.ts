@@ -5,6 +5,7 @@ import type { ComboBoxItem } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { navigateTo } from '@/router'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 
 // 占位任务：value 是判断依据（startsWith('mock-')），label 只用于展示
@@ -176,7 +177,8 @@ export const useHomeQuickStart = () => {
           modeLabel: '自动代理',
         })
         message.success(t('home.quickStart.started'))
-        await playSound('task_started')
+        navigateTo('/scheduler')
+        void playSound('task_started')
       } else {
         message.error(response.message || t('home.quickStart.startFailed'))
       }
