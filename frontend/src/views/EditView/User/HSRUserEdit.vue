@@ -285,7 +285,11 @@
           </div>
 
           <!-- 额外脚本组件 -->
-          <ExtraScriptSection :form-data="formData" :loading="isSaving" @save="handleFieldSave" />
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="isSaving"
+            @save="handleFieldSave"
+          />
 
           <UserNotifyConfig
             v-model="formData.Notify"
