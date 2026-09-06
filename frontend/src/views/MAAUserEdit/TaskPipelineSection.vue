@@ -170,13 +170,12 @@
         </a-row>
       </PipelineRow>
 
-      <!-- 库存保持：日常流程中的独立任务，计划模式下后端强制关闭 -->
+      <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
         :summary="depotSummary"
-        :checked="!isPlanMode && formData.Task.IfDepotMaintain"
-        :disabled="loading || isPlanMode"
-        :has-detail="!isPlanMode"
+        :checked="formData.Task.IfDepotMaintain"
+        :disabled="loading"
         @change="emitSave('Task.IfDepotMaintain', $event)"
       >
         <DepotMaintainPlanEditor
@@ -335,7 +334,6 @@ const formData = defineModel<any>('formData', { required: true })
 
 const props = defineProps<{
   loading: boolean
-  isPlanMode: boolean
   stageOptions: any[]
   activityStageOptions: Array<{ label: string; value: number }>
   activityStageLoading: boolean
@@ -420,7 +418,6 @@ const infrastSummary = computed(() => {
 
 const depotSummary = computed(() =>
   summarizeDepot(
-    props.isPlanMode,
     formData.value.Task.IfDepotMaintain,
     formData.value.Task.DepotMaintainPlans
   )

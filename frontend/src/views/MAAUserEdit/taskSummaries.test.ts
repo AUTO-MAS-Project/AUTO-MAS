@@ -49,22 +49,17 @@ describe('activity summary', () => {
 })
 
 describe('depot summary', () => {
-  it('explains that plan mode disables inventory maintenance', () => {
-    expect(summarizeDepot(true, true, '[{"Stage":"CE-6"}]')).toBe('计划模式下不可用')
-  })
-
   it('counts configured plans', () => {
-    expect(summarizeDepot(false, true, '[{"a":1},{"b":2}]')).toBe('2 项计划')
+    expect(summarizeDepot(true, '[{"a":1},{"b":2}]')).toBe('2 项计划')
   })
 
   it('treats malformed or empty plan JSON as no plans', () => {
-    expect(summarizeDepot(false, true, 'not json')).toBe('尚未添加计划')
-    expect(summarizeDepot(false, true, '')).toBe('尚未添加计划')
+    expect(summarizeDepot(true, 'not json')).toBe('尚未添加计划')
+    expect(summarizeDepot(true, '')).toBe('尚未添加计划')
   })
 
-  it('stays empty when switched off, but keeps explaining plan mode', () => {
-    expect(summarizeDepot(false, false, '[{"a":1}]')).toBe('')
-    expect(summarizeDepot(true, false, '[]')).toBe('计划模式下不可用')
+  it('stays empty when switched off', () => {
+    expect(summarizeDepot(false, '[{"a":1}]')).toBe('')
   })
 })
 

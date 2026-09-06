@@ -534,8 +534,6 @@ class AutoProxyTask(TaskExecuteBase):
                     task: self.cur_user_config.get("Task", f"If{task}")
                     for task in MAA_TASKS
                 }
-                if self.cur_user_config.get("Info", "StageMode") != "Fixed":
-                    self.task_dict["DepotMaintain"] = False
             elif self.mode == "Annihilation":
                 self.task_dict = {
                     task: bool(task in ("StartUp", "Fight")) for task in MAA_TASKS

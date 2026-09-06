@@ -55,7 +55,6 @@
           <TaskPipelineSection
             v-model:form-data="formData"
             :loading="loading"
-            :is-plan-mode="isPlanMode"
             :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
