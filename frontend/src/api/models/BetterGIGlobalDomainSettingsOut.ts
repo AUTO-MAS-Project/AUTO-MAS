@@ -23,3 +23,4 @@ export type BetterGIGlobalDomainSettingsOut = {
      */
     data?: Record<string, any>;
 };
+

@@ -19,3 +19,4 @@ export type BetterGIGlobalDomainSettingsIn = {
      */
     settings?: Record<string, any>;
 };
+

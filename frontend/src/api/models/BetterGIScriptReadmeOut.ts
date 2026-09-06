@@ -23,3 +23,4 @@ export type BetterGIScriptReadmeOut = {
      */
     data?: string;
 };
+

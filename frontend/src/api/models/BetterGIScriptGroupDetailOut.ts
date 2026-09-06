@@ -23,3 +23,4 @@ export type BetterGIScriptGroupDetailOut = {
      */
     data?: Record<string, any>;
 };
+

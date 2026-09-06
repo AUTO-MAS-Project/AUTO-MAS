@@ -1175,6 +1175,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     AutoBossStrategyName: '根据队伍自动选择',
     IfUseCustomGroups: false,
     CustomGroups: '[]',
+    Queue: '[]',
   },
   Notify: {
     Enabled: false,

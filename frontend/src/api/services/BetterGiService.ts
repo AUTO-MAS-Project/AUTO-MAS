@@ -2,12 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { BetterGIDomainCatalogOut } from '../models/BetterGIDomainCatalogOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
-import type { BetterGIScriptGroupDetailOut } from '../models/BetterGIScriptGroupDetailOut';
-import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSaveIn';
-import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
-import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
+import type { BetterGIDomainCatalogOut } from '../models/BetterGIDomainCatalogOut';
 import type { BetterGIGlobalDomainSettingsIn } from '../models/BetterGIGlobalDomainSettingsIn';
 import type { BetterGIGlobalDomainSettingsOut } from '../models/BetterGIGlobalDomainSettingsOut';
 import type { BetterGIGlobalStygianSettingsIn } from '../models/BetterGIGlobalStygianSettingsIn';
@@ -16,6 +12,10 @@ import type { BetterGIOneDragonSettingsIn } from '../models/BetterGIOneDragonSet
 import type { BetterGIOneDragonSettingsOut } from '../models/BetterGIOneDragonSettingsOut';
 import type { BetterGIPathingTreeOut } from '../models/BetterGIPathingTreeOut';
 import type { BetterGIScriptDirsOut } from '../models/BetterGIScriptDirsOut';
+import type { BetterGIScriptGroupDetailOut } from '../models/BetterGIScriptGroupDetailOut';
+import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSaveIn';
+import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
+import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -96,8 +96,9 @@ export class BetterGiService {
      * 获取 BetterGI 全局 config.json 的秘境刷取配置段
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
-     * userId 非空时读该用户 per-user 副本（副本缺失回退 BGI 全局实配），
-     * 空时（直控模式）读 BGI 全局 config.json。
+     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+     * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
      * @returns BetterGIGlobalDomainSettingsOut Successful Response
@@ -105,7 +106,7 @@ export class BetterGiService {
      */
     public static getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
         scriptId: string,
-        userId?: string,
+        userId: string = '',
     ): CancelablePromise<BetterGIGlobalDomainSettingsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -120,7 +121,7 @@ export class BetterGiService {
         });
     }
     /**
-     * 保存秘境刷取配置到 per-user 副本（userId 空=写 BGI 全局 config.json）
+     * 保存 BetterGI 全局 config.json 的秘境刷取配置段
      * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
@@ -143,8 +144,9 @@ export class BetterGiService {
      * 获取 BetterGI 全局 config.json 的自动幽境危战设置段
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
-     * userId 非空时读该用户 per-user 副本（副本缺失回退 BGI 全局实配），
-     * 空时（直控模式）读 BGI 全局 config.json。
+     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+     * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
      * @returns BetterGIGlobalStygianSettingsOut Successful Response
@@ -152,7 +154,7 @@ export class BetterGiService {
      */
     public static getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
         scriptId: string,
-        userId?: string,
+        userId: string = '',
     ): CancelablePromise<BetterGIGlobalStygianSettingsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -190,8 +192,8 @@ export class BetterGiService {
      * 获取 BetterGI 每周秘境候选与每秘境三档奖励物
      * 返回 BetterGI 每周秘境可选秘境目录与分档奖励物。
      *
-     * 秘境名以官方传送点 tp.json（GameTask/AutoTrackPath/Assets）为准；
-     * 产出表 Genshin_Domains_SC_Live_Source.json（用户 JS 脚本目录下）仅补三档奖励物名。
+     * 数据源：官方传送点 tp.json（GameTask/AutoTrackPath/Assets/tp.json）中
+     * Bless/Forgery/Mastery 三类 Domain 点（含奖励物）；tp.json 缺失或为空时返回空目录。
      * 供「每周秘境」表格的秘境/奖励下拉联动使用（奖励仍按 BGI 语义存 0~3 序号）。
      * @param scriptId
      * @returns BetterGIDomainCatalogOut Successful Response
@@ -215,10 +217,11 @@ export class BetterGiService {
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      *
-     * ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
-     * per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
-     * 独立配置添加的自定义组。
+     * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+     * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
+     * @param userId
      * @param configName
      * @param useMasConfig
      * @returns BetterGICustomGroupsOut Successful Response
@@ -293,12 +296,15 @@ export class BetterGiService {
     }
     /**
      * 获取 BetterGI 可用配置组列表
-     * 返回 BetterGI 配置组候选：{RootPath}/User/ScriptGroup*.json 的文件名；
-     * userId 非空时并集该用户的 per-user ScriptGroup 副本名。
+     * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
      *
      * BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
      * ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
-     * 的引用名一致。供「添加配置组」弹窗「配置组」标签页展示。
+     * 的引用名一致。每次调用实时扫描，供「添加配置组」弹窗「配置组」标签页展示。
+     *
+     * ``userId`` 非空时把该用户的 per-user ScriptGroup 副本名一并并入（副本是 MAS
+     * 独立配置的权威内容源，复制自 JS/路径等来源的新组也只存在于副本目录，需要能被
+     * 识别/展示为配置组）。
      * @param scriptId
      * @param userId
      * @returns ComboBoxOut Successful Response
@@ -306,7 +312,7 @@ export class BetterGiService {
      */
     public static getBettergiScriptGroupsApiApiScriptsBettergiScriptGroupsGet(
         scriptId: string,
-        userId?: string,
+        userId: string = '',
     ): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -353,7 +359,9 @@ export class BetterGiService {
     /**
      * 保存 BetterGI 配置组 json 到 per-user 副本
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
-     * 该用户的 per-user 副本。
+     * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+     *
+     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

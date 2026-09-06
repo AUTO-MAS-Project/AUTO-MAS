@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * BetterGI 每周秘境可选秘境目录项（来源：产出表或官方 tp.json）
+ * BetterGI 每周秘境可选秘境目录项（来源：官方 tp.json，唯一数据源）
  */
 export type BetterGIDomainCatalogItem = {
     /**
@@ -15,11 +15,12 @@ export type BetterGIDomainCatalogItem = {
      */
     region?: string;
     /**
-     * 产出表类别/兜底时 tp.json 的 domain type
+     * tp.json 的 domain type（BlessDomain/ForgeryDomain/MasteryDomain）
      */
     category?: string;
     /**
-     * 三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；圣遗物或无数据时为空数组）
+     * 三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；圣遗物秘境为套装两件）
      */
     rewards?: Array<string>;
 };
+

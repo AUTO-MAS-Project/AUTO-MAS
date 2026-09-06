@@ -23,3 +23,4 @@ export type BetterGIScriptGroupSaveIn = {
      */
     data?: Record<string, any>;
 };
+

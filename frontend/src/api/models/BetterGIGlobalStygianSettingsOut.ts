@@ -23,3 +23,4 @@ export type BetterGIGlobalStygianSettingsOut = {
      */
     data?: Record<string, any>;
 };
+

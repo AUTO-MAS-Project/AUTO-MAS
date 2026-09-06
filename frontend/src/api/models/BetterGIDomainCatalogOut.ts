@@ -28,3 +28,4 @@ export type BetterGIDomainCatalogOut = {
      */
     source?: (string | null);
 };
+

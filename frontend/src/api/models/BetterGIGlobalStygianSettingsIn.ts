@@ -19,3 +19,4 @@ export type BetterGIGlobalStygianSettingsIn = {
      */
     settings?: Record<string, any>;
 };
+

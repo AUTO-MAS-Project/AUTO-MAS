@@ -23,3 +23,4 @@ export type BetterGIScriptSettingsUiOut = {
      */
     data?: Array<Record<string, any>>;
 };
+
