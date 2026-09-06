@@ -58,8 +58,7 @@ export const summarizeActivity = (options: {
   return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
 }
 
-export const summarizeDepot = (isPlanMode: boolean, enabled: boolean, plansJson: string) => {
-  if (isPlanMode) return '计划模式下不可用'
+export const summarizeDepot = (enabled: boolean, plansJson: string) => {
   if (!enabled) return ''
   let count = 0
   try {
