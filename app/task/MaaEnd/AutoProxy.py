@@ -234,14 +234,39 @@ class AutoProxyTask(TaskExecuteBase):
                 self.auto_collect_run_at,
             )
 
-        mode_enabled = {
-            mode: self._mode_has_enabled_tasks(mode) for mode in MAAEND_RUN_MOOD_BOOK
-        }
+        mode_skip_reasons: dict[str, str] = {}
+        missing_task_modes: list[str] = []
+        for mode in MAAEND_RUN_MOOD_BOOK:
+            reason, missing_task = self._mode_skip_reason(mode)
+            if reason is None:
+                continue
+            mode_skip_reasons[mode] = reason
+            if missing_task:
+                missing_task_modes.append(mode)
         self.account_switch_mode = next(
-            (mode for mode, enabled in mode_enabled.items() if enabled),
+            (mode for mode in MAAEND_RUN_MOOD_BOOK if mode not in mode_skip_reasons),
             None,
         )
-        self.run_book = {mode: not enabled for mode, enabled in mode_enabled.items()}
+        self.run_book = {
+            mode: mode in mode_skip_reasons for mode in MAAEND_RUN_MOOD_BOOK
+        }
+        for mode, reason in mode_skip_reasons.items():
+            logger.info(
+                f"用户 {self.cur_user_item.name} 跳过{MAAEND_RUN_MOOD_BOOK[mode]}阶段: {reason}"
+            )
+        for mode in missing_task_modes:
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=(
+                        f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中不存在"
+                        f"{MAAEND_RUN_MOOD_BOOK[mode]}阶段所需任务，已跳过该阶段，"
+                        "请在 MaaEnd 中添加并启用对应任务"
+                    ),
+                ),
+            )
 
     def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
         """读取当前用户所选 MaaEnd 实例的任务列表。"""
@@ -276,46 +301,88 @@ class AutoProxyTask(TaskExecuteBase):
             return None
         return [task for task in tasks if isinstance(task, dict)]
 
-    def _mode_has_enabled_tasks(self, mode: str) -> bool:
-        """判断某阶段是否有任务，空阶段直接视为完成。"""
-
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
-            if mode == "Delivery":
-                return bool(self.cur_user_config.get("Task", "IfSeizeDeliveryJobs"))
-            if mode == "AutoCollect":
-                return bool(
-                    self.cur_user_config.get("Task", "IfAutoCollect")
-                    and any(self.auto_collect_routes.values())
-                )
-            return any(
-                bool(self.cur_user_config.get("Task", f"If{task_name}"))
-                for task_name in MAAEND_TASKS
-            )
+    def _source_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+        """非快速配置下按 MaaEnd 配置判断阶段是否可执行。"""
 
         tasks = self._source_maaend_tasks()
         if tasks is None:
             # 配置读取失败时交给 MaaEnd 执行并由日志判定，避免误跳过用户任务。
-            return True
+            return None, False
+
+        def has_task(task_name: str, *, enabled_only: bool = False) -> bool:
+            return any(
+                str(task.get("taskName", "")) == task_name
+                and (not enabled_only or bool(task.get("enabled", False)))
+                for task in tasks
+            )
+
         if mode == "Delivery":
-            return any(
-                str(task.get("taskName", "")) == MAAEND_DELIVERY_TASK
-                and bool(task.get("enabled", False))
-                for task in tasks
-            )
+            if not has_task(MAAEND_DELIVERY_TASK):
+                return "MaaEnd 配置中不存在抢委托送货任务", True
+            if not has_task(MAAEND_DELIVERY_TASK, enabled_only=True):
+                return "抢委托送货任务未启用", False
+            return None, False
         if mode == "AutoCollect":
-            return any(
-                str(task.get("taskName", "")) == MAAEND_AUTO_COLLECT_TASK
-                and bool(task.get("enabled", False))
-                for task in tasks
-            )
-        return any(
+            if not has_task(MAAEND_AUTO_COLLECT_TASK):
+                return "MaaEnd 配置中不存在自动采集任务", True
+            if not has_task(MAAEND_AUTO_COLLECT_TASK, enabled_only=True):
+                return "自动采集任务未启用", False
+            return None, False
+        if not any(
             _task_enabled_for_mode(
                 task.get("taskName"), task.get("enabled", False), mode
             )
             for task in tasks
             if not str(task.get("taskName", "")).startswith("__MXU_")
             and str(task.get("taskName", "")) != _MAAEND_ACCOUNT_SWITCH_TASK
-        )
+        ):
+            return "MaaEnd 配置中没有已启用的日常任务", False
+        return None, False
+
+    def _quick_config_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+        """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
+
+        if mode == "Delivery":
+            if not self.cur_user_config.get("Task", "IfSeizeDeliveryJobs"):
+                return "快速配置未开启抢委托送货", False
+            task_name = MAAEND_DELIVERY_TASK
+            task_label = "抢委托送货"
+        elif mode == "AutoCollect":
+            if not self.cur_user_config.get("Task", "IfAutoCollect"):
+                return "快速配置未开启自动采集", False
+            if not any(self.auto_collect_routes.values()):
+                return "今日采集周期无待执行路线", False
+            task_name = MAAEND_AUTO_COLLECT_TASK
+            task_label = "自动采集"
+        else:
+            if not any(
+                bool(self.cur_user_config.get("Task", f"If{task_name}"))
+                for task_name in MAAEND_TASKS
+            ):
+                return "快速配置未开启任何日常任务", False
+            return None, False
+
+        tasks = self._source_maaend_tasks()
+        if tasks is None:
+            return None, False
+        if not any(str(task.get("taskName", "")) == task_name for task in tasks):
+            return f"MaaEnd 配置中不存在{task_label}任务", True
+        return None, False
+
+    def _mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+        """判断某阶段是否无可执行任务，空阶段直接视为完成。
+
+        Args:
+            mode (str): MaaEnd 运行阶段。
+
+        Returns:
+            tuple[str | None, bool]: 跳过原因（None 表示该阶段有任务可执行），
+                以及是否因阶段任务在 MaaEnd 配置中不存在导致跳过。
+        """
+
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            return self._quick_config_mode_skip_reason(mode)
+        return self._source_mode_skip_reason(mode)
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -372,9 +439,8 @@ class AutoProxyTask(TaskExecuteBase):
                 f"阶段尝试次数: {i}/{run_times_limit}"
             )
             self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
-            )
+            self.cur_user_log = LogRecord(phase=self.mode)
+            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -1126,7 +1192,12 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "MaaEnd 正在更新":
                 continue
 
-            await Config.save_maaend_log(log_path, log_item.content, log_item.status)
+            await Config.save_maaend_log(
+                log_path,
+                log_item.content,
+                log_item.status,
+                phase_label=MAAEND_RUN_MOOD_BOOK.get(log_item.phase, ""),
+            )
             user_logs_list.append(log_path.with_suffix(".json"))
 
         latest_log_status = (

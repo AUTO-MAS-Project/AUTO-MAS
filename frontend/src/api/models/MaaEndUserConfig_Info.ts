@@ -20,9 +20,9 @@ export type MaaEndUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 配置来源（脚本/用户）
+     * 配置来源（脚本共享、用户独立、脚本直控）
      */
-    Mode?: ('脚本' | '用户' | null);
+    Mode?: ('脚本' | '用户' | '直控' | null);
     /**
      * 是否启用快速配置
      */

@@ -47,7 +47,7 @@
                 <CloseCircleOutlined v-else />
                 {{
                   record.status === 'DONE'
-                    ? t('history.done')
+                    ? record.result || t('history.done')
                     : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
                       ? t('history.failedWith', { error: errorInfo[record.date] })
                       : t('history.failed')
@@ -80,6 +80,7 @@ interface RecordItem {
   date: string
   jsonFile: string
   status: string
+  result?: string | null
 }
 
 interface Props {

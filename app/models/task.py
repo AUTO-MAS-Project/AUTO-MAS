@@ -42,6 +42,8 @@ TaskTriggerSource = Literal[
 class LogRecord:
     content: list[str] = field(default_factory=list)
     status: str = "未开始监看日志"
+    # 所属运行阶段（如 MaaEnd 的送货/日常/自动采集），用于历史记录结果前缀
+    phase: str = ""
 
 
 @dataclass
