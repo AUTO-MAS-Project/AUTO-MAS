@@ -68,20 +68,21 @@
                 </a-button>
               </span>
             </div>
-            <a-checkbox-group
-              :value="panelValues(panel)"
-              class="route-checkbox-group"
-              :disabled="loading"
-              @change="handleRegionChange(panel, $event)"
-            >
-              <a-checkbox
+            <div class="route-card-grid">
+              <button
                 v-for="option in panel.options"
                 :key="option.value"
-                :value="option.value"
+                type="button"
+                class="route-card"
+                :class="{ selected: isRouteSelected(option.value) }"
+                :disabled="loading"
+                :aria-pressed="isRouteSelected(option.value)"
+                @click="toggleRoute(panel, option.value)"
               >
-                {{ option.label }}
-              </a-checkbox>
-            </a-checkbox-group>
+                <span class="route-card-label">{{ option.label }}</span>
+                <CheckCircleFilled v-if="isRouteSelected(option.value)" class="route-card-check" />
+              </button>
+            </div>
           </div>
         </div>
       </a-form-item>
@@ -118,20 +119,24 @@
                 </a-button>
               </span>
             </div>
-            <a-checkbox-group
-              v-model:value="commonRoutes"
-              class="route-checkbox-group"
-              :disabled="loading"
-              @change="handleCommonRoutesChange"
-            >
-              <a-checkbox
+            <div class="route-card-grid">
+              <button
                 v-for="option in commonRouteOptions"
                 :key="option.value"
-                :value="option.value"
+                type="button"
+                class="route-card"
+                :class="{ selected: isCommonRouteSelected(option.value) }"
+                :disabled="loading"
+                :aria-pressed="isCommonRouteSelected(option.value)"
+                @click="toggleCommonRoute(option.value)"
               >
-                {{ option.label }}
-              </a-checkbox>
-            </a-checkbox-group>
+                <span class="route-card-label">{{ option.label }}</span>
+                <CheckCircleFilled
+                  v-if="isCommonRouteSelected(option.value)"
+                  class="route-card-check"
+                />
+              </button>
+            </div>
           </div>
         </div>
       </a-form-item>
@@ -142,7 +147,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CheckCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS,
   MAAEND_AUTO_COLLECT_MODE_OPTIONS,
@@ -250,8 +255,24 @@ const applyRegionValues = (panel: RegionPanel, values: Array<string | number>) =
   emit('save', 'Task.AutoCollectRoutes', routes.value)
 }
 
-const handleRegionChange = (panel: RegionPanel, values: Array<string | number>) => {
-  applyRegionValues(panel, values)
+const isRouteSelected = (value: MaaEndAutoCollectRoute) => routes.value.includes(value)
+
+const isCommonRouteSelected = (value: MaaEndAutoCollectCommonRoute) =>
+  commonRoutes.value.includes(value)
+
+const toggleRoute = (panel: RegionPanel, value: MaaEndAutoCollectRoute) => {
+  const current = panelValues(panel)
+  const next = current.includes(value)
+    ? current.filter(item => item !== value)
+    : [...current, value]
+  applyRegionValues(panel, next)
+}
+
+const toggleCommonRoute = (value: MaaEndAutoCollectCommonRoute) => {
+  const next = commonRoutes.value.includes(value)
+    ? commonRoutes.value.filter(item => item !== value)
+    : [...commonRoutes.value, value]
+  applyCommonRoutes(next)
 }
 
 const handleSelectAll = (panel: RegionPanel) => {
@@ -320,11 +341,6 @@ const handleModeChange = (value: MaaEndAutoCollectMode) => {
   mode.value = value
   emit('save', 'Task.AutoCollectMode', value)
 }
-
-const handleCommonRoutesChange = (value: Array<string | number>) => {
-  commonRoutes.value = normalizeRoutes(value, MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS)
-  emit('save', 'Task.AutoCollectCommonRoutes', commonRoutes.value)
-}
 </script>
 
 <style scoped>
@@ -377,10 +393,54 @@ const handleCommonRoutesChange = (value: Array<string | number>) => {
   align-items: center;
 }
 
-.route-checkbox-group {
+.route-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 8px 16px;
+  gap: 8px;
   width: 100%;
+}
+
+.route-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 34px 8px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.route-card:hover:not(:disabled) {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.route-card.selected {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.route-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.route-card-label {
+  min-width: 0;
+}
+
+.route-card-check {
+  position: absolute;
+  right: 10px;
+  color: var(--ant-color-primary);
+  font-size: 15px;
 }
 </style>
