@@ -42,11 +42,12 @@ import time
 from pathlib import Path
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceRef, DeviceStatus
+from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 from app.utils.platform import IS_WINDOWS
 
+from .adb import parse_adb_devices, resolve_serial
 from .bosskey import BossKey, read_boss_key
 from .settings import (
     InstanceSettings,
@@ -81,6 +82,10 @@ logger = get_logger("Emulator2 雷电管理")
 _INSTANCE_MUTATION_RETRIES = 3
 _INSTANCE_MUTATION_DELAY_SECONDS = 2.0
 
+#: adb devices 的缓存时长与超时。状态轮询几秒一次, 不缓存会每轮起一次子进程。
+_ADB_CACHE_SECONDS = 5.0
+_ADB_QUERY_TIMEOUT = 10
+
 
 class BossKeyUnavailableError(RuntimeError):
     """无法确定该实例的老板键，隐藏操作不可用。
@@ -102,6 +107,10 @@ class LDPlayer14Manager(LDManager):
     实例锁的键就是这个路径 ``resolve().casefold()`` 加原生索引，路径口径不对
     就和旧配置、和设置写入各拿各的锁，配置守卫的回滚时序就挡不住了。
     """
+
+    #: adb devices 的缓存。放类属性而不是覆写 __init__，免得和父类的构造契约纠缠。
+    _adb_cache: list[str] | None = None
+    _adb_cache_until: float = 0.0
 
     def read_instance_config(self, idx: str) -> dict | None:
         """只读地取一份 ``leidianN.config``。读不出返回 ``None``。"""
@@ -195,6 +204,70 @@ class LDPlayer14Manager(LDManager):
 
         logger.info(f"已写入雷电实例 {idx} 的设置: {cleaned}")
         return cleaned
+
+    async def _list_adb_serials(self) -> list[str]:
+        """``adb devices`` 的在线设备列表，带 5 秒缓存。
+
+        状态轮询每几秒就调一次 :meth:`getInfo`，不缓存的话每轮都要起一次子进程。
+        缓存到期前多台设备共用同一份结果，这正是 :func:`resolve_serial`
+        排除其他实例候选时需要的一致视图。
+        """
+        now = time.monotonic()
+        if self._adb_cache is not None and now < self._adb_cache_until:
+            return self._adb_cache
+
+        adb_path = self.get_adb_path()
+        if adb_path is None:
+            return []
+
+        try:
+            result = await ProcessRunner.run_process(
+                adb_path, "devices", timeout=_ADB_QUERY_TIMEOUT, if_merge_std=True
+            )
+            serials = parse_adb_devices(str(getattr(result, "stdout", "") or ""))
+        except Exception as e:  # noqa: BLE001 - 查不到就退回公式, 不该让状态轮询挂掉
+            logger.debug(f"执行 adb devices 失败: {e}")
+            return []
+
+        self._adb_cache = serials
+        self._adb_cache_until = now + _ADB_CACHE_SECONDS
+        return serials
+
+    async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
+        """在父类结果之上，把 ADB 地址换成核对过的序列号。
+
+        父类的做法是 ``get_adb_ports(vbox_pid)`` 查不到就回落公式。实测雷电 14 的
+        ``Ld9BoxHeadless.exe`` 一个端口都不监听（端口归所有实例共用的 ``VBoxNetNAT``），
+        那条查询**永远查不到**，等于一直在用没核过的公式值。这里改成拿
+        ``adb devices`` 的真实结果核对，核不上就明确记一笔，而不是默默当成对的。
+        """
+        result = await super().getInfo(idx)
+        if not result:
+            return result
+
+        serials = await self._list_adb_serials()
+        if not serials:
+            return result
+
+        # 排除其他实例的候选时要看全量索引，不能只看本次查询的那一台
+        try:
+            all_indexes = list((await self.get_device_info(None)).keys())
+        except Exception:  # noqa: BLE001 - 拿不到全量就不做认领, 只做核对
+            all_indexes = list(result)
+
+        resolved: dict[str, DeviceInfo] = {}
+        for native_index, info in result.items():
+            others = [i for i in all_indexes if str(i) != str(native_index)]
+            outcome = resolve_serial(native_index, serials, others)
+            if outcome.source == "recovered":
+                logger.warning(
+                    f"雷电实例 {native_index} 的 ADB 序列号与约定不符，"
+                    f"按实际连接认领为 {outcome.serial}"
+                )
+            resolved[native_index] = DeviceInfo(
+                title=info.title, status=info.status, adb_address=outcome.serial
+            )
+        return resolved
 
     async def read_stable_mode(self, idx: str) -> tuple[bool, list[str]]:
         """稳定模式是否已生效，以及还有哪几项不安全。"""

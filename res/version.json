@@ -16,6 +16,7 @@
                 "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
+                "模拟器管理 Emulator 2.0 的雷电设备改为按 adb devices 的实际连接核对 ADB 地址，核不上时记录日志而不是默默沿用按索引推出来的值；原先那条按 vbox 进程查端口的实现在雷电 14 上从来查不到，等于一直没核过",
                 "OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)",
                 "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
