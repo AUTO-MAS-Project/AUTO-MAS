@@ -35,7 +35,13 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
-from app.utils import LogMonitor, ProcessManager, get_logger, is_process_running
+from app.utils import (
+    LogMonitor,
+    ProcessManager,
+    get_logger,
+    is_backend_dev_mode,
+    is_process_running,
+)
 from app.utils.constants import (
     MAAEND_AUTO_COLLECT_MODES,
     MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
@@ -596,8 +602,13 @@ class AutoProxyTask(TaskExecuteBase):
             3,
         )
 
-    async def kill_managed_process(self) -> None:
-        """中止关联进程"""
+    async def kill_managed_process(self, kill_game: bool = True) -> None:
+        """中止关联进程
+
+        Args:
+            kill_game (bool): 是否同时关闭游戏或模拟器；开发模式下手动中止
+                任务时传 False，保留游戏便于继续调试。
+        """
 
         try:
             logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
@@ -605,6 +616,9 @@ class AutoProxyTask(TaskExecuteBase):
             await System.kill_process(self.maaend_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
+        if not kill_game:
+            logger.info("开发模式下手动中止任务，保留游戏进程")
+            return
         try:
             if self.emulator_manager is None:
                 logger.info("中止终末地进程")
@@ -1089,7 +1103,9 @@ class AutoProxyTask(TaskExecuteBase):
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         else:
-            await self.kill_managed_process()
+            # 开发模式下手动中止任务时保留游戏进程，便于继续调试
+            keep_game = is_backend_dev_mode() and self.stopped_manually
+            await self.kill_managed_process(kill_game=not keep_game)
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():

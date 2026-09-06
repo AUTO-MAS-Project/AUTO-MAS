@@ -258,6 +258,9 @@ class TaskItem(ABC):
 class TaskExecuteBase(ABC):
     wait_for_finalizer_on_cancel = False
 
+    # 外部手动停止（TaskManager 中止）时置位，供收尾逻辑区分自然结束与手动中止
+    stopped_manually: bool = False
+
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
@@ -307,6 +310,9 @@ class TaskExecuteBase(ABC):
         self._task_group = parent_tg
         try:
             await self.main_task()
+        except asyncio.CancelledError:
+            self.stopped_manually = True
+            raise
         except Exception as e:
             await self.on_crash(e)
         finally:
