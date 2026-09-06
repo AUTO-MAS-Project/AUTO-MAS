@@ -75,10 +75,14 @@ class MaaEndManager(TaskExecuteBase):
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
+        controller_name = str(script_config.get("Game", "ControllerType") or "").strip()
+        if not controller_name:
+            return "未选择 MaaEnd 控制器，请在脚本编辑页选择控制器！"
+
         try:
             self.controller_protocol = load_maaend_controller_protocol(
                 Path(script_config.get("Info", "Path")),
-                script_config.get("Game", "ControllerType"),
+                controller_name,
             )
         except (OSError, KeyError, ValueError) as error:
             return f"MaaEnd 控制器配置读取失败: {error}"
