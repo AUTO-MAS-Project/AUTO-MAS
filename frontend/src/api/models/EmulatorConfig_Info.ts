@@ -10,11 +10,19 @@ export type EmulatorConfig_Info = {
     /**
      * 模拟器类型
      */
-    Type?: ('general' | 'mumu' | 'ldplayer' | null);
+    Type?: ('general' | 'mumu' | 'ldplayer' | 'emulator2' | null);
     /**
      * 模拟器路径
      */
     Path?: (string | null);
+    /**
+     * Emulator 2.0 纳管的模拟器路径列表（JSON）
+     */
+    Paths?: (string | null);
+    /**
+     * Emulator 2.0 的设备号槽位表（JSON）
+     */
+    Slots?: (string | null);
     /**
      * 老板键快捷键配置
      */

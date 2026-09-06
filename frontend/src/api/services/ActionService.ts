@@ -6,6 +6,11 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
+import type { Emulator2SettingsApplyAllOut } from '../models/Emulator2SettingsApplyAllOut';
+import type { Emulator2SettingsApplyIn } from '../models/Emulator2SettingsApplyIn';
+import type { Emulator2SettingsApplyOut } from '../models/Emulator2SettingsApplyOut';
+import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -101,6 +106,75 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/operate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改实例设置
+     * 写一台设备的设置。
+     *
+     * 只提交用户改过的字段；``expected`` 与文件现状对不上就拒绝写入并交回冲突字段，
+     * 绝不把表单打开时的旧值整片盖回去。
+     * @param requestBody
+     * @returns Emulator2SettingsApplyOut Successful Response
+     * @throws ApiError
+     */
+    public static applySettingsApiEmulator2SettingsApplyPost(
+        requestBody: Emulator2SettingsApplyIn,
+    ): CancelablePromise<Emulator2SettingsApplyOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/settings/apply',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 批量修改全部实例设置
+     * 把同一组设置写到全部实例上。
+     *
+     * 没有勾选也没有冲突比对——点它就是明确要求「所有实例都设成这组值」。
+     * 一台失败不影响其余，逐台交回结果。
+     * @param requestBody
+     * @returns Emulator2SettingsApplyAllOut Successful Response
+     * @throws ApiError
+     */
+    public static applySettingsToAllApiEmulator2SettingsApplyAllPost(
+        requestBody: Emulator2SettingsApplyAllIn,
+    ): CancelablePromise<Emulator2SettingsApplyAllOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/settings/apply-all',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 应用稳定模式
+     * 把设备切进稳定模式：关掉会干扰截图识别的模拟器功能。
+     *
+     * ``slots`` 留空表示全部。每台交回实际改动了哪几项；已经安全的返回空改动列表。
+     * **关掉稳定模式不由这个接口负责**——我们不知道用户原来想要什么值，不替他猜。
+     * @param requestBody
+     * @returns Emulator2SettingsApplyAllOut Successful Response
+     * @throws ApiError
+     */
+    public static applyStableModeApiEmulator2StableModeApplyPost(
+        requestBody: Emulator2StableModeIn,
+    ): CancelablePromise<Emulator2SettingsApplyAllOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/stable-mode/apply',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -1290,19 +1290,35 @@ class AutoProxyTask(TaskExecuteBase):
         emulator_manager,
     ) -> dict | None:
         try:
-            emulator_uid = uuid.UUID(emulator_id)
-            emulator_config = Config.EmulatorConfig[emulator_uid]
+            # 先问管理器这个索引到底对应哪台设备。一条配置可以纳管多个模拟器安装,
+            # 那种情况下持久化的类型不等于设备的真实类型, 直接读配置会漏掉专用能力。
+            emulator_type = ""
+            emulator_path = Path("")
+            native_index = emulator_index
 
-            emulator_type = emulator_config.get("Info", "Type")
-            emulator_path = Path(emulator_config.get("Info", "Path"))
+            resolve_device = getattr(emulator_manager, "resolve_device", None)
+            device_ref = resolve_device(emulator_index) if resolve_device else None
+            if device_ref is not None:
+                emulator_type = device_ref.emulator_type
+                emulator_path = Path(device_ref.manager_path)
+                native_index = device_ref.native_index
+            else:
+                emulator_uid = uuid.UUID(emulator_id)
+                emulator_config = Config.EmulatorConfig[emulator_uid]
+                emulator_type = emulator_config.get("Info", "Type")
+                emulator_path = Path(emulator_config.get("Info", "Path"))
 
             if emulator_type == "ldplayer":
                 return await self._build_ldplayer_config(
-                    emulator_info, emulator_path, emulator_index, emulator_manager
+                    emulator_info,
+                    emulator_path,
+                    emulator_index,
+                    native_index,
+                    emulator_manager,
                 )
             elif emulator_type == "mumu":
                 return self._build_mumu_config(
-                    emulator_info, emulator_path, emulator_index
+                    emulator_info, emulator_path, native_index
                 )
             else:
                 logger.info(f"不支持的模拟器类型: {emulator_type}，使用默认配置")
@@ -1316,6 +1332,7 @@ class AutoProxyTask(TaskExecuteBase):
         emulator_info: DeviceInfo,
         emulator_path: Path,
         emulator_index: str,
+        native_index: str,
         emulator_manager,
     ) -> dict:
         logger.info("构建雷电模拟器 AdbDevice 配置")
@@ -1335,7 +1352,8 @@ class AutoProxyTask(TaskExecuteBase):
         adb_path = emulator_root / "adb.exe"
 
         name = ld_player_device.title if ld_player_device else "雷电模拟器-LDPlayer"
-        idx = ld_player_device.idx if ld_player_device else int(emulator_index)
+        # 兜底必须用原生索引: ADB 序列号是按它算的, 拿设备号顶替会连到别的实例
+        idx = ld_player_device.idx if ld_player_device else int(native_index)
         pid = ld_player_device.pid if ld_player_device else 0
 
         ld_extras = {

@@ -49,6 +49,20 @@ class DeviceInfo:
     adb_address: str
 
 
+@dataclass(frozen=True)
+class DeviceRef:
+    """一个设备索引解析出来的真实归属。
+
+    ``manager_path`` 与 ``EmulatorConfig`` 的 ``Info.Path`` 同口径, 即主管理器程序
+    （雷电是 ``ldconsole.exe``、MuMu 是 ``MuMuManager.exe``）的路径, 不是安装目录。
+    ``native_index`` 是模拟器自己的实例索引, 用来算 ADB 端口等, 不能拿设备号顶替。
+    """
+
+    emulator_type: str
+    manager_path: str
+    native_index: str
+
+
 class DeviceBase(ABC):
     """模拟器管理基类"""
 
@@ -155,3 +169,36 @@ class DeviceBase(ABC):
             自带 adb 的路径; 返回 ``None`` 表示该模拟器不自带 adb, 调用方应回退到系统 adb
         """
         return None
+
+    def resolve_device(self, idx: str) -> "DeviceRef | None":
+        """把设备索引解析成「真实模拟器类型 + 管理器路径 + 原生索引」
+
+        脚本适配器里有几处不经管理器、直接读持久化配置的类型和路径来决定要不要启用
+        模拟器专用能力（雷电专用连接、EmulatorExtras 截图）。一条配置纳管多个模拟器
+        安装时，持久化的类型不再等于某个设备的真实类型，那些判断就会失效。
+        调用方改成问这个方法，就不必关心配置形态。
+
+        默认实现直接回报本管理器自己的类型与路径, 索引原样透传——对「一条配置一个安装」
+        的旧配置永远成立。纳管多个安装的管理器需要覆盖它。
+
+        Parameters
+        ----------
+        idx : str
+            设备索引
+
+        Returns
+        -------
+        DeviceRef | None
+            解析结果; 返回 ``None`` 表示解析不出, 调用方应按「没有专用能力」处理
+        """
+        config = getattr(self, "config", None)
+        if config is None:
+            return None
+        try:
+            return DeviceRef(
+                emulator_type=str(config.get("Info", "Type") or ""),
+                manager_path=str(config.get("Info", "Path") or ""),
+                native_index=str(idx),
+            )
+        except Exception:  # noqa: BLE001 - 解析不出就当没有专用能力, 不该让调用方炸
+            return None
