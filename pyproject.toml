@@ -44,6 +44,12 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 
+[dependency-groups]
+# 仅开发/回归测试使用，生产安装不需要
+dev = [
+    "pytest==9.1.1",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
