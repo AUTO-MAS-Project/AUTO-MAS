@@ -31,11 +31,20 @@
             {{ t('comp.backendUpdateDevUnsupported') }}
           </span>
           <span
-            v-else-if="backendUpdateInfo?.if_need_update"
+            v-else-if="
+              runtimeBackendUpdateAvailable ||
+              (backendUpdateInfo?.if_need_update && !isRuntimeManaged)
+            "
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
-            {{ t('comp.backendUpdateAvailableClick') }}
+            {{
+              t(
+                runtimeBackendUpdateAvailable
+                  ? 'comp.backendUpdateReady'
+                  : 'comp.backendUpdateAvailableClick'
+              )
+            }}
           </span>
         </span>
       </div>
@@ -143,9 +152,17 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { closeApp } from '@/composables/useAppLifecycle'
+import {
+  beginIntentionalBackendRestart,
+  closeApp,
+  endIntentionalBackendRestart,
+} from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
-import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import {
+  updateInfo,
+  backendUpdateInfo,
+  runtimeBackendUpdateAvailable,
+} from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
@@ -289,17 +306,29 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 const handleBackendUpdateClick = () => {
   Modal.confirm({
     title: t('comp.restartBackendUpdate'),
-    content: t('comp.backendAboutUpdateWhich'),
+    content: t(
+      runtimeBackendUpdateAvailable.value
+        ? 'comp.backendUpdateReadyConfirm'
+        : 'comp.backendAboutUpdateWhich'
+    ),
     okText: t('comp.confirm'),
     cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
-      // Runtime 监督链路下走「停机 → bootstrap → 重新监督」，不再跳初始化页整包更新。
+      // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
+      if (isRuntimeManaged.value && runtimeBackendUpdateAvailable.value) {
+        await window.electronAPI.appRestart()
+        return
+      }
+      // 跨版本更新仍走完整的 Runtime 更新编排。
       if (isRuntimeManaged.value) {
         await startRuntimeUpdate(resolveRuntimeUpdateVersion())
         return
       }
 
+      // 关后端到初始化流程重新拉起它之间的断开是计划内的：先打好标记，
+      // 否则生命周期协调器会当成事故——提示用户断线，并 taskkill 后抢着起一个后端
+      beginIntentionalBackendRestart('标题栏触发后端更新')
       try {
         logger.info('开始更新后端')
 
@@ -330,6 +359,8 @@ const handleBackendUpdateClick = () => {
         await router.push('/initialization')
         logger.info('已跳转到初始化页面')
       } catch (error) {
+        // 没能走到初始化页：后端不会有人再拉起它，交回协调器按事故处理
+        endIntentionalBackendRestart('后端更新流程异常中断')
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`更新后端失败: ${errorMsg}`)
       }

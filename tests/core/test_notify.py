@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.core.notify import DispatchResult, NotifyPayload, NotifyTarget, dispatch
 from app.tools.game_sign_notify import (
@@ -265,3 +265,34 @@ def test_dispatch_task_report_zero_targets_keeps_summary() -> None:
     assert task.game_sign_summary_delivered == set()
     assert task.game_sign_summary_pending == ()
     assert task.game_sign_summary_consumed is False
+
+
+def test_dispatch_task_report_publishes_failure_notice() -> None:
+    class _FailingMailNotify(_Notify):
+        async def send_mail(self, **kwargs) -> bool:
+            self.calls.append("邮件")
+            return False
+
+    task = _Task()
+    task.task_id = "task-1"
+    target = NotifyTarget(name="全局", mail_to="user@example.com")
+
+    with (
+        patch("app.core.notify.Notify", _FailingMailNotify()),
+        patch(
+            "app.tools.game_sign_notify.Publisher.send", new_callable=AsyncMock
+        ) as publish,
+    ):
+        result = _run(
+            dispatch_task_report(
+                NotifyPayload(title="报告", text="正文"), [target], task
+            )
+        )
+
+    assert result.failed == ("全局邮件",)
+    publish.assert_awaited_once()
+    assert publish.await_args.kwargs["id"] == "task-1"
+    assert publish.await_args.kwargs["type"] == "task.notice"
+    notice = publish.await_args.kwargs["data"]
+    assert notice.level == "warning"
+    assert "全局邮件" in notice.message

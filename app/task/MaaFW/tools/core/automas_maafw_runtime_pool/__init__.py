@@ -8,7 +8,7 @@ from .identity import (
     canonicalize_requirements,
     find_maafw_requirement,
 )
-from .installer import install_python_runtime
+from .installer import install_python_runtime, runtime_managed_uv_executable
 from .pool import (
     POOL_MARKER_NAME,
     POOL_SCHEMA_VERSION,
@@ -34,4 +34,5 @@ __all__ = [
     "find_maafw_requirement",
     "install_python_runtime",
     "prune_uv_cache",
+    "runtime_managed_uv_executable",
 ]

@@ -37,6 +37,8 @@ export interface InitializationProgress {
   status?: InitializationStageStatus
   /** 本次进度来自哪条链路；旧链路不产生，界面按 `off` 处理。 */
   runtimeMode?: RuntimeLaunchMode
+  /** 当前阶段没有可靠总量，界面应展示持续活动状态而不是精确百分比。 */
+  indeterminate?: boolean
   details?: {
     checkInfo?: unknown // 可以是 EnvironmentCheckResult, RepositoryCheckResult, 或 DependencyCheckResult
     currentMirror?: string
@@ -381,6 +383,7 @@ export class InitializationService {
         message: update.message,
         status: update.status,
         runtimeMode,
+        indeterminate: update.indeterminate,
       })
   }
 

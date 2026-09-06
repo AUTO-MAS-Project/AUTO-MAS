@@ -241,7 +241,7 @@
           <template #label>
             <a-tooltip :title="t('edit.pickDivergentUniverseStage3')">
               <span class="form-label">
-                {{ t('edit.divergentUniverse') }}
+                {{ t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>

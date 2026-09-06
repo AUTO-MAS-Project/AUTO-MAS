@@ -20,7 +20,6 @@
 
 
 import asyncio
-import shlex
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -300,15 +299,6 @@ class HSRAccountSwitcher:
         self._append_log = append_log
         self._last_sra_window_recovery_at: datetime | None = None
 
-    @staticmethod
-    def split_game_arguments(raw_arguments: object) -> list[str]:
-        """解析脚本页填写的游戏启动参数。"""
-
-        value = str(raw_arguments or "").strip()
-        if not value:
-            return []
-        return shlex.split(value, posix=False)
-
     async def wait_before_external_script(
         self,
         script: str,
@@ -425,14 +415,9 @@ class HSRAccountSwitcher:
             self._append_log,
         )
 
-        game_args = self.split_game_arguments(
-            self.script_config.get("Game", "Arguments")
-        )
-        args_text = f"，参数：{' '.join(game_args)}" if game_args else ""
-        self._append_log(f"正在由 MAS 启动游戏：{game_exe_path}{args_text}")
+        self._append_log(f"正在由 MAS 启动游戏：{game_exe_path}")
         await self.runtime.game_process_manager.open_process(
             game_exe_path,
-            *game_args,
             cwd=game_exe_path.parent,
         )
         self.runtime.game_started_by_mas = True

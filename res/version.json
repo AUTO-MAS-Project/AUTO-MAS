@@ -12,8 +12,11 @@
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
                 "BetterGI专项 用户编辑页的一条龙配置改为可视化队列：左侧可拖拽排序配置组，支持一次输入多个配置组批量加入、右键移出、一键清空，并新增「体力作战」专项项（启用后自动关闭并冻结刷取类官方组，关闭后恢复） by [@TCddddd](https://github.com/TCddddd)",
                 "BetterGI专项 添加配置组弹窗加大并改为「JS脚本/地图追踪」双标签页：顶部提供自适应多行输入与两排入口按钮（在线脚本仓库 s.bettergi.com、脚本目录、任务目录、打开BGI、一条龙目录、配置组目录）；JS脚本页可搜索加入 User/JsScript 脚本、地图追踪页按 User/AutoPathing 目录树浏览路径文件，两者均点击先写入输入框再确认统一入队，并支持 Shift 区间/Ctrl 逐个多选；一条龙队列行同样支持 Shift/Ctrl 多选后可批量启停或移除（JS 归入自定义标签、路径文件带「路径」标签） by [@TCddddd](https://github.com/TCddddd)"
+                "调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)",
+                "通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "程序优化": [
+                "后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)",
                 "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "代码清理 统一全仓 Python 导入排序，并清理 BetterGI 只写不读的配置项与已冻结的更新开关，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "代码清理 合并各脚本重复的用户标签生成与配置模型并精简报告统计逻辑，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -25,7 +28,16 @@
                 "启动与首页 大幅优化启动速度；修复弱网或 VPN 下刷新活动数据导致所有请求长时间无响应的问题，六张第三方活动卡任一张数据异常只影响自身 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "前端i18n BetterGI 专项的脚本编辑页、用户编辑页与配置组件接入词表，切换界面语言即时生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 清理不再需要的 MFW 资源 by [@HarcoChen](https://github.com/HarcoChen)",
-                "Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退 by [@qiyinxi](https://github.com/qiyinxi)"
+                "Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 移除脚本页的「游戏启动参数」，窗口大小统一由「1920×1080 窗口模式」开关临时改写注册表、任务结束后恢复，旧配置中的该项会在下次保存时自动清除 by [@qiyinxi](https://github.com/qiyinxi)",
+                "通用脚本 未填写「配置路径」时改为在任务开始前直接提示，不再跑起来后才报出难懂的错误 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 脚本直控不再要求先导入配置快照，默认直接使用 SRA / 三月七助手当前的配置运行；导入快照改为可选，仅在同一脚本下多个用户需要各跑一套配置时使用，并可一键改回使用脚本当前配置 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 MAS 管控任务的「一键从源配置导入」改名为「重置为源配置」并增加二次确认，明确该操作会清除用户在 MAS 里改过的全部覆盖配置、重新读取 SRA / 三月七助手当前配置 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 MAS 管控任务的配置项补齐中文名称、取值范围与填写说明（如货币战争刷开局的四个重开条件格式），三月七助手缺少配置说明文件时给出明确提示；切换执行引擎时明确提示配置项与副本按引擎分别保存、需要重新选择 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 体力副本在所指派引擎下未选择、执行引擎因缺少路径被自动改派时，改为在任务开始前提示并写入运行日志，不再跑完才在日志里体现 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 脚本页新增「SRA 配置档案」下拉，可指定 SRA 多份配置档案中的哪一份供 MAS 管控表单、脚本直控与导入快照使用；默认「自动」保持原有的优先 Default 行为，所选档案被删除时会回退并在脚本页、用户页与运行日志中提示 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 用户页仍以中文显示的一批界面文案（页面标题、用户名与剩余天数标签、历战余响与周常的本周完成状态、服务器与体力副本选项、管控任务列表的周常/日常与启用摘要等）接入多语言词表，英文与日文界面不再夹杂中文 by [@qiyinxi](https://github.com/qiyinxi)",
+                "日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -34,6 +46,10 @@
             ],
             "修复BUG": [
                 "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "修复同时打开两个前端窗口时互相抢占后端连接、每隔几秒断线并反复弹出提示的问题：后开的窗口接管连接，先开的窗口停止重连并只提示一次 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MaaEnd专项 修复 MaaEnd 更新后已完成任务被误判失败并重复重试的问题 by [@HarcoChen](https://github.com/HarcoChen)",
+                "修复与后端断开连接时立即弹出阻塞式弹窗的问题：改为右上角非阻塞提示并在重连成功后自动收起，生产模式仅在整轮重连失败后才升级为弹窗，开发模式下开发者手动重启后端不再被弹窗打断 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复点击「更新后端」时弹出「与后端失去连接」弹窗的问题：更新期间的断开按计划内处理，不再提示，也不再由前端另起一个后端与更新流程抢进程 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题",
                 "MAA专项 修复日常理智作战误用剿灭任务队列、导致计划表关卡被错误用于剿灭任务的问题",
                 "修复渲染进程崩溃后窗口永久黑屏的问题，崩溃会自动记录并重载窗口 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -47,14 +63,18 @@
                 "OK-NTE专项 修复任务报告剩余体力计算不准确的问题：体力不足以刷满设定目标时误显「剩余体力: 0」，改为按实际刷本消耗（异象界域双倍/单倍次数、异象追猎实际消耗）精确计算剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "前端类型治理 清理脚本与 Electron 基础边界中的 any，并修复 BetterGI 设置会话无法接收完成和错误事件的问题",
                 "HSR专项 修复 MAS 管控任务的文本与 JSON 配置项在输入过程中被重渲染清空、导致只有数字项能填写的问题（如货币战争的首领/投资重开条件、策略文件、开拓者名称） by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 修复 SRA 开启「使用培养目标」后历战余响一直不刷、状态始终停在本周未完成的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 修复三月七助手跑完体力后按其「任务完成后操作」自行关闭游戏，导致本已成功的模块被判失败、后续模块空跑一次的问题；MAS 管控运行时该项固定为「无操作」，游戏中途退出时不再继续启动该用户的剩余模块 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送因漏传通知用户配置参数而失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "游戏签到 修复通知返回值改为 DispatchResult 后未同步两处消费方、开启签到通知时执行签到必报 TypeError 的问题（手动签到接口返回 500，慢渠道后台通知路径丢失日志） by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "BetterGI专项 修复任务跨过本地午夜后仍监控前一天日志文件、导致后续状态误判的问题 by [@Craun718](https://github.com/Craun718)",
                 "修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复账号切换在游戏启动阶段定位不到窗口、或界面尚未进入可执行登录态就误操作而失败的问题，改为分段进展续延等待：先轮询窗口就绪，再等待界面进入「登录页/已登录主菜单」（游戏内长时间更新/加载时持续顺延，长时间无进展才判失败），兼容低性能设备启动延迟 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "OK-WW专项 账号切换未能回到登录界面时立即报错并说明原因，不再误报已就绪后在错误画面上继续选号失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "MAA专项 修复 MAA 更新至 v6.14 后代理时不再按用户填写的账号执行账号切换的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW与OK-NTE专项 修复多用户切换时误复用正在退出的旧游戏窗口导致任务被中止的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "OK-NTE专项 修复体力不足以刷满目标时任务报告误显「剩余体力: 0」的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "HSR专项 修复 SRA / 三月七助手升级或更换配置后，单个失效的 MAS 覆盖配置项会让该引擎全部任务表单一起消失、运行时任务直接失败的问题，现在只忽略失效项并在用户页提示、可一键清理 by [@qiyinxi](https://github.com/qiyinxi)",
                 "BetterGI专项 修复设置会话无法接收完成和错误事件的问题",
                 "HSR专项 修复任务配置的文本与 JSON 项在输入时被清空、导致只有数字项能填写的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 修复任务报告推送失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)",
@@ -69,6 +89,14 @@
                 "首页 修复活动卡片鼠标悬停在边缘时反复上下抖动的问题",
                 "BetterGI专项 修复一条龙任务跨零点被误判超时、重试后执行报告出现两轮重复、设置会话结束后 BGI GUI 残留运行时配置、切号首次启用误删已有脚本仓库、以管理员权限运行时重复弹出 UAC 授权（支持关闭管理员提权启动）、以及自定义配置组默认启用状态前后端不一致的问题 by [@TCddddd](https://github.com/TCddddd)",
                 "BetterGI专项 修复开启体力作战时仍可从添加弹窗把被冻结的刷取类官方组加入一条龙，导致该组被重新启用且无法再关闭或移除的问题 by [@TCddddd](https://github.com/TCddddd)"
+                "通用脚本 修复配置管理方式选「脚本直控配置」时，若脚本配置目录中有文件正被占用，该目录会被删掉一部分且不再还原的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 修复差分宇宙 / 货币战争在日志未确认完成时，统计通知仍显示「完成」而用户页周常标签停在「未完成」、下次运行重复执行的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 修复 MAS 管控任务中体力「补充方式」的选项与 SRA 实际含义错位一格的问题：原先选「燃料」实际使用后备开拓力、选「星琼」实际使用燃料，现修正为后备开拓力 / 燃料 / 星琼，并补上缺失的货币战争「刷开局」模式 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 修复调度台日志每行的时间戳被硬编码为东八区、非中国时区用户看到的时间与本机时钟不符的问题，现跟随本机时区（周常重置日等游戏内日期判定仍按游戏服务器时区） by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项与SRC专项 修复英文与日文界面的术语错误：「历战余响」在英文下被显示为「差分宇宙」（两者在同一页面上是不同玩法），「体力配置」沿用了明日方舟的「理智」译法，「侵蚀隧洞」英文名复数有误 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MFW专项 修复项目 interface 的同一个预设里重复写了同一个任务（例如 MXU 的随机启动标记）时整份项目读不出来、建项向导卡在第一步的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MFW专项 从新链路回退到旧链路后准备项目运行环境时，改为直接复用 Runtime 已经装好的 uv，不再要求用户自己再准备一份 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.2": {

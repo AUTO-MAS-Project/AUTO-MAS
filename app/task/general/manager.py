@@ -89,6 +89,12 @@ class GeneralManager(TaskExecuteBase):
             )
         ):
             return "开启追踪子进程后, 需至少填写一项追踪进程信息！"
+        # 配置路径为空时 Path("") 等价于 Path(".")，后续的快照与清理会落到
+        # 程序自身的工作目录上，必须在任务开始前拦下
+        if not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Script", "ConfigPath"
+        ):
+            return "未填写配置路径, 请检查脚本配置中的配置路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Game", "Enabled"
         ):
@@ -136,12 +142,22 @@ class GeneralManager(TaskExecuteBase):
 
         return "Pass"
 
-    def _remove_script_config(self) -> None:
-        """清理脚本当前配置路径，避免不同来源的目录文件互相残留。"""
+    def _remove_script_config(self) -> bool:
+        """清理脚本当前配置路径，避免不同来源的目录文件互相残留。
+
+        Returns:
+            bool: 配置路径是否已被清空。目录被脚本进程占用时 rmtree 会在遍历
+                途中抛出 PermissionError 并留下半删的目录，这里只忽略残留并如实
+                返回结果，由调用方决定后续处理。
+        """
         if self.script_config_path.is_dir():
-            shutil.rmtree(self.script_config_path)
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
         elif self.script_config_path.exists():
-            self.script_config_path.unlink()
+            try:
+                self.script_config_path.unlink()
+            except OSError as e:
+                logger.opt(exception=True).warning(f"清理脚本直控配置失败: {e}")
+        return not self.script_config_path.exists()
 
     def _snapshot_external_config(self) -> None:
         """保存脚本直控配置，作为用户切换和任务结束时的恢复基线。"""
@@ -164,7 +180,13 @@ class GeneralManager(TaskExecuteBase):
         if not self.external_config_snapshot_ready:
             return
 
-        self._remove_script_config()
+        # 配置路径被脚本进程占用时只能清掉一部分，此时仍要把快照覆盖回去，
+        # 否则用户目录会停在半删状态
+        if not self._remove_script_config():
+            logger.warning(
+                f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
+            )
+
         if not self.external_config_exists:
             logger.info("脚本直控配置不存在，保持配置路径为空")
             return

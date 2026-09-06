@@ -40,6 +40,8 @@ const subscriptionMocks = vi.hoisted(() => ({
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 vi.mock('ant-design-vue', () => ({
   Modal: { error: vi.fn(), warning: vi.fn(() => ({ destroy: vi.fn() })) },
+  // 断开提示走非阻塞 notification，关闭流程用例本身不断言它，但协调器会调用
+  notification: { warning: vi.fn(), info: vi.fn(), close: vi.fn() },
 }))
 vi.mock('@/api', () => ({
   Service: {

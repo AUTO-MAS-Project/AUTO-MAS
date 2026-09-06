@@ -12,6 +12,13 @@
       :message="t('edit.sanityScriptChangedPick')"
     />
     <a-alert
+      v-if="currentEngineStageMissing"
+      type="warning"
+      show-icon
+      style="margin-bottom: 8px"
+      :message="t('edit.hsrStageMissingForEngine', { engine: dailyEngine })"
+    />
+    <a-alert
       v-if="stageOptionsError && !stageOptionsLoading"
       type="error"
       show-icon
@@ -159,9 +166,9 @@
       <a-col :span="12">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <a-tooltip :title="t('edit.pickDivergentUniverseStage')">
+            <a-tooltip :title="t('edit.pickEchoOfWarStage')">
               <span class="form-label">
-                {{ t('edit.divergentUniverse') }}
+                {{ t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -185,7 +192,7 @@
           <template #label>
             <a-tooltip :title="t('edit.startDayIfIt')">
               <span class="form-label">
-                {{ t('edit.divergentUniverseStartDay') }}
+                {{ t('edit.echoOfWarStartDay') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -409,6 +416,25 @@ const selectedDynamicOptionForChannel = (channel: ActiveChannel) => {
   return findDynamicOption(payload?.value, [category])
 }
 
+// 另一引擎名下已经存了副本，而当前引擎名下一个主关卡也没有——这是刚切换体力
+// 执行引擎后的典型状态；旧格式（无 byEngine 容器）的不匹配由 nativeEngineMismatch 负责。
+const otherEngineHasStages = computed(() => {
+  for (const raw of [props.formData.Stage.ScriptStage, props.formData.Stage.ScriptEchoOfWar]) {
+    const byEngine = parseObject(parseObject(raw)?.byEngine)
+    if (!byEngine) continue
+    for (const engine of ['SRA', 'M7A'] as const) {
+      if (engine !== props.dailyEngine && parseObject(byEngine[engine])) return true
+    }
+  }
+  return false
+})
+
+const currentEngineStageMissing = computed(() => {
+  if (nativeEngineMismatch.value) return false
+  const hasMain = activeChannels.some(channel => getPayloadForChannel(channel) !== null)
+  return !hasMain && otherEngineHasStages.value
+})
+
 const dynamicOptionsForChannel = (channel: ActiveChannel) => {
   const category = dynamicCategoryByChannel.value[channel]
   return (category?.options ?? []).map(option => ({
@@ -562,12 +588,12 @@ const activeChannel = computed<ActiveChannel>(() => {
 })
 
 // 刷取副本下拉的可见选项（4 类）
-const activeChannelOptions = [
-  { value: 'CalyxGolden', label: '拟造花萼（金）' },
-  { value: 'CalyxCrimson', label: '拟造花萼（赤）' },
-  { value: 'Relic', label: '侵蚀隧洞' },
-  { value: 'Ornament', label: '饰品提取' },
-]
+const activeChannelOptions = computed(() => [
+  { value: 'CalyxGolden', label: t('edit.calyxGolden') },
+  { value: 'CalyxCrimson', label: t('edit.calyxCrimson') },
+  { value: 'Relic', label: t('edit.cavernsCorrosion') },
+  { value: 'Ornament', label: t('edit.ornamentExtraction') },
+])
 
 // 当前生效关卡读取：根据 activeChannel 读对应字段
 const currentNativePayload = computed(() => {
@@ -577,14 +603,14 @@ const currentNativePayload = computed(() => {
 // 当前生效关卡显示：副本类型 + 关卡名
 // 格式：拟造花萼（金） 材料：武器经验（以太之蕾 翁法罗斯）
 const currentStageDisplay = computed((): string => {
-  if (nativeEngineMismatch.value) return '请重新选择副本'
+  if (nativeEngineMismatch.value) return t('edit.hsrRepickStage')
   const nativePayload = currentNativePayload.value
   if (nativePayload?.label) {
     return nativePayload.categoryLabel
       ? `${nativePayload.categoryLabel} ${nativePayload.label}`
       : nativePayload.label
   }
-  return '未配置'
+  return t('edit.notConfigured')
 })
 
 const currentStageColor = computed((): string => {

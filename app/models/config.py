@@ -231,6 +231,25 @@ class MaaEndPlanKeyValidator(ValidatorBase):
         return normalize_maaend_plan_key(value)
 
 
+class SRAProfileValidator(ValidatorBase):
+    """SRA 配置档案名验证器：只接受能直接拼成文件名的档案 id，空串表示自动。"""
+
+    _FORBIDDEN = frozenset('\\/:*?"<>|')
+
+    def validate(self, value):
+        if not isinstance(value, str):
+            return False
+        if value == "":
+            return True
+        stripped = value.strip()
+        if stripped != value or stripped in {".", ".."}:
+            return False
+        return not any(ch in self._FORBIDDEN or ord(ch) < 32 for ch in value)
+
+    def correct(self, value):
+        return value if self.validate(value) else ""
+
+
 class EmulatorConfig(ConfigBase):
     """模拟器配置"""
 
@@ -438,6 +457,10 @@ class QueueConfig(ConfigBase):
                     "Logoff",
                 ]
             ),
+        )
+        ## 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+        self.Info_AfterAccomplishDelay = ConfigItem(
+            "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
         )
 
         ## Data ------------------------------------------------------------
@@ -1895,14 +1918,16 @@ class HSRConfig(ConfigBase):
         self.Info_M7APath = ConfigItem("Info", "M7APath", "", FolderValidator())
         ## SRA 路径
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
+        ## SRA 配置档案（%APPDATA%\SRA\configs 下的文件名，不含扩展名；空串表示自动）
+        self.Info_SRAProfile = ConfigItem(
+            "Info", "SRAProfile", "", SRAProfileValidator()
+        )
 
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
         self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 游戏启动参数
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
@@ -3852,6 +3877,41 @@ class GlobalConfig(ConfigBase):
         )
         ## Koishi Token
         self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
+        ## 是否启用微信 Claw 通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawWeixin = ConfigItem(
+            "Notify", "IfOpenClawWeixin", False, BoolValidator()
+        )
+        ## 是否启用 QQ 官方机器人通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawQQ = ConfigItem(
+            "Notify", "IfOpenClawQQ", False, BoolValidator()
+        )
+        ## QQ 官方机器人应用 ID（由扫码登录响应返回）
+        self.Notify_OpenClawQQAppId = ConfigItem("Notify", "OpenClawQQAppId", "")
+        ## QQ 官方机器人客户端密钥（由扫码登录响应返回）
+        self.Notify_OpenClawQQClientSecret = ConfigItem(
+            "Notify", "OpenClawQQClientSecret", "", EncryptValidator()
+        )
+        ## QQ 官方机器人目标用户 OpenID（由扫码登录响应返回）
+        self.Notify_OpenClawQQTargetOpenId = ConfigItem(
+            "Notify", "OpenClawQQTargetOpenId", ""
+        )
+        self.Notify_OpenClawWeixinServerAddress = ConfigItem(
+            "Notify",
+            "OpenClawWeixinServerAddress",
+            "https://ilinkai.weixin.qq.com",
+            URLValidator(schemes=["https"]),
+        )
+        self.Notify_OpenClawWeixinBotToken = ConfigItem(
+            "Notify", "OpenClawWeixinBotToken", "", EncryptValidator()
+        )
+        ## 微信 Claw 账号 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinAccountId = ConfigItem(
+            "Notify", "OpenClawWeixinAccountId", ""
+        )
+        ## 微信 Claw 用户 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
+            "Notify", "OpenClawWeixinTargetUserId", ""
+        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码

@@ -35,9 +35,6 @@ const {
 const buildCopyText = () =>
   [
     t('setting.others.copyVersion', { version }),
-    t('setting.others.copyBackendDate', {
-      date: backendUpdateInfo?.current_time || t('common.unknown'),
-    }),
     t('setting.others.copyBackendHash', {
       hash: backendUpdateInfo?.current_hash || t('common.unknown'),
     }),
@@ -277,12 +274,6 @@ const copyAllInfo = async () => {
             <span class="info-label">{{ t('setting.others.appVersion') }}</span>
             <a-tag color="blue" class="info-badge" @click="copyAllInfo">
               {{ version }}
-            </a-tag>
-          </div>
-          <div class="info-item">
-            <span class="info-label">{{ t('setting.others.backendDate') }}</span>
-            <a-tag color="orange" class="info-badge" @click="copyAllInfo">
-              {{ backendUpdateInfo?.current_time || t('common.unknown') }}
             </a-tag>
           </div>
           <div class="info-item">

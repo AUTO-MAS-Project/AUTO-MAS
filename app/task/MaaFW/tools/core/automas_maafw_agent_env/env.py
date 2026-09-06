@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
@@ -708,6 +709,12 @@ def _find_uv_executable() -> str | None:
     portable_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if portable_uv.is_file():
         return str(portable_uv)
+
+    # 用户从受管模式回退到旧链路时监督器不再注入变量，但 Runtime 早已把 uv 装在
+    # runtime/tools/uv 下；和运行池共用同一份查找逻辑，免得两处各认一半。
+    runtime_uv = runtime_managed_uv_executable()
+    if runtime_uv is not None:
+        return runtime_uv
     return shutil.which("uv")
 
 

@@ -114,9 +114,10 @@ unsubscribe(subscriptionId) // 幂等
 - 常驻订阅：`backend.shutdown.ready`、`frontend.close.requested`、`power.countdown.updated/cancelled`，在建立连接前注册，重连不重复注册，页面切换不取消
 - `closeApp()`：退出并关闭后端 —— POST `/api/core/close` → 等待 `backend.shutdown.ready`（30 秒超时）→ 等待后端进程退出 → 超时才 taskkill → 关闭前端；关闭流程期间禁止自动重连与自动重启
 - 异常断开：连接层一轮重连（5 次退避）失败后，由协调器查询后端进程状态 —— 进程已死则自动重启后端（上限 3 次，超限弹窗提示重启应用），进程存活则延迟继续重连
+- 有意重启后端：标题栏「更新后端」在关闭后端前调用 `beginIntentionalBackendRestart()`，窗口期内的断开按计划内处理（不提示、不自动重启后端、一轮重连失败也不升级弹窗），由后端重新连上、进入关闭流程或 10 分钟兜底超时结束。两条更新链路都走这个窗口：旧链路由初始化流程重新拉起后端，Runtime 链路（`useBackendRuntimeUpdate` 的 `start` / `retry`，收口在 `settle`）由 Runtime 停机后 `workspace sync` 再重新监督。协调器都不得插手——旧链路会与初始化流程抢同一个进程，Runtime 链路会让 `workspace sync` 撞上「后端仍在跑」而失败
 
 ## 连接状态
 
-前端连接层状态机：`idle` → `connecting` → `open` ⇄ `reconnecting`，`closed` 为退出流程终态。同时最多存在一个连接尝试和一个重连计时器，连接成功后退避状态清零。
+前端连接层状态机：`idle` → `connecting` → `open` ⇄ `reconnecting`，`closed` 为退出流程终态，`superseded` 为"被另一个前端接管"终态（不再自动重连，显式 `connect` / `reconnectNow` 仍可重新接管）。同时最多存在一个连接尝试和一个重连计时器，连接成功后退避状态清零。
 
-后端第二条主连接接入时，**新连接替换旧连接**（旧连接被关闭），避免休眠恢复后残留死连接阻塞重连。
+后端第二条主连接接入时，**新连接替换旧连接**（旧连接被关闭），避免休眠恢复后残留死连接阻塞重连。旧连接以应用级关闭码 **`4001`**、reason `replaced-by-new-connection` 关闭（常量 `CLOSE_CODE_REPLACED` / `WS_CLOSE_CODE_REPLACED`，见 `app/core/ws/protocol.py` 与 `services/websocket/types.ts`）；前端收到该码即进入 `superseded`，只提示一次、不重连，避免两个窗口互相踢下线。后端关闭流程中拒绝新连接仍使用 `1001`。

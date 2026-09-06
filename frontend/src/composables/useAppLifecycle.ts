@@ -5,7 +5,7 @@
 
 import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
-import { Modal } from 'ant-design-vue'
+import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
@@ -28,6 +28,7 @@ import {
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_BACKEND_SHUTDOWN_READY,
+  WS_CLOSE_CODE_REPLACED,
   WS_FRONTEND_CLOSE_REQUESTED,
   WS_ID_MAIN,
   WS_POWER_COUNTDOWN_CANCELLED,
@@ -53,8 +54,19 @@ const RESTART_DELAY = 2000
 // 一轮重连失败后，后端进程仍存活时的下一轮延迟
 const NEXT_CYCLE_DELAY = 30000
 const DEV_MODE_RETRY_DELAY = 3000
+// 有意重启后端期间一轮重连失败后的下一轮延迟：更新流程随时可能把后端拉起来，
+// 等满 NEXT_CYCLE_DELAY 只会白白拖长空窗期
+const INTENTIONAL_RESTART_RETRY_DELAY = 3000
+// 有意重启窗口的兜底时限：更新流程异常中断（初始化页报错停住、用户切走不管）时标志不能
+// 永久滞留，否则之后真正的事故也不再提示与自动恢复。按最慢的一次后端更新取上限：
+// 拉取源码 + 装依赖可达数分钟
+const INTENTIONAL_RESTART_TIMEOUT = 600000
 // 倒计时消息停止更新后自动清除展示状态
 const POWER_COUNTDOWN_STALE_MS = 3000
+// 断开提示的通知 key：同一次断开只保留一条，重连成功后按 key 收起
+const DISCONNECT_NOTICE_KEY = 'app-lifecycle-disconnect'
+// 被另一个前端窗口接管的提示 key：同样只保留一条，重新连上后收起
+const SUPERSEDED_NOTICE_KEY = 'app-lifecycle-superseded'
 
 export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'error'
 
@@ -83,6 +95,10 @@ let restartFailureShown = false
 let disconnectIncidentShown = false
 let closeDisconnectModal: (() => void) | null = null
 
+// 有意重启后端状态：标题栏「更新后端」先关后端，再由初始化流程重新拉起
+let intentionalRestartActive = false
+let intentionalRestartTimer: number | undefined
+
 // HTTP 快照与同时到达的 WS 事件使用单调序号协调：HTTP 是连接建立时的初始权威状态，
 // 但请求发出后到达的 WS 事件必须覆盖该快照，不能被较旧的 HTTP 响应回滚。
 let lifecycleSnapshotGeneration = 0
@@ -97,13 +113,21 @@ const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTi
 
 const isClosing = (): boolean => closePromise !== null
 
+// 计划内的后端重启窗口期：断开是预期的，既不提示也不自行恢复
+const isIntentionalRestart = (): boolean => intentionalRestartActive
+
 // ==================== 常驻订阅 ====================
 
 const handleShutdownReady = (): void => {
   // 仅在本次关闭流程期间生效：第三方（如 Koishi 远程命令）触发的 /close
   // 也会广播 ready，不能留下陈旧标志影响之后真正的关闭流程
   if (!isClosing()) {
-    logger.info('收到 backend.shutdown.ready（非关闭流程期间，忽略）')
+    // 有意重启期间后端也会播报 ready，单独记一条日志，避免排查时误判成意外断开
+    logger.info(
+      isIntentionalRestart()
+        ? '收到 backend.shutdown.ready（后端有意重启期间，忽略）'
+        : '收到 backend.shutdown.ready（非关闭流程期间，忽略）'
+    )
     return
   }
   logger.info('收到 backend.shutdown.ready，后端清理完成')
@@ -179,10 +203,9 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
 const handleConnected = async (): Promise<void> => {
   backendRestartAttempts = 0
   restartFailureShown = false
-  disconnectIncidentShown = false
   backendStatus.value = 'running'
-  closeDisconnectModal?.()
-  closeDisconnectModal = null
+  endIntentionalBackendRestart('后端已重新连上')
+  dismissDisconnectIncident()
   await refreshLifecycleSnapshots()
 }
 
@@ -310,8 +333,8 @@ export function disposeAppLifecycle(): void {
     window.clearTimeout(powerCountdownStaleTimer)
     powerCountdownStaleTimer = undefined
   }
-  closeDisconnectModal?.()
-  closeDisconnectModal = null
+  endIntentionalBackendRestart('生命周期协调器释放')
+  dismissDisconnectIncident()
   logger.info('应用生命周期协调器已释放')
 }
 
@@ -343,6 +366,10 @@ const runCloseFlow = async (): Promise<void> => {
 
   // 关闭流程期间停止普通自动重连；自动重启与 taskkill 互斥由 isClosing() 保证
   stopReconnect()
+  // 关闭流程开始即收起断开提示，不让它叠在关闭遮罩上；
+  // 关闭优先级最高，未走完的有意重启窗口一并作废
+  endIntentionalBackendRestart('进入关闭流程')
+  dismissDisconnectIncident()
 
   closeViaRuntime = await queryRuntimeSupervised()
   if (closeViaRuntime) {
@@ -485,6 +512,11 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
   // 关闭流程具有最高优先级，任何异步步骤后都会重新检查并退出。
   if (restartPromise) return restartPromise
   if (restartFailureShown || isClosing()) return Promise.resolve()
+  if (isIntentionalRestart()) {
+    // 后端由更新流程负责拉起：这里再起一个会与它抢同一个进程（先 taskkill 再启动）
+    logger.info('后端有意重启进行中，跳过自动恢复')
+    return Promise.resolve()
+  }
   if (isBackendDevMode() && !allowDevMode) {
     logger.warn('开发模式后端由开发者管理，跳过自动重启并继续重连')
     scheduleReconnect(DEV_MODE_RETRY_DELAY)
@@ -549,10 +581,71 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
   return restartPromise
 }
 
-const showDisconnectIncident = (event: WSDisconnectEvent): void => {
+// ==================== 后端有意重启 ====================
+// 标题栏「更新后端」会先关掉后端，再由初始化流程拉源码、装依赖并重新拉起它。
+// 这段窗口期内的断开是计划内的，不该走事故路径：提示会出现在用户自己点的更新流程里，
+// 自动恢复更会 taskkill 后抢着起一个后端，与初始化流程争同一个进程。
+// 判据必须是显式标志而不是「多久内恢复」：更新耗时从几秒到几分钟不等。
+
+/**
+ * 进入有意重启窗口。调用方必须在流程未能走到「后端重新连上」时调用
+ * {@link endIntentionalBackendRestart}；两者都没发生时由超时兜底解除。
+ *
+ * @param reason 记入日志的触发原因
+ */
+export function beginIntentionalBackendRestart(reason: string): void {
+  if (intentionalRestartTimer !== undefined) window.clearTimeout(intentionalRestartTimer)
+  intentionalRestartActive = true
+  intentionalRestartTimer = window.setTimeout(() => {
+    intentionalRestartTimer = undefined
+    if (!intentionalRestartActive) return
+    intentionalRestartActive = false
+    logger.warn('后端有意重启窗口超时未结束，恢复断开提示与自动恢复')
+  }, INTENTIONAL_RESTART_TIMEOUT)
+  logger.info(`进入后端有意重启窗口: ${reason}`)
+}
+
+/**
+ * 结束有意重启窗口，恢复正常的断开提示与自动恢复。幂等。
+ *
+ * @param reason 记入日志的结束原因
+ */
+export function endIntentionalBackendRestart(reason: string): void {
+  if (intentionalRestartTimer !== undefined) {
+    window.clearTimeout(intentionalRestartTimer)
+    intentionalRestartTimer = undefined
+  }
+  if (!intentionalRestartActive) return
+  intentionalRestartActive = false
+  logger.info(`结束后端有意重启窗口: ${reason}`)
+}
+
+// ==================== 断开提示 ====================
+// 断开先只给右上角非阻塞通知：后端偶发抖动或 Electron 主动重启后端时几秒即恢复，
+// 一断开就弹阻塞式模态框只是噪音。生产模式仅在整轮重连失败后才升级为模态框；
+// 开发模式后端由开发者手动重启，属于常规操作，始终不弹模态框。
+
+const showDisconnectNotice = (event: WSDisconnectEvent): void => {
   if (disconnectIncidentShown) return
   disconnectIncidentShown = true
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
+  notification.warning({
+    key: DISCONNECT_NOTICE_KEY,
+    message: t('misc.lostConnectionBackend'),
+    description: t(
+      isBackendDevMode()
+        ? 'misc.devBackendReconnecting'
+        : 'misc.checkingBackendRecoveringAutomatically'
+    ),
+    // 持续到重连成功或关闭流程开始时按 key 收起，不自动消失
+    duration: null,
+  })
+}
+
+const escalateDisconnectIncident = (): void => {
+  // 只升级由断开事件开启的事故；开发模式与已升级过的事故不重复弹
+  if (!disconnectIncidentShown || closeDisconnectModal || isBackendDevMode()) return
+  notification.close(DISCONNECT_NOTICE_KEY)
   const modal = Modal.warning({
     title: t('misc.lostConnectionBackend'),
     content: t('misc.checkingBackendRecoveringAutomatically'),
@@ -561,6 +654,29 @@ const showDisconnectIncident = (event: WSDisconnectEvent): void => {
   if (modal && typeof modal.destroy === 'function') {
     closeDisconnectModal = () => modal.destroy()
   }
+}
+
+const dismissDisconnectIncident = (): void => {
+  disconnectIncidentShown = false
+  notification.close(DISCONNECT_NOTICE_KEY)
+  notification.close(SUPERSEDED_NOTICE_KEY)
+  closeDisconnectModal?.()
+  closeDisconnectModal = null
+}
+
+const showSupersededNotice = (event: WSDisconnectEvent): void => {
+  // 另一个前端窗口接管了后端主连接（后端以专用关闭码通知）。后端没坏，
+  // 连接层也已停止自动重连，所以只给一次非阻塞提示：不弹模态框、不自动重启后端、
+  // 不进入恢复流程，否则本窗口会把对方踢掉、两边无限互踢。
+  logger.warn(`主连接已被另一个前端窗口接管: code=${event.code}, reason=${event.reason || '无'}`)
+  dismissDisconnectIncident()
+  notification.info({
+    key: SUPERSEDED_NOTICE_KEY,
+    message: t('misc.anotherWindowTookOverBackend'),
+    description: t('misc.thisWindowStoppedReconnecting'),
+    // 本窗口不会自己恢复，提示保留到显式重连成功或关闭流程开始
+    duration: null,
+  })
 }
 
 const recoverAfterDisconnect = (): Promise<void> => {
@@ -586,13 +702,35 @@ const handleDisconnected = (event: WSDisconnectEvent): void => {
     }
     return
   }
+  if (event.code === WS_CLOSE_CODE_REPLACED) {
+    // 被另一个窗口接管：后端仍在运行，backendStatus 不改，不进入恢复流程
+    showSupersededNotice(event)
+    return
+  }
+  if (isIntentionalRestart()) {
+    // 计划内重启（标题栏「更新后端」）：后端由更新流程重新拉起，连接层照常自动重连。
+    // 这里既不提示也不恢复，否则用户会在自己点的更新流程里看到「与后端失去连接」，
+    // 协调器还会 taskkill 后抢着起一个后端。
+    logger.info(`后端有意重启期间断开: code=${event.code}，等待更新流程重新拉起后端`)
+    backendStatus.value = 'starting'
+    return
+  }
   backendStatus.value = 'stopped'
-  showDisconnectIncident(event)
+  showDisconnectNotice(event)
   void recoverAfterDisconnect()
 }
 
 const handleReconnectCycleFailed = async (): Promise<void> => {
   if (isClosing() || restartFailureShown) return
+  if (isIntentionalRestart()) {
+    // 更新流程可能正在装依赖，耗时远超一轮重连（约 40 秒）：不升级弹窗、不抢着起后端，
+    // 只缩短下一轮间隔，后端一起来就能连上
+    logger.info('后端有意重启进行中，本轮重连失败后继续等待')
+    scheduleReconnect(INTENTIONAL_RESTART_RETRY_DELAY)
+    return
+  }
+  // 一整轮重连都没连上，才把非阻塞通知升级为模态框
+  escalateDisconnectIncident()
 
   const running = await queryBackendRunning()
   // IPC 查询期间关闭流程可能已开始：重查后再决策，避免在关闭态重建重连计时器
@@ -611,7 +749,7 @@ const handleReconnectCycleFailed = async (): Promise<void> => {
 const handleSystemResume = (): Promise<void> => {
   if (resumeRecoveryPromise) return resumeRecoveryPromise
   resumeRecoveryPromise = (async () => {
-    if (isClosing()) return
+    if (isClosing() || isIntentionalRestart()) return
     logger.info('检测到系统恢复，检查后端和主 WebSocket')
 
     const running = await queryBackendRunning()
@@ -728,6 +866,8 @@ export async function manualReconnect(): Promise<boolean> {
 
 /** 手动重启后端（重置失败计数） */
 export async function restartBackendManually(): Promise<void> {
+  // 用户显式重启优先于有意重启窗口，否则会被上面的守卫直接跳过
+  endIntentionalBackendRestart('用户手动重启后端')
   backendRestartAttempts = 0
   restartFailureShown = false
   await restartBackendFlow(true)
