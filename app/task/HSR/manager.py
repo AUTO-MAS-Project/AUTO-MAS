@@ -65,6 +65,7 @@ from .tools.external_locks import (
     acquire_external_path_locks,
     resolve_external_lock_paths,
 )
+from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.m7a_config import load_m7a_native_config
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
@@ -815,6 +816,9 @@ class HSRManager(TaskExecuteBase):
         user_item.status = "运行"
         log_start = len(self._log_lines)
 
+        # 执行任务前脚本（每用户仅一次）
+        await run_script_before_task(user_config)
+
         switcher = HSRAccountSwitcher(
             script_config=self.script_config,
             runtime=self._runtime,
@@ -866,11 +870,15 @@ class HSRManager(TaskExecuteBase):
             user_item.status = "异常"
             log_item.status = "HSR 脚本直控异常"
             log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
+            # 执行任务后脚本（每用户仅一次）
+            await run_script_after_task(user_config)
             raise
 
         user_item.status = "完成"
         log_item.status = "HSR 脚本直控完成"
         log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
+        # 执行任务后脚本（每用户仅一次）
+        await run_script_after_task(user_config)
         return len(control.engines)
 
     async def _persist_user_logs(self) -> None:

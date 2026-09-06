@@ -52,6 +52,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.log_detect import detect_echo_of_war_completion
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
@@ -1528,6 +1529,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self._finish_current_user_log("HSR 本轮无需执行，已跳过")
             return
 
+        # 执行任务前脚本（每用户仅一次，补跑不重复执行）
+        await run_script_before_task(user_cfg)
+
         failed_items: list[HSRRunItem] = []
         current_items = full_queue
         for attempt in range(1, retry_limit + 1):
@@ -1583,6 +1587,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             # 用户状态必须在这一次里定好，否则后续补写全部失效。
             if not failed_items:
                 self._finish_current_user_log(status)
+                # 执行任务后脚本（每用户仅一次）
+                await run_script_after_task(user_cfg)
                 return
 
             if attempt < retry_limit:
@@ -1620,6 +1626,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         status="failed",
                         reason=failed_item.last_error or "重试后仍未完成",
                     )
+                # 执行任务后脚本（每用户仅一次）
+                await run_script_after_task(user_cfg)
                 raise RuntimeError(
                     self._format_queue_failures(failed_items, retry_limit)
                 )
