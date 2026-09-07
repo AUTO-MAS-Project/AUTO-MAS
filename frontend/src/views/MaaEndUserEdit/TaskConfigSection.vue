@@ -1,13 +1,5 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.taskConfiguration') }}</h3>
-      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
-        <template #icon><CalendarOutlined /></template>
-        {{ t('edit.goPlan') }}
-      </a-button>
-    </div>
-
+  <div>
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
       <div class="task-group-sidebar">
         <button
@@ -55,6 +47,33 @@
         </div>
       </div>
     </div>
+
+    <a-row :gutter="24" class="daily-once-row">
+      <a-col :span="24">
+        <a-form-item>
+          <template #label>
+            <a-tooltip :title="t('edit.maaEndDailyOnceTasksHint')">
+              <span class="form-label">
+                {{ t('edit.maaEndDailyOnceTasks') }}
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            :value="dailyOnceTaskValues"
+            mode="multiple"
+            size="large"
+            :options="dailyOnceTaskOptions"
+            :disabled="props.loading"
+            option-filter-prop="label"
+            show-search
+            :max-tag-count="'responsive'"
+            :placeholder="t('edit.maaEndDailyOnceTasksPlaceholder')"
+            @change="handleDailyOnceTasksChange"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
 
     <a-row v-if="showSanityDetail" :gutter="24">
       <a-col :span="optionColumnSpan">
@@ -153,11 +172,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
-import { navigateTo } from '@/router'
 import {
   MAAEND_TASK_GROUPS,
+  MAAEND_DAILY_ONCE_TASK_OPTIONS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
@@ -235,6 +254,27 @@ const controlsDisabled = computed(() => {
 })
 
 const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const dailyOnceTaskValues = computed(() => {
+  const value = formData.Task.DailyOnceTasks
+  if (Array.isArray(value)) {
+    return value.filter((item: unknown): item is string => typeof item === 'string')
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : []
+    } catch {
+      return []
+    }
+  }
+  return []
+})
+const dailyOnceTaskOptions = MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
+  label: task.label,
+  value: task.name,
+}))
 const displayPlanConfig = computed(() =>
   props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
 )
@@ -335,6 +375,15 @@ const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
 
+const handleDailyOnceTasksChange = (values: string[]) => {
+  if (props.loading) return
+  const normalized = Array.from(new Set(values.filter(Boolean)))
+  const serialized = JSON.stringify(normalized)
+  formData.Task.DailyOnceTasks = serialized
+  // 非快速配置同样开放此用户级选项，不能走仅允许快速配置任务开关的 emitSave。
+  emit('save', 'Task.DailyOnceTasks', serialized)
+}
+
 const taskSwitchKey = (taskName: MaaEndTaskSwitch) => `If${taskName}` as const
 
 const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
@@ -351,10 +400,6 @@ const showRewardGroupSelect = computed(
         isProtocolSpaceRewardEnabled(displayPlanConfig.value)
       : rewardGroupEnabled.value)
 )
-
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
-}
 
 const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
   emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
@@ -478,28 +523,15 @@ watch(
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.mode-notice {
-  margin-bottom: 16px;
-}
-
 .task-switch-layout {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
   gap: 24px;
   margin-bottom: 20px;
+}
+
+.daily-once-row :deep(.ant-select) {
+  width: 100%;
 }
 
 .task-group-sidebar {
@@ -583,28 +615,6 @@ watch(
 .task-switch-label {
   color: var(--ant-color-text);
   font-size: 14px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.plans-button {
-  padding-inline: 0;
 }
 
 .plan-mode-display {

@@ -1,6 +1,6 @@
 <template>
   <div class="form-section">
-    <div class="section-header">
+    <div v-if="!hideSectionHeader" class="section-header">
       <h3>{{ t('edit.notificationSettings') }}</h3>
     </div>
 
@@ -121,12 +121,15 @@ withDefaults(
     scriptId?: string | null
     userId?: string | null
     showSixStar?: boolean
+    // 卡片化页面（如 MaaEnd 用户编辑页）由外层卡片提供标题时隐藏内部标题
+    hideSectionHeader?: boolean
   }>(),
   {
     loading: false,
     scriptId: null,
     userId: null,
     showSixStar: false,
+    hideSectionHeader: false,
   }
 )
 

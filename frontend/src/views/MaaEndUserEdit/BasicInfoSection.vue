@@ -1,9 +1,5 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
-    </div>
-
+  <div>
     <a-row :gutter="24">
       <a-col :span="12">
         <a-form-item name="userName" required>
@@ -20,7 +16,6 @@
             :placeholder="t('edit.enterUsername')"
             :disabled="loading"
             size="large"
-            class="modern-input"
             @blur="emitSave('userName', formData.userName)"
           />
         </a-form-item>
@@ -89,38 +84,22 @@
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :span="12">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('edit.configurationSource') }}
-              <a-tooltip :title="t('edit.scriptUsesGlobalConfiguration')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
+      <a-col :span="24">
+        <GeneralConfigModeSelector
+          :model-value="formData.Info.Mode"
+          :options="maaEndConfigModeOptions"
+          :disabled="loading"
+          alert-message="脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用 MaaEnd 原有配置。接管具体任务配置是独立覆盖层。"
+          @change="$emit('modeChange', $event)"
+        />
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="24">
+        <a-form-item :label="t('edit.configurationSource')">
           <div class="config-source-control">
-            <a-select
-              v-model:value="formData.Info.Mode"
-              size="large"
-              :options="modeOptions"
-              :disabled="loading"
-              @change="emitSave('Info.Mode', formData.Info.Mode)"
-            />
             <a-button
-              v-if="formData.Info.Mode === '脚本'"
-              type="default"
-              size="large"
-              :disabled="loading || showConfigMask"
-              @click="$emit('scriptConfig')"
-            >
-              <template #icon>
-                <EditOutlined />
-              </template>
-              {{ t('edit.editScriptSettings') }}
-            </a-button>
-            <a-button
-              v-else
               type="primary"
               ghost
               size="large"
@@ -131,10 +110,10 @@
               <template #icon>
                 <SettingOutlined />
               </template>
-              {{ showConfigMask ? '正在配置' : '配置' }}
+              {{ showConfigMask ? '正在配置' : `配置${currentConfigModeLabel}` }}
             </a-button>
             <a-button
-              v-if="formData.Info.Mode !== '脚本'"
+              v-if="formData.Info.Mode !== '直控'"
               type="default"
               size="large"
               :loading="importLoading"
@@ -146,10 +125,24 @@
               </template>
               {{ t('edit.import2') }}
             </a-button>
+            <a-button
+              type="default"
+              size="large"
+              :disabled="loading || showConfigMask"
+              @click="$emit('scriptConfig')"
+            >
+              <template #icon>
+                <EditOutlined />
+              </template>
+              {{ t('edit.editScriptSettings') }}
+            </a-button>
           </div>
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -168,10 +161,8 @@
           />
         </a-form-item>
       </a-col>
-    </a-row>
 
-    <a-row :gutter="24">
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -191,7 +182,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -228,7 +219,6 @@
         :placeholder="t('edit.enterNote')"
         :rows="4"
         :disabled="loading"
-        class="modern-input"
         @blur="emitSave('Info.Notes', formData.Info.Notes)"
       />
     </a-form-item>
@@ -243,6 +233,8 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
+import { computed } from 'vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
 const emit = defineEmits<{
@@ -250,10 +242,10 @@ const emit = defineEmits<{
   configure: []
   importConfig: []
   scriptConfig: []
+  modeChange: [value: boolean | string]
 }>()
 
 const formData = defineModel<any>('formData', { required: true })
-
 defineProps<{
   loading: boolean
   resourceOptions: Array<{ label: string; value: string }>
@@ -263,9 +255,30 @@ defineProps<{
   showConfigMask?: boolean
 }>()
 
-const modeOptions = [
-  { label: t('edit.script'), value: '脚本' },
-  { label: t('edit.user'), value: '用户' },
+const maaEndConfigModeOptions: Array<{
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  {
+    value: '脚本',
+    title: '脚本',
+    description: '使用脚本级共享配置，所有用户共用。',
+    icon: 'file',
+  },
+  {
+    value: '用户',
+    title: '用户',
+    description: '使用当前用户独立配置，与脚本配置隔离。',
+    icon: 'database',
+  },
+  {
+    value: '直控',
+    title: '直控',
+    description: '直接使用 MaaEnd 原有配置，由 MaaEnd GUI 维护。',
+    icon: 'setting',
+  },
 ]
 
 const quickConfigOptions = [
@@ -276,43 +289,19 @@ const quickConfigOptions = [
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
+
+const currentConfigModeLabel = computed(() => {
+  if (formData.value.Info.Mode === '直控') return '脚本直控'
+  if (formData.value.Info.Mode === '用户') return '用户独立'
+  return '脚本共享'
+})
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
 .config-source-control {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-}
-
-.config-source-control :deep(.ant-select) {
-  flex: 1;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -325,10 +314,5 @@ const emitSave = (key: string, value: any) => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
 }
 </style>

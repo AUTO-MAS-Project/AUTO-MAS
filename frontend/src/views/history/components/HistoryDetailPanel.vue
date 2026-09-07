@@ -43,6 +43,7 @@ interface RecordItem {
   date: string
   jsonFile: string
   status: string
+  result?: string | null
 }
 
 interface Props {

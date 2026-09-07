@@ -20,6 +20,7 @@
 
 
 import asyncio
+import json
 import re
 import shutil
 import uuid
@@ -35,17 +36,118 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
-from app.utils import LogMonitor, ProcessManager, get_logger, is_process_running
-from app.utils.constants import MAAEND_TASKS, UTC4
+from app.utils import (
+    LogMonitor,
+    ProcessManager,
+    get_logger,
+    is_backend_dev_mode,
+    is_process_running,
+)
+from app.utils.constants import (
+    MAAEND_AUTO_COLLECT_MODES,
+    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+    MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS,
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_DELIVERY_TASK,
+    MAAEND_RUN_MOOD_BOOK,
+    MAAEND_TASKS,
+    UTC4,
+)
 from app.utils.io import read_file, write_file
 
 from .resource_loader import (
     load_maaend_interface_i18n,
     load_maaend_task_i18n,
 )
+from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
 from .tools import login, push_notification, replace_account_switch_task
 
 logger = get_logger("MaaEnd 自动代理")
+
+_MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
+_MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
+
+
+def _load_json_dict(value: object) -> dict[str, object]:
+    """读取配置中的 JSON 对象，兼容运行时直接传入字典。"""
+
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _load_json_list(value: object) -> list[str]:
+    """读取配置中的 JSON 字符串列表。"""
+
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(data, list):
+            return [str(item) for item in data if str(item).strip()]
+    return []
+
+
+def _task_enabled_for_mode(task_name: object, enabled: object, mode: str) -> bool:
+    """按送货/日常/自动采集阶段筛选 MaaEnd 任务。"""
+
+    name = str(task_name)
+    if mode == "Delivery":
+        return bool(enabled) and name in {
+            MAAEND_DELIVERY_TASK,
+            _MAAEND_ACCOUNT_SWITCH_TASK,
+        }
+    if mode == "AutoCollect":
+        return bool(enabled) and name in {
+            MAAEND_AUTO_COLLECT_TASK,
+            _MAAEND_ACCOUNT_SWITCH_TASK,
+        }
+    if mode == "Routine":
+        return bool(enabled) and name not in {
+            MAAEND_DELIVERY_TASK,
+            MAAEND_AUTO_COLLECT_TASK,
+        }
+    raise ValueError(f"未知 MaaEnd 运行模式: {mode}")
+
+
+def _select_auto_collect_routes(
+    mode: str,
+    routes: list[str],
+    common_routes: list[str],
+    now: datetime,
+) -> dict[str, list[str]]:
+    """按东四区日期选择本轮需要执行的自动采集路线。"""
+
+    cycle_index = now.date().toordinal() % 3
+
+    def select_routes(option_name: str, selected: list[str]) -> list[str]:
+        selected_set = set(selected)
+        return [
+            route
+            for index, route in enumerate(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS[option_name])
+            if route in selected_set
+            and (
+                mode == "Concentrated" and cycle_index == 0
+                or mode == "Distributed" and index % 3 == cycle_index
+            )
+        ]
+
+    return {
+        "AutoCollectRoutes": select_routes("AutoCollectRoutes", routes),
+        "AutoCollectCommonRoutes": select_routes(
+            "AutoCollectCommonRoutes", common_routes
+        ),
+    }
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -75,6 +177,18 @@ class AutoProxyTask(TaskExecuteBase):
         self.account_switch_task_name = ""
         self.color_match_failed_message: str | None = None
         self.retryable = True
+        self.mode = "Routine"
+        self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
+        self.task_dict: dict[str, dict[str, bool]] | None = None
+        self.task_name_map: dict[str, str] = {}
+        self.unique_task: dict[str, str] = {}
+        self.maaend_config_file: Path | None = None
+        self.account_switch_mode: str | None = None
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.auto_collect_run_at: datetime | None = None
+        self.auto_collect_routes: dict[str, list[str]] = {
+            option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
+        }
 
     async def check(self) -> str:
 
@@ -100,20 +214,155 @@ class AutoProxyTask(TaskExecuteBase):
                     "请检查账号ID或改用 MAS 自建账号切换"
                 )
 
-        config_user_id = (
-            "Default"
-            if self.cur_user_config.get("Info", "Mode") == "脚本"
-            else self.cur_user_uid
-        )
-        config_file = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile/mxu-MaaEnd.json"
-        )
+        config_mode = maaend_config_mode(self.cur_user_config.get("Info", "Mode"))
+        if config_mode == "直控":
+            config_file = (
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp/mxu-MaaEnd.json"
+            )
+        else:
+            config_file = (
+                maaend_mas_config_dir(
+                    self.script_info.script_id,
+                    str(self.cur_user_uid),
+                    config_mode,
+                )
+                / "mxu-MaaEnd.json"
+            )
+        self.maaend_config_file = config_file
         if not config_file.exists():
             self.cur_user_item.status = "异常"
             return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
+        self._prepare_auto_collect_routes()
+        daily_once_skip_reason = self._daily_once_skip_reason()
+        if daily_once_skip_reason is not None:
+            self.cur_user_item.status = "跳过"
+            return daily_once_skip_reason
+
         return "Pass"
+
+    def _prepare_auto_collect_routes(self) -> None:
+        """按当前日期准备自动采集路线。"""
+
+        if not self.cur_user_config.get("Info", "IfQuickConfig"):
+            self.auto_collect_run_at = None
+            self.auto_collect_routes = {
+                option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
+            }
+            return
+
+        auto_collect_mode = self.cur_user_config.get("Task", "AutoCollectMode")
+        if auto_collect_mode not in MAAEND_AUTO_COLLECT_MODES:
+            auto_collect_mode = MAAEND_AUTO_COLLECT_MODES[0]
+        self.auto_collect_run_at = datetime.now(tz=UTC4)
+        self.auto_collect_routes = _select_auto_collect_routes(
+            auto_collect_mode,
+            list(self.cur_user_config.get("Task", "AutoCollectRoutes") or []),
+            list(self.cur_user_config.get("Task", "AutoCollectCommonRoutes") or []),
+            self.auto_collect_run_at,
+        )
+
+    def _daily_once_task_names(self) -> set[str]:
+        return set(
+            _load_json_list(self.cur_user_config.get("Task", "DailyOnceTasks"))
+        )
+
+    def _daily_task_records(self) -> dict[str, str]:
+        raw_records = _load_json_dict(
+            self.cur_user_config.get("Data", "PeriodTaskRecords")
+        )
+        daily_records = raw_records.get("daily", {})
+        if not isinstance(daily_records, dict):
+            return {}
+        return {
+            str(task_name): str(period_key)
+            for task_name, period_key in daily_records.items()
+            if str(task_name).strip() and str(period_key).strip()
+        }
+
+    def _daily_once_task_done(self, task_name: object) -> bool:
+        """判断任务是否已在当天正常完成。"""
+
+        name = str(task_name)
+        selected_tasks = self._daily_once_task_names()
+        if name not in selected_tasks and not (
+            name in _MAAEND_SANITY_TASK_NAMES and "Sanity" in selected_tasks
+        ):
+            return False
+
+        records = self._daily_task_records()
+        if records.get(name) == self.curdate:
+            return True
+        return name in _MAAEND_SANITY_TASK_NAMES and records.get("Sanity") == self.curdate
+
+    def _quick_task_daily_once_done(self, task_name: str) -> bool:
+        """判断快速配置中的逻辑任务是否已在当天完成。"""
+
+        if task_name != "Sanity":
+            return self._daily_once_task_done(task_name)
+        if self._daily_once_task_done(task_name):
+            return True
+        try:
+            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
+        except ValueError:
+            return False
+        target_task_name = (
+            "AutoEssence"
+            if sanity_task_key["SanityTaskType"] == "Essence"
+            else "ProtocolSpace"
+        )
+        return self._daily_once_task_done(target_task_name)
+
+    async def _mark_daily_once_tasks_completed(
+        self, completed_task_names: set[str]
+    ) -> None:
+        """记录当天已正常完成的每日一次任务。"""
+
+        selected_tasks = self._daily_once_task_names()
+        if not selected_tasks or not completed_task_names:
+            return
+
+        records_data = _load_json_dict(
+            self.cur_user_config.get("Data", "PeriodTaskRecords")
+        )
+        records = self._daily_task_records()
+        changed = False
+        for task_name in completed_task_names:
+            keys = {str(task_name)}
+            if str(task_name) in _MAAEND_SANITY_TASK_NAMES:
+                keys.add("Sanity")
+            for key in keys.intersection(selected_tasks):
+                if records.get(key) != self.curdate:
+                    records[key] = self.curdate
+                    changed = True
+
+        if changed:
+            records_data["daily"] = records
+            await self.cur_user_config.set(
+                "Data",
+                "PeriodTaskRecords",
+                json.dumps(records_data, ensure_ascii=False),
+            )
+
+    def _daily_once_skip_reason(self) -> str | None:
+        """判断当前用户是否所有阶段都因每日一次规则而无需启动。"""
+
+        mode_results = [
+            self._mode_skip_reason(mode) for mode in MAAEND_RUN_MOOD_BOOK
+        ]
+        if any(reason is None or missing for reason, missing in mode_results):
+            return None
+        daily_once_done = (
+            self._quick_task_daily_once_done
+            if self.cur_user_config.get("Info", "IfQuickConfig")
+            else self._daily_once_task_done
+        )
+        if not any(
+            daily_once_done(task_name)
+            for task_name in self._daily_once_task_names()
+        ):
+            return None
+        return "每日仅执行一次的任务今日已完成，跳过该用户"
 
     async def prepare(self):
 
@@ -134,7 +383,165 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
         )
 
-        self.run_book = False
+        self._prepare_auto_collect_routes()
+
+        mode_skip_reasons: dict[str, str] = {}
+        missing_task_modes: list[str] = []
+        for mode in MAAEND_RUN_MOOD_BOOK:
+            reason, missing_task = self._mode_skip_reason(mode)
+            if reason is None:
+                continue
+            mode_skip_reasons[mode] = reason
+            if missing_task:
+                missing_task_modes.append(mode)
+        self.account_switch_mode = next(
+            (mode for mode in MAAEND_RUN_MOOD_BOOK if mode not in mode_skip_reasons),
+            None,
+        )
+        self.run_book = {
+            mode: mode in mode_skip_reasons for mode in MAAEND_RUN_MOOD_BOOK
+        }
+        for mode, reason in mode_skip_reasons.items():
+            logger.info(
+                f"用户 {self.cur_user_item.name} 跳过{MAAEND_RUN_MOOD_BOOK[mode]}阶段: {reason}"
+            )
+        for mode in missing_task_modes:
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=(
+                        f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中不存在"
+                        f"{MAAEND_RUN_MOOD_BOOK[mode]}阶段所需任务，已跳过该阶段，"
+                        "请在 MaaEnd 中添加并启用对应任务"
+                    ),
+                ),
+            )
+
+    def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
+        """读取当前用户所选 MaaEnd 实例的任务列表。"""
+
+        if self.maaend_config_file is None:
+            return None
+        try:
+            source_config = read_file(self.maaend_config_file)
+        except (OSError, TypeError, ValueError):
+            return None
+        if not isinstance(source_config, dict):
+            return None
+
+        instances = source_config.get("instances")
+        if not isinstance(instances, list) or not instances:
+            return None
+
+        selected_instance = None
+        for instance in instances:
+            if not isinstance(instance, dict):
+                continue
+            if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
+                selected_instance = instance
+                break
+            if instance.get("id") == source_config.get("lastActiveInstanceId"):
+                selected_instance = instance
+                break
+        if selected_instance is None:
+            selected_instance = instances[0]
+        tasks = selected_instance.get("tasks")
+        if not isinstance(tasks, list):
+            return None
+        return [task for task in tasks if isinstance(task, dict)]
+
+    def _source_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+        """非快速配置下按 MaaEnd 配置判断阶段是否可执行。"""
+
+        tasks = self._source_maaend_tasks()
+        if tasks is None:
+            # 配置读取失败时交给 MaaEnd 执行并由日志判定，避免误跳过用户任务。
+            return None, False
+
+        def has_task(task_name: str, *, enabled_only: bool = False) -> bool:
+            return any(
+                str(task.get("taskName", "")) == task_name
+                and (not enabled_only or bool(task.get("enabled", False)))
+                for task in tasks
+            )
+
+        if mode == "Delivery":
+            if not has_task(MAAEND_DELIVERY_TASK):
+                return "MaaEnd 配置中不存在抢委托送货任务", True
+            if not has_task(MAAEND_DELIVERY_TASK, enabled_only=True):
+                return "抢委托送货任务未启用", False
+            if self._daily_once_task_done(MAAEND_DELIVERY_TASK):
+                return "抢委托送货任务今日已完成", False
+            return None, False
+        if mode == "AutoCollect":
+            if not has_task(MAAEND_AUTO_COLLECT_TASK):
+                return "MaaEnd 配置中不存在自动采集任务", True
+            if not has_task(MAAEND_AUTO_COLLECT_TASK, enabled_only=True):
+                return "自动采集任务未启用", False
+            if self._daily_once_task_done(MAAEND_AUTO_COLLECT_TASK):
+                return "自动采集任务今日已完成", False
+            return None, False
+        if not any(
+            _task_enabled_for_mode(
+                task.get("taskName"), task.get("enabled", False), mode
+            )
+            for task in tasks
+            if not str(task.get("taskName", "")).startswith("__MXU_")
+            and str(task.get("taskName", "")) != _MAAEND_ACCOUNT_SWITCH_TASK
+            and not self._daily_once_task_done(task.get("taskName"))
+        ):
+            return "MaaEnd 配置中没有已启用的日常任务", False
+        return None, False
+
+    def _quick_config_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+        """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
+
+        if mode == "Delivery":
+            if not self.cur_user_config.get("Task", "IfSeizeDeliveryJobs"):
+                return "快速配置未开启抢委托送货", False
+            task_name = MAAEND_DELIVERY_TASK
+            task_label = "抢委托送货"
+        elif mode == "AutoCollect":
+            if not self.cur_user_config.get("Task", "IfAutoCollect"):
+                return "快速配置未开启自动采集", False
+            if not any(self.auto_collect_routes.values()):
+                return "今日采集周期无待执行路线", False
+            task_name = MAAEND_AUTO_COLLECT_TASK
+            task_label = "自动采集"
+        else:
+            if not any(
+                bool(self.cur_user_config.get("Task", f"If{task_name}"))
+                and not self._quick_task_daily_once_done(task_name)
+                for task_name in MAAEND_TASKS
+            ):
+                return "快速配置未开启任何日常任务", False
+            return None, False
+
+        tasks = self._source_maaend_tasks()
+        if tasks is None:
+            return None, False
+        if not any(str(task.get("taskName", "")) == task_name for task in tasks):
+            return f"MaaEnd 配置中不存在{task_label}任务", True
+        if self._daily_once_task_done(task_name):
+            return f"{task_label}任务今日已完成", False
+        return None, False
+
+    def _mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+        """判断某阶段是否无可执行任务，空阶段直接视为完成。
+
+        Args:
+            mode (str): MaaEnd 运行阶段。
+
+        Returns:
+            tuple[str | None, bool]: 跳过原因（None 表示该阶段有任务可执行），
+                以及是否因阶段任务在 MaaEnd 配置中不存在导致跳过。
+        """
+
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            return self._quick_config_mode_skip_reason(mode)
+        return self._source_mode_skip_reason(mode)
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -162,24 +569,37 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户 {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
-        self.task_dict: dict[str, dict[str, bool]] | None = None
-        self.unique_task: dict[str, str] = {}
-
         run_times_limit = self.script_config.get("Run", "RunTimesLimit")
         maaend_update_retry_used = False
         i = 0
-        while i < run_times_limit:
-            if self.run_book:
-                break
+        mode_order = list(MAAEND_RUN_MOOD_BOOK)
+        mode_index = 0
+        while mode_index < len(mode_order):
+            self.mode = mode_order[mode_index]
+            if self.run_book[self.mode]:
+                mode_index += 1
+                i = 0
+                maaend_update_retry_used = False
+                self.task_dict = None
+                continue
+            if i >= run_times_limit:
+                logger.warning(
+                    f"用户: {self.cur_user_uid} - {MAAEND_RUN_MOOD_BOOK[self.mode]}阶段重试次数已耗尽"
+                )
+                mode_index += 1
+                i = 0
+                maaend_update_retry_used = False
+                self.task_dict = None
+                continue
             i += 1
             self.retryable = True
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i}/{run_times_limit}"
+                f"用户 {self.cur_user_item.name} - {MAAEND_RUN_MOOD_BOOK[self.mode]}"
+                f"阶段尝试次数: {i}/{run_times_limit}"
             )
             self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
-            )
+            self.cur_user_log = LogRecord(phase=self.mode)
+            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -314,26 +734,35 @@ class AutoProxyTask(TaskExecuteBase):
             await self.maaend_log_monitor.stop()
 
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_book[self.mode] = True
                 self.script_info.log = (
-                    "检测到 MaaEnd 完成代理任务\n正在等待相关程序结束"
+                    f"检测到 MaaEnd 完成{MAAEND_RUN_MOOD_BOOK[self.mode]}任务\n"
+                    "正在等待相关程序结束"
                 )
 
                 # 中止相关程序
                 await self.maaend_process_manager.kill()
                 await System.kill_process(self.maaend_exe_path)
-
-                # 执行任务后脚本
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
+                # 任务切换方式为重启游戏时，关闭游戏或模拟器供下一阶段重新启动
+                if (
+                    self.script_config.get("Run", "TaskTransitionMethod") == "ExitGame"
+                    and any(
+                        not self.run_book[mode] for mode in mode_order[mode_index + 1 :]
                     )
+                ):
+                    await self.kill_game_process()
+
+                mode_index += 1
+                i = 0
+                maaend_update_retry_used = False
+                self.task_dict = None
 
             else:
                 if self.cur_user_log.status == "MaaEnd 正在更新":
-                    logger.info("MaaEnd 更新流程已退出，准备自动重试当前用户")
-                    self.script_info.log = "MaaEnd 更新完成，正在自动重试当前用户"
+                    logger.info(
+                        f"MaaEnd 更新流程已退出，准备自动重试{MAAEND_RUN_MOOD_BOOK[self.mode]}阶段"
+                    )
+                    self.script_info.log = "MaaEnd 更新完成，正在自动重试当前阶段"
 
                     # MaaEnd 更新后只重启脚本本体，保留 Endfield 进程减少重试成本。
                     await self.maaend_process_manager.kill()
@@ -346,7 +775,8 @@ class AutoProxyTask(TaskExecuteBase):
                         continue
 
                     logger.warning("MaaEnd 更新后已自动重试一次，跳过后续重试")
-                    break
+                    i = run_times_limit
+                    continue
 
                 logger.warning(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
@@ -363,16 +793,15 @@ class AutoProxyTask(TaskExecuteBase):
                     3,
                 )
 
-                # 执行任务后脚本
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
-
                 if not self.retryable:
                     logger.info("检测到游戏画面参数错误，跳过后续重试")
-                    break
+                    i = run_times_limit
+
+        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                "脚本后任务",
+            )
 
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None
@@ -406,8 +835,13 @@ class AutoProxyTask(TaskExecuteBase):
             3,
         )
 
-    async def kill_managed_process(self) -> None:
-        """中止关联进程"""
+    async def kill_managed_process(self, kill_game: bool = True) -> None:
+        """中止关联进程
+
+        Args:
+            kill_game (bool): 是否同时关闭游戏或模拟器；开发模式下手动中止
+                任务时传 False，保留游戏便于继续调试。
+        """
 
         try:
             logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
@@ -415,6 +849,14 @@ class AutoProxyTask(TaskExecuteBase):
             await System.kill_process(self.maaend_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
+        if not kill_game:
+            logger.info("开发模式下手动中止任务，保留游戏进程")
+            return
+        await self.kill_game_process()
+
+    async def kill_game_process(self) -> None:
+        """关闭游戏或模拟器进程（Win32 为终末地客户端，Adb 为模拟器）"""
+
         try:
             if self.emulator_manager is None:
                 logger.info("中止终末地进程")
@@ -426,7 +868,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Game", "EmulatorIndex")
                 )
         except Exception as e:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
@@ -441,14 +883,15 @@ class AutoProxyTask(TaskExecuteBase):
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
             maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
 
-        config_user_id = (
-            "Default"
-            if self.cur_user_config.get("Info", "Mode") == "脚本"
-            else self.cur_user_uid
-        )
+        config_mode = maaend_config_mode(self.cur_user_config.get("Info", "Mode"))
         maaend_config_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if config_mode == "直控"
+            else maaend_mas_config_dir(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                config_mode,
+            )
         )
         maaend_config_file = maaend_config_path / "mxu-MaaEnd.json"
         if not maaend_config_file.exists():
@@ -558,6 +1001,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.task_dict is None:
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
+            self.task_name_map = {}
             sanity_configured = False
             sanity_switch_enabled = if_quick_config and self.cur_user_config.get(
                 "Task", "IfSanity"
@@ -571,26 +1015,49 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
             for task in maaend_tasks:
-                if task["taskName"].startswith("__MXU_"):
+                task_name_value = str(task.get("taskName"))
+                if task_name_value.startswith("__MXU_"):
                     continue
 
-                task_enabled = task["enabled"]
+                task_enabled = bool(task.get("enabled", False))
                 if if_quick_config:
-                    if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
+                    if task_name_value in ("ProtocolSpace", "AutoEssence"):
                         if sanity_managed:
                             task_enabled = (
                                 sanity_switch_enabled
-                                and task["taskName"] == target_task_name
+                                and task_name_value == target_task_name
                                 and not sanity_configured
                             )
                             if task_enabled:
                                 sanity_configured = True
-                    elif task["taskName"] in MAAEND_TASKS:
+                    elif task_name_value == MAAEND_DELIVERY_TASK:
                         task_enabled = self.cur_user_config.get(
-                            "Task", f"If{task['taskName']}"
+                            "Task", f"If{MAAEND_DELIVERY_TASK}"
+                        )
+                    elif task_name_value == MAAEND_AUTO_COLLECT_TASK:
+                        task_enabled = bool(
+                            self.cur_user_config.get("Task", "IfAutoCollect")
+                            and any(self.auto_collect_routes.values())
+                        )
+                    elif task_name_value in MAAEND_TASKS:
+                        task_enabled = self.cur_user_config.get(
+                            "Task", f"If{task_name_value}"
                         )
 
+                task_enabled = _task_enabled_for_mode(
+                    task_name_value, task_enabled, self.mode
+                )
+                if (
+                    task_name_value == _MAAEND_ACCOUNT_SWITCH_TASK
+                    and self.mode != self.account_switch_mode
+                ):
+                    task_enabled = False
+
+                if self._daily_once_task_done(task_name_value):
+                    task_enabled = False
+
                 task_name = get_task_book_name(task)
+                self.task_name_map[task_name] = task_name_value
                 if task_name not in self.task_dict:
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task_enabled
@@ -609,19 +1076,47 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 按本轮任务表写回 MaaEnd 运行配置
         for task in maaend_tasks:
-            if task["taskName"].startswith("__MXU_"):
+            task_name_value = str(task.get("taskName"))
+            if task_name_value.startswith("__MXU_"):
                 continue
 
             task_name = get_task_book_name(task)
             if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
                 task["enabled"] = self.task_dict[task_name][task["id"]]
 
-            if not task["enabled"]:
+            if not task.get("enabled", False):
                 continue
 
-            if (
+            if if_quick_config and task_name_value == MAAEND_DELIVERY_TASK:
+                task.setdefault("optionValues", {})
+                task["optionValues"]["SeizeDeliveryJobsReward"] = {
+                    "type": "input",
+                    "values": {
+                        "Reward": str(
+                            self.cur_user_config.get("Task", "SeizeDeliveryJobsReward")
+                        )
+                    },
+                }
+                task["optionValues"]["SeizeDeliveryJobsCommissionSource"] = {
+                    "type": "select",
+                    "caseName": self.cur_user_config.get(
+                        "Task", "SeizeDeliveryJobsCommissionSource"
+                    ),
+                }
+            elif if_quick_config and task_name_value == MAAEND_AUTO_COLLECT_TASK:
+                task.setdefault("optionValues", {})
+                task["optionValues"]["AutoCollectSchedule"] = {
+                    "type": "checkbox",
+                    "caseNames": list(MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS),
+                }
+                for option_name, route_names in self.auto_collect_routes.items():
+                    task["optionValues"][option_name] = {
+                        "type": "checkbox",
+                        "caseNames": route_names,
+                    }
+            elif (
                 if_quick_config
-                and task["taskName"] == target_task_name
+                and task_name_value == target_task_name
                 and target_task_name == "ProtocolSpace"
             ):
                 task.setdefault("optionValues", {})
@@ -691,7 +1186,7 @@ class AutoProxyTask(TaskExecuteBase):
                         }
             elif (
                 if_quick_config
-                and task["taskName"] == target_task_name
+                and task_name_value == target_task_name
                 and target_task_name == "AutoEssence"
             ):
                 task.setdefault("optionValues", {})
@@ -728,6 +1223,11 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "MaaEnd 正在更新"
                 self.script_info.log = "检测到 MaaEnd 正在更新，正在等待更新进程退出"
                 if_maaend_updating = True
+
+            if if_maaend_updating and not await self.maaend_process_manager.is_running():
+                logger.info("MaaEnd 更新进程已退出，后台检测释放日志锁")
+                self.wait_event.set()
+                return
 
             await asyncio.sleep(5)
 
@@ -776,6 +1276,7 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 try:
                     task_name = ""
+                    completed_task_names: set[str] = set()
                     task_index = {
                         k: {"index": 0, "list": list(v.keys())}
                         for k, v in self.task_dict.items()
@@ -792,9 +1293,14 @@ class AutoProxyTask(TaskExecuteBase):
                                     task_index[task_name]["index"]
                                 ]
                             ] = False
+                            completed_task_names.add(
+                                self.task_name_map.get(task_name, task_name)
+                            )
                             task_index[task_name]["index"] += 1
                         elif f"任务失败: {task_name}" in log_line:
                             task_index[task_name]["index"] += 1
+
+                    await self._mark_daily_once_tasks_completed(completed_task_names)
 
                     unfinished_tasks = {}
                     for task_name, task_status in self.task_dict.items():
@@ -836,7 +1342,7 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_log_monitor.stop()
         if (
             self.script_info.current_index == len(self.script_info.user_list) - 1
-            and self.run_book
+            and all(self.run_book.values())
             and not self.script_config.get("Game", "CloseOnFinish")
         ):
             try:
@@ -846,7 +1352,9 @@ class AutoProxyTask(TaskExecuteBase):
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         else:
-            await self.kill_managed_process()
+            # 开发模式下手动中止任务时保留游戏进程，便于继续调试
+            keep_game = is_backend_dev_mode() and self.stopped_manually
+            await self.kill_managed_process(kill_game=not keep_game)
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
@@ -867,7 +1375,12 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "MaaEnd 正在更新":
                 continue
 
-            await Config.save_maaend_log(log_path, log_item.content, log_item.status)
+            await Config.save_maaend_log(
+                log_path,
+                log_item.content,
+                log_item.status,
+                phase_label=MAAEND_RUN_MOOD_BOOK.get(log_item.phase, ""),
+            )
             user_logs_list.append(log_path.with_suffix(".json"))
 
         latest_log_status = (
@@ -889,10 +1402,12 @@ class AutoProxyTask(TaskExecuteBase):
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         statistics["user_result"] = (
-            "代理任务全部完成" if self.run_book else self.cur_user_item.result
+            "代理任务全部完成"
+            if all(self.run_book.values())
+            else self.cur_user_item.result
         )
 
-        success_symbol = "√" if self.run_book else "X"
+        success_symbol = "√" if all(self.run_book.values()) else "X"
 
         if user_logs_list:
             try:
@@ -912,7 +1427,7 @@ class AutoProxyTask(TaskExecuteBase):
                     ),
                 )
 
-        if self.run_book:
+        if all(self.run_book.values()):
             if (
                 self.cur_user_config.get("Data", "ProxyTimes") == 0
                 and self.cur_user_config.get("Info", "RemainedDay") != -1

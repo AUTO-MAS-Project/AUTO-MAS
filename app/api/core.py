@@ -35,7 +35,7 @@ from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import *
 from app.services import System
-from app.utils import get_logger, is_supervised
+from app.utils import get_logger, is_backend_dev_mode, is_supervised
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -98,25 +98,6 @@ async def get_health(request: Request) -> BackendHealthOut:
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
     )
-
-
-def is_backend_dev_mode() -> bool:
-    """判断后端是否处于开发模式（后端由开发者独立管理，前端不得强杀）。
-
-    dev 分支的 AUTO_MAS_DEV 标记“由前端拉起”（跳过自行提权），生产环境同样为 1，
-    不能作为开发模式依据；以 main.py 启动时归一化的 AUTO_MAS_ENV 为准。
-
-    受 AUTO-MAS-Runtime 监督时优先级高于 AUTO_MAS_DEV 与 AUTO_MAS_ENV，恒为
-    False：监督器依赖 /api/core/close 真正退出进程，若判定为开发模式，
-    _shutdown_backend() 只做轻量清理、不设 should_exit，关闭请求就会永远
-    不生效，5 秒后被监督器硬杀。
-    """
-
-    if is_supervised():
-        return False
-
-    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
-    return raw in {"dev", "development"}
 
 
 @router.get(

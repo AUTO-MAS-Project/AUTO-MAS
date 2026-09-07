@@ -21,6 +21,7 @@
 
 import asyncio
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,23 @@ from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
 logger = get_logger("MaaEnd 脚本设置")
+
+
+def maaend_config_mode(raw: object) -> str:
+    """读取 MaaEnd 配置来源，并兼容旧版名称。"""
+
+    mode = str(raw or "脚本")
+    return {"简洁": "脚本", "详细": "用户", "自定义": "用户"}.get(mode, mode)
+
+
+def maaend_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
+    """返回脚本共享或用户独立配置目录。"""
+
+    mode = maaend_config_mode(mode)
+    if mode == "直控":
+        raise ValueError("直控配置不使用 MAS 配置目录")
+    owner = "Default" if mode == "脚本" else user_id
+    return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
 def normalize_maaend_config(
@@ -99,7 +117,24 @@ class ScriptConfigTask(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.script_config = script_config
+        self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        target_user_id = self.cur_user_item.user_id
+        self.config_mode = "脚本"
+        if target_user_id != "Default":
+            self.config_mode = maaend_config_mode(
+                self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+            )
+        self.use_mas_config = self.config_mode != "直控"
+        self.config_file_path = (
+            maaend_mas_config_dir(
+                self.script_info.script_id,
+                target_user_id,
+                self.config_mode,
+            )
+            if self.use_mas_config
+            else None
+        )
 
     async def prepare(self):
 
@@ -109,10 +144,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_set_path = self.maaend_root_path / "config"
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
-        self.config_file_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-        )
 
     async def main_task(self):
 
@@ -132,10 +163,18 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        if (self.config_file_path / "mxu-MaaEnd.json").exists():
+        if (
+            self.use_mas_config
+            and self.config_file_path
+            and (self.config_file_path / "mxu-MaaEnd.json").exists()
+        ):
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             shutil.copytree(self.config_file_path, self.maaend_set_path)
-        elif self.maaend_set_path.exists():
+        elif (
+            self.use_mas_config
+            and self.config_file_path
+            and self.maaend_set_path.exists()
+        ):
             shutil.copytree(
                 self.maaend_set_path,
                 self.config_file_path,
@@ -148,31 +187,36 @@ class ScriptConfigTask(TaskExecuteBase):
                 "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
             )
 
-        maaend_set = read_file(maaend_set_path)
-        maaend_set = normalize_maaend_config(
-            maaend_set,
-            self.script_config.get("Game", "ControllerType"),
-        )
-
-        write_file(maaend_set_path, maaend_set)
-        logger.success(
-            f"MaaEnd 运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}"
-        )
+        if self.use_mas_config:
+            maaend_set = read_file(maaend_set_path)
+            maaend_set = normalize_maaend_config(
+                maaend_set,
+                self.script_config.get("Game", "ControllerType"),
+            )
+            write_file(maaend_set_path, maaend_set)
+        logger.success(f"MaaEnd 运行参数配置完成: {self.config_mode}配置")
 
     async def final_task(self):
 
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        shutil.rmtree(self.config_file_path, ignore_errors=True)
-        self.config_file_path.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
-        config_path = self.config_file_path / "mxu-MaaEnd.json"
-        maaend_set = read_file(config_path)
-        maaend_set = normalize_maaend_config(
-            maaend_set, self.script_config.get("Game", "ControllerType")
-        )
-        write_file(config_path, maaend_set)
+        if self.use_mas_config and self.config_file_path:
+            shutil.rmtree(self.config_file_path, ignore_errors=True)
+            self.config_file_path.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                self.maaend_set_path, self.config_file_path, dirs_exist_ok=True
+            )
+            config_path = self.config_file_path / "mxu-MaaEnd.json"
+            maaend_set = read_file(config_path)
+            maaend_set = normalize_maaend_config(
+                maaend_set, self.script_config.get("Game", "ControllerType")
+            )
+            write_file(config_path, maaend_set)
+            logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")
+        else:
+            logger.success("MaaEnd 直控配置已由脚本原生 GUI 保存")
+        self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

@@ -2653,7 +2653,7 @@ class AppConfig(GlobalConfig):
         return statistics if len(statistics) == len(field_patterns) else None
 
     async def save_maaend_log(
-        self, log_path: Path, logs: list[str], maaend_result: str
+        self, log_path: Path, logs: list[str], maaend_result: str, phase_label: str = ""
     ) -> None:
         """
         Save MaaEnd logs and generate basic statistics data.
@@ -2662,6 +2662,7 @@ class AppConfig(GlobalConfig):
             log_path (Path): Target log file path.
             logs (list[str]): Log lines.
             maaend_result (str): Result label for this run.
+            phase_label (str): 运行阶段标签（送货/日常/自动采集），作为历史结果前缀。
         """
 
         logger.info(
@@ -2674,6 +2675,9 @@ class AppConfig(GlobalConfig):
 
         if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
             maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        if phase_label:
+            maaend_result = f"[{phase_label}] {maaend_result}"
 
         data: Dict[str, Any] = {"maaend_result": maaend_result}
         if has_matrix_flow and matrix_statistics is not None:
@@ -2786,7 +2790,11 @@ class AppConfig(GlobalConfig):
         }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
-            if result_value == "Success!":
+            # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
+            if not isinstance(result_value, str):
+                return False
+            value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
+            if value == "Success!":
                 return True
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
@@ -2867,6 +2875,7 @@ class AppConfig(GlobalConfig):
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
                         "status": "DONE" if success else "ERROR",
                         "jsonFile": str(json_file),
+                        "result": single_data[key],
                     }
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]

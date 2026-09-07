@@ -64,9 +64,17 @@ export type MaaEndUserConfig_Task = {
      */
     IfCreditShoppingN2?: (boolean | null);
     /**
-     * 抢委托
+     * 抢委托送货最低接取价格（万）
      */
-    IfSeizeEntrustTask?: (boolean | null);
+    SeizeDeliveryJobsReward?: (number | null);
+    /**
+     * 抢委托送货委托接收点
+     */
+    SeizeDeliveryJobsCommissionSource?: ('Unlimited' | 'WulingCity' | 'TestArea' | null);
+    /**
+     * 抢委托送货
+     */
+    IfSeizeDeliveryJobs?: (boolean | null);
     /**
      * 生态农场
      */
@@ -83,6 +91,22 @@ export type MaaEndUserConfig_Task = {
      * 自动采集
      */
     IfAutoCollect?: (boolean | null);
+    /**
+     * 自动采集路线安排：分散或集中
+     */
+    AutoCollectMode?: ('Distributed' | 'Concentrated' | null);
+    /**
+     * 自动采集区域资源路线
+     */
+    AutoCollectRoutes?: (Array<'Route1' | 'Route2' | 'Route3' | 'Route4' | 'Route5' | 'Route6' | 'Route7' | 'Route8' | 'Route9' | 'Route10' | 'Route11' | 'Route12' | 'Route13' | 'Route14' | 'Route15'> | null);
+    /**
+     * 自动采集通用资源路线
+     */
+    AutoCollectCommonRoutes?: (Array<'CommonRoute1' | 'CommonRoute2' | 'CommonRoute3' | 'CommonRoute4' | 'CommonRoute5' | 'CommonRoute6' | 'CommonRoute7' | 'CommonRoute8'> | null);
+    /**
+     * 每日正常完成一次后当天跳过的 MaaEnd 任务名列表
+     */
+    DailyOnceTasks?: (string | Array<string> | null);
     /**
      * 选剑演武
      */

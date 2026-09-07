@@ -15,5 +15,9 @@ export type MaaEndUserConfig_Data = {
      * 上次代理状态
      */
     LastProxyStatus?: ('未知' | '成功' | '失败' | null);
+    /**
+     * MaaEnd 每日任务完成记录
+     */
+    PeriodTaskRecords?: (string | null);
 };
 
