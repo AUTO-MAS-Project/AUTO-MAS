@@ -168,6 +168,7 @@ export interface MaaEndScriptConfig {
     ProxyTimesLimit: number
     RunTimesLimit: number
     AccountSwitchMethod: 'MAS' | 'MAAEND'
+    TaskTransitionMethod: 'NoAction' | 'ExitGame'
   }
   Game: {
     ControllerType: string | null

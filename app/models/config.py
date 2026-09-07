@@ -1290,6 +1290,13 @@ class MaaEndConfig(ConfigBase):
             "MAS",
             OptionsValidator(["MAS", "MAAEND"]),
         )
+        ## 任务切换方式
+        self.Run_TaskTransitionMethod = ConfigItem(
+            "Run",
+            "TaskTransitionMethod",
+            "NoAction",
+            OptionsValidator(["NoAction", "ExitGame"]),
+        )
 
         ## Game ------------------------------------------------------------
         ## 控制器类型

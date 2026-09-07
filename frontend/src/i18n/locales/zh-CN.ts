@@ -1323,6 +1323,11 @@ export default {
     pickScriptRootDirectory2: '请选择脚本根目录',
     pickProcessExecutablePath: '请选择进程可执行文件路径',
     accountSwitching: '账号切换方式',
+    taskTransitionMethod: '任务切换方式',
+    taskTransitionHint:
+      '送货、日常、自动采集阶段之间是否同时重启游戏；「仅重启 MaaEnd」时游戏保持运行，「重启 Endfield.exe/模拟器」时每阶段结束后关闭并在下一阶段重新启动',
+    restartMaaendOnly: '仅重启 MaaEnd',
+    restartEndfield: '重启 Endfield.exe/模拟器',
     startPattern: '起始正则',
     pathSelected: '路径已选择',
     invalidPath: '路径无效',

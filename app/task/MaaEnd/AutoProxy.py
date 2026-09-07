@@ -584,6 +584,14 @@ class AutoProxyTask(TaskExecuteBase):
                 # 中止相关程序
                 await self.maaend_process_manager.kill()
                 await System.kill_process(self.maaend_exe_path)
+                # 任务切换方式为重启游戏时，关闭游戏或模拟器供下一阶段重新启动
+                if (
+                    self.script_config.get("Run", "TaskTransitionMethod") == "ExitGame"
+                    and any(
+                        not self.run_book[mode] for mode in mode_order[mode_index + 1 :]
+                    )
+                ):
+                    await self.kill_game_process()
 
                 mode_index += 1
                 i = 0
@@ -685,6 +693,11 @@ class AutoProxyTask(TaskExecuteBase):
         if not kill_game:
             logger.info("开发模式下手动中止任务，保留游戏进程")
             return
+        await self.kill_game_process()
+
+    async def kill_game_process(self) -> None:
+        """关闭游戏或模拟器进程（Win32 为终末地客户端，Adb 为模拟器）"""
+
         try:
             if self.emulator_manager is None:
                 logger.info("中止终末地进程")
@@ -696,7 +709,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Game", "EmulatorIndex")
                 )
         except Exception as e:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""

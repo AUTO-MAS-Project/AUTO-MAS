@@ -1366,6 +1366,9 @@ class MaaEndConfig_Run(BaseModel):
     AccountSwitchMethod: Optional[Literal["MAS", "MAAEND"]] = Field(
         default=None, description="账号切换方式"
     )
+    TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame"]] = Field(
+        default=None, description="任务切换方式"
+    )
 
 
 class MaaEndConfig_Game(BaseModel):
