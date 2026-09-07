@@ -49,7 +49,7 @@
     </div>
 
     <a-row :gutter="24" class="daily-once-row">
-      <a-col :span="8">
+      <a-col :span="24">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('edit.maaEndDailyOnceTasksHint')">
