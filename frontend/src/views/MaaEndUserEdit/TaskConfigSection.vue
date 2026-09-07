@@ -48,6 +48,33 @@
       </div>
     </div>
 
+    <a-row :gutter="24" class="daily-once-row">
+      <a-col :span="8">
+        <a-form-item>
+          <template #label>
+            <a-tooltip :title="t('edit.maaEndDailyOnceTasksHint')">
+              <span class="form-label">
+                {{ t('edit.maaEndDailyOnceTasks') }}
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            :value="dailyOnceTaskValues"
+            mode="multiple"
+            size="large"
+            :options="dailyOnceTaskOptions"
+            :disabled="props.loading"
+            option-filter-prop="label"
+            show-search
+            :max-tag-count="'responsive'"
+            :placeholder="t('edit.maaEndDailyOnceTasksPlaceholder')"
+            @change="handleDailyOnceTasksChange"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
     <a-row v-if="showSanityDetail" :gutter="24">
       <a-col :span="optionColumnSpan">
         <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
@@ -149,6 +176,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
 import {
   MAAEND_TASK_GROUPS,
+  MAAEND_DAILY_ONCE_TASK_OPTIONS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
@@ -226,6 +254,27 @@ const controlsDisabled = computed(() => {
 })
 
 const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const dailyOnceTaskValues = computed(() => {
+  const value = formData.Task.DailyOnceTasks
+  if (Array.isArray(value)) {
+    return value.filter((item: unknown): item is string => typeof item === 'string')
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : []
+    } catch {
+      return []
+    }
+  }
+  return []
+})
+const dailyOnceTaskOptions = MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
+  label: task.label,
+  value: task.name,
+}))
 const displayPlanConfig = computed(() =>
   props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
 )
@@ -324,6 +373,15 @@ const taskOptionTooltip = computed(() =>
 const emitSave = (key: string, value: any) => {
   if (controlsDisabled.value) return
   emit('save', key, value)
+}
+
+const handleDailyOnceTasksChange = (values: string[]) => {
+  if (props.loading) return
+  const normalized = Array.from(new Set(values.filter(Boolean)))
+  const serialized = JSON.stringify(normalized)
+  formData.Task.DailyOnceTasks = serialized
+  // 非快速配置同样开放此用户级选项，不能走仅允许快速配置任务开关的 emitSave。
+  emit('save', 'Task.DailyOnceTasks', serialized)
 }
 
 const taskSwitchKey = (taskName: MaaEndTaskSwitch) => `If${taskName}` as const
@@ -470,6 +528,10 @@ watch(
   grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
   gap: 24px;
   margin-bottom: 20px;
+}
+
+.daily-once-row :deep(.ant-select) {
+  width: 100%;
 }
 
 .task-group-sidebar {

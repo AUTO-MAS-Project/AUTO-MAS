@@ -20,6 +20,7 @@
 
 
 import asyncio
+import json
 import re
 import shutil
 import uuid
@@ -64,6 +65,37 @@ from .tools import login, push_notification, replace_account_switch_task
 logger = get_logger("MaaEnd 自动代理")
 
 _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
+_MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
+
+
+def _load_json_dict(value: object) -> dict[str, object]:
+    """读取配置中的 JSON 对象，兼容运行时直接传入字典。"""
+
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _load_json_list(value: object) -> list[str]:
+    """读取配置中的 JSON 字符串列表。"""
+
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(data, list):
+            return [str(item) for item in data if str(item).strip()]
+    return []
 
 
 def _task_enabled_for_mode(task_name: object, enabled: object, mode: str) -> bool:
@@ -148,9 +180,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
+        self.task_name_map: dict[str, str] = {}
         self.unique_task: dict[str, str] = {}
         self.maaend_config_file: Path | None = None
         self.account_switch_mode: str | None = None
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {
             option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
@@ -199,7 +233,136 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "异常"
             return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
+        self._prepare_auto_collect_routes()
+        daily_once_skip_reason = self._daily_once_skip_reason()
+        if daily_once_skip_reason is not None:
+            self.cur_user_item.status = "跳过"
+            return daily_once_skip_reason
+
         return "Pass"
+
+    def _prepare_auto_collect_routes(self) -> None:
+        """按当前日期准备自动采集路线。"""
+
+        if not self.cur_user_config.get("Info", "IfQuickConfig"):
+            self.auto_collect_run_at = None
+            self.auto_collect_routes = {
+                option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
+            }
+            return
+
+        auto_collect_mode = self.cur_user_config.get("Task", "AutoCollectMode")
+        if auto_collect_mode not in MAAEND_AUTO_COLLECT_MODES:
+            auto_collect_mode = MAAEND_AUTO_COLLECT_MODES[0]
+        self.auto_collect_run_at = datetime.now(tz=UTC4)
+        self.auto_collect_routes = _select_auto_collect_routes(
+            auto_collect_mode,
+            list(self.cur_user_config.get("Task", "AutoCollectRoutes") or []),
+            list(self.cur_user_config.get("Task", "AutoCollectCommonRoutes") or []),
+            self.auto_collect_run_at,
+        )
+
+    def _daily_once_task_names(self) -> set[str]:
+        return set(
+            _load_json_list(self.cur_user_config.get("Task", "DailyOnceTasks"))
+        )
+
+    def _daily_task_records(self) -> dict[str, str]:
+        raw_records = _load_json_dict(
+            self.cur_user_config.get("Data", "PeriodTaskRecords")
+        )
+        daily_records = raw_records.get("daily", {})
+        if not isinstance(daily_records, dict):
+            return {}
+        return {
+            str(task_name): str(period_key)
+            for task_name, period_key in daily_records.items()
+            if str(task_name).strip() and str(period_key).strip()
+        }
+
+    def _daily_once_task_done(self, task_name: object) -> bool:
+        """判断任务是否已在当天正常完成。"""
+
+        name = str(task_name)
+        selected_tasks = self._daily_once_task_names()
+        if name not in selected_tasks and not (
+            name in _MAAEND_SANITY_TASK_NAMES and "Sanity" in selected_tasks
+        ):
+            return False
+
+        records = self._daily_task_records()
+        if records.get(name) == self.curdate:
+            return True
+        return name in _MAAEND_SANITY_TASK_NAMES and records.get("Sanity") == self.curdate
+
+    def _quick_task_daily_once_done(self, task_name: str) -> bool:
+        """判断快速配置中的逻辑任务是否已在当天完成。"""
+
+        if task_name != "Sanity":
+            return self._daily_once_task_done(task_name)
+        if self._daily_once_task_done(task_name):
+            return True
+        try:
+            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
+        except ValueError:
+            return False
+        target_task_name = (
+            "AutoEssence"
+            if sanity_task_key["SanityTaskType"] == "Essence"
+            else "ProtocolSpace"
+        )
+        return self._daily_once_task_done(target_task_name)
+
+    async def _mark_daily_once_tasks_completed(
+        self, completed_task_names: set[str]
+    ) -> None:
+        """记录当天已正常完成的每日一次任务。"""
+
+        selected_tasks = self._daily_once_task_names()
+        if not selected_tasks or not completed_task_names:
+            return
+
+        records_data = _load_json_dict(
+            self.cur_user_config.get("Data", "PeriodTaskRecords")
+        )
+        records = self._daily_task_records()
+        changed = False
+        for task_name in completed_task_names:
+            keys = {str(task_name)}
+            if str(task_name) in _MAAEND_SANITY_TASK_NAMES:
+                keys.add("Sanity")
+            for key in keys.intersection(selected_tasks):
+                if records.get(key) != self.curdate:
+                    records[key] = self.curdate
+                    changed = True
+
+        if changed:
+            records_data["daily"] = records
+            await self.cur_user_config.set(
+                "Data",
+                "PeriodTaskRecords",
+                json.dumps(records_data, ensure_ascii=False),
+            )
+
+    def _daily_once_skip_reason(self) -> str | None:
+        """判断当前用户是否所有阶段都因每日一次规则而无需启动。"""
+
+        mode_results = [
+            self._mode_skip_reason(mode) for mode in MAAEND_RUN_MOOD_BOOK
+        ]
+        if any(reason is None or missing for reason, missing in mode_results):
+            return None
+        daily_once_done = (
+            self._quick_task_daily_once_done
+            if self.cur_user_config.get("Info", "IfQuickConfig")
+            else self._daily_once_task_done
+        )
+        if not any(
+            daily_once_done(task_name)
+            for task_name in self._daily_once_task_names()
+        ):
+            return None
+        return "每日仅执行一次的任务今日已完成，跳过该用户"
 
     async def prepare(self):
 
@@ -220,19 +383,7 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
         )
 
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
-            auto_collect_mode = self.cur_user_config.get("Task", "AutoCollectMode")
-            if auto_collect_mode not in MAAEND_AUTO_COLLECT_MODES:
-                auto_collect_mode = MAAEND_AUTO_COLLECT_MODES[0]
-            self.auto_collect_run_at = datetime.now(tz=UTC4)
-            self.auto_collect_routes = _select_auto_collect_routes(
-                auto_collect_mode,
-                list(self.cur_user_config.get("Task", "AutoCollectRoutes") or []),
-                list(
-                    self.cur_user_config.get("Task", "AutoCollectCommonRoutes") or []
-                ),
-                self.auto_collect_run_at,
-            )
+        self._prepare_auto_collect_routes()
 
         mode_skip_reasons: dict[str, str] = {}
         missing_task_modes: list[str] = []
@@ -321,12 +472,16 @@ class AutoProxyTask(TaskExecuteBase):
                 return "MaaEnd 配置中不存在抢委托送货任务", True
             if not has_task(MAAEND_DELIVERY_TASK, enabled_only=True):
                 return "抢委托送货任务未启用", False
+            if self._daily_once_task_done(MAAEND_DELIVERY_TASK):
+                return "抢委托送货任务今日已完成", False
             return None, False
         if mode == "AutoCollect":
             if not has_task(MAAEND_AUTO_COLLECT_TASK):
                 return "MaaEnd 配置中不存在自动采集任务", True
             if not has_task(MAAEND_AUTO_COLLECT_TASK, enabled_only=True):
                 return "自动采集任务未启用", False
+            if self._daily_once_task_done(MAAEND_AUTO_COLLECT_TASK):
+                return "自动采集任务今日已完成", False
             return None, False
         if not any(
             _task_enabled_for_mode(
@@ -335,6 +490,7 @@ class AutoProxyTask(TaskExecuteBase):
             for task in tasks
             if not str(task.get("taskName", "")).startswith("__MXU_")
             and str(task.get("taskName", "")) != _MAAEND_ACCOUNT_SWITCH_TASK
+            and not self._daily_once_task_done(task.get("taskName"))
         ):
             return "MaaEnd 配置中没有已启用的日常任务", False
         return None, False
@@ -357,6 +513,7 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             if not any(
                 bool(self.cur_user_config.get("Task", f"If{task_name}"))
+                and not self._quick_task_daily_once_done(task_name)
                 for task_name in MAAEND_TASKS
             ):
                 return "快速配置未开启任何日常任务", False
@@ -367,6 +524,8 @@ class AutoProxyTask(TaskExecuteBase):
             return None, False
         if not any(str(task.get("taskName", "")) == task_name for task in tasks):
             return f"MaaEnd 配置中不存在{task_label}任务", True
+        if self._daily_once_task_done(task_name):
+            return f"{task_label}任务今日已完成", False
         return None, False
 
     def _mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
@@ -842,6 +1001,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.task_dict is None:
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
+            self.task_name_map = {}
             sanity_configured = False
             sanity_switch_enabled = if_quick_config and self.cur_user_config.get(
                 "Task", "IfSanity"
@@ -893,7 +1053,11 @@ class AutoProxyTask(TaskExecuteBase):
                 ):
                     task_enabled = False
 
+                if self._daily_once_task_done(task_name_value):
+                    task_enabled = False
+
                 task_name = get_task_book_name(task)
+                self.task_name_map[task_name] = task_name_value
                 if task_name not in self.task_dict:
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task_enabled
@@ -1112,6 +1276,7 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 try:
                     task_name = ""
+                    completed_task_names: set[str] = set()
                     task_index = {
                         k: {"index": 0, "list": list(v.keys())}
                         for k, v in self.task_dict.items()
@@ -1128,9 +1293,14 @@ class AutoProxyTask(TaskExecuteBase):
                                     task_index[task_name]["index"]
                                 ]
                             ] = False
+                            completed_task_names.add(
+                                self.task_name_map.get(task_name, task_name)
+                            )
                             task_index[task_name]["index"] += 1
                         elif f"任务失败: {task_name}" in log_line:
                             task_index[task_name]["index"] += 1
+
+                    await self._mark_daily_once_tasks_completed(completed_task_names)
 
                     unfinished_tasks = {}
                     for task_name, task_status in self.task_dict.items():

@@ -432,6 +432,10 @@ export default {
     noConfigurationImportedYet: 'No configuration imported yet',
     whenHighTrafficSettings:
       'When on, the high-traffic settings on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
+    maaEndDailyOnceTasks: 'Tasks to run once per day',
+    maaEndDailyOnceTasksHint:
+      'After a task completes normally once today, later runs skip it automatically; leave empty to run it every time',
+    maaEndDailyOnceTasksPlaceholder: 'Choose tasks to run once per day',
     maaEndAutoCollectConfig: 'Auto-collect configuration',
     maaEndAutoCollectEnabled: 'Auto-collect',
     maaEndAutoCollectEnabledHint:

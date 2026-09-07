@@ -1316,6 +1316,9 @@ class MaaEndUserConfig_Task(BaseModel):
     AutoCollectCommonRoutes: Optional[list[MaaEndAutoCollectCommonRoute]] = Field(
         default=None, description="自动采集通用资源路线"
     )
+    DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
+        default=None, description="每日正常完成一次后当天跳过的 MaaEnd 任务名列表"
+    )
     IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(
@@ -1340,6 +1343,9 @@ class MaaEndUserConfig_Data(BaseModel):
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
     LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
         default=None, description="上次代理状态"
+    )
+    PeriodTaskRecords: Optional[str] = Field(
+        default=None, description="MaaEnd 每日任务完成记录"
     )
 
 

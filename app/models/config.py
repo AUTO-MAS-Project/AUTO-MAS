@@ -179,6 +179,11 @@ def init_maaend_task_config(config) -> None:
         ),
     )
 
+    ## 每日正常完成一次后，当天剩余时间跳过的任务名列表
+    config.Task_DailyOnceTasks = ConfigItem(
+        "Task", "DailyOnceTasks", "[ ]", JSONValidator(list)
+    )
+
     for task_name in MAAEND_TASKS:
         setattr(
             config,
@@ -1117,6 +1122,10 @@ class MaaEndUserConfig(ConfigBase):
             "LastProxyStatus",
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
+        )
+        ## MaaEnd 每日任务完成记录，结构为 daily -> task name -> 日期
+        self.Data_PeriodTaskRecords = ConfigItem(
+            "Data", "PeriodTaskRecords", "{ }", JSONValidator(dict)
         )
         ## Notify ----------------------------------------------------------
         ## 是否启用通知

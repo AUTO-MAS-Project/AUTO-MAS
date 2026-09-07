@@ -60,11 +60,11 @@
             />
           </a-card>
 
-          <a-card v-if="formData.Info.IfQuickConfig" id="section-task" class="section-card">
+          <a-card id="section-task" class="section-card">
             <template #title>{{ t('edit.taskConfiguration') }}</template>
             <template #extra>
               <a-button
-                v-if="isSanityPlanMode"
+                v-if="formData.Info.IfQuickConfig && isSanityPlanMode"
                 type="link"
                 class="plans-button"
                 @click="handleGoToPlans"
@@ -215,12 +215,12 @@ const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 let sanityPlanLoadVersion = 0
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
-// 锚点目录随「接管具体任务配置」开关增减，与条件渲染的卡片保持一致
+// 任务卡片始终保留：关闭快速配置后仍可设置每日仅执行一次的任务。
 const anchorItems = computed(() => {
   const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
+  items.push({ key: 'task', href: '#section-task', title: t('edit.taskConfiguration') })
   if (formData.Info.IfQuickConfig) {
     items.push(
-      { key: 'task', href: '#section-task', title: t('edit.taskConfiguration') },
       { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
       { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') }
     )
@@ -305,6 +305,7 @@ const getDefaultMaaEndUserData = () => ({
     IfDailyRewards: true,
     IfResourceRecycleStation: true,
     IfPullCountCalculator: false,
+    DailyOnceTasks: '[ ]',
   },
   Notify: {
     Enabled: false,
@@ -317,6 +318,7 @@ const getDefaultMaaEndUserData = () => ({
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    PeriodTaskRecords: '{ }',
   },
 })
 

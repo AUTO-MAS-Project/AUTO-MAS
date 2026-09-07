@@ -431,6 +431,10 @@ export default {
     noConfigurationImportedYet: '設定はまだインポートされていません',
     whenHighTrafficSettings:
       'オンにすると、実行前にこのページの主要な設定で MaaEnd のタスクを上書きします。オフの場合は設定ファイル内のタスク設定をそのまま実行します',
+    maaEndDailyOnceTasks: '1日1回だけ実行するタスク',
+    maaEndDailyOnceTasksHint:
+      'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
+    maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
     markAsDone2: '完了としてマーク',
     takeOverTaskConfiguration: 'タスク設定を引き継ぐ',
     usedWhenThereNo: 'イベントがないときやショップを買い切ったときに使う、通常の周回です',
