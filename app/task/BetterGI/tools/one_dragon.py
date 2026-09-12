@@ -1553,10 +1553,13 @@ def _set_leaf(config: dict, leaf: tuple[str, ...], value: str) -> bool:
 
 
 def _apply_leaves(root: Path, leaves, value: str) -> None:
-    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段；空值不写。"""
+    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段。
+
+    ``value`` **允许为空串**，表示"明确清空该叶子"：通用战斗队伍为空即"不切换队伍"，
+    必须把全局段清掉，否则 BGI 原生路径（地脉花/幽境危战直读全局段）会沿用旧队伍。
+    空值不写会让"清空"退化成"不覆盖"，正是「右栏已清空却仍切旧队伍」的成因。
+    """
     value = (value or "").strip()
-    if not value:
-        return
     with GLOBAL_CONFIG_LOCK:
         config = read_file(_global_config_path(root))
         if not isinstance(config, dict):
@@ -1572,7 +1575,11 @@ def apply_global_battle_team(root: Path, party_name: str) -> None:
     """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
 
     首领讨伐走一条龙 ``AutoBossTeamName``（见 ``write_user_one_dragon``）；地脉花/幽境危战
-    由 BGI 直读全局段，故在此补写。保留同段其余字段；空值不覆盖。
+    由 BGI 直读全局段，故在此补写。保留同段其余字段。
+
+    与 ``apply_global_battle_strategy`` 一致，**空值也写**：空队伍即"不切换队伍"，必须把
+    全局段清成空串，否则原生路径会沿用 BGI 旧队伍（右栏已清空却仍切队）。本次写入由
+    ``snapshot_global_battle_config`` / ``restore_global_battle_config`` 在运行结束还原。
     """
     _apply_leaves(root, _GLOBAL_TEAM_LEAVES, party_name)
 

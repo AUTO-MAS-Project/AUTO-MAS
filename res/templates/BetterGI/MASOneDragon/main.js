@@ -227,10 +227,18 @@ async function dispatchCombat(step) {
       // 且战斗队伍为空时保留好感队会沿用全局 FriendshipTeam（右栏清空却仍切好感队）。
       p.team = team || "";
       p.friendshipTeam = team ? s.friendshipTeam || "" : "";
-      // 地脉花 Param 在部分 BGI 版本无 setCombatStrategyPath（d.ts 未声明），做存在性守卫防 TypeError
+      // 地脉花策略：留空则完全不设置（BGI 回退全局，等价于「跟随顶部通用战斗策略」，
+      // 由 MAS 物化的全局叶子保证确定值，见 apply_global_battle_strategy）。
+      // 非空则必须真正落到 Param 上，否则右栏单独给地脉花选的策略不生效。
       if (strategy) {
+        // 部分 BGI 版本的 AutoLeyLineOutcropParam 无 setCombatStrategyPath（d.ts 未声明），
+        // 该情况改直接写 Param 上的 FightConfig.StrategyName：地脉花的战斗配置取
+        // _taskParam.FightConfig，其 StrategyName 非空时 BuildLeyLineAutoFightConfig
+        // 就不再回退全局 AutoFightConfig（源码已核实）。
         if (typeof p.setCombatStrategyPath === "function") {
           p.combatStrategyPath = p.setCombatStrategyPath(strategy);
+        } else if (p.fightConfig) {
+          setProp(p.fightConfig, "strategyName", strategy);
         } else {
           masLog("MAS_LEYLINE_STRATEGY_UNSUPPORTED: " + strategy);
         }
