@@ -68,6 +68,12 @@ _MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
 _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
+
+# 右栏「通用战斗策略」留空时的解析结果（公开别名）。
+# 策略侧没有"不指定"这种语义：BGI 各处对空策略的回退是「读全局 autoFightConfig」
+# （AutoLeyLineOutcropTask.BuildLeyLineAutoFightConfig / AutoDomainParam.SetCombatStrategyPath）
+# 或直接抛「策略文件不存在」，所以留空必须解析成一个确定值，否则会沿用 BGI 配置里的旧策略。
+DEFAULT_COMBAT_STRATEGY = _AUTO_BOSS_BUILTIN_STRATEGY
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
 
@@ -105,10 +111,14 @@ _GLOBAL_TEAM_LEAVES = (
 )
 
 # 通用战斗策略落到的叶子路径
+# autoBossConfig 也要写：执行层「自动首领讨伐」走 dispatcher.runAutoBossTask(new AutoBossParam())，
+# 而 AutoBossParam 无参构造只读 autoBossConfig（不读一条龙里的 AutoBossStrategyName），
+# 若此处不写，右栏清空策略后它仍会用 BGI 自己的 autoBossConfig.strategyName 旧值。
 _GLOBAL_STRATEGY_LEAVES = (
     ("autoFightConfig", "strategyName"),
     ("autoLeyLineOutcropConfig", "fightConfig", "strategyName"),
     ("autoStygianOnslaughtConfig", "strategyName"),
+    ("autoBossConfig", "strategyName"),
 )
 
 # 全部待补写叶子路径：apply 用分组，快照/还原用全集
@@ -1568,12 +1578,22 @@ def apply_global_battle_team(root: Path, party_name: str) -> None:
 
 
 def apply_global_battle_strategy(root: Path, strategy_name: str) -> None:
-    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战读取。
+    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战/首领讨伐读取。
 
-    首领讨伐走一条龙 ``AutoBossStrategyName``（见 ``write_user_one_dragon``）；其余三项
-    由 BGI 直读全局段。保留同段其余字段；空值不覆盖。
+    BGI 对"步骤级策略为空"的原生回退就是读这几个全局段
+    （地脉花 ``BuildLeyLineAutoFightConfig`` 在 ``FightConfig.StrategyName`` 为空时
+    ``CopyFromAutoFightConfig(全局)``、秘境 ``AutoDomainParam.SetCombatStrategyPath()``
+    读全局 ``autoFightConfig``），所以本函数必须保证全局是**确定值**。
+
+    与 ``apply_global_battle_team`` 不同，这里**空值也要写**：留空不写会让上述回退拿到
+    BGI 配置里的旧策略（表现为「右栏已清空策略却仍用旧策略」）。故留空解析为内置的
+    「根据队伍自动选择」。保留同段其余字段。
     """
-    _apply_leaves(root, _GLOBAL_STRATEGY_LEAVES, strategy_name)
+    _apply_leaves(
+        root,
+        _GLOBAL_STRATEGY_LEAVES,
+        (strategy_name or "").strip() or DEFAULT_COMBAT_STRATEGY,
+    )
 
 
 def _restore_leaf(config: dict, leaf: tuple[str, ...], existed: bool, value) -> bool:
