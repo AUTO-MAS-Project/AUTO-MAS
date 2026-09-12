@@ -26,7 +26,7 @@ function baseStepName(name) {
 //   1) 不让「配置缺失」被降级成 BGI 内部的静默跳过（原生分支只 LogError 后 return），
 //      也避免落到 AutoBossParam 无参构造的 SetDefault 兜底上 —— 那会读 BGI 全局
 //      autoBossConfig.bossName，使右栏显示「未选择首领」时静默讨伐一个 BGI 旧配置里的首领；
-//   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_plan_combat）。
+//   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_execution_layer）。
 // 键为归一化基名（baseStepName），值为 [settings 键, 用户可读缺失原因] 数组。
 const REQUIRED_STEP_FIELDS = {
   自动首领讨伐: [["bossName", "未选择首领"]],

@@ -333,19 +333,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.use_execution_layer = bool(self.use_mas_config) and bool(
             self.cur_user_config.get("OneDragon", "UseExecutionLayer")
         )
-        # 路径 B（自定义项执行层）：队列中 kind ∈ CUSTOM_EXEC_KINDS 的条目，运行时改由
-        # ``--startGroups MAS-{短id}-自定义配置组{N}`` 逐个配置组直连执行（与战斗 4 项的 MASOneDragon
-        # 自编排执行层并列）。物化后的 BGI 组名由 one_dragon.write_user_one_dragon 按队列顺序
-        # 编号（MAS-{短id}-自定义配置组1..N），与 materialize_user_script_groups 规则一致；本类只负责
-        # 计算「是否有自定义项需由执行层接管」与门控，具体组名在 _write_one_dragon_config 后
-        # 由 _materialized_script_groups 的 stem 派生（见 main_task）。
+        # 路径 B（自定义项执行层）：队列中 kind ∈ CUSTOM_EXEC_KINDS 的条目与战斗 4 项一起，
+        # 由 one_dragon_bridge 按左栏队列顺序切成「段」（MAS-{短id}-执行层段{N}），在**同一次**
+        # ``--startGroups <段名...>`` 里顺序执行。本类只负责计算「是否有自定义项需由执行层
+        # 接管」与门控；具体段名在 _write_one_dragon_config 切段时确定（见 main_task）。
         self.custom_exec_items = [
             q
             for q in (self.one_dragon_queue or [])
             if str(q.get("kind", "")) in CUSTOM_EXEC_KINDS
             and str(q.get("name", "")).strip()
         ]
-        self.custom_exec_groups: list[str] = []
         self.custom_exec_enabled = self.use_execution_layer and bool(self.custom_exec_items)
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
         # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
@@ -401,6 +398,9 @@ class AutoProxyTask(TaskExecuteBase):
         self._reseed_global_config: dict | None = None
         # 本次物化到 BGI User/ScriptGroup 的前缀配置组文件（运行结束删除）
         self._materialized_script_groups: list[Path] = []
+        # 执行层「段」组文件与组名（按左栏队列顺序切分，运行结束删除）
+        self._materialized_exec_groups: list[Path] = []
+        self.exec_group_names: list[str] = []
 
     def _resolve_log_file_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
@@ -431,18 +431,22 @@ class AutoProxyTask(TaskExecuteBase):
         # 把「队列里出现的所有战斗组」一律从原生副本剔除，使前端队列开关成为唯一真理源：
         # 开 → 执行层跑；关（Plan.step.enabled=false）→ 原生也不跑，避免关了还漏跑/重复跑。
         # 日常 4 项不在战斗集合内，仍按 OneDragon.Groups 在原生一条龙启停（单开关已对齐）。
-        _exclude = exclude_task_names or (
-            sorted(
-                {
-                    b
-                    for q in (self.one_dragon_queue or [])
-                    for b in [resolve_base_name(str(q.get("name", "")))]
-                    if b and b in BUILTIN_COMBAT_STEP_NAMES
-                }
+        _exclude: set[str] = set(exclude_task_names or ())
+        if self.plan_mode:
+            _exclude |= {
+                b
+                for q in (self.one_dragon_queue or [])
+                for b in [resolve_base_name(str(q.get("name", "")))]
+                if b and b in BUILTIN_COMBAT_STEP_NAMES
+            }
+        # 执行层接管的自定义项同样从原生副本剔除：它们改由执行层「段」承载
+        # （见下方 build_execution_segments），不剔除会与原生一条龙重复执行。
+        if self.custom_exec_enabled:
+            _exclude |= set(
+                one_dragon_bridge.custom_exec_names(
+                    self.one_dragon_queue, CUSTOM_EXEC_KINDS
+                )
             )
-            if self.plan_mode
-            else None
-        )
         self._materialized_script_groups = one_dragon.write_user_one_dragon(
             self.script_root_path,
             self.script_info.script_id,
@@ -458,9 +462,28 @@ class AutoProxyTask(TaskExecuteBase):
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
-            exclude_task_names=_exclude,
-            exclude_materialized_custom_groups=self.custom_exec_enabled,
+            exclude_task_names=sorted(_exclude) or None,
+            # 执行层接管时不再逐项物化自定义配置组（避免与「段」重复）
+            materialize_custom_groups=not self.custom_exec_enabled,
         )
+        # 执行层「段」：按左栏队列顺序切段并写入 BGI 配置组（战斗段 + 自定义项同批），
+        # 随后由 ``_run_execution_layer`` 用**一次** ``--startGroups <段名...>`` 顺序跑完。
+        self._materialized_exec_groups = []
+        self.exec_group_names = []
+        if self.plan_mode or self.custom_exec_enabled:
+            self._materialized_exec_groups = one_dragon_bridge.write_execution_groups(
+                self.script_root_path,
+                self.cur_user_item.user_id,
+                one_dragon_bridge.build_execution_segments(
+                    self.script_root_path,
+                    self.script_info.script_id,
+                    self.cur_user_item.user_id,
+                    self.one_dragon_queue or [],
+                    self.plan_combat_steps,
+                    CUSTOM_EXEC_KINDS,
+                ),
+            )
+            self.exec_group_names = [str(p.stem) for p in self._materialized_exec_groups]
         # 通用战斗队伍/策略先补写进全局 config.json（秘境/地脉花/幽境危战读取段）；
         # 优先级：右栏配置 > 顶部通用（通用仅兜底）
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
@@ -504,6 +527,10 @@ class AutoProxyTask(TaskExecuteBase):
         one_dragon.cleanup_leftover_mas_groups(
             self.script_root_path, self.script_info.script_id, self.cur_user_item.user_id
         )
+        # 上一轮被强杀时残留的执行层「段」组一并清理，避免常驻 BGI 配置组列表
+        one_dragon_bridge.cleanup_leftover_execution_groups(
+            self.script_root_path, self.cur_user_item.user_id
+        )
         self._reseed_global_config = one_dragon.snapshot_global_battle_config(
             self.script_root_path
         )
@@ -523,6 +550,10 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_root_path, self._materialized_script_groups
             )
             self._materialized_script_groups = []
+            one_dragon_bridge.remove_execution_groups(
+                self.script_root_path, self._materialized_exec_groups
+            )
+            self._materialized_exec_groups = []
             one_dragon.remove_one_dragon_slot(
                 self.script_root_path, self.script_info.script_id
             )
@@ -574,46 +605,25 @@ class AutoProxyTask(TaskExecuteBase):
         # 用户独立配置：先备份现场再写入，结束后 (final_task/on_crash) 还原
         self._backup_one_dragon_config()
         self._write_one_dragon_config()
-        # 自定义项执行层组名由物化结果派生（MAS-{短id}-自定义配置组{N}）；仅当执行层接管时才非空有效。
-        # 必须放在 _write_one_dragon_config 之后——组名在物化阶段才确定。
-        _short = one_dragon._mas_user_short_id(self.cur_user_item.user_id)
-        self.custom_exec_groups = [
-            str(p.stem)
-            for p in (self._materialized_script_groups or [])
-            if str(p.stem).startswith(f"MAS-{_short}-自定义配置组")
-        ]
 
-        # 路径 B：先直连执行层跑战斗 4 项。失败不再中止任务：日常 4 项（领奖类）
-        # 与战斗无依赖，仍由随后的一条龙承接，避免战斗异常连坐吞掉日常收益
+        # 路径 B：执行层（战斗段 + 自定义项）在**一次** BGI 进程里按左栏队列顺序跑完，
+        # 组名由 _write_one_dragon_config 切段时确定。失败不再中止任务：日常 4 项（领奖类）
+        # 与执行层无依赖，仍由随后的一条龙承接，避免执行层异常连坐吞掉日常收益
         # （2026-09-08 用户决策：记录警告但继续）。
-        plan_combat_ok = True
-        if self.plan_mode:
-            plan_combat_ok = await self._run_plan_combat()
-            if not plan_combat_ok:
-                self.script_info.log = "执行层（战斗4项）失败，继续执行一条龙日常"
+        exec_ok = True
+        if self.exec_group_names:
+            exec_ok = await self._run_execution_layer()
+            if not exec_ok:
+                self.script_info.log = "执行层失败，继续执行一条龙日常"
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
-                )
-
-        # 路径 B（自定义项执行层）：配置组/脚本/路径/录制经 --startGroups 逐个配置组直连执行。
-        # 失败不中止任务：自定义项与日常无依赖，仍由随后的一条龙承接（若原生还有启用任务），
-        # 与战斗 4 项同口径（记录警告但继续）。
-        custom_ok = True
-        if self.custom_exec_enabled:
-            custom_ok = await self._run_plan_custom()
-            if not custom_ok:
-                self.script_info.log = "执行层（自定义项）失败，继续执行一条龙"
-                logger.warning(
-                    f"用户 {self.cur_user_item.name} 自定义项执行层失败，记录警告并继续"
                 )
 
         # 原生一条龙（阶段2）无启用任务：不再启动 BetterGI，避免空一条龙进程不退出导致任务挂死。
         # 路径 B 下战斗/自定义组已被剔除，若日常也都关，启用任务数即为 0。
         if not self._native_one_dragon_has_tasks():
-            if (not self.plan_mode or plan_combat_ok) and (
-                not self.custom_exec_enabled or custom_ok
-            ):
-                # 战斗/自定义项已由执行层完成，原生一条龙无活可干：整体视为成功，直接收尾
+            if exec_ok:
+                # 执行层已完成，原生一条龙无活可干：整体视为成功，直接收尾
                 self.run_book = True
                 self.script_info.log = (
                     "执行层已完成；原生一条龙无启用任务，跳过阶段2"
@@ -709,34 +719,32 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
 
-    async def _run_plan_combat(self) -> bool:
-        """路径 B：用 ``--startGroups MAS一条龙`` 直连执行层跑战斗 4 项，返回是否成功。
+    async def _run_execution_layer(self) -> bool:
+        """路径 B：用**一次** ``--startGroups <段名...>`` 按队列顺序跑完执行层，返回是否成功。
 
-        单组 --startGroups 成败判定与切号一致（见 ``_switch_account``）：
-        成功 = 「配置组 "MAS一条龙" 执行结束」；失败 = 执行配置组任务时失败 / 任务启动失败 /
-        任务执行异常 / [FTL] / [ERR]；进程提前退出亦判失败。
+        各「段」由 ``one_dragon_bridge.build_execution_segments`` 按左栏队列顺序切分，并在
+        ``_write_one_dragon_config`` 里物化（战斗 4 项整体一段；js/pathing/keymouse 相邻合并；
+        scriptgroup 独立成段），全部在**同一个 BGI 进程**里顺序执行——既省掉一次冷启动，
+        也让执行顺序真正听队列。
+
+        成功 = **所有段**都打印「配置组 "<名>" 执行结束」；失败 = 执行配置组任务时失败 /
+        任务启动失败 / [FTL] / MAS_PLAN_FAIL；进程提前退出亦判失败。
 
         另有两条与「步骤跳过」相关的口径：
         - ``MAS_STEP_FAIL``（运行期异常）：只统计数量，不判负（单步跳过继续，见下方注释）；
         - ``MAS_STEP_MISSING_CONFIG``（右栏必填项未填）：判负并提示具体原因——该步根本没
           进 BGI，若仍判成功，用户会看到「一条龙直接完成」而任务实际没跑。
         """
-        group_name = one_dragon_bridge.GROUP_NAME
-        try:
-            one_dragon_bridge.write_one_dragon_group(
-                self.script_root_path, self.plan_combat_steps
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"一条龙执行层配置组生成失败: {e}")
-            await self._push_dispatch_log(f"执行层配置组生成失败: {e}")
-            return False
+        group_names = list(self.exec_group_names)
+        if not group_names:
+            return True
 
         await self._push_dispatch_log(
-            f"开始执行层（战斗4项）: --startGroups {group_name}"
+            f"开始执行层: --startGroups {' '.join(group_names)}"
         )
         logger.info(
             f"用户 {self.cur_user_item.name} 启动 BetterGI 执行层: "
-            f"{self.script_exe_path} --startGroups {group_name}"
+            f"{self.script_exe_path} --startGroups {' '.join(group_names)}"
         )
 
         # 杀旧进程，保证单实例下 --startGroups 由新进程执行
@@ -744,7 +752,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         result: dict[str, bool] = {"success": False, "started": False}
         done_event = asyncio.Event()
-        done_marker = f'配置组 "{group_name}" 执行结束'
+        done_groups: set[str] = set()
         # [ERR]/任务执行异常 是 TaskRunner 在每个子任务 catch 里打印的「任务级」可恢复异常，
         # BGI 捕获后不 rethrow、跳过该步继续跑后续项，配置组仍能到达"执行结束"。若把它们当 fatal，
         # 会在 BGI 还想继续时强杀（见 _BGI_BUILTIN_FATAL 注释）。仅保留真正致命的标记。
@@ -766,7 +774,7 @@ class AutoProxyTask(TaskExecuteBase):
         last_activity = time.monotonic()
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity, step_failed
+            nonlocal last_activity, step_failed, done_groups
             last_activity = time.monotonic()
             log = "".join(log_content)
             # 单步失败只统计（执行层会跳过继续），不据此判负
@@ -774,7 +782,10 @@ class AutoProxyTask(TaskExecuteBase):
             for reason in _missing_config_reasons(log):
                 if reason not in missing_config:
                     missing_config.append(reason)
-            if done_marker in log:
+            for name in group_names:
+                if f'配置组 "{name}" 执行结束' in log:
+                    done_groups.add(name)
+            if done_groups >= set(group_names):
                 # 必填配置缺失 → 判负：该步被跳过、任务没跑，若还判成功用户无从得知
                 result["success"] = not missing_config
                 done_event.set()
@@ -793,7 +804,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 "--startGroups",
-                group_name,
+                *group_names,
                 target_process=self.script_target_process_info,
                 elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
             )
@@ -825,13 +836,12 @@ class AutoProxyTask(TaskExecuteBase):
         finally:
             await monitor.stop()
             await self.kill_managed_process()
-            with suppress(Exception):
-                one_dragon_bridge.remove_one_dragon_group(self.script_root_path)
+            # 「段」组文件由 _restore_one_dragon_config 统一删除（含异常路径）
 
         if missing_config:
             # 具体到「哪一项缺什么」，避免只留一句笼统的「执行层失败」
             reason = "；".join(missing_config)
-            await self._push_dispatch_log(f"执行层（战斗4项）有任务未执行：{reason}")
+            await self._push_dispatch_log(f"执行层有任务未执行：{reason}")
             logger.warning(
                 f"用户 {self.cur_user_item.name} 执行层有任务未执行（配置缺失）: {reason}"
             )
@@ -843,107 +853,12 @@ class AutoProxyTask(TaskExecuteBase):
                     f"但 {step_failed} 个步骤失败（已跳过并继续后续步骤）"
                 )
                 await self._push_dispatch_log(
-                    f"执行层（战斗4项）完成，{step_failed} 个步骤失败已跳过"
+                    f"执行层完成，{step_failed} 个步骤失败已跳过"
                 )
             else:
-                await self._push_dispatch_log("执行层（战斗4项）完成")
+                await self._push_dispatch_log("执行层完成")
         else:
-            await self._push_dispatch_log("执行层（战斗4项）失败")
-        return result["success"]
-
-    async def _run_plan_custom(self) -> bool:
-        """路径 B：用 ``--startGroups <组名...>`` 直连执行层跑自定义项（配置组/脚本/路径/录制）。
-
-        与战斗 4 项的 ``_run_plan_combat`` 并列，但一次传入多个物化后的配置组名
-        （``MAS-{短id}-自定义配置组{N}``），BetterGI 顺序执行；每组的成败判定沿用配置组执行标记：
-        成功 = 各组均打印「配置组 "<name>" 执行结束」；失败 = 执行配置组任务时失败 /
-        任务启动失败 / [FTL] / MAS_PLAN_FAIL；进程提前退出亦判失败。
-        """
-        group_names = list(self.custom_exec_groups)
-        if not group_names:
-            return True
-        await self._push_dispatch_log(
-            f"开始执行层（自定义项）: --startGroups {' '.join(group_names)}"
-        )
-        logger.info(
-            f"用户 {self.cur_user_item.name} 启动 BetterGI 自定义项执行层: "
-            f"{self.script_exe_path} --startGroups {' '.join(group_names)}"
-        )
-
-        # 杀旧进程，保证单实例下 --startGroups 由新进程执行
-        await self.kill_managed_process()
-
-        result: dict[str, bool] = {"success": False, "started": False}
-        done_event = asyncio.Event()
-        done_groups: set[str] = set()
-        fail_markers = (
-            "执行配置组任务时失败",
-            "任务启动失败",
-            "[FTL]",
-            "MAS_PLAN_FAIL",
-        )
-
-        last_activity = time.monotonic()
-
-        async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity, done_groups
-            last_activity = time.monotonic()
-            log = "".join(log_content)
-            for g in group_names:
-                if f'配置组 "{g}" 执行结束' in log:
-                    done_groups.add(g)
-            # 全部组均到达「执行结束」即成功
-            if done_groups >= set(group_names):
-                result["success"] = True
-                done_event.set()
-            elif any(m in log for m in fail_markers):
-                result["success"] = False
-                done_event.set()
-            elif (
-                result["started"]
-                and not await self.bettergi_process_manager.is_running()
-            ):
-                done_event.set()
-
-        monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
-
-        try:
-            await self.bettergi_process_manager.open_process(
-                self.script_exe_path,
-                "--startGroups",
-                *group_names,
-                target_process=self.script_target_process_info,
-                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
-            )
-            result["started"] = True
-            await asyncio.sleep(1)
-            await monitor.start_monitor_file(
-                self._resolve_log_file_path, datetime.now()
-            )
-            # 空闲超时循环：仅按日志静默阈值判定卡死，不设总时长上限（与 _run_plan_combat 同口径）
-            while not done_event.is_set():
-                try:
-                    await asyncio.wait_for(done_event.wait(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    pass
-                if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
-                    result["success"] = False
-                    logger.warning(
-                        f"用户 {self.cur_user_item.name} 自定义项执行层空闲超时"
-                        f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
-                    )
-                    break
-        except Exception as e:
-            logger.opt(exception=True).warning(f"自定义项执行层执行异常: {e}")
-            result["success"] = False
-        finally:
-            await monitor.stop()
-            await self.kill_managed_process()
-
-        if result["success"]:
-            await self._push_dispatch_log("执行层（自定义项）完成")
-        else:
-            await self._push_dispatch_log("执行层（自定义项）失败")
+            await self._push_dispatch_log("执行层失败")
         return result["success"]
 
     async def _switch_account(self) -> bool:
