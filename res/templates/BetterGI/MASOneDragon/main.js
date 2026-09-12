@@ -21,6 +21,25 @@ function baseStepName(name) {
   return idx > 0 ? name.slice(0, idx) : name;
 }
 
+// 战斗步骤的必填设置项：缺失时不进 BGI，直接跳过该步并打 MAS_STEP_MISSING_CONFIG。
+// 两层目的：
+//   1) 不让「配置缺失」被降级成 BGI 内部的静默跳过（原生分支只 LogError 后 return），
+//      也避免落到 AutoBossParam 无参构造的 SetDefault 兜底上 —— 那会读 BGI 全局
+//      autoBossConfig.bossName，使右栏显示「未选择首领」时静默讨伐一个 BGI 旧配置里的首领；
+//   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_plan_combat）。
+// 键为归一化基名（baseStepName），值为 [settings 键, 用户可读缺失原因] 数组。
+const REQUIRED_STEP_FIELDS = {
+  自动首领讨伐: [["bossName", "未选择首领"]],
+};
+
+// 返回该步骤缺失的必填项（空数组表示齐全或该步无需校验）。
+function missingRequiredFields(step) {
+  const items = REQUIRED_STEP_FIELDS[baseStepName(step.name)];
+  if (!items) return [];
+  const s = step.settings || {};
+  return items.filter((item) => !s[item[0]]);
+}
+
 // 日志：优先 BGI 注入的 log（写入 BGI 日志文件，供 MAS 监控解析 MAS_STEP_* 标记），
 // console.log 仅作兜底（不进日志文件）。不可命名回 log，避免遮蔽注入对象。
 function masLog(line) {
@@ -282,8 +301,11 @@ async function dispatchCombat(step) {
       // 正确通道：new AutoBossParam()（无参=SetDefault 读本体配置）+ 逐字段覆盖
       // + dispatcher.runAutoBossTask(param)。属性赋值统一走 setProp，兼容未暴露属性。
       const p = new AutoBossParam();
-      // bossName 必填（Validate 第一道校验）；Param 无参构造已读本体配置作兜底
-      if (s.bossName) setProp(p, "bossName", s.bossName);
+      // bossName 必填：缺失已由 REQUIRED_STEP_FIELDS 前置拦截（MAS_STEP_MISSING_CONFIG），
+      // 走不到这里。这里「无条件赋值」是刻意的——不要退回 `if (s.bossName)` 而依赖 Param
+      // 无参构造的 SetDefault 兜底：那会读 BGI 全局 autoBossConfig.bossName，使右栏显示
+      // 「未选择首领」时静默讨伐一个 BGI 旧配置里的首领。
+      setProp(p, "bossName", s.bossName);
       // 队伍配置表「战斗场景」选队结果优先级最高（压过步骤级 teamName）
       const bossTeam = s.masTeamOverride || s.teamName;
       if (bossTeam) setProp(p, "teamName", bossTeam);
@@ -359,6 +381,20 @@ async function main() {
     }
     if (!shouldRunToday(step)) {
       masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
+      continue;
+    }
+    // 必填项缺失：跳过该步并打标记（MAS 侧据此判负并提示用户），不进 BGI。
+    // 放在 shouldRunToday 之后：今天本就不执行的步骤不必报缺失。
+    const missing = missingRequiredFields(step);
+    if (missing.length > 0) {
+      masLog(
+        "MAS_STEP_MISSING_CONFIG: " +
+          step.uid +
+          " " +
+          step.name +
+          " " +
+          missing.map((item) => item[1]).join("/")
+      );
       continue;
     }
     masLog("MAS_STEP_BEGIN: " + step.uid + " " + step.name);

@@ -98,6 +98,17 @@ _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
 _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
 
+# 执行层「必填配置缺失」标记（由 MASOneDragon/main.js 打出）：右栏必填项（如自动首领
+# 讨伐的首领）未填时，main.js 不进 BGI 直接跳过该步并打本标记。字段布局与
+# MAS_STEP_FAIL 一致：``MAS_STEP_MISSING_CONFIG: <步骤 uid> <步骤名> <原因>``。
+#
+# ⚠️ 与 MAS_STEP_FAIL 的分工：后者是运行期异常（识别失败等），按既有决策「单步失败跳过
+# 继续、仅统计数量不判负」；本标记是前置配置错误、重试无用，必须判负并让用户看见——否则
+# 该步被静默跳过、整轮仍报成功，用户表现为「一条龙直接完成」而任务其实没跑。
+_BGI_MISSING_CONFIG_RE = re.compile(
+    r"MAS_STEP_MISSING_CONFIG:\s*(\S+)\s+(\S+)\s+([^\r\n]+)"
+)
+
 # 切换账号单独执行的超时（秒），超时视为失败并继续一条龙
 _BGI_SWITCH_TIMEOUT_SECONDS = 600
 
@@ -182,6 +193,18 @@ def _party_config_error(log: str) -> str | None:
         return None
     name = m.group(1).strip()
     return name or None
+
+
+def _missing_config_reasons(log: str) -> list[str]:
+    """从执行层累计日志提取「必填配置缺失」的用户可读原因（``步骤名：原因``）。
+
+    标记行含步骤 uid，对用户无意义；这里只保留步骤名与原因，直接用于调度台/日志
+    提示（如「自动首领讨伐：未选择首领」）。同一原因重复出现由调用方去重。
+    """
+    return [
+        f"{m.group(2)}：{m.group(3).strip()}"
+        for m in _BGI_MISSING_CONFIG_RE.finditer(log)
+    ]
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -692,6 +715,11 @@ class AutoProxyTask(TaskExecuteBase):
         单组 --startGroups 成败判定与切号一致（见 ``_switch_account``）：
         成功 = 「配置组 "MAS一条龙" 执行结束」；失败 = 执行配置组任务时失败 / 任务启动失败 /
         任务执行异常 / [FTL] / [ERR]；进程提前退出亦判失败。
+
+        另有两条与「步骤跳过」相关的口径：
+        - ``MAS_STEP_FAIL``（运行期异常）：只统计数量，不判负（单步跳过继续，见下方注释）；
+        - ``MAS_STEP_MISSING_CONFIG``（右栏必填项未填）：判负并提示具体原因——该步根本没
+          进 BGI，若仍判成功，用户会看到「一条龙直接完成」而任务实际没跑。
         """
         group_name = one_dragon_bridge.GROUP_NAME
         try:
@@ -732,6 +760,8 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         step_failed = 0
+        # 必填配置缺失的步骤（用户可读原因）：与 step_failed 不同，它会让本次执行层判负
+        missing_config: list[str] = []
 
         last_activity = time.monotonic()
 
@@ -741,8 +771,12 @@ class AutoProxyTask(TaskExecuteBase):
             log = "".join(log_content)
             # 单步失败只统计（执行层会跳过继续），不据此判负
             step_failed = log.count("MAS_STEP_FAIL")
+            for reason in _missing_config_reasons(log):
+                if reason not in missing_config:
+                    missing_config.append(reason)
             if done_marker in log:
-                result["success"] = True
+                # 必填配置缺失 → 判负：该步被跳过、任务没跑，若还判成功用户无从得知
+                result["success"] = not missing_config
                 done_event.set()
             elif any(m in log for m in fail_markers):
                 result["success"] = False
@@ -793,6 +827,14 @@ class AutoProxyTask(TaskExecuteBase):
             await self.kill_managed_process()
             with suppress(Exception):
                 one_dragon_bridge.remove_one_dragon_group(self.script_root_path)
+
+        if missing_config:
+            # 具体到「哪一项缺什么」，避免只留一句笼统的「执行层失败」
+            reason = "；".join(missing_config)
+            await self._push_dispatch_log(f"执行层（战斗4项）有任务未执行：{reason}")
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 执行层有任务未执行（配置缺失）: {reason}"
+            )
 
         if result["success"]:
             if step_failed:
