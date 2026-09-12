@@ -46,9 +46,9 @@ from .tools import (
     team_resolver,
 )
 from .tools.one_dragon_plan import (
-    BUILTIN_COMBAT_STEP_NAMES,
     build_combat_steps,
     parse_one_dragon_plan,
+    plan_combat_bases,
     resolve_base_name,
 )
 from .tools.one_dragon_report import parse_one_dragon_report
@@ -345,14 +345,18 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.custom_exec_enabled = self.use_execution_layer and bool(self.custom_exec_items)
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
-        # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
-        # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
         _plan_steps = parse_one_dragon_plan(
             self.cur_user_config.get("OneDragon", "Plan") or ""
         )
+        # 这次实际跑谁：Plan 中启用、且队列行启用、且组开关允许的战斗 4 项（各带自身 settings）。
         self.plan_combat_steps = build_combat_steps(
             _plan_steps, self.one_dragon_queue, self.one_dragon_groups
         )
+        # 谁归执行层负责（不看启停）：只要 Plan 里配过该战斗组的实例，就不再交回原生一条龙
+        # 执行——开则由战斗段跑，关则本次不跑。_write_one_dragon_config 用它决定原生副本
+        # 剔除谁；不能用 plan_mode 代替：全部行都关掉时 plan_mode 为假，战斗项会整体落回
+        # 原生副本照跑，与界面「已关」不符（2026-09-12 实机排障）。
+        self.plan_combat_bases = plan_combat_bases(_plan_steps)
         # 路径 B 回退：顶层「通用战斗队伍」(OneDragon.PartyName) 默认填入各战斗步骤的
         # 队伍字段，与路径 A（write_user_one_dragon 把 PartyName 写入秘境/首领，并经
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
@@ -428,16 +432,20 @@ class AutoProxyTask(TaskExecuteBase):
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
         # 路径 B：战斗 4 项由执行层直连，原生一条龙只跑日常 + 自定义组。
-        # 把「队列里出现的所有战斗组」一律从原生副本剔除，使前端队列开关成为唯一真理源：
-        # 开 → 执行层跑；关（Plan.step.enabled=false）→ 原生也不跑，避免关了还漏跑/重复跑。
+        # 把「队列里出现过、且 Plan 中配过实例的战斗组」一律从原生副本剔除，使前端队列行
+        # 开关成为唯一真理源：开 → 执行层跑（战斗段）；关（Plan.step.enabled=false）→ 原生
+        # 也不跑，避免「关了还漏跑」。**不能按 plan_mode 门控**：全部行都关掉时 plan_mode
+        # 为假，那样战斗项会整体落回原生副本照跑（2026-09-12 实机排障）。
+        # Plan 里没有实例的战斗组（异常存量/尚未配过）仍留在原生副本：宁可多跑一次，
+        # 也不静默丢掉界面上开着的任务。
         # 日常 4 项不在战斗集合内，仍按 OneDragon.Groups 在原生一条龙启停（单开关已对齐）。
         _exclude: set[str] = set(exclude_task_names or ())
-        if self.plan_mode:
+        if self.use_execution_layer:
             _exclude |= {
                 b
                 for q in (self.one_dragon_queue or [])
                 for b in [resolve_base_name(str(q.get("name", "")))]
-                if b and b in BUILTIN_COMBAT_STEP_NAMES
+                if b in self.plan_combat_bases
             }
         # 执行层接管的自定义项同样从原生副本剔除：它们改由执行层「段」承载
         # （见下方 build_execution_segments），不剔除会与原生一条龙重复执行。
