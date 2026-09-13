@@ -455,6 +455,7 @@ export type { ZzzOdUserConfig_OneDragon } from './models/ZzzOdUserConfig_OneDrag
 export { Service } from './services/Service';
 export { ActionService } from './services/ActionService';
 export { AddService } from './services/AddService';
+export { BaahService } from './services/BaahService';
 export { BackupService } from './services/BackupService';
 export { BetterGiService } from './services/BetterGiService';
 export { ClawService } from './services/ClawService';

@@ -1572,11 +1572,11 @@ export default {
     baahConfigName: 'BAAH 配置文件名',
     baahConfigNameHint:
       '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',
-    baahConfigNamePlaceholder: '例如：example',
+    baahConfigNamePlaceholder: '请选择 BAAH 配置文件',
     baahActivityConfigName: '活动期间配置文件名',
     baahActivityConfigNameHint:
       '开启脚本配置里的「活动适配」后，碧蓝档案有进行中的活动时改用这个配置启动 BAAH；留空、或活动排期取不到时仍用上面的配置名',
-    baahActivityConfigNamePlaceholder: '例如：activity',
+    baahActivityConfigNamePlaceholder: '留空则始终使用上面的配置',
     baahIfActivityAdapt: '活动适配',
     baahIfActivityAdaptHint:
       '开启后按碧蓝档案的活动排期切换配置文件：有活动时用用户配置里的「活动期间配置文件名」，没有活动时用「BAAH 配置文件名」',

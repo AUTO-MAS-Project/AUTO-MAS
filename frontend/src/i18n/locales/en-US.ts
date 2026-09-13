@@ -1661,11 +1661,11 @@ export default {
     baahConfigName: 'BAAH config file name',
     baahConfigNameHint:
       'Enter an existing config file name from the BAAH UI (for example the bundled example); this app launches it as BAAH.exe example.json',
-    baahConfigNamePlaceholder: 'e.g. example',
+    baahConfigNamePlaceholder: 'Pick a BAAH config file',
     baahActivityConfigName: 'Event-period config file name',
     baahActivityConfigNameHint:
       'With "Activity adaptation" enabled in the script settings, BAAH is started with this config while Blue Archive has an ongoing event; leave it empty, or when the event schedule cannot be fetched, the config name above is used instead',
-    baahActivityConfigNamePlaceholder: 'e.g. activity',
+    baahActivityConfigNamePlaceholder: 'Leave empty to always use the config above',
     baahIfActivityAdapt: 'Activity adaptation',
     baahIfActivityAdaptHint:
       'Switch the config file by the Blue Archive event schedule: the "Event-period config file name" from the user settings while an event is running, otherwise the "BAAH config file name"',

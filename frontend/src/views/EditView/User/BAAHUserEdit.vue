@@ -109,19 +109,28 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
+                <a-select
                   v-model:value="formData.Info.ConfigName"
                   :placeholder="t('edit.baahConfigNamePlaceholder')"
                   :disabled="loading"
+                  :loading="configNamesLoading"
+                  :options="configNameOptions"
                   size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
+                  show-search
+                  option-filter-prop="label"
+                  style="width: 100%"
+                  @dropdown-visible-change="
+                    (open: boolean) => {
+                      if (open) void loadConfigNames()
+                    }
+                  "
+                  @change="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
                 />
               </a-form-item>
             </a-col>
           </a-row>
 
-          <!-- 开启活动适配后，活动期间改用这里填写的配置；留空则始终用上面的配置名 -->
+          <!-- 开启活动适配后，活动期间改用这里选的配置；留空则始终用上面的配置名 -->
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="activityConfigName">
@@ -133,14 +142,27 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
+                <a-select
                   v-model:value="formData.Info.ActivityConfigName"
                   :placeholder="t('edit.baahActivityConfigNamePlaceholder')"
                   :disabled="loading"
+                  :loading="configNamesLoading"
+                  :options="configNameOptions"
                   size="large"
-                  class="modern-input"
-                  @blur="
-                    handleFieldSave('Info.ActivityConfigName', formData.Info.ActivityConfigName)
+                  show-search
+                  allow-clear
+                  option-filter-prop="label"
+                  style="width: 100%"
+                  @dropdown-visible-change="
+                    (open: boolean) => {
+                      if (open) void loadConfigNames()
+                    }
+                  "
+                  @change="
+                    handleFieldSave(
+                      'Info.ActivityConfigName',
+                      formData.Info.ActivityConfigName ?? ''
+                    )
                   "
                 />
               </a-form-item>
@@ -245,6 +267,7 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import { BaahService, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 
@@ -300,6 +323,24 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultBAAHUserData(),
 })
+
+// BAAH 配置文件名下拉候选：由后端按脚本配置里的主程序路径实时读取 BAAH_CONFIGS
+// 目录，两份配置名（默认与活动期间）共用同一份候选，避免手输不存在的配置名
+const configNameOptions = ref<{ label: string; value: string }[]>([])
+const configNamesLoading = ref(false)
+const loadConfigNames = async () => {
+  configNamesLoading.value = true
+  try {
+    const resp = await BaahService.getBaahConfigNamesApiApiScriptsBaahConfigNamesGet(scriptId)
+    configNameOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    configNamesLoading.value = false
+  }
+}
 
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
