@@ -1797,7 +1797,7 @@ class BAAHUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
+    ConfigName: Optional[str] = Field(default=None, description="默认使用的 BAAH 配置文件名")
     ActivityConfigName: Optional[str] = Field(
         default=None, description="活动期间使用的 BAAH 配置文件名"
     )

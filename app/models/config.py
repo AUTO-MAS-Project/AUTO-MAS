@@ -4680,7 +4680,7 @@ class BAAHUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        ## BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
+        ## 默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
         ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
         self.Info_ActivityConfigName = ConfigItem("Info", "ActivityConfigName", "")

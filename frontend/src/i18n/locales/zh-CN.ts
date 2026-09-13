@@ -1569,17 +1569,17 @@ export default {
     baahNotBaahScript: '脚本类型不是 BAAH',
     baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
     baahRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
-    baahConfigName: 'BAAH 配置文件名',
+    baahConfigName: '默认配置名',
     baahConfigNameHint:
-      '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',
-    baahConfigNamePlaceholder: '请选择 BAAH 配置文件',
+      '平时使用的 BAAH 配置，本软件用它启动 BAAH.exe <名称>.json；开启活动适配后，它在活动期间会被「活动期间配置文件名」取代',
+    baahConfigNamePlaceholder: '请选择平时使用的配置',
     baahActivityConfigName: '活动期间配置文件名',
     baahActivityConfigNameHint:
-      '开启脚本配置里的「活动适配」后，碧蓝档案有进行中的活动时改用这个配置启动 BAAH；留空、或活动排期取不到时仍用上面的配置名',
-    baahActivityConfigNamePlaceholder: '留空则始终使用上面的配置',
+      '开启上面的「活动适配」后，碧蓝档案有进行中的活动时改用这个配置启动 BAAH；留空、或活动排期取不到时仍用默认配置名',
+    baahActivityConfigNamePlaceholder: '留空则始终使用默认配置',
     baahIfActivityAdapt: '活动适配',
     baahIfActivityAdaptHint:
-      '开启后按碧蓝档案的活动排期切换配置文件：有活动时用用户配置里的「活动期间配置文件名」，没有活动时用「BAAH 配置文件名」',
+      '开启后按碧蓝档案的活动排期切换配置文件：有活动时用「活动期间配置文件名」，没有活动时用「默认配置名」',
     baahActivityLineType: '活动排期服务器',
     baahActivityLineTypeHint:
       '按哪个服的排期判断有没有活动；各服活动时间不同，请选你的账号所在的服',

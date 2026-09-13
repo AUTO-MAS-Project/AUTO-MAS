@@ -16,7 +16,7 @@ export type BAAHUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
-     * BAAH 配置文件名
+     * 默认使用的 BAAH 配置文件名
      */
     ConfigName?: (string | null);
     /**
