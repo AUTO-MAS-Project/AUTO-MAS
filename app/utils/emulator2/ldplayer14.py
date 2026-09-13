@@ -137,9 +137,10 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
     store_package = "com.android.flysilkworm"
 
-    #: adb devices 的缓存。放类属性而不是覆写 __init__，免得和父类的构造契约纠缠。
-    _adb_cache: list[str] | None = None
-    _adb_cache_until: float = 0.0
+    #: adb devices 的缓存：adb 路径 -> (在线序列号, 缓存到什么时候)。
+    #: 放类属性而不是覆写 __init__，免得和父类的构造契约纠缠；按路径而不是按实例存，
+    #: 因为管理器本身每个请求都会重建（见 :mod:`.service`），挂在实例上的缓存永远不会命中。
+    _adb_cache: dict[str, tuple[list[str], float]] = {}
 
     #: 序列号 -> (是不是别家的, 缓存到什么时候)。同上放类属性；
     #: 「谁占着这个端口」本来就是整机的事实，几个管理器实例共用一份反而更对。
@@ -222,8 +223,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             return {}
 
         # 越过 adb devices 的缓存：这里要的是「现在」有没有，不是几秒前的视图
-        self._adb_cache = None
-        serials = await self._list_adb_serials()
+        serials = await self._list_adb_serials(fresh=True)
         probes: dict[str, VmProbe] = {}
         for idx, device in devices.items():
             others = [i for i in devices if str(i) != str(idx)]
@@ -454,20 +454,22 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         logger.info(f"已写入雷电实例 {idx} 的设置: {cleaned}")
         return cleaned
 
-    async def _list_adb_serials(self) -> list[str]:
+    async def _list_adb_serials(self, *, fresh: bool = False) -> list[str]:
         """``adb devices`` 的在线设备列表，带 5 秒缓存。
 
         状态轮询每几秒就调一次 :meth:`getInfo`，不缓存的话每轮都要起一次子进程。
         缓存到期前多台设备共用同一份结果，这正是 :func:`resolve_serial`
-        排除其他实例候选时需要的一致视图。
+        排除其他实例候选时需要的一致视图。``fresh`` 越过缓存，给需要「现在」的探测用。
         """
-        now = time.monotonic()
-        if self._adb_cache is not None and now < self._adb_cache_until:
-            return self._adb_cache
-
         adb_path = self.get_adb_path()
         if adb_path is None:
             return []
+        cache_key = str(adb_path)
+
+        now = time.monotonic()
+        cached = self._adb_cache.get(cache_key)
+        if not fresh and cached is not None and now < cached[1]:
+            return cached[0]
 
         try:
             result = await ProcessRunner.run_process(
@@ -478,8 +480,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             logger.debug(f"执行 adb devices 失败: {e}")
             return []
 
-        self._adb_cache = serials
-        self._adb_cache_until = now + _ADB_CACHE_SECONDS
+        self._adb_cache[cache_key] = (serials, now + _ADB_CACHE_SECONDS)
         return serials
 
     async def _is_foreign_serial(self, serial: str) -> bool:
@@ -560,11 +561,15 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         if not serials:
             return result
 
-        # 排除其他实例的候选时要看全量索引，不能只看本次查询的那一台
-        try:
-            all_indexes = list((await self.get_device_info(None)).keys())
-        except Exception:  # noqa: BLE001 - 拿不到全量就不做认领, 只做核对
+        # 排除其他实例的候选时要看全量索引，不能只看本次查询的那一台。
+        # 查全部时父类已经把全量给了，别再跑一遍 list2——这条路径是状态轮询走的
+        if idx is None:
             all_indexes = list(result)
+        else:
+            try:
+                all_indexes = list((await self.get_device_info(None)).keys())
+            except Exception:  # noqa: BLE001 - 拿不到全量就不做认领, 只做核对
+                all_indexes = list(result)
 
         resolved: dict[str, DeviceInfo] = {}
         for native_index, info in result.items():
@@ -596,10 +601,25 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     async def read_stable_mode(self, idx: str) -> tuple[bool, list[str]]:
         """稳定模式是否已生效，以及还有哪几项不安全。"""
         config = await asyncio.to_thread(self.read_instance_config, idx)
+        return self._stable_mode_of(config)
+
+    @staticmethod
+    def _stable_mode_of(config: dict | None) -> tuple[bool, list[str]]:
         if config is None:
             return False, [item.field for item in LDPLAYER_ITEMS]
         current = {item.key: _dig_flat(config, item.key) for item in LDPLAYER_ITEMS}
         return evaluate(LDPLAYER_ITEMS, current)
+
+    async def read_instance_overview(
+        self, idx: str
+    ) -> tuple[InstanceSettings, bool, list[str]]:
+        """四项设置和稳定模式一次读完：设备表每行都要这两样，分开读就是把同一个文件读两遍。"""
+        config = await asyncio.to_thread(self.read_instance_config, idx)
+        stable, unsafe = self._stable_mode_of(config)
+        if config is None:
+            return build_settings(None, None, readable=False), stable, unsafe
+        vbox_text = await asyncio.to_thread(self._read_instance_vbox, idx)
+        return build_settings(config, vbox_text), stable, unsafe
 
     async def apply_stable_mode(self, idx: str) -> list[str]:
         """把不安全的项写成安全值，返回实际改动的字段名。

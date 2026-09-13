@@ -1164,6 +1164,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <Emulator2Panel
                   :ref="(el: any) => setEmulator2Panel(element.uid, el)"
                   :emulator-id="element.uid"
+                  :active="activeKey === element.uid"
                 />
               </div>
 

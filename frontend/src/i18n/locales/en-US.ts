@@ -1702,9 +1702,6 @@ export default {
       'When on, the BAAH task nodes of this run (finished / skipped / failed) are included in the task report; when off no task nodes are collected, while the run log and the result decision stay unchanged',
     baahEmulatorHint:
       'Pick the emulator this app should schedule; it starts the emulator and waits for the device before the run, so BAAH only connects and you need no emulator path or port inside BAAH',
-    baahCloseEmulatorOnFinish: 'Close the emulator when finished',
-    baahCloseEmulatorOnFinishHint:
-      'When on, this app closes the selected emulator instance once the task ends',
     baahNotBaahScript: 'This script is not a BAAH script',
     baahRunTimesLimitHint: 'Stop the run when this many attempts still fail',
     baahRunTimeLimitHint:
@@ -2199,6 +2196,7 @@ export default {
     stateDefault: 'Default',
     start: 'Start',
     stop: 'Stop',
+    show: 'Show window',
     hide: 'Hide window',
     openStore: 'Open game center',
     settings: 'Settings',
@@ -2290,6 +2288,7 @@ export default {
       unavailable: 'This emulator is unreachable right now',
       missing: 'This instance cannot be found',
       error: 'The instance is in an error state',
+      busy: 'An operation is still in progress',
     },
     status: {
       missing: 'Not found',

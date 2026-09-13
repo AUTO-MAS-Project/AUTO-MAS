@@ -26,6 +26,8 @@ const deferred = <T>() => {
 describe('useEmulatorDeviceOptions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // 缓存是模块级的，每个用例都要从干净的模块开始
+    vi.resetModules()
   })
 
   it('tracks loading without blocking the caller', async () => {
@@ -83,10 +85,11 @@ describe('useEmulatorDeviceOptions', () => {
     expect(emulatorDeviceOptions.value).toEqual([])
   })
 
-  it('caches successful responses until options are cleared', async () => {
-    loadDevicesRequest
-      .mockResolvedValueOnce({ code: 200, data: [{ label: '实例 0', value: '0' }] })
-      .mockResolvedValueOnce({ code: 200, data: [{ label: '实例 1', value: '1' }] })
+  it('caches successful responses; clearing the page keeps the shared cache', async () => {
+    loadDevicesRequest.mockResolvedValueOnce({
+      code: 200,
+      data: [{ label: '实例 0', value: '0' }],
+    })
     const { clearEmulatorDeviceOptions, emulatorDeviceOptions, loadEmulatorDeviceOptions } =
       await import('./useEmulatorDeviceOptions').then(module => module.useEmulatorDeviceOptions())
 
@@ -96,11 +99,58 @@ describe('useEmulatorDeviceOptions', () => {
     expect(loadDevicesRequest).toHaveBeenCalledTimes(1)
     expect(emulatorDeviceOptions.value).toEqual([{ label: '实例 0', value: '0' }])
 
+    // 清空只是本页没选模拟器了，别的页面刚缓存的列表不该跟着没
     clearEmulatorDeviceOptions()
+    expect(emulatorDeviceOptions.value).toEqual([])
     await loadEmulatorDeviceOptions('emulator-a')
 
+    expect(loadDevicesRequest).toHaveBeenCalledTimes(1)
+    expect(emulatorDeviceOptions.value).toEqual([{ label: '实例 0', value: '0' }])
+  })
+
+  it('shares cached options across composable instances until invalidated', async () => {
+    loadDevicesRequest
+      .mockResolvedValueOnce({ code: 200, data: [{ label: '#0 实例', value: '0' }] })
+      .mockResolvedValueOnce({ code: 200, data: [{ label: '#1 实例', value: '1' }] })
+    const module = await import('./useEmulatorDeviceOptions')
+    const first = module.useEmulatorDeviceOptions()
+    const second = module.useEmulatorDeviceOptions()
+
+    await first.loadEmulatorDeviceOptions('emulator-a')
+    await second.loadEmulatorDeviceOptions('emulator-a')
+
+    // 另一个页面的 composable 直接吃到缓存，不再问后端
+    expect(loadDevicesRequest).toHaveBeenCalledTimes(1)
+    expect(second.emulatorDeviceOptions.value).toEqual([{ label: '#0 实例', value: '0' }])
+
+    module.invalidateEmulatorDeviceOptions('emulator-a')
+    await second.loadEmulatorDeviceOptions('emulator-a')
+
     expect(loadDevicesRequest).toHaveBeenCalledTimes(2)
-    expect(emulatorDeviceOptions.value).toEqual([{ label: '实例 1', value: '1' }])
+    expect(second.emulatorDeviceOptions.value).toEqual([{ label: '#1 实例', value: '1' }])
+  })
+
+  it('expires cached options after the ttl', async () => {
+    vi.useFakeTimers()
+    try {
+      loadDevicesRequest
+        .mockResolvedValueOnce({ code: 200, data: [{ label: '旧', value: '0' }] })
+        .mockResolvedValueOnce({ code: 200, data: [{ label: '新', value: '0' }] })
+      const { emulatorDeviceOptions, loadEmulatorDeviceOptions } =
+        await import('./useEmulatorDeviceOptions').then(module => module.useEmulatorDeviceOptions())
+
+      await loadEmulatorDeviceOptions('emulator-a')
+      vi.advanceTimersByTime(30_000)
+      await loadEmulatorDeviceOptions('emulator-a')
+      expect(loadDevicesRequest).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(31_000)
+      await loadEmulatorDeviceOptions('emulator-a')
+      expect(loadDevicesRequest).toHaveBeenCalledTimes(2)
+      expect(emulatorDeviceOptions.value).toEqual([{ label: '新', value: '0' }])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('settles empty and failed responses', async () => {

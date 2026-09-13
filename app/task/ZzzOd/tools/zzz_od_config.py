@@ -36,7 +36,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from app.utils.io import read_file, write_file
+from app.utils.io import read_file, replace_dir, write_file
 from app.utils.logger import get_logger
 
 logger = get_logger("绝区零一条龙配置")
@@ -679,17 +679,10 @@ def clear_run_records(root: Path, idx: int) -> None:
 
 
 def _atomic_copytree(source: Path, target: Path) -> None:
-    """目录整体原子替换（tmp + rename），覆盖目标已有内容。"""
+    """目录整体替换, 覆盖目标已有内容（先清后拷, 不再走 tmp + rename）。"""
 
-    temporary = target.with_name(f".{target.name}.{id(source)}.tmp")
-    try:
-        shutil.rmtree(temporary, ignore_errors=True)
-        shutil.copytree(source, temporary)
-        shutil.rmtree(target, ignore_errors=True)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary.rename(target)
-    finally:
-        shutil.rmtree(temporary, ignore_errors=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    replace_dir(source, target)
 
 
 def backup_instance(root: Path, idx: int, backup_dir: Path) -> None:

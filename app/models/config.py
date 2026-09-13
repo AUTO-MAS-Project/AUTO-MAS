@@ -4800,10 +4800,6 @@ class BAAHConfig(ConfigBase):
         )
         ## 模拟器索引
         self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
-        ## 结束后是否关闭模拟器
-        self.Emulator_CloseOnFinish = ConfigItem(
-            "Emulator", "CloseOnFinish", True, BoolValidator()
-        )
 
         self.UserData = MultipleConfig([BAAHUserConfig])
 

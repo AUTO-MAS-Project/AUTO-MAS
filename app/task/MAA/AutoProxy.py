@@ -38,6 +38,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
@@ -53,7 +54,7 @@ from app.utils.constants import (
     MAA_TASKS_ZH,
     UTC4,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .tools import (
     agree_bilibili,
@@ -696,12 +697,7 @@ class AutoProxyTask(TaskExecuteBase):
                     ]
                     self.cur_user_log.status = "模拟器启动失败"
 
-                    try:
-                        await self.emulator_manager.close(
-                            self.script_config.get("Emulator", "Index")
-                        )
-                    except Exception as e:
-                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                    await close_emulator(self)
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -758,12 +754,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                     await self.maa_process_manager.kill()
-                    try:
-                        await self.emulator_manager.close(
-                            self.script_config.get("Emulator", "Index")
-                        )
-                    except Exception as e:
-                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                    await close_emulator(self)
                     await System.kill_process(self.maa_exe_path)
 
                     # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
@@ -1161,6 +1152,13 @@ class AutoProxyTask(TaskExecuteBase):
         # 拍下托管注入完成后的配置基线, 供任务结束后甄别 MAA 自身的写盘变更
         self._snapshot_maa_config()
 
+        # 快照记录注入后指纹, 供崩溃恢复区分 MAS 污染与用户手动改动
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
+
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
     def _snapshot_maa_config(self) -> None:
@@ -1281,12 +1279,7 @@ class AutoProxyTask(TaskExecuteBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=result.message),
         )
-        try:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+        await close_emulator(self)
 
         await Notify.push_plyer(
             "游戏需要手动更新！",
@@ -1395,12 +1388,7 @@ class AutoProxyTask(TaskExecuteBase):
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
-            try:
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            await close_emulator(self)
 
         user_logs_list = []
         if_six_star = False

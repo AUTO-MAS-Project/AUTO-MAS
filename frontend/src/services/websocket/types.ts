@@ -61,6 +61,9 @@ export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
 export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
+// 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
+export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
+
 // ==================== 关键消息数据类型 ====================
 
 /** 任务提示消息数据 (type=task.notice) */
@@ -181,6 +184,21 @@ export interface WSGameSignResultData {
   result: string
 }
 
+/**
+ * 模拟器操作结束 (type=emulator.operation.finished)
+ *
+ * 启动 / 关闭是后台任务，接口一调用就返回；界面靠这条消息知道那一次操作什么时候真正结束。
+ */
+export interface WSEmulatorOperationData {
+  emulatorId: string
+  /** 设备索引；Emulator 2.0 下是设备号 */
+  index: string
+  operate: 'open' | 'close' | 'show' | 'hide'
+  ok: boolean
+  /** 失败原因，成功时为空 */
+  message: string
+}
+
 export type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
@@ -203,6 +221,7 @@ export interface WSMessageDataMap {
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
+  [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
 }
 
 export type WSKnownMessageType = keyof WSMessageDataMap

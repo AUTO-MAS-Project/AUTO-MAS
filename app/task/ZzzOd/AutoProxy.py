@@ -46,13 +46,10 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 
 import asyncio
 import json
-import shlex
 import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-
-import psutil
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -63,6 +60,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    find_pids_by_name,
+    push_dispatch_log,
+    split_args,
+)
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
@@ -109,13 +111,6 @@ _ZZZOD_LAUNCHERS = tuple(_ZZZOD_LAUNCHER_BOOK.values())
 # 游戏本体进程名：MAS 侧关闭游戏按进程名结束（游戏由启动器拉起，可能不在
 # 启动器进程树内，进程管理器跟踪不到）
 _ZZZ_GAME_PROCESS = "ZenlessZoneZero.exe"
-
-
-def _split_args(raw: object) -> list[str]:
-    """启动参数按 shell 规则拆分（保留 Windows 风格引号，空串返回空列表）。"""
-
-    value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
 
 
 # 启动器成功启动的证据：出现 zzz-od 应用层运行上下文即视为已启动（两种启动器的
@@ -179,19 +174,6 @@ def _failed_apps(diffs: list) -> list[str]:
         for app_id, _, new in diffs
         if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
     ]
-
-
-def _find_pids_by_name(process_name: str) -> list[int]:
-    """按进程名收集 PID（同步全进程扫描，调用方放到线程里跑）。"""
-
-    pids: list[int] = []
-    for process in psutil.process_iter(["name"]):
-        try:
-            if process.info["name"] == process_name:
-                pids.append(process.pid)
-        except psutil.Error:
-            continue
-    return pids
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -429,6 +411,8 @@ class AutoProxyTask(TaskExecuteBase):
         self._multi_uids: set[str] = set()
         self._multi_judged: set[int] = set()
         self._multi_ran = False
+        # 本轮判定为完成但部分任务执行失败的节点展示名（写入 script_info.log/通知）
+        self._partial_failed_apps: list[str] = []
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
@@ -947,7 +931,8 @@ class AutoProxyTask(TaskExecuteBase):
                     self._judge_final(records_before, records_after, log)
 
                 if self.run_book:
-                    # 终态成功（判定器设置）：含「Success!」与「今日任务均已完成」
+                    # 终态成功（判定器设置）：统一为框架成功契约「Success!」
+                    # （直控跳过场景的可读说明已由判定器写入 script_info.log）
                     if (
                         self._launcher_label is not None
                         and self._launcher_mode == "自动"
@@ -956,7 +941,7 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.cur_user_config.set(
                             "Data", "LauncherLastGood", self._launcher_label
                         )
-                    self.script_info.log = "检测到 ZZZ-OD 已完成任务"
+                    self.script_info.log = self.script_info.log or "检测到 ZZZ-OD 已完成任务"
                     if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                         await execute_script_task(
                             Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
@@ -1038,21 +1023,29 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs)
-            # 节点失败只记录不重跑（次日 zzz-od 按运行记录自行重试）
+            # 节点失败只记录不重跑（次日 zzz-od 按运行记录自行重试），本轮仍判
+            # 完成；结果向框架成功契约 Success! 归一，失败节点进 script_info.log
+            # 供任务详情与通知展示（历史层保持只认 Success! 的干净契约）
             if failed_apps:
-                failed_names = "、".join(
+                self._partial_failed_apps = [
                     self._app_display_name(app_id) for app_id in failed_apps
-                )
-                log_status = f"ZZZ-OD 部分任务执行失败: {failed_names}"
+                ]
+                log_status = "Success!"
                 user_status = "完成"
+                self.script_info.log = (
+                    "部分任务执行失败: " + "、".join(self._partial_failed_apps)
+                )
             elif any(new == RUN_STATUS_SUCCESS for _, _, new in diffs):
                 log_status = "Success!"
                 user_status = "完成"
+                self.script_info.log = "检测到 ZZZ-OD 已完成任务"
             elif self._launch_evidence(log, False) or _ZZZOD_ONE_DRAGON_SUCCESS in log:
                 # 记录无变化但有一条龙运行证据（应用层日志/成功标志）：
-                # 直控态=今日任务均已完成（zzz-od 启动后按记录跳过全部任务）
-                log_status = "今日任务均已完成"
+                # 直控态=今日任务均已完成（zzz-od 启动后按记录跳过全部任务）。
+                # 结果向框架成功契约 Success! 归一，可读说明放到 script_info.log
+                log_status = "Success!"
                 user_status = "完成"
+                self.script_info.log = "今日任务均已完成"
             else:
                 # 记录无变化且无任何启动证据：启动器未能真正拉起一条龙
                 # （缺依赖早退等），判失败走重试/启动器切换，不得报成功
@@ -1060,8 +1053,9 @@ class AutoProxyTask(TaskExecuteBase):
                 user_status = "异常"
 
         self.cur_user_log.status = log_status
-        # 以 run_book 向 main_task 通信终态：「今日任务均已完成」也视为成功
-        # （否则会空跑满重试次数并以失败落库）；展示文本保留给 result 行
+        # 以 run_book 向 main_task 通信终态：判定为完成的路径统一归一为
+        # Success!（部分节点失败/直控跳过也视为成功，否则会空跑满重试次数
+        # 并以失败落库）；具体说明已写入 script_info.log 供详情展示
         self.run_book = user_status == "完成"
         if user_status is not None:
             self.cur_user_item.status = user_status
@@ -1186,6 +1180,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
         elif all_ok:
             self.cur_user_log.status = "Success!"
+            self.script_info.log = "检测到 ZZZ-OD 已完成任务"
         else:
             failed_users = "、".join(
                 user_item.name
@@ -1227,9 +1222,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
 
     async def _restore_injection(self) -> None:
         """恢复注入现场（用户态接管过时生效；幂等，恢复一次后置空）。
@@ -1360,9 +1353,17 @@ class AutoProxyTask(TaskExecuteBase):
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                statistics["user_result"] = (
-                    "代理任务全部完成" if self.run_book else self.cur_user_item.result
-                )
+                if not self.run_book:
+                    user_result = self.cur_user_item.result
+                elif self._partial_failed_apps:
+                    # 判定完成但部分节点失败：结果保持成功，明细告知用户
+                    user_result = (
+                        "部分任务未完成，将于次日重试: "
+                        + "、".join(self._partial_failed_apps)
+                    )
+                else:
+                    user_result = "代理任务全部完成"
+                statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
                 await push_notification(
                     "统计信息",
@@ -1485,7 +1486,7 @@ class AutoProxyTask(TaskExecuteBase):
         await self._push_dispatch_log("正在由 MAS 启动游戏...")
         await self.game_process_manager.open_process(
             self.game_exe_path,
-            *_split_args(self.script_config.get("Game", "Arguments")),
+            *split_args(self.script_config.get("Game", "Arguments")),
         )
         wait_time = max(int(self.script_config.get("Game", "WaitTime") or 0), 0)
         if wait_time:
@@ -1498,7 +1499,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             # 全进程扫描放到线程里，不阻塞事件循环
-            for pid in await asyncio.to_thread(_find_pids_by_name, _ZZZ_GAME_PROCESS):
+            for pid in await asyncio.to_thread(find_pids_by_name, _ZZZ_GAME_PROCESS):
                 try:
                     await System.kill_process_by_pid(pid)
                 except Exception as e:

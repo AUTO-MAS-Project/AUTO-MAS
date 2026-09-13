@@ -1859,6 +1859,7 @@ export default {
     stateDefault: '既定',
     start: '起動',
     stop: '停止',
+    show: 'ウィンドウを表示',
     hide: 'ウィンドウを隠す',
     openStore: 'ゲームセンターを開く',
     settings: '設定',
@@ -1948,6 +1949,7 @@ export default {
       unavailable: 'このエミュレーターは現在利用できません',
       missing: 'このインスタンスが見つかりません',
       error: 'インスタンスがエラー状態です',
+      busy: '操作が進行中です',
     },
     status: {
       missing: '見つかりません',

@@ -451,19 +451,31 @@ async def delete_instance(emulator_id: str, slot: str) -> dict:
     return {"ok": True, "reason": "ok"}
 
 
-async def list_devices(emulator_id: str) -> dict:
+#: 同一条安装下并发读设置的上限。雷电是读文件，MuMu 每台是一个子进程；
+#: 全串行时十台设备就是十个来回，全放开又会同时拉起一堆 MuMuManager.exe。
+_OVERVIEW_CONCURRENCY = 4
+
+
+async def list_devices(emulator_id: str, *, with_settings: bool = True) -> dict:
     """合并设备列表。
 
-    枚举失败的安装标 ``unavailable``——**一次枚举失败不等于实例被删除**，
-    既不写墓碑，也不影响下次恢复。
+    每条安装只问一次 ``getInfo``：它既是「这次枚举到了哪些实例」，也是每台的状态，
+    没必要像早先那样先枚举一遍再取一遍状态。枚举失败的安装标 ``unavailable``——
+    **一次枚举失败不等于实例被删除**，既不写墓碑，也不影响下次恢复。
+
+    ``with_settings=False`` 只取状态，不读四项设置与稳定模式——状态轮询走这条，
+    设置几秒变不了一次，没必要每轮把每台的配置都读一遍（MuMu 那边每台是一个子进程）。
     """
     manager = await build_manager(emulator_id)
 
     devices: list[dict] = []
     dirty = False
     for path in manager.paths:
-        native_indexes = await manager.enumerate_native(path)
-        if native_indexes is None:
+        try:
+            backend = await manager.manager_for(path)
+            info = await backend.getInfo(None)
+        except Exception as e:  # noqa: BLE001 - 一条安装枚举失败不影响其余
+            logger.warning(f"枚举 {path.alias or path.install_path} 失败: {e}")
             for record in manager.slots.records:
                 if record.path_id != path.path_id or record.state != "active":
                     continue
@@ -474,46 +486,38 @@ async def list_devices(emulator_id: str) -> dict:
                 )
             continue
 
-        if manager.slots.sync_path(path.path_id, native_indexes):
+        if manager.slots.sync_path(path.path_id, list(info)):
             dirty = True
 
-        backend = await manager.manager_for(path)
-        try:
-            info = await backend.getInfo(None)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"获取 {path.alias} 设备信息失败: {e}")
-            info = {}
+        # 枚举成功但没有这台 = 已经确认它不在了（多半是在模拟器自己的多开器里删掉的）。
+        # 列一行「未找到」的空设备只是噪音，用户看到的是一台并不存在的模拟器。
+        # 设备号仍留在槽位表里：以后同一个原生索引再出现，还是这个号。
+        #
+        # 与 unavailable 的区别在于「查证不存在」和「没查成」：整条安装不可达时我们
+        # 并不知道实例还在不在，那种照常显示并标暂时不可用。
+        records = [
+            record
+            for record in manager.slots.records
+            if record.path_id == path.path_id
+            and record.state == "active"
+            and record.native_index in info
+        ]
 
-        for record in manager.slots.records:
-            if record.path_id != path.path_id or record.state != "active":
-                continue
-            present = record.native_index in native_indexes
-            if not present:
-                # 枚举成功但没有这台 = 已经确认它不在了（多半是在模拟器自己的
-                # 多开器里删掉的）。列一行「未找到」的空设备只是噪音，用户看到的是
-                # 一台并不存在的模拟器。设备号仍留在槽位表里：以后同一个原生索引
-                # 再出现，还是这个号。
-                #
-                # 与 unavailable 的区别在于「查证不存在」和「没查成」：整条安装
-                # 不可达时我们并不知道实例还在不在，那种照常显示并标暂时不可用。
-                continue
-            settings = {}
-            stable, unsafe = False, []
-            if present:
-                try:
-                    settings = (
-                        await backend.read_instance_settings(record.native_index)
-                    ).to_dict()
-                    stable, unsafe = await backend.read_stable_mode(record.native_index)
-                except Exception as e:  # noqa: BLE001 - 读不出设置不该让整张表挂掉
-                    logger.warning(f"读取设备 #{record.slot} 设置失败: {e}")
+        overviews: dict[str, tuple] = {}
+        if with_settings:
+            overviews = await _read_overviews(backend, records)
+
+        for record in records:
+            settings, stable, unsafe = overviews.get(
+                record.native_index, ({}, False, [])
+            )
             devices.append(
                 _device_row(
                     path,
                     record.slot,
                     record.native_index,
-                    info.get(record.native_index),
-                    "ok" if present else "missing",
+                    info[record.native_index],
+                    "ok",
                     settings,
                     stable,
                     unsafe,
@@ -533,6 +537,27 @@ async def list_devices(emulator_id: str) -> dict:
         ],
         "devices": devices,
     }
+
+
+async def _read_overviews(backend, records) -> dict[str, tuple[dict, bool, list]]:
+    """并发读一条安装下各台的设置与稳定模式。读不出的那台不在结果里，整张表照常出。"""
+    import asyncio
+
+    gate = asyncio.Semaphore(_OVERVIEW_CONCURRENCY)
+
+    async def read_one(record) -> tuple[str, tuple | None]:
+        async with gate:
+            try:
+                settings, stable, unsafe = await backend.read_instance_overview(
+                    record.native_index
+                )
+            except Exception as e:  # noqa: BLE001 - 读不出设置不该让整张表挂掉
+                logger.warning(f"读取设备 #{record.slot} 设置失败: {e}")
+                return record.native_index, None
+            return record.native_index, (settings.to_dict(), stable, unsafe)
+
+    results = await asyncio.gather(*(read_one(record) for record in records))
+    return {index: overview for index, overview in results if overview is not None}
 
 
 def _device_row(

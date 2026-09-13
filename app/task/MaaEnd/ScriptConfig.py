@@ -33,7 +33,13 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils.io import (
+    mark_native_config_injected,
+    read_file,
+    replace_dir,
+    swap_in_dir,
+    write_file,
+)
 
 logger = get_logger("MaaEnd 脚本设置")
 
@@ -168,8 +174,12 @@ class ScriptConfigTask(TaskExecuteBase):
             and self.config_file_path
             and (self.config_file_path / "mxu-MaaEnd.json").exists()
         ):
-            shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-            shutil.copytree(self.config_file_path, self.maaend_set_path)
+            replace_dir(self.config_file_path, self.maaend_set_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.maaend_set_path,
+                script_id=self.script_info.script_id,
+            )
         elif (
             self.use_mas_config
             and self.config_file_path
@@ -201,17 +211,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        if self.stopped_manually:
-            logger.info("MaaEnd 脚本设置任务被手动中止，不保存未完成的配置修改")
-            self.cur_user_item.status = "异常"
-            return
-
+        # 配置会话没有自然结束点: main_task 里的 wait_event 没有任何设置方,
+        # 用户在配置窗口点「保存配置」发起的中止就是唯一出口, 因此这里不能按
+        # 中止丢弃改动, 否则 MaaEnd GUI 的编辑永远落不回 MAS 配置目录。
         if self.use_mas_config and self.config_file_path:
-            shutil.rmtree(self.config_file_path, ignore_errors=True)
-            self.config_file_path.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(
-                self.maaend_set_path, self.config_file_path, dirs_exist_ok=True
-            )
+            swap_in_dir(self.maaend_set_path, self.config_file_path)
             config_path = self.config_file_path / "mxu-MaaEnd.json"
             maaend_set = read_file(config_path)
             maaend_set = normalize_maaend_config(

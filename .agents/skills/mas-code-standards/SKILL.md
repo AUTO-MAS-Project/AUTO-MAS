@@ -23,7 +23,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 4. Match nearby naming, logging tone, comment style, and result contracts.
 5. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
 6. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
-7. Before completing a user-visible feature or fix, add its `CHANGELOG.md` entry under the top (unreleased) version section and run `python scripts/changelog.py sync` so the generated `res/version.json` stays in step; treat the entry as part of the implementation rather than a reminder. Add exactly one entry per PR, written as one concise sentence summarizing the PR's significance; condense all changes into that sentence.
+7. Before completing a user-visible feature or fix, add exactly one changelog fragment under `changelog.d/` (`<PR number or branch>.<feat|change|fix|breaking|deprecate|remove|security|dev>.md`, one concise user-facing sentence; `python scripts/changelog.py add <type> "<sentence>"` creates it); treat it as part of the implementation rather than a reminder. Condense all changes of the PR into that one sentence. Never edit `CHANGELOG.md`, `res/version.json` or any version number: they are written only by the release PR.
 
 ## Commit Lenses
 1. `e541fa5f`: small cleanup.
@@ -75,7 +75,7 @@ Protect these comments especially:
 7. Do not split equivalent behavior into multiple methods or API routes when a dict selector or type field represents the difference directly.
 8. Do not leave dead support paths for future detailed/raw config when there is no complete UI-to-runtime path yet.
 9. Do not add maintainer-facing "safety" code that only repeats guarantees already enforced by base classes or validators.
-10. Do not complete a user-visible feature or fix without adding a matching `CHANGELOG.md` entry under the top (unreleased) version section.
+10. Do not complete a user-visible feature or fix without adding its changelog fragment under `changelog.d/`.
 11. Do not delete useful comments just to make a diff look cleaner.
 
 ## Review Checklist
@@ -91,4 +91,4 @@ Protect these comments especially:
 10. Commit messages and scopes follow the project convention when preparing commits.
 11. Backend comments and config-class annotations use the project style rather than ad hoc prose.
 12. Existing useful comments were preserved or updated accurately, not removed as noise.
-13. User-visible features and fixes include their matching `CHANGELOG.md` entry under the top (unreleased) version section, with `res/version.json` regenerated.
+13. User-visible features and fixes include exactly one changelog fragment under `changelog.d/`; `CHANGELOG.md`, `res/version.json` and version numbers stay untouched.

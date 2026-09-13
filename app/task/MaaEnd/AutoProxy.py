@@ -22,7 +22,6 @@
 import asyncio
 import json
 import re
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +34,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.utils import (
     LogMonitor,
@@ -53,7 +53,12 @@ from app.utils.constants import (
     MAAEND_TASKS,
     UTC4,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import (
+    mark_native_config_injected,
+    read_file,
+    swap_in_dir,
+    write_file,
+)
 
 from .resource_loader import (
     get_loaded_maaend_options,
@@ -983,9 +988,7 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.script_config.get("Game", "Path"))
             else:
                 logger.info("中止模拟器进程")
-                await self.emulator_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex")
-                )
+                await close_emulator(self)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
 
@@ -1246,8 +1249,12 @@ class AutoProxyTask(TaskExecuteBase):
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
             )
 
-        shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-        shutil.copytree(maaend_config_path, self.maaend_set_path)
+        swap_in_dir(maaend_config_path, self.maaend_set_path)
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maaend_set_path,
+            script_id=self.script_info.script_id,
+        )
         maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         for field in ("version", "interfaceTaskSnapshot"):
             maaend_set.pop(field, None)
