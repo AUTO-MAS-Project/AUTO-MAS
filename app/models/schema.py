@@ -1264,9 +1264,10 @@ class UserIndexItem(BaseModel):
 class MaaUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Id: Optional[str] = Field(default=None, description="用户ID")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     Server: Optional[
         Literal["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
@@ -1435,8 +1436,14 @@ class GeneralUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本/用户/直控）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     IfUseMasConfig: Optional[bool] = Field(
-        default=None, description="是否使用用户独立脚本配置"
+        default=None, description="兼容旧版用户独立配置开关"
     )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
@@ -1502,7 +1509,7 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     Id: Optional[str] = Field(default=None, description="账号")
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None,
-        description="配置来源（脚本共享、用户独立、直控优先读取脚本原配置）",
+        description="配置来源（脚本/用户/直控）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置覆盖 OK-WW 高频任务字段"
@@ -1555,8 +1562,8 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本/用户/直控）"
     )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
@@ -1694,9 +1701,12 @@ class ZzzOdUserConfig_Info(BaseModel):
 
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
-    Mode: Optional[Literal["用户", "直控"]] = Field(
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None,
-        description="配置来源（用户=本配置字段，直控=zzz-od 原生配置）",
+        description="配置来源（脚本/用户/直控）",
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
     )
     SlotIdx: Optional[int] = Field(
         default=None,
@@ -1797,6 +1807,10 @@ class BAAHUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本/用户/直控）"
+    )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
@@ -2317,9 +2331,10 @@ class SrcUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     Server: Optional[
         Literal[
             "CN-Official",
@@ -2609,6 +2624,8 @@ class HSRUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID（账号）")
     Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(default=None, description="配置来源（脚本/用户/直控）")
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     Server: Optional[Literal["CN-Official"]] = Field(
         default=None, description="游戏服务器"
     )
@@ -2983,6 +3000,12 @@ class M9AUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
     )
@@ -3079,6 +3102,12 @@ class MaaFWUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
     )

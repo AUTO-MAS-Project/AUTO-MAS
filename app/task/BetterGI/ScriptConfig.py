@@ -28,6 +28,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils.platform import IS_ELEVATED
 
 from .AutoProxy import _BGI_REL_EXE
@@ -53,13 +54,14 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        # 脚本级配置（"Default"）强制独立配置；真实用户读 IfUseMasConfig
+        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按来源和快速配置决定。
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
-            self.use_mas_config = bool(
-                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
-                    "Info", "IfUseMasConfig"
-                )
+            user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            # 直控+关闭=不写；其余组合都写面板值
+            mode = read_config_source(user_config)
+            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT or bool(
+                user_config.get("Info", "IfQuickConfig")
             )
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()

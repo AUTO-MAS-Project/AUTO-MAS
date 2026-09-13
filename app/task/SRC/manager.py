@@ -34,6 +34,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, CONFIG_SOURCE_SCRIPT, read_config_source
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -143,14 +144,25 @@ class SrcManager(TaskExecuteBase):
         )
         if not src_config_available and not temp_config_available:
             return "SRC配置文件不存在或已损坏, 请检查SRC路径设置或检查配置文件情况！"
+        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 SRC 安装目录的原生配置
         if (
             self.task_info.mode != "ScriptConfig"
+            and self._has_mas_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
         ):
             return "未完成 SRC 全局设置, 请先设置 SRC！"
         return "Pass"
+
+    def _has_mas_config_user(self) -> bool:
+        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。"""
+
+        return any(
+            read_config_source(self.user_config[uuid.UUID(item.user_id)], CONFIG_SOURCE_SCRIPT)
+            != CONFIG_SOURCE_DIRECT
+            for item in self.script_info.user_list
+        )
 
     async def prepare(self):
         """运行前准备"""

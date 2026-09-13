@@ -16,6 +16,14 @@ export type M9AUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
+     * 配置来源（用户独立、直控使用脚本原生配置）
+     */
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
+    /**
      * 是否在任务前执行脚本
      */
     IfScriptBeforeTask?: (boolean | null);

@@ -60,14 +60,14 @@ class MaaFWConfigTest(unittest.TestCase):
         self.assertEqual(
             user_groups,
             {
-                "Info": 13,
+                "Info": 15,
                 "Task": 2,
                 "Device": 4,
                 "Data": 5,
                 "Notify": 6,
             },
         )
-        self.assertEqual(_item_count(user), 30)
+        self.assertEqual(_item_count(user), 32)
         self.assertIn("SelectedPreset", user._config_item_index["Task"])
         self.assertIn("Account", user._config_item_index["Info"])
         self.assertIn("Password", user._config_item_index["Info"])
