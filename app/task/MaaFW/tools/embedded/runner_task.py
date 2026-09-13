@@ -77,6 +77,18 @@ _ADB_SCREENCAP_EMULATOR_EXTRAS = 1 << 6
 _ADB_INPUT_DEFAULT = -9
 _ADB_INPUT_ALL = -1
 _ADB_INPUT_EMULATOR_EXTRAS = 1 << 3
+# 雷电专用：MinitouchAndAdbKey(2) | AdbShell(1)，故意不带 Maatouch(4)。
+#
+# MaaFW 的 ADB 文本输入只有两条实现：Maatouch 走 MaaTouch 的 `t` 命令，
+# AdbShell / MinitouchAndAdbKey 走 adb config 里可替换的 `InputText` 命令
+# （默认 `input text`）。前者按键盘映射逐字符注入，`input text` 也只认 ASCII，
+# 两条都打不进中文——2026-09-12 生产实测 M9A 兑换码「魔精小A邀泥收看1999泡面番」
+# 被 Maatouch 重打 265 次、输入框始终为空，整次运行撞硬超时。
+# 雷电自己的 `ldconsole action --key call.input --value <文本>` 能把任意文本
+# 提交到当前焦点的输入框（实测中文 35 ms 落地），所以在雷电上把 Maatouch 从
+# 候选里摘掉，让文本走 MinitouchAndAdbKey 的 `InputText` 命令并替换成 ldconsole。
+# 触控仍是 minitouch 协议，雷电 adbd 本身是 root，minitouch 可用（实测 init 508 ms）。
+_ADB_INPUT_LDPLAYER_CONSOLE_TEXT = (1 << 1) | 1
 _WIN32_SCREENCAP_METHODS = {
     "GDI": 1,
     "FramePool": 1 << 1,
@@ -901,11 +913,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             capability = capabilities.get(emulator_type, {})
             screencap_extra = bool(capability.get("screencap", False))
             input_extra = bool(capability.get("input", False))
-            if emulator_type == "ldplayer" and screencap_extra:
+            if emulator_type == "ldplayer":
+                # 没有截图增强也要进来：文本输入改走 ldconsole 与截图增强无关
                 config = await self._build_ldplayer_adb_controller_config(
                     emulator_path,
                     emulator_index,
                     native_index,
+                    with_extras=screencap_extra,
                 )
                 self._cached_adb_profile = MaaFWAdbControlProfile(
                     emulator_type,
@@ -989,6 +1003,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         extra_input_method = _ADB_INPUT_EMULATOR_EXTRAS
         if profile.emulator_type == "mumu" and profile.input_extra:
             return _ADB_INPUT_ALL
+        if profile.emulator_type == "ldplayer" and _has_input_text_command(
+            profile.config
+        ):
+            # 文本已改走 ldconsole，见 _ADB_INPUT_LDPLAYER_CONSOLE_TEXT
+            return _ADB_INPUT_LDPLAYER_CONSOLE_TEXT
         if profile.emulator_type in {"ldplayer", "mumu"}:
             return _ADB_INPUT_DEFAULT
 
@@ -1006,7 +1025,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         emulator_path: Path,
         emulator_index: str,
         native_index: str | None = None,
+        *,
+        with_extras: bool = True,
     ) -> dict[str, Any]:
+        """雷电的 ADB controller config：截图增强 extras + 走 ldconsole 的文本输入。
+
+        ``with_extras`` 为 False（运行时 maa 没有雷电截图增强）时不写 ``extras``，
+        但文本输入命令照写：它只依赖安装目录里的 ``ldconsole.exe``。
+        """
         emulator_root = emulator_path.parent
         # 兜底必须用原生索引: 雷电 extras 的 index 与 ADB 序列号都按它算,
         # 纳管多个安装时设备号与原生索引不是一回事。
@@ -1037,11 +1063,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if ld_library.exists():
             ld_config["lib"] = str(ld_library).replace("\\", "/")
 
-        return {
-            "extras": {
-                "ld": ld_config,
-            },
-        }
+        config: dict[str, Any] = {}
+        if with_extras:
+            config["extras"] = {"ld": ld_config}
+        command = _ldplayer_input_text_command(emulator_root, index)
+        if command is not None:
+            config["command"] = {"InputText": command}
+        return config
 
     @staticmethod
     def _build_mumu_adb_controller_config(
@@ -2162,6 +2190,36 @@ def _remove_method(methods: int, method: int, fallback: int) -> int:
     """从位掩码中剔除 method 位；若结果为 0（无可用方法）则回退到 fallback。"""
     filtered = methods & ~method
     return filtered or fallback
+
+
+def _ldplayer_input_text_command(emulator_root: Path, index: int) -> list[str] | None:
+    """雷电文本输入改走 ``ldconsole action --key call.input`` 的 adb config 命令。
+
+    MaaFW 的 ``AdbShellInput`` 按 ``config.command.InputText`` 的 argv 起子进程，
+    ``{TEXT}`` 由它替换成待输入文本；首元素不必是 adb。ldconsole 成功时无输出、
+    返回 0，正好满足 MaaFW「输出为空即成功」的判据；索引错了它会打印错误，
+    MaaFW 就把这次 InputText 判失败，让节点失败而不是像 Maatouch 那样静默重打。
+    索引必须是雷电原生实例号（与 extras 同口径）。找不到 ldconsole 就返回 None，
+    调用方维持原来的 Maatouch 路径。
+    """
+    console = emulator_root / "ldconsole.exe"
+    if not console.is_file():
+        return None
+    return [
+        str(console).replace("\\", "/"),
+        "action",
+        "--index",
+        str(index),
+        "--key",
+        "call.input",
+        "--value",
+        "{TEXT}",
+    ]
+
+
+def _has_input_text_command(config: dict[str, Any]) -> bool:
+    command = config.get("command")
+    return isinstance(command, dict) and bool(command.get("InputText"))
 
 
 def _load_json_dict(value: Any) -> dict[str, Any]:
