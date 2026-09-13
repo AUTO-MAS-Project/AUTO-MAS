@@ -89,8 +89,6 @@
 - 模拟器 2.0 支持由原有全局开关控制的「大雷主人模式」，并新增「打开游戏中心」按钮 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 - 初始化 下载前先对各下载源测速并按最快的顺序使用，安装 Python 与依赖时显示当前文件、进度、速度与来源 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 - 星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新采用可回滚的事务方式，中途失败会还原到原版本，你自己的配置文件和另存的自定义策略不会被动到（与上游同名的模板文件会随更新覆盖）；脚本正开着窗口时会跳过本轮而不是强行关掉它 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- BAAH专项 新增碧蓝档案爱丽丝助手脚本支持，可集中管理多个账号的配置并自动完成每日任务
-- BAAH专项 首页新增碧蓝档案活动卡片：可切换日服 / 国际服 / 国服查看进行中的活动与剩余时间，服务器顺序支持拖动调整
 
 ### 变更
 

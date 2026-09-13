@@ -52,9 +52,7 @@
                 "MFW专项 同一个任务可以重复加入任务队列，每一份各自配置选项与排序；设了「每日/每周/每月仅一次」的任务仍按任务计，一轮只跑一次 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)",
                 "模拟器 2.0 支持由原有全局开关控制的「大雷主人模式」，并新增「打开游戏中心」按钮 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)",
                 "初始化 下载前先对各下载源测速并按最快的顺序使用，安装 Python 与依赖时显示当前文件、进度、速度与来源 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)",
-                "星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新采用可回滚的事务方式，中途失败会还原到原版本，你自己的配置文件和另存的自定义策略不会被动到（与上游同名的模板文件会随更新覆盖）；脚本正开着窗口时会跳过本轮而不是强行关掉它 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)",
-                "BAAH专项 新增碧蓝档案爱丽丝助手脚本支持，可集中管理多个账号的配置并自动完成每日任务",
-                "BAAH专项 首页新增碧蓝档案活动卡片：可切换日服 / 国际服 / 国服查看进行中的活动与剩余时间，服务器顺序支持拖动调整"
+                "星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新采用可回滚的事务方式，中途失败会还原到原版本，你自己的配置文件和另存的自定义策略不会被动到（与上游同名的模板文件会随更新覆盖）；脚本正开着窗口时会跳过本轮而不是强行关掉它 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "变更": [
                 "全局设置 虚拟显示器改为常驻监测：运行期间检测不到真实显示输出自动挂上，恢复后自动拆掉（任务运行中等结束再拆）；说明里可直接点开 Parsec 驱动下载页 by [@qiyinxi](https://github.com/qiyinxi)",
