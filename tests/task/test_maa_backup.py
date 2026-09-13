@@ -54,7 +54,12 @@ def test_mas_backup_dedup_and_restore_loop(
     (mas_dir / "gui.json").write_text(
         json.dumps({"Current": "Default", "Global": {}}), encoding="utf-8"
     )
-    overlay = {"IfFight": True, "IfInfrast": False, "ActivityStageIndex": 3, "Server": "Official"}
+    overlay = {
+        "IfFight": True,
+        "IfInfrast": False,
+        "ActivityStageIndex": 3,
+        "Server": "Official",
+    }
 
     # 首次归档（含侧车）→ 内容一致跳过（指纹去重）
     first = archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
@@ -172,7 +177,7 @@ def test_runtime_backup_skips_missing(
 
 
 def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
-    """native 预览：旧/新两文件分别展示当前方案/连接地址/客户端/启动开关。"""
+    """native 预览：标签/取值与 MAS 侧同口径，TaskQueue 反读任务开关与参数。"""
 
     backup = tmp_path / "backup"
     backup.mkdir()
@@ -201,7 +206,43 @@ def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
                         "Gui": {
                             "ConnectSettings": {"Address": "127.0.0.1:16384"},
                             "RuntimeSettings": {"ClientType": 1, "StartGame": True},
-                        }
+                        },
+                        "TaskQueue": [
+                            {
+                                "$type": "StartUpTask",
+                                "TaskType": "StartUp",
+                                "Name": "开始唤醒",
+                                "IsEnable": True,
+                                "AccountName": "13084046220",
+                            },
+                            {
+                                "$type": "FightTask",
+                                "TaskType": "Fight",
+                                "Name": "理智作战",
+                                "IsEnable": True,
+                                "UseMedicine": True,
+                                "MedicineCount": 998,
+                                "Series": 0,
+                                "StagePlan": ["1-7", ""],
+                            },
+                            # 缺 TaskType/$type：按中文名兜底识别
+                            {"Name": "自动公招", "IsEnable": False},
+                            {
+                                "$type": "InfrastTask",
+                                "TaskType": "Infrast",
+                                "Name": "基建换班",
+                                "IsEnable": False,
+                                "Mode": "Custom",
+                            },
+                            # 剩余理智是第二个 Fight 任务，单独成行
+                            {
+                                "$type": "FightTask",
+                                "TaskType": "Fight",
+                                "Name": "剩余理智",
+                                "IsEnable": False,
+                                "StagePlan": [],
+                            },
+                        ],
                     }
                 },
             }
@@ -224,8 +265,8 @@ def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
     assert {row["key"]: row["value"] for row in gui["summary"]} == {
         "当前方案": "Default",
         "连接地址": "127.0.0.1:16384",
-        "客户端": "官服",
-        "启动游戏": "True",
+        "服务器": "官服",
+        "启动游戏": "是",
     }
 
     gui_new = by_name["gui.new.json"]
@@ -233,19 +274,68 @@ def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
     assert {row["key"]: row["value"] for row in gui_new["summary"]} == {
         "当前方案": "Default",
         "连接地址": "127.0.0.1:16384",
-        "客户端": "B服",
+        "服务器": "B服",
         "启动游戏": "是",
+        "自动唤醒": "是",
+        "账号": "130****6220",
+        "理智作战": "是",
+        "吃理智药": "998",
+        "连战次数": "AUTO",
+        "关卡": "1-7",
+        "公开招募": "否",
+        "基建换班": "否",
+        "基建模式": "自定义",
+        "剩余理智": "否",
+        "剩余理智关卡": "不选择",
     }
 
 
+def test_fight_stage_plan_default_shows_current(tmp_path: Path) -> None:
+    """空 StagePlan = MAA GUI 的「关卡指定=当前/上次」，不是「不选择」。"""
+
+    from app.task.MAA.tools.backup_archive import build_backup_file_summary
+
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    (backup / "gui.new.json").write_text(
+        json.dumps(
+            {
+                "Current": "Default",
+                "Configurations": {
+                    "Default": {
+                        "TaskQueue": [
+                            {
+                                "$type": "FightTask",
+                                "TaskType": "Fight",
+                                "Name": "理智作战",
+                                "IsEnable": True,
+                                # 使用药剂未勾选但数量仍显示配置值（对齐 GUI）
+                                "UseMedicine": False,
+                                "MedicineCount": 998,
+                                "StagePlan": [],
+                            }
+                        ]
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    files = build_backup_file_summary(backup)
+    rows = {row["key"]: row["value"] for row in files[0]["summary"]}
+    assert rows["关卡"] == "当前/上次"
+    assert rows["吃理智药"] == "998"
+
+
 def test_overlay_preview_shows_core_fields(tmp_path: Path) -> None:
-    """侧车预览：覆盖 MAS 侧可配置核心内容，枚举/哨兵值/账号脱敏正确。"""
+    """侧车预览：MAS 独有/MAA 对应双分区，枚举/哨兵值/账号脱敏正确。"""
 
     from app.task.MAA.tools.backup_archive import build_overlay_summary, group_overlay
 
     overlay = {
         "Server": "Official",
         "Id": "13084046220",
+        "Mode": "脚本",
         "StageMode": "Fixed",
         "IfStartUp": True,
         "IfFight": False,
@@ -257,6 +347,7 @@ def test_overlay_preview_shows_core_fields(tmp_path: Path) -> None:
         "Stage_Remain": "",
         "IfActivityFirst": True,
         "ActivityStageIndex": 3,
+        "ActivityMedicineNumb": 0,
         "Annihilation": "Annihilation",
         "AnnihilationStartWeekday": "Monday",
         "IfDepotMaintain": False,
@@ -264,43 +355,70 @@ def test_overlay_preview_shows_core_fields(tmp_path: Path) -> None:
         "InfrastMode": "Normal",
         "InfrastName": "未使用自定义基建模式",
     }
-    rows = {row["key"]: row["value"] for row in build_overlay_summary(overlay)}
-    assert rows == {
-        "服务器": "官服",
-        "账号": "130****6220",
+    sections = {section["name"]: section for section in build_overlay_summary(overlay)}
+    assert set(sections) == {"mas-only", "maa"}
+
+    # MAS 独有区：查看详细配置看不到的字段，全量展示
+    mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["summary"]}
+    assert mas_rows == {
+        "配置文件来源": "脚本",
         "关卡配置模式": "固定",
-        "自动唤醒": "是",
-        "理智作战": "否",
-        "绿票商店": "是",
-        "吃理智药": "998",
-        "连战次数": "AUTO",
-        "关卡": "当前/上次",
-        "备选关卡 1": "1-7",
-        "剩余理智关卡": "不选择",
+        "剿灭开始星期": "周一",
         "活动关优先": "是",
         "活动关卡序号": "3",
-        "剿灭模式": "当期剿灭",
-        "剿灭开始星期": "周一",
-        "库存保持": "否",
+        "活动理智药": "0",
+        "绿票商店": "是",
         "库存保持计划": "无",
-        "基建模式": "标准",
-        # 非自定义模式：基建配置名（虚拟字段回退文案）不进预览
     }
-    assert "基建配置" not in rows
+
+    # MAA 对应区：与 MAA GUI 同口径；关卡为合成后的具体刷本内容
+    maa_rows = {row["key"]: row["value"] for row in sections["maa"]["summary"]}
+    assert maa_rows == {
+        "服务器": "官服",
+        "账号": "130****6220",
+        "自动唤醒": "是",
+        "理智作战": "否",
+        "库存保持": "否",
+        "吃理智药": "998",
+        "连战次数": "AUTO",
+        "关卡": "1-7",
+        "剩余理智关卡": "不选择",
+        "剿灭模式": "当期剿灭",
+        "基建模式": "标准",
+    }
 
     # 自定义模式：基建配置名进预览
-    rows2 = {
-        row["key"]: row["value"]
-        for row in build_overlay_summary({**overlay, "InfrastMode": "Custom", "InfrastName": " my plan - v2 "})
+    sections2 = {
+        section["name"]: section
+        for section in build_overlay_summary(
+            {**overlay, "InfrastMode": "Custom", "InfrastName": " my plan - v2 "}
+        )
     }
-    assert rows2["基建模式"] == "自定义"
-    assert rows2["基建配置"] == " my plan - v2 "
+    maa_rows2 = {row["key"]: row["value"] for row in sections2["maa"]["summary"]}
+    assert maa_rows2["基建模式"] == "自定义"
+    assert maa_rows2["基建配置"] == " my plan - v2 "
 
-    # 分组回填：Info/Task 各归其段
+    # 全部关卡槽位禁用 → 与配置界面折叠摘要同口径显示当前/上次
+    overlay_all_disabled = {
+        **overlay,
+        "Stage": "-",
+        "Stage_1": "-",
+        "Stage_2": "-",
+        "Stage_3": "-",
+    }
+    sections3 = {
+        section["name"]: section
+        for section in build_overlay_summary(overlay_all_disabled)
+    }
+    maa_rows3 = {row["key"]: row["value"] for row in sections3["maa"]["summary"]}
+    assert maa_rows3["关卡"] == "当前/上次"
+
+    # 分组回填：Info/Task 各归其段；仅预览字段（Mode）不回填
     grouped = group_overlay(overlay)
     assert set(grouped) == {"Info", "Task"}
     assert grouped["Info"]["Server"] == "Official"
     assert grouped["Task"]["IfFight"] is False
+    assert "Mode" not in grouped["Info"]
 
 
 def test_read_overlay_values_covers_both_groups() -> None:
@@ -340,3 +458,33 @@ def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:
 
     assert get_mas_backup_dir(script_id, user_id, "20260913-000000") is None
     assert get_mas_backup_dir(script_id, user_id, "../../../evil") is None
+
+
+def test_seed_mas_dir_from_install(tmp_path: Path) -> None:
+    """MAS 配置目录缺失时从 MAA 本体播种；已有内容或源缺失时保持原状。"""
+
+    from types import SimpleNamespace
+
+    from app.task.MAA.tools.restore_service import _seed_mas_dir
+
+    install = tmp_path / "MAA" / "config"
+    install.mkdir(parents=True)
+    (install / "gui.json").write_text("{}", encoding="utf-8")
+    ctx = SimpleNamespace(
+        script_config=SimpleNamespace(get=lambda g, k: str(tmp_path / "MAA"))
+    )
+
+    mas_dir = tmp_path / "data" / "s" / "Default" / "ConfigFile"
+    _seed_mas_dir(ctx, mas_dir)
+    assert (mas_dir / "gui.json").is_file()
+
+    # 已有内容不重复播种（不覆盖现场）
+    (mas_dir / "gui.json").write_text(json.dumps({"Current": "X"}), encoding="utf-8")
+    _seed_mas_dir(ctx, mas_dir)
+    assert json.loads((mas_dir / "gui.json").read_text("utf-8")) == {"Current": "X"}
+
+    # MAA 路径未配置时静默跳过
+    empty_ctx = SimpleNamespace(script_config=SimpleNamespace(get=lambda g, k: ""))
+    other = tmp_path / "data" / "s2" / "ConfigFile"
+    _seed_mas_dir(empty_ctx, other)
+    assert not other.exists()

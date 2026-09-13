@@ -49,10 +49,12 @@ logger = get_logger("MAA 脚本设置")
 class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式
 
-    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
-    会话下发的用户目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
-    （原生目录即备份）；结束不回写 MAS 配置，安装 config/ 由 manager 的
-    任务前快照还原（临时注入，看完还原）。
+    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（脚本态共享
+    Default、用户态独立目录），见 :meth:`_mas_owner`。view_only=True 时为
+    查看会话：只读预览（如「查看历史备份」）——用户级会话下发的 owner 目录
+    即刚恢复的备份（所见即备份），脚本级会话跳过下发（原生目录即备份）；
+    结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
+    注入，看完还原）。
     """
 
     def __init__(
@@ -95,6 +97,20 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maa_process_manager.open_process(self.maa_exe_path)
         await self.wait_event.wait()
 
+    def _mas_owner(self) -> str:
+        """本会话的 MAS 配置目录 owner：脚本态共享 Default、用户态独立目录。
+
+        与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
+        回写此前硬编码用户目录，脚本态用户的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。
+        """
+
+        user_id = self.cur_user_item.user_id
+        if user_id == "Default":
+            return "Default"
+        mode = self.user_config[uuid.UUID(user_id)].get("Info", "Mode")
+        return user_id if mode == "用户" else "Default"
+
     async def set_maa(self):
         """配置MAA运行参数"""
 
@@ -108,36 +124,25 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
-        # 下发前归档 MAS 配置到用户池（运行下发源；带页面任务字段侧车，
-        # 指纹去重，失败不阻断会话）。native 池由 manager.prepare 在任务级
-        # 一次性归档
+        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带页面
+        # 核心字段侧车，指纹去重，失败不阻断会话）。native 池由
+        # manager.prepare 在任务级一次性归档
         target_user_id = self.cur_user_item.user_id
-        mas_owner = "Default"
-        if target_user_id != "Default":
-            mode = self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
-            mas_owner = target_user_id if mode == "用户" else "Default"
-            overlay = read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
-        else:
-            overlay = None
+        mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
+        overlay = (
+            read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
+            if target_user_id != "Default"
+            else None
+        )
         archive_mas_runtime_backup(
             self.script_info.script_id,
             target_user_id,
-            mas_config_dir(self.script_info.script_id, mas_owner),
+            mas_dir,
             overlay=overlay,
         )
 
-        if (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-        ).exists():
-            shutil.copytree(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-                ),
-                self.maa_set_path,
-                dirs_exist_ok=True,
-            )
+        if mas_dir.is_dir() and any(mas_dir.iterdir()):
+            shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
 
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
@@ -237,21 +242,10 @@ class ScriptConfigTask(TaskExecuteBase):
             self.cur_user_item.status = "完成"
             return
 
-        shutil.rmtree(
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
-            ignore_errors=True,
-        )
-        (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-        ).mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            self.maa_set_path,
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
-            dirs_exist_ok=True,
-        )
+        mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
+        shutil.rmtree(mas_dir, ignore_errors=True)
+        mas_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(self.maa_set_path, mas_dir, dirs_exist_ok=True)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

@@ -1513,9 +1513,13 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // 退出编辑页：归档 MAS 配置终态（编辑会话包络），并结束未关闭的会话
-  void ensureMaaBackup('mas')
-  void stopSession()
+  // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
+  // rmtree/copytree 回写撞车，归档到半程状态；会话未开时 stopSession
+  // 立即返回，不影响归档时机
+  void (async () => {
+    await stopSession()
+    await ensureMaaBackup('mas')
+  })()
 })
 </script>
 

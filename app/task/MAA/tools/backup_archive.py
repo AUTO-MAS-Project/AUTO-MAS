@@ -39,7 +39,7 @@
   去重、保留清理与整目录恢复的通用逻辑由公共模块
   ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
   MAA 特有的目录布局、侧车、恢复语义（恢复前强制归档当前）与归档目录布局。
-  """
+"""
 
 import json
 import tempfile
@@ -55,6 +55,7 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
+from app.utils.constants import MAA_TASKS, MAA_TASKS_ZH
 
 logger = get_logger("MAA 配置备份")
 
@@ -114,6 +115,7 @@ _OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
 _OVERLAY_INFO_KEYS = (
     "Server",
     "Id",
+    "Mode",
     "StageMode",
     "MedicineNumb",
     "SeriesNumb",
@@ -154,12 +156,14 @@ _OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
 _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
-# 侧车预览展示顺序：服务器/账号 → 关卡模式 → 任务开关 → 战斗参数 → 活动关
-# → 剿灭 → 库存保持 → 基建（与编辑页分区对应）
-_OVERLAY_DISPLAY_ORDER = (
+
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+"""仅预览不回填的字段：配置文件来源决定恢复目标目录，恢复时以当前值为准"""
+
+# 预览分区一：与 MAA GUI 概念对应的字段（恢复后可在 MAA GUI 对照）
+_OVERLAY_MAA_ORDER = (
     "Server",
     "Id",
-    "StageMode",
     "IfStartUp",
     "IfFight",
     "IfInfrast",
@@ -169,28 +173,32 @@ _OVERLAY_DISPLAY_ORDER = (
     "IfSwitchTheme",
     "IfRoguelike",
     "IfReclamation",
-    "IfGreenTicketStore",
+    "IfDepotMaintain",
     "MedicineNumb",
     "SeriesNumb",
     "Stage",
-    "Stage_1",
-    "Stage_2",
-    "Stage_3",
     "Stage_Remain",
+    "Annihilation",
+    "InfrastMode",
+    "InfrastName",
+)
+# 预览分区二：MAS 独有字段（MAA GUI 无对应概念，「查看详细配置」看不到，
+# 必须全量进预览）
+_OVERLAY_MAS_ONLY_ORDER = (
+    "Mode",
+    "StageMode",
+    "AnnihilationStartWeekday",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
-    "Annihilation",
-    "AnnihilationStartWeekday",
-    "IfDepotMaintain",
+    "IfGreenTicketStore",
     "DepotMaintainPlans",
-    "InfrastMode",
-    "InfrastName",
 )
 
 _OVERLAY_FIELD_LABELS = {
     "Server": "服务器",
     "Id": "账号",
+    "Mode": "配置文件来源",
     "StageMode": "关卡配置模式",
     "IfStartUp": "自动唤醒",
     "IfFight": "理智作战",
@@ -210,16 +218,13 @@ _OVERLAY_FIELD_LABELS = {
     "MedicineNumb": "吃理智药",
     "SeriesNumb": "连战次数",
     "Stage": "关卡",
-    "Stage_1": "备选关卡 1",
-    "Stage_2": "备选关卡 2",
-    "Stage_3": "备选关卡 3",
     "Stage_Remain": "剩余理智关卡",
     "Annihilation": "剿灭模式",
     "AnnihilationStartWeekday": "剿灭开始星期",
     "InfrastMode": "基建模式",
     "InfrastName": "基建配置",
 }
-"""侧车字段中文标签（对齐 MAA 编辑页词表）"""
+"""侧车字段中文标签（MAA 对应区对齐 MAA 编辑页词表）"""
 
 _SERVER_LABELS = {
     "Official": "官服",
@@ -265,10 +270,16 @@ def read_overlay_values(config) -> dict:
 
 
 def group_overlay(overlay: dict) -> dict[str, dict]:
-    """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。"""
+    """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。
+
+    仅预览字段（配置文件来源等）不回填：恢复目标目录由当前模式决定，
+    回填旧值会静默改变用户态/脚本态。
+    """
 
     grouped: dict[str, dict] = {}
     for key, value in overlay.items():
+        if key in _OVERLAY_PREVIEW_ONLY_KEYS:
+            continue
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
     return grouped
 
@@ -456,9 +467,6 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
 
 # ══════════════════ 备份预览摘要 ══════════════════
 
-_SUMMARY_ROW_LIMIT = 6
-"""gui 文件摘要展示的最大字段行数"""
-
 _SUMMARY_VALUE_LIMIT = 50
 """摘要字段值的最大字符数（超出截断）"""
 
@@ -509,42 +517,175 @@ def _client_type_label(value) -> str:
     return _LEGACY_CLIENT_TYPE_TO_LABEL.get(str(value), str(value))
 
 
-def _gui_summary_rows(name: str, data: dict) -> list[dict]:
-    """MAA 配置文件的稳定字段摘要（抗版本漂移，只取 MAS 任务注入时读写过的）。
+def _bool_text(value) -> str:
+    """开关值转是否（新版布尔 / 旧版 "True"/"False" 字符串都映射）。"""
 
-    预览的语义是「这份备份的 MAA 设置是什么样」：展示当前方案、连接地址
-    （模拟器 ADB）、客户端类型（服名）与启动开关——用户能分辨每个备份
-    「连哪台、哪个服」。旧 gui.json 用扁平键，新 gui.new.json 用嵌套结构，
-    按文件分支提取；其余内部字段随 MAA 版本变化大，不进预览（经「查看
-    详细配置」恢复后在 MAA GUI 里查看）。
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    text = str(value)
+    if text.lower() == "true":
+        return "是"
+    if text.lower() == "false":
+        return "否"
+    return text
+
+
+_TASK_SWITCH_LABELS = {
+    "StartUp": "自动唤醒",
+    "Fight": "理智作战",
+    "Infrast": "基建换班",
+    "Recruit": "公开招募",
+    "Mall": "信用收支",
+    "Award": "领取奖励",
+    "SwitchTheme": "更换主题",
+    "Roguelike": "自动肉鸽",
+    "Reclamation": "生息演算",
+    "DepotMaintain": "库存保持",
+}
+"""TaskQueue 任务类型 → 开关标签（与 MAS 侧侧车词表一致）"""
+
+_TASK_ZH_TO_TYPE = {zh: en for en, zh in zip(MAA_TASKS, MAA_TASKS_ZH)}
+"""MAA 任务中文名 → 任务类型（GUI 存的任务可能缺 TaskType，按名兜底）"""
+
+
+def _task_type_of(task: dict) -> str | None:
+    """TaskQueue 任务条目的任务类型（TaskType → $type 后缀 → 中文名兜底）。"""
+
+    task_type = task.get("TaskType")
+    if isinstance(task_type, str) and task_type:
+        return task_type
+    dtype = task.get("$type")
+    if isinstance(dtype, str) and dtype.endswith("Task"):
+        return dtype[: -len("Task")]
+    return _TASK_ZH_TO_TYPE.get(task.get("Name"))
+
+
+def _stage_plan_text(stage_plan: list) -> str:
+    """StagePlan → 关卡展示文本（与 MAA GUI「关卡指定」显示对齐）。
+
+    MAA GUI 的「关卡指定=当前/上次」在配置里就是空 StagePlan——只有 MAS
+    侧的剩余理智关卡才有「不选择」哨兵值，native 侧没有。
+    """
+
+    stages = [str(stage) for stage in stage_plan if str(stage)]
+    return "、".join(stages) if stages else "当前/上次"
+
+
+def _fight_task_rows(task: dict) -> list[dict]:
+    """Fight 任务条目的战斗参数行（标签与取值同 MAS 侧侧车口径）。"""
+
+    rows: list[dict] = []
+    if "MedicineCount" in task or "UseMedicine" in task:
+        # 直接显示配置里的数量（与 MAA GUI 一致：勾不勾选都显示数字）
+        rows.append({"key": "吃理智药", "value": str(task.get("MedicineCount", 0))})
+    if task.get("Series") is not None:
+        rows.append(
+            {
+                "key": "连战次数",
+                "value": {"0": "AUTO", "-1": "不切换"}.get(
+                    str(task["Series"]), str(task["Series"])
+                ),
+            }
+        )
+    if isinstance(task.get("StagePlan"), list):
+        rows.append({"key": "关卡", "value": _stage_plan_text(task["StagePlan"])})
+    if task.get("AnnihilationStage") is not None:
+        rows.append(
+            {
+                "key": "剿灭模式",
+                "value": _ANNIHILATION_LABELS.get(
+                    str(task["AnnihilationStage"]), str(task["AnnihilationStage"])
+                ),
+            }
+        )
+    return rows
+
+
+def _task_queue_rows(queue) -> list[dict]:
+    """TaskQueue 任务条目 → 开关/参数摘要行（标签对齐 MAS 侧；同类型只取首条）。"""
+
+    if not isinstance(queue, list):
+        return []
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for task in queue:
+        if not isinstance(task, dict):
+            continue
+        task_type = _task_type_of(task)
+        if task_type is None:
+            continue
+        if task_type == "Fight" and task.get("Name") == "剩余理智":
+            # MAA 的剩余理智是第二个 Fight 任务，不并入理智作战：开关 +
+            # 关卡（关闭且未配置时与 MAS 侧的「不选择」口径一致）
+            rows.append({"key": "剩余理智", "value": _bool_text(task.get("IsEnable"))})
+            if isinstance(task.get("StagePlan"), list):
+                stages = [str(stage) for stage in task["StagePlan"] if str(stage)]
+                value = (
+                    "、".join(stages)
+                    if stages
+                    else ("当前/上次" if task.get("IsEnable") else "不选择")
+                )
+                rows.append({"key": "剩余理智关卡", "value": value})
+            continue
+        if task_type in seen:
+            continue
+        seen.add(task_type)
+        if task_type in _TASK_SWITCH_LABELS and "IsEnable" in task:
+            label = _TASK_SWITCH_LABELS[task_type]
+            rows.append({"key": label, "value": _bool_text(task["IsEnable"])})
+        if task_type == "StartUp" and task.get("AccountName"):
+            rows.append({"key": "账号", "value": _mask_account(task["AccountName"])})
+        if task_type == "Fight":
+            rows.extend(_fight_task_rows(task))
+        if task_type == "Infrast" and task.get("Mode") is not None:
+            mode = _INFRAST_MODE_LABELS.get(str(task["Mode"]), str(task["Mode"]))
+            rows.append({"key": "基建模式", "value": mode})
+    return rows
+
+
+def _gui_summary_rows(name: str, data: dict) -> list[dict]:
+    """MAA 配置文件的稳定字段摘要（与 MAS 侧预览同口径对齐）。
+
+    预览的语义是「这份备份的 MAA 设置是什么样」。同一配置概念在两池
+    必须同口径展示（同标签、同取值文本）：gui.new.json 的 TaskQueue 是
+    MAS 任务开关/战斗参数注入的同一载体，反读成与侧车一致的行；仅隶属
+    一侧的字段（当前方案/连接地址/启动游戏）单独展示。旧 gui.json 用扁平
+    键且任务设置随版本漂移，只取 MAS 读写过的稳定字段。其余内部字段不进
+    预览（经「查看详细配置」恢复后在 MAA GUI 里查看）。
     """
 
     rows: list[dict] = []
     current = data.get("Current")
     if current is not None:
         rows.append({"key": "当前方案", "value": _summary_value(current)})
-    default_conf = data.get("Configurations", {}).get("Default")
-    if isinstance(default_conf, dict):
-        if name == "gui.json":
-            # OLD 扁平键：Configurations.Default["Connect.Address"] 等
-            addr = default_conf.get("Connect.Address")
-            client_type = default_conf.get("Start.ClientType")
-            start_game = default_conf.get("Start.StartGame")
-        else:
-            # NEW 嵌套：Configurations.Default.Gui.ConnectSettings / RuntimeSettings
-            gui = default_conf.get("Gui") or {}
-            connect = gui.get("ConnectSettings") or {}
-            runtime = gui.get("RuntimeSettings") or {}
-            addr = connect.get("Address")
-            client_type = runtime.get("ClientType")
-            start_game = runtime.get("StartGame")
-        if addr:
-            rows.append({"key": "连接地址", "value": _summary_value(addr)})
-        if client_type is not None:
-            rows.append({"key": "客户端", "value": _client_type_label(client_type)})
-        if start_game is not None:
-            rows.append({"key": "启动游戏", "value": _summary_value(start_game)})
-    return rows[: _SUMMARY_ROW_LIMIT]
+    configurations = data.get("Configurations")
+    default_conf = (
+        configurations.get("Default") if isinstance(configurations, dict) else None
+    )
+    if not isinstance(default_conf, dict):
+        return rows
+    if name == "gui.json":
+        # OLD 扁平键：Configurations.Default["Connect.Address"] 等
+        addr = default_conf.get("Connect.Address")
+        client_type = default_conf.get("Start.ClientType")
+        start_game = default_conf.get("Start.StartGame")
+    else:
+        # NEW 嵌套：Configurations.Default.Gui.ConnectSettings / RuntimeSettings
+        gui = default_conf.get("Gui") or {}
+        connect = gui.get("ConnectSettings") or {}
+        runtime = gui.get("RuntimeSettings") or {}
+        addr = connect.get("Address")
+        client_type = runtime.get("ClientType")
+        start_game = runtime.get("StartGame")
+    if addr:
+        rows.append({"key": "连接地址", "value": _summary_value(addr)})
+    if client_type is not None:
+        rows.append({"key": "服务器", "value": _client_type_label(client_type)})
+    if start_game is not None:
+        rows.append({"key": "启动游戏", "value": _bool_text(start_game)})
+    if name != "gui.json":
+        rows.extend(_task_queue_rows(default_conf.get("TaskQueue")))
+    return rows
 
 
 def build_backup_file_summary(backup_dir: Path) -> list[dict]:
@@ -599,8 +740,9 @@ def _overlay_value(key: str, value) -> str:
     elif key == "SeriesNumb":
         text = {"0": "AUTO", "-1": "不切换"}.get(str(value), str(value))
     elif key.startswith("Stage"):
-        # 关卡哨兵值：- = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
-        text = {"-": "当前/上次", "": "不选择"}.get(str(value), str(value))
+        # 关卡哨兵值（与配置界面同口径）：- = 禁用（下拉原始标签），
+        # * = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
+        text = {"-": "禁用", "*": "当前/上次", "": "不选择"}.get(str(value), str(value))
     elif key == "DepotMaintainPlans":
         # JSON 串存计划列表，预览只给数量（恢复仍整串写回）
         try:
@@ -615,32 +757,72 @@ def _overlay_value(key: str, value) -> str:
     return text
 
 
-def build_overlay_summary(overlay: dict) -> list[dict]:
-    """侧车字段的摘要行（mas 池预览用，纯读）。
+def _compose_stage_text(overlay: dict) -> str:
+    """合成「具体刷什么本」：按注入顺序取非禁用槽位（关卡 → 备选 1-3）。
 
-    展示的是备份时点的 MAS 页面核心配置（覆盖 MAS 侧全部可配置核心内容：
-    服务器/账号/关卡模式/任务开关/战斗参数/剿灭/库存保持/基建），与用户
-    在编辑页所见同源，运行时才会注入 gui.json。布尔开关为 False 的字段
-    一并展示（用户要确认「当时关没关」）；自定义基建名仅在自定义模式下
-    展示。
+    与配置界面折叠摘要同口径——全部槽位禁用时不注入任何关卡，MAA 按
+    当前/上次执行；`*`（当前/上次）注入为空串槽位。
     """
 
-    rows: list[dict] = []
-    for key in _OVERLAY_DISPLAY_ORDER:
-        if key not in overlay or key not in _OVERLAY_FIELD_LABELS:
+    slots: list[str] = []
+    for key in ("Stage", "Stage_1", "Stage_2", "Stage_3"):
+        value = overlay.get(key)
+        if value is None or str(value) in ("-", ""):
             continue
-        if key == "InfrastName" and overlay.get("InfrastMode") != "Custom":
-            continue  # 非自定义模式下基建配置名无意义（虚拟字段回退文案）
-        value = overlay[key]
-        if isinstance(value, list):
-            joined = "、".join(
-                _overlay_value(key, item)
-                for item in value
-                if isinstance(item, (str, int, float, bool))
+        text = str(value)
+        slots.append("当前/上次" if text == "*" else text)
+    return "、".join(slots) if slots else "当前/上次"
+
+
+def build_overlay_summary(overlay: dict) -> list[dict]:
+    """侧车字段的分区预览（mas 池预览用，纯读）。
+
+    返回两个分区（前端按文件集逐区渲染）：
+
+    - **MAS 独有配置**：MAA GUI 无对应概念、「查看详细配置」看不到的
+      字段，必须全量展示（配置文件来源/关卡配置模式/剿灭开始星期/活动关
+      优先三项/绿票商店/库存保持计划）；
+    - **MAA 配置**：与 MAA GUI 概念对应的字段（服务器/账号/任务开关/
+      战斗参数/剿灭/基建），关卡为合成后的具体刷本内容。
+
+    布尔开关为 False 的字段一并展示（用户要确认「当时关没关」）；自定义
+    基建名仅在自定义模式下展示；分区无行时整体省略（旧版备份可能只有
+    部分字段）。
+    """
+
+    def _rows(order: tuple[str, ...]) -> list[dict]:
+        rows: list[dict] = []
+        for key in order:
+            if key not in overlay or key not in _OVERLAY_FIELD_LABELS:
+                continue
+            if key == "InfrastName" and overlay.get("InfrastMode") != "Custom":
+                continue  # 非自定义模式下基建配置名无意义（虚拟字段回退文案）
+            if key == "Stage":
+                rows.append({"key": "关卡", "value": _compose_stage_text(overlay)})
+                continue
+            value = overlay[key]
+            if isinstance(value, list):
+                joined = "、".join(
+                    _overlay_value(key, item)
+                    for item in value
+                    if isinstance(item, (str, int, float, bool))
+                )
+                rows.append(
+                    {"key": _OVERLAY_FIELD_LABELS[key], "value": joined or "无"}
+                )
+                continue
+            rows.append(
+                {"key": _OVERLAY_FIELD_LABELS[key], "value": _overlay_value(key, value)}
             )
-            rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": joined or "无"})
-            continue
-        rows.append(
-            {"key": _OVERLAY_FIELD_LABELS[key], "value": _overlay_value(key, value)}
+        return rows
+
+    sections: list[dict] = []
+    mas_rows = _rows(_OVERLAY_MAS_ONLY_ORDER)
+    if mas_rows:
+        sections.append(
+            {"name": "mas-only", "label": "MAS 独有配置", "summary": mas_rows}
         )
-    return rows
+    maa_rows = _rows(_OVERLAY_MAA_ORDER)
+    if maa_rows:
+        sections.append({"name": "maa", "label": "MAA 配置", "summary": maa_rows})
+    return sections

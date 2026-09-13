@@ -32,9 +32,11 @@ mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 
 规则。
 """
 
+import shutil
 import uuid
 from pathlib import Path
 
+from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool
 
 from .backup_archive import (
@@ -53,6 +55,8 @@ from .backup_archive import (
     restore_mas_backup,
     restore_native_backup,
 )
+
+logger = get_logger("MAA 配置恢复")
 
 RESTORE_SCRIPT_NAME = "maa"
 """专项统一名（文案参数化用）"""
@@ -94,9 +98,32 @@ def _mas_dir_for_owner(ctx, owner: str) -> Path:
     return mas_config_dir(ctx.script_id, owner)
 
 
+def _seed_mas_dir(ctx, mas_dir: Path) -> None:
+    """MAS 配置目录缺失时从 MAA 安装目录 config/ 播种。
+
+    对齐 ok-ww 的 owner 目录初始化（add_user 时播种）：MAA 的配置目录历史
+    上只在老版本迁移或一次完成的配置会话后才存在，缺失时退出归档会静默
+    跳过（mas 池永远为空，「改了配置也不生产备份」）。播种让「进入编辑页
+    → 退出」的包络自第一次退出起就有现场可归档。不在 add_user 时播种：
+    MAA 路径可以晚于用户配置，播种失败不该挡建用户。
+    """
+
+    if mas_dir.is_dir() and any(mas_dir.iterdir()):
+        return
+    install_config = _native_config_path(ctx)
+    if (
+        install_config is None
+        or not install_config.is_dir()
+        or not any(install_config.iterdir())
+    ):
+        return
+    shutil.copytree(install_config, mas_dir, dirs_exist_ok=True)
+    logger.info(f"已从 MAA 本体播种 MAS 配置目录: {mas_dir}")
+
+
 def _preview_payload(ctx, ts: str, backup: Path | None) -> dict:
-    """预览载荷：MAA 配置文件摘要（当前方案等稳定字段），其余经「查看
-    详细配置」恢复后在 MAA GUI 里查看。
+    """预览载荷：MAA 配置文件摘要（与 MAS 侧同口径的稳定字段），其余经
+    「查看详细配置」恢复后在 MAA GUI 里查看。
 
     载荷必须是 dict（通用预览响应模型的 ``data`` 字段），文件列表挂在
     ``files`` 键下，前端 ``#preview`` 插槽按 ``raw.files`` 消费。
@@ -119,12 +146,12 @@ async def _list_native(ctx) -> list[str]:
 
 
 def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
-    """mas 池预览载荷：侧车字段（备份时点的 MAS 页面核心配置）。
+    """mas 池预览载荷：侧车字段分区预览（MAS 独有配置 + MAA 对应配置）。
 
     ConfigFile 里的 gui.json 是 MAA GUI 结构，MAS 页面配置（Info/Task 段）
     运行时才注入、不落盘其中——展示它只会误导（与页面对不上）；这里只
-    展示与页面同源的侧车字段，来源配置本体经「查看详细配置」在 MAA GUI
-    里查看。旧版备份无侧车，无可展示内容。
+    展示与页面同源的侧车字段，且按「MAS 独有（查看详细配置看不到）/
+    MAA 对应（可在 MAA GUI 对照）」分区。旧版备份无侧车，无可展示内容。
     """
 
     if backup is None:
@@ -132,15 +159,7 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
     overlay = read_overlay_sidecar(backup)
     if overlay is None:
         return {"files": []}
-    return {
-        "files": [
-            {
-                "name": "overlay",
-                "label": "MAS 配置",
-                "summary": build_overlay_summary(overlay),
-            }
-        ]
-    }
+    return {"files": build_overlay_summary(overlay)}
 
 
 async def _preview_mas(ctx, ts: str) -> dict:
@@ -188,11 +207,15 @@ async def _snapshot_mas(ctx) -> dict:
     owner = _mas_owner(ctx)
     dest = None
     if owner:
+        mas_dir = _mas_dir_for_owner(ctx, owner)
+        _seed_mas_dir(ctx, mas_dir)
         dest = archive_mas_backup(
             ctx.script_id,
             ctx.user_id,
-            _mas_dir_for_owner(ctx, owner),
-            overlay=read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)]),
+            mas_dir,
+            overlay=read_overlay_values(
+                ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+            ),
         )
     times = list_mas_backups(ctx.script_id, ctx.user_id)
     return {"created": dest is not None, "time": times[0] if times else ""}
