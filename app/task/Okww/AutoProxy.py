@@ -18,7 +18,6 @@
 
 import asyncio
 import json
-import shlex
 import time
 import uuid
 from contextlib import suppress
