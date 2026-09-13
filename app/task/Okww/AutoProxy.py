@@ -62,6 +62,7 @@ from .push_log import (
     okww_resolve,
 )
 from .tools import async_switch_account, push_notification
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -376,6 +377,20 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
+            # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
+            # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（脚本态
+            # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
+            # 性归档，此处不重复
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                _okww_mas_config_dir(
+                    self.script_info.script_id,
+                    str(self.cur_user_uid),
+                    config_mode,
+                ),
+                overlay=read_overlay_values(self.cur_user_config),
+            )
             mas_config_dir = _okww_mas_config_dir(
                 self.script_info.script_id,
                 str(self.cur_user_uid),

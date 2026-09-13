@@ -370,7 +370,6 @@ export default {
     startedMaaSetupUser: 'Started the MAA setup for user {p0}',
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
-    openedOkWwSettings: 'Opened the ok-ww settings for {p0}',
     readP0: 'Read {p0}',
     addedP0Tasks: 'Added {p0} tasks',
     configurationSessionUserP02:
@@ -1834,6 +1833,21 @@ export default {
     oknteViewingDesc: 'The ok-nte window shows the selected backup, for viewing only.',
     oknteViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     oknteViewClose: 'Close viewer',
+    // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    okwwConfigRestoreScriptDesc:
+      'Backups of the ok-ww native config; restoring applies directly to ok-ww itself. Created automatically (dedup) when opening this edit page, before running ok-ww or opening its config UI, latest 10 kept',
+    // ok-ww 原生设置/查看会话（措辞对齐 ok-nte / 一条龙）
+    okwwSessionOpened: 'ok-ww setup opened',
+    okwwSessionStartFailed: 'Could not start the ok-ww setup session',
+    okwwSessionStopFailed: 'Could not stop the ok-ww setup session',
+    okwwViewOpened: 'ok-ww viewer opened',
+    okwwSessionTimeoutWarn:
+      'The ok-ww setup session is about to time out and will be saved in 30 seconds',
+    okwwViewingTitle: 'Viewing ok-ww config',
+    okwwViewingDesc: 'The ok-ww window shows the selected backup, for viewing only.',
+    okwwViewingDesc2:
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    okwwViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',
     configRestorePreviewLauncher: 'Launcher',

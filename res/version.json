@@ -6,14 +6,8 @@
                 "绝区零一条龙升级后，旧版本保存在脚本目录下的「一条龙原生配置」备份不再显示在配置恢复列表中（数据未删除，确需找回请手动迁移） by [@AthenaHibou](https://github.com/AthenaHibou)"
             ],
             "新增": [
-                "OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)"
-            ],
-            "修复": [
-                "BAAH 专项 修复配置页多出一个「结束后关闭模拟器」开关的问题：其他专项都没有这个选项，BAAH 一并按「任务结束后关闭模拟器」执行 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复模拟器关闭动作缺少超时、关闭失败时仍可能让任务收尾长时间卡住的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "修复脚本配置目录被脚本进程占用或含只读文件时，任务收尾复原配置失败、配置目录停留在半删状态的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "开发流程：收敛各专项重复的日志推送与启动参数拆分实现，避免同类逻辑在多处各存一份 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "开发流程：恢复 tzdata 依赖——Windows 上没有系统时区数据库，移除后会导致时区查询失败 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "ok-ww 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-ww 原生配置，各留最近 10 份）"
             ]
         },
         "v5.5.0-beta.5": {
@@ -90,7 +84,6 @@
                 "修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)",
                 "OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)",
                 "调度台 修复任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)",
-                "MAA专项 修复在配置检查通过后、任务正式开始前停止任务时被报成「MAA任务出现异常」的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)",
                 "修复日志文件在运行过程中被重建或删除时，日志监控会静默失效、该趟任务再也不会被正常判定（卡到超时或误报异常）的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "开发流程": [

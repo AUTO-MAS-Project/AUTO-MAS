@@ -26,6 +26,9 @@
 > 参考实现（按优先级）：
 > - **OkNte（自包含式）**：`app/task/OkNte/tools/restore_service.py` +
 >   `useOknteGuiSession.ts` + `OkNteUserEdit.vue`
+> - **Okww（自包含式 + 覆盖层侧车）**：`app/task/Okww/tools/restore_service.py` +
+>   `useOkwwGuiSession.ts` + `OkwwUserEdit.vue`——mas 池带覆盖层字段侧车，
+>   三态专项的池分桶教训见 §1.1
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 
@@ -42,6 +45,34 @@
 
 池表顺序 = 前端 segmented 展示顺序。`key` 任意（`mas`/`onedragon`/`native`…），
 非法 key 由服务层统一 400。
+
+#### 1.1.1 池分桶必须按用户，恢复目标才按三态 owner（Okww 教训）
+
+**三态专项（脚本/用户/直控）的「池归属」与「恢复目标路径」是两回事，必须解耦**：
+
+- **池分桶恒按用户**（`mas/{user_id}`）。备份内容若含用户级数据（如 ok-ww 快速
+  配置覆盖层字段侧车），按共享 owner（脚本态 `Default`）分桶会把多个用户的
+  用户级内容混进同一个池——用户 A 会看到并恢复用户 B 的侧车，回填进自己的
+  UserData，跨用户污染。
+- **恢复目标路径才按三态 owner**：脚本态 `Default` 共享目录、用户态独立目录、
+  直控无 MAS 配置。脚本态多用户各自持有共享目录的快照（内容重复但完整），
+  恢复任一备份 = 把共享目录回滚到该用户归档时点（覆盖语义，确认弹窗已提示）。
+
+实现上：池函数一律用 `ctx.user_id` 定位归档根；`mas_dir`（归档/恢复目标）由
+专项按 owner 解析后显式传入 `archive_mas_backup` / `restore_mas_backup`。
+
+#### 1.1.2 覆盖层字段侧车（Okww）
+
+MAS 编辑页配置的字段可能**不落盘在被备份的文件里**（ok-ww：快速配置覆盖层
+字段存在 UserData，运行时才覆盖进 DailyTask.json）。此时「MAS 用户配置」池要
+在 ConfigFile 副本之外**附带一个侧车**（`_mas_overlay.json`）：
+
+- **侧车参与指纹**——只改表单、没动文件也要新建备份（否则表单改动丢备份）；
+- **预览展示侧车**（与页面认知同源），不展示 ConfigFile 里那些运行时会被表单
+  覆盖、值与页面对不上的字段；
+- **恢复文件回滚 + 侧车回填 UserData**（对齐 ZzzOd 字段回填模式），前端重拉
+  表单；侧车落地后即从 ConfigFile 分离删除，不污染脚本 GUI；
+- 旧版备份（无侧车）文件可正常恢复、预览为空、不回填。
 
 ### 1.2 恢复关键语义
 

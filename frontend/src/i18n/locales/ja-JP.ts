@@ -371,7 +371,6 @@ export default {
     startedMaaSetupUser: 'ユーザー {p0} の MAA 設定を開始しました',
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
-    openedOkWwSettings: '{p0} の ok-ww 設定を開きました',
     readP0: '{p0} を読み込みました',
     addedP0Tasks: 'タスクを {p0} 件追加しました',
     configurationSessionUserP02:

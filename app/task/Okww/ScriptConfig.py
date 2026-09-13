@@ -39,18 +39,26 @@ from .AutoProxy import (
     _okww_mas_config_dir,
     _update_json,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("OK-WW 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """无参数启动 OK-WW 本体，供用户修改程序设置。"""
+    """无参数启动 OK-WW 本体，供用户修改程序设置。
+
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
+    会话下发的 MAS 目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    （原生目录即备份）；结束不回写 MAS 配置，原生目录由 manager 的任务前
+    快照还原（临时注入，看完还原）。
+    """
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: OkwwConfig,
         user_config: MultipleConfig[OkwwUserConfig],
+        view_only: bool = False,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -59,6 +67,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
+        self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
@@ -74,6 +84,18 @@ class ScriptConfigTask(TaskExecuteBase):
             mode = _okww_config_mode(target_user_config.get("Info", "Mode"))
             self.resource = str(target_user_config.get("Info", "Resource"))
         self.use_mas_config = mode != "直控"
+        # MAS 配置目录 owner（脚本态共享 Default、用户态独立目录；直控无 MAS 配置）
+        self.mas_owner = (
+            ("Default" if mode == "脚本" else target_user_id)
+            if self.use_mas_config
+            else None
+        )
+        # 本会话涉及用户的覆盖层字段（脚本级 Default 入口无单一用户，不带侧车）
+        self.mas_overlay = (
+            read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
+            if self.use_mas_config and target_user_id != "Default"
+            else None
+        )
         self.mas_config_dir = (
             _okww_mas_config_dir(self.script_info.script_id, target_user_id, mode)
             if self.use_mas_config
@@ -83,7 +105,21 @@ class ScriptConfigTask(TaskExecuteBase):
     async def main_task(self) -> None:
         await self._kill_processes()
         _configure_okww_launcher(self.root_path, self.resource)
-        if (
+
+        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
+        # 失败不阻断会话）。native 池由 manager.prepare 在任务级一次性归档
+        if self.use_mas_config and self.mas_owner and self.mas_config_dir:
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                self.cur_user_item.user_id,
+                self.mas_config_dir,
+                overlay=self.mas_overlay,
+            )
+
+        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
+        if self.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("OK-WW 查看会话跳过配置下发: 原生目录即所选备份")
+        elif (
             self.use_mas_config
             and self.mas_config_dir
             and self.mas_config_dir.is_dir()
@@ -103,6 +139,14 @@ class ScriptConfigTask(TaskExecuteBase):
     async def final_task(self) -> None:
         self.wait_event.set()
         await self._kill_processes()
+
+        # 查看会话：只读预览，不把原生目录回写 MAS 配置（原生现场由 manager
+        # 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("OK-WW 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
+
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
             _configure_okww_launcher(self.root_path, self.resource)
             if not self.script_config_path.is_dir():

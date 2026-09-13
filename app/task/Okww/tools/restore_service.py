@@ -1,0 +1,230 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+#
+#   This file is part of AUTO-MAS.
+#
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+#
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+#
+#   You should have received a copy of the GNU Affero General Public
+#   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+"""OK-WW 配置恢复池声明：三态 owner 解析 + 用户守卫，供基座统一分发。
+
+池函数显式收 :class:`~app.utils.config_restore.RestoreContext`，全部逻辑
+自包含（守卫与 owner 解析走 ``ctx.script_config.UserData``，路径走专项
+字段），不依赖核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
+
+mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 快速配置
+覆盖层字段侧车。页面任务配置卡片的字段存在 MAS 用户配置里、运行时才覆盖
+进 DailyTask.json——备份/恢复两端都带上覆盖层字段（恢复后回填表单，对齐
+ZzzOd 字段回填模式），预览与页面认知才一致。**池恒按用户分桶**（侧车是
+用户级的，脚本态多用户若共享一个 Default 池会互相污染）；三态 owner
+（脚本=Default 共享目录、用户=独立目录、直控=无）只决定归档/恢复目标
+路径，与运行下发（``_okww_mas_config_dir``）同一套来源规则。
+"""
+
+import uuid
+from pathlib import Path
+
+from app.utils.config_restore import ConfigRestorePool
+
+from ..AutoProxy import _OKWW_REL_CONFIG_DIR, _okww_config_mode
+from .backup_archive import (
+    archive_mas_backup,
+    archive_native_backup,
+    build_backup_file_summary,
+    build_overlay_summary,
+    get_mas_backup_dir,
+    get_native_backup_dir,
+    list_mas_backups,
+    list_native_backups,
+    mas_config_dir,
+    read_overlay_sidecar,
+    read_overlay_values,
+    restore_mas_backup,
+    restore_native_backup,
+)
+
+RESTORE_SCRIPT_NAME = "ok-ww"
+"""专项统一名（文案参数化用）"""
+
+
+def _user_guard(ctx) -> None:
+    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+
+    if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
+        raise ValueError("OK-WW 用户不存在，请刷新后重试")
+
+
+def _mas_owner(ctx) -> str | None:
+    """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+
+    脚本态共享 ``Default``、用户态用当前用户目录，与
+    ``_okww_mas_config_dir``（运行下发）同一套来源规则；用户不存在时
+    无法判态，返回 ``None`` 让列表/预览为空（恢复/归档另有用户守卫）。
+
+    注意：owner 只决定**归档/恢复目标路径**（脚本态=Default 共享目录、
+    用户态=独立目录）；mas 池本身恒按 ``ctx.user_id`` 分桶——侧车字段是
+    用户级的，脚本态多用户若共享同一个 Default 池会把各自的覆盖层字段
+    混在一起、互相污染，见 :func:`~app.task.Okww.tools.backup_archive.mas_backup_root`。
+    """
+
+    try:
+        uid = uuid.UUID(ctx.user_id)
+        mode = _okww_config_mode(ctx.script_config.UserData[uid].get("Info", "Mode"))
+    except (ValueError, KeyError, TypeError):
+        return None
+    if mode == "直控":
+        return None
+    return ctx.user_id if mode == "用户" else "Default"
+
+
+def _native_config_path(ctx) -> Path | None:
+    """ok-ww 原生 working 配置目录；未配置脚本路径返回 ``None``。"""
+
+    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    return Path(raw) / _OKWW_REL_CONFIG_DIR if raw else None
+
+
+def _mas_dir_for_owner(ctx, owner: str) -> Path:
+    """按三态 owner 求 MAS 配置目录（归档/恢复目标路径）。"""
+
+    return mas_config_dir(ctx.script_id, owner)
+
+
+async def _list_mas(ctx) -> list[str]:
+    return list_mas_backups(ctx.script_id, ctx.user_id)
+
+
+async def _list_native(ctx) -> list[str]:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return []
+    return list_native_backups(config_path)
+
+
+def _preview_payload(ctx, ts: str, backup: Path | None) -> dict:
+    """native 池预览载荷：MAS 任务配置文件（日常任务，ok-ww 直接消费、
+    文件值即生效值），其余文件经「查看详细配置」恢复后在 ok-ww GUI 查看。
+
+    载荷必须是 dict（通用预览响应模型的 ``data`` 字段），文件列表挂在
+    ``files`` 键下，前端 ``#preview`` 插槽按 ``raw.files`` 消费。
+    """
+
+    if backup is None:
+        raise ValueError(f"备份不存在: {ts}")
+    return {"files": build_backup_file_summary(backup)}
+
+
+def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
+    """mas 池预览载荷：覆盖层字段侧车（备份时点的 MAS 页面表单值）。
+
+    ConfigFile 里的 DailyTask.json 覆盖层字段在快速配置开启时运行时会被
+    表单覆盖、不是生效值，展示它只会误导（与表单对不上）；这里只展示与
+    页面同源的侧车字段，来源配置本体经「查看详细配置」在 ok-ww GUI 查看。
+    旧版备份无侧车，无可展示内容。
+    """
+
+    if backup is None:
+        raise ValueError(f"备份不存在: {ts}")
+    overlay = read_overlay_sidecar(backup)
+    if overlay is None:
+        return {"files": []}
+    return {
+        "files": [
+            {
+                "name": "overlay",
+                "label": "任务配置（快速配置）",
+                "summary": build_overlay_summary(overlay),
+            }
+        ]
+    }
+
+
+async def _preview_mas(ctx, ts: str) -> dict:
+    return _overlay_preview_payload(
+        get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
+    )
+
+
+async def _preview_native(ctx, ts: str) -> dict:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return {"files": []}
+    return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
+
+
+async def _restore_mas(ctx, ts: str) -> object:
+    _user_guard(ctx)
+    owner = _mas_owner(ctx)
+    if owner is None:
+        raise ValueError("直控用户不使用 MAS 独立配置，无可恢复内容")
+    user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+    restored_overlay = restore_mas_backup(
+        ctx.script_id,
+        ctx.user_id,
+        ts,
+        _mas_dir_for_owner(ctx, owner),
+        overlay=read_overlay_values(user),
+    )
+    if restored_overlay:
+        # 覆盖层字段回填（对齐 ZzzOd 字段回填模式）：文件回滚的同时把表单
+        # 字段回到备份时点，否则旧表单值下次保存会静默覆盖回滚结果
+        await user.update({"Task": restored_overlay})
+
+
+async def _restore_native(ctx, ts: str) -> object:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        raise ValueError("请先设置 ok-ww 脚本路径")
+    restore_native_backup(config_path, ts)
+
+
+async def _snapshot_mas(ctx) -> dict:
+    _user_guard(ctx)
+    owner = _mas_owner(ctx)
+    dest = None
+    if owner:
+        dest = archive_mas_backup(
+            ctx.script_id,
+            ctx.user_id,
+            _mas_dir_for_owner(ctx, owner),
+            overlay=read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)]),
+        )
+    times = list_mas_backups(ctx.script_id, ctx.user_id)
+    return {"created": dest is not None, "time": times[0] if times else ""}
+
+
+async def _snapshot_native(ctx) -> dict:
+    config_path = _native_config_path(ctx)
+    dest = archive_native_backup(config_path) if config_path is not None else None
+    times = list_native_backups(config_path) if config_path is not None else []
+    return {"created": dest is not None, "time": times[0] if times else ""}
+
+
+RESTORE_POOLS = [
+    ConfigRestorePool(
+        key="mas",
+        kind="user",
+        list_backups=_list_mas,
+        preview=_preview_mas,
+        restore=_restore_mas,
+        snapshot=_snapshot_mas,
+    ),
+    ConfigRestorePool(
+        key="native",
+        kind="script",
+        list_backups=_list_native,
+        preview=_preview_native,
+        restore=_restore_native,
+        snapshot=_snapshot_native,
+    ),
+]

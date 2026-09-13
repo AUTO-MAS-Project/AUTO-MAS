@@ -392,7 +392,6 @@ export default {
     startedMaaSetupUser: '已开始配置用户 {p0} 的MAA设置',
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
-    openedOkWwSettings: '已打开{p0}的 ok-ww 设置',
     readP0: '已读取 {p0}',
     addedP0Tasks: '成功添加 {p0} 个任务',
     configurationSessionUserP02: '用户 {p0} 的配置会话已超时（30分钟），正在自动保存配置...',
@@ -1771,6 +1770,19 @@ export default {
     oknteViewingDesc: 'ok-nte 界面显示的是所选备份的内容，仅供查看。',
     oknteViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     oknteViewClose: '关闭查看',
+    // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    okwwConfigRestoreScriptDesc:
+      'ok-ww 原生配置的备份，恢复会直接作用于 ok-ww 本体；打开本编辑页、运行 ok-ww 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // ok-ww 原生设置/查看会话（措辞对齐 ok-nte / 一条龙）
+    okwwSessionOpened: '已打开 ok-ww 设置',
+    okwwSessionStartFailed: '启动 ok-ww 设置失败',
+    okwwSessionStopFailed: '停止 ok-ww 设置失败',
+    okwwViewOpened: '已打开 ok-ww 查看',
+    okwwSessionTimeoutWarn: 'ok-ww 设置会话即将超时，30 秒后自动保存',
+    okwwViewingTitle: '正在查看 ok-ww 配置',
+    okwwViewingDesc: 'ok-ww 界面显示的是所选备份的内容，仅供查看。',
+    okwwViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    okwwViewClose: '关闭查看',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
