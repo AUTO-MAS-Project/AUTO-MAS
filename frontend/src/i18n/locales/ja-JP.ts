@@ -368,7 +368,6 @@ export default {
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
     startedP0MaaendConfiguration: '{p0} の MaaEnd 設定を開始しました',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
-    startedMaaSetupUser: 'ユーザー {p0} の MAA 設定を開始しました',
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
     readP0: '{p0} を読み込みました',
@@ -998,7 +997,6 @@ export default {
     onlyProcessesStartedBy:
       'このタスクが起動し、MAS が所有するプロセスのみを終了します。手動で開いたプロセスを誤って終了することはありません',
     optional: '任意',
-    couldNotStartMaa: 'MAA の設定を開始できませんでした',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',

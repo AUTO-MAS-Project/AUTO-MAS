@@ -367,7 +367,6 @@ export default {
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
     startedP0MaaendConfiguration: 'Started the {p0} MaaEnd configuration',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
-    startedMaaSetupUser: 'Started the MAA setup for user {p0}',
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
     readP0: 'Read {p0}',
@@ -1038,7 +1037,6 @@ export default {
     onlyProcessesStartedBy:
       'Only processes started by this task and owned by MAS are closed; processes you opened yourself are left alone',
     optional: 'Optional',
-    couldNotStartMaa: 'Could not start the MAA configuration',
     couldNotStartSrc: 'Could not start the SRC configuration',
     checkGameUpdateBefore: 'Check for a game update before launching',
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
@@ -1848,6 +1846,21 @@ export default {
     okwwViewingDesc2:
       'Viewing temporarily switches the config; click "Close viewer" when done.',
     okwwViewClose: 'Close viewer',
+    // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaConfigRestoreScriptDesc:
+      'Backups of the MAA native config; restoring applies directly to MAA itself. Created automatically (dedup) when opening this edit page, before running MAA or opening its config UI, latest 10 kept',
+    // MAA 原生设置/查看会话（措辞对齐 ok-ww / ok-nte / 一条龙）
+    maaSessionOpened: 'MAA setup opened',
+    maaSessionStartFailed: 'Could not start the MAA setup session',
+    maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaViewOpened: 'MAA viewer opened',
+    maaSessionTimeoutWarn:
+      'The MAA setup session is about to time out and will be saved in 30 seconds',
+    maaViewingTitle: 'Viewing MAA config',
+    maaViewingDesc: 'The MAA window shows the selected backup, for viewing only.',
+    maaViewingDesc2:
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    maaViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',
     configRestorePreviewLauncher: 'Launcher',

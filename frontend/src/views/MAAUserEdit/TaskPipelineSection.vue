@@ -3,6 +3,9 @@
     <div class="section-header">
       <h3>{{ t('edit.taskConfiguration') }}</h3>
       <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
+      <div class="section-header-actions">
+        <slot name="header-actions" />
+      </div>
     </div>
 
     <a-alert
@@ -506,6 +509,15 @@ const greenTicketStoreSummary = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .section-header h3 {

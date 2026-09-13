@@ -22,6 +22,7 @@
 import asyncio
 import json
 import shutil
+import uuid
 from pathlib import Path
 
 from app.core import Config
@@ -36,12 +37,19 @@ from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
 from .AutoProxy import _build_maa_preset_task_queue
+from .tools.backup_archive import archive_mas_runtime_backup, mas_config_dir
 
 logger = get_logger("MAA 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """脚本设置模式"""
+    """脚本设置模式
+
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
+    会话下发的用户目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    （原生目录即备份）；结束不回写 MAS 配置，安装 config/ 由 manager 的
+    任务前快照还原（临时注入，看完还原）。
+    """
 
     def __init__(
         self,
@@ -49,6 +57,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
         emulator_manager: DeviceBase,
+        view_only: bool = False,
     ):
         super().__init__()
 
@@ -60,6 +69,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
+        self.view_only = view_only
 
     async def prepare(self):
 
@@ -87,6 +98,24 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+
+        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        if self.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
+            return
+
+        # 下发前归档 MAS 配置到用户池（运行下发源；指纹去重，失败不阻断
+        # 会话）。native 池由 manager.prepare 在任务级一次性归档
+        target_user_id = self.cur_user_item.user_id
+        mas_owner = "Default"
+        if target_user_id != "Default":
+            mode = self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+            mas_owner = target_user_id if mode == "用户" else "Default"
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            target_user_id,
+            mas_config_dir(self.script_info.script_id, mas_owner),
+        )
 
         if (
             Path.cwd()
@@ -191,6 +220,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+
+        # 查看会话：只读预览，不把安装 config/ 回写用户目录（安装现场由
+        # manager 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("MAA 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
 
         shutil.rmtree(
             Path.cwd()

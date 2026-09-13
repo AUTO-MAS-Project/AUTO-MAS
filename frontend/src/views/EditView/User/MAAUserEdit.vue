@@ -1,26 +1,36 @@
 <template>
   <div class="user-edit-container">
-    <!-- MAA配置遮罩层 -->
-    <teleport to="body">
-      <div v-if="showMAAConfigMask" class="maa-config-mask">
-        <div class="mask-content">
-          <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
-          </div>
-          <h2 class="mask-title">{{ t('edit.maaConfigurationProgress') }}</h2>
-          <p class="mask-description">
-            {{ t('edit.maaConfigurationThisUser') }}
-            <br />
-            配置完成后，请点击"保存配置"按钮来结束配置会话。
-          </p>
-          <div class="mask-actions">
-            <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
-              {{ t('edit.saveConfiguration') }}
-            </a-button>
-          </div>
-        </div>
-      </div>
-    </teleport>
+    <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-ww / ok-nte） -->
+    <GuiSessionMask
+      :open="showMaaConfigMask"
+      :icon="SettingOutlined"
+      :title="t('edit.maaConfigurationProgress')"
+      :description="`${t('edit.maaConfigurationThisUser')}\n${t('edit.clickSaveSettingsWhen')}`"
+    >
+      <template #actions>
+        <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
+          {{ t('edit.saveConfiguration') }}
+        </a-button>
+      </template>
+    </GuiSessionMask>
+    <GuiSessionMask
+      :open="showMaaViewMask"
+      :icon="EyeOutlined"
+      :title="t('edit.maaViewingTitle')"
+      :description="`${t('edit.maaViewingDesc')}\n${t('edit.maaViewingDesc2')}`"
+    >
+      <template #actions>
+        <a-button
+          v-if="maaTaskId"
+          type="primary"
+          size="large"
+          :loading="stoppingMaaConfig"
+          @click="handleCloseMaaView"
+        >
+          {{ t('edit.maaViewClose') }}
+        </a-button>
+      </template>
+    </GuiSessionMask>
     <!-- 头部组件 -->
     <MAAUserEditHeader
       :script-id="scriptId"
@@ -28,7 +38,7 @@
       :is-edit="isEdit"
       :user-mode="formData.Info.Mode"
       :maa-config-loading="maaConfigLoading"
-      :show-maa-config-mask="showMAAConfigMask"
+      :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
@@ -85,6 +95,12 @@
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @save="handleFieldSave"
           >
+            <template #header-actions>
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </template>
             <template #fight-detail>
               <StageConfigSection
                 v-model:form-data="formData"
@@ -143,30 +159,60 @@
         </a-form>
       </a-card>
     </div>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MAA 原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :script-name="MAA_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :script-desc="t('edit.maaConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+      :on-detail="handleRestoreView"
+    >
+      <!-- MAA 备份摘要为文件集结构，用插槽完全接管预览区 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewFiles(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="f in previewFiles(raw)" :key="f.name">
+            <h4 class="maa-preview-title">{{ f.label }}</h4>
+            <a-descriptions :column="1" size="small" bordered class="maa-preview-box">
+              <a-descriptions-item
+                v-for="row in f.summary"
+                :key="row.key"
+                :label="row.key"
+              >
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
-import { SettingOutlined } from '@ant-design/icons-vue'
+import { message, Modal } from 'ant-design-vue'
+import {
+  EyeOutlined,
+  HistoryOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
-import { useWebSocket } from '@/composables/useWebSocket.ts'
-import {
-  WS_TASK_COMPLETED,
-  WS_TASK_NOTICE,
-  type WSTaskCompletedData,
-  type WSTaskNoticeData,
-} from '@/services/websocket/types'
+import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
 import { Service } from '@/api'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 import type { HomeOverviewResponse } from '@/types/home.ts'
 
@@ -180,6 +226,8 @@ import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GuiSessionMask from '@/components/GuiSessionMask.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 
 const { t } = useI18n()
 
@@ -188,7 +236,16 @@ const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
-const { subscribe, unsubscribe } = useWebSocket()
+const {
+  maaConfigLoading,
+  maaTaskId,
+  showMaaConfigMask,
+  showMaaViewMask,
+  stoppingMaaConfig,
+  startSession,
+  saveSession,
+  stopSession,
+} = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
@@ -212,13 +269,6 @@ const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 
 // 脚本信息
 const scriptName = ref('')
-
-// MAA配置相关
-const maaConfigLoading = ref(false)
-const maaSubscriptionIds = ref<string[]>([])
-const maaTaskId = ref<string | null>(null)
-const showMAAConfigMask = ref(false)
-let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
 const infrastructureImporting = ref(false)
@@ -1102,134 +1152,16 @@ const loadInfrastructureOptions = async () => {
 }
 
 const handleMAAConfig = async () => {
-  try {
-    maaConfigLoading.value = true
-
-    // 如果已有连接，先断开
-    if (maaSubscriptionIds.value.length > 0) {
-      for (const subscriptionId of maaSubscriptionIds.value) {
-        unsubscribe(subscriptionId)
-      }
-      maaSubscriptionIds.value = []
-      maaTaskId.value = null
-      showMAAConfigMask.value = false
-      if (maaConfigTimeout) {
-        window.clearTimeout(maaConfigTimeout)
-        maaConfigTimeout = null
-      }
-    }
-
-    // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (response && response.taskId) {
-      const wsId = response.taskId
-
-      // 订阅 websocket
-      const subscriptionIds = [
-        // 处理任务提示中的错误消息（不取消订阅，等待任务结束消息）
-        subscribe({ id: wsId, type: WS_TASK_NOTICE }, wsMessage => {
-          const data = wsMessage.data as unknown as WSTaskNoticeData
-          if (data.level === 'error') {
-            logger.error(
-              `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${data.message}`
-            )
-            message.error(t('edit.maaConfigurationFailedP0', { p0: data.message }))
-          }
-        }),
-        // 处理任务结束消息
-        subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
-          const data = wsMessage.data as unknown as WSTaskCompletedData
-          logger.info(`用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`)
-          // 根据结果显示不同消息
-          if (data.outcome === 'success') {
-            message.success(
-              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
-            )
-          }
-          // 清理连接
-          for (const subscriptionId of maaSubscriptionIds.value) {
-            unsubscribe(subscriptionId)
-          }
-          maaSubscriptionIds.value = []
-          maaTaskId.value = null
-          showMAAConfigMask.value = false
-          if (maaConfigTimeout) {
-            window.clearTimeout(maaConfigTimeout)
-            maaConfigTimeout = null
-          }
-        }),
-      ]
-
-      maaSubscriptionIds.value = subscriptionIds
-      maaTaskId.value = wsId
-      showMAAConfigMask.value = true
-      message.success(
-        t('edit.startedMaaSetupUser', { p0: formData.Info?.Name || formData.userName })
-      )
-
-      // 设置 30 分钟超时自动断开
-      maaConfigTimeout = window.setTimeout(
-        () => {
-          if (maaSubscriptionIds.value.length > 0) {
-            for (const subscriptionId of maaSubscriptionIds.value) {
-              unsubscribe(subscriptionId)
-            }
-            maaSubscriptionIds.value = []
-            maaTaskId.value = null
-            showMAAConfigMask.value = false
-            message.info(
-              t('edit.configurationSessionUserP0', { p0: formData.Info?.Name || formData.userName })
-            )
-          }
-          maaConfigTimeout = null
-        },
-        30 * 60 * 1000
-      )
-    } else {
-      message.error(response?.message || '启动MAA配置失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`启动MAA配置失败: ${errorMsg}`)
-    message.error(t('edit.couldNotStartMaa'))
-  } finally {
-    maaConfigLoading.value = false
-  }
+  if (!userId) return
+  await startSession(userId)
 }
 
-const handleSaveMAAConfig = async () => {
-  try {
-    const taskId = maaTaskId.value
-    if (!taskId) {
-      message.error(t('edit.noActiveConfigurationSession'))
-      return
-    }
+const handleSaveMAAConfig = () => {
+  void saveSession()
+}
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
-    if (response && response.code === 200) {
-      for (const subscriptionId of maaSubscriptionIds.value) {
-        unsubscribe(subscriptionId)
-      }
-      maaSubscriptionIds.value = []
-      maaTaskId.value = null
-      showMAAConfigMask.value = false
-      if (maaConfigTimeout) {
-        window.clearTimeout(maaConfigTimeout)
-        maaConfigTimeout = null
-      }
-      message.success(t('edit.configurationThisUserWas'))
-    } else {
-      message.error(response.message || '保存配置失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存MAA配置失败: ${errorMsg}`)
-    message.error(t('edit.couldNotSaveMaa'))
-  }
+const handleCloseMaaView = () => {
+  void stopSession()
 }
 
 // 验证关卡名称格式
@@ -1342,13 +1274,7 @@ const handleCancel = async () => {
   const pendingSave = fieldSavePromise
   if (pendingSave && !(await pendingSave)) return
 
-  if (maaSubscriptionIds.value.length > 0) {
-    for (const subscriptionId of maaSubscriptionIds.value) {
-      unsubscribe(subscriptionId)
-    }
-    maaSubscriptionIds.value = []
-    maaTaskId.value = null
-  }
+  await stopSession()
   router.push('/scripts')
 }
 const updateMedicineNumb = (value: number) => {
@@ -1390,6 +1316,113 @@ watch(
   () => applyServerStageOptions()
 )
 
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：MAA 统一叫「maa」
+const MAA_DISPLAY_NAME = 'maa'
+const restoreOpen = ref(false)
+
+// 目标池顺序 = segmented 展示顺序：MAS 用户配置（在前）、MAA 原生配置（在后）
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+// 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
+      scriptId,
+      userId,
+      time,
+      target
+    ),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+}
+
+const openRestoreModal = () => {
+  restoreOpen.value = true
+}
+
+// 预览响应原文（unknown）收敛为文件集视图：泛用组件的 raw 插槽不带专项类型
+interface MaaPreviewFileView {
+  name: string
+  label: string
+  summary: Array<{ key: string; value: string }>
+}
+const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
+  (raw as { files?: MaaPreviewFileView[] } | null)?.files ?? []
+
+// 一键恢复成功：MAA 的 mas 备份只回滚 ConfigFile 目录副本（页面任务字段存
+// UserData、运行时注入，不在恢复范围），无需刷新表单，关弹窗即可
+const handleRestored = () => {
+  restoreOpen.value = false
+}
+
+// 「查看详细配置」语义（对齐一条龙）：恢复该时点 + 拉起查看会话预览。
+// 弹窗文案必须显式区分——该按钮极易被误以为只读，实际会真覆盖当前配置。
+// mas 备份：恢复到 MAS 目录后启动查看会话（下发为查看的必经复制，GUI 所见
+// 即备份）；原生备份：恢复到 MAA 本体后启动脚本级查看会话（跳过下发，
+// 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
+const handleRestoreView = (target: string, item: { time: string }) => {
+  Modal.confirm({
+    title: t('edit.configRestoreDetailView'),
+    content: h(
+      'p',
+      { style: { color: 'var(--ant-color-error)', margin: 0 } },
+      t('edit.configRestoreDetailConfirm', { script: MAA_DISPLAY_NAME })
+    ),
+    okText: t('edit.configRestoreConfirmOk'),
+    cancelText: t('edit.cancel'),
+    onOk: async () => {
+      try {
+        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+          scriptId,
+          userId,
+          time: item.time,
+          target,
+        })
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('edit.configRestoreFailed'))
+        }
+        restoreOpen.value = false
+        if (target === 'mas') {
+          await startSession(userId, true)
+        } else {
+          await startSession(scriptId, true)
+        }
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+      }
+    },
+  })
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
+// （AutoProxy/ScriptConfig 的 set_maa）配合——进入归档原生配置当前状态
+// （MAS 触碰前原始态），退出归档 MAS 配置终态（编辑会话包络）
+const ensureMaaBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
 // 初始化加载
 onMounted(() => {
   if (!scriptId) {
@@ -1403,6 +1436,8 @@ onMounted(() => {
   loadActivityStageOptions()
   loadDepotItemOptions()
   loadDepotInventory()
+  // 进入编辑页：归档 MAA 原生配置当前状态（MAS 触碰前的原始态）
+  void ensureMaaBackup('native')
 
   // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
   // 如果是新建模式，也尝试加载基建配置选项（如果已经有用户ID）
@@ -1470,6 +1505,12 @@ onMounted(() => {
     { immediate: false }
   )
 })
+
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 配置终态（编辑会话包络），并结束未关闭的会话
+  void ensureMaaBackup('mas')
+  void stopSession()
+})
 </script>
 
 <style scoped>
@@ -1513,54 +1554,18 @@ onMounted(() => {
   }
 }
 
-/* MAA 配置遮罩样式（与 Scripts.vue 一致，用于全局覆盖） */
-.maa-config-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.mask-content {
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  padding: 24px;
-  max-width: 480px;
-  width: 100%;
-  text-align: center;
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ant-color-border);
-}
-
-.mask-icon {
-  margin-bottom: 16px;
-}
-
-.mask-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px;
-  color: var(--ant-color-text);
-}
-
-.mask-description {
+/* 配置预览：逐文件的摘要标题与摘要表 */
+.maa-preview-title {
+  margin: 14px 0 6px;
   font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 24px;
-  line-height: 1.5;
+  font-weight: 600;
 }
 
-.mask-actions {
-  display: flex;
-  justify-content: center;
+.maa-preview-title:first-child {
+  margin-top: 0;
+}
+
+.maa-preview-box {
+  margin-bottom: 4px;
 }
 </style>

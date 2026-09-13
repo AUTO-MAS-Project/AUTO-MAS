@@ -389,7 +389,6 @@ export default {
     loadedP0P1Log: '已加载 {p0} 行日志（共 {p1} 行）',
     startedP0MaaendConfiguration: '已启动 {p0} MaaEnd 配置',
     importedP0ConfigurationFile: '已导入{p0}配置文件',
-    startedMaaSetupUser: '已开始配置用户 {p0} 的MAA设置',
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
     readP0: '已读取 {p0}',
@@ -1040,7 +1039,6 @@ export default {
     onlyProcessesStartedBy:
       '只关闭由本次任务启动且归 MAS 所有的目标进程，不会误杀用户手动打开的进程',
     optional: '可选',
-    couldNotStartMaa: '启动MAA配置失败',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
@@ -1783,6 +1781,19 @@ export default {
     okwwViewingDesc: 'ok-ww 界面显示的是所选备份的内容，仅供查看。',
     okwwViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     okwwViewClose: '关闭查看',
+    // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaConfigRestoreScriptDesc:
+      'MAA 原生配置的备份，恢复会直接作用于 MAA 本体；打开本编辑页、运行 MAA 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // MAA 原生设置/查看会话（措辞对齐 ok-ww / ok-nte / 一条龙）
+    maaSessionOpened: '已打开 MAA 设置',
+    maaSessionStartFailed: '启动 MAA 设置失败',
+    maaSessionStopFailed: '停止 MAA 设置失败',
+    maaViewOpened: '已打开 MAA 查看',
+    maaSessionTimeoutWarn: 'MAA 设置会话即将超时，30 秒后自动保存',
+    maaViewingTitle: '正在查看 MAA 配置',
+    maaViewingDesc: 'MAA 界面显示的是所选备份的内容，仅供查看。',
+    maaViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaViewClose: '关闭查看',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
