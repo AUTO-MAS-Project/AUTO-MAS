@@ -360,23 +360,68 @@ def _summary_value(value) -> str:
     return text
 
 
-def _gui_summary_rows(data: dict) -> list[dict]:
-    """gui.json 的稳定字段摘要（抗 MAA 版本漂移，只取结构稳定项）。
+_CLIENT_TYPE_TO_LABEL = {
+    0: "官服",
+    1: "B服",
+    2: "国际服（YoStarEN）",
+    3: "日服（YoStarJP）",
+    4: "韩服（YoStarKR）",
+    5: "繁中服（txwy）",
+}
+"""新版 gui.new.json 的 ClientType 枚举整数 → 服名"""
 
-    预览的语义是「这份备份的 MAA 设置是什么样」：展示当前方案与方案数，
-    其余配置项随 MAA 版本变化大，不进预览（经「查看详细配置」恢复后在
-    MAA GUI 里查看）。
+_LEGACY_CLIENT_TYPE_TO_LABEL = {
+    "Official": "官服",
+    "Bilibili": "B服",
+    "YoStarEN": "国际服（YoStarEN）",
+    "YoStarJP": "日服（YoStarJP）",
+    "YoStarKR": "韩服（YoStarKR）",
+    "txwy": "繁中服（txwy）",
+}
+"""旧版 gui.json 的 ClientType 字符串 → 服名"""
+
+
+def _client_type_label(value) -> str:
+    """客户端类型转展示文本（新版整数枚举 / 旧版字符串都映射到服名）。"""
+
+    if isinstance(value, int):
+        return _CLIENT_TYPE_TO_LABEL.get(value, str(value))
+    return _LEGACY_CLIENT_TYPE_TO_LABEL.get(str(value), str(value))
+
+
+def _gui_summary_rows(name: str, data: dict) -> list[dict]:
+    """MAA 配置文件的稳定字段摘要（抗版本漂移，只取 MAS 任务注入时读写过的）。
+
+    预览的语义是「这份备份的 MAA 设置是什么样」：展示当前方案、连接地址
+    （模拟器 ADB）、客户端类型（服名）与启动开关——用户能分辨每个备份
+    「连哪台、哪个服」。旧 gui.json 用扁平键，新 gui.new.json 用嵌套结构，
+    按文件分支提取；其余内部字段随 MAA 版本变化大，不进预览（经「查看
+    详细配置」恢复后在 MAA GUI 里查看）。
     """
 
     rows: list[dict] = []
     current = data.get("Current")
     if current is not None:
         rows.append({"key": "当前方案", "value": _summary_value(current)})
-    configurations = data.get("Configurations")
-    if isinstance(configurations, dict) and len(configurations) > 1:
-        rows.append(
-            {"key": "方案数", "value": str(len(configurations))}
-        )
+    default_conf = data.get("Configurations", {}).get("Default")
+    if isinstance(default_conf, dict):
+        if name == "gui.json":
+            # OLD 扁平键：Configurations.Default["Connect.Address"] 等
+            addr = default_conf.get("Connect.Address")
+            client_type = default_conf.get("Start.ClientType")
+            start_game = default_conf.get("Start.StartGame")
+        else:
+            # NEW 嵌套：Configurations.Default.Gui.ConnectSettings / RuntimeSettings
+            gui = default_conf.get("Gui", {})
+            addr = (gui.get("ConnectSettings") or {}).get("Address")
+            client_type = (gui.get("RuntimeSettings") or {}).get("ClientType")
+            start_game = (gui.get("RuntimeSettings") or {}).get("StartGame")
+        if addr:
+            rows.append({"key": "连接地址", "value": _summary_value(addr)})
+        if client_type is not None:
+            rows.append({"key": "客户端", "value": _client_type_label(client_type)})
+        if start_game is not None:
+            rows.append({"key": "启动游戏", "value": _summary_value(start_game)})
     return rows[: _SUMMARY_ROW_LIMIT]
 
 
@@ -399,7 +444,7 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
             continue
         if not isinstance(data, dict):
             continue
-        rows = _gui_summary_rows(data)
+        rows = _gui_summary_rows(rel, data)
         if not rows:  # 无可展示字段的文件不进预览
             continue
         files.append(

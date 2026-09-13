@@ -172,17 +172,42 @@ def test_runtime_backup_skips_missing(
 
 
 def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
-    """预览只保留 gui.json/gui.new.json 的稳定字段，坏 JSON 跳过。"""
+    """native 预览：旧/新两文件分别展示当前方案/连接地址/客户端/启动开关。"""
 
     backup = tmp_path / "backup"
     backup.mkdir()
     (backup / "gui.json").write_text(
         json.dumps(
-            {"Current": "Default", "Configurations": {"Default": {}, "B": {}}}
+            {
+                "Current": "Default",
+                "Configurations": {
+                    "Default": {
+                        "Connect.Address": "127.0.0.1:16384",
+                        "Start.ClientType": "Official",
+                        "Start.StartGame": "True",
+                    },
+                    "B": {},
+                },
+            }
         ),
         encoding="utf-8",
     )
-    (backup / "gui.new.json").write_text(json.dumps({"Current": "方案B"}), encoding="utf-8")
+    (backup / "gui.new.json").write_text(
+        json.dumps(
+            {
+                "Current": "Default",
+                "Configurations": {
+                    "Default": {
+                        "Gui": {
+                            "ConnectSettings": {"Address": "127.0.0.1:16384"},
+                            "RuntimeSettings": {"ClientType": 1, "StartGame": True},
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     (backup / "broken.json").write_text("{oops", encoding="utf-8")
     (backup / "readme.txt").write_text("skip me", encoding="utf-8")
     (backup / "other_config.json").write_text(
@@ -198,13 +223,18 @@ def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
     assert gui["label"] == "MAA 设置"
     assert {row["key"]: row["value"] for row in gui["summary"]} == {
         "当前方案": "Default",
-        "方案数": "2",
+        "连接地址": "127.0.0.1:16384",
+        "客户端": "官服",
+        "启动游戏": "True",
     }
 
     gui_new = by_name["gui.new.json"]
     assert gui_new["label"] == "MAA 设置（新版）"
     assert {row["key"]: row["value"] for row in gui_new["summary"]} == {
-        "当前方案": "方案B"
+        "当前方案": "Default",
+        "连接地址": "127.0.0.1:16384",
+        "客户端": "B服",
+        "启动游戏": "是",
     }
 
 
