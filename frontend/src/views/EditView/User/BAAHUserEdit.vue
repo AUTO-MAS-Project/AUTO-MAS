@@ -121,6 +121,32 @@
             </a-col>
           </a-row>
 
+          <!-- 开启活动适配后，活动期间改用这里填写的配置；留空则始终用上面的配置名 -->
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item name="activityConfigName">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahActivityConfigNameHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahActivityConfigName') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.Info.ActivityConfigName"
+                  :placeholder="t('edit.baahActivityConfigNamePlaceholder')"
+                  :disabled="loading"
+                  size="large"
+                  class="modern-input"
+                  @blur="
+                    handleFieldSave('Info.ActivityConfigName', formData.Info.ActivityConfigName)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24">
             <a-col :span="16">
               <a-form-item name="notes">
@@ -249,6 +275,7 @@ const getDefaultBAAHUserData = () => ({
     Status: true,
     RemainedDay: -1,
     ConfigName: '',
+    ActivityConfigName: '',
     Notes: '',
     Tag: '',
   },

@@ -1573,6 +1573,19 @@ export default {
     baahConfigNameHint:
       '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',
     baahConfigNamePlaceholder: '例如：example',
+    baahActivityConfigName: '活动期间配置文件名',
+    baahActivityConfigNameHint:
+      '开启脚本配置里的「活动适配」后，碧蓝档案有进行中的活动时改用这个配置启动 BAAH；留空、或活动排期取不到时仍用上面的配置名',
+    baahActivityConfigNamePlaceholder: '例如：activity',
+    baahIfActivityAdapt: '活动适配',
+    baahIfActivityAdaptHint:
+      '开启后按碧蓝档案的活动排期切换配置文件：有活动时用用户配置里的「活动期间配置文件名」，没有活动时用「BAAH 配置文件名」',
+    baahActivityLineType: '活动排期服务器',
+    baahActivityLineTypeHint:
+      '按哪个服的排期判断有没有活动；各服活动时间不同，请选你的账号所在的服',
+    baahActivityLineCN: '国服',
+    baahActivityLineJP: '日服',
+    baahActivityLineGloble: '国际服',
     baahUserTag: '用户标签',
     baahUserTagHint: '由本软件按运行情况自动生成，仅供查看',
     baahLastProxyDate: '上次代理日期',

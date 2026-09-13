@@ -141,6 +141,59 @@
             </a-col>
           </a-row>
 
+          <!-- 活动适配：按碧蓝档案当前有没有活动，在用户填写的两份配置文件之间切换 -->
+          <a-row :gutter="24">
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.baahIfActivityAdapt') }}
+                    <a-tooltip :title="t('edit.baahIfActivityAdaptHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="baahConfig.Script.IfActivityAdapt"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Script', 'IfActivityAdapt', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="baahConfig.Script.IfActivityAdapt" :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.baahActivityLineType') }}
+                    <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="baahConfig.Script.ActivityLineType"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Script', 'ActivityLineType', $event)"
+                >
+                  <a-select-option value="CN">
+                    {{ t('edit.baahActivityLineCN') }}
+                  </a-select-option>
+                  <a-select-option value="JP">
+                    {{ t('edit.baahActivityLineJP') }}
+                  </a-select-option>
+                  <a-select-option value="Globle">
+                    {{ t('edit.baahActivityLineGloble') }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <!-- 关闭托管时 BAAH 会用它自己的设置启动模拟器，两边抢同一台设备 -->
           <a-alert
             type="warning"
@@ -326,6 +379,8 @@ interface BAAHScriptForm {
   BAAHPath: string
   IfManageConfig: boolean
   PushLogEnabled: boolean
+  IfActivityAdapt: boolean
+  ActivityLineType: string
 }
 
 interface BAAHRunForm {
@@ -353,6 +408,8 @@ const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
     BAAHPath: '',
     IfManageConfig: true,
     PushLogEnabled: true,
+    IfActivityAdapt: false,
+    ActivityLineType: 'CN',
   },
   Run: {
     RunTimesLimit: 2,

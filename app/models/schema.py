@@ -1798,6 +1798,9 @@ class BAAHUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
+    ActivityConfigName: Optional[str] = Field(
+        default=None, description="活动期间使用的 BAAH 配置文件名"
+    )
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
         default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
@@ -2094,6 +2097,12 @@ class BAAHConfig_Script(BaseModel):
     )
     PushLogEnabled: Optional[bool] = Field(
         default=None, description="是否在任务报告中保留 BAAH 的运行日志"
+    )
+    IfActivityAdapt: Optional[bool] = Field(
+        default=None, description="是否按碧蓝档案有没有活动切换用户使用的配置文件"
+    )
+    ActivityLineType: Optional[Literal["JP", "Globle", "CN"]] = Field(
+        default=None, description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服"
     )
 
 

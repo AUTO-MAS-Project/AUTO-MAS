@@ -1307,6 +1307,10 @@ export function useScriptApi() {
                           baahUserData.Info?.ConfigName !== undefined
                             ? baahUserData.Info.ConfigName
                             : '',
+                        ActivityConfigName:
+                          baahUserData.Info?.ActivityConfigName !== undefined
+                            ? baahUserData.Info.ActivityConfigName
+                            : '',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
                         Tag:

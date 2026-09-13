@@ -20,6 +20,10 @@ export type BAAHUserConfig_Info = {
      */
     ConfigName?: (string | null);
     /**
+     * 活动期间使用的 BAAH 配置文件名
+     */
+    ActivityConfigName?: (string | null);
+    /**
      * 备注
      */
     Notes?: (string | null);
