@@ -1342,6 +1342,14 @@ class MultipleConfig(Generic[T]):
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
 
+                # 重建出来的子配置要挂上父级保存回调（#174），否则复制脚本、任务
+                # 收尾整表写回之后，对这些子配置的修改只改内存、不落盘。放在子配置
+                # load 之后：它自己的纠错保存不该触发父级半途落盘。
+                for save_method in self._save_methods:
+                    await self.data[self.order[-1]].add_save_method(save_method)
+                if self.file:
+                    await self.data[self.order[-1]].add_save_method(self.save)
+
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
 
