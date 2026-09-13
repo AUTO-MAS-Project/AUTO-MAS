@@ -22,7 +22,6 @@
 import asyncio
 import json
 import re
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -54,7 +53,12 @@ from app.utils.constants import (
     MAAEND_TASKS,
     UTC4,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import (
+    mark_native_config_injected,
+    read_file,
+    swap_in_dir,
+    write_file,
+)
 
 from .resource_loader import (
     get_loaded_maaend_options,
@@ -1245,8 +1249,12 @@ class AutoProxyTask(TaskExecuteBase):
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
             )
 
-        shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-        shutil.copytree(maaend_config_path, self.maaend_set_path)
+        swap_in_dir(maaend_config_path, self.maaend_set_path)
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maaend_set_path,
+            script_id=self.script_info.script_id,
+        )
         maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         for field in ("version", "interfaceTaskSnapshot"):
             maaend_set.pop(field, None)

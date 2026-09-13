@@ -31,7 +31,13 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import force_rmtree, replace_dir
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    force_rmtree,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -164,15 +170,17 @@ class OkNteManager(TaskExecuteBase):
                 self.script_config.get("Script", "ConfigPath")
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            force_rmtree(self.temp_path)
-            self.temp_path.mkdir(parents=True, exist_ok=True)
+            self._recover_previous_run()
             if self.script_config_path.exists():
                 self.had_original_script_config = True
                 if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                    shutil.copytree(
-                        self.script_config_path, self.temp_path, dirs_exist_ok=True
+                    commit_native_config_snapshot(
+                        self.temp_path,
+                        self.script_config_path,
+                        script_id=self.script_info.script_id,
                     )
                 elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                    self.temp_path.mkdir(parents=True, exist_ok=True)
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
             # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
@@ -184,6 +192,21 @@ class OkNteManager(TaskExecuteBase):
                     self.script_config_path,
                     self.script_config.get("Script", "ConfigPathMode"),
                 )
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.script_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 OK-NTE 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 OK-NTE 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
@@ -204,7 +227,7 @@ class OkNteManager(TaskExecuteBase):
                     force_rmtree(self.script_config_path)
                 else:
                     logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
-                    replace_dir(self.temp_path, self.script_config_path)
+                    swap_in_dir(self.temp_path, self.script_config_path)
             elif self.script_config.get("Script", "ConfigPathMode") == "File":
                 if (self.temp_path / "config.temp").exists():
                     logger.info(
@@ -220,7 +243,7 @@ class OkNteManager(TaskExecuteBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"复原 OK-NTE 脚本配置失败: {e}")
         finally:
-            force_rmtree(self.temp_path)
+            clear_native_config_snapshot(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()

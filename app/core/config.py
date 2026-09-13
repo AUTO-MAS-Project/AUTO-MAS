@@ -2439,7 +2439,9 @@ class AppConfig(GlobalConfig):
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        shutil.rmtree(target_config_dir, ignore_errors=True)
+        # 目录里可能有只读文件（如脚本自带的 .git 对象），rmtree(ignore_errors)
+        # 静默残留会让随后的覆盖写入抛 PermissionError。
+        force_rmtree(target_config_dir)
         target_config_dir.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
 

@@ -40,7 +40,7 @@ from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .task_loader import M9ATaskLoader
 from .tools import push_notification
@@ -499,6 +499,13 @@ class AutoProxyTask(TaskExecuteBase):
         # 保存配置到 M9A 目录
         write_file(self.m9a_tasks_path, config)
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
+
+        # 快照记录注入后指纹, 供崩溃恢复区分 MAS 污染与用户手动改动
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.m9a_config_path,
+            script_id=self.script_info.script_id,
+        )
 
     @staticmethod
     def _extract_failed_task_names(log: str) -> set[str]:

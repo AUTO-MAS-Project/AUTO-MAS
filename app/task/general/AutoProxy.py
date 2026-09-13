@@ -54,6 +54,7 @@ from app.utils import (
     strptime,
 )
 from app.utils.constants import UTC4
+from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 
 from .tools import execute_script_task, push_notification
@@ -626,15 +627,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if self.script_config_path.is_dir():
-                shutil.rmtree(self.script_config_path)
-            elif self.script_config_path.exists():
-                self.script_config_path.unlink()
-            shutil.copytree(
+            swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                 self.script_config_path,
-                dirs_exist_ok=True,
+            )
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(

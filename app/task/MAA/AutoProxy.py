@@ -54,7 +54,7 @@ from app.utils.constants import (
     MAA_TASKS_ZH,
     UTC4,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .tools import (
     agree_bilibili,
@@ -1151,6 +1151,13 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 拍下托管注入完成后的配置基线, 供任务结束后甄别 MAA 自身的写盘变更
         self._snapshot_maa_config()
+
+        # 快照记录注入后指纹, 供崩溃恢复区分 MAS 污染与用户手动改动
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
 
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 

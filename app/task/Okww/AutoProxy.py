@@ -52,7 +52,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import replace_dir, write_file
+from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -371,7 +371,12 @@ class AutoProxyTask(TaskExecuteBase):
                 str(self.cur_user_uid),
                 config_mode,
             )
-            replace_dir(mas_config_dir, self.script_config_path)
+            swap_in_dir(mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            )
         self._apply_mas_overrides()
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 

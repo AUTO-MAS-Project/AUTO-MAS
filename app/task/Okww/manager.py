@@ -16,7 +16,6 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime
@@ -31,7 +30,13 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import force_rmtree, replace_dir
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    force_rmtree,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import (
     _OKWW_REL_APP_JSON,
@@ -194,13 +199,13 @@ class OkwwManager(TaskExecuteBase):
                 Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            force_rmtree(self.temp_path)
-            self.temp_path.mkdir(parents=True, exist_ok=True)
-            if self.script_config_path.exists():
+            self._recover_previous_run()
+            if commit_native_config_snapshot(
+                self.temp_path,
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            ):
                 self.had_original_script_config = True
-                shutil.copytree(
-                    self.script_config_path, self.temp_path, dirs_exist_ok=True
-                )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
@@ -217,11 +222,26 @@ class OkwwManager(TaskExecuteBase):
             force_rmtree(self.script_config_path)
         else:
             logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
-            replace_dir(self.temp_path, self.script_config_path)
+            swap_in_dir(self.temp_path, self.script_config_path)
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.script_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 OK-WW 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 OK-WW 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     def _cleanup_script_config_temp(self) -> None:
         if self.temp_path:
-            force_rmtree(self.temp_path)
+            clear_native_config_snapshot(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()

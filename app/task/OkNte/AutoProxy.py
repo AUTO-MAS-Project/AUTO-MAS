@@ -51,7 +51,7 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import UTC4
-from app.utils.io import read_file, replace_dir
+from app.utils.io import mark_native_config_injected, read_file, swap_in_dir
 from app.utils.LogMonitor import LogMonitor
 from app.utils.LogPatternExtractor import (
     SIGN_MODE_SPLIT,
@@ -492,7 +492,12 @@ class AutoProxyTask(TaskExecuteBase):
         mas_config_dir = self._ensure_oknte_mas_config_dir()
         self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            replace_dir(mas_config_dir, self.script_config_path)
+            swap_in_dir(mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(
                 mas_config_dir / self.script_config_path.name,
