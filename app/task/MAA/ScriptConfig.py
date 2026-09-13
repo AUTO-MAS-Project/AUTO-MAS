@@ -37,7 +37,11 @@ from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
 from .AutoProxy import _build_maa_preset_task_queue
-from .tools.backup_archive import archive_mas_runtime_backup, mas_config_dir
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    mas_config_dir,
+    read_overlay_values,
+)
 
 logger = get_logger("MAA 脚本设置")
 
@@ -104,17 +108,22 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
-        # 下发前归档 MAS 配置到用户池（运行下发源；指纹去重，失败不阻断
-        # 会话）。native 池由 manager.prepare 在任务级一次性归档
+        # 下发前归档 MAS 配置到用户池（运行下发源；带页面任务字段侧车，
+        # 指纹去重，失败不阻断会话）。native 池由 manager.prepare 在任务级
+        # 一次性归档
         target_user_id = self.cur_user_item.user_id
         mas_owner = "Default"
         if target_user_id != "Default":
             mode = self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
             mas_owner = target_user_id if mode == "用户" else "Default"
+            overlay = read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
+        else:
+            overlay = None
         archive_mas_runtime_backup(
             self.script_info.script_id,
             target_user_id,
             mas_config_dir(self.script_info.script_id, mas_owner),
+            overlay=overlay,
         )
 
         if (

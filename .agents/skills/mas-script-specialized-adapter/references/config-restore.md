@@ -29,6 +29,9 @@
 > - **Okww（自包含式 + 覆盖层侧车）**：`app/task/Okww/tools/restore_service.py` +
 >   `useOkwwGuiSession.ts` + `OkwwUserEdit.vue`——mas 池带覆盖层字段侧车，
 >   三态专项的池分桶教训见 §1.1
+> - **MAA（自包含式 + 任务侧车）**：`app/task/MAA/tools/restore_service.py` +
+>   `useMaaGuiSession.ts` + `MAAUserEdit.vue`——mas 池带页面任务字段侧车
+>   （Task 开关），两态 owner；新建用户首次进入必须先等 userId 就绪再 ensure
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 
@@ -204,6 +207,22 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 
 预览结构约定（ZzzOd 用这套）：`info` / `account`（`{key,value}`）、`tasks`
 （`{app_id, app_name, enabled}`）、`instances`（`{idx, name, active, account, tasks}`）。
+
+### 3.3 预览内容来源约定（专项必读）
+
+**预览必须对用户有区分价值**——用户靠它分辨「这个备份是哪个状态」，而不是
+看一份无意义的文件清单：
+
+- **mas 池**：优先展示**与页面表单同源的内容**。页面字段不落盘在被备份文件
+  时（ok-ww 覆盖层、MAA 任务开关等），用**侧车**承载并展示（见 §1.1.2）；
+  页面字段就落盘在被备份文件时（OkNte 的 ConfigFile 即页面编辑对象），展示
+  文件内页面管理的关键字段。
+- **native 池**：展示脚本原生配置里**结构稳定、用户关心的字段**（如 MAA 的
+  当前方案 / 连接地址 / 客户端类型）；随版本漂移、用户读不懂的内部字段不进
+  预览（经「查看详细配置」在原生 GUI 里看）。
+- **不确定展示什么 = 先询问**：专项对「这个备份对用户意味着什么」拿不准时，
+  **先向维护者 / 用户确认预览内容，再实现**；不要自己拍脑袋放几个字段充数。
+  预览字段选择是产品决策，不是实现细节。
 
 ## 4. 可自定义点（不符合专项实际情况时才用）
 

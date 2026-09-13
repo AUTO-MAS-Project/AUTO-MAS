@@ -1360,10 +1360,13 @@ interface MaaPreviewFileView {
 const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
   (raw as { files?: MaaPreviewFileView[] } | null)?.files ?? []
 
-// 一键恢复成功：MAA 的 mas 备份只回滚 ConfigFile 目录副本（页面任务字段存
-// UserData、运行时注入，不在恢复范围），无需刷新表单，关弹窗即可
-const handleRestored = () => {
+// 一键恢复成功：mas 恢复含页面任务字段回填，重拉表单——否则旧表单值在
+// 下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
+const handleRestored = async (target: string) => {
   restoreOpen.value = false
+  if (target === 'mas') {
+    await loadUserData()
+  }
 }
 
 // 「查看详细配置」语义（对齐一条龙）：恢复该时点 + 拉起查看会话预览。
@@ -1424,14 +1427,17 @@ const ensureMaaBackup = async (target: 'mas' | 'native') => {
 }
 
 // 初始化加载
-onMounted(() => {
+onMounted(async () => {
   if (!scriptId) {
     message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
 
-  loadScriptInfo()
+  // 先等脚本信息加载（新建模式内部会创建用户并写入 userId），native 归档
+  // 虽不需要用户但后端 ensure 端点要求 userId 参数——必须在 userId 就绪后
+  // 才能发出，否则新建用户首次进入会静默跳过归档
+  await loadScriptInfo()
   loadStageModeOptions()
   loadActivityStageOptions()
   loadDepotItemOptions()

@@ -41,11 +41,13 @@ config-restore.md §1.1.1）。时间戳快照、指纹去重、保留清理与�
 """
 
 import json
+import tempfile
 from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
     archive_dir,
+    archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
@@ -105,18 +107,98 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 
 # ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
 
+_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
+"""覆盖层字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落入 ConfigFile）"""
+
+_OVERLAY_TASK_KEYS = (
+    "IfStartUp",
+    "IfFight",
+    "IfInfrast",
+    "IfRecruit",
+    "IfMall",
+    "IfAward",
+    "IfSwitchTheme",
+    "IfRoguelike",
+    "IfReclamation",
+    "IfDepotMaintain",
+    "IfGreenTicketStore",
+    "IfActivityFirst",
+    "ActivityStageIndex",
+    "ActivityMedicineNumb",
+    "DepotMaintainPlans",
+)
+"""MAS 页面任务字段（UserData.Task，运行时注入 gui.json 的开关与序号）"""
+
+_OVERLAY_FIELD_LABELS = {
+    "IfStartUp": "自动唤醒",
+    "IfFight": "理智作战",
+    "IfInfrast": "基建换班",
+    "IfRecruit": "公开招募",
+    "IfMall": "信用收支",
+    "IfAward": "领取奖励",
+    "IfSwitchTheme": "更换主题",
+    "IfRoguelike": "自动肉鸽",
+    "IfReclamation": "生息演算",
+    "IfDepotMaintain": "库存保持",
+    "IfGreenTicketStore": "绿票商店",
+    "IfActivityFirst": "活动关优先",
+    "ActivityStageIndex": "活动关卡序号",
+    "ActivityMedicineNumb": "活动理智药",
+    "DepotMaintainPlans": "库存保持计划",
+}
+"""侧车字段中文标签（对齐 MAA 编辑页词表）"""
+
+
+def read_overlay_values(config) -> dict:
+    """读取配置对象的 MAS 页面任务字段（鸭子类型，仅需 ``get(group, key)``）。
+
+    值为 ``None``（配置项不存在）的键不纳入侧车。
+    """
+
+    return {
+        key: value
+        for key in _OVERLAY_TASK_KEYS
+        if (value := config.get("Task", key)) is not None
+    }
+
+
+def _sidecar_temp_file(overlay: dict) -> Path:
+    """把覆盖层字段写到临时文件（参与归档指纹，归档后即删）。"""
+
+    fd = tempfile.NamedTemporaryFile(
+        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
+    )
+    json.dump(overlay, fd, ensure_ascii=False, indent=2)
+    fd.close()
+    return Path(fd.name)
+
+
+def read_overlay_sidecar(backup_dir: Path) -> dict | None:
+    """读取归档内的覆盖层字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
+
+    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
+    if not sidecar.is_file():
+        return None
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
 
 def archive_mas_backup(
     script_id: str,
     user_id: str,
     mas_dir: Path,
+    overlay: dict | None = None,
     force: bool = False,
 ) -> Path | None:
-    """归档 MAS 配置整份到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
 
     ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按两态 owner 解析（脚本态
     共享 Default 目录、用户态独立目录）——池与目标解耦。
+    侧车参与指纹：只改页面任务字段、未动 ConfigFile 时同样新建归档。
     目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 强制
     归档（恢复前存底——让「恢复前的配置」在列表里有明确的时间戳条目）。
     """
@@ -124,7 +206,16 @@ def archive_mas_backup(
     mas_dir = Path(mas_dir)
     if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
         return None
-    dest = archive_dir(mas_dir, mas_backup_root(script_id, user_id), force=force)
+    files = dir_files(mas_dir)
+    temp_sidecar: Path | None = None
+    if overlay:
+        temp_sidecar = _sidecar_temp_file(overlay)
+        files[_OVERLAY_SIDECAR_NAME] = temp_sidecar
+    try:
+        dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    finally:
+        if temp_sidecar is not None:
+            temp_sidecar.unlink(missing_ok=True)
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -149,12 +240,15 @@ def restore_mas_backup(
     user_id: str,
     ts: str,
     mas_dir: Path,
-) -> None:
+    overlay: dict | None = None,
+) -> dict | None:
     """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
     ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按两态 owner 解析（脚本态共享 Default 目录、用户态独立
-    目录）。
+    目录）。``overlay`` 为当前用户的页面任务字段，随恢复前存底一起归档。
+    返回该备份的侧车（供调用方回填 MAS 用户配置；旧版备份无侧车返回
+    ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
 
     backup_dir = get_mas_backup_dir(script_id, user_id, ts)
@@ -162,23 +256,33 @@ def restore_mas_backup(
         raise ValueError(f"备份不存在: {ts}")
     mas_dir = Path(mas_dir)
     if mas_dir.is_dir() and any(mas_dir.iterdir()):
-        archive_mas_backup(script_id, user_id, mas_dir, force=True)
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+    restored_overlay = read_overlay_sidecar(mas_dir)
+    if restored_overlay is not None:
+        (mas_dir / _OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    return restored_overlay
 
 
-def archive_mas_runtime_backup(script_id: str, user_id: str, mas_dir: Path) -> None:
+def archive_mas_runtime_backup(
+    script_id: str,
+    user_id: str,
+    mas_dir: Path,
+    overlay: dict | None = None,
+) -> None:
     """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
     ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    两态解析（脚本态=Default 共享目录、用户态=独立目录）。native 池与
-    此处无关：原生配置跨用户共享，由 manager ``prepare`` 在任务级一次性
-    归档（见 :func:`archive_native_backup`）。
+    两态解析（脚本态=Default 共享目录、用户态=独立目录）。``overlay``
+    为当前用户的页面任务字段。native 池与此处无关：原生配置跨用户共享，
+    由 manager ``prepare`` 在任务级一次性归档（见
+    :func:`archive_native_backup`）。
     """
 
-    archive_mas_backup(script_id, user_id, mas_dir)
+    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
 
 
 # ══════════════════ 脚本原生配置（安装目录 config/ 整目录） ══════════════════
@@ -306,3 +410,41 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
             }
         )
     return files
+
+
+def _overlay_value(key: str, value) -> str:
+    """侧车字段值转展示文本（布尔转是否、列表收拢、超长截断）。"""
+
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    text = str(value)
+    if len(text) > _SUMMARY_VALUE_LIMIT:
+        return text[: _SUMMARY_VALUE_LIMIT - 1] + "…"
+    return text
+
+
+def build_overlay_summary(overlay: dict) -> list[dict]:
+    """侧车字段的摘要行（mas 池预览用，纯读）。
+
+    展示的是备份时点的 MAS 页面任务配置（开关/序号），与用户在任务配置
+    所见同源，运行时才会注入 gui.json。布尔开关值为 False 的字段一并展示
+    （用户要确认「当时关没关」）。
+    """
+
+    rows: list[dict] = []
+    for key in _OVERLAY_TASK_KEYS:
+        if key not in overlay or key not in _OVERLAY_FIELD_LABELS:
+            continue
+        value = overlay[key]
+        if isinstance(value, (dict, list)):
+            joined = "、".join(
+                _overlay_value(key, item)
+                for item in value
+                if isinstance(item, (str, int, float, bool))
+            )
+            rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": joined or "无"})
+            continue
+        rows.append(
+            {"key": _OVERLAY_FIELD_LABELS[key], "value": _overlay_value(key, value)}
+        )
+    return rows[: _SUMMARY_ROW_LIMIT * 2]

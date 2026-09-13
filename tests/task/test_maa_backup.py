@@ -45,7 +45,7 @@ from app.task.MAA.tools.backup_archive import (
 def test_mas_backup_dedup_and_restore_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """mas 池：无备份即建、内容一致跳过、内容变化再建、恢复闭环可找回。"""
+    """mas 池：无备份即建、内容一致跳过、内容/侧车变化再建、恢复闭环。"""
 
     monkeypatch.chdir(tmp_path)
     script_id, user_id = "s-0001", "u-0001"
@@ -54,22 +54,34 @@ def test_mas_backup_dedup_and_restore_loop(
     (mas_dir / "gui.json").write_text(
         json.dumps({"Current": "Default", "Global": {}}), encoding="utf-8"
     )
+    overlay = {"IfFight": True, "IfInfrast": False, "ActivityStageIndex": 3}
 
-    # 首次归档 → 内容一致跳过（指纹去重）
-    first = archive_mas_backup(script_id, user_id, mas_dir)
+    # 首次归档（含侧车）→ 内容一致跳过（指纹去重）
+    first = archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
     assert first is not None and (first / "gui.json").is_file()
-    assert archive_mas_backup(script_id, user_id, mas_dir) is None
+    assert (first / "_mas_overlay.json").is_file()
+    assert archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay) is None
     assert len(list_mas_backups(script_id, user_id)) == 1
 
-    # 内容变化 → 新建归档
-    (mas_dir / "gui.new.json").write_text("{}", encoding="utf-8")
-    assert archive_mas_backup(script_id, user_id, mas_dir) is not None
+    # 只改侧车字段（文件未动）→ 指纹变化，新建归档
+    overlay2 = {**overlay, "IfFight": False}
+    second = archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay2)
+    assert second is not None
     assert len(list_mas_backups(script_id, user_id)) == 2
 
-    # 恢复到第一份：gui.new.json 回到不存在；恢复前的当前态被强制存底
-    restore_mas_backup(script_id, user_id, first.name, mas_dir)
-    assert not (mas_dir / "gui.new.json").exists()
+    # 只改文件（侧车同第二份）→ 同样新建归档
+    (mas_dir / "gui.new.json").write_text("{}", encoding="utf-8")
+    assert archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay2) is not None
     assert len(list_mas_backups(script_id, user_id)) == 3
+
+    # 恢复到第一份：文件与侧车都回到该时点，侧车不留在 ConfigFile
+    restored = restore_mas_backup(
+        script_id, user_id, first.name, mas_dir, overlay=overlay2
+    )
+    assert restored == overlay
+    assert not (mas_dir / "gui.new.json").exists()
+    assert not (mas_dir / "_mas_overlay.json").exists()
+    assert len(list_mas_backups(script_id, user_id)) == 4  # 恢复前强制存底 +1
 
     # 用户池隔离：另一个用户看不到这个池
     assert list_mas_backups(script_id, "u-other") == []
@@ -194,6 +206,28 @@ def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
     assert {row["key"]: row["value"] for row in gui_new["summary"]} == {
         "当前方案": "方案B"
     }
+
+
+def test_overlay_preview_shows_task_fields(tmp_path: Path) -> None:
+    """侧车预览：展示备份时点的 MAS 页面任务配置（开关/序号翻译）。"""
+
+    from app.task.MAA.tools.backup_archive import build_overlay_summary
+
+    overlay = {
+        "IfStartUp": True,
+        "IfFight": False,
+        "IfGreenTicketStore": True,
+        "ActivityStageIndex": 3,
+    }
+    rows = {row["key"]: row["value"] for row in build_overlay_summary(overlay)}
+    assert rows == {
+        "自动唤醒": "是",
+        "理智作战": "否",
+        "绿票商店": "是",
+        "活动关卡序号": "3",
+    }
+    # 未知键/缺失键不进摘要
+    assert "不存在的字段" not in rows
 
 
 def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:

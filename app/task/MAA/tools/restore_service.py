@@ -22,12 +22,13 @@
 自包含（守卫与 owner 解析走 ``ctx.script_config.UserData``，路径走专项
 字段），不依赖核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAA 为该用户维护的配置」（运行下发源 ConfigFile 目录副本）。
-MAA 无覆盖层侧车需求：页面任务字段存 MAS 用户配置、运行时注入 gui.json，
-不存在「页面字段不落盘在被备份文件」的问题（对比 ok-ww）。池恒按用户
-分桶（侧车虽无，但脚本态多用户共享 Default 目录，各自快照仍需隔离）；
-两态 owner（脚本=Default 共享目录、用户=独立目录）只决定归档/恢复目标
-路径，与运行下发（AutoProxy ``set_maa``）同一套来源规则。
+mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面任务
+字段侧车。MAA 页面任务字段（UserData.Task）运行时注入 gui.json、不落盘在
+ConfigFile——备份/恢复两端都带上侧车（恢复后回填表单，对齐 ZzzOd / ok-ww
+字段回填模式），预览与页面认知才一致。池恒按用户分桶（侧车是用户级的，
+脚本态多用户共享 Default 目录时各自快照仍需隔离）；两态 owner（脚本
+=Default 共享目录、用户=独立目录）只决定归档/恢复目标路径，与运行下发
+（AutoProxy ``set_maa``）同一套来源规则。
 """
 
 import uuid
@@ -39,11 +40,14 @@ from .backup_archive import (
     archive_mas_backup,
     archive_native_backup,
     build_backup_file_summary,
+    build_overlay_summary,
     get_mas_backup_dir,
     get_native_backup_dir,
     list_mas_backups,
     list_native_backups,
     mas_config_dir,
+    read_overlay_sidecar,
+    read_overlay_values,
     restore_mas_backup,
     restore_native_backup,
 )
@@ -112,9 +116,34 @@ async def _list_native(ctx) -> list[str]:
     return list_native_backups(config_path)
 
 
+def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
+    """mas 池预览载荷：覆盖层字段侧车（备份时点的 MAS 页面任务配置）。
+
+    ConfigFile 里的 gui.json 是 MAA GUI 结构，MAS 页面任务字段（Task 段）
+    运行时才注入、不落盘其中——展示它只会误导（与页面对不上）；这里只
+    展示与页面同源的侧车字段，来源配置本体经「查看详细配置」在 MAA GUI
+    里查看。旧版备份无侧车，无可展示内容。
+    """
+
+    if backup is None:
+        raise ValueError(f"备份不存在: {ts}")
+    overlay = read_overlay_sidecar(backup)
+    if overlay is None:
+        return {"files": []}
+    return {
+        "files": [
+            {
+                "name": "overlay",
+                "label": "任务配置",
+                "summary": build_overlay_summary(overlay),
+            }
+        ]
+    }
+
+
 async def _preview_mas(ctx, ts: str) -> dict:
-    return _preview_payload(
-        ctx, ts, get_mas_backup_dir(ctx.script_id, ctx.user_id, ts)
+    return _overlay_preview_payload(
+        get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
     )
 
 
@@ -130,12 +159,18 @@ async def _restore_mas(ctx, ts: str) -> object:
     owner = _mas_owner(ctx)
     if owner is None:
         raise ValueError("无法确定该用户的 MAS 配置目录，请刷新后重试")
-    restore_mas_backup(
+    user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+    restored_overlay = restore_mas_backup(
         ctx.script_id,
         ctx.user_id,
         ts,
         _mas_dir_for_owner(ctx, owner),
+        overlay=read_overlay_values(user),
     )
+    if restored_overlay:
+        # 侧车字段回填（对齐 ZzzOd / ok-ww 字段回填模式）：文件回滚的同时
+        # 把页面任务字段回到备份时点，否则旧表单值下次保存会静默覆盖回滚结果
+        await user.update({"Task": restored_overlay})
 
 
 async def _restore_native(ctx, ts: str) -> object:
@@ -148,13 +183,14 @@ async def _restore_native(ctx, ts: str) -> object:
 async def _snapshot_mas(ctx) -> dict:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
-    dest = (
-        archive_mas_backup(
-            ctx.script_id, ctx.user_id, _mas_dir_for_owner(ctx, owner)
+    dest = None
+    if owner:
+        dest = archive_mas_backup(
+            ctx.script_id,
+            ctx.user_id,
+            _mas_dir_for_owner(ctx, owner),
+            overlay=read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)]),
         )
-        if owner
-        else None
-    )
     times = list_mas_backups(ctx.script_id, ctx.user_id)
     return {"created": dest is not None, "time": times[0] if times else ""}
 

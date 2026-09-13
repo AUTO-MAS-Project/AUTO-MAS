@@ -67,7 +67,7 @@ from .tools import (
     push_notification,
     update_maa,
 )
-from .tools.backup_archive import archive_mas_runtime_backup
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.cultivate import (
     CultivatePlan,
     ProviderContext,
@@ -1140,12 +1140,14 @@ class AutoProxyTask(TaskExecuteBase):
             await agree_bilibili(self.maa_tasks_path, False)
 
         # 下发前归档 MAS 配置到用户池（下发源，运行回写 _sync_maa_config_updates
-        # 会覆盖它；指纹去重，失败不阻断运行）。目标路径按两态 owner（脚本态
-        # 共享 Default 目录）。native 池由 manager prepare 在任务级一次性归档
+        # 会覆盖它；带页面任务字段侧车，指纹去重，失败不阻断运行）。目标路径
+        # 按两态 owner（脚本态共享 Default 目录）。native 池由 manager prepare
+        # 在任务级一次性归档
         archive_mas_runtime_backup(
             self.script_info.script_id,
             str(self.cur_user_uid),
             self._config_archive_dir(),
+            overlay=read_overlay_values(self.cur_user_config),
         )
 
         # ── 第一段：来源落盘 ──────────────────────────────────────────
