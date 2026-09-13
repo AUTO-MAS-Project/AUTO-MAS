@@ -38,6 +38,7 @@ from app.task.BAAH.tools.config_manager import (
     MANAGED_USER_VALUES,
     apply_managed_config,
     latest_log_file,
+    list_config_names,
     read_json,
     resolve_config_name,
     resolve_log_time_range,
@@ -486,3 +487,34 @@ class TestPushLogNodeRules:
         assert self._nodes(log_path, [self.CRASH_IN_TASK]) == [
             "❌ 失败: 任务InCafe执行后条件不成立或超时，且无法正确返回主页，程序退出"
         ]
+
+
+class TestListConfigNames:
+    """配置目录列举：下拉选项只来自目录里真实存在的配置"""
+
+    def test_missing_dir_returns_empty(self, tmp_path: Path) -> None:
+        assert list_config_names(tmp_path / "BAAH_CONFIGS") == []
+
+    def test_empty_dir_returns_empty(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "BAAH_CONFIGS"
+        config_dir.mkdir()
+
+        assert list_config_names(config_dir) == []
+
+    def test_lists_json_names_without_suffix_sorted(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "BAAH_CONFIGS"
+        config_dir.mkdir()
+        for name in ["b活动", "日常", "a日常"]:
+            (config_dir / f"{name}.json").write_text("{}", encoding="utf-8")
+
+        assert list_config_names(config_dir) == ["a日常", "b活动", "日常"]
+
+    def test_ignores_non_json_and_directories(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "BAAH_CONFIGS"
+        config_dir.mkdir()
+        (config_dir / "日常.json").write_text("{}", encoding="utf-8")
+        (config_dir / "日常.json.tmp").write_text("{}", encoding="utf-8")
+        (config_dir / "readme.txt").write_text("x", encoding="utf-8")
+        (config_dir / "子目录.json").mkdir()
+
+        assert list_config_names(config_dir) == ["日常"]

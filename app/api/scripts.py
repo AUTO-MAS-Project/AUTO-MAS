@@ -31,11 +31,13 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.core import Config
+from app.models.config import BAAHConfig as RuntimeBAAHConfig
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
+from app.task.BAAH.tools import CONFIG_DIR_NAME, list_config_names
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
@@ -61,6 +63,15 @@ from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
+
+
+def _baah_script_config(script_id: str):
+    """Resolve a BAAH script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeBAAHConfig):
+        raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
+    return script_config
 
 
 def _hsr_script_config(script_id: str):
@@ -1587,6 +1598,45 @@ async def get_bettergi_custom_groups_api(
             f"get_bettergi_custom_groups_api失败: {type(e).__name__}: {e}"
         )
         return BetterGICustomGroupsOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/baah/config-names",
+    tags=["BAAH"],
+    summary="获取 BAAH 配置文件名列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
+    """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
+
+    配置目录由脚本配置里的主程序路径派生（``BAAH.exe`` 同级的 ``BAAH_CONFIGS``），
+    与运行时读写的是同一个目录，供界面下拉选择，避免手输一个不存在的配置名。
+    """
+
+    try:
+        script_config = _baah_script_config(scriptId)
+        baah_path = Path(str(script_config.get("Script", "BAAHPath")))
+        names = list_config_names(baah_path.parent / CONFIG_DIR_NAME)
+        data = [ComboBoxItem(label=name, value=name) for name in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 份 BAAH 配置",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_baah_config_names_api失败: {type(e).__name__}: {e}"
+        )
+        return ComboBoxOut(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
