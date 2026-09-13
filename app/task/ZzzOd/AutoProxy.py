@@ -46,13 +46,10 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 
 import asyncio
 import json
-import shlex
 import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-
-import psutil
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -63,6 +60,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    find_pids_by_name,
+    push_dispatch_log,
+    split_args,
+)
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
@@ -109,13 +111,6 @@ _ZZZOD_LAUNCHERS = tuple(_ZZZOD_LAUNCHER_BOOK.values())
 # 游戏本体进程名：MAS 侧关闭游戏按进程名结束（游戏由启动器拉起，可能不在
 # 启动器进程树内，进程管理器跟踪不到）
 _ZZZ_GAME_PROCESS = "ZenlessZoneZero.exe"
-
-
-def _split_args(raw: object) -> list[str]:
-    """启动参数按 shell 规则拆分（保留 Windows 风格引号，空串返回空列表）。"""
-
-    value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
 
 
 # 启动器成功启动的证据：出现 zzz-od 应用层运行上下文即视为已启动（两种启动器的
@@ -179,19 +174,6 @@ def _failed_apps(diffs: list) -> list[str]:
         for app_id, _, new in diffs
         if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
     ]
-
-
-def _find_pids_by_name(process_name: str) -> list[int]:
-    """按进程名收集 PID（同步全进程扫描，调用方放到线程里跑）。"""
-
-    pids: list[int] = []
-    for process in psutil.process_iter(["name"]):
-        try:
-            if process.info["name"] == process_name:
-                pids.append(process.pid)
-        except psutil.Error:
-            continue
-    return pids
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -1227,9 +1209,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
 
     async def _restore_injection(self) -> None:
         """恢复注入现场（用户态接管过时生效；幂等，恢复一次后置空）。
@@ -1485,7 +1465,7 @@ class AutoProxyTask(TaskExecuteBase):
         await self._push_dispatch_log("正在由 MAS 启动游戏...")
         await self.game_process_manager.open_process(
             self.game_exe_path,
-            *_split_args(self.script_config.get("Game", "Arguments")),
+            *split_args(self.script_config.get("Game", "Arguments")),
         )
         wait_time = max(int(self.script_config.get("Game", "WaitTime") or 0), 0)
         if wait_time:
@@ -1498,7 +1478,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             # 全进程扫描放到线程里，不阻塞事件循环
-            for pid in await asyncio.to_thread(_find_pids_by_name, _ZZZ_GAME_PROCESS):
+            for pid in await asyncio.to_thread(find_pids_by_name, _ZZZ_GAME_PROCESS):
                 try:
                     await System.kill_process_by_pid(pid)
                 except Exception as e:

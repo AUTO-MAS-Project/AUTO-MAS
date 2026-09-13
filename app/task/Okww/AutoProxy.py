@@ -18,7 +18,6 @@
 
 import asyncio
 import json
-import shlex
 import shutil
 import time
 import uuid
@@ -40,6 +39,11 @@ from app.services.wuthering_waves import (
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    append_push_log,
+    push_dispatch_log,
+    split_args,
+)
 from app.utils import (
     ProcessInfo,
     ProcessManager,
@@ -93,11 +97,6 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
-
-
-def _split_args(raw: object) -> list[str]:
-    value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
 
 
 def _okww_config_mode(raw: object) -> str:
@@ -383,16 +382,15 @@ class AutoProxyTask(TaskExecuteBase):
         self._apply_mas_overrides()
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text, ts))
-
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
+
+    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
+        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+
+        append_push_log(self.cur_user_item, log_type, text, ts)
 
     async def handle_pre_okww_error(
         self, error_message: str, e: Exception | None = None
@@ -496,7 +494,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.game_manager.open_process(
                 self.game_process_path,
-                *_split_args(self.script_config.get("Game", "Arguments")),
+                *split_args(self.script_config.get("Game", "Arguments")),
             )
             wait_time = max(int(self.script_config.get("Game", "WaitTime")), 0)
             if wait_time:
