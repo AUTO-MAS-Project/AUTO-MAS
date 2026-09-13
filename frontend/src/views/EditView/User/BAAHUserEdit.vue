@@ -438,9 +438,10 @@ const loadActivityStatus = async () => {
 
   activityStatusLoading.value = true
   try {
-    activityStatus.value = await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
-      formData.Info.ActivityLineType as 'JP' | 'Globle' | 'CN'
-    )
+    // 服务器值缺失时兜底成国服，避免拼出 lineType=null 的请求被后端拒掉
+    const lineType = (formData.Info.ActivityLineType || 'CN') as 'JP' | 'Globle' | 'CN'
+    activityStatus.value =
+      await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(lineType)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     activityStatus.value = null

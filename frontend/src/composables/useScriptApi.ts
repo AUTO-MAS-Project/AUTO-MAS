@@ -1312,11 +1312,11 @@ export function useScriptApi() {
                             ? baahUserData.Info.ActivityConfigName
                             : '',
                         IfActivityAdapt:
-                          baahUserData.Info?.IfActivityAdapt !== undefined
+                          baahUserData.Info?.IfActivityAdapt != null
                             ? baahUserData.Info.IfActivityAdapt
                             : false,
                         ActivityLineType:
-                          baahUserData.Info?.ActivityLineType !== undefined
+                          baahUserData.Info?.ActivityLineType != null
                             ? baahUserData.Info.ActivityLineType
                             : 'CN',
                         Notes:
