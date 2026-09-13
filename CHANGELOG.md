@@ -82,8 +82,6 @@
 
 ### 新增
 
-- 首页 每日一句旁新增「换一句」按钮，点一下文字碎开再重新拼成新的一句
-- BAAH专项 新增碧蓝档案爱丽丝助手脚本支持，可集中管理多个账号的配置并自动完成每日任务
 - MAA 专项 日常调度新增「更换主题」开关：勾选后 MAS 计划运行时会执行 MAA 里配好的界面主题更换（多个主题随机切换），主题名称仍在 MAA 中配置，需要 MAA v6.17.3 及以上版本 by [@jinghero](https://github.com/jinghero) by [@HarcoChen](https://github.com/HarcoChen)
 - 绝区零一条龙专项 用户卡片新增「用户模式/直控模式」来源、区服、账号尾号与一条龙任务数标签，并修复 MaaFW 专项用户卡片不显示任何标签的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
 - MFW专项 使用模拟器时可顺带把游戏一起打开（包名自动识别或手动填写），任务前后自定义脚本改为每用户各跑一次、不再随重试重复 by [@HarcoChen](https://github.com/HarcoChen)
