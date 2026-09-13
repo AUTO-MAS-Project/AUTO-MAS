@@ -2482,7 +2482,12 @@ class MaaFWUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {
+                "text": f"上次：{last_status}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
 
         if not self.get("Data", "IfPassCheck"):
             tags.append({"text": "人工排查未通过", "color": "red"})

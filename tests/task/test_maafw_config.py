@@ -75,6 +75,21 @@ class MaaFWConfigTest(unittest.TestCase):
     def test_add_user_creates_maafw_user_config(self) -> None:
         asyncio.run(self._assert_add_user_creates_maafw_user_config())
 
+    def test_user_tags_mark_failed_last_run_red(self) -> None:
+        """「上次」标签：失败标红，其余沿用绿色（与 ZzzOd 同一口径）。"""
+
+        user = MaaFWUserConfig()
+        tag_colors = {
+            tag["text"]: tag["color"] for tag in json.loads(user.get("Info", "Tag"))
+        }
+        self.assertEqual(tag_colors["上次：未知"], "green")
+
+        asyncio.run(user.set("Data", "LastProxyStatus", "失败"))
+        tag_colors = {
+            tag["text"]: tag["color"] for tag in json.loads(user.get("Info", "Tag"))
+        }
+        self.assertEqual(tag_colors["上次：失败"], "red")
+
     async def _assert_add_user_creates_maafw_user_config(self) -> None:
         with tempfile.TemporaryDirectory() as manager_dir:
             manager_root = Path(manager_dir)
