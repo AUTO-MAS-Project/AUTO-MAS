@@ -36,6 +36,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
@@ -253,12 +254,7 @@ class AutoProxyTask(TaskExecuteBase):
                 ]
                 self.cur_user_log.status = "模拟器启动失败"
 
-                try:
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
-                except Exception as e:
-                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                await close_emulator(self)
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -328,13 +324,8 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.m9a_process_manager.kill()
                 self.m9a_started = False
                 if not self.is_virtual_update_user:
-                    try:
-                        await self.emulator_manager.close(
-                            self.script_config.get("Emulator", "Index")
-                        )
-                        self.emulator_opened = False
-                    except Exception as e:
-                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                    await close_emulator(self)
+                    self.emulator_opened = False
                 await System.kill_process(self.m9a_exe_path)
                 self.m9a_started = False
 
@@ -755,12 +746,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.emulator_opened:
             # 关闭模拟器
             logger.info("用户任务结束，关闭模拟器")
-            try:
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                )
-            except Exception as e:
-                logger.warning(f"关闭模拟器失败: {e}")
+            await close_emulator(self)
 
         # 保存历史记录并合并统计信息
         user_logs_list = []

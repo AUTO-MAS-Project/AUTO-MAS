@@ -23,6 +23,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.MaaFW.tools.core.automas_maafw_controller_win32.service import (
     MaaFWWin32ControllerService,
@@ -1605,14 +1606,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self.cur_user_config.set("Data", "LastProxyStatus", "运行中")
 
     async def _close_emulator(self) -> None:
-        if not self.opened_emulator or self.emulator_manager is None:
+        if not self.opened_emulator:
             return
         try:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
-        except Exception as exc:
-            logger.warning(f"MaaFW 插件清理模拟器失败: {exc}")
+            await close_emulator(self, log_failure=False)
         finally:
             self.opened_emulator = False
 
