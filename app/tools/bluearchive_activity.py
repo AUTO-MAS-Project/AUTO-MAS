@@ -5,13 +5,13 @@
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of the
-#   License, or (at your option) any later version.
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#   GNU Affero General Public License for more details.
 
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
@@ -23,12 +23,14 @@
 数据取自 Kivo 古书馆时间轴。该接口对 Origin 做了白名单校验，只放行 kivo.wiki
 自己的来源，浏览器直连必定 403，所以由服务端直接请求（不带 Origin）。
 
-对外只回答「当前有没有正在进行中的活动」，供调度侧决定本次使用哪份脚本配置。
-第三方接口不可用不应挡住脚本执行，因此取数失败返回 None，由调用方退回默认行为。
+对外提供两个口径：调度侧只要「当前有没有进行中的活动」，界面还要知道活动
+叫什么、什么时候开始结束。第三方接口不可用不应挡住脚本执行，因此取数失败
+一律返回 None，由调用方退回默认行为。
 """
 
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
@@ -53,11 +55,19 @@ REQUEST_TIMEOUT = 20
 ## 只有「活动」算活动，卡池、掉落加倍、维护等分类不算
 WANTED_TYPE = "Event"
 
-## 与前端首页活动卡片一致的口径：只取「活动」分类，按开始/结束时间判断是否进行中
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
 
 ## 只缓存原始条目：判定结果与「当前时刻」相关，缓存起来会在跨过活动起止时间后失真
 _cache: dict[str, tuple[float, tuple[Mapping[str, object], ...]]] = {}
+
+
+@dataclass(frozen=True)
+class ActivityInfo:
+    """一场活动：名称与起止时间（Unix 秒）"""
+
+    name: str
+    start_time: float
+    end_time: float
 
 
 def has_running_activity_in(
@@ -86,6 +96,58 @@ def has_running_activity_in(
             return True
 
     return False
+
+
+def collect_activities(
+    items: Sequence[Mapping[str, object]], now_seconds: float
+) -> tuple[ActivityInfo | None, ActivityInfo | None]:
+    """挑出正在进行中的活动与下一个还没开始的活动。
+
+    与前端首页卡片的取值口径一致：只认「活动」分类，同一活动被拆成多条
+    （活动本体与介绍 PV）时保留结束时间最晚的那条；没有标题的条目无法展示，
+    直接跳过。
+
+    Args:
+        items: Kivo 时间轴条目。
+        now_seconds: 判定时刻的 Unix 秒。
+
+    Returns:
+        tuple[ActivityInfo | None, ActivityInfo | None]: 依次为进行中的活动、
+            下一个未开始的活动；没有则为 None。
+    """
+
+    picked: dict[str, ActivityInfo] = {}
+
+    for item in items:
+        if item.get("type") != WANTED_TYPE:
+            continue
+
+        start = item.get("start_time")
+        end = item.get("end_time")
+        name = str(item.get("title") or "").strip()
+        if (
+            not name
+            or not isinstance(start, (int, float))
+            or not isinstance(end, (int, float))
+        ):
+            continue
+
+        existing = picked.get(name)
+        if existing is not None and existing.end_time >= end:
+            continue
+
+        picked[name] = ActivityInfo(name, float(start), float(end))
+
+    running = sorted(
+        (item for item in picked.values() if item.start_time <= now_seconds < item.end_time),
+        key=lambda item: item.start_time,
+    )
+    upcoming = sorted(
+        (item for item in picked.values() if item.start_time > now_seconds),
+        key=lambda item: item.start_time,
+    )
+
+    return (running[0] if running else None, upcoming[0] if upcoming else None)
 
 
 async def _fetch_timeline(line_type: BlueArchiveLineType) -> tuple[Mapping[str, object], ...]:
@@ -130,6 +192,34 @@ async def _fetch_timeline(line_type: BlueArchiveLineType) -> tuple[Mapping[str, 
     return tuple(items)
 
 
+async def _timeline(line_type: BlueArchiveLineType) -> tuple[Mapping[str, object], ...] | None:
+    """取回时间轴，命中缓存时直接复用。
+
+    Args:
+        line_type: 服务器标识。
+
+    Returns:
+        tuple[Mapping[str, object], ...] | None: 时间轴条目；取数失败为 None。
+    """
+
+    now = time.time()
+    cached = _cache.get(line_type)
+    if cached is not None and now - cached[0] < ACTIVITY_CACHE_TTL:
+        return cached[1]
+
+    try:
+        items = await _fetch_timeline(line_type)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"获取碧蓝档案活动排期失败({line_type}): {type(e).__name__}: {e}"
+        )
+        ## 失败不写缓存：下次调度应当重新尝试，而不是把一次失败沿用十分钟
+        return None
+
+    _cache[line_type] = (now, items)
+    return items
+
+
 async def has_running_activity(line_type: BlueArchiveLineType) -> bool | None:
     """查询指定服当前是否有进行中的活动。
 
@@ -141,20 +231,28 @@ async def has_running_activity(line_type: BlueArchiveLineType) -> bool | None:
         None: 取数失败，调用方应退回默认行为。
     """
 
-    now = time.time()
-    cached = _cache.get(line_type)
+    items = await _timeline(line_type)
+    if items is None:
+        return None
 
-    if cached is None or now - cached[0] >= ACTIVITY_CACHE_TTL:
-        try:
-            items = await _fetch_timeline(line_type)
-        except Exception as e:
-            logger.opt(exception=True).warning(
-                f"获取碧蓝档案活动排期失败({line_type}): {type(e).__name__}: {e}"
-            )
-            ## 失败不写缓存：下次调度应当重新尝试，而不是把一次失败沿用十分钟
-            return None
+    return has_running_activity_in(items, time.time())
 
-        _cache[line_type] = (now, items)
-        cached = _cache[line_type]
 
-    return has_running_activity_in(cached[1], now)
+async def resolve_activity_state(
+    line_type: BlueArchiveLineType,
+) -> tuple[ActivityInfo | None, ActivityInfo | None] | None:
+    """查询指定服正在进行的活动与下一个未开始的活动。
+
+    Args:
+        line_type: 服务器标识（``JP`` / ``Globle`` / ``CN``）。
+
+    Returns:
+        tuple[ActivityInfo | None, ActivityInfo | None] | None: 依次为进行中的
+            活动、下一个未开始的活动；取数失败为 None。
+    """
+
+    items = await _timeline(line_type)
+    if items is None:
+        return None
+
+    return collect_activities(items, time.time())

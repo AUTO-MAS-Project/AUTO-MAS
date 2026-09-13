@@ -24,6 +24,7 @@
 import asyncio
 import uuid
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1644,6 +1645,61 @@ async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
         )
+
+
+## Kivo 的时间戳是 Unix 秒；碧蓝档案各服排期按北京时间展示，与首页卡片的惯例一致
+_BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _format_beijing_time(timestamp: float) -> str:
+    """Unix 秒 → 北京时间「YYYY-MM-DD HH:MM」。"""
+
+    return datetime.fromtimestamp(timestamp, tz=_BEIJING_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+@router.get(
+    "/baah/activity-status",
+    tags=["BAAH"],
+    summary="获取碧蓝档案活动状态",
+    response_model=BlueArchiveActivityStatusOut,
+    status_code=200,
+)
+async def get_baah_activity_status_api(
+    lineType: Literal["JP", "Globle", "CN"] = "CN",
+) -> BlueArchiveActivityStatusOut:
+    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。
+
+    与 BAAH 活动适配用的是同一份数据、同一套口径（只认「活动」分类，同一
+    活动被拆成多条时保留结束最晚的那条），界面据此显示当前会按哪一边切换。
+    """
+
+    from app.tools.bluearchive_activity import resolve_activity_state
+
+    state = await resolve_activity_state(lineType)
+    if state is None:
+        ## 取不到排期不是错误：说明情况即可，活动适配本身也会退回默认配置
+        return BlueArchiveActivityStatusOut(
+            message="未取到碧蓝档案活动排期，请稍后重试",
+        )
+
+    running, upcoming = state
+    if running is not None:
+        return BlueArchiveActivityStatusOut(
+            Running=True,
+            Name=running.name,
+            StartTime=_format_beijing_time(running.start_time),
+            EndTime=_format_beijing_time(running.end_time),
+            message=f"进行中: {running.name}",
+        )
+
+    if upcoming is not None:
+        return BlueArchiveActivityStatusOut(
+            NextName=upcoming.name,
+            NextStartTime=_format_beijing_time(upcoming.start_time),
+            message=f"下一个活动: {upcoming.name}",
+        )
+
+    return BlueArchiveActivityStatusOut(message="没有进行中或即将开始的活动")
 
 
 @router.get(

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -25,6 +26,30 @@ export class BaahService {
             url: '/api/scripts/baah/config-names',
             query: {
                 'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取碧蓝档案活动状态
+     * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
+     *
+     * 与 BAAH 活动适配用的是同一份数据、同一套口径（只认「活动」分类，同一
+     * 活动被拆成多条时保留结束最晚的那条），界面据此显示当前会按哪一边切换。
+     * @param lineType
+     * @returns BlueArchiveActivityStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
+        lineType: 'JP' | 'Globle' | 'CN' = 'CN',
+    ): CancelablePromise<BlueArchiveActivityStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/baah/activity-status',
+            query: {
+                'lineType': lineType,
             },
             errors: {
                 422: `Validation Error`,

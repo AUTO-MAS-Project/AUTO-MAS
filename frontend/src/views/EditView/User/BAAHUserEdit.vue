@@ -185,6 +185,33 @@
                     {{ t('edit.baahActivityLineGloble') }}
                   </a-select-option>
                 </a-select>
+                <div v-if="formData.Info.IfActivityAdapt" class="activity-status">
+                  <a-spin v-if="activityStatusLoading" size="small" />
+                  <template v-else-if="activityStatus">
+                    <template v-if="activityStatus.Running">
+                      <span class="activity-status-label">
+                        {{ t('edit.baahActivityRunning') }}
+                      </span>
+                      <span class="activity-status-name">{{ activityStatus.Name }}</span>
+                      <div class="activity-status-time">
+                        {{ activityStatus.StartTime }} ~ {{ activityStatus.EndTime }}
+                      </div>
+                    </template>
+                    <template v-else-if="activityStatus.NextName">
+                      <span class="activity-status-label">
+                        {{ t('edit.baahActivityUpcoming') }}
+                      </span>
+                      <span class="activity-status-name">{{ activityStatus.NextName }}</span>
+                      <div class="activity-status-time">{{ activityStatus.NextStartTime }}</div>
+                    </template>
+                    <div v-else class="activity-status-empty">
+                      {{ t('edit.baahActivityNone') }}
+                    </div>
+                  </template>
+                  <div v-else class="activity-status-empty">
+                    {{ t('edit.baahActivityUnavailable') }}
+                  </div>
+                </div>
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -322,7 +349,7 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
-import { BaahService, type ComboBoxItem } from '@/api'
+import { BaahService, type BlueArchiveActivityStatusOut, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 
@@ -398,6 +425,37 @@ const loadConfigNames = async () => {
     configNamesLoading.value = false
   }
 }
+
+// 所选服当前的活动排期：界面据此说明活动期间会切到哪份配置。开着活动适配
+// 才有意义，所以开关或服务器一变就重新取；取不到时后端会带说明回来。
+const activityStatus = ref<BlueArchiveActivityStatusOut | null>(null)
+const activityStatusLoading = ref(false)
+const loadActivityStatus = async () => {
+  if (!formData.Info.IfActivityAdapt) {
+    activityStatus.value = null
+    return
+  }
+
+  activityStatusLoading.value = true
+  try {
+    activityStatus.value = await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
+      formData.Info.ActivityLineType as 'JP' | 'Globle' | 'CN'
+    )
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    activityStatus.value = null
+  } finally {
+    activityStatusLoading.value = false
+  }
+}
+
+watch(
+  () => [formData.Info.IfActivityAdapt, formData.Info.ActivityLineType],
+  () => {
+    void loadActivityStatus()
+  },
+  { immediate: true }
+)
 
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
@@ -647,6 +705,30 @@ onMounted(() => {
   border-radius: 2px;
 }
 
+.activity-status {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ant-color-text-secondary);
+}
+
+.activity-status-label {
+  color: var(--ant-color-text-secondary);
+}
+
+.activity-status-name {
+  color: var(--ant-color-text);
+  font-weight: 600;
+}
+
+.activity-status-time {
+  color: var(--ant-color-text-tertiary);
+}
+
+.activity-status-empty {
+  color: var(--ant-color-text-tertiary);
+}
+
 .form-label {
   display: flex;
   align-items: center;
@@ -660,8 +742,7 @@ onMounted(() => {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
   cursor: help;
-  transition: color 0.3s ease;
-}
+  transition: color 0.3s ease;}
 
 .help-icon:hover {
   color: var(--ant-color-primary);

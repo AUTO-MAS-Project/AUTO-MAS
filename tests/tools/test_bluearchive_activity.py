@@ -25,7 +25,7 @@
 接口取数失败退回默认行为属于功能边界，不在本文件覆盖。
 """
 
-from app.tools.bluearchive_activity import has_running_activity_in
+from app.tools.bluearchive_activity import collect_activities, has_running_activity_in
 
 ## 判定函数只认这两个字段，时间一律是 Unix 秒
 NOW = 1_700_000_000
@@ -82,3 +82,96 @@ class TestHasRunningActivityIn:
 
     def test_empty_timeline(self) -> None:
         assert has_running_activity_in([], NOW) is False
+
+
+def titled_activity(
+    start: float, end: float, title: str = "活动", item_type: str = "Event"
+) -> dict:
+    """构造一条带标题的时间轴条目（界面要展示活动名）"""
+
+    return {"type": item_type, "title": title, "start_time": start, "end_time": end}
+
+
+class TestCollectActivities:
+    """挑出进行中的活动与下一个未开始的活动"""
+
+    def test_running_and_upcoming(self) -> None:
+        timeline = [
+            titled_activity(NOW - 100, NOW + 100, title="进行中"),
+            titled_activity(NOW + 200, NOW + 300, title="下一个"),
+        ]
+
+        running, upcoming = collect_activities(timeline, NOW)
+
+        assert running is not None and running.name == "进行中"
+        assert upcoming is not None and upcoming.name == "下一个"
+
+    def test_no_running_returns_next(self) -> None:
+        running, upcoming = collect_activities(
+            [titled_activity(NOW + 200, NOW + 300, title="下一个")], NOW
+        )
+
+        assert running is None
+        assert upcoming is not None and upcoming.name == "下一个"
+
+    def test_running_prefers_earliest_start(self) -> None:
+        timeline = [
+            titled_activity(NOW - 50, NOW + 100, title="晚开始"),
+            titled_activity(NOW - 200, NOW + 100, title="早开始"),
+        ]
+
+        running, _ = collect_activities(timeline, NOW)
+
+        assert running is not None and running.name == "早开始"
+
+    def test_upcoming_prefers_earliest_start(self) -> None:
+        timeline = [
+            titled_activity(NOW + 500, NOW + 600, title="更晚"),
+            titled_activity(NOW + 200, NOW + 300, title="更早"),
+        ]
+
+        _, upcoming = collect_activities(timeline, NOW)
+
+        assert upcoming is not None and upcoming.name == "更早"
+
+    def test_same_title_keeps_latest_end(self) -> None:
+        """同一活动被拆成多条（活动本体与介绍 PV）时保留结束最晚的那条"""
+
+        timeline = [
+            titled_activity(NOW - 100, NOW + 50, title="活动"),
+            titled_activity(NOW - 100, NOW + 300, title="活动"),
+        ]
+
+        running, _ = collect_activities(timeline, NOW)
+
+        assert running is not None and running.end_time == NOW + 300
+
+    def test_items_without_title_are_skipped(self) -> None:
+        """没有名字的条目界面无法展示，按不存在处理"""
+
+        running, upcoming = collect_activities(
+            [{"type": "Event", "start_time": NOW - 100, "end_time": NOW + 100}], NOW
+        )
+
+        assert running is None and upcoming is None
+
+    def test_other_types_are_ignored(self) -> None:
+        timeline = [
+            titled_activity(NOW - 100, NOW + 100, title="卡池", item_type="Gacha")
+        ]
+
+        running, upcoming = collect_activities(timeline, NOW)
+
+        assert running is None and upcoming is None
+
+    def test_end_boundary_moves_to_upcoming(self) -> None:
+        """刚好结束的活动不再算进行中，也不该被当成下一个"""
+
+        running, upcoming = collect_activities(
+            [titled_activity(NOW - 100, NOW, title="刚结束")], NOW
+        )
+
+        assert running is None and upcoming is None
+
+    def test_empty_timeline(self) -> None:
+        assert collect_activities([], NOW) == (None, None)
