@@ -31,7 +31,7 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import force_rmtree
+from app.utils.io import force_rmtree, replace_dir
 
 from .AutoProxy import (
     _OKWW_REL_APP_JSON,
@@ -217,13 +217,7 @@ class OkwwManager(TaskExecuteBase):
             force_rmtree(self.script_config_path)
         else:
             logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
-            tmp_dst = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
-            )
-            force_rmtree(tmp_dst)
-            shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-            force_rmtree(self.script_config_path)
-            tmp_dst.rename(self.script_config_path)
+            replace_dir(self.temp_path, self.script_config_path)
 
     def _cleanup_script_config_temp(self) -> None:
         if self.temp_path:
