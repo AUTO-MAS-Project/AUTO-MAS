@@ -698,6 +698,26 @@ export default {
     whenSavingMasEncrypts:
       'When saving, MAS encrypts the account password. Without SRA configured, or when the SRA module is unused, the password is not used for account switching.',
     aboutSharing: 'About sharing',
+    share: {
+      loginRequired: 'Sign in to the config center first',
+      loginRequiredDesc:
+        'The author is taken from your signed-in account, so there is nothing to fill in by hand.',
+      startLogin: 'Sign in to config center',
+      startFailed: 'Could not start the config center sign-in',
+      pendingDesc:
+        'The authorization page is open in your browser. Check the code below, then choose Approve:',
+      reopenBrowser: 'Reopen the page',
+      cancelAuth: 'Cancel sign-in',
+      authorized: 'Signed in to the config center: {name}',
+      signedInAs: 'Sharing as {name}',
+      signedInDesc:
+        'The upload enters the config center review queue and becomes visible once approved.',
+      switchAccount: 'Use another account',
+      riskTitle: 'These fields may still contain something you should not publish',
+      riskConfirm: 'I confirm the items above are safe to share publicly',
+      privacyNotice:
+        'Known paths such as the script root and script path are replaced with placeholders before upload, and user data is never uploaded. The upload enters the review queue and becomes downloadable once approved.',
+    },
     singleFile: 'Single file',
     match: 'Match',
     multiLineAggregationGuide: 'Multi-line aggregation guide',

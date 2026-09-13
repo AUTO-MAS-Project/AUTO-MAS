@@ -481,6 +481,7 @@ def main():
         history_router,
         tools_router,
         setting_router,
+        share_router,
         update_router,
         ocr_router,
         openclaw_qq_router,
@@ -515,6 +516,7 @@ def main():
     app.include_router(history_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
+    app.include_router(share_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
     app.include_router(openclaw_qq_router)

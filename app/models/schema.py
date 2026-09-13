@@ -3893,16 +3893,79 @@ class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
-class ScriptUrlIn(BaseModel):
+class ShareTemplateListIn(BaseModel):
+    page: int = Field(default=1, ge=1, description="页码, 从 1 开始")
+    pageSize: int = Field(default=20, ge=1, le=100, description="每页条数")
+    keyword: Optional[str] = Field(default=None, description="搜索关键字")
+
+
+class ShareTemplateItem(BaseModel):
+    projectKey: str = Field(..., description="配置中心项目标识")
+    categoryKey: str = Field(..., description="配置中心分类标识")
+    configKey: str = Field(..., description="配置中心配置标识")
+    displayName: str = Field(..., description="配置名称")
+    description: str = Field(default="", description="配置描述")
+    ownerUsername: str = Field(default="", description="分享者用户名")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号"
+    )
+    publishedAt: str = Field(default="", description="发布时间")
+    updatedAt: str = Field(default="", description="更新时间")
+
+
+class ShareTemplateListOut(OutBase):
+    items: List[ShareTemplateItem] = Field(
+        default_factory=list, description="配置模板列表"
+    )
+    page: int = Field(default=1, description="当前页码")
+    pageSize: int = Field(default=20, description="每页条数")
+    total: int = Field(default=0, description="模板总数")
+    hasNext: bool = Field(default=False, description="是否还有下一页")
+
+
+class ScriptShareInspectIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    url: str = Field(..., description="配置文件URL")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+
+
+class ScriptTemplateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    configKey: str = Field(..., description="配置中心配置标识")
+    versionNo: Optional[int] = Field(
+        default=None, ge=1, description="版本号, 为空表示已发布的最新版本"
+    )
 
 
 class ScriptUploadIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    config_name: str = Field(..., description="配置名称")
-    author: str = Field(..., description="作者")
-    description: str = Field(..., description="描述")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+    description: str = Field(..., min_length=1, max_length=500, description="描述")
+    acknowledged: bool = Field(
+        default=False, description="是否已确认分享前检查出的隐私风险项"
+    )
+
+
+class ShareRiskItem(BaseModel):
+    field: str = Field(..., description="存在风险的配置项")
+    reason: str = Field(..., description="风险说明")
+
+
+class ShareInspectOut(OutBase):
+    risks: List[ShareRiskItem] = Field(
+        default_factory=list, description="分享前检查出的隐私风险项"
+    )
+
+
+class ShareAuthStatusOut(OutBase):
+    authStatus: Literal["idle", "pending", "authorized", "denied", "expired"] = Field(
+        ..., description="配置中心授权状态"
+    )
+    username: str = Field(default="", description="已授权用户的用户名")
+    displayName: str = Field(default="", description="已授权用户的显示名")
+    userCode: str = Field(default="", description="待用户在浏览器确认的短授权码")
+    verificationUri: str = Field(default="", description="浏览器授权页地址")
+    expiresIn: int = Field(default=0, description="剩余有效秒数")
+    interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
 class UserInBase(BaseModel):

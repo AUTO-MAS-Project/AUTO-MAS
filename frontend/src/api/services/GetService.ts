@@ -45,7 +45,12 @@ import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
+import type { ShareInspectOut } from '../models/ShareInspectOut';
+import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
+import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
@@ -177,17 +182,6 @@ export class GetService {
         });
     }
     /**
-     * 获取配置分享中心的配置信息
-     * @returns InfoOut Successful Response
-     * @throws ApiError
-     */
-    public static getWebConfigApiInfoWebconfigPost(): CancelablePromise<InfoOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/webconfig',
-        });
-    }
-    /**
      * 信息总览
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -210,6 +204,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享前检查脚本配置中的隐私风险
+     * @param requestBody
+     * @returns ShareInspectOut Successful Response
+     * @throws ApiError
+     */
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/share/inspect',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -716,6 +729,47 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/status',
+        });
+    }
+    /**
+     * 获取配置中心已发布的通用脚本配置
+     * @param requestBody
+     * @returns ShareTemplateListOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareTemplatesApiShareTemplatesPost(
+        requestBody: ShareTemplateListIn,
+    ): CancelablePromise<ShareTemplateListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/templates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取配置中心授权状态
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getShareAuthStatusApiShareAuthStatusPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/status',
+        });
+    }
+    /**
+     * 轮询配置中心授权结果
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static pollShareAuthApiShareAuthPollPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/poll',
         });
     }
     /**

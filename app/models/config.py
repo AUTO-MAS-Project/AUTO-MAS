@@ -4531,17 +4531,6 @@ class GlobalConfig(ConfigBase):
         )
         ## 公告内容
         self.Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
-        ## 上次 Web 配置更新时间
-        self.Data_LastWebConfigUpdated = ConfigItem(
-            "Data",
-            "LastWebConfigUpdated",
-            "2000-01-01 00:00:00",
-            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-        )
-        ## Web 配置
-        self.Data_WebConfig = ConfigItem(
-            "Data", "WebConfig", "[ ]", JSONValidator(list)
-        )
         super().__init__()
 
         ## 模拟器配置列表
