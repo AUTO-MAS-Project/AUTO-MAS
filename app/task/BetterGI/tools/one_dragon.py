@@ -619,6 +619,7 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
     - ``oneDragon``：一条龙配置目录（{RootPath}/User/OneDragon）
     - ``scriptGroup``：配置组目录（{RootPath}/User/ScriptGroup）
     - ``keyMouseScript``：键鼠脚本（录制）目录（{RootPath}/User/KeyMouseScript）
+    - ``autoFight``：自动战斗策略目录（{RootPath}/User/AutoFight，*.txt 即一份策略）
     - ``exe``：BetterGI 主程序（{RootPath}/BetterGI.exe，用于打开 BGI 调度/主界面）
 
     目录不存在时仅返回派生路径，由调用方决定是否提示缺失；返回绝对路径便于前端直接打开。
@@ -630,6 +631,7 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
         "oneDragon": str((root / _ONE_DRAGON_REL_DIR).resolve()),
         "scriptGroup": str((root / _SCRIPT_GROUP_REL_DIR).resolve()),
         "keyMouseScript": str((root / _KEY_MOUSE_SCRIPT_REL_DIR).resolve()),
+        "autoFight": str((root / _AUTO_FIGHT_REL_DIR).resolve()),
         "exe": str((root / "BetterGI.exe").resolve()),
     }
 

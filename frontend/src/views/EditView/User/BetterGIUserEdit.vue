@@ -1067,6 +1067,23 @@
         </a-form>
       </a-card>
 
+      <!-- 队伍配置：位于「任务配置」下方，胶囊开关控制启停；开启后按「战斗场景」为战斗任务选队 -->
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
+          <BettergiTeamSettings
+            :form-data="formData"
+            :editable="formData.Info.IfUseMasConfig"
+            :strategy-options="strategyOptions"
+            :domain-catalog="domainCatalog"
+            :boss-catalog="AUTO_BOSS_CATALOG"
+            :leyline-country-options="LEY_LINE_COUNTRY_OPTIONS"
+            :leyline-type-options="LEY_LINE_TYPE_OPTIONS"
+            @save="saveField"
+            @open-strategy-dir="openBettergiDir('autoFight')"
+          />
+        </a-form>
+      </a-card>
+
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
           <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
@@ -1206,6 +1223,7 @@ import { openExternalUrl } from '@/utils/openExternal'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import BettergiDragonGroupSettings from './BettergiDragonGroupSettings.vue'
 import BettergiGroupProjectEditor from './BettergiGroupProjectEditor.vue'
+import BettergiTeamSettings from './BettergiTeamSettings.vue'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
@@ -1281,6 +1299,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Queue: '[]',
     Plan: '',
     UseExecutionLayer: true,
+    IfUseTeams: false,
+    Teams: '[]',
   },
   Notify: {
     Enabled: false,
@@ -1617,6 +1637,7 @@ const bettergiDirs = ref<{
   oneDragonDir?: string
   scriptGroupDir?: string
   keyMouseScriptDir?: string
+  autoFightDir?: string
   exePath?: string
 }>({})
 // 当前选中的目录节点 key（相对路径）
@@ -3473,6 +3494,7 @@ const loadBettergiDirs = async () => {
         oneDragonDir: resp.oneDragonDir ?? undefined,
         scriptGroupDir: resp.scriptGroupDir ?? undefined,
         keyMouseScriptDir: resp.keyMouseScriptDir ?? undefined,
+        autoFightDir: resp.autoFightDir ?? undefined,
         exePath: resp.exePath ?? undefined,
       }
     }
@@ -3486,7 +3508,7 @@ const BGI_SCRIPT_SITE = 'https://s.bettergi.com/'
 
 // 打开某目录（脚本目录 / 路径目录 / 录制 / 配置组）；脚本仓库走在线网页
 const openBettergiDir = async (
-  kind: 'jsScript' | 'autoPathing' | 'keyMouse' | 'scriptGroup'
+  kind: 'jsScript' | 'autoPathing' | 'keyMouse' | 'scriptGroup' | 'autoFight'
 ) => {
   if (!bettergiDirs.value.jsScriptDir) await loadBettergiDirs()
   const target =
@@ -3496,7 +3518,9 @@ const openBettergiDir = async (
         ? bettergiDirs.value.autoPathingDir
         : kind === 'keyMouse'
           ? bettergiDirs.value.keyMouseScriptDir
-          : bettergiDirs.value.scriptGroupDir
+          : kind === 'autoFight'
+            ? bettergiDirs.value.autoFightDir
+            : bettergiDirs.value.scriptGroupDir
   if (!target) {
     message.warning(t('edit.bettergiPathingEmptyTree'))
     return

@@ -43,6 +43,10 @@ export type BetterGIScriptDirsOut = {
      */
     keyMouseScriptDir?: (string | null);
     /**
+     * 自动战斗策略目录（User/AutoFight，*.txt 即一份策略）
+     */
+    autoFightDir?: (string | null);
+    /**
      * BetterGI 主程序路径
      */
     exePath?: (string | null);
