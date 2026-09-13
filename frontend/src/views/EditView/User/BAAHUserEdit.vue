@@ -430,23 +430,33 @@ const loadConfigNames = async () => {
 // 才有意义，所以开关或服务器一变就重新取；取不到时后端会带说明回来。
 const activityStatus = ref<BlueArchiveActivityStatusOut | null>(null)
 const activityStatusLoading = ref(false)
+// 快速切换服务器时先发的请求可能后到：用代数标记，只采纳最新一次的结果
+let activityStatusGeneration = 0
 const loadActivityStatus = async () => {
   if (!formData.Info.IfActivityAdapt) {
+    activityStatusGeneration += 1
     activityStatus.value = null
+    activityStatusLoading.value = false
     return
   }
 
+  const generation = (activityStatusGeneration += 1)
   activityStatusLoading.value = true
   try {
     // 服务器值缺失时兜底成国服，避免拼出 lineType=null 的请求被后端拒掉
     const lineType = (formData.Info.ActivityLineType || 'CN') as 'JP' | 'Globle' | 'CN'
-    activityStatus.value =
+    const resp =
       await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(lineType)
+    if (generation !== activityStatusGeneration) return
+    activityStatus.value = resp
   } catch (e) {
+    if (generation !== activityStatusGeneration) return
     logger.error(e instanceof Error ? e.message : String(e))
     activityStatus.value = null
   } finally {
-    activityStatusLoading.value = false
+    if (generation === activityStatusGeneration) {
+      activityStatusLoading.value = false
+    }
   }
 }
 

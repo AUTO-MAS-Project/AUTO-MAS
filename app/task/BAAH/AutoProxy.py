@@ -183,8 +183,9 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.effective_config_name = default_name
 
-        activity_name = str(
-            self.cur_user_config.get("Info", "ActivityConfigName")
+        ## 用 or "" 兜住 None：str(None) 会得到非空的 "None"，会被当成配置名去找 None.json
+        activity_name = (
+            self.cur_user_config.get("Info", "ActivityConfigName") or ""
         ).strip()
         if not self.if_activity_adapt or not activity_name:
             return self.effective_config_name
