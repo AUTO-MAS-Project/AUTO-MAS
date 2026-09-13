@@ -226,22 +226,6 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahCloseEmulatorOnFinish') }}
-                    <a-tooltip :title="t('edit.baahCloseEmulatorOnFinishHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-switch
-                  v-model:checked="baahConfig.Emulator.CloseOnFinish"
-                  @change="handleChange('Emulator', 'CloseOnFinish', $event)"
-                />
-              </a-form-item>
-            </a-col>
           </a-row>
         </div>
 
@@ -352,7 +336,6 @@ interface BAAHRunForm {
 interface BAAHEmulatorForm {
   Id: string
   Index: string
-  CloseOnFinish: boolean
 }
 
 interface BAAHScriptConfigForm {
@@ -378,7 +361,6 @@ const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
   Emulator: {
     Id: '',
     Index: '',
-    CloseOnFinish: true,
   },
 })
 

@@ -22,6 +22,12 @@ import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_ca
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CommunityActivityOut } from '../models/CommunityActivityOut';
 import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
+import type { ConfigBackupEnsureIn } from '../models/ConfigBackupEnsureIn';
+import type { ConfigBackupEnsureOut } from '../models/ConfigBackupEnsureOut';
+import type { ConfigBackupListOut } from '../models/ConfigBackupListOut';
+import type { ConfigBackupPreviewOut } from '../models/ConfigBackupPreviewOut';
+import type { ConfigBackupRestoreIn } from '../models/ConfigBackupRestoreIn';
+import type { ConfigBackupRestoreOut } from '../models/ConfigBackupRestoreOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
@@ -139,12 +145,6 @@ import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
-import type { ZzzOdBackupEnsureIn } from '../models/ZzzOdBackupEnsureIn';
-import type { ZzzOdBackupEnsureOut } from '../models/ZzzOdBackupEnsureOut';
-import type { ZzzOdBackupListOut } from '../models/ZzzOdBackupListOut';
-import type { ZzzOdBackupPreviewOut } from '../models/ZzzOdBackupPreviewOut';
-import type { ZzzOdBackupRestoreIn } from '../models/ZzzOdBackupRestoreIn';
-import type { ZzzOdBackupRestoreOut } from '../models/ZzzOdBackupRestoreOut';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
 import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
@@ -1772,33 +1772,6 @@ export class Service {
         });
     }
     /**
-     * 列出配置备份（onedragon=一条龙原生配置 / mas=MAS 用户槽）
-     * 按时间倒序返回历史备份（运行/会话前自动归档，内容无变化跳过）。
-     * @param scriptId
-     * @param userId
-     * @param target
-     * @returns ZzzOdBackupListOut Successful Response
-     * @throws ApiError
-     */
-    public static listZzzodBackupsApiApiScriptsZzzodBackupsGet(
-        scriptId: string,
-        userId: string,
-        target: string = 'onedragon',
-    ): CancelablePromise<ZzzOdBackupListOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/zzzod/backups',
-            query: {
-                'scriptId': scriptId,
-                'userId': userId,
-                'target': target,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取一条龙两种启动器的安装情况与默认项
      * 渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。
      * @param scriptId
@@ -1820,47 +1793,6 @@ export class Service {
         });
     }
     /**
-     * 把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）
-     * onedragon：恢复一条龙原生配置（MAS 槽不触碰）；mas：恢复槽并全量回填本页字段。
-     * @param requestBody
-     * @returns ZzzOdBackupRestoreOut Successful Response
-     * @throws ApiError
-     */
-    public static restoreZzzodBackupApiApiScriptsZzzodBackupRestorePost(
-        requestBody: ZzzOdBackupRestoreIn,
-    ): CancelablePromise<ZzzOdBackupRestoreOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/backup/restore',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）
-     * onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
-     * mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。
-     * @param requestBody
-     * @returns ZzzOdBackupEnsureOut Successful Response
-     * @throws ApiError
-     */
-    public static ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost(
-        requestBody: ZzzOdBackupEnsureIn,
-    ): CancelablePromise<ZzzOdBackupEnsureOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/backup/ensure',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）
      * 把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
      * 导入前状态可在「配置恢复」中找回。
@@ -1876,36 +1808,6 @@ export class Service {
             url: '/api/scripts/zzzod/import',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
-     * mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。
-     * @param scriptId
-     * @param userId
-     * @param time
-     * @param target
-     * @returns ZzzOdBackupPreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static getZzzodBackupPreviewApiApiScriptsZzzodBackupPreviewGet(
-        scriptId: string,
-        userId: string,
-        time: string,
-        target: string = 'onedragon',
-    ): CancelablePromise<ZzzOdBackupPreviewOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/zzzod/backup/preview',
-            query: {
-                'scriptId': scriptId,
-                'userId': userId,
-                'time': time,
-                'target': target,
-            },
             errors: {
                 422: `Validation Error`,
             },
@@ -2095,6 +1997,104 @@ export class Service {
             url: '/api/scripts/oknte/configs/batch-update',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
+     * 运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。
+     * @param scriptId
+     * @param userId
+     * @param target
+     * @returns ConfigBackupListOut Successful Response
+     * @throws ApiError
+     */
+    public static listConfigBackupsApiApiScriptsBackupListGet(
+        scriptId: string,
+        userId: string,
+        target: string,
+    ): CancelablePromise<ConfigBackupListOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/list',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'target': target,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面进入/退出时机调用）
+     * target 取值由专项池定义（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）。
+     * @param requestBody
+     * @returns ConfigBackupEnsureOut Successful Response
+     * @throws ApiError
+     */
+    public static ensureConfigBackupApiApiScriptsBackupEnsurePost(
+        requestBody: ConfigBackupEnsureIn,
+    ): CancelablePromise<ConfigBackupEnsureOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/backup/ensure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）
+     * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
+     * 用户配置并按需回填前端表单。
+     * @param requestBody
+     * @returns ConfigBackupRestoreOut Successful Response
+     * @throws ApiError
+     */
+    public static restoreConfigBackupApiApiScriptsBackupRestorePost(
+        requestBody: ConfigBackupRestoreIn,
+    ): CancelablePromise<ConfigBackupRestoreOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/backup/restore',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
+     * data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。
+     * @param scriptId
+     * @param userId
+     * @param time
+     * @param target
+     * @returns ConfigBackupPreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
+        scriptId: string,
+        userId: string,
+        time: string,
+        target: string,
+    ): CancelablePromise<ConfigBackupPreviewOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/preview',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'time': time,
+                'target': target,
+            },
             errors: {
                 422: `Validation Error`,
             },

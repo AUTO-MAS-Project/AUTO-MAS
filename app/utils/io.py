@@ -29,6 +29,7 @@ import threading
 import tomllib
 from contextlib import suppress
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 import json5
@@ -95,6 +96,26 @@ _ALIASES: dict[str, str] = {
 # 进程内串行锁, 避免并发竞争写
 _WRITE_LOCK = threading.Lock()
 
+# 删除重试: 任务收尾复原紧跟脚本进程结束, 等被占用的句柄释放
+_RMTREE_RETRIES = 5
+_RMTREE_RETRY_INTERVAL = 0.3
+
+
+def remove_readonly(func: Any, target: Any, _exc: BaseException) -> None:
+    """``shutil.rmtree`` 的 ``onexc`` 回调: 删到只读条目时清除只读位再重试
+
+    Windows 上 ``rmtree`` 删不掉只读文件; 清除只读位后仍失败的条目按原
+    ``ignore_errors`` 语义忽略, 不向上抛出。
+
+    Args:
+        func: ``shutil`` 传入的删除函数。
+        target: 删除失败的目标路径。
+        _exc: ``shutil`` 传入的异常, 不使用。
+    """
+    with suppress(OSError):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
 
 def force_rmtree(path: Path) -> None:
     """
@@ -105,17 +126,42 @@ def force_rmtree(path: Path) -> None:
     ``PermissionError``; 脚本配置目录里的 ``.git`` 对象正是只读的。清除只读位后仍
     删不掉的条目按原 ``ignore_errors`` 语义忽略, 不向上抛出。
 
+    删除**带重试**: 目标下仍有被进程占用的文件时, ``rmtree`` 会删掉能删的、
+    留下被占用的, 调用方随后 ``copytree`` 或 ``rename`` 都会失败。任务收尾复原
+    紧跟在脚本进程被结束后, 句柄释放存在竞态, 重试是等它释放。
+
     Args:
         path: 待删除的目录路径
     """
 
-    def _retry_without_readonly(func: Any, target: Any, _exc: BaseException) -> None:
-        with suppress(OSError):
-            os.chmod(target, stat.S_IWRITE)
-            func(target)
+    for attempt in range(_RMTREE_RETRIES):
+        try:
+            shutil.rmtree(path, onexc=remove_readonly)
+            return
+        except OSError:
+            if attempt == _RMTREE_RETRIES - 1:
+                return
+            sleep(_RMTREE_RETRY_INTERVAL)
 
-    with suppress(OSError):
-        shutil.rmtree(path, onexc=_retry_without_readonly)
+
+def replace_dir(src: Path, dst: Path) -> None:
+    """
+    用 ``src`` 整目录替换 ``dst``（先清后拷, 不做改名的双份拷贝）
+
+    只删一次且用 ``force_rmtree``: 目录带只读文件（如脚本自带的 ``.git`` 对象）
+    或删除前仍有残留时都能清干净, 不需要先拷到 .tmp 再改名的中间副本——
+    改名在 Windows 上并不原子, 目标存在时直接失败, 失败还会把用户的配置
+    留在半删状态。
+
+    删不掉的条目按 ``force_rmtree`` 语义忽略, 随后 ``copytree`` 就地补回被删的
+    部分: 宁可留下几个多余文件, 也不让目标停在半删状态。
+
+    Args:
+        src: 内容来源目录。
+        dst: 目标目录, 会被替换成 ``src`` 的内容。
+    """
+    force_rmtree(dst)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
 def atomic_write(path: Path, data: bytes) -> None:

@@ -35,6 +35,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
+from app.utils.io import replace_dir
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
@@ -103,16 +104,13 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
         raise RuntimeError(f"备份路径不存在：{backup}")
 
     source.parent.mkdir(parents=True, exist_ok=True)
-    temp_source = source.with_name(f"{source.name}.tmp")
-    _remove_path(temp_source)
 
     if backup.is_dir():
-        shutil.copytree(backup, temp_source)
+        replace_dir(backup, source)
     else:
-        shutil.copy2(backup, temp_source)
+        _remove_path(source)
+        shutil.copy2(backup, source)
 
-    _remove_path(source)
-    temp_source.rename(source)
     logger.info(f"{label} 已恢复：{source}")
 
 

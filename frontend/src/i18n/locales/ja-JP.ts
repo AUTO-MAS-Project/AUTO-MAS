@@ -356,7 +356,6 @@ export default {
     stageP0AlreadyExists: 'ステージ「{p0}」はすでに存在します',
     configurationSessionUserP0: 'ユーザー {p0} の設定セッションがタイムアウトしました',
     maaConfigurationFailedP0: 'MAA の設定に失敗しました: {p0}',
-    okNteConfigurationFailed: 'OK-NTE の設定に失敗しました: {p0}',
     srcConfigurationFailedP0: 'SRC の設定に失敗しました: {p0}',
     okWwSetupFailed: 'ok-ww の設定に失敗しました: {p0}',
     p0NotValidJson: '{p0} は有効な JSON ではありません',
@@ -372,14 +371,12 @@ export default {
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
     startedP0MaaendConfiguration: '{p0} の MaaEnd 設定を開始しました',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
-    startedOkNteSetup: 'ユーザー {p0} の OK-NTE 設定を開始しました',
     startedMaaSetupUser: 'ユーザー {p0} の MAA 設定を開始しました',
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
     openedOkWwSettings: '{p0} の ok-ww 設定を開きました',
     readP0: '{p0} を読み込みました',
     addedP0Tasks: 'タスクを {p0} 件追加しました',
-    okNteConfigurationUser: 'ユーザー {p0} の OK-NTE 設定が完了しました',
     configurationSessionUserP02:
       'ユーザー {p0} の設定セッションが 30 分でタイムアウトしました。設定を自動保存しています...',
     configurationUserP0Was: 'ユーザー {p0} の設定を保存しました',
@@ -668,7 +665,6 @@ export default {
     done: '完了',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
-    saved: '保存済み',
     turnAutomaticRelicSalvage:
       '遺物周回でバッグがいっぱいになって中断しないよう、ゲーム内で遺物の自動分解を有効にしておくことをおすすめします。',
     thisScriptDeclaresNo:
@@ -680,7 +676,6 @@ export default {
     run: '実行',
     folder: 'フォルダ',
     runOnceNewUser: '新規ユーザーは 1 回実行する',
-    youHaveUnsavedChanges2: '保存していない変更があります',
     noMatch: '一致なし',
     checkUpdates2: '更新を確認',
     emulator2: 'エミュレータ',
@@ -885,8 +880,6 @@ export default {
     okNteScriptConfiguration: 'OK-NTE スクリプト設定',
     okNtePath: 'OK-NTE のパス',
     okNtePathMatched: 'OK-NTE のパスを自動で検出しました',
-    okNteConfigurationSession:
-      'OK-NTE の設定セッションがタイムアウトしました。設定を自動保存しています',
     okNteConfiguration: 'OK-NTE の設定',
     howPcGameLaunched: 'PC 版ゲームの起動方式',
     sraPath: 'SRA のパス',
@@ -1013,7 +1006,6 @@ export default {
     onlyProcessesStartedBy:
       'このタスクが起動し、MAS が所有するプロセスのみを終了します。手動で開いたプロセスを誤って終了することはありません',
     optional: '任意',
-    couldNotStartOk: 'OK-NTE の設定を開始できませんでした',
     couldNotStartMaa: 'MAA の設定を開始できませんでした',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
@@ -1218,7 +1210,6 @@ export default {
     maximumLines: '最大行数',
     youHaveUnsavedChanges: '保存していない変更があります',
     server: 'サーバー',
-    noActiveOkNte: '有効な OK-NTE 設定セッションがありません',
     localProjectDirectory: 'ローカルのプロジェクトフォルダ',
     readExtractionPatternReference: 'ログ抽出式のリファレンスを見る',
     rootPathSelected: 'ルートパスを選択しました',

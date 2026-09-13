@@ -5,9 +5,9 @@
 /**
  * 配置备份条目
  */
-export type ZzzOdBackupItemOut = {
+export type ConfigBackupItemOut = {
     /**
-     * 备份时间戳（目录名，如 20260903-104500）
+     * 备份时间戳（目录名，如 20260910-104500）
      */
     time: string;
 };

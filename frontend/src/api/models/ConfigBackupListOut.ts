@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ZzzOdBackupItemOut } from './ZzzOdBackupItemOut';
-export type ZzzOdBackupListOut = {
+import type { ConfigBackupItemOut } from './ConfigBackupItemOut';
+export type ConfigBackupListOut = {
     /**
      * 状态码
      */
@@ -19,6 +19,6 @@ export type ZzzOdBackupListOut = {
     /**
      * 备份列表（时间倒序）
      */
-    data: Array<ZzzOdBackupItemOut>;
+    data: Array<ConfigBackupItemOut>;
 };
 

@@ -31,6 +31,7 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.emulator_core import close_emulator
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -58,6 +59,7 @@ class MaaManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.prepared = False
 
     async def check(self) -> str:
         """校验MAA配置是否可用"""
@@ -175,6 +177,9 @@ class MaaManager(TaskExecuteBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+        # prepare() 内每次 await 都可能被中止。只有它整体返回后，收尾依赖的
+        # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
+        self.prepared = True
 
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
@@ -191,6 +196,14 @@ class MaaManager(TaskExecuteBase):
     async def final_task(self):
         """运行结束后的收尾工作"""
 
+        if not self.prepared:
+            # prepare() 未走完就结束：配置锁、备份目录与模拟器实例都还没建立，
+            # 没有可收尾的资源。此时收尾只应回报状态——主动停止不算异常，
+            # 而 prepare() 自身的失败则要保留异常
+            if not self.stopped_manually:
+                self.script_info.status = "异常"
+            return self.check_result
+
         if self.check_result != "Pass":
             self.script_info.status = "异常"
             return self.check_result
@@ -200,9 +213,7 @@ class MaaManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
+            await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())

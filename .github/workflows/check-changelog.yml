@@ -20,9 +20,17 @@
 
 name: 检查更新日志
 
+# 三类 PR 三套规则，全部由 scripts/changelog.py check 实现：
+#   - 普通 PR：改了用户可见代码就必须恰好新增一个 changelog.d/ 碎片（或带 skip-changelog 标签），
+#     且不得改 CHANGELOG.md、res/version.json 与五处版本号；目标是 release/* 时还不得带入 dev 独有提交。
+#   - 发版 PR（标题 Release vX.Y.Z 或带 release 标签）：碎片必须已清空、版本号必须比目标分支新。
+#   - 同步 PR（目标是 main）：只校验格式与生成物一致。
+# 任何 PR 都会校验：仓库里的版本号不小于当前分支可达的最新 tag，防止合并时把版本提升冲掉。
+# labeled / unlabeled 也触发，这样加上 skip-changelog 标签后不用再推一次提交。
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
 
 permissions:
   contents: read
@@ -30,34 +38,68 @@ permissions:
 
 jobs:
   check-changelog:
-    name: 检查 CHANGELOG.md 与生成物一致
+    name: 检查更新日志碎片与版本号
     runs-on: ubuntu-latest
-
     steps:
       - name: 检出代码
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      # 版本号守门要看 tag，release 分支的守门要看 dev；pull_request 的检出默认都没有。
+      - name: 拉取目标分支、dev 与全部 tag
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-recurse-submodules origin \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" \
+            "+refs/heads/dev:refs/remotes/origin/dev" \
+            "+refs/tags/*:refs/tags/*"
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
 
-      # CHANGELOG.md 是唯一手写来源，res/version.json 与四处版本号都由它生成。
-      # 这一步同时校验更新日志格式、五处版本号一致、生成物是最新的。
-      - name: 检查更新日志格式与版本号一致性
-        run: python scripts/changelog.py check
+      - name: 判断 PR 类型
+        id: kind
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          kind=normal
+          if [ "$BASE_REF" = "main" ]; then
+            kind=sync
+          elif [[ ",$PR_LABELS," == *",release,"* ]] || [[ "$PR_TITLE" == Release\ v* ]]; then
+            kind=release
+          fi
+          flags=""
+          [[ ",$PR_LABELS," == *",skip-changelog,"* ]] && flags="$flags --skip-changelog"
+          [[ ",$PR_LABELS," == *",changelog-maintenance,"* ]] && flags="$flags --maintenance"
+          [[ "$BASE_REF" == release/* ]] && flags="$flags --dev-ref origin/dev"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
+          echo "PR 类型：$kind，附加参数：${flags:-无}"
 
-      - name: 检查 PR 文件列表
-        uses: actions/github-script@v9.0.0
-        with:
-          script: |
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              per_page: 100,
-            });
+      # 发版 PR 会往 CHANGELOG.md 里写整段新条目。默认分支上旧的署名机器人还在的话，
+      # 合并后它会给每一条再签一次 PR 作者，所以先确认它已经删掉。
+      - name: 发版 PR 前确认旧署名机器人已从默认分支删除
+        if: steps.kind.outputs.kind == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/append-version-contributor.yml?ref=${default_branch}" >/dev/null 2>&1; then
+            echo "::error::默认分支 ${default_branch} 上仍有 append-version-contributor.yml，合并这个发版 PR 会让它把每一条都误签成 PR 作者。请先从 ${default_branch} 删除它。"
+            exit 1
+          fi
 
-            if (!files.some(file => file.filename === 'CHANGELOG.md')) {
-              core.setFailed('每个 PR 都必须包含对 CHANGELOG.md 的更改。');
-            }
+      - name: 检查更新日志
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          python scripts/changelog.py check \
+            --pr-base "origin/${BASE_REF}" \
+            --pr-kind "${{ steps.kind.outputs.kind }}" \
+            ${{ steps.kind.outputs.flags }}

@@ -254,7 +254,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.4"
+    VERSION = "v5.5.0-beta.6"
 
     def __init__(self) -> None:
         super().__init__()
@@ -1663,111 +1663,17 @@ class AppConfig(GlobalConfig):
 
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
-    async def list_zzzod_backups(
-        self, script_id: str, user_id: str, target: str
-    ) -> list[dict]:
-        """列出配置备份（时间倒序）。target=onedragon 原生配置 / mas 用户槽。"""
-
-        service = self.zzzod_restore_service(script_id, user_id)
-        return [{"time": ts} for ts in await service.list(target)]
-
-    def zzzod_restore_service(
-        self, script_id: str, user_id: str
-    ) -> "ConfigRestoreService":
-        """构建 ZzzOd 配置恢复服务（双目标：mas 在前、onedragon 在后）。
-
-        供其他专项参考：配置恢复的「列表/预览/恢复」统一走
-        :class:`app.utils.config_restore.ConfigRestoreService`，各专项只提供
-        ``ConfigRestoreTarget`` 回调（闭包捕获脚本/用户上下文）。脚本名
-        「一条龙」用于文案参数化。
-        """
-
-        from app.utils.config_restore import ConfigRestoreService, ConfigRestoreTarget
-
-        async def list_mas():
-            from app.task.ZzzOd.tools import list_mas_backups
-
-            _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
-            slot = int(user_cfg.get("Info", "SlotIdx") or -1)
-            if slot <= 0:
-                return []
-            return list_mas_backups(script_id, slot)
-
-        async def list_onedragon():
-            from app.task.ZzzOd.tools import list_onedragon_backups
-
-            return list_onedragon_backups(script_id)
-
-        async def preview_mas(ts: str) -> dict:
-            return await self.get_zzzod_backup_preview(
-                script_id, user_id, ts, target="mas"
-            )
-
-        async def preview_onedragon(ts: str) -> dict:
-            return await self.get_zzzod_backup_preview(
-                script_id, user_id, ts, target="onedragon"
-            )
-
-        async def restore_mas(ts: str) -> object:
-            return await self.restore_zzzod_backup(
-                script_id, user_id, ts, target="mas"
-            )
-
-        async def restore_onedragon(ts: str) -> object:
-            return await self.restore_zzzod_backup(
-                script_id, user_id, ts, target="onedragon"
-            )
-
-        async def snapshot_mas() -> dict:
-            return await self.ensure_zzzod_mas_backup(script_id, user_id)
-
-        async def snapshot_onedragon() -> dict:
-            return self.ensure_zzzod_direct_backup(script_id)
-
-        return ConfigRestoreService(
-            script_name="一条龙",
-            targets=[
-                ConfigRestoreTarget(
-                    key="mas",
-                    list_backups=list_mas,
-                    preview=preview_mas,
-                    restore=restore_mas,
-                    snapshot=snapshot_mas,
-                ),
-                ConfigRestoreTarget(
-                    key="onedragon",
-                    list_backups=list_onedragon,
-                    preview=preview_onedragon,
-                    restore=restore_onedragon,
-                    snapshot=snapshot_onedragon,
-                ),
-            ],
-        )
-
-    async def ensure_zzzod_backup(
-        self, script_id: str, user_id: str, target: str
-    ) -> dict:
-        """按需归档目标池当前配置（指纹去重，无变化自动跳过）。
-
-        编辑界面三时机的 ZzzOd 入口：进入编辑页归档 onedragon（MAS 操作前
-        原始态）、退出编辑页归档 mas（用户侧终态）、运行前两者都归档
-        （:meth:`ZzzOd.AutoProxyTask._prepare_injection`）。
-        """
-
-        service = self.zzzod_restore_service(script_id, user_id)
-        return await service.ensure(target)
-
     async def ensure_zzzod_mas_backup(
         self, script_id: str, user_id: str
     ) -> dict:
         """确保 MAS 用户绑定槽有当前状态的备份（指纹去重，无变化跳过）。
 
-        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽或槽目录
-        为空时跳过（没有可恢复的内容），返回 ``created=False``。
+        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽时跳过
+        （没有可恢复的内容），返回 ``created=False``。
         """
 
         from app.task.ZzzOd.tools import (
-            archive_mas_backup,
+            archive_mas_config_backup,
             collect_mas_user_info,
             instance_dir,
             list_mas_backups,
@@ -1776,13 +1682,16 @@ class AppConfig(GlobalConfig):
         _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         slot_dir = instance_dir(self._zzzod_script_root(script_id), slot)
-        if slot <= 0 or not slot_dir.is_dir() or not any(slot_dir.iterdir()):
+        if slot <= 0 or not slot_dir.is_dir():
             return {"created": False, "time": ""}
 
-        dest = archive_mas_backup(
+        # 统一入口：归档前物化本页账号+编排进槽（账号/编排只存在 UserData，
+        # 槽要注入才带；不物化会漏、恢复会把本页字段清空），见文档 §3.1 陷阱
+        dest = archive_mas_config_backup(
             script_id,
             slot,
             slot_dir,
+            user_cfg,
             meta=collect_mas_user_info(user_cfg),
         )
         times = list_mas_backups(script_id, slot)
@@ -1808,19 +1717,52 @@ class AppConfig(GlobalConfig):
             MAS_USER_INFO_FILE,
             collect_mas_user_info,
             get_mas_backup_dir,
+            get_onedragon_backup_dir,
             instance_dir,
+            materialize_user_fields,
             normalize_app_group_entries,
             read_app_group,
             read_game_account,
             restore_mas_backup,
             restore_onedragon_backup,
         )
+        from app.utils.config_archive import dir_files
         from app.utils.io import read_file
 
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
 
         if target == "onedragon":
-            restore_onedragon_backup(script_id, ts, root)
+            # 恢复守卫：备份内的原生实例 idx 若已被任一 MAS 用户绑定为配置槽
+            # （任何脚本、含本用户——恢复会整目录替换槽目录），中止并点名，
+            # 避免把绑定槽内容覆盖成原生实例；原生注册表不在此列，恢复本就
+            # 是把原生世界拉回该时点（恢复前已强制存底）
+            backup_dir = get_onedragon_backup_dir(root, ts)
+            if backup_dir is None:
+                raise ValueError(f"备份不存在: {ts}")
+            backup_idxs = {
+                int(rel.split("/", 1)[0])
+                for rel in dir_files(backup_dir)
+                if "/" in rel and rel.split("/", 1)[0].isdigit()
+            }
+            for bound_script in self.ScriptConfig.values():
+                if not isinstance(bound_script, ZzzOdConfig):
+                    continue
+                for bound_uid, bound_cfg in bound_script.UserData.items():
+                    bound_slot = int(bound_cfg.get("Info", "SlotIdx") or -1)
+                    if bound_slot not in backup_idxs:
+                        continue
+                    if bound_uid == uid:
+                        who = "本用户"
+                    else:
+                        who = (
+                            f"脚本「{str(bound_script.get('Info', 'Name') or '未知脚本')}」"
+                            f"的用户「{str(bound_cfg.get('Info', 'Name') or '未知用户')}」"
+                        )
+                    raise ValueError(
+                        f"备份含原生实例 {bound_slot:02d}，已被{who}绑定为配置槽，"
+                        "恢复会覆盖其内容，已中止"
+                    )
+            restore_onedragon_backup(root, ts)
             logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
             return -1
 
@@ -1835,16 +1777,20 @@ class AppConfig(GlobalConfig):
                 f"目标槽 {slot:02d} 当前已被「{occupant}」占用，"
                 "为避免覆盖他人配置已中止恢复，请先处理占用后再试"
             )
+        # 恢复前先物化本页账号+编排进槽，再走 restore_mas_backup 内部「强制
+        # 归档当前」——这份「恢复前存底」才能回到本页配置状态（否则缺账号，
+        # 误恢复想找回时会把本页账号清空）
+        slot_dir = instance_dir(root, slot)
+        materialize_user_fields(slot_dir, user_cfg)
         restore_mas_backup(
             script_id,
             slot,
             ts,
-            root / "config" / f"{slot:02d}",
+            slot_dir,
             meta=collect_mas_user_info(user_cfg),
         )
 
         # 恢复后的槽内容 = 该时点的 MAS 配置；把 MAS 管理的字段全量回填本页
-        slot_dir = instance_dir(root, slot)
         account = read_game_account(slot_dir)
         # 任务编排整表回填（含未启用项原位保留顺序，运行侧只消费启用项）
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
@@ -1893,6 +1839,8 @@ class AppConfig(GlobalConfig):
         任务编排只取来源实例当前启用的应用（对齐 _group.yml 缺席=不加入）。
         实例级配置随导入对齐来源实例写入绑定槽：notify.yml（应用通知，
         zzz-od 默认开启，不搬会让「来源关着」变开着）、team.yml（预备编队）、
+        game.yml（按键配置：键盘/手柄按键、后台模式、输入方式、HDR、启动
+        参数、分辨率等，MAS 不托管、注入不触碰，只能靠导入对齐）、
         one_dragon/ 全部 per-app 配置（体力计划/咖啡店/随便观等任务级 yml）。
         """
 
@@ -1901,7 +1849,7 @@ class AppConfig(GlobalConfig):
             ensure_user_slot,
         )
         from app.task.ZzzOd.tools import (
-            archive_mas_backup,
+            archive_mas_config_backup,
             collect_mas_user_info,
             instance_dir,
             normalize_app_group_entries,
@@ -1914,10 +1862,13 @@ class AppConfig(GlobalConfig):
         if slot > 0:
             slot_dir = root / "config" / f"{slot:02d}"
             if slot_dir.is_dir():
-                archive_mas_backup(
+                # 覆盖前存底走统一入口（先物化再快照）：不物化的「导入前」
+                # 备份缺账号，恢复它会把本页账号清空
+                archive_mas_config_backup(
                     script_id,
                     slot,
                     slot_dir,
+                    user_cfg,
                     force=True,
                     meta=collect_mas_user_info(user_cfg),
                 )
@@ -1959,6 +1910,9 @@ class AppConfig(GlobalConfig):
         # 实例级持久配置对齐来源实例：
         # - notify.yml（应用通知）在实例根
         # - team.yml（预备编队：名称 + 绑定配队方案 + 成员）在实例根
+        # - game.yml（GameConfig 按键配置：键盘/手柄按键、后台模式、输入方式、
+        #   HDR、启动参数、分辨率）在实例根——MAS 不托管该文件，注入运行也
+        #   不触碰，导入不对齐会导致按键配置永远停留在 zzz-od 默认值
         # - one_dragon/ 全部 per-app 配置（charge_plan.yml 体力计划、coffee.yml
         #   咖啡店、suibian_temple.yml 随便观等）随导入整目录对齐
         # _group.yml 例外：任务编排走上面的 AppList 整表语义（含未启用项），不整搬。
@@ -1984,6 +1938,7 @@ class AppConfig(GlobalConfig):
 
         _align_yml(("notify.yml",))
         _align_yml(("team.yml",))
+        _align_yml(("game.yml",))
 
         source_one_dragon = source_dir / "one_dragon"
         target_one_dragon = target_dir / "one_dragon"
@@ -2004,7 +1959,7 @@ class AppConfig(GlobalConfig):
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
             f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
-            f"应用通知/体力计划已对齐槽 {slot:02d})"
+            f"应用通知/按键配置/体力计划已对齐槽 {slot:02d})"
         )
         return {
             "instanceIdx": int(instance_idx),
@@ -2051,14 +2006,48 @@ class AppConfig(GlobalConfig):
                 return str(item.get("name") or f"原生实例 {slot:02d}")
         return None
 
+    @staticmethod
+    def _preview_account_fields(account: dict) -> list[dict]:
+        """备份预览用的账号字段列表；密码一律掩码、不返回明文。
+
+        预览是纯展示（恢复直接回写备份文件内容，不经此值），密码明文没有
+        理由出现在响应里；其余字段缺失时合并默认值（无值前端兜底 ``—``）。
+        mas 与 onedragon 两个预览分支共用。
+        """
+
+        from app.task.ZzzOd.tools.zzz_od_config import DEFAULT_GAME_ACCOUNT
+
+        return [
+            {
+                "key": key,
+                "value": (
+                    "••••••••"
+                    if key == "password" and account.get(key)
+                    else str(
+                        account[key]
+                        if account.get(key) is not None
+                        else DEFAULT_GAME_ACCOUNT.get(key, "")
+                    )
+                ),
+            }
+            for key in (
+                "game_region",
+                "game_path",
+                "game_language",
+                "account",
+                "password",
+                "bilibili_account_name",
+            )
+        ]
+
     def get_zzzod_backup_preview(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复），供「预览配置」快速展示。
 
         - target="mas"：基本信息卡信息字段（用户名/启用/模式/启动器/剩余天数/
-          备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值）
-          + 任务编排（应用目录并入中文名）；
+          备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值，
+          密码掩码）+ 任务编排（应用目录并入中文名）；
         - target="onedragon"：备份内 one_dragon.yml 注册表的实例列表。
         """
 
@@ -2070,16 +2059,13 @@ class AppConfig(GlobalConfig):
             read_app_group,
             read_game_account,
         )
-        from app.task.ZzzOd.tools.zzz_od_config import (
-            DEFAULT_GAME_ACCOUNT,
-        )
         from app.utils.io import read_file
 
         # 脚本安装根目录（onedragon/mas 两条分支都要用：实例名书、槽目录）
         root = self._zzzod_root(self._zzzod_script_config(script_id))
 
         if target == "onedragon":
-            backup = get_onedragon_backup_dir(script_id, ts)
+            backup = get_onedragon_backup_dir(root, ts)
             if backup is None:
                 raise ValueError(f"备份不存在: {ts}")
             data = read_file(backup / "one_dragon.yml") or {}
@@ -2096,24 +2082,7 @@ class AppConfig(GlobalConfig):
                 # 目录名不带零填充，与一条龙原生实例目录同构）
                 backup_idx_dir = backup / str(idx)
                 account = read_game_account(backup_idx_dir)
-                account_fields = [
-                    {
-                        "key": key,
-                        "value": str(
-                            account[key]
-                            if account.get(key) is not None
-                            else DEFAULT_GAME_ACCOUNT.get(key, "")
-                        ),
-                    }
-                    for key in (
-                        "game_region",
-                        "game_path",
-                        "game_language",
-                        "account",
-                        "password",
-                        "bilibili_account_name",
-                    )
-                ]
+                account_fields = self._preview_account_fields(account)
                 task_fields = []
                 for task in read_app_group(backup_idx_dir):
                     app_id = str(task.get("app_id") or "").strip()
@@ -2168,26 +2137,8 @@ class AppConfig(GlobalConfig):
                 continue
             info_fields.append({"key": key, "value": str(info[field])})
 
-        keys = (
-            "game_region",
-            "game_path",
-            "game_language",
-            "account",
-            "password",
-            "bilibili_account_name",
-        )
         account = read_game_account(backup)
-        account_fields = [
-            {
-                "key": key,
-                "value": str(
-                    account[key]
-                    if account.get(key) is not None
-                    else DEFAULT_GAME_ACCOUNT.get(key, "")
-                ),
-            }
-            for key in keys
-        ]
+        account_fields = self._preview_account_fields(account)
 
         name_book = {
             str(item.get("app_id")): str(item.get("app_name") or "")
@@ -2337,8 +2288,8 @@ class AppConfig(GlobalConfig):
             list_onedragon_backups,
         )
 
-        dest = archive_onedragon_backup(script_id, root)
-        times = list_onedragon_backups(script_id)
+        dest = archive_onedragon_backup(root)
+        times = list_onedragon_backups(root)
         return {
             "created": dest is not None,
             "time": times[0] if times else "",
@@ -2361,6 +2312,77 @@ class AppConfig(GlobalConfig):
             "original_available": "原始" in available,
             "integrated_available": "集成" in available,
         }
+
+    # ════════════ 配置恢复（基座统一分发，池声明见各专项 tools/restore_service） ════════════
+
+    def restore_service(self, script_id: str, user_id: str) -> "ConfigRestoreService":
+        """按脚本类型分发到专项恢复池，绑定上下文构建运行时服务。
+
+        专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
+        与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
+        与 schema，只在分发链加一个分支。
+        """
+
+        from app.utils.config_restore import RestoreContext, build_restore_service
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if isinstance(script_config, ZzzOdConfig):
+            from app.task.ZzzOd.tools.restore_service import (
+                RESTORE_POOLS,
+                RESTORE_SCRIPT_NAME,
+            )
+        elif isinstance(script_config, OkNteConfig):
+            from app.task.OkNte.tools.restore_service import (
+                RESTORE_POOLS,
+                RESTORE_SCRIPT_NAME,
+            )
+        else:
+            raise ValueError("该专项暂不支持配置恢复")
+        return build_restore_service(
+            RestoreContext(
+                config=self,
+                script_config=script_config,
+                script_id=script_id,
+                user_id=user_id,
+            ),
+            RESTORE_SCRIPT_NAME,
+            RESTORE_POOLS,
+        )
+
+    async def list_config_backups(
+        self, script_id: str, user_id: str, target: str
+    ) -> list[dict]:
+        """列出配置备份（时间倒序）。target 取值由专项池定义。"""
+
+        service = self.restore_service(script_id, user_id)
+        return [{"time": ts} for ts in await service.list(target)]
+
+    async def ensure_config_backup(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict:
+        """按需归档目标池当前配置（指纹去重，无变化自动跳过）。
+
+        编辑界面三时机的统一入口：进入/退出编辑页（前端触发）、运行前
+        （各专项任务流程调用专项归档函数，不经本方法）。
+        """
+
+        return await self.restore_service(script_id, user_id).ensure(target)
+
+    async def restore_config_backup(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict:
+        """把指定备份恢复到目标位置（恢复前存底由专项池函数自理）。"""
+
+        await self.restore_service(script_id, user_id).restore(target, ts)
+        return {"target": target}
+
+    async def get_config_backup_preview(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict:
+        """读取指定备份的配置摘要（纯读不恢复）；载荷结构由专项定义。"""
+
+        payload = await self.restore_service(script_id, user_id).preview(target, ts)
+        return {"time": ts, "target": target, "data": payload}
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]

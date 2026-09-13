@@ -2,8 +2,11 @@
   <div class="oknte-config-editor">
     <div class="editor-header">
       <h3>{{ t('edit.okNteConfiguration') }}</h3>
-      <a-tag v-if="hasChanges" color="warning">{{ t('edit.youHaveUnsavedChanges2') }}</a-tag>
-      <a-tag v-else color="success">{{ t('edit.saved') }}</a-tag>
+      <!-- 保存为静默自动进行（不展示已保存/未保存标签，避免与配置备份混淆）；
+           右侧动作区由父组件经 header-actions 插槽注入（配置恢复入口） -->
+      <div class="editor-header-actions">
+        <slot name="header-actions" />
+      </div>
     </div>
 
     <a-spin :spinning="loading" :tip="t('edit.loadingConfiguration')">
@@ -20,7 +23,6 @@
                   class="config-item"
                   :class="{
                     'config-item--active': selectedFilename === config.filename,
-                    'config-item--changed': changedFiles.has(config.filename),
                   }"
                   @click="selectConfig(config.filename)"
                 >
@@ -30,7 +32,6 @@
                       -t {{ config.taskIndex }}
                     </span>
                   </div>
-                  <span v-if="changedFiles.has(config.filename)" class="config-item-dot" />
                 </div>
               </div>
             </div>
@@ -682,6 +683,12 @@ watch(
   gap: 12px;
 }
 
+.editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .editor-header h3::before {
   content: '';
   width: 4px;
@@ -743,10 +750,6 @@ watch(
   border-left-color: var(--ant-color-primary) !important;
 }
 
-.config-item--changed {
-  background-color: var(--ant-color-warning-bg);
-}
-
 .config-item-info {
   display: flex;
   align-items: center;
@@ -765,14 +768,6 @@ watch(
   border-radius: 4px;
   background: var(--ant-color-fill-secondary);
   color: var(--ant-color-text-secondary);
-}
-
-.config-item-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ant-color-warning);
-  flex-shrink: 0;
 }
 
 .right-panel {

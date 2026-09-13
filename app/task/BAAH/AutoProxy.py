@@ -43,6 +43,7 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.proxy_helpers import append_push_log
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
 
@@ -500,7 +501,8 @@ class AutoProxyTask(TaskExecuteBase):
 
     def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
         """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text, ts))
+
+        append_push_log(self.cur_user_item, log_type, text, ts)
 
     def _close_log_collect(self) -> None:
         """结束采集会话：冲刷本次运行剩余日志、解析任务节点并写入推送日志。

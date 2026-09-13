@@ -80,7 +80,11 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 - `--instance 1,2,...`（逗号分隔多实例）**只在 `instance_run=全部实例` 分支被读取**——instance_run 由合成视图统一落盘（窗口结束随视图恢复原生值）；且 idx 必须在视图注册表内，未注册的会被启动器静默丢弃。
 - 注入只做一次，**重试不清运行记录**（zzz-od 按记录跳过已完成任务）；新建槽的目录保留（配队持久）。
 - 判态：内置致命日志（未找到有效的实例 / 请先结束其他运行中的功能 再启动 / 运行应用 one_dragon 失败 / 指令[ 一条龙 ] 执行失败）→ 各槽 `app_run_record` 前后 diff；成功标志「指令[ 一条龙 ] 执行成功」出现即结束日志等待（不等启动器进程退出，LogMonitor 静默期回调节流最长 60s），终态成败仍由 diff 判定。
-- **重跑按关键名单区分（仅节点失败维度）**（AutoProxy.py 顶部 `_ZZZOD_CRITICAL_APPS` frozenset，app_id 为键）：仅名单内应用失败才把本轮判异常并重跑；名单外失败只记录进状态文本不重跑；名单为空 = 任何节点失败都不重跑。**运行级失败（启动器没起来 / 登录失败 / 配置错误）不在本名单维护**：由 `check_log` 致命日志关键词 + 超时态折算 `run_book=False` 走 main_task 既有「用户运行失败 → 重试」分支。初始名单全部注释（即空），按需解开维护。
+- **节点失败不触发重跑**：运行记录 diff 里的应用失败只记录进任务报告（次日运行
+  时 zzz-od 会按运行记录自行重试失败节点），不再维护关键名单、也不按名单判整轮
+  重跑（曾有的 `_ZZZOD_CRITICAL_APPS` 机制已随 #696 移除）。**运行级失败
+  （启动器没起来 / 登录失败 / 配置错误）**仍由 `check_log` 致命日志关键词 +
+  超时态折算 `run_book=False` 走 main_task 既有「用户运行失败 → 重试」分支。
 - **「通知」应用是汇总信号**：上游 NotifyApp 在本轮存在失败任务时会把自己 round_fail（消息本身 fire-and-forget 已发出），MAS 侧在 `_failed_apps`（diff 判定）与 push_log resolve（节点行）两处剔除，避免「通知（失败）」误导。
 - 直控任务编排保存保留完整顺序（`save_native_tasks` 含未启用项原位写回，对齐原生队列「灰色可任意位置」语义）；「启用在前」只由前端一键整理按钮触发。用户模式 AppList 同为整表语义（含未启用项，运行侧 `parse_user_apps` 只消费启用项）；开关/拖拽/一键整理为两模式共用封装 `useZzzOdTaskBoard`，仅落盘方式不同。
 - 恢复在 `main_task` finally、`final_task`、`on_crash` 三处幂等执行：先还原合成视图，再逐槽备份恢复（目录一律保留）。
@@ -106,25 +110,35 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 - 配队等 MAS 不管的内容不注入不回读，持久留在槽里；
 - Default（脚本级）会话直接拉起 GUI，无注入/回读。
 
-## 配置恢复（通用服务 + 通用组件）
+## 配置恢复（基座统一分发 + 专项池声明）
 
-ZzzOd 的「配置恢复」接入通用能力（专项只喂参数）：
+ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 config-restore.md）：
 
-- 后端：`app.core.config.zzzod_restore_service()` 用 `ConfigRestoreService` 组装双目标
-  （mas 在前、onedragon 在后，`script_name="一条龙"` 专项统一名）；`list_zzzod_backups`
-  等改为 `service.list(target)` 薄委托。
-- 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（传 `scriptName="一条龙"`
-  而非脚本实例名、`targets`/`api`/字段映射/`onRestored`/`onDetail`）。
-- 会话遮罩：配置/查看会话拉起原生 GUI 期间用 `GuiSessionMask`（纯 UI，专项传
-  开关/文案/按钮）。
-- **归档三时机落地**（`ConfigRestoreTarget.snapshot` + `service.ensure`）：
-  ① 进入编辑页归档 onedragon（用户模式 `ensureOnedragonBackup`、直控
-  `enterDirectMode` 内 `ensureDirectBackup`）——MAS 操作前原始态；② 退出编辑页
-  `onUnmounted` 归档（直控 onedragon 终态；用户模式绑定槽 mas 终态 + onedragon
-  终态）——MAS 侧配置的编辑会话包络；③ 运行前 `_prepare_injection` 两者都归档
-  （原有）。`ensure_zzzod_mas_backup` 对未绑定槽/空槽跳过（无可恢复内容）。
+- 池声明：`app/task/ZzzOd/tools/restore_service.py` 的 `RESTORE_POOLS`
+  （mas=用户槽 / onedragon=原生，`RESTORE_SCRIPT_NAME="一条龙"`）；备份内部
+  业务（槽占用守卫、字段回填、预览构建）依赖门面 helper，留在
+  `app.core.config`（`get_zzzod_backup_preview` / `restore_zzzod_backup` /
+  `ensure_zzzod_mas_backup` / `ensure_zzzod_direct_backup`），池函数经
+  `ctx.config` 薄委托。
+- core 门面：`restore_service()` isinstance 分发 + `list/ensure/restore/
+  preview_config_backup` 四个通用方法；HTTP 层只有通用端点 `/backup/*`
+  （list/ensure/restore/preview），preview 的 `data` 载荷 = ZzzOd 结构
+  （info/account/tasks/instances）。
+- 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（`scriptName`
+  传统一名「一条龙」、内置预览渲染直接吃解包后的载荷），`restoreApi` 调
+  `BackupService` 通用函数；三时机 ensure 走通用 ensure（`ensurePoolBackup`
+  收 `'mas'`/`'onedragon'` 字符串）。
+- 会话遮罩：配置/查看会话拉起原生 GUI 期间用 `GuiSessionMask`（纯 UI）。
+- **归档三时机落地**：① 进入编辑页归档 onedragon（用户模式 `ensureDirectBackup`、
+  直控 `enterDirectMode` 内同函数）——MAS 操作前原始态；② 退出编辑页
+  `onUnmounted` 归档（直控 onedragon 终态；用户模式绑定槽 mas 终态 +
+  onedragon 终态）——**mas 槽快照一律走统一入口 `archive_mas_config_backup`
+  （先物化账号+编排进槽再快照**：账号/编排只存在 UserData，槽只有会话/运行
+  才被注入，直接快照会漏掉，恢复这种备份会把它清空）；③ 运行
+  前 `_prepare_injection` 两者都归档（原有）。
+  `ensure_zzzod_mas_backup` 对未绑定槽跳过（无可恢复内容）。
   归档全部指纹去重：内容无变化不产生新条目，恢复列表只留真实变更点。
-- 完整用法见 [config-restore.md](config-restore.md)。
+- 文件级快照/回写原语见 [config-archive.md](config-archive.md)。
 
 ## 陷阱
 
