@@ -170,7 +170,7 @@
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
-      <!-- MAA 备份摘要为文件集结构，用插槽完全接管预览区 -->
+      <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
@@ -1360,8 +1360,8 @@ interface MaaPreviewFileView {
 const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
   (raw as { files?: MaaPreviewFileView[] } | null)?.files ?? []
 
-// 一键恢复成功：mas 恢复含页面任务字段回填，重拉表单——否则旧表单值在
-// 下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
+// 一键恢复成功：mas 恢复含页面核心配置（Info/Task）回填，重拉表单——否则
+// 旧表单值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
 const handleRestored = async (target: string) => {
   restoreOpen.value = false
   if (target === 'mas') {

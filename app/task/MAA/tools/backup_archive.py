@@ -30,15 +30,16 @@
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
-mas 池的备份对象是「运行下发源」：MAA 的 AutoProxy 按用户 ``Info.Mode``
-两态（脚本=Default 共享目录、用户=独立目录）把 MAS 配置 copytree 进安装
-目录，并把运行期写盘变更回写该目录。池恒按用户分桶（``mas/{user_id}``），
-多用户共享同一份 Default 目录时各自持有快照、互不混淆（教训见
-config-restore.md §1.1.1）。时间戳快照、指纹去重、保留清理与整目录恢复的
-通用逻辑由公共模块 ``app.utils.config_archive`` 提供（默认每池保留 10 份），
-本模块只保留 MAA 特有的目录布局、恢复语义（恢复前强制归档当前）与归档
-目录布局。
-"""
+``mas`` 池的内容 = ConfigFile 整目录 + **页面核心字段侧车**（Info / Task
+两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.json、
+  不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与页面认知一致，恢复时
+  随文件一起回滚并按段分组回填表单（对齐 ZzzOd / ok-ww 字段回填模式）。
+  池恒按用户分桶（``mas/{user_id}``），多用户共享同一份 Default 目录时各自
+  持有快照、互不混淆（教训见 config-restore.md §1.1.1）。时间戳快照、指纹
+  去重、保留清理与整目录恢复的通用逻辑由公共模块
+  ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+  MAA 特有的目录布局、侧车、恢复语义（恢复前强制归档当前）与归档目录布局。
+  """
 
 import json
 import tempfile
@@ -108,7 +109,25 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 # ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
 
 _OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""覆盖层字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落入 ConfigFile）"""
+"""页面核心字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落入 ConfigFile）"""
+
+_OVERLAY_INFO_KEYS = (
+    "Server",
+    "Id",
+    "StageMode",
+    "MedicineNumb",
+    "SeriesNumb",
+    "Stage",
+    "Stage_1",
+    "Stage_2",
+    "Stage_3",
+    "Stage_Remain",
+    "Annihilation",
+    "AnnihilationStartWeekday",
+    "InfrastMode",
+    "InfrastName",
+)
+"""MAS 页面基础/战斗/基建字段（UserData.Info，运行时注入 gui.json）"""
 
 _OVERLAY_TASK_KEYS = (
     "IfStartUp",
@@ -127,9 +146,52 @@ _OVERLAY_TASK_KEYS = (
     "ActivityMedicineNumb",
     "DepotMaintainPlans",
 )
-"""MAS 页面任务字段（UserData.Task，运行时注入 gui.json 的开关与序号）"""
+"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
+
+_OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
+"""侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
+
+_OVERLAY_KEY_GROUP = {
+    key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
+}
+# 侧车预览展示顺序：服务器/账号 → 关卡模式 → 任务开关 → 战斗参数 → 活动关
+# → 剿灭 → 库存保持 → 基建（与编辑页分区对应）
+_OVERLAY_DISPLAY_ORDER = (
+    "Server",
+    "Id",
+    "StageMode",
+    "IfStartUp",
+    "IfFight",
+    "IfInfrast",
+    "IfRecruit",
+    "IfMall",
+    "IfAward",
+    "IfSwitchTheme",
+    "IfRoguelike",
+    "IfReclamation",
+    "IfGreenTicketStore",
+    "MedicineNumb",
+    "SeriesNumb",
+    "Stage",
+    "Stage_1",
+    "Stage_2",
+    "Stage_3",
+    "Stage_Remain",
+    "IfActivityFirst",
+    "ActivityStageIndex",
+    "ActivityMedicineNumb",
+    "Annihilation",
+    "AnnihilationStartWeekday",
+    "IfDepotMaintain",
+    "DepotMaintainPlans",
+    "InfrastMode",
+    "InfrastName",
+)
 
 _OVERLAY_FIELD_LABELS = {
+    "Server": "服务器",
+    "Id": "账号",
+    "StageMode": "关卡配置模式",
     "IfStartUp": "自动唤醒",
     "IfFight": "理智作战",
     "IfInfrast": "基建换班",
@@ -145,25 +207,83 @@ _OVERLAY_FIELD_LABELS = {
     "ActivityStageIndex": "活动关卡序号",
     "ActivityMedicineNumb": "活动理智药",
     "DepotMaintainPlans": "库存保持计划",
+    "MedicineNumb": "吃理智药",
+    "SeriesNumb": "连战次数",
+    "Stage": "关卡",
+    "Stage_1": "备选关卡 1",
+    "Stage_2": "备选关卡 2",
+    "Stage_3": "备选关卡 3",
+    "Stage_Remain": "剩余理智关卡",
+    "Annihilation": "剿灭模式",
+    "AnnihilationStartWeekday": "剿灭开始星期",
+    "InfrastMode": "基建模式",
+    "InfrastName": "基建配置",
 }
 """侧车字段中文标签（对齐 MAA 编辑页词表）"""
 
+_SERVER_LABELS = {
+    "Official": "官服",
+    "Bilibili": "B服",
+    "YoStarEN": "国际服（YoStarEN）",
+    "YoStarJP": "日服（YoStarJP）",
+    "YoStarKR": "韩服（YoStarKR）",
+    "txwy": "繁中服（txwy）",
+}
+_ANNIHILATION_LABELS = {
+    "Close": "关闭",
+    "Annihilation": "当期剿灭",
+    "Chernobog@Annihilation": "切尔诺伯格",
+    "LungmenOutskirts@Annihilation": "龙门市郊",
+    "LungmenDowntown@Annihilation": "龙门市区",
+}
+_WEEKDAY_LABELS = {
+    "Monday": "周一",
+    "Tuesday": "周二",
+    "Wednesday": "周三",
+    "Thursday": "周四",
+    "Friday": "周五",
+    "Saturday": "周六",
+    "Sunday": "周日",
+}
+_INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自定义"}
+"""枚举字段取值中文词表（对齐编辑页选项；未知取值显示原文）"""
+
 
 def read_overlay_values(config) -> dict:
-    """读取配置对象的 MAS 页面任务字段（鸭子类型，仅需 ``get(group, key)``）。
+    """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    值为 ``None``（配置项不存在）的键不纳入侧车。
+    覆盖 Info / Task 两段的全部 MAS 可配置核心内容；值为 ``None``（配置项
+    不存在）的键不纳入侧车。
     """
 
-    return {
-        key: value
-        for key in _OVERLAY_TASK_KEYS
-        if (value := config.get("Task", key)) is not None
-    }
+    values: dict = {}
+    for group, keys in _OVERLAY_KEY_GROUPS.items():
+        for key in keys:
+            if (value := config.get(group, key)) is not None:
+                values[key] = value
+    return values
+
+
+def group_overlay(overlay: dict) -> dict[str, dict]:
+    """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。"""
+
+    grouped: dict[str, dict] = {}
+    for key, value in overlay.items():
+        grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
+    return grouped
+
+
+def _mask_account(value) -> str:
+    """账号脱敏：11 位手机号保留前 3 后 4，其余原样。"""
+
+    text = str(value)
+    if len(text) == 11 and text.isdigit():
+        return f"{text[:3]}****{text[7:]}"
+    return text
 
 
 def _sidecar_temp_file(overlay: dict) -> Path:
-    """把覆盖层字段写到临时文件（参与归档指纹，归档后即删）。"""
+    """把页面核心字段写到临时文件（参与归档指纹，归档后即删）。"""
 
     fd = tempfile.NamedTemporaryFile(
         "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
@@ -174,7 +294,7 @@ def _sidecar_temp_file(overlay: dict) -> Path:
 
 
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的覆盖层字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
+    """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
 
     sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
     if not sidecar.is_file():
@@ -193,12 +313,12 @@ def archive_mas_backup(
     overlay: dict | None = None,
     force: bool = False,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
 
     ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按两态 owner 解析（脚本态
     共享 Default 目录、用户态独立目录）——池与目标解耦。
-    侧车参与指纹：只改页面任务字段、未动 ConfigFile 时同样新建归档。
+    侧车参与指纹：只改页面配置、未动 ConfigFile 时同样新建归档。
     目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 强制
     归档（恢复前存底——让「恢复前的配置」在列表里有明确的时间戳条目）。
     """
@@ -246,7 +366,7 @@ def restore_mas_backup(
 
     ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按两态 owner 解析（脚本态共享 Default 目录、用户态独立
-    目录）。``overlay`` 为当前用户的页面任务字段，随恢复前存底一起归档。
+    目录）。``overlay`` 为当前用户的页面核心字段，随恢复前存底一起归档。
     返回该备份的侧车（供调用方回填 MAS 用户配置；旧版备份无侧车返回
     ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
@@ -277,7 +397,7 @@ def archive_mas_runtime_backup(
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
     ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
     两态解析（脚本态=Default 共享目录、用户态=独立目录）。``overlay``
-    为当前用户的页面任务字段。native 池与此处无关：原生配置跨用户共享，
+    为当前用户的页面核心字段。native 池与此处无关：原生配置跨用户共享，
     由 manager ``prepare`` 在任务级一次性归档（见
     :func:`archive_native_backup`）。
     """
@@ -337,7 +457,7 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
 # ══════════════════ 备份预览摘要 ══════════════════
 
 _SUMMARY_ROW_LIMIT = 6
-"""单文件摘要展示的最大字段行数"""
+"""gui 文件摘要展示的最大字段行数"""
 
 _SUMMARY_VALUE_LIMIT = 50
 """摘要字段值的最大字符数（超出截断）"""
@@ -412,10 +532,12 @@ def _gui_summary_rows(name: str, data: dict) -> list[dict]:
             start_game = default_conf.get("Start.StartGame")
         else:
             # NEW 嵌套：Configurations.Default.Gui.ConnectSettings / RuntimeSettings
-            gui = default_conf.get("Gui", {})
-            addr = (gui.get("ConnectSettings") or {}).get("Address")
-            client_type = (gui.get("RuntimeSettings") or {}).get("ClientType")
-            start_game = (gui.get("RuntimeSettings") or {}).get("StartGame")
+            gui = default_conf.get("Gui") or {}
+            connect = gui.get("ConnectSettings") or {}
+            runtime = gui.get("RuntimeSettings") or {}
+            addr = connect.get("Address")
+            client_type = runtime.get("ClientType")
+            start_game = runtime.get("StartGame")
         if addr:
             rows.append({"key": "连接地址", "value": _summary_value(addr)})
         if client_type is not None:
@@ -458,11 +580,36 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
 
 
 def _overlay_value(key: str, value) -> str:
-    """侧车字段值转展示文本（布尔转是否、列表收拢、超长截断）。"""
+    """侧车字段值转展示文本（枚举词表、账号脱敏、布尔转是否、超长截断）。"""
 
+    if key == "Id":
+        return _mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
-    text = str(value)
+    enum = {
+        "Server": _SERVER_LABELS,
+        "Annihilation": _ANNIHILATION_LABELS,
+        "AnnihilationStartWeekday": _WEEKDAY_LABELS,
+        "InfrastMode": _INFRAST_MODE_LABELS,
+    }.get(key)
+    if enum is not None:
+        text = enum.get(str(value), str(value))
+    elif key == "StageMode":
+        text = "固定" if str(value) == "Fixed" else "计划表"
+    elif key == "SeriesNumb":
+        text = {"0": "AUTO", "-1": "不切换"}.get(str(value), str(value))
+    elif key.startswith("Stage"):
+        # 关卡哨兵值：- = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
+        text = {"-": "当前/上次", "": "不选择"}.get(str(value), str(value))
+    elif key == "DepotMaintainPlans":
+        # JSON 串存计划列表，预览只给数量（恢复仍整串写回）
+        try:
+            plans = json.loads(value) if isinstance(value, str) else value
+            text = f"{len(plans)} 个计划" if isinstance(plans, list) and plans else "无"
+        except Exception:
+            text = "已配置"
+    else:
+        text = str(value)
     if len(text) > _SUMMARY_VALUE_LIMIT:
         return text[: _SUMMARY_VALUE_LIMIT - 1] + "…"
     return text
@@ -471,17 +618,21 @@ def _overlay_value(key: str, value) -> str:
 def build_overlay_summary(overlay: dict) -> list[dict]:
     """侧车字段的摘要行（mas 池预览用，纯读）。
 
-    展示的是备份时点的 MAS 页面任务配置（开关/序号），与用户在任务配置
-    所见同源，运行时才会注入 gui.json。布尔开关值为 False 的字段一并展示
-    （用户要确认「当时关没关」）。
+    展示的是备份时点的 MAS 页面核心配置（覆盖 MAS 侧全部可配置核心内容：
+    服务器/账号/关卡模式/任务开关/战斗参数/剿灭/库存保持/基建），与用户
+    在编辑页所见同源，运行时才会注入 gui.json。布尔开关为 False 的字段
+    一并展示（用户要确认「当时关没关」）；自定义基建名仅在自定义模式下
+    展示。
     """
 
     rows: list[dict] = []
-    for key in _OVERLAY_TASK_KEYS:
+    for key in _OVERLAY_DISPLAY_ORDER:
         if key not in overlay or key not in _OVERLAY_FIELD_LABELS:
             continue
+        if key == "InfrastName" and overlay.get("InfrastMode") != "Custom":
+            continue  # 非自定义模式下基建配置名无意义（虚拟字段回退文案）
         value = overlay[key]
-        if isinstance(value, (dict, list)):
+        if isinstance(value, list):
             joined = "、".join(
                 _overlay_value(key, item)
                 for item in value
@@ -492,4 +643,4 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
         rows.append(
             {"key": _OVERLAY_FIELD_LABELS[key], "value": _overlay_value(key, value)}
         )
-    return rows[: _SUMMARY_ROW_LIMIT * 2]
+    return rows

@@ -22,13 +22,14 @@
 自包含（守卫与 owner 解析走 ``ctx.script_config.UserData``，路径走专项
 字段），不依赖核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面任务
-字段侧车。MAA 页面任务字段（UserData.Task）运行时注入 gui.json、不落盘在
-ConfigFile——备份/恢复两端都带上侧车（恢复后回填表单，对齐 ZzzOd / ok-ww
-字段回填模式），预览与页面认知才一致。池恒按用户分桶（侧车是用户级的，
-脚本态多用户共享 Default 目录时各自快照仍需隔离）；两态 owner（脚本
-=Default 共享目录、用户=独立目录）只决定归档/恢复目标路径，与运行下发
-（AutoProxy ``set_maa``）同一套来源规则。
+mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面核心
+字段侧车（Info/Task 两段，覆盖 MAS 编辑页全部可配置核心内容）。这些字段
+运行时注入 gui.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
+后按段分组回填表单，对齐 ZzzOd / ok-ww 字段回填模式），预览与页面认知才
+一致。池恒按用户分桶（侧车是用户级的，脚本态多用户共享 Default 目录时
+各自快照仍需隔离）；两态 owner（脚本=Default 共享目录、用户=独立目录）
+只决定归档/恢复目标路径，与运行下发（AutoProxy ``set_maa``）同一套来源
+规则。
 """
 
 import uuid
@@ -43,6 +44,7 @@ from .backup_archive import (
     build_overlay_summary,
     get_mas_backup_dir,
     get_native_backup_dir,
+    group_overlay,
     list_mas_backups,
     list_native_backups,
     mas_config_dir,
@@ -117,9 +119,9 @@ async def _list_native(ctx) -> list[str]:
 
 
 def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
-    """mas 池预览载荷：覆盖层字段侧车（备份时点的 MAS 页面任务配置）。
+    """mas 池预览载荷：侧车字段（备份时点的 MAS 页面核心配置）。
 
-    ConfigFile 里的 gui.json 是 MAA GUI 结构，MAS 页面任务字段（Task 段）
+    ConfigFile 里的 gui.json 是 MAA GUI 结构，MAS 页面配置（Info/Task 段）
     运行时才注入、不落盘其中——展示它只会误导（与页面对不上）；这里只
     展示与页面同源的侧车字段，来源配置本体经「查看详细配置」在 MAA GUI
     里查看。旧版备份无侧车，无可展示内容。
@@ -134,7 +136,7 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
         "files": [
             {
                 "name": "overlay",
-                "label": "任务配置",
+                "label": "MAS 配置",
                 "summary": build_overlay_summary(overlay),
             }
         ]
@@ -168,9 +170,10 @@ async def _restore_mas(ctx, ts: str) -> object:
         overlay=read_overlay_values(user),
     )
     if restored_overlay:
-        # 侧车字段回填（对齐 ZzzOd / ok-ww 字段回填模式）：文件回滚的同时
-        # 把页面任务字段回到备份时点，否则旧表单值下次保存会静默覆盖回滚结果
-        await user.update({"Task": restored_overlay})
+        # 侧车字段回填（对齐 ZzzOd / ok-ww 字段回填模式）：按配置段分组写回
+        # （Info/Task），页面配置随文件一起回到备份时点，否则旧表单值下次
+        # 保存会静默覆盖回滚结果
+        await user.update(group_overlay(restored_overlay))
 
 
 async def _restore_native(ctx, ts: str) -> object:

@@ -54,7 +54,7 @@ def test_mas_backup_dedup_and_restore_loop(
     (mas_dir / "gui.json").write_text(
         json.dumps({"Current": "Default", "Global": {}}), encoding="utf-8"
     )
-    overlay = {"IfFight": True, "IfInfrast": False, "ActivityStageIndex": 3}
+    overlay = {"IfFight": True, "IfInfrast": False, "ActivityStageIndex": 3, "Server": "Official"}
 
     # 首次归档（含侧车）→ 内容一致跳过（指纹去重）
     first = archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
@@ -64,7 +64,7 @@ def test_mas_backup_dedup_and_restore_loop(
     assert len(list_mas_backups(script_id, user_id)) == 1
 
     # 只改侧车字段（文件未动）→ 指纹变化，新建归档
-    overlay2 = {**overlay, "IfFight": False}
+    overlay2 = {**overlay, "IfFight": False, "Server": "Bilibili"}
     second = archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay2)
     assert second is not None
     assert len(list_mas_backups(script_id, user_id)) == 2
@@ -238,26 +238,92 @@ def test_preview_summary_keeps_stable_fields(tmp_path: Path) -> None:
     }
 
 
-def test_overlay_preview_shows_task_fields(tmp_path: Path) -> None:
-    """侧车预览：展示备份时点的 MAS 页面任务配置（开关/序号翻译）。"""
+def test_overlay_preview_shows_core_fields(tmp_path: Path) -> None:
+    """侧车预览：覆盖 MAS 侧可配置核心内容，枚举/哨兵值/账号脱敏正确。"""
 
-    from app.task.MAA.tools.backup_archive import build_overlay_summary
+    from app.task.MAA.tools.backup_archive import build_overlay_summary, group_overlay
 
     overlay = {
+        "Server": "Official",
+        "Id": "13084046220",
+        "StageMode": "Fixed",
         "IfStartUp": True,
         "IfFight": False,
         "IfGreenTicketStore": True,
+        "MedicineNumb": 998,
+        "SeriesNumb": "0",
+        "Stage": "-",
+        "Stage_1": "1-7",
+        "Stage_Remain": "",
+        "IfActivityFirst": True,
         "ActivityStageIndex": 3,
+        "Annihilation": "Annihilation",
+        "AnnihilationStartWeekday": "Monday",
+        "IfDepotMaintain": False,
+        "DepotMaintainPlans": "[]",
+        "InfrastMode": "Normal",
+        "InfrastName": "未使用自定义基建模式",
     }
     rows = {row["key"]: row["value"] for row in build_overlay_summary(overlay)}
     assert rows == {
+        "服务器": "官服",
+        "账号": "130****6220",
+        "关卡配置模式": "固定",
         "自动唤醒": "是",
         "理智作战": "否",
         "绿票商店": "是",
+        "吃理智药": "998",
+        "连战次数": "AUTO",
+        "关卡": "当前/上次",
+        "备选关卡 1": "1-7",
+        "剩余理智关卡": "不选择",
+        "活动关优先": "是",
         "活动关卡序号": "3",
+        "剿灭模式": "当期剿灭",
+        "剿灭开始星期": "周一",
+        "库存保持": "否",
+        "库存保持计划": "无",
+        "基建模式": "标准",
+        # 非自定义模式：基建配置名（虚拟字段回退文案）不进预览
     }
-    # 未知键/缺失键不进摘要
-    assert "不存在的字段" not in rows
+    assert "基建配置" not in rows
+
+    # 自定义模式：基建配置名进预览
+    rows2 = {
+        row["key"]: row["value"]
+        for row in build_overlay_summary({**overlay, "InfrastMode": "Custom", "InfrastName": " my plan - v2 "})
+    }
+    assert rows2["基建模式"] == "自定义"
+    assert rows2["基建配置"] == " my plan - v2 "
+
+    # 分组回填：Info/Task 各归其段
+    grouped = group_overlay(overlay)
+    assert set(grouped) == {"Info", "Task"}
+    assert grouped["Info"]["Server"] == "Official"
+    assert grouped["Task"]["IfFight"] is False
+
+
+def test_read_overlay_values_covers_both_groups() -> None:
+    """read_overlay_values 覆盖 Info/Task 两段，None 值键跳过。"""
+
+    from app.task.MAA.tools.backup_archive import read_overlay_values
+
+    class _FakeUserConfig:
+        _data = {
+            "Info": {"Server": "Bilibili", "Stage": "-", "InfrastName": None},
+            "Task": {"IfFight": True, "DepotMaintainPlans": "[]"},
+        }
+
+        def get(self, section: str, key: str):
+            return self._data.get(section, {}).get(key)
+
+    values = read_overlay_values(_FakeUserConfig())
+    assert values == {
+        "Server": "Bilibili",
+        "Stage": "-",
+        "IfFight": True,
+        "DepotMaintainPlans": "[]",
+    }
 
 
 def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:
