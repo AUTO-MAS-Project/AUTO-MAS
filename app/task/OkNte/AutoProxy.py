@@ -28,8 +28,6 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-import psutil
-
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogType, log_box
@@ -39,6 +37,12 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    append_push_log,
+    find_pids_by_name,
+    push_dispatch_log,
+    split_args,
+)
 from app.utils import (
     ProcessInfo,
     ProcessManager,
@@ -47,7 +51,7 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import UTC4
-from app.utils.io import read_file
+from app.utils.io import read_file, replace_dir
 from app.utils.LogMonitor import LogMonitor
 from app.utils.LogPatternExtractor import (
     SIGN_MODE_SPLIT,
@@ -63,6 +67,7 @@ from .config_schema import (
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
 from .tools.account_switch import async_switch_account
+from .tools.backup_archive import archive_mas_runtime_backup
 from .tools.launcher_start import async_start_game_via_launcher
 
 logger = get_logger("OK-NTE 自动代理")
@@ -108,18 +113,6 @@ def _yes_no(value: bool) -> str:
     return "是" if value else "否"
 
 
-def _find_pids_by_name(process_name: str) -> list[int]:
-    """按进程名收集 PID（同步全进程扫描，调用方放到线程里跑）。"""
-    pids: list[int] = []
-    for process in psutil.process_iter(["name"]):
-        try:
-            if process.info["name"] == process_name:
-                pids.append(process.pid)
-        except psutil.Error:
-            continue
-    return pids
-
-
 # 对齐 MaaEnd：专项内置致命日志片段（非用户 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
 _OKNTE_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-NTE 未连接游戏客户端"),
@@ -146,11 +139,6 @@ _OKNTE_DAILY_ROUTINE_SUCCESS_RE = re.compile(
 _OKNTE_DAILY_ROUTINE_SKIPPED_RE = re.compile(
     r"DailyRoutineTask:info_set skipped\s*(?P<skipped>\[[^\r\n]*\])"
 )
-
-
-def _split_args(raw: object) -> list[str]:
-    value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
 
 
 def _oknte_log_indicates_success(log: str, success_log: LogSignMatcher) -> bool:
@@ -420,7 +408,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.exit_on_finish = bool(self.cur_user_config.get("Task", "ExitOnFinish"))
 
-        extra_args = _split_args(self.script_config.get("Script", "Arguments"))
+        extra_args = split_args(self.script_config.get("Script", "Arguments"))
 
         self.oknte_args = ["-t", str(self.task_index)]
         if self.exit_on_finish:
@@ -495,16 +483,16 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
 
+        # 下发前归档 MAS 用户配置（下发源，运行回写 update_config 会覆盖它；
+        # 指纹去重，失败不阻断运行）。native 池不在此处归档：原生配置跨用户
+        # 共享，按用户/重试归档会把上一轮下发的 MAS 配置误当原生内容挤进
+        # 保留池，由 manager.prepare 在任务级一次性完成
+        archive_mas_runtime_backup(self.script_info.script_id, str(self.cur_user_uid))
+
         mas_config_dir = self._ensure_oknte_mas_config_dir()
         self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            tmp_dst = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
-            )
-            shutil.rmtree(tmp_dst, ignore_errors=True)
-            shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
-            tmp_dst.rename(self.script_config_path)
+            replace_dir(mas_config_dir, self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(
                 mas_config_dir / self.script_config_path.name,
@@ -541,13 +529,12 @@ class AutoProxyTask(TaskExecuteBase):
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
 
     def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
         """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text, ts))
+
+        append_push_log(self.cur_user_item, log_type, text, ts)
 
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
@@ -1130,7 +1117,7 @@ class AutoProxyTask(TaskExecuteBase):
                 # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
                 # 全进程扫描放到线程里，不阻塞事件循环
                 for pid in await asyncio.to_thread(
-                    _find_pids_by_name, _NTE_CLIENT_PROCESS
+                    find_pids_by_name, _NTE_CLIENT_PROCESS
                 ):
                     try:
                         await System.kill_process_by_pid(pid)

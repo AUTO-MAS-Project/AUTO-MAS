@@ -31,10 +31,12 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import force_rmtree, replace_dir
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -162,7 +164,7 @@ class OkNteManager(TaskExecuteBase):
                 self.script_config.get("Script", "ConfigPath")
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            shutil.rmtree(self.temp_path, ignore_errors=True)
+            force_rmtree(self.temp_path)
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 self.had_original_script_config = True
@@ -173,6 +175,16 @@ class OkNteManager(TaskExecuteBase):
                 elif self.script_config.get("Script", "ConfigPathMode") == "File":
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
+            # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
+            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——set_oknte 里按用户/重试归档会把上一轮下发的
+            # MAS 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
+            with suppress(Exception):
+                archive_native_backup(
+                    self.script_config_path,
+                    self.script_config.get("Script", "ConfigPathMode"),
+                )
+
     async def _restore_script_config_from_temp(self) -> None:
         if not (
             self.task_info.mode in ("AutoProxy", "ScriptConfig")
@@ -182,34 +194,33 @@ class OkNteManager(TaskExecuteBase):
             and self.script_config
         ):
             return
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if not self.had_original_script_config:
-                logger.info(
-                    f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}"
-                )
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-            else:
-                logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
-                tmp_dst = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
-                )
-                shutil.rmtree(tmp_dst, ignore_errors=True)
-                shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                tmp_dst.rename(self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            if (self.temp_path / "config.temp").exists():
-                logger.info(
-                    f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}"
-                )
-                shutil.copy(self.temp_path / "config.temp", self.script_config_path)
-            elif not self.had_original_script_config:
-                logger.info(
-                    f"清理任务期写入的 OK-NTE 脚本配置文件: {self.script_config_path}"
-                )
-                with suppress(FileNotFoundError):
-                    self.script_config_path.unlink()
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+        # 复原属于收尾清理, 失败不应掩盖任务本身的异常, 也不应中断后续解锁与回写
+        try:
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                if not self.had_original_script_config:
+                    logger.info(
+                        f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}"
+                    )
+                    force_rmtree(self.script_config_path)
+                else:
+                    logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
+                    replace_dir(self.temp_path, self.script_config_path)
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                if (self.temp_path / "config.temp").exists():
+                    logger.info(
+                        f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}"
+                    )
+                    shutil.copy(self.temp_path / "config.temp", self.script_config_path)
+                elif not self.had_original_script_config:
+                    logger.info(
+                        f"清理任务期写入的 OK-NTE 脚本配置文件: {self.script_config_path}"
+                    )
+                    with suppress(FileNotFoundError):
+                        self.script_config_path.unlink()
+        except Exception as e:
+            logger.opt(exception=True).warning(f"复原 OK-NTE 脚本配置失败: {e}")
+        finally:
+            force_rmtree(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -228,12 +239,16 @@ class OkNteManager(TaskExecuteBase):
 
         method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            method = method_cls(
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            kwargs: dict = dict(
                 script_info=self.script_info,
                 script_config=self.script_config,  # type: ignore[arg-type]
                 user_config=self.user_config,  # type: ignore[arg-type]
                 game_manager=self.game_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                kwargs["view_only"] = self.task_info.view_only
+            method = method_cls(**kwargs)
 
             sub_check = await method.check()
             if sub_check != "Pass":

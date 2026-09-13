@@ -16,8 +16,8 @@
     <p class="restore-desc">
       {{
         currentTarget?.kind === 'user'
-          ? t('edit.configRestoreMasDesc', { script: scriptName })
-          : t('edit.configRestoreScriptDesc', { script: scriptName })
+          ? (userDesc ?? t('edit.configRestoreMasDesc', { script: scriptName }))
+          : (scriptDesc ?? t('edit.configRestoreScriptDesc', { script: scriptName }))
       }}
     </p>
     <a-spin :spinning="backupsLoading">
@@ -45,6 +45,7 @@
     :open="previewOpen"
     :footer="null"
     width="540px"
+    :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
     @update:open="previewOpen = $event"
   >
     <template #title>
@@ -53,13 +54,16 @@
         {{ `${t('edit.configRestorePreviewTitle')} · ${previewTime}` }}
       </slot>
     </template>
-    <a-spin :spinning="previewLoading">
+    <a-spin :spinning="previewLoading" class="preview-scroll">
       <p v-if="previewError" class="restore-desc">{{ previewError }}</p>
-      <!-- 自定义预览：专项通过 #preview 插槽完全接管预览区（字段型适配器等） -->
+      <!-- 自定义预览：专项通过 #preview 插槽完全接管预览区（字段型适配器等）；
+           raw 为后端预览响应原文（内置 info/account/tasks/instances 之外的
+           自定义结构从这里取） -->
       <slot
         v-else
         name="preview"
         :data="previewData"
+        :raw="previewRaw"
         :target="restoreTarget"
         :format-value="formatValue"
         :field-label="fieldLabel"
@@ -135,7 +139,12 @@
       </slot>
     </a-spin>
     <div class="preview-actions">
-      <a-tooltip :title="t('edit.configRestoreDetailHint', { script: scriptName })">
+      <!-- 「查看详细配置」依赖父组件的 onDetail 回调（恢复 + 拉起查看会话）；
+           专项未提供时不渲染，避免出现无响应的按钮 -->
+      <a-tooltip
+        v-if="onDetail"
+        :title="t('edit.configRestoreDetailHint', { script: scriptName })"
+      >
         <a-button @click="handlePreviewDetail">
           {{ t('edit.configRestoreDetailView') }}
         </a-button>
@@ -191,6 +200,8 @@ const props = defineProps<{
         account: { key: string; value: string }[]
         tasks: { app_id: string; app_name: string; enabled: boolean }[]
       }[]
+      /** 通用端点把专项载荷包在 data 里；缺省回落到顶层平铺结构 */
+      data?: Record<string, unknown> | null
     }>
     restore: (
       target: string,
@@ -199,6 +210,9 @@ const props = defineProps<{
   }
   /** 预览字段标签映射（key → 展示标题） */
   fieldLabels?: Record<string, string>
+  /** 描述文案覆写（缺省用 i18n 通用词条；专项的归档时机措辞不同时传入） */
+  userDesc?: string
+  scriptDesc?: string
   /** 预览字段值格式化（枚举值转词表文案） */
   formatValue?: (key: string, raw: string) => string
   /** 恢复后回调（一键恢复成功后通知父组件刷新表单等） */
@@ -275,6 +289,9 @@ const previewLoading = ref(false)
 const previewError = ref('')
 const previewTime = ref('')
 const previewItem = ref<BackupItem | null>(null)
+// 预览响应原文：内置 info/account/tasks/instances 之外的自定义预览
+// 结构通过 #preview 插槽的 raw 取用
+const previewRaw = ref<unknown>(null)
 
 const previewData = reactive<{
   info: { key: string; value: string }[]
@@ -341,10 +358,13 @@ const handlePreview = async (item: BackupItem) => {
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.configRestorePreviewFailed'))
     }
-    previewData.info = resp.info ?? []
-    previewData.account = resp.account ?? []
-    previewData.tasks = resp.tasks ?? []
-    previewData.instances = resp.instances ?? []
+    // 通用端点把专项载荷包在 data 里；缺省回落到顶层平铺结构（向后兼容）
+    const payload = (resp.data ?? resp) as typeof resp
+    previewData.info = payload.info ?? []
+    previewData.account = payload.account ?? []
+    previewData.tasks = payload.tasks ?? []
+    previewData.instances = payload.instances ?? []
+    previewRaw.value = payload
   } catch (e) {
     previewError.value =
       e instanceof Error ? e.message : t('edit.configRestorePreviewFailed')
@@ -352,6 +372,7 @@ const handlePreview = async (item: BackupItem) => {
     previewData.account = []
     previewData.tasks = []
     previewData.instances = []
+    previewRaw.value = null
   } finally {
     previewLoading.value = false
   }
@@ -420,6 +441,12 @@ const confirmRestore = (item: BackupItem) => {
 .backup-time {
   color: var(--ant-color-text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* 预览内容限高在弹窗内滚动，摘要过长不撑破窗口 */
+.preview-scroll {
+  max-height: 56vh;
+  overflow-y: auto;
 }
 
 /* 配置预览弹窗：摘要表格与任务标签 */

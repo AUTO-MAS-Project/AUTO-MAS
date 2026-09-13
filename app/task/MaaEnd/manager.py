@@ -31,8 +31,10 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.emulator_core import close_emulator
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import force_rmtree, replace_dir
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
@@ -176,16 +178,11 @@ class MaaEndManager(TaskExecuteBase):
         ):
             return
         if not self.had_original_script_config:
-            shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
+            force_rmtree(self.maaend_config_dir)
             return
 
-        temporary_path = self.maaend_config_dir.with_name(
-            self.maaend_config_dir.name + ".tmp"
-        )
-        shutil.rmtree(temporary_path, ignore_errors=True)
-        shutil.copytree(self.temp_path, temporary_path, dirs_exist_ok=True)
-        shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
-        temporary_path.rename(self.maaend_config_dir)
+        logger.info(f"复原 MaaEnd 脚本配置文件: {self.temp_path}")
+        replace_dir(self.temp_path, self.maaend_config_dir)
 
     def _cleanup_script_config_temp(self) -> None:
         if self.temp_path:
@@ -258,10 +255,7 @@ class MaaEndManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            if self.emulator_manager is not None:
-                await self.emulator_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex")
-                )
+            await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())

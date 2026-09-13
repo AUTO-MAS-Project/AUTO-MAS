@@ -17,7 +17,6 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
-import shutil
 import uuid
 from contextlib import suppress
 from pathlib import Path
@@ -29,7 +28,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
-from app.utils.io import force_rmtree
+from app.utils.io import replace_dir
 
 from .AutoProxy import (
     _OKWW_REL_CONFIG_DIR,
@@ -90,13 +89,7 @@ class ScriptConfigTask(TaskExecuteBase):
             and self.mas_config_dir.is_dir()
             and any(item.is_file() for item in self.mas_config_dir.rglob("*"))
         ):
-            temporary_path = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
-            )
-            force_rmtree(temporary_path)
-            shutil.copytree(self.mas_config_dir, temporary_path)
-            force_rmtree(self.script_config_path)
-            temporary_path.rename(self.script_config_path)
+            replace_dir(self.mas_config_dir, self.script_config_path)
         logger.info(f"启动 OK-WW 设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
         await self.process_manager.open_process(self.exe_path)
@@ -115,14 +108,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.script_config_path / "Basic Options.json",
                 {"Exit App when Game Exits": True},
             )
-            temporary_path = self.mas_config_dir.with_name(
-                self.mas_config_dir.name + ".tmp"
-            )
-            force_rmtree(temporary_path)
-            temporary_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(self.script_config_path, temporary_path)
-            force_rmtree(self.mas_config_dir)
-            temporary_path.rename(self.mas_config_dir)
+            self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
+            replace_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
             self.cur_user_item.status = "完成"
         elif not self.crashed:

@@ -33,7 +33,7 @@ jobs:
   build:
     name: 构建 Windows 版本
     runs-on: windows-latest
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
     
     outputs:
       version_tag: ${{ steps.generate_version_info.outputs.version_tag }}
@@ -162,49 +162,31 @@ jobs:
             wait-for-completion: true
             output-artifact-directory: 'frontend\dist\win-unpacked'
 
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      # 守门：仓库版本号必须已经比最新 tag 新、changelog.d/ 必须已清空，否则说明发版 PR 还没合并，
+      # 或者合并之后又进了带碎片的改动。Release 正文由脚本渲染：首行 JSON 是老客户端的解析契约，
+      # 可见正文只写本版增量。
       - name: 生成版本信息
         id: generate_version_info
         run: |
-          $tempScript = "temp_version_script.js"
-          @'
-          const fs = require('fs');
-          const path = require('path');
-
-          let versionPath = '../res/version.json';
-          if (!fs.existsSync(versionPath)) {
-              versionPath = 'res/version.json';
-          }
-          const version = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
-
-          function versionInfoMarkdown(info) {
-              let md = '';
-              for (const [key, values] of Object.entries(info)) {
-                  md += `## ${key}\n`;
-                  for (const v of values) md += `- ${v}\n`;
-              }
-              return md;
-          }
-
-          const versionTag = version.version;
-          const isPrerelease = versionTag.includes('-beta');
-
-          const allVersionInfo = {};
-          for (const v_i of Object.values(version.version_info)) {
-              for (const [key, value] of Object.entries(v_i)) {
-                  if (!allVersionInfo[key]) allVersionInfo[key] = [];
-                  allVersionInfo[key].push(...value);
-              }
-          }
-          const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
-
-          const outputPath = process.env.GITHUB_OUTPUT;
-          fs.appendFileSync(outputPath, `version_tag=${versionTag}\n`);
-          fs.appendFileSync(outputPath, `is_prerelease=${isPrerelease}\n`);
-          fs.appendFileSync(outputPath, `version_changelog<<EOF\n${changelog}\nEOF\n`);
-          '@ | Out-File -FilePath $tempScript -Encoding UTF8
-
-          node $tempScript
-          Remove-Item $tempScript
+          python scripts/changelog.py guard
+          if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
+          $versionTag = (python scripts/changelog.py current).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
+          $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
+          python scripts/changelog.py release-note --version $versionTag --output $notePath
+          if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
+          $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
+          $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
+          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$versionTag" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "is_prerelease=$isPrerelease" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_changelog<<$delimiter`n$changelog`n$delimiter" -Encoding utf8
+          Write-Host "版本 $versionTag，预发布：$isPrerelease"
         shell: pwsh
 
       - name: 准备 Inno Setup
@@ -470,7 +452,7 @@ jobs:
     name: 发布 CNB 发行版
     runs-on: ubuntu-latest
     needs: build
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
 
     steps:
       - name: 签出代码

@@ -47,7 +47,7 @@ from .AutoProxy import (
     parse_user_apps,
 )
 from .tools import (
-    archive_mas_backup,
+    archive_mas_config_backup,
     archive_onedragon_backup,
     collect_mas_user_info,
     find_active_instance,
@@ -122,7 +122,7 @@ class ScriptConfigTask(TaskExecuteBase):
             # 归档点：一条龙原生配置快照——必须在 ensure_user_slot（可能注册
             # 新槽）与合成视图写入之前，捕获未被本次会话触碰的原生状态
             try:
-                archive_onedragon_backup(self.script_info.script_id, self.root_path)
+                archive_onedragon_backup(self.root_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"归档 zzz-od 原生配置快照失败: {e}")
             used = collect_used_slot_idxs(exclude_uids={self._target_uid})
@@ -139,12 +139,15 @@ class ScriptConfigTask(TaskExecuteBase):
                     f"只读预览，不注入不回读)"
                 )
             else:
-                # MAS 用户槽快照（含配队等全部内容），供配置恢复
+                # MAS 用户槽快照（含配队等全部内容），供配置恢复——统一入口
+                # 会先物化本页账号+编排进槽（它们只存在 UserData，槽要会话
+                # 注入才带上；直接快照会漏掉，恢复会把本页字段清空）
                 if instance_dir(self.root_path, slot).is_dir():
-                    archive_mas_backup(
+                    archive_mas_config_backup(
                         self.script_info.script_id,
                         slot,
                         instance_dir(self.root_path, slot),
+                        self.cur_user_config,
                         meta=collect_mas_user_info(self.cur_user_config),
                     )
                 inject_user_fields(
@@ -216,9 +219,7 @@ class ScriptConfigTask(TaskExecuteBase):
         if str(account.get("password") or "").strip():
             await cfg.set("Game", "Password", str(account.get("password")))
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
-        await cfg.set(
-            "OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False)
-        )
+        await cfg.set("OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False))
         logger.info(
             f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(all_apps)} 项)"
         )
@@ -285,7 +286,9 @@ class ScriptConfigTask(TaskExecuteBase):
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=f"zzz-od 设置任务出现异常: {e}"),
+            data=WSTaskNoticeData(
+                level="error", message=f"zzz-od 设置任务出现异常: {e}"
+            ),
         )
 
     async def _kill_processes(self) -> None:

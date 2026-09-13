@@ -2969,38 +2969,6 @@ async def save_zzzod_native_config_api(
 
 
 @router.get(
-    "/zzzod/backups",
-    tags=["ZZZ-OD"],
-    summary="列出配置备份（onedragon=一条龙原生配置 / mas=MAS 用户槽）",
-    response_model=ZzzOdBackupListOut,
-    status_code=200,
-)
-async def list_zzzod_backups_api(
-    scriptId: str, userId: str, target: str = "onedragon"
-) -> ZzzOdBackupListOut:
-    """按时间倒序返回历史备份（运行/会话前自动归档，内容无变化跳过）。"""
-
-    try:
-        data = await Config.list_zzzod_backups(scriptId, userId, target)
-        return ZzzOdBackupListOut(
-            code=200,
-            status="success",
-            message=f"共 {len(data)} 份备份",
-            data=[ZzzOdBackupItemOut(**item) for item in data],
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"list_zzzod_backups_api失败: {type(e).__name__}: {e}"
-        )
-        return ZzzOdBackupListOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=[],
-        )
-
-
-@router.get(
     "/zzzod/launchers",
     tags=["ZZZ-OD"],
     summary="获取一条龙两种启动器的安装情况与默认项",
@@ -3023,78 +2991,6 @@ async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
             message=f"{type(e).__name__}: {str(e)}",
             original_available=False,
             integrated_available=False,
-        )
-
-
-@router.post(
-    "/zzzod/backup/restore",
-    tags=["ZZZ-OD"],
-    summary="把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）",
-    response_model=ZzzOdBackupRestoreOut,
-    status_code=200,
-)
-async def restore_zzzod_backup_api(
-    script: ZzzOdBackupRestoreIn = Body(...),
-) -> ZzzOdBackupRestoreOut:
-    """onedragon：恢复一条龙原生配置（MAS 槽不触碰）；mas：恢复槽并全量回填本页字段。"""
-
-    try:
-        slot = await Config.restore_zzzod_backup(
-            script.scriptId, script.userId, script.time, target=script.target
-        )
-        return ZzzOdBackupRestoreOut(
-            code=200,
-            status="success",
-            message=f"已恢复备份 {script.time}",
-            slot=slot,
-            target=script.target,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"restore_zzzod_backup_api失败: {type(e).__name__}: {e}"
-        )
-        return ZzzOdBackupRestoreOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            slot=-1,
-            target=script.target,
-        )
-
-
-@router.post(
-    "/zzzod/backup/ensure",
-    tags=["ZZZ-OD"],
-    summary="按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）",
-    response_model=ZzzOdBackupEnsureOut,
-    status_code=200,
-)
-async def ensure_zzzod_backup_api(
-    script: ZzzOdBackupEnsureIn = Body(...),
-) -> ZzzOdBackupEnsureOut:
-    """onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
-    mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。"""
-
-    try:
-        data = await Config.ensure_zzzod_backup(
-            script.scriptId, script.userId, target=script.target
-        )
-        return ZzzOdBackupEnsureOut(
-            code=200,
-            status="success",
-            message="",
-            **data,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"ensure_zzzod_backup_api失败: {type(e).__name__}: {e}"
-        )
-        return ZzzOdBackupEnsureOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            created=False,
-            time="",
         )
 
 
@@ -3134,53 +3030,6 @@ async def import_zzzod_config_api(
             importedAccountCount=0,
             importedTaskCount=0,
             slot=-1,
-        )
-
-
-@router.get(
-    "/zzzod/backup/preview",
-    tags=["ZZZ-OD"],
-    summary="读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）",
-    response_model=ZzzOdBackupPreviewOut,
-    status_code=200,
-)
-async def get_zzzod_backup_preview_api(
-    scriptId: str, userId: str, time: str, target: str = "onedragon"
-) -> ZzzOdBackupPreviewOut:
-    """mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。"""
-
-    # target 是 Literal 响应字段：非法值进 try 后成功/异常两条分支都会因
-    # 响应模型校验失败抛 ValidationError → 裸 500；在入口用 400 拦截
-    if target not in ("onedragon", "mas"):
-        raise HTTPException(status_code=400, detail=f"不支持的备份类别: {target}")
-
-    try:
-        data = Config.get_zzzod_backup_preview(
-            scriptId, userId, time, target=target
-        )
-        return ZzzOdBackupPreviewOut(
-            code=200,
-            status="success",
-            message="",
-            **data,
-        )
-    except Exception as e:
-        # 响应模型 info/account/tasks/instances 全部 required（...）；除填
-        # account/tasks/instances 外还要填 info，否则 Pydantic 校验失败抛
-        # ValidationError → 裸 500。错误信息塞进 info 的首项展示给用户。
-        logger.opt(exception=True).warning(
-            f"get_zzzod_backup_preview_api失败: {type(e).__name__}: {e}"
-        )
-        return ZzzOdBackupPreviewOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            time=time,
-            target=target,  # type: ignore[arg-type]
-            info=[ZzzOdPreviewField(key="error", value=str(e))],
-            account=[],
-            tasks=[],
-            instances=[],
         )
 
 
@@ -3653,6 +3502,132 @@ async def batch_update_oknte_configs(
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
         }
+
+
+@router.get(
+    "/backup/list",
+    tags=["Backup"],
+    summary="列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）",
+    response_model=ConfigBackupListOut,
+    status_code=200,
+)
+async def list_config_backups_api(
+    scriptId: str, userId: str, target: str
+) -> ConfigBackupListOut:
+    """运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。"""
+
+    try:
+        data = await Config.list_config_backups(scriptId, userId, target)
+        return ConfigBackupListOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 份备份",
+            data=[ConfigBackupItemOut(**item) for item in data],
+        )
+    except Exception as e:
+        return ConfigBackupListOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/backup/ensure",
+    tags=["Backup"],
+    summary="按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面进入/退出时机调用）",
+    response_model=ConfigBackupEnsureOut,
+    status_code=200,
+)
+async def ensure_config_backup_api(
+    script: ConfigBackupEnsureIn = Body(...),
+) -> ConfigBackupEnsureOut:
+    """target 取值由专项池定义（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）。"""
+
+    try:
+        data = await Config.ensure_config_backup(
+            script.scriptId, script.userId, target=script.target
+        )
+        return ConfigBackupEnsureOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        return ConfigBackupEnsureOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            created=False,
+            time="",
+        )
+
+
+@router.post(
+    "/backup/restore",
+    tags=["Backup"],
+    summary="把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）",
+    response_model=ConfigBackupRestoreOut,
+    status_code=200,
+)
+async def restore_config_backup_api(
+    script: ConfigBackupRestoreIn = Body(...),
+) -> ConfigBackupRestoreOut:
+    """恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
+    用户配置并按需回填前端表单。"""
+
+    try:
+        data = await Config.restore_config_backup(
+            script.scriptId, script.userId, script.time, target=script.target
+        )
+        return ConfigBackupRestoreOut(
+            code=200,
+            status="success",
+            message=f"已恢复备份 {script.time}",
+            target=data["target"],
+        )
+    except Exception as e:
+        return ConfigBackupRestoreOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            target=script.target,
+        )
+
+
+@router.get(
+    "/backup/preview",
+    tags=["Backup"],
+    summary="读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）",
+    response_model=ConfigBackupPreviewOut,
+    status_code=200,
+)
+async def get_config_backup_preview_api(
+    scriptId: str, userId: str, time: str, target: str
+) -> ConfigBackupPreviewOut:
+    """data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。"""
+
+    try:
+        data = await Config.get_config_backup_preview(
+            scriptId, userId, time, target=target
+        )
+        return ConfigBackupPreviewOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        return ConfigBackupPreviewOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,
+            data={},
+        )
 
 
 _MAAFW_IMAGE_SUFFIXES = {

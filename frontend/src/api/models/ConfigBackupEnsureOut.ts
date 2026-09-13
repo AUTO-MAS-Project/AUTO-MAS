@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type ZzzOdBackupEnsureOut = {
+export type ConfigBackupEnsureOut = {
     /**
      * 状态码
      */
@@ -16,7 +16,7 @@ export type ZzzOdBackupEnsureOut = {
      */
     message?: string;
     /**
-     * 本次是否新建了归档（False=指纹无变化跳过或无槽可归档）
+     * 本次是否新建了归档（False=指纹无变化跳过或无可归档内容）
      */
     created: boolean;
     /**

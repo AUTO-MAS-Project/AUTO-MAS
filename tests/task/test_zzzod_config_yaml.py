@@ -23,13 +23,16 @@
 实例槽备份恢复闭环与运行记录 diff 的纯逻辑。
 """
 
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 
 from app.task.ZzzOd.tools.backup_archive import (
+    archive_mas_config_backup,
     archive_onedragon_backup,
+    materialize_user_fields,
     onedragon_backup_root,
 )
 from app.task.ZzzOd.tools.catalog import list_app_catalog
@@ -388,12 +391,12 @@ def test_native_account_default_merge_and_default_skip(tmp_path: Path) -> None:
         {
             "game_region": "cn",
             "account": "abc",  # 未变，跳过
-            "password": "",    # 原 secret → 清空（= 默认），落盘为空串
+            "password": "",  # 原 secret → 清空（= 默认），落盘为空串
         },
     )
     data = read_game_account(slot_dir)
-    assert data["account"] == "abc"          # 未变 → 保持
-    assert data["password"] == ""            # 清空回默认 → 字段被写为空串
+    assert data["account"] == "abc"  # 未变 → 保持
+    assert data["password"] == ""  # 清空回默认 → 字段被写为空串
     assert data["game_path"] == r"G:\Games\ZZZ.exe"
     # read_native_account_fields 把空串视为默认 = 表单清空
     fields = read_native_account_fields(root, 1)
@@ -406,7 +409,12 @@ def test_native_tasks_merge_and_full_order_writeback(tmp_path: Path) -> None:
     root = _make_root(tmp_path)
     catalog = [
         {"app_id": "email", "app_name": "邮件", "default_group": True, "priority": 200},
-        {"app_id": "coffee", "app_name": "咖啡店", "default_group": True, "priority": 9999},
+        {
+            "app_id": "coffee",
+            "app_name": "咖啡店",
+            "default_group": True,
+            "priority": 9999,
+        },
     ]
 
     # 原生 app_list 仅 email(启用)；coffee 未加入 → 并入为禁用可选项
@@ -579,11 +587,10 @@ def test_onedragon_backup_fingerprint_dedup(
     root = _make_root(tmp_path)
     # 备份根目录取 Path.cwd()/data，chdir 进 tmp 保证密封不污染真实 data
     monkeypatch.chdir(tmp_path)
-    script_id = "s-0001"
-    od_root = onedragon_backup_root(script_id)
+    od_root = onedragon_backup_root(root)
 
     # 首次：无任何备份 → 立即归档
-    first = archive_onedragon_backup(script_id, root)
+    first = archive_onedragon_backup(root)
     assert first is not None
     assert first.is_dir()
     assert (first / "one_dragon.yml").is_file()
@@ -592,12 +599,12 @@ def test_onedragon_backup_fingerprint_dedup(
     assert not any("MAS-" in rel for rel in dir_files(first))
 
     # 内容一致：指纹相同 → 跳过（不新增时间戳）
-    assert archive_onedragon_backup(script_id, root) is None
+    assert archive_onedragon_backup(root) is None
     assert len(list_times(od_root)) == 1
 
     # 内容变化：原生配置被改（如直控误操作改坏）→ 指纹不同 → 新建归档
     write_game_account(instance_dir(root, 1), {"game_region": "us"})
-    second = archive_onedragon_backup(script_id, root)
+    second = archive_onedragon_backup(root)
     assert second is not None
     assert len(list_times(od_root)) == 2
     assert (second / "1" / "game_account.yml").read_text(encoding="utf-8").find(
@@ -605,7 +612,7 @@ def test_onedragon_backup_fingerprint_dedup(
     ) != -1
 
     # force=True：即使内容一致也强制归档（恢复前存底语义）
-    restored_marker = archive_onedragon_backup(script_id, root, force=True)
+    restored_marker = archive_onedragon_backup(root, force=True)
     assert restored_marker is not None
     assert len(list_times(od_root)) == 3
 
@@ -640,10 +647,178 @@ def test_archive_force_protects_existing_backups(tmp_path: Path) -> None:
 
     # 非 force 归档正常执行保留清理：超出 keep 的最旧份被清掉（5 份 → keep 2 份）
     (src3 / "a.txt").write_text("v4", encoding="utf-8")
-    assert (
-        _archive({"a.txt": src3 / "a.txt"}, store, keep=2, force=False) is not None
-    )
+    assert _archive({"a.txt": src3 / "a.txt"}, store, keep=2, force=False) is not None
     times = list_times(store)
     assert len(times) == 2
     assert ts_book[0] not in times
     assert ts_book[1] not in times
+
+
+def test_materialize_user_applist(tmp_path: Path) -> None:
+    """退出归档前的编排物化：AppList 整表进槽 _group.yml，空/非法跳过。
+
+    槽只有会话/运行注入才带编排；用户只在 MAS 页面保存过编排就退出的话，
+    直接快照槽会漏掉它，恢复这种备份会把编排清空。
+    """
+
+    from app.task.ZzzOd.tools.backup_archive import materialize_user_applist
+
+    slot = tmp_path / "14"
+    write_file(slot / "game_account.yml", {"account": "主号"})
+
+    applist = json.dumps(
+        [
+            {"app_id": "coffee", "enabled": True},
+            {"app_id": "email", "enabled": False},
+        ]
+    )
+    assert materialize_user_applist(slot, applist) is True
+    assert read_app_group(slot) == [
+        {"app_id": "coffee", "enabled": True},
+        {"app_id": "email", "enabled": False},
+    ]
+    # 账号等既有文件不受影响
+    assert read_game_account(slot)["account"] == "主号"
+
+    # 空编排 / 非法 JSON：跳过不写盘
+    assert materialize_user_applist(slot, "[]") is False
+    assert materialize_user_applist(slot, "not-json") is False
+    assert materialize_user_applist(slot, None) is False
+    assert read_app_group(slot) == [
+        {"app_id": "coffee", "enabled": True},
+        {"app_id": "email", "enabled": False},
+    ]
+
+
+def test_materialize_user_fields_account_and_applist(tmp_path: Path) -> None:
+    """归档前物化：账号字段与任务编排一并进槽（game_account.yml + _group.yml）。
+
+    账号/编排只存在 MAS UserData，槽在会话/运行注入前并不带上它们——mas
+    池所有归档点都必须先物化再快照，否则预览读取与恢复回填都会把账号字段
+    清空（AppList 同款陷阱，账号也在内）。
+    """
+
+    class _FakeUserConfig:
+        """最小桩：只支撑 ``get(section, field)`` 读取（对齐 user_field_patch）。"""
+
+        _data = {
+            "Game": {
+                "GameRegion": "cn",
+                "GamePath": r"G:\Games\ZZZ.exe",
+                "GameLanguage": "cn",
+                "Account": "17715817026",
+                "Password": "secret",
+                "BilibiliAccountName": "B站名",
+                "UseCustomWinTitle": True,
+            },
+            "OneDragon": {
+                "AppList": json.dumps(
+                    [
+                        {"app_id": "coffee", "enabled": True},
+                        {"app_id": "email", "enabled": False},
+                    ]
+                )
+            },
+        }
+
+        def get(self, section: str, field: str):
+            return self._data.get(section, {}).get(field)
+
+    slot = tmp_path / "14"
+    # 槽里已有与 MAS 页面不同的区服（如 GUI 改过的残留）与未知字段
+    write_file(slot / "game_account.yml", {"game_region": "us", "unrelated": 1})
+    materialize_user_fields(slot, _FakeUserConfig())
+
+    account = read_game_account(slot)
+    assert account["account"] == "17715817026"
+    assert account["password"] == "secret"
+    assert account["game_path"] == r"G:\Games\ZZZ.exe"
+    assert account["game_language"] == "cn"
+    assert account["bilibili_account_name"] == "B站名"
+    # 本页字段覆盖槽内残留；槽内未知字段保留
+    assert account["game_region"] == "cn"
+    assert account["unrelated"] == 1
+    # 编排整表物化（含未启用项）
+    assert read_app_group(slot) == [
+        {"app_id": "coffee", "enabled": True},
+        {"app_id": "email", "enabled": False},
+    ]
+
+    # 页面未填的字段不写入（不污染槽）：账号/编排缺省时槽内既有值保持
+    class _PartialUserConfig:
+        """最小桩：页面大部分字段为空的场景。"""
+
+        _data = {
+            "Game": {"GameRegion": "cn", "Account": "", "Password": ""},
+            "OneDragon": {"AppList": "[]"},
+        }
+
+        def get(self, section: str, field: str):
+            return self._data.get(section, {}).get(field)
+
+    write_file(slot / "game_account.yml", {"account": "旧账号"})
+    materialize_user_fields(slot, _PartialUserConfig())
+    data = read_game_account(slot)
+    assert data["account"] == "旧账号"  # 页面为空 → 不覆盖槽内既有账号
+    # 已填写的字段仍会写入
+    assert data["game_region"] == "cn"
+
+
+def test_preview_account_fields_masks_password(tmp_path: Path) -> None:
+    """预览账号字段：密码一律掩码不返回明文，其余字段缺失合并默认值。"""
+
+    from app.core.config import AppConfig
+
+    fields = {
+        f["key"]: f["value"]
+        for f in AppConfig._preview_account_fields(
+            {"account": "abc", "password": "secret", "game_path": r"G:\a.exe"}
+        )
+    }
+    assert fields["password"] == "••••••••"
+    assert fields["account"] == "abc"
+    assert fields["game_path"] == r"G:\a.exe"
+
+    # 密码缺省：值为空（前端兜底 —），不返回任何明文
+    empty = {f["key"]: f["value"] for f in AppConfig._preview_account_fields({})}
+    assert empty["password"] == ""
+    assert empty["game_region"] == "cn"  # 缺失合并默认值
+
+
+def test_archive_mas_config_backup_materializes_account(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """统一归档入口：快照自带本页账号与编排（物化后落盘），不再需要调用方手工补。"""
+
+    from app.task.ZzzOd.tools.backup_archive import list_mas_backups
+
+    class _FakeUserConfig:
+        _data = {
+            "Game": {
+                "GameRegion": "cn",
+                "Account": "17715817026",
+                "Password": "secret",
+            },
+            "OneDragon": {
+                "AppList": json.dumps([{"app_id": "coffee", "enabled": True}])
+            },
+        }
+
+        def get(self, section: str, field: str):
+            return self._data.get(section, {}).get(field)
+
+    root = _make_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    script_id = "s-mas"
+    slot = 1
+    # 槽里原本是原生 fixture 的旧账号（主号账号）——统一入口应被本页账号覆盖后归档
+    dest = archive_mas_config_backup(
+        script_id, slot, instance_dir(root, slot), _FakeUserConfig()
+    )
+    assert dest is not None
+    account = read_game_account(dest)
+    assert account["account"] == "17715817026"
+    assert account["password"] == "secret"
+    assert read_app_group(dest) == [{"app_id": "coffee", "enabled": True}]
+    times = list_mas_backups(script_id, slot)
+    assert dest.name in times

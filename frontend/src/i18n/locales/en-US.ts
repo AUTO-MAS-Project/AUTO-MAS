@@ -354,7 +354,6 @@ export default {
     stageP0AlreadyExists: 'Stage "{p0}" already exists',
     configurationSessionUserP0: 'The configuration session for user {p0} timed out',
     maaConfigurationFailedP0: 'MAA configuration failed: {p0}',
-    okNteConfigurationFailed: 'OK-NTE configuration failed: {p0}',
     srcConfigurationFailedP0: 'SRC configuration failed: {p0}',
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
@@ -371,14 +370,12 @@ export default {
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
     startedP0MaaendConfiguration: 'Started the {p0} MaaEnd configuration',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
-    startedOkNteSetup: 'Started the OK-NTE setup for user {p0}',
     startedMaaSetupUser: 'Started the MAA setup for user {p0}',
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
     openedOkWwSettings: 'Opened the ok-ww settings for {p0}',
     readP0: 'Read {p0}',
     addedP0Tasks: 'Added {p0} tasks',
-    okNteConfigurationUser: 'The OK-NTE configuration for user {p0} is done',
     configurationSessionUserP02:
       'The configuration session for user {p0} timed out after 30 minutes; saving automatically...',
     configurationUserP0Was: 'The configuration for user {p0} was saved',
@@ -709,7 +706,6 @@ export default {
     done: 'Done',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
-    saved: 'Saved',
     turnAutomaticRelicSalvage:
       'Turn on automatic relic salvage in game, so a full bag does not interrupt relic farming.',
     thisScriptDeclaresNo: 'This script declares no version, so updates cannot be checked',
@@ -720,7 +716,6 @@ export default {
     run: 'Run',
     folder: 'Folder',
     runOnceNewUser: 'Run once for a new user',
-    youHaveUnsavedChanges2: 'You have unsaved changes',
     noMatch: 'No match',
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
@@ -924,8 +919,6 @@ export default {
     okNteScriptConfiguration: 'OK-NTE script configuration',
     okNtePath: 'OK-NTE path',
     okNtePathMatched: 'OK-NTE path matched automatically',
-    okNteConfigurationSession:
-      'The OK-NTE configuration session timed out; saving the configuration',
     okNteConfiguration: 'OK-NTE configuration',
     howPcGameLaunched: 'How the PC game is launched',
     sraPath: 'SRA path',
@@ -1053,7 +1046,6 @@ export default {
     onlyProcessesStartedBy:
       'Only processes started by this task and owned by MAS are closed; processes you opened yourself are left alone',
     optional: 'Optional',
-    couldNotStartOk: 'Could not start the OK-NTE configuration',
     couldNotStartMaa: 'Could not start the MAA configuration',
     couldNotStartSrc: 'Could not start the SRC configuration',
     checkGameUpdateBefore: 'Check for a game update before launching',
@@ -1258,7 +1250,6 @@ export default {
     maximumLines: 'Maximum lines',
     youHaveUnsavedChanges: 'You have unsaved changes',
     server: 'Server',
-    noActiveOkNte: 'No active OK-NTE configuration session',
     localProjectDirectory: 'Local project directory',
     readExtractionPatternReference: 'Read the extraction-pattern reference',
     rootPathSelected: 'Root path selected',
@@ -1663,9 +1654,6 @@ export default {
       'When on, the BAAH task nodes of this run (finished / skipped / failed) are included in the task report; when off no task nodes are collected, while the run log and the result decision stay unchanged',
     baahEmulatorHint:
       'Pick the emulator this app should schedule; it starts the emulator and waits for the device before the run, so BAAH only connects and you need no emulator path or port inside BAAH',
-    baahCloseEmulatorOnFinish: 'Close the emulator when finished',
-    baahCloseEmulatorOnFinishHint:
-      'When on, this app closes the selected emulator instance once the task ends',
     baahNotBaahScript: 'This script is not a BAAH script',
     baahRunTimesLimitHint: 'Stop the run when this many attempts still fail',
     baahRunTimeLimitHint:
@@ -1773,12 +1761,31 @@ export default {
     configRestoreDetailView: 'View details',
     configRestoreDetailHint:
       'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
+    configRestoreDetailConfirm:
+      'The script view page will open and temporarily overwrite the current config. Make sure no script with the same name is running during viewing; otherwise conflicts may occur. If anything unexpected happens, you can restore via Config restore.',
+    configRestoreConfirmOk: 'Confirm',
     configRestoreAction: 'Restore',
     configRestoreSuccess: 'Config restored',
     configRestoreFailed: 'Failed to restore config',
     configRestoreConfirmTitle: 'Overwrite current config',
     configRestoreConfirmDesc:
       'Restores the config at this point in time to its location. The current config is backed up automatically before restoring and can be recovered anytime via "Config restore". Continue?',
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    oknteConfigRestoreScriptDesc:
+      'Backups of the ok-nte native config; restoring applies directly to ok-nte itself. Created automatically (dedup) when opening this edit page, before running ok-nte or opening its config UI, latest 10 kept',
+    // ok-nte 原生设置/查看会话（措辞对齐一条龙）
+    oknteSessionStopFailed: 'Could not stop the OK-NTE setup session',
+    oknteSessionStartFailed: 'Could not start the OK-NTE setup session',
+    oknteSessionFailed: 'OK-NTE setup failed: {p0}',
+    oknteSessionOpened: 'OK-NTE setup opened',
+    oknteViewOpened: 'OK-NTE viewer opened',
+    oknteSessionTimeoutWarn:
+      'The OK-NTE setup session is about to time out and will be saved in 30 seconds',
+    oknteViewingTitle: 'Viewing OK-NTE config',
+    oknteViewingDesc: 'The ok-nte window shows the selected backup, for viewing only.',
+    oknteViewingDesc2:
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    oknteViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',
     configRestorePreviewLauncher: 'Launcher',
@@ -1809,7 +1816,7 @@ export default {
     zzzodViewingTitle: 'Viewing ZZZ-OD config',
     zzzodViewingDesc: 'The OneDragon window shows the selected backup, for viewing only.',
     zzzodViewingDesc2:
-      'Viewing does not change the fields on this page; click "Close viewer" when done.',
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
     zzzodViewClose: 'Close viewer',
     zzzodSettingsSaved: 'ZZZ-OD settings saved',
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',

@@ -33,6 +33,7 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.emulator_core import close_emulator
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -824,16 +825,8 @@ class SrcManager(TaskExecuteBase):
         if self.task_info.mode not in ["AutoProxy"]:
             return False
 
-        try:
-            await asyncio.wait_for(
-                self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                ),
-                timeout=_EMULATOR_CLOSE_TIMEOUT_SECONDS,
-            )
-        except Exception as e:
+        if not await close_emulator(self, timeout=_EMULATOR_CLOSE_TIMEOUT_SECONDS):
             self.script_info.status = "异常"
-            logger.opt(exception=True).warning(f"关闭模拟器时出现异常: {e}")
 
         # 根配置保持锁定以阻止外部编辑；仅临时开放内部用户集合写回。
         await self.script_config.UserData.unlock()

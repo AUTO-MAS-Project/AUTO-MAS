@@ -486,49 +486,53 @@ class ZzzOdTeamsSaveOut(OutBase):
     teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表")
 
 
-class ZzzOdBackupItemOut(BaseModel):
+class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
-    time: str = Field(..., description="备份时间戳（目录名，如 20260903-104500）")
+    time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
 
 
-class ZzzOdBackupListOut(OutBase):
-    data: List[ZzzOdBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+class ConfigBackupListOut(OutBase):
+    data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
 
 
-class ZzzOdBackupRestoreIn(BaseModel):
-    """把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）"""
+class ConfigBackupRestoreIn(BaseModel):
+    """把指定备份恢复到目标位置（target 取值由专项池定义）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
     userId: str = Field(..., description="目标用户ID")
     time: str = Field(..., description="备份时间戳")
-    target: Literal["onedragon", "mas"] = Field(
-        default="onedragon",
-        description="恢复目标：onedragon=把一条龙原生配置备份恢复到一条龙本身（one_dragon.yml + 原生实例目录，MAS 槽不触碰，恢复前自动归档当前）；mas=把 MAS 用户槽备份恢复到绑定槽并全量回填本页字段（配队等随槽回到该时点）",
+    target: str = Field(
+        ...,
+        description="恢复目标（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）；非法值返回 400",
     )
 
 
-class ZzzOdBackupEnsureIn(BaseModel):
-    """按需归档目标池当前配置（编辑界面三时机：进入/退出/运行前）"""
+class ConfigBackupRestoreOut(OutBase):
+    target: str = Field(..., description="实际执行的恢复目标")
+
+
+class ConfigBackupEnsureIn(BaseModel):
+    """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
     userId: str = Field(..., description="目标用户ID")
-    target: Literal["onedragon", "mas"] = Field(
-        default="onedragon",
-        description="归档目标：onedragon=一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；mas=MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）",
+    target: str = Field(..., description="归档目标（取值由专项池定义）")
+
+
+class ConfigBackupEnsureOut(OutBase):
+    created: bool = Field(
+        ..., description="本次是否新建了归档（False=指纹无变化跳过或无可归档内容）"
     )
-
-
-class ZzzOdBackupEnsureOut(OutBase):
-    created: bool = Field(..., description="本次是否新建了归档（False=指纹无变化跳过或无槽可归档）")
     time: str = Field(..., description="最新备份时间戳（无任何备份为空串）")
 
 
-class ZzzOdBackupRestoreOut(OutBase):
-    slot: int = Field(..., description="关联槽 idx（onedragon 恢复为 -1，失败为 -1）")
-    target: Literal["onedragon", "mas"] = Field(
-        default="onedragon", description="实际执行的恢复目标"
-    )
+class ConfigBackupPreviewOut(OutBase):
+    """备份配置摘要（预览用，纯读不恢复；载荷结构由专项定义）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    data: dict = Field(..., description="专项预览载荷（如 zzz-od 的 info/account/tasks/instances 或 ok-nte 的 files）")
 
 
 class ZzzOdNativeAccountField(BaseModel):
@@ -629,55 +633,6 @@ class ZzzOdImportOut(OutBase):
     importedTaskCount: int = Field(..., description="本次导入的已启用任务数")
     slot: int = Field(
         ..., description="用户绑定槽 idx（未绑定时 -1，此时无槽内容可备份）"
-    )
-
-
-class ZzzOdPreviewField(BaseModel):
-    """配置摘要中的账号字段"""
-
-    key: str = Field(..., description="game_account.yml 字段名")
-    value: str = Field(..., description="字段值（缺失合并默认值）")
-
-
-class ZzzOdPreviewTask(BaseModel):
-    """配置摘要中的任务编排条目"""
-
-    app_id: str = Field(..., description="应用ID")
-    app_name: str = Field(..., description="应用中文名")
-    enabled: bool = Field(..., description="是否启用")
-
-
-class ZzzOdPreviewInstance(BaseModel):
-    """一条龙备份摘要中的实例条目（可展开查看账号/任务明细）"""
-
-    idx: int = Field(..., description="实例下标")
-    name: str = Field(..., description="实例名称")
-    active: bool = Field(..., description="是否为当前活跃实例")
-    active_in_od: bool = Field(..., description="是否参与「全部实例」模式的一条龙")
-    account: List[ZzzOdPreviewField] = Field(
-        ..., description="该实例的账号字段（来自备份目录内 game_account.yml）"
-    )
-    tasks: List[ZzzOdPreviewTask] = Field(
-        ..., description="该实例的任务编排（来自备份目录内 _group.yml）"
-    )
-
-
-class ZzzOdBackupPreviewOut(OutBase):
-    """备份配置摘要（预览用，纯读不恢复）"""
-
-    time: str = Field(..., description="备份时间戳")
-    target: Literal["onedragon", "mas"] = Field(..., description="备份类别")
-    info: List[ZzzOdPreviewField] = Field(
-        ..., description="基本信息卡信息字段（mas 类备份；旧备份或 onedragon 为空）"
-    )
-    account: List[ZzzOdPreviewField] = Field(
-        ..., description="账号字段（mas 类备份；onedragon 为空）"
-    )
-    tasks: List[ZzzOdPreviewTask] = Field(
-        ..., description="任务编排（mas 类备份；onedragon 为空）"
-    )
-    instances: List[ZzzOdPreviewInstance] = Field(
-        ..., description="实例列表（onedragon 类备份，带可展开明细；mas 为空）"
     )
 
 
@@ -2160,9 +2115,6 @@ class BAAHConfig_Run(BaseModel):
 class BAAHConfig_Emulator(BaseModel):
     Id: Optional[str] = Field(default=None, description="模拟器ID")
     Index: Optional[str] = Field(default=None, description="模拟器多开实例索引")
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭模拟器"
-    )
 
 
 class BAAHConfig(BaseModel):

@@ -6,19 +6,20 @@
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
 <!--
-  本文件是更新日志与版本号的唯一手写来源，请不要手改 res/version.json 等生成物。
+  本文件由 scripts/changelog.py 在发版时从 changelog.d/ 里的碎片编译生成，平时不要手改，
+  也不要手改 res/version.json 等生成物。
 
-  - 文件顶部第一个 `## [vX.Y.Z] - 未发布` 标题即当前尚未发布的版本号，新条目写进它下面。
-  - 每个 PR 都要在这里登记一条，写在最贴切的分类下；分类不存在就新建一个 `###`。
-  - 条目写成一行，`- ` 开头，从用户视角描述这次改动带来了什么。
-  - 不要手写 ` by [@用户](链接)` 署名，PR 合并后由机器人补。
-  - 改完运行 `python scripts/changelog.py sync`，它会同步各处版本号、规范化本文件、
-    并重新生成底部的版本对比链接。
+  - 要登记一条更新日志，在 changelog.d/ 下新建一个碎片文件，见 changelog.d/README.md，
+    或运行 `python scripts/changelog.py add <分类> "<一句话>"`。一条 PR 只放一个碎片。
+  - 文件顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号。发版 PR 由「准备发版」工作流
+    创建，是唯一会改动本文件与各处版本号的地方。
+  - 条目写成一行，从用户视角描述这次改动带来了什么；署名在发版时按碎片的提交作者自动补，
+    不要手写。
 
   分类含义（中间六类来自 Keep a Changelog）：
 
   - 破坏性变更：需要用户动手确认或会改变既有行为的改动，在更新提示里最醒目地展示。
-  - 本次亮点：这一版最值得一看的三五条，正文仍写在下面对应的分类里。
+  - 本次亮点：这一版最值得一看的三五条，由维护者在发版 PR 里挑选。
   - 新增：新添加的功能。
   - 变更：对现有功能的变更，含优化与调整。
   - 弃用：已经不建议使用、即将移除的功能。
@@ -28,7 +29,56 @@
   - 开发流程：只影响贡献者、用户看不见的改动。
 -->
 
-## [v5.5.0-beta.4] - 未发布
+## [v5.5.0-beta.6] - 未发布
+
+### 破坏性变更
+
+- 绝区零一条龙升级后，旧版本保存在脚本目录下的「一条龙原生配置」备份不再显示在配置恢复列表中（数据未删除，确需找回请手动迁移） by [@AthenaHibou](https://github.com/AthenaHibou)
+
+### 新增
+
+- OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)
+
+### 修复
+
+- BAAH 专项 修复配置页多出一个「结束后关闭模拟器」开关的问题：其他专项都没有这个选项，BAAH 一并按「任务结束后关闭模拟器」执行 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复模拟器关闭动作缺少超时、关闭失败时仍可能让任务收尾长时间卡住的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复脚本配置目录被脚本进程占用或含只读文件时，任务收尾复原配置失败、配置目录停留在半删状态的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 开发流程：收敛各专项重复的日志推送与启动参数拆分实现，避免同类逻辑在多处各存一份 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 开发流程：恢复 tzdata 依赖——Windows 上没有系统时区数据库，移除后会导致时区查询失败 by [@1w1w11w1](https://github.com/1w1w11w1)
+
+## [v5.5.0-beta.5] - 2026-09-12
+
+### 新增
+
+- BAAH专项 新增碧蓝档案爱丽丝助手脚本支持，可集中管理多个账号的配置并自动完成每日任务 by [@audiencegeg-glitch](https://github.com/audiencegeg-glitch)
+- MAA专项 日常调度新增「更换主题」开关，勾选后计划运行时执行 MAA 里配好的界面主题更换（多个主题随机切换，需 MAA v6.17.3 及以上）；库存保持的关卡下拉只显示真正掉落该材料的关卡、按「刷一件要多少理智」从省到贵排序，并新增库存列显示当前仓库数量 by [@jinghero](https://github.com/jinghero)
+- MFW专项 同一个任务可以重复加入任务队列，每一份各自配置选项与排序；设了「每日/每周/每月仅一次」的任务仍按任务计、一轮只跑一次 by [@qiyinxi](https://github.com/qiyinxi)
+- 模拟器 2.0 支持由原有全局开关控制的「大雷主人模式」，并新增「打开游戏中心」按钮 by [@qiyinxi](https://github.com/qiyinxi)
+- 初始化 下载前先对各下载源测速并按最快的顺序使用，安装 Python 与依赖时显示当前文件、进度、速度与来源 by [@qiyinxi](https://github.com/qiyinxi)
+- 星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新可回滚，中途失败会还原到原版本，你自己的配置文件和另存的自定义策略不会被动到；脚本正开着窗口时跳过本轮 by [@qiyinxi](https://github.com/qiyinxi)
+
+### 变更
+
+- 性能与清理 编辑页连续改动不再丢失，配置文件损坏时保留副本而不是静默清空；日志页、模拟器页、签到页与工具页不再高频轮询，任务日志改为增量推送，MAA 起步不再卡顿一秒，运行日志不再被访问记录撑大；并移除前端从不使用的 9 个接口（MCP 同名工具一并消失）与约两万行无用代码 by [@qiyinxi](https://github.com/qiyinxi)
+
+### 修复
+
+- 绝区零一条龙 修复「快速导入配置」没有带入所选实例的按键配置（键盘/手柄按键、后台模式、输入方式等），导入后按键仍是默认值的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 模拟器 2.0 修复雷电 VBox 服务卡住时（窗口开了、虚拟机起不来、MAA 报 ADB 连接异常且反复重试）的启动问题：会自动关掉空窗口并重启该服务再试一次，但只要还有实例在运行或正在启动就不碰、改为提示先关闭它们；启动前还会检查 VBox 运行时是否被修复工具修残（缺 GPU 库导致虚拟机启动几十秒后崩溃），缺了就从雷电安装目录补回，补不回时明确报错；MuMu 实例启动失败或超时时报错附上 MuMu 自己给出的错误码、错误信息和实例状态 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复社区通知重复发送、标题重复及同名 Webhook 漏发签到摘要的问题；修复库街区签到失败及凭据兼容问题，分别显示游戏与库洛币的签到结果、奖励和失败原因
+- MAA专项 修复 MAA 内配置方案与新版配置文件不一致时脚本设置、自动代理与 MAA 更新任务直接报错中断，理智不足时剿灭被误记为本周已完成、当周剩余剿灭不再执行，以及本周剿灭已完成时仍被判定为部分任务执行失败并反复重跑的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MAA专项 修复活动关优先失败但后续理智作战完成时整轮仍被判失败的问题
+- 调度中心 修复任务完成后没有执行设定的关机、重启等电源操作、倒计时结束后只有软件退出，以及任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复绝区零一条龙运行记录被写坏时整个任务直接异常、无法继续运行的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- HSR专项 修复三月七助手的输出在日志与通知里全是 `\uXXXX` 乱码、失败原因只截到一条 WARNING，以及识屏超时自己关掉游戏却被报成「若是用户主动关闭游戏」的问题；通知 Webhook 被钉钉/企微/飞书/OneBot 拒收时不再记成推送成功，会在任务页提示失败原因 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」（现按镜像依次重试并提示失败原因）；beta.4 下脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru；agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本导致每次都卡在「AgentClient 连接超时」（已装错的环境会自动重建一次）；首次更新自行解压的项目时不清理旧版残留文件导致资源加载失败；以及运行环境准备与脚本运行被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题，依赖解析只按 MAS 选定的下载源进行，脚本与 Agent 不再继承宿主的 Python 环境变量 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MaaEnd专项 修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题；现在会自动跳过这些任务并提示重做「MaaEnd 配置」 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+
+## [v5.5.0-beta.4] - 2026-09-10
 
 ### 新增
 
@@ -80,6 +130,8 @@
 - 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 - OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 - 调度台 修复任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- MAA专项 修复在配置检查通过后、任务正式开始前停止任务时被报成「MAA任务出现异常」的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- 修复日志文件在运行过程中被重建或删除时，日志监控会静默失效、该趟任务再也不会被正常判定（卡到超时或误报异常）的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 
 ### 开发流程
 
@@ -220,7 +272,9 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 
-[v5.5.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.3...dev
+[v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...dev
+[v5.5.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.4...v5.5.0-beta.5
+[v5.5.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.3...v5.5.0-beta.4
 [v5.5.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.2...v5.5.0-beta.3
 [v5.5.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.1...v5.5.0-beta.2
 [v5.5.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0-beta.1

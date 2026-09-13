@@ -10,7 +10,7 @@ import os
 import stat
 from pathlib import Path
 
-from app.utils.io import force_rmtree
+from app.utils.io import force_rmtree, replace_dir
 
 
 def _write_readonly(path: Path) -> None:
@@ -41,3 +41,51 @@ def test_missing_path_is_a_noop(tmp_path: Path) -> None:
     force_rmtree(tmp_path / "not-exists")
 
     assert not (tmp_path / "not-exists").exists()
+
+
+def test_replace_dir_overwrites_readonly_target(tmp_path: Path) -> None:
+    """目标目录带只读文件时也能整体换成源内容，不留 `.tmp` 残留。"""
+
+    src = tmp_path / "src"
+    src.mkdir()
+    dst = tmp_path / "configs"
+    (dst / ".git" / "objects" / "pack").mkdir(parents=True)
+    _write_readonly(dst / ".git" / "objects" / "pack" / "pack-aabb.pack")
+    (dst / "user.json").write_text('{"a": 999}', encoding="utf-8")
+    (src / "user.json").write_text('{"a": 1}', encoding="utf-8")
+
+    replace_dir(src, dst)
+
+    assert (dst / "user.json").read_text(encoding="utf-8") == '{"a": 1}'
+    assert not (tmp_path / "configs.tmp").exists()
+
+
+def test_replace_dir_restores_when_target_still_held(tmp_path: Path) -> None:
+    """目标有文件被占用时不再停在半删状态：删掉的部分会被就地补回。"""
+
+    src = tmp_path / "src"
+    dst = tmp_path / "configs"
+    src.mkdir()
+    (src / "user.json").write_text('{"a": 1}', encoding="utf-8")
+    dst.mkdir()
+    (dst / "user.json").write_text('{"a": 999}', encoding="utf-8")
+    (dst / "held.bin").write_bytes(b"x" * 64)
+
+    with (dst / "held.bin").open("rb"):
+        replace_dir(src, dst)
+
+        # 关键断言：不是「删了一半、备份一个没拷回」
+        assert (dst / "user.json").exists()
+        assert (dst / "user.json").read_text(encoding="utf-8") == '{"a": 1}'
+
+
+def test_replace_dir_creates_missing_target(tmp_path: Path) -> None:
+    """目标不存在时直接建出来，与源内容一致。"""
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "user.json").write_text("{}", encoding="utf-8")
+
+    replace_dir(src, tmp_path / "brand-new")
+
+    assert (tmp_path / "brand-new" / "user.json").exists()

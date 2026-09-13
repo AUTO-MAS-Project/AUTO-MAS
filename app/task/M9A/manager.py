@@ -33,6 +33,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
+from app.task.emulator_core import close_emulator
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from app.utils.io import read_file, write_file
@@ -327,9 +328,7 @@ class M9AManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
+            await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
