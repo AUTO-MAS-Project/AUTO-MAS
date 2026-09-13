@@ -24,6 +24,14 @@ export type BAAHUserConfig_Info = {
      */
     ActivityConfigName?: (string | null);
     /**
+     * 是否按碧蓝档案有没有活动切换使用的配置文件
+     */
+    IfActivityAdapt?: (boolean | null);
+    /**
+     * 活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服
+     */
+    ActivityLineType?: ('JP' | 'Globle' | 'CN' | null);
+    /**
      * 备注
      */
     Notes?: (string | null);

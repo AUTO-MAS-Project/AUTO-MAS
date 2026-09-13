@@ -1311,6 +1311,14 @@ export function useScriptApi() {
                           baahUserData.Info?.ActivityConfigName !== undefined
                             ? baahUserData.Info.ActivityConfigName
                             : '',
+                        IfActivityAdapt:
+                          baahUserData.Info?.IfActivityAdapt !== undefined
+                            ? baahUserData.Info.IfActivityAdapt
+                            : false,
+                        ActivityLineType:
+                          baahUserData.Info?.ActivityLineType !== undefined
+                            ? baahUserData.Info.ActivityLineType
+                            : 'CN',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
                         Tag:

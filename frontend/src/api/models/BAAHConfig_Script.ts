@@ -15,13 +15,5 @@ export type BAAHConfig_Script = {
      * 是否在任务报告中保留 BAAH 的运行日志
      */
     PushLogEnabled?: (boolean | null);
-    /**
-     * 是否按碧蓝档案有没有活动切换用户使用的配置文件
-     */
-    IfActivityAdapt?: (boolean | null);
-    /**
-     * 活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服
-     */
-    ActivityLineType?: ('JP' | 'Globle' | 'CN' | null);
 };
 

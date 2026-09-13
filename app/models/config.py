@@ -4684,6 +4684,14 @@ class BAAHUserConfig(ConfigBase):
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
         ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
         self.Info_ActivityConfigName = ConfigItem("Info", "ActivityConfigName", "")
+        ## 是否按碧蓝档案有没有活动切换使用的配置文件
+        self.Info_IfActivityAdapt = ConfigItem(
+            "Info", "IfActivityAdapt", False, BoolValidator()
+        )
+        ## 活动排期按哪个服判断（Kivo 时间轴的原文拼写：JP / Globle / CN）
+        self.Info_ActivityLineType = ConfigItem(
+            "Info", "ActivityLineType", "CN", OptionsValidator(["JP", "Globle", "CN"])
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 用户标签信息
@@ -4762,14 +4770,6 @@ class BAAHConfig(ConfigBase):
         ## 是否在任务报告中展示 BAAH 的任务节点详情
         self.Script_PushLogEnabled = ConfigItem(
             "Script", "PushLogEnabled", True, BoolValidator()
-        )
-        ## 是否按碧蓝档案有没有活动切换用户使用的配置文件
-        self.Script_IfActivityAdapt = ConfigItem(
-            "Script", "IfActivityAdapt", False, BoolValidator()
-        )
-        ## 活动排期按哪个服判断（Kivo 时间轴的原文拼写：JP / Globle / CN）
-        self.Script_ActivityLineType = ConfigItem(
-            "Script", "ActivityLineType", "CN", OptionsValidator(["JP", "Globle", "CN"])
         )
 
         ## Run -------------------------------------------------------------

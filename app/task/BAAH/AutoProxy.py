@@ -125,7 +125,7 @@ class AutoProxyTask(TaskExecuteBase):
         ## 两个总开关在 prepare() 里按脚本配置初始化，这里给出保守默认值
         self.if_manage_config = True
         self.push_log_enabled = True
-        ## 活动适配开关与判定所用的服，在 check() 里按脚本配置初始化
+        ## 活动适配开关与判定所用的服，在 check() 里按用户配置初始化
         self.if_activity_adapt = False
         self.activity_line_type: BlueArchiveLineType = "CN"
         ## 本次运行实际使用的配置文件名：check() 里确定，prepare() 复用，
@@ -172,9 +172,11 @@ class AutoProxyTask(TaskExecuteBase):
             return self.effective_config_name
 
         self.if_activity_adapt = bool(
-            self.script_config.get("Script", "IfActivityAdapt")
+            self.cur_user_config.get("Info", "IfActivityAdapt")
         )
-        self.activity_line_type = self.script_config.get("Script", "ActivityLineType")
+        self.activity_line_type = self.cur_user_config.get(
+            "Info", "ActivityLineType"
+        )
 
         default_name = resolve_config_name(
             str(self.cur_user_config.get("Info", "ConfigName"))

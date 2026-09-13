@@ -130,8 +130,63 @@
             </a-col>
           </a-row>
 
-          <!-- 开启活动适配后，活动期间改用这里选的配置；留空则始终用上面的配置名 -->
+          <!-- 活动适配：按碧蓝档案当前有没有活动，改用另一份配置文件 -->
           <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item name="ifActivityAdapt">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahIfActivityAdaptHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahIfActivityAdapt') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.IfActivityAdapt"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @change="
+                    handleFieldSave('Info.IfActivityAdapt', formData.Info.IfActivityAdapt)
+                  "
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item name="activityLineType">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahActivityLineType') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ActivityLineType"
+                  :disabled="loading || !formData.Info.IfActivityAdapt"
+                  size="large"
+                  style="width: 100%"
+                  @change="
+                    handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)
+                  "
+                >
+                  <a-select-option value="CN">
+                    {{ t('edit.baahActivityLineCN') }}
+                  </a-select-option>
+                  <a-select-option value="JP">
+                    {{ t('edit.baahActivityLineJP') }}
+                  </a-select-option>
+                  <a-select-option value="Globle">
+                    {{ t('edit.baahActivityLineGloble') }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
             <a-col :span="8">
               <a-form-item name="activityConfigName">
                 <template #label>
@@ -145,7 +200,7 @@
                 <a-select
                   v-model:value="formData.Info.ActivityConfigName"
                   :placeholder="t('edit.baahActivityConfigNamePlaceholder')"
-                  :disabled="loading"
+                  :disabled="loading || !formData.Info.IfActivityAdapt"
                   :loading="configNamesLoading"
                   :options="configNameOptions"
                   size="large"
@@ -299,6 +354,8 @@ const getDefaultBAAHUserData = () => ({
     RemainedDay: -1,
     ConfigName: '',
     ActivityConfigName: '',
+    IfActivityAdapt: false,
+    ActivityLineType: 'CN',
     Notes: '',
     Tag: '',
   },
