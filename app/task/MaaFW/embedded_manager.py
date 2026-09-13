@@ -260,6 +260,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
         self.runnable_user_uids: list[uuid.UUID] = []
         self.emulator_manager: DeviceBase | None = None
+        # check() 建副本前锁住脚本配置，final_task 写回用户配置前再解开；只解一次。
+        self._script_locked = False
         # 当前正在跑的那一位用户的 AutoProxy 任务；每个用户各建一个。
         self.inner_task: "MaaFWPluginAutoProxyTask | None" = None
         self._inner_finalized = True
@@ -296,6 +298,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if not Path(project_value).resolve().is_dir():
             return "请设置包含 interface.json 的 MFW 项目目录"
 
+        # 与其他专项同一口径：运行期间锁住脚本配置，界面上的改动会被拒绝。
+        # 先锁再建副本，两步之间不能有让出点——改动一旦落在副本之外，final_task
+        # 整表写回时就会被覆盖。后面的校验没通过也要靠 final_task 解锁。
+        await script_config.lock()
+        self._script_locked = True
         user_config: MultipleConfig[MaaFWUserConfig] = MultipleConfig([MaaFWUserConfig])
         await user_config.load(await script_config.UserData.toDict())
         self.user_config = user_config
@@ -717,9 +724,37 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MFW 内置运行收尾异常：{exc}")
 
+    async def _commit_user_data(self) -> None:
+        """解锁脚本配置，并把用户配置副本整表写回、落盘；只做一次。
+
+        ``runner_task`` 结算的代理次数、剩余天数、上次运行状态与周期任务记录都写在
+        ``check()`` 建的那份副本上，不写回就随任务结束一起丢（#720）。整表写回与
+        其他专项同一口径，所以副本必须始终包含脚本下全部用户，不能按可运行用户裁剪。
+        """
+
+        if not self._script_locked:
+            return
+        self._script_locked = False
+        assert self.script_config is not None
+        assert self.user_config is not None
+        # MultipleConfig.load 在锁定状态下会直接拒绝，先解锁再写回。
+        await self.script_config.unlock()
+        if self.check_result != "Pass":
+            # 校验没过就没跑过任何用户，副本与脚本配置一致，只解锁不写回。
+            return
+        try:
+            await self.script_config.UserData.load(await self.user_config.toDict())
+            await Config.ScriptConfig.save()
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MFW 用户配置写回失败：{exc}")
+
     async def final_task(self) -> None:
         # 正常路径下每个用户跑完就已收尾；这里只兜取消与异常路径的最后一位用户。
-        await self._finalize_inner_task()
+        try:
+            await self._finalize_inner_task()
+        finally:
+            # 最后一位用户收尾完，副本上的数据才齐；取消与崩溃路径也从这里写回。
+            await self._commit_user_data()
         for user in self.script_info.user_list:
             if user.status in ("等待", "运行"):
                 user.status = "异常"
