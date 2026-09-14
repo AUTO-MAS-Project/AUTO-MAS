@@ -133,12 +133,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.config_mode = read_config_source(self.cur_user_config)
-        # 是否写 MAS 侧配置：直控+关闭=不写，其余三种组合都写面板值。
-        # 通用脚本的「用户」来源落盘的就是面板值本身，所以直控+开启与它同路径
-        # 是预期行为，不是漏分支。
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
-            self.cur_user_config.get("Info", "IfQuickConfig")
-        )
+        # 是否写 MAS 侧配置：直控=不写，脚本/用户来源都写面板值。
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         self.check_result = "-"
 
     async def check(self) -> str:

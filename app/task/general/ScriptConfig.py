@@ -66,10 +66,8 @@ class ScriptConfigTask(TaskExecuteBase):
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
             self.config_mode = read_config_source(user_config)
-            # 直控+关闭=不写；其余组合都写面板值（见 AutoProxy 同款说明）
-            self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
-                user_config.get("Info", "IfQuickConfig")
-            )
+            # 直控=不写；脚本/用户来源都写面板值（见 AutoProxy 同款说明）
+            self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
 
     async def prepare(self):
 

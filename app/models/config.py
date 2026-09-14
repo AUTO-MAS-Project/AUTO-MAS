@@ -2956,8 +2956,6 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 配置来源（脚本/用户/直控）
         self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
         ## 兼容旧版用户独立脚本配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()

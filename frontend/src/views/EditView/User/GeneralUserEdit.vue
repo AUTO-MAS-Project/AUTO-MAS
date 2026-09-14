@@ -155,10 +155,8 @@
                 :options="generalConfigModeOptions"
                 :disabled="loading"
                 :saving="configModeSaving"
-                :quick-config="formData.Info.IfQuickConfig ?? true"
                 :alert-message="t('edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
-                @quick-config-change="handleQuickConfigChange"
               />
             </a-col>
           </a-row>
@@ -267,8 +265,6 @@ const getDefaultGeneralUserData = () => ({
     RemainedDay: -1,
     // 配置来源三态（脚本/用户/直控）
     Mode: '用户',
-    // 快速配置：独立于配置来源的用户级开关
-    IfQuickConfig: true,
     IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
@@ -430,11 +426,6 @@ const handleConfigModeChange = async (value: boolean | string) => {
   }
 }
 
-// 快速配置开关：与配置来源独立，真实保存
-const handleQuickConfigChange = async (value: boolean) => {
-  formData.Info.IfQuickConfig = value
-  await updateUser(scriptId, userId, { Info: { IfQuickConfig: value } })
-}
 
 // 注意：移除了 watch 自动保存，现在由各控件的 @change/@blur 事件触发保存
 
