@@ -63,7 +63,10 @@ from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     find_pids_by_name,
     push_dispatch_log,
+    read_config_source,
     split_args,
+    user_uses_direct_control,
+    user_uses_quick_config,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
@@ -372,8 +375,8 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: ZzzOdUserConfig = self.user_config[self.cur_user_uid]
-        # 两态配置来源（用户=本配置字段 / 直控=zzz-od 原生配置）
-        self.mode = str(self.cur_user_config.get("Info", "Mode") or "用户")
+        # 配置来源三态（脚本/用户=本配置字段 / 直控=zzz-od 原生配置）
+        self.mode = read_config_source(self.cur_user_config)
         # 账号切换方式（脚本级下拉，仅用户态生效）：
         # 多实例切换=多用户注入多实例槽一轮跑；单实例切换=逐用户独立会话
         self.account_switch = str(
@@ -486,7 +489,7 @@ class AutoProxyTask(TaskExecuteBase):
             cfg = self.user_config[uid]
             if not cfg.get("Info", "Status"):
                 continue
-            if str(cfg.get("Info", "Mode") or "用户") == "直控":
+            if user_uses_direct_control(cfg):
                 logger.warning(
                     f"用户 {user_item.name} 为直控配置, 不参与注入运行（原生裸跑由调度单独分派）"
                 )
@@ -597,6 +600,48 @@ class AutoProxyTask(TaskExecuteBase):
         self._push_user_book = {
             user_item.name: user_item for user_item, _, _ in users
         }
+
+    async def _prepare_direct_quick_config(self) -> None:
+        """直控+快速配置：任务前把该用户面板字段写入绑定实例槽，任务后恢复。
+
+        复用用户态注入原语（ensure_user_slot 解析/分配绑定槽 → 槽目录备份 →
+        由用户配置字段生成 YAML 写入槽），与 ``_prepare_injection`` 共用
+        ``_injected_slots``/``_slot_users`` 现场与 ``_restore_injection`` 恢复路径
+        （无合成视图：直控裸跑走原生注册表，恢复只还原槽目录）。
+
+        绑定槽缺失时按 zzz-od 固定槽形状建空槽（注入原语自动创建
+        game_account.yml / one_dragon/_group.yml），不建平行模型。
+        写失败（含槽备份失败）异常向上传播即任务失败（S5），不吞异常。
+        """
+
+        used_idxs = collect_used_slot_idxs(exclude_uids={self.cur_user_uid})
+        slot = await ensure_user_slot(
+            self.script_root_path, self.cur_user_config, used_idxs
+        )
+        backup_base = (
+            Path.cwd()
+            / "data"
+            / self.script_info.script_id
+            / "Temp"
+            / "InstanceBackup"
+        )
+        backup_dir = backup_base / f"{slot:02d}"
+        if instance_dir(self.script_root_path, slot).is_dir():
+            backup_instance(self.script_root_path, slot, backup_dir)
+            self._injected_slots.append((slot, backup_dir))
+        else:
+            # 槽目录不存在：以固定槽形状建空槽（注入原语创建配置文件）
+            self._injected_slots.append((slot, None))
+        self._inject_user_config(
+            slot, self.cur_user_config, self._enabled_app_list()
+        )
+        self._slot_users[slot] = (self.cur_user_item, self.cur_user_config)
+        self._slot_records_before[slot] = snapshot_run_records(
+            self.script_root_path, slot
+        )
+        logger.info(
+            f"ZZZ-OD 直控快速配置：已把用户 {self.cur_user_item.name} 面板字段写入绑定槽 {slot:02d}"
+        )
 
     def _write_view(self) -> None:
         """（重）写合成注册表视图：仅本脚本注入槽，活跃=首槽。
@@ -775,6 +820,11 @@ class AutoProxyTask(TaskExecuteBase):
                     for item in list_instances(self.script_root_path)
                     if isinstance(item, dict)
                 }
+                # 直控+快速配置开启：任务前把该用户面板字段（Game/OneDragon）
+                # 复用用户态注入原语写入绑定实例槽（任务结束由既有注入快照
+                # 恢复）；关闭=纯原生裸跑零写入。写失败异常向上传播即任务失败。
+                if user_uses_quick_config(self.cur_user_config):
+                    await self._prepare_direct_quick_config()
                 launcher_args = ["--onedragon"]
             else:
                 if self._is_multi_account():

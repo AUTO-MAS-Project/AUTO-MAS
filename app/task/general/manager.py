@@ -31,6 +31,7 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -231,7 +232,11 @@ class GeneralManager(TaskExecuteBase):
         user_id = self.script_info.user_list[self.script_info.current_index].user_id
         if user_id == "Default":
             return True
-        return bool(self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig"))
+        user_config = self.user_config[uuid.UUID(user_id)]
+        # 直控+关闭=不写；脚本/用户来源、以及直控+开启都写面板值
+        if read_config_source(user_config) == CONFIG_SOURCE_DIRECT:
+            return bool(user_config.get("Info", "IfQuickConfig"))
+        return True
 
     async def prepare(self):
         """运行前准备"""

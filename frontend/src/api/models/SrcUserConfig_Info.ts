@@ -20,9 +20,13 @@ export type SrcUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 配置来源（脚本/用户）
+     * 配置来源（脚本共享、用户独立、直控使用脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | null);
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 游戏服务器
      */

@@ -354,6 +354,9 @@ export interface MaaFWUserConfig {
     Account: string
     Password: string
     Resource?: string
+    Mode?: '脚本' | '用户' | '直控'
+    /** 快速配置：独立于配置来源的用户级开关 */
+    IfQuickConfig?: boolean
   }
   Task: {
     SelectedPreset: string

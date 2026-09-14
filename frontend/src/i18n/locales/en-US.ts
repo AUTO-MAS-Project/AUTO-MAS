@@ -1345,6 +1345,12 @@ export default {
       'Use the existing Okww configuration and leave the complex settings to the script GUI.',
     useScriptSCurrent:
       "Use the script's current configuration; this user's own configuration is neither loaded nor written back.",
+    useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
+    quickConfig: 'Quick configuration',
+    configSourceHint:
+      'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
+    configSourceHintBase:
+      "Script uses the shared script-level configuration, User uses this user's own configuration; Direct control uses the script's existing configuration and MAS never writes it. Quick configuration is a separate switch.",
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',
@@ -1458,6 +1464,8 @@ export default {
     updateAutomaticallyBeforeRun: 'Update automatically before a run',
     run1920x1080WindowedMode: 'Run in 1920x1080 windowed mode',
     runMode: 'Run mode',
+    hsrRunModeHint:
+      'Run mode and config source are two independent axes: config source decides config ownership (script/user/direct control), run mode decides whether MAS manages the HSR native config (managed = MAS writes managed fields, direct = use the live native config). Under direct-control source the runtime always resolves to direct.',
     couldNotSaveRun: 'Could not save the run mode — try again',
     runTimeoutMinutes2: 'Run timeout (minutes)',
     backScriptList: 'Back to the script list',

@@ -90,7 +90,7 @@
                   :options="okwwConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="isSaving"
-                  alert-message="脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用 Okww 原有配置。快速配置为独立覆盖层，仅覆盖本页暴露的高频任务字段。"
+                  :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
                 />
               </a-col>

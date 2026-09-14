@@ -19,7 +19,15 @@ export type OkNteUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
-     * 是否使用用户独立脚本配置
+     * 配置来源（脚本/用户/直控）
+     */
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
+    /**
+     * 兼容旧版用户独立配置开关
      */
     IfUseMasConfig?: (boolean | null);
     /**
@@ -54,10 +62,6 @@ export type OkNteUserConfig_Info = {
      * 密码
      */
     Password?: (string | null);
-    /**
-     * 配置来源（脚本/用户）
-     */
-    Mode?: ('脚本' | '用户' | null);
     /**
      * 游戏资源
      */
