@@ -124,6 +124,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        self.crashed = False
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         target_user_id = self.cur_user_item.user_id
         self.config_mode = "脚本"
@@ -214,7 +215,9 @@ class ScriptConfigTask(TaskExecuteBase):
         # 配置会话没有自然结束点: main_task 里的 wait_event 没有任何设置方,
         # 用户在配置窗口点「保存配置」发起的中止就是唯一出口, 因此这里不能按
         # 中止丢弃改动, 否则 MaaEnd GUI 的编辑永远落不回 MAS 配置目录。
-        if self.use_mas_config and self.config_file_path:
+        # 但 main_task 已经失败(如 MaaEnd 配置目录不存在)时没有任何可回写的
+        # 内容, 再换入只会把不存在的目录当源头再报一次错, 盖住真正的原因。
+        if not self.crashed and self.use_mas_config and self.config_file_path:
             swap_in_dir(self.maaend_set_path, self.config_file_path)
             config_path = self.config_file_path / "mxu-MaaEnd.json"
             maaend_set = read_file(config_path)
@@ -223,11 +226,13 @@ class ScriptConfigTask(TaskExecuteBase):
             )
             write_file(config_path, maaend_set)
             logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")
-        else:
+            self.cur_user_item.status = "完成"
+        elif not self.crashed:
             logger.success("MaaEnd 直控配置已由脚本原生 GUI 保存")
-        self.cur_user_item.status = "完成"
+            self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception):
+        self.crashed = True
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
