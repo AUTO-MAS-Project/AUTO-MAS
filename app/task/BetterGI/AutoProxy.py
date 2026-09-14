@@ -214,6 +214,14 @@ class AutoProxyTask(TaskExecuteBase):
         # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让直控被锁回 MAS 槽位。
         self.config_mode = read_config_source(self.cur_user_config)
         self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
+        # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
+        # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
+        self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
+            self.cur_user_config.get("Info", "IfQuickConfig")
+        )
+        # 原生配置的运行前快照与本次写入内容（还原前比对，保护运行期间的外部修改）
+        self._native_one_dragon_snapshot: dict | None = None
+        self._native_one_dragon_written: dict | None = None
         self.cur_user_log: LogRecord | None = None
         self.bettergi_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
@@ -404,6 +412,8 @@ class AutoProxyTask(TaskExecuteBase):
         ``exclude_task_names`` 用于路径 B：把已改由执行层直连的战斗 4 项从一条龙副本过滤掉。
         """
         if not self.use_mas_config:
+            # 直控来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
+            self._write_native_one_dragon(exclude_task_names=exclude_task_names)
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
         # 路径 B：战斗 4 项由执行层直连，原生一条龙只跑日常 + 自定义组。
@@ -470,6 +480,60 @@ class AutoProxyTask(TaskExecuteBase):
             f"{one_dragon.launch_slot_name()}），物化配置组 {len(self._materialized_script_groups)} 个"
         )
 
+    def _write_native_one_dragon(
+        self, exclude_task_names: list[str] | None = None
+    ) -> None:
+        """直控 + 快速配置开启：把面板值写入 BGI **那份原生一条龙配置**。
+
+        不建 MAS 槽位、不物化 ``MAS-`` 前缀配置组（原生配置引用的是用户自己的组）。
+        写入内容留档给 ``_restore_one_dragon_config`` 比对，用于保护运行期间的外部修改。
+        直控下执行层被禁用（见 ``use_execution_layer``），故不需要路径 B 的剔除参数。
+        """
+        if self._native_one_dragon_snapshot is None:
+            # 快照阶段没读到原生配置（文件缺失/非法）：本次不接管，避免写出一份空配置
+            return
+        party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
+        written = one_dragon.write_native_one_dragon(
+            self.script_root_path,
+            self.one_dragon_config,
+            self.one_dragon_groups,
+            daily_reward_party_name=str(
+                self.cur_user_config.get("OneDragon", "DailyRewardPartyName") or ""
+            ),
+            party_name=party_name,
+            auto_boss_strategy_name=str(
+                self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""
+            ),
+            custom_groups=self.one_dragon_custom_groups,
+            manage_custom_groups=self.use_custom_groups,
+            queue=self.one_dragon_queue,
+            exclude_task_names=exclude_task_names,
+        )
+        if written is None:
+            return
+        self._native_one_dragon_written = written
+        # 通用战斗队伍/策略与幽境/秘境的全局叶子：与 MAS 槽位路径同口径补写
+        # （原生路径同样读 config.json 这些段），结束由 _restore_one_dragon_config 还原
+        one_dragon.apply_global_battle_team(self.script_root_path, party_name)
+        one_dragon.apply_global_battle_strategy(
+            self.script_root_path,
+            str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
+        )
+        one_dragon.apply_user_global_stygian_settings(
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+        )
+        one_dragon.apply_user_global_domain_settings(
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+        )
+        logger.info(
+            f"已把用户 {self.cur_user_item.name} 的面板值写入一条龙配置"
+            f"「{self.one_dragon_config}」（直控 + 快速配置）"
+        )
+
     def _backup_one_dragon_config(self) -> None:
         """运行前快照乐观覆盖的全局 config.json 队伍/策略叶子，供结束后还原。
 
@@ -477,8 +541,24 @@ class AutoProxyTask(TaskExecuteBase):
         一条龙文件无需备份。全局 config.json 的队伍/策略叶子（地脉花/幽境危战/秘境读段）
         仍需运行时临时补写、结束还原，故这里先快照。同时清理上一轮强杀可能残留的
         前缀物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）。
+
+        直控来源且快速配置开启时改为接管 **BGI 那份原生一条龙配置**：先整份快照，
+        再连同全局叶子一起补写，运行/异常结束由 ``_restore_one_dragon_config`` 还原。
         """
         if not self.use_mas_config:
+            if not self.writes_native_config:
+                return
+            self._native_one_dragon_snapshot = one_dragon.read_native_one_dragon(
+                self.script_root_path, self.one_dragon_config
+            )
+            if self._native_one_dragon_snapshot is None:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 直控快速配置：未找到一条龙配置"
+                    f"「{self.one_dragon_config}」，本次不写入面板值"
+                )
+            self._reseed_global_config = one_dragon.snapshot_global_battle_config(
+                self.script_root_path
+            )
             return
         one_dragon.cleanup_leftover_mas_groups(
             self.script_root_path, self.script_info.script_id, self.cur_user_item.user_id
@@ -496,6 +576,31 @@ class AutoProxyTask(TaskExecuteBase):
         各步置空后再次调用即安全，避免 final_task 与 on_crash 相继触发时重复操作。
         """
         if not self.use_mas_config:
+            # 直控 + 快速配置：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
+            # 被外部改过的配置保留外部改动（与各专项「发现外侧新修改时保护该修改」同口径）
+            if self.writes_native_config:
+                if self._native_one_dragon_written is not None:
+                    native_path = one_dragon.one_dragon_path(
+                        self.script_root_path, self.one_dragon_config
+                    )
+                    current = one_dragon.read_file(native_path)
+                    if current == self._native_one_dragon_written:
+                        if self._native_one_dragon_snapshot is not None:
+                            one_dragon.write_file(
+                                native_path, self._native_one_dragon_snapshot
+                            )
+                    else:
+                        logger.warning(
+                            f"用户 {self.cur_user_item.name} 的一条龙配置在运行期间被外部"
+                            "修改，保留该修改、不做还原"
+                        )
+                if self._reseed_global_config is not None:
+                    one_dragon.restore_global_battle_config(
+                        self.script_root_path, self._reseed_global_config
+                    )
+                self._native_one_dragon_written = None
+                self._native_one_dragon_snapshot = None
+                self._reseed_global_config = None
             return
         try:
             one_dragon.remove_materialized_script_groups(

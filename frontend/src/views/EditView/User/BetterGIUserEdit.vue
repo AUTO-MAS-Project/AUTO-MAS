@@ -279,7 +279,7 @@
                 />
                 <a-switch
                   v-model:checked="formData.Info.IfQuickConfig"
-                  :disabled="pageLoading || formData.Info.Mode === '直控'"
+                  :disabled="pageLoading"
                   style="margin-top: 12px"
                   @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
                 />

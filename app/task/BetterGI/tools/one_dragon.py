@@ -1382,6 +1382,76 @@ def _exclude_tasks(config: dict, task_names: list[str]) -> dict:
     return config
 
 
+def read_native_one_dragon(root: Path, config_name: str) -> dict[str, Any] | None:
+    """读取 BGI 原生一条龙配置（直控来源的快照与比对用）。
+
+    不存在、非 JSON 对象或为空时返回 None——调用方据此判断"这份原生配置不可接管"。
+    """
+    config = read_file(one_dragon_path(root, resolve_config_name(config_name)))
+    return config if isinstance(config, dict) and config else None
+
+
+def write_native_one_dragon(
+    root: Path,
+    config_name: str,
+    groups: list[str],
+    daily_reward_party_name: str = "",
+    party_name: str = "",
+    auto_boss_strategy_name: str = "",
+    custom_groups: list[dict[str, Any]] | None = None,
+    manage_custom_groups: bool = False,
+    queue: list[dict[str, Any]] | None = None,
+    exclude_task_names: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """把面板值写入 **BGI 原生一条龙配置**（直控来源 + 快速配置开启时使用）。
+
+    与 ``write_user_one_dragon`` 的区别：
+    - 种子是**该原生配置自身**（保留用户的一条龙结构与自定义组定义，不回退内置模板）；
+    - 写入目标是**同一个原生文件**，不创建 MAS 槽位、不物化 ``MAS-`` 前缀配置组；
+    - 调用方负责运行前快照、运行/异常结束还原（见 AutoProxy 的
+      ``_backup_one_dragon_config`` / ``_restore_one_dragon_config``）。
+
+    非组字段（领取奖励队伍 / 战斗队伍 / 战斗策略 / 周表默认行）与槽位路径同口径：
+    仅在非空时写入，留空则保持原生配置现有值。
+
+    Returns:
+        写入后的配置 dict；原生配置不存在或非法时返回 None（不凭空造一份）。
+    """
+    name = resolve_config_name(config_name)
+    path = one_dragon_path(root, name)
+    config = read_file(path)
+    if not isinstance(config, dict) or not config:
+        return None
+    config = apply_groups(
+        config,
+        groups,
+        custom_groups=custom_groups,
+        manage_customs=manage_custom_groups,
+        queue=queue,
+    )
+    if exclude_task_names:
+        config = _exclude_tasks(config, exclude_task_names)
+    if daily_reward_party_name:
+        config["DailyRewardPartyName"] = daily_reward_party_name
+    if party_name:
+        config["PartyName"] = party_name
+        # 一条龙自动首领讨伐从 AutoBossTeamName 取队伍（OneDragonTaskItem.cs）
+        config["AutoBossTeamName"] = party_name
+    if auto_boss_strategy_name:
+        config["AutoBossStrategyName"] = auto_boss_strategy_name
+    # 通用战斗队伍/策略权威覆盖周表「默认」行（与槽位路径同口径，理由见
+    # write_user_one_dragon：默认行即「通用队伍」映射，否则其旧值会遮挡通用值）
+    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+        _wd = config.get(_wd_key)
+        if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
+            if party_name:
+                _wd["default"][_team_key] = party_name
+            if auto_boss_strategy_name:
+                _wd["default"]["strategy"] = auto_boss_strategy_name
+    write_file(path, config)
+    return config
+
+
 def write_user_one_dragon(
     root: Path,
     script_id: str,
