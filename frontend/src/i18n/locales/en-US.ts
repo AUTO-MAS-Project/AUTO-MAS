@@ -1132,6 +1132,18 @@ export default {
       'Backups of the MAS edit-page fields (config binding, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
     baahConfigRestoreScriptDesc:
       'Backups of the bound BAAH config file; restoring overwrites the config with the same name in BAAH. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    // SRC 配置恢复（native 恢复前拒绝接管待恢复快照，防止被任务回滚覆盖）
+    srcConfigRestoreUserDesc:
+      'Backups of the MAS config (stage fields and the user config directory); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    srcConfigRestoreScriptDesc:
+      'Backups of the config folder in the SRC installation; restoring overwrites the native SRC config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    srcViewingTitle: 'Viewing SRC configuration',
+    srcViewingDesc: 'The SRC UI shows the selected backup, for viewing only.',
+    srcViewingDesc2:
+      'The config is temporarily switched during viewing; click "Close Viewer" when finished.',
+    srcViewClose: 'Close Viewer',
+    srcViewOpened: 'SRC viewer opened',
+    srcViewStartFailed: 'Failed to open the SRC viewer',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: 'MaaEnd setup opened',
     maaendSessionStartFailed: 'Could not start the MaaEnd setup session',

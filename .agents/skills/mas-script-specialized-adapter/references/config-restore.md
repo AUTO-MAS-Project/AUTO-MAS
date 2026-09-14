@@ -47,6 +47,12 @@
 >   配置为用户自填 ConfigPath（File/Folder 两态），预览为**文件清单粒度**
 >   （配置格式任意透传，不解析内容）；提供「查看详细配置」（viewOnly，
 >   脚本级跳过下发直接读 `task_info.view_only`，无需构造参数与 manager 透传）
+> - **SRC（自包含式 + 页面字段侧车，有会话）**：`app/task/SRC/tools/restore_service.py` +
+>   `SRCUserEdit.vue`——MAA 孪生形态（ConfigFile 目录副本 + Stage/Server 侧车
+>   + ScriptConfig 会话 + manager 任务级原生快照）；native 恢复前守卫 Temp
+>   待恢复快照（`Temp.ready` 残留时拒绝，防止恢复结果被下次任务回滚覆盖）、
+>   viewOnly 会话不登记 `config_user_id`（中断恢复路径不保存回 ConfigFile），
+>   SRC 特有陷阱见 examples-src.md
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 

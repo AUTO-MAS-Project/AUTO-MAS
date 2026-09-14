@@ -23,6 +23,7 @@
 import asyncio
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -47,6 +48,7 @@ from .ScriptConfig import ScriptConfigTask
 from .tools import (
     SrcConfigSnapshotState,
     SrcProcessState,
+    archive_native_backup,
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
@@ -215,6 +217,11 @@ class SrcManager(TaskExecuteBase):
 
         # 备份本次任务开始前的原始配置
         self._backup_src_config_to_temp()
+
+        # 归档原生配置到持久保留池（指纹去重，失败不阻断任务——Temp 快照
+        # 已保证原生安全，这里提供的是跨会话可找回的历史）
+        with suppress(Exception):
+            archive_native_backup(self.src_set_path)
         self.prepared = True
 
     async def _initialize_recovery_context(self) -> None:
@@ -772,12 +779,16 @@ class SrcManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            task_kwargs: dict = {"src_installation_id": self.src_installation_id}
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            if self.task_info.mode == "ScriptConfig":
+                task_kwargs["view_only"] = self.task_info.view_only
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
-                src_installation_id=self.src_installation_id,
+                **task_kwargs,
             )
             try:
                 await self.spawn(task)

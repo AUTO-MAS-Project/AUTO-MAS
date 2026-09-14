@@ -1123,6 +1123,17 @@ export default {
       'MAS 编辑页配置（配置文件绑定等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
     baahConfigRestoreScriptDesc:
       '当前绑定配置文件的备份，恢复会直接覆盖 BAAH 里的同名配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // SRC 配置恢复（native 恢复前拒绝接管待恢复快照，防止被任务回滚覆盖）
+    srcConfigRestoreUserDesc:
+      'MAS 配置的备份（关卡配置等页面字段与用户配置目录），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    srcConfigRestoreScriptDesc:
+      'SRC 安装目录 config 文件夹的备份，恢复会直接覆盖 SRC 本体配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    srcViewingTitle: '正在查看 SRC 配置',
+    srcViewingDesc: 'SRC 界面显示的是所选备份的内容，仅供查看。',
+    srcViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    srcViewClose: '关闭查看',
+    srcViewOpened: '已打开 SRC 查看',
+    srcViewStartFailed: '打开 SRC 查看失败',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: '已打开 MaaEnd 设置',
     maaendSessionStartFailed: '启动 MaaEnd 设置失败',
