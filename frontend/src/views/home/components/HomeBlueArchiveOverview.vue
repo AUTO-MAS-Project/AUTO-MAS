@@ -31,13 +31,19 @@
           type="button"
           class="server-tab"
           :class="{ 'is-active': server.key === selected, 'is-dragging': dragIndex === index }"
-          draggable="true"
           @click="emit('select', server.key)"
-          @dragstart="onDragStart(index, $event)"
           @dragover.prevent="onDragOver(index)"
           @dragend="onDragEnd"
           @drop.prevent="onDragEnd"
         >
+          <DragOutlined
+            class="server-drag-handle"
+            draggable="true"
+            :aria-label="t('home.bluearchive.serverDragHint')"
+            @click.stop
+            @dragstart.stop="onDragStart(index, $event)"
+            @dragend.stop="onDragEnd"
+          />
           {{ server.label }}
         </button>
       </div>
@@ -73,7 +79,7 @@
         <div class="version-badge">
           <span class="badge-dot" />
           <span class="badge-text">{{
-            t('home.sra.versionBadge', { version: overview.version })
+            t('home.bluearchive.versionBadge', { version: overview.version })
           }}</span>
         </div>
 
@@ -81,7 +87,7 @@
 
         <div class="version-time">
           <ClockCircleOutlined class="version-time-icon" />
-          <span>{{ t('home.sra.endsAt', { time: formatTime(overview.endTime) }) }}</span>
+          <span>{{ t('home.bluearchive.endsAt', { time: formatTime(overview.endTime) }) }}</span>
         </div>
 
         <div v-if="activeActivities.length" class="activity-tags">
@@ -96,13 +102,13 @@
       </div>
 
       <div class="version-remaining">
-        <div class="remaining-label">{{ t('home.sra.versionRemaining') }}</div>
+        <div class="remaining-label">{{ t('home.bluearchive.versionRemaining') }}</div>
         <a-statistic-countdown
           :value="getCountdownValue(overview.endTime)"
           :format="t('home.countdown.dh')"
           :value-style="remainingCountdownStyle"
         />
-        <div class="remaining-sub">{{ t('home.sra.nextVersionSoon') }}</div>
+        <div class="remaining-sub">{{ t('home.bluearchive.nextVersionSoon') }}</div>
       </div>
     </div>
 
@@ -112,7 +118,7 @@
         <div class="version-info-name">{{ overview.versionName }}</div>
         <div class="version-info-time">
           <ClockCircleOutlined class="version-info-time-icon" />
-          <span class="version-info-time-label">{{ t('home.sra.versionTime') }}</span>
+          <span class="version-info-time-label">{{ t('home.bluearchive.versionTime') }}</span>
           <span class="version-info-time-value"
             >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
           >
@@ -121,7 +127,7 @@
 
       <div class="version-info-right">
         <a-statistic-countdown
-          :title="t('home.sra.versionRemaining')"
+          :title="t('home.bluearchive.versionRemaining')"
           :value="getCountdownValue(overview.endTime)"
           :format="
             getPlainTimeStatus(overview.endTime) === 'ended'
@@ -139,7 +145,7 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { ClockCircleOutlined } from '@ant-design/icons-vue'
+import { ClockCircleOutlined, DragOutlined } from '@ant-design/icons-vue'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -354,6 +360,9 @@ const formatTime = (value: string) =>
 }
 
 .server-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 14px;
   border: none;
   border-radius: 6px;
@@ -366,6 +375,15 @@ const formatTime = (value: string) =>
   transition:
     background 0.2s,
     color 0.2s;
+}
+
+.server-drag-handle {
+  color: var(--ant-color-text-tertiary);
+  cursor: grab;
+}
+
+.server-drag-handle:active {
+  cursor: grabbing;
 }
 
 .server-tab:hover {

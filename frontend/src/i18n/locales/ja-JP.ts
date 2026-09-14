@@ -2318,6 +2318,11 @@ export default {
       endedAt: '{time} 終了',
     },
     bluearchive: {
+      versionBadge: '{version}',
+      endsAt: '{time} 終了',
+      versionRemaining: 'イベントの残り時間',
+      nextVersionSoon: '次のイベントがまもなく始まります',
+      versionTime: 'イベント期間：',
       serverLabel: 'サーバー',
       serverDragHint: 'ドラッグでサーバーの順番を変更できます',
       server: {

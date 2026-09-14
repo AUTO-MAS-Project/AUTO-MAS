@@ -2651,6 +2651,11 @@ export default {
       endedAt: 'Ends {time}',
     },
     bluearchive: {
+      versionBadge: '{version}',
+      endsAt: 'Ends {time}',
+      versionRemaining: 'Event time remaining',
+      nextVersionSoon: 'More events are coming soon',
+      versionTime: 'Event period:',
       serverLabel: 'Server',
       serverDragHint: 'Drag to reorder servers',
       server: {

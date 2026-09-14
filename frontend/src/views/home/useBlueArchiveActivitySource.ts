@@ -15,6 +15,7 @@ const logger = window.electronAPI.getLogger('活动数据')
 const FETCH_TIMEOUT_MS = 20_000
 const RETRY_DELAY_MS = 30_000
 const MAX_RETRIES = 8
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000
 
 /**
  * 数据取自 Kivo 古书馆时间轴，但那个接口对 Origin 做了白名单校验（只放行
@@ -187,6 +188,7 @@ interface ServerRuntime {
   retryCount: number
   hasData: boolean
   retryPending: boolean
+  requesting: boolean
 }
 
 /** 拉取一个服的完整时间轴（分页直到空页或达到页数上限） */
@@ -248,6 +250,7 @@ export const useBlueArchiveActivitySource = () => {
     retryCount: 0,
     hasData: false,
     retryPending: false,
+    requesting: false,
   }))
 
   const loadingByServer: Record<BlueArchiveServerKey, boolean> = reactive({
@@ -260,6 +263,7 @@ export const useBlueArchiveActivitySource = () => {
   let active = false
   let started = false
   let disposed = false
+  let refreshTimer: number | null = null
 
   // 启动先用上次快照填卡片，不等网络
   for (const runtime of runtimes) {
@@ -270,8 +274,8 @@ export const useBlueArchiveActivitySource = () => {
         runtime.overview.value = {
           ...createEmptySraActivityOverview(),
           ...cached,
-          Stale: false,
-          Message: '',
+          Stale: true,
+          Message: t('home.bluearchive.staleMessage'),
           // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
           versionName: serverVersionName(runtime.key),
         }
@@ -286,7 +290,8 @@ export const useBlueArchiveActivitySource = () => {
   }
 
   const loadServer = async (runtime: ServerRuntime) => {
-    if (disposed) return
+    if (disposed || runtime.requesting) return
+    runtime.requesting = true
     try {
       const controller = new AbortController()
       const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
@@ -334,6 +339,7 @@ export const useBlueArchiveActivitySource = () => {
         }
       }
     } finally {
+      runtime.requesting = false
       if (!disposed) {
         loadingByServer[runtime.key] = false
       }
@@ -347,6 +353,15 @@ export const useBlueArchiveActivitySource = () => {
     }, RETRY_DELAY_MS)
   }
 
+  const scheduleRefresh = () => {
+    if (!active || disposed || refreshTimer !== null) return
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = null
+      for (const runtime of runtimes) void loadServer(runtime)
+      scheduleRefresh()
+    }, REFRESH_INTERVAL_MS)
+  }
+
   // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
   const start = () => {
     if (disposed) return
@@ -354,18 +369,22 @@ export const useBlueArchiveActivitySource = () => {
     if (!started) {
       started = true
       for (const runtime of runtimes) void loadServer(runtime)
-      return
-    }
-    for (const runtime of runtimes) {
-      if (runtime.retryPending) {
+    } else {
+      // 栏目重新显示时立即校验，避免继续展示隐藏期间已经过期的活动。
+      for (const runtime of runtimes) {
         runtime.retryPending = false
         void loadServer(runtime)
       }
     }
+    scheduleRefresh()
   }
 
   const stop = () => {
     active = false
+    if (refreshTimer !== null) {
+      window.clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
     for (const runtime of runtimes) {
       if (runtime.retryTimer !== null) {
         window.clearTimeout(runtime.retryTimer)
@@ -377,6 +396,10 @@ export const useBlueArchiveActivitySource = () => {
 
   onScopeDispose(() => {
     disposed = true
+    if (refreshTimer !== null) {
+      window.clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
     for (const runtime of runtimes) {
       if (runtime.retryTimer !== null) {
         window.clearTimeout(runtime.retryTimer)

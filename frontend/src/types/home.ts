@@ -133,6 +133,18 @@ export interface SraActivityOverview {
   activities: SraActivityItem[]
 }
 
+export const createEmptySraActivityOverview = (): SraActivityOverview => ({
+  Available: false,
+  Stale: false,
+  Message: '',
+  version: '',
+  versionName: '',
+  cover: '',
+  startTime: '',
+  endTime: '',
+  activities: [],
+})
+
 export type Reverse1999ActivityOverview = SraActivityOverview
 export type BlueArchiveActivityOverview = SraActivityOverview
 
