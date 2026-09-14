@@ -142,17 +142,36 @@ def resolve_user_control(
     *,
     script_config: Any | None = None,
 ) -> "HSRUserControlSettings":
-    """Resolve per-user managed/direct mode, accepting old ConfigBase records."""
+    """Resolve per-user managed/direct mode, accepting old ConfigBase records.
 
+    配置来源与引擎直控的合流点：``Info.Mode``（脚本/用户/直控三态，用户可见的来源
+    选择器）在这里折进 HSR 原有的 ``Control.Mode``（引擎级托管/直控），两者不是
+    并列的第二套概念。语义：
+
+    - ``Info.Mode == "直控"`` → ``direct``。用户选「直控」就是要直接用原生配置跑，
+      不再需要单独再去勾 ``Control.Mode``；跑哪些引擎仍由 ``Control.{engine}``
+      决定，一个都没勾时回落到已配置脚本路径的引擎（否则会「直控但什么都不跑」）。
+    - ``Info.Mode`` 为脚本/用户 → 维持 ``Control.Mode`` 既有取值，兼容插件版
+      存量用户的托管/直控设置。
+    - ``Info.IfQuickConfig``：HSR **明确声明不支持快速配置**——SRA/M7A 的
+      原生配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合
+      托管运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的
+      快速配置子集，故开关不产生任何行为差异；前端不渲染该开关（死开关）。
+    """
+
+    info_mode = str(_config_value(user_config, "Info", "Mode", "") or "").strip()
     raw_mode = str(_config_value(user_config, "Control", "Mode", "managed"))
-    mode: Literal["managed", "direct"] = (
-        "direct" if raw_mode.strip().lower() == "direct" else "managed"
-    )
+    direct = info_mode == "直控" or raw_mode.strip().lower() == "direct"
+    mode: Literal["managed", "direct"] = "direct" if direct else "managed"
     engines: tuple[HSREngine, ...] = tuple(
         engine
         for engine in ("SRA", "M7A")
         if bool(_config_value(user_config, "Control", engine, False))
     )  # type: ignore[assignment]
+    if direct and not engines and script_config is not None:
+        # 直控但未勾选引擎：回落到「配了脚本路径」的引擎，与脚本管理页展示的
+        # effective_engines 同源，避免用户选了直控却什么都不跑。
+        engines = resolve_configured_engines(script_config)
     return HSRUserControlSettings(
         mode=mode,
         engines=engines,

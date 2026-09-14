@@ -1,0 +1,137 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+name: 准备发版
+
+# 在 dev（或 release/*）上手动触发：把 changelog.d/ 里的碎片编译进 CHANGELOG.md 的新版本段、
+# 按最新 tag 推进版本号、清空碎片，然后开一个标题为 `Release vX.Y.Z` 的 PR。
+# 维护者在 PR 里补「本次亮点」、整理条目，合并后再手动运行「构建并发布应用程序」。
+# 这个 PR 是唯一允许改动 CHANGELOG.md 与版本号的地方。
+#
+# workflow_dispatch 的工作流必须存在于默认分支才会出现「Run workflow」按钮，
+# 运行时用的是所选分支上的这份文件。
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: '发版类型：beta 公测 N+1；stable 转正（与最后一个 beta 同号）；patch 正式版补丁 Z+1；explicit 手填'
+        type: choice
+        required: true
+        default: beta
+        options: [beta, stable, patch, explicit]
+      version:
+        description: 'kind=explicit 时填版本号，如 v6.0.0-beta.1；必须比所选分支可达的最新 tag 新，且不能与任何已有 tag 重号'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: 编译碎片并开发版 PR
+    runs-on: ubuntu-latest
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
+    steps:
+      # 分支限制不写进 job 级 if：那样误选 main 只会看到整个运行灰色 skipped，没有任何说明。
+      - name: 只允许在 dev 或 release/* 上运行
+        if: github.ref_name != 'dev' && !startsWith(github.ref_name, 'release/')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "::error::「准备发版」只能在 dev 或 release/* 分支上运行，当前选的是 ${REF_NAME}。请在 Run workflow 的分支下拉框里改选。"
+          exit 1
+
+      - name: 检出代码
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # 旧的「记录版本贡献者」机器人按 pull_request_target 从默认分支取文件，会给发版 PR 里
+      # 的每一条都再签一次 PR 作者。它在默认分支上没删干净之前，绝不能开发版 PR。
+      - name: 确认默认分支上的旧署名机器人已删除
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/append-version-contributor.yml?ref=${default_branch}" >/dev/null 2>&1; then
+            echo "::error::默认分支 ${default_branch} 上仍有 .github/workflows/append-version-contributor.yml，它会把发版 PR 的全部条目误签成 PR 作者。请先把它从 ${default_branch} 删除再发版。"
+            exit 1
+          fi
+          echo "默认分支 ${default_branch} 上没有旧机器人，可以继续"
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      # 分支名把目标分支也编进去：dev 与 release/* 在同一个 tag 之后各自准备同一个版本号时，
+      # 否则会共用 chore/release-vX 这一个 head，后跑的那次会改写先开的 PR。
+      - name: 计算发版分支名
+        id: slug
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "base_slug=${REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: 编译碎片并推进版本号
+        id: release
+        env:
+          # 解析碎片作者用：把提交换成 GitHub 登录名
+          GH_TOKEN: ${{ github.token }}
+          KIND: ${{ inputs.kind }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          args=(--kind "$KIND" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/pr-body.md" --summary-file "$RUNNER_TEMP/summary.json" --github-output "$GITHUB_OUTPUT")
+          if [ -n "$VERSION" ]; then
+            args+=(--version "$VERSION")
+          fi
+          python scripts/changelog.py release "${args[@]}"
+          python scripts/changelog.py check
+          cat "$RUNNER_TEMP/summary.json"
+
+      # 用 GITHUB_TOKEN 开的 PR 不会触发 pull_request 工作流，「检查更新日志」在发版 PR 上就不会跑。
+      # 仓库配置了 RELEASE_PR_TOKEN（PAT 或 GitHub App 令牌）时改用它，检查就能照常触发。
+      - name: 开发版 PR
+        id: pr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.RELEASE_PR_TOKEN || github.token }}
+          base: ${{ github.ref_name }}
+          branch: chore/release-${{ steps.slug.outputs.base_slug }}-${{ steps.release.outputs.version }}
+          delete-branch: true
+          commit-message: 'chore(release): ${{ steps.release.outputs.version }}'
+          committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+          author: '${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>'
+          title: 'Release ${{ steps.release.outputs.version }}'
+          body-path: ${{ runner.temp }}/pr-body.md
+          labels: release
+
+      - name: 结果
+        run: |
+          echo "版本号：${{ steps.release.outputs.version }}（基于 ${{ steps.release.outputs.previous_tag }}）"
+          echo "发版 PR：${{ steps.pr.outputs.pull-request-url }}"

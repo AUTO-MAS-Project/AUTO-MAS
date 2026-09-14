@@ -53,7 +53,9 @@ from app.utils import (
     load_patterns,
     strptime,
 )
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils.constants import UTC4
+from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 
 from .tools import execute_script_task, push_notification
@@ -130,7 +132,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
+        self.config_mode = read_config_source(self.cur_user_config)
+        # 是否写 MAS 侧配置：直控+关闭=不写，其余三种组合都写面板值。
+        # 通用脚本的「用户」来源落盘的就是面板值本身，所以直控+开启与它同路径
+        # 是预期行为，不是漏分支。
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
+            self.cur_user_config.get("Info", "IfQuickConfig")
+        )
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -626,15 +634,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if self.script_config_path.is_dir():
-                shutil.rmtree(self.script_config_path)
-            elif self.script_config_path.exists():
-                self.script_config_path.unlink()
-            shutil.copytree(
+            swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                 self.script_config_path,
-                dirs_exist_ok=True,
+            )
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(

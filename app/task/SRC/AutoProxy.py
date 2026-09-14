@@ -36,7 +36,13 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
+    CONFIG_SOURCE_USER,
+    resolve_config_source,
+)
 from app.utils import LogMonitor, ProcessManager, get_logger, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from app.utils.io import read_file, write_file
@@ -104,6 +110,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.src_webui_port: int | None = None
         self.process_cleanup_success = True
         self.prepared = False
+        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
+        # 快速配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
 
     async def check(self) -> str:
 
@@ -418,13 +429,8 @@ class AutoProxyTask(TaskExecuteBase):
             listener_wait_timeout=2.0,
             expected_installation_id=self.src_installation_id,
         )
-        try:
-            logger.info("中止模拟器进程")
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+        logger.info("中止模拟器进程")
+        await close_emulator(self)
         return cleanup_success
 
     async def set_src(self, emulator_info: DeviceInfo) -> None:
@@ -447,18 +453,33 @@ class AutoProxyTask(TaskExecuteBase):
             self.src_installation_id,
         )
 
+        # ── 第一段：来源落盘 ──────────────────────────────────────────
+        # 用 MAS 托管配置作为本次运行的基底。直控来源不下发 overlay ——
+        # 直控的事实源就是 SRC 安装目录里现有的原生配置。
         overlay_path = None
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        if self.config_mode == CONFIG_SOURCE_SCRIPT:
             overlay_path = (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
-        elif self.cur_user_config.get("Info", "Mode") == "用户":
+        elif self.config_mode == CONFIG_SOURCE_USER:
             overlay_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
         if overlay_path is not None:
             recover_src_user_config(overlay_path)
+
+        # ── 第二段：快速配置覆盖 ──────────────────────────────────────
+        # 由 IfQuickConfig 守卫，与来源无关：直控+关闭=完全用外侧原生配置，
+        # 直控+开启=任务前把面板值写进原生配置（任务结束走既有快照恢复）。
+        if self.direct_control and not self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ):
+            logger.info(
+                "SRC 直控配置：直接使用脚本原生配置，跳过快速配置写入"
+            )
+            return
+
         staging_path = stage_src_config_update(
             self.src_set_path,
             expected_installation_id=self.src_installation_id,
@@ -630,15 +651,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self._handle_process_cleanup_failure()
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
-            try:
-                await asyncio.wait_for(
-                    self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    ),
-                    timeout=_FINAL_CLEANUP_TIMEOUT_SECONDS,
-                )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            await close_emulator(self, timeout=_FINAL_CLEANUP_TIMEOUT_SECONDS)
 
         del self.src_process_manager
         del self.src_log_monitor

@@ -10,7 +10,7 @@ export interface TaskLogBufferState {
   logSeq?: number
 }
 
-export type TaskLogUpdateResult = 'replace' | 'append' | 'resync'
+type TaskLogUpdateResult = 'replace' | 'append' | 'resync'
 
 export const trimLogBuffer = (content: string) =>
   content.length <= LOG_BUFFER_MAX_CHARS ? content : content.slice(-LOG_BUFFER_MAX_CHARS)

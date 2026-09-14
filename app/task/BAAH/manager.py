@@ -34,6 +34,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.emulator_core import close_emulator
 from app.tools.push_log import build_user_result_text
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -77,9 +78,7 @@ class BAAHManager(TaskExecuteBase):
         ) in ["", "-"]:
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
 
-        if not str(script_config.get("Info", "RootPath")).strip():
-            return "未填写 BAAH 程序目录, 请检查脚本配置中的程序目录设置！"
-
+        ## 程序目录、配置目录与日志目录都由 BAAHPath 派生，只需校验它
         if not str(script_config.get("Script", "BAAHPath")).strip():
             return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
 
@@ -149,7 +148,7 @@ class BAAHManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode == "AutoProxy":
-            await self._close_emulator()
+            await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -212,20 +211,3 @@ class BAAHManager(TaskExecuteBase):
             data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
         )
 
-    async def _close_emulator(self) -> None:
-        """按配置关闭本次任务启动的模拟器"""
-
-        if self.emulator_manager is None:
-            return
-
-        if not self.script_config.get("Emulator", "CloseOnFinish"):
-            logger.info("未开启「结束后关闭模拟器」, 跳过关闭模拟器")
-            return
-
-        try:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
-            logger.success("模拟器已关闭")
-        except Exception as e:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")

@@ -6,19 +6,20 @@
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
 <!--
-  本文件是更新日志与版本号的唯一手写来源，请不要手改 res/version.json 等生成物。
+  本文件由 scripts/changelog.py 在发版时从 changelog.d/ 里的碎片编译生成，平时不要手改，
+  也不要手改 res/version.json 等生成物。
 
-  - 文件顶部第一个 `## [vX.Y.Z] - 未发布` 标题即当前尚未发布的版本号，新条目写进它下面。
-  - 每个 PR 都要在这里登记一条，写在最贴切的分类下；分类不存在就新建一个 `###`。
-  - 条目写成一行，`- ` 开头，从用户视角描述这次改动带来了什么。
-  - 不要手写 ` by [@用户](链接)` 署名，PR 合并后由机器人补。
-  - 改完运行 `python scripts/changelog.py sync`，它会同步各处版本号、规范化本文件、
-    并重新生成底部的版本对比链接。
+  - 要登记一条更新日志，在 changelog.d/ 下新建一个碎片文件，见 changelog.d/README.md，
+    或运行 `python scripts/changelog.py add <分类> "<一句话>"`。一条 PR 只放一个碎片。
+  - 文件顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号。发版 PR 由「准备发版」工作流
+    创建，是唯一会改动本文件与各处版本号的地方。
+  - 条目写成一行，从用户视角描述这次改动带来了什么；署名在发版时按碎片的提交作者自动补，
+    不要手写。
 
   分类含义（中间六类来自 Keep a Changelog）：
 
   - 破坏性变更：需要用户动手确认或会改变既有行为的改动，在更新提示里最醒目地展示。
-  - 本次亮点：这一版最值得一看的三五条，正文仍写在下面对应的分类里。
+  - 本次亮点：这一版最值得一看的三五条，由维护者在发版 PR 里挑选。
   - 新增：新添加的功能。
   - 变更：对现有功能的变更，含优化与调整。
   - 弃用：已经不建议使用、即将移除的功能。
@@ -50,6 +51,14 @@
 - 修复 BetterGI 编辑页点击配置组（如默认配置组）时后端报 `NameError: name 'Literal' is not defined` 导致请求失败的问题（补充缺失的类型导入）
 - 修复 BetterGI 配置组编辑器里，尚未加入其它脚本的独立 JS 脚本或地图追踪路线误点「清空脚本」会被清空为不执行任何内容的空组：现这类独立项在转为配置组前禁用清空与移除，仅「添加脚本」可将其纳入配置组
 
+### 修复
+
+- BAAH 专项 修复配置页多出一个「结束后关闭模拟器」开关的问题：其他专项都没有这个选项，BAAH 一并按「任务结束后关闭模拟器」执行 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复模拟器关闭动作缺少超时、关闭失败时仍可能让任务收尾长时间卡住的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复脚本配置目录被脚本进程占用或含只读文件时，任务收尾复原配置失败、配置目录停留在半删状态的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 开发流程：收敛各专项重复的日志推送与启动参数拆分实现，避免同类逻辑在多处各存一份 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 开发流程：恢复 tzdata 依赖——Windows 上没有系统时区数据库，移除后会导致时区查询失败 by [@1w1w11w1](https://github.com/1w1w11w1)
+
 ## [v5.5.0-beta.5] - 2026-09-12
 
 ### 新增
@@ -67,6 +76,7 @@
 
 ### 修复
 
+- 绝区零一条龙 修复「快速导入配置」没有带入所选实例的按键配置（键盘/手柄按键、后台模式、输入方式等），导入后按键仍是默认值的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
 - 模拟器 2.0 修复雷电 VBox 服务卡住时（窗口开了、虚拟机起不来、MAA 报 ADB 连接异常且反复重试）的启动问题：会自动关掉空窗口并重启该服务再试一次，但只要还有实例在运行或正在启动就不碰、改为提示先关闭它们；启动前还会检查 VBox 运行时是否被修复工具修残（缺 GPU 库导致虚拟机启动几十秒后崩溃），缺了就从雷电安装目录补回，补不回时明确报错；MuMu 实例启动失败或超时时报错附上 MuMu 自己给出的错误码、错误信息和实例状态 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复社区通知重复发送、标题重复及同名 Webhook 漏发签到摘要的问题；修复库街区签到失败及凭据兼容问题，分别显示游戏与库洛币的签到结果、奖励和失败原因
 - MAA专项 修复 MAA 内配置方案与新版配置文件不一致时脚本设置、自动代理与 MAA 更新任务直接报错中断，理智不足时剿灭被误记为本周已完成、当周剩余剿灭不再执行，以及本周剿灭已完成时仍被判定为部分任务执行失败并反复重跑的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
@@ -125,13 +135,18 @@
 - BetterGI专项 修复一条龙队列加入「录制」键鼠脚本后重复出现一条同名「自定义」配置组项的问题：录制现已与 JS 脚本、地图追踪同样作为独立队列项按名字识别，不再额外生成配置组
 - BetterGI专项 修复一条龙加入「录制」键鼠脚本后运行时「没有内容」的问题：录制在 BetterGI 一条龙里只能作为配置组的 `type=KeyMouse` 项目执行，现已为每个加入队列的录制自动生成含该录制项目的 per-user 配置组副本并物化引用，右栏也改回「配置组项目编辑」可查看录制项目、双击打开录制目录
 - BetterGI专项 修复直控模式仍会执行 MAS 流程、一条龙名称无法修改、首次启动切号失败，以及单日代理次数达上限后次日被跳过的问题
-- MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」的问题，现按镜像依次重试；失败原因也会写进日志并显示在提示条上，不再只有一句准备失败 by [@qiyinxi](https://github.com/qiyinxi)
-- MFW专项 修复 beta.4 下 MFW 脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru 的问题
-- MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次
-- MFW专项 修复首次更新「自己解压好、再指给 MAS」的项目时不清理资源目录里的旧版残留文件，新版挪走或删掉的文件留在原地导致资源加载失败、项目彻底跑不起来的问题 by [@qiyinxi](https://github.com/qiyinxi)
-- 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- MFW专项 修复运行环境准备与脚本运行会被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题：依赖解析只按 MAS 自己选定的下载源进行，脚本与 Agent 不再继承宿主的 PYTHONPATH、PYTHONWARNINGS 等变量 by [@qiyinxi](https://github.com/qiyinxi)
-- MaaEnd专项 修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题；现在会自动跳过这些任务并提示重做「MaaEnd 配置」 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」的问题，现按镜像依次重试；失败原因也会写进日志并显示在提示条上，不再只有一句准备失败 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- MFW专项 修复 beta.4 下 MFW 脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru 的问题 by [@HarcoChen](https://github.com/HarcoChen)
+- MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次 by [@HarcoChen](https://github.com/HarcoChen)
+- MFW专项 修复首次更新「自己解压好、再指给 MAS」的项目时不清理资源目录里的旧版残留文件，新版挪走或删掉的文件留在原地导致资源加载失败、项目彻底跑不起来的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- MFW专项 修复运行环境准备与脚本运行会被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题：依赖解析只按 MAS 自己选定的下载源进行，脚本与 Agent 不再继承宿主的 PYTHONPATH、PYTHONWARNINGS 等变量 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- MaaEnd专项 修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题；现在会自动跳过这些任务并提示重做「MaaEnd 配置」 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- 调度台 修复任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- MAA专项 修复在配置检查通过后、任务正式开始前停止任务时被报成「MAA任务出现异常」的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- 修复日志文件在运行过程中被重建或删除时，日志监控会静默失效、该趟任务再也不会被正常判定（卡到超时或误报异常）的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 
 ### 开发流程
 

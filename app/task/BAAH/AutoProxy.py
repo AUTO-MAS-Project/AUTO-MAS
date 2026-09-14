@@ -43,6 +43,11 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_USER,
+    append_push_log,
+    resolve_config_source,
+)
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
 
@@ -192,6 +197,17 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_manage_config = bool(
             self.script_config.get("Script", "IfManageConfig")
         )
+        ## 配置来源三态（脚本/用户/直控）与独立的快速配置开关：
+        ## - 脚本/用户来源：按脚本级「配置托管」总开关决定是否注入托管项
+        ## - 直控+开启：注入托管项（面板值），任务结束按既有 managed_backup 恢复
+        ## - 直控+关闭：完全按 BAAH 自己的配置文件运行，零写入
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_USER
+        )
+        if self.direct_control and not bool(
+            self.cur_user_config.get("Info", "IfQuickConfig")
+        ):
+            self.if_manage_config = False
         ## 推送任务节点详情开关：关闭时**不创建 log_box**（不读日志、不匹配），
         ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
         ## 与结果判定都不受它影响，照常进行
@@ -500,7 +516,8 @@ class AutoProxyTask(TaskExecuteBase):
 
     def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
         """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text, ts))
+
+        append_push_log(self.cur_user_item, log_type, text, ts)
 
     def _close_log_collect(self) -> None:
         """结束采集会话：冲刷本次运行剩余日志、解析任务节点并写入推送日志。

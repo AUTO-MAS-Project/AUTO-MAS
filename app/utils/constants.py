@@ -85,26 +85,6 @@ MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
 MAAEND_AUTO_COLLECT_MODES = ("Distributed", "Concentrated")
 """MaaEnd 自动采集的三日周期模式"""
 
-MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS = tuple(
-    f"AutoCollectSchedule{weekday}"
-    for weekday in (
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    )
-)
-"""MaaEnd 自动采集任务的星期计划选项"""
-
-MAAEND_AUTO_COLLECT_ROUTE_OPTIONS = {
-    "AutoCollectRoutes": tuple(f"Route{index}" for index in range(1, 16)),
-    "AutoCollectCommonRoutes": tuple(f"CommonRoute{index}" for index in range(1, 9)),
-}
-"""MaaEnd 自动采集两类路线选项"""
-
 MAA_TASKS = [
     "StartUp",
     "DepotMaintain",

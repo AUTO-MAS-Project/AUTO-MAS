@@ -157,6 +157,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "活动关优先",
         "库存保持",
         "剩余理智",
+        "养成计划",
     }
     annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
     fight_start_markers = (
@@ -164,6 +165,10 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "开始任务: 理智作战",
         "Start Task Chain: Fight",
     )
+    # 库存保持/养成计划在同一个任务项里按 plan 拼接多条独立 Fight 链，MAA 为
+    # 区分日志给每条链的完成行追加 " #N" 序号后缀（语言无关）；裸任务名只出现在
+    # 识别链的括号后缀里，剥掉序号后缀再与目标名比对，否则这些链会被整体漏掉。
+    multi_chain_suffix = re.compile(r"\s+#\d+$")
 
     def is_task_boundary(line: str) -> bool:
         return "完成任务:" in line or "Completed Task Chain:" in line
@@ -171,7 +176,8 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     def get_completed_task_name(line: str) -> str | None:
         match = re.search(r"完成任务:\s*([^\r\n]+)", line)
         if match is not None:
-            return match.group(1).strip() or None
+            name = multi_chain_suffix.sub("", match.group(1).strip())
+            return name or None
 
         match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
@@ -1121,11 +1127,14 @@ class AppConfig(GlobalConfig):
 
         已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
         脚本来源使用脚本共享目录，用户来源使用当前用户独立目录。
+        本方法只服务「脚本/用户」来源的 MAS 目录初始化；直控来源不调用——
+        直控直接使用脚本原生配置，MAS 不建平行全量配置。
 
         Args:
             script_id: OK-WW 脚本 ID。
             user_id: OK-WW 用户 ID。
-            mode: 配置来源，支持“脚本”或“用户”；“简洁”/“详细”仅兼容旧配置。
+            mode: 配置来源（脚本/用户/直控三态）；本方法只接受“脚本”/“用户”，
+                “简洁”/“详细”仅兼容旧配置，误传“直控”会抛 ValueError。
 
         Returns:
             MAS 用户配置目录路径。
@@ -1839,6 +1848,8 @@ class AppConfig(GlobalConfig):
         任务编排只取来源实例当前启用的应用（对齐 _group.yml 缺席=不加入）。
         实例级配置随导入对齐来源实例写入绑定槽：notify.yml（应用通知，
         zzz-od 默认开启，不搬会让「来源关着」变开着）、team.yml（预备编队）、
+        game.yml（按键配置：键盘/手柄按键、后台模式、输入方式、HDR、启动
+        参数、分辨率等，MAS 不托管、注入不触碰，只能靠导入对齐）、
         one_dragon/ 全部 per-app 配置（体力计划/咖啡店/随便观等任务级 yml）。
         """
 
@@ -1908,6 +1919,9 @@ class AppConfig(GlobalConfig):
         # 实例级持久配置对齐来源实例：
         # - notify.yml（应用通知）在实例根
         # - team.yml（预备编队：名称 + 绑定配队方案 + 成员）在实例根
+        # - game.yml（GameConfig 按键配置：键盘/手柄按键、后台模式、输入方式、
+        #   HDR、启动参数、分辨率）在实例根——MAS 不托管该文件，注入运行也
+        #   不触碰，导入不对齐会导致按键配置永远停留在 zzz-od 默认值
         # - one_dragon/ 全部 per-app 配置（charge_plan.yml 体力计划、coffee.yml
         #   咖啡店、suibian_temple.yml 随便观等）随导入整目录对齐
         # _group.yml 例外：任务编排走上面的 AppList 整表语义（含未启用项），不整搬。
@@ -1933,6 +1947,7 @@ class AppConfig(GlobalConfig):
 
         _align_yml(("notify.yml",))
         _align_yml(("team.yml",))
+        _align_yml(("game.yml",))
 
         source_one_dragon = source_dir / "one_dragon"
         target_one_dragon = target_dir / "one_dragon"
@@ -1953,7 +1968,7 @@ class AppConfig(GlobalConfig):
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
             f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
-            f"应用通知/体力计划已对齐槽 {slot:02d})"
+            f"应用通知/按键配置/体力计划已对齐槽 {slot:02d})"
         )
         return {
             "instanceIdx": int(instance_idx),
@@ -2390,14 +2405,16 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # ZzzOd 专项守卫：每脚本仅允许一个直控用户——直控是脚本级全局视图
-        # （实例/活跃/运行实例都在一份 one_dragon.yml），多直控用户共享同一
-        # 份状态互相干扰，多账号由直控页实例管理直接配置。
-        # 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
+        # 直控守卫：每脚本仅允许一个直控用户——直控共享脚本级原生配置（MAA/SRC
+        # 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多直控用户共享
+        # 同一份状态互相干扰。
+        # ZzzOd 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
         # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）。
-        if isinstance(script_config, ZzzOdConfig):
+        if isinstance(script_config, (ZzzOdConfig, MaaConfig, SrcConfig)):
             new_mode = str(data.get("Info", {}).get("Mode", "") or "")
-            if new_mode == "直控":
+            # 仅 ZzzOd 需要清空任务编排残留: 直控不消费 AppList, 残留会让
+            # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）
+            if new_mode == "直控" and isinstance(script_config, ZzzOdConfig):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
             if (
                 new_mode == "直控"
@@ -2433,7 +2450,9 @@ class AppConfig(GlobalConfig):
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        shutil.rmtree(target_config_dir, ignore_errors=True)
+        # 目录里可能有只读文件（如脚本自带的 .git 对象），rmtree(ignore_errors)
+        # 静默残留会让随后的覆盖写入抛 PermissionError。
+        force_rmtree(target_config_dir)
         target_config_dir.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
 
@@ -4009,7 +4028,9 @@ class AppConfig(GlobalConfig):
             if not isinstance(result_value, str):
                 return False
             value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
-            if value == "Success!":
+            if value in ("Success!", "今日任务均已完成"):
+                # 「今日任务均已完成」= zzz-od 直控/按记录跳过场景的历史存量文案,
+                # 运行时已向 Success! 归一, 此处仅为兼容旧历史数据保留成功判定
                 return True
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True

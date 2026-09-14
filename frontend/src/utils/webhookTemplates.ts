@@ -1,5 +1,5 @@
 // Webhook 模板配置
-export interface WebhookTemplate {
+interface WebhookTemplate {
   name: string
   /** 词表 key：本文件是模块级常量，t() 在这里会被冻结在初始语言 */
   descriptionKey: string

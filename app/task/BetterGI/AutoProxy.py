@@ -32,6 +32,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source, push_dispatch_log
 from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
@@ -205,7 +206,11 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: BetterGIUserConfig = self.user_config[self.cur_user_uid]
-        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
+        # 直控+关闭=不写；其余组合都写面板值（一条龙的「用户」来源即面板值）
+        self.config_mode = read_config_source(self.cur_user_config)
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
+            self.cur_user_config.get("Info", "IfQuickConfig")
+        )
         self.cur_user_log: LogRecord | None = None
         self.bettergi_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
@@ -366,9 +371,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
 
     def _write_one_dragon_config(
         self, exclude_task_names: list[str] | None = None

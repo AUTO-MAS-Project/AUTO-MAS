@@ -38,7 +38,13 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
+    CONFIG_SOURCE_USER,
+    resolve_config_source,
+)
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
     ARKNIGHTS_PACKAGE_NAME,
@@ -53,7 +59,7 @@ from app.utils.constants import (
     MAA_TASKS_ZH,
     UTC4,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .tools import (
     agree_bilibili,
@@ -517,6 +523,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
+        # 快速配置决定是否把面板值写进 MAA 原生配置（两段互不替代）。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
 
@@ -696,12 +707,7 @@ class AutoProxyTask(TaskExecuteBase):
                     ]
                     self.cur_user_log.status = "模拟器启动失败"
 
-                    try:
-                        await self.emulator_manager.close(
-                            self.script_config.get("Emulator", "Index")
-                        )
-                    except Exception as e:
-                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                    await close_emulator(self)
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -758,12 +764,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                     await self.maa_process_manager.kill()
-                    try:
-                        await self.emulator_manager.close(
-                            self.script_config.get("Emulator", "Index")
-                        )
-                    except Exception as e:
-                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                    await close_emulator(self)
                     await System.kill_process(self.maa_exe_path)
 
                     # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
@@ -803,14 +804,16 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             await agree_bilibili(self.maa_tasks_path, False)
 
-        # 基础配置内容
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        # ── 第一段：来源落盘 ──────────────────────────────────────────
+        # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
+        # 直控的事实源是 MAA 安装目录里现有的原生配置。
+        if self.config_mode == CONFIG_SOURCE_SCRIPT:
             shutil.copytree(
                 (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
-        elif self.cur_user_config.get("Info", "Mode") == "用户":
+        elif self.config_mode == CONFIG_SOURCE_USER:
             shutil.copytree(
                 (
                     Path.cwd()
@@ -819,6 +822,17 @@ class AutoProxyTask(TaskExecuteBase):
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
+
+        # ── 第二段：快速配置覆盖 ──────────────────────────────────────
+        # 由 IfQuickConfig 守卫，与来源无关：直控+关闭=完全用外侧原生配置，
+        # 直控+开启=任务前把面板值写进原生配置（任务结束按既有快照恢复）。
+        if self.direct_control and not self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ):
+            logger.info(
+                "MAA 直控配置：直接使用脚本原生配置，跳过快速配置写入"
+            )
+            return
 
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
@@ -1161,6 +1175,13 @@ class AutoProxyTask(TaskExecuteBase):
         # 拍下托管注入完成后的配置基线, 供任务结束后甄别 MAA 自身的写盘变更
         self._snapshot_maa_config()
 
+        # 快照记录注入后指纹, 供崩溃恢复区分 MAS 污染与用户手动改动
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
+
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
     def _snapshot_maa_config(self) -> None:
@@ -1281,12 +1302,7 @@ class AutoProxyTask(TaskExecuteBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=result.message),
         )
-        try:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+        await close_emulator(self)
 
         await Notify.push_plyer(
             "游戏需要手动更新！",
@@ -1395,12 +1411,7 @@ class AutoProxyTask(TaskExecuteBase):
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
-            try:
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            await close_emulator(self)
 
         user_logs_list = []
         if_six_star = False

@@ -8,7 +8,7 @@
 
 import type { RuntimeUpdateOutcome, RuntimeUpdateRetryAction } from '@/types/electron'
 
-export interface BackendUpdateActions {
+interface BackendUpdateActions {
   /** 可展示的重试入口；不可重试时为空。 */
   retryActions: RuntimeUpdateRetryAction[]
   /** 源码与依赖已就位（或取消后旧后端没拉起来），给「重新启动后端」。 */

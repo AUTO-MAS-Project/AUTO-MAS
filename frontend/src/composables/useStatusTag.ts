@@ -3,7 +3,7 @@ import { computed, type ComputedRef } from 'vue'
 /**
  * 状态标签接口定义
  */
-export interface StatusTag {
+interface StatusTag {
   text: string
   color: string
 }

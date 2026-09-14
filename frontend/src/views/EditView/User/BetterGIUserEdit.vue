@@ -19,7 +19,7 @@
 
       <a-space size="middle">
         <a-tooltip
-          v-if="!showBettergiConfigMask && !pageLoading && formData.Info.IfUseMasConfig"
+          v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
           placement="bottom"
         >
           <template #title>
@@ -271,11 +271,19 @@
             <a-row :gutter="24">
               <a-col :span="24">
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.IfUseMasConfig"
+                  :model-value="formData.Info.Mode"
+                  :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
                   @change="handleConfigModeChange"
                 />
+                <a-switch
+                  v-model:checked="formData.Info.IfQuickConfig"
+                  :disabled="pageLoading"
+                  style="margin-top: 12px"
+                  @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
+                />
+                <span style="margin-left: 8px">{{ t('edit.quickConfig') }}</span>
               </a-col>
             </a-row>
 
@@ -313,7 +321,7 @@
             </div>
 
             <a-alert
-              v-if="!formData.Info.IfUseMasConfig"
+              v-if="formData.Info.Mode === '直控' && !formData.Info.IfQuickConfig"
               type="info"
               show-icon
               class="mode-guide-alert"
@@ -326,7 +334,7 @@
             </a-alert>
 
             <a-alert
-              v-if="formData.Info.IfUseMasConfig"
+              v-if="masConfigEnabled"
               type="info"
               show-icon
               class="mode-guide-alert config-flow-hint"
@@ -355,24 +363,24 @@
                   </template>
                   <a-select
                     :value="
-                      formData.Info.IfUseMasConfig
+                      masConfigEnabled
                         ? MAS_ONE_DRAGON_SLOT_NAME
                         : formData.Task.OneDragonConfigName
                     "
                     :options="
-                      formData.Info.IfUseMasConfig
+                      masConfigEnabled
                         ? [{ label: MAS_ONE_DRAGON_SLOT_NAME, value: MAS_ONE_DRAGON_SLOT_NAME }]
                         : oneDragonConfigOptions
                     "
                     :placeholder="t('edit.bettergiPickOneDragonName')"
                     size="large"
-                    :disabled="formData.Info.IfUseMasConfig"
+                    :disabled="masConfigEnabled"
                     show-search
                     option-filter-prop="label"
                     class="modern-input"
                     @dropdown-visible-change="
                       (open: boolean) => {
-                        if (open && !formData.Info.IfUseMasConfig) void loadOneDragonConfigs()
+                        if (open && !masConfigEnabled) void loadOneDragonConfigs()
                       }
                     "
                     @change="
@@ -386,7 +394,7 @@
               </a-col>
               <!-- 独立配置模式：领取奖励队伍；脚本直控模式：配置 BetterGI（打开 BGI 原生界面） -->
               <a-col :span="12">
-                <a-form-item v-if="formData.Info.IfUseMasConfig">
+                <a-form-item v-if="masConfigEnabled">
                   <template #label>
                     <span class="form-label">
                       {{ t('edit.bettergiDailyRewardParty') }}
@@ -397,7 +405,7 @@
                   </template>
                   <a-input
                     v-model:value="formData.OneDragon.DailyRewardPartyName"
-                    :disabled="!formData.Info.IfUseMasConfig"
+                    :disabled="!masConfigEnabled"
                     :placeholder="t('edit.bettergiEnterDailyRewardParty')"
                     size="large"
                     class="modern-input"
@@ -430,7 +438,7 @@
             </a-row>
 
             <!-- 战斗队伍/战斗策略与一条龙队列：仅「用户独立配置」下按用户可配 -->
-            <template v-if="formData.Info.IfUseMasConfig">
+            <template v-if="masConfigEnabled">
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -1222,6 +1230,34 @@ const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 const configModeSaving = ref(false)
+const bettergiConfigModeOptions: Array<{
+  title: string
+  description: string
+  value: string
+  icon: 'database' | 'file' | 'setting'
+}> = [
+  {
+    title: t('edit.scriptConfiguration'),
+    description: t('edit.scriptConfiguration'),
+    value: '脚本',
+    icon: 'file',
+  },
+  {
+    title: t('edit.perUserConfiguration'),
+    description: t('edit.perUserConfiguration'),
+    value: '用户',
+    icon: 'database',
+  },
+  {
+    title: t('edit.scriptDirectControl'),
+    description: t('edit.useScriptSCurrent'),
+    value: '直控',
+    icon: 'setting',
+  },
+]
+const masConfigEnabled = computed(
+  () => formData.Info.Mode !== '直控' || formData.Info.IfQuickConfig
+)
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -1256,6 +1292,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Id: '',
     Password: '',
     RemainedDay: -1,
+    Mode: '用户',
+    IfQuickConfig: true,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
@@ -1357,7 +1395,7 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
 }
 
 const toggleGroup = (value: string) => {
-  if (!formData.Info.IfUseMasConfig) return
+  if (!masConfigEnabled.value) return
   const set = new Set(formData.OneDragon.Groups)
   if (set.has(value)) {
     set.delete(value)
@@ -1427,14 +1465,14 @@ const strategyPickerCurrentValue = computed<string>(() => {
   return String(dragonSettings.value[field.key] ?? '')
 })
 const openStrategyPicker = async () => {
-  if (!formData.Info.IfUseMasConfig) return
+  if (!masConfigEnabled.value) return
   strategyPickerTargetField.value = null
   await loadStrategyOptions()
   strategyPickerOpen.value = true
 }
 // 右栏「首领讨伐-讨伐目标」字段发起：把弹窗目标指向该字段再打开
 const openStrategyPickerForField = async (field: DragonSettingField) => {
-  if (!formData.Info.IfUseMasConfig) return
+  if (!masConfigEnabled.value) return
   strategyPickerTargetField.value = field
   await loadStrategyOptions()
   strategyPickerOpen.value = true
@@ -1471,8 +1509,8 @@ const {
   userId: () => userId.value,
   oneDragon: () => formData.OneDragon,
   configName: () => dragonConfigName.value,
-  masConfig: () => formData.Info.IfUseMasConfig,
-  editable: () => formData.Info.IfUseMasConfig,
+  masConfig: () => masConfigEnabled.value,
+  editable: () => masConfigEnabled.value,
   saveField,
 })
 
@@ -1553,9 +1591,9 @@ const builtinGroupLabels = computed<Record<string, string>>(() =>
 )
 
 // 左侧是否可编辑/可展示列表（受「MAS 独立配置」总开关约束）
-const groupsEditable = computed(() => formData.Info.IfUseMasConfig)
+const groupsEditable = computed(() => masConfigEnabled.value)
 const groupsShowCustom = computed(
-  () => formData.OneDragon.IfUseCustomGroups && formData.Info.IfUseMasConfig
+  () => formData.OneDragon.IfUseCustomGroups && masConfigEnabled.value
 )
 
 // 前缀 tag 文案
@@ -2669,7 +2707,7 @@ const hasGroupSettingFields = computed<boolean>(
 const MAS_ONE_DRAGON_SLOT_NAME = 'MAS独立配置'
 // 右栏任务设置读写的配置名：独立模式固定为 MAS 槽位名；否则用户所选一条龙名（默认配置兜底）
 const dragonConfigName = computed<string>(() =>
-  formData.Info.IfUseMasConfig
+  masConfigEnabled
     ? MAS_ONE_DRAGON_SLOT_NAME
     : formData.Task.OneDragonConfigName || '默认配置'
 )
@@ -2736,7 +2774,7 @@ const loadDragonGroupSettings = async () => {
   dragonSettingsLoading.value = true
   try {
     // 四份数据互不依赖，并行拉取
-    const globalUserId = formData.Info.IfUseMasConfig ? userId.value : undefined
+    const globalUserId = masConfigEnabled ? userId.value : undefined
     const [dragon, globalDomain, globalStygian, catalog] = await Promise.all([
       fetchOneDragonSettings(scriptId, userId.value, dragonConfigName.value, stepNameOf(sel)),
       needGlobalDomainSettings.value
@@ -2792,7 +2830,7 @@ const saveDragonGroupSettings = (
       tasks.push(
         saveGlobalDomainSettings(
           scriptId,
-          formData.Info.IfUseMasConfig ? userId.value : undefined,
+          masConfigEnabled.value ? userId.value : undefined,
           globalDomainSettings.value,
           stepNameOf(sel)
         ).then(() => {
@@ -2804,7 +2842,7 @@ const saveDragonGroupSettings = (
       tasks.push(
         saveGlobalStygianSettings(
           scriptId,
-          formData.Info.IfUseMasConfig ? userId.value : undefined,
+          masConfigEnabled.value ? userId.value : undefined,
           globalStygianSettings.value,
           stepNameOf(sel)
         ).then(() => {
@@ -3868,38 +3906,21 @@ watch(
 )
 
 watch(
-  () => formData.Info.IfUseMasConfig,
+  () => masConfigEnabled.value,
   () => {
-    if (!formData.Info.IfUseMasConfig) selectedGroupIdentity.value = null
+    if (!masConfigEnabled.value) selectedGroupIdentity.value = null
   }
 )
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'boolean') return
-  if (
-    isInitializing.value ||
-    configModeSaving.value ||
-    !userId.value ||
-    formData.Info.IfUseMasConfig === value
-  ) {
-    return
-  }
-
-  const previousValue = formData.Info.IfUseMasConfig
-  formData.Info.IfUseMasConfig = value
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  if (isInitializing.value || configModeSaving.value || !userId.value || formData.Info.Mode === value) return
+  const previousValue = formData.Info.Mode
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
   configModeSaving.value = true
-
   try {
-    const saved = await updateUser(scriptId, userId.value, {
-      Info: { IfUseMasConfig: value },
-    })
-
-    if (!saved) {
-      formData.Info.IfUseMasConfig = previousValue
-      return
-    }
-
-    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+    const saved = await updateUser(scriptId, userId.value, { Info: { Mode: formData.Info.Mode } })
+    if (!saved) formData.Info.Mode = previousValue
   } finally {
     configModeSaving.value = false
   }

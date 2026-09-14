@@ -18,8 +18,6 @@
 
 import asyncio
 import json
-import shlex
-import shutil
 import time
 import uuid
 from contextlib import suppress
@@ -40,6 +38,11 @@ from app.services.wuthering_waves import (
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    append_push_log,
+    push_dispatch_log,
+    split_args,
+)
 from app.utils import (
     ProcessInfo,
     ProcessManager,
@@ -49,7 +52,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import force_rmtree, write_file
+from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -93,11 +96,6 @@ _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
-
-
-def _split_args(raw: object) -> list[str]:
-    value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
 
 
 def _okww_config_mode(raw: object) -> str:
@@ -328,10 +326,20 @@ class AutoProxyTask(TaskExecuteBase):
         return self.script_log_path
 
     def _apply_mas_overrides(self) -> None:
-        _update_json(
-            self.script_config_path / "Basic Options.json",
-            {"Exit App when Game Exits": True},
-        )
+        """快速配置覆盖段：把 MAS 面板值写入脚本 working 配置。
+
+        DailyTask.json 是快速配置子集，由 IfQuickConfig 守卫、与来源独立——
+        直控+开启同样写入，任务结束由 manager 既有快照恢复；直控+关闭零写入。
+        Basic Options.json 是全局运行选项、不属于快速配置子集，直控来源下
+        零写入（F13 修复：直控时不得污染用户自己维护的原生配置），只有
+        脚本/用户来源（MAS 配置整体落盘）才写它。
+        """
+
+        if _okww_config_mode(self.cur_user_config.get("Info", "Mode")) != "直控":
+            _update_json(
+                self.script_config_path / "Basic Options.json",
+                {"Exit App when Game Exits": True},
+            )
         if not self.cur_user_config.get("Info", "IfQuickConfig"):
             return
         _update_json(
@@ -373,26 +381,24 @@ class AutoProxyTask(TaskExecuteBase):
                 str(self.cur_user_uid),
                 config_mode,
             )
-            tmp_dst = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
+            swap_in_dir(mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
-            force_rmtree(tmp_dst)
-            shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            force_rmtree(self.script_config_path)
-            tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
         logger.info("OK-WW 运行参数配置完成: 自动代理")
-
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-        self.cur_user_item.push_log.append((log_type, text, ts))
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
+
+    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
+        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+
+        append_push_log(self.cur_user_item, log_type, text, ts)
 
     async def handle_pre_okww_error(
         self, error_message: str, e: Exception | None = None
@@ -496,7 +502,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.game_manager.open_process(
                 self.game_process_path,
-                *_split_args(self.script_config.get("Game", "Arguments")),
+                *split_args(self.script_config.get("Game", "Arguments")),
             )
             wait_time = max(int(self.script_config.get("Game", "WaitTime")), 0)
             if wait_time:

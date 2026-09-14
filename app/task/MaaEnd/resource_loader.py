@@ -46,7 +46,7 @@ def _normalize_language(language: str) -> str:
 class MaaEndResourceLoader:
     """按 MaaEnd 根目录缓存解析后的动态资源。"""
 
-    _disk_cache_version = 3
+    _disk_cache_version = 4
     _loader_cache: dict[Path, "MaaEndResourceLoader"] = {}
     _cache_lock = RLock()
 
@@ -235,10 +235,14 @@ class MaaEndResourceLoader:
             try:
                 task_data = self._read_json5(interface_path.parent / relative_path)
             except (OSError, ValueError) as error:
-                logger.warning(f"MaaEnd 任务选项资源读取失败，已跳过 {relative_path}: {error}")
+                logger.warning(
+                    f"MaaEnd 任务选项资源读取失败，已跳过 {relative_path}: {error}"
+                )
                 continue
             if not isinstance(task_data, dict):
-                logger.warning(f"MaaEnd 任务资源不是 JSON 对象，已跳过: {relative_path}")
+                logger.warning(
+                    f"MaaEnd 任务资源不是 JSON 对象，已跳过: {relative_path}"
+                )
                 continue
             options = task_data.get("option")
             if options is None:
@@ -331,6 +335,98 @@ class MaaEndResourceLoader:
             result.append({"label": label or case["name"], "value": case["name"]})
         return result
 
+    def _auto_collect_groups(self, locale: dict[str, str]) -> list[dict[str, Any]]:
+        """按上游稳定的地区—分类框架读取路线，不维护路线或地区清单。
+
+        MaaEnd 若改变 Routes 分类命名或地区开关结构，将无法识别分组，
+        快速配置会明确报错；旧版两组路线仍按原字段读取。
+        """
+        options = self._task_options.get("AutoCollect", {})
+        groups = []
+        for name, option in options.items():
+            if not name.startswith("AutoCollect") or option.get("type") != "checkbox":
+                continue
+            if name == "AutoCollectRoutes" or name.endswith("RareRoutes"):
+                config_key = "AutoCollectRoutes"
+                region = (
+                    name.removesuffix("RareRoutes")
+                    if name.endswith("RareRoutes")
+                    else ""
+                )
+            elif name.endswith("CommonRoutes"):
+                config_key = "AutoCollectCommonRoutes"
+                region = name.removesuffix("CommonRoutes")
+                if region == "AutoCollect":
+                    region = ""
+            else:
+                continue
+            cases = option.get("cases", [])
+            region_option = options.get(region, {})
+            if region and not (
+                region_option.get("type") == "switch"
+                and any(
+                    name in case.get("option", [])
+                    for case in region_option.get("cases", [])
+                )
+            ):
+                raise ValueError(f"MaaEnd 采集地区声明不匹配: {name}")
+            groups.append(
+                {
+                    "value": name,
+                    "label": self._localize_options([dict(option, name=name)], locale)[
+                        0
+                    ]["label"],
+                    "region": region,
+                    "regionLabel": self._localize_options(
+                        [dict(region_option, name=region)], locale
+                    )[0]["label"]
+                    if region
+                    else "",
+                    "configKey": config_key,
+                    "options": self._localize_options(cases, locale),
+                    "defaultCases": option.get(
+                        "default_case", [case["name"] for case in cases]
+                    ),
+                }
+            )
+        return groups
+
+    def write_auto_collect_options(
+        self, task: dict[str, Any], routes: dict[str, list[str]]
+    ) -> None:
+        """将排程后的路线写入当前安装版本声明的选项。"""
+        groups = self._options["autoCollectGroups"]
+        if not groups:
+            raise ValueError("MaaEnd 自动采集路线读取失败，请检查安装资源")
+        values = task.setdefault("optionValues", {})
+        # 移除被新版替代的旧字段；真实字段与地区开关均来自同一份资源。
+        names = {group["value"] for group in groups}
+        for name in ("AutoCollectRoutes", "AutoCollectCommonRoutes"):
+            if name not in names:
+                values.pop(name, None)
+        for group in groups:
+            values[group["value"]] = {
+                "type": "checkbox",
+                "caseNames": routes.get(group["value"], []),
+            }
+        for region in {group["region"] for group in groups if group["region"]}:
+            values[region] = {
+                "type": "switch",
+                "value": any(
+                    routes.get(group["value"])
+                    for group in groups
+                    if group["region"] == region
+                ),
+            }
+        options = self._task_options["AutoCollect"]
+        if "AutoCollectSchedule" in options:
+            values["AutoCollectSchedule"] = {
+                "type": "checkbox",
+                "caseNames": [
+                    case["name"] for case in options["AutoCollectSchedule"]["cases"]
+                ],
+            }
+
     def _build_options(self, language: str) -> dict[str, Any]:
         locale = self._get_locale(language)
         controller_cases = [
@@ -380,6 +476,7 @@ class MaaEndResourceLoader:
             )
 
         return {
+            "autoCollectGroups": self._auto_collect_groups(locale),
             "controllers": self._localize_options(controller_cases, locale),
             "controllerTypes": {
                 controller["name"]: controller["type"]

@@ -49,6 +49,8 @@
             :loading="loading"
             :server-options="serverOptions"
             @save="handleFieldSave"
+            @mode-change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
           />
 
           <!-- 关卡配置组件 -->
@@ -156,6 +158,7 @@ const getDefaultSRCUserData = () => ({
     Id: '',
     Password: '',
     Mode: '脚本',
+    IfQuickConfig: true,
     Server: 'CN-Official',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -252,6 +255,19 @@ const handleFieldSave = async (key: string, value: any) => {
       logger.error(`保存字段失败: ${errorMsg}`)
     }
   }, key)
+}
+
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  await handleFieldSave('Info.IfQuickConfig', value)
+}
+
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 // 初始化

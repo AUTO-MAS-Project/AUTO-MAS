@@ -7,12 +7,12 @@ import { BetterGiService } from '@/api'
 
 const logger = window.electronAPI.getLogger('BetterGI自定义配置组')
 
-export interface BettergiCustomGroupRow {
+interface BettergiCustomGroupRow {
   name: string
   enabled: boolean
 }
 
-export interface BettergiCustomGroupOptions {
+interface BettergiCustomGroupOptions {
   /** 所在脚本，用于从 BetterGI 现有配置读取自定义组 */
   scriptId: string
   /** 当前编辑用户 id（用户独立配置读取 per-user 副本必需） */
