@@ -42,7 +42,7 @@ function addLatestOkNteScriptLog(state: CollectorState, installations: Installat
   }
 }
 
-export interface OkNteIssueReportResult {
+interface OkNteIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string

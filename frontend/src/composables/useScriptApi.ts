@@ -16,10 +16,6 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import {
-  MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS,
-  MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
-} from '@/utils/maaEndProtocolSpace'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -67,14 +63,6 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
 
 const resolveScriptType = (configType: string): ScriptType => {
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
-}
-
-const normalizeMaaEndOptionArray = <T extends string>(
-  value: unknown,
-  fallback: readonly T[]
-): T[] => {
-  if (!Array.isArray(value)) return [...fallback]
-  return value.filter((item): item is T => typeof item === 'string' && fallback.includes(item as T))
 }
 
 export function useScriptApi() {
@@ -676,14 +664,9 @@ export function useScriptApi() {
                           maaEndUserData.Task?.AutoCollectMode === 'Concentrated'
                             ? 'Concentrated'
                             : 'Distributed',
-                        AutoCollectRoutes: normalizeMaaEndOptionArray(
-                          maaEndUserData.Task?.AutoCollectRoutes,
-                          MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => option.value)
-                        ),
-                        AutoCollectCommonRoutes: normalizeMaaEndOptionArray(
-                          maaEndUserData.Task?.AutoCollectCommonRoutes,
-                          MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option => option.value)
-                        ),
+                        AutoCollectRoutes: maaEndUserData.Task?.AutoCollectRoutes ?? null,
+                        AutoCollectCommonRoutes:
+                          maaEndUserData.Task?.AutoCollectCommonRoutes ?? null,
                         IfTrialOfSwordmancy:
                           maaEndUserData.Task?.IfTrialOfSwordmancy != null
                             ? maaEndUserData.Task.IfTrialOfSwordmancy

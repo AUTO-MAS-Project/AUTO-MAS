@@ -33,7 +33,9 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import ProcessManager, get_logger
+from app.utils.io import mark_native_config_injected, swap_in_dir
 
 logger = get_logger("通用脚本设置")
 
@@ -59,13 +61,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        self.config_mode = "脚本"
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
-            self.use_mas_config = bool(
-                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
-                    "Info", "IfUseMasConfig"
-                )
-            )
+            user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            self.config_mode = read_config_source(user_config)
+            # 直控=不写；脚本/用户来源都写面板值（见 AutoProxy 同款说明）
+            self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
 
     async def prepare(self):
 
@@ -137,15 +139,15 @@ class ScriptConfigTask(TaskExecuteBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
             ).exists()
         ):
-            if self.script_config_path.is_dir():
-                shutil.rmtree(self.script_config_path)
-            elif self.script_config_path.exists():
-                self.script_config_path.unlink()
-            shutil.copytree(
+            swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
                 self.script_config_path,
-                dirs_exist_ok=True,
+            )
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
         elif (
             self.script_config.get("Script", "ConfigPathMode") == "File"

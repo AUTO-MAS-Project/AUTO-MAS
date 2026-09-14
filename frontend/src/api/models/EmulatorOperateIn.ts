@@ -24,6 +24,7 @@ export namespace EmulatorOperateIn {
         OPEN = 'open',
         CLOSE = 'close',
         SHOW = 'show',
+        HIDE = 'hide',
     }
 }
 

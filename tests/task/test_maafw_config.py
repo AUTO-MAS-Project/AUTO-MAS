@@ -60,20 +60,35 @@ class MaaFWConfigTest(unittest.TestCase):
         self.assertEqual(
             user_groups,
             {
-                "Info": 13,
+                "Info": 15,
                 "Task": 2,
                 "Device": 4,
                 "Data": 5,
                 "Notify": 6,
             },
         )
-        self.assertEqual(_item_count(user), 30)
+        self.assertEqual(_item_count(user), 32)
         self.assertIn("SelectedPreset", user._config_item_index["Task"])
         self.assertIn("Account", user._config_item_index["Info"])
         self.assertIn("Password", user._config_item_index["Info"])
 
     def test_add_user_creates_maafw_user_config(self) -> None:
         asyncio.run(self._assert_add_user_creates_maafw_user_config())
+
+    def test_user_tags_mark_failed_last_run_red(self) -> None:
+        """「上次」标签：失败标红，其余沿用绿色（与 ZzzOd 同一口径）。"""
+
+        user = MaaFWUserConfig()
+        tag_colors = {
+            tag["text"]: tag["color"] for tag in json.loads(user.get("Info", "Tag"))
+        }
+        self.assertEqual(tag_colors["上次：未知"], "green")
+
+        asyncio.run(user.set("Data", "LastProxyStatus", "失败"))
+        tag_colors = {
+            tag["text"]: tag["color"] for tag in json.loads(user.get("Info", "Tag"))
+        }
+        self.assertEqual(tag_colors["上次：失败"], "red")
 
     async def _assert_add_user_creates_maafw_user_config(self) -> None:
         with tempfile.TemporaryDirectory() as manager_dir:

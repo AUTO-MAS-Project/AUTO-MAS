@@ -10,7 +10,7 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 - 前端只存**官方启动器完整路径**，由后端读启动器缓存解析真实客户端 exe——**启动器路径与游戏进程路径职责分离**，不要在前端直接存客户端路径。
 - MAS 任务只开放 `1`（DailyTask）与 `7`（MultiAccountDailyTask）；旧值 `2` 读取时纠正为 `7`。
 
-## 三态来源 + 快速配置覆盖层
+## 三态来源与独立快速配置
 
 `Info.Mode` 三态只决定**脚本配置 owner**：
 
@@ -18,13 +18,32 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 | --- | --- |
 | 脚本 | `data/{scriptId}/Default/ConfigFile`，所有用户共用 |
 | 用户 | `data/{scriptId}/{userId}/ConfigFile`，用户独立 |
-| 直控 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置** |
+| 直控 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置**（仍有一处运行时必需写入，见下节） |
 
-`Info.IfQuickConfig` 是**独立覆盖层**，不是第四种来源：开启时仅用快速配置面板的高频字段覆盖当前脚本配置；关闭时使用来源配置中的完整任务设置。
+`Info.IfQuickConfig` 是独立的用户级快速配置开关，三种来源均可使用：开启时用该用户快速配置面板的高频字段覆盖当前原生配置；关闭时使用来源配置中的完整任务设置。直控+关闭只使用脚本原生配置（不含 MAS 侧全量配置，仅有运行时必需写入，见下节）；直控+开启则任务前注入、任务后按快照策略恢复。
 
 旧值 `简洁` / `详细` 读取时迁移为 `脚本` / `用户`，**迁移不得改变用户实际生效的来源**。
 
 配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；直控不得为了"字段齐全"复制脚本全量配置。
+
+## 直控下的原生配置写入：例外与来源守卫
+
+直控**不等于** MAS 对原生配置零写入。为让 OK-WW 按用户所选 `Info.Resource` 正确启动，`set_okww()` 在直控判定**之前**无条件调用 `_configure_okww_launcher()`，直控用户同样会走到。这是经裁定的**运行时必需写入**，不是覆盖用户配置。
+
+| 原生目标 | 写入内容 | 触发条件 |
+| --- | --- | --- |
+| `data/apps/ok-ww/app.json` | `auto_start=True` | 缺省才补（已是 `True` 不写） |
+| 同上 | `update_method=AUTO_UPDATE` | 键不存在才补 |
+| 同上 | `current_profile`（按 `Resource` 映射官服/国际服） | 与目标 profile 不同才写 |
+
+三项共用 `changed` 标志：无事即**零写入**并直接返回，属幂等最小补齐。写入经 `write_file` 原子落盘（tmp + rename），不会产生半写文件。
+
+**判别判据（最易混淆处）**：区分「例外」与「来源守卫」看的是**幂等最小补齐 vs 按来源条件写入**，不是代码位置或先后顺序。
+
+- `_configure_okww_launcher()`（于 `set_okww()` 内调用）→ **真例外**：缺省才补 + `changed` 早退 + 原子落盘，无事零写入，属运行时必需，保留。
+- `_apply_mas_overrides()` 对 `Basic Options.json` 的写入（`Exit App when Game Exits: True`）→ **已纳入来源守卫（F13 已修复）**：该文件是全局运行选项、不属于快速配置子集，只有脚本/用户来源（MAS 配置整体落盘）才写它，直控来源下零写入。
+
+修复后的守卫行为：直控下 `Basic Options.json` 写入次数必须为 0（`Info.IfQuickConfig` 开与关都为 0）；`DailyTask.json` 是快速配置子集，由 `Info.IfQuickConfig` 守卫、与来源独立——直控+开启写入、直控+关闭零写入，任务结束由 manager 既有快照恢复。
 
 ## 哨兵契约
 
@@ -67,6 +86,8 @@ OCR 走共享工具 `app/tools/ocr.py`（用法见 [ocr-tools.md](./ocr-tools.md
 - [ ] 三态映射到正确 owner；旧简洁/详细迁移不改变实际来源
 - [ ] 快速配置开关真实控制是否覆盖高频字段
 - [ ] 直控直接读脚本原配置，任务前后保留原配置快照
+- [ ] 直控下的写入区分「例外」与「来源守卫」：启动器补齐属幂等最小补齐（缺省才写、无事零写入），是例外；`Basic Options.json` 属全局运行选项、仅脚本/用户来源写入
+- [x] 直控下 `Basic Options.json` 写入次数为 0（开关皆然）；直控+开启只写 `DailyTask.json` 快速配置子集（F13 已修复）
 - [ ] 自动发现与手动选择校验同一组哨兵
 - [ ] 启动器路径与客户端进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile

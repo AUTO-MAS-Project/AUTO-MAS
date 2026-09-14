@@ -8,7 +8,7 @@ export interface ReportLogger {
   error: (message: string) => void | Promise<void>
 }
 
-export interface IssueReportResult {
+interface IssueReportResult {
   success: boolean
   message?: string
   zipPath?: string

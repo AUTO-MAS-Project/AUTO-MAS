@@ -1,10 +1,5 @@
 <template>
-  <a-card
-    :title="t('home.module.reverse1999')"
-    class="r1999-card"
-    :style="cardStyle"
-    :loading="loading"
-  >
+  <a-card :title="t('home.module.reverse1999')" class="r1999-card" :loading="loading">
     <template #extra>
       <div class="card-extra">
         <a-typography-link
@@ -28,87 +23,44 @@
       class="status-alert"
     />
 
-    <!-- 版本 Banner（超高竖图只显示上部条带） -->
-    <div v-if="overview.Available && !loading && versionCover" class="version-banner">
-      <img
-        :src="versionCover"
-        :alt="overview.versionName"
-        class="version-cover"
-        @error="failedVersionCover = true"
-      />
-      <div class="version-overlay" />
-
-      <div class="version-content">
-        <div class="version-badge">
-          <span class="badge-dot" />
-          <span class="badge-text">{{
-            t('home.sra.versionBadge', { version: overview.version })
-          }}</span>
+    <!-- 版本封面、版本名与版本倒计时由上方的轮播横幅统一承担，这里只留进行中的活动 -->
+    <div v-if="activeActivities.length" class="activity-rows">
+      <div
+        v-for="activity in activeActivities"
+        :key="`${activity.name}-${activity.endTime}`"
+        class="activity-row"
+      >
+        <div class="activity-row-main">
+          <div class="activity-row-name">{{ activity.name }}</div>
+          <div v-if="activity.description" class="activity-row-desc">
+            {{ activity.description }}
+          </div>
         </div>
 
-        <div class="version-name">{{ overview.versionName }}</div>
-
-        <div class="version-time">
-          <ClockCircleOutlined class="version-time-icon" />
-          <span>{{ t('home.sra.endsAt', { time: formatTime(overview.endTime) }) }}</span>
+        <div class="activity-row-meta">
+          <a-statistic-countdown
+            :value="getCountdownValue(activity.endTime)"
+            :format="t('home.countdown.dh')"
+            :value-style="activityCountdownStyle"
+          />
+          <div class="activity-row-time">
+            {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+          </div>
         </div>
-
-        <div v-if="activeActivities.length" class="activity-tags">
-          <a-tag
-            v-for="activity in activeActivities"
-            :key="`${activity.name}-${activity.endTime}`"
-            class="activity-tag"
-          >
-            {{ activity.name }}
-          </a-tag>
-        </div>
-      </div>
-
-      <div class="version-remaining">
-        <div class="remaining-label">{{ t('home.sra.versionRemaining') }}</div>
-        <a-statistic-countdown
-          :value="getCountdownValue(overview.endTime)"
-          :format="t('home.countdown.dh')"
-          :value-style="remainingCountdownStyle"
-        />
-        <div class="remaining-sub">{{ t('home.sra.nextVersionSoon') }}</div>
       </div>
     </div>
 
-    <!-- 无版本封面：简洁信息条 -->
-    <div v-else-if="overview.Available && !loading" class="version-info">
-      <div class="version-info-left">
-        <div class="version-info-name">{{ overview.versionName }}</div>
-        <div class="version-info-time">
-          <ClockCircleOutlined class="version-info-time-icon" />
-          <span class="version-info-time-label">{{ t('home.sra.versionTime') }}</span>
-          <span class="version-info-time-value"
-            >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
-          >
-        </div>
-      </div>
-
-      <div class="version-info-right">
-        <a-statistic-countdown
-          :title="t('home.sra.versionRemaining')"
-          :value="getCountdownValue(overview.endTime)"
-          :format="
-            getPlainTimeStatus(overview.endTime) === 'ended'
-              ? t('home.countdown.ended')
-              : t('home.countdown.dh')
-          "
-          :value-style="plainRemainingCountdownStyle"
-        />
-      </div>
-    </div>
+    <a-empty
+      v-else-if="!loading && overview.Available"
+      :description="t('home.empty.reverse1999')"
+    />
   </a-card>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { CSSProperties } from 'vue'
-import { ClockCircleOutlined } from '@ant-design/icons-vue'
 import type { Reverse1999ActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -126,14 +78,6 @@ const props = withDefaults(
 
 const ACCENT = '#e0484f'
 const MAX_VISIBLE_ACTIVITIES = 4
-const failedVersionCover = ref(false)
-
-const cardStyle = computed<CSSProperties>(
-  () =>
-    ({
-      '--r1999-accent': ACCENT,
-    }) as CSSProperties
-)
 
 const activeActivities = computed(() => {
   const now = Date.now()
@@ -147,38 +91,11 @@ const activeActivities = computed(() => {
     .slice(0, MAX_VISIBLE_ACTIVITIES)
 })
 
-const versionCover = computed(() => {
-  if (failedVersionCover.value) return ''
-  return (
-    props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
-  )
-})
-
-const remainingCountdownStyle = computed<CSSProperties>(() => ({
+const activityCountdownStyle = computed<CSSProperties>(() => ({
   color: ACCENT,
-  fontSize: '34px',
+  fontSize: '14px',
   fontWeight: 700,
-  lineHeight: 1.1,
-  fontVariantNumeric: 'tabular-nums',
 }))
-
-const getPlainTimeStatus = (value: string): 'normal' | 'warning' | 'ended' => {
-  const remaining = getCountdownValue(value) - Date.now()
-  if (remaining <= 0) return 'ended'
-  if (remaining <= 2 * 24 * 60 * 60 * 1000) return 'warning'
-  return 'normal'
-}
-
-const plainRemainingCountdownStyle = computed<CSSProperties>(() => {
-  const status = getPlainTimeStatus(props.overview.endTime)
-  if (status === 'ended') {
-    return { color: 'var(--ant-color-error)', fontWeight: 600, fontSize: '18px' }
-  }
-  if (status === 'warning') {
-    return { color: 'var(--ant-color-warning)', fontWeight: 600, fontSize: '18px' }
-  }
-  return { color: 'var(--ant-color-text)', fontWeight: 600, fontSize: '18px' }
-})
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
 
@@ -217,248 +134,55 @@ const formatTime = (value: string) =>
   margin-bottom: 16px;
 }
 
-/* ---------- 版本 Banner ---------- */
-.version-banner {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  min-height: 300px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background:
-    radial-gradient(
-      ellipse at 78% 20%,
-      color-mix(in srgb, var(--r1999-accent) 14%, transparent),
-      transparent 55%
-    ),
-    radial-gradient(ellipse at 90% 85%, rgba(64, 128, 255, 0.18), transparent 60%),
-    linear-gradient(135deg, #0b1220 0%, #101a2e 55%, #0e1a2b 100%);
-}
-
-.version-cover {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  /* 官网图是 1920x3902 的超高竖图，只显示上部约 14% 处的条带 */
-  object-position: right 14%;
-}
-
-.version-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(11, 18, 32, 0.9) 0%,
-    rgba(11, 18, 32, 0.72) 42%,
-    rgba(11, 18, 32, 0.15) 100%
-  );
-}
-
-.version-content {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  min-width: 0;
+.activity-rows {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 28px 32px;
-  color: white;
-}
-
-.version-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 4px 12px;
-  margin-bottom: 12px;
-  border: 1px solid color-mix(in srgb, var(--r1999-accent) 45%, transparent);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.55);
-}
-
-.badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--r1999-accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--r1999-accent) 80%, transparent);
-}
-
-.badge-text {
-  color: var(--r1999-accent);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.version-name {
-  margin-bottom: 14px;
-  color: white;
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-}
-
-.version-time {
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
-  align-self: flex-start;
-  padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.5);
-  color: white;
-  font-size: 15px;
-  font-weight: 500;
 }
 
-.version-time-icon {
-  color: var(--r1999-accent);
-  font-size: 15px;
-}
-
-/* ---------- 活动类型标签 ---------- */
-.activity-tags {
+.activity-row {
+  padding: 12px 16px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.activity-tag {
-  margin-inline-end: 0;
-  border: 1px solid color-mix(in srgb, var(--r1999-accent) 45%, transparent);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.55);
-  color: white;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 22px;
-}
-
-/* ---------- 版本剩余时间 ---------- */
-.version-remaining {
-  position: relative;
-  z-index: 1;
-  align-self: center;
-  margin-right: 28px;
-  padding: 18px 28px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  border: 1px solid color-mix(in srgb, var(--r1999-accent) 35%, transparent);
-  border-radius: 14px;
-  background: rgba(11, 18, 32, 0.6);
-  backdrop-filter: blur(10px);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 0 24px color-mix(in srgb, var(--r1999-accent) 5%, transparent);
-  white-space: nowrap;
-}
-
-.remaining-label {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 13px;
-  line-height: 1;
-  letter-spacing: 0.08em;
-}
-
-.version-remaining :deep(.ant-statistic-content) {
-  color: var(--r1999-accent);
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 20px color-mix(in srgb, var(--r1999-accent) 35%, transparent);
-}
-
-.remaining-sub {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
-  line-height: 1;
-}
-
-/* ---------- 无封面：简洁信息条 ---------- */
-.version-info {
-  padding: 16px;
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  border: 1px solid var(--ant-color-border);
+  gap: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
 }
 
-.version-info-left {
+.activity-row-main {
   min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
-.version-info-name {
+.activity-row-name {
+  overflow: hidden;
   color: var(--ant-color-text);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.version-info-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.version-info-time-icon,
-.version-info-time-label {
+.activity-row-desc {
+  margin-top: 2px;
+  overflow: hidden;
   color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.version-info-time-value {
-  color: var(--ant-color-text);
-  font-weight: 500;
-}
-
-.version-info-right {
+.activity-row-meta {
   flex-shrink: 0;
   text-align: right;
 }
 
-@media (max-width: 800px) {
-  .version-banner {
-    flex-direction: column;
-  }
+.activity-row-meta :deep(.ant-statistic-content) {
+  font-size: 14px;
+}
 
-  .version-name {
-    font-size: 26px;
-  }
-
-  .version-remaining {
-    align-self: stretch;
-    align-items: flex-start;
-    margin: 0 28px 24px;
-  }
-
-  .version-info {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .version-info-right {
-    text-align: left;
-  }
+.activity-row-time {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 </style>

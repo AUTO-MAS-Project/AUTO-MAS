@@ -127,6 +127,25 @@ _MODE_GATES = {
 
 _MB_PER_GB = 1024
 
+#: 读四项设置要的键。
+_SETTINGS_KEYS: tuple[str, ...] = tuple(_EFFECTIVE_KEYS.values()) + (
+    "resolution_mode",
+    "performance_mode",
+    "performance_cpu.custom",
+    "performance_mem.custom",
+)
+
+#: MuMu 6 内置的性能档位。设备表一次读完时把它们的 CPU / 内存键顺手带上，
+#: 免得为了「当前档位到底是几核」再起一个子进程；不认识的档位仍然会补问一次。
+_KNOWN_TIERS = ("low", "middle", "high")
+_TIER_KEYS = [
+    f"performance_{kind}.{tier}" for tier in _KNOWN_TIERS for kind in ("cpu", "mem")
+]
+
+
+def _tier_keys(performance_mode: str) -> tuple[str, str]:
+    return f"performance_cpu.{performance_mode}", f"performance_mem.{performance_mode}"
+
 
 def _to_float(raw: object) -> float | None:
     """MuMu 把数值全当字符串返回，而且常带小数（``"1280.000000"``）。"""
@@ -382,28 +401,52 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
         （``saved``）还是模拟器预设的（``default``）；CPU / 内存没有裸键，
         按当前 ``performance_mode`` 去读对应档位的键。
         """
-        wanted = list(_EFFECTIVE_KEYS.values()) + [
-            "resolution_mode",
-            "performance_mode",
-            "performance_cpu.custom",
-            "performance_mem.custom",
-        ]
-        data = await self._setting_get(idx, wanted)
+        data = await self._setting_get(idx, [*_SETTINGS_KEYS, *_TIER_KEYS])
         if not data:
             return build_settings(None, None, readable=False)
+        await self._complete_performance_tier(idx, data)
+        return self._settings_from(data)
 
+    async def read_instance_overview(
+        self, idx: str
+    ) -> tuple[InstanceSettings, bool, list[str]]:
+        """四项设置和稳定模式一次读完。
+
+        设备表每行都要这两样，而 MuMu 每读一次就是一个子进程；把两组键并进同一条
+        ``setting`` 命令，再顺手把常见档位的 CPU / 内存键一起带上，绝大多数实例一个
+        子进程就够，不用像分开读那样跑三次。
+        """
+        keys = [*_SETTINGS_KEYS, *(item.key for item in MUMU_ITEMS), *_TIER_KEYS]
+        data = await self._setting_get(idx, keys)
+        if not data:
+            return (
+                build_settings(None, None, readable=False),
+                False,
+                [item.field for item in MUMU_ITEMS],
+            )
+        await self._complete_performance_tier(idx, data)
+        stable, unsafe = evaluate(MUMU_ITEMS, data)
+        return self._settings_from(data), stable, unsafe
+
+    async def _complete_performance_tier(self, idx: str, data: dict[str, str]) -> None:
+        """CPU / 内存的生效值藏在当前档位的键里；手上没有这两个键时再问一次。"""
+        performance_mode = data.get("performance_mode", "")
+        if performance_mode.startswith("custom"):
+            return
+        cpu_key, mem_key = _tier_keys(performance_mode)
+        if cpu_key in data and mem_key in data:
+            return
+        data.update(await self._setting_get(idx, [cpu_key, mem_key]))
+
+    @staticmethod
+    def _settings_from(data: dict[str, str]) -> InstanceSettings:
         resolution_mode = data.get("resolution_mode", "")
         performance_mode = data.get("performance_mode", "")
 
-        # CPU / 内存的生效值藏在当前档位的键里，得再问一次
-        cpu_key, mem_key = (
-            f"performance_cpu.{performance_mode}",
-            f"performance_mem.{performance_mode}",
-        )
-        if not performance_mode.startswith("custom"):
-            data.update(await self._setting_get(idx, [cpu_key, mem_key]))
-        else:
+        if performance_mode.startswith("custom"):
             cpu_key, mem_key = "performance_cpu.custom", "performance_mem.custom"
+        else:
+            cpu_key, mem_key = _tier_keys(performance_mode)
 
         def state_for(mode: str) -> str:
             return "saved" if mode.startswith("custom") else "default"

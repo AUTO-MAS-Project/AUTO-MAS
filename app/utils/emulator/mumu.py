@@ -547,6 +547,11 @@ class MumuManager(DeviceBase):
         if adb_address is not None:
             return adb_address
 
+        # 没起来的实例问 ``adb -v N`` 只会得到 "vm not running"，结果照样是下面的兜底值，
+        # 白起一个子进程；状态轮询每轮都会经过这里，关着的实例多时这笔开销很可观
+        if not data.get("is_process_started"):
+            return self._get_default_adb_address(index)
+
         try:
             adb_data = await self.get_adb_info(index)
             adb_json = self._decode_polluted_json(

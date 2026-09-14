@@ -26,9 +26,10 @@ UUID 是每实例随机生成的临时标识，因此本模块按组名识别与
 - 配置名固定为 MAS 专属槽位「MAS独立配置」，per-user 副本路径固定
   ``data/{script_id}/{user_id}/OneDragon/MAS独立配置.json``，BGI 同名实配全程零接触。
 - 种子顺序为 per-user 副本 → 内置模板（不回退 BGI 实配，实配不是权威源）。
-- 自定义配置组（per-user ScriptGroup 副本）在运行时以 ``MAS-{user短id}-{原名}`` 前缀名
-  物化到 BGI ``User/ScriptGroup`` 并同步改写槽位 ``TaskDefinitions`` 引用；运行结束删除，
-  BGI 本体目录平时保持干净（``remove_materialized_script_groups``）。
+- 自定义配置组（per-user ScriptGroup 副本，键为原名）在运行时统一物化为 BGI ``User/ScriptGroup``
+  下的 ``MAS-{短id}-自定义配置组{N}.json``（N 为队列顺序编号），并同步改写槽位 ``TaskDefinitions`` 引用；
+  原名只保留在 per-user 副本（前端显示名），BGI 内部名不暴露原名；运行结束删除，BGI 本体目录
+  平时保持干净（``remove_materialized_script_groups``）。
 非独立模式（``IfUseMasConfig=False``）保持直控 BGI 所选实配，本模块的独立槽位逻辑不生效。
 """
 
@@ -81,6 +82,9 @@ _REPO_REL_DIR = Path("Repos") / "bettergi-scripts-list"
 
 # BetterGI 配置组目录（{RootPath}/User/ScriptGroup/*.json，BGI 一条龙自定义组定义）
 _SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
+
+# BetterGI 键鼠脚本（录制）目录（{RootPath}/User/KeyMouseScript/*.json）
+_KEY_MOUSE_SCRIPT_REL_DIR = Path("User") / "KeyMouseScript"
 
 # BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗字段的只有
 # 秘境（PartyName）与首领讨伐（AutoBossTeamName/AutoBossStrategyName）；地脉花/幽境危战
@@ -173,6 +177,22 @@ def list_script_groups(root: Path) -> list[str]:
     return names
 
 
+def list_key_mouse_scripts(root: Path) -> list[str]:
+    """列出 BetterGI 键鼠脚本（录制）候选：{RootPath}/User/KeyMouseScript/*.json 的文件名。
+
+    键鼠脚本是 BetterGI「录制」得到的脚本，一条龙可像配置组一样引用，文件名即脚本名。
+    每次调用实时扫描，以反映 BGI 侧手工新增/删除的录制脚本。
+    """
+    names: list[str] = []
+    km_dir = root / _KEY_MOUSE_SCRIPT_REL_DIR
+    if km_dir.is_dir():
+        for p in sorted(km_dir.glob("*.json"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
 def read_script_group(root: Path, name: str) -> dict[str, Any]:
     """读取某个配置组 json 全文（{RootPath}/User/ScriptGroup/{name}.json）。
 
@@ -210,10 +230,107 @@ def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
         return []
     js_dir = root / _JS_SCRIPT_REL_DIR / folder
     settings = js_dir / "settings.json"
-    data = read_file(settings)
+    if not settings.is_file():
+        return []
+    try:
+        raw = settings.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    # 先按严格 JSON 解析（绝大多数脚本合规）
+    data: Any = None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        # 部分脚本的 settings.json 带 JS 风格注释（如「铁匠铺」的 // 与 /* */），
+        # 严格解析会失败并导致该脚本设置项整体丢失（界面表现为「无设置文件」）。
+        data = _loads_jsonc(raw)
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
     return []
+
+
+def _loads_jsonc(text: str) -> Any:
+    """解析带 ``//`` 与 ``/* */`` 注释的 JSON（JSONC），失败返回 ``None``。
+
+    仅用于兼容 BetterGI 第三方脚本不合规的 settings.json；字符串字面量内的
+    ``//`` 不做处理，避免误删内容。
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    in_str = False
+    esc = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        out.append(ch)
+        i += 1
+    cleaned = "".join(out)
+    try:
+        return json.loads(cleaned)
+    except ValueError:
+        pass
+    # 尾随逗号：注释移除后可能残留（如 `"type": "select", // 类型` 后紧跟 `}`）
+    try:
+        return json.loads(_drop_trailing_commas(cleaned))
+    except ValueError:
+        return None
+
+
+def _drop_trailing_commas(text: str) -> str:
+    """删除对象/数组末尾多余的逗号（JSONC 常见写法），字符串字面量内不受影响。"""
+    buf: list[str] = []
+    k, n = 0, len(text)
+    in_str = False
+    esc = False
+    while k < n:
+        ch = text[k]
+        if in_str:
+            buf.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            k += 1
+            continue
+        if ch == '"':
+            in_str = True
+            buf.append(ch)
+            k += 1
+            continue
+        if ch == ",":
+            j = k + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                k += 1
+                continue
+        buf.append(ch)
+        k += 1
+    return "".join(buf)
 
 
 def read_script_readme(root: Path, folder: str) -> str:
@@ -295,6 +412,35 @@ def per_user_script_group_path(script_id: str, user_id: str, name: str) -> Path:
     )
 
 
+def _safe_write_per_user_copy(
+    script_id: str, user_id: str, name: str, copy: dict[str, Any]
+) -> None:
+    """把物化副本写入 per-user 目录；名字非法（含路径分隔符的路线名等）时静默跳过。
+
+    路线/脚本名等合法可作 BGI 一条龙引用、却不可作 ScriptGroup 文件名的项，本就无需
+    per-user 副本（BGI 已有源文件，运行时直接经 MAS 物化组引用），故解析失败不抛错。
+    """
+    try:
+        write_file(per_user_script_group_path(script_id, user_id, name), copy)
+    except ValueError:
+        pass
+
+
+def _read_per_user_copy(script_id: str, user_id: str, name: str) -> Any:
+    """读取 per-user 配置组副本；名字非法（含路径分隔符的路线名等）时返回 ``None``。
+
+    与 ``_safe_write_per_user_copy`` 成对：per-user 副本名必须是合法 ScriptGroup 名，
+    而路线名等合法 BGI 引用可能含 ``/``，此处不得抛「配置组名非法」。
+    """
+    try:
+        path = per_user_script_group_path(script_id, user_id, name)
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    return read_file(path)
+
+
 def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
     """列出某用户 per-user ScriptGroup 副本的文件名（不含 ``.json``）。
 
@@ -309,7 +455,27 @@ def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
             name = p.stem.strip()
             if name and name not in names:
                 names.append(name)
-    return names
+    # 多实例副本（「组名-{uid}」）不是独立配置组：仅当基名也在列表中才隐藏，
+    # 避免它们混进「可编辑配置组 / 添加候选」被当成新组重复加入队列。
+    base_set = set(names)
+    return [
+        n
+        for n in names
+        if not (_instance_base_name(n) and _instance_base_name(n) in base_set)
+    ]
+
+
+def _instance_base_name(name: str) -> str:
+    """从实例名（形如「组名-{行uid}」）解析基名；非实例名返回空串。
+
+    仅用于回退：BGI 实配与 per-user 副本都只按**基名**存盘，非首实例（``组名-48``）
+    在自己还没有专属副本时必须继承基名内容，否则右栏读不到任何设置。
+    """
+    text = str(name or "")
+    head, sep, tail = text.rpartition("-")
+    if not sep or not tail.isdigit():
+        return ""
+    return head
 
 
 def read_user_script_group(
@@ -319,12 +485,30 @@ def read_user_script_group(
 
     供右栏「配置组项目编辑」渲染与编辑：副本缺失/未生成时回退 BGI 实配，
     保证展示的是用户当前可编辑的内容（首次编辑时即以实配为底稿）。
+
+    录制（KeyMouse）特例：若 ``name`` 命中 BGI ``KeyMouseScript`` 目录下的录制且副本、
+    BGI 实配均不存在，则即时生成「仅含该录制单 KeyMouse 项目」的配置组副本并落盘后返回。
+    这样右栏能直接看到录制项目，且运行时 ``materialize_user_script_groups`` 亦据此物化，
+    不依赖队列落库路径是否触发过 ``ensure_keymouse_groups``。
     """
     name = resolve_script_group_name(name)
     copy = read_file(per_user_script_group_path(script_id, user_id, name))
     if isinstance(copy, dict) and copy:
         return copy
-    return read_script_group(root, name)
+    existing = read_script_group(root, name)
+    if isinstance(existing, dict) and existing:
+        return existing
+    rec = _keymouse_file_for(root, name)
+    if rec:
+        group = _make_keymouse_script_group(name, rec)
+        write_file(per_user_script_group_path(script_id, user_id, name), group)
+        return group
+    # 多实例回退：实例名（组名-{uid}）既无专属副本、BGI 也无同名实配 → 继承基名内容。
+    # 非首实例据此正常展示设置；只有用户在右栏保存后才生成实例专属副本（设置独立）。
+    base = _instance_base_name(name)
+    if base and base != name:
+        return read_user_script_group(root, script_id, user_id, base)
+    return existing
 
 
 def write_user_script_group(
@@ -434,6 +618,8 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
     - ``autoPathing``：地图追踪任务目录（{RootPath}/User/AutoPathing）
     - ``oneDragon``：一条龙配置目录（{RootPath}/User/OneDragon）
     - ``scriptGroup``：配置组目录（{RootPath}/User/ScriptGroup）
+    - ``keyMouseScript``：键鼠脚本（录制）目录（{RootPath}/User/KeyMouseScript）
+    - ``autoFight``：自动战斗策略目录（{RootPath}/User/AutoFight，*.txt 即一份策略）
     - ``exe``：BetterGI 主程序（{RootPath}/BetterGI.exe，用于打开 BGI 调度/主界面）
 
     目录不存在时仅返回派生路径，由调用方决定是否提示缺失；返回绝对路径便于前端直接打开。
@@ -444,6 +630,8 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
         "autoPathing": str((root / _AUTO_PATHING_REL_DIR).resolve()),
         "oneDragon": str((root / _ONE_DRAGON_REL_DIR).resolve()),
         "scriptGroup": str((root / _SCRIPT_GROUP_REL_DIR).resolve()),
+        "keyMouseScript": str((root / _KEY_MOUSE_SCRIPT_REL_DIR).resolve()),
+        "autoFight": str((root / _AUTO_FIGHT_REL_DIR).resolve()),
         "exe": str((root / "BetterGI.exe").resolve()),
     }
 
@@ -620,9 +808,18 @@ def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
             kind = "builtin"
         else:
             kind = str(item.get("kind", "")).strip()
-            if kind not in ("js", "pathing", "scriptgroup", "custom"):
+            if kind not in ("js", "pathing", "scriptgroup", "keymouse", "custom"):
                 kind = "custom"
         entry: dict[str, Any] = {"kind": kind, "name": name}
+        # 每实例独立开关：仅当条目显式带 enabled 时才记录（存量数据没有该字段，
+        # 需回退到按名查询自定义组管理表，否则会把用户已关闭的组误判为启用）。
+        if "enabled" in item:
+            entry["enabled"] = bool(item["enabled"])
+        # 实例名（形如「组名-{行uid}」，与战斗组 stepNameIn 同规则）：同一配置组的
+        # 多个实例靠它区分，用于定位该实例独立的设置副本。缺省即等于基名（首实例）。
+        step = str(item.get("step", "")).strip()
+        if step:
+            entry["step"] = step
         # 保留前端条目 planUid（其绑定的执行层 Plan 步骤 uid）：同名多实例如
         # 「自动秘境」×3 依赖它定向排序，否则只能按 Plan 原顺序 FIFO。
         item_plan_uid = str(item.get("planUid", "")).strip()
@@ -739,9 +936,301 @@ def per_user_one_dragon_path(script_id: str, user_id: str, config_name: str) -> 
 
 
 def _mas_user_short_id(user_id: str) -> str:
-    """用户短标识：取 UUID 十六进制前 8 位，供物化文件名前缀避让使用。"""
+    """用户短标识：取 UUID 十六进制前 8 位，供物化文件名前缀隔离（按用户冗余，避免误删他用户组）。"""
     short = (user_id or "").replace("-", "")[:8]
     return short or "user"
+
+
+# BetterGI 键鼠脚本（录制）在一条龙配置组 projects 中的 type 标识（来自用户实导出的配置组）。
+# 用户导出的「录制测试.json」即 ``{"type": "KeyMouse", "name"/"folderName": 录制文件名}`` 的 project。
+_KEY_MOUSE_PROJECT_TYPE = "KeyMouse"
+
+
+def _default_script_group_config() -> dict[str, Any]:
+    """生成一个合法且字段齐全的 BetterGI 配置组 ``config`` 段（缺省兜底）。
+
+    BetterGI 的 ScriptGroup json 的 ``config`` 段字段极多，BGI 加载时会用默认值补齐缺失项，
+    但为稳妥（避免某版本对缺失段报错），这里以用户实导出的录制配置组为模板，给出一套
+    完整可用的默认值。每次调用返回新 dict，避免共享可变引用。
+    """
+    return {
+        "pathingConfig": {
+            "recoverTiming": 0,
+            "enabled": True,
+            "autoPickEnabled": True,
+            "partyName": "",
+            "isVisitStatueBeforeSwitchParty": False,
+            "mainAvatarIndex": "",
+            "guardianAvatarIndex": "",
+            "guardianElementalSkillSecondInterval": "",
+            "guardianElementalSkillLongPress": False,
+            "onlyInTeleportRecover": False,
+            "jsScriptUseEnabled": True,
+            "soloTaskUseFightEnabled": True,
+            "skipDuring": "",
+            "useGadgetIntervalMs": 0,
+            "autoSkipEnabled": True,
+            "autoRunEnabled": True,
+            "autoEatEnabled": False,
+            "autoEatConfig": {
+                "enabled": False,
+                "showNotification": True,
+                "checkInterval": 150,
+                "eatInterval": 1000,
+                "testFoodName": None,
+                "defaultAtkBoostingDishName": "炸萝卜丸子",
+                "defaultAdventurersDishName": None,
+                "defaultDefBoostingDishName": None,
+            },
+            "hideOnRepeat": False,
+            "taskCycleConfig": {
+                "enable": False,
+                "boundaryTime": 0,
+                "isBoundaryTimeBasedOnServerTime": False,
+                "cycle": 1,
+                "index": 1,
+            },
+            "taskCompletionSkipRuleConfig": {
+                "enable": False,
+                "skipPolicy": "GroupPhysicalPathSkipPolicy",
+                "boundaryTime": 4,
+                "isBoundaryTimeBasedOnServerTime": False,
+                "lastRunGapSeconds": -1,
+                "referencePoint": "EndTime",
+            },
+            "preExecutionPriorityConfig": {
+                "enabled": False,
+                "groupNames": "",
+                "maxRetryCount": 1,
+            },
+            "autoFightEnabled": True,
+            "autoFightConfig": {
+                "strategyName": "根据队伍自动选择",
+                "teamNames": "",
+                "fightFinishDetectEnabled": True,
+                "actionSchedulerByCd": "",
+                "onlyPickEliteDropsMode": "Closed",
+                "finishDetectConfig": {
+                    "battleEndProgressBarColor": "",
+                    "battleEndProgressBarColorTolerance": "",
+                    "fastCheckEnabled": False,
+                    "rotateFindEnemyEnabled": False,
+                    "fastCheckParams": "",
+                    "checkAfterSwitchAvatar": False,
+                    "checkEndDelay": "0.4",
+                    "beforeDetectDelay": "0.4",
+                    "rotaryFactor": 12,
+                    "isFirstCheck": False,
+                    "checkBeforeBurst": False,
+                    "skipFightEndCheckWhenEnemyVisible": False,
+                    "blockCheckBeforeBattleSeconds": 0,
+                    "paimonEndCheckEnabled": False,
+                    "paimonEndCheckDelay": 0.2,
+                },
+                "pickDropsAfterFightEnabled": True,
+                "pickDropsAfterFightSeconds": 15,
+                "battleThresholdForLoot": None,
+                "kazuhaPickupEnabled": True,
+                "qinDoublePickUp": False,
+                "guardianAvatar": "",
+                "guardianCombatSkip": False,
+                "skipModel": False,
+                "guardianAvatarHold": False,
+                "burstEnabled": False,
+                "kazuhaPartyName": "",
+                "swimmingEnabled": True,
+                "expBasedPickupEnabled": False,
+                "timeout": 120,
+                "enableCombatTargeting": False,
+                "lockLostWaitTime": 0.5,
+                "targetingDetectionInterval": 50,
+                "damageNumberRecognitionMode": 2,
+                "drawRecognitionResults": True,
+            },
+            "distance": 45,
+            "approachStopDistance": 25,
+            "hurryOnAvatar": "",
+            "hurryOnFrameInterval": 100,
+            "travelMode": "精准靠近",
+            "switchToWalkEnabled": False,
+            "mwkJumpFlyEnabled": True,
+            "mwkJumpFlyDistance": 75,
+            "mwkJumpFlyIntervalSeconds": 1,
+            "mwkDisableSprintEnabled": False,
+            "mwkJumpFlySprintCount": 0,
+        },
+        "shellConfig": {
+            "disable": False,
+            "timeout": 60,
+            "noWindow": True,
+            "output": True,
+        },
+        "enableShellConfig": False,
+    }
+
+
+def _keymouse_file_for(root: Path, name: str) -> str | None:
+    """若 ``name`` 命中 BetterGI KeyMouseScript 目录下的录制文件，返回其完整文件名（含 .json）。
+
+    一条龙 TaskDefinitions 引用录制时用其文件名（含 .json）；这里容错：``name`` 已带
+    ``.json`` 时直接命中，未带时补 ``.json`` 再试。命中则返回用于 project 的 ``name``/
+    ``folderName``（即该文件名），否则返回 ``None``。
+    """
+    km_dir = root / _KEY_MOUSE_SCRIPT_REL_DIR
+    candidate = km_dir / name
+    if candidate.is_file():
+        return name
+    with_json = f"{name}.json" if not name.endswith(".json") else name
+    if (km_dir / with_json).is_file():
+        return with_json
+    return None
+
+
+def _make_keymouse_script_group(name: str, rec_file: str) -> dict[str, Any]:
+    """构造一个仅含单个 KeyMouse 录制项目的配置组 json（供 MAS 物化到 BGI 一条龙）。
+
+    ``name`` 为配置组名（= 一条龙引用的录制文件名，可能含 .json）；``rec_file`` 为录制
+    文件名（project 的 name/folderName，必含 .json）。结构与用户导出的「录制测试.json」一致。
+    """
+    return {
+        "index": 0,
+        "name": name,
+        "config": _default_script_group_config(),
+        "projects": [
+            {
+                "name": rec_file,
+                "folderName": rec_file,
+                "index": 1,
+                "type": _KEY_MOUSE_PROJECT_TYPE,
+                "status": "Enabled",
+                "schedule": "Daily",
+                "runNum": 1,
+                "allowJsNotification": True,
+                "allowJsHTTPHash": "",
+            }
+        ],
+    }
+
+
+def _js_script_file_for(root: Path, name: str) -> str | None:
+    """若 ``name`` 命中 BetterGI JsScript 目录下的脚本文件夹（含 main.js），返回该名；否则 None。
+
+    一条龙 TaskDefinitions 引用 JS 脚本时用其文件夹名；命中即返回，供物化为仅含单个
+    Javascript 项目的配置组，使「脚本」队列项可经 ``--startGroups`` 执行层运行。
+    """
+    if not isinstance(name, str) or not name:
+        return None
+    js_dir = root / _JS_SCRIPT_REL_DIR / name
+    if js_dir.is_dir() and (js_dir / "main.js").is_file():
+        return name
+    return None
+
+
+def _pathing_file_for(root: Path, name: str) -> str | None:
+    """若 ``name`` 命中 BetterGI AutoPathing 目录下的路径文件，返回其文件名（含 .json）；否则 None。
+
+    一条龙 TaskDefinitions 引用地图追踪时用其文件名；命中即返回，供物化为仅含单个
+    Pathing 项目的配置组，使「路径」队列项可经 ``--startGroups`` 执行层运行。
+    """
+    if not isinstance(name, str) or not name:
+        return None
+    pt_dir = root / _AUTO_PATHING_REL_DIR
+    candidate = pt_dir / name
+    if candidate.is_file():
+        return name
+    with_json = f"{name}.json" if not name.endswith(".json") else name
+    if (pt_dir / with_json).is_file():
+        return with_json
+    return None
+
+
+def _make_js_script_group(name: str) -> dict[str, Any]:
+    """构造仅含单个 Javascript 项目的配置组（供 MAS 物化，使「脚本」队列项经 --startGroups 执行层运行）。"""
+    return {
+        "index": 0,
+        "name": name,
+        "config": _default_script_group_config(),
+        "projects": [
+            {
+                "name": name,
+                "folderName": name,
+                "index": 1,
+                "type": "Javascript",
+                "status": "Enabled",
+                "schedule": "Daily",
+                "runNum": 1,
+                "allowJsNotification": True,
+                "allowJsHTTPHash": "",
+            }
+        ],
+    }
+
+
+def _make_pathing_group(name: str) -> dict[str, Any]:
+    """构造仅含单个 Pathing 项目的配置组（供 MAS 物化，使「路径」队列项经 --startGroups 执行层运行）。
+
+    ``name`` 为路线相对 AutoPathing 目录的文件路径（可含分类子目录，如
+    「矿物/铁块/富集路线@Tool_tingsu/路线.json」）。
+
+    ⚠️ BetterGI 运行 Pathing 项目时按 ``AutoPathing + folderName + name`` 定位路线文件：
+    ``folderName`` 必须是**分类子目录**、「name」必须是**含 .json 的文件名**（BGI 不会自动补
+    扩展名）。两者都填完整相对路径会使路径被重复拼接成 ``AutoPathing\\X\\X``，
+    抛 DirectoryNotFoundException。
+    """
+    rel = str(name or "").replace("\\", "/").strip()
+    while rel.startswith("/"):
+        rel = rel[1:]
+    folder, _, file_name = rel.rpartition("/")
+    return {
+        "index": 0,
+        "name": file_name,
+        "config": _default_script_group_config(),
+        "projects": [
+            {
+                "name": file_name,
+                "folderName": folder,
+                "index": 1,
+                "type": "Pathing",
+                "status": "Enabled",
+                "schedule": "Daily",
+                "runNum": 1,
+                "allowJsNotification": True,
+                "allowJsHTTPHash": "",
+            }
+        ],
+    }
+
+
+def ensure_keymouse_groups(
+    root: Path, script_id: str, user_id: str, names: list[str]
+) -> None:
+    """为队列中引用的录制（KeyMouse）名生成 per-user 配置组副本（含单 KeyMouse 项目）。
+
+    供队列保存与运行时物化前调用；幂等（per-user 副本已存在则跳过）。副本存在后：
+    - 右栏「配置组项目编辑」能读到该录制项目（提前呈现内容，无需等到运行时）；
+    - ``materialize_user_script_groups`` 能据此物化到 BGI 一条龙并改写引用，使录制真正执行。
+
+    录制在 BetterGI 一条龙里只能作为配置组的 ``type=KeyMouse`` project 执行（不能像 JS 脚本
+    那样被一条龙直接引用）；用户导出的「录制测试.json」即包含 ``type=KeyMouse`` 的 project。
+    """
+    for name in names:
+        if not isinstance(name, str) or not name:
+            continue
+        if name in _BUILTIN_ONE_DRAGON_GROUPS:
+            continue
+        # 名字含路径分隔符（如 AutoPathing 路线名「矿物/铁块/.../路线」）：这类名字在 BGI 里
+        # 合法、可作一条龙引用，但不可作 ScriptGroup 文件名/per-user 副本名，且必非录制引用，
+        # 故解析失败（ValueError）直接跳过，不抛「配置组名非法」。
+        try:
+            copy_path = per_user_script_group_path(script_id, user_id, name)
+        except ValueError:
+            continue
+        if copy_path.is_file():
+            continue
+        rec = _keymouse_file_for(root, name)
+        if not rec:
+            continue
+        write_file(copy_path, _make_keymouse_script_group(name, rec))
 
 
 def materialize_user_script_groups(
@@ -749,43 +1238,89 @@ def materialize_user_script_groups(
     script_id: str,
     user_id: str,
     config: dict[str, Any],
+    instance_base: dict[str, str] | None = None,
 ) -> list[Path]:
-    """把用户独立配置的自定义配置组物化到 BGI User/ScriptGroup（前缀避让）。
+    """把用户独立配置的自定义配置组物化到 BGI User/ScriptGroup（统一编号，彻底去耦合）。
 
-    仅物化**存在 per-user ScriptGroup 副本**（``data/{script}/{user}/ScriptGroup/{原名}.json``）
-    的组：以 ``MAS-{user短id}-{原名}.json`` 写入 BGI，并把 ``config`` 的
-    ``TaskDefinitions`` 中该组引用同步改写为前缀名。BGI 原有同名文件零接触
-    （前缀不同绝不覆盖）。无副本的组（引用 BGI 已有配置组 / JS 脚本 / 路径等）
-    原样保留名字，交由 BGI 自身解析。
+    四类自定义项（配置组 scriptgroup / 录制 keymouse / 脚本 js / 路径 pathing）一律物化，
+    与「是否引用 BGI 已有组」无关。物化文件统一命名为 ``MAS-{短id}-自定义配置组{N}.json``（N 为
+    队列顺序的 1-based 编号，按 ``TaskDefinitions`` 中首次出现的唯一自定义项递增），并把
+    ``config`` 的 ``TaskDefinitions`` 引用同步改写为该编号名。前名（用户显示名 ``原名``）
+    只留在 per-user 副本 ``data/{script}/{user}/ScriptGroup/{原名}.json``，后名（BGI 内部）
+    完全不暴露原名 → 前端显示名与 BGI 配置组名自由松绑。
+
+    - 配置组：存在 per-user ScriptGroup 副本 → 直接物化该副本。
+    - 录制 / 脚本 / 路径：无 MAS 副本时按 BGI 目录（KeyMouseScript / JsScript / AutoPathing）
+      自动生成「单项目」配置组副本并物化（录制只能作为配置组 project；js/路径经 --startGroups
+      直连执行层跑，不再依赖一条龙裸名解析分支）。
+    - 引用 BGI 已有配置组：无 per-user 副本且非录制/脚本/路径 → 以 BGI 实配为底稿物化
+      （统一编号命名）；读不到实配的极少数项才原样保留名字（BGI 自解析）。
+
+    BGI 原有同名文件零接触（编号名绝不冲突）。
 
     Returns:
         本次物化写入的文件路径列表（供运行结束删除）。
     """
     created: list[Path] = []
+    instance_base = instance_base or {}
     defs = config.get("TaskDefinitions")
     if not isinstance(defs, dict):
         return created
-    rename: dict[str, str] = {}
-    seen: set[str] = set()
-    for name in defs.values():
+    idx = 0
+    # 多实例：逐 uid 物化——同一配置组的多份各自生成一个物化组，不再按名去重
+    for uid, name in list(defs.items()):
         if not isinstance(name, str) or not name:
             continue
-        if name in _BUILTIN_ONE_DRAGON_GROUPS or name in seen:
+        if name in _BUILTIN_ONE_DRAGON_GROUPS:
             continue
-        seen.add(name)
-        copy = read_file(per_user_script_group_path(script_id, user_id, name))
+        # 实例名（形如「组名-{行uid}」）→ 基名：BGI 目录只认基名，且首实例/存量数据
+        # 的副本就按基名存，回退与解析都用它。缺省即实例名等于基名。
+        base = instance_base.get(name) or name
+        # 1) 该实例自己的 per-user 设置副本（多实例各自独立，互不串台）
+        copy = _read_per_user_copy(script_id, user_id, name)
+        # 2) 回退：基名副本（首实例与存量数据均按基名存）
+        if not (isinstance(copy, dict) and copy) and base != name:
+            copy = _read_per_user_copy(script_id, user_id, base)
         if not (isinstance(copy, dict) and copy):
-            continue  # 无 MAS 副本：引用 BGI 已有组/JS/路径，原样保留
-        prefixed = f"MAS-{_mas_user_short_id(user_id)}-{name}"
+            # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
+            rec = _keymouse_file_for(root, base)
+            if rec:
+                copy = _make_keymouse_script_group(name, rec)
+                _safe_write_per_user_copy(script_id, user_id, name, copy)
+            else:
+                # 脚本（JS）：引用 JsScript 下的脚本文件夹 → 物化为单 Javascript 项目配置组，
+                # 使其可由 --startGroups 执行层直连（去耦合：不再依赖 BGI 一条龙裸名解析分支）
+                js = _js_script_file_for(root, base)
+                if js:
+                    copy = _make_js_script_group(js)
+                    _safe_write_per_user_copy(script_id, user_id, name, copy)
+                else:
+                    # 路径（地图追踪）：引用 AutoPathing 下的路径文件 → 物化为单 Pathing 项目配置组
+                    pt = _pathing_file_for(root, base)
+                    if pt:
+                        copy = _make_pathing_group(pt)
+                        _safe_write_per_user_copy(script_id, user_id, name, copy)
+                    else:
+                        # 引用 BGI 已有配置组：以 BGI 实配为底稿物化（四类统一编号命名，
+                        # 前后名彻底解耦）。BGI 只认基名，故按 base 读取。
+                        try:
+                            existing = read_script_group(root, base)
+                        except ValueError:
+                            existing = {}
+                        if not (isinstance(existing, dict) and existing):
+                            # 无法解析：回退基名交 BGI 自解析（实例名对 BGI 无意义）
+                            if base != name:
+                                defs[uid] = base
+                            continue
+                        copy = existing
+        idx += 1
+        prefixed = f"MAS-{_mas_user_short_id(user_id)}-自定义配置组{idx}"
         copy["name"] = prefixed
         out_path = root / _SCRIPT_GROUP_REL_DIR / f"{prefixed}.json"
         write_file(out_path, copy)
         created.append(out_path)
-        rename[name] = prefixed
-    if rename:
-        for uid, name in defs.items():
-            if isinstance(name, str) and name in rename:
-                defs[uid] = rename[name]
+        # 逐实例改写引用：不能按名映射——同名多实例的物化名各不相同
+        defs[uid] = prefixed
     return created
 
 
@@ -799,10 +1334,10 @@ def remove_materialized_script_groups(root: Path, created: list[Path]) -> None:
 
 
 def cleanup_leftover_mas_groups(root: Path, script_id: str, user_id: str) -> int:
-    """清理该用户历史残留的 MAS 物化配置组文件（``User/ScriptGroup/MAS-{短id}-*.json``）。
+    """清理该用户历史残留的 MAS 物化配置组文件（``User/ScriptGroup/MAS-{短id}-自定义配置组*.json``）。
 
     进程被强杀等异常场景会留下前缀物化文件（无 owner 标记可循），此函数按用户短 id
-    前缀扫描删除，只命中 MAS 专属前缀，绝不触碰 BGI 本体文件。返回删除数量。
+    前缀扫描删除，只命中该用户专属前缀，绝不触碰 BGI 本体文件。返回删除数量。
 
     ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行；并发任务下此清理会删掉
     其他运行实例正在使用的物化文件（见 ``_slot_owner_path`` 的说明）。
@@ -811,7 +1346,7 @@ def cleanup_leftover_mas_groups(root: Path, script_id: str, user_id: str) -> int
     removed = 0
     sg_dir = root / _SCRIPT_GROUP_REL_DIR
     if sg_dir.is_dir():
-        for p in sg_dir.glob(f"MAS-{short}-*.json"):
+        for p in sg_dir.glob(f"MAS-{short}-自定义配置组*.json"):
             try:
                 p.unlink(missing_ok=True)
                 removed += 1
@@ -859,6 +1394,7 @@ def write_user_one_dragon(
     manage_custom_groups: bool = False,
     queue: list[dict[str, Any]] | None = None,
     exclude_task_names: list[str] | None = None,
+    exclude_materialized_custom_groups: bool = False,
 ) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
@@ -874,8 +1410,8 @@ def write_user_one_dragon(
     - 物化结果写入 MAS 专属槽位 ``{RootPath}/User/OneDragon/MAS独立配置.json``（据此启动，
       运行后由 ``remove_one_dragon_slot`` 删除）；
     - 入列的自定义配置组（含禁用，凡在 per-user ScriptGroup 副本中有定义的组）一并
-      以 ``MAS-{短id}-{原名}`` 前缀物化到 BGI ``User/ScriptGroup``，并同步改写槽位
-      ``TaskDefinitions`` 引用；BGI 本体原有同名文件绝不覆盖。
+      统一物化为 BGI ``User/ScriptGroup`` 下的 ``MAS-{短id}-自定义配置组{N}``（N=队列顺序编号），
+      并同步改写槽位 ``TaskDefinitions`` 引用；原名只保留在 per-user 副本，BGI 内部名不暴露原名。
 
     非组字段（领取奖励队伍/战斗队伍/战斗策略）作为**运行时覆盖层**：仅在非空时写入
     BGI 槽位（留空则保持 BetterGI 现有设置），**只物化到槽位、不回写 per-user 副本**
@@ -933,7 +1469,38 @@ def write_user_one_dragon(
             if auto_boss_strategy_name:
                 _wd["default"]["strategy"] = auto_boss_strategy_name
 
-    materialized = materialize_user_script_groups(root, script_id, user_id, slot_config)
+    # 录制（KeyMouse）引用：确保 per-user 配置组副本存在（含单 KeyMouse 项目），
+    # 使 materialize 能物化、运行时真的执行录制（录制在 BGI 一条龙里只能作为配置组 project）。
+    ensure_keymouse_groups(
+        root,
+        script_id,
+        user_id,
+        [n for n in (slot_config.get("TaskDefinitions") or {}).values() if isinstance(n, str)],
+    )
+
+    # 多实例：实例名（组名-{行uid}）→ 基名 的映射，供物化回退到基名副本/实配，
+    # 以及按基名在 BGI 目录（JsScript/AutoPathing/KeyMouseScript/ScriptGroup）解析。
+    _instance_base: dict[str, str] = {}
+    for _e in queue or []:
+        if not isinstance(_e, dict):
+            continue
+        _n = str(_e.get("name") or "").strip()
+        _s = str(_e.get("step") or "").strip()
+        if _n and _s and _s != _n:
+            _instance_base[_s] = _n
+    materialized = materialize_user_script_groups(
+        root, script_id, user_id, slot_config, _instance_base
+    )
+    # 路径 B（自定义项执行层）：把已物化的自定义配置组（MAS-{短id}-自定义配置组{N}）从原生槽位剔除，
+    # 避免与 --startGroups 执行层重复执行。组名直接取自本次物化结果（materialized 的路径 stem），
+    # 不依赖短 id/原名，与 materialize_user_script_groups 的编号规则完全同源。排除必须在物化之后：
+    # 若在 apply_groups 后即剔除，materialize 会因 TaskDefinitions 无对应项而不生成组文件。
+    if exclude_materialized_custom_groups:
+        _custom_prefix = f"MAS-{_mas_user_short_id(user_id)}-自定义配置组"
+        _exclude_tasks(
+            slot_config,
+            [p.stem for p in materialized if str(p.stem).startswith(_custom_prefix)],
+        )
 
     slot_path = one_dragon_slot_path(root)
     owner_path = _slot_owner_path(script_id)
@@ -1754,12 +2321,26 @@ def apply_groups(
             if not name:
                 continue
             uid = str(uuid.uuid4())
-            new_defs[uid] = name
+            # 自定义项多实例：实例名形如「组名-{行uid}」，只用于 MAS 侧定位该实例的
+            # 独立设置副本；BGI 侧最终由物化改写为 MAS-{短id}-自定义配置组{N}，
+            # 无法物化时回退基名（见 materialize_user_script_groups）。
+            # 内置组一律用基名：BGI 一条龙只认内置基名，把实例名（如「自动秘境-3」）
+            # 写进 TaskDefinitions 会让 BGI 无法识别，按基名的排除逻辑也会失配。
+            step = (
+                ""
+                if name in _BUILTIN_ONE_DRAGON_GROUPS
+                else str(entry.get("step") or "").strip()
+            )
+            new_defs[uid] = step or name
             new_order.append(uid)
             if name in _BUILTIN_ONE_DRAGON_GROUPS:
                 present_builtin.add(name)
                 new_enabled[uid] = name in selected_set
+            elif "enabled" in entry:
+                # 每实例独立开关（队列条目自带 enabled），与战斗组实例行为一致
+                new_enabled[uid] = bool(entry["enabled"])
             else:
+                # 存量数据无 per-instance enabled：回退按名查自定义组管理表
                 new_enabled[uid] = _custom_enabled_for(name)
     else:
         # 旧行为：单遍扫描旧顺序，内置组按按钮开关置 enabled，自定义组按管理表/原样保留

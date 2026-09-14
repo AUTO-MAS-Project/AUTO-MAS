@@ -38,9 +38,10 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import CONFIG_SOURCE_SCRIPT, resolve_config_source
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .task_loader import M9ATaskLoader
 from .tools import push_notification
@@ -86,6 +87,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        # 配置来源三态与独立的快速配置开关（两段式：来源决定是否下发 MAS
+        # 托管配置，快速配置决定是否把面板值写进 M9A 原生配置）。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.check_result = "-"
 
         # 初始化路径
@@ -274,8 +280,20 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
-            # 写入 M9A 配置
-            await self.write_m9a_config(queue, emulator_info, resource, account)
+            # 两段式：来源决定是否下发 MAS 托管配置，快速配置决定是否把面板值
+            # 写进 M9A 原生配置。
+            # - 脚本/用户来源：写（面板值即本次运行配置）
+            # - 直控+开启：写面板值，任务结束按既有快照恢复
+            # - 直控+关闭：完全用 M9A 安装目录现有的原生配置，零写入
+            if self.direct_control and not self.cur_user_config.get(
+                "Info", "IfQuickConfig"
+            ):
+                logger.info(
+                    "M9A 直控配置：直接使用脚本原生配置，跳过 MAS 配置写入"
+                )
+            else:
+                # 写入 M9A 配置
+                await self.write_m9a_config(queue, emulator_info, resource, account)
 
             # 启动 M9A
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
@@ -499,6 +517,13 @@ class AutoProxyTask(TaskExecuteBase):
         # 保存配置到 M9A 目录
         write_file(self.m9a_tasks_path, config)
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
+
+        # 快照记录注入后指纹, 供崩溃恢复区分 MAS 污染与用户手动改动
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.m9a_config_path,
+            script_id=self.script_info.script_id,
+        )
 
     @staticmethod
     def _extract_failed_task_names(log: str) -> set[str]:

@@ -16,7 +16,7 @@ import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 /** 下载前测速的 Runtime stage。与 electron 侧 `NETWORK_PROBE_STAGE` 同值。 */
 export const NETWORK_PROBE_STAGE = 'network.probe'
 
-export interface NetworkProbeEntry {
+interface NetworkProbeEntry {
   source: string
   /**
    * 该源实测吞吐（字节/秒）。
@@ -27,13 +27,13 @@ export interface NetworkProbeEntry {
   bytesPerSecond?: number
 }
 
-export interface NetworkProbe {
+interface NetworkProbe {
   entries: NetworkProbeEntry[]
   /** 本轮测速结束后 Runtime 给出的最终顺序文案；还在测时为 null。 */
   summary: string | null
 }
 
-export interface NetworkTransfer {
+interface NetworkTransfer {
   /** 产生这条进度的 Runtime stage，用于判断后续无文件名的事件是否还属于同一次下载。 */
   stage: string
   item: string

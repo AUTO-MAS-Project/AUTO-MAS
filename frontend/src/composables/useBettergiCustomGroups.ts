@@ -7,12 +7,12 @@ import { BetterGiService } from '@/api'
 
 const logger = window.electronAPI.getLogger('BetterGI自定义配置组')
 
-export interface BettergiCustomGroupRow {
+interface BettergiCustomGroupRow {
   name: string
   enabled: boolean
 }
 
-export interface BettergiCustomGroupOptions {
+interface BettergiCustomGroupOptions {
   /** 所在脚本，用于从 BetterGI 现有配置读取自定义组 */
   scriptId: string
   /** 当前编辑用户 id（用户独立配置读取 per-user 副本必需） */
@@ -126,6 +126,9 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     mergeRows(await fetchBettergiGroups())
   }
 
+  /** 仅读取 BetterGI 现有自定义组名（供弹窗候选展示），不合并进管理表，避免打开弹窗即自动入队 */
+  const listFromBettergi = async (): Promise<BettergiCustomGroupRow[]> => fetchBettergiGroups()
+
   /** 拉取「添加配置组」下拉候选：BGI 现有自定义组名，剔除已入表的 */
   const refreshAddOptions = async () => {
     const existing = new Set(table.value.map(r => r.name))
@@ -210,6 +213,7 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
     rowSelection,
     syncFromForm,
     loadFromBettergi,
+    listFromBettergi,
     toggleMaster,
     openAdd,
     confirmAdd,

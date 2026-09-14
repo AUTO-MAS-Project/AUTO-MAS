@@ -183,10 +183,3 @@ def validate_community_credential(
             "凭据本地校验失败",
         )
     return CredentialStatus(token_field, "valid", info.fields)
-
-
-# 旧名称继续作为历史调用兼容入口。
-GameSignCredentialInfo = CommunityCredentialInfo
-parse_game_sign_credential = parse_community_credential
-is_game_sign_credential_configured = is_community_credential_configured
-validate_game_sign_credential = validate_community_credential

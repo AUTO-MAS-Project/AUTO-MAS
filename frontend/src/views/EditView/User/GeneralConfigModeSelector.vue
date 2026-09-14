@@ -40,6 +40,29 @@
     </a-radio-group>
 
     <a-alert class="config-mode-alert" type="info" show-icon :message="alertMessage" />
+
+    <!--
+      快速配置：独立于配置来源的用户级开关（与 Info.Mode 无耦合，任一来源均可开关）。
+      只有声明了 quickConfig 双向绑定的调用方才渲染，避免给未接入运行时的专项做出死开关。
+    -->
+    <a-form-item v-if="quickConfig !== undefined" class="quick-config-form-item">
+      <template #label>
+        <span class="config-mode-label">
+          {{ t('edit.enableQuickConfiguration') }}
+          <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
+            <QuestionCircleOutlined class="help-icon" />
+          </a-tooltip>
+        </span>
+      </template>
+      <a-select
+        :value="quickConfig"
+        size="large"
+        style="width: 100%"
+        :disabled="disabled || saving || quickConfigDisabled"
+        :options="quickConfigOptions"
+        @change="handleQuickConfigChange"
+      />
+    </a-form-item>
   </a-form-item>
 </template>
 
@@ -52,6 +75,7 @@ import {
   LoadingOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 
 const { t } = useI18n()
@@ -69,6 +93,12 @@ const props = defineProps<{
   saving?: boolean
   options?: ConfigModeOption[]
   alertMessage?: string
+  /**
+   * 快速配置开关（用户级，独立于 Info.Mode）。
+   * 传 undefined 表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
+   */
+  quickConfig?: boolean
+  quickConfigDisabled?: boolean
 }>()
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
@@ -90,18 +120,24 @@ const defaultOptions = computed<ConfigModeOption[]>(() => [
 ])
 
 const options = computed(() => props.options ?? defaultOptions.value)
-const alertMessage = computed(
-  () =>
-    props.alertMessage ??
-    '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。'
-)
+const alertMessage = computed(() => props.alertMessage ?? t('edit.configSourceHint'))
+
+const quickConfigOptions = computed(() => [
+  { label: t('edit.enabled3'), value: true },
+  { label: t('edit.off'), value: false },
+])
 
 const emit = defineEmits<{
   change: [value: boolean | string]
+  quickConfigChange: [value: boolean]
 }>()
 
 const handleChange = (event: RadioChangeEvent) => {
   emit('change', event.target.value as boolean | string)
+}
+
+const handleQuickConfigChange = (value: boolean) => {
+  emit('quickConfigChange', value)
 }
 </script>
 
@@ -210,6 +246,10 @@ const handleChange = (event: RadioChangeEvent) => {
 
 .config-mode-alert {
   margin-top: 12px;
+}
+
+.quick-config-form-item {
+  margin-top: 16px;
 }
 
 @media (max-width: 760px) {

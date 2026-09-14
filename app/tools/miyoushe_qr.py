@@ -86,7 +86,6 @@ PASSPORT_LTOKEN_URL = (
     "https://passport-api.mihoyo.com/account/auth/api/getLTokenBySToken"
 )
 # ---- GameToken QR 登录 API（参考项目已确认的请求/响应形状） ----
-GAME_TOKEN_CREATE_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/fetch"
 GAME_TOKEN_CHECK_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/query"
 GAME_TOKEN_STOKEN_URL = (
     "https://api-takumi.mihoyo.com/account/ma-cn-session/app/getTokenByGameToken"

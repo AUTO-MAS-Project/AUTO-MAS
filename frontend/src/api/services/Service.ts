@@ -1049,6 +1049,30 @@ export class Service {
         });
     }
     /**
+     * 获取 BetterGI 可用键鼠脚本（录制）列表
+     * 返回 BetterGI 键鼠脚本（录制）候选。
+     *
+     * ``label`` 与 ``value`` 同为 {RootPath}/User/KeyMouseScript*.json 的文件名（即脚本名）。
+     * 供一条龙「添加配置组」弹窗的「录制」标签页作为候选（贴录制标签）选择。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiKeyMouseScriptsApiApiScriptsBettergiKeyMouseScriptsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/key-mouse-scripts',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 BetterGI 可用配置组列表
      * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
      *
