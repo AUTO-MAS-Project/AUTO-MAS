@@ -694,12 +694,27 @@ class AutoProxyTask(TaskExecuteBase):
         任务执行异常 / [FTL] / [ERR]；进程提前退出亦判失败。
         """
         group_name = one_dragon_bridge.GROUP_NAME
+        # 执行层同样是一次真实运行，必须留下 log_record：否则本用户这次运行在 MAS 侧
+        # 一条记录都没有，表现为 UserItem.result 落到「未开始运行」（models/task.py:76）、
+        # final_task 不写历史日志（statistic_paths 为空 → 「统计信息」通知整块跳过）、
+        # 分步报告与掉落统计也无数据可解析。原生一条龙随后会另开一条记录，
+        # 因此可能出现「执行层 | 一条龙」两段结果。
+        combat_log = LogRecord()
+        self.log_start_time = datetime.now()
+        self.cur_user_item.log_record[self.log_start_time] = combat_log
+        # 同步为「当前记录」：on_crash 与收尾的「运行异常」桌面通知都读 self.cur_user_log；
+        # 原生一条龙随后会把它换成自己的记录（与重试循环同构）
+        self.cur_user_log = combat_log
+
         try:
             one_dragon_bridge.write_one_dragon_group(
                 self.script_root_path, self.plan_combat_steps
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"一条龙执行层配置组生成失败: {e}")
+            # 留一行内容：否则 final_task 会因内容为空把这条记录改写成「未捕获到日志」，盖掉失败原因
+            combat_log.content = [f"一条龙执行层配置组生成失败: {e}"]
+            combat_log.status = "执行层失败：配置组生成失败"
             await self._push_dispatch_log(f"执行层配置组生成失败: {e}")
             return False
 
@@ -732,13 +747,18 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         step_failed = 0
+        # 失败原因，收尾时写入 combat_log.status；成功统一为项目契约 "Success!"
+        failure_reason = "执行层未正常结束"
 
         last_activity = time.monotonic()
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity, step_failed
+            nonlocal last_activity, step_failed, failure_reason
             last_activity = time.monotonic()
             log = "".join(log_content)
+            # 与原生一条龙的 check_log 同构：把执行层日志写进本次运行记录，
+            # 历史日志、统计通知与掉落统计都从这条记录取数据
+            combat_log.content = log_content
             # 单步失败只统计（执行层会跳过继续），不据此判负
             step_failed = log.count("MAS_STEP_FAIL")
             if done_marker in log:
@@ -746,11 +766,13 @@ class AutoProxyTask(TaskExecuteBase):
                 done_event.set()
             elif any(m in log for m in fail_markers):
                 result["success"] = False
+                failure_reason = "执行层失败（命中致命日志）"
                 done_event.set()
             elif (
                 result["started"]
                 and not await self.bettergi_process_manager.is_running()
             ):
+                failure_reason = "执行层进程在结束标记前退出"
                 done_event.set()
 
         monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
@@ -780,6 +802,10 @@ class AutoProxyTask(TaskExecuteBase):
                     # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
                     if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
                         result["success"] = False
+                        failure_reason = (
+                            "执行层空闲超时"
+                            f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                        )
                         logger.warning(
                             f"用户 {self.cur_user_item.name} 执行层空闲超时"
                             f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
@@ -788,11 +814,16 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"执行层执行异常: {e}")
             result["success"] = False
+            failure_reason = f"执行层执行异常: {e}"
         finally:
             await monitor.stop()
             await self.kill_managed_process()
             with suppress(Exception):
                 one_dragon_bridge.remove_one_dragon_group(self.script_root_path)
+
+        # 收尾状态：成功必须用 "Success!"——final_task 的「成功轮」筛选与 on_crash 的
+        # 「非 Success! 即弹运行异常通知」都依赖这个契约串
+        combat_log.status = "Success!" if result["success"] else failure_reason
 
         if result["success"]:
             if step_failed:
