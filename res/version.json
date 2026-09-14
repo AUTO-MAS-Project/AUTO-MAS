@@ -6,18 +6,9 @@
                 "绝区零一条龙升级后，旧版本保存在脚本目录下的「一条龙原生配置」备份不再显示在配置恢复列表中（数据未删除，确需找回请手动迁移） by [@AthenaHibou](https://github.com/AthenaHibou)"
             ],
             "新增": [
-                "OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)",
-                "BetterGI专项 一条龙队列支持将录制（键鼠脚本）作为独立队列项、配置组可自定义显示名称与备注，并修复直控模式仍执行 MAS 流程、录制项重复生成配置组、录制运行时「没有内容」等问题",
-                "BetterGI专项 配置组编辑器（右侧栏）新增「清空」按钮可一键移除当前配置组全部脚本项目（二次确认）；「添加脚本」复用「添加配置组」弹窗，冻结「配置组」标签、仅可从 JS脚本/地图追踪/录制 三个标签加入，所选项依次追加到脚本队列末尾",
-                "BetterGI专项 配置组编辑器的「添加脚本 / 移除脚本 / 清空」工具栏现也适用于录制(keymouse)类真实配置组（与 scriptgroup 一致）；JS脚本/地图追踪 为独立单脚本、无对应配置组 json，仍按只读单项目展示，不开放增删与清空",
-                "BetterGI专项 配置组编辑器的「添加脚本 / 移除脚本 / 清空」工具栏进一步扩展到 脚本(js) 与 路径(pathing) 队列项：二者以 per-user ScriptGroup 副本（`data/{script}/{user}/ScriptGroup/{name}.json`）充当配置组，未编辑前仍为独立单脚本（运行时自动生成单项目配置组），一旦增删/清空即落盘为该多项目配置组，由运行时物化执行（无需切换队列 kind）"
+                "OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)"
             ],
             "修复": [
-                "修复 BetterGI 一条龙「添加配置组」弹窗的「JS脚本」标签页误显示已加入一条龙的路径与录制项",
-                "修复 BetterGI 一条龙打开「添加配置组」弹窗时，已加入一条龙的路径与录制项被当成自定义配置组自动补进队列",
-                "修复 BetterGI 一条龙打开「添加配置组」弹窗时，BetterGI 已有的自定义配置组被自动并入一条龙队列：现仅作弹窗候选展示，需用户显式确认才加入",
-                "修复 BetterGI 编辑页点击配置组（如默认配置组）时后端报 `NameError: name 'Literal' is not defined` 导致请求失败的问题（补充缺失的类型导入）",
-                "修复 BetterGI 配置组编辑器里，尚未加入其它脚本的独立 JS 脚本或地图追踪路线误点「清空脚本」会被清空为不执行任何内容的空组：现这类独立项在转为配置组前禁用清空与移除，仅「添加脚本」可将其纳入配置组"
                 "BAAH 专项 修复配置页多出一个「结束后关闭模拟器」开关的问题：其他专项都没有这个选项，BAAH 一并按「任务结束后关闭模拟器」执行 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复模拟器关闭动作缺少超时、关闭失败时仍可能让任务收尾长时间卡住的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "修复脚本配置目录被脚本进程占用或含只读文件时，任务收尾复原配置失败、配置目录停留在半删状态的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -66,8 +57,6 @@
             "变更": [
                 "全局设置 虚拟显示器改为常驻监测：运行期间检测不到真实显示输出自动挂上，恢复后自动拆掉（任务运行中等结束再拆）；说明里可直接点开 Parsec 驱动下载页 by [@qiyinxi](https://github.com/qiyinxi)",
                 "日志清理 MFW 项目的 MaaFramework 原生日志备份改为按保留天数一并清理，不再无限堆积",
-                "BetterGI专项 一条龙相关按钮与目录文案统一改为「配置组」口径，并新增「录制」标签页，可直接选用 BetterGI 键鼠脚本、打开录制目录",
-                "BetterGI专项 一条龙队列里的自定义配置组可自定义显示名称与名称备注，仅改变界面显示、不影响实际执行；默认与专项配置组的名称保持不可修改",
                 "性能与清理 编辑页连续改动不再丢失，配置文件损坏时保留副本而不是静默清空；日志页、模拟器页、签到页与工具页不再高频轮询，任务日志改为增量推送，MAA 起步不再卡顿一秒，运行日志不再被访问记录撑大；并移除前端从不使用的 9 个接口（MCP 同名工具一并消失）与约两万行无用代码 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)"
             ],
             "修复": [
@@ -91,9 +80,6 @@
                 "修复后端就绪前退出时只能反复重试的问题，现同时提供「重建运行环境」入口 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)",
                 "MAA专项 修复未返回分服关卡数据时用户配置页打不开的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "模拟器管理 修复部分 MuMu 因命令输出混有日志而无法读取信息的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 修复一条龙队列加入「录制」键鼠脚本后重复出现一条同名「自定义」配置组项的问题：录制现已与 JS 脚本、地图追踪同样作为独立队列项按名字识别，不再额外生成配置组",
-                "BetterGI专项 修复一条龙加入「录制」键鼠脚本后运行时「没有内容」的问题：录制在 BetterGI 一条龙里只能作为配置组的 `type=KeyMouse` 项目执行，现已为每个加入队列的录制自动生成含该录制项目的 per-user 配置组副本并物化引用，右栏也改回「配置组项目编辑」可查看录制项目、双击打开录制目录",
-                "BetterGI专项 修复直控模式仍会执行 MAS 流程、一条龙名称无法修改、首次启动切号失败，以及单日代理次数达上限后次日被跳过的问题",
                 "MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」的问题，现按镜像依次重试；失败原因也会写进日志并显示在提示条上，不再只有一句准备失败 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)",
                 "MFW专项 修复 beta.4 下 MFW 脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru 的问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次 by [@HarcoChen](https://github.com/HarcoChen)",
