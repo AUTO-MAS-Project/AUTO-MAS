@@ -275,15 +275,10 @@
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
+                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
-                <a-switch
-                  v-model:checked="formData.Info.IfQuickConfig"
-                  :disabled="pageLoading"
-                  style="margin-top: 12px"
-                  @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
-                />
-                <span style="margin-left: 8px">{{ t('edit.quickConfig') }}</span>
               </a-col>
             </a-row>
 
@@ -3936,6 +3931,13 @@ watch(
     if (!masConfigEnabled.value) selectedGroupIdentity.value = null
   }
 )
+
+// 快速配置开关（用户级，独立于配置来源）：统一走 GeneralConfigModeSelector 的表单项，
+// 不再单独渲染一个裸开关——两个入口指向同一个 Info.IfQuickConfig，容易让人分不清哪个是真实开关。
+const handleQuickConfigChange = (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  void saveField('Info.IfQuickConfig', value)
+}
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
