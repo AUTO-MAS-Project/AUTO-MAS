@@ -211,13 +211,15 @@ const packageLogs = async () => {
       return
     }
     if (result.success) {
-      message.success(result.message || t('logs.toast.packageExported'))
+      message.success(t('logs.toast.packageExported'))
       logger.info(`日志打包成功: ${result.zipPath}`)
       if (result.zipPath) await window.electronAPI.showItemInFolder?.(result.zipPath)
+    } else if (result.error === '用户取消') {
+      // 主进程对保存对话框取消统一返回该中文文案，静默即可
+      logger.info('用户取消了日志打包')
     } else {
-      const errorMsg = result.error || t('logs.toast.packageFailed')
-      logger.error(`打包日志失败: ${errorMsg}`)
-      message.error(errorMsg)
+      logger.error(`打包日志失败: ${result.error}`)
+      message.error(t('logs.toast.packageFailed'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
