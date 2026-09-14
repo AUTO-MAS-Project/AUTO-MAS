@@ -31,6 +31,7 @@
 import asyncio
 import time
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -216,6 +217,13 @@ class AutoProxyTask(TaskExecuteBase):
             str(self.cur_user_config.get("Info", "ConfigName"))
         )
         self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
+
+        ## 运行前归档该用户的 BAAH 配置（按用户分桶，指纹去重，失败不阻断
+        ## 任务）：此刻配置文件尚未被托管项改写，是「本轮动手前」的完整现场
+        from .tools.backup_archive import archive_native_backup
+
+        with suppress(Exception):
+            archive_native_backup(self.config_dir, config_name, self.cur_user_uid)
 
     async def main_task(self):
         """自动代理模式主逻辑"""

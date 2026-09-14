@@ -1127,6 +1127,11 @@ export default {
     generalViewingDesc2:
       'When finished, click "Close viewer" to end the viewing session; the script config will stay untouched.',
     generalViewClose: 'Close viewer',
+    // BAAH 配置恢复（无遮罩会话；native 按用户绑定的配置文件名动态归档）
+    baahConfigRestoreUserDesc:
+      'Backups of the MAS edit-page fields (config binding, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    baahConfigRestoreScriptDesc:
+      'Backups of the bound BAAH config file; restoring overwrites the config with the same name in BAAH. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: 'MaaEnd setup opened',
     maaendSessionStartFailed: 'Could not start the MaaEnd setup session',

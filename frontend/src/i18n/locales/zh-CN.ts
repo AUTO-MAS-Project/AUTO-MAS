@@ -1118,6 +1118,11 @@ export default {
     generalViewingDesc: '正在以只读方式打开该份备份的脚本配置。',
     generalViewingDesc2: '查看完成后，请点击"关闭查看"按钮结束查看会话，脚本配置将保持原状。',
     generalViewClose: '关闭查看',
+    // BAAH 配置恢复（无遮罩会话；native 按用户绑定的配置文件名动态归档）
+    baahConfigRestoreUserDesc:
+      'MAS 编辑页配置（配置文件绑定等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    baahConfigRestoreScriptDesc:
+      '当前绑定配置文件的备份，恢复会直接覆盖 BAAH 里的同名配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: '已打开 MaaEnd 设置',
     maaendSessionStartFailed: '启动 MaaEnd 设置失败',
