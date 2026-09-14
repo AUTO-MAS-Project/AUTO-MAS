@@ -65,6 +65,12 @@
 >   侧车（Info/Task.SelectedPreset/TaskSnapshot/Device 段，无 per-user 目录），
 >   native = 项目 `config/` + `interface.json`（运行时物化处，排除 resource/
 >   资产）；无原生 GUI 遮罩会话
+> - **HSR（自包含式 + 纯字段侧车，无会话，一对多两引擎）**：
+>   `app/task/HSR/tools/restore_service.py` + `HSRUserEdit.vue`——mas 池是
+>   纯字段侧车（Info.Mode 仅预览 + Managed.TaskMapping/Options + Direct 快照
+>   元数据，不含加密快照内容与账号密码，无 per-user 目录），native = M7A
+>   `config.yaml` + SRA `settings.json`/`cache.json`/`configs/`（按 SRA appdata
+>   根分桶，跨脚本共享、M7A 随 SRA 池一并归档）；无原生 GUI 遮罩会话
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 

@@ -59,6 +59,16 @@ HSR 直接读写两个上游的真实配置文件。当前备份覆盖 M7A 的 `
 - 托管字段运行时动态渲染，**新增字段扩展后端字段定义，不在 Vue 里加分支**。
 - 不新增 `ScriptConfig.py` 或原生编辑器遮罩会话，除非产品明确改变 HSR 的配置 owner 模型。
 
+## 配置恢复接入要求
+
+已接入通用配置恢复（mas/native 双池 + 字段侧车，无会话），机制见 [config-restore.md](config-restore.md)；后续改动**必须符合**：
+
+- **mas 池是纯字段侧车**：HSR 无 per-user 目录，用户配置即字段——只收录 Info.Mode（仅预览不回填，防静默翻转配置来源）、Managed.TaskMapping/Options（运行时物化进原生）、Direct 快照**元数据**（*ImportedAt/*Source）。**不收录** Direct 加密快照内容与账号密码；恢复 = 回填 UserData。
+- **native 池按 SRA appdata 根分桶**：SRA appdata 是多脚本共享目录，必须 `config_root_key` 分桶跨脚本共享、不随脚本删除；M7A `config.yaml` 随 SRA 池一并归档（HSR 脚本通常成对配两引擎）。目标按归档内相对键 `M7A/*`、`SRA/*` 写回，只覆盖归档内包含的文件。
+- **归档时机与 MAA 同型**：任务启动（manager `prepare`）归档 native（运行会写托管字段、崩溃残留会污染原生）；编辑页进入归档 native（MAS 触碰前原始态）、退出归档 mas（编辑会话包络终态）。无遮罩会话，无 viewOnly 分支。
+- **预览口径**：mas 分区行（MAS 独有 = 配置来源；托管配置 = 任务映射/覆盖；直控快照 = 导入元数据）；native **文件清单粒度不反读内部字段**（M7A config.yaml 与 SRA 配置结构随引擎版本漂移、未现场核实，按「不臆造」原则对齐 General）。
+- **新增引擎/配置文件必须同步扩展 `collect_native_files`**——只归档不恢复等于备份了个寂寞，只恢复不归档等于永久改坏用户的原生配置。
+
 ## 现状缺陷（别照抄，也别再加一处）
 
 HSR 用户编辑 Section **同时存在于两处目录**（`views/EditView/User/HSRUserEdit/` 与 `views/HSRUserEdit/`）。这是现状不是规范——新增 Section 先确认相邻文件在哪一处，**不要制造第三处**。
