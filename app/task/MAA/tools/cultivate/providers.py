@@ -29,6 +29,7 @@ ProviderContext 注入。链执行器只依赖契约端口，接收调用方给�
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -61,8 +62,29 @@ def parse_oper_box_payload(payload: Mapping[str, Any]) -> dict[str, Progression]
     return progressions
 
 
+def parse_oper_box_names(payload: Mapping[str, Any]) -> dict[str, str]:
+    """把 MAA OperBoxData.json 原始数据解析为干员名字映射（纯函数）。
+
+    名字仅用于用户可见文案（推送报告等），不进练度契约 Progression；
+    达成判定可自证即干员必在识别数据中，名字因此总能随判定取到。
+    """
+
+    names: dict[str, str] = {}
+    for oper in payload.get("own_opers") or []:
+        if not isinstance(oper, dict) or not oper.get("id"):
+            continue
+        name = oper.get("name")
+        if isinstance(name, str) and name:
+            names[str(oper["id"])] = name
+    return names
+
+
 def parse_depot_payload(payload: Mapping[str, Any]) -> tuple[dict[str, int], int]:
-    """把 MAA DepotData.json 原始数据解析为 (库存映射, 时间戳)。"""
+    """把 MAA DepotData.json 原始数据解析为 (库存映射, 时间戳)。
+
+    syncTime 兼容 epoch 秒与 ISO 8601 字符串两种格式（MAA 以
+    ``ToLocalTime().ToString("o")`` 写 ISO，方案决策 26/31）。
+    """
 
     data = payload.get("data")
     inventory = {
@@ -71,11 +93,73 @@ def parse_depot_payload(payload: Mapping[str, Any]) -> tuple[dict[str, int], int
         if isinstance(item_id, str) and isinstance(count, int)
     }
     sync_time = payload.get("syncTime")
-    if isinstance(sync_time, (int, float)):
+    if isinstance(sync_time, (int, float)) and not isinstance(sync_time, bool):
         return inventory, int(sync_time)
-    if isinstance(sync_time, str) and sync_time.isdigit():
-        return inventory, int(sync_time)
+    if isinstance(sync_time, str):
+        if sync_time.isdigit():
+            return inventory, int(sync_time)
+        try:
+            return inventory, int(datetime.fromisoformat(sync_time).timestamp())
+        except ValueError:
+            pass
     return inventory, 0
+
+
+def load_oper_box_index(context: ProviderContext) -> dict[str, Progression]:
+    """读取（带 context 级缓存）干员练度索引：char_id → Progression。
+
+    供 LocalProgressionProvider 逐干员取数与需要全量练度的编排方（如
+    选择器过滤）共用同一份解析结果；同一 context 内只读一次磁盘。
+    文件缺失或损坏返回空索引（消费方按"练度未知"处理，宁缺勿滥）。
+    """
+
+    return _load_oper_box(context)[1]
+
+
+def load_oper_box_names(context: ProviderContext) -> dict[str, str]:
+    """读取（带 context 级缓存）干员名字映射：char_id → 名称。
+
+    与练度索引共用同一份磁盘读取与缓存（_load_oper_box 三元组）。
+    """
+
+    return _load_oper_box(context)[2]
+
+
+def has_oper_box_data(context: ProviderContext) -> bool:
+    """干员识别数据是否可用：文件存在且可解析。
+
+    与库存的"空仓库 ≠ 数据缺失"（决策 24）同口径——识别过但结果为空
+    （新号/无干员）算作"有数据"，只有缺失/损坏才算"未识别"。消费方据此
+    区分"按精 0 估算"与"确实没有干员"。
+    """
+
+    return _load_oper_box(context)[0] is not None
+
+
+def _load_oper_box(
+    context: ProviderContext,
+) -> tuple[float | None, dict[str, Progression], dict[str, str]]:
+    """读取干员识别文件，返回 (mtime, 练度索引, 名字映射)；缺失/损坏时 mtime 为 None。"""
+
+    cached = context.file_cache.get("oper_box")
+    if cached is None:
+        index: dict[str, Progression] = {}
+        names: dict[str, str] = {}
+        mtime: float | None = None
+        if context.maa_data_dir is not None:
+            path = Path(context.maa_data_dir) / "OperBoxData.json"
+            if path.exists():
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    pass
+                else:
+                    mtime = path.stat().st_mtime
+                    index = parse_oper_box_payload(payload)
+                    names = parse_oper_box_names(payload)
+        cached = (mtime, index, names)
+        context.file_cache["oper_box"] = cached
+    return cached
 
 
 class LocalProgressionProvider:
@@ -89,19 +173,12 @@ class LocalProgressionProvider:
     ) -> ProgressionSnapshot | None:
         if context.maa_data_dir is None:
             return None
-        path = Path(context.maa_data_dir) / "OperBoxData.json"
-        if not path.exists():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        progression = parse_oper_box_payload(payload).get(operator_id)
+        mtime, index = _load_oper_box(context)[:2]
+        progression = index.get(operator_id)
         if progression is None:
             return None
-        mtime = path.stat().st_mtime
         return ProgressionSnapshot(
-            source="local", timestamp=int(mtime), data=progression
+            source="local", timestamp=int(mtime or 0), data=progression
         )
 
 

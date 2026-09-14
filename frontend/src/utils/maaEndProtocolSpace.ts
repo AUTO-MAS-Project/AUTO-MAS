@@ -131,7 +131,6 @@ export const MAAEND_TASK_GROUPS = [
     label: '🧠 理智作战',
     tasks: [
       { name: 'Sanity', label: '🧠 理智任务' },
-      { name: 'AutoUseSpMedication', label: '💊 应急理智加强剂' },
     ],
   },
   {

@@ -70,6 +70,13 @@
             :depot-stage-candidates-loading="depotStageCandidatesLoading"
             :depot-inventory="depotInventory"
             :load-depot-stage-candidates="loadDepotStageCandidates"
+            :cultivate-operator-options="cultivateOperatorOptions"
+            :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
+            :cultivate-operator-options-error="cultivateOperatorOptionsError"
+            :cultivate-preview="cultivatePreview"
+            :cultivate-preview-loading="cultivatePreviewLoading"
+            :cultivate-preview-error="cultivatePreviewError"
+            :load-cultivate-preview="loadCultivatePreview"
             :fight-summary="fightSummary"
             :is-edit="isEdit"
             :infrastructure-importing="infrastructureImporting"
@@ -157,6 +164,7 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { Service } from '@/api'
+import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
@@ -226,6 +234,17 @@ const depotItemOptionsError = ref('')
 const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
 const depotStageCandidatesLoading = ref<string[]>([])
 const depotInventory = ref<Record<string, number>>({})
+
+// 干员养成选择器目录（一图流全量表，随快照缓存）
+const cultivateOperatorOptions = ref<Array<{ label: string; value: string }>>([])
+const cultivateOperatorOptionsLoading = ref(false)
+const cultivateOperatorOptionsError = ref('')
+
+// 养成需求预览（纯计算不落库；序列号守卫防快速编辑时的乱序覆盖）
+const cultivatePreview = ref<CultivatePreviewOut | null>(null)
+const cultivatePreviewLoading = ref(false)
+const cultivatePreviewError = ref('')
+let cultivatePreviewSeq = 0
 
 // 服务器选项
 const serverOptions = [
@@ -515,11 +534,15 @@ const getDefaultMAAUserData = () => ({
     IfReclamation: false,
     IfRoguelike: false,
     IfDepotMaintain: false,
+    IfCultivate: false,
     IfGreenTicketStore: false,
     IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     DepotMaintainPlans: '[]',
+    CultivateTargets: '[]',
+    CultivateSkipDuringActivity: false,
+    CultivateSkipDuringResourceCollection: false,
   },
   Notify: {
     Enabled: false,
@@ -535,6 +558,7 @@ const getDefaultMAAUserData = () => ({
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    CultivateNotice: '',
   },
 })
 
@@ -788,6 +812,11 @@ const loadUserData = async () => {
 
         // 数据加载完成，允许自动保存
         isInitializing.value = false
+
+        // 干员目录按用户档案过滤已精 2（PR2 仅精英化），须在 userId 就绪后加载。
+        // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
+        // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）
+        await loadCultivateOperatorOptions()
       } else {
         message.error(t('edit.userDoesNotExist'))
         handleCancel()
@@ -932,6 +961,57 @@ const loadDepotInventory = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载 MAA 仓库库存失败: ${errorMsg}`)
+  }
+}
+
+const loadCultivateOperatorOptions = async () => {
+  cultivateOperatorOptionsLoading.value = true
+  cultivateOperatorOptionsError.value = ''
+  try {
+    const response =
+      await Service.getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost({
+        script: { scriptId },
+        userId,
+      })
+    if (response.code !== 200) {
+      cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
+      return
+    }
+    cultivateOperatorOptions.value = response.data
+      .filter(option => option.value)
+      .map(option => ({ label: option.label, value: option.value as string }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载干员目录失败: ${errorMsg}`)
+    cultivateOperatorOptionsError.value = '加载干员目录失败'
+  } finally {
+    cultivateOperatorOptionsLoading.value = false
+  }
+}
+
+const loadCultivatePreview = async (targetsJson: string) => {
+  const seq = ++cultivatePreviewSeq
+  cultivatePreviewLoading.value = true
+  cultivatePreviewError.value = ''
+  try {
+    const response = await Service.getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost({
+      scriptId,
+      userId,
+      targets: targetsJson,
+    })
+    if (seq !== cultivatePreviewSeq) return
+    if (response.code !== 200) {
+      cultivatePreviewError.value = response.message || '需求计算失败'
+      return
+    }
+    cultivatePreview.value = response
+  } catch (error) {
+    if (seq !== cultivatePreviewSeq) return
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`养成需求计算失败: ${errorMsg}`)
+    cultivatePreviewError.value = '需求计算失败'
+  } finally {
+    if (seq === cultivatePreviewSeq) cultivatePreviewLoading.value = false
   }
 }
 

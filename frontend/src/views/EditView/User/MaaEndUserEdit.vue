@@ -48,6 +48,16 @@
               v-model:form-data="formData"
               :loading="loading"
               :resource-options="resourceOptions"
+              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
+              @save="handleFieldSave"
+            />
+          </a-card>
+
+          <a-card id="section-source" class="section-card">
+            <template #title>{{ t('edit.configurationSource') }}</template>
+            <ConfigSourceSection
+              v-model:form-data="formData"
+              :loading="loading"
               :preset-supported="presetSupported"
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
@@ -74,6 +84,7 @@
               </a-button>
             </template>
             <TaskConfigSection
+              v-if="formData.Info.IfQuickConfig"
               :form-data="formData"
               :loading="loading"
               :if-quick-config="formData.Info.IfQuickConfig"
@@ -87,6 +98,13 @@
               :plan-mode-config="planModeConfig"
               @save="handleFieldSave"
               @save-batch="handleFieldsSave"
+            />
+            <a-divider v-if="formData.Info.IfQuickConfig" />
+            <h3 class="daily-once-title">{{ t('edit.maaEndDailyOnceTasks') }}</h3>
+            <DailyOnceSection
+              :value="formData.Task.DailyOnceTasks"
+              :loading="loading"
+              @save="handleFieldSave('Task.DailyOnceTasks', $event)"
             />
           </a-card>
 
@@ -110,27 +128,29 @@
             />
           </a-card>
 
-          <a-card id="section-script" class="section-card">
-            <template #title>{{ t('comp.extraScripts') }}</template>
-            <ExtraScriptSection
-              v-model:form-data="formData"
-              :loading="loading"
-              hide-section-header
-              @save="handleFieldSave"
-            />
-          </a-card>
+          <a-collapse id="section-script" class="optional-section" :bordered="false">
+            <a-collapse-panel key="script" :header="t('comp.extraScripts')">
+              <ExtraScriptSection
+                v-model:form-data="formData"
+                :loading="loading"
+                hide-section-header
+                @save="handleFieldSave"
+              />
+            </a-collapse-panel>
+          </a-collapse>
 
-          <a-card id="section-notify" class="section-card">
-            <template #title>{{ t('edit.notificationSettings') }}</template>
-            <UserNotifyConfig
-              v-model="formData.Notify"
-              :loading="loading"
-              :script-id="scriptId"
-              :user-id="userId"
-              hide-section-header
-              @save="handleFieldSave"
-            />
-          </a-card>
+          <a-collapse id="section-notify" class="optional-section" :bordered="false">
+            <a-collapse-panel key="notify" :header="t('edit.notificationSettings')">
+              <UserNotifyConfig
+                v-model="formData.Notify"
+                :loading="loading"
+                :script-id="scriptId"
+                :user-id="userId"
+                hide-section-header
+                @save="handleFieldSave"
+              />
+            </a-collapse-panel>
+          </a-collapse>
         </a-form>
 
         <aside class="anchor-sidebar">
@@ -180,6 +200,8 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
+import DailyOnceSection from '@/views/MaaEndUserEdit/DailyOnceSection.vue'
+import ConfigSourceSection from '@/views/MaaEndUserEdit/ConfigSourceSection.vue'
 import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
 import type { MaaEndAutoCollectGroup } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
@@ -210,6 +232,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
+const controllerProtocol = ref<string | null>(null)
 const presetSupported = ref(true)
 
 const maaEndConfigLoading = ref(false)
@@ -233,9 +256,10 @@ const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
-// 任务卡片始终保留：关闭快速配置后仍可设置每日仅执行一次的任务。
+// 任务卡片始终保留：关闭快速配置后仍可设置每日执行限制。
 const anchorItems = computed(() => {
   const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
+  items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
   items.push({ key: 'task', href: '#section-task', title: t('edit.taskConfiguration') })
   if (formData.Info.IfQuickConfig) {
     items.push(
@@ -468,7 +492,8 @@ const loadMaaEndOptions = async () => {
       essenceLocationOptions.value = response.essenceLocations
       essenceMenuOptions.value = response.essenceMenus ?? []
       essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
-      presetSupported.value = response.controllerTypes[controllerType.value ?? ''] === 'Win32'
+      controllerProtocol.value = response.controllerTypes[controllerType.value ?? ''] ?? null
+      presetSupported.value = controllerProtocol.value === 'Win32'
       maaEndOptionsLoaded.value = true
     }
   } finally {
@@ -726,24 +751,27 @@ watch(
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
+  padding: 24px;
   background: var(--ant-color-bg-layout);
 }
 
 .user-edit-content {
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
 }
 
 .page-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 176px;
+  grid-template-columns: 144px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
 
 .sections-column {
+  width: 100%;
+  max-width: none;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -751,8 +779,7 @@ watch(
 }
 
 .section-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
   scroll-margin-top: 32px;
 }
 
@@ -760,11 +787,26 @@ watch(
   padding: 24px;
 }
 
+.optional-section {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  scroll-margin-top: 32px;
+}
+
+.daily-once-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .plans-button {
   padding-inline: 0;
 }
 
 .anchor-sidebar {
+  grid-column: 1;
+  grid-row: 1;
   position: sticky;
   top: 32px;
 }
@@ -772,6 +814,10 @@ watch(
 @media (max-width: 1100px) {
   .page-layout {
     grid-template-columns: 1fr;
+  }
+
+  .sections-column {
+    grid-column: 1;
   }
 
   .anchor-sidebar {

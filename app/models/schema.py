@@ -90,6 +90,55 @@ class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
 
 
+class CultivatePreviewIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    userId: str = Field(..., description="用户ID")
+    targets: str = Field(
+        ..., description="养成目标 JSON（与 Task.CultivateTargets 同构）"
+    )
+
+
+class CultivatePreviewItem(BaseModel):
+    itemId: str = Field(..., description="物品ID")
+    name: str = Field(..., description="物品名称")
+    count: int = Field(..., description="需求数量（保有量目标）")
+    stage: Optional[str] = Field(
+        default=None, description="推荐关卡；刷取计划条目有值，材料需求/不可获取类为空"
+    )
+    expectedSanity: Optional[float] = Field(
+        default=None,
+        description="刷取该条目到保有量目标的期望理智；固定产出关不可估算，为空",
+    )
+
+
+class CultivatePreviewOut(OutBase):
+    stages: List[CultivatePreviewItem] = Field(
+        ..., description="刷取计划（按推荐关执行的材料条目）"
+    )
+    demands: List[CultivatePreviewItem] = Field(
+        ..., description="全量材料需求（已含合成折算）"
+    )
+    unobtainable: List[CultivatePreviewItem] = Field(
+        ..., description="不可获取材料（需游戏内另行获取）"
+    )
+    totalExpectedSanity: Optional[float] = Field(
+        default=None,
+        description="可估算刷取条目的期望理智合计（不含固定产出关）；无可估算条目时为空",
+    )
+    hasProgression: bool = Field(..., description="是否存在干员识别档案")
+    hasInventory: bool = Field(..., description="是否存在仓库识别档案")
+
+
+class BlueArchiveActivityIn(BaseModel):
+    """碧蓝档案活动数据查询参数"""
+
+    line_type: Literal["JP", "Globle", "CN"] = Field(
+        ..., description="服务器：JP 日服 / Globle 国际服 / CN 国服（原文拼写如此）"
+    )
+    page: int = Field(default=1, ge=1, le=20, description="页码，从 1 开始")
+    page_size: int = Field(default=50, ge=1, le=100, description="每页条数")
+
+
 class BetterGICustomGroupOut(BaseModel):
     """BetterGI 一条龙自定义配置组（非内置 8 组）"""
 
@@ -269,7 +318,15 @@ class BetterGIScriptDirsOut(OutBase):
     autoPathingDir: Optional[str] = Field(default=None, description="地图追踪任务目录")
     oneDragonDir: Optional[str] = Field(default=None, description="一条龙配置目录")
     scriptGroupDir: Optional[str] = Field(default=None, description="配置组目录")
+    keyMouseScriptDir: Optional[str] = Field(
+        default=None, description="键鼠脚本（录制）目录"
+    )
+    autoFightDir: Optional[str] = Field(
+        default=None, description="自动战斗策略目录（User/AutoFight，*.txt 即一份策略）"
+    )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
+
+
 class ZzzOdInstanceOut(BaseModel):
     """zzz-od 实例（账号）信息"""
 
@@ -1346,6 +1403,9 @@ class MaaUserConfig_Data(BaseModel):
     LastResVersion: Optional[str] = Field(
         default=None, description="上次成功代理时服务端的游戏资源版本"
     )
+    CultivateNotice: Optional[str] = Field(
+        default=None, description="养成接管提示（空 = 未接管）"
+    )
 
 
 class MaaUserConfig_Task(BaseModel):
@@ -1371,6 +1431,16 @@ class MaaUserConfig_Task(BaseModel):
     )
     DepotMaintainPlans: Optional[str] = Field(
         default=None, description="库存保持计划 JSON"
+    )
+    IfCultivate: Optional[bool] = Field(default=None, description="干员养成")
+    CultivateTargets: Optional[str] = Field(
+        default=None, description="干员养成目标 JSON"
+    )
+    CultivateSkipDuringActivity: Optional[bool] = Field(
+        default=None, description="活动期间跳过养成计划"
+    )
+    CultivateSkipDuringResourceCollection: Optional[bool] = Field(
+        default=None, description="资源收集期跳过养成计划"
     )
 
 
@@ -1453,9 +1523,6 @@ class GeneralUserConfig_Info(BaseModel):
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None, description="配置来源（脚本/用户/直控）"
-    )
-    IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
     )
     IfUseMasConfig: Optional[bool] = Field(
         default=None, description="兼容旧版用户独立配置开关"
@@ -1636,6 +1703,30 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     Password: Optional[str] = Field(default=None, description="密码")
 
 
+class OneDragonPlanStep(BaseModel):
+    """一条龙执行计划中的单个步骤（执行层实例）。"""
+
+    uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
+    kind: Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"] = (
+        Field(..., description="步骤来源类型")
+    )
+    name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
+    enabled: bool = Field(default=True, description="是否启用该步骤")
+    settings: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="该步骤的 per-任务执行层参数（camelCase 键，按 kind 白名单校验）",
+    )
+
+
+class OneDragonPlan(BaseModel):
+    """一条龙执行计划（Plan），替代/并列于可视化队列 Queue。"""
+
+    version: int = Field(default=1, description="Plan 结构版本")
+    steps: List[OneDragonPlanStep] = Field(
+        default_factory=list, description="有序步骤列表"
+    )
+
+
 class BetterGIUserConfig_OneDragon(BaseModel):
     """BetterGI 一条龙配置"""
 
@@ -1675,6 +1766,16 @@ class BetterGIUserConfig_OneDragon(BaseModel):
         description="是否启用「直连执行层」开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、"
         "战斗 4 项直连 BetterGI 原生任务；默认开，但只有用户配置过该组且队列中启用时才接管，"
         "其余战斗组仍走原生一条龙",
+    )
+    IfUseTeams: Optional[bool] = Field(
+        default=None,
+        description="是否启用「队伍配置」（总开关）；关闭时表格数据保留，但除通用队伍外不参与匹配",
+    )
+    Teams: Optional[Union[str, List]] = Field(
+        default=None,
+        description="队伍配置 JSON 数组字符串，按展示顺序存储，元素含 "
+        "name/strategy/scenes{domain,leyline,boss}/note/enabled；"
+        "序号 0 的通用队伍不落本字段（直绑 PartyName / AutoBossStrategyName）",
     )
 
 
@@ -2312,6 +2413,17 @@ class MaaEndConfig_Game(BaseModel):
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
+    RestoreResolution: Optional[
+        Literal["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]
+    ] = Field(
+        default=None, description="关闭游戏时恢复的分辨率，Off 表示不修改"
+    )
+    RestoreResolutionWidth: Optional[int] = Field(
+        default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
+    )
+    RestoreResolutionHeight: Optional[int] = Field(
+        default=None, ge=1, le=16384, description="自定义恢复分辨率高度"
+    )
 
 
 class MaaEndConfig(BaseModel):

@@ -61,6 +61,7 @@ class MaaEndResourceLoader:
         self._interface: dict[str, Any] = {}
         self._locales: dict[str, dict[str, str]] = {}
         self._tasks: list[dict[str, Any]] = []
+        self._pretasks: list[dict[str, Any]] = []
         self._task_options: dict[str, dict[str, Any]] = {}
         self._options: dict[str, Any] = {}
         self._tasks_loaded = False
@@ -287,6 +288,18 @@ class MaaEndResourceLoader:
                     continue
                 self._tasks.extend(task for task in tasks if isinstance(task, dict))
 
+                raw_pretasks = task_data.get("pretask")
+                pretasks = (
+                    raw_pretasks
+                    if isinstance(raw_pretasks, list)
+                    else [raw_pretasks]
+                    if isinstance(raw_pretasks, dict)
+                    else []
+                )
+                self._pretasks.extend(
+                    pretask for pretask in pretasks if isinstance(pretask, dict)
+                )
+
             self._tasks_loaded = True
             self._resource_signature = self._current_signature()
             self._save_disk_cache()
@@ -503,6 +516,12 @@ class MaaEndResourceLoader:
             isinstance(task, dict) and task.get("name") == task_name
             for task in self._tasks
         )
+
+    def has_pretask(self, pretask_name: str) -> bool:
+        """判断当前 MaaEnd 资源是否声明了指定 PI V2 预任务。"""
+
+        self._load_task_resources()
+        return any(pretask.get("name") == pretask_name for pretask in self._pretasks)
 
     def get_interface_i18n(self, language: str) -> dict[str, str]:
         return deepcopy(self._get_locale(language))

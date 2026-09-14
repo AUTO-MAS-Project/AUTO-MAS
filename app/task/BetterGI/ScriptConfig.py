@@ -74,7 +74,7 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.use_mas_config:
             return
         with suppress(Exception):
-            # 按用户短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-*，不碰 BGI 本体）
+            # 按用户短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）
             one_dragon.cleanup_leftover_mas_groups(
                 self.root_path, self.script_info.script_id, self.cur_user_item.user_id
             )

@@ -67,11 +67,14 @@ from .resource_loader import (
     maaend_task_supported,
 )
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
-from .tools import login, push_notification, replace_account_switch_task
+from .tools import push_notification, replace_account_switch_task
 
 logger = get_logger("MaaEnd 自动代理")
 
 _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
+_MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
+_MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
+_AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
 
 
@@ -196,6 +199,75 @@ def _disable_removed_tasks(
     return removed_names
 
 
+def _place_managed_task(
+    tasks: list[dict[str, object]],
+    *,
+    task_name: str,
+    task_id: str,
+    controller_type: str,
+    enabled: bool,
+    first: bool,
+) -> dict[str, object]:
+    """补齐 MAS 托管的上游任务，并固定在任务列表首尾。"""
+
+    matching = [task for task in tasks if task.get("taskName") == task_name]
+    task = (
+        matching[0]
+        if matching
+        else {
+            "id": task_id,
+            "taskName": task_name,
+            "expanded": False,
+            "optionValues": {},
+        }
+    )
+    task["enabled"] = enabled
+    enabled_by_controller = task.setdefault("enabledByController", {})
+    if isinstance(enabled_by_controller, dict):
+        enabled_by_controller[controller_type] = True
+
+    tasks[:] = [item for item in tasks if item.get("taskName") != task_name]
+    if first:
+        tasks.insert(0, task)
+    else:
+        tasks.append(task)
+    return task
+
+
+def _configure_game_pre_action(
+    instance: dict[str, object],
+    *,
+    game_path: str,
+    game_arguments: str,
+) -> None:
+    """让 MXU 在 PI pretask 完成后启动 Endfield。"""
+
+    pre_actions = instance.get("preActions")
+    if not isinstance(pre_actions, list):
+        pre_actions = []
+    pre_actions = [
+        action
+        for action in pre_actions
+        if not (
+            isinstance(action, dict) and action.get("id") == _AUTOMAS_GAME_PRE_ACTION_ID
+        )
+    ]
+    pre_actions.insert(
+        0,
+        {
+            "id": _AUTOMAS_GAME_PRE_ACTION_ID,
+            "customName": "AUTO-MAS 启动终末地",
+            "enabled": True,
+            "program": game_path,
+            "args": game_arguments,
+            "waitForExit": False,
+            "skipIfRunning": True,
+            "useCmd": False,
+        },
+    )
+    instance["preActions"] = pre_actions
+
+
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
 
@@ -234,7 +306,7 @@ class AutoProxyTask(TaskExecuteBase):
         self._source_tasks_cache: (
             tuple[tuple, list[dict[str, object]] | None] | None
         ) = None
-        self.account_switch_mode: str | None = None
+        self.first_run_mode: str | None = None
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
@@ -252,16 +324,25 @@ class AutoProxyTask(TaskExecuteBase):
             return "今日代理次数已达上限, 跳过该用户"
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        if (
-            self.script_config.get("Run", "AccountSwitchMethod") == "MAAEND"
-            and account_id
-        ):
+        if account_id:
             if len(account_id) < 4 or not account_id[-4:].isdigit():
                 self.cur_user_item.status = "异常"
-                return (
-                    "MAAEND 内置账号切换需要账号末四位为数字，"
-                    "请检查账号ID或改用 MAS 自建账号切换"
-                )
+                return "MAAEND 内置账号切换需要账号末四位为数字，请检查账号ID"
+
+        if self.emulator_manager is None:
+            root_path = self._maaend_root_path()
+            if root_path is None:
+                return "MaaEnd 路径未配置"
+            try:
+                loader = MaaEndResourceLoader.get_loaded(root_path)
+            except ValueError as error:
+                return f"MaaEnd 资源加载失败: {error}"
+            if not loader.has_pretask("GameSetting") or not loader.has_task(
+                _MAAEND_CLOSE_GAME_TASK
+            ):
+                return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
+            if account_id and not loader.has_task(_MAAEND_ACCOUNT_SWITCH_TASK):
+                return "当前 MaaEnd 版本不支持内置账号切换，请更新 MaaEnd 后重试"
 
         config_mode = maaend_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode == "直控":
@@ -451,7 +532,7 @@ class AutoProxyTask(TaskExecuteBase):
             mode_skip_reasons[mode] = reason
             if missing_task:
                 missing_task_modes.append(mode)
-        self.account_switch_mode = next(
+        self.first_run_mode = next(
             (mode for mode in MAAEND_RUN_MOOD_BOOK if mode not in mode_skip_reasons),
             None,
         )
@@ -563,7 +644,8 @@ class AutoProxyTask(TaskExecuteBase):
             )
             for task in tasks
             if not str(task.get("taskName", "")).startswith("__MXU_")
-            and str(task.get("taskName", "")) != _MAAEND_ACCOUNT_SWITCH_TASK
+            and str(task.get("taskName", ""))
+            not in {_MAAEND_ACCOUNT_SWITCH_TASK, _MAAEND_CLOSE_GAME_TASK}
             and not self._daily_once_task_done(task.get("taskName"))
         ):
             return "MaaEnd 配置中没有已启用的日常任务", False
@@ -624,6 +706,7 @@ class AutoProxyTask(TaskExecuteBase):
                 task_name = str(task.get("taskName", ""))
                 if task_name.startswith("__MXU_") or task_name in {
                     _MAAEND_ACCOUNT_SWITCH_TASK,
+                    _MAAEND_CLOSE_GAME_TASK,
                     MAAEND_DELIVERY_TASK,
                     MAAEND_AUTO_COLLECT_TASK,
                 }:
@@ -677,6 +760,51 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             return self._quick_config_mode_skip_reason(mode)
         return self._source_mode_skip_reason(mode)
+
+    async def _wait_maaend_stage(self) -> None:
+        """同时等待日志结果与进程退出，避免子进程持有 stdout 导致阶段卡住。"""
+        process = self.maaend_process_manager.process
+        if not isinstance(process, asyncio.subprocess.Process):
+            self.cur_user_log.status = "MaaEnd 未启动可监控的进程"
+            return
+
+        async def wait_exit() -> None:
+            # Process.wait() 也可能等待管道关闭；returncode 独立反映主进程退出。
+            while process.returncode is None:
+                await asyncio.sleep(0.2)
+
+        await self.maaend_log_monitor.start_monitor_process(process, "stdout")
+        monitor = self.maaend_log_monitor.task
+        exit_task = asyncio.create_task(wait_exit())
+        result_task = asyncio.create_task(self.wait_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {monitor, exit_task, result_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if exit_task in done and not monitor.done():
+                logger.info(f"MaaEnd 主进程已退出，退出码: {process.returncode}")
+                # 消费已经写入管道的尾部日志，但不无限等待继承管道的子进程。
+                try:
+                    await asyncio.wait_for(asyncio.shield(monitor), timeout=2)
+                except asyncio.TimeoutError:
+                    pass
+                except Exception as error:
+                    logger.warning(f"MaaEnd 日志读取失败: {error}")
+            if monitor.done() and not monitor.cancelled() and monitor.exception():
+                logger.warning(f"MaaEnd 日志读取失败: {monitor.exception()}")
+                self.cur_user_log.status = "MaaEnd 日志读取失败"
+            elif exit_task in done or monitor.done():
+                await self.maaend_log_monitor.stop()
+                await self.check_log(
+                    self.maaend_log_monitor.log_contents,
+                    self.maaend_log_monitor.latest_time,
+                    if_stream_end=True,
+                )
+        finally:
+            exit_task.cancel()
+            result_task.cancel()
+            await asyncio.gather(exit_task, result_task, return_exceptions=True)
+            await self.maaend_log_monitor.stop()
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -741,27 +869,17 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
             self.script_info.log = "正在启动游戏..."
-            # 启动游戏
+            # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
             try:
                 if self.emulator_manager is None:
-                    if is_process_running("Endfield.exe"):
+                    if self.mode == self.first_run_mode and is_process_running(
+                        "Endfield.exe"
+                    ):
                         logger.info(
-                            "检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                            "关闭已运行的终末地，准备执行 MaaEnd 游戏设置预任务"
                         )
-                        self.script_info.log = "检测到游戏已在运行，跳过启动游戏"
-                    else:
-                        # 游戏退出后，启动器可能仍被跟踪；先清理再启动，避免占用一次重试。
-                        await self.game_process_manager.kill()
-                        logger.info(
-                            f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
-                        )
-                        await self.game_process_manager.open_process(
-                            self.script_config.get("Game", "Path"),
-                            *str(self.script_config.get("Game", "Arguments")).split(
-                                " "
-                            ),
-                        )
-                        await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
+                        await self.kill_game_process()
+                    logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
                     logger.info(
@@ -780,41 +898,17 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 continue
 
-            self.script_info.log = (
-                "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
-            )
-
             account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-            account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
-            if account_switch_method == "MAS":
-                try:
-                    if account_id:
-                        await login(account_id, emulator_info)
-                    logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
-                except RuntimeError as e:
-                    await self.handle_pre_maaend_error(
-                        "「明日方舟：终末地」登录失败", e
-                    )
-                    continue
-                self.script_info.log = (
-                    "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」\n"
-                    "「明日方舟：终末地」登录成功"
+            if account_id:
+                logger.info(
+                    f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                 )
+                self.script_info.log = "将由 MAAEND 启动游戏并执行账号切换"
             else:
-                if account_id:
-                    logger.info(
-                        f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
-                    )
-                    self.script_info.log = (
-                        "正在启动游戏...\n游戏启动成功\n将由 MAAEND 执行账号切换"
-                    )
-                else:
-                    logger.info(
-                        f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
-                    )
-                    self.script_info.log = (
-                        "正在启动游戏...\n游戏启动成功\n未配置账号，跳过账号切换"
-                    )
+                logger.info(
+                    f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
+                )
+                self.script_info.log = "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
 
             await self.set_maaend(emulator_info)
 
@@ -842,27 +936,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning("前置 Endfield 窗口失败")
 
             await asyncio.sleep(1)
-            if isinstance(
-                self.maaend_process_manager.main_process, asyncio.subprocess.Process
-            ):
-                await self.maaend_log_monitor.start_monitor_process(
-                    self.maaend_process_manager.main_process, "stdout"
-                )
-                if self.maaend_log_monitor.task is not None:
-                    self.maaend_log_monitor.task.add_done_callback(
-                        lambda _: self.wait_event.set()
-                    )
-            await self.wait_event.wait()
-            if (
-                self.maaend_log_monitor.task is not None
-                and self.maaend_log_monitor.task.done()
-            ):
-                await self.check_log(
-                    self.maaend_log_monitor.log_contents,
-                    self.maaend_log_monitor.latest_time,
-                    if_stream_end=True,
-                )
-            await self.maaend_log_monitor.stop()
+            await self._wait_maaend_stage()
 
             if self.cur_user_log.status == "Success!":
                 self.run_book[self.mode] = True
@@ -874,14 +948,6 @@ class AutoProxyTask(TaskExecuteBase):
                 # 中止相关程序
                 await self.maaend_process_manager.kill()
                 await System.kill_process(self.maaend_exe_path)
-                # 任务切换方式为重启游戏时，关闭游戏或模拟器供下一阶段重新启动
-                if self.script_config.get(
-                    "Run", "TaskTransitionMethod"
-                ) == "ExitGame" and any(
-                    not self.run_book[mode] for mode in mode_order[mode_index + 1 :]
-                ):
-                    await self.kill_game_process()
-
                 mode_index += 1
                 i = 0
                 self.task_dict = None
@@ -1211,6 +1277,76 @@ class AutoProxyTask(TaskExecuteBase):
         # 旧版曾把该字段写入任务选项；清掉后避免新版把它当成未知选项。
         option_values.pop("AutoEssenceSpecifiedLocation", None)
 
+    def _configure_resolution_restore(
+        self, tasks: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复分辨率。"""
+        resolution = self.script_config.get("Game", "RestoreResolution")
+        if (
+            not resolution
+            or resolution == "Off"
+            or not self.script_config.get("Game", "CloseOnFinish")
+            or self.emulator_manager is not None
+        ):
+            return None
+        stages = list(MAAEND_RUN_MOOD_BOOK)
+        is_last_stage = all(
+            self.run_book[stage] for stage in stages[stages.index(self.mode) + 1 :]
+        )
+        close_tasks = [task for task in tasks if task.get("taskName") == "CloseGamePC"]
+        if not is_last_stage:
+            # 保留阶段切换要求的关闭游戏，但不要提前恢复游戏设置。
+            for task in close_tasks:
+                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
+                    "type": "switch",
+                    "value": False,
+                }
+            return None
+        required_options = (
+            "CloseGamePCApplyGameSetting",
+            "CloseGamePCGameSettingResolution",
+        )
+        if self._maaend_task_supported("CloseGamePC") is not True or not all(
+            self._maaend_task_option_supported("CloseGamePC", name)
+            for name in required_options
+        ):
+            raise ValueError(
+                "当前 MaaEnd 不支持关闭游戏时恢复分辨率，请更新 MaaEnd 或关闭此设置"
+            )
+        close_task = (
+            close_tasks[0]
+            if close_tasks
+            else {
+                "id": "automas-restore-resolution",
+                "taskName": "CloseGamePC",
+                "enabledByController": {
+                    str(self.script_config.get("Game", "ControllerType")): True
+                },
+                "optionValues": {},
+            }
+        )
+        tasks[:] = [task for task in tasks if task.get("taskName") != "CloseGamePC"]
+        close_task["enabled"] = True
+        close_task.setdefault("enabledByController", {})[
+            str(self.script_config.get("Game", "ControllerType"))
+        ] = True
+        tasks.append(close_task)
+        if resolution == "Custom":
+            width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
+            height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
+        else:
+            width, height = resolution.split("x")
+        values = close_task.setdefault("optionValues", {})
+        values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
+        values["CloseGamePCGameSettingResolution"] = {
+            "type": "input",
+            "values": {
+                "CloseGamePCGameSettingResolutionWidth": width,
+                "CloseGamePCGameSettingResolutionHeight": height,
+            },
+        }
+        return close_task
+
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
 
@@ -1299,13 +1435,46 @@ class AutoProxyTask(TaskExecuteBase):
         self._drop_removed_medication_task(maaend_tasks)
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
         replace_account_switch_task(
             tasks=maaend_tasks,
-            account_id=(account_id if account_switch_method == "MAAEND" else ""),
+            account_id=account_id,
             controller_type=str(self.script_config.get("Game", "ControllerType")),
             task_id=f"mas{self.cur_user_uid.hex[:4]}",
         )
+
+        if self.emulator_manager is None:
+            controller_type = str(self.script_config.get("Game", "ControllerType"))
+            remaining_modes = list(MAAEND_RUN_MOOD_BOOK)[
+                list(MAAEND_RUN_MOOD_BOOK).index(self.mode) + 1 :
+            ]
+            has_later_mode = any(not self.run_book[mode] for mode in remaining_modes)
+            close_after_mode = (
+                has_later_mode
+                and self.script_config.get("Run", "TaskTransitionMethod") == "ExitGame"
+                or not has_later_mode
+                and self.script_config.get("Game", "CloseOnFinish")
+            )
+            _place_managed_task(
+                maaend_tasks,
+                task_name=_MAAEND_GAME_SETTING_PRETASK,
+                task_id="automas-gamesetting",
+                controller_type=controller_type,
+                enabled=self.mode == self.first_run_mode,
+                first=True,
+            )
+            _place_managed_task(
+                maaend_tasks,
+                task_name=_MAAEND_CLOSE_GAME_TASK,
+                task_id="automas-close-game",
+                controller_type=controller_type,
+                enabled=close_after_mode,
+                first=False,
+            )
+            _configure_game_pre_action(
+                maaend_instance,
+                game_path=str(self.script_config.get("Game", "Path")),
+                game_arguments=str(self.script_config.get("Game", "Arguments")),
+            )
 
         # 加载 i18n 配置
         settings = maaend_set["settings"]
@@ -1350,6 +1519,8 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_config.get("Task", "IfSanity"):
                 self._ensure_sanity_task(maaend_tasks, target_task_name)
 
+        restore_task = self._configure_resolution_restore(maaend_tasks)
+
         if self.task_dict is None:
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
@@ -1368,7 +1539,9 @@ class AutoProxyTask(TaskExecuteBase):
 
             for task in maaend_tasks:
                 task_name_value = str(task.get("taskName"))
-                if task_name_value.startswith("__MXU_"):
+                if task_name_value.startswith("__MXU_") or task_name_value == (
+                    _MAAEND_CLOSE_GAME_TASK
+                ):
                     continue
 
                 if task_name_value in removed_task_names:
@@ -1404,7 +1577,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 if (
                     task_name_value == _MAAEND_ACCOUNT_SWITCH_TASK
-                    and self.mode != self.account_switch_mode
+                    and self.mode != self.first_run_mode
                 ):
                     task_enabled = False
 
@@ -1451,6 +1624,12 @@ class AutoProxyTask(TaskExecuteBase):
             task_name = get_task_book_name(task)
             if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
                 task["enabled"] = self.task_dict[task_name][task["id"]]
+
+            if restore_task is task:
+                # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
+                task["enabled"] = True
+                self.task_dict.setdefault(task_name, {})[task["id"]] = True
+                self.task_name_map[task_name] = task_name_value
 
             if not task.get("enabled", False):
                 continue

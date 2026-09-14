@@ -170,6 +170,30 @@
         </a-row>
       </PipelineRow>
 
+      <!-- 干员养成：一次性目标（PR2 仅精英化），排活动关优先之后、库存保持之前（队列 #3） -->
+      <PipelineRow
+        :name="t('edit.maaCultivate')"
+        :summary="cultivateSummary"
+        :checked="formData.Task.IfCultivate"
+        :disabled="loading"
+        :hint="t('edit.maaCultivateHint')"
+        @change="emitSave('Task.IfCultivate', $event)"
+      >
+        <CultivateTargetEditor
+          :form-data="formData"
+          :loading="loading"
+          :operator-options="cultivateOperatorOptions"
+          :operator-options-loading="cultivateOperatorOptionsLoading"
+          :operator-options-error="cultivateOperatorOptionsError"
+          :item-options="depotItemOptions"
+          :cultivate-preview="cultivatePreview"
+          :cultivate-preview-loading="cultivatePreviewLoading"
+          :cultivate-preview-error="cultivatePreviewError"
+          :load-cultivate-preview="loadCultivatePreview"
+          @save="emitSave"
+        />
+      </PipelineRow>
+
       <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
@@ -329,6 +353,8 @@ import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+import CultivateTargetEditor from './CultivateTargetEditor.vue'
+import type { CultivatePreviewOut } from '@/api'
 import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
@@ -336,6 +362,7 @@ import {
   INFRAST_MODE_OPTIONS,
   summarizeActivity,
   summarizeAnnihilation,
+  summarizeCultivate,
   summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
@@ -364,6 +391,16 @@ const props = defineProps<{
   depotInventory: Record<string, number>
   /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
   loadDepotStageCandidates: (itemId: string) => Promise<void>
+  /** 干员目录（一图流全量表；[] 表示已加载但为空） */
+  cultivateOperatorOptions: SelectOption[]
+  cultivateOperatorOptionsLoading: boolean
+  cultivateOperatorOptionsError: string
+  /** 养成需求预览（后端纯计算结果） */
+  cultivatePreview: CultivatePreviewOut | null
+  cultivatePreviewLoading: boolean
+  cultivatePreviewError: string
+  /** 目标行变化时由子组件触发（父级负责请求与竞态守卫） */
+  loadCultivatePreview: (targetsJson: string) => Promise<void>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean
@@ -443,6 +480,10 @@ const depotSummary = computed(() =>
     formData.value.Task.IfDepotMaintain,
     formData.value.Task.DepotMaintainPlans
   )
+)
+
+const cultivateSummary = computed(() =>
+  summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
 )
 
 const greenTicketStoreDoneThisMonth = computed(

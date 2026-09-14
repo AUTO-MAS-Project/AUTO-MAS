@@ -4,12 +4,16 @@
 /* eslint-disable */
 import type { ADBScreenshotIn } from '../models/ADBScreenshotIn';
 import type { ADBScreenshotOut } from '../models/ADBScreenshotOut';
+import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
+import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { CheckImageAllIn } from '../models/CheckImageAllIn';
 import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
+import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
@@ -199,6 +203,29 @@ export class GetService {
         });
     }
     /**
+     * 获取碧蓝档案活动数据（Kivo 中转）
+     * 按服务器取回碧蓝档案的活动时间轴。
+     *
+     * 这里只做转发：把 Kivo 的响应原样交给前端，筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，是因为 Kivo 的接口校验 Origin，浏览器直连必定 403。
+     * @param requestBody
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveActivityApiInfoBluearchiveActivityPost(
+        requestBody: BlueArchiveActivityIn,
+    ): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/bluearchive/activity',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询脚本配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
@@ -324,6 +351,44 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/depot/inventory',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 干员养成选择器目录（一图流全量表，稀有度降序）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
+        requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/operators',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 养成计划预览（纯计算不落库）
+     * @param requestBody
+     * @returns CultivatePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost(
+        requestBody: CultivatePreviewIn,
+    ): CancelablePromise<CultivatePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/preview',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

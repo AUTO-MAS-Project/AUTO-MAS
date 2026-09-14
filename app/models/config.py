@@ -842,6 +842,8 @@ class MaaUserConfig(ConfigBase):
         )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
+        ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
+        self.Data_CultivateNotice = ConfigItem("Data", "CultivateNotice", "")
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
@@ -904,6 +906,20 @@ class MaaUserConfig(ConfigBase):
         ## 库存保持计划
         self.Task_DepotMaintainPlans = ConfigItem(
             "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
+        )
+        ## 是否干员养成
+        self.Task_IfCultivate = ConfigItem("Task", "IfCultivate", False, BoolValidator())
+        ## 干员养成目标
+        self.Task_CultivateTargets = ConfigItem(
+            "Task", "CultivateTargets", "[]", JSONValidator(list)
+        )
+        ## 活动期间是否跳过养成计划
+        self.Task_CultivateSkipDuringActivity = ConfigItem(
+            "Task", "CultivateSkipDuringActivity", False, BoolValidator()
+        )
+        ## 资源收集期是否跳过养成计划
+        self.Task_CultivateSkipDuringResourceCollection = ConfigItem(
+            "Task", "CultivateSkipDuringResourceCollection", False, BoolValidator()
         )
 
         ## Notify ----------------------------------------------------------
@@ -1418,11 +1434,11 @@ class MaaEndConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 账号切换方式
+        ## 账号切换方式（MAS 自建切换已废弃，字段仅保留旧配置兼容）
         self.Run_AccountSwitchMethod = ConfigItem(
             "Run",
             "AccountSwitchMethod",
-            "MAS",
+            "MAAEND",
             OptionsValidator(["MAS", "MAAEND"]),
         )
         ## 任务切换方式
@@ -1461,6 +1477,22 @@ class MaaEndConfig(ConfigBase):
         ## 结束后是否关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        ## 关闭游戏时恢复分辨率；关闭时完全沿用原生设置
+        self.Game_RestoreResolution = ConfigItem(
+            "Game",
+            "RestoreResolution",
+            "Off",
+            OptionsValidator(["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]),
+        )
+        ## 自定义恢复分辨率宽度
+        self.Game_RestoreResolutionWidth = ConfigItem(
+            "Game", "RestoreResolutionWidth", 1920, RangeValidator(1, 16384)
+        )
+        ## 自定义恢复分辨率高度
+        self.Game_RestoreResolutionHeight = ConfigItem(
+            "Game", "RestoreResolutionHeight", 1080, RangeValidator(1, 16384)
         )
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
@@ -2956,8 +2988,6 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 配置来源（脚本/用户/直控）
         self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
         ## 兼容旧版用户独立脚本配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
@@ -3449,6 +3479,24 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_AutoBossStrategyName = ConfigItem(
             "OneDragon", "AutoBossStrategyName", ""
         )
+        ## 「队伍配置」总开关（胶囊开关）：ON 时表格内队伍参与运行时「战斗场景」选队；
+        ## OFF 时数据保留但不参与匹配（通用队伍 PartyName/AutoBossStrategyName 照旧生效）。
+        self.OneDragon_IfUseTeams = ConfigItem(
+            "OneDragon", "IfUseTeams", False, BoolValidator()
+        )
+        ## 队伍配置表：JSON 数组字符串，数组顺序即界面展示顺序（可拖拽重排），元素为
+        ## {"name": str,            # 队伍名称（游戏内队伍名）
+        ##  "strategy": str,        # 战斗策略名（留空 = 跟随通用策略 AutoBossStrategyName）
+        ##  "scenes": {             # 战斗场景（可跨标签页任意叠加，空则本行不参与匹配）
+        ##    "domain": [{"region": str, "domain": str, "reward": str}],   # 秘境：地区/秘境名/奖励档
+        ##    "leyline": [{"country": str, "type": str}],                  # 地脉花：地区/地脉类型
+        ##    "boss": [{"region": str, "boss": str}]},                     # 首领讨伐：地区/首领名
+        ##  "note": str,            # 备注
+        ##  "enabled": bool}        # 启用状态
+        ## 序号 0 的「通用队伍」不落本字段（直绑 PartyName / AutoBossStrategyName）。
+        ## 运行期由 team_resolver 按 L1 精确匹配 + 随机选取，写入 Plan 步骤的
+        ## masTeamOverride / masStrategyOverride（最高优先级，压过每周行与步骤级字段）。
+        self.OneDragon_Teams = ConfigItem("OneDragon", "Teams", "[]", JSONValidator(list))
         ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
         self.OneDragon_IfUseCustomGroups = ConfigItem(
             "OneDragon", "IfUseCustomGroups", False, BoolValidator()

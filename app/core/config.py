@@ -305,6 +305,9 @@ class AppConfig(GlobalConfig):
         self._stage_refresh_task: Optional[asyncio.Task] = None
         # MAA item_index.json 解析缓存: 路径 -> (mtime_ns, 物品选项)
         self._maa_depot_items_cache: dict[Path, tuple[int, list[dict[str, str]]]] = {}
+        # MAA item_index.json 全量 id→名称缓存: 路径 -> (mtime_ns, 名称映射)
+        # （不受选择器排除规则影响，养成预览展示用）
+        self._maa_item_name_cache: dict[Path, tuple[int, dict[str, str]]] = {}
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
@@ -2618,6 +2621,145 @@ class AppConfig(GlobalConfig):
             {"label": str(count), "value": item_id}
             for item_id, count in sorted(inventory.items())
         ]
+
+    async def get_maa_cultivate_operators(
+        self, script_id: str, user_id: str
+    ) -> list[dict[str, str]]:
+        """获取干员养成选择器目录（一图流全量表兜底，方案决策 11）。
+
+        按用户档案剔除已精 2 的干员（PR2 仅精英化目标，决策 32 配套）；
+        档案缺失或未识别时不过滤（练度未知宁多勿少）。
+        """
+
+        from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
+        catalog = await depot_cultivate_service.operator_catalog(
+            config_path=self.config_path,
+            proxy=self.proxy,
+            maa_data_dir=archive_dir,
+        )
+        return [
+            {"label": item["label"], "value": item["value"]}
+            for item in catalog
+            if item.get("label") and item.get("value")
+        ]
+
+    async def _maa_item_names(self, script_id: str) -> dict[str, str]:
+        """MAA 物品 id→名称全量映射（不受选择器排除规则影响，预览展示用）。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+        item_index_path = (
+            Path(script_config.get("Info", "Path")) / "resource" / "item_index.json"
+        )
+        if not item_index_path.exists():
+            raise FileNotFoundError(
+                f"未找到 MAA 物品资源: {item_index_path}，请更新 MAA 后重试"
+            )
+        mtime_ns = item_index_path.stat().st_mtime_ns
+        cached = self._maa_item_name_cache.get(item_index_path)
+        if cached is not None and cached[0] == mtime_ns:
+            return cached[1]
+        items = json.loads(item_index_path.read_text(encoding="utf-8"))
+        if not isinstance(items, dict):
+            raise ValueError(f"MAA 物品资源格式异常: {item_index_path}")
+        names = {
+            item_id: str(entry.get("name") or item_id)
+            for item_id, entry in items.items()
+            if isinstance(entry, dict)
+        }
+        self._maa_item_name_cache[item_index_path] = (mtime_ns, names)
+        return names
+
+    async def get_maa_cultivate_preview(
+        self, script_id: str, user_id: str, targets: str
+    ) -> dict[str, object]:
+        """养成计划预览（纯计算不落库，方案 §4.3）。
+
+        与注入同一管线；编排逻辑在 task 域（cultivate.service），本方法
+        只做脚本/档案定位与解析，保持对外契约。
+        """
+
+        from app.task.MAA.tools.cultivate import (
+            depot_cultivate_service,
+            parse_cultivate_targets,
+        )
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        try:
+            raw_targets = json.loads(targets)
+        except (TypeError, ValueError):
+            raw_targets = []
+
+        archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
+        plan, availability = await depot_cultivate_service.preview_cultivate(
+            targets=parse_cultivate_targets(raw_targets),
+            maa_data_dir=archive_dir,
+            config_path=self.config_path,
+            proxy=self.proxy,
+        )
+        if plan is None:
+            # 空计划先短路：物品索引读不出来也不该把空预览变 500
+            return {
+                "stages": [],
+                "demands": [],
+                "unobtainable": [],
+                "availability": availability,
+            }
+        # 物品名从 item_index 全量取（双芯片等选择器排除项也有名称）
+        names = await self._maa_item_names(script_id)
+
+        def named(
+            item_id: str,
+            count: int,
+            stage: str | None = None,
+            expected_sanity: float | None = None,
+        ) -> dict[str, object]:
+            item: dict[str, object] = {
+                "itemId": item_id,
+                "name": names.get(item_id, item_id),
+                "count": count,
+            }
+            if stage is not None:
+                item["stage"] = stage
+            if expected_sanity is not None:
+                item["expectedSanity"] = expected_sanity
+            return item
+
+        # 固定产出关（龙门币 ← CE-6 等）单次产量未知，内核保持 0.0 中性值，
+        # 展示层按"不可估算"处理（None），不计入合计
+        computable_sanity = [
+            entry.expected_sanity for entry in plan.entries if entry.expected_sanity > 0
+        ]
+
+        return {
+            "stages": [
+                named(
+                    entry.item_id,
+                    entry.amount,
+                    entry.stage_code,
+                    entry.expected_sanity or None,
+                )
+                for entry in plan.entries
+            ],
+            "demands": [named(req.item_id, req.amount) for req in plan.demands],
+            "unobtainable": [
+                named(req.item_id, req.amount) for req in plan.unobtainable
+            ],
+            "totalExpectedSanity": (
+                round(sum(computable_sanity), 1) if computable_sanity else None
+            ),
+            "availability": availability,
+        }
 
     async def add_plan(
         self, script: Literal["MaaPlan", "MaaEndPlan"]
