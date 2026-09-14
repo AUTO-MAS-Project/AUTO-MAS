@@ -2512,6 +2512,8 @@ export default {
     emptyTitle: 'プランがありません',
     emptyDesc: 'プランはまだ作成されていません',
     selectLabel: 'プラン選択',
+    drag: 'ドラッグして並び替え',
+    rename: '名前の変更',
     count: '{count} 件のプラン | {count} 件のプラン',
     configTitle: 'プラン設定',
     namePlaceholder: 'プラン名を入力してください',

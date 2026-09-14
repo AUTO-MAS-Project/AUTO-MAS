@@ -35,6 +35,8 @@
           :plan-list="planList"
           :active-plan-id="activePlanId"
           @plan-change="onPlanChange"
+          @reorder="handlePlanReorder"
+          @rename="renamePlan"
         />
 
         <!-- 计划配置 -->
@@ -98,7 +100,7 @@ defineOptions({
 
 const logger = window.electronAPI.getLogger('计划管理')
 
-const { getPlans, createPlan, updatePlan, deletePlan } = usePlanApi()
+const { getPlans, createPlan, updatePlan, deletePlan, reorderPlans } = usePlanApi()
 const route = useRoute()
 
 interface PlanListItem {
@@ -354,6 +356,58 @@ const onPlanChange = async (planId: string) => {
   }
 }
 
+/** 拖拽排序结果落盘：界面先就位，保存失败再退回 */
+const handlePlanReorder = async (planIds: string[]) => {
+  const planById = new Map(planList.value.map(plan => [plan.id, plan]))
+  const nextPlanList: PlanListItem[] = []
+
+  for (const planId of planIds) {
+    const plan = planById.get(planId)
+    // 顺序列表必须是全部计划的完整顺序，缺项说明计划列表已变化，放弃本次排序
+    if (!plan) return
+    nextPlanList.push(plan)
+  }
+  if (nextPlanList.length !== planList.value.length) return
+
+  const previousPlanList = planList.value
+  planList.value = nextPlanList
+
+  try {
+    await reorderPlans(planIds)
+  } catch {
+    // 接口层已提示失败原因，这里只把界面顺序退回去
+    planList.value = previousPlanList
+  }
+}
+
+/** 改名：校验、落盘、同步本地缓存，返回是否改名成功 */
+const renamePlan = async (planId: string, newName: string): Promise<boolean> => {
+  const plan = planList.value.find(item => item.id === planId)
+  if (!plan) {
+    return false
+  }
+
+  const existingNames = planList.value.filter(item => item.id !== planId).map(item => item.name)
+  const validation = validatePlanName(newName, existingNames, plan.name)
+
+  if (!validation.isValid) {
+    message.error(validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid'))
+    return false
+  }
+
+  const success = await savePlanField(planId, buildNestedObject('Info.Name', newName))
+  if (!success) {
+    return false
+  }
+
+  plan.name = newName
+  applyLocalPlanChange(planId, 'Info.Name', newName)
+  if (isActivePlan(planId)) {
+    currentPlanName.value = newName
+  }
+  return true
+}
+
 const startEditPlanName = () => {
   isEditingPlanName.value = true
   setTimeout(() => {
@@ -366,31 +420,24 @@ const startEditPlanName = () => {
 }
 
 const finishEditPlanName = async () => {
-  if (activePlanId.value) {
-    const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
-    if (currentPlan) {
-      const newName = currentPlanName.value?.trim() || ''
-      const existingNames = planList.value.map(plan => plan.name)
-
-      // 验证新名称
-      const validation = validatePlanName(newName, existingNames, currentPlan.name)
-
-      if (!validation.isValid) {
-        // 如果验证失败，显示错误消息并恢复原名称
-        message.error(
-          validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid')
-        )
-        currentPlanName.value = currentPlan.name
-      } else {
-        // 如果验证成功，更新名称并保存到后端
-        currentPlan.name = newName
-        currentPlanName.value = newName
-        // 只发送修改的字段
-        await handlePlanChange('Info.Name', newName)
-      }
-    }
-  }
   isEditingPlanName.value = false
+
+  const planId = activePlanId.value
+  const currentPlan = planList.value.find(plan => plan.id === planId)
+  if (!currentPlan) {
+    return
+  }
+
+  const newName = currentPlanName.value?.trim() || ''
+  if (newName === currentPlan.name) {
+    return
+  }
+
+  const renamed = await renamePlan(planId, newName)
+  if (!renamed) {
+    // 校验或保存失败：标题退回原名
+    currentPlanName.value = currentPlan.name
+  }
 }
 
 const onModeChange = async () => {

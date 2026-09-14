@@ -2730,6 +2730,8 @@ export default {
     emptyTitle: '暂无计划',
     emptyDesc: '您还没有创建任何计划',
     selectLabel: '计划选择',
+    drag: '拖拽排序',
+    rename: '重命名',
     count: '{count} 个计划 | {count} 个计划',
     configTitle: '计划配置',
     namePlaceholder: '请输入计划名称',
