@@ -35,7 +35,7 @@ const vddDriverMessage = ref('')
 async function refreshVirtualDisplayStatus() {
   try {
     const res = await GetService.virtualDisplayStatusApiSettingVirtualDisplayStatusPost()
-    vddDriverReady.value = (res.results ?? []).every((item) => item.passed)
+    vddDriverReady.value = (res.results ?? []).every(item => item.passed)
     vddDriverMessage.value = res.message ?? ''
   } catch {
     // 探测不出来就不拦——宁可让用户开着不生效，也不要因为一次查询失败把功能锁死。
@@ -49,7 +49,7 @@ onMounted(refreshVirtualDisplayStatus)
 // 驱动不可用时禁用开关，避免「开了但永远不生效」的假保障。
 // 但**已经开着**的时候必须留出关掉的余地，否则用户连关都关不掉。
 const vddSwitchDisabled = computed(
-  () => vddDriverReady.value === false && !settings.Display?.IfEnableVirtualDisplay,
+  () => vddDriverReady.value === false && !settings.Display?.IfEnableVirtualDisplay
 )
 
 const vddWarning = computed(() => {
@@ -63,9 +63,7 @@ const vddChecking = ref(false)
 const vddResult = ref<VirtualDisplayCheckOut | null>(null)
 // 结论这一行由前端出：后端文案是中文的，紧挨着英文标签太刺眼。明细仍用后端原文，
 // 那里带着版本号、实际模式、错误详情这些动态内容，与全站其它后端文案一致。
-const vddAllPassed = computed(() =>
-  (vddResult.value?.results ?? []).every((item) => item.passed),
-)
+const vddAllPassed = computed(() => (vddResult.value?.results ?? []).every(item => item.passed))
 
 async function runVirtualDisplayCheck() {
   vddChecking.value = true
@@ -390,8 +388,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               size="large"
               style="width: 100%"
               @change="
-                (checked: any) =>
-                  handleSettingChange('Display', 'IfEnableVirtualDisplay', checked)
+                (checked: any) => handleSettingChange('Display', 'IfEnableVirtualDisplay', checked)
               "
             >
               <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
@@ -413,9 +410,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               :disabled="!settings.Display?.IfEnableVirtualDisplay"
               size="large"
               style="width: 100%"
-              @change="
-                (value: any) => handleSettingChange('Display', 'VirtualDisplayMode', value)
-              "
+              @change="(value: any) => handleSettingChange('Display', 'VirtualDisplayMode', value)"
             />
           </div>
         </a-col>
@@ -454,7 +449,9 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         <a-col :span="24">
           <a-alert :type="vddAllPassed ? 'success' : 'warning'" show-icon>
             <template #message>
-              {{ vddAllPassed ? t('setting.display.checkPassed') : t('setting.display.checkIssue') }}
+              {{
+                vddAllPassed ? t('setting.display.checkPassed') : t('setting.display.checkIssue')
+              }}
             </template>
             <template #description>
               <p v-if="!vddAllPassed && vddResult.message" class="vdd-summary">
@@ -470,7 +467,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               <p v-if="vddResult.monitors" class="vdd-monitors">
                 {{ t('setting.display.monitors') }}: {{ vddResult.monitors }}
               </p>
-              <p v-if="!(vddResult.results ?? []).some((item) => item.stage === 'openable')">
+              <p v-if="!(vddResult.results ?? []).some(item => item.stage === 'openable')">
                 <a href="#" @click.prevent="openVddDownload">
                   {{ t('setting.display.download') }}
                 </a>

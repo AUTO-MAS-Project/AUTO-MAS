@@ -70,9 +70,7 @@ def project_fingerprint(project_path: str | Path) -> str | None:
         return None
     digest = hashlib.sha256()
     ignored_dirs = set(FINGERPRINT_IGNORED_DIRS)
-    if (
-        root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER
-    ).is_file():
+    if (root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER).is_file():
         ignored_dirs.add(NATIVE_RUNTIME_OVERLAY_DIR)
     files: list[Path] = []
     for candidate in root.rglob("*"):

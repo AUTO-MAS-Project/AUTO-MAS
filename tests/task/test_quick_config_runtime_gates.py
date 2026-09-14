@@ -83,7 +83,9 @@ def test_okww_direct_quick_writes_only_daily_task(tmp_path: Path) -> None:
     task._apply_mas_overrides()
 
     assert not (tmp_path / "configs" / "Basic Options.json").exists()
-    daily = json.loads((tmp_path / "configs" / "DailyTask.json").read_text(encoding="utf-8"))
+    daily = json.loads(
+        (tmp_path / "configs" / "DailyTask.json").read_text(encoding="utf-8")
+    )
     assert daily["Which to Farm"] == "无"
 
 
@@ -114,7 +116,9 @@ class _MaaFWScriptConfig:
 
 
 class _MaaFWUserConfig:
-    def __init__(self, mode: str, quick: bool, snapshot: str = "", preset: str = "") -> None:
+    def __init__(
+        self, mode: str, quick: bool, snapshot: str = "", preset: str = ""
+    ) -> None:
         self._mode = mode
         self._quick = quick
         self._snapshot = snapshot
@@ -224,7 +228,10 @@ def test_oknte_direct_quick_writes_panel_subset(tmp_path: Path) -> None:
     native.mkdir()
     (native / "DailyRoutineTask.json").write_text(
         json.dumps(
-            {"Routine Items": [{"id": "daily_anomaly", "enabled": False}], "Exit After Task": True},
+            {
+                "Routine Items": [{"id": "daily_anomaly", "enabled": False}],
+                "Exit After Task": True,
+            },
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -233,7 +240,10 @@ def test_oknte_direct_quick_writes_panel_subset(tmp_path: Path) -> None:
     mas_dir.mkdir(parents=True)
     (mas_dir / "DailyRoutineTask.json").write_text(
         json.dumps(
-            {"Routine Items": [{"id": "daily_anomaly", "enabled": True}], "Exit After Task": False},
+            {
+                "Routine Items": [{"id": "daily_anomaly", "enabled": True}],
+                "Exit After Task": False,
+            },
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -243,9 +253,11 @@ def test_oknte_direct_quick_writes_panel_subset(tmp_path: Path) -> None:
     task.script_exe_path = tmp_path / "ok-nte.exe"
     task._ensure_oknte_mas_config_dir = MagicMock(return_value=mas_dir)  # type: ignore[method-assign]
 
-    with patch("app.task.OkNte.AutoProxy.System.kill_process"), patch(
-        "app.task.OkNte.AutoProxy.swap_in_dir"
-    ) as swap, patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive:
+    with (
+        patch("app.task.OkNte.AutoProxy.System.kill_process"),
+        patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap,
+        patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive,
+    ):
         asyncio.run(task.set_oknte())
 
     swap.assert_not_called()
@@ -262,7 +274,10 @@ class _ZzzOdCfg:
     """模拟 ZzzOdUserConfig：绑定槽 + 一条龙任务编排 + Game 字段。"""
 
     def __init__(self, slot_idx: int = 1, app_list: str = "[]") -> None:
-        self._values: dict[str, Any] = {"Info.SlotIdx": slot_idx, "OneDragon.AppList": app_list}
+        self._values: dict[str, Any] = {
+            "Info.SlotIdx": slot_idx,
+            "OneDragon.AppList": app_list,
+        }
 
     def get(self, group: str, name: str) -> Any:
         key = f"{group}.{name}"

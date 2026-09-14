@@ -476,10 +476,7 @@ const infrastSummary = computed(() => {
 })
 
 const depotSummary = computed(() =>
-  summarizeDepot(
-    formData.value.Task.IfDepotMaintain,
-    formData.value.Task.DepotMaintainPlans
-  )
+  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
 )
 
 const cultivateSummary = computed(() =>

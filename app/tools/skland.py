@@ -626,9 +626,14 @@ def build_skland_signed_headers(
         "dId": device_id,
         "vName": version,
     }
-    signature_text = path + body_or_query + timestamp + json.dumps(
-        signature_headers,
-        separators=(",", ":"),
+    signature_text = (
+        path
+        + body_or_query
+        + timestamp
+        + json.dumps(
+            signature_headers,
+            separators=(",", ":"),
+        )
     )
     digest = hashlib.md5(
         hmac.new(
@@ -783,9 +788,7 @@ async def check_skland_qr_status(
             params={"scanId": ticket},
         )
         if not response.is_success:
-            raise ValueError(
-                f"查询森空岛扫码状态失败: HTTP {response.status_code}"
-            )
+            raise ValueError(f"查询森空岛扫码状态失败: HTTP {response.status_code}")
         response_data = _parse_json_object(response)
 
     raw_status_value = response_data.get("status")
@@ -813,9 +816,7 @@ async def check_skland_qr_status(
 
     data = response_data.get("data")
     scan_code = (
-        str(data.get("scanCode") or "").strip()
-        if isinstance(data, dict)
-        else ""
+        str(data.get("scanCode") or "").strip() if isinstance(data, dict) else ""
     )
     if not scan_code:
         raise ValueError("森空岛扫码已确认，但未返回 scanCode")
@@ -849,12 +850,8 @@ async def finalize_skland_qr_login(
                 response_data.get("msg") or response_data.get("message") or ""
             ).strip()
             if "失效" in message or "过期" in message:
-                raise ValueError(
-                    "森空岛扫码凭证已失效，请重新扫码"
-                )
-            raise ValueError(
-                f"森空岛扫码换取 Token 失败: {message or '上游拒绝请求'}"
-            )
+                raise ValueError("森空岛扫码凭证已失效，请重新扫码")
+            raise ValueError(f"森空岛扫码换取 Token 失败: {message or '上游拒绝请求'}")
 
         data = response_data.get("data")
         if not isinstance(data, dict) or not data.get("token"):

@@ -38,6 +38,7 @@ from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
 
+
 class _MainTimer:
     def __init__(self):
         self.started = False
@@ -174,10 +175,7 @@ class _MainTimer:
         ):
             return
 
-        if (
-            self.community_sign_task is not None
-            and not self.community_sign_task.done()
-        ):
+        if self.community_sign_task is not None and not self.community_sign_task.done():
             logger.debug("游戏社区签到后台任务正在执行，跳过重复派发")
             return
 
@@ -239,9 +237,8 @@ class _MainTimer:
             logger.success("游戏社区签到执行完成")
 
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-            if (
-                source not in TASK_COMMUNITY_SOURCES
-                and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+            if source not in TASK_COMMUNITY_SOURCES and Config.ToolsConfig.get(
+                "GameSign", "NotifyEnabled"
             ):
                 from app.tools.community_notify import push_community_notification
 
@@ -284,9 +281,7 @@ class _MainTimer:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         # 快速检查：是否没有待处理账号
-        if all_community_accounts_signed(
-            Config.ToolsConfig.GameSign_Accounts, today
-        ):
+        if all_community_accounts_signed(Config.ToolsConfig.GameSign_Accounts, today):
             return []
 
         return await self._execute_community_sign(source=source)

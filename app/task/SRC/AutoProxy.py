@@ -475,9 +475,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.direct_control and not self.cur_user_config.get(
             "Info", "IfQuickConfig"
         ):
-            logger.info(
-                "SRC 直控配置：直接使用脚本原生配置，跳过快速配置写入"
-            )
+            logger.info("SRC 直控配置：直接使用脚本原生配置，跳过快速配置写入")
             return
 
         staging_path = stage_src_config_update(

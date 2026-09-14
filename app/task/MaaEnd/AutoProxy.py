@@ -667,9 +667,9 @@ class AutoProxyTask(TaskExecuteBase):
             task_name = MAAEND_AUTO_COLLECT_TASK
             task_label = "自动采集"
         else:
-            sanity_enabled = bool(self.cur_user_config.get("Task", "IfSanity")) and not (
-                self._quick_task_daily_once_done("Sanity")
-            )
+            sanity_enabled = bool(
+                self.cur_user_config.get("Task", "IfSanity")
+            ) and not (self._quick_task_daily_once_done("Sanity"))
             if not (
                 sanity_enabled
                 or any(
@@ -686,10 +686,12 @@ class AutoProxyTask(TaskExecuteBase):
 
             # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
             # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
-            if self.cur_user_config.get("Task", "IfSanity") and not self._quick_task_daily_once_done(
-                "Sanity"
-            ):
-                sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
+            if self.cur_user_config.get(
+                "Task", "IfSanity"
+            ) and not self._quick_task_daily_once_done("Sanity"):
+                sanity_task_key, _ = (
+                    self.cur_user_config.get_effective_sanity_task_key()
+                )
                 target_sanity_task_name = (
                     "AutoEssence"
                     if sanity_task_key["SanityTaskType"] == "Essence"
@@ -1088,9 +1090,7 @@ class AutoProxyTask(TaskExecuteBase):
         path = str(script_config.get("Info", "Path")).strip()
         return Path(path) if path else None
 
-    def _drop_removed_medication_task(
-        self, tasks: list[dict[str, object]]
-    ) -> None:
+    def _drop_removed_medication_task(self, tasks: list[dict[str, object]]) -> None:
         """新版 MaaEnd 将应急理智加强剂并入理智任务，移除旧独立任务。"""
 
         if self._maaend_task_supported("AutoUseSpMedication") is not False:
@@ -1145,7 +1145,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         location = sanity_task_key.get("AutoEssenceSpecifiedLocation")
         location = location if isinstance(location, str) else ""
-        target_weapons = _load_json_list(sanity_task_key.get("AutoEssenceTargetWeapons"))
+        target_weapons = _load_json_list(
+            sanity_task_key.get("AutoEssenceTargetWeapons")
+        )
         menu = sanity_task_key.get("AutoEssenceMenu")
         if menu not in {"Random", "Location", "Target"}:
             menu = "Target" if target_weapons else "Location"
@@ -1212,8 +1214,7 @@ class AutoProxyTask(TaskExecuteBase):
                 selected_group_values = [
                     str(option.get("value"))
                     for option in options
-                    if isinstance(option, dict)
-                    and option.get("value") in selected
+                    if isinstance(option, dict) and option.get("value") in selected
                 ]
                 if not selected:
                     continue

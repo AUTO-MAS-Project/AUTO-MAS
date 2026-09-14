@@ -604,9 +604,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
-        project_path = Path(
-            str(self.script_config.get("Info", "Path") or "")
-        ).resolve()
+        project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
 
         # 更新已经放掉了项目锁。拿不到说明另有准备/运行在跑，那份准备一样管用。
         reservation_key = await try_reserve_project_path(project_path)

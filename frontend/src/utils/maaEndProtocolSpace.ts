@@ -129,9 +129,7 @@ export const MAAEND_TASK_GROUPS = [
   {
     key: 'Sanity',
     label: '🧠 理智作战',
-    tasks: [
-      { name: 'Sanity', label: '🧠 理智任务' },
-    ],
+    tasks: [{ name: 'Sanity', label: '🧠 理智任务' }],
   },
   {
     key: 'Infrastructure',
@@ -281,9 +279,8 @@ const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
 const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
   PROTOCOL_SPACE_TASK_FIELD_MAP[tab]
 
-const getProtocolSpaceTaskOptions = (
-  tab: ProtocolSpaceTab
-): readonly ProtocolSpaceTaskOption[] => PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
+const getProtocolSpaceTaskOptions = (tab: ProtocolSpaceTab): readonly ProtocolSpaceTaskOption[] =>
+  PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
 
 const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): ProtocolSpaceTaskValue =>
   config[getProtocolSpaceTaskField(config.SanityTaskType as ProtocolSpaceTab)]
@@ -400,16 +397,16 @@ export const maaEndPlanKeyToSanityConfig = (rawSlot?: unknown): MaaEndSanityConf
 export const normalizeMaaEndPlanKey = (rawSlot?: unknown): MaaEndPlanKey => {
   const config = maaEndPlanKeyToSanityConfig(rawSlot)
   if (config.SanityTaskType === 'Essence') {
-    const rawObject = rawSlot && typeof rawSlot === 'object' ? (rawSlot as Record<string, unknown>) : {}
-    const rawKey = rawObject.Key && typeof rawObject.Key === 'object'
-      ? (rawObject.Key as Record<string, unknown>)
-      : rawObject
+    const rawObject =
+      rawSlot && typeof rawSlot === 'object' ? (rawSlot as Record<string, unknown>) : {}
+    const rawKey =
+      rawObject.Key && typeof rawObject.Key === 'object'
+        ? (rawObject.Key as Record<string, unknown>)
+        : rawObject
     return {
       SanityTaskType: 'Essence',
       AutoEssenceSpecifiedLocation: config.AutoEssenceSpecifiedLocation,
-      ...(rawKey.AutoEssenceMenu !== undefined
-        ? { AutoEssenceMenu: config.AutoEssenceMenu }
-        : {}),
+      ...(rawKey.AutoEssenceMenu !== undefined ? { AutoEssenceMenu: config.AutoEssenceMenu } : {}),
       ...(config.AutoEssenceTargetWeapons.length
         ? { AutoEssenceTargetWeapons: config.AutoEssenceTargetWeapons }
         : {}),

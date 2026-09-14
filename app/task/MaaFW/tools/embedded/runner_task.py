@@ -649,9 +649,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 同路径应用用户面板值——MaaFW 的运行计划在内存里构造、不落盘原生
         # 配置文件，快速配置的「写入点」就是 build_plan 的参数集（任务快照/
         # 预设），构造失败抛 MaaFWRunPlanError 即任务失败。
-        if user_uses_direct_control(self.cur_user_config) and not user_uses_quick_config(
+        if user_uses_direct_control(
             self.cur_user_config
-        ):
+        ) and not user_uses_quick_config(self.cur_user_config):
             return MaaFWRunnerService().build_plan(
                 self.project_path,
                 interface_model,

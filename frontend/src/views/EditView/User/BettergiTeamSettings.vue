@@ -6,22 +6,13 @@
         <a-tooltip :title="t('edit.bettergiTeamConfigHint')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
-        <div
-          class="team-master-capsule"
-          :class="{ active: teamsOn }"
-          @click="toggleMaster"
-        >
+        <div class="team-master-capsule" :class="{ active: teamsOn }" @click="toggleMaster">
           <span class="team-master-dot"></span>
         </div>
       </h3>
     </div>
 
-    <a-alert
-      v-if="!editable"
-      type="info"
-      show-icon
-      class="mode-guide-alert"
-    >
+    <a-alert v-if="!editable" type="info" show-icon class="mode-guide-alert">
       <template #message>
         <span class="mode-guide-message">{{ t('edit.bettergiDirectModeAlert') }}</span>
       </template>
@@ -36,7 +27,12 @@
             <template #icon><PlusOutlined /></template>
             {{ t('edit.bettergiTeamAdd') }}
           </a-button>
-          <a-button size="small" danger :disabled="!canEdit || !selectedUids.length" @click="deleteSelected">
+          <a-button
+            size="small"
+            danger
+            :disabled="!canEdit || !selectedUids.length"
+            @click="deleteSelected"
+          >
             <template #icon><DeleteOutlined /></template>
             {{ t('edit.bettergiTeamBatchDelete') }}
           </a-button>
@@ -56,7 +52,9 @@
           <span class="team-cell team-cell-check"></span>
           <span class="team-cell team-cell-index">{{ t('edit.bettergiTeamIndexColumn') }}</span>
           <span class="team-cell team-cell-name">{{ t('edit.bettergiTeamNameColumn') }}</span>
-          <span class="team-cell team-cell-strategy">{{ t('edit.bettergiTeamStrategyColumn') }}</span>
+          <span class="team-cell team-cell-strategy">{{
+            t('edit.bettergiTeamStrategyColumn')
+          }}</span>
           <span class="team-cell team-cell-scenes">{{ t('edit.bettergiTeamScenesColumn') }}</span>
           <span class="team-cell team-cell-note">{{ t('edit.bettergiTeamNoteColumn') }}</span>
           <span class="team-cell team-cell-actions">{{ t('edit.bettergiTeamActionColumn') }}</span>
@@ -87,7 +85,9 @@
               :disabled="!editable"
               :placeholder="t('edit.bettergiTeamStrategyFollowGeneral')"
               :options="strategyOptions"
-              @update:value="(v: string | undefined) => saveGeneral('OneDragon.AutoBossStrategyName', v ?? '')"
+              @update:value="
+                (v: string | undefined) => saveGeneral('OneDragon.AutoBossStrategyName', v ?? '')
+              "
             />
           </span>
           <span class="team-cell team-cell-scenes">
@@ -99,12 +99,7 @@
           </span>
         </div>
 
-        <draggable
-          v-model="rows"
-          item-key="uid"
-          handle=".team-drag-handle"
-          :disabled="!canEdit"
-        >
+        <draggable v-model="rows" item-key="uid" handle=".team-drag-handle" :disabled="!canEdit">
           <template #item="{ element }">
             <div class="team-row">
               <span class="team-cell team-cell-check">
@@ -123,7 +118,9 @@
               <span class="team-cell team-cell-name">{{ element.name }}</span>
               <span class="team-cell team-cell-strategy">
                 <span v-if="element.strategy">{{ element.strategy }}</span>
-                <span v-else class="team-muted">{{ t('edit.bettergiTeamStrategyFollowGeneral') }}</span>
+                <span v-else class="team-muted">{{
+                  t('edit.bettergiTeamStrategyFollowGeneral')
+                }}</span>
               </span>
               <span class="team-cell team-cell-scenes">
                 <template v-if="sceneTags(element).length">
@@ -215,7 +212,9 @@
         </a-form-item>
         <a-form-item :label="t('edit.bettergiTeamScenesColumn')">
           <a-space size="small" wrap>
-            <a-tag v-for="tag in sceneTags(editModal.draft)" :key="tag" size="small">{{ tag }}</a-tag>
+            <a-tag v-for="tag in sceneTags(editModal.draft)" :key="tag" size="small">{{
+              tag
+            }}</a-tag>
             <span v-if="!sceneTags(editModal.draft).length" class="team-muted">
               {{ t('edit.bettergiTeamNoScene') }}
             </span>
@@ -279,7 +278,11 @@
         </a-tab-pane>
 
         <a-tab-pane key="leyline" :tab="t('edit.bettergiTeamSceneLeylineTab')">
-          <div v-for="(cond, i) in editModal.draft.scenes.leyline" :key="`l${i}`" class="scene-cond">
+          <div
+            v-for="(cond, i) in editModal.draft.scenes.leyline"
+            :key="`l${i}`"
+            class="scene-cond"
+          >
             <a-select
               :value="cond.country || undefined"
               style="width: 150px"
@@ -480,7 +483,10 @@ const toggleMaster = () => {
 }
 
 /** 通用队伍：直接读写任务配置字段（与任务配置卡片互通，改一处两处同步） */
-const saveGeneral = (key: 'OneDragon.PartyName' | 'OneDragon.AutoBossStrategyName', value: string) => {
+const saveGeneral = (
+  key: 'OneDragon.PartyName' | 'OneDragon.AutoBossStrategyName',
+  value: string
+) => {
   const field = key === 'OneDragon.PartyName' ? 'PartyName' : 'AutoBossStrategyName'
   oneDragon.value[field] = value
   emit('save', key, value)
@@ -640,7 +646,13 @@ const confirmScenes = () => {
 }
 
 const addCond = (key: SceneKey) => {
-  editModal.draft.scenes[key].push(key === 'leyline' ? { country: '', type: '' } : key === 'boss' ? { region: '', boss: '' } : { region: '', domain: '', reward: '' })
+  editModal.draft.scenes[key].push(
+    key === 'leyline'
+      ? { country: '', type: '' }
+      : key === 'boss'
+        ? { region: '', boss: '' }
+        : { region: '', domain: '', reward: '' }
+  )
 }
 
 const removeCond = (key: SceneKey, index: number) => {

@@ -91,9 +91,7 @@ def write_one_dragon_group(root_path: Path, plan_steps: list[dict[str, Any]]) ->
     # MAS_SETTINGS_KEYS 打出 GetType/ToString 等），JS 侧对嵌套值（steps/weeklyLeyLine）
     # 做属性访问会拿到 undefined，序列化成字符串后由 main.js safeParsePlan 解析。
     project["jsScriptSettingsObject"] = {
-        "plan": json.dumps(
-            {"version": 1, "steps": plan_steps}, ensure_ascii=False
-        )
+        "plan": json.dumps({"version": 1, "steps": plan_steps}, ensure_ascii=False)
     }
     out_path = root_path / _GROUP_REL_DIR / f"{GROUP_NAME}.json"
     write_file(out_path, template)

@@ -288,10 +288,7 @@
                       >
                         {{ String(inst.idx).padStart(2, '0') }} - {{ inst.name }}
                       </span>
-                      <a-tooltip
-                        v-if="inst.active"
-                        :title="t('edit.zzzodInstanceActiveTagHint')"
-                      >
+                      <a-tooltip v-if="inst.active" :title="t('edit.zzzodInstanceActiveTagHint')">
                         <a-tag color="processing" class="instance-manage-tag">
                           {{ t('edit.zzzodInstanceActiveTag') }}
                         </a-tag>
@@ -389,11 +386,7 @@
               <a-spin :spinning="nativeLoading">
                 <template v-if="nativeInstanceIdx !== null">
                   <a-row :gutter="24">
-                    <a-col
-                      v-for="f in nativeAccountFields"
-                      :key="f.key"
-                      :span="12"
-                    >
+                    <a-col v-for="f in nativeAccountFields" :key="f.key" :span="12">
                       <a-form-item>
                         <template #label>
                           <span class="form-label">
@@ -424,11 +417,7 @@
                             class="path-input"
                             readonly
                           />
-                          <a-button
-                            size="large"
-                            class="path-button"
-                            @click="selectDirectGamePath"
-                          >
+                          <a-button size="large" class="path-button" @click="selectDirectGamePath">
                             <template #icon>
                               <FolderOpenOutlined />
                             </template>
@@ -469,10 +458,7 @@
                     </a-button>
                   </div>
                 </template>
-                <a-empty
-                  v-else
-                  :description="t('edit.zzzodDirectPickInstanceFirst')"
-                />
+                <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
               </a-spin>
             </template>
 
@@ -606,7 +592,9 @@
                       :placeholder="t('edit.zzzodEnterBilibiliAccount')"
                       size="large"
                       class="modern-input"
-                      @blur="saveField('Game.BilibiliAccountName', formData.Game.BilibiliAccountName)"
+                      @blur="
+                        saveField('Game.BilibiliAccountName', formData.Game.BilibiliAccountName)
+                      "
                     />
                   </a-form-item>
                 </a-col>
@@ -866,7 +854,10 @@
                           size="small"
                           type="text"
                           class="task-config-gear"
-                          @click="jumpTipVisible[card.app_id] = false; handleZzzodConfig()"
+                          @click="
+                            jumpTipVisible[card.app_id] = false
+                            handleZzzodConfig()
+                          "
                         >
                           <template #icon><ExportOutlined /></template>
                         </a-button>
@@ -945,11 +936,7 @@
               :new-item="planModalField.newItem ?? {}"
               :train-categories="planModal.trainCategories"
             />
-            <div
-              v-for="f in planModalOtherFields"
-              :key="f.field"
-              class="plan-modal-field"
-            >
+            <div v-for="f in planModalOtherFields" :key="f.field" class="plan-modal-field">
               <span class="plan-modal-field-title">{{ f.title }}</span>
               <a-switch
                 v-if="f.type === 'bool'"
@@ -1164,8 +1151,7 @@ const handleNameBlur = async () => {
     const duplicate = Object.entries(resp?.data ?? {}).some(
       ([uid, user]) =>
         uid !== userId.value &&
-        String((user as { Info?: { Name?: string } })?.Info?.Name ?? '').trim() ===
-          name
+        String((user as { Info?: { Name?: string } })?.Info?.Name ?? '').trim() === name
     )
     if (duplicate) {
       message.error(t('edit.zzzodDuplicateUserName'))
@@ -1248,8 +1234,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
       const hasOtherDirect = Object.entries(resp?.data ?? {}).some(
         ([uid, user]) =>
           uid !== userId.value &&
-          String((user as { Info?: { Mode?: string } })?.Info?.Mode ?? '') ===
-            '直控'
+          String((user as { Info?: { Mode?: string } })?.Info?.Mode ?? '') === '直控'
       )
       if (hasOtherDirect) {
         formData.Info.Mode = prev
@@ -1574,9 +1559,7 @@ const launchersUsable = computed(() => ({
 const loadLaunchers = async () => {
   launchersLoading.value = true
   try {
-    const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(
-      scriptId
-    )
+    const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(scriptId)
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodLauncherLoadFailed'))
     }
@@ -1838,8 +1821,7 @@ const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
   setTaskLoading(card.app_id, true)
   try {
     const fields = await loadTaskConfig(card)
-    const useModal =
-      fields.some(f => f.type === 'plan_list') || fields.length > 6
+    const useModal = fields.some(f => f.type === 'plan_list') || fields.length > 6
     if (useModal) {
       void openPlanModal(card, fields)
     } else {
@@ -1864,14 +1846,9 @@ interface PendingTaskConfigSave {
 }
 const taskConfigPending = new Map<string, PendingTaskConfigSave>()
 
-const taskConfigKey = (card: TaskCard, field: TaskConfigField) =>
-  `${card.app_id}::${field.field}`
+const taskConfigKey = (card: TaskCard, field: TaskConfigField) => `${card.app_id}::${field.field}`
 
-const scheduleTaskConfigSave = (
-  card: TaskCard,
-  field: TaskConfigField,
-  value: any
-) => {
+const scheduleTaskConfigSave = (card: TaskCard, field: TaskConfigField, value: any) => {
   const key = taskConfigKey(card, field)
   const existing = taskConfigPending.get(key)
   if (existing) clearTimeout(existing.timer)
@@ -1898,11 +1875,7 @@ const flushAllTaskConfigSaves = () => {
   taskConfigPending.clear()
 }
 
-const saveTaskConfigField = async (
-  card: TaskCard,
-  field: TaskConfigField,
-  value: any
-) => {
+const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value: any) => {
   // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
   // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
   if (value === null || value === undefined || Number.isNaN(value)) return
@@ -1938,12 +1911,8 @@ const planModal = reactive({
   trainCategories: [] as any[],
 })
 
-const planModalField = computed(
-  () => planModal.fields.find(f => f.type === 'plan_list') ?? null
-)
-const planModalOtherFields = computed(() =>
-  planModal.fields.filter(f => f.type !== 'plan_list')
-)
+const planModalField = computed(() => planModal.fields.find(f => f.type === 'plan_list') ?? null)
+const planModalOtherFields = computed(() => planModal.fields.filter(f => f.type !== 'plan_list'))
 
 const openPlanModal = async (card: TaskCard, fields?: TaskConfigField[]) => {
   planModal.appId = card.app_id
@@ -2067,11 +2036,7 @@ const formatPreviewValue = (key: string, raw: string): string => {
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
 const restoreApi = {
   list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(
-      scriptId,
-      userId.value,
-      target
-    ),
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId.value, target),
   preview: async (target: string, time: string) =>
     Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
       scriptId,

@@ -20,8 +20,7 @@ export interface LogHookRule {
   _uid?: string
 }
 
-const normalizeHookType = (raw: unknown): LogHookType =>
-  raw === 'replace' ? 'replace' : 'drop'
+const normalizeHookType = (raw: unknown): LogHookType => (raw === 'replace' ? 'replace' : 'drop')
 
 let uidCounter = 0
 const newUid = (): string => `hook_${Date.now()}_${++uidCounter}`

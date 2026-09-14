@@ -181,7 +181,9 @@ def resolve_target(
     return None
 
 
-def _condition_hit(scene: str, condition: dict[str, Any], target: dict[str, str]) -> bool:
+def _condition_hit(
+    scene: str, condition: dict[str, Any], target: dict[str, str]
+) -> bool:
     """单个场景条件与目标明细的 L1 精确匹配。"""
     if scene == "domain":
         value = _clean(condition.get("domain"))

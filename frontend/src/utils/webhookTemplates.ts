@@ -33,8 +33,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   {
     name: '企业微信机器人',
     descriptionKey: 'misc.wecomGroupBot',
-    template:
-      '{"msgtype": "markdown", "markdown": {"content": "**{title}**\\n{content}"}}',
+    template: '{"msgtype": "markdown", "markdown": {"content": "**{title}**\\n{content}"}}',
     method: 'POST',
     example: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key',
     headers: {

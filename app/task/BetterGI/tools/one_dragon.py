@@ -721,7 +721,9 @@ def _slot_owner_path(script_id: str) -> Path:
 
 def _slot_backup_path(script_id: str) -> Path:
     """写槽位前若该位置本是用户自己的同名配置，备份到此处；结束时恢复而非删除。"""
-    return Path.cwd() / "data" / _validate_script_id(script_id) / ".mas_slot_backup.json"
+    return (
+        Path.cwd() / "data" / _validate_script_id(script_id) / ".mas_slot_backup.json"
+    )
 
 
 def remove_one_dragon_slot(root: Path, script_id: str) -> bool:
@@ -879,7 +881,11 @@ def list_user_custom_groups(
 
 def one_dragon_path(root: Path, name: str) -> Path:
     """一条龙配置文件的绝对路径。"""
-    return root / _ONE_DRAGON_REL_DIR / f"{_validate_file_stem(resolve_config_name(name))}.json"
+    return (
+        root
+        / _ONE_DRAGON_REL_DIR
+        / f"{_validate_file_stem(resolve_config_name(name))}.json"
+    )
 
 
 def load_one_dragon(root: Path, name: str) -> dict[str, Any]:
@@ -1461,7 +1467,10 @@ def write_user_one_dragon(
     # 应与顶部「通用战斗队伍/策略」同源生效，否则会以其旧值遮挡通用队伍/策略
     # （main.js 选队：秘境 todayRow||defaultRow||s.partyName 与 todayRow||defaultRow||s.combatStrategyPath；
     #  地脉花 wdRow||def||s.team 与 wdRow||def||s.combatStrategyPath）。per-day 行各自独立保留。
-    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+    for _wd_key, _team_key in (
+        ("weeklyDomain", "partyName"),
+        ("weeklyLeyLine", "team"),
+    ):
         _wd = slot_config.get(_wd_key)
         if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
             if party_name:
@@ -1475,7 +1484,11 @@ def write_user_one_dragon(
         root,
         script_id,
         user_id,
-        [n for n in (slot_config.get("TaskDefinitions") or {}).values() if isinstance(n, str)],
+        [
+            n
+            for n in (slot_config.get("TaskDefinitions") or {}).values()
+            if isinstance(n, str)
+        ],
     )
 
     # 多实例：实例名（组名-{行uid}）→ 基名 的映射，供物化回退到基名副本/实配，
@@ -1759,7 +1772,10 @@ def _coerce_domain_leaf(segment: str, key: str, value: Any) -> Any:
         return bool(value)
     if segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key == "rewardRecognitionEnabled":
         return bool(value)
-    if segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS:
+    if (
+        segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT
+        and key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS
+    ):
         try:
             return int(value)
         except (TypeError, ValueError):
@@ -1819,7 +1835,10 @@ def write_global_domain_settings(root: Path, settings: dict[str, Any]) -> None:
                 config[segment] = seg_data
             if segment == _GLOBAL_ARTIFACT_SALVAGE_SEGMENT:
                 norm = str(value) if value is not None else "4"
-            elif segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT and key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS:
+            elif (
+                segment == _GLOBAL_DOMAIN_CONFIG_SEGMENT
+                and key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS
+            ):
                 try:
                     norm = int(value)
                 except (TypeError, ValueError):
@@ -1885,9 +1904,7 @@ def write_user_global_domain_settings(
     return out_path
 
 
-def apply_user_global_domain_settings(
-    root: Path, script_id: str, user_id: str
-) -> bool:
+def apply_user_global_domain_settings(root: Path, script_id: str, user_id: str) -> bool:
     """把某用户 per-user 副本的秘境刷取配置物化到 BGI 全局 config.json。
 
     仅在副本存在且非空时写入；写入前调用方应已快照（``snapshot_global_battle_config``
@@ -2166,9 +2183,7 @@ def load_setting_defaults() -> dict[str, Any]:
     global _DEFAULT_SETTING_VALUES
     seed = load_seed_template()
     _DEFAULT_SETTING_VALUES = {
-        key: seed.get(key)
-        for key in _ONE_DRAGON_SETTING_KEYS
-        if key in seed
+        key: seed.get(key) for key in _ONE_DRAGON_SETTING_KEYS if key in seed
     }
     return dict(_DEFAULT_SETTING_VALUES)
 
@@ -2210,7 +2225,9 @@ def read_user_one_dragon_settings(
     种子顺序与 ``write_user_one_dragon`` 一致（见 ``_seed_user_one_dragon_config``）；
     独立模式固定名副本缺失时以内置模板为准，保证右栏显示的是将生效的值。
     """
-    return _pick_settings(_seed_user_one_dragon_config(root, script_id, user_id, config_name))
+    return _pick_settings(
+        _seed_user_one_dragon_config(root, script_id, user_id, config_name)
+    )
 
 
 def write_user_one_dragon_settings(

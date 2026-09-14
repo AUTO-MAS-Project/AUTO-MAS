@@ -28,11 +28,7 @@ describe('parseCultivateTargets', () => {
   })
 
   it('跳过非法条目与非法 JSON', () => {
-    const json = JSON.stringify([
-      { operator_id: '', goals: [] },
-      { goals: [] },
-      'garbage',
-    ])
+    const json = JSON.stringify([{ operator_id: '', goals: [] }, { goals: [] }, 'garbage'])
     expect(parseCultivateTargets(json)).toEqual([])
     expect(parseCultivateTargets('not-json')).toEqual([])
     expect(parseCultivateTargets(undefined)).toEqual([])
@@ -66,9 +62,7 @@ describe('serializeCultivateTargets', () => {
   })
 
   it('无 elite 目标的条目追加一条', () => {
-    const rows = parseCultivateTargets(
-      JSON.stringify([{ operator_id: 'char_2', goals: [] }])
-    )
+    const rows = parseCultivateTargets(JSON.stringify([{ operator_id: 'char_2', goals: [] }]))
     const parsed = JSON.parse(serializeCultivateTargets(rows))
     expect(parsed[0].goals).toEqual([
       { kind: 'elite', target_id: '', to_level: 2, state: 'not_started' },

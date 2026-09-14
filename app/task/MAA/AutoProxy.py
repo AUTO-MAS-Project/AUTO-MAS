@@ -1163,9 +1163,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.direct_control and not self.cur_user_config.get(
             "Info", "IfQuickConfig"
         ):
-            logger.info(
-                "MAA 直控配置：直接使用脚本原生配置，跳过快速配置写入"
-            )
+            logger.info("MAA 直控配置：直接使用脚本原生配置，跳过快速配置写入")
             return
 
         gui_set = read_file(self.maa_set_path / "gui.json")

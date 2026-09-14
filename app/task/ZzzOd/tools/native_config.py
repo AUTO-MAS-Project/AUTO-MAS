@@ -105,9 +105,7 @@ def read_native_account_fields(root, slot_idx: int) -> list[dict]:
     return fields
 
 
-def save_native_account_fields(
-    root, slot_idx: int, values: dict[str, str]
-) -> None:
+def save_native_account_fields(root, slot_idx: int, values: dict[str, str]) -> None:
     """白名单过滤后写回实例原生 game_account.yml（页面所见即所得）。
 
     与 zzz-od 行为对齐：值未变即跳过（既不强制写空、也不污染原文件）；

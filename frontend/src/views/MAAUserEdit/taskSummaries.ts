@@ -29,8 +29,7 @@ const annihilationStageLabel = (value: string) =>
 export const stageLabel = (value: string) => (value === '-' ? '当前/上次' : value || '不选择')
 
 /** 连战次数：'0' 为自动识别倍率，'-1' 为不改动游戏内设置 */
-const seriesLabel = (value: string) =>
-  value === '0' ? 'AUTO' : value === '-1' ? '不切换' : value
+const seriesLabel = (value: string) => (value === '0' ? 'AUTO' : value === '-1' ? '不切换' : value)
 
 // 关闭态一律返回空串：关着的开关已经表达了关闭，摘要再写一遍就是重复
 export const summarizeAnnihilation = (

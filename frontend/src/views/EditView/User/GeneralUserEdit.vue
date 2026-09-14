@@ -426,7 +426,6 @@ const handleConfigModeChange = async (value: boolean | string) => {
   }
 }
 
-
 // 注意：移除了 watch 自动保存，现在由各控件的 @change/@blur 事件触发保存
 
 // 加载脚本信息

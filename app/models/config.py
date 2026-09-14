@@ -709,7 +709,9 @@ class MaaUserConfig(ConfigBase):
         ## 配置来源（脚本/用户/直控）
         self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
             "Info",
@@ -908,7 +910,9 @@ class MaaUserConfig(ConfigBase):
             "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
         )
         ## 是否干员养成
-        self.Task_IfCultivate = ConfigItem("Task", "IfCultivate", False, BoolValidator())
+        self.Task_IfCultivate = ConfigItem(
+            "Task", "IfCultivate", False, BoolValidator()
+        )
         ## 干员养成目标
         self.Task_CultivateTargets = ConfigItem(
             "Task", "CultivateTargets", "[]", JSONValidator(list)
@@ -1148,7 +1152,9 @@ class ConfigSourceValidator(OptionsValidator):
         legacy_map: 旧版来源名到新名的映射, 加载时自动归一。
     """
 
-    def __init__(self, modes: tuple[str, ...], legacy_map: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, modes: tuple[str, ...], legacy_map: dict[str, str] | None = None
+    ) -> None:
         super().__init__(list(modes))
         self.legacy_map = legacy_map or {}
 
@@ -1364,7 +1370,10 @@ class MaaEndUserConfig(ConfigBase):
                 }
             )
 
-            if sanity_task_type == "Essence" and task_key.get("AutoEssenceMenu") == "Target":
+            if (
+                sanity_task_type == "Essence"
+                and task_key.get("AutoEssenceMenu") == "Target"
+            ):
                 target_weapons = task_key.get("AutoEssenceTargetWeapons", [])
                 detail_key = "Target"
                 detail_label = (
@@ -1550,7 +1559,9 @@ class SrcUserConfig(ConfigBase):
         ## 配置来源（脚本/用户/直控）
         self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -1912,9 +1923,13 @@ class HSRUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -2105,10 +2120,9 @@ class HSRUserConfig(ConfigBase):
         is_dirty = await super().load(data)
 
         raw_control_mode = str(self.get("Control", "Mode") or "").strip().lower()
-        if (
-            raw_control_mode == "direct"
-            and str(self.get("Info", "Mode") or "").strip() in ("", "用户")
-        ):
+        if raw_control_mode == "direct" and str(
+            self.get("Info", "Mode") or ""
+        ).strip() in ("", "用户"):
             await self.set("Info", "Mode", "直控")
             is_dirty = True
 
@@ -2302,9 +2316,13 @@ class M9AUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2469,9 +2487,13 @@ class MaaFWUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 是否在任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2987,7 +3009,9 @@ class GeneralUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 兼容旧版用户独立脚本配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
@@ -3308,7 +3332,9 @@ class OkNteUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
@@ -3448,9 +3474,13 @@ class BetterGIUserConfig(ConfigBase):
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 兼容旧版用户独立一条龙配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
@@ -3496,7 +3526,9 @@ class BetterGIUserConfig(ConfigBase):
         ## 序号 0 的「通用队伍」不落本字段（直绑 PartyName / AutoBossStrategyName）。
         ## 运行期由 team_resolver 按 L1 精确匹配 + 随机选取，写入 Plan 步骤的
         ## masTeamOverride / masStrategyOverride（最高优先级，压过每周行与步骤级字段）。
-        self.OneDragon_Teams = ConfigItem("OneDragon", "Teams", "[]", JSONValidator(list))
+        self.OneDragon_Teams = ConfigItem(
+            "OneDragon", "Teams", "[]", JSONValidator(list)
+        )
         ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
         self.OneDragon_IfUseCustomGroups = ConfigItem(
             "OneDragon", "IfUseCustomGroups", False, BoolValidator()
@@ -3510,7 +3542,9 @@ class BetterGIUserConfig(ConfigBase):
         ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
         ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
         ## （按副本 TaskOrder 相对顺序，不重排）。
-        self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
+        self.OneDragon_Queue = ConfigItem(
+            "OneDragon", "Queue", "[]", JSONValidator(list)
+        )
         ## 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。
         ## 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段
         ## 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。
@@ -3963,15 +3997,17 @@ class ZzzOdUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
         ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
         ## 此后配置会话与运行时注入都固定使用该槽
-        self.Info_SlotIdx = ConfigItem(
-            "Info", "SlotIdx", -1, RangeValidator(-1, 999)
-        )
+        self.Info_SlotIdx = ConfigItem("Info", "SlotIdx", -1, RangeValidator(-1, 999))
         ## 一条龙启动器选择（直控/用户两态通用）：
         ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
         ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
@@ -4783,9 +4819,13 @@ class BAAHUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
         ## 备注

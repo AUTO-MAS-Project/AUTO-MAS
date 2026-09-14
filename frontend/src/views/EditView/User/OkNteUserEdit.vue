@@ -337,11 +337,7 @@
           <template v-for="f in previewFiles(raw)" :key="f.name">
             <h4 class="oknte-preview-title">{{ f.label }}</h4>
             <a-descriptions :column="1" size="small" bordered class="oknte-preview-box">
-              <a-descriptions-item
-                v-for="row in f.summary"
-                :key="row.key"
-                :label="row.key"
-              >
+              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
@@ -354,16 +350,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import {
-  computed,
-  h,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  watch,
-} from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -426,9 +413,27 @@ const oknteConfigModeOptions: Array<{
   description: string
   icon: 'file' | 'database' | 'setting'
 }> = [
-  { label: t('edit.script'), value: '脚本', title: t('edit.script'), description: '使用脚本级共享配置', icon: 'file' },
-  { label: t('edit.user'), value: '用户', title: t('edit.user'), description: t('edit.useThisUserS'), icon: 'database' },
-  { label: t('edit.directControl'), value: '直控', title: t('edit.directControl'), description: t('edit.useScriptSCurrent'), icon: 'setting' },
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: '使用脚本级共享配置',
+    icon: 'file',
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: t('edit.useScriptSCurrent'),
+    icon: 'setting',
+  },
 ]
 
 const pushLogModeOptions = [
@@ -547,7 +552,8 @@ const handleQuickConfigChange = async (value: boolean) => {
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value)) return
+  if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value))
+    return
   formData.Info.Mode = value as '脚本' | '用户' | '直控'
   await saveField('Info.Mode', formData.Info.Mode)
 }
@@ -676,12 +682,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,

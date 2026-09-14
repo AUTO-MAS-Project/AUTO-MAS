@@ -25,11 +25,7 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card
-      :title="t('edit.zzzodScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
+    <a-card :title="t('edit.zzzodScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ZZZ-OD</a-tag>
       </template>

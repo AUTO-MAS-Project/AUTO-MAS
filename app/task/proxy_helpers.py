@@ -81,9 +81,7 @@ async def push_dispatch_log(script_info: object, line: str) -> None:
     await asyncio.sleep(0)
 
 
-def append_push_log(
-    cur_user_item: object, log_type: str, text: str, ts: float
-) -> None:
+def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) -> None:
     """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
 
     cur_user_item.push_log.append((log_type, text, ts))
@@ -187,5 +185,3 @@ def quick_config_takeover(
         return False
     write()
     return True
-
-

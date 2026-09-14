@@ -352,7 +352,15 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
 # 嵌套键：秘境 weeklyDomain / 地脉花 weeklyLeyLine，值形如
 #   { "default": {partyName, domainName, reward}, "Monday": {...}, ... }
 #   { "Monday": {country, type, run}, ... }
-WEEKDAY_KEYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+WEEKDAY_KEYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 
 
 def _secret_weekly_plan_key(field_key: str):
@@ -625,7 +633,11 @@ def build_combat_steps(
     # 3) 未被 queue 消费的 Plan 步骤（孤儿实例，如曾创建后从队列移除/未入队）
     #    不执行：左栏队列是用户所见即所得，追加执行会让用户跑出「界面上没有的
     #    任务」（2026-09-09 实机排障：队列 7 个战斗组被跑出 11 步）。
-    orphans = [str(plan_combat[i].get("name", "")) for i in range(len(plan_combat)) if i not in consumed]
+    orphans = [
+        str(plan_combat[i].get("name", ""))
+        for i in range(len(plan_combat))
+        if i not in consumed
+    ]
     if orphans:
         logger.warning(f"以下执行层实例不在队列中，本次跳过: {', '.join(orphans)}")
     return out
@@ -658,7 +670,11 @@ def prune_plan_to_queue(
         queue = []
 
     if not plan_steps:
-        return plan_json if isinstance(plan_json, str) else json.dumps(plan_json, ensure_ascii=False)
+        return (
+            plan_json
+            if isinstance(plan_json, str)
+            else json.dumps(plan_json, ensure_ascii=False)
+        )
 
     # 计算队列当前引用的战斗实例步骤名（含被关闭行；仅剔除已从队列移除的行）
     referenced: set[str] = set()
@@ -698,7 +714,11 @@ def prune_plan_to_queue(
     ]
     if len(new_steps) == len(plan_steps):
         # 无变化：原样返回（保留原字符串，避免每次队列保存都重写 Plan）
-        return plan_json if isinstance(plan_json, str) else json.dumps(plan_json, ensure_ascii=False)
+        return (
+            plan_json
+            if isinstance(plan_json, str)
+            else json.dumps(plan_json, ensure_ascii=False)
+        )
 
     # 重建 JSON，保留 version 等外层字段
     if isinstance(plan_json, str):

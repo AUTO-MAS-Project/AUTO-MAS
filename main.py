@@ -56,7 +56,9 @@ if _leaked_venv is not None:
     # PATH 裸调 python/pip 的子进程都会命中 MAS 的 runtime venv；按该值精确
     # 摘除对应段，PATH 其余内容不动
     _venv_scripts = os.path.normcase(
-        os.path.join(_leaked_venv, "Scripts" if os.name == "nt" else "bin").rstrip("\\/")
+        os.path.join(_leaked_venv, "Scripts" if os.name == "nt" else "bin").rstrip(
+            "\\/"
+        )
     )
     _path_entries = os.environ.get("PATH", "").split(os.pathsep)
     _kept_entries = [
@@ -317,7 +319,9 @@ def main():
                             )
                         elif isinstance(value, list):
                             schema_part[key] = [
-                                resolve_with_depth_limit(item, reference_schema, _depth + 1)
+                                resolve_with_depth_limit(
+                                    item, reference_schema, _depth + 1
+                                )
                                 if isinstance(item, dict)
                                 else item
                                 for item in value

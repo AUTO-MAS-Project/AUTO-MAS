@@ -1565,7 +1565,8 @@ export default {
     bettergiTeamActionColumn: '操作',
     bettergiTeamGeneralTag: '共通',
     bettergiTeamGeneralScene: '共通フォールバック',
-    bettergiTeamGeneralHint: '一致しなかったすべての戦闘タスクをフォールバックします。削除できません',
+    bettergiTeamGeneralHint:
+      '一致しなかったすべての戦闘タスクをフォールバックします。削除できません',
     bettergiTeamStrategyFollowGeneral: '共通ストラテジーに従う',
     bettergiTeamNoScene: '未指定（選出に参加しません）',
     bettergiTeamEditScenes: '戦闘シーン',
@@ -1649,7 +1650,8 @@ export default {
     bettergiDuplicateOk: '保存',
     bettergiDuplicateSameDone: '同じ設定グループをコピーしました',
     bettergiDuplicateSource: '元の設定グループ',
-    bettergiDuplicateTip: '選択した設定グループの内容を、個別に編集できる新しい設定グループとして保存します',
+    bettergiDuplicateTip:
+      '選択した設定グループの内容を、個別に編集できる新しい設定グループとして保存します',
     bettergiGroupFrozen: '凍結',
     bettergiGroupFrozenTip: 'この設定グループは凍結されており、編集・移動できません',
     bettergiGroupKindCustom: 'スクリプト',
@@ -1659,7 +1661,8 @@ export default {
     bettergiGroupKindStamina: 'スタミナ',
     bettergiGroupNamesUnknown: '不明なグループ',
     bettergiGroupPrefixDefault: 'デフォルト',
-    bettergiGroupSettingsKeyMouse: 'これは BetterGI の録画（キー・マウス）スクリプトです。BetterGI が一条龍で録画内容どおりに実行するため、MAS では設定を編集できません。',
+    bettergiGroupSettingsKeyMouse:
+      'これは BetterGI の録画（キー・マウス）スクリプトです。BetterGI が一条龍で録画内容どおりに実行するため、MAS では設定を編集できません。',
     bettergiGroupSettingsLoadFailed: '設定グループの読み込みに失敗しました',
     bettergiGroupSettingsNone: 'この設定グループには設定がありません',
     bettergiGroupSettingsSaveFailed: '設定グループの保存に失敗しました',
@@ -1736,7 +1739,8 @@ export default {
     bettergiProjectSaved: 'プロジェクトを保存しました',
     bettergiProjectSettingsSave: '設定を保存',
     bettergiProjectToolbarTip: 'カードをドラッグしてプロジェクトの順序を変更',
-    bettergiProjectStandaloneTip: '「スクリプトを追加」で他のスクリプトと設定グループにまとめられます',
+    bettergiProjectStandaloneTip:
+      '「スクリプトを追加」で他のスクリプトと設定グループにまとめられます',
     bettergiProjectUnselect: '選択解除',
     bettergiProjectZoom: 'ズーム',
   },

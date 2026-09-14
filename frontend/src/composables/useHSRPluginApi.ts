@@ -38,14 +38,7 @@ export interface HSRTaskCapability {
   strategies?: Partial<Record<HSREngine, string[]>>
 }
 
-type HSRManagedFieldType =
-  | 'boolean'
-  | 'integer'
-  | 'number'
-  | 'string'
-  | 'select'
-  | 'json'
-  | 'stage'
+type HSRManagedFieldType = 'boolean' | 'integer' | 'number' | 'string' | 'select' | 'json' | 'stage'
 
 interface HSRManagedFieldOption {
   value: unknown

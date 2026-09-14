@@ -32,7 +32,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source, push_dispatch_log
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_DIRECT,
+    read_config_source,
+    push_dispatch_log,
+)
 from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
@@ -323,7 +327,9 @@ class AutoProxyTask(TaskExecuteBase):
             and str(q.get("name", "")).strip()
         ]
         self.custom_exec_groups: list[str] = []
-        self.custom_exec_enabled = self.use_execution_layer and bool(self.custom_exec_items)
+        self.custom_exec_enabled = self.use_execution_layer and bool(
+            self.custom_exec_items
+        )
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
         # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
         # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
@@ -337,7 +343,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 队伍字段，与路径 A（write_user_one_dragon 把 PartyName 写入秘境/首领，并经
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
         # 队伍字段为空时注入，已显式设置的队伍不覆盖。
-        _default_party = str(self.cur_user_config.get("OneDragon", "PartyName") or "").strip()
+        _default_party = str(
+            self.cur_user_config.get("OneDragon", "PartyName") or ""
+        ).strip()
         if _default_party:
             _TEAM_FIELD_BY_BASE = {
                 "自动秘境": "partyName",
@@ -479,7 +487,9 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.use_mas_config:
             return
         one_dragon.cleanup_leftover_mas_groups(
-            self.script_root_path, self.script_info.script_id, self.cur_user_item.user_id
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
         )
         self._reseed_global_config = one_dragon.snapshot_global_battle_config(
             self.script_root_path
@@ -592,9 +602,7 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 # 战斗/自定义项已由执行层完成，原生一条龙无活可干：整体视为成功，直接收尾
                 self.run_book = True
-                self.script_info.log = (
-                    "执行层已完成；原生一条龙无启用任务，跳过阶段2"
-                )
+                self.script_info.log = "执行层已完成；原生一条龙无启用任务，跳过阶段2"
             else:
                 self.script_info.log = "一条龙无启用任务，跳过"
             logger.info(
@@ -769,22 +777,25 @@ class AutoProxyTask(TaskExecuteBase):
                 self._resolve_log_file_path, datetime.now()
             )
             # 空闲超时循环：日志每次输出即续期，仅当日志静默超过 idle 阈值
-            #（BGI 卡死）才终止，不设总时长上限。旧实现为固定 900s 墙钟，
+            # （BGI 卡死）才终止，不设总时长上限。旧实现为固定 900s 墙钟，
             # 多实例执行层总耗时 20+ 分钟会被误杀（2026-09-08 实机排障：
             # 7 步在 14 分钟处被砍，末位步骤未执行）。
             while not done_event.is_set():
-                    try:
-                        await asyncio.wait_for(done_event.wait(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        pass
-                    # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
-                    if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
-                        result["success"] = False
-                        logger.warning(
-                            f"用户 {self.cur_user_item.name} 执行层空闲超时"
-                            f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
-                        )
-                        break
+                try:
+                    await asyncio.wait_for(done_event.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass
+                # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
+                if (
+                    time.monotonic() - last_activity
+                    >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS
+                ):
+                    result["success"] = False
+                    logger.warning(
+                        f"用户 {self.cur_user_item.name} 执行层空闲超时"
+                        f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                    )
+                    break
         except Exception as e:
             logger.opt(exception=True).warning(f"执行层执行异常: {e}")
             result["success"] = False
@@ -884,7 +895,10 @@ class AutoProxyTask(TaskExecuteBase):
                     await asyncio.wait_for(done_event.wait(), timeout=1.0)
                 except asyncio.TimeoutError:
                     pass
-                if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
+                if (
+                    time.monotonic() - last_activity
+                    >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS
+                ):
                     result["success"] = False
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 自定义项执行层空闲超时"
@@ -929,7 +943,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 1. 订阅脚本仓库（BetterGI 自行拉取/更新切换账号脚本）+ 生成配置组
         #    首次使用/误删导致脚本本地缺失时，临时开启「运行前同步更新」，
         #    让 BGI 在跑切号组前先把脚本同步拉下，避免「第一次启动切号必失败」。
-        script_missing = not account_switch.switch_script_dir(self.script_root_path).is_dir()
+        script_missing = not account_switch.switch_script_dir(
+            self.script_root_path
+        ).is_dir()
         try:
             script_present = account_switch.ensure_switch_subscription(
                 self.script_root_path, sync_update=script_missing
@@ -1311,7 +1327,9 @@ class AutoProxyTask(TaskExecuteBase):
         for name in _BGI_GAME_PROCESS_NAMES:
             image = f"{name}.exe"
             try:
-                result = await ProcessRunner.run_process("taskkill", "/IM", image, "/F", "/T")
+                result = await ProcessRunner.run_process(
+                    "taskkill", "/IM", image, "/F", "/T"
+                )
                 if result.returncode != 0:
                     reason = (result.stderr or result.stdout or "").strip()
                     if "没有找到进程" in reason or "not found" in reason.lower():

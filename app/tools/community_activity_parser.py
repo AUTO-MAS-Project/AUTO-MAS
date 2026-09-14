@@ -223,9 +223,7 @@ def _resource_item(
         "name": name,
         "current": current,
         "target": target,
-        "status": status or (
-            "已满" if target > 0 and current >= target else "可用"
-        ),
+        "status": status or ("已满" if target > 0 and current >= target else "可用"),
     }
 
 
@@ -394,9 +392,7 @@ def _build_snapshot(
         )
 
     if progress is None and daily_items:
-        completed = sum(
-            _as_int(item.get("completed")) or 0 for item in daily_items
-        )
+        completed = sum(_as_int(item.get("completed")) or 0 for item in daily_items)
         target = sum(_as_int(item.get("target")) or 0 for item in daily_items)
     elif progress is None:
         completed = None
@@ -514,15 +510,11 @@ def _parse_skland_arknights(
     weekly_value = routine.get("weekly") or root.get("weekly")
     items = _task_items(daily_value, default_name="日常活跃度")
     items.extend(
-        _mark_period(
-            _task_items(weekly_value, default_name="每周活跃度"), "weekly"
-        )
+        _mark_period(_task_items(weekly_value, default_name="每周活跃度"), "weekly")
     )
 
     campaign = root.get("campaign")
-    campaign_reward = (
-        campaign.get("reward") if isinstance(campaign, Mapping) else None
-    )
+    campaign_reward = campaign.get("reward") if isinstance(campaign, Mapping) else None
     campaign_item = _activity_item("每周报酬合成玉", campaign_reward)
     if campaign_item is not None:
         items.append(dict(campaign_item, period="weekly"))
@@ -565,9 +557,7 @@ def _parse_skland_arknights(
             elapsed = max(0, current_ts - last_add_ts)
             if current < maximum:
                 current = min(maximum, current + elapsed // 360)
-            complete_recovery_ts = _as_int(
-                ap_value.get("completeRecoveryTime")
-            )
+            complete_recovery_ts = _as_int(ap_value.get("completeRecoveryTime"))
             recovery_seconds = (
                 max(0, complete_recovery_ts - current_ts)
                 if complete_recovery_ts is not None
@@ -594,8 +584,7 @@ def _parse_skland_arknights(
     )
     if recruit_entries:
         completed_recruits = sum(
-            (_as_code(entry.get("state")) or 0) != 2
-            for entry in recruit_entries
+            (_as_code(entry.get("state")) or 0) != 2 for entry in recruit_entries
         )
         finish_timestamps = [
             timestamp
@@ -714,9 +703,7 @@ def _parse_skland_arknights(
             formula = formula_map.get(formula_id)
             capacity = _as_int(manufacture.get("capacity"))
             weight = (
-                _as_int(formula.get("weight"))
-                if isinstance(formula, Mapping)
-                else None
+                _as_int(formula.get("weight")) if isinstance(formula, Mapping) else None
             )
             if capacity is not None and weight:
                 manufacture_target += capacity // weight
@@ -753,9 +740,7 @@ def _parse_skland_arknights(
 
     tired_chars = building.get("tiredChars")
     if isinstance(tired_chars, list):
-        resources.append(
-            _status_resource("干员疲劳", f"{len(tired_chars)}名干员疲劳")
-        )
+        resources.append(_status_resource("干员疲劳", f"{len(tired_chars)}名干员疲劳"))
 
     return _build_snapshot(
         account_uid=account_uid,
@@ -778,9 +763,7 @@ def _parse_skland_endfield(
     root = _unwrap_data(payload)
     detail = root.get("detail")
     if not isinstance(detail, Mapping):
-        raise ActivityResponseUnavailableError(
-            "森空岛终末地未返回可识别的角色详情"
-        )
+        raise ActivityResponseUnavailableError("森空岛终末地未返回可识别的角色详情")
 
     daily_value = detail.get("dailyMission")
     daily_pair = _named_progress(
@@ -943,9 +926,7 @@ def _parse_miyoushe_genshin(
             transformer_status = "未获得"
         else:
             recovery_time = transformer.get("recovery_time")
-            recovery_time = (
-                recovery_time if isinstance(recovery_time, Mapping) else {}
-            )
+            recovery_time = recovery_time if isinstance(recovery_time, Mapping) else {}
             if recovery_time.get("reached") is True:
                 transformer_status = "可使用"
             else:
@@ -1016,9 +997,7 @@ def _parse_miyoushe_genshin(
         ),
     )
     for name, current_value, target_value, recovery_time in recoverable_resources:
-        pair = _progress_pair(
-            {"current": current_value, "total": target_value}
-        )
+        pair = _progress_pair({"current": current_value, "total": target_value})
         if pair is None:
             continue
         current, target = pair
@@ -1043,9 +1022,7 @@ def _parse_miyoushe_genshin(
         else None
     )
     if stored_attendance is not None:
-        resources.append(
-            _status_resource("长效历练点", f"现有{stored_attendance}点")
-        )
+        resources.append(_status_resource("长效历练点", f"现有{stored_attendance}点"))
 
     expeditions = root.get("expeditions")
     expedition_entries = (
@@ -1257,7 +1234,9 @@ def _state_task(
     status = (
         complete_status
         if state == complete
-        else incomplete_status if state in incomplete else "状态未知"
+        else incomplete_status
+        if state in incomplete
+        else "状态未知"
     )
     return _status_item(
         name,
@@ -1301,9 +1280,7 @@ def _parse_miyoushe_zzz(
 
     hollow_zero = root.get("hollow_zero")
     hollow_zero = hollow_zero if isinstance(hollow_zero, Mapping) else {}
-    bounty = root.get("bounty_commission") or hollow_zero.get(
-        "bounty_commission"
-    )
+    bounty = root.get("bounty_commission") or hollow_zero.get("bounty_commission")
     bounty_pair = _named_progress(
         bounty,
         current_names=("num",),
@@ -1316,9 +1293,7 @@ def _parse_miyoushe_zzz(
         if bounty_item is not None:
             items.append(dict(bounty_item, period="weekly"))
 
-    survey_points = root.get("survey_points") or hollow_zero.get(
-        "survey_points"
-    )
+    survey_points = root.get("survey_points") or hollow_zero.get("survey_points")
     survey_pair = _named_progress(
         survey_points,
         current_names=("num",),

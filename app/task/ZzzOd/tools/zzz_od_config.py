@@ -226,9 +226,7 @@ def set_instance_active_in_od(root: Path, idx: int, value: bool) -> None:
     """
 
     def mutate(entries: list[dict]) -> None:
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         entry["active_in_od"] = bool(value)
@@ -244,9 +242,7 @@ def set_instance_force_login(root: Path, idx: int, value: bool) -> None:
     """
 
     def mutate(entries: list[dict]) -> None:
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         entry["force_login_before_run"] = bool(value)
@@ -262,9 +258,7 @@ def set_active_instance(root: Path, idx: int) -> None:
     """
 
     def mutate(entries: list[dict]) -> None:
-        target = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        target = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if target is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         for entry in entries:
@@ -281,9 +275,7 @@ def rename_instance(root: Path, idx: int, name: str) -> None:
         raise ValueError("实例名称不能为空")
 
     def mutate(entries: list[dict]) -> None:
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         entry["name"] = name
@@ -291,9 +283,7 @@ def rename_instance(root: Path, idx: int, name: str) -> None:
     _registry_rmw(root, mutate)
 
 
-def add_instance(
-    root: Path, name: str, used_idxs: set[int] | None = None
-) -> int:
+def add_instance(root: Path, name: str, used_idxs: set[int] | None = None) -> int:
     """新建实例：分配最小空闲槽并注册到 one_dragon.yml。
 
     - 槽分配避开原生注册表与 ``used_idxs``（跨脚本 MAS 已绑定槽）；
@@ -351,9 +341,7 @@ def remove_instance(
     def mutate(entries: list[dict]) -> None:
         if len(entries) <= 1:
             raise ValueError("至少保留一个实例")
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         if idx in protected:
@@ -483,9 +471,7 @@ def user_field_patch(user_config) -> dict[str, Any]:
         if value:
             patch[yaml_key] = value
     # 布尔字段原样写入（YAML 布尔而非字符串）：MAS 字段是事实源，False 也下发
-    patch["use_custom_win_title"] = bool(
-        user_config.get("Game", "UseCustomWinTitle")
-    )
+    patch["use_custom_win_title"] = bool(user_config.get("Game", "UseCustomWinTitle"))
     title = str(user_config.get("Game", "CustomWinTitle") or "").strip()
     if title:
         patch["custom_win_title"] = title
@@ -584,18 +570,22 @@ def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
         if str(item.get("name") or "").strip() == "" and i >= len(existing):
             continue
         # 配队方案字段前端发 autoBattle、磁盘/上游均用 auto_battle：两键兼容
-        auto_battle = (
-            str(item.get("auto_battle") or item.get("autoBattle") or "全配队通用")
+        auto_battle = str(
+            item.get("auto_battle") or item.get("autoBattle") or "全配队通用"
         )
         incoming_agents = item.get("agent_id_list")
         prev_agents = existing[i].get("agent_id_list") if i < len(existing) else None
         agents_src = (
             incoming_agents
             if isinstance(incoming_agents, list) and incoming_agents
-            else (prev_agents if isinstance(prev_agents, list) and prev_agents else None)
+            else (
+                prev_agents if isinstance(prev_agents, list) and prev_agents else None
+            )
         )
         agents = (
-            [str(a) for a in agents_src] if agents_src else ["unknown", "unknown", "unknown"]
+            [str(a) for a in agents_src]
+            if agents_src
+            else ["unknown", "unknown", "unknown"]
         )
         normalized.append(
             {

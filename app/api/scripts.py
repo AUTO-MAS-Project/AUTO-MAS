@@ -111,7 +111,9 @@ def _read_combat_from_plan(
         return data
     user_config = _bettergi_user_config(script_config, user_id)
     plan_json = user_config.get("OneDragon", "Plan") or ""
-    data.update(one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {})
+    data.update(
+        one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {}
+    )
     # 还原 weekly 嵌套结构为平铺右栏键（供前端周表回显）
     steps = one_dragon_plan.parse_one_dragon_plan(plan_json) if plan_json else []
     target = next((s for s in steps if s.get("name") == target_group), None)
@@ -176,7 +178,9 @@ def _combat_target_group(source: str, group: str) -> str:
 
     if group and one_dragon_plan.resolve_base_name(group):
         return group
-    return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(source, group)
+    return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(
+        source, group
+    )
 
 
 def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
@@ -1747,7 +1751,8 @@ async def get_bettergi_js_scripts_api(scriptId: str) -> ComboBoxOut:
             f"get_bettergi_js_scripts_api失败: {type(e).__name__}: {e}"
         )
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1784,7 +1789,8 @@ async def get_bettergi_key_mouse_scripts_api(scriptId: str) -> ComboBoxOut:
         )
     except Exception as e:
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1839,7 +1845,8 @@ async def get_bettergi_script_groups_api(
             f"get_bettergi_script_groups_api失败: {type(e).__name__}: {e}"
         )
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1888,7 +1895,8 @@ async def get_bettergi_script_group_detail_api(
             f"get_bettergi_script_group_detail_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIScriptGroupDetailOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1928,7 +1936,8 @@ async def get_bettergi_script_settings_ui_api(
             f"get_bettergi_script_settings_ui_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIScriptSettingsUiOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1968,7 +1977,8 @@ async def get_bettergi_script_readme_api(
             f"get_bettergi_script_readme_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIScriptReadmeOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2010,7 +2020,8 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             f"get_bettergi_script_dirs_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIScriptDirsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2057,7 +2068,8 @@ async def get_bettergi_auto_pathing_tree_api(scriptId: str) -> BetterGIPathingTr
             f"get_bettergi_auto_pathing_tree_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIPathingTreeOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2106,7 +2118,8 @@ async def get_bettergi_one_dragon_settings_api(
             f"get_bettergi_one_dragon_settings_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIOneDragonSettingsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2157,7 +2170,8 @@ async def save_bettergi_one_dragon_settings_api(
             f"save_bettergi_one_dragon_settings_api失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2258,7 +2272,9 @@ async def get_bettergi_global_domain_settings_api(
         )
         # 战斗4项（自动秘境）的可映射字段（领奖树脂/分解圣遗物/奖励识别等）在 Plan 中回显
         if userId:
-            data = _read_combat_from_plan(script_config, userId, groupName, "globalDomain", data)
+            data = _read_combat_from_plan(
+                script_config, userId, groupName, "globalDomain", data
+            )
         return BetterGIGlobalDomainSettingsOut(
             code=200,
             status="success",
@@ -2270,7 +2286,8 @@ async def get_bettergi_global_domain_settings_api(
             f"get_bettergi_global_domain_settings_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIGlobalDomainSettingsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2320,7 +2337,8 @@ async def save_bettergi_global_domain_settings_api(
             f"save_bettergi_global_domain_settings_api失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2358,7 +2376,9 @@ async def get_bettergi_global_stygian_settings_api(
         )
         # 战斗4项（自动幽境危战）全部字段在 Plan 中回显
         if userId:
-            data = _read_combat_from_plan(script_config, userId, groupName, "globalStygian", data)
+            data = _read_combat_from_plan(
+                script_config, userId, groupName, "globalStygian", data
+            )
         return BetterGIGlobalStygianSettingsOut(
             code=200,
             status="success",
@@ -2370,7 +2390,8 @@ async def get_bettergi_global_stygian_settings_api(
             f"get_bettergi_global_stygian_settings_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIGlobalStygianSettingsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2420,7 +2441,8 @@ async def save_bettergi_global_stygian_settings_api(
             f"save_bettergi_global_stygian_settings_api失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2460,7 +2482,8 @@ async def get_bettergi_domain_catalog_api(
         )
     except Exception as e:
         return BetterGIDomainCatalogOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2507,7 +2530,8 @@ async def save_bettergi_script_group_api(
             f"save_bettergi_script_group_api失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2600,9 +2624,7 @@ async def rename_zzzod_instance_api(
 
     try:
         return _zzzod_instances_response(
-            Config.rename_zzzod_instance(
-                body.scriptId, body.instanceIdx, body.name
-            )
+            Config.rename_zzzod_instance(body.scriptId, body.instanceIdx, body.name)
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -2802,7 +2824,9 @@ async def get_zzzod_teams_api(
     response_model=ZzzOdTeamsSaveOut,
     status_code=200,
 )
-async def save_zzzod_teams_api(script: ZzzOdTeamsSaveIn = Body(...)) -> ZzzOdTeamsSaveOut:
+async def save_zzzod_teams_api(
+    script: ZzzOdTeamsSaveIn = Body(...),
+) -> ZzzOdTeamsSaveOut:
     """直控传 instanceIdx 直接写原生实例，缺省写用户绑定槽。"""
 
     try:
@@ -3060,9 +3084,7 @@ async def save_zzzod_native_config_api(
             else None,
             script.instanceRun,
         )
-        data = await Config.get_zzzod_native_config(
-            script.scriptId, script.instanceIdx
-        )
+        data = await Config.get_zzzod_native_config(script.scriptId, script.instanceIdx)
         return ZzzOdNativeConfigOut(
             code=200,
             status="success",

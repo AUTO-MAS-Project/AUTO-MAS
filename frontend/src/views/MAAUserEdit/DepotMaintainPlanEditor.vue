@@ -99,9 +99,7 @@
           :precision="0"
           @change="savePlans"
         />
-        <span v-else-if="column.key === 'stock'" class="stock-value">{{
-          stockOf(record)
-        }}</span>
+        <span v-else-if="column.key === 'stock'" class="stock-value">{{ stockOf(record) }}</span>
         <a-button
           v-else-if="column.key === 'action'"
           type="text"

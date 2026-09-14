@@ -46,7 +46,9 @@
 
     <div v-if="rows.length" class="cultivate-rows">
       <div v-for="row in rows" :key="row.operatorId" class="cultivate-row">
-        <span class="cultivate-name" :title="operatorName(row.operatorId)">{{ operatorName(row.operatorId) }}</span>
+        <span class="cultivate-name" :title="operatorName(row.operatorId)">{{
+          operatorName(row.operatorId)
+        }}</span>
         <a-select
           :value="row.toLevel"
           :options="eliteLevelOptions"
@@ -64,11 +66,7 @@
         </a-button>
       </div>
     </div>
-    <a-empty
-      v-else
-      :description="t('edit.maaCultivateEmpty')"
-      :image-style="{ height: '48px' }"
-    />
+    <a-empty v-else :description="t('edit.maaCultivateEmpty')" :image-style="{ height: '48px' }" />
     <div class="cultivate-skips">
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringActivity"
@@ -100,7 +98,9 @@
         class="cultivate-alert"
       />
       <a-alert
-        v-if="cultivatePreview && (!cultivatePreview.hasProgression || !cultivatePreview.hasInventory)"
+        v-if="
+          cultivatePreview && (!cultivatePreview.hasProgression || !cultivatePreview.hasInventory)
+        "
         :message="availabilityNotice"
         type="info"
         show-icon
@@ -126,10 +126,7 @@
         <div v-if="!cultivatePreview.stages.length" class="preview-empty">
           {{ t('edit.maaCultivatePreviewNone') }}
         </div>
-        <div
-          v-if="cultivatePreview.totalExpectedSanity != null"
-          class="preview-line preview-total"
-        >
+        <div v-if="cultivatePreview.totalExpectedSanity != null" class="preview-line preview-total">
           <span class="preview-item">
             {{ t('edit.maaCultivatePreviewSanityTotal') }}
           </span>
@@ -236,8 +233,7 @@ const pickerOptions = computed(() => {
   const matched = text
     ? availableOperatorOptions.value.filter(
         option =>
-          option.label.toLowerCase().includes(text) ||
-          option.value.toLowerCase().includes(text)
+          option.label.toLowerCase().includes(text) || option.value.toLowerCase().includes(text)
       )
     : availableOperatorOptions.value
   return matched.slice(0, 10)
@@ -252,9 +248,7 @@ const handleLevelChange = (operatorId: string, toLevel: unknown) => {
 }
 
 // 已添加的干员不再出现在选择器里（Set 查找，目录 427 条 × 目标行）
-const selectedOperatorIds = computed(
-  () => new Set(rows.value.map(row => row.operatorId))
-)
+const selectedOperatorIds = computed(() => new Set(rows.value.map(row => row.operatorId)))
 const availableOperatorOptions = computed(() =>
   props.operatorOptions.filter(option => !selectedOperatorIds.value.has(option.value))
 )
@@ -268,8 +262,7 @@ const operatorPlaceholder = computed(() =>
 const operatorLabelById = computed(
   () => new Map(props.operatorOptions.map(option => [option.value, option.label]))
 )
-const operatorName = (operatorId: string) =>
-  operatorLabelById.value.get(operatorId) ?? operatorId
+const operatorName = (operatorId: string) => operatorLabelById.value.get(operatorId) ?? operatorId
 
 const eliteLevelOptions = computed(() => [
   { label: t('edit.maaCultivateElite1'), value: 1 },
@@ -310,10 +303,8 @@ const itemName = (itemId: string) => itemLabelById.value.get(itemId) ?? itemId
 const availabilityNotice = computed(() => {
   if (!props.cultivatePreview) return ''
   const missing: string[] = []
-  if (!props.cultivatePreview.hasProgression)
-    missing.push(t('edit.maaCultivateMissingProgression'))
-  if (!props.cultivatePreview.hasInventory)
-    missing.push(t('edit.maaCultivateMissingInventory'))
+  if (!props.cultivatePreview.hasProgression) missing.push(t('edit.maaCultivateMissingProgression'))
+  if (!props.cultivatePreview.hasInventory) missing.push(t('edit.maaCultivateMissingInventory'))
   if (!missing.length) return ''
   return `${t('edit.maaCultivateEstimatePrefix')}${missing.join(
     t('edit.maaCultivateEstimateJoin')

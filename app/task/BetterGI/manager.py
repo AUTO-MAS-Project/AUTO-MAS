@@ -285,5 +285,7 @@ class BetterGIManager(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"BetterGI任务出现异常: {e}"),
+                data=WSTaskNoticeData(
+                    level="error", message=f"BetterGI任务出现异常: {e}"
+                ),
             )

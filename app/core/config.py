@@ -1243,9 +1243,7 @@ class AppConfig(GlobalConfig):
                 "name": str(item.get("name", "")),
                 "active": bool(item.get("active")),
                 "active_in_od": bool(item.get("active_in_od")),
-                "force_login_before_run": bool(
-                    item.get("force_login_before_run")
-                ),
+                "force_login_before_run": bool(item.get("force_login_before_run")),
             }
             for item in list_instances(root)
         ]
@@ -1267,7 +1265,9 @@ class AppConfig(GlobalConfig):
         logger.info(f"ZZZ-OD 直控新建实例: 槽 {idx:02d} (名称 {name})")
         return self.get_zzzod_instances(script_id)
 
-    def rename_zzzod_instance(self, script_id: str, instance_idx: int, name: str) -> list[dict]:
+    def rename_zzzod_instance(
+        self, script_id: str, instance_idx: int, name: str
+    ) -> list[dict]:
         """直控：重命名实例（只改注册表 name，实例目录不变）。"""
 
         script_config = self._zzzod_script_config(script_id)
@@ -1292,12 +1292,12 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         set_instance_active_in_od(root, instance_idx, value)
-        logger.info(
-            f"ZZZ-OD 直控实例 {instance_idx:02d} 参与全部实例 → {bool(value)}"
-        )
+        logger.info(f"ZZZ-OD 直控实例 {instance_idx:02d} 参与全部实例 → {bool(value)}")
         return self.get_zzzod_instances(script_id)
 
-    def set_zzzod_instance_active(self, script_id: str, instance_idx: int) -> list[dict]:
+    def set_zzzod_instance_active(
+        self, script_id: str, instance_idx: int
+    ) -> list[dict]:
         """直控：把所选实例设为当前活跃（「仅运行当前」运行的就是它）。"""
 
         script_config = self._zzzod_script_config(script_id)
@@ -1352,9 +1352,7 @@ class AppConfig(GlobalConfig):
         from app.task.ZzzOd.tools import remove_instance
 
         self.ensure_zzzod_direct_backup(script_id)
-        remove_instance(
-            root, instance_idx, protected_idxs=collect_used_slot_idxs()
-        )
+        remove_instance(root, instance_idx, protected_idxs=collect_used_slot_idxs())
         logger.info(f"ZZZ-OD 直控删除实例: {instance_idx:02d}")
         return self.get_zzzod_instances(script_id)
 
@@ -1530,7 +1528,9 @@ class AppConfig(GlobalConfig):
                 patch[str(key)] = merge_plan_list(
                     columns,
                     dict(meta.get("new_item") or {}),
-                    current.get(str(key)) if isinstance(current.get(str(key)), list) else [],
+                    current.get(str(key))
+                    if isinstance(current.get(str(key)), list)
+                    else [],
                     raw if isinstance(raw, list) else [],
                 )
             elif ftype == "bool":
@@ -1666,7 +1666,9 @@ class AppConfig(GlobalConfig):
             used = collect_used_slot_idxs(exclude_uids={uid})
             slot = await ensure_user_slot(root, user_cfg, used)
 
-        saved = write_team_list(instance_dir(self._zzzod_script_root(script_id), slot), teams)
+        saved = write_team_list(
+            instance_dir(self._zzzod_script_root(script_id), slot), teams
+        )
         logger.info(f"ZZZ-OD 预备编队已保存到槽 {slot:02d}: {len(saved)} 个编队")
         return saved
 
@@ -1675,9 +1677,7 @@ class AppConfig(GlobalConfig):
 
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
-    async def ensure_zzzod_mas_backup(
-        self, script_id: str, user_id: str
-    ) -> dict:
+    async def ensure_zzzod_mas_backup(self, script_id: str, user_id: str) -> dict:
         """确保 MAS 用户绑定槽有当前状态的备份（指纹去重，无变化跳过）。
 
         供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽时跳过
@@ -1814,7 +1814,8 @@ class AppConfig(GlobalConfig):
             "Game", "GameLanguage", str(account.get("game_language") or "cn")
         )
         await user_cfg.set(
-            "Game", "BilibiliAccountName",
+            "Game",
+            "BilibiliAccountName",
             str(account.get("bilibili_account_name") or ""),
         )
         await user_cfg.set("Game", "Account", str(account.get("account") or ""))
@@ -1827,8 +1828,14 @@ class AppConfig(GlobalConfig):
         backup_dir = get_mas_backup_dir(script_id, slot, ts)
         if backup_dir is not None:
             info = read_file(backup_dir / MAS_USER_INFO_FILE) or {}
-            for field in ("Name", "Status", "Mode", "LauncherMode",
-                          "RemainedDay", "Notes"):
+            for field in (
+                "Name",
+                "Status",
+                "Mode",
+                "LauncherMode",
+                "RemainedDay",
+                "Notes",
+            ):
                 if field in info:
                     await user_cfg.set("Info", field, info[field])
             if "PushLogMode" in info:
@@ -1910,7 +1917,8 @@ class AppConfig(GlobalConfig):
             imported_accounts += 1
         if "use_custom_win_title" in game_account:
             await user_cfg.set(
-                "Game", "UseCustomWinTitle",
+                "Game",
+                "UseCustomWinTitle",
                 bool(game_account.get("use_custom_win_title")),
             )
             imported_accounts += 1
@@ -1956,9 +1964,10 @@ class AppConfig(GlobalConfig):
         target_one_dragon = target_dir / "one_dragon"
         if target_one_dragon.is_dir():
             for target_yml in target_one_dragon.glob("*.yml"):
-                if target_yml.name != "_group.yml" and not (
-                    source_one_dragon / target_yml.name
-                ).is_file():
+                if (
+                    target_yml.name != "_group.yml"
+                    and not (source_one_dragon / target_yml.name).is_file()
+                ):
                     target_yml.unlink(missing_ok=True)
         if source_one_dragon.is_dir():
             target_one_dragon.mkdir(parents=True, exist_ok=True)
@@ -1999,9 +2008,7 @@ class AppConfig(GlobalConfig):
         for script_config in self.ScriptConfig.values():
             if not isinstance(script_config, ZzzOdConfig):
                 continue
-            script_name = str(
-                script_config.get("Info", "Name") or "未知脚本"
-            )
+            script_name = str(script_config.get("Info", "Name") or "未知脚本")
             for other_uid, cfg in script_config.UserData.items():
                 if other_uid == user_uid:
                     continue
@@ -2199,9 +2206,7 @@ class AppConfig(GlobalConfig):
             raise ValueError(f"实例 {int(instance_idx):02d} 不存在")
         return root, instance
 
-    async def get_zzzod_native_config(
-        self, script_id: str, instance_idx: int
-    ) -> dict:
+    async def get_zzzod_native_config(self, script_id: str, instance_idx: int) -> dict:
         """读取实例原生配置（账号字段 + 任务编排 + 运行实例），供直控页面表单渲染。
 
         account 条目含默认值合并与可选项；tasks 为原生 app_list 与应用目录
@@ -2224,8 +2229,7 @@ class AppConfig(GlobalConfig):
         catalog = [
             {
                 **item,
-                "configurable": get_task_app_fields(str(item["app_id"]))
-                is not None,
+                "configurable": get_task_app_fields(str(item["app_id"])) is not None,
                 "jump": get_task_app_jump(str(item["app_id"])),
             }
             for item in list_app_catalog(root)
@@ -3124,9 +3128,7 @@ class AppConfig(GlobalConfig):
             if self._game_sign_result_date == today
             else {}
         )
-        result = merge_community_sign_results(
-            existing, formatted, replace=replace
-        )
+        result = merge_community_sign_results(existing, formatted, replace=replace)
         self.ToolsConfig._game_sign_result_data = result
         self._game_sign_result_date = today
         _save_game_sign_result_snapshot(

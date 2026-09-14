@@ -51,7 +51,9 @@ _bluearchive_cache: dict[str, tuple[float, dict]] = {}
 def _prune_bluearchive_cache(now: float) -> None:
     """先清掉过期项，仍超出上限时按写入时间淘汰最旧的。"""
 
-    for key in [k for k, v in _bluearchive_cache.items() if now - v[0] >= BLUEARCHIVE_CACHE_TTL]:
+    for key in [
+        k for k, v in _bluearchive_cache.items() if now - v[0] >= BLUEARCHIVE_CACHE_TTL
+    ]:
         _bluearchive_cache.pop(key, None)
 
     while len(_bluearchive_cache) >= BLUEARCHIVE_CACHE_MAX_ENTRIES:

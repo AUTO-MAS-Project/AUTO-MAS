@@ -72,11 +72,7 @@
         <template v-if="currentTarget?.kind === 'user'">
           <h4 class="preview-section-title">{{ t('edit.basicInfo') }}</h4>
           <a-descriptions :column="1" size="small" bordered class="preview-box">
-            <a-descriptions-item
-              v-for="row in previewRows"
-              :key="row.label"
-              :label="row.label"
-            >
+            <a-descriptions-item v-for="row in previewRows" :key="row.label" :label="row.label">
               {{ row.value }}
             </a-descriptions-item>
           </a-descriptions>
@@ -109,12 +105,7 @@
                   {{ t('edit.configRestorePreviewActive') }}
                 </a-tag>
               </template>
-              <a-descriptions
-                :column="1"
-                size="small"
-                bordered
-                class="preview-box"
-              >
+              <a-descriptions :column="1" size="small" bordered class="preview-box">
                 <a-descriptions-item
                   v-for="f in inst.account"
                   :key="f.key"
@@ -141,10 +132,7 @@
     <div class="preview-actions">
       <!-- 「查看详细配置」依赖父组件的 onDetail 回调（恢复 + 拉起查看会话）；
            专项未提供时不渲染，避免出现无响应的按钮 -->
-      <a-tooltip
-        v-if="onDetail"
-        :title="t('edit.configRestoreDetailHint', { script: scriptName })"
-      >
+      <a-tooltip v-if="onDetail" :title="t('edit.configRestoreDetailHint', { script: scriptName })">
         <a-button @click="handlePreviewDetail">
           {{ t('edit.configRestoreDetailView') }}
         </a-button>
@@ -177,9 +165,7 @@ const props = defineProps<{
   targets: Array<{ key: string; kind: 'user' | 'script' }>
   /** 后端 API：list/preview/restore（父组件按自身端点包装） */
   api: {
-    list: (
-      target: string
-    ) => Promise<{
+    list: (target: string) => Promise<{
       code?: number
       message?: string
       data?: Array<{ time: string }>
@@ -203,10 +189,7 @@ const props = defineProps<{
       /** 通用端点把专项载荷包在 data 里；缺省回落到顶层平铺结构 */
       data?: Record<string, unknown> | null
     }>
-    restore: (
-      target: string,
-      time: string
-    ) => Promise<{ code?: number; message?: string }>
+    restore: (target: string, time: string) => Promise<{ code?: number; message?: string }>
   }
   /** 预览字段标签映射（key → 展示标题） */
   fieldLabels?: Record<string, string>
@@ -366,8 +349,7 @@ const handlePreview = async (item: BackupItem) => {
     previewData.instances = payload.instances ?? []
     previewRaw.value = payload
   } catch (e) {
-    previewError.value =
-      e instanceof Error ? e.message : t('edit.configRestorePreviewFailed')
+    previewError.value = e instanceof Error ? e.message : t('edit.configRestorePreviewFailed')
     previewData.info = []
     previewData.account = []
     previewData.tasks = []

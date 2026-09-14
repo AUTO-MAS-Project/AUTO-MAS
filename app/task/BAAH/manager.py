@@ -100,7 +100,9 @@ class BAAHManager(TaskExecuteBase):
             and config.get("Info", "RemainedDay") != 0
             and self.task_info.is_target_user(str(uid))
         ]
-        logger.info(f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}")
+        logger.info(
+            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+        )
 
         # 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度,
         # BAAH 自身不再负责拉起模拟器
@@ -157,8 +159,12 @@ class BAAHManager(TaskExecuteBase):
             error_count = sum(
                 1 for u in self.script_info.user_list if u.status == "异常"
             )
-            over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
-            wait_count = sum(1 for u in self.script_info.user_list if u.status == "等待")
+            over_count = sum(
+                1 for u in self.script_info.user_list if u.status == "完成"
+            )
+            wait_count = sum(
+                1 for u in self.script_info.user_list if u.status == "等待"
+            )
 
             title = (
                 f"{datetime.now().strftime('%m-%d')} | "
@@ -210,4 +216,3 @@ class BAAHManager(TaskExecuteBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
         )
-

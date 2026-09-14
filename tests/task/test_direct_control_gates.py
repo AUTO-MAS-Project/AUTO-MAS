@@ -257,9 +257,11 @@ def test_oknte_direct_skips_native_config_injection(tmp_path: Path) -> None:
     task = _oknte_task(_Cfg("直控", IfQuickConfig=False), script_config)
     task.script_exe_path = tmp_path / "ok-nte.exe"
 
-    with patch("app.task.OkNte.AutoProxy.System.kill_process"), patch(
-        "app.task.OkNte.AutoProxy.swap_in_dir"
-    ) as swap, patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive:
+    with (
+        patch("app.task.OkNte.AutoProxy.System.kill_process"),
+        patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap,
+        patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive,
+    ):
         asyncio.run(task.set_oknte())
 
     swap.assert_not_called()
@@ -298,12 +300,18 @@ def test_oknte_user_source_still_injects(tmp_path: Path) -> None:
     task = _oknte_task(_Cfg("用户"), _OkNteScriptConfig(target))
     task.script_exe_path = tmp_path / "ok-nte.exe"
 
-    with patch("app.task.OkNte.AutoProxy.System.kill_process"), patch(
-        "app.task.OkNte.AutoProxy.archive_mas_runtime_backup"
-    ), patch("app.task.OkNte.AutoProxy._oknte_daily_activity_enabled", return_value=True):
-        with patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap, patch(
-            "app.task.OkNte.AutoProxy.mark_native_config_injected"
-        ), patch("app.task.OkNte.AutoProxy.ensure_oknte_daily_routine_configs"):
+    with (
+        patch("app.task.OkNte.AutoProxy.System.kill_process"),
+        patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup"),
+        patch(
+            "app.task.OkNte.AutoProxy._oknte_daily_activity_enabled", return_value=True
+        ),
+    ):
+        with (
+            patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap,
+            patch("app.task.OkNte.AutoProxy.mark_native_config_injected"),
+            patch("app.task.OkNte.AutoProxy.ensure_oknte_daily_routine_configs"),
+        ):
             task._ensure_oknte_mas_config_dir = MagicMock(return_value=tmp_path / "mas")
             asyncio.run(task.set_oknte())
 
@@ -365,8 +373,6 @@ def test_quick_config_takeover_write_failure_is_task_failure() -> None:
 
     with pytest.raises(Boom):
         quick_config_takeover(_qc_cfg("直控"), broken_write)
-
-
 
 
 # ── ZzzOd：脚本来源被 check() 接受并按用户路径校验 ───────────────────────

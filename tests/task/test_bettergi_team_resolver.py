@@ -54,7 +54,9 @@ def test_domain_exact_match_only():
 
 def test_domain_reward_does_not_affect_matching():
     """奖励档只作界面展示：同秘境不同奖励档仍应命中。"""
-    teams = [_team("甲", {"domain": [{"region": "蒙德", "domain": "苗圃", "reward": "1"}]})]
+    teams = [
+        _team("甲", {"domain": [{"region": "蒙德", "domain": "苗圃", "reward": "1"}]})
+    ]
     settings = {"domainName": "苗圃", "sundaySelectedValue": "3"}
     assert team_resolver.resolve_team_for_step(teams, "自动秘境", settings, "Monday")
 
@@ -105,7 +107,9 @@ def test_multiple_hits_pick_random_stable_in_one_run():
 def test_disabled_team_not_matched():
     teams = [_team("甲", {"boss": [{"boss": "急冻树"}]}, enabled=False)]
     assert (
-        team_resolver.resolve_team_for_step(teams, "自动首领讨伐", {"bossName": "急冻树"}, "Monday")
+        team_resolver.resolve_team_for_step(
+            teams, "自动首领讨伐", {"bossName": "急冻树"}, "Monday"
+        )
         is None
     )
 
@@ -114,7 +118,9 @@ def test_empty_scenes_is_not_a_wildcard():
     """Q15：未勾选任何场景的队伍不参与匹配（不是万能队）。"""
     teams = [_team("万能?", {})]
     assert (
-        team_resolver.resolve_team_for_step(teams, "自动首领讨伐", {"bossName": "急冻树"}, "Monday")
+        team_resolver.resolve_team_for_step(
+            teams, "自动首领讨伐", {"bossName": "急冻树"}, "Monday"
+        )
         is None
     )
 
@@ -122,7 +128,9 @@ def test_empty_scenes_is_not_a_wildcard():
 def test_team_matched_on_other_scene_is_ignored():
     teams = [_team("甲", {"domain": [{"domain": "急冻树"}]})]
     assert (
-        team_resolver.resolve_team_for_step(teams, "自动首领讨伐", {"bossName": "急冻树"}, "Monday")
+        team_resolver.resolve_team_for_step(
+            teams, "自动首领讨伐", {"bossName": "急冻树"}, "Monday"
+        )
         is None
     )
 
@@ -131,7 +139,10 @@ def test_stygian_never_participates():
     """Q5：幽境危战暂不纳入场景选队。"""
     teams = [_team("甲", {"boss": [{"boss": "急冻树"}]})]
     settings = {"fightTeamName": "甲", "bossNum": 1}
-    assert team_resolver.resolve_team_for_step(teams, "自动幽境危战", settings, "Monday") is None
+    assert (
+        team_resolver.resolve_team_for_step(teams, "自动幽境危战", settings, "Monday")
+        is None
+    )
 
 
 # ── 自动地脉花：地区 + 类型双字段 ──────────────────────────────────────────
@@ -155,9 +166,14 @@ def test_leyline_weekly_row_without_run_is_skipped():
     teams = [_team("甲", {"leyline": [{"country": "璃月", "type": "藏金之花"}]})]
     settings = {
         "leyLineDailyEnabled": False,
-        "weeklyLeyLine": {"Monday": {"run": False, "country": "璃月", "type": "藏金之花"}},
+        "weeklyLeyLine": {
+            "Monday": {"run": False, "country": "璃月", "type": "藏金之花"}
+        },
     }
-    assert team_resolver.resolve_team_for_step(teams, "自动地脉花", settings, "Monday") is None
+    assert (
+        team_resolver.resolve_team_for_step(teams, "自动地脉花", settings, "Monday")
+        is None
+    )
 
 
 def test_leyline_weekly_row_falls_back_to_default():

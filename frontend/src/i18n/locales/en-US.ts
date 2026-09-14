@@ -1546,7 +1546,7 @@ export default {
     bettergiNotBettergiScript: 'This script is not a BetterGI script',
     bettergiConfigure: 'Configure BetterGI',
     bettergiMasConfigTooltip:
-      'Per-user mode: this user\'s One Dragon tasks and custom groups are configured entirely on this page (MAS is the source of truth); there is no need to edit the MAS independent profile inside BetterGI.',
+      "Per-user mode: this user's One Dragon tasks and custom groups are configured entirely on this page (MAS is the source of truth); there is no need to edit the MAS independent profile inside BetterGI.",
     bettergiConfiguringTitle: 'BetterGI setup in progress',
     bettergiConfiguringDesc: 'Finish your changes in the BetterGI window.',
     bettergiConfiguringDesc2: 'When you are done, click Save settings to end this session.',
@@ -1832,8 +1832,7 @@ export default {
       'The OK-NTE setup session is about to time out and will be saved in 30 seconds',
     oknteViewingTitle: 'Viewing OK-NTE config',
     oknteViewingDesc: 'The ok-nte window shows the selected backup, for viewing only.',
-    oknteViewingDesc2:
-      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    oknteViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     oknteViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',
@@ -1864,8 +1863,7 @@ export default {
       'The ZZZ-OD setup session is about to time out and will be saved in 30 seconds',
     zzzodViewingTitle: 'Viewing ZZZ-OD config',
     zzzodViewingDesc: 'The OneDragon window shows the selected backup, for viewing only.',
-    zzzodViewingDesc2:
-      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    zzzodViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     zzzodViewClose: 'Close viewer',
     zzzodSettingsSaved: 'ZZZ-OD settings saved',
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',
@@ -1987,7 +1985,8 @@ export default {
     bettergiDuplicateOk: 'Save as',
     bettergiDuplicateSameDone: 'Copied an identical config group',
     bettergiDuplicateSource: 'Source config group',
-    bettergiDuplicateTip: 'Save the selected config group content as a new, separately editable config group',
+    bettergiDuplicateTip:
+      'Save the selected config group content as a new, separately editable config group',
     bettergiGroupFrozen: 'Frozen',
     bettergiGroupFrozenTip: 'This config group is frozen and cannot be edited or moved',
     bettergiGroupKindCustom: 'Script',
@@ -1997,7 +1996,8 @@ export default {
     bettergiGroupKindStamina: 'Stamina',
     bettergiGroupNamesUnknown: 'Unknown group',
     bettergiGroupPrefixDefault: 'Default',
-    bettergiGroupSettingsKeyMouse: 'This is a BetterGI key-mouse (recorded) script. BetterGI runs it in One-Dragon by its recorded content; its settings are not editable in MAS.',
+    bettergiGroupSettingsKeyMouse:
+      'This is a BetterGI key-mouse (recorded) script. BetterGI runs it in One-Dragon by its recorded content; its settings are not editable in MAS.',
     bettergiGroupSettingsLoadFailed: 'Failed to load config group settings',
     bettergiGroupSettingsNone: 'This config group has no settings',
     bettergiGroupSettingsSaveFailed: 'Failed to save config group settings',
@@ -2010,7 +2010,8 @@ export default {
     bettergiMultiDisable: 'Disable selected',
     bettergiMultiEnable: 'Enable selected',
     bettergiMultiRemove: 'Remove selected',
-    bettergiMultiRemoveContent: 'After removal, these config groups will no longer run with the one-dragon',
+    bettergiMultiRemoveContent:
+      'After removal, these config groups will no longer run with the one-dragon',
     bettergiMultiRemoveTitle: 'Remove the selected config groups?',
     bettergiMultiSelected: 'Selected {count}',
     bettergiOpenBgi: 'Open BetterGI',
@@ -2024,7 +2025,8 @@ export default {
     bettergiPathingSelectHint: 'Select a pathing to add',
     bettergiPickCandidateFirst: 'Please select a candidate first',
     bettergiProjectSaveFailed: 'Failed to save the project',
-    bettergiRemoveFromDragonContent: 'After removal, this config group will no longer run with the one-dragon',
+    bettergiRemoveFromDragonContent:
+      'After removal, this config group will no longer run with the one-dragon',
     bettergiRemoveFromDragonTitle: 'Remove this item from the one-dragon queue?',
     bettergiRenameAsNew: 'Rename config group',
     bettergiRenameDone: 'Renamed to "{name}"',
@@ -2033,7 +2035,8 @@ export default {
     bettergiRenameNameLabel: 'Config group name',
     bettergiRenameNamePlaceholder: 'Enter a config group name',
     bettergiRenameOk: 'Rename',
-    bettergiRenamePlaceholder: 'Optional, distinguishes multiple instances of the same config group',
+    bettergiRenamePlaceholder:
+      'Optional, distinguishes multiple instances of the same config group',
     bettergiRenameSource: 'Actual group name',
     bettergiRenameSuffixLabel: 'Name note',
     bettergiRenameTip:
@@ -2074,7 +2077,8 @@ export default {
     bettergiProjectSaved: 'Project saved',
     bettergiProjectSettingsSave: 'Save settings',
     bettergiProjectToolbarTip: 'Drag cards to reorder projects',
-    bettergiProjectStandaloneTip: 'Click "Add script" to combine it with more scripts into a config group',
+    bettergiProjectStandaloneTip:
+      'Click "Add script" to combine it with more scripts into a config group',
     bettergiProjectUnselect: 'Unselect',
     bettergiProjectZoom: 'Zoom',
   },

@@ -451,7 +451,8 @@ export default {
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
-    maaEndRestoreResolutionHint: '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
+    maaEndRestoreResolutionHint:
+      '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
     maaEndResolutionWidth: '宽度',
     maaEndResolutionHeight: '高度',
     maaEndResolutionUnchanged: '不修改',
@@ -1305,8 +1306,10 @@ export default {
     useScriptSCurrent: '直接使用脚本当前配置，不加载或回写该用户的独立配置。',
     useScriptS: '使用脚本配置，不与用户独立配置隔离。',
     quickConfig: '快速配置',
-    configSourceHint: '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
-    configSourceHintBase: '脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用脚本原有配置，MAS 不写入配置，快速配置为独立开关。',
+    configSourceHint:
+      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
+    configSourceHintBase:
+      '脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用脚本原有配置，MAS 不写入配置，快速配置为独立开关。',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
     leaveWithoutSavingUnsaved: '确定要离开吗？未保存的更改可能会丢失。',
@@ -1921,7 +1924,8 @@ export default {
     bettergiGroupKindStamina: '体力',
     bettergiGroupNamesUnknown: '未知分组',
     bettergiGroupPrefixDefault: '默认',
-    bettergiGroupSettingsKeyMouse: '这是 BetterGI 录制脚本（键鼠脚本），由 BetterGI 在一条龙中按其录制内容自行执行，设置不可在 MAS 中编辑',
+    bettergiGroupSettingsKeyMouse:
+      '这是 BetterGI 录制脚本（键鼠脚本），由 BetterGI 在一条龙中按其录制内容自行执行，设置不可在 MAS 中编辑',
     bettergiGroupSettingsLoadFailed: '配置组设置加载失败',
     bettergiGroupSettingsNone: '该配置组暂无设置',
     bettergiGroupSettingsSaveFailed: '配置组设置保存失败',

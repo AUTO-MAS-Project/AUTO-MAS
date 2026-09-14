@@ -170,9 +170,7 @@ async def _run_configured_community_sign_in(
                 continue
 
         tokens = {
-            provider.token_field: read_community_token(
-                account, provider.token_field
-            )
+            provider.token_field: read_community_token(account, provider.token_field)
             for provider in providers
         }
         runtime_tokens = dict(tokens)
@@ -265,7 +263,9 @@ async def _run_configured_community_sign_in(
                     enabled_platforms.append(platform)
             results.extend(run.results)
             for field, updated_token in run.credential_updates.items():
-                credential_update_platforms[field] = run.platforms or (provider.log_name,)
+                credential_update_platforms[field] = run.platforms or (
+                    provider.log_name,
+                )
                 if not updated_token or updated_token == tokens.get(field, ""):
                     continue
                 async with credential_update_lock:

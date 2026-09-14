@@ -150,9 +150,7 @@ async def push_notification(
         for webhook in user_config.Notify_CustomWebhooks.values():
             # Webhook 目标多为聊天机器人（企业微信 2048 字节 / Discord 2000 字符 / Telegram
             # 4096 字符），有真实字数瓶颈 → 用回简略版，避免分步表塞爆被静默丢弃。
-            await Notify.WebhookPush(
-                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-            )
+            await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
         return DispatchResult()
 
     if mode != "代理结果":
@@ -167,9 +165,7 @@ async def push_notification(
         f"未完成数: {message['uncompleted_count']}\n\n"
         f"{message['result']}"
     )
-    message_html = Config.notify_env.get_template("general_result.html").render(
-        message
-    )
+    message_html = Config.notify_env.get_template("general_result.html").render(message)
     counts = (
         f"已完成用户数: {message['completed_count']}, "
         f"未完成用户数: {message['uncompleted_count']}"
@@ -179,7 +175,8 @@ async def push_notification(
             title=title,
             text=message_text,
             html=message_html,
-            system_title=message.get("system_title") or title.replace("报告", "已完成！"),
+            system_title=message.get("system_title")
+            or title.replace("报告", "已完成！"),
             system_message=counts,
             system_ticker=counts,
             system_timeout=10,

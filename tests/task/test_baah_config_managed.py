@@ -71,9 +71,7 @@ class TestResolveConfigName:
 class TestManagedConfigRoundTrip:
     """托管写入与恢复"""
 
-    def test_writes_managed_values_and_restores_original(
-        self, tmp_path: Path
-    ) -> None:
+    def test_writes_managed_values_and_restores_original(self, tmp_path: Path) -> None:
         user_path = tmp_path / "BAAH_CONFIGS" / "国服2.json"
         user_path.parent.mkdir(parents=True)
         original = {"SERVER_TYPE": "CN", "CLOSE_BAAH_FINISH": False, "KEEP_ME": 7}
@@ -129,7 +127,9 @@ class TestManagedConfigRoundTrip:
     def test_restore_is_safe_without_apply(self, tmp_path: Path) -> None:
         from app.task.BAAH.tools.config_manager import ManagedConfigBackup
 
-        restore_managed_config(ManagedConfigBackup(user_config_path=tmp_path / "x.json"))
+        restore_managed_config(
+            ManagedConfigBackup(user_config_path=tmp_path / "x.json")
+        )
 
     def test_restore_accepts_none_backup(self) -> None:
         """任务在托管配置写入前被中止时，收尾阶段会拿到 None，不应抛异常"""

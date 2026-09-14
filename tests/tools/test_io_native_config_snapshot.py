@@ -176,4 +176,3 @@ def test_mark_injected_updates_marker_only_for_own_script(tmp_path: Path) -> Non
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
-

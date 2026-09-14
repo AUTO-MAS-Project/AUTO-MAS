@@ -3,10 +3,7 @@
     <div v-if="open" class="gui-session-mask">
       <div class="mask-content">
         <div v-if="icon" class="mask-icon">
-          <component
-            :is="icon"
-            :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }"
-          />
+          <component :is="icon" :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
         </div>
         <h2 class="mask-title">{{ title }}</h2>
         <p v-if="description" class="mask-description">

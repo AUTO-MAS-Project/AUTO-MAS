@@ -923,11 +923,10 @@ const loadDepotStageCandidates = async (itemId: string) => {
   if (depotStageCandidatesLoading.value.includes(itemId)) return
   depotStageCandidatesLoading.value.push(itemId)
   try {
-    const response =
-      await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
-        script: { scriptId },
-        itemId,
-      })
+    const response = await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
+      script: { scriptId },
+      itemId,
+    })
     // 失败/无候选时写入空数组作为"已完成"标记：编辑器据此回退全量关卡表
     // （undefined 才表示加载中），同时避免失败后无限重试
     depotStageCandidates.value[itemId] =
@@ -968,11 +967,10 @@ const loadCultivateOperatorOptions = async () => {
   cultivateOperatorOptionsLoading.value = true
   cultivateOperatorOptionsError.value = ''
   try {
-    const response =
-      await Service.getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost({
-        script: { scriptId },
-        userId,
-      })
+    const response = await Service.getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost({
+      script: { scriptId },
+      userId,
+    })
     if (response.code !== 200) {
       cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
       return

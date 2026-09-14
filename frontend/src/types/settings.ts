@@ -8,4 +8,3 @@ export interface CustomWebhook {
   headers?: Record<string, string>
   method?: 'POST' | 'GET'
 }
-
