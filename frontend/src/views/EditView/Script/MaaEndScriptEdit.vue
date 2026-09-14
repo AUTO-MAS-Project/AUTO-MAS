@@ -317,24 +317,6 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.accountSwitching') }}
-                    <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
-                  size="large"
-                  :options="accountSwitchMethodOptions"
-                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
                     {{ t('edit.runsPerDay') }}
                     <a-tooltip :title="t('edit.skipRunOnceThis')">
                       <QuestionCircleOutlined class="help-icon" />
@@ -485,7 +467,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
-    AccountSwitchMethod: 'MAS',
+    AccountSwitchMethod: 'MAAEND',
     TaskTransitionMethod: 'NoAction',
   },
   Game: {
@@ -495,7 +477,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     WaitTime: 60,
     EmulatorId: '',
     EmulatorIndex: '',
-    CloseOnFinish: false,
+    CloseOnFinish: true,
   },
 })
 
@@ -511,11 +493,6 @@ const defaultMaaEndController = 'Win32-Front'
 const booleanOptions = [
   { label: t('edit.yes'), value: true },
   { label: t('edit.no'), value: false },
-]
-
-const accountSwitchMethodOptions = [
-  { label: 'MAS 自建账号切换', value: 'MAS' },
-  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
 ]
 
 const taskTransitionMethodOptions = [
