@@ -1731,6 +1731,18 @@ export default {
       'The BetterGI setup session is about to time out and will be saved in 30 seconds',
     bettergiSettingsSaved: 'BetterGI settings saved',
     bettergiSettingsSaveFailed: 'Could not save the BetterGI settings',
+    // BetterGI 配置恢复（mas=per-user 副本 + 页面字段；native=全局 config.json）
+    bettergiConfigRestoreUserDesc:
+      'Backups of the MAS config (per-user config copies and page fields); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    bettergiConfigRestoreScriptDesc:
+      'Backups of the BetterGI global config (config.json); restoring overwrites the global BetterGI settings. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    bettergiViewingTitle: 'Viewing BetterGI configuration',
+    bettergiViewingDesc: 'The BetterGI UI shows the selected backup, for viewing only.',
+    bettergiViewingDesc2:
+      'The config is temporarily opened during viewing; click "Close Viewer" when finished.',
+    bettergiViewClose: 'Close Viewer',
+    bettergiViewOpened: 'BetterGI viewer opened',
+    bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
     // BAAH dedicated adapter
     baahScriptConfiguration: 'BAAH script settings',
     baahScriptNameHint: 'Distinguishes this BAAH script instance from others',

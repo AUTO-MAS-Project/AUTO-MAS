@@ -58,7 +58,8 @@ description: >-
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md) ·
    [ZzzOd](references/examples-zzzod.md) ·
-   [BAAH](references/examples-baah.md)
+   [BAAH](references/examples-baah.md) ·
+   [BetterGI](references/examples-bettergi.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？

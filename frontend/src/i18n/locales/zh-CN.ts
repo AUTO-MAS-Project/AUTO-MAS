@@ -1674,6 +1674,17 @@ export default {
     bettergiSessionTimeoutWarn: 'BetterGI 设置会话即将超时，30 秒后自动保存',
     bettergiSettingsSaved: 'BetterGI 设置已保存',
     bettergiSettingsSaveFailed: '保存 BetterGI 设置失败',
+    // BetterGI 配置恢复（mas=per-user 副本 + 页面字段；native=全局 config.json）
+    bettergiConfigRestoreUserDesc:
+      'MAS 配置的备份（用户配置副本与页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    bettergiConfigRestoreScriptDesc:
+      'BetterGI 全局主配置（config.json）的备份，恢复会直接覆盖 BetterGI 全局设置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    bettergiViewingTitle: '正在查看 BetterGI 配置',
+    bettergiViewingDesc: 'BetterGI 界面显示的是所选备份的内容，仅供查看。',
+    bettergiViewingDesc2: '查看期间将临时打开配置；查看完成后请点击「关闭查看」结束。',
+    bettergiViewClose: '关闭查看',
+    bettergiViewOpened: '已打开 BetterGI 查看',
+    bettergiViewStartFailed: '打开 BetterGI 查看失败',
     // BAAH 专项
     baahScriptConfiguration: 'BAAH 脚本配置',
     baahScriptNameHint: '用于区分不同的 BAAH 脚本实例',

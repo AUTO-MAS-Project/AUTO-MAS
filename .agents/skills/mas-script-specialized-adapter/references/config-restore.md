@@ -53,6 +53,13 @@
 >   待恢复快照（`Temp.ready` 残留时拒绝，防止恢复结果被下次任务回滚覆盖）、
 >   viewOnly 会话不登记 `config_user_id`（中断恢复路径不保存回 ConfigFile），
 >   SRC 特有陷阱见 examples-src.md
+> - **BetterGI（自包含式 + per-user 副本目录 + 字段侧车，有会话）**：
+>   `app/task/BetterGI/tools/restore_service.py` + `BetterGIUserEdit.vue`——
+>   前端端点直接读写 per-user 副本（OneDragon/ScriptGroup/GlobalDomain，
+>   即页面编辑对象，恒按用户、无 owner 解耦）；native = BGI 全局
+>   `User/config.json` + 一条龙实配 `User/OneDragon/*.json`（用户在 BGI GUI
+>   直接编辑的对象，排除 MAS 运行时槽位），两池「已启用任务」同标签同口径，
+>   详见 examples-bettergi.md
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 
@@ -445,7 +452,9 @@ showOknteViewMask.value = viewOnly
       旧签名调用致预览 500）
 - [ ] 分发链加一个 elif 分支即可；**未**新增端点/模型/门面包装方法
 - [ ] 恢复回调：先 force 归档当前 → 回写 → 恢复后语义；查看会话结束不回写
-- [ ] 恢复按钮放编辑器标题行右侧（`header-actions` 插槽模式），区域唯一按钮；
+- [ ] 恢复按钮放**「任务配置」类区块的标题行右侧**（`section-header` +
+      `header-actions` 插槽/small 按钮，区域唯一按钮）；页面没有任务配置类
+      区块时才退挂「基本信息」标题行——用户靠任务配置区的备份恢复任务配置；
       无「已保存/未保存」标签、无脏点
 - [ ] `onMounted` ensure(native)、`onUnmounted` ensure(mas)+stopSession；遮罩关闭
       watch 刷新表单（配置与查看会话都要）

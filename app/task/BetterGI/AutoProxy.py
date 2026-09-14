@@ -34,8 +34,8 @@ from app.services import Notify, System
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
-    read_config_source,
     push_dispatch_log,
+    read_config_source,
 )
 from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
 from app.utils.constants import UTC4
@@ -44,9 +44,11 @@ from app.utils.platform import IS_ELEVATED
 
 from .tools import (
     account_switch,
+    archive_mas_runtime_backup,
     one_dragon,
     one_dragon_bridge,
     push_notification,
+    read_overlay_values,
     team_resolver,
 )
 from .tools.one_dragon_plan import (
@@ -560,6 +562,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 用户独立配置：先备份现场再写入，结束后 (final_task/on_crash) 还原
         self._backup_one_dragon_config()
+        # 物化前归档本用户 per-user 副本 + 页面字段（运行会把字段物化进副本
+        # 与 BGI 槽位、覆盖副本内容；指纹去重，失败不阻断运行）。native 池
+        # 由 manager.prepare 在任务级一次性归档
+        with suppress(Exception):
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                read_overlay_values(self.cur_user_config),
+            )
         self._write_one_dragon_config()
         # 自定义项执行层组名由物化结果派生（MAS-{短id}-自定义配置组{N}）；仅当执行层接管时才非空有效。
         # 必须放在 _write_one_dragon_config 之后——组名在物化阶段才确定。
