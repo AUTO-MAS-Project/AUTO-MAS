@@ -156,11 +156,11 @@ def test_deferral_takes_effect_only_after_the_attempt_ends() -> None:
     assert task.cur_user_log.status == "MAA 正常运行中"
 
 
-def _annihilation_task_for_main_task(status: str) -> AutoProxyTask:
+def _annihilation_task_for_main_task(status: str, run_times: int = 1) -> AutoProxyTask:
     task = object.__new__(AutoProxyTask)
     task.task_info = SimpleNamespace(is_queue_task=False)
     script_config = {
-        "RunTimesLimit": 1,
+        "RunTimesLimit": run_times,
         "TaskTransitionMethod": "NoAction",
         "Index": "0",
     }
@@ -182,6 +182,7 @@ def _annihilation_task_for_main_task(status: str) -> AutoProxyTask:
     task.script_info = SimpleNamespace(log="", script_id="script", name="脚本")
     task.maa_exe_path = "MAA.exe"
     task.maa_root_path = "MAA"
+    task._annihilation_weekly_deferral_marker = None
     task.wait_event = SimpleNamespace(
         clear=lambda: None, wait=_nothing, set=lambda: None
     )
@@ -198,13 +199,7 @@ def test_main_task_stops_retrying_annihilation_when_insufficient_sanity(
         pushed.append(args[0])
 
     monkeypatch.setattr("app.task.MAA.AutoProxy.Notify.push_plyer", _record_push_plyer)
-    monkeypatch.setattr(AutoProxyTask, "prepare", _nothing)
-    monkeypatch.setattr(AutoProxyTask, "set_maa", _nothing)
-    monkeypatch.setattr(AutoProxyTask, "_resolve_log_file_path", lambda self: "gui.log")
-    monkeypatch.setattr(AutoProxyTask, "_sync_maa_config_updates", _nothing)
-    monkeypatch.setattr("app.task.MAA.AutoProxy.update_maa", _nothing)
-    # System.kill_process 会真的去杀 MAA.exe，测试里必须挡住
-    monkeypatch.setattr("app.task.MAA.AutoProxy.System.kill_process", _nothing)
+    _patch_main_task_environment(monkeypatch)
 
     async def _mark_insufficient_sanity(*args, **kwargs) -> None:
         # 日志监看回调在真实运行里已经用 check_log 把状态改成了理智不足
@@ -217,3 +212,47 @@ def test_main_task_stops_retrying_annihilation_when_insufficient_sanity(
     # 理智不足不重试也不推异常通知，本模式就此收尾
     assert task.run_book["Annihilation"] is True
     assert pushed == []
+
+
+def _patch_main_task_environment(monkeypatch) -> None:
+    monkeypatch.setattr(AutoProxyTask, "prepare", _nothing)
+    monkeypatch.setattr(AutoProxyTask, "set_maa", _nothing)
+    monkeypatch.setattr(AutoProxyTask, "_resolve_log_file_path", lambda self: "gui.log")
+    monkeypatch.setattr(AutoProxyTask, "_sync_maa_config_updates", _nothing)
+    monkeypatch.setattr("app.task.MAA.AutoProxy.update_maa", _nothing)
+    # System.kill_process 会真的去杀 MAA.exe，测试里必须挡住
+    monkeypatch.setattr("app.task.MAA.AutoProxy.System.kill_process", _nothing)
+
+
+def test_new_attempt_drops_the_previous_attempt_deferral_marker(monkeypatch) -> None:
+    task = _annihilation_task_for_main_task("", run_times=2)
+    _patch_main_task_environment(monkeypatch)
+
+    # 第一次尝试留下理智不足标记后因别的原因失败；第二次尝试走到整体完成但任务未完成
+    insufficient_sanity_log = [
+        "开始任务: 剿灭作战\n",
+        "理智: 5/210\n",
+        "剿灭模式 : 1480 / 1800\n",
+        "完成任务: 剿灭作战\n",
+        "任务已全部完成！\n",
+    ]
+    partial_failure_log = ["开始任务: 剿灭作战\n", "任务已全部完成！\n"]
+    attempt = 0
+
+    async def _start_monitor(*args, **kwargs) -> None:
+        nonlocal attempt
+        attempt += 1
+        if attempt == 1:
+            # 第一次尝试：判定出理智不足标记，但以别的失败收尾（不消费该标记）
+            await task.check_log(insufficient_sanity_log, datetime.now())
+            task.cur_user_log.status = "MAA 的 ADB 连接异常"
+        elif attempt == 2:
+            await task.check_log(partial_failure_log, datetime.now())
+
+    task.maa_log_monitor.start_monitor_file = _start_monitor
+
+    asyncio.run(task.main_task())
+
+    # 陈旧的理智不足标记若被带进第二次尝试，这次真正的失败会被吞成「留待下次调度」
+    assert attempt == 2
+    assert task.cur_user_log.status == "MAA 部分任务执行失败"

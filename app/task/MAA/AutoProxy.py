@@ -724,6 +724,9 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.log_record[self.log_start_time] = (
                     self.cur_user_log
                 ) = LogRecord()
+                # 上一次尝试留下的理智不足标记不能带进新尝试：新尝试的日志还没到
+                # 完成行，陈旧的标记会在收尾判定里把健康的这次尝试也标成理智不足
+                self._annihilation_weekly_deferral_marker = None
 
                 try:
                     self.script_info.log = "正在启动模拟器"
