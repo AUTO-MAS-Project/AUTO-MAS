@@ -46,6 +46,16 @@ const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, BlueArchiveActivityIn.line
 
 /** 默认展示顺序：国服优先（国服玩家最多），三个服的先后不影响各自独立取数 */
 const SERVER_KEYS: BlueArchiveServerKey[] = ['cn', 'jp', 'global']
+const SELECTED_SERVER_STORAGE_KEY = 'auto-mas.home.bluearchive-selected-server'
+
+const readSelectedServer = (): BlueArchiveServerKey => {
+  try {
+    const stored = localStorage.getItem(SELECTED_SERVER_STORAGE_KEY)
+    return SERVER_KEYS.find(key => key === stored) ?? SERVER_KEYS[0]
+  } catch {
+    return SERVER_KEYS[0]
+  }
+}
 
 /**
  * 固定 +08:00 偏移（Asia/Shanghai 无夏令时）。
@@ -258,7 +268,7 @@ export const useBlueArchiveActivitySource = () => {
     global: false,
     cn: false,
   })
-  const selectedServer = ref<BlueArchiveServerKey>(SERVER_KEYS[0])
+  const selectedServer = ref<BlueArchiveServerKey>(readSelectedServer())
 
   let active = false
   let started = false
@@ -419,7 +429,13 @@ export const useBlueArchiveActivitySource = () => {
     selectedServer,
     loadingByServer,
     selectServer: (server: BlueArchiveServerKey) => {
+      if (!SERVER_KEYS.includes(server)) return
       selectedServer.value = server
+      try {
+        localStorage.setItem(SELECTED_SERVER_STORAGE_KEY, server)
+      } catch {
+        // 存储不可用时仍允许切换，保留当前会话的选择。
+      }
     },
     start,
     stop,

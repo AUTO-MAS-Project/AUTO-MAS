@@ -189,6 +189,7 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
+import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
 import HomeBlueArchiveOverview from '@/views/home/components/HomeBlueArchiveOverview.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
 import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
@@ -331,8 +332,11 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
         ...base,
         loading: blueArchiveSource.loadingByServer[blueArchiveSource.selectedServer.value],
         ...sraActivityBanner(
-          selectedServer?.overview ?? createEmptySraActivityOverview()
+          blueArchivePresentation(selectedServer?.overview ?? createEmptySraActivityOverview())
         ),
+        cover:
+          blueArchivePresentation(selectedServer?.overview ?? createEmptySraActivityOverview())
+            .cover || '',
       }
     }
 
@@ -360,10 +364,7 @@ const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: 
 for (const [moduleKey, source] of activitySourcesByModule) {
   watch(
     // 各游戏活动源现在都收在「活动轮播」模块里：整个轮播被隐藏时同样不拉数据
-    () =>
-      layoutReady.value &&
-      isHomeModuleVisible('activities') &&
-      isHomeModuleVisible(moduleKey),
+    () => layoutReady.value && isHomeModuleVisible('activities') && isHomeModuleVisible(moduleKey),
     visible => (visible ? source.start() : source.stop()),
     { immediate: true }
   )

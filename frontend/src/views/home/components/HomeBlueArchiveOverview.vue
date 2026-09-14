@@ -1,10 +1,5 @@
 <template>
-  <a-card
-    :title="t('home.module.bluearchive')"
-    class="bluearchive-card"
-    :style="cardStyle"
-    :loading="currentLoading"
-  >
+  <a-card :title="t('home.module.bluearchive')" class="bluearchive-card" :style="cardStyle">
     <template #extra>
       <div class="card-extra">
         <a-typography-link
@@ -23,31 +18,22 @@
     <!-- 三个服的数据在数据源里已并行拉好，这里只切显示，不重新请求 -->
     <div class="server-switch" role="group" :aria-label="t('home.bluearchive.serverLabel')">
       <span class="server-switch-label">{{ t('home.bluearchive.serverLabel') }}</span>
-      <!-- 拖动即可调整顺序，顺序记在本地 -->
-      <div class="server-tabs" :title="t('home.bluearchive.serverDragHint')">
+      <div class="server-tabs">
         <button
-          v-for="(server, index) in orderedServers"
+          v-for="server in servers"
           :key="server.key"
           type="button"
           class="server-tab"
-          :class="{ 'is-active': server.key === selected, 'is-dragging': dragIndex === index }"
+          :class="{ 'is-active': server.key === selected }"
+          :aria-pressed="server.key === selected"
           @click="emit('select', server.key)"
-          @dragover.prevent="onDragOver(index)"
-          @dragend="onDragEnd"
-          @drop.prevent="onDragEnd"
         >
-          <DragOutlined
-            class="server-drag-handle"
-            draggable="true"
-            :aria-label="t('home.bluearchive.serverDragHint')"
-            @click.stop
-            @dragstart.stop="onDragStart(index, $event)"
-            @dragend.stop="onDragEnd"
-          />
           {{ server.label }}
         </button>
       </div>
     </div>
+
+    <a-skeleton v-if="currentLoading" active :paragraph="{ rows: 4 }" />
 
     <!-- 当前服的失败提示：只影响这一个服，切到其它服照常显示 -->
     <a-alert
@@ -71,6 +57,7 @@
         :src="versionCover"
         :alt="overview.versionName"
         class="version-cover"
+        decoding="async"
         @error="failedVersionCover = true"
       />
       <div class="version-overlay" />
@@ -145,7 +132,8 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { ClockCircleOutlined, DragOutlined } from '@ant-design/icons-vue'
+import { ClockCircleOutlined } from '@ant-design/icons-vue'
+import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -181,8 +169,8 @@ const cardStyle = computed<CSSProperties>(
 
 const currentServer = computed(() => props.servers.find(server => server.key === props.selected))
 
-const overview = computed<BlueArchiveActivityOverview>(
-  () => currentServer.value?.overview ?? createEmptySraActivityOverview()
+const overview = computed<BlueArchiveActivityOverview>(() =>
+  blueArchivePresentation(currentServer.value?.overview ?? createEmptySraActivityOverview())
 )
 
 // 每个服各有自己的加载态，卡片只关心当前选中的这个服
@@ -195,67 +183,6 @@ watch(
     failedVersionCover.value = false
   }
 )
-
-/** 服务器显示顺序的本地记忆键；顺序只影响展示，不影响各自取数 */
-const SERVER_ORDER_STORAGE_KEY = 'auto-mas.home.bluearchive-server-order'
-
-const readStoredOrder = (): BlueArchiveServerKey[] => {
-  try {
-    const raw = localStorage.getItem(SERVER_ORDER_STORAGE_KEY)
-    const parsed: unknown = raw ? JSON.parse(raw) : []
-    if (Array.isArray(parsed)) {
-      return parsed.filter((key): key is BlueArchiveServerKey => typeof key === 'string')
-    }
-  } catch {
-    // 记忆损坏时退回默认顺序即可，不影响卡片显示
-  }
-  return []
-}
-
-const serverOrder = ref<BlueArchiveServerKey[]>(readStoredOrder())
-const dragIndex = ref<number | null>(null)
-
-/** 按用户拖出来的顺序排列；顺序里还没有的（例如以后新增服务器）接在末尾 */
-const orderedServers = computed(() => {
-  const byKey = new Map(props.servers.map(server => [server.key, server]))
-  const ordered = serverOrder.value
-    .map(key => byKey.get(key))
-    .filter((server): server is BlueArchiveServerOverview => server !== undefined)
-  const listed = new Set(ordered.map(server => server.key))
-  return [...ordered, ...props.servers.filter(server => !listed.has(server.key))]
-})
-
-const persistServerOrder = () => {
-  try {
-    localStorage.setItem(SERVER_ORDER_STORAGE_KEY, JSON.stringify(serverOrder.value))
-  } catch {
-    // 存储不可用时只保留本次会话的顺序
-  }
-}
-
-const onDragStart = (index: number, event: DragEvent) => {
-  dragIndex.value = index
-  event.dataTransfer?.setData('text/plain', String(index))
-}
-
-/** 拖到哪一格就实时插到哪一格，松手才算数（dragend 统一落盘） */
-const onDragOver = (index: number) => {
-  const from = dragIndex.value
-  if (from === null || from === index) return
-
-  const keys = orderedServers.value.map(server => server.key)
-  const [moved] = keys.splice(from, 1)
-  keys.splice(index, 0, moved)
-  serverOrder.value = keys
-  dragIndex.value = index
-}
-
-const onDragEnd = () => {
-  if (dragIndex.value === null) return
-  dragIndex.value = null
-  serverOrder.value = orderedServers.value.map(server => server.key)
-  persistServerOrder()
-}
 
 const activeActivities = computed(() => {
   const now = Date.now()
@@ -271,11 +198,7 @@ const activeActivities = computed(() => {
 
 const versionCover = computed(() => {
   if (failedVersionCover.value) return ''
-  return (
-    overview.value.cover ||
-    overview.value.activities.find(activity => activity.cover)?.cover ||
-    ''
-  )
+  return overview.value.cover || ''
 })
 
 const remainingCountdownStyle = computed<CSSProperties>(() => ({
@@ -349,13 +272,15 @@ const formatTime = (value: string) =>
   font-size: 13px;
 }
 
-/* 自己做分段控件而不用 a-segmented：那一排要能拖动排序 */
+/* 服务器胶囊切换条 */
 .server-tabs {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
+  padding: 4px;
+  border-radius: 999px;
+  max-width: 100%;
+  overflow-x: auto;
   background: var(--ant-color-fill-tertiary);
 }
 
@@ -363,27 +288,17 @@ const formatTime = (value: string) =>
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 14px;
+  padding: 6px 16px;
+  flex-shrink: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--ant-color-text);
   font-size: 14px;
   line-height: 22px;
   cursor: pointer;
   user-select: none;
-  transition:
-    background 0.2s,
-    color 0.2s;
-}
-
-.server-drag-handle {
-  color: var(--ant-color-text-tertiary);
-  cursor: grab;
-}
-
-.server-drag-handle:active {
-  cursor: grabbing;
+  transition: box-shadow 0.12s;
 }
 
 .server-tab:hover {
@@ -397,8 +312,9 @@ const formatTime = (value: string) =>
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
-.server-tab.is-dragging {
-  opacity: 0.5;
+.server-tab:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
 }
 
 .status-alert {

@@ -148,7 +148,9 @@ const activeIndex = computed(() => {
 const activeKey = computed<HomeModuleKey | null>(() => props.items[activeIndex.value]?.key ?? null)
 
 const activeItem = computed(() => props.items[activeIndex.value])
-const isCompact = computed(() => ['endfield', 'arknights'].includes(activeKey.value ?? ''))
+const isCompact = computed(() =>
+  ['endfield', 'arknights', 'bluearchive'].includes(activeKey.value ?? '')
+)
 
 const remainingStyle: CSSProperties = {
   color: '#fff',
