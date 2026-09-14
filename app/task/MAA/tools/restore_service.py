@@ -70,17 +70,20 @@ def _user_guard(ctx) -> None:
 
 
 def _mas_owner(ctx) -> str | None:
-    """当前用户的 MAS 配置目录 owner；无法解析时返回 ``None``。
+    """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
 
     脚本态共享 ``Default``、用户态用当前用户目录，与 AutoProxy ``set_maa``
-    的下发源同一套来源规则；用户不存在时无法判态，返回 ``None`` 让
-    列表/预览为空（恢复/归档另有用户守卫）。MAA 为两态（无直控）。
+    的下发源同一套来源规则；直控用户没有 MAS 托管配置目录（对齐 MaaEnd
+    的「直控无 mas 池」），mas 池列表/预览为空；用户不存在时无法判态，
+    同样返回 ``None``（恢复/归档另有用户守卫）。
     """
 
     try:
         uid = uuid.UUID(ctx.user_id)
-        mode = ctx.script_config.UserData[uid].get("Info", "Mode")
+        mode = str(ctx.script_config.UserData[uid].get("Info", "Mode") or "").strip()
     except (ValueError, KeyError, TypeError):
+        return None
+    if mode == "直控":
         return None
     return ctx.user_id if mode == "用户" else "Default"
 

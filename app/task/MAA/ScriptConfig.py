@@ -97,18 +97,23 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maa_process_manager.open_process(self.maa_exe_path)
         await self.wait_event.wait()
 
-    def _mas_owner(self) -> str:
-        """本会话的 MAS 配置目录 owner：脚本态共享 Default、用户态独立目录。
+    def _mas_owner(self) -> str | None:
+        """本会话的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
 
         与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
         回写此前硬编码用户目录，脚本态用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。
+        白改），配置备份也因此采不到会话现场；现对齐运行态。直控用户没有
+        MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），返回 ``None``。
         """
 
         user_id = self.cur_user_item.user_id
         if user_id == "Default":
             return "Default"
-        mode = self.user_config[uuid.UUID(user_id)].get("Info", "Mode")
+        mode = str(
+            self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+        ).strip()
+        if mode == "直控":
+            return None
         return user_id if mode == "用户" else "Default"
 
     async def set_maa(self):
@@ -122,6 +127,12 @@ class ScriptConfigTask(TaskExecuteBase):
         # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
+            return
+
+        # 直控会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
+        # 内的编辑由本体落盘并保留
+        if self._mas_owner() is None:
+            logger.info("MAA 直控会话: 直接使用安装目录原生配置, MAS 零写入")
             return
 
         # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带页面
@@ -239,6 +250,12 @@ class ScriptConfigTask(TaskExecuteBase):
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("MAA 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
+
+        # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
+        if self._mas_owner() is None:
+            logger.success("MAA 直控配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
             return
 

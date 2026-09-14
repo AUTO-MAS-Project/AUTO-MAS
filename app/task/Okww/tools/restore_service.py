@@ -197,7 +197,9 @@ async def _snapshot_mas(ctx) -> dict:
             ctx.script_id,
             ctx.user_id,
             _mas_dir_for_owner(ctx, owner),
-            overlay=read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)]),
+            overlay=read_overlay_values(
+                ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+            ),
         )
     times = list_mas_backups(ctx.script_id, ctx.user_id)
     return {"created": dest is not None, "time": times[0] if times else ""}

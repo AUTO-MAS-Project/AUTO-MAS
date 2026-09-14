@@ -486,5 +486,7 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
             )
             rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": joined or "无"})
             continue
-        rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": _overlay_value(key, value)})
+        rows.append(
+            {"key": _OVERLAY_FIELD_LABELS[key], "value": _overlay_value(key, value)}
+        )
     return rows
