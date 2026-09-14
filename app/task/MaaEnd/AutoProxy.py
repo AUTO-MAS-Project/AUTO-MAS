@@ -737,6 +737,8 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                         self.script_info.log = "检测到游戏已在运行，跳过启动游戏"
                     else:
+                        # 游戏退出后，启动器可能仍被跟踪；先清理再启动，避免占用一次重试。
+                        await self.game_process_manager.kill()
                         logger.info(
                             f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
                         )
@@ -757,7 +759,12 @@ class AutoProxyTask(TaskExecuteBase):
                         "com.hypergryph.endfield",
                     )
             except Exception as e:
-                await self.handle_pre_maaend_error("模拟器启动失败", e)
+                await self.handle_pre_maaend_error(
+                    "游戏启动失败"
+                    if self.emulator_manager is None
+                    else "模拟器启动失败",
+                    e,
+                )
                 continue
 
             self.script_info.log = (
