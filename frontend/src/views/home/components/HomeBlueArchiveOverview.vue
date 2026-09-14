@@ -54,6 +54,7 @@
     <!-- 活动 Banner（超高竖图只显示上部条带） -->
     <div v-else-if="overview.Available && !currentLoading && versionCover" class="version-banner">
       <img
+        :key="versionCover"
         :src="versionCover"
         :alt="overview.versionName"
         class="version-cover"
@@ -176,13 +177,10 @@ const overview = computed<BlueArchiveActivityOverview>(() =>
 // 每个服各有自己的加载态，卡片只关心当前选中的这个服
 const currentLoading = computed(() => props.loadingByServer[props.selected] === true)
 
-// 封面加载失败是「上一张图」的结果，切换服务器时必须重新判定，否则一个服取不到图会拖累其它服
-watch(
-  () => props.selected,
-  () => {
-    failedVersionCover.value = false
-  }
-)
+// 失败状态只属于当前封面；同服活动刷新换图或切服后都应重新尝试。
+watch([() => props.selected, () => overview.value.cover], () => {
+  failedVersionCover.value = false
+})
 
 const activeActivities = computed(() => {
   const now = Date.now()

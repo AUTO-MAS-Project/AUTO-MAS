@@ -69,7 +69,7 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
     moduleOrder: isMigration ? placeCarousel(mergedOrder) : mergedOrder,
     hiddenModules,
     hideScrollHint: config.hideScrollHint === true,
-    // 未写过这项的老配置按开启处理，与新装用户保持一致
+    // 新装及缺少该字段的旧配置统一默认关闭，避免阅读时自动切换；保留显式开启的选择。
     carouselAutoplay: config.carouselAutoplay === true,
   }
 }
