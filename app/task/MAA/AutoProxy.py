@@ -155,8 +155,10 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
     return (current, total) if total > 0 else None
 
 
-def _has_completed_annihilation_week(log: str) -> bool:
-    """判断剿灭日志是否表明本周额度已完成。
+def _annihilation_weekly_completion_marker(
+    log: str,
+) -> tuple[bool, tuple[int, int] | None]:
+    """判定剿灭日志表明的周完成状态。
 
     MAA 剿灭结束都会打印「完成任务: 剿灭作战」，以理智识别行区分战斗流程：
 
@@ -165,17 +167,55 @@ def _has_completed_annihilation_week(log: str) -> bool:
     - 有进度行但 current < total：开战了但理智不足没能打满进度，未达标；
     - 进度 current >= total：本周剿灭已完成。
 
-    未达标时不记周完成标记，宁可下次代理重试。
+    返回值第二项是该次日志的周进度（无则 ``None``），供调用方直接展示。
     """
 
     if "完成任务: 剿灭作战" not in log:
-        return False
+        return False, None
 
     if not _MAA_SANITY_RECOGNITION_RE.search(log):
-        return True
+        return True, None
 
     progress = _parse_annihilation_weekly_progress(log)
-    return progress is not None and progress[0] >= progress[1]
+    return progress is not None and progress[0] >= progress[1], progress
+
+
+def _has_completed_annihilation_week(log: str) -> bool:
+    """判断剿灭日志是否表明本周额度已完成。"""
+
+    return _annihilation_weekly_completion_marker(log)[0]
+
+
+def _annihilation_weekly_deferral_marker(
+    log: str,
+) -> tuple[str, tuple[int, int] | None] | None:
+    """判断剿灭日志是否表明本次因理智不足而没打满周额度。
+
+    返回可写入任务日志的说明文字；与「已达周上限」或「没进过副本」都不算。
+
+    理智不足时 MAA 会提前收尾并打印「完成任务: 剿灭作战」，理智识别行是区分它的
+    依据：进到副本门口后日志才会留下「理智: x/y」（界面语言识别不到理智时，日志与
+    「周内已完成」形态相同，这一种按既有口径直接视为已完成，不在本次改动范围）。
+    理智每 6 分钟才回 1 点，同一轮里重试凑不齐下一场（一场 25 点，差一场也要两个
+    多小时），只会反复重启 MAA，所以这一种收尾不做重试，留待下次调度继续。
+    """
+
+    if "完成任务: 剿灭作战" not in log:
+        return None
+
+    if not _MAA_SANITY_RECOGNITION_RE.search(log):
+        return None
+
+    progress = _parse_annihilation_weekly_progress(log)
+    if progress is not None and progress[0] >= progress[1]:
+        return None
+
+    if progress is not None:
+        return (
+            f"剿灭理智不足，本次未打满：{progress[0]}/{progress[1]}",
+            progress,
+        )
+    return ("剿灭理智不足，本次未开战", None)
 
 
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
@@ -530,6 +570,9 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
+        self._annihilation_weekly_deferral_marker: (
+            tuple[str, tuple[int, int] | None] | None
+        ) = None
 
     async def check(self) -> str:
 
@@ -770,6 +813,17 @@ class AutoProxyTask(TaskExecuteBase):
                     # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
                     if self.mode == "GreenTicketStore":
                         self.run_book[self.mode] = True
+                    elif (
+                        self.mode == "Annihilation"
+                        and self.cur_user_log.status == "MAA 剿灭理智不足"
+                    ):
+                        # 缺的理智以「小时」为单位才回得满，同轮重试只会反复重启 MAA，
+                        # 留待下次调度继续，不重试也不惊动用户
+                        self.run_book[self.mode] = True
+                        logger.warning(
+                            f"用户 {self.cur_user_item.name} 剿灭理智不足，"
+                            "本次不做重试，留待下次调度继续"
+                        )
                     else:
                         await Notify.push_plyer(
                             "用户自动代理出现异常！",
@@ -1320,8 +1374,20 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
 
         if self.mode == "Annihilation":
-            progress = _parse_annihilation_weekly_progress(log)
-            completed = _has_completed_annihilation_week(log)
+            completed, progress = _annihilation_weekly_completion_marker(log)
+            if not completed and self._annihilation_weekly_deferral_marker is None:
+                deferral = _annihilation_weekly_deferral_marker(log)
+                if deferral:
+                    self._annihilation_weekly_deferral_marker = deferral
+                    progress_text = (
+                        f"{deferral[1][0]}/{deferral[1][1]}"
+                        if deferral[1]
+                        else "未开战"
+                    )
+                    logger.info(
+                        f"用户 {self.cur_user_item.name} 剿灭理智不足（{progress_text}），"
+                        "本次不重试 MAA，留待下次调度继续"
+                    )
             if completed:
                 self.task_dict["Fight"] = False
                 self.run_book["Annihilation"] = True
@@ -1396,6 +1462,13 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 正常运行中"
 
         logger.debug(f"MAA 日志分析结果: {self.cur_user_log.status}")
+        if (
+            self.mode == "Annihilation"
+            and self.cur_user_log.status in ("MAA 正常运行中", "MAA 部分任务执行失败")
+            and "任务已全部完成！" in log
+            and self._annihilation_weekly_deferral_marker is not None
+        ):
+            self.cur_user_log.status = "MAA 剿灭理智不足"
         if self.cur_user_log.status != "MAA 正常运行中":
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
