@@ -57,7 +57,7 @@ function addZzzOdConfigs(
   }
 }
 
-export interface ZzzOdIssueReportResult {
+interface ZzzOdIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string

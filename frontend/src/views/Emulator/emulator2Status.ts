@@ -38,7 +38,7 @@ export interface Pending {
 /** 启动 / 关闭的兜底时长。启动要等 Android 起来，给足；后端事件正常会早得多地收掉它 */
 export const OPERATION_PENDING_TTL_MS = 120_000
 /** 显示 / 隐藏 / 打开游戏中心这类，几秒内必有结果 */
-export const QUICK_PENDING_TTL_MS = 30_000
+const QUICK_PENDING_TTL_MS = 30_000
 
 /** 轮询节奏：有行在过渡态时盯紧一点，其余时间慢慢来（每轮都是几个子进程） */
 export const POLL_IDLE_MS = 5000
@@ -77,7 +77,7 @@ export const pendingSettled = (pending: Pending, polledStatus: number, now: numb
 export const isTransitional = (status: number): boolean =>
   status === DeviceStatus.STARTING || status === DeviceStatus.CLOSING
 
-export interface ActionAvailability {
+interface ActionAvailability {
   start: boolean
   stop: boolean
   show: boolean

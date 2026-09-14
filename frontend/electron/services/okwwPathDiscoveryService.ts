@@ -5,14 +5,14 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
-export type WutheringWavesChannel = 'China' | 'Global'
+type WutheringWavesChannel = 'China' | 'Global'
 
 export interface PathDiscoveryCandidate {
   path: string
   channel?: WutheringWavesChannel
 }
 
-export interface PathDiscoveryResult {
+interface PathDiscoveryResult {
   success: boolean
   candidates?: PathDiscoveryCandidate[]
   path?: string
@@ -20,7 +20,7 @@ export interface PathDiscoveryResult {
   error?: string
 }
 
-export interface UninstallRegistryEntry {
+interface UninstallRegistryEntry {
   keyPath: string
   displayName: string | null
   publisher: string | null
@@ -29,12 +29,12 @@ export interface UninstallRegistryEntry {
   uninstallString: string | null
 }
 
-export interface KuroLauncherRegistryEntry {
+interface KuroLauncherRegistryEntry {
   keyPath: string
   installPath: string | null
 }
 
-export interface RegistrySnapshot {
+interface RegistrySnapshot {
   uninstallEntries: UninstallRegistryEntry[]
   kuroLaunchers: KuroLauncherRegistryEntry[]
 }
@@ -102,7 +102,7 @@ function asArray(value: unknown): unknown[] {
   return value === null || value === undefined ? [] : [value]
 }
 
-export function parseRegistrySnapshot(output: string): RegistrySnapshot {
+function parseRegistrySnapshot(output: string): RegistrySnapshot {
   const parsed = asObject(JSON.parse(output.replace(/^\uFEFF/, '').trim()))
 
   return {
@@ -136,7 +136,7 @@ function expandEnvironmentVariables(value: string): string {
   })
 }
 
-export function parseRegistryPath(value: string | null): string | null {
+function parseRegistryPath(value: string | null): string | null {
   if (!value) return null
 
   const expanded = expandEnvironmentVariables(value.trim().replace(/^@/, ''))
@@ -319,7 +319,7 @@ async function findOfficialLauncherCandidates(
   return candidates
 }
 
-export async function findOkwwCandidates(
+async function findOkwwCandidates(
   snapshot: RegistrySnapshot,
   fileExists: (filePath: string) => Promise<boolean> = isFile
 ): Promise<PathDiscoveryCandidate[]> {
@@ -340,7 +340,7 @@ export async function findOkwwCandidates(
   )
 }
 
-export async function findWutheringWavesCandidates(
+async function findWutheringWavesCandidates(
   snapshot: RegistrySnapshot,
   fileExists: (filePath: string) => Promise<boolean> = isFile
 ): Promise<PathDiscoveryCandidate[]> {

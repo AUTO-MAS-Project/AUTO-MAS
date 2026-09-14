@@ -45,7 +45,7 @@ const isApiEndpointKey = (value: unknown): value is keyof ApiEndpoints =>
   typeof value === 'string' && apiEndpointKeys.has(value as keyof ApiEndpoints)
 
 /** 更新流程的进度事件通道，与初始化的分段进度通道分开，互不干扰。 */
-export const BACKEND_UPDATE_PROGRESS_CHANNEL = 'backend-update-progress'
+const BACKEND_UPDATE_PROGRESS_CHANNEL = 'backend-update-progress'
 
 const retryActions = new Set<RuntimeUpdateRetryAction>([
   'workspace-sync',
@@ -156,7 +156,7 @@ async function runStageViaRuntime(
  * 直接置完成）、失败时「打开日志」拿不到 Runtime 日志路径要退回哪个文件、
  * 「换镜像重试」在 Runtime 下该列哪些镜像键。
  */
-export interface RuntimeInitContext {
+interface RuntimeInitContext {
   mode: RuntimeLaunchMode
   /** 本程序自己的日志文件，Runtime 没给 `logPath` 时的回退。 */
   fallbackLogPath: string

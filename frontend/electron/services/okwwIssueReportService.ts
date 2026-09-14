@@ -42,7 +42,7 @@ function addLatestOkwwScriptLog(state: CollectorState, installations: Installati
   }
 }
 
-export interface OkwwIssueReportResult {
+interface OkwwIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string
