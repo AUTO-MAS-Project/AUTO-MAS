@@ -66,6 +66,7 @@
             @update:selected-task-ids="updateSelectedHomeTaskIds"
             @dropdown-visible-change="onSchedulerDropdownVisibleChange"
             @start="startHomeTask"
+            @refresh-greeting="refreshGreeting"
           />
 
           <HomeQuickActionsCard v-else-if="moduleKey === 'quick'" />
@@ -233,6 +234,7 @@ const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfi
 const {
   commandTitle,
   commandAuthor,
+  refreshGreeting,
   schedulerTasksLoading,
   schedulerTasksUnavailable,
   startingHomeTask,
