@@ -58,7 +58,7 @@
         :value="quickConfig"
         size="large"
         style="width: 100%"
-        :disabled="disabled || saving"
+        :disabled="disabled || saving || quickConfigDisabled"
         :options="quickConfigOptions"
         @change="handleQuickConfigChange"
       />
@@ -98,6 +98,7 @@ const props = defineProps<{
    * 传 undefined 表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
    */
   quickConfig?: boolean
+  quickConfigDisabled?: boolean
 }>()
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，

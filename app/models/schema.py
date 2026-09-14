@@ -129,6 +129,16 @@ class CultivatePreviewOut(OutBase):
     hasInventory: bool = Field(..., description="是否存在仓库识别档案")
 
 
+class BlueArchiveActivityIn(BaseModel):
+    """碧蓝档案活动数据查询参数"""
+
+    line_type: Literal["JP", "Globle", "CN"] = Field(
+        ..., description="服务器：JP 日服 / Globle 国际服 / CN 国服（原文拼写如此）"
+    )
+    page: int = Field(default=1, ge=1, le=20, description="页码，从 1 开始")
+    page_size: int = Field(default=50, ge=1, le=100, description="每页条数")
+
+
 class BetterGICustomGroupOut(BaseModel):
     """BetterGI 一条龙自定义配置组（非内置 8 组）"""
 
@@ -311,7 +321,12 @@ class BetterGIScriptDirsOut(OutBase):
     keyMouseScriptDir: Optional[str] = Field(
         default=None, description="键鼠脚本（录制）目录"
     )
+    autoFightDir: Optional[str] = Field(
+        default=None, description="自动战斗策略目录（User/AutoFight，*.txt 即一份策略）"
+    )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
+
+
 class ZzzOdInstanceOut(BaseModel):
     """zzz-od 实例（账号）信息"""
 
@@ -1509,9 +1524,6 @@ class GeneralUserConfig_Info(BaseModel):
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None, description="配置来源（脚本/用户/直控）"
     )
-    IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
-    )
     IfUseMasConfig: Optional[bool] = Field(
         default=None, description="兼容旧版用户独立配置开关"
     )
@@ -1754,6 +1766,16 @@ class BetterGIUserConfig_OneDragon(BaseModel):
         description="是否启用「直连执行层」开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、"
         "战斗 4 项直连 BetterGI 原生任务；默认开，但只有用户配置过该组且队列中启用时才接管，"
         "其余战斗组仍走原生一条龙",
+    )
+    IfUseTeams: Optional[bool] = Field(
+        default=None,
+        description="是否启用「队伍配置」（总开关）；关闭时表格数据保留，但除通用队伍外不参与匹配",
+    )
+    Teams: Optional[Union[str, List]] = Field(
+        default=None,
+        description="队伍配置 JSON 数组字符串，按展示顺序存储，元素含 "
+        "name/strategy/scenes{domain,leyline,boss}/note/enabled；"
+        "序号 0 的通用队伍不落本字段（直绑 PartyName / AutoBossStrategyName）",
     )
 
 
@@ -2383,6 +2405,17 @@ class MaaEndConfig_Game(BaseModel):
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
+    RestoreResolution: Optional[
+        Literal["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]
+    ] = Field(
+        default=None, description="关闭游戏时恢复的分辨率，Off 表示不修改"
+    )
+    RestoreResolutionWidth: Optional[int] = Field(
+        default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
+    )
+    RestoreResolutionHeight: Optional[int] = Field(
+        default=None, ge=1, le=16384, description="自定义恢复分辨率高度"
+    )
 
 
 class MaaEndConfig(BaseModel):

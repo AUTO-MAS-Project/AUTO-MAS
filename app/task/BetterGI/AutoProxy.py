@@ -43,6 +43,7 @@ from .tools import (
     one_dragon,
     one_dragon_bridge,
     push_notification,
+    team_resolver,
 )
 from .tools.one_dragon_plan import (
     BUILTIN_COMBAT_STEP_NAMES,
@@ -292,6 +293,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_custom_groups = one_dragon.parse_custom_groups(
             self.cur_user_config.get("OneDragon", "CustomGroups") or ""
         )
+        # 「队伍配置」总开关与队伍表：开启时按「战斗场景」选队（第 1 层优先级）；
+        # 关闭时数据保留但除通用队伍外一律不参与匹配（通用队伍照旧生效）。
+        self.use_teams = bool(self.cur_user_config.get("OneDragon", "IfUseTeams"))
+        self.one_dragon_teams = team_resolver.parse_teams(
+            self.cur_user_config.get("OneDragon", "Teams") or ""
+        )
         # 可视化队列（有序条目，含重复实例）：决定运行时 TaskOrder 重建顺序；
         # 为空/非法时 write_user_one_dragon 回退旧行为（沿用副本 TaskOrder 相对顺序）
         self.one_dragon_queue = one_dragon.parse_one_dragon_queue(
@@ -349,6 +356,18 @@ class AutoProxyTask(TaskExecuteBase):
                     _step["settings"] = _settings
                 if not _settings.get(_field):
                     _settings[_field] = _default_party
+        # 第 1 层（最高优先级）：队伍配置表按「战斗场景」匹配选队，写入独立的
+        # masTeamOverride / masStrategyOverride，由执行层 main.js 以最高优先级读取，
+        # 从而压过每周行与步骤级字段（「按任务决定队伍」优先于「按日期决定」）。
+        # 只在总开关开启且表非空时介入；随机在一次运行内固定（此处一次性解析）。
+        if self.use_teams and self.one_dragon_teams:
+            _hit = team_resolver.apply_teams_to_steps(
+                self.plan_combat_steps, self.one_dragon_teams
+            )
+            logger.info(
+                f"队伍配置：总开关开启，{len(self.one_dragon_teams)} 个队伍参与匹配，"
+                f"{_hit} 个战斗步骤按场景命中队伍"
+            )
         self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
@@ -1075,15 +1094,20 @@ class AutoProxyTask(TaskExecuteBase):
         # 切队配置错误（战斗队伍名在游戏内置找不到）优先于笼统的 [ERR] 判定，
         # 并给一次指明队伍名的明确报错
         if party_err := _party_config_error(log):
+            # 队伍名命中「队伍配置」表时额外标注来源：场景选队是运行时随机抽取的，
+            # 不指明来源用户很难定位到底是哪一行配置引起的
+            from_teams = any(t["name"] == party_err for t in self.one_dragon_teams)
+            source = "「队伍配置」表" if from_teams else "「战斗队伍」配置"
             log_status = (
                 f"切队失败/配置错误: 战斗队伍「{party_err}」在游戏内队伍列表中未找到"
+                f"（来源：{source}）"
             )
             user_item_status = "异常"
             if not self._party_err_pushed:
                 self._party_err_pushed = True
                 await self._push_dispatch_log(
                     f"BetterGI 运行异常：战斗队伍「{party_err}」在游戏内未找到，"
-                    "请核对 MAS 里该用户的「战斗队伍」配置"
+                    f"请核对 MAS 里该用户的{source}"
                 )
         else:
             for needle, msg in _BGI_BUILTIN_FATAL:
