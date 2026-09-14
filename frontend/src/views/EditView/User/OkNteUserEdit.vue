@@ -139,6 +139,20 @@
             </a-row>
 
             <a-row :gutter="24">
+              <a-col :span="24">
+                <GeneralConfigModeSelector
+                  :model-value="formData.Info.Mode"
+                  :options="oknteConfigModeOptions"
+                  :disabled="pageLoading"
+                  :quick-config="formData.Info.IfQuickConfig ?? true"
+                  :alert-message="t('edit.configSourceHintBase')"
+                  @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
+                />
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
@@ -367,6 +381,7 @@ import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 
 const { t } = useI18n()
@@ -404,6 +419,18 @@ const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const oknteConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  { label: t('edit.script'), value: '脚本', title: t('edit.script'), description: '使用脚本级共享配置', icon: 'file' },
+  { label: t('edit.user'), value: '用户', title: t('edit.user'), description: t('edit.useThisUserS'), icon: 'database' },
+  { label: t('edit.directControl'), value: '直控', title: t('edit.directControl'), description: t('edit.useScriptSCurrent'), icon: 'setting' },
+]
+
 const pushLogModeOptions = [
   { label: t('edit.pushLogModeOff'), value: '关闭' },
   { label: t('edit.pushLogModeList'), value: '逐条' },
@@ -451,6 +478,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Id: '',
     Password: '',
     Mode: '脚本',
+    IfQuickConfig: true,
     Resource: '官服',
     RemainedDay: -1,
     IfUseMasConfig: true,
@@ -510,6 +538,18 @@ const createUserImmediately = async () => {
     name: 'OkNteUserEdit',
     params: { scriptId, userId },
   })
+}
+
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  await saveField('Info.IfQuickConfig', value)
+}
+
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await saveField('Info.Mode', formData.Info.Mode)
 }
 
 const saveField = async (key: string, value: unknown) => {

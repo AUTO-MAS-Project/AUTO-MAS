@@ -199,6 +199,7 @@ export type { MaaConfig } from './models/MaaConfig';
 export type { MaaConfig_Emulator } from './models/MaaConfig_Emulator';
 export type { MaaConfig_Info } from './models/MaaConfig_Info';
 export type { MaaConfig_Run } from './models/MaaConfig_Run';
+export { MaaEndAutoCollectGroup } from './models/MaaEndAutoCollectGroup';
 export type { MaaEndAutoEssencePlanKey } from './models/MaaEndAutoEssencePlanKey';
 export type { MaaEndConfig } from './models/MaaEndConfig';
 export type { MaaEndConfig_Game } from './models/MaaEndConfig_Game';

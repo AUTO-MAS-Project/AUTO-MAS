@@ -295,6 +295,20 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-row :gutter="24">
+            <a-col :span="24">
+              <GeneralConfigModeSelector
+                :model-value="formData.Info.Mode"
+                :options="baahConfigModeOptions"
+                :disabled="loading"
+                :quick-config="formData.Info.IfQuickConfig ?? true"
+                :alert-message="t('edit.configSourceHintBase')"
+                @change="handleConfigModeChange"
+                @quick-config-change="handleQuickConfigChange"
+              />
+            </a-col>
+          </a-row>
         </div>
 
         <!-- 数据统计（只读，由本软件自动写入） -->
@@ -349,6 +363,7 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import { BaahService, type BlueArchiveActivityStatusOut, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
@@ -378,6 +393,8 @@ const getDefaultBAAHUserData = () => ({
   Info: {
     Name: '',
     Status: true,
+    Mode: '用户',
+    IfQuickConfig: true,
     RemainedDay: -1,
     ConfigName: '',
     ActivityConfigName: '',
@@ -501,6 +518,50 @@ watch(
     }
   }
 )
+
+// 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+const baahConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'database' | 'setting'
+}> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useScriptS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: '直接使用脚本原生配置，MAS 不写入配置',
+    icon: 'setting',
+  },
+]
+
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  await handleFieldSave('Info.IfQuickConfig', value)
+}
+
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
+}
 
 // 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
 const handleFieldSave = async (key: string, value: any) => {

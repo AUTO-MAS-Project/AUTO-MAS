@@ -81,6 +81,9 @@ GAMESIGN_RESULT_UPDATED = "gamesign.result.updated"
 EMULATOR_NOTICE = "emulator.notice"
 TOOLKIT_NOTICE = "toolkit.notice"
 
+# 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
+EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
+
 
 # ==================== 主连接关闭码（后端 → 前端） ====================
 

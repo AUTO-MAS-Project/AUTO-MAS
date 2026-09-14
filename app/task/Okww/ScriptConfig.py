@@ -28,7 +28,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
-from app.utils.io import replace_dir
+from app.utils.io import mark_native_config_injected, swap_in_dir
 
 from .AutoProxy import (
     _OKWW_REL_CONFIG_DIR,
@@ -89,7 +89,12 @@ class ScriptConfigTask(TaskExecuteBase):
             and self.mas_config_dir.is_dir()
             and any(item.is_file() for item in self.mas_config_dir.rglob("*"))
         ):
-            replace_dir(self.mas_config_dir, self.script_config_path)
+            swap_in_dir(self.mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            )
         logger.info(f"启动 OK-WW 设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
         await self.process_manager.open_process(self.exe_path)
@@ -109,7 +114,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 {"Exit App when Game Exits": True},
             )
             self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
-            replace_dir(self.script_config_path, self.mas_config_dir)
+            swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
             self.cur_user_item.status = "完成"
         elif not self.crashed:

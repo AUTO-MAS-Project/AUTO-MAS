@@ -89,7 +89,10 @@
           :model-value="formData.Info.Mode"
           :options="maaEndConfigModeOptions"
           :disabled="loading"
-          alert-message="脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用 MaaEnd 原有配置。接管具体任务配置是独立覆盖层。"
+          :alert-message="t('edit.configSourceHintBase')"
+          :quick-config="formData.Info.IfQuickConfig"
+          :quick-config-disabled="presetSupported === false"
+          @quick-config-change="emitSave('Info.IfQuickConfig', $event)"
           @change="$emit('modeChange', $event)"
         />
       </a-col>
@@ -142,26 +145,6 @@
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('edit.takeOverTaskConfiguration') }}
-              <a-tooltip :title="t('edit.whenHighTrafficSettings')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
-          <a-select
-            v-model:value="formData.Info.IfQuickConfig"
-            size="large"
-            :disabled="loading || presetSupported === false"
-            :options="quickConfigOptions"
-            @change="emitSave('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
-          />
-        </a-form-item>
-      </a-col>
-
       <a-col :span="8">
         <a-form-item>
           <template #label>
@@ -279,11 +262,6 @@ const maaEndConfigModeOptions: Array<{
     description: '直接使用 MaaEnd 原有配置，由 MaaEnd GUI 维护。',
     icon: 'setting',
   },
-]
-
-const quickConfigOptions = [
-  { label: t('edit.enabled3'), value: true },
-  { label: t('edit.off'), value: false },
 ]
 
 const emitSave = (key: string, value: any) => {

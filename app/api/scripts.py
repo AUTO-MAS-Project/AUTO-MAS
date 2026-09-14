@@ -561,6 +561,10 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            autoCollectGroups=[
+                MaaEndAutoCollectGroup(**item)
+                for item in data.get("autoCollectGroups", [])
+            ],
             controllers=[ComboBoxItem(**item) for item in data["controllers"]],
             controllerTypes=data["controllerTypes"],
             essenceLocations=[
@@ -683,6 +687,25 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
             if new_plan != plan:
                 od["Plan"] = new_plan
+            # 录制（KeyMouse）加入队列：提前生成 per-user 配置组副本（含单 KeyMouse 项目），
+            # 使右栏项目编辑能读到录制内容、运行时可被物化，避免「一条龙里没有内容」。
+            try:
+                from app.task.BetterGI.tools import one_dragon as _od
+
+                _root = Path(str(script_cfg.get("Info", "RootPath"))).expanduser()
+                _queue = _od.parse_one_dragon_queue(od["Queue"])
+                _od.ensure_keymouse_groups(
+                    _root,
+                    user.scriptId,
+                    user.userId,
+                    [e.get("name") for e in _queue if isinstance(e, dict)],
+                )
+            except Exception:  # pragma: no cover - 兜底：生成失败不应阻断保存
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "为队列中的录制生成配置组副本失败（已忽略）", exc_info=True
+                )
         except Exception as e:  # pragma: no cover - 兜底：同步失败不应阻断保存
             import logging
 
@@ -1782,6 +1805,43 @@ async def get_bettergi_js_scripts_api(scriptId: str) -> ComboBoxOut:
 
 
 @router.get(
+    "/bettergi/key-mouse-scripts",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 可用键鼠脚本（录制）列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_key_mouse_scripts_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 键鼠脚本（录制）候选。
+
+    ``label`` 与 ``value`` 同为 {RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
+    供一条龙「添加配置组」弹窗的「录制」标签页作为候选（贴录制标签）选择。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_key_mouse_scripts(root)
+        data = [ComboBoxItem(label=name, value=name) for name in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个键鼠脚本",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
     "/bettergi/script-groups",
     tags=["BetterGI"],
     summary="获取 BetterGI 可用配置组列表",
@@ -1990,6 +2050,8 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             autoPathingDir=dirs.get("autoPathing"),
             oneDragonDir=dirs.get("oneDragon"),
             scriptGroupDir=dirs.get("scriptGroup"),
+            keyMouseScriptDir=dirs.get("keyMouseScript"),
+            autoFightDir=dirs.get("autoFight"),
             exePath=dirs.get("exe"),
         )
     except Exception as e:
@@ -2006,6 +2068,8 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             autoPathingDir=None,
             oneDragonDir=None,
             scriptGroupDir=None,
+            keyMouseScriptDir=None,
+            autoFightDir=None,
             exePath=None,
         )
 

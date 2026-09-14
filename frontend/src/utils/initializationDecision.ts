@@ -1,8 +1,8 @@
 import type { RuntimeInitMode } from '@/types/electron'
 
-export type InitializationDecisionMode = 'skip-home' | 'full-init' | 'force-backend-update'
+type InitializationDecisionMode = 'skip-home' | 'full-init' | 'force-backend-update'
 
-export interface InitializationDecision {
+interface InitializationDecision {
   mode: InitializationDecisionMode
   currentVersion: string
   savedVersion: string | null
@@ -108,7 +108,7 @@ export interface FailureAction {
 /** 需要在按钮之外多说一句话的两种情形。 */
 export type FailureNoticeKind = 'internal-error' | 'contact-support'
 
-export interface FailureActionPlan {
+interface FailureActionPlan {
   /** 有序动作列表，界面按这个顺序渲染，第一个作主按钮。 */
   actions: FailureAction[]
   /** 是否展开镜像源选择面板。 */
@@ -120,7 +120,7 @@ export interface FailureActionPlan {
 }
 
 /** 决策输入，全部来自失败结果里的机器字段，不含任何展示文案。 */
-export interface FailureContext {
+interface FailureContext {
   /** Runtime 结果码。 */
   code?: string
   retryable?: boolean

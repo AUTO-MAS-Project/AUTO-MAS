@@ -4,7 +4,7 @@ import { message } from 'ant-design-vue'
 import { ActionService, type PatternDebugIn, type PushLogPattern as ApiPushLogPattern } from '@/api'
 import type { PushLogPattern } from './usePushLogPatterns'
 
-export interface DebugResult {
+interface DebugResult {
   idx: number
   hit: boolean
   extracted: string
@@ -12,7 +12,7 @@ export interface DebugResult {
   error?: string | null
 }
 
-export interface UseLogPatternDebugOptions {
+interface UseLogPatternDebugOptions {
   logPath?: string | (() => string | undefined)
 }
 

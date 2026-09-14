@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { ComboBoxItem } from './ComboBoxItem';
+import type { MaaEndAutoCollectGroup } from './MaaEndAutoCollectGroup';
 import type { MaaEndEssenceTargetGroup } from './MaaEndEssenceTargetGroup';
 export type MaaEndOptionsOut = {
     /**
@@ -17,6 +18,10 @@ export type MaaEndOptionsOut = {
      * 操作消息
      */
     message?: string;
+    /**
+     * MaaEnd 自动采集地区与分类
+     */
+    autoCollectGroups?: Array<MaaEndAutoCollectGroup>;
     /**
      * MaaEnd 控制器选项
      */

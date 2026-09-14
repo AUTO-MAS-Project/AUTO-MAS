@@ -47,7 +47,7 @@ export interface LogHighlightColors {
 }
 
 // 字体样式配置接口
-export interface LogHighlightStyles {
+interface LogHighlightStyles {
   timestampBold: boolean
   levelBold: boolean
   keywordBold: boolean
@@ -55,7 +55,7 @@ export interface LogHighlightStyles {
 }
 
 // 编辑器配置接口
-export interface LogEditorConfig {
+interface LogEditorConfig {
   fontSize: number
   lineHeight: number
 }

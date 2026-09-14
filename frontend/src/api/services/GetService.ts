@@ -464,7 +464,7 @@ export class GetService {
      * 合并多条安装的实例。键是设备号，另附模拟器自己的实例索引。
      *
      * 枚举失败的安装标 ``unavailable``——一次枚举失败不等于实例被删除，
-     * 既不写墓碑也不影响下次恢复。
+     * 既不写墓碑也不影响下次恢复。``withSettings=false`` 只取状态，给轮询用。
      * @param requestBody
      * @returns Emulator2DevicesOut Successful Response
      * @throws ApiError

@@ -16,6 +16,14 @@ export type BAAHUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
+     * 配置来源（脚本/用户/直控）
+     */
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
+    /**
      * 默认使用的 BAAH 配置文件名
      */
     ConfigName?: (string | null);
