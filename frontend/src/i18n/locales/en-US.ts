@@ -2980,6 +2980,15 @@ export default {
       saveQueueFailed: 'Could not save the queue: {error}',
     },
   },
+  logs: {
+    package: 'Package logs',
+    toast: {
+      packageNoResponse: 'Packaging logs did not respond. Check the app.',
+      packageExported: 'Log archive exported',
+      packageFailed: 'Could not package logs',
+      packageError: 'Error packaging logs: {error}',
+    },
+  },
   scheduler: {
     title: 'Scheduler',
     powerLabel: 'Power action when the task finishes:',

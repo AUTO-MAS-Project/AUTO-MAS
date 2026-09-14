@@ -2859,6 +2859,15 @@ export default {
       saveQueueFailed: '保存队列数据失败: {error}',
     },
   },
+  logs: {
+    package: '打包日志',
+    toast: {
+      packageNoResponse: '打包日志功能未响应，请检查程序',
+      packageExported: '日志压缩包导出成功',
+      packageFailed: '日志打包失败',
+      packageError: '打包日志异常: {error}',
+    },
+  },
   scheduler: {
     title: '调度中心',
     powerLabel: '任务完成后电源操作：',
