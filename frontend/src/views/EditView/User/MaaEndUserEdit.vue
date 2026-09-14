@@ -132,7 +132,14 @@
         </a-form>
 
         <aside class="anchor-sidebar">
-          <a-anchor :items="anchorItems" :affix="false" :offset-top="96" />
+          <!-- 页内目录只滚动内容，避免锚点覆盖应用的 hash 路由。 -->
+          <a-anchor
+            :items="anchorItems"
+            :affix="false"
+            :offset-top="96"
+            :get-container="getAnchorContainer"
+            @click.prevent
+          />
         </aside>
       </div>
     </div>
@@ -219,6 +226,8 @@ const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
 let sanityPlanLoadVersion = 0
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
+
+const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
 // 任务卡片始终保留：关闭快速配置后仍可设置每日仅执行一次的任务。
 const anchorItems = computed(() => {
