@@ -54,15 +54,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按来源和快速配置决定。
+        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按配置来源决定。
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 直控+关闭=不写；其余组合都写面板值
+            # 直控来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径）
             mode = read_config_source(user_config)
-            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT or bool(
-                user_config.get("Info", "IfQuickConfig")
-            )
+            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False

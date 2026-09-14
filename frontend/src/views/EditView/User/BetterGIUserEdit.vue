@@ -279,7 +279,7 @@
                 />
                 <a-switch
                   v-model:checked="formData.Info.IfQuickConfig"
-                  :disabled="pageLoading"
+                  :disabled="pageLoading || formData.Info.Mode === '直控'"
                   style="margin-top: 12px"
                   @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
                 />
@@ -321,7 +321,7 @@
             </div>
 
             <a-alert
-              v-if="formData.Info.Mode === '直控' && !formData.Info.IfQuickConfig"
+              v-if="formData.Info.Mode === '直控'"
               type="info"
               show-icon
               class="mode-guide-alert"
@@ -1273,9 +1273,10 @@ const bettergiConfigModeOptions: Array<{
     icon: 'setting',
   },
 ]
-const masConfigEnabled = computed(
-  () => formData.Info.Mode !== '直控' || formData.Info.IfQuickConfig
-)
+// 配置来源决定任务配置区的形态：直控 = 用 BGI 所选原生配置（下方「一条龙名称」可选、
+// 可点「配置 BetterGI」打开原生界面），MAS 不接管；脚本/用户 = MAS 侧配置面板。
+// 快速配置不再参与这里的判定，否则「直控」会被快速配置（默认开）锁回 MAS 槽位。
+const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 

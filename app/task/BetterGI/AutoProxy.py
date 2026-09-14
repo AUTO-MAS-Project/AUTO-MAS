@@ -207,11 +207,13 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: BetterGIUserConfig = self.user_config[self.cur_user_uid]
-        # 直控+关闭=不写；其余组合都写面板值（一条龙的「用户」来源即面板值）
+        # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管
+        # （一条龙配置名回到 Task.OneDragonConfigName，前端也据此显示原生控件）；
+        # 脚本/用户 = MAS 侧配置（脚本级共享 / per-user 独立）。
+        # 注：快速配置不再参与这里的判定——它在直控下的语义是「要不要把面板值写入
+        # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让直控被锁回 MAS 槽位。
         self.config_mode = read_config_source(self.cur_user_config)
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
-            self.cur_user_config.get("Info", "IfQuickConfig")
-        )
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         self.cur_user_log: LogRecord | None = None
         self.bettergi_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
