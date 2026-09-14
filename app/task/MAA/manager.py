@@ -20,7 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -32,8 +31,15 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, CONFIG_SOURCE_SCRIPT, read_config_source
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -106,14 +112,35 @@ class MaaManager(TaskExecuteBase):
             ).exists()
         ):
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
+        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 MAA 安装目录的原生配置,
+        # 不依赖 MAS 侧的 Default/ConfigFile 存档
         if (
             self.task_info.mode != "ScriptConfig"
+            and self._has_mas_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
         ):
             return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Pass"
+
+    def _has_mas_config_user(self) -> bool:
+        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+
+        check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
+        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
+        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        """
+
+        return any(
+            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            for uid, config in Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].UserData.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
+        )
 
     async def prepare(self):
         """运行前准备"""
@@ -133,10 +160,15 @@ class MaaManager(TaskExecuteBase):
             self.script_config.get("Emulator", "Id")
         )
 
-        # 备份原始配置
-        self.temp_path.mkdir(parents=True, exist_ok=True)
-        if self.maa_set_path.exists():
-            shutil.copytree(self.maa_set_path, self.temp_path, dirs_exist_ok=True)
+        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
+        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
+        self._recover_previous_run()
+        if commit_native_config_snapshot(
+            self.temp_path,
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        ):
+            self.had_original_script_config = True
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -162,6 +194,21 @@ class MaaManager(TaskExecuteBase):
         # 活动关卡信息整个任务只刷新一次, 各用户注入配置时直接用缓存
         if self.task_info.mode == "AutoProxy":
             await Config.get_stage(refresh=True)
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.maa_set_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 MAA 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 MAA 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     async def main_task(self):
 
@@ -260,9 +307,8 @@ class MaaManager(TaskExecuteBase):
 
         # 还原配置
         if (self.temp_path).exists():
-            shutil.rmtree(self.maa_set_path, ignore_errors=True)
-            shutil.copytree(self.temp_path, self.maa_set_path, dirs_exist_ok=True)
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+            swap_in_dir(self.temp_path, self.maa_set_path)
+        clear_native_config_snapshot(self.temp_path)
 
         self.script_info.status = "完成"
 

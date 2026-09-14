@@ -14,7 +14,7 @@ import {
 
 const logger = getLogger('MaaEnd问题包')
 
-export interface MaaEndIssueReportResult {
+interface MaaEndIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string

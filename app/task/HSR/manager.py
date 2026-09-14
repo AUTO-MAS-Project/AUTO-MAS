@@ -1057,7 +1057,11 @@ class HSRManager(TaskExecuteBase):
         try:
             # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
             # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
-            if is_game_management_enabled(self.script_config):
+            # 配置检查未通过或 prepare() 未走完时 script_config 仍为 None，
+            # 与上面 _close_game_if_needed 一样跳过，不把它记成收尾异常。
+            if isinstance(self.script_config, HSRConfig) and is_game_management_enabled(
+                self.script_config
+            ):
                 restore_game_resolution_if_needed(
                     self._runtime,
                     self._append_log,

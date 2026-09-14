@@ -16,7 +16,6 @@ export default {
     on: 'On',
     off: 'Off',
     confirm: 'OK',
-    back: 'Back',
     cancel: 'Cancel',
     doc: 'Docs',
     unknown: 'Unknown',
@@ -333,7 +332,6 @@ export default {
     stage: 'Stage',
     dropWholeLineWhen: 'Drop the whole line when the pattern matches',
     failed: 'Failed',
-    normalMode: 'Normal mode',
     filterLinesByKeyword: 'Filter lines by keyword, then trim the head and tail',
     rewriteLineMatchPattern: 'Rewrite the line with the match pattern, then pass it on',
     controlConfiguration: 'Control configuration',
@@ -345,7 +343,6 @@ export default {
     extractFieldsFromWindow: 'Extract fields from a window bounded by the start and end patterns',
     targetStock: 'Target stock',
     stock: 'Stock',
-    customBaseLayout: 'Custom base layout',
     resource: 'Resource',
     preset: 'Preset',
     claimRewards: 'Claim rewards',
@@ -392,7 +389,6 @@ export default {
     wutheringWavesUpdateFailed: 'Wuthering Waves update failed: {p0}',
     fromPlan: 'From the plan',
     pickTypeCustomStage: 'Pick or type a custom stage',
-    sendThisUserS: "Send this user's task notifications to the selected channels",
     keepOriginalConfiguration: 'Keep the original configuration',
     pickServer: 'Pick a server',
     accountId: 'Account ID',
@@ -931,9 +927,6 @@ export default {
     srcScriptConfiguration: 'SRC script configuration',
     srcPath: 'SRC path',
     srcPathSelected: 'SRC path selected',
-    serverchan2: 'ServerChan',
-    serverchanSendkey: 'ServerChan SendKey...',
-    serverchanKey: 'ServerChan key',
     starrailassistantInstallDirectoryContain:
       'StarRailAssistant install directory (contains SRA-cli.exe)',
     url: 'URL',
@@ -1345,6 +1338,12 @@ export default {
       'Use the existing Okww configuration and leave the complex settings to the script GUI.',
     useScriptSCurrent:
       "Use the script's current configuration; this user's own configuration is neither loaded nor written back.",
+    useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
+    quickConfig: 'Quick configuration',
+    configSourceHint:
+      'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
+    configSourceHintBase:
+      "Script uses the shared script-level configuration, User uses this user's own configuration; Direct control uses the script's existing configuration and MAS never writes it. Quick configuration is a separate switch.",
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',
@@ -1458,6 +1457,8 @@ export default {
     updateAutomaticallyBeforeRun: 'Update automatically before a run',
     run1920x1080WindowedMode: 'Run in 1920x1080 windowed mode',
     runMode: 'Run mode',
+    hsrRunModeHint:
+      'Run mode and config source are two independent axes: config source decides config ownership (script/user/direct control), run mode decides whether MAS manages the HSR native config (managed = MAS writes managed fields, direct = use the live native config). Under direct-control source the runtime always resolves to direct.',
     couldNotSaveRun: 'Could not save the run mode — try again',
     runTimeoutMinutes2: 'Run timeout (minutes)',
     backScriptList: 'Back to the script list',
@@ -2135,6 +2136,7 @@ export default {
     stateDefault: 'Default',
     start: 'Start',
     stop: 'Stop',
+    show: 'Show window',
     hide: 'Hide window',
     openStore: 'Open game center',
     settings: 'Settings',
@@ -2226,6 +2228,7 @@ export default {
       unavailable: 'This emulator is unreachable right now',
       missing: 'This instance cannot be found',
       error: 'The instance is in an error state',
+      busy: 'An operation is still in progress',
     },
     status: {
       missing: 'Not found',
@@ -3015,7 +3018,6 @@ export default {
     overview: {
       title: 'Task overview',
       unknownScript: 'Unknown script',
-      unknownTask: 'Unknown task',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',

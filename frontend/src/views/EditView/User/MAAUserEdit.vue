@@ -49,10 +49,13 @@
             :loading="loading"
             :server-options="serverOptions"
             @save="handleFieldSave"
+            @mode-change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
           />
 
-          <!-- 任务配置：明确区分剿灭与日常的两次 MAA 启动 -->
+          <!-- 任务配置：明确区分剿灭与日常的两次 MAA 启动（直控时隐藏，配置由脚本原生维护） -->
           <TaskPipelineSection
+            v-if="formData.Info.Mode !== '直控'"
             v-model:form-data="formData"
             :loading="loading"
             :stage-options="stageOptions"
@@ -508,6 +511,7 @@ const getDefaultMAAUserData = () => ({
     Notes: '',
     Status: true,
     Mode: '脚本',
+    IfQuickConfig: true,
     InfrastMode: 'Normal',
     InfrastName: '',
     InfrastIndex: '',
@@ -704,6 +708,19 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
   fieldSavePromise = savePromise
 
   return savePromise
+}
+
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  await handleFieldSave('Info.IfQuickConfig', value)
+}
+
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 // 注意：移除了 watch 自动保存，现在由子组件的 @save 事件触发保存

@@ -38,9 +38,12 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
     append_push_log,
     find_pids_by_name,
     push_dispatch_log,
+    quick_config_takeover,
+    resolve_config_source,
     split_args,
 )
 from app.utils import (
@@ -51,7 +54,7 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import UTC4
-from app.utils.io import read_file, replace_dir
+from app.utils.io import mark_native_config_injected, read_file, swap_in_dir
 from app.utils.LogMonitor import LogMonitor
 from app.utils.LogPatternExtractor import (
     SIGN_MODE_SPLIT,
@@ -60,6 +63,7 @@ from app.utils.LogPatternExtractor import (
 )
 
 from .config_schema import (
+    DAILY_ROUTINE_CONFIGS_FILE,
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,
     ensure_oknte_daily_routine_configs,
@@ -259,6 +263,13 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkNteUserConfig = self.user_config[self.cur_user_uid]
+        # 配置来源三态：直控时 MAS 不做整目录下发与回写（原生配置由用户在
+        # ok-nte 里维护）。快速配置是与来源独立的用户级开关，可观测效果仅
+        # 在直控下体现：直控+开启=任务前写 DailyRoutine 面板子集（见
+        # _apply_oknte_quick_config），直控+关闭=零写入。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
@@ -290,6 +301,11 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "RemainedDay") == 0:
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
+
+        # 直控不做任何下发，脚本原生配置就是本次运行的全部配置来源：缺失时
+        # 必须提前报错，否则会静默启动一个未配置的 ok-nte（对齐 Okww）。
+        if self.direct_control and not self._native_config_ready():
+            return "未找到 OK-NTE 脚本原有配置，请先在 OK-NTE 中保存设置"
 
         if (
             self.script_config.get("Game", "Enabled")
@@ -427,6 +443,20 @@ class AutoProxyTask(TaskExecuteBase):
             Path.cwd() / "data" / self.script_info.script_id / "Default" / "ConfigFile"
         )
 
+    def _native_config_ready(self) -> bool:
+        """直控运行前检查：脚本原生配置是否存在（Folder=目录非空 / File=文件存在）。
+
+        从 ScriptConfig 现场解析 ConfigPath：本方法在 check() 阶段调用，早于
+        prepare()，此时 self.script_config_path 尚未赋值。
+        """
+
+        target = Path(self.script_config.get("Script", "ConfigPath"))
+        if self.script_config.get("Script", "ConfigPathMode") == "File":
+            return target.is_file()
+        with suppress(OSError):
+            return target.is_dir() and any(target.iterdir())
+        return False
+
     def _oknte_mas_config_dir(self) -> Path:
         return (
             Path.cwd()
@@ -483,6 +513,18 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
 
+        # 直控：MAS 不做整目录下发/回写（原生配置由用户自己在 ok-nte 里维护）。
+        # 快速配置子集（DailyRoutine 面板字段）由 quick_config_takeover 统一门控：
+        # 直控+开启=任务前把该用户子集写进原生 working 配置（任务结束由 manager
+        # 既有快照恢复）；直控+关闭=零写入。写失败异常向上传播即任务失败（S5），
+        # 不吞异常、不假装成功。
+        if self.direct_control:
+            quick_config_takeover(
+                self.cur_user_config,
+                self._apply_oknte_quick_config,
+            )
+            return
+
         # 下发前归档 MAS 用户配置（下发源，运行回写 update_config 会覆盖它；
         # 指纹去重，失败不阻断运行）。native 池不在此处归档：原生配置跨用户
         # 共享，按用户/重试归档会把上一轮下发的 MAS 配置误当原生内容挤进
@@ -492,7 +534,12 @@ class AutoProxyTask(TaskExecuteBase):
         mas_config_dir = self._ensure_oknte_mas_config_dir()
         self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            replace_dir(mas_config_dir, self.script_config_path)
+            swap_in_dir(mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(
                 mas_config_dir / self.script_config_path.name,
@@ -500,8 +547,45 @@ class AutoProxyTask(TaskExecuteBase):
             )
         logger.info("OK-NTE 运行参数配置完成: 自动代理")
 
+    def _apply_oknte_quick_config(self) -> None:
+        """直控+快速配置：把该用户 DailyRoutine 面板字段子集写入原生 working 配置。
+
+        子集=高频日常任务面板（DailyRoutineTask.json / DailyRoutineTaskConfigs.json，
+        与 ok-ww DailyTask.json 子集语义一致），值来自该用户的 MAS 配置目录
+        （web 编辑保存处）；不发明「全部面板字段」的平行语义。原生 working 配置
+        在任务结束由 manager 既有快照/指纹恢复（Folder=整目录；File=文件集，
+        manager 已把子集文件纳入快照）。File 模式只替换已存在的原生文件，
+        不新造文件——避免写入未被快照覆盖的内容。
+        """
+
+        mas_config_dir = self._ensure_oknte_mas_config_dir()
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            target_dir = self.script_config_path
+        else:
+            target_dir = self.script_config_path.parent
+        for name in (DAILY_ROUTINE_TASK_FILE, DAILY_ROUTINE_CONFIGS_FILE):
+            src = mas_config_dir / name
+            target = target_dir / name
+            if not src.is_file():
+                continue
+            if (
+                self.script_config.get("Script", "ConfigPathMode") != "Folder"
+                and not target.is_file()
+            ):
+                # File 模式快照只覆盖已存在的子集文件，不新造
+                continue
+            target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(src, target)
+        logger.info("OK-NTE 直控快速配置：已写入 DailyRoutine 面板字段子集")
+
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
+
+        # 直控：原生配置不属于 MAS，不得把它抄回 MAS 侧 ConfigFile——否则
+        # 下一次切回「用户」来源会把这个直控用户的原生配置当成他的独立配置。
+        if self.direct_control:
+            logger.info("OK-NTE 直控配置：跳过配置回写 MAS")
+            return
 
         mas_config_dir = self._oknte_mas_config_dir()
         mas_config_dir.mkdir(parents=True, exist_ok=True)

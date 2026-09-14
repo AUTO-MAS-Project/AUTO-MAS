@@ -19,7 +19,7 @@ const toLocalDate = (
   millisecond = 0
 ) => new Date(year, month - 1, day, hour, minute, second, millisecond)
 
-export const parseBackendDateTime = (value: string): Date | null => {
+const parseBackendDateTime = (value: string): Date | null => {
   if (!value) return null
 
   // 优先解析旧中文格式，避免依赖浏览器对本地化日期字符串的支持。

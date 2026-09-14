@@ -31,14 +31,14 @@ export interface PushLogPattern {
 const LOG_TYPE_NORMAL = '普通'
 const LOG_TYPE_ERROR = '失败'
 
-export const normalizePatternType = (raw: unknown): PushLogPatternType => {
+const normalizePatternType = (raw: unknown): PushLogPatternType => {
   if (raw === 'split') return 'split'
   if (raw === 'multiline') return 'multiline'
   return 'regex'
 }
 
 /** 日志类型归一：仅接受 普通/失败（旧值「错误」「异常」归一为「失败」），其余回退 普通 */
-export const normalizeLogType = (raw: unknown): string => {
+const normalizeLogType = (raw: unknown): string => {
   return raw === LOG_TYPE_ERROR || raw === '错误' || raw === '异常'
     ? LOG_TYPE_ERROR
     : LOG_TYPE_NORMAL
@@ -79,13 +79,13 @@ const defaultMultilinePattern = (): PushLogPattern => ({
   maxLines: 50,
 })
 
-export const createPattern = (type: PushLogPatternType): PushLogPattern => {
+const createPattern = (type: PushLogPatternType): PushLogPattern => {
   if (type === 'split') return defaultSplitPattern()
   if (type === 'multiline') return defaultMultilinePattern()
   return defaultRegexPattern()
 }
 
-export const parsePushLogPatterns = (json: string): PushLogPattern[] => {
+const parsePushLogPatterns = (json: string): PushLogPattern[] => {
   if (!json) return []
   try {
     const items = JSON.parse(json)
@@ -155,7 +155,7 @@ const ruleHasRequiredField = (p: PushLogPattern): boolean => {
 const ruleDisplayName = (p: PushLogPattern, idx: number): string =>
   (p.name || '').trim() || `规则${idx + 1}`
 
-export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => {
+const serializePushLogPatterns = (patterns: PushLogPattern[]): string => {
   const cleaned: PushLogPattern[] = []
   for (const p of patterns) {
     const enabled = p.enabled === false ? false : true
@@ -211,7 +211,7 @@ export const serializePushLogPatterns = (patterns: PushLogPattern[]): string => 
  * - match / start 语义相近：regex.match -> multiline.start
  * - extract 在 regex / multiline 之间通用
  */
-export const migratePatternOnTypeChange = (
+const migratePatternOnTypeChange = (
   oldPattern: PushLogPattern,
   newType: PushLogPatternType
 ): PushLogPattern => {
@@ -251,7 +251,7 @@ export const migratePatternOnTypeChange = (
   }
 }
 
-export interface UsePushLogPatternsOptions {
+interface UsePushLogPatternsOptions {
   patternsJson: Ref<string>
   onChange?: (json: string) => void
 }

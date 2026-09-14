@@ -164,12 +164,20 @@ class StringListValidator(ValidatorBase):
 
     MaaEnd 的目标武器选项来自安装目录，无法在配置模型初始化时写死，
     因此不能使用需要静态选项表的 ``MultipleOptionsValidator``。
+    allow_none 用于区分“沿用动态默认值”和显式清空列表。
     """
 
+    def __init__(self, *, allow_none: bool = False):
+        self.allow_none = allow_none
+
     def validate(self, value):
+        if value is None and self.allow_none:
+            return True
         return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
     def correct(self, value):
+        if value is None and self.allow_none:
+            return None
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, str)]
@@ -1341,6 +1349,14 @@ class MultipleConfig(Generic[T]):
                 self.order.append(uuid.UUID(instance["uid"]))
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
+
+                # 重建出来的子配置要挂上父级保存回调（#174），否则复制脚本、任务
+                # 收尾整表写回之后，对这些子配置的修改只改内存、不落盘。放在子配置
+                # load 之后：它自己的纠错保存不该触发父级半途落盘。
+                for save_method in self._save_methods:
+                    await self.data[self.order[-1]].add_save_method(save_method)
+                if self.file:
+                    await self.data[self.order[-1]].add_save_method(self.save)
 
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data

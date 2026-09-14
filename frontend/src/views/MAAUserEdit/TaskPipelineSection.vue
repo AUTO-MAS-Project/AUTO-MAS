@@ -47,7 +47,7 @@
           <a-button
             size="small"
             :disabled="loading"
-            @click="emitSave('Data.GreenTicketStoreMonth', currentMonthMarker)"
+            @click="emitSave('Data.GreenTicketStoreMonth', currentMonthMarker())"
           >
             {{ t('edit.markAsDone2') }}
           </a-button>
@@ -105,7 +105,7 @@
               <a-button
                 size="small"
                 :disabled="loading"
-                @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker)"
+                @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker())"
               >
                 {{ t('edit.markAsDone2') }}
               </a-button>
@@ -423,7 +423,7 @@ const dailyTasks = [
 const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')
 
 const annihilationCompletedThisWeek = computed(
-  () => formData.value.Data?.AnnihilationCompletedWeek === currentWeekMarker
+  () => formData.value.Data?.AnnihilationCompletedWeek === currentWeekMarker()
 )
 
 // 关闭时记住原关卡，重新打开直接恢复，省掉一次下拉选择
@@ -487,7 +487,7 @@ const cultivateSummary = computed(() =>
 )
 
 const greenTicketStoreDoneThisMonth = computed(
-  () => formData.value.Data?.GreenTicketStoreMonth === currentMonthMarker
+  () => formData.value.Data?.GreenTicketStoreMonth === currentMonthMarker()
 )
 
 const greenTicketStoreSummary = computed(() => {

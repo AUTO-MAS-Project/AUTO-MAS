@@ -4,7 +4,7 @@ import type {
   HSREngine,
 } from '@/composables/useHSRPluginApi'
 
-export interface HSRCapabilityView {
+interface HSRCapabilityView {
   effectiveEngines: HSREngine[]
   taskKeys: string[]
   supportedModes: string[]

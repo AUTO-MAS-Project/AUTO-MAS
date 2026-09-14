@@ -17,14 +17,14 @@ export interface GameItem {
 }
 
 /** 合并前的游戏签到或账号共享的库洛币签到结果 */
-export interface GameSignDetail {
+interface GameSignDetail {
   kind: 'game' | 'community'
   status: string
   reward?: string
   reason?: string
 }
 
-export interface SignDetailItem extends Omit<GameItem, 'details'> {
+interface SignDetailItem extends Omit<GameItem, 'details'> {
   kind: 'game' | 'community' | 'combined'
 }
 
@@ -36,12 +36,12 @@ export interface AccountGroup {
 }
 
 /** 后端返回的签到结果：社区名 -> 账号组列表 */
-export interface PlatformResult {
+interface PlatformResult {
   [platform: string]: AccountGroup[]
 }
 
 /** 标签云状态 */
-export type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'risk' | 'unconfigured'
+type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'risk' | 'unconfigured'
 
 /** 单个社区标签的聚合数据 */
 export interface PlatformTag {
@@ -66,7 +66,7 @@ export interface SignAccount {
 }
 
 /** 标签云中社区的展示顺序 */
-export const SIGN_PLATFORMS = ['米游社', '森空岛', '库街区', '塔吉多', '云异环'] as const
+const SIGN_PLATFORMS = ['米游社', '森空岛', '库街区', '塔吉多', '云异环'] as const
 
 /** 视为「已签到」的状态文案 */
 const SIGNED_STATUSES = ['成功', '已签到']
@@ -106,7 +106,7 @@ export const parseSignResult = (resultStr?: string | null): PlatformResult => {
 }
 
 /** 塔吉多 Token 里同时藏了塔吉多与云异环两套凭据 */
-export interface TaygedoCredential {
+interface TaygedoCredential {
   taygedo: boolean
   cloud: boolean
 }
