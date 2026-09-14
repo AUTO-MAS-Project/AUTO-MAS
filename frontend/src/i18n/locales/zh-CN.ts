@@ -2866,6 +2866,7 @@ export default {
       packageExported: '日志压缩包导出成功',
       packageFailed: '日志打包失败',
       packageError: '打包日志异常: {error}',
+      openFolderFailed: '无法打开压缩包所在文件夹',
     },
   },
   scheduler: {

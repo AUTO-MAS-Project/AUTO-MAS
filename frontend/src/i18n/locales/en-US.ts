@@ -2987,6 +2987,7 @@ export default {
       packageExported: 'Log archive exported',
       packageFailed: 'Could not package logs',
       packageError: 'Error packaging logs: {error}',
+      openFolderFailed: 'Could not open the archive folder',
     },
   },
   scheduler: {

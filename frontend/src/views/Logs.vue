@@ -213,7 +213,15 @@ const packageLogs = async () => {
     if (result.success) {
       message.success(t('logs.toast.packageExported'))
       logger.info(`日志打包成功: ${result.zipPath}`)
-      if (result.zipPath) await window.electronAPI.showItemInFolder?.(result.zipPath)
+      if (result.zipPath) {
+        try {
+          await window.electronAPI.showItemInFolder?.(result.zipPath)
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`打开压缩包所在文件夹失败: ${errorMsg}`)
+          message.error(t('logs.toast.openFolderFailed'))
+        }
+      }
     } else if (result.error === '用户取消') {
       // 主进程对保存对话框取消统一返回该中文文案，静默即可
       logger.info('用户取消了日志打包')
