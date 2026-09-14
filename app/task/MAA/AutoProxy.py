@@ -967,6 +967,7 @@ class AutoProxyTask(TaskExecuteBase):
                 if (
                     f"完成任务: {zh_task}" in log
                     or f"{zh_task} 任务跳过" in log
+                    or (en_task == "Fight" and "完成任务: 剿灭作战" in log)
                 ):
                     self.task_dict[en_task] = False
 
