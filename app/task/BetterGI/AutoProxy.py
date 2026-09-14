@@ -745,7 +745,17 @@ class AutoProxyTask(TaskExecuteBase):
         """
         group_names = list(self.exec_group_names)
         if not group_names:
+            # 没有需要接管的段 = 本次没有执行层任务要跑，不建记录
             return True
+
+        # 执行层是一次真实运行，必须留下 log_record：否则本用户这次运行在 MAS 侧没有
+        # 任何记录（结果列落到「未开始运行」、不写历史日志、不发统计通知、分步报告与
+        # 掉落统计无数据可解析）。原生一条龙随后会另开一条记录，结果形如「执行层 | 一条龙」。
+        exec_log = LogRecord()
+        self.log_start_time = datetime.now()
+        self.cur_user_item.log_record[self.log_start_time] = exec_log
+        # 同步为「当前记录」：on_crash 与收尾的「运行异常」通知都读 self.cur_user_log
+        self.cur_user_log = exec_log
 
         await self._push_dispatch_log(
             f"开始执行层: --startGroups {' '.join(group_names)}"
@@ -778,13 +788,18 @@ class AutoProxyTask(TaskExecuteBase):
         step_failed = 0
         # 必填配置缺失的步骤（用户可读原因）：与 step_failed 不同，它会让本次执行层判负
         missing_config: list[str] = []
+        # 失败原因，收尾时写入 exec_log.status；成功统一为项目契约 "Success!"
+        failure_reason = "执行层未正常结束"
 
         last_activity = time.monotonic()
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity, step_failed, done_groups
+            nonlocal last_activity, step_failed, done_groups, failure_reason
             last_activity = time.monotonic()
             log = "".join(log_content)
+            # 与原生一条龙的 check_log 同构：把执行层日志写进本次运行记录，
+            # 历史日志、统计通知与掉落统计都从这条记录取数据
+            exec_log.content = log_content
             # 单步失败只统计（执行层会跳过继续），不据此判负
             step_failed = log.count("MAS_STEP_FAIL")
             for reason in _missing_config_reasons(log):
@@ -796,14 +811,18 @@ class AutoProxyTask(TaskExecuteBase):
             if done_groups >= set(group_names):
                 # 必填配置缺失 → 判负：该步被跳过、任务没跑，若还判成功用户无从得知
                 result["success"] = not missing_config
+                if missing_config:
+                    failure_reason = "执行层失败：有任务因必填配置缺失未执行"
                 done_event.set()
             elif any(m in log for m in fail_markers):
                 result["success"] = False
+                failure_reason = "执行层失败（命中致命日志）"
                 done_event.set()
             elif (
                 result["started"]
                 and not await self.bettergi_process_manager.is_running()
             ):
+                failure_reason = "执行层进程在结束标记前退出"
                 done_event.set()
 
         monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
@@ -833,6 +852,10 @@ class AutoProxyTask(TaskExecuteBase):
                     # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
                     if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
                         result["success"] = False
+                        failure_reason = (
+                            "执行层空闲超时"
+                            f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                        )
                         logger.warning(
                             f"用户 {self.cur_user_item.name} 执行层空闲超时"
                             f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
@@ -841,6 +864,7 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"执行层执行异常: {e}")
             result["success"] = False
+            failure_reason = f"执行层执行异常: {e}"
         finally:
             await monitor.stop()
             await self.kill_managed_process()
@@ -849,10 +873,15 @@ class AutoProxyTask(TaskExecuteBase):
         if missing_config:
             # 具体到「哪一项缺什么」，避免只留一句笼统的「执行层失败」
             reason = "；".join(missing_config)
+            failure_reason = f"执行层有任务未执行（配置缺失）: {reason}"
             await self._push_dispatch_log(f"执行层有任务未执行：{reason}")
             logger.warning(
                 f"用户 {self.cur_user_item.name} 执行层有任务未执行（配置缺失）: {reason}"
             )
+
+        # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
+        # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
+        exec_log.status = "Success!" if result["success"] else failure_reason
 
         if result["success"]:
             if step_failed:
