@@ -3447,6 +3447,24 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_AutoBossStrategyName = ConfigItem(
             "OneDragon", "AutoBossStrategyName", ""
         )
+        ## 「队伍配置」总开关（胶囊开关）：ON 时表格内队伍参与运行时「战斗场景」选队；
+        ## OFF 时数据保留但不参与匹配（通用队伍 PartyName/AutoBossStrategyName 照旧生效）。
+        self.OneDragon_IfUseTeams = ConfigItem(
+            "OneDragon", "IfUseTeams", False, BoolValidator()
+        )
+        ## 队伍配置表：JSON 数组字符串，数组顺序即界面展示顺序（可拖拽重排），元素为
+        ## {"name": str,            # 队伍名称（游戏内队伍名）
+        ##  "strategy": str,        # 战斗策略名（留空 = 跟随通用策略 AutoBossStrategyName）
+        ##  "scenes": {             # 战斗场景（可跨标签页任意叠加，空则本行不参与匹配）
+        ##    "domain": [{"region": str, "domain": str, "reward": str}],   # 秘境：地区/秘境名/奖励档
+        ##    "leyline": [{"country": str, "type": str}],                  # 地脉花：地区/地脉类型
+        ##    "boss": [{"region": str, "boss": str}]},                     # 首领讨伐：地区/首领名
+        ##  "note": str,            # 备注
+        ##  "enabled": bool}        # 启用状态
+        ## 序号 0 的「通用队伍」不落本字段（直绑 PartyName / AutoBossStrategyName）。
+        ## 运行期由 team_resolver 按 L1 精确匹配 + 随机选取，写入 Plan 步骤的
+        ## masTeamOverride / masStrategyOverride（最高优先级，压过每周行与步骤级字段）。
+        self.OneDragon_Teams = ConfigItem("OneDragon", "Teams", "[]", JSONValidator(list))
         ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
         self.OneDragon_IfUseCustomGroups = ConfigItem(
             "OneDragon", "IfUseCustomGroups", False, BoolValidator()

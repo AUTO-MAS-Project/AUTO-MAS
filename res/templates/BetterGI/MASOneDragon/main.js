@@ -105,7 +105,8 @@ async function dispatchCombat(step) {
       const defaultRow = wd.default || {};
       const useWeekly = s.weeklyDomainEnabled !== false;
       const todayRow = (useWeekly && wd[wdName]) || {};
-      const partyName = todayRow.partyName || defaultRow.partyName || s.partyName;
+      // 队伍配置表「战斗场景」选队结果优先级最高（压过每周行与步骤级），见后端 team_resolver.py
+      const partyName = s.masTeamOverride || todayRow.partyName || defaultRow.partyName || s.partyName;
       const domainName = todayRow.domainName || defaultRow.domainName || s.domainName;
       const reward = useWeekly
         ? todayRow.reward != null
@@ -116,7 +117,7 @@ async function dispatchCombat(step) {
         : s.sundaySelectedValue;
       // 战斗策略：优先当天行，其次每周默认行，最后才是步骤级 combatStrategyPath（全局兜底）。
       // 留空则完全不设置，由 BGI 沿用 autoFightConfig 的全局策略。
-      const strategyName = todayRow.strategy || defaultRow.strategy || s.combatStrategyPath;
+      const strategyName = s.masStrategyOverride || todayRow.strategy || defaultRow.strategy || s.combatStrategyPath;
       // 今天无对应秘境配置则跳过（不执行）
       if (!domainName) {
         masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
@@ -197,6 +198,9 @@ async function dispatchCombat(step) {
         team = wdRow.team || def.team || s.team;
         strategy = wdRow.strategy || def.strategy || s.combatStrategyPath;
       }
+      // 队伍配置表「战斗场景」选队结果优先级最高（压过每日/每周行）
+      team = s.masTeamOverride || team;
+      strategy = s.masStrategyOverride || strategy;
       const p = new AutoLeyLineOutcropParam(
         s.count != null ? s.count : 3,
         country || "",
@@ -280,7 +284,9 @@ async function dispatchCombat(step) {
       const p = new AutoBossParam();
       // bossName 必填（Validate 第一道校验）；Param 无参构造已读本体配置作兜底
       if (s.bossName) setProp(p, "bossName", s.bossName);
-      if (s.teamName) setProp(p, "teamName", s.teamName);
+      // 队伍配置表「战斗场景」选队结果优先级最高（压过步骤级 teamName）
+      const bossTeam = s.masTeamOverride || s.teamName;
+      if (bossTeam) setProp(p, "teamName", bossTeam);
       if (s.specifyRunCount != null) setProp(p, "specifyRunCount", !!s.specifyRunCount);
       if (s.runCount != null) setProp(p, "runCount", s.runCount);
       if (s.useTransientResin != null) setProp(p, "useTransientResin", !!s.useTransientResin);
@@ -293,7 +299,7 @@ async function dispatchCombat(step) {
       if (s.timeout != null) setProp(p, "timeout", s.timeout);
       // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
       // 其余组策略走 s.combatStrategyPath。两者取其一经 setCombatStrategyPath 按策略名重算路径。
-      const bossStrategy = s.strategyName || s.combatStrategyPath;
+      const bossStrategy = s.masStrategyOverride || s.strategyName || s.combatStrategyPath;
       if (bossStrategy && typeof p.setCombatStrategyPath === "function") {
         p.setCombatStrategyPath(bossStrategy);
       }

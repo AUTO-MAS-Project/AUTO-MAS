@@ -272,7 +272,12 @@ class BetterGIScriptDirsOut(OutBase):
     keyMouseScriptDir: Optional[str] = Field(
         default=None, description="键鼠脚本（录制）目录"
     )
+    autoFightDir: Optional[str] = Field(
+        default=None, description="自动战斗策略目录（User/AutoFight，*.txt 即一份策略）"
+    )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
+
+
 class ZzzOdInstanceOut(BaseModel):
     """zzz-od 实例（账号）信息"""
 
@@ -1699,6 +1704,16 @@ class BetterGIUserConfig_OneDragon(BaseModel):
         description="是否启用「直连执行层」开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、"
         "战斗 4 项直连 BetterGI 原生任务；默认开，但只有用户配置过该组且队列中启用时才接管，"
         "其余战斗组仍走原生一条龙",
+    )
+    IfUseTeams: Optional[bool] = Field(
+        default=None,
+        description="是否启用「队伍配置」（总开关）；关闭时表格数据保留，但除通用队伍外不参与匹配",
+    )
+    Teams: Optional[Union[str, List]] = Field(
+        default=None,
+        description="队伍配置 JSON 数组字符串，按展示顺序存储，元素含 "
+        "name/strategy/scenes{domain,leyline,boss}/note/enabled；"
+        "序号 0 的通用队伍不落本字段（直绑 PartyName / AutoBossStrategyName）",
     )
 
 

@@ -1945,6 +1945,7 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             oneDragonDir=dirs.get("oneDragon"),
             scriptGroupDir=dirs.get("scriptGroup"),
             keyMouseScriptDir=dirs.get("keyMouseScript"),
+            autoFightDir=dirs.get("autoFight"),
             exePath=dirs.get("exe"),
         )
     except Exception as e:
@@ -1962,6 +1963,7 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             oneDragonDir=None,
             scriptGroupDir=None,
             keyMouseScriptDir=None,
+            autoFightDir=None,
             exePath=None,
         )
 
