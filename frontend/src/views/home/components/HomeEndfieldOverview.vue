@@ -27,38 +27,18 @@
       class="status-alert"
     />
 
-    <a-carousel
-      v-if="overview.Pools.length"
-      class="pool-carousel"
-      :dots="overview.Pools.length > 1"
-    >
-      <div v-for="pool in overview.Pools" :key="pool.Id">
-        <div class="pool-banner">
-          <div class="pool-content">
-            <div class="pool-heading">
-              <a-tag color="blue">{{ pool.Type }}</a-tag>
-              <span v-if="pool.UpCharacters.length" class="up-characters">
-                UP：{{ pool.UpCharacters.join('、') }}
-              </span>
-            </div>
-            <div class="pool-name">{{ pool.Name }}</div>
-            <div class="pool-end-time">
-              <ClockCircleOutlined />
-              <span>{{ t('home.endfield.endsAt', { time: formatTime(pool.EndTime) }) }}</span>
-            </div>
-            <a-statistic-countdown
-              :title="t('home.endfield.poolRemaining')"
-              :value="getCountdownValue(pool.EndTime)"
-              :format="t('home.countdown.dhm')"
-              :value-style="poolCountdownValueStyle"
-              @finish="emit('refresh')"
-            />
-          </div>
+    <!-- 卡池大横幅撤掉了，改成和活动一样的小行，避免和上方的轮播横幅重复一张大图 -->
+    <section v-if="overview.Pools.length" class="activity-section">
+      <div class="activity-section-header">
+        <span>{{ t('home.endfield.poolSection') }}</span>
+      </div>
 
-          <div class="pool-art">
+      <div class="activity-grid">
+        <div v-for="pool in overview.Pools" :key="pool.Id" class="activity-item">
+          <div class="activity-thumbnail">
             <PictureOutlined
               v-if="!pool.ImageUrl || failedImageIds.has(pool.Id)"
-              class="pool-placeholder"
+              class="activity-placeholder"
             />
             <img
               v-if="pool.ImageUrl && !failedImageIds.has(pool.Id)"
@@ -67,9 +47,28 @@
               @error="handleImageError(pool.Id)"
             />
           </div>
+
+          <div class="activity-info">
+            <div class="activity-title-row">
+              <span class="activity-name">{{ pool.Name }}</span>
+              <a-tag v-if="pool.Type" color="blue">{{ pool.Type }}</a-tag>
+            </div>
+            <div v-if="pool.UpCharacters.length" class="pool-up">
+              {{ t('home.endfield.upCharacters', { names: pool.UpCharacters.join('、') }) }}
+            </div>
+            <div class="activity-meta">
+              <span>{{ t('home.endfield.endsAt', { time: formatShortTime(pool.EndTime) }) }}</span>
+              <a-statistic-countdown
+                :value="getCountdownValue(pool.EndTime)"
+                :format="t('home.countdown.dh')"
+                :value-style="activityCountdownValueStyle"
+                @finish="emit('refresh')"
+              />
+            </div>
+          </div>
         </div>
       </div>
-    </a-carousel>
+    </section>
 
     <section v-if="overview.Activities.length" class="activity-section">
       <div class="activity-section-header">
@@ -126,7 +125,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
-import { ClockCircleOutlined, PictureOutlined } from '@ant-design/icons-vue'
+import { PictureOutlined } from '@ant-design/icons-vue'
 import type { CSSProperties } from 'vue'
 import type { EndfieldActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -148,12 +147,6 @@ const emit = defineEmits<{
 
 const failedImageIds = ref(new Set<string>())
 
-const poolCountdownValueStyle: CSSProperties = {
-  color: 'var(--ant-color-text)',
-  fontSize: '28px',
-  fontWeight: 700,
-}
-
 const activityCountdownValueStyle: CSSProperties = {
   color: 'var(--ant-color-primary)',
   fontSize: '13px',
@@ -165,16 +158,6 @@ const { t } = useI18n()
 const emptyDescription = computed(() =>
   props.overview.Available ? t('home.empty.endfield') : t('home.empty.endfieldNoData')
 )
-
-const formatTime = (timeString: string) => {
-  return new Date(timeString).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 const formatShortTime = (timeString: string) => {
   return new Date(timeString).toLocaleString('zh-CN', {
@@ -204,8 +187,6 @@ const handleImageError = (itemId: string) => {
 }
 
 .card-title,
-.pool-heading,
-.pool-end-time,
 .activity-section-header,
 .activity-title-row,
 .activity-meta {
@@ -213,15 +194,12 @@ const handleImageError = (itemId: string) => {
   align-items: center;
 }
 
-.card-title,
-.pool-heading,
-.pool-end-time {
+.card-title {
   gap: 8px;
 }
 
 .source-link,
 .activity-count,
-.pool-end-time,
 .activity-meta {
   font-size: 13px;
 }
@@ -230,80 +208,17 @@ const handleImageError = (itemId: string) => {
   margin-bottom: 16px;
 }
 
-.pool-carousel {
-  min-width: 0;
-}
-
-.pool-banner {
-  min-height: 220px;
-  padding: 28px 32px;
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.pool-content {
-  position: relative;
-  z-index: 1;
-}
-
-.up-characters,
-.pool-end-time,
+.pool-up,
 .activity-count,
 .activity-meta {
   color: var(--ant-color-text-secondary);
 }
 
-.pool-name {
-  margin: 14px 0 8px;
-  color: var(--ant-color-text);
-  font-size: 28px;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.pool-end-time {
-  margin-bottom: 16px;
-}
-
-.pool-art {
-  min-height: 164px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-quaternary);
-}
-
-.pool-art img {
-  width: 100%;
-  height: 210px;
-  position: absolute;
-  inset: auto 0 -28px;
-  z-index: 1;
-  object-fit: contain;
-  object-position: center bottom;
-}
-
-.pool-placeholder {
-  z-index: 1;
-  font-size: 44px;
-}
-
-.pool-carousel :deep(.slick-dots) {
-  bottom: 10px;
-}
-
-.pool-carousel :deep(.slick-dots li button) {
-  background: var(--ant-color-text-quaternary);
-}
-
-.pool-carousel :deep(.slick-dots li.slick-active button) {
-  background: var(--ant-color-primary);
+.pool-up {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .activity-section {
@@ -404,19 +319,6 @@ const handleImageError = (itemId: string) => {
 }
 
 @media (max-width: 640px) {
-  .pool-banner {
-    padding: 24px;
-    grid-template-columns: 1fr;
-  }
-
-  .pool-art {
-    display: none;
-  }
-
-  .pool-name {
-    font-size: 24px;
-  }
-
   .activity-item {
     grid-template-columns: 88px minmax(0, 1fr);
   }
