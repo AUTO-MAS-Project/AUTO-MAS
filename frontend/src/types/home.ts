@@ -3,6 +3,7 @@ export type HomeModuleKey =
   | 'quick'
   | 'satellite'
   | 'proxy'
+  | 'activities'
   | 'endfield'
   | 'starrail'
   | 'genshin'
@@ -16,6 +17,8 @@ export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
   hiddenModules: HomeModuleKey[]
   hideScrollHint?: boolean
+  /** 活动轮播是否自动播放；未设置按开启处理 */
+  carouselAutoplay?: boolean
 }
 
 export interface HomeModuleDescriptor {
@@ -24,7 +27,7 @@ export interface HomeModuleDescriptor {
   visible: boolean
 }
 
-export interface ActivityInfo {
+interface ActivityInfo {
   Tip: string
   StageName: string
   UtcStartTime: string
@@ -48,12 +51,12 @@ export interface ResourceItem {
   Activity: Pick<ActivityInfo, 'Tip' | 'StageName'>
 }
 
-export interface StageOption {
+interface StageOption {
   label: string
   value: string | null
 }
 
-export interface StageOverview {
+interface StageOverview {
   Activity: ActivityItem[]
   Resource: ResourceItem[]
   Options: StageOption[]
@@ -66,7 +69,7 @@ export interface ProxyInfo {
   ErrorInfo: Record<string, unknown>
 }
 
-export interface EndfieldActivityItem {
+interface EndfieldActivityItem {
   Id: string
   Name: string
   StartTime: string
@@ -75,7 +78,7 @@ export interface EndfieldActivityItem {
   Tags: string[]
 }
 
-export interface EndfieldPoolItem {
+interface EndfieldPoolItem {
   Id: string
   Name: string
   Type: string
@@ -129,27 +132,28 @@ export interface SraActivityOverview {
   activities: SraActivityItem[]
 }
 
-export type StarRailActivityOverview = SraActivityOverview
-export type GenshinActivityOverview = SraActivityOverview
-export type ZenlessZoneZeroActivityOverview = SraActivityOverview
-export type WutheringWavesActivityOverview = SraActivityOverview
-export type NevernessToEvernessActivityOverview = SraActivityOverview
 export type Reverse1999ActivityOverview = SraActivityOverview
-
-export const createEmptySraActivityOverview = (): SraActivityOverview => ({
-  Available: false,
-  Stale: false,
-  Message: '',
-  version: '',
-  versionName: '',
-  cover: '',
-  startTime: '',
-  endTime: '',
-  activities: [],
-})
 
 export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>
   Proxy: Record<string, ProxyInfo>
+}
+
+/** 首页活动轮播里单张 banner 的统一形状，屏蔽各游戏数据源的差异 */
+export interface ActivityBannerItem {
+  key: HomeModuleKey
+  /** 游戏短名，用于 banner 标题与切换条 */
+  title: string
+  /** 主题色，无封面时用来生成底纹 */
+  accent: string
+  /** 封面图地址，取不到时为空串 */
+  cover: string
+  /** 版本名或当期活动名 */
+  subtitle: string
+  /** 倒计时终点，取不到时为空串 */
+  endTime: string
+  loading: boolean
+  available: boolean
+  stale: boolean
 }

@@ -40,6 +40,11 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
+    CONFIG_SOURCE_USER,
+    resolve_config_source,
+)
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
     ARKNIGHTS_PACKAGE_NAME,
@@ -518,6 +523,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
+        # 快速配置决定是否把面板值写进 MAA 原生配置（两段互不替代）。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
 
@@ -794,14 +804,16 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             await agree_bilibili(self.maa_tasks_path, False)
 
-        # 基础配置内容
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        # ── 第一段：来源落盘 ──────────────────────────────────────────
+        # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
+        # 直控的事实源是 MAA 安装目录里现有的原生配置。
+        if self.config_mode == CONFIG_SOURCE_SCRIPT:
             shutil.copytree(
                 (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
-        elif self.cur_user_config.get("Info", "Mode") == "用户":
+        elif self.config_mode == CONFIG_SOURCE_USER:
             shutil.copytree(
                 (
                     Path.cwd()
@@ -810,6 +822,17 @@ class AutoProxyTask(TaskExecuteBase):
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
+
+        # ── 第二段：快速配置覆盖 ──────────────────────────────────────
+        # 由 IfQuickConfig 守卫，与来源无关：直控+关闭=完全用外侧原生配置，
+        # 直控+开启=任务前把面板值写进原生配置（任务结束按既有快照恢复）。
+        if self.direct_control and not self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ):
+            logger.info(
+                "MAA 直控配置：直接使用脚本原生配置，跳过快速配置写入"
+            )
+            return
 
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")

@@ -6,7 +6,7 @@
 
 import { promises as fsPromises } from 'fs'
 
-export interface LogIncrement {
+interface LogIncrement {
   /** 新增内容；reset 为 true 时是当前全文 */
   content: string
   /** 读取后的字节偏移，下一次从这里继续 */

@@ -29,72 +29,7 @@
       class="status-alert"
     />
 
-    <!-- 有版本封面：HSR 风格深色大横幅 -->
-    <div v-if="overview.Available && !loading && versionCover" class="version-banner">
-      <img
-        :src="versionCover"
-        :alt="overview.versionName"
-        class="version-cover"
-        referrerpolicy="no-referrer"
-        :style="{ objectPosition: coverPosition }"
-        @error="failedVersionCover = true"
-      />
-      <div class="version-overlay" />
-
-      <div class="version-content">
-        <div class="version-badge">
-          <span class="badge-dot" />
-          <span class="badge-text">{{
-            t('home.sra.versionBadge', { version: overview.version })
-          }}</span>
-        </div>
-
-        <div class="version-name">{{ overview.versionName }}</div>
-
-        <div class="version-time">
-          <ClockCircleOutlined class="version-time-icon" />
-          <span>{{ t('home.sra.endsAt', { time: formatTime(overview.endTime) }) }}</span>
-        </div>
-      </div>
-
-      <div class="version-remaining">
-        <div class="remaining-label">{{ t('home.sra.versionRemaining') }}</div>
-        <a-statistic-countdown
-          :value="getCountdownValue(overview.endTime)"
-          :format="t('home.countdown.dh')"
-          :value-style="remainingCountdownStyle"
-        />
-        <div class="remaining-sub">{{ t('home.sra.nextVersionSoon') }}</div>
-      </div>
-    </div>
-
-    <!-- 无版本封面：MAA 风格浅色简洁信息条 -->
-    <div v-else-if="overview.Available && !loading" class="version-info">
-      <div class="version-info-left">
-        <div class="version-info-name">{{ overview.versionName }}</div>
-        <div class="version-info-time">
-          <ClockCircleOutlined class="version-info-time-icon" />
-          <span class="version-info-time-label">{{ t('home.sra.versionTime') }}</span>
-          <span class="version-info-time-value"
-            >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
-          >
-        </div>
-      </div>
-
-      <div class="version-info-right">
-        <a-statistic-countdown
-          :title="t('home.sra.versionRemaining')"
-          :value="getCountdownValue(overview.endTime)"
-          :format="
-            getPlainTimeStatus(overview.endTime) === 'ended'
-              ? t('home.countdown.ended')
-              : t('home.countdown.dh')
-          "
-          :value-style="plainRemainingCountdownStyle"
-        />
-      </div>
-    </div>
-
+    <!-- 版本封面、版本名与版本倒计时由上方的轮播横幅统一承担，这里只留活动列表 -->
     <div
       v-if="activeActivities.length"
       class="activity-list"
@@ -138,7 +73,6 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { CSSProperties } from 'vue'
-import { ClockCircleOutlined } from '@ant-design/icons-vue'
 import type { SraActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -157,21 +91,17 @@ const props = withDefaults(
     plainActivities?: boolean
     sourceName?: string
     sourceUrl?: string
-    /** 版本封面裁切位置（object-position），用于超高竖图只显示特定条带 */
-    coverPosition?: string
   }>(),
   {
     plainActivities: false,
     sourceName: 'SRA',
     sourceUrl: 'https://starrailassistant.top',
-    coverPosition: 'right center',
   }
 )
 
 const emit = defineEmits<{ refresh: [] }>()
 
 const failedImageNames = ref(new Set<string>())
-const failedVersionCover = ref(false)
 
 const cardStyle = computed<CSSProperties>(
   () =>
@@ -191,12 +121,11 @@ const activeActivities = computed(() => {
     .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
 })
 
-const versionCover = computed(() => {
-  if (failedVersionCover.value) return ''
-  return (
+// 版本封面本身不再渲染，只用来给没有自带图的活动卡片兜底，并决定活动列表用哪套样式
+const versionCover = computed(
+  () =>
     props.overview.cover || props.overview.activities.find(activity => activity.cover)?.cover || ''
-  )
-})
+)
 
 const activityPlain = computed(() => props.plainActivities || !versionCover.value)
 
@@ -208,32 +137,6 @@ const getActivityImage = (activity: SraActivityOverview['activities'][number]) =
 const handleImageError = (activityName: string) => {
   failedImageNames.value = new Set(failedImageNames.value).add(activityName)
 }
-
-const remainingCountdownStyle = computed<CSSProperties>(() => ({
-  color: props.accent,
-  fontSize: '34px',
-  fontWeight: 700,
-  lineHeight: 1.1,
-  fontVariantNumeric: 'tabular-nums',
-}))
-
-const getPlainTimeStatus = (value: string): 'normal' | 'warning' | 'ended' => {
-  const remaining = getCountdownValue(value) - Date.now()
-  if (remaining <= 0) return 'ended'
-  if (remaining <= 2 * 24 * 60 * 60 * 1000) return 'warning'
-  return 'normal'
-}
-
-const plainRemainingCountdownStyle = computed<CSSProperties>(() => {
-  const status = getPlainTimeStatus(props.overview.endTime)
-  if (status === 'ended') {
-    return { color: 'var(--ant-color-error)', fontWeight: 600, fontSize: '18px' }
-  }
-  if (status === 'warning') {
-    return { color: 'var(--ant-color-warning)', fontWeight: 600, fontSize: '18px' }
-  }
-  return { color: 'var(--ant-color-text)', fontWeight: 600, fontSize: '18px' }
-})
 
 const activityCountdownStyle = computed<CSSProperties>(() => ({
   color: props.accent,
@@ -276,207 +179,6 @@ const formatTime = (value: string) =>
 
 .status-alert {
   margin-bottom: 16px;
-}
-
-/* ---------- 有封面：HSR 风格顶部版本横幅 ---------- */
-.version-banner {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  min-height: 300px;
-  margin-bottom: 16px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background:
-    radial-gradient(
-      ellipse at 78% 20%,
-      color-mix(in srgb, var(--sra-accent) 14%, transparent),
-      transparent 55%
-    ),
-    radial-gradient(ellipse at 90% 85%, rgba(64, 128, 255, 0.18), transparent 60%),
-    linear-gradient(135deg, #0b1220 0%, #101a2e 55%, #0e1a2b 100%);
-}
-
-.version-cover {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  object-position: right center;
-}
-
-.version-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(11, 18, 32, 0.9) 0%,
-    rgba(11, 18, 32, 0.72) 42%,
-    rgba(11, 18, 32, 0.15) 100%
-  );
-}
-
-.version-content {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 28px 32px;
-  color: white;
-}
-
-.version-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 4px 12px;
-  margin-bottom: 12px;
-  border: 1px solid color-mix(in srgb, var(--sra-accent) 45%, transparent);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.55);
-}
-
-.badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--sra-accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--sra-accent) 80%, transparent);
-}
-
-.badge-text {
-  color: var(--sra-accent);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.version-name {
-  margin-bottom: 14px;
-  color: white;
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-}
-
-.version-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.5);
-  color: white;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.version-time-icon {
-  color: var(--sra-accent);
-  font-size: 15px;
-}
-
-.version-remaining {
-  position: relative;
-  z-index: 1;
-  align-self: center;
-  margin-right: 28px;
-  padding: 18px 28px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  border: 1px solid color-mix(in srgb, var(--sra-accent) 35%, transparent);
-  border-radius: 14px;
-  background: rgba(11, 18, 32, 0.6);
-  backdrop-filter: blur(10px);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 0 24px color-mix(in srgb, var(--sra-accent) 5%, transparent);
-  white-space: nowrap;
-}
-
-.remaining-label {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 13px;
-  line-height: 1;
-  letter-spacing: 0.08em;
-}
-
-.version-remaining :deep(.ant-statistic-content) {
-  color: var(--sra-accent);
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 20px color-mix(in srgb, var(--sra-accent) 35%, transparent);
-}
-
-.remaining-sub {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
-  line-height: 1;
-}
-
-/* ---------- 无封面：MAA 风格浅色简洁版本信息条 ---------- */
-.version-info {
-  margin-bottom: 24px;
-  padding: 16px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.version-info-left {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.version-info-name {
-  color: var(--ant-color-text);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-
-.version-info-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.version-info-time-icon,
-.version-info-time-label {
-  color: var(--ant-color-text-secondary);
-}
-
-.version-info-time-value {
-  color: var(--ant-color-text);
-  font-weight: 500;
-}
-
-.version-info-right {
-  flex-shrink: 0;
-  text-align: right;
 }
 
 /* ---------- 活动列表（有封面：深色封面卡片） ---------- */
@@ -684,31 +386,6 @@ const formatTime = (value: string) =>
 .activity-list.is-plain .activity-item:hover .activity-desc {
   max-height: 60px;
   opacity: 1;
-}
-
-@media (max-width: 800px) {
-  .version-banner {
-    flex-direction: column;
-  }
-
-  .version-name {
-    font-size: 26px;
-  }
-
-  .version-remaining {
-    align-self: stretch;
-    align-items: flex-start;
-    margin: 0 28px 24px;
-  }
-
-  .version-info {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .version-info-right {
-    text-align: left;
-  }
 }
 
 @media (max-width: 560px) {

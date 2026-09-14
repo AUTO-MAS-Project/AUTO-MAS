@@ -6,9 +6,8 @@ import {
   type CommunityActivityTaskOut,
 } from '@/api'
 
-export type ActivityStatus = CommunityActivitySnapshotOut['status']
-export type ActivityTask = CommunityActivityTaskOut & { period: string }
-export type ActivityResource = CommunityActivityResourceOut
+type ActivityTask = CommunityActivityTaskOut & { period: string }
+type ActivityResource = CommunityActivityResourceOut
 export type ActivitySnapshot = Omit<
   CommunityActivitySnapshotOut,
   'completed' | 'target' | 'tasks' | 'resources'

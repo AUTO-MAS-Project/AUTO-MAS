@@ -181,7 +181,7 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 | `#preview` 插槽 | **完全接管预览区** | 字段型专项（M9A/HSR…）用自身结构渲染键值摘要；OkNte 按 `raw.files` 逐文件渲染摘要表 |
 | `#preview-title` 插槽 | 覆盖预览弹窗标题/说明 | 缺省「配置预览 · 时间」 |
 | `fieldLabels` / `formatValue` | 预览字段标签与枚举词表 | 内置渲染用 |
-| `userDesc` / `scriptDesc` | 描述文案覆写 | 专项归档时机措辞与通用不同时（如 ok-nte 无直控模式） |
+| `userDesc` / `scriptDesc` | 描述文案覆写 | 专项归档时机措辞与通用不同时（如 ok-nte 的脚本级/用户级归档措辞） |
 | `onRestored` / `onDetail` | 一键恢复后动作 / 查看详细配置流程 | `onRestored` 刷新表单；`onDetail` 按 §5.3 固定流程执行（不应自定义流程） |
 | 查看会话遮罩 | `GuiSessionMask` 是纯 UI | 专项只控制显示/隐藏与按钮行为，视觉统一复用 |
 

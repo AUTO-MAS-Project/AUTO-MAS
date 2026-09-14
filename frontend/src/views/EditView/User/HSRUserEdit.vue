@@ -139,7 +139,23 @@
                 </a-form-item>
               </a-col>
             </a-row>
-            <a-form-item :label="t('edit.runMode')" style="margin-top: 8px">
+            <GeneralConfigModeSelector
+              :model-value="formData.Info.Mode ?? '用户'"
+              :options="hsrConfigModeOptions"
+              :disabled="isSaving"
+              :saving="isSaving"
+              :alert-message="t('edit.configSourceHintBase')"
+              @change="handleConfigModeChange"
+            />
+            <a-form-item style="margin-top: 8px">
+              <template #label>
+                <span class="form-label">
+                  {{ t('edit.runMode') }}
+                  <a-tooltip :title="t('edit.hsrRunModeHint')">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </span>
+              </template>
               <a-select
                 :value="controlMode"
                 :options="controlModeOptions"
@@ -328,6 +344,7 @@ import type { HSRConfig_TaskMapping } from '@/api'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
 import type { HSRScriptConfig } from '@/types/script'
 import StageConfigSection from './HSRUserEdit/StageConfigSection.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import type { HSRDynamicStageOptionsData, HSRUserConfigData } from './HSRUserEdit/types'
 import { buildHSRCapabilityView } from './HSRUserEdit/capabilityView'
 import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
@@ -383,6 +400,10 @@ const formData = reactive<HSRUserConfigData>({
     Status: true,
     Id: '',
     Password: '',
+    // 配置来源三态（脚本/用户/直控），与下方 Control.Mode（托管/直连）是不同的轴，勿混用
+    Mode: '用户',
+    // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
+    // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
     Server: 'CN-Official',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -464,6 +485,37 @@ const serverOptions = computed(() => [
 const controlModeOptions = [
   { value: 'managed', label: t('edit.masManaged') },
   { value: 'direct', label: t('edit.scriptDirectControl') },
+]
+
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+const hsrConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'database' | 'setting'
+}> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useScriptS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: t('edit.useScriptSCurrent'),
+    icon: 'setting',
+  },
 ]
 
 type MutableRecord = Record<string, unknown>
@@ -657,6 +709,13 @@ const handleManagedInvalidOverridesClear = async (
   }
   await loadManagedConfig()
   message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
+}
+
+// 配置来源三态切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 const handleControlModeChange = async (value: string | number) => {

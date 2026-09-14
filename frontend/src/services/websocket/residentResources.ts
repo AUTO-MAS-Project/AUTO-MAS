@@ -5,7 +5,7 @@
  * 从而保证订阅可在首个连接前统一启动，并在应用最终关闭时显式释放。
  */
 
-export interface ResidentResource {
+interface ResidentResource {
   bootstrap: () => void
   dispose: () => void
 }

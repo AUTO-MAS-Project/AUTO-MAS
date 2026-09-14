@@ -53,6 +53,7 @@ from app.utils import (
     load_patterns,
     strptime,
 )
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils.constants import UTC4
 from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
@@ -131,7 +132,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
+        self.config_mode = read_config_source(self.cur_user_config)
+        # 是否写 MAS 侧配置：直控=不写，脚本/用户来源都写面板值。
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         self.check_result = "-"
 
     async def check(self) -> str:

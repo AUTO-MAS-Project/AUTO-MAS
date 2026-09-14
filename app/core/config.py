@@ -157,6 +157,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "活动关优先",
         "库存保持",
         "剩余理智",
+        "养成计划",
     }
     annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
     fight_start_markers = (
@@ -164,6 +165,10 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "开始任务: 理智作战",
         "Start Task Chain: Fight",
     )
+    # 库存保持/养成计划在同一个任务项里按 plan 拼接多条独立 Fight 链，MAA 为
+    # 区分日志给每条链的完成行追加 " #N" 序号后缀（语言无关）；裸任务名只出现在
+    # 识别链的括号后缀里，剥掉序号后缀再与目标名比对，否则这些链会被整体漏掉。
+    multi_chain_suffix = re.compile(r"\s+#\d+$")
 
     def is_task_boundary(line: str) -> bool:
         return "完成任务:" in line or "Completed Task Chain:" in line
@@ -171,7 +176,8 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     def get_completed_task_name(line: str) -> str | None:
         match = re.search(r"完成任务:\s*([^\r\n]+)", line)
         if match is not None:
-            return match.group(1).strip() or None
+            name = multi_chain_suffix.sub("", match.group(1).strip())
+            return name or None
 
         match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
@@ -1121,11 +1127,14 @@ class AppConfig(GlobalConfig):
 
         已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
         脚本来源使用脚本共享目录，用户来源使用当前用户独立目录。
+        本方法只服务「脚本/用户」来源的 MAS 目录初始化；直控来源不调用——
+        直控直接使用脚本原生配置，MAS 不建平行全量配置。
 
         Args:
             script_id: OK-WW 脚本 ID。
             user_id: OK-WW 用户 ID。
-            mode: 配置来源，支持“脚本”或“用户”；“简洁”/“详细”仅兼容旧配置。
+            mode: 配置来源（脚本/用户/直控三态）；本方法只接受“脚本”/“用户”，
+                “简洁”/“详细”仅兼容旧配置，误传“直控”会抛 ValueError。
 
         Returns:
             MAS 用户配置目录路径。
@@ -2396,14 +2405,16 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # ZzzOd 专项守卫：每脚本仅允许一个直控用户——直控是脚本级全局视图
-        # （实例/活跃/运行实例都在一份 one_dragon.yml），多直控用户共享同一
-        # 份状态互相干扰，多账号由直控页实例管理直接配置。
-        # 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
+        # 直控守卫：每脚本仅允许一个直控用户——直控共享脚本级原生配置（MAA/SRC
+        # 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多直控用户共享
+        # 同一份状态互相干扰。
+        # ZzzOd 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
         # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）。
-        if isinstance(script_config, ZzzOdConfig):
+        if isinstance(script_config, (ZzzOdConfig, MaaConfig, SrcConfig)):
             new_mode = str(data.get("Info", {}).get("Mode", "") or "")
-            if new_mode == "直控":
+            # 仅 ZzzOd 需要清空任务编排残留: 直控不消费 AppList, 残留会让
+            # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）
+            if new_mode == "直控" and isinstance(script_config, ZzzOdConfig):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
             if (
                 new_mode == "直控"

@@ -6,7 +6,7 @@ import type { PlanGetOut } from '@/api'
 // ==================== 类型定义 ====================
 
 export type PlanConfigType = PlanIndexItem.type
-export type PlanCreateType = PlanCreateIn.type
+type PlanCreateType = PlanCreateIn.type
 export type PlanConfigData = PlanGetOut['data'][string]
 
 export const PLAN_CONFIG_TYPES = {
@@ -25,7 +25,7 @@ export type PlanChangeHandler = (
   _reloadOrOptions?: boolean | PlanChangeOptions
 ) => Promise<boolean>
 
-export interface PlanTypeDescriptor {
+interface PlanTypeDescriptor {
   configType: PlanConfigType
   createType: PlanCreateType
   /** 词表 key；defaultName 刻意不走词表，见下方注释 */

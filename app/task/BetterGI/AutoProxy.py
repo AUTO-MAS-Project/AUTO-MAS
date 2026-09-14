@@ -32,7 +32,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
-from app.task.proxy_helpers import push_dispatch_log
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source, push_dispatch_log
 from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
@@ -207,7 +207,11 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: BetterGIUserConfig = self.user_config[self.cur_user_uid]
-        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
+        # 直控+关闭=不写；其余组合都写面板值（一条龙的「用户」来源即面板值）
+        self.config_mode = read_config_source(self.cur_user_config)
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
+            self.cur_user_config.get("Info", "IfQuickConfig")
+        )
         self.cur_user_log: LogRecord | None = None
         self.bettergi_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None

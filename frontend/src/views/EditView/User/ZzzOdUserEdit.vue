@@ -148,8 +148,10 @@
                   :model-value="formData.Info.Mode"
                   :options="configModeOptions"
                   :disabled="pageLoading"
+                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   :alert-message="configModeAlert"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -1032,6 +1034,7 @@ type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
 type ZzzOdUserFormData = {
   userName: string
+  // Info.IfQuickConfig（快速配置开关，与配置来源独立）由生成模型 ZzzOdUserConfig_Info 提供
   Info: FormSection<NonNullable<ZzzOdUserConfig['Info']>>
   Game: FormSection<NonNullable<ZzzOdUserConfig['Game']>>
   OneDragon: FormSection<NonNullable<ZzzOdUserConfig['OneDragon']>>
@@ -1043,6 +1046,7 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
     Name: '',
     Status: true,
     Mode: '用户',
+    IfQuickConfig: true,
     SlotIdx: -1,
     LauncherMode: '自动',
     RemainedDay: -1,
@@ -1090,14 +1094,21 @@ const pushLogModeOptions = [
   { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
 
-// 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
 const configModeOptions: Array<{
   label: string
-  value: '用户' | '直控'
+  value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
 }> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useScriptS'),
+    icon: 'database',
+  },
   {
     label: t('edit.zzzodModeUser'),
     value: '用户',
@@ -1186,6 +1197,12 @@ const createUserImmediately = async (): Promise<boolean> => {
 // 保存串行化队列：以 promise 链取代布尔互斥，连续保存按序写回不丢
 let saveChain: Promise<boolean> = Promise.resolve(true)
 
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  await saveField('Info.IfQuickConfig', value)
+}
+
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
 
@@ -1243,7 +1260,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
       logger.warn(e instanceof Error ? e.message : String(e))
     }
   }
-  formData.Info.Mode = value as '用户' | '直控'
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
   await saveField('Info.Mode', formData.Info.Mode)
   if (value === '直控') {
     // 进入直控：公共初始化（备份 + 默认实例 + 加载原生配置）

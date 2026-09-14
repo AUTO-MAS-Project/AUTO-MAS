@@ -2,7 +2,7 @@ import centerIcon from '@/assets/AUTO-MAS.ico'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
-export interface SatelliteModule {
+interface SatelliteModule {
   scriptType: ScriptType
   iconUrl: string
   enabled: boolean

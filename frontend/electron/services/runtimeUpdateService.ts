@@ -177,7 +177,7 @@ export function resetRuntimeUpdateSession(): void {
   session = null
 }
 
-export interface RuntimeUpdateAbortResult {
+interface RuntimeUpdateAbortResult {
   /** 清场时是否有更新会话。 */
   hadSession: boolean
   /** 是否有在途 Runtime 命令并已向它下发 cancel。 */
@@ -187,7 +187,7 @@ export interface RuntimeUpdateAbortResult {
 }
 
 /** 退出清场默认等在途命令落地的上限。 */
-export const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = 5000
+const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = 5000
 
 /**
  * 应用退出时中止更新。
@@ -241,8 +241,8 @@ const STOP_MESSAGE = '正在停止当前后端'
 const STOP_DONE_MESSAGE = '后端已停止'
 const RESTART_MESSAGE = '正在重新启动后端'
 const RESTART_DONE_MESSAGE = '后端已重新启动'
-export const RUNTIME_UPDATE_UNSUPPORTED_CODE = 'RUNTIME_UPDATE_UNSUPPORTED'
-export const RUNTIME_UPDATE_INVALID_VERSION_CODE = 'INVALID_VERSION'
+const RUNTIME_UPDATE_UNSUPPORTED_CODE = 'RUNTIME_UPDATE_UNSUPPORTED'
+const RUNTIME_UPDATE_INVALID_VERSION_CODE = 'INVALID_VERSION'
 
 /**
  * 走 Runtime 链路更新后端：停机 → bootstrap → 重新监督。

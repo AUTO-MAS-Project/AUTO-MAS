@@ -326,10 +326,20 @@ class AutoProxyTask(TaskExecuteBase):
         return self.script_log_path
 
     def _apply_mas_overrides(self) -> None:
-        _update_json(
-            self.script_config_path / "Basic Options.json",
-            {"Exit App when Game Exits": True},
-        )
+        """快速配置覆盖段：把 MAS 面板值写入脚本 working 配置。
+
+        DailyTask.json 是快速配置子集，由 IfQuickConfig 守卫、与来源独立——
+        直控+开启同样写入，任务结束由 manager 既有快照恢复；直控+关闭零写入。
+        Basic Options.json 是全局运行选项、不属于快速配置子集，直控来源下
+        零写入（F13 修复：直控时不得污染用户自己维护的原生配置），只有
+        脚本/用户来源（MAS 配置整体落盘）才写它。
+        """
+
+        if _okww_config_mode(self.cur_user_config.get("Info", "Mode")) != "直控":
+            _update_json(
+                self.script_config_path / "Basic Options.json",
+                {"Exit App when Game Exits": True},
+            )
         if not self.cur_user_config.get("Info", "IfQuickConfig"):
             return
         _update_json(

@@ -1,6 +1,6 @@
 # 案例：ZzzOd（绝区零 / zzz-od）
 
-ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段化**（ConfigItem 字段为事实源，web 直接编辑），但运行方式是 **注入式**：运行时由用户字段生成 zzz-od YAML 写入绑定实例槽，zzz-od 原生一条龙负责执行与游戏内切账号。不要把 zzz-od 的实例槽当 MAS 配置目录（两者结构同构但 owner 不同），也不要用 ok-ww 的三态/快速配置模型套它。
+ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段化**（ConfigItem 字段为事实源，web 直接编辑），但运行方式是 **注入式**：运行时由用户字段生成 zzz-od YAML 写入绑定实例槽，zzz-od 原生一条龙负责执行与游戏内切账号。不要把 zzz-od 的实例槽当 MAS 配置目录（两者结构同构但 owner 不同），其物理布局可不同，但仍遵循统一的脚本 / 用户 / 直控三态来源与独立用户级快速配置语义。
 
 具体字段、路径、函数名现场读 `app/task/ZzzOd/` 确认。本文件只记推不出来的部分。
 
@@ -33,13 +33,13 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 结论：统一的是「每用户一份完整配置」的语义（ZzzOd=`UserData 字段 + 绑定槽物化`两半合一），不是物理目录布局。
 
-## 两态来源
+## 三态来源
 
-`Info.Mode` 两态：`用户`（本配置字段，运行时注入绑定槽）/ `直控`（页面选一条龙实例直接编辑其原生配置：账号字段白名单 + 任务编排 + `instance_run`，保存即写回原始 YAML；运行仍 `--onedragon` 裸跑，MAS 不注入）。无脚本态——脚本级只保留 RootPath 与运行开关，不留用户级配置。直控账号字段读取合并 zzz-od 默认值（原生只落盘非默认字段），保存时默认值跳过不落盘。进入/退出直控页时自动对一条龙原生配置做指纹去重备份（防误操作改坏后无恢复点）。
+`Info.Mode` 三态：`用户`（本配置字段，运行时注入绑定槽）/ `直控`（页面选一条龙实例直接编辑其原生配置：账号字段白名单 + 任务编排 + `instance_run`，保存即写回原始 YAML；运行仍 `--onedragon` 裸跑，MAS 不注入）。脚本态保留脚本级共享配置；直控下快速配置仍是独立用户级开关，关闭时只跑原生配置，开启时任务前注入并按快照策略恢复。直控账号字段读取合并 zzz-od 默认值（原生只落盘非默认字段），保存时默认值跳过不落盘。进入/退出直控页时自动对一条龙原生配置做指纹去重备份（防误操作改坏后无恢复点）。
 
 ## 直控模式：单一用户 + 实例管理（2026-09 定稿）
 
-**每脚本仅允许一个直控用户**（前端切模式拦截 + 后端 `update_user` ZzzOd 守卫抛 ValueError，双保险）。为什么不能多个：直控是**脚本级全局视图**——实例列表、活跃实例、`instance_run` 全在一份 `one_dragon.yml` 里，多直控用户读到写的都是同一份状态，互相干扰且"每个用户独立运行意图"从架构上不成立（曾按多用户实现踩实这一坑：用户1 配 A、用户2 配 B，但活跃/运行实例互相覆盖，运行也分不开）。多账号直接在这**唯一**直控用户的实例管理里配置（实例即账号），或走用户模式注入——两态各司其职。
+**每脚本仅允许一个直控用户**（前端切模式拦截 + 后端 `update_user` ZzzOd 守卫抛 ValueError，双保险）。为什么不能多个：直控是**脚本级全局视图**——实例列表、活跃实例、`instance_run` 全在一份 `one_dragon.yml` 里，多直控用户读到写的都是同一份状态，互相干扰且"每个用户独立运行意图"从架构上不成立（曾按多用户实现踩实这一坑：用户1 配 A、用户2 配 B，但活跃/运行实例互相覆盖，运行也分不开）。多账号直接在这**唯一**直控用户的实例管理里配置（实例即账号），或走用户模式注入——两种运行路径各司其职。
 
 直控实例管理（全部映射 `one_dragon.yml`，MAS 零消费，变更前指纹备份）：
 
@@ -73,7 +73,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 - **绑定持久在用户配置**（`Info.SlotIdx`），idx 分配全局查重：原生实例 idx ∪ 所有 ZzzOd 脚本用户 SlotIdx（`collect_used_slot_idxs`，排除本次注入/会话用户）——槽目录跨脚本共享，idx 不唯一会互相覆盖。绑定有效性要求 idx 不与原生实例/其他用户冲突（无注册表可查名字，旧版 MAS- 前缀校验随持久注册一起废弃）。
 - **同脚本用户名唯一**（前端改名查重 + `check()` 兜底）：视图内槽名 `MAS-{用户名}`，重名会混；跨脚本重名由视图天然隔离。
 - 有效根目录哨兵：`find_launcher_exe` 按序找 `OneDragon-RuntimeLauncher.exe` / `OneDragon-Launcher.exe`（`.bak` 不算）；离线校验另见 `tools.zzz_od_config.validate_root`（src + config/one_dragon.yml）。
-- **启动器选择（用户字段 `Info.LauncherMode`，直控/用户两态通用）**：标签映射——集成=`OneDragon-RuntimeLauncher.exe`（WithRuntime 打包）、原始=`OneDragon-Launcher.exe`（旧安装器，外部 uv 拉起）。**自动**=优先 `Data.LauncherLastGood`（上次成功项），失败换另一个重试并记住下次成功的那个；原始/集成=固定（所选 exe 未安装回退默认顺序并告警）。**启动级失败靠日志证据判定**：两种启动器的一条龙运行日志都汇聚 `.log/log.txt`，启动器自身没起来（uv 缺失/同步失败早退）时该文件无应用层条目——以 `[application_launcher.py`/`[one_dragon_context.py`/`[application_factory_manager.py` 任一出现或运行记录有变化为「已启动」，避免把功能级失败误判成启动失败。原始启动器的框架日志另写 `python_launcher_framework.log`，不进 log.txt。
+- **启动器选择（用户字段 `Info.LauncherMode`，直控/用户模式通用）**：标签映射——集成=`OneDragon-RuntimeLauncher.exe`（WithRuntime 打包）、原始=`OneDragon-Launcher.exe`（旧安装器，外部 uv 拉起）。**自动**=优先 `Data.LauncherLastGood`（上次成功项），失败换另一个重试并记住下次成功的那个；原始/集成=固定（所选 exe 未安装回退默认顺序并告警）。**启动级失败靠日志证据判定**：两种启动器的一条龙运行日志都汇聚 `.log/log.txt`，启动器自身没起来（uv 缺失/同步失败早退）时该文件无应用层条目——以 `[application_launcher.py`/`[one_dragon_context.py`/`[application_factory_manager.py` 任一出现或运行记录有变化为「已启动」，避免把功能级失败误判成启动失败。原始启动器的框架日志另写 `python_launcher_framework.log`，不进 log.txt。
 
 ## 注入运行与判态
 
@@ -166,4 +166,7 @@ ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 conf
 - [ ] 直控实例管理的字段映射走 one_dragon.yml 原语（`_registry_rmw`），变更前指纹备份；删除受 MAS 绑定槽与「至少一个实例」保护
 - [ ] 运行实例（`instance_run`）走独立 run-mode 端点，不与「编辑所选实例」的通道/disabled 耦合
 - [ ] 直控账号字段元数据（顺序与 options）一致；`game_language` 等下拉字段的 options 未丢失
+- [ ] `Info.Mode` 三态映射到正确 owner；直控为脚本级全局视图，每脚本仅一个直控用户
+- [ ] 快速配置开关独立于来源，直控下同样可开关；关闭时只跑原生配置
+- [ ] 直控 + 开启在任务前注入并按快照策略恢复（含合成视图还原）
 - [ ] 报告正文走 `build_user_result_text` 局部变量，未对 `ScriptItem.result` 赋值

@@ -21,9 +21,12 @@
             v-model:form-data="formData"
             :loading="loading"
             @save="handleFieldSave"
+            @mode-change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
           />
 
           <TaskQueueSection
+            v-if="formData.Info.Mode !== '直控'"
             v-model:task-queue="taskQueue"
             :script-id="scriptId"
             :loading="loading"
@@ -91,6 +94,8 @@ const getDefaultM9AUserData = () => ({
   Info: {
     Name: '',
     Status: true,
+    Mode: '用户',
+    IfQuickConfig: true,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -192,6 +197,19 @@ const handleFieldSave = async (key: string, value: any) => {
       logger.error(`保存失败: ${errorMsg}`)
     }
   }, key)
+}
+
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  await handleFieldSave('Info.IfQuickConfig', value)
+}
+
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 const loadScriptInfo = async () => {
