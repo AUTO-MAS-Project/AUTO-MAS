@@ -761,6 +761,51 @@ class AutoProxyTask(TaskExecuteBase):
             return self._quick_config_mode_skip_reason(mode)
         return self._source_mode_skip_reason(mode)
 
+    async def _wait_maaend_stage(self) -> None:
+        """同时等待日志结果与进程退出，避免子进程持有 stdout 导致阶段卡住。"""
+        process = self.maaend_process_manager.process
+        if not isinstance(process, asyncio.subprocess.Process):
+            self.cur_user_log.status = "MaaEnd 未启动可监控的进程"
+            return
+
+        async def wait_exit() -> None:
+            # Process.wait() 也可能等待管道关闭；returncode 独立反映主进程退出。
+            while process.returncode is None:
+                await asyncio.sleep(0.2)
+
+        await self.maaend_log_monitor.start_monitor_process(process, "stdout")
+        monitor = self.maaend_log_monitor.task
+        exit_task = asyncio.create_task(wait_exit())
+        result_task = asyncio.create_task(self.wait_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {monitor, exit_task, result_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if exit_task in done and not monitor.done():
+                logger.info(f"MaaEnd 主进程已退出，退出码: {process.returncode}")
+                # 消费已经写入管道的尾部日志，但不无限等待继承管道的子进程。
+                try:
+                    await asyncio.wait_for(asyncio.shield(monitor), timeout=2)
+                except asyncio.TimeoutError:
+                    pass
+                except Exception as error:
+                    logger.warning(f"MaaEnd 日志读取失败: {error}")
+            if monitor.done() and not monitor.cancelled() and monitor.exception():
+                logger.warning(f"MaaEnd 日志读取失败: {monitor.exception()}")
+                self.cur_user_log.status = "MaaEnd 日志读取失败"
+            elif exit_task in done or monitor.done():
+                await self.maaend_log_monitor.stop()
+                await self.check_log(
+                    self.maaend_log_monitor.log_contents,
+                    self.maaend_log_monitor.latest_time,
+                    if_stream_end=True,
+                )
+        finally:
+            exit_task.cancel()
+            result_task.cancel()
+            await asyncio.gather(exit_task, result_task, return_exceptions=True)
+            await self.maaend_log_monitor.stop()
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -891,27 +936,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning("前置 Endfield 窗口失败")
 
             await asyncio.sleep(1)
-            if isinstance(
-                self.maaend_process_manager.main_process, asyncio.subprocess.Process
-            ):
-                await self.maaend_log_monitor.start_monitor_process(
-                    self.maaend_process_manager.main_process, "stdout"
-                )
-                if self.maaend_log_monitor.task is not None:
-                    self.maaend_log_monitor.task.add_done_callback(
-                        lambda _: self.wait_event.set()
-                    )
-            await self.wait_event.wait()
-            if (
-                self.maaend_log_monitor.task is not None
-                and self.maaend_log_monitor.task.done()
-            ):
-                await self.check_log(
-                    self.maaend_log_monitor.log_contents,
-                    self.maaend_log_monitor.latest_time,
-                    if_stream_end=True,
-                )
-            await self.maaend_log_monitor.stop()
+            await self._wait_maaend_stage()
 
             if self.cur_user_log.status == "Success!":
                 self.run_book[self.mode] = True
@@ -1252,6 +1277,76 @@ class AutoProxyTask(TaskExecuteBase):
         # 旧版曾把该字段写入任务选项；清掉后避免新版把它当成未知选项。
         option_values.pop("AutoEssenceSpecifiedLocation", None)
 
+    def _configure_resolution_restore(
+        self, tasks: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复分辨率。"""
+        resolution = self.script_config.get("Game", "RestoreResolution")
+        if (
+            not resolution
+            or resolution == "Off"
+            or not self.script_config.get("Game", "CloseOnFinish")
+            or self.emulator_manager is not None
+        ):
+            return None
+        stages = list(MAAEND_RUN_MOOD_BOOK)
+        is_last_stage = all(
+            self.run_book[stage] for stage in stages[stages.index(self.mode) + 1 :]
+        )
+        close_tasks = [task for task in tasks if task.get("taskName") == "CloseGamePC"]
+        if not is_last_stage:
+            # 保留阶段切换要求的关闭游戏，但不要提前恢复游戏设置。
+            for task in close_tasks:
+                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
+                    "type": "switch",
+                    "value": False,
+                }
+            return None
+        required_options = (
+            "CloseGamePCApplyGameSetting",
+            "CloseGamePCGameSettingResolution",
+        )
+        if self._maaend_task_supported("CloseGamePC") is not True or not all(
+            self._maaend_task_option_supported("CloseGamePC", name)
+            for name in required_options
+        ):
+            raise ValueError(
+                "当前 MaaEnd 不支持关闭游戏时恢复分辨率，请更新 MaaEnd 或关闭此设置"
+            )
+        close_task = (
+            close_tasks[0]
+            if close_tasks
+            else {
+                "id": "automas-restore-resolution",
+                "taskName": "CloseGamePC",
+                "enabledByController": {
+                    str(self.script_config.get("Game", "ControllerType")): True
+                },
+                "optionValues": {},
+            }
+        )
+        tasks[:] = [task for task in tasks if task.get("taskName") != "CloseGamePC"]
+        close_task["enabled"] = True
+        close_task.setdefault("enabledByController", {})[
+            str(self.script_config.get("Game", "ControllerType"))
+        ] = True
+        tasks.append(close_task)
+        if resolution == "Custom":
+            width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
+            height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
+        else:
+            width, height = resolution.split("x")
+        values = close_task.setdefault("optionValues", {})
+        values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
+        values["CloseGamePCGameSettingResolution"] = {
+            "type": "input",
+            "values": {
+                "CloseGamePCGameSettingResolutionWidth": width,
+                "CloseGamePCGameSettingResolutionHeight": height,
+            },
+        }
+        return close_task
+
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
 
@@ -1424,6 +1519,8 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_config.get("Task", "IfSanity"):
                 self._ensure_sanity_task(maaend_tasks, target_task_name)
 
+        restore_task = self._configure_resolution_restore(maaend_tasks)
+
         if self.task_dict is None:
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
@@ -1527,6 +1624,12 @@ class AutoProxyTask(TaskExecuteBase):
             task_name = get_task_book_name(task)
             if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
                 task["enabled"] = self.task_dict[task_name][task["id"]]
+
+            if restore_task is task:
+                # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
+                task["enabled"] = True
+                self.task_dict.setdefault(task_name, {})[task["id"]] = True
+                self.task_name_map[task_name] = task_name_value
 
             if not task.get("enabled", False):
                 continue
