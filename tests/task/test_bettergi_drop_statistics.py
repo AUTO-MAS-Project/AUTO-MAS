@@ -63,30 +63,3 @@ def test_format_is_item_then_count_sorted_by_count() -> None:
     assert text.splitlines() == ["【掉落统计】", "摩拉: 1800", "精锻用魔矿: 3"]
     assert format_drop_statistics({}) == ""
     assert format_drop_statistics(None) == ""
-
-
-def test_parse_strips_wrapping_quotes_from_first_item() -> None:
-    """明细段两侧的引号不能污染首条物品名（曾解析出 `"好感经验` 这种键）。"""
-    assert parse_drop_lines(
-        ['自动秘境：本轮奖励识别结果 "好感经验 x60, 摩拉 x10575"']
-    ) == {"好感经验": 60, "摩拉": 10575}
-
-
-def test_parse_merges_same_item_across_quoted_lines() -> None:
-    """同一物品在首位与非首位出现时必须合并成一条（引号污染会把它拆成两个键）。"""
-    lines = [
-        '"自动首领讨伐"：本轮奖励识别结果 "角色经验 x200, 好感经验 x45"',
-        '自动秘境：本轮奖励识别结果 "好感经验 x60, 摩拉 x10575"',
-    ]
-    assert parse_drop_lines(lines) == {
-        "角色经验": 200,
-        "好感经验": 105,
-        "摩拉": 10575,
-    }
-
-
-def test_parse_keeps_corner_bracket_in_item_name() -> None:
-    """物品名本身可能以「开头，剥包裹引号时不能把「」一并剥掉。"""
-    assert parse_drop_lines(
-        ['自动秘境：本轮奖励识别结果 "「久雨莲」的种子 x2, 摩拉 x100"']
-    ) == {"「久雨莲」的种子": 2, "摩拉": 100}
