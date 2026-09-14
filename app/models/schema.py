@@ -3944,6 +3944,14 @@ class ScriptConfigImportIn(UserInBase):
     )
 
 
+class UserConfigDirIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
+class UserConfigDirOut(OutBase):
+    path: str = Field(..., description="用户配置目录绝对路径")
+
+
 class UserGetIn(UserInBase):
     userId: Optional[str] = Field(
         default=None, description="用户ID, 未携带时表示获取所有用户数据"

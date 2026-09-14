@@ -8,6 +8,7 @@ import type {
   UserDeleteIn,
   UserGetIn,
   UserReorderIn,
+  UserConfigDirIn,
 } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -202,6 +203,40 @@ export function useUserApi() {
     }
   }
 
+  // 打开用户配置目录
+  const openUserConfigFolder = async (scriptId: string, userId: string): Promise<boolean> => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const requestData: UserConfigDirIn = {
+        scriptId,
+        userId,
+      }
+
+      const response = await Service.getUserConfigDirApiScriptsUserConfigDirPost(requestData)
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || '获取用户配置目录失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      await window.electronAPI.openFile(response.path)
+
+      return true
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '打开用户配置目录失败'
+      error.value = errorMsg
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     loading,
     error,
@@ -211,5 +246,6 @@ export function useUserApi() {
     updateUser,
     deleteUser,
     reorderUser,
+    openUserConfigFolder,
   }
 }

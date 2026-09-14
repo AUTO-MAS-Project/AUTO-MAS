@@ -125,6 +125,8 @@ import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
+import type { UserConfigDirIn } from '../models/UserConfigDirIn';
+import type { UserConfigDirOut } from '../models/UserConfigDirOut';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
@@ -534,6 +536,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取用户配置目录
+     * @param requestBody
+     * @returns UserConfigDirOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserConfigDirApiScriptsUserConfigDirPost(
+        requestBody: UserConfigDirIn,
+    ): CancelablePromise<UserConfigDirOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/config-dir',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
