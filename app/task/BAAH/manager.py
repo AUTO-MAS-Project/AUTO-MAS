@@ -78,9 +78,7 @@ class BAAHManager(TaskExecuteBase):
         ) in ["", "-"]:
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
 
-        if not str(script_config.get("Info", "RootPath")).strip():
-            return "未填写 BAAH 程序目录, 请检查脚本配置中的程序目录设置！"
-
+        ## 程序目录、配置目录与日志目录都由 BAAHPath 派生，只需校验它
         if not str(script_config.get("Script", "BAAHPath")).strip():
             return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
 
