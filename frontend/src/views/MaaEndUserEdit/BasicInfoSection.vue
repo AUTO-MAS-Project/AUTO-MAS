@@ -1,7 +1,7 @@
 <template>
   <div class="basic-info-section">
     <a-row :gutter="24">
-      <a-col :xs="24" :sm="12">
+      <a-col :xs="24" :sm="24" :md="8">
         <a-form-item name="userName" required>
           <template #label>
             <span class="form-label">
@@ -9,6 +9,7 @@
             </span>
           </template>
           <a-input
+            size="large"
             v-model:value="formData.userName"
             :placeholder="t('edit.enterUsername')"
             :disabled="loading"
@@ -16,7 +17,28 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :sm="12">
+      <a-col :xs="24" :sm="12" :md="8">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
+              {{ t('edit.daysLeft') }}
+              <a-tooltip :title="t('edit.daysLeftAccount1')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-input-number
+            size="large"
+            v-model:value="formData.Info.RemainedDay"
+            :min="-1"
+            :max="9999"
+            :disabled="loading"
+            style="width: 100%"
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :xs="24" :sm="12" :md="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -26,6 +48,7 @@
           <a-select
             v-model:value="formData.Info.Status"
             :disabled="loading"
+            size="large"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
             <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
@@ -47,6 +70,7 @@
             </span>
           </template>
           <a-input
+            size="large"
             v-model:value="formData.Info.Id"
             :placeholder="t('edit.enterAccountId')"
             :disabled="loading"
@@ -65,6 +89,7 @@
             </span>
           </template>
           <a-input-password
+            size="large"
             v-model:value="formData.Info.Password"
             :placeholder="t('edit.passwordStoredOnlySo2')"
             :disabled="loading"
@@ -74,7 +99,7 @@
       </a-col>
     </a-row>
 
-    <a-row :gutter="24">
+    <a-row v-if="showResource" :gutter="24">
       <a-col v-if="showResource" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
@@ -83,31 +108,12 @@
             </span>
           </template>
           <a-select
+            size="large"
             v-model:value="formData.Info.Resource"
             :placeholder="t('edit.pickResource')"
             :disabled="loading"
             :options="resourceOptions"
             @change="emitSave('Info.Resource', formData.Info.Resource)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :xs="24" :sm="showResource ? 12 : 24">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('edit.daysLeft') }}
-              <a-tooltip :title="t('edit.daysLeftAccount1')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            :disabled="loading"
-            style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
           />
         </a-form-item>
       </a-col>

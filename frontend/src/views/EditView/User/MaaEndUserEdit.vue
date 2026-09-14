@@ -756,18 +756,20 @@ watch(
 }
 
 .user-edit-content {
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
 }
 
 .page-layout {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: 144px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
 
 .sections-column {
+  width: 100%;
+  max-width: none;
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
