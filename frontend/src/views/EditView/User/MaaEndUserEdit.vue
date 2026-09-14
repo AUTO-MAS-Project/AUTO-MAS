@@ -48,6 +48,7 @@
               v-model:form-data="formData"
               :loading="loading"
               :resource-options="resourceOptions"
+              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
               @save="handleFieldSave"
             />
           </a-card>
@@ -231,6 +232,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
+const controllerProtocol = ref<string | null>(null)
 const presetSupported = ref(true)
 
 const maaEndConfigLoading = ref(false)
@@ -490,7 +492,8 @@ const loadMaaEndOptions = async () => {
       essenceLocationOptions.value = response.essenceLocations
       essenceMenuOptions.value = response.essenceMenus ?? []
       essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
-      presetSupported.value = response.controllerTypes[controllerType.value ?? ''] === 'Win32'
+      controllerProtocol.value = response.controllerTypes[controllerType.value ?? ''] ?? null
+      presetSupported.value = controllerProtocol.value === 'Win32'
       maaEndOptionsLoaded.value = true
     }
   } finally {

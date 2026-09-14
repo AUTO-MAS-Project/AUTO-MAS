@@ -75,7 +75,7 @@
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :xs="24" :sm="12">
+      <a-col v-if="showResource" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -91,7 +91,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :sm="12">
+      <a-col :xs="24" :sm="showResource ? 12 : 24">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -139,6 +139,7 @@ const emit = defineEmits<{ save: [key: string, value: any] }>()
 const formData = defineModel<any>('formData', { required: true })
 defineProps<{
   loading: boolean
+  showResource: boolean
   resourceOptions: Array<{ label: string; value: string }>
 }>()
 
