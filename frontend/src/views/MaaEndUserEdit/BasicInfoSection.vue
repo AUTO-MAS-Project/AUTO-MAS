@@ -1,21 +1,17 @@
 <template>
-  <div>
+  <div class="basic-info-section">
     <a-row :gutter="24">
       <a-col :xs="24" :sm="12">
         <a-form-item name="userName" required>
           <template #label>
             <span class="form-label">
               {{ t('edit.username') }}
-              <a-tooltip :title="t('edit.nameUsedTellUsers')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
             </span>
           </template>
           <a-input
             v-model:value="formData.userName"
             :placeholder="t('edit.enterUsername')"
             :disabled="loading"
-            size="large"
             @blur="emitSave('userName', formData.userName)"
           />
         </a-form-item>
@@ -25,15 +21,11 @@
           <template #label>
             <span class="form-label">
               {{ t('edit.enabled') }}
-              <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
             </span>
           </template>
           <a-select
             v-model:value="formData.Info.Status"
             :disabled="loading"
-            size="large"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
             <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
@@ -58,7 +50,6 @@
             v-model:value="formData.Info.Id"
             :placeholder="t('edit.enterAccountId')"
             :disabled="loading"
-            size="large"
             @blur="emitSave('Info.Id', formData.Info.Id)"
           />
         </a-form-item>
@@ -77,7 +68,6 @@
             v-model:value="formData.Info.Password"
             :placeholder="t('edit.passwordStoredOnlySo2')"
             :disabled="loading"
-            size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
           />
         </a-form-item>
@@ -90,16 +80,12 @@
           <template #label>
             <span class="form-label">
               {{ t('edit.gameResource') }}
-              <a-tooltip :title="t('edit.pickGameResourceThis')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
             </span>
           </template>
           <a-select
             v-model:value="formData.Info.Resource"
             :placeholder="t('edit.pickResource')"
             :disabled="loading"
-            size="large"
             :options="resourceOptions"
             @change="emitSave('Info.Resource', formData.Info.Resource)"
           />
@@ -120,71 +106,9 @@
             :min="-1"
             :max="9999"
             :disabled="loading"
-            size="large"
             style="width: 100%"
             @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
           />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <a-row :gutter="24">
-      <a-col :span="24">
-        <GeneralConfigModeSelector
-          :model-value="formData.Info.Mode"
-          :options="maaEndConfigModeOptions"
-          :disabled="loading"
-          :alert-message="t('edit.configSourceHintBase')"
-          :quick-config="formData.Info.IfQuickConfig"
-          :quick-config-disabled="presetSupported === false"
-          @quick-config-change="emitSave('Info.IfQuickConfig', $event)"
-          @change="$emit('modeChange', $event)"
-        />
-      </a-col>
-    </a-row>
-
-    <a-row :gutter="24">
-      <a-col :span="24">
-        <a-form-item :label="t('edit.configurationSource')">
-          <div class="config-source-control">
-            <a-button
-              type="primary"
-              ghost
-              size="large"
-              :loading="configLoading"
-              :disabled="loading || showConfigMask"
-              @click="$emit('configure')"
-            >
-              <template #icon>
-                <SettingOutlined />
-              </template>
-              {{ showConfigMask ? '正在配置' : `配置${currentConfigModeLabel}` }}
-            </a-button>
-            <a-button
-              v-if="formData.Info.Mode !== '直控'"
-              type="default"
-              size="large"
-              :loading="importLoading"
-              :disabled="loading || showConfigMask"
-              @click="$emit('importConfig')"
-            >
-              <template #icon>
-                <ImportOutlined />
-              </template>
-              {{ t('edit.import2') }}
-            </a-button>
-            <a-button
-              type="default"
-              size="large"
-              :disabled="loading || showConfigMask"
-              @click="$emit('scriptConfig')"
-            >
-              <template #icon>
-                <EditOutlined />
-              </template>
-              {{ t('edit.editScriptSettings') }}
-            </a-button>
-          </div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -193,15 +117,12 @@
       <template #label>
         <span class="form-label">
           {{ t('edit.note') }}
-          <a-tooltip :title="t('edit.addNoteAboutThis')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
         </span>
       </template>
       <a-textarea
         v-model:value="formData.Info.Notes"
         :placeholder="t('edit.enterNote')"
-        :rows="4"
+        :auto-size="{ minRows: 2, maxRows: 4 }"
         :disabled="loading"
         @blur="emitSave('Info.Notes', formData.Info.Notes)"
       />
@@ -211,85 +132,30 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import {
-  EditOutlined,
-  ImportOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
-import { computed } from 'vue'
-import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
-const emit = defineEmits<{
-  save: [key: string, value: any]
-  configure: []
-  importConfig: []
-  scriptConfig: []
-  modeChange: [value: boolean | string]
-}>()
-
+const emit = defineEmits<{ save: [key: string, value: any] }>()
 const formData = defineModel<any>('formData', { required: true })
 defineProps<{
   loading: boolean
   resourceOptions: Array<{ label: string; value: string }>
-  presetSupported?: boolean
-  configLoading?: boolean
-  importLoading?: boolean
-  showConfigMask?: boolean
 }>()
-
-const maaEndConfigModeOptions: Array<{
-  value: '脚本' | '用户' | '直控'
-  title: string
-  description: string
-  icon: 'file' | 'database' | 'setting'
-}> = [
-  {
-    value: '脚本',
-    title: '脚本',
-    description: '使用脚本级共享配置，所有用户共用。',
-    icon: 'file',
-  },
-  {
-    value: '用户',
-    title: '用户',
-    description: '使用当前用户独立配置，与脚本配置隔离。',
-    icon: 'database',
-  },
-  {
-    value: '直控',
-    title: '直控',
-    description: '直接使用 MaaEnd 原有配置，由 MaaEnd GUI 维护。',
-    icon: 'setting',
-  },
-]
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
-
-const currentConfigModeLabel = computed(() => {
-  if (formData.value.Info.Mode === '直控') return '脚本直控'
-  if (formData.value.Info.Mode === '用户') return '用户独立'
-  return '脚本共享'
-})
 </script>
 
 <style scoped>
-.config-source-control {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.basic-info-section :deep(.ant-form-item) {
+  margin-bottom: 16px;
 }
-
 .form-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
 }
-
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
