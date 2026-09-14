@@ -3012,6 +3012,7 @@ export default {
       add: 'Add task',
       colIndex: '#',
       colScript: 'Script task',
+      colDays: 'Run on',
       colActions: 'Actions',
       dragSort: 'Drag to reorder',
       selectScript: 'Select a script',

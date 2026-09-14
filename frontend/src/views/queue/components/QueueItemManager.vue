@@ -18,6 +18,9 @@
         <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
         <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
+        <div v-if="!showCycleConfig" class="header-cell days-cell">
+          {{ t('queue.item.colDays') }}
+        </div>
         <div v-if="showCycleConfig" class="header-cell cycle-cell">
           {{ t('queue.cycle.colConfig') }}
         </div>
@@ -62,6 +65,28 @@
                 allow-clear
                 @change="updateQueueItemScript(record)"
               />
+            </div>
+            <div v-if="!showCycleConfig" class="row-cell days-cell">
+              <a-select
+                v-model:value="record.schedule.Days"
+                mode="multiple"
+                size="small"
+                style="width: 100%"
+                class="days-select"
+                :placeholder="t('queue.time.selectDays')"
+                :disabled="locked"
+                :max-tag-count="7"
+                :bordered="false"
+                @change="saveDays(record)"
+              >
+                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+              </a-select>
             </div>
             <div v-if="showCycleConfig" class="row-cell cycle-cell">
               <div class="cycle-panel">
@@ -134,7 +159,7 @@
                       :placeholder="t('queue.time.selectDays')"
                       :disabled="!record.schedule.Enabled"
                       :max-tag-count="3"
-                      @change="saveSchedule(record, { Days: record.schedule.Days })"
+                      @change="saveDays(record)"
                     >
                       <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
                       <a-select-option value="Tuesday">
@@ -349,6 +374,17 @@ const saveInterval = async (record: any) => {
   if (success) {
     record.savedIntervalMinutes = minutes
   }
+}
+
+// 周几按星期顺序存盘，和定时列表保持一致
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+const saveDays = async (record: any) => {
+  const days = [...(record.schedule.Days || [])].sort(
+    (a: string, b: string) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+  )
+  record.schedule.Days = days
+  await saveSchedule(record, { Days: days })
 }
 
 const saveScheduleTime = async (record: any) => {
@@ -710,6 +746,12 @@ onMounted(() => {
   min-width: 0;
 }
 
+.header-cell.days-cell,
+.row-cell.days-cell {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
 .cycle-panel {
   display: flex;
   flex-direction: column;
@@ -859,6 +901,7 @@ onMounted(() => {
   .index-cell,
   .drag-cell,
   .script-cell,
+  .days-cell,
   .actions-cell {
     width: 100% !important;
     min-width: auto !important;
