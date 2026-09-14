@@ -93,6 +93,8 @@
           <a-card v-if="formData.Info.IfQuickConfig" id="section-collect" class="section-card">
             <template #title>{{ t('edit.maaEndAutoCollectConfig') }}</template>
             <AutoCollectConfigSection
+              :groups="autoCollectGroups"
+              :options-loading="maaEndOptionsLoading"
               :form-data="formData"
               :loading="loading"
               @save="handleFieldSave"
@@ -179,6 +181,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
+import type { MaaEndAutoCollectGroup } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -218,6 +221,7 @@ let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
 const essenceMenuOptions = ref<ComboBoxItem[]>([])
+const autoCollectGroups = ref<MaaEndAutoCollectGroup[]>([])
 const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
 const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: t('edit.fixed'), value: 'Fixed' },
@@ -276,33 +280,8 @@ const getDefaultMaaEndUserData = () => ({
     SeizeDeliveryJobsReward: 15.9,
     SeizeDeliveryJobsCommissionSource: 'Unlimited',
     AutoCollectMode: 'Distributed',
-    AutoCollectRoutes: [
-      'Route1',
-      'Route2',
-      'Route3',
-      'Route4',
-      'Route5',
-      'Route6',
-      'Route7',
-      'Route8',
-      'Route9',
-      'Route10',
-      'Route11',
-      'Route12',
-      'Route13',
-      'Route14',
-      'Route15',
-    ],
-    AutoCollectCommonRoutes: [
-      'CommonRoute1',
-      'CommonRoute2',
-      'CommonRoute3',
-      'CommonRoute4',
-      'CommonRoute5',
-      'CommonRoute6',
-      'CommonRoute7',
-      'CommonRoute8',
-    ],
+    AutoCollectRoutes: null,
+    AutoCollectCommonRoutes: null,
     IfSanity: true,
     IfAutoUseSpMedication: true,
     IfDijiangRewards: true,
@@ -485,6 +464,7 @@ const loadMaaEndOptions = async () => {
   try {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code === 200) {
+      autoCollectGroups.value = response.autoCollectGroups ?? []
       essenceLocationOptions.value = response.essenceLocations
       essenceMenuOptions.value = response.essenceMenus ?? []
       essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []

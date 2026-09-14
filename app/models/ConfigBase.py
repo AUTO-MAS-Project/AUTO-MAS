@@ -164,12 +164,20 @@ class StringListValidator(ValidatorBase):
 
     MaaEnd 的目标武器选项来自安装目录，无法在配置模型初始化时写死，
     因此不能使用需要静态选项表的 ``MultipleOptionsValidator``。
+    allow_none 用于区分“沿用动态默认值”和显式清空列表。
     """
 
+    def __init__(self, *, allow_none: bool = False):
+        self.allow_none = allow_none
+
     def validate(self, value):
+        if value is None and self.allow_none:
+            return True
         return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
     def correct(self, value):
+        if value is None and self.allow_none:
+            return None
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, str)]

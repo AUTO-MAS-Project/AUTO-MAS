@@ -423,6 +423,7 @@ export default {
     maaEndDailyOnceTasksHint: '任务当天正常完成一次后，后续运行会自动跳过；留空则每次运行都执行',
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
+    maaEndAutoCollectOptionsUnavailable: '未能读取采集路线，请检查 MaaEnd 路径与资源后重新打开此页',
     maaEndAutoCollectEnabled: '自动采集',
     maaEndAutoCollectEnabledHint: '自动采集作为独立阶段运行；关闭后下方安排不会生效',
     maaEndAutoCollectMode: '采集安排',

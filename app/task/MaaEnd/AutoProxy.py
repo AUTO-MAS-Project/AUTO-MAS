@@ -25,6 +25,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -44,9 +45,6 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import (
-    MAAEND_AUTO_COLLECT_MODES,
-    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
-    MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS,
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_RUN_MOOD_BOOK,
@@ -61,6 +59,7 @@ from app.utils.io import (
 )
 
 from .resource_loader import (
+    MaaEndResourceLoader,
     get_loaded_maaend_options,
     load_maaend_interface_i18n,
     load_maaend_task_i18n,
@@ -130,35 +129,49 @@ def _task_enabled_for_mode(task_name: object, enabled: object, mode: str) -> boo
 
 def _select_auto_collect_routes(
     mode: str,
-    routes: list[str],
-    common_routes: list[str],
+    selections: dict[str, list[str] | None],
+    groups: list[dict[str, Any]],
     now: datetime,
 ) -> dict[str, list[str]]:
-    """按东四区日期选择本轮需要执行的自动采集路线。"""
-
+    """按东四区三日周期选择路线，沿用路线编号顺序以保持已有排程。"""
     cycle_index = now.date().toordinal() % 3
-
-    def select_routes(option_name: str, selected: list[str]) -> list[str]:
-        selected_set = set(selected)
-        return [
+    selected_by_key = {}
+    for key in ("AutoCollectRoutes", "AutoCollectCommonRoutes"):
+        category_groups = [group for group in groups if group["configKey"] == key]
+        available = {
+            option["value"] for group in category_groups for option in group["options"]
+        }
+        # 自然排序使 Route16 排在 Route15 后，新增地区分组不会重排原路线。
+        ordered = sorted(
+            available,
+            key=lambda name: (
+                name.rstrip("0123456789"),
+                int(name[len(name.rstrip("0123456789")) :] or 0),
+            ),
+        )
+        selected = selections[key]
+        if selected is None:
+            selected = [
+                value for group in category_groups for value in group["defaultCases"]
+            ]
+        selected_by_key[key] = {
             route
-            for index, route in enumerate(
-                MAAEND_AUTO_COLLECT_ROUTE_OPTIONS[option_name]
-            )
-            if route in selected_set
+            for index, route in enumerate(ordered)
+            if route in selected
             and (
                 mode == "Concentrated"
                 and cycle_index == 0
                 or mode == "Distributed"
                 and index % 3 == cycle_index
             )
-        ]
-
+        }
     return {
-        "AutoCollectRoutes": select_routes("AutoCollectRoutes", routes),
-        "AutoCollectCommonRoutes": select_routes(
-            "AutoCollectCommonRoutes", common_routes
-        ),
+        group["value"]: [
+            option["value"]
+            for option in group["options"]
+            if option["value"] in selected_by_key[group["configKey"]]
+        ]
+        for group in groups
     }
 
 
@@ -224,9 +237,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.account_switch_mode: str | None = None
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
-        self.auto_collect_routes: dict[str, list[str]] = {
-            option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
-        }
+        self.auto_collect_routes: dict[str, list[str]] = {}
 
     async def check(self) -> str:
 
@@ -282,21 +293,27 @@ class AutoProxyTask(TaskExecuteBase):
     def _prepare_auto_collect_routes(self) -> None:
         """按当前日期准备自动采集路线。"""
 
-        if not self.cur_user_config.get("Info", "IfQuickConfig"):
-            self.auto_collect_run_at = None
-            self.auto_collect_routes = {
-                option_name: [] for option_name in MAAEND_AUTO_COLLECT_ROUTE_OPTIONS
-            }
+        self.auto_collect_routes = {}
+        self.auto_collect_run_at = None
+        if not self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ) or not self.cur_user_config.get("Task", "IfAutoCollect"):
             return
-
+        root_path = self._maaend_root_path()
+        if root_path is None:
+            raise ValueError("MaaEnd 路径未配置")
+        groups = get_loaded_maaend_options(root_path)["autoCollectGroups"]
+        if not groups:
+            raise ValueError("MaaEnd 自动采集路线读取失败，请检查安装资源")
         auto_collect_mode = self.cur_user_config.get("Task", "AutoCollectMode")
-        if auto_collect_mode not in MAAEND_AUTO_COLLECT_MODES:
-            auto_collect_mode = MAAEND_AUTO_COLLECT_MODES[0]
         self.auto_collect_run_at = datetime.now(tz=UTC4)
         self.auto_collect_routes = _select_auto_collect_routes(
             auto_collect_mode,
-            list(self.cur_user_config.get("Task", "AutoCollectRoutes") or []),
-            list(self.cur_user_config.get("Task", "AutoCollectCommonRoutes") or []),
+            {
+                key: self.cur_user_config.get("Task", key)
+                for key in ("AutoCollectRoutes", "AutoCollectCommonRoutes")
+            },
+            groups,
             self.auto_collect_run_at,
         )
 
@@ -1455,22 +1472,23 @@ class AutoProxyTask(TaskExecuteBase):
                     ),
                 }
             elif if_quick_config and task_name_value == MAAEND_AUTO_COLLECT_TASK:
-                task.setdefault("optionValues", {})
-                task["optionValues"]["AutoCollectSchedule"] = {
-                    "type": "checkbox",
-                    "caseNames": list(MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS),
-                }
-                for option_name, route_names in self.auto_collect_routes.items():
-                    task["optionValues"][option_name] = {
-                        "type": "checkbox",
-                        "caseNames": route_names,
-                    }
+                MaaEndResourceLoader.get_loaded(
+                    self.maaend_root_path
+                ).write_auto_collect_options(task, self.auto_collect_routes)
             elif (
                 if_quick_config
                 and task_name_value == target_task_name
                 and target_task_name == "ProtocolSpace"
             ):
                 task.setdefault("optionValues", {})
+                # 指定关卡属于 ByCount 分支，避免原生库存目标模式屏蔽计划表关卡。
+                if self._maaend_task_option_supported(
+                    "ProtocolSpace", "ProtocolSpaceMode"
+                ):
+                    task["optionValues"]["ProtocolSpaceMode"] = {
+                        "type": "select",
+                        "caseName": "ByCount",
+                    }
                 # MaaEnd 2.28 重命名了领取方式字段；新资源存在时切换到新字段，
                 # 旧资源则保留源配置中的旧字段。
                 supports_obtain_mode = self._maaend_task_option_supported(

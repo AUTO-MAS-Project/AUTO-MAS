@@ -16,9 +16,7 @@ import type {
 import type {
   AutoEssenceLocation,
   AutoEssenceMenu,
-  MaaEndAutoCollectCommonRoute,
   MaaEndAutoCollectMode,
-  MaaEndAutoCollectRoute,
   MaaEndDeliveryCommissionSource,
   MaaEndTaskSwitch,
   ProtocolSpaceTaskValue,
@@ -144,13 +142,13 @@ type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
   IfSeizeDeliveryJobs: boolean
 }
 
-type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
   IfAutoCollect: boolean
   SeizeDeliveryJobsReward: number
   SeizeDeliveryJobsCommissionSource: MaaEndDeliveryCommissionSource
   AutoCollectMode: MaaEndAutoCollectMode
-  AutoCollectRoutes: MaaEndAutoCollectRoute[]
-  AutoCollectCommonRoutes: MaaEndAutoCollectCommonRoute[]
+  AutoCollectRoutes: string[] | null
+  AutoCollectCommonRoutes: string[] | null
   SanityTaskType: SanityTaskType
   OperatorProgression: ProtocolSpaceTaskValue
   WeaponProgression: ProtocolSpaceTaskValue
