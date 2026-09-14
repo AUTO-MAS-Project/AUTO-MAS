@@ -60,6 +60,11 @@
 >   `User/config.json` + 一条龙实配 `User/OneDragon/*.json`（用户在 BGI GUI
 >   直接编辑的对象，排除 MAS 运行时槽位），两池「已启用任务」同标签同口径，
 >   详见 examples-bettergi.md
+> - **MaaFW（自包含式 + 纯字段侧车，无会话）**：`app/task/MaaFW/tools/
+>   restore_service.py` + `MaaFWUserEdit.vue`——M9A 同线：mas 池是纯字段
+>   侧车（Info/Task.SelectedPreset/TaskSnapshot/Device 段，无 per-user 目录），
+>   native = 项目 `config/` + `interface.json`（运行时物化处，排除 resource/
+>   资产）；无原生 GUI 遮罩会话
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 

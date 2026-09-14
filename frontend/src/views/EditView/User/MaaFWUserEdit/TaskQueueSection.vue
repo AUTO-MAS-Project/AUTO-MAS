@@ -3,6 +3,12 @@
     <div class="section-header section-header-with-action">
       <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
       <a-space>
+        <a-button size="small" @click="emit('openRestore')">
+          <template #icon>
+            <HistoryOutlined />
+          </template>
+          {{ t('edit.configRestoreTitle') }}
+        </a-button>
         <a-button
           :loading="interfaceLoading"
           :disabled="!scriptPath"
@@ -328,6 +334,7 @@ import {
   ArrowUpOutlined,
   DeleteOutlined,
   FileSearchOutlined,
+  HistoryOutlined,
   HolderOutlined,
   PlusOutlined,
   ThunderboltOutlined,
@@ -389,6 +396,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:addTaskCascaderValue': [value: string[]]
   'update:showPresetModal': [value: boolean]
+  openRestore: []
   reloadInterface: []
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]

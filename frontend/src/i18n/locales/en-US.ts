@@ -1743,6 +1743,11 @@ export default {
     bettergiViewClose: 'Close Viewer',
     bettergiViewOpened: 'BetterGI viewer opened',
     bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    maafwConfigRestoreUserDesc:
+      'Backups of the MAS config (task snapshot and device overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    maafwConfigRestoreScriptDesc:
+      'Backups of the MaaFW project config (config folder and interface.json); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // BAAH dedicated adapter
     baahScriptConfiguration: 'BAAH script settings',
     baahScriptNameHint: 'Distinguishes this BAAH script instance from others',

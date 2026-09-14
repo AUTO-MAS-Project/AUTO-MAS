@@ -46,6 +46,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.MaaFW.tools.backup_archive import archive_native_backup
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
@@ -686,6 +687,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"MFW 内置运行用户列表加载完成，已筛选用户数: "
             f"{len(self.script_info.user_list)}"
         )
+
+        # 运行前归档 MaaFW 项目配置（config/ + interface.json）——物化会写这两处，
+        # 归档必须在任何写入前（指纹去重，失败不阻断任务）
+        with suppress(Exception):
+            archive_native_backup(Path(self.script_config.get("Info", "Path")))
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
