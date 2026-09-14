@@ -126,14 +126,14 @@ export const MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS = [
 export type MaaEndAutoCollectCommonRoute =
   (typeof MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS)[number]['value']
 
-export const PROTOCOL_SPACE_OPTIONS = [
+const PROTOCOL_SPACE_OPTIONS = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
   { label: '危境预演', value: 'CrisisDrills' },
 ] as const
 
 export type ProtocolSpaceTab = (typeof PROTOCOL_SPACE_OPTIONS)[number]['value']
-export type CurrentTaskField = ProtocolSpaceTab
+type CurrentTaskField = ProtocolSpaceTab
 
 export type PlanTimeKey =
   | 'ALL'
@@ -145,7 +145,7 @@ export type PlanTimeKey =
   | 'Saturday'
   | 'Sunday'
 
-export type PlanWeekdayKey = Exclude<PlanTimeKey, 'ALL'>
+type PlanWeekdayKey = Exclude<PlanTimeKey, 'ALL'>
 
 export const MAAEND_PLAN_TIME_KEYS: PlanTimeKey[] = [
   'ALL',
@@ -282,7 +282,7 @@ export const MAAEND_TASK_GROUPS = [
 
 export type MaaEndTaskSwitch = (typeof MAAEND_TASK_GROUPS)[number]['tasks'][number]['name']
 
-export type MaaEndDailyOnceTask = MaaEndTaskSwitch | 'SeizeDeliveryJobs'
+type MaaEndDailyOnceTask = MaaEndTaskSwitch | 'SeizeDeliveryJobs'
 
 // 自动采集由自身的路线周期独立管理，不纳入每日仅执行一次任务。
 export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
@@ -299,7 +299,7 @@ export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
   return options
 })()
 
-export interface ProtocolSpaceTaskOption {
+interface ProtocolSpaceTaskOption {
   label: string
   value: ProtocolSpaceTaskValue
   rewards?: boolean
@@ -331,25 +331,12 @@ export interface MaaEndAutoEssencePlanKey {
   AutoEssenceTargetWeapons?: string[]
 }
 
-export type MaaEndPlanKey = MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey
+type MaaEndPlanKey = MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey
 
 type MaaEndLegacyPlanKey = Omit<Partial<MaaEndSanityConfig>, 'SanityTaskType'> & {
   SanityTaskType?: SanityTaskType | 'ProtocolSpace' | 'Matrix' | 'AutoEssence'
   ProtocolSpaceTab?: ProtocolSpaceTab
 }
-
-export interface MaaEndTaskSwitchItem {
-  name: MaaEndTaskSwitch
-  label: string
-}
-
-export interface MaaEndTaskSwitchGroup {
-  key: string
-  label: string
-  tasks: MaaEndTaskSwitchItem[]
-}
-
-export type ProtocolSpaceConfig = MaaEndSanityConfig
 
 export const PROTOCOL_SPACE_TASK_FIELD_MAP: Record<ProtocolSpaceTab, CurrentTaskField> = {
   OperatorProgression: 'OperatorProgression',
@@ -361,7 +348,7 @@ export const SANITY_TASK_TYPE_LABEL_MAP = Object.fromEntries(
   SANITY_TASK_TYPE_OPTIONS.map(option => [option.value, option.label])
 ) as Record<SanityTaskType, string>
 
-export const PROTOCOL_SPACE_TASK_LABEL_MAP = Object.fromEntries(
+const PROTOCOL_SPACE_TASK_LABEL_MAP = Object.fromEntries(
   Object.values(PROTOCOL_SPACE_TASK_OPTIONS_MAP)
     .flat()
     .map(option => [option.value, option.label])
@@ -383,7 +370,7 @@ export const REWARD_LABEL_MAP = Object.fromEntries(
   REWARD_OPTIONS.map(option => [option.value, option.label])
 ) as Record<RewardSetOption, string>
 
-export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
+const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
   SanityTaskType: 'OperatorProgression',
   OperatorProgression: 'OperatorEXP',
   WeaponProgression: 'WeaponEXP',
@@ -394,14 +381,14 @@ export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
   AutoEssenceTargetWeapons: [],
 })
 
-export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
+const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
   PROTOCOL_SPACE_TASK_FIELD_MAP[tab]
 
-export const getProtocolSpaceTaskOptions = (
+const getProtocolSpaceTaskOptions = (
   tab: ProtocolSpaceTab
 ): readonly ProtocolSpaceTaskOption[] => PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
 
-export const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): ProtocolSpaceTaskValue =>
+const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): ProtocolSpaceTaskValue =>
   config[getProtocolSpaceTaskField(config.SanityTaskType as ProtocolSpaceTab)]
 
 export const getCurrentTaskValue = (config: MaaEndSanityConfig): CurrentTaskValue => {

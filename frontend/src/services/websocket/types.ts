@@ -3,7 +3,7 @@
 
 // ==================== 信封 ====================
 
-export type WSJsonValue = string | number | boolean | null | WSJsonValue[] | WSJsonObject
+type WSJsonValue = string | number | boolean | null | WSJsonValue[] | WSJsonObject
 export interface WSJsonObject {
   [key: string]: WSJsonValue
 }
@@ -146,12 +146,12 @@ export interface WSPowerCountdownData {
 }
 
 /** 电源标志更新数据 (id=Main, type=power.sign.updated) */
-export interface WSPowerSignData {
+interface WSPowerSignData {
   signal: string
 }
 
 /** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */
-export interface WSMaaFWEnvPrepareProgressData {
+interface WSMaaFWEnvPrepareProgressData {
   /** resolving / installing_python / creating_runtime / installing_runtime / runtime_ready / reused / log / ready / failed */
   stage: string
   /** running / success / failed */
@@ -170,11 +170,11 @@ export interface WSUpdateProgressData {
   source: string
 }
 
-export interface WSUpdateCompletedData {
+interface WSUpdateCompletedData {
   file: string
 }
 
-export interface WSUpdateFailedData {
+interface WSUpdateFailedData {
   message: string
 }
 
@@ -199,10 +199,10 @@ export interface WSEmulatorOperationData {
   message: string
 }
 
-export type WSEmptyData = Record<string, never>
+type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
-export interface WSMessageDataMap {
+interface WSMessageDataMap {
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData
@@ -224,7 +224,7 @@ export interface WSMessageDataMap {
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
 }
 
-export type WSKnownMessageType = keyof WSMessageDataMap
+type WSKnownMessageType = keyof WSMessageDataMap
 export type WSDataForType<TType extends string> = TType extends WSKnownMessageType
   ? WSMessageDataMap[TType]
   : WSJsonObject

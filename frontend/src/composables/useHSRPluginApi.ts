@@ -4,7 +4,7 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 /** Engines exposed by the built-in HSR adapter. */
 export type HSREngine = 'SRA' | 'M7A'
 
-export interface HSRBrowserCapability {
+interface HSRBrowserCapability {
   service: string
   handoff_protocol?: string
   service_available: boolean
@@ -19,7 +19,7 @@ export interface HSRBrowserCapability {
   }>
 }
 
-export interface HSRAdapterCapability {
+interface HSRAdapterCapability {
   engine: HSREngine
   display_name: string
   version?: string | null
@@ -38,7 +38,7 @@ export interface HSRTaskCapability {
   strategies?: Partial<Record<HSREngine, string[]>>
 }
 
-export type HSRManagedFieldType =
+type HSRManagedFieldType =
   | 'boolean'
   | 'integer'
   | 'number'
@@ -47,7 +47,7 @@ export type HSRManagedFieldType =
   | 'json'
   | 'stage'
 
-export interface HSRManagedFieldOption {
+interface HSRManagedFieldOption {
   value: unknown
   label: string
 }
@@ -74,7 +74,7 @@ export interface HSRDroppedOverride {
   message: string
 }
 
-export interface HSRManagedEngineForm {
+interface HSRManagedEngineForm {
   key?: string
   engine: HSREngine
   fields: HSRManagedField[]
@@ -137,7 +137,7 @@ export interface HSRSRAProfilesSnapshot {
   profiles: HSRSRAProfile[]
 }
 
-export interface HSRDirectConfigImportResult {
+interface HSRDirectConfigImportResult {
   engine: HSREngine
   source?: string | null
   imported_at?: string | null
@@ -205,7 +205,7 @@ const firstNumber = (...values: unknown[]): number | null => {
   return typeof value === 'number' ? value : null
 }
 
-export interface HSRStageOption {
+interface HSRStageOption {
   id: string
   label: string
   detail: string
@@ -214,7 +214,7 @@ export interface HSRStageOption {
   native_payload: Record<string, unknown>
 }
 
-export interface HSRStageCategory {
+interface HSRStageCategory {
   key: string
   label: string
   options: HSRStageOption[]

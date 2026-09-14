@@ -41,7 +41,6 @@ from app.services import Notify, System
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
     CONFIG_SOURCE_SCRIPT,
     CONFIG_SOURCE_USER,
     resolve_config_source,

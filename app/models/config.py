@@ -3050,13 +3050,6 @@ class OkwwTaskIndexValidator(OptionsValidator):
         return 7 if value == 2 else super().correct(value)
 
 
-class ScriptUserModeValidator(ConfigSourceValidator):
-    """脚本/用户配置来源（兼容旧版“简洁/详细”）。"""
-
-    def __init__(self) -> None:
-        super().__init__(("脚本", "用户"), {"简洁": "脚本", "详细": "用户"})
-
-
 class OkwwConfigModeValidator(ConfigSourceValidator):
     """脚本/用户/直控配置来源（兼容旧版“简洁/详细”）。"""
 

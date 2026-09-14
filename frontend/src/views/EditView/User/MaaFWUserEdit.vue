@@ -14,7 +14,7 @@
         <template #title>
           <div class="card-title">
             <img
-              :src="getScriptIcon('MaaFW', projectIconUrl)"
+              :src="projectIconUrl || SCRIPT_LOGOS.MaaFW"
               alt="MaaFW"
               width="22"
               height="22"
@@ -115,7 +115,7 @@ import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { getScriptIcon, maafwScriptIcon } from '@/utils/scriptIcon'
+import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
@@ -224,7 +224,7 @@ const handleProjectIconError = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement | null
   if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
   image.dataset.maafwIconFallbackApplied = 'true'
-  image.src = maafwScriptIcon
+  image.src = SCRIPT_LOGOS.MaaFW
 }
 const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
