@@ -1351,7 +1351,11 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-                if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
+                if (
+                    f"完成任务: {zh_task}" in log
+                    or f"{zh_task} 任务跳过" in log
+                    or (en_task == "Fight" and "完成任务: 剿灭作战" in log)
+                ):
                     self.task_dict[en_task] = False
 
             if any(self.task_dict.values()):
