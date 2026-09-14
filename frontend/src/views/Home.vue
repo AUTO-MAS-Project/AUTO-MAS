@@ -160,6 +160,14 @@
                 :loading="reverse1999Source.loading.value"
                 :overview="reverse1999Source.overview.value"
               />
+
+              <HomeBlueArchiveOverview
+                v-else-if="gameKey === 'bluearchive'"
+                :servers="blueArchiveSource.servers.value"
+                :selected="blueArchiveSource.selectedServer.value"
+                :loading-by-server="blueArchiveSource.loadingByServer"
+                @select="blueArchiveSource.selectServer"
+              />
             </template>
           </HomeActivityCarousel>
         </section>
@@ -181,6 +189,7 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
+import HomeBlueArchiveOverview from '@/views/home/components/HomeBlueArchiveOverview.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
 import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
@@ -200,6 +209,7 @@ import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useSraActivitySource } from '@/views/home/useSraActivitySource'
 import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
+import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
 import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
@@ -266,6 +276,7 @@ const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
 const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
 const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
 const reverse1999Source = useReverse1999ActivitySource()
+const blueArchiveSource = useBlueArchiveActivitySource()
 const endfieldSource = useEndfieldActivitySource()
 
 const sraSourceFor = (key: HomeModuleKey) => {
@@ -312,6 +323,19 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       }
     }
 
+    if (key === 'bluearchive') {
+      const selectedServer = blueArchiveSource.servers.value.find(
+        server => server.key === blueArchiveSource.selectedServer.value
+      )
+      return {
+        ...base,
+        loading: blueArchiveSource.loadingByServer[blueArchiveSource.selectedServer.value],
+        ...sraActivityBanner(
+          selectedServer?.overview ?? createEmptySraActivityOverview()
+        ),
+      }
+    }
+
     const source = sraSourceFor(key)
     return {
       ...base,
@@ -330,6 +354,7 @@ const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: 
   ['wutheringwaves', wutheringWavesSource],
   ['nte', nevernessToEvernessSource],
   ['reverse1999', reverse1999Source],
+  ['bluearchive', blueArchiveSource],
   ['endfield', endfieldSource],
 ]
 for (const [moduleKey, source] of activitySourcesByModule) {

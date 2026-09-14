@@ -12,6 +12,7 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'wutheringwaves',
   'nte',
   'reverse1999',
+  'bluearchive',
   'arknights',
 ]
 

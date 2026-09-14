@@ -44,6 +44,7 @@ export type { BetterGIUserConfig_Info } from './models/BetterGIUserConfig_Info';
 export type { BetterGIUserConfig_OneDragon } from './models/BetterGIUserConfig_OneDragon';
 export type { BetterGIUserConfig_Switch } from './models/BetterGIUserConfig_Switch';
 export type { BetterGIUserConfig_Task } from './models/BetterGIUserConfig_Task';
+export { BlueArchiveActivityIn } from './models/BlueArchiveActivityIn';
 export type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from './models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 export type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from './models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 export type { CheckImageAllIn } from './models/CheckImageAllIn';
