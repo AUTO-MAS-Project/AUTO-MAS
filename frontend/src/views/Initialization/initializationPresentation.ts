@@ -8,7 +8,7 @@ export type InitializationStepKey =
 
 export type InitializationStepStatus = 'waiting' | 'processing' | 'success' | 'failed'
 
-export type InitializationStageKey = 'environment' | 'repository' | 'dependency' | 'backend'
+type InitializationStageKey = 'environment' | 'repository' | 'dependency' | 'backend'
 
 export const initializationStages: readonly {
   key: InitializationStageKey

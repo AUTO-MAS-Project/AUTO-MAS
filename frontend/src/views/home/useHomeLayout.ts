@@ -3,9 +3,9 @@ import { computed, ref } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import type { HomeLayoutConfig, HomeModuleDescriptor, HomeModuleKey } from '@/types/home'
 
-export const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
+const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
 
-export const defaultHomeModuleOrder: HomeModuleKey[] = [
+const defaultHomeModuleOrder: HomeModuleKey[] = [
   'command',
   'quick',
   'satellite',
@@ -29,7 +29,7 @@ const normalizeModuleKeys = (value: unknown): HomeModuleKey[] => {
   return keys.filter((key, index, array) => array.indexOf(key) === index)
 }
 
-export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
+const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   const config =
     typeof value === 'object' && value !== null ? (value as Partial<HomeLayoutConfig>) : {}
   const configuredOrder = normalizeModuleKeys(config.moduleOrder)

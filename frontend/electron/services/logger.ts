@@ -4,11 +4,6 @@ import { app } from 'electron'
 import { isDevelopmentEnvironment } from './instanceConfig'
 
 /**
- * 日志级别类型
- */
-export type LogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug' | 'silly'
-
-/**
  * 模块颜色映射
  */
 const moduleColors = new Map<string, string>()

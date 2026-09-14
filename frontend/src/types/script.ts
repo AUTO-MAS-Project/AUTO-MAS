@@ -40,11 +40,6 @@ export type ScriptType =
   | 'ZzzOd'
   | 'BAAH'
 
-export type OkwwScriptConfig = OkwwConfig
-export type OkNteScriptConfig = OkNteConfig
-export type BetterGIScriptConfig = BetterGIConfig
-export type ZzzOdScriptConfig = ZzzOdConfig
-export type BAAHScriptConfig = BAAHConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -145,11 +140,11 @@ export interface SRCScriptConfig {
   }
 }
 
-export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
+type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
   IfSeizeDeliveryJobs: boolean
 }
 
-export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
   IfAutoCollect: boolean
   SeizeDeliveryJobsReward: number
   SeizeDeliveryJobsCommissionSource: MaaEndDeliveryCommissionSource
@@ -391,7 +386,7 @@ export interface MaaFWProjectInfo {
   icon?: string | null
 }
 
-export const MAAFW_SUPPORTED_CONTROLLER_TYPES = ['Adb', 'Win32', 'Gamepad', 'PlayCover'] as const
+const MAAFW_SUPPORTED_CONTROLLER_TYPES = ['Adb', 'Win32', 'Gamepad', 'PlayCover'] as const
 
 export const isSupportedMaaFWControllerType = (type: string) =>
   (MAAFW_SUPPORTED_CONTROLLER_TYPES as readonly string[]).includes(type)
@@ -652,27 +647,6 @@ export interface User {
   }
 }
 
-// API响应类型
-export interface AddScriptResponse {
-  code: number
-  status: string
-  message: string
-  scriptId: string
-  data:
-    | MAAScriptConfig
-    | GeneralScriptConfig
-    | OkwwScriptConfig
-    | OkNteScriptConfig
-    | SRCScriptConfig
-    | MaaEndScriptConfig
-    | M9AScriptConfig
-    | MaaFWScriptConfig
-    | HSRScriptConfig
-    | BetterGIScriptConfig
-    | ZzzOdScriptConfig
-    | BAAHScriptConfig
-}
-
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
@@ -689,29 +663,6 @@ export interface ScriptIndexItem {
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
     | 'BAAHConfig'
-}
-
-// 获取脚本API响应
-export interface GetScriptsResponse {
-  code: number
-  status: string
-  message: string
-  index: ScriptIndexItem[]
-  data: Record<
-    string,
-    | MAAScriptConfig
-    | GeneralScriptConfig
-    | OkwwScriptConfig
-    | OkNteScriptConfig
-    | SRCScriptConfig
-    | MaaEndScriptConfig
-    | M9AScriptConfig
-    | MaaFWScriptConfig
-    | HSRScriptConfig
-    | BetterGIScriptConfig
-    | ZzzOdScriptConfig
-    | BAAHScriptConfig
-  >
 }
 
 // 脚本详情（用于前端展示）
@@ -736,13 +687,6 @@ export interface ScriptDetail {
   createTime?: string
 }
 
-// 删除脚本API响应
-export interface DeleteScriptResponse {
-  code: number
-  status: string
-  message: string
-}
-
 // M9A 任务选项类型
 export interface M9ATaskOption {
   name: string
@@ -756,11 +700,4 @@ export interface M9ATaskOption {
 export interface M9ATaskQueueItem {
   name: string
   options: M9ATaskOption[]
-}
-
-// 更新脚本API响应
-export interface UpdateScriptResponse {
-  code: number
-  status: string
-  message: string
 }

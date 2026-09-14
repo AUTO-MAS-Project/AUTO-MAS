@@ -347,12 +347,6 @@ def _target_channels(target: NotifyTarget) -> dict[str, str]:
     return channels
 
 
-def target_channel_names(target: NotifyTarget) -> tuple[str, ...]:
-    """返回用户可见的渠道名，保持既有名称枚举接口。"""
-
-    return tuple(_target_channels(target).values())
-
-
 async def _send(
     channel: str,
     send: Callable[[], Awaitable[Any]],
