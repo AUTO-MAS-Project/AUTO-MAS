@@ -70,6 +70,6 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
     hiddenModules,
     hideScrollHint: config.hideScrollHint === true,
     // 未写过这项的老配置按开启处理，与新装用户保持一致
-    carouselAutoplay: config.carouselAutoplay !== false,
+    carouselAutoplay: config.carouselAutoplay === true,
   }
 }

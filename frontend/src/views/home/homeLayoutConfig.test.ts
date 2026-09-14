@@ -64,8 +64,9 @@ describe('normalizeHomeLayoutConfig', () => {
     expect(layout.hiddenModules).not.toContain(HOME_ACTIVITY_CAROUSEL_KEY)
   })
 
-  it('缺省视为开启自动轮播，显式关闭时保留', () => {
-    expect(normalizeHomeLayoutConfig({}).carouselAutoplay).toBe(true)
+  it('缺省关闭自动轮播，保留显式选择', () => {
+    expect(normalizeHomeLayoutConfig({}).carouselAutoplay).toBe(false)
+    expect(normalizeHomeLayoutConfig({ carouselAutoplay: true }).carouselAutoplay).toBe(true)
     expect(normalizeHomeLayoutConfig({ carouselAutoplay: false }).carouselAutoplay).toBe(false)
   })
 

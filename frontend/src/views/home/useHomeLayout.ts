@@ -50,7 +50,7 @@ export const useHomeLayout = () => {
   const homeActivityOrder = ref<HomeModuleKey[]>([...defaultSplit.activities])
   const hiddenHomeModules = ref<HomeModuleKey[]>([])
   const scrollHintHidden = ref(false)
-  const carouselAutoplay = ref(true)
+  const carouselAutoplay = ref(false)
   let saveQueue = Promise.resolve()
 
   const homeModuleOrder = computed(() =>
@@ -70,7 +70,7 @@ export const useHomeLayout = () => {
     homeActivityOrder.value = split.activities
     hiddenHomeModules.value = [...layout.hiddenModules]
     scrollHintHidden.value = layout.hideScrollHint === true
-    carouselAutoplay.value = layout.carouselAutoplay !== false
+    carouselAutoplay.value = layout.carouselAutoplay === true
   }
 
   const logWarning = (message: string, error: unknown) => {
@@ -83,7 +83,7 @@ export const useHomeLayout = () => {
       moduleOrder: [...layout.moduleOrder],
       hiddenModules: [...layout.hiddenModules],
       hideScrollHint: layout.hideScrollHint === true,
-      carouselAutoplay: layout.carouselAutoplay !== false,
+      carouselAutoplay: layout.carouselAutoplay === true,
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
     saveQueue = saveTask.catch(error => {

@@ -1,24 +1,35 @@
 <template>
   <section
     class="activity-carousel"
-    @mouseenter="paused = true"
-    @mouseleave="paused = false"
-    @focusin="paused = true"
-    @focusout="paused = false"
+    @mouseenter="hovered = true"
+    @mouseleave="hovered = false"
+    @focusin="focused = true"
+    @focusout="onFocusOut"
   >
     <a-card v-if="!items.length" class="carousel-empty">
       <a-empty :description="t('home.carousel.allHidden')" />
     </a-card>
 
     <template v-else>
-      <div class="banner-viewport">
-        <div class="banner-track" :style="trackStyle">
-          <article
-            v-for="(item, index) in items"
-            :key="item.key"
-            class="banner-slide"
-            :aria-hidden="index !== activeIndex"
-          >
+      <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
+      <div v-if="items.length > 1" class="banner-switcher">
+        <button
+          v-for="(item, index) in items"
+          :key="item.key"
+          type="button"
+          class="switcher-chip"
+          :class="{ 'is-active': index === activeIndex }"
+          :style="index === activeIndex ? activeChipStyle(item) : undefined"
+          :aria-current="index === activeIndex ? 'true' : undefined"
+          @click="select(index)"
+        >
+          {{ item.title }}
+        </button>
+      </div>
+
+      <div v-if="activeItem && !isCompact" class="banner-viewport">
+        <div class="banner-track">
+          <article v-for="item in [activeItem]" :key="item.key" class="banner-slide">
             <div class="banner-body" :style="bannerStyle(item)">
               <img
                 v-if="hasCover(item)"
@@ -73,22 +84,6 @@
         </button>
       </div>
 
-      <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
-      <div v-if="items.length > 1" class="banner-switcher">
-        <button
-          v-for="(item, index) in items"
-          :key="item.key"
-          type="button"
-          class="switcher-chip"
-          :class="{ 'is-active': index === activeIndex }"
-          :style="index === activeIndex ? activeChipStyle(item) : undefined"
-          :aria-current="index === activeIndex ? 'true' : undefined"
-          @click="select(index)"
-        >
-          {{ item.title }}
-        </button>
-      </div>
-
       <div v-if="activeKey" class="activity-detail">
         <slot name="detail" :module-key="activeKey" />
       </div>
@@ -132,7 +127,14 @@ type CoverMode =
   | 'inset'
 
 const selectedKey = ref<HomeModuleKey | null>(null)
-const paused = ref(false)
+const hovered = ref(false)
+const focused = ref(false)
+const paused = computed(() => hovered.value || focused.value)
+const onFocusOut = (event: FocusEvent) => {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
+    focused.value = false
+  }
+}
 // 用户手动选过游戏后就不再自动翻页：下方详情卡正在被人阅读
 const userTookControl = ref(false)
 const failedCovers = ref(new Set<HomeModuleKey>())
@@ -145,9 +147,8 @@ const activeIndex = computed(() => {
 
 const activeKey = computed<HomeModuleKey | null>(() => props.items[activeIndex.value]?.key ?? null)
 
-const trackStyle = computed<CSSProperties>(() => ({
-  transform: `translateX(-${activeIndex.value * 100}%)`,
-}))
+const activeItem = computed(() => props.items[activeIndex.value])
+const isCompact = computed(() => ['endfield', 'arknights'].includes(activeKey.value ?? ''))
 
 const remainingStyle: CSSProperties = {
   color: '#fff',
@@ -196,8 +197,7 @@ const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
 }
 
 const activeChipStyle = (item: ActivityBannerItem): CSSProperties => ({
-  borderColor: item.accent,
-  color: item.accent,
+  '--activity-accent': item.accent,
 })
 
 const bannerSubtitle = (item: ActivityBannerItem) => {
@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
 /* 各游戏卡里的版本大图已经撤掉，这张横幅接手它的高度，裁得没那么狠 */
 .banner-body {
   position: relative;
-  height: 300px;
+  height: clamp(220px, 24vw, 320px);
   overflow: hidden;
   background: var(--ant-color-fill-secondary);
   border-radius: 12px;
@@ -456,20 +456,23 @@ onBeforeUnmount(() => {
 
 .banner-switcher {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding: 5px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
+  background: var(--ant-color-bg-container);
   scrollbar-width: thin;
 }
 
 .switcher-chip {
   flex: 0 0 auto;
-  padding: 4px 12px;
+  padding: 9px 16px;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   background: var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
   transition:
     color 0.2s ease,
@@ -482,12 +485,35 @@ onBeforeUnmount(() => {
 
 .switcher-chip.is-active {
   font-weight: 600;
-  background: var(--ant-color-fill-tertiary);
+  color: var(--ant-color-text);
+  background: var(--ant-color-fill-secondary);
+  box-shadow: inset 0 -2px var(--activity-accent);
 }
 
 .activity-detail {
   display: flex;
   flex-direction: column;
+}
+
+.switcher-chip:focus-visible,
+.banner-arrow:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-track,
+  .banner-cover,
+  .banner-arrow,
+  .switcher-chip {
+    transition: none;
+  }
+}
+
+@media (hover: none) {
+  .banner-arrow {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 800px) {
