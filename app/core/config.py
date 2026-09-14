@@ -2367,6 +2367,11 @@ class AppConfig(GlobalConfig):
                 RESTORE_POOLS,
                 RESTORE_SCRIPT_NAME,
             )
+        elif isinstance(script_config, M9AConfig):
+            from app.task.M9A.tools.restore_service import (
+                RESTORE_POOLS,
+                RESTORE_SCRIPT_NAME,
+            )
         else:
             raise ValueError("该专项暂不支持配置恢复")
         return build_restore_service(

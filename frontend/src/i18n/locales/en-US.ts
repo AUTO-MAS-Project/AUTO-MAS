@@ -1112,6 +1112,11 @@ export default {
     // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
     maaendConfigRestoreScriptDesc:
       'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
+    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
+    m9aConfigRestoreUserDesc:
+      'Backups of the core MAS edit-page fields (task queue, server resource, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    m9aConfigRestoreScriptDesc:
+      'Backups of the M9A native config; restoring applies directly to M9A itself. Created automatically (dedup) when opening this edit page or before running M9A, latest 10 kept',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: 'MaaEnd setup opened',
     maaendSessionStartFailed: 'Could not start the MaaEnd setup session',

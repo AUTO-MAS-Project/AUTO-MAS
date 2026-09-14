@@ -37,6 +37,10 @@
 >   `useMaaEndGuiSession.ts` + `MaaEndUserEdit.vue`——mas 池带快速配置覆盖层
 >   侧车（对齐 ok-ww），脚本/用户/直控三态（直控无 mas 池，见 §1.1.1）；
 >   预览为「任务启用罗列 + 配置内容表单」结构，专项要求见 examples-maaend.md
+> - **M9A（自包含式 + 纯字段侧车，无会话）**：`app/task/M9A/tools/restore_service.py` +
+>   `M9AUserEdit.vue`——MFAA 线无 per-user ConfigFile 目录、无遮罩会话：
+>   mas 池是**纯字段侧车**（无目录部分，见 §1.1.4），恢复即字段回填；
+>   不提供「查看详细配置」（无 viewOnly 会话可挂，onDetail 不传即不渲染）
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 
@@ -95,6 +99,30 @@ MAS 编辑页配置的字段可能**不落盘在被备份的文件里**（ok-ww�
 （目录缺失 → 无内容可归档）。ok-ww 在 add_user 时从本体 configs 播种 owner
 目录；MAA 在 mas 快照时播种（MAA 路径可晚于用户配置，播种失败不挡建用户）；
 OkNte 的用户目录是页面编辑对象天然存在；ZzzOd 进页即物理化槽位。
+
+#### 1.1.4 无 ConfigFile 目录的专项：纯字段侧车（M9A）
+
+MFAA 线（M9A）的 MAS 用户配置是**字段**（存共享 ScriptConfig.json，运行时
+经 build_config 写入原生实例配置），没有 per-user ConfigFile 目录。此时
+mas 池是**纯字段侧车**——归档内唯一文件就是 `_mas_overlay.json`，没有
+目录部分：
+
+- 侧车同时存**原始值**（Queue JSON 串等，回填 UserData 用）与**展示快照**
+  （选项 index 翻译成中文 case 名，预览零本体依赖）。展示快照在归档时经
+  任务定义翻译固化；任务定义不可用时降级保存原始值，预览仍可读；
+- 自描述值（checkbox 的 selected_cases、输入值）不依赖任务定义直出；
+  只有 index 类选项需要定义翻译——**能自描述的不翻译，缺定义的降级不臆造**；
+- 恢复 = 回填 UserData（无目录目标、无需播种），恢复前把当前字段终态
+  force 归档存底；
+- 上游任务/选项定义随版本漂移、无法固化词表时，预览翻译**尽力而为**：
+  归档/预览时定义可用（脚本路径存在）就翻译，不可用就显示原始值；
+  与 mas 池同口径的 native 反读同此策略。
+
+配套的 native 池形态（M9A 本体 `config/`）：实例配置文件**任意命名**
+（M9A GUI 用哈希命名），预览须**全实例反读**并按实例折叠展示（ZzzOd
+实例列表同语义），**实例显示名取 JSON 内的名称字段**（如 `InstanceName`），
+文件名只作缺失回退——MaaFramework 线的实例文件名普遍不是显示名，只认
+固定文件名（如 default.json）会漏掉用户创建的全部实例。
 
 ### 1.2 恢复关键语义
 

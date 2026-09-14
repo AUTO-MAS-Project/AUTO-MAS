@@ -2,6 +2,9 @@
   <div class="task-queue-section">
     <div class="section-header">
       <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
+      <div class="section-header-actions">
+        <slot name="header-actions" />
+      </div>
     </div>
 
     <a-row :gutter="24" class="task-queue-layout">

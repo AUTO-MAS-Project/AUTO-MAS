@@ -1104,6 +1104,11 @@ export default {
     // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
     maaendConfigRestoreScriptDesc:
       'MaaEnd 原生配置的备份，恢复会直接作用于 MaaEnd 本体；打开本编辑页、运行 MaaEnd 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
+    m9aConfigRestoreUserDesc:
+      'MAS 编辑页核心配置（任务队列、服务器资源等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    m9aConfigRestoreScriptDesc:
+      'M9A 本体配置的备份，恢复会直接作用于 M9A 本体；进入本编辑页或运行 M9A 前会自动去重创建，保留最近 10 份',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: '已打开 MaaEnd 设置',
     maaendSessionStartFailed: '启动 MaaEnd 设置失败',
