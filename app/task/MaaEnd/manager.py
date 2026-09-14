@@ -33,6 +33,12 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
@@ -135,12 +141,15 @@ class MaaEndManager(TaskExecuteBase):
         else:
             self.emulator_manager = None
 
-        # 备份原始配置
-        shutil.rmtree(self.temp_path, ignore_errors=True)
-        self.temp_path.mkdir(parents=True, exist_ok=True)
-        if self.maaend_config_dir.exists():
+        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
+        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
+        self._recover_previous_run()
+        if commit_native_config_snapshot(
+            self.temp_path,
+            self.maaend_config_dir,
+            script_id=self.script_info.script_id,
+        ):
             self.had_original_script_config = True
-            shutil.copytree(self.maaend_config_dir, self.temp_path, dirs_exist_ok=True)
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -179,25 +188,37 @@ class MaaEndManager(TaskExecuteBase):
             shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
             return
 
-        temporary_path = self.maaend_config_dir.with_name(
-            self.maaend_config_dir.name + ".tmp"
+        logger.info(f"复原 MaaEnd 脚本配置文件: {self.temp_path}")
+        swap_in_dir(self.temp_path, self.maaend_config_dir)
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.maaend_config_dir,
+            expected_script_id=self.script_info.script_id,
         )
-        shutil.rmtree(temporary_path, ignore_errors=True)
-        shutil.copytree(self.temp_path, temporary_path, dirs_exist_ok=True)
-        shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
-        temporary_path.rename(self.maaend_config_dir)
+        if result == "restored":
+            logger.info("已恢复上次中断前的 MaaEnd 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 MaaEnd 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     def _cleanup_script_config_temp(self) -> None:
         if self.temp_path:
-            shutil.rmtree(self.temp_path, ignore_errors=True)
+            clear_native_config_snapshot(self.temp_path)
 
     def _keep_script_config_changes(self) -> bool:
         """直控配置会话成功时保留 MaaEnd GUI 的写回。"""
 
+        # 配置会话的唯一出口就是用户在配置窗口点「保存配置」发起的中止,
+        # 因此这里不能把 stopped_manually 当作丢弃的依据, 否则直控模式下
+        # MaaEnd GUI 的写回会被随后的配置复原抹掉。
         return (
             self.task_info.mode == "ScriptConfig"
             and self.script_config_mode == "直控"
-            and not self.stopped_manually
             and bool(self.script_info.user_list)
             and self.script_info.user_list[0].status == "完成"
         )

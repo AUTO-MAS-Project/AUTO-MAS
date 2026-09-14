@@ -34,6 +34,12 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -161,18 +167,34 @@ class GeneralManager(TaskExecuteBase):
                 logger.opt(exception=True).warning(f"清理脚本直控配置失败: {e}")
         return not self.script_config_path.exists()
 
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.script_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的通用脚本原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到通用脚本原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
+
     def _snapshot_external_config(self) -> None:
         """保存脚本直控配置，作为用户切换和任务结束时的恢复基线。"""
-        shutil.rmtree(self.temp_path, ignore_errors=True)
         self.external_config_exists = self.script_config_path.exists()
-        self.temp_path.mkdir(parents=True, exist_ok=True)
 
         if self.external_config_exists:
             if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                shutil.copytree(
-                    self.script_config_path, self.temp_path, dirs_exist_ok=True
+                commit_native_config_snapshot(
+                    self.temp_path,
+                    self.script_config_path,
+                    script_id=self.script_info.script_id,
                 )
             elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                self.temp_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
         self.external_config_snapshot_ready = True
@@ -182,27 +204,27 @@ class GeneralManager(TaskExecuteBase):
         if not self.external_config_snapshot_ready:
             return
 
-        # 配置路径被脚本进程占用时只能清掉一部分，此时仍要把快照覆盖回去，
-        # 否则用户目录会停在半删状态
-        if not self._remove_script_config():
-            logger.warning(
-                f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
-            )
-
         if not self.external_config_exists:
             logger.info("脚本直控配置不存在，保持配置路径为空")
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            shutil.copytree(self.temp_path, self.script_config_path, dirs_exist_ok=True)
+            # 原子换入: 原生目录要么原样要么完整就位, 不出现半删中间态
+            swap_in_dir(self.temp_path, self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            # 配置路径被脚本进程占用时只能清掉一部分, 此时仍要把快照覆盖回去,
+            # 否则用户目录会停在半删状态
+            if not self._remove_script_config():
+                logger.warning(
+                    f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
+                )
             self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.temp_path / "config.temp", self.script_config_path)
 
     def _cleanup_external_config_snapshot(self) -> None:
         if not self.external_config_snapshot_ready:
             return
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+        clear_native_config_snapshot(self.temp_path)
         self.external_config_snapshot_ready = False
 
     def _user_uses_mas_config(self) -> bool:
@@ -264,6 +286,7 @@ class GeneralManager(TaskExecuteBase):
         )
 
         logger.info(f"记录脚本直控配置: {self.script_config_path}")
+        self._recover_previous_run()
         self._snapshot_external_config()
 
     async def main_task(self):
