@@ -2394,7 +2394,6 @@ export default {
     failure: {
       retryOtherMirror: '別のダウンロード元で再試行',
       rebuildEnvironment: '実行環境を再構築',
-      openLog: 'ログを開く',
       runDoctor: '実行環境を確認',
       internalErrorNotice:
         'これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください',
@@ -2722,6 +2721,16 @@ export default {
       deleteFailed: 'キューを削除できませんでした: {error}',
       saveFailed: '保存に失敗しました',
       saveQueueFailed: 'キューを保存できませんでした: {error}',
+    },
+  },
+  logs: {
+    package: 'ログの書き出し',
+    toast: {
+      packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
+      packageExported: 'ログのアーカイブを書き出しました',
+      packageFailed: 'ログの書き出しに失敗しました',
+      packageError: 'ログの書き出しでエラーが発生しました: {error}',
+      openFolderFailed: 'アーカイブの保存先フォルダを開けませんでした',
     },
   },
   scheduler: {

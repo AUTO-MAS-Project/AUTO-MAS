@@ -2618,7 +2618,6 @@ export default {
     failure: {
       retryOtherMirror: '换个下载源重试',
       rebuildEnvironment: '重建运行环境',
-      openLog: '打开日志',
       runDoctor: '检查运行环境',
       internalErrorNotice: '这是程序内部的问题，重试也不会有帮助，请带上日志反馈给开发者',
       contactSupportNotice: '这个问题需要带上日志反馈给开发者',
@@ -2933,6 +2932,16 @@ export default {
       deleteFailed: '删除队列失败: {error}',
       saveFailed: '保存失败',
       saveQueueFailed: '保存队列数据失败: {error}',
+    },
+  },
+  logs: {
+    package: '打包日志',
+    toast: {
+      packageNoResponse: '打包日志功能未响应，请检查程序',
+      packageExported: '日志压缩包导出成功',
+      packageFailed: '日志打包失败',
+      packageError: '打包日志异常: {error}',
+      openFolderFailed: '无法打开压缩包所在文件夹',
     },
   },
   scheduler: {

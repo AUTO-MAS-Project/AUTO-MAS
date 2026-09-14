@@ -63,7 +63,7 @@ describe('LaunchFailure', () => {
     })
 
     // 依赖段在 Runtime 下换不了镜像，所以是普通重试而不是换源重试，也不带源列表
-    expect(buttonLabels(html)).toEqual(['重试', '重建运行环境', '打开日志'])
+    expect(buttonLabels(html)).toEqual(['重试', '重建运行环境', '查看日志'])
     expect(html).not.toContain('换一个源重试')
     // 日志仍然整块给出，只是收进「详细信息」
     expect(html).toContain('详细信息')
@@ -86,7 +86,7 @@ describe('LaunchFailure', () => {
       showMirrorSelection: plan.showMirrorSelection,
     })
 
-    expect(buttonLabels(html)).toEqual(['打开日志'])
+    expect(buttonLabels(html)).toEqual(['查看日志'])
     expect(html).toContain('这是程序内部的问题')
   })
 
@@ -103,9 +103,25 @@ describe('LaunchFailure', () => {
       ],
     })
 
-    expect(buttonLabels(html)).toEqual(['换个下载源重试'])
+    expect(buttonLabels(html)).toEqual(['换个下载源重试', '查看日志'])
     expect(html).toContain('换一个源重试')
     expect(html).toContain('CNB 官方镜像')
+  })
+
+  it('可重试且可跳过的失败仍保留查看日志入口', async () => {
+    const plan = decideFailureActions({
+      code: 'DIRECTORY_OCCUPIED',
+      retryable: true,
+      remediation: ['retry'],
+    })
+
+    const html = await renderFailure({
+      failureActions: plan.actions,
+      showSkipButton: true,
+    })
+
+    expect(buttonLabels(html)).toEqual(['重试', '查看日志'])
+    expect(html).toContain('跳过此步骤')
   })
 
   it('运行环境检查的逐项结果按 status 字段着色展示', async () => {

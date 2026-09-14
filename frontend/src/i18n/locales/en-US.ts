@@ -2728,7 +2728,6 @@ export default {
     failure: {
       retryOtherMirror: 'Retry with another source',
       rebuildEnvironment: 'Rebuild the environment',
-      openLog: 'Open the log',
       runDoctor: 'Check the environment',
       internalErrorNotice:
         'This is an internal problem; retrying will not help. Please report it with the log.',
@@ -3052,6 +3051,16 @@ export default {
       deleteFailed: 'Could not delete the queue: {error}',
       saveFailed: 'Save failed',
       saveQueueFailed: 'Could not save the queue: {error}',
+    },
+  },
+  logs: {
+    package: 'Package logs',
+    toast: {
+      packageNoResponse: 'Packaging logs did not respond. Check the app.',
+      packageExported: 'Log archive exported',
+      packageFailed: 'Could not package logs',
+      packageError: 'Error packaging logs: {error}',
+      openFolderFailed: 'Could not open the archive folder',
     },
   },
   scheduler: {
