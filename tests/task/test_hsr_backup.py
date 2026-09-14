@@ -49,7 +49,60 @@ from app.task.HSR.tools.backup_archive import (
 
 _SRA_SETTINGS = {"gamePath": "G:/games/SR"}
 _SRA_CACHE = {"notificationsDisabled": True}
-_M7A_CONFIG = "loginAccount:\n  username: user1\n"
+# M7A config.yaml 为平铺键（现场核实 config.example.yaml；无 loginAccount 字段）
+_M7A_CONFIG = (
+    "power_enable: true\n"
+    "instance_type: 侵蚀隧洞\n"
+    "instance_names:\n"
+    "  侵蚀隧洞: 睿治之径\n"
+    "  历战余响: 毁灭的开端\n"
+    "use_reserved_trailblaze_power: false\n"
+    "use_fuel: false\n"
+    "echo_of_war_enable: true\n"
+    "reward_enable: true\n"
+    "reward_dispatch_enable: true\n"
+    "reward_mail_enable: false\n"
+    "weekly_divergent_enable: false\n"
+    "currencywars_enable: true\n"
+    "currencywars_type: overclock\n"
+)
+# SRA 档案为顶层 camelCase 段 + 段内平铺点号键（SRACore/models/tasks_config.py
+# @ v2.22.0-beta.4，与 MAS _build_sra_base_config 写出口径一致）
+_SRA_PROFILE = {
+    "name": "Default",
+    "version": 0,
+    "startGame": {"enabled": True, "game.channel": 0},
+    "trailblazePower": {
+        "enabled": True,
+        "replenish.enabled": True,
+        "replenish.way": 1,
+        "replenish.times": 3,
+        "tasklist": [
+            {
+                "name": "历战余响",
+                "id": "echo_of_war",
+                "level": 9,
+                "levelName": "毁灭的开端",
+                "count": 3,
+                "runtimes": 1,
+                "autoDetect": True,
+            }
+        ],
+    },
+    "receiveRewards": {
+        "enabled": True,
+        "redeemCodes": "",
+        "rewards": [True, True, False, True, True, True, False],
+    },
+    "cosmicStrife": {
+        "enabled": False,
+        "divergentUniverse.enabled": True,
+        "divergentUniverse.mode": 1,
+        "divergentUniverse.runtimes": 20,
+        "currencyWars.enabled": False,
+    },
+    "missionAccomplished": {"enabled": False, "exitGame": True, "logout": False},
+}
 
 
 class _FakeUser:
@@ -78,7 +131,7 @@ def _make_sra_appdata(tmp_path: Path) -> Path:
         json.dumps(_SRA_CACHE, ensure_ascii=False), encoding="utf-8"
     )
     (sra / "configs" / "Default.json").write_text(
-        json.dumps({"profile": "default"}), encoding="utf-8"
+        json.dumps(_SRA_PROFILE, ensure_ascii=False), encoding="utf-8"
     )
     return sra
 
@@ -128,6 +181,7 @@ def test_mas_overlay_grouping_and_dedup(
     grouped = group_overlay(overlay)
     assert set(grouped) == {"Managed", "Direct"}
     assert "TaskMapping" in grouped["Managed"]
+
 
 def test_mas_restore_roundtrip_with_user_isolation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -180,9 +234,10 @@ def test_native_backup_restore_loop(
     restore_native_backup(m7a, sra, first.name)
     assert (m7a / "config.yaml").read_text("utf-8") == _M7A_CONFIG
     assert json.loads((sra / "settings.json").read_text("utf-8")) == _SRA_SETTINGS
-    assert json.loads((sra / "configs" / "Default.json").read_text("utf-8")) == {
-        "profile": "default"
-    }
+    assert (
+        json.loads((sra / "configs" / "Default.json").read_text("utf-8"))
+        == _SRA_PROFILE
+    )
     assert len(list_native_backups(sra)) == 2  # 恢复前存底 +1
 
     # 全缺失时跳过归档
@@ -190,10 +245,10 @@ def test_native_backup_restore_loop(
     assert archive_native_backup(None, tmp_path / "nope") is None
 
 
-def test_native_preview_file_granularity(
+def test_native_preview_field_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """native 预览：两引擎文件清单粒度（不反读内部字段）。"""
+    """native 预览：M7A/SRA 常用字段反读 + settings/cache 只进文件清单。"""
 
     monkeypatch.chdir(tmp_path)
     m7a = _make_m7a_root(tmp_path)
@@ -203,13 +258,58 @@ def test_native_preview_file_granularity(
 
     payload = build_native_preview(sra, first.name)
     sections = {s["name"]: s for s in payload["sections"]}
-    rows = {row["key"]: row["value"] for row in sections["hsr"]["rows"]}
-    assert set(rows) == {
+    assert set(sections) == {"m7a", "sra:Default", "files"}
+
+    m7a_rows = {row["key"]: row["value"] for row in sections["m7a"]["rows"]}
+    assert m7a_rows["清体力"] == "开启"
+    assert m7a_rows["副本"] == "侵蚀隧洞 · 睿治之径"
+    assert m7a_rows["历战余响"] == "开启 · 毁灭的开端"
+    assert m7a_rows["体力补充"] == "无"
+    assert m7a_rows["领取奖励"] == "委托"
+    assert m7a_rows["差分宇宙"] == "关闭"
+    assert m7a_rows["货币战争"] == "超频博弈"
+
+    sra_rows = {row["key"]: row["value"] for row in sections["sra:Default"]["rows"]}
+    assert sra_rows["游戏渠道"] == "国服"
+    assert "毁灭的开端" in sra_rows["清体力任务清单"]
+    assert sra_rows["补充开拓力"] == "燃料 ×3"
+    assert sra_rows["领取奖励"] == (
+        "签证（支援）奖励、委托奖励、每日实训奖励、无名勋礼奖励、巡星之礼"
+    )
+    assert sra_rows["差分宇宙"] == "周期演算 ×20"
+    assert sra_rows["货币战争"] == "关闭"
+    assert sra_rows["完成后动作"] == "退出游戏"
+
+    file_rows = {row["key"] for row in sections["files"]["rows"]}
+    assert file_rows == {
         "M7A/config.yaml",
         "SRA/cache.json",
         "SRA/configs/Default.json",
         "SRA/settings.json",
     }
+
+
+def test_sra_reward_values_named_and_legacy() -> None:
+    """SRA 奖励开关读取：命名键优先、索引式回退、两类都缺失不渲染。"""
+
+    from app.task.HSR.tools.backup_archive import _sra_reward_values
+
+    # 命名键（新版），个别缺失回退 legacy 列表
+    named = _sra_reward_values(
+        {
+            "rewards.trailblazeProfile": True,
+            "rewards.mail": False,
+            "rewards": [False, False, True, True, True, True, True],
+        }
+    )
+    assert named == [True, False, False, True, True, True, True]
+
+    # 仅索引式（旧版）
+    legacy = _sra_reward_values({"rewards": [True, False]})
+    assert legacy == [True, False, False, False, False, False, False]
+
+    # 两类都没有 → None
+    assert _sra_reward_values({"enabled": True}) is None
 
 
 def test_overlay_preview_sections(
