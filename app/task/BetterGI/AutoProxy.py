@@ -850,7 +850,18 @@ class AutoProxyTask(TaskExecuteBase):
         """
         group_names = list(self.custom_exec_groups)
         if not group_names:
+            # 没物化出任何自定义配置组 = 本次没有自定义项要跑，不建记录
             return True
+
+        # 与 _run_plan_combat 同口径：执行层是一次真实运行，必须留下 log_record，
+        # 否则本用户这次运行在 MAS 侧没有记录（结果落到「未开始运行」、不写历史日志、
+        # 不发统计通知、掉落统计无数据可解析）
+        custom_log = LogRecord()
+        self.log_start_time = datetime.now()
+        self.cur_user_item.log_record[self.log_start_time] = custom_log
+        # 同步为「当前记录」：on_crash 与收尾的「运行异常」通知都读 self.cur_user_log
+        self.cur_user_log = custom_log
+
         await self._push_dispatch_log(
             f"开始执行层（自定义项）: --startGroups {' '.join(group_names)}"
         )
@@ -872,12 +883,16 @@ class AutoProxyTask(TaskExecuteBase):
             "MAS_PLAN_FAIL",
         )
 
+        # 失败原因，收尾时写入 custom_log.status；成功统一为项目契约 "Success!"
+        failure_reason = "执行层（自定义项）未正常结束"
+
         last_activity = time.monotonic()
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity, done_groups
+            nonlocal last_activity, done_groups, failure_reason
             last_activity = time.monotonic()
             log = "".join(log_content)
+            custom_log.content = log_content
             for g in group_names:
                 if f'配置组 "{g}" 执行结束' in log:
                     done_groups.add(g)
@@ -887,11 +902,13 @@ class AutoProxyTask(TaskExecuteBase):
                 done_event.set()
             elif any(m in log for m in fail_markers):
                 result["success"] = False
+                failure_reason = "执行层（自定义项）失败（命中致命日志）"
                 done_event.set()
             elif (
                 result["started"]
                 and not await self.bettergi_process_manager.is_running()
             ):
+                failure_reason = "执行层（自定义项）进程在结束标记前退出"
                 done_event.set()
 
         monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
@@ -917,6 +934,10 @@ class AutoProxyTask(TaskExecuteBase):
                     pass
                 if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
                     result["success"] = False
+                    failure_reason = (
+                        "执行层（自定义项）空闲超时"
+                        f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                    )
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 自定义项执行层空闲超时"
                         f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
@@ -925,9 +946,14 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"自定义项执行层执行异常: {e}")
             result["success"] = False
+            failure_reason = f"执行层（自定义项）执行异常: {e}"
         finally:
             await monitor.stop()
             await self.kill_managed_process()
+
+        # 成功必须用 "Success!"（同 _run_plan_combat：final_task 的成功轮筛选与
+        # on_crash 的「非 Success! 即弹运行异常通知」都依赖这个契约串）
+        custom_log.status = "Success!" if result["success"] else failure_reason
 
         if result["success"]:
             await self._push_dispatch_log("执行层（自定义项）完成")
