@@ -1,7 +1,7 @@
 <template>
   <div>
     <a-row :gutter="24">
-      <a-col :span="12">
+      <a-col :xs="24" :sm="12">
         <a-form-item name="userName" required>
           <template #label>
             <span class="form-label">
@@ -20,7 +20,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -32,6 +32,7 @@
           </template>
           <a-select
             v-model:value="formData.Info.Status"
+            :disabled="loading"
             size="large"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
@@ -43,7 +44,7 @@
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :span="12">
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -62,7 +63,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -78,6 +79,50 @@
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :xs="24" :sm="12">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
+              {{ t('edit.gameResource') }}
+              <a-tooltip :title="t('edit.pickGameResourceThis')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-select
+            v-model:value="formData.Info.Resource"
+            :placeholder="t('edit.pickResource')"
+            :disabled="loading"
+            size="large"
+            :options="resourceOptions"
+            @change="emitSave('Info.Resource', formData.Info.Resource)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :xs="24" :sm="12">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
+              {{ t('edit.daysLeft') }}
+              <a-tooltip :title="t('edit.daysLeftAccount1')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-input-number
+            v-model:value="formData.Info.RemainedDay"
+            :min="-1"
+            :max="9999"
+            :disabled="loading"
+            size="large"
+            style="width: 100%"
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
           />
         </a-form-item>
       </a-col>
@@ -140,50 +185,6 @@
               {{ t('edit.editScriptSettings') }}
             </a-button>
           </div>
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <a-row :gutter="24">
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('edit.gameResource') }}
-              <a-tooltip :title="t('edit.pickGameResourceThis')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
-          <a-select
-            v-model:value="formData.Info.Resource"
-            :placeholder="t('edit.pickResource')"
-            :disabled="loading"
-            size="large"
-            :options="resourceOptions"
-            @change="emitSave('Info.Resource', formData.Info.Resource)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('edit.daysLeft') }}
-              <a-tooltip :title="t('edit.daysLeftAccount1')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-          />
         </a-form-item>
       </a-col>
     </a-row>
