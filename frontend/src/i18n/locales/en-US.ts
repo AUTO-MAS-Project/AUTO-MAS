@@ -2866,6 +2866,8 @@ export default {
     emptyTitle: 'No plans yet',
     emptyDesc: 'You have not created any plans',
     selectLabel: 'Plans',
+    drag: 'Drag to reorder',
+    rename: 'Rename',
     count: '{count} plan | {count} plans',
     configTitle: 'Plan configuration',
     namePlaceholder: 'Enter a plan name',
