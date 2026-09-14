@@ -48,6 +48,7 @@ from app.task.proxy_helpers import (
     append_push_log,
     resolve_config_source,
 )
+from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
 
@@ -128,6 +129,12 @@ class AutoProxyTask(TaskExecuteBase):
         ## 两个总开关在 prepare() 里按脚本配置初始化，这里给出保守默认值
         self.if_manage_config = True
         self.push_log_enabled = True
+        ## 活动适配开关与判定所用的服，在 check() 里按用户配置初始化
+        self.if_activity_adapt = False
+        self.activity_line_type: BlueArchiveLineType = "CN"
+        ## 本次运行实际使用的配置文件名：check() 里确定，prepare() 复用，
+        ## 避免一次任务里重复查询第三方活动排期
+        self.effective_config_name: str | None = None
         ## log_box：任务节点采集（受「推送任务节点详情」开关控制，关闭时不创建）
         self.log_collect: LogCollect | None = None
         self.script_log_path: Path | None = None
@@ -151,6 +158,61 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_dir = self.root_path / LOG_DIR_RELATIVE
         self.software_config_path = self.root_path / SOFTWARE_CONFIG_RELATIVE
 
+    async def _resolve_effective_config_name(self) -> str:
+        """决定本次运行使用哪份 BAAH 配置文件。
+
+        开启活动适配后，碧蓝档案有进行中的活动时改用用户填写的活动配置；
+        没有活动、或拿不到排期（第三方接口不可用）时一律用默认配置——查不到
+        活动状态只该退回默认行为，不该挡住脚本执行。
+
+        Returns:
+            str: 规范化后的配置名。
+
+        Raises:
+            ValueError: 默认配置名为空或含路径分隔符。
+        """
+
+        if self.effective_config_name is not None:
+            return self.effective_config_name
+
+        self.if_activity_adapt = bool(
+            self.cur_user_config.get("Info", "IfActivityAdapt")
+        )
+        self.activity_line_type = self.cur_user_config.get(
+            "Info", "ActivityLineType"
+        )
+
+        default_name = resolve_config_name(
+            str(self.cur_user_config.get("Info", "ConfigName"))
+        )
+        self.effective_config_name = default_name
+
+        ## 用 or "" 兜住 None：str(None) 会得到非空的 "None"，会被当成配置名去找 None.json
+        activity_name = (
+            self.cur_user_config.get("Info", "ActivityConfigName") or ""
+        ).strip()
+        if not self.if_activity_adapt or not activity_name:
+            return self.effective_config_name
+
+        running = await has_running_activity(self.activity_line_type)
+        if running is None:
+            logger.warning("未取到碧蓝档案活动排期, 本次使用默认配置文件运行")
+            return self.effective_config_name
+
+        if not running:
+            logger.info("碧蓝档案当前没有进行中的活动, 使用默认配置文件运行")
+            return self.effective_config_name
+
+        try:
+            activity_config_name = resolve_config_name(activity_name)
+        except ValueError as e:
+            logger.warning(f"活动配置文件名称 {e}, 本次使用默认配置文件运行")
+            return self.effective_config_name
+
+        logger.info(f"碧蓝档案当前有进行中的活动, 使用活动配置文件 {activity_config_name}")
+        self.effective_config_name = activity_config_name
+        return self.effective_config_name
+
     async def check(self) -> str:
         """校验 BAAH 运行所需的路径与用户配置"""
 
@@ -159,9 +221,7 @@ class AutoProxyTask(TaskExecuteBase):
             return "未找到 BAAH 主程序, 请检查脚本配置中的主程序路径设置！"
 
         try:
-            config_name = resolve_config_name(
-                str(self.cur_user_config.get("Info", "ConfigName"))
-            )
+            config_name = await self._resolve_effective_config_name()
         except ValueError as e:
             self.cur_user_item.status = "异常"
             return f"{e}, 请在用户配置中填写 BAAH 配置文件名称！"
@@ -216,9 +276,8 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.log_collect = None
 
-        config_name = resolve_config_name(
-            str(self.cur_user_config.get("Info", "ConfigName"))
-        )
+        ## 配置文件名在 check() 里已按活动排期定好，这里复用同一结果
+        config_name = await self._resolve_effective_config_name()
         self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
 
     async def main_task(self):
