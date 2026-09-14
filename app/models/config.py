@@ -1418,11 +1418,11 @@ class MaaEndConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 账号切换方式
+        ## 账号切换方式（MAS 自建切换已废弃，字段仅保留旧配置兼容）
         self.Run_AccountSwitchMethod = ConfigItem(
             "Run",
             "AccountSwitchMethod",
-            "MAS",
+            "MAAEND",
             OptionsValidator(["MAS", "MAAEND"]),
         )
         ## 任务切换方式
@@ -1461,6 +1461,22 @@ class MaaEndConfig(ConfigBase):
         ## 结束后是否关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        ## 关闭游戏时恢复分辨率；关闭时完全沿用原生设置
+        self.Game_RestoreResolution = ConfigItem(
+            "Game",
+            "RestoreResolution",
+            "Off",
+            OptionsValidator(["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]),
+        )
+        ## 自定义恢复分辨率宽度
+        self.Game_RestoreResolutionWidth = ConfigItem(
+            "Game", "RestoreResolutionWidth", 1920, RangeValidator(1, 16384)
+        )
+        ## 自定义恢复分辨率高度
+        self.Game_RestoreResolutionHeight = ConfigItem(
+            "Game", "RestoreResolutionHeight", 1080, RangeValidator(1, 16384)
         )
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
