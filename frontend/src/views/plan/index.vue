@@ -356,6 +356,9 @@ const onPlanChange = async (planId: string) => {
   }
 }
 
+/** 排序请求串行化：并发请求会按完成顺序落盘，与界面上的拖拽顺序不一致 */
+let reorderTask: Promise<unknown> = Promise.resolve()
+
 /** 拖拽排序结果落盘：界面先就位，保存失败再退回 */
 const handlePlanReorder = async (planIds: string[]) => {
   const planById = new Map(planList.value.map(plan => [plan.id, plan]))
@@ -372,8 +375,10 @@ const handlePlanReorder = async (planIds: string[]) => {
   const previousPlanList = planList.value
   planList.value = nextPlanList
 
+  reorderTask = reorderTask.catch(() => undefined).then(() => reorderPlans(planIds))
+
   try {
-    await reorderPlans(planIds)
+    await reorderTask
   } catch {
     // 接口层已提示失败原因，这里只把界面顺序退回去
     planList.value = previousPlanList
@@ -430,6 +435,8 @@ const finishEditPlanName = async () => {
 
   const newName = currentPlanName.value?.trim() || ''
   if (newName === currentPlan.name) {
+    // 只差首尾空格：把标题回写成规范名称，别把多余空格留在界面上
+    currentPlanName.value = newName
     return
   }
 
