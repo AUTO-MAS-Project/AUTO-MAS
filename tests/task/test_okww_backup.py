@@ -137,7 +137,8 @@ def test_mas_backup_dedup_and_restore_loop(
     assert restored == overlay
     assert not (mas_dir / "a.json").exists()
     assert not (mas_dir / "_mas_overlay.json").exists()
-    assert len(list_mas_backups(script_id, owner)) == 4  # 恢复前强制存底 +1
+    # 恢复前存底与最新份内容一致 → 跳过（不产生冗余条目）
+    assert len(list_mas_backups(script_id, owner)) == 3
 
     # owner 分池：用户目录与脚本共享 Default 互不干扰
     assert list_mas_backups(script_id, "Default") == []
@@ -250,7 +251,8 @@ def test_mas_pool_isolates_script_mode_users(
     )
     assert restored_b == overlay_b
     times_a = list_mas_backups(script_id, user_a)
-    assert len(times_a) == 2  # first + A 恢复前 force 存底
+    # A 恢复前存底与最新份（first）内容一致 → 跳过（不产生冗余条目）
+    assert len(times_a) == 1
     # 隔离的实质是侧车内容各归其主（同秒时间戳可能跨池同名，不能拿名字判断）
     from app.task.Okww.tools.backup_archive import read_overlay_sidecar
 

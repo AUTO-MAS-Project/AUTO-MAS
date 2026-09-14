@@ -61,12 +61,12 @@ def test_mas_backup_dedup_and_restore_loop(
     assert archive_mas_backup(script_id, user_id, mas_dir) is None  # 指纹去重
     assert len(list_mas_backups(script_id, user_id)) == 1
 
-    # 内容变化再建归档；恢复到第一份（恢复前强制存底 +1）
+    # 内容变化再建归档；恢复到第一份（恢复前存底与最新份一致 → 跳过）
     (mas_dir / "config.ini").write_text("[main]\nmode = 2\n", encoding="utf-8")
     assert archive_mas_backup(script_id, user_id, mas_dir) is not None
     restore_mas_backup(script_id, user_id, first.name, mas_dir)
     assert "mode = 1" in (mas_dir / "config.ini").read_text("utf-8")
-    assert len(list_mas_backups(script_id, user_id)) == 3
+    assert len(list_mas_backups(script_id, user_id)) == 2
 
     # 空目录/缺失无可归档内容；另一用户看不到这个池
     assert archive_mas_backup(script_id, user_id, tmp_path / "empty") is None

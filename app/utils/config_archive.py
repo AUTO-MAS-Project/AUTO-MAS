@@ -131,9 +131,10 @@ def _archive(
 ) -> Path | None:
     """把文件集复制为 ``store_root`` 下新时间戳目录。
 
-    内容与最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前
-    存底——让「恢复前的配置」在列表里有明确的时间戳条目）；跳过返回
-    ``None``，否则返回归档目录。指纹对比失败的边界下照常归档。
+    内容与最近一份备份完全一致时跳过（含 ``force=True``：恢复前存底在
+    「恢复目标与当前内容一致」时不再产生冗余条目——当前配置已完整存放在
+    该份备份中，误恢复可从它找回）；跳过返回 ``None``，否则返回归档目录。
+    指纹对比失败的边界下照常归档。
 
     ``protect``：保留清理时排除的时间戳集合（不在超时清理中删）。用于
     ``restore_dir`` 链路上 force 归档后立刻恢复——用户选中的那份若在
@@ -145,7 +146,7 @@ def _archive(
     times = list_times(store_root)
     if force:
         protect = frozenset(times) | protect
-    if not force and times:
+    if times:
         try:
             latest = dir_files(store_root / times[0])
             if file_set_hash(latest) == file_set_hash(files):
@@ -188,7 +189,8 @@ def archive_files(
         files: 相对路径键 → 文件路径的映射（见 :func:`dir_files`）。
         store_root: 归档根目录（该目录 = 一份独立的保留池）。
         keep: 保留份数，超出清理最旧；默认 :data:`KEEP_COUNT`。
-        force: 强制归档，跳过指纹去重（恢复前存底用）。
+        force: 恢复/覆盖前存底用：不做超时清理（protect 全部现存条目），
+            但内容与最新份一致时同样跳过（不产生冗余条目）。
 
     Returns:
         新归档目录；内容无变化被跳过时返回 ``None``。
@@ -217,7 +219,8 @@ def archive_dir(
         src: 源目录（整份备份）。
         store_root: 归档根目录（该目录 = 一份独立的保留池）。
         keep: 保留份数，超出清理最旧；默认 :data:`KEEP_COUNT`。
-        force: 强制归档，跳过指纹去重（恢复前存底用）。
+        force: 恢复/覆盖前存底用：不做超时清理（protect 全部现存条目），
+            但内容与最新份一致时同样跳过（不产生冗余条目）。
 
     Returns:
         新归档目录；内容无变化被跳过时返回 ``None``。

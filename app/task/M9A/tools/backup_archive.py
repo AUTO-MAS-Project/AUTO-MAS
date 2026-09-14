@@ -253,8 +253,8 @@ def archive_mas_backup(
 
     M9A 无 per-user 目录，侧车是归档内唯一文件；只改表单也会因侧车内容
     变化新建归档。``overlay`` 侧车原样保存（含 ``Display`` 展示快照）；
-    ``force=True`` 强制归档（恢复前存底——让「恢复前的字段」在列表里有
-    明确的时间戳条目）。
+    ``force=True`` 恢复前存底（不清理历史条目；内容与最新份一致时同样
+    跳过——当前字段已存放在该份备份中，误恢复可从它找回）。
     """
 
     temp_sidecar = _sidecar_temp_file(overlay)

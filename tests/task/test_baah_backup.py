@@ -261,7 +261,8 @@ def test_restore_service_callbacks_roundtrip(
     assert len(user.updated) == 1
     assert user.updated[0]["Info"]["ConfigName"] == "account1"
     assert "Mode" not in user.updated[0]["Info"]
-    assert len(list_mas_backups(script_id, str(uid))) == 2  # snapshot + 恢复前存底
+    # 恢复前存底与最新份内容一致 → 跳过（不产生冗余条目）
+    assert len(list_mas_backups(script_id, str(uid))) == 1
 
     # native：snapshot（按 ConfigName 动态解析）+ 空名用户报错
     created = asyncio.run(_snapshot_native(ctx))

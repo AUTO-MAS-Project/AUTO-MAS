@@ -78,7 +78,8 @@ def test_mas_backup_dedup_and_restore_loop(
     )
     assert restored == overlay
     assert not (mas_dir / "_mas_overlay.json").exists()
-    assert len(list_mas_backups(script_id, user_id)) == 3  # 恢复前强制存底 +1
+    # 恢复前存底与最新份内容一致 → 跳过（不产生冗余条目）
+    assert len(list_mas_backups(script_id, user_id)) == 2
 
     # 用户池隔离：另一个用户看不到这个池
     assert list_mas_backups(script_id, "u-other") == []

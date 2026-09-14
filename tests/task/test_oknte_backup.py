@@ -91,10 +91,11 @@ def test_mas_backup_dedup_and_restore_loop(
     assert archive_mas_backup(script_id, user_id, mas_dir) is not None
     assert len(list_mas_backups(script_id, user_id)) == 2
 
-    # 恢复到第一份：CoffeeTask.json 回到不存在；恢复前的当前态被强制存底
+    # 恢复到第一份：CoffeeTask.json 回到不存在；恢复前的当前态与最新份
+    # 内容一致 → 存底跳过（不产生冗余条目）
     restore_mas_backup(script_id, user_id, first.name, mas_dir)
     assert not (mas_dir / "CoffeeTask.json").exists()
-    assert len(list_mas_backups(script_id, user_id)) == 3
+    assert len(list_mas_backups(script_id, user_id)) == 2
 
     # mas 目录为空/缺失时无可归档内容，跳过不报错
     empty_dir = tmp_path / "elsewhere"

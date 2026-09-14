@@ -194,9 +194,8 @@ def archive_onedragon_backup(root: Path, force: bool = False) -> Path | None:
     """归档一条龙原生配置（one_dragon.yml + 原生实例目录，排除 MAS 槽）。
 
     归档落到该项目级池（按物理安装根指纹分桶），与脚本实例解耦。内容与
-    最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前存底——
-    让「恢复前的配置」在列表里有明确的时间戳条目）；跳过返回 ``None``，
-    否则返回归档目录。
+    最近一份备份完全一致时跳过（``force=True`` 恢复前存底，同样不产生
+    冗余条目）；跳过返回 ``None``，否则返回归档目录。
     """
 
     files = _onedragon_files(root)
@@ -273,8 +272,8 @@ def archive_mas_backup(
 ) -> Path | None:
     """归档 MAS 用户槽目录整份（覆盖式加时间戳）。
 
-    内容与最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前
-    存底）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
+    内容与最近一份备份完全一致时跳过（``force=True`` 恢复前存底，同样
+    不产生冗余条目）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
     信息字段快照（见 :data:`MAS_USER_INFO_FILE`），写入后 ``list/preview/
     restore`` 可在不触碰当前配置的情况下还原该时点的基本信息卡内容。
 
