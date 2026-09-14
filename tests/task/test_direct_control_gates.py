@@ -16,7 +16,7 @@ import asyncio
 import uuid
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,7 +27,6 @@ from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
     CONFIG_SOURCE_SCRIPT,
     CONFIG_SOURCE_USER,
-    ensure_task_entry,
     quick_config_takeover,
     read_config_source,
     resolve_config_source,
@@ -35,6 +34,7 @@ from app.task.proxy_helpers import (
     user_uses_quick_config,
 )
 from app.task.SRC.manager import SrcManager
+from app.task.ZzzOd.AutoProxy import AutoProxyTask as ZzzOdAutoProxyTask
 
 UID_A = str(uuid.uuid4())
 UID_B = str(uuid.uuid4())
@@ -57,6 +57,9 @@ class _Cfg:
         self._values = {"Mode": mode, "Status": True, "RemainedDay": 1, **extra}
 
     def get(self, group: str, name: str) -> Any:
+        key = f"{group}.{name}"
+        if key in self._values:
+            return self._values[key]
         if group == "Info" and name in self._values:
             return self._values[name]
         raise AttributeError(f"配置项 ‘{group}.{name}’ 不存在")
@@ -361,36 +364,37 @@ def test_quick_config_takeover_write_failure_is_task_failure() -> None:
         quick_config_takeover(_qc_cfg("直控"), broken_write)
 
 
-def test_ensure_task_entry_creates_fixed_shape_when_missing() -> None:
-    """目标任务不存在时按固定形状追加空任务 dict（enabled=False），再写面板值。"""
 
-    tasks: list[dict[str, object]] = []
 
-    entry = ensure_task_entry(
-        tasks,
-        {"id": "automas-fight", "enabled": False, "optionValues": {}},
-        matches=lambda t: str(t.get("id", "")) == "automas-fight",
+# ── ZzzOd：脚本来源被 check() 接受并按用户路径校验 ───────────────────────
+
+
+def test_zzzod_check_accepts_script_source(tmp_path: Path) -> None:
+    """脚本来源不再被 check() 白名单拒绝，走与用户来源相同的注入校验。"""
+
+    task = ZzzOdAutoProxyTask.__new__(ZzzOdAutoProxyTask)
+    task.script_config = MagicMock()
+    task.script_config.get.side_effect = lambda group, name: {
+        ("Info", "RootPath"): tmp_path,
+        ("Run", "ProxyTimesLimit"): 0,
+    }.get((group, name), "")
+    task.script_info = MagicMock()
+    task.user_config = {}
+    task.cur_user_config = _Cfg(
+        "脚本",
+        RemainedDay=5,
+        **{"OneDragon.AppList": '[{"app_id": "daily", "enabled": true}]'},
     )
+    task.cur_user_item = MagicMock()
+    task.mode = CONFIG_SOURCE_SCRIPT
+    task._reset_daily_proxy_count = AsyncMock()
 
-    assert len(tasks) == 1
-    assert tasks[0]["enabled"] is False
-    entry["optionValues"]["stage"] = "1-7"  # type: ignore[index]
+    with patch(
+        "app.task.ZzzOd.AutoProxy.find_launcher_exe", return_value=Path("launcher.exe")
+    ):
+        result = asyncio.run(task.check())
 
-
-def test_ensure_task_entry_reuses_existing_entry() -> None:
-    """目标任务已存在时直接复用，不重复追加。"""
-
-    existing = {"id": "automas-fight", "enabled": True}
-    tasks = [existing]
-
-    entry = ensure_task_entry(
-        tasks,
-        {"id": "automas-fight", "enabled": False},
-        matches=lambda t: str(t.get("id", "")) == "automas-fight",
-    )
-
-    assert entry is existing
-    assert len(tasks) == 1
+    assert result == "Pass"
 
 
 if __name__ == "__main__":
