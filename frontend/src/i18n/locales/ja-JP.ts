@@ -2650,6 +2650,16 @@ export default {
       saveQueueFailed: 'キューを保存できませんでした: {error}',
     },
   },
+  logs: {
+    package: 'ログの書き出し',
+    toast: {
+      packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
+      packageExported: 'ログのアーカイブを書き出しました',
+      packageFailed: 'ログの書き出しに失敗しました',
+      packageError: 'ログの書き出しでエラーが発生しました: {error}',
+      openFolderFailed: 'アーカイブの保存先フォルダを開けませんでした',
+    },
+  },
   scheduler: {
     title: 'スケジューラ',
     powerLabel: 'タスク完了後の電源操作：',
