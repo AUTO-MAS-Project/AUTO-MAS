@@ -366,7 +366,6 @@ export default {
     p0PathSelected: '{p0}のパスを選択しました',
     switchedPlanModeP0: 'プランモードに切り替えました：{p0}',
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
-    startedP0MaaendConfiguration: '{p0} の MaaEnd 設定を開始しました',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',

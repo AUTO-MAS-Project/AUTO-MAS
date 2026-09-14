@@ -67,7 +67,8 @@ from .resource_loader import (
     maaend_task_supported,
 )
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
-from .tools import push_notification, replace_account_switch_task
+from .tools import login, push_notification, replace_account_switch_task
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -1375,6 +1376,17 @@ class AutoProxyTask(TaskExecuteBase):
         if not maaend_config_file.exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
+            )
+
+        # 下发前归档 MAS 配置到用户池（下发源；带快速配置覆盖层字段侧车，
+        # 指纹去重，失败不阻断运行）。直控无 MAS 配置目录，不归档；native
+        # 池由 manager.prepare 在任务级一次性归档
+        if config_mode != "直控":
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                maaend_config_path,
+                overlay=read_overlay_values(self.cur_user_config),
             )
 
         swap_in_dir(maaend_config_path, self.maaend_set_path)

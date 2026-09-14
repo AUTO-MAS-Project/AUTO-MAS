@@ -387,7 +387,6 @@ export default {
     p0PathSelected: '{p0}路径选择成功',
     switchedPlanModeP0: '已切换到计划模式：{p0}',
     loadedP0P1Log: '已加载 {p0} 行日志（共 {p1} 行）',
-    startedP0MaaendConfiguration: '已启动 {p0} MaaEnd 配置',
     importedP0ConfigurationFile: '已导入{p0}配置文件',
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
@@ -1102,6 +1101,19 @@ export default {
       '当前 ok-ww 安装中没有可用的设置目录。首次下载后，请先返回脚本列表点击“配置 ok-ww”，在本体中保存一次设置，再重新添加用户。',
     maaendConfigurationWindowOpen:
       '当前正在为这个用户打开 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
+    // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaendConfigRestoreScriptDesc:
+      'MaaEnd 原生配置的备份，恢复会直接作用于 MaaEnd 本体；打开本编辑页、运行 MaaEnd 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
+    maaendSessionOpened: '已打开 MaaEnd 设置',
+    maaendSessionStartFailed: '启动 MaaEnd 设置失败',
+    maaendSessionStopFailed: '停止 MaaEnd 设置失败',
+    maaendViewOpened: '已打开 MaaEnd 查看',
+    maaendSessionTimeoutWarn: 'MaaEnd 设置会话即将超时，30 秒后自动保存',
+    maaendViewingTitle: '正在查看 MaaEnd 配置',
+    maaendViewingDesc: 'MaaEnd 界面显示的是所选备份的内容，仅供查看。',
+    maaendViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaendViewClose: '关闭查看',
     scriptLevelMaaendConfiguration2:
       '当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
     okNteGuiConfiguration: '当前正在进行该用户的 OK-NTE GUI 配置，请在 OK-NTE 界面完成相关设置。',

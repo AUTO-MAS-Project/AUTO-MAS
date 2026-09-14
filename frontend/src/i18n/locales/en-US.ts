@@ -365,7 +365,6 @@ export default {
     p0PathSelected: '{p0} path selected',
     switchedPlanModeP0: 'Switched to plan mode: {p0}',
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
-    startedP0MaaendConfiguration: 'Started the {p0} MaaEnd configuration',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
@@ -1110,6 +1109,21 @@ export default {
       'The current ok-ww install has no settings directory. After the first download, go back to the script list, click "Configure ok-ww", save the settings once inside ok-ww, and then add the user again.',
     maaendConfigurationWindowOpen:
       'The MaaEnd configuration window is open for this user — finish the setup there.',
+    // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaendConfigRestoreScriptDesc:
+      'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
+    // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
+    maaendSessionOpened: 'MaaEnd setup opened',
+    maaendSessionStartFailed: 'Could not start the MaaEnd setup session',
+    maaendSessionStopFailed: 'Could not stop the MaaEnd setup session',
+    maaendViewOpened: 'MaaEnd viewer opened',
+    maaendSessionTimeoutWarn:
+      'The MaaEnd setup session is about to time out and will be saved in 30 seconds',
+    maaendViewingTitle: 'Viewing MaaEnd config',
+    maaendViewingDesc: 'The MaaEnd window shows the selected backup, for viewing only.',
+    maaendViewingDesc2:
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    maaendViewClose: 'Close viewer',
     scriptLevelMaaendConfiguration2:
       'The script-level MaaEnd configuration window is open — finish the setup there.',
     okNteGuiConfiguration:

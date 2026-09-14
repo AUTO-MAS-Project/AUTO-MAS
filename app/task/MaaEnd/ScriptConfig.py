@@ -41,6 +41,8 @@ from app.utils.io import (
     write_file,
 )
 
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+
 logger = get_logger("MaaEnd 脚本设置")
 
 
@@ -106,7 +108,15 @@ def normalize_maaend_config(
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """MaaEnd 脚本设置模式"""
+    """MaaEnd 脚本设置模式
+
+    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则
+    （:func:`maaend_mas_config_dir`：脚本态=Default 共享、用户态=独立目录）。
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
+    会话下发的 owner 目录即刚恢复的备份（所见即备份），脚本级会话跳过
+    下发（原生目录即备份）；结束不回写 MAS 配置，安装 config/ 由 manager
+    的任务前快照还原（临时注入，看完还原）。
+    """
 
     def __init__(
         self,
@@ -114,6 +124,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_config: MaaEndConfig,
         user_config: MultipleConfig[MaaEndUserConfig],
         emulator_manager: DeviceBase | None,
+        view_only: bool = False,
     ):
         super().__init__()
 
@@ -126,6 +137,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.crashed = False
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
+        self.view_only = view_only
         target_user_id = self.cur_user_item.user_id
         self.config_mode = "脚本"
         if target_user_id != "Default":
@@ -170,6 +183,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        if self.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("MaaEnd 查看会话跳过配置下发: 原生目录即所选备份")
+            return
+
         if (
             self.use_mas_config
             and self.config_file_path
@@ -192,6 +210,23 @@ class ScriptConfigTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
+        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带快速
+        # 配置覆盖层字段侧车，指纹去重，失败不阻断会话）。native 池由
+        # manager.prepare 在任务级一次性归档
+        if self.use_mas_config and self.config_file_path:
+            target_user_id = self.cur_user_item.user_id
+            overlay = (
+                read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
+                if target_user_id != "Default"
+                else None
+            )
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                target_user_id,
+                self.config_file_path,
+                overlay=overlay,
+            )
+
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
         if not maaend_set_path.exists():
             raise FileNotFoundError(
@@ -211,6 +246,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
+
+        # 查看会话：只读预览，不把安装 config/ 回写 MAS 目录（安装现场由
+        # manager 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("MaaEnd 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
 
         # 配置会话没有自然结束点: main_task 里的 wait_event 没有任何设置方,
         # 用户在配置窗口点「保存配置」发起的中止就是唯一出口, 因此这里不能按
