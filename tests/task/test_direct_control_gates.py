@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core import Config
 from app.task.M9A.manager import M9AManager
 from app.task.MAA.manager import MaaManager
 from app.task.OkNte.AutoProxy import AutoProxyTask as OkNteAutoProxyTask
@@ -38,12 +39,6 @@ from app.task.ZzzOd.AutoProxy import AutoProxyTask as ZzzOdAutoProxyTask
 
 UID_A = str(uuid.uuid4())
 UID_B = str(uuid.uuid4())
-
-
-def _user_item(user_id: str):
-    item = MagicMock()
-    item.user_id = user_id
-    return item
 
 
 class _TaskInfo:
@@ -108,61 +103,69 @@ def test_resolve_and_direct_control_agree() -> None:
 
 # ── MAA / SRC：脚本级存档要求 ───────────────────────────────────────────
 
+SCRIPT_ID = "9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
 
-def _maa_manager() -> MaaManager:
-    manager = MaaManager.__new__(MaaManager)
+
+def _script_config(user_configs: dict[str, _Cfg]) -> MagicMock:
+    """模拟脚本配置持久化的 UserData（check() 阶段唯一可用的数据源）。"""
+
+    script_config = MagicMock()
+    script_config.UserData.items = lambda: {
+        uuid.UUID(uid): cfg for uid, cfg in user_configs.items()
+    }.items()
+    return script_config
+
+
+def _manager(cls: type, user_configs: dict[str, _Cfg], monkeypatch: pytest.MonkeyPatch):
+    """构造 manager 并把 Config.ScriptConfig 指到模拟脚本配置。
+
+    走真实生产路径：_has_mas_config_user 读 Config.ScriptConfig[uid].UserData
+    （check() 先于 prepare()，此时 self.user_config / user_list 尚未就绪）。
+    """
+
+    manager = cls.__new__(cls)
     manager.task_info = _TaskInfo()
+    manager.task_info.is_target_user = lambda uid: True
     manager.script_info = MagicMock()
-    manager.script_info.user_list = []
-    manager.user_config = {}
+    manager.script_info.script_id = SCRIPT_ID
+    monkeypatch.setattr(
+        Config, "ScriptConfig", {uuid.UUID(SCRIPT_ID): _script_config(user_configs)}
+    )
     return manager
 
 
-def _src_manager() -> SrcManager:
-    manager = SrcManager.__new__(SrcManager)
-    manager.task_info = _TaskInfo()
-    manager.script_info = MagicMock()
-    manager.script_info.user_list = []
-    manager.user_config = {}
-    return manager
-
-
-def test_maa_has_mas_config_user_true_when_user_mode() -> None:
+def test_maa_has_mas_config_user_true_when_user_mode(monkeypatch) -> None:
     """存在「用户」来源用户时要求脚本级存档。"""
 
-    manager = _maa_manager()
-    manager.script_info.user_list = [_user_item(UID_A)]
-    manager.user_config = {uuid.UUID(UID_A): _Cfg("用户")}
+    manager = _manager(MaaManager, {UID_A: _Cfg("用户")}, monkeypatch)
 
     assert manager._has_mas_config_user() is True
 
 
-def test_maa_has_mas_config_user_false_when_all_direct() -> None:
+def test_maa_has_mas_config_user_false_when_all_direct(monkeypatch) -> None:
     """全直控用户时不要求脚本级存档。"""
 
-    manager = _maa_manager()
-    manager.script_info.user_list = [_user_item(UID_A), _user_item(UID_B)]
-    manager.user_config = {uuid.UUID(UID_A): _Cfg("直控"), uuid.UUID(UID_B): _Cfg("直控")}
+    manager = _manager(
+        MaaManager, {UID_A: _Cfg("直控"), UID_B: _Cfg("直控")}, monkeypatch
+    )
 
     assert manager._has_mas_config_user() is False
 
 
-def test_maa_has_mas_config_user_true_when_mixed() -> None:
+def test_maa_has_mas_config_user_true_when_mixed(monkeypatch) -> None:
     """只要有一个非直控用户，脚本级存档就是必需的。"""
 
-    manager = _maa_manager()
-    manager.script_info.user_list = [_user_item(UID_A), _user_item(UID_B)]
-    manager.user_config = {uuid.UUID(UID_A): _Cfg("直控"), uuid.UUID(UID_B): _Cfg("脚本")}
+    manager = _manager(
+        MaaManager, {UID_A: _Cfg("直控"), UID_B: _Cfg("脚本")}, monkeypatch
+    )
 
     assert manager._has_mas_config_user() is True
 
 
-def test_src_has_mas_config_user_mirrors_maa() -> None:
+def test_src_has_mas_config_user_mirrors_maa(monkeypatch) -> None:
     """SRC 与 MAA 同构: 全直控时不要求脚本级存档。"""
 
-    manager = _src_manager()
-    manager.script_info.user_list = [_user_item(UID_A)]
-    manager.user_config = {uuid.UUID(UID_A): _Cfg("直控")}
+    manager = _manager(SrcManager, {UID_A: _Cfg("直控")}, monkeypatch)
 
     assert manager._has_mas_config_user() is False
 

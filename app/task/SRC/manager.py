@@ -156,12 +156,21 @@ class SrcManager(TaskExecuteBase):
         return "Pass"
 
     def _has_mas_config_user(self) -> bool:
-        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。"""
+        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+
+        check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
+        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
+        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        """
 
         return any(
-            read_config_source(self.user_config[uuid.UUID(item.user_id)], CONFIG_SOURCE_SCRIPT)
-            != CONFIG_SOURCE_DIRECT
-            for item in self.script_info.user_list
+            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            for uid, config in Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].UserData.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
         )
 
     async def prepare(self):
