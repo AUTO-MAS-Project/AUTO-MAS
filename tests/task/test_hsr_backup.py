@@ -148,13 +148,33 @@ def _make_m7a_root(tmp_path: Path) -> Path:
 def test_mas_overlay_grouping_and_dedup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """侧车归档：指纹去重、Managed/Direct 可回填、Mode 仅预览、加密快照不进。"""
+    """侧车归档：全量字段分组、指纹去重、Mode 仅预览、敏感内容不进。"""
 
     monkeypatch.chdir(tmp_path)
     script_id, user_id = "s-0001", "u-0001"
     user = SimpleNamespace(
         get=lambda g, k: {
             ("Info", "Mode"): "用户",
+            ("Info", "Name"): "新用户",
+            ("Info", "Status"): True,
+            ("Info", "Server"): "CN-Official",
+            ("Info", "RemainedDay"): -1,
+            ("Info", "Notes"): "无",
+            ("TaskSwitch", "Daily"): True,
+            ("TaskSwitch", "ReceiveRewards"): True,
+            ("TaskSwitch", "DivergentUniverse"): False,
+            ("TaskSwitch", "CurrencyWars"): False,
+            ("Stage", "Channel"): "CalyxGolden",
+            ("Stage", "ScriptStage"): json.dumps(
+                {"label": "回忆之蕾", "sra": {"id": "calyx_golden", "level": 3}}
+            ),
+            ("Stage", "ScriptEchoOfWar"): json.dumps(
+                {"label": "毁灭的开端", "sra": {"id": "echo_of_war", "level": 9}}
+            ),
+            ("TaskOpt", "EchoOfWarWeekday"): "Monday",
+            ("Notify", "Enabled"): False,
+            ("Control", "SRA"): True,
+            ("Control", "M7A"): False,
             ("Managed", "TaskMapping"): json.dumps(
                 {"每日清体力": "M7A", "刷圣遗物": "SRA"}
             ),
@@ -162,25 +182,39 @@ def test_mas_overlay_grouping_and_dedup(
             ("Direct", "SRAImportedAt"): "2026-01-01T00:00:00",
             ("Direct", "SRASource"): "my-profile",
             ("Direct", "SRAConfig"): "encrypted-secret",  # 加密内容不进侧车
-            ("Info", "Id"): "user1",
+            ("Info", "Id"): "user1",  # 加密凭据不进侧车
+            ("Data", "ProxyTimes"): 3,  # 运行统计不进侧车
         }.get((g, k))
     )
 
     overlay = read_overlay_values(user)
-    assert "SRAConfig" not in overlay  # 加密快照内容不进
-    assert "Id" not in overlay  # 账号不进
-    assert overlay["TaskMapping"]  # 原始 JSON 串
+    assert "Direct.SRAConfig" not in overlay  # 加密快照内容不进
+    assert "Info.Id" not in overlay  # 加密凭据不进
+    assert "Data.ProxyTimes" not in overlay  # 运行统计不进
+    assert overlay["Managed.TaskMapping"]  # 原始 JSON 串
+    assert overlay["TaskSwitch.Daily"] is True
 
     first = archive_mas_backup(script_id, user_id, overlay)
     assert first is not None
     assert archive_mas_backup(script_id, user_id, overlay) is None  # 指纹去重
-    changed = dict(overlay, SRAImportedAt="2026-02-01T00:00:00")
+    changed = dict(overlay, **{"Direct.SRAImportedAt": "2026-02-01T00:00:00"})
     assert archive_mas_backup(script_id, user_id, changed) is not None
     assert len(list_mas_backups(script_id, user_id)) == 2
 
     grouped = group_overlay(overlay)
-    assert set(grouped) == {"Managed", "Direct"}
-    assert "TaskMapping" in grouped["Managed"]
+    assert set(grouped) == {
+        "Info",
+        "TaskSwitch",
+        "Stage",
+        "TaskOpt",
+        "Notify",
+        "Control",
+        "Managed",
+        "Direct",
+    }
+    assert "Mode" not in grouped["Info"]  # 配置来源仅预览不回填
+    assert grouped["TaskSwitch"]["Daily"] is True
+    assert grouped["Stage"]["Channel"] == "CalyxGolden"
 
 
 def test_mas_restore_roundtrip_with_user_isolation(
@@ -191,9 +225,11 @@ def test_mas_restore_roundtrip_with_user_isolation(
     monkeypatch.chdir(tmp_path)
     script_id, user_id = "s-0002", "u-0001"
     overlay = {
-        "TaskMapping": json.dumps({"每日清体力": "M7A"}),
-        "SRAImportedAt": "2026-01-01T00:00:00",
-        "Mode": "用户",
+        "Managed.TaskMapping": json.dumps({"每日清体力": "M7A"}),
+        "TaskSwitch.Daily": True,
+        "Direct.SRAImportedAt": "2026-01-01T00:00:00",
+        "Info.Mode": "用户",
+        "legacy-orphan": "no-dot",  # 旧格式无组前缀：不回填
     }
     first = archive_mas_backup(script_id, user_id, overlay)
     assert first is not None
@@ -202,7 +238,10 @@ def test_mas_restore_roundtrip_with_user_isolation(
     assert restored == overlay
     grouped = group_overlay(restored)
     assert "TaskMapping" in grouped["Managed"]
+    assert grouped["TaskSwitch"]["Daily"] is True
     assert "SRAImportedAt" in grouped["Direct"]
+    assert "Info" not in grouped  # Mode 仅预览
+    assert "legacy-orphan" not in grouped  # 无组前缀不回填
 
     other = "u-0002"
     assert list_mas_backups(script_id, other) == []
@@ -315,23 +354,68 @@ def test_sra_reward_values_named_and_legacy() -> None:
 def test_overlay_preview_sections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """mas 预览：分区（MAS 独有 / 托管配置 / 直控快照）。"""
+    """mas 预览：全量分区（MAS 独有 / 任务配置 / 通知 / 托管 / 直控快照）。"""
 
     monkeypatch.chdir(tmp_path)
     payload = build_overlay_preview(
         {
-            "Mode": "用户",
-            "TaskMapping": json.dumps({"每日清体力": "M7A", "刷圣遗物": "SRA"}),
-            "Options": json.dumps({"每日清体力次数": 3}),
-            "SRAImportedAt": "2026-01-01T00:00:00",
+            "Info.Mode": "用户",
+            "Info.Server": "CN-Official",
+            "Info.RemainedDay": 30,
+            "Info.IfScriptBeforeTask": True,
+            "Info.ScriptBeforeTask": "scripts/pre.bat",
+            "Control.SRA": True,
+            "Control.M7A": False,
+            "Info.Notes": "无",
+            "TaskSwitch.Daily": True,
+            "TaskSwitch.ReceiveRewards": True,
+            "TaskSwitch.DivergentUniverse": False,
+            "TaskSwitch.CurrencyWars": False,
+            "Stage.Channel": "Relic",
+            "Stage.ScriptStage": json.dumps(
+                {
+                    "stages": {
+                        "Relic": {
+                            "label": "睿治之径",
+                            "sra": {"id": "caver", "level": 3},
+                        }
+                    }
+                }
+            ),
+            "Stage.ScriptEchoOfWar": json.dumps({"label": "毁灭的开端"}),
+            "TaskOpt.EchoOfWarWeekday": "Monday",
+            "Notify.Enabled": True,
+            "Notify.IfSendMail": True,
+            "Notify.ToAddress": "user@example.com",
+            "Managed.TaskMapping": json.dumps({"每日清体力": "M7A", "刷圣遗物": "SRA"}),
+            "Managed.Options": json.dumps({"每日清体力次数": 3}),
+            "Direct.SRAImportedAt": "2026-01-01T00:00:00",
         }
     )
     sections = {s["name"]: s for s in payload["sections"]}
-    assert set(sections) == {"mas-only", "managed", "direct"}
+    assert set(sections) == {"mas-only", "tasks", "notify", "managed", "direct"}
+
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["rows"]}
-    assert mas_rows == {"配置来源": "用户"}
+    assert mas_rows["配置来源"] == "用户"
+    assert mas_rows["服务器"] == "官服"
+    assert mas_rows["剩余天数"] == "30"
+    assert mas_rows["任务前脚本"] == "启用 · scripts/pre.bat"
+    assert mas_rows["直控引擎"] == "SRA"
+
+    task_rows = {row["key"]: row["value"] for row in sections["tasks"]["rows"]}
+    assert task_rows["任务开关"] == "每日、领取奖励"
+    assert task_rows["体力类型"] == "侵蚀隧洞"
+    assert task_rows["主副本"] == "睿治之径"
+    assert task_rows["历战余响副本"] == "毁灭的开端"
+    assert task_rows["历战余响开始星期"] == "周一"
+
+    notify_rows = {row["key"]: row["value"] for row in sections["notify"]["rows"]}
+    assert notify_rows["通知"] == "邮件"
+    assert notify_rows["收件地址"] == "已设置（不显示）"  # 敏感值脱敏
+
     managed_rows = {row["key"]: row["value"] for row in sections["managed"]["rows"]}
     assert "每日清体力→M7A" in managed_rows["任务映射"]
+
     direct_rows = {row["key"]: row["value"] for row in sections["direct"]["rows"]}
     assert direct_rows == {"SRA 快照导入时间": "2026-01-01T00:00:00"}
 

@@ -24,10 +24,11 @@
 自包含（守卫走 ``ctx.script_config.UserData``，路径走专项字段与引擎路径
 解析），不依赖核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = **纯字段侧车**（HSR 无 per-user 目录）：Info.Mode（仅预览）+
-Managed.TaskMapping/Options + Direct 快照元数据；不收录加密快照内容与
-账号凭据。恢复 = 回填 UserData。native 池 = M7A config.yaml + SRA
-settings.json/cache.json/configs/（按 SRA appdata 根分桶）。
+mas 池 = **纯字段侧车**（HSR 无 per-user 目录，用户配置即字段）：MAS 用户
+配置全量（Info/TaskSwitch/Stage/TaskOpt/Notify/Control/Managed/Direct
+元数据，平铺键 ``组.键``；Info.Mode 仅预览；不收录加密凭据与快照内容、
+Data 运行统计、子表）。恢复 = 回填 UserData。native 池 = M7A config.yaml +
+SRA settings.json/cache.json/configs/（按 SRA appdata 根分桶）。
 """
 
 import uuid

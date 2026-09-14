@@ -30,11 +30,18 @@ HSR 是唯一一对多专项（一个 ScriptType 编排 M7A 与 SRA 两个上游
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``、退出时归档
   ``mas``（编辑会话包络的 MAS 侧终态）。
 
-``mas`` 池是**纯字段侧车**（HSR 无 per-user 目录，用户配置是字段）：
-Info.Mode（仅预览）+ Managed.TaskMapping/Options（托管覆盖值，运行时物化
-进原生）+ Direct.*ImportedAt/Source（直控快照元数据）。**不收录**：
-Direct.SRAConfig/M7AConfig（加密快照内容，API 不外泄）、账号密码、
-IfQuickConfig（HSR 不支持快速配置，死开关）。恢复即字段回填。
+``mas`` 池是**纯字段侧车**（HSR 无 per-user 目录，用户配置即字段），
+收录 **MAS 用户配置全量**（对齐 MAA「MAS 独有配置全量进侧车」口径）：
+Info（名称/状态/服务器/剩余天数/前后脚本/备注）、TaskSwitch 任务开关、
+Stage 副本配置（含原生关卡 JSON）、TaskOpt、Notify 通知、Control 引擎
+开关、Managed.TaskMapping/Options（托管覆盖值，运行时物化进原生）、
+Direct.*ImportedAt/Source（直控快照元数据）。侧车内平铺键为
+``组.键``（如 ``TaskSwitch.Daily``）。**不收录**：Info.Id/Password（加密
+凭据）、Direct.SRAConfig/M7AConfig（加密快照内容，API 不外泄）、
+IfQuickConfig（HSR 不支持快速配置，死开关）、Info.Tag（虚拟字段）、
+Data.*（运行统计与完成态，恢复配置不恢复统计）、Notify.CustomWebhooks
+（子表结构）。Info.Mode 仅预览不回填（回填旧来源会翻转脚本态/用户态/
+直控）。恢复即字段回填。
 
 ``native`` 池 = M7A ``config.yaml`` + SRA ``settings.json``/``cache.json``/
 ``configs/``，按 **SRA appdata 根的指纹分桶**（SRA appdata 是多脚本共享
@@ -71,71 +78,142 @@ logger = get_logger("HSR 配置备份")
 _OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
 """页面核心字段侧车文件名（归档内唯一文件；恢复时读出回填，不落任何目录）"""
 
-_OVERLAY_INFO_KEYS = ("Mode",)
-"""配置来源（仅预览不回填：决定运行方式）"""
-
-_OVERLAY_MANAGED_KEYS = ("TaskMapping", "Options")
-"""托管覆盖值（UserData.Managed，运行时物化进 M7A/SRA 原生配置）"""
-
-_OVERLAY_DIRECT_KEYS = (
-    "SRAImportedAt",
-    "M7AImportedAt",
-    "SRASource",
-    "M7ASource",
-)
-"""直控快照元数据（UserData.Direct；不含加密快照内容）"""
-
-_OVERLAY_KEY_GROUPS = {
-    "Info": _OVERLAY_INFO_KEYS,
-    "Managed": _OVERLAY_MANAGED_KEYS,
-    "Direct": _OVERLAY_DIRECT_KEYS,
+_OVERLAY_KEY_GROUPS: dict[str, tuple[str, ...]] = {
+    "Info": (
+        "Mode",
+        "Name",
+        "Status",
+        "Server",
+        "RemainedDay",
+        "IfScriptBeforeTask",
+        "ScriptBeforeTask",
+        "IfScriptAfterTask",
+        "ScriptAfterTask",
+        "Notes",
+    ),
+    "TaskSwitch": ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"),
+    "Stage": ("Channel", "ScriptStage", "ScriptEchoOfWar"),
+    "TaskOpt": ("EchoOfWarWeekday",),
+    "Notify": (
+        "Enabled",
+        "IfSendStatistic",
+        "IfSendMail",
+        "ToAddress",
+        "IfServerChan",
+        "ServerChanKey",
+    ),
+    "Control": ("SRA", "M7A"),
+    "Managed": ("TaskMapping", "Options"),
+    "Direct": ("SRAImportedAt", "M7AImportedAt", "SRASource", "M7ASource"),
 }
-"""侧车字段的配置段归属（键名无交集，侧车内平铺存储）"""
+"""侧车收录的配置段与键（MAS 用户配置全量，见模块 docstring 的排除清单）。
 
-_OVERLAY_KEY_GROUP = {
-    key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
-}
+侧车内平铺键为 ``组.键``——Info.Mode 与 Control.Mode 历史同名，裸键平铺
+会互相覆盖；前缀形式也便于 group_overlay 按段解析。
+"""
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Info.Mode"}
 """仅预览不回填的字段：配置来源决定运行方式，恢复时以当前值为准"""
 
-_OVERLAY_FIELD_LABELS = {
-    "Mode": "配置来源",
-    "TaskMapping": "任务映射",
-    "Options": "托管覆盖",
-    "SRAImportedAt": "SRA 快照导入时间",
-    "M7AImportedAt": "M7A 快照导入时间",
-    "SRASource": "SRA 快照来源",
-    "M7ASource": "M7A 快照来源",
+_OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
+    ("Info", "Mode"): "配置来源",
+    ("Info", "Name"): "用户名",
+    ("Info", "Status"): "启用状态",
+    ("Info", "Server"): "服务器",
+    ("Info", "RemainedDay"): "剩余天数",
+    ("Info", "IfScriptBeforeTask"): "任务前脚本",
+    ("Info", "ScriptBeforeTask"): "任务前脚本路径",
+    ("Info", "IfScriptAfterTask"): "任务后脚本",
+    ("Info", "ScriptAfterTask"): "任务后脚本路径",
+    ("Info", "Notes"): "备注",
+    ("TaskSwitch", "Daily"): "每日",
+    ("TaskSwitch", "ReceiveRewards"): "领取奖励",
+    ("TaskSwitch", "DivergentUniverse"): "差分宇宙",
+    ("TaskSwitch", "CurrencyWars"): "货币战争",
+    ("Stage", "Channel"): "体力类型",
+    ("Stage", "ScriptStage"): "主副本",
+    ("Stage", "ScriptEchoOfWar"): "历战余响副本",
+    ("TaskOpt", "EchoOfWarWeekday"): "历战余响开始星期",
+    ("Notify", "Enabled"): "通知",
+    ("Notify", "IfSendStatistic"): "发送统计",
+    ("Notify", "IfSendMail"): "邮件通知",
+    ("Notify", "ToAddress"): "收件地址",
+    ("Notify", "IfServerChan"): "Server 酱",
+    ("Notify", "ServerChanKey"): "Server 酱密钥",
+    ("Control", "SRA"): "SRA 引擎开关",
+    ("Control", "M7A"): "M7A 引擎开关",
+    ("Managed", "TaskMapping"): "任务映射",
+    ("Managed", "Options"): "托管覆盖",
+    ("Direct", "SRAImportedAt"): "SRA 快照导入时间",
+    ("Direct", "M7AImportedAt"): "M7A 快照导入时间",
+    ("Direct", "SRASource"): "SRA 快照来源",
+    ("Direct", "M7ASource"): "M7A 快照来源",
 }
 """侧车字段中文标签（对齐 HSR 编辑页词表）"""
 
+# 侧车预览脱敏的键（回填完整值，预览不外泄）
+_OVERLAY_SECRET_FLAT_KEYS = {"Notify.ToAddress", "Notify.ServerChanKey"}
+
+_STAGE_CHANNEL_LABELS = {
+    "CalyxGolden": "拟造花萼（金）",
+    "CalyxCrimson": "拟造花萼（赤）",
+    "Relic": "侵蚀隧洞",
+    "Ornament": "饰品提取",
+}
+"""Stage.Channel 取值（HSRUserConfig OptionsValidator 值域）"""
+
+_STAGE_WEEKDAY_LABELS = {
+    "Monday": "周一",
+    "Tuesday": "周二",
+    "Wednesday": "周三",
+    "Thursday": "周四",
+    "Friday": "周五",
+    "Saturday": "周六",
+    "Sunday": "周日",
+}
+"""TaskOpt.EchoOfWarWeekday 取值（HSRUserConfig OptionsValidator 值域）"""
+
+_STAGE_SERVER_LABELS = {"CN-Official": "官服"}
+"""Info.Server 取值（HSRUserConfig 值域，与 getTags 同款映射）"""
+
+_TASKSWITCH_MODULE_LABELS = {
+    "Daily": "每日",
+    "ReceiveRewards": "领取奖励",
+    "DivergentUniverse": "差分宇宙",
+    "CurrencyWars": "货币战争",
+}
+"""TaskSwitch 模块键 → 中文（task_mapping 的模块中文名）"""
+
 
 def read_overlay_values(config) -> dict:
-    """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
+    """读取配置对象的 MAS 用户配置字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    值为 ``None``（配置项不存在）的键不纳入侧车。
+    值为 ``None``（配置项不存在）的键不纳入侧车；平铺键为 ``组.键``。
     """
 
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
         for key in keys:
             if (value := config.get(group, key)) is not None:
-                values[key] = value
+                values[f"{group}.{key}"] = value
     return values
 
 
 def group_overlay(overlay: dict) -> dict[str, dict]:
-    """把平铺的侧车字段按配置段分组（恢复回填 HSRUserConfig 用）。
+    """把 ``组.键`` 平铺侧车按配置段分组（恢复回填 HSRUserConfig 用）。
 
     仅预览字段（配置来源）不回填：回填旧来源会静默翻转脚本态/用户态/直控。
+    无组前缀的键（旧格式侧车）无法定位段，跳过不回填。
     """
 
     grouped: dict[str, dict] = {}
     for key, value in overlay.items():
         if key in _OVERLAY_PREVIEW_ONLY_KEYS:
             continue
-        grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Managed"), {})[key] = value
+        group, _, name = key.partition(".")
+        if not name:
+            continue
+        grouped.setdefault(group, {})[name] = value
     return grouped
 
 
@@ -352,41 +430,168 @@ def _parse_json_dict(raw) -> dict:
     return {}
 
 
+def _stage_label(raw, channel: str | None = None) -> str:
+    """从 Stage 原生关卡 JSON 提取关卡显示名（label）。
+
+    ``ScriptStage`` 含 ``stages`` 按体力类型分槽，取 ``channel`` 槽；
+    ``ScriptEchoOfWar`` 为单槽顶层。缺失/损坏返回空串。
+    """
+
+    data = _parse_json_dict(raw)
+    if not data:
+        return ""
+    if channel is not None:
+        stages = data.get("stages")
+        data = (
+            stages.get(channel)
+            if isinstance(stages, dict) and isinstance(stages.get(channel), dict)
+            else data
+        )
+    return str(data.get("label") or "").strip()
+
+
+def _overlay_row(flat_key: str, value) -> dict:
+    """侧车字段 → 预览行；敏感键脱敏（回填完整值，预览不外泄）。"""
+
+    label = _OVERLAY_FIELD_LABELS[tuple(flat_key.split(".", 1))]
+    if flat_key in _OVERLAY_SECRET_FLAT_KEYS:
+        value = "已设置（不显示）" if str(value).strip() else "未设置"
+    return {"key": label, "value": _summary_text(value)}
+
+
 def build_overlay_preview(overlay: dict) -> dict:
-    """mas 池预览：分区行（MAS 独有 = 配置来源；托管配置 = 任务映射/覆盖）。"""
+    """mas 池预览：MAS 用户配置全量分区（侧车收录什么就展示什么）。
+
+    分区：MAS 独有配置（来源/服务器/脚本/直控引擎/备注）→ 任务配置
+    （任务开关/副本）→ 通知 → 托管配置（映射/覆盖）→ 直控快照。
+    """
 
     sections: list[dict] = []
 
+    def has(group: str, key: str) -> bool:
+        return f"{group}.{key}" in overlay
+
     mas_rows: list[dict] = []
-    if "Mode" in overlay:
-        mas_rows.append({"key": "配置来源", "value": _summary_text(overlay["Mode"])})
+    if has("Info", "Mode"):
+        mas_rows.append(_overlay_row("Info.Mode", overlay["Info.Mode"]))
+    if has("Info", "Server"):
+        server = str(overlay["Info.Server"])
+        mas_rows.append(
+            {
+                "key": "服务器",
+                "value": _STAGE_SERVER_LABELS.get(server, server),
+            }
+        )
+    if has("Info", "RemainedDay"):
+        days = overlay["Info.RemainedDay"]
+        mas_rows.append(
+            {
+                "key": "剩余天数",
+                "value": "未设置" if days is None or int(days) < 0 else str(days),
+            }
+        )
+    for enabled_key, path_key, label in (
+        ("IfScriptBeforeTask", "ScriptBeforeTask", "任务前脚本"),
+        ("IfScriptAfterTask", "ScriptAfterTask", "任务后脚本"),
+    ):
+        if not has("Info", enabled_key):
+            continue
+        value = "关闭"
+        if overlay[f"Info.{enabled_key}"]:
+            path = str(overlay.get(f"Info.{path_key}") or "").strip()
+            value = f"启用 · {path}" if path else "启用"
+        mas_rows.append({"key": label, "value": value})
+    engines = [
+        engine
+        for engine in ("SRA", "M7A")
+        if has("Control", engine) and overlay[f"Control.{engine}"]
+    ]
+    if has("Control", "SRA") or has("Control", "M7A"):
+        mas_rows.append(
+            {"key": "直控引擎", "value": "、".join(engines) if engines else "无"}
+        )
+    if has("Info", "Notes"):
+        mas_rows.append(_overlay_row("Info.Notes", overlay["Info.Notes"]))
     if mas_rows:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
+    task_rows: list[dict] = []
+    if any(has("TaskSwitch", key) for key in _TASKSWITCH_MODULE_LABELS):
+        enabled = [
+            label
+            for key, label in _TASKSWITCH_MODULE_LABELS.items()
+            if overlay.get(f"TaskSwitch.{key}") is True
+        ]
+        task_rows.append(
+            {"key": "任务开关", "value": "、".join(enabled) if enabled else "无"}
+        )
+    if has("Stage", "Channel"):
+        channel = str(overlay["Stage.Channel"])
+        task_rows.append(
+            {
+                "key": "体力类型",
+                "value": _STAGE_CHANNEL_LABELS.get(channel, channel),
+            }
+        )
+    if has("Stage", "ScriptStage"):
+        label = _stage_label(
+            overlay["Stage.ScriptStage"],
+            str(overlay.get("Stage.Channel") or "") or None,
+        )
+        task_rows.append({"key": "主副本", "value": label or "未选择"})
+    if has("Stage", "ScriptEchoOfWar"):
+        label = _stage_label(overlay["Stage.ScriptEchoOfWar"])
+        task_rows.append({"key": "历战余响副本", "value": label or "未选择"})
+    if has("TaskOpt", "EchoOfWarWeekday"):
+        weekday = str(overlay["TaskOpt.EchoOfWarWeekday"])
+        task_rows.append(
+            {
+                "key": "历战余响开始星期",
+                "value": _STAGE_WEEKDAY_LABELS.get(weekday, weekday),
+            }
+        )
+    if task_rows:
+        sections.append({"name": "tasks", "label": "任务配置", "rows": task_rows})
+
+    if has("Notify", "Enabled"):
+        notify_value = "关闭"
+        if overlay["Notify.Enabled"]:
+            channels = [
+                label
+                for key, label in (
+                    ("IfSendStatistic", "统计"),
+                    ("IfSendMail", "邮件"),
+                    ("IfServerChan", "Server 酱"),
+                )
+                if overlay.get(f"Notify.{key}") is True
+            ]
+            notify_value = "、".join(channels) if channels else "开启"
+        notify_rows: list[dict] = [{"key": "通知", "value": notify_value}]
+        for secret_key in ("Notify.ToAddress", "Notify.ServerChanKey"):
+            if secret_key in overlay:
+                notify_rows.append(_overlay_row(secret_key, overlay[secret_key]))
+        sections.append({"name": "notify", "label": "通知", "rows": notify_rows})
+
     managed_rows: list[dict] = []
-    if "TaskMapping" in overlay:
-        mapping = _parse_json_dict(overlay["TaskMapping"])
+    if "Managed.TaskMapping" in overlay:
+        mapping = _parse_json_dict(overlay["Managed.TaskMapping"])
         managed_rows.append(
             {
                 "key": "任务映射",
                 "value": "、".join(f"{k}→{v}" for k, v in mapping.items()) or "无",
             }
         )
-    if "Options" in overlay:
-        options = _parse_json_dict(overlay["Options"])
+    if "Managed.Options" in overlay:
+        options = _parse_json_dict(overlay["Managed.Options"])
         managed_rows.append({"key": "托管覆盖", "value": "、".join(options) or "无"})
     if managed_rows:
         sections.append({"name": "managed", "label": "托管配置", "rows": managed_rows})
 
     direct_rows: list[dict] = []
-    for key in _OVERLAY_DIRECT_KEYS:
-        if key in overlay and str(overlay[key]).strip():
-            direct_rows.append(
-                {
-                    "key": _OVERLAY_FIELD_LABELS[key],
-                    "value": _summary_text(overlay[key]),
-                }
-            )
+    for key in _OVERLAY_KEY_GROUPS["Direct"]:
+        flat_key = f"Direct.{key}"
+        if flat_key in overlay and str(overlay[flat_key]).strip():
+            direct_rows.append(_overlay_row(flat_key, overlay[flat_key]))
     if direct_rows:
         sections.append({"name": "direct", "label": "直控快照", "rows": direct_rows})
 
