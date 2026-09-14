@@ -1117,6 +1117,16 @@ export default {
       'Backups of the core MAS edit-page fields (task queue, server resource, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
     m9aConfigRestoreScriptDesc:
       'Backups of the M9A native config; restoring applies directly to M9A itself. Created automatically (dedup) when opening this edit page or before running M9A, latest 10 kept',
+    // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
+    generalConfigRestoreUserDesc:
+      'Backups of this user script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept',
+    generalConfigRestoreScriptDesc:
+      'Backups of the script config path; restoring applies directly to the script itself. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    generalViewingTitle: 'Viewing script config',
+    generalViewingDesc: 'Opening the backed-up script config in read-only mode.',
+    generalViewingDesc2:
+      'When finished, click "Close viewer" to end the viewing session; the script config will stay untouched.',
+    generalViewClose: 'Close viewer',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: 'MaaEnd setup opened',
     maaendSessionStartFailed: 'Could not start the MaaEnd setup session',

@@ -1109,6 +1109,15 @@ export default {
       'MAS 编辑页核心配置（任务队列、服务器资源等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
     m9aConfigRestoreScriptDesc:
       'M9A 本体配置的备份，恢复会直接作用于 M9A 本体；进入本编辑页或运行 M9A 前会自动去重创建，保留最近 10 份',
+    // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
+    generalConfigRestoreUserDesc:
+      '该用户脚本配置的备份，恢复会直接作用于 MAS 配置页；运行或打开配置界面前会自动去重创建，保留最近 10 份',
+    generalConfigRestoreScriptDesc:
+      '脚本配置路径的备份，恢复会直接作用于脚本本体；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    generalViewingTitle: '正在查看脚本配置',
+    generalViewingDesc: '正在以只读方式打开该份备份的脚本配置。',
+    generalViewingDesc2: '查看完成后，请点击"关闭查看"按钮结束查看会话，脚本配置将保持原状。',
+    generalViewClose: '关闭查看',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
     maaendSessionOpened: '已打开 MaaEnd 设置',
     maaendSessionStartFailed: '启动 MaaEnd 设置失败',

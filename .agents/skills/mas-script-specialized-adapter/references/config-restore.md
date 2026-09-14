@@ -41,6 +41,12 @@
 >   `M9AUserEdit.vue`——MFAA 线无 per-user ConfigFile 目录、无遮罩会话：
 >   mas 池是**纯字段侧车**（无目录部分，见 §1.1.4），恢复即字段回填；
 >   不提供「查看详细配置」（无 viewOnly 会话可挂，onDetail 不传即不渲染）
+> - **General（自包含式 + 无侧车目录池，有会话）**：`app/task/general/tools/restore_service.py` +
+>   `GeneralUserEdit.vue`——ConfigFile 恒按用户（无 owner 解耦、无侧车：
+>   MAS 编辑页字段不注入原生配置，不属于配置内容，见 §1.1.4 末段）；原生
+>   配置为用户自填 ConfigPath（File/Folder 两态），预览为**文件清单粒度**
+>   （配置格式任意透传，不解析内容）；提供「查看详细配置」（viewOnly，
+>   脚本级跳过下发直接读 `task_info.view_only`，无需构造参数与 manager 透传）
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 
@@ -123,6 +129,12 @@ mas 池是**纯字段侧车**——归档内唯一文件就是 `_mas_overlay.jso
 实例列表同语义），**实例显示名取 JSON 内的名称字段**（如 `InstanceName`），
 文件名只作缺失回退——MaaFramework 线的实例文件名普遍不是显示名，只认
 固定文件名（如 default.json）会漏掉用户创建的全部实例。
+
+**侧车与否的判据（M9A 有、General 无）**：MAS 编辑页字段**会注入原生
+配置**（是配置内容的一部分）→ 进侧车与预览；字段只由 MAS 自己消费
+（前后置脚本、来源开关等执行域配置）→ 不进备份。ConfigFile/配置目录
+本身的持久副本形态（OkNte 页面编辑对象、General 会话回写副本）同样
+无需侧车。
 
 ### 1.2 恢复关键语义
 

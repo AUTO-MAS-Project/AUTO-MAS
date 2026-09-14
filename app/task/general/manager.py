@@ -22,6 +22,7 @@
 
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -206,7 +207,11 @@ class GeneralManager(TaskExecuteBase):
             return
 
         if not self.external_config_exists:
-            logger.info("脚本直控配置不存在，保持配置路径为空")
+            # 任务前原生配置不存在: 现场内容只可能是本任务注入的 MAS 配置
+            # (查看会话恢复的备份 / 非直控用户的下发), 删除即恢复「不存在」
+            # 原状——混合用户时直控用户也因此拿到干净的原始现场
+            self._remove_script_config()
+            logger.info("脚本任务前原生配置不存在, 已清理任务注入的配置")
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
@@ -292,6 +297,17 @@ class GeneralManager(TaskExecuteBase):
         self._recover_previous_run()
         self._snapshot_external_config()
 
+        # 任务级一次性归档脚本原生配置（项目级池，指纹去重，失败不阻断
+        # 任务）：此刻 ConfigPath 仍是任务动手前的完整现场，必须在任何
+        # 换入/写入前归档
+        from .tools.backup_archive import archive_native_backup
+
+        with suppress(Exception):
+            archive_native_backup(
+                self.script_config_path,
+                self.script_config.get("Script", "ConfigPathMode"),
+            )
+
     async def main_task(self):
 
         self.check_result = await self.check()
@@ -338,7 +354,11 @@ class GeneralManager(TaskExecuteBase):
             try:
                 await self.spawn(task)
             finally:
-                if not use_mas_config:
+                # 查看会话（viewOnly）不重拍快照：用户级查看会把该用户
+                # ConfigFile 下发进原生配置（GUI 所见即备份），重拍会把被
+                # 污染的原生存成新快照、覆盖 prepare 时的真实原状，收尾
+                # 还原时原生就被固定成备份内容
+                if not use_mas_config and not self.task_info.view_only:
                     self._snapshot_external_config()
 
     async def final_task(self):
