@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import date, datetime
 from datetime import time as dt_time
 from typing import Mapping
@@ -148,16 +149,14 @@ def _direct_cost(
     weekday: int | None = None,
     blacklist: frozenset[str] = frozenset(),
 ) -> float | None:
-    """直刷获得 1 个物品的等效理智成本 = 物品价值 ÷ 关卡综合效率。
+    """直刷获得 1 个物品的期望理智成本 = 关卡理智 ÷ 该物品每次期望掉落。
 
-    综合效率 = Σ(每次掉落期望×物品价值)/理智，副产品按价值自动抵扣
-    （一图流综合效率口径）。取各候选关最小值；不可直刷/价值未知/今天
-    无开放关（now_ms/weekday 提供时）返回 None。
+    单件口径（副产品不抵扣），与 recommend_stages 选关判据同源——路径层
+    与定关层必须同口径，否则会出现"按 A 口径判直刷、按 B 口径定关执行"
+    的错配（综合效率口径与多目标联合折算留 P3 完整版）。取各候选关
+    最小值；今天无开放关（now_ms/weekday 提供时）返回 None。
     """
 
-    value = data.item_value.get(item_id)
-    if value is None or value <= 0:
-        return None
     best: float | None = None
     for drop in data.drops:
         if drop.item_id != item_id:
@@ -170,9 +169,9 @@ def _direct_cost(
         if weekday is not None and meta.open_weekdays is not None:
             if weekday not in meta.open_weekdays:
                 continue
-        if meta.composite <= 0:
+        if drop.expected_per_run <= 0:
             continue
-        cost = value / meta.composite
+        cost = meta.ap_cost / drop.expected_per_run
         best = cost if best is None else min(best, cost)
     return best
 
@@ -247,15 +246,14 @@ def synthesize(
 
     不可获取类（模组凭证等）原样返回，供 UI 单列"需另行获取"，
     绝不进刷取条目。路径选择为 P1 基础版：每理智成本择优，不计现有库存
-    对路径选择的影响（完整口径 P3 对齐）；库存缺口由 MAA 执行时现算，
-    因此条目数量取路径总量（保有量目标语义）而非扣减后的差额。
+    对路径选择的影响（完整口径 P3 对齐）。数量是路径总量：本函数只管
+    "折算到哪里刷"，扣减库存得到净需求由 _farm_demand_net 负责。
 
-    today 提供时直刷可行性按当天开放性评估——直刷关今天没开的材料自动
-    落到合成路径（例：固源岩组直刷候选全是已过期的复刻/限时节，大量需求
-    会折叠为"刷固源岩×5 合成"）；连合成路径今天也走不通的，保留为未展开
-    的刷取需求（recommend_stages 自然不产条目，demands 仍展示缺口）；
-    结构性不可获取（无直掉关且无配方）才进不可获取清单。不提供 today 则
-    不做开放性过滤（仅限测试）。
+    today 提供时直刷可行性按当天开放性评估——直刷关今天没开（限时关
+    过期/星期关未开）的材料自动落到合成路径；连合成路径今天也走不通的，
+    保留为未展开的刷取需求（recommend_stages 自然不产条目，demands 仍
+    展示缺口）；结构性不可获取（无直掉关且无配方）才进不可获取清单。
+    不提供 today 则不做开放性过滤（仅限测试）。
     """
 
     recipe_map = _build_recipe_map(data)
@@ -447,16 +445,24 @@ def build_plan(
     data: CultivateDataSet,
     today: date,
     blacklist: frozenset[str] = frozenset(),
+    inventory: Mapping[str, int] | None = None,
 ) -> CultivatePlan:
-    """完整管线：目标 + 观测 + 数据 → 中性养成计划。
+    """完整管线：目标 + 观测 + 库存 → 中性养成计划。
 
-    不接收库存：保有量目标语义下缺口由 MAA 执行时现算（库存只在
-    has_material_gap 的接管判定中使用）。
+    条目数量是按库存抵扣后的净缺口（还需刷多少），与 has_material_gap
+    同一份结果；MAA 的保有量目标由构建器加上档案现存（FarmEntry.held），
+    落地到 MAA 仍是净缺口。不传库存时退化为路径总量（仅测试用）。
+    demands 保留目标全量材料需求（含暂无可刷关的材料）供 UI 展示。
     """
 
     requirements = aggregate(build_requirements(targets, snapshots, data.demands))
-    farm, unobtainable = synthesize(requirements, data, today, blacklist)
-    entries = recommend_stages(farm, data, today, blacklist)
+    gross, unobtainable = synthesize(requirements, data, today, blacklist)
+    held = dict(inventory or {})
+    net, _ = _farm_demand_net(requirements, held, data, today, blacklist)
+    entries = tuple(
+        replace(entry, held=held.get(entry.item_id, 0))
+        for entry in recommend_stages(net, data, today, blacklist)
+    )
 
     # 排序不变量：精英化条目最前（专精/模组的前置）→ 按用户添加目标顺序
     # → 折算原料条目紧随其目标材料（按最早来源目标排序即自然满足）
@@ -482,9 +488,9 @@ def build_plan(
 
     entries = sorted(entries, key=sort_key)
 
-    # demands 保留全部折算后需求（含暂无可刷关的材料，供 UI 展示缺口）；
-    # entries 只含有可用推荐关的材料
-    demands = tuple(farm) + tuple(unobtainable)
+    # demands 是目标全量材料需求（路径总量，含暂无可刷关的材料），供 UI
+    # 展示"这个目标要什么"；entries 是净缺口（还需刷多少），只含有可用推荐关的材料
+    demands = tuple(gross) + tuple(unobtainable)
     return CultivatePlan(
         entries=tuple(entries),
         demands=demands,
@@ -492,59 +498,113 @@ def build_plan(
     )
 
 
-def _unmet_by_stock(
+def _farm_demand_net(
     requirements: list[Requirement],
     inventory: Mapping[str, int],
     data: CultivateDataSet,
-) -> list[Requirement]:
-    """按库存递归抵扣后的未满足需求（原始需求粒度，保留来源档案）。
+    today: date | None = None,
+    blacklist: frozenset[str] = frozenset(),
+) -> tuple[list[Requirement], list[Requirement]]:
+    """按库存抵扣后的净需求，折算到可刷取材料（与 synthesize 同分支同选路）。
 
-    抵扣沿合成链进行：先扣本体库存，不足的再逐级扣原料库存（等价于
-    立即合成消耗）。用户已持有的高阶材料与中间材料因此都能抵扣目标，
-    不会出现"材料全齐仍判缺口"。贪心按需求顺序消耗、不求解最优分配：
-    缺口判定只取布尔结果，且真实配方都是可刷材料的逐级合成，逐项贪心
-    与最优分配在此口径下结论一致。
+    每层先扣库存：本体 → 配方原料逐级往下（等价于立即合成消耗），只有真正
+    要刷的叶子材料留下数量，因此返回值就是"还需要刷多少"。路径选择仍按每
+    理智成本择优、只看今天开放的直刷关，与 synthesize 完全同源；唯一区别
+    是这里接收库存做抵扣（synthesize 产出路径总量）。
+
+    贪心按需求顺序消耗、不求解最优分配：缺口判定与计划数量都建立在这一份
+    结果上，两者不会互相打架。
     """
 
     recipe_map = _build_recipe_map(data)
+    structural_memo: dict[str, tuple[float, dict[str, float]] | None] = {}
+    today_memo: dict[str, tuple[float, dict[str, float]] | None] = {}
+    now_ms = (
+        int(datetime.combine(today, dt_time.min).timestamp()) * 1000
+        if today is not None
+        else None
+    )
+    weekday = today.weekday() if today is not None else None
     stock = dict(inventory)
+    farm_totals: dict[str, float] = {}
+    unobtainable_totals: dict[str, float] = {}
+    sources_by_item: dict[str, tuple[GoalRef, ...]] = {}
 
-    def consume(item_id: str, amount: int, depth: int) -> int:
-        """从库存消耗 amount 个 item（本体直用，不足沿配方合成）。
+    def record(
+        totals: dict[str, float],
+        item_id: str,
+        amount: float,
+        sources: tuple[GoalRef, ...],
+    ) -> None:
+        totals[item_id] = totals.get(item_id, 0.0) + amount
+        sources_by_item[item_id] = sources_by_item.get(item_id, ()) + sources
 
-        返回仍缺的数量。数量精度对布尔判定无关：原料不足时消耗现有
-        部分后按本体剩余计缺口——无论之后直刷本体还是补刷原料，都
-        存在需要刷取的缺口。
-        """
+    def acquire(
+        item_id: str, amount: float, sources: tuple[GoalRef, ...], depth: int
+    ) -> None:
+        """获得 amount 个 item：先扣库存，余量按最优路径生产或留作刷取需求。"""
 
-        if depth > _MAX_PATH_DEPTH:
-            return amount
+        if amount <= 0:
+            return
         use = min(amount, stock.get(item_id, 0))
         if use:
             stock[item_id] -= use
-        unmet = amount - use
-        if unmet <= 0:
-            return 0
+        amount -= use
+        if amount <= 0:
+            return
+        if data.material_class.get(item_id) == "unobtainable":
+            record(unobtainable_totals, item_id, amount, sources)
+            return
+        fixed_stage_id = data.fixed_source_stages.get(item_id)
+        if fixed_stage_id is not None:
+            if _stage_unusable(fixed_stage_id, data, blacklist):
+                record(unobtainable_totals, item_id, amount, sources)
+            else:
+                record(farm_totals, item_id, amount, sources)
+            return
+        structural = _best_path(item_id, data, recipe_map, structural_memo)
+        if structural is None:
+            record(unobtainable_totals, item_id, amount, sources)
+            return
+        if depth > _MAX_PATH_DEPTH:
+            record(farm_totals, item_id, amount, sources)
+            return
+        path = (
+            _best_path(
+                item_id, data, recipe_map, today_memo, now_ms, weekday, blacklist
+            )
+            if now_ms is not None
+            else structural
+        )
+        if path is None:
+            # 今天不可直刷且无可行的合成链：留作刷取需求（选关时自然过滤）
+            record(farm_totals, item_id, amount, sources)
+            return
+        if list(path[1]) == [item_id] and path[1][item_id] == 1.0:
+            # 直刷本体：路径即它自己，不再往下展开
+            record(farm_totals, item_id, amount, sources)
+            return
         recipe = recipe_map.get(item_id)
         if recipe is None:
-            return unmet
+            record(farm_totals, item_id, amount, sources)
+            return
         for ingredient_id, count in recipe.ingredients.items():
-            if consume(ingredient_id, count * unmet, depth + 1) > 0:
-                return unmet
-        return 0
+            acquire(ingredient_id, amount * count, sources, depth + 1)
 
-    unmet_requirements: list[Requirement] = []
     for requirement in requirements:
-        remaining = consume(requirement.item_id, requirement.amount, 0)
-        if remaining > 0:
-            unmet_requirements.append(
-                Requirement(
-                    item_id=requirement.item_id,
-                    amount=remaining,
-                    sources=requirement.sources,
-                )
+        acquire(requirement.item_id, float(requirement.amount), requirement.sources, 0)
+
+    def to_requirements(totals: Mapping[str, float]) -> list[Requirement]:
+        return [
+            Requirement(
+                item_id=item_id,
+                amount=math.ceil(total),
+                sources=sources_by_item.get(item_id, ()),
             )
-    return unmet_requirements
+            for item_id, total in sorted(totals.items())
+        ]
+
+    return to_requirements(farm_totals), to_requirements(unobtainable_totals)
 
 
 def has_material_gap(
@@ -558,16 +618,14 @@ def has_material_gap(
     """注入时接管判定第三步：存在今日可刷、且库存（含沿配方立即合成）
     满足不了的材料缺口。
 
-    库存先沿合成链递归抵扣原始需求（本体直用 → 原料合成，见
-    _unmet_by_stock），仍缺的才走选关过滤（时间窗/星期/黑名单，与
-    build_plan 同口径）。因此"当前无开放关"的材料不计入缺口——它们
-    即使缺也刷不了，不应抑制库存保持；不可获取类（模组凭证等）靠用户
-    游戏内获取，同样不计入。
+    净需求由 _farm_demand_net 给出（本体直用 → 原料逐级合成），再走选关
+    过滤（时间窗/星期/黑名单，与 build_plan 同口径、同一份结果）。因此
+    "当前无开放关"的材料不计入缺口——它们即使缺也刷不了，不应抑制库存
+    保持；不可获取类（模组凭证等）靠用户游戏内获取，同样不计入。
     """
 
     requirements = aggregate(build_requirements(targets, snapshots, data.demands))
-    unmet = _unmet_by_stock(requirements, inventory, data)
-    farm, _ = synthesize(unmet, data, today, blacklist)
+    farm, _ = _farm_demand_net(requirements, inventory, data, today, blacklist)
     return bool(recommend_stages(farm, data, today, blacklist))
 
 
@@ -632,10 +690,9 @@ def apply_achievements(
     )
     if should_refresh:
         requirements = aggregate(build_requirements(targets, snapshots, data.demands))
-        # 库存递归抵扣后再折算：已有高阶材料库存能抵掉目标，材料备齐的
-        # 目标回到 not_started 而不是被反复刷取（与 has_material_gap 同口径）
-        unmet = _unmet_by_stock(requirements, inventory, data)
-        farm, _ = synthesize(unmet, data, today)
+        # 库存递归抵扣后折算：已有高阶材料库存能抵掉目标，材料备齐的
+        # 目标回到 not_started 而不是被反复刷取（与 has_material_gap 同源）
+        farm, _ = _farm_demand_net(requirements, inventory, data, today)
         for requirement in farm:
             for ref in requirement.sources:
                 gap_index.add((ref.operator_id, ref.goal_index))
@@ -671,3 +728,38 @@ def apply_achievements(
         if new_goals:
             new_targets.append(OperatorTarget(target.operator_id, tuple(new_goals)))
     return new_targets
+
+
+_GOAL_LABELS: Mapping[str, str] = {
+    "elite": "精",
+    "mastery": "专精",
+    "module": "模组",
+}
+
+
+def summarize_achievements(
+    targets: list[OperatorTarget] | tuple[OperatorTarget, ...],
+    achievements: list[Achievement],
+    names: Mapping[str, str] | None = None,
+) -> list[str]:
+    """把"达成且可自证"（apply_achievements 将移除）的目标拼成用户文案。
+
+    pending_confirm（来源不可自证）不在此列：目标仍保留，仅状态流转。
+    名字映射缺失时回退 char_id；本函数只产出文本，不做任何流转。
+    """
+
+    goal_by_key = {
+        (target.operator_id, goal_index): goal
+        for target in targets
+        for goal_index, goal in enumerate(target.goals)
+    }
+    lines: list[str] = []
+    for achievement in achievements:
+        if not (achievement.achieved and achievement.confident):
+            continue
+        goal = goal_by_key.get((achievement.operator_id, achievement.goal_index))
+        if goal is None:
+            continue
+        name = (names or {}).get(achievement.operator_id, achievement.operator_id)
+        lines.append(f"{name} 已达到{_GOAL_LABELS[goal.kind]}{goal.to_level}")
+    return lines

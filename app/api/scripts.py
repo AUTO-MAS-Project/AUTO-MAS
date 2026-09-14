@@ -857,6 +857,63 @@ async def get_maa_depot_inventory(script: ScriptDeleteIn = Body(...)) -> ComboBo
 
 
 @router.post(
+    "/maa/cultivate/operators",
+    tags=["Get"],
+    summary="MAA 干员养成选择器目录（一图流全量表，稀有度降序）",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_cultivate_operators(
+    script: ScriptDeleteIn = Body(...), userId: str = Body(...)
+) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_cultivate_operators(script.scriptId, userId)
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/cultivate/preview",
+    tags=["Get"],
+    summary="MAA 养成计划预览（纯计算不落库）",
+    response_model=CultivatePreviewOut,
+    status_code=200,
+)
+async def get_maa_cultivate_preview(
+    preview: CultivatePreviewIn = Body(...),
+) -> CultivatePreviewOut:
+
+    try:
+        data = await Config.get_maa_cultivate_preview(
+            preview.scriptId, preview.userId, preview.targets
+        )
+    except Exception as e:
+        return CultivatePreviewOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            stages=[],
+            demands=[],
+            unobtainable=[],
+            hasProgression=False,
+            hasInventory=False,
+        )
+    return CultivatePreviewOut(
+        stages=data["stages"],
+        demands=data["demands"],
+        unobtainable=data["unobtainable"],
+        totalExpectedSanity=data.get("totalExpectedSanity"),
+        hasProgression=bool(data.get("availability", {}).get("has_progression")),
+        hasInventory=bool(data.get("availability", {}).get("has_inventory")),
+    )
+
+
+@router.post(
     "/webhook/get",
     tags=["Get"],
     summary="查询 webhook 配置",

@@ -1,5 +1,13 @@
 <template>
   <div class="depot-plan-editor">
+    <!-- 养成接管提示：接管发生时本任务整条不注入（方案决策 20/28），与养成编辑器共用后端写入的提示字段 -->
+    <a-alert
+      v-if="formData.Data?.CultivateNotice"
+      :message="formData.Data.CultivateNotice"
+      type="warning"
+      show-icon
+      class="takeover-alert"
+    />
     <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
     <div class="plan-actions">
       <a-space wrap>
@@ -106,11 +114,21 @@
         </a-button>
       </template>
     </a-table>
+    <a-typography-link
+      class="data-source-note"
+      href="https://ark.yituliu.cn"
+      target="_blank"
+      rel="noreferrer"
+      @click="handleExternalLink"
+    >
+      {{ t('edit.maaDataSourceYituliu') }}
+    </a-typography-link>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { handleExternalLink } from '@/utils/openExternal'
 import { computed, ref, watch } from 'vue'
 import {
   AppstoreAddOutlined,
@@ -205,7 +223,7 @@ watch(
 
 // 行内关卡选项四态：
 // - 未选物品 → 全量表（允许先选关卡）
-// - 候选已加载且非空 → 只显示掉落该物品的关（按单件理智升序）
+// - 候选已加载且非空 → 只显示掉落该物品的关（按单件理智升序，后端截断 top-10）
 // - 候选加载中（缓存无 key）→ 只保留当前值，绝不回退全量表——否则滚轮
 //   浏览期间候选完成、列表从全量集突变为候选集，滚动位置与新内容错位
 //   （表现为"被全量表里的关卡污染"）
@@ -221,6 +239,12 @@ const stageOptionsFor = (record: DepotMaintainPlan): SelectOption[] => {
   if (candidates.length === 0) {
     const current = props.stageOptions.find(option => option.value === record.Stage)
     return current ? [current] : []
+  }
+  // 已保存的关被截断在候选外：追加显示（全量表有则带名称，否则裸关码），
+  // 绝不静默丢失已保存选择
+  if (record.Stage && !candidates.some(option => option.value === record.Stage)) {
+    const saved = props.stageOptions.find(option => option.value === record.Stage)
+    return [...candidates, saved ?? { label: record.Stage, value: record.Stage }]
   }
   return candidates
 }
@@ -316,8 +340,18 @@ const removeSelectedPlans = () => {
   overscroll-behavior: contain;
 }
 
+.takeover-alert {
+  margin-bottom: 12px;
+}
+
 .plan-actions {
   margin-bottom: 12px;
+}
+
+/* 一图流数据署名（CC BY-NC 4.0 授权条件，方案 §5.4/决策 3）；链接走系统浏览器 */
+.data-source-note {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 .stock-value {

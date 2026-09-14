@@ -63,5 +63,21 @@ export type MaaUserConfig_Task = {
      * 库存保持计划 JSON
      */
     DepotMaintainPlans?: (string | null);
+    /**
+     * 干员养成
+     */
+    IfCultivate?: (boolean | null);
+    /**
+     * 干员养成目标 JSON
+     */
+    CultivateTargets?: (string | null);
+    /**
+     * 活动期间跳过养成计划
+     */
+    CultivateSkipDuringActivity?: (boolean | null);
+    /**
+     * 资源收集期跳过养成计划
+     */
+    CultivateSkipDuringResourceCollection?: (boolean | null);
 };
 

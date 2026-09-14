@@ -5,12 +5,15 @@
 import type { ADBScreenshotIn } from '../models/ADBScreenshotIn';
 import type { ADBScreenshotOut } from '../models/ADBScreenshotOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
+import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { CheckImageAllIn } from '../models/CheckImageAllIn';
 import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
+import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
@@ -348,6 +351,44 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/depot/inventory',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 干员养成选择器目录（一图流全量表，稀有度降序）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
+        requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/operators',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 养成计划预览（纯计算不落库）
+     * @param requestBody
+     * @returns CultivatePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost(
+        requestBody: CultivatePreviewIn,
+    ): CancelablePromise<CultivatePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/preview',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

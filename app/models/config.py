@@ -842,6 +842,8 @@ class MaaUserConfig(ConfigBase):
         )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
+        ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
+        self.Data_CultivateNotice = ConfigItem("Data", "CultivateNotice", "")
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
@@ -904,6 +906,20 @@ class MaaUserConfig(ConfigBase):
         ## 库存保持计划
         self.Task_DepotMaintainPlans = ConfigItem(
             "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
+        )
+        ## 是否干员养成
+        self.Task_IfCultivate = ConfigItem("Task", "IfCultivate", False, BoolValidator())
+        ## 干员养成目标
+        self.Task_CultivateTargets = ConfigItem(
+            "Task", "CultivateTargets", "[]", JSONValidator(list)
+        )
+        ## 活动期间是否跳过养成计划
+        self.Task_CultivateSkipDuringActivity = ConfigItem(
+            "Task", "CultivateSkipDuringActivity", False, BoolValidator()
+        )
+        ## 资源收集期是否跳过养成计划
+        self.Task_CultivateSkipDuringResourceCollection = ConfigItem(
+            "Task", "CultivateSkipDuringResourceCollection", False, BoolValidator()
         )
 
         ## Notify ----------------------------------------------------------

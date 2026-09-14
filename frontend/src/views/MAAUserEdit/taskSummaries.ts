@@ -1,4 +1,6 @@
 // 任务行折叠态摘要：不展开也能确认当前生效的配置
+import { parseCultivateTargets } from './cultivateTargets'
+
 export const ANNIHILATION_STAGE_OPTIONS = [
   { label: '关闭', value: 'Close' },
   { label: '当期剿灭', value: 'Annihilation' },
@@ -68,6 +70,12 @@ export const summarizeDepot = (enabled: boolean, plansJson: string) => {
     count = 0
   }
   return count ? `${count} 项计划` : '尚未添加计划'
+}
+
+export const summarizeCultivate = (enabled: boolean, targetsJson: string) => {
+  if (!enabled) return ''
+  const count = parseCultivateTargets(targetsJson).length
+  return count ? `${count} 名干员` : '尚未添加养成目标'
 }
 
 export const INFRAST_MODE_OPTIONS = [

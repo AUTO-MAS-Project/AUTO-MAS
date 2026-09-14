@@ -67,6 +67,20 @@ from .tools import (
     push_notification,
     update_maa,
 )
+from .tools.cultivate import (
+    CultivatePlan,
+    ProviderContext,
+    apply_achievements,
+    depot_cultivate_service,
+    dump_cultivate_targets,
+    get_certifying_chain,
+    judge_achievements,
+    load_oper_box_names,
+    parse_cultivate_targets,
+    parse_depot_payload,
+    resolve_progression,
+    summarize_achievements,
+)
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -94,6 +108,22 @@ _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 活动关优先",
     "完成任务: 库存保持",
     "完成任务: 剩余理智",
+    "完成任务: 养成计划",
+)
+# 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
+_MAA_CULTIVATE_TASK_NAME = "养成计划"
+_MAA_DATA_UPDATE_TASK_NAME = "更新数据"
+# 识别数据档案文件名（MAA 原生格式透传，MAS 绝不回写 MAA，方案决策 31）
+_MAA_DEPOT_ARCHIVE_NAME = "DepotData.json"
+_MAA_OPER_BOX_ARCHIVE_NAME = "OperBoxData.json"
+# 识别链完成标记：锚定注入的任务名 + 链后缀（MAS 强制 zh-cn，方案 §4.2/T0.3）
+_MAA_DEPOT_CHAIN_COMPLETION_MARKERS = (
+    "完成任务: 库存保持 (仓库识别)",
+    f"完成任务: {_MAA_CULTIVATE_TASK_NAME} (仓库识别)",
+    f"完成任务: {_MAA_DATA_UPDATE_TASK_NAME} (仓库识别)",
+)
+_MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS = (
+    f"完成任务: {_MAA_DATA_UPDATE_TASK_NAME} (干员识别)",
 )
 _MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
 # MAA 的停滞提示：只说明任务没有推进，本身不是推进信号。若让它参与 latest_time
@@ -449,6 +479,89 @@ def _build_depot_maintain_task(
     }
 
 
+def _build_cultivate_task(
+    plan: "CultivatePlan",
+    source_task: dict | None,
+    *,
+    skip_during_activity: bool,
+    skip_during_resource_collection: bool,
+) -> dict | None:
+    """把内核养成计划映射为 MAA 养成任务（MAA 字段名唯一出现点，方案 §4.1）。
+
+    药剂/源石按决策 5 硬编码关闭；计划无可用刷取条目时不生成任务。
+    DropCount 是 MAA 的"保有量目标"语义（need = DropCount − 该材料现存，
+    只比对本材料），故写净缺口 + 档案现存，MAA 现算后落回净缺口。
+    """
+
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
+    plans = []
+    for entry in plan.entries:
+        source_plan = next(
+            (
+                item
+                for item in source_plans
+                if isinstance(item, dict)
+                and item.get("Stage") == entry.stage_code
+                and item.get("DropId") == entry.item_id
+            ),
+            {},
+        )
+        plans.append(
+            {
+                **deepcopy(source_plan),
+                "UseMedicine": False,
+                "MedicineCount": 0,
+                "UseStone": False,
+                "StoneCount": 0,
+                "Stage": entry.stage_code,
+                "DropId": entry.item_id,
+                "DropCount": entry.amount + entry.held,
+            }
+        )
+    if not plans:
+        return None
+
+    return {
+        "$type": source_task.get("$type", "DepotMaintainTask"),
+        "Name": _MAA_CULTIVATE_TASK_NAME,
+        "IsEnable": True,
+        "TaskType": "DepotMaintain",
+        # 仓库识别随养成任务执行，缺口由 MAA 按最新库存现算（方案 §9）
+        "UpdateDepot": True,
+        "IsStageManually": True,
+        "SkipDuringActivity": skip_during_activity,
+        "SkipDuringResourceCollection": skip_during_resource_collection,
+        "OnlyFirstInsufficientPlan": False,
+        "UseAutoSeries": False,
+        "UseMedicine": False,
+        "UseStone": False,
+        "UseExpiringMedicine": False,
+        "PlanList": plans,
+    }
+
+
+def _build_data_update_task(source_task: dict | None) -> dict:
+    """构建更新数据任务（干员识别 + 仓库识别，方案决策 7/30）。
+
+    识别结果供 check_log 采集落用户档案，缺口始终由 MAA 执行时现算。
+    """
+
+    source_task = source_task or {}
+    return {
+        **deepcopy(source_task),
+        "$type": source_task.get("$type", "UserDataUpdateTask"),
+        "Name": _MAA_DATA_UPDATE_TASK_NAME,
+        "IsEnable": True,
+        "TaskType": "UserDataUpdate",
+        "UpdateOperBox": True,
+        "UpdateDepot": True,
+        "TriggerInterval": "EveryTime",
+    }
+
+
 def _resolve_activity_stage(
     activity_stages: list[dict], configured_index: int
 ) -> str | None:
@@ -502,6 +615,12 @@ def _build_activity_priority_fight(
 
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
+
+    # 养成采集状态：prepare() 每轮重置；类级默认保证未跑 prepare 的
+    # 实例（如单测直接构造）调用 check_log 时不炸
+    _cultivate_collected_depot: bool = False
+    _cultivate_collected_oper_box: bool = False
+    _depot_maintain_suppressed: bool = False
 
     def __init__(
         self,
@@ -569,6 +688,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_game_hot_update = False
         self.pending_res_version = ""
         self._maa_config_baseline: dict[str, dict] | None = None
+        # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
+        # 见 _collect_cultivate_archive）；
+        # 达成文案供 final_task 的统计信息报告，按 (干员, 档位) 去重累积
+        self._cultivate_collected_depot = False
+        self._cultivate_collected_oper_box = False
+        self._cultivate_achievement_summary: list[str] = []
+        # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
+        # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
+        self._depot_maintain_suppressed = False
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -778,6 +906,7 @@ class AutoProxyTask(TaskExecuteBase):
                             3,
                         )
 
+                await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
                 await update_maa(self.maa_root_path)
@@ -789,6 +918,211 @@ class AutoProxyTask(TaskExecuteBase):
                 Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                 "脚本后任务",
             )
+
+    def _cultivate_archive_dir(self) -> Path:
+        """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
+        cur_user_uid 为准，查询与注入判定只读档案，绝不回写 MAA）。"""
+
+        return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
+
+    def _archive_recognition_file(
+        self, name: str, *, require_fresh_sync_time: bool = False
+    ) -> bool:
+        """把 MAA 安装目录的识别结果只读复制进当前用户档案（T1.17）。
+
+        整份原子覆盖：识别数据是全量快照且档案可由下一轮重跑再生，
+        无 diff、无回滚（方案决策 31）。
+
+        Args:
+            name: 识别数据文件名（DepotData.json / OperBoxData.json）。
+            require_fresh_sync_time: 是否校验 syncTime 不早于本轮开始
+                （DepotData 有该字段；OperBoxData 无时间字段，靠会话归因）。
+
+        Returns:
+            是否成功落档；失败不阻断运行，下一轮重新采集。
+        """
+
+        source = self.maa_root_path / "data" / name
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            if require_fresh_sync_time:
+                _, sync_time = parse_depot_payload(payload)
+                if sync_time < int(self.log_start_time.timestamp()):
+                    logger.warning(
+                        f"用户 {self.cur_user_item.name} 的 {name} syncTime 早于本轮开始, 弃用本次采集"
+                    )
+                    return False
+            archive_dir = self._cultivate_archive_dir()
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            write_file(archive_dir / name, payload)
+            logger.info(f"用户 {self.cur_user_item.name} 的识别数据已落档案: {name}")
+            return True
+        except (OSError, ValueError, TypeError):
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 采集识别数据失败: {name}"
+            )
+            return False
+
+    async def _collect_cultivate_archive(self, log: str) -> None:
+        """识别链完成标记 → 立即读安装目录识别数据落用户档案（方案 §4.2）。
+
+        归因依据"该链运行在当前用户的 MAA 会话内"（串行调度 + StartUp 已
+        切号）；每类数据每轮以最后一次识别标记为准并覆盖档案——队列里养成
+        计划（刷取前）与更新数据（刷取后）各有一条仓库识别，取后者下一轮
+        缺口判定才用得上刷取后的库存，否则补齐材料后仍会多接管一轮。
+        """
+
+        if any(marker in log for marker in _MAA_DEPOT_CHAIN_COMPLETION_MARKERS):
+            self._cultivate_collected_depot = self._archive_recognition_file(
+                _MAA_DEPOT_ARCHIVE_NAME, require_fresh_sync_time=True
+            )
+        if any(marker in log for marker in _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS):
+            self._cultivate_collected_oper_box = self._archive_recognition_file(
+                _MAA_OPER_BOX_ARCHIVE_NAME
+            )
+
+    async def _finish_cultivate_round(self) -> None:
+        """运行结束钩子：本轮采集到识别数据时刷新达成状态并持久化（T1.11）。
+
+        无采集观测时 no-op（绿票/剿灭轮天然空转）；判定只用可自证链，
+        异常只记日志，档案留待下一轮注入前拦截兜底。
+        """
+
+        if not (self._cultivate_collected_depot or self._cultivate_collected_oper_box):
+            return
+        self._cultivate_collected_depot = False
+        self._cultivate_collected_oper_box = False
+        try:
+            targets = parse_cultivate_targets(
+                json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
+            )
+            if not targets:
+                return
+            context = ProviderContext(maa_data_dir=self._cultivate_archive_dir())
+            snapshots = {
+                target.operator_id: resolve_progression(
+                    target.operator_id, get_certifying_chain(), context
+                )
+                for target in targets
+            }
+            achievements = judge_achievements(targets, snapshots)
+            updated = apply_achievements(targets, achievements)
+            if updated != list(targets):
+                await self.cur_user_config.set(
+                    "Task",
+                    "CultivateTargets",
+                    json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
+                )
+                removed = summarize_achievements(
+                    targets, achievements, load_oper_box_names(context)
+                )
+                for line in removed:
+                    if line not in self._cultivate_achievement_summary:
+                        self._cultivate_achievement_summary.append(line)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 养成达成刷新失败: {e}"
+            )
+
+    async def _set_cultivate_notice(self, notice: str) -> None:
+        """写接管提示字段；值未变化时跳过，避免每轮无谓的配置写盘。"""
+
+        if self.cur_user_config.get("Data", "CultivateNotice") == notice:
+            return
+        await self.cur_user_config.set("Data", "CultivateNotice", notice)
+
+    async def _prepare_cultivate_injection(
+        self, source_queue: list[dict]
+    ) -> tuple[dict | None, bool, bool]:
+        """准备养成计划注入：达成拦截 → 计划构建 → 接管判定（方案 §4.1/§9）。
+
+        仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
+        练度、库存任何异常一律 fail-open——本轮不注入、不接管，既有任务
+        队列不受影响（决策 28）。
+
+        Returns:
+            (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
+        """
+
+        if not self.cur_user_config.get("Task", "IfCultivate"):
+            await self._set_cultivate_notice("")
+            return None, False, False
+        try:
+            raw_targets = json.loads(
+                self.cur_user_config.get("Task", "CultivateTargets")
+            )
+        except (TypeError, ValueError):
+            raw_targets = []
+        targets = parse_cultivate_targets(raw_targets)
+        if not targets:
+            await self._set_cultivate_notice("")
+            return None, False, False
+
+        try:
+            (
+                updated_targets,
+                plan,
+                gap,
+            ) = await depot_cultivate_service.prepare_cultivate(
+                targets=targets,
+                # 只读用户档案（归属正确）：隔日档案对达成判定只会保守
+                # （练度单调），缺口判定的新鲜度由每轮采集保底（方案决策 31）
+                maa_data_dir=self._cultivate_archive_dir(),
+                config_path=Config.config_path,
+                proxy=Config.proxy,
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 养成数据准备失败, 本轮跳过养成注入: {e}"
+            )
+            await self._set_cultivate_notice("")
+            return None, True, False
+
+        # 达成拦截后把目标状态写回档案：可自证达成的目标已移除（方案 §7.6）；
+        # 状态无变化时跳过，避免每轮无谓写盘
+        if updated_targets != list(targets):
+            await self.cur_user_config.set(
+                "Task",
+                "CultivateTargets",
+                json.dumps(dump_cultivate_targets(updated_targets), ensure_ascii=False),
+            )
+        # 接管态写提示字段供前端展示（方案 T1.19；空 = 未接管）
+        await self._set_cultivate_notice(
+            "材料存在缺口，本轮库存保持暂停，由养成计划接管" if gap else ""
+        )
+
+        cultivate_task = None
+        # gap 与计划条目同源（同一份净需求），缺口为假即无条目可刷；
+        # 显式门控，接管判定与注入判定不允许出现任何分歧
+        if plan is not None and gap:
+            cultivate_task = _build_cultivate_task(
+                plan,
+                _find_task_source(
+                    source_queue, _MAA_CULTIVATE_TASK_NAME, "DepotMaintain"
+                ),
+                skip_during_activity=self.cur_user_config.get(
+                    "Task", "CultivateSkipDuringActivity"
+                ),
+                skip_during_resource_collection=self.cur_user_config.get(
+                    "Task", "CultivateSkipDuringResourceCollection"
+                ),
+            )
+        return cultivate_task, True, gap
+
+    def _restore_depot_maintain(self) -> None:
+        """按开关事实恢复库存保持，仅限上一轮确实被养成接管抑制过时。
+
+        每次 set_maa 都无条件恢复会把上一轮已完成（check_log 已置 False）
+        的库存保持重新点亮，重试轮把它整个重跑一遍；决策 28 的 fail-open
+        只在抑制过的那一轮之后需要。
+        """
+
+        if not self._depot_maintain_suppressed:
+            return
+        self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+            "Task", "IfDepotMaintain"
+        )
+        self._depot_maintain_suppressed = False
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -876,6 +1210,34 @@ class AutoProxyTask(TaskExecuteBase):
                 stage_info.get("Activity", []),
                 self.cur_user_config.get("Task", "ActivityStageIndex"),
             )
+
+        # 养成计划注入，仅 Routine 模式（方案决策 27）：剿灭/绿票轮不注入。
+        # 必须在下方 MAA_TASKS 装配循环之前执行：接管抑制靠提前置
+        # task_dict["DepotMaintain"] = False 走既有"开关关→整条不写"路径
+        # （方案决策 20/28，不得只从队列剔除）
+        cultivate_task = None
+        update_task = None
+        if self.mode == "Routine":
+            self._restore_depot_maintain()
+            (
+                cultivate_task,
+                has_targets,
+                takes_over,
+            ) = await self._prepare_cultivate_injection(source_queue)
+            if has_targets:
+                # 更新数据紧跟养成/库存保持注入（方案决策 30），为下一轮
+                # 提供归属正确的识别数据
+                update_task = _build_data_update_task(
+                    _find_task_source(
+                        source_queue, _MAA_DATA_UPDATE_TASK_NAME, "UserDataUpdate"
+                    )
+                )
+            if takes_over:
+                self.task_dict["DepotMaintain"] = False
+                self._depot_maintain_suppressed = True
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 养成计划接管本轮, 库存保持暂停注入"
+                )
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
@@ -1137,10 +1499,16 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
+            if task_type == "Fight" and update_task is not None:
+                # 更新数据位于库存保持之后、理智作战之前（方案 §9 队列 #5）
+                task_queue.append(update_task)
             task_queue.append(task_set[task_type])
 
             if task_type == "StartUp" and activity_fight:
                 task_queue.append(activity_fight)
+            if task_type == "StartUp" and cultivate_task is not None:
+                # 养成计划位于活动关优先之后、库存保持之前（方案 §9 队列 #3）
+                task_queue.append(cultivate_task)
 
             # 剩余理智关卡配置
             if (
@@ -1354,6 +1722,10 @@ class AutoProxyTask(TaskExecuteBase):
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
+        # 养成采集：识别链完成标记 → 立即读安装目录识别数据落用户档案
+        # （方案 §4.2/决策 31，T1.17；无标记时不读不采）
+        await self._collect_cultivate_archive(log)
+
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
@@ -1443,6 +1815,11 @@ class AutoProxyTask(TaskExecuteBase):
             if (self.run_book["Annihilation"] and self.run_book["Routine"])
             else self.cur_user_item.result
         )
+        # 本轮有干员达成养成目标时随统计报告告知用户（目标消失可查）
+        if self._cultivate_achievement_summary:
+            statistics["cultivate_achievement"] = "、".join(
+                self._cultivate_achievement_summary
+            )
 
         # 判断是否成功
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
