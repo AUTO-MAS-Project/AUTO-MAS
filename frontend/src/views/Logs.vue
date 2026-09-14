@@ -227,7 +227,8 @@ const packageLogs = async () => {
       logger.info('用户取消了日志打包')
     } else {
       logger.error(`打包日志失败: ${result.error}`)
-      message.error(t('logs.toast.packageFailed'))
+      const errorMsg = result.error || t('logs.toast.packageFailed')
+      message.error(errorMsg)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

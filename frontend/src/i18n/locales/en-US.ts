@@ -2654,7 +2654,6 @@ export default {
     failure: {
       retryOtherMirror: 'Retry with another source',
       rebuildEnvironment: 'Rebuild the environment',
-      openLog: 'Open the log',
       runDoctor: 'Check the environment',
       internalErrorNotice:
         'This is an internal problem; retrying will not help. Please report it with the log.',

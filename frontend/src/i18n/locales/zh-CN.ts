@@ -2542,7 +2542,6 @@ export default {
     failure: {
       retryOtherMirror: '换个下载源重试',
       rebuildEnvironment: '重建运行环境',
-      openLog: '打开日志',
       runDoctor: '检查运行环境',
       internalErrorNotice: '这是程序内部的问题，重试也不会有帮助，请带上日志反馈给开发者',
       contactSupportNotice: '这个问题需要带上日志反馈给开发者',

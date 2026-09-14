@@ -2320,7 +2320,6 @@ export default {
     failure: {
       retryOtherMirror: '別のダウンロード元で再試行',
       rebuildEnvironment: '実行環境を再構築',
-      openLog: 'ログを開く',
       runDoctor: '実行環境を確認',
       internalErrorNotice:
         'これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください',
