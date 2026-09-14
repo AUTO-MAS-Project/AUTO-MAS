@@ -233,10 +233,8 @@ class GeneralManager(TaskExecuteBase):
         if user_id == "Default":
             return True
         user_config = self.user_config[uuid.UUID(user_id)]
-        # 直控+关闭=不写；脚本/用户来源、以及直控+开启都写面板值
-        if read_config_source(user_config) == CONFIG_SOURCE_DIRECT:
-            return bool(user_config.get("Info", "IfQuickConfig"))
-        return True
+        # 直控=不写；脚本/用户来源都写面板值
+        return read_config_source(user_config) != CONFIG_SOURCE_DIRECT
 
     async def prepare(self):
         """运行前准备"""
