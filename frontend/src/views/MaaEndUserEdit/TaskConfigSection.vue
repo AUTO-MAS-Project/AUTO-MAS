@@ -1,38 +1,34 @@
 <template>
   <div>
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
-      <div class="task-group-sidebar">
-        <button
-          v-for="group in visibleTaskGroups"
-          :key="group.key"
-          class="task-group-item"
-          :class="{ active: group.key === activeGroupKey }"
-          type="button"
-          @click="activeGroupKey = group.key"
-        >
-          <span class="task-group-main">
-            <span class="task-group-title">{{ group.label }}</span>
-            <span class="task-group-count">
-              {{ enabledGroupTaskCount(group) }}/{{ group.tasks.length }}
-            </span>
-          </span>
-          <span class="task-group-switch" @click.stop>
-            <a-switch
-              :checked="isGroupEnabled(group)"
-              :disabled="controlsDisabled"
-              size="small"
-              @change="handleGroupSwitchChange(group, $event)"
-            />
-          </span>
-        </button>
-      </div>
+      <a-tabs v-model:active-key="activeGroupKey" size="small">
+        <a-tab-pane v-for="group in visibleTaskGroups" :key="group.key">
+          <template #tab>
+            <span>{{ group.label }}</span>
+            <span class="task-group-count"
+              >{{ enabledGroupTaskCount(group) }}/{{ group.tasks.length }}</span
+            >
+          </template>
+        </a-tab-pane>
+      </a-tabs>
 
       <div v-if="activeGroup" class="task-group-detail">
         <div class="task-group-detail-header">
-          <span>{{ activeGroup.label }}</span>
-          <span class="task-group-count">
-            {{ enabledGroupTaskCount(activeGroup) }}/{{ activeGroup.tasks.length }}
-          </span>
+          <span>{{
+            t('edit.maaEndGroupEnabled', {
+              n: enabledGroupTaskCount(activeGroup),
+              m: activeGroup.tasks.length,
+            })
+          }}</span>
+          <label v-if="activeGroup.tasks.length > 1" class="task-group-toggle">
+            <span>{{ t('edit.maaEndEnableGroup') }}</span>
+            <a-switch
+              :checked="isGroupEnabled(activeGroup)"
+              :disabled="controlsDisabled"
+              :aria-label="t('edit.maaEndEnableGroup')"
+              @change="handleGroupSwitchChange(activeGroup, $event)"
+            />
+          </label>
         </div>
 
         <div class="task-switch-list">
@@ -41,6 +37,7 @@
             <a-switch
               v-model:checked="formData.Task[taskSwitchKey(task.name)]"
               :disabled="controlsDisabled"
+              :aria-label="task.label"
               @change="handleTaskSwitchChange(task.name)"
             />
           </div>
@@ -48,64 +45,20 @@
       </div>
     </div>
 
-    <a-row :gutter="24" class="daily-once-row">
-      <a-col :span="24">
-        <a-form-item>
-          <template #label>
-            <a-tooltip :title="t('edit.maaEndDailyOnceTasksHint')">
-              <span class="form-label">
-                {{ t('edit.maaEndDailyOnceTasks') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            :value="dailyOnceTaskValues"
-            mode="multiple"
-            size="large"
-            :options="dailyOnceTaskOptions"
-            :disabled="props.loading"
-            option-filter-prop="label"
-            show-search
-            :max-tag-count="'responsive'"
-            :placeholder="t('edit.maaEndDailyOnceTasksPlaceholder')"
-            @change="handleDailyOnceTasksChange"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
     <a-row v-if="showSanityDetail" :gutter="24">
-      <a-col :span="optionColumnSpan">
+      <a-col :xs="24" :sm="12">
         <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
             :options="resolvedSanityModeOptions"
             :disabled="loading"
-            size="large"
+            size="middle"
             @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
           />
         </a-form-item>
       </a-col>
 
-      <a-col v-if="effectiveSanityTaskType === 'Essence'" :span="optionColumnSpan">
-        <a-form-item label="基质刷取模式">
-          <div v-if="isPlanMode" class="plan-mode-display">
-            <span>{{ displayEssenceMenu }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
-          </div>
-          <a-select
-            v-else
-            :value="formData.Task.AutoEssenceMenu"
-            :options="resolvedEssenceMenuOptions"
-            :disabled="optionControlsDisabled"
-            size="large"
-            @change="handleEssenceMenuChange"
-          />
-        </a-form-item>
-      </a-col>
-
-      <a-col :span="optionColumnSpan">
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('edit.pickSanityTaskType')">
@@ -124,13 +77,30 @@
             v-model:value="formData.Task.SanityTaskType"
             :options="sanityTaskTypeOptions"
             :disabled="optionControlsDisabled"
-            size="large"
+            size="middle"
             @change="handleSanityTaskTypeChange"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="optionColumnSpan">
+      <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
+        <a-form-item label="基质刷取模式">
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayEssenceMenu }}</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+          </div>
+          <a-select
+            v-else
+            :value="formData.Task.AutoEssenceMenu"
+            :options="resolvedEssenceMenuOptions"
+            :disabled="optionControlsDisabled"
+            size="middle"
+            @change="handleEssenceMenuChange"
+          />
+        </a-form-item>
+      </a-col>
+
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="taskOptionTooltip">
@@ -151,15 +121,12 @@
             :mode="isTargetEssenceMode ? 'multiple' : undefined"
             :disabled="optionControlsDisabled"
             :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
-            size="large"
+            size="middle"
             @change="handleTaskOptionChange"
           />
         </a-form-item>
       </a-col>
-    </a-row>
-
-    <a-row v-if="showRewardGroupSelect" :gutter="24">
-      <a-col :span="8">
+      <a-col v-if="showRewardGroupSelect" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('edit.rewardGroupsProtocolSpace')">
@@ -178,7 +145,7 @@
             v-model:value="formData.Task.RewardsSetOption"
             :options="REWARD_OPTIONS"
             :disabled="optionControlsDisabled"
-            size="large"
+            size="middle"
             @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
           />
         </a-form-item>
@@ -194,7 +161,6 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
 import {
   MAAEND_TASK_GROUPS,
-  MAAEND_DAILY_ONCE_TASK_OPTIONS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
@@ -263,7 +229,6 @@ const emit = defineEmits<{
 }>()
 
 const formData = props.formData
-const optionColumnSpan = 8
 const activeGroupKey = ref('')
 const showManagedTaskConfig = computed(() => props.ifQuickConfig)
 const visibleTaskGroups = computed(() => MAAEND_TASK_GROUPS)
@@ -279,27 +244,6 @@ const controlsDisabled = computed(() => {
 })
 
 const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
-const dailyOnceTaskValues = computed(() => {
-  const value = formData.Task.DailyOnceTasks
-  if (Array.isArray(value)) {
-    return value.filter((item: unknown): item is string => typeof item === 'string')
-  }
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed: unknown = JSON.parse(value)
-      return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === 'string')
-        : []
-    } catch {
-      return []
-    }
-  }
-  return []
-})
-const dailyOnceTaskOptions = MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
-  label: task.label,
-  value: task.name,
-}))
 const displayPlanConfig = computed(() =>
   props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
 )
@@ -466,15 +410,6 @@ const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
 
-const handleDailyOnceTasksChange = (values: string[]) => {
-  if (props.loading) return
-  const normalized = Array.from(new Set(values.filter(Boolean)))
-  const serialized = JSON.stringify(normalized)
-  formData.Task.DailyOnceTasks = serialized
-  // 非快速配置同样开放此用户级选项，不能走仅允许快速配置任务开关的 emitSave。
-  emit('save', 'Task.DailyOnceTasks', serialized)
-}
-
 const handleEssenceMenuChange = (value: AutoEssenceMenu) => {
   if (optionControlsDisabled.value) return
   const normalized = AUTO_ESSENCE_MENU_OPTIONS.some(option => option.value === value)
@@ -541,8 +476,8 @@ const ensureCurrentTaskValue = (): FieldChange | null => {
   if (isTargetEssenceMode.value) {
     const selected = Array.isArray(currentTaskValue.value) ? currentTaskValue.value : []
     const validValues = new Set(options.map(option => option.value).filter(Boolean))
-    const normalized = selected.filter((value: unknown): value is string =>
-      typeof value === 'string' && validValues.has(value)
+    const normalized = selected.filter(
+      (value: unknown): value is string => typeof value === 'string' && validValues.has(value)
     )
     if (JSON.stringify(normalized) === JSON.stringify(selected)) return null
     currentTaskValue.value = normalized
@@ -641,76 +576,29 @@ watch(
 
 <style scoped>
 .task-switch-layout {
-  display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.daily-once-row :deep(.ant-select) {
-  width: 100%;
-}
-
-.task-group-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.task-group-item {
-  width: 100%;
-  min-height: 52px;
-  padding: 10px 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  text-align: left;
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease;
-}
-
-.task-group-item.active {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-}
-
-.task-group-main {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.task-group-title {
-  font-size: 14px;
-  font-weight: 600;
+  margin-bottom: 24px;
 }
 
 .task-group-count {
-  color: var(--ant-color-text-secondary);
+  margin-inline-start: 8px;
+  color: var(--ant-color-text-tertiary);
   font-size: 12px;
 }
 
-.task-group-detail {
-  min-height: 220px;
-  padding: 4px 0;
+.task-group-detail-header,
+.task-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .task-group-detail-header {
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  color: var(--ant-color-text);
-  font-size: 15px;
-  font-weight: 600;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 .task-switch-list {
@@ -756,7 +644,7 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ant-color-text);
   font-size: 14px;
 }
@@ -772,16 +660,7 @@ watch(
   color: var(--ant-color-primary);
 }
 
-@media (max-width: 900px) {
-  .task-switch-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .task-group-sidebar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
+@media (max-width: 600px) {
   .task-switch-list {
     grid-template-columns: 1fr;
   }
