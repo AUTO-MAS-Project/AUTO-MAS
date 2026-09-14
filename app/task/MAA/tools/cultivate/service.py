@@ -35,11 +35,13 @@
 from __future__ import annotations
 
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 
 import httpx
+
+from app.utils.constants import UTC4
 
 from .engine import apply_achievements, build_plan, has_material_gap, judge_achievements
 from .providers import (
@@ -365,7 +367,7 @@ class DepotCultivateService:
 
         context = context or ProviderContext(maa_data_dir=maa_data_dir)
         dataset = await self._load_dataset(config_path, proxy)
-        today = today or date.today()
+        today = today or datetime.now(tz=UTC4).date()
 
         # 达成拦截：自证链（local）判定；全量链（local+手填+兜底）供需求计算
         certifying_snapshots = {
@@ -399,6 +401,7 @@ class DepotCultivateService:
             snapshots=snapshots,
             data=dataset,
             today=today,
+            inventory=inventory,
         )
         gap = has_material_gap(updated_targets, snapshots, inventory, dataset, today)
         return updated_targets, plan, gap

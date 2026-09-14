@@ -489,6 +489,8 @@ def _build_cultivate_task(
     """把内核养成计划映射为 MAA 养成任务（MAA 字段名唯一出现点，方案 §4.1）。
 
     药剂/源石按决策 5 硬编码关闭；计划无可用刷取条目时不生成任务。
+    DropCount 是 MAA 的"保有量目标"语义（need = DropCount − 该材料现存，
+    只比对本材料），故写净缺口 + 档案现存，MAA 现算后落回净缺口。
     """
 
     source_task = source_task or {}
@@ -516,7 +518,7 @@ def _build_cultivate_task(
                 "StoneCount": 0,
                 "Stage": entry.stage_code,
                 "DropId": entry.item_id,
-                "DropCount": entry.amount,
+                "DropCount": entry.amount + entry.held,
             }
         )
     if not plans:
@@ -618,6 +620,7 @@ class AutoProxyTask(TaskExecuteBase):
     # 实例（如单测直接构造）调用 check_log 时不炸
     _cultivate_collected_depot: bool = False
     _cultivate_collected_oper_box: bool = False
+    _depot_maintain_suppressed: bool = False
 
     def __init__(
         self,
@@ -685,11 +688,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_game_hot_update = False
         self.pending_res_version = ""
         self._maa_config_baseline: dict[str, dict] | None = None
-        # 养成采集：每类识别数据每轮只采一次（方案 §4.2）；
+        # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
+        # 见 _collect_cultivate_archive）；
         # 达成文案供 final_task 的统计信息报告，按 (干员, 档位) 去重累积
         self._cultivate_collected_depot = False
         self._cultivate_collected_oper_box = False
         self._cultivate_achievement_summary: list[str] = []
+        # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
+        # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
+        self._depot_maintain_suppressed = False
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -960,18 +967,16 @@ class AutoProxyTask(TaskExecuteBase):
         """识别链完成标记 → 立即读安装目录识别数据落用户档案（方案 §4.2）。
 
         归因依据"该链运行在当前用户的 MAA 会话内"（串行调度 + StartUp 已
-        切号）；每类数据每轮只采一次，采集过的链不再重复读文件。
+        切号）；每类数据每轮以最后一次识别标记为准并覆盖档案——队列里养成
+        计划（刷取前）与更新数据（刷取后）各有一条仓库识别，取后者下一轮
+        缺口判定才用得上刷取后的库存，否则补齐材料后仍会多接管一轮。
         """
 
-        if not self._cultivate_collected_depot and any(
-            marker in log for marker in _MAA_DEPOT_CHAIN_COMPLETION_MARKERS
-        ):
+        if any(marker in log for marker in _MAA_DEPOT_CHAIN_COMPLETION_MARKERS):
             self._cultivate_collected_depot = self._archive_recognition_file(
                 _MAA_DEPOT_ARCHIVE_NAME, require_fresh_sync_time=True
             )
-        if not self._cultivate_collected_oper_box and any(
-            marker in log for marker in _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS
-        ):
+        if any(marker in log for marker in _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS):
             self._cultivate_collected_oper_box = self._archive_recognition_file(
                 _MAA_OPER_BOX_ARCHIVE_NAME
             )
@@ -1087,7 +1092,9 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         cultivate_task = None
-        if plan is not None:
+        # gap 与计划条目同源（同一份净需求），缺口为假即无条目可刷；
+        # 显式门控，接管判定与注入判定不允许出现任何分歧
+        if plan is not None and gap:
             cultivate_task = _build_cultivate_task(
                 plan,
                 _find_task_source(
@@ -1101,6 +1108,21 @@ class AutoProxyTask(TaskExecuteBase):
                 ),
             )
         return cultivate_task, True, gap
+
+    def _restore_depot_maintain(self) -> None:
+        """按开关事实恢复库存保持，仅限上一轮确实被养成接管抑制过时。
+
+        每次 set_maa 都无条件恢复会把上一轮已完成（check_log 已置 False）
+        的库存保持重新点亮，重试轮把它整个重跑一遍；决策 28 的 fail-open
+        只在抑制过的那一轮之后需要。
+        """
+
+        if not self._depot_maintain_suppressed:
+            return
+        self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+            "Task", "IfDepotMaintain"
+        )
+        self._depot_maintain_suppressed = False
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -1196,11 +1218,7 @@ class AutoProxyTask(TaskExecuteBase):
         cultivate_task = None
         update_task = None
         if self.mode == "Routine":
-            # 先按开关事实恢复，再由本轮判定覆写：上一轮的接管抑制不得
-            # 残留到重试轮（决策 28 fail-open，库存保持照常注入）
-            self.task_dict["DepotMaintain"] = self.cur_user_config.get(
-                "Task", "IfDepotMaintain"
-            )
+            self._restore_depot_maintain()
             (
                 cultivate_task,
                 has_targets,
@@ -1216,6 +1234,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             if takes_over:
                 self.task_dict["DepotMaintain"] = False
+                self._depot_maintain_suppressed = True
                 logger.info(
                     f"用户 {self.cur_user_item.name} 养成计划接管本轮, 库存保持暂停注入"
                 )

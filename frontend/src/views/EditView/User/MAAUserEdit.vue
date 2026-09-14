@@ -810,11 +810,13 @@ const loadUserData = async () => {
         // 加载基建配置选项
         await loadInfrastructureOptions()
 
-        // 干员目录按用户档案过滤已精 2（PR2 仅精英化），须在 userId 就绪后加载
-        await loadCultivateOperatorOptions()
-
         // 数据加载完成，允许自动保存
         isInitializing.value = false
+
+        // 干员目录按用户档案过滤已精 2（PR2 仅精英化），须在 userId 就绪后加载。
+        // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
+        // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）
+        await loadCultivateOperatorOptions()
       } else {
         message.error(t('edit.userDoesNotExist'))
         handleCancel()

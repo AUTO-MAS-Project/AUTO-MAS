@@ -179,8 +179,76 @@ def test_prepare_gap_false_when_inventory_covers(tmp_path: Path) -> None:
 
     assert gap is False
     assert [g.state for g in updated[0].goals] == ["not_started"]
-    # 保有量目标语义：计划仍生成，缺口由 MAA 执行时现算
-    assert plan is not None and plan.entries
+    # 净缺口语义：材料备齐即无刷取条目，MAA 侧不会被要求补刷原料；
+    # demands 仍保留目标全量需求供 UI 展示
+    assert plan is not None and plan.entries == ()
+    assert plan.demands
+
+
+def test_prepare_plan_counts_net_gap_and_task_keeps_holdings(tmp_path: Path) -> None:
+    """计划数量是净缺口（跨合成链抵扣）；MAA 保有量目标 = 净缺口 + 档案现存。"""
+
+    maa_dir = tmp_path / "data"
+    _write_oper_box(maa_dir, elite=0)
+    targets = parse_cultivate_targets(
+        [{"operator_id": "char_1", "goals": [{"kind": "elite", "to_level": 2}]}]
+    )
+    # 精英 1+2 折算后需要 30012×45；已有 20 个原料
+    service = _service({"30012": 20})
+
+    updated, plan, gap = asyncio.run(
+        service.prepare_cultivate(
+            targets=targets,
+            maa_data_dir=maa_dir,
+            config_path=tmp_path,
+            today=TODAY,
+        )
+    )
+
+    assert gap is True
+    assert [g.state for g in updated[0].goals] == ["in_progress"]
+    entries = {entry.item_id: entry for entry in plan.entries}
+    # 高阶材料（30115/30013）沿合成链折算到原料，再抵扣已有库存
+    assert set(entries) == {"30012"}
+    assert entries["30012"].amount == 25
+    assert entries["30012"].held == 20
+
+    task = _build_cultivate_task(
+        plan,
+        None,
+        skip_during_activity=False,
+        skip_during_resource_collection=False,
+    )
+    # MAA 现算 need = DropCount − 现存 = 25：写保有量目标而非净缺口
+    assert {item["DropId"]: item["DropCount"] for item in task["PlanList"]} == {
+        "30012": 45
+    }
+
+
+def test_prepare_net_gap_ignores_higher_tier_stock_for_plan(tmp_path: Path) -> None:
+    """高阶材料都在库里、只缺原料时，计划不会把已备齐的那部分再刷一遍。"""
+
+    maa_dir = tmp_path / "data"
+    _write_oper_box(maa_dir, elite=0)
+    targets = parse_cultivate_targets(
+        [{"operator_id": "char_1", "goals": [{"kind": "elite", "to_level": 2}]}]
+    )
+    # 30013×3 与 30115×1 都在库里：真实缺口只剩 30012×5
+    service = _service({"30115": 1, "30013": 3})
+
+    _, plan, gap = asyncio.run(
+        service.prepare_cultivate(
+            targets=targets,
+            maa_data_dir=maa_dir,
+            config_path=tmp_path,
+            today=TODAY,
+        )
+    )
+
+    assert gap is True
+    entries = {entry.item_id: entry for entry in plan.entries}
+    assert entries["30012"].amount == 5
+    assert entries["30012"].held == 0
 
 
 def test_prepare_propagates_dataset_error(tmp_path: Path) -> None:
@@ -391,3 +459,56 @@ def _loader_ok():
         return build_dataset()
 
     return _loader
+
+
+def test_restore_depot_maintain_only_after_suppression() -> None:
+    """库存保持的开关恢复只在上一轮被接管抑制过时进行。
+
+    回归：每次 set_maa 都无条件恢复开关值，会把上一轮已完成（check_log
+    已置 False）的库存保持重新点亮，重试轮把它整个重跑一遍。
+    """
+
+    from app.task.MAA.AutoProxy import AutoProxyTask
+
+    class _ConfigStub:
+        def get(self, section: str, key: str) -> bool:
+            return True
+
+    task = AutoProxyTask.__new__(AutoProxyTask)
+    task.cur_user_config = _ConfigStub()
+    task.task_dict = {"DepotMaintain": False}  # 上一轮已完成：任务置 False
+    task._depot_maintain_suppressed = False
+
+    task._restore_depot_maintain()
+    assert task.task_dict["DepotMaintain"] is False
+
+    task._depot_maintain_suppressed = True
+    task._restore_depot_maintain()
+    assert task.task_dict["DepotMaintain"] is True
+    assert task._depot_maintain_suppressed is False
+
+
+def test_collect_cultivate_archive_keeps_last_depot_snapshot() -> None:
+    """仓库识别以本轮最后一次为准：队列里养成计划在前、更新数据在后。
+
+    回归：只认第一条标记会采到刷取前的库存，补齐材料后仍会多接管一轮。
+    """
+
+    from app.task.MAA.AutoProxy import AutoProxyTask
+
+    task = AutoProxyTask.__new__(AutoProxyTask)
+    task._cultivate_collected_depot = False
+    task._cultivate_collected_oper_box = False
+    archived: list[str] = []
+
+    def _archive(name: str, require_fresh_sync_time: bool = False) -> bool:
+        archived.append(name)
+        return True
+
+    task._archive_recognition_file = _archive  # type: ignore[method-assign]
+
+    asyncio.run(task._collect_cultivate_archive("完成任务: 养成计划 (仓库识别)"))
+    asyncio.run(task._collect_cultivate_archive("完成任务: 更新数据 (仓库识别)"))
+
+    assert archived == ["DepotData.json", "DepotData.json"]
+    assert task._cultivate_collected_depot is True

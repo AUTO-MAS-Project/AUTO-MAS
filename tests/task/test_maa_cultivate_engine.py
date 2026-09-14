@@ -863,3 +863,86 @@ def test_stage_candidates_truncates_to_limit() -> None:
     assert [option["stage"] for option in trimmed] == [
         option["stage"] for option in full[:10]
     ]
+
+
+def test_normalize_dataset_excludes_maa_unnavigable_stages() -> None:
+    """别传常驻（stageType=ACT_PERM）不进数据集：MAA 判其为过期活动关。
+
+    回归：一图流把已转常驻的别传当常驻关给出（end 是远期占位时间），
+    MAA 的常驻关卡表不收录，库存保持/养成计划会整条跳过；当期活动关
+    （ACT）与主线保留，stageType 缺失时按 stageId 的 _perm 后缀兜底。
+    """
+
+    from app.task.MAA.tools.cultivate.yituliu import normalize_dataset
+
+    stage_raw = {
+        "data": [
+            {
+                "stageId": "act18d0_06_perm",
+                "stageCode": "WD-6",
+                "apCost": 15,
+                "stageType": "ACT_PERM",
+            },
+            {
+                "stageId": "act54side_08",
+                "stageCode": "SR-8",
+                "apCost": 21,
+                "stageType": "ACT",
+            },
+            {
+                "stageId": "main_01-07",
+                "stageCode": "1-7",
+                "apCost": 6,
+                "stageType": "MAIN",
+            },
+            {"stageId": "legacy_01_perm", "stageCode": "LM-1", "apCost": 15},
+        ]
+    }
+    matrix_raw = [
+        {
+            "stageId": stage_id,
+            "itemId": "30012",
+            "times": 100,
+            "quantity": 50,
+            "start": 1,
+            "end": None,
+        }
+        for stage_id in (
+            "act18d0_06_perm",
+            "act54side_08",
+            "main_01-07",
+            "legacy_01_perm",
+        )
+    ]
+
+    data = normalize_dataset(
+        demand_raw={"char_1": {"name": "X", "rarity": 6, "elite": [{}, {"30012": 1}]}},
+        matrix_raw=matrix_raw,
+        stage_raw=stage_raw,
+        recipe_raw=[],
+        data_version="test",
+    )
+
+    assert {drop.stage_id for drop in data.drops} == {"act54side_08", "main_01-07"}
+
+
+def test_dataset_from_json_drops_perm_stages_of_legacy_snapshot() -> None:
+    """修复前写入的快照仍带别传常驻关：加载时按 _perm 后缀剔除。"""
+
+    from app.task.MAA.tools.cultivate.yituliu import dataset_from_json, dataset_to_json
+
+    payload = dataset_to_json(build_dataset())
+    payload["drops"] = [
+        *payload["drops"],
+        {
+            "stage_id": "act18d0_06_perm",
+            "item_id": "30033",
+            "expected_per_run": 0.465,
+            "start_ms": 1,
+            "end_ms": None,
+        },
+    ]
+
+    data = dataset_from_json(payload)
+
+    assert all(drop.stage_id != "act18d0_06_perm" for drop in data.drops)

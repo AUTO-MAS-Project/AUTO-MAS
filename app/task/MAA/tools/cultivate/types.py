@@ -112,8 +112,9 @@ class FarmEntry:
     """折算后的可刷取条目，直接对应 MAA PlanList 的一项。"""
 
     item_id: str
-    amount: int  # 保有量目标，缺口由 MAA 执行时现算
+    amount: int  # 净缺口：按库存抵扣后还需刷取的数量
     stage_code: str  # 推荐关卡码；auto 语义由构建时的最新数据解析
+    held: int = 0  # 档案现存：MAA 保有量目标 = amount + held（构建器叠加）
     expected_runs: float = 0.0  # 期望次数（概率期望，非保证值）
     expected_sanity: float = 0.0  # 期望理智
     sources: tuple[GoalRef, ...] = ()

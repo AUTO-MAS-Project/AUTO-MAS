@@ -99,6 +99,15 @@ _UNOBTAINABLE_ITEM_IDS = frozenset(
 # 对自动刷取无意义，数据层直接剔除。
 _EXCLUDED_STAGE_CODE_PREFIXES = ("RI-",)
 
+# 插曲/别传常驻（一图流 stageType=ACT_PERM，游戏内长期开放，end 是远期占位
+# 时间）不在 MAA 常驻关卡表内：StageManager.GetStageInfo 把不在表内、形如
+# "2字母+数字"的编号判为过期活动关，库存保持/养成计划随即整条跳过（日志记
+# "关卡未开放"）。这类关永远刷不到，会让材料缺口恒存在并持续抑制库存保持，
+# 故数据层直接剔除。stageType 缺失时按 stageId 的 _perm 后缀兜底（实测两侧
+# 158/158 完全等价）。
+_EXCLUDED_STAGE_TYPES = frozenset({"ACT_PERM"})
+_EXCLUDED_STAGE_ID_SUFFIXES = ("_perm",)
+
 
 class YituliuDataError(RuntimeError):
     """一图流数据不可用（下载失败且无快照可回退）。"""
@@ -370,6 +379,28 @@ def apply_composite(
     return result
 
 
+def _excluded_stage_ids(stage_raw: Mapping[str, Any] | list) -> set[str]:
+    """MAA 无法导航的关卡 stageId 集（别传常驻；stageType 缺失时按后缀兜底）。"""
+
+    entries: Any = (
+        stage_raw
+        if isinstance(stage_raw, list)
+        else (stage_raw.get("data") or stage_raw.get("stages") or [])
+    )
+    excluded: set[str] = set()
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        stage_id = str(entry.get("stageId") or "")
+        if not stage_id:
+            continue
+        if entry.get("stageType") in _EXCLUDED_STAGE_TYPES or stage_id.endswith(
+            _EXCLUDED_STAGE_ID_SUFFIXES
+        ):
+            excluded.add(stage_id)
+    return excluded
+
+
 def normalize_dataset(
     demand_raw: Mapping[str, Any],
     matrix_raw: Mapping[str, Any] | list,
@@ -385,10 +416,12 @@ def normalize_dataset(
     drops = parse_drop_matrix(matrix_raw)
     stages = parse_stage_info(stage_raw)
     recipes = parse_recipes(recipe_raw)
+    excluded_stage_ids = _excluded_stage_ids(stage_raw)
     drops = tuple(
         drop
         for drop in drops
-        if not (
+        if drop.stage_id not in excluded_stage_ids
+        and not (
             drop.stage_id in stages
             and stages[drop.stage_id].stage_code.startswith(
                 _EXCLUDED_STAGE_CODE_PREFIXES
@@ -548,7 +581,11 @@ def dataset_to_json(dataset: CultivateDataSet) -> dict[str, Any]:
 
 
 def dataset_from_json(raw: Mapping[str, Any]) -> CultivateDataSet:
-    """快照 JSON → 契约数据集。"""
+    """快照 JSON → 契约数据集。
+
+    快照可能写于剔除规则生效之前，故加载时同样剔除 MAA 无法导航的别传常驻
+    关：stageType 不进快照，按 _perm 后缀判定（与 stageType 等价，见上方常量）。
+    """
 
     return CultivateDataSet(
         demands={
@@ -572,6 +609,7 @@ def dataset_from_json(raw: Mapping[str, Any]) -> CultivateDataSet:
                 end_ms=drop["end_ms"],
             )
             for drop in raw.get("drops", [])
+            if not drop["stage_id"].endswith(_EXCLUDED_STAGE_ID_SUFFIXES)
         ),
         stages={
             meta["stage_id"]: StageMeta(
