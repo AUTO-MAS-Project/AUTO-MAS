@@ -33,7 +33,6 @@ from app.utils.constants import (
     CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
     MAAEND_AUTO_COLLECT_MODES,
-    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_AUTO_ESSENCE_MENUS,
     MAAEND_DELIVERY_COMMISSION_SOURCES,
@@ -181,19 +180,15 @@ def init_maaend_task_config(config) -> None:
     config.Task_AutoCollectRoutes = ConfigItem(
         "Task",
         "AutoCollectRoutes",
-        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"]),
-        MultipleOptionsValidator(
-            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"])
-        ),
+        None,  # 未配置时采用安装版本的默认路线，空列表表示不采集
+        StringListValidator(allow_none=True),
     )
     ## 自动采集通用资源路线
     config.Task_AutoCollectCommonRoutes = ConfigItem(
         "Task",
         "AutoCollectCommonRoutes",
-        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"]),
-        MultipleOptionsValidator(
-            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"])
-        ),
+        None,  # 未配置时采用安装版本的默认路线，空列表表示不采集
+        StringListValidator(allow_none=True),
     )
 
     ## 每日正常完成一次后，当天剩余时间跳过的任务名列表

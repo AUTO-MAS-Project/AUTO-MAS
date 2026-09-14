@@ -549,6 +549,10 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            autoCollectGroups=[
+                MaaEndAutoCollectGroup(**item)
+                for item in data.get("autoCollectGroups", [])
+            ],
             controllers=[ComboBoxItem(**item) for item in data["controllers"]],
             controllerTypes=data["controllerTypes"],
             essenceLocations=[
