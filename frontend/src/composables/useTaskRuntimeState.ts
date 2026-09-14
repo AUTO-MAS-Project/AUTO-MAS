@@ -46,7 +46,7 @@ export interface TaskRuntimeState {
   completedAt: number | null
 }
 
-export interface ScriptRuntimeStatus {
+interface ScriptRuntimeStatus {
   queued: boolean
   running: boolean
   lastFailed: boolean

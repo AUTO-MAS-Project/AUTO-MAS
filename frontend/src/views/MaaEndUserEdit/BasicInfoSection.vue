@@ -89,7 +89,7 @@
           :model-value="formData.Info.Mode"
           :options="maaEndConfigModeOptions"
           :disabled="loading"
-          alert-message="脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用 MaaEnd 原有配置。接管具体任务配置是独立覆盖层。"
+          :alert-message="t('edit.configSourceHintBase')"
           @change="$emit('modeChange', $event)"
         />
       </a-col>

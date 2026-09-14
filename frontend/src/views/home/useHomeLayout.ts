@@ -9,7 +9,7 @@ import {
   normalizeHomeLayoutConfig,
 } from '@/views/home/homeLayoutConfig'
 
-export const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
+const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
 
 export {
   HOME_ACTIVITY_CAROUSEL_KEY,

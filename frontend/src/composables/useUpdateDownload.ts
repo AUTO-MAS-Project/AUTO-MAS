@@ -29,7 +29,7 @@ export type UpdateDownloadStatus =
   | 'completed'
   | 'failed'
 
-export type UpdateDownloadProgress = WSUpdateProgressData
+type UpdateDownloadProgress = WSUpdateProgressData
 
 const status = ref<UpdateDownloadStatus>('idle')
 const modalVisible = ref(false)
@@ -251,7 +251,7 @@ const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {
   }
 }
 
-export async function refreshUpdateDownloadSnapshot(): Promise<void> {
+async function refreshUpdateDownloadSnapshot(): Promise<void> {
   const generation = ++snapshotGeneration
   try {
     const snapshot = await updateDownloadApi.status()

@@ -5,7 +5,7 @@ import { getAppRoot } from '../services/environmentService'
 import { getLogger } from '../services/logger'
 const logger = getLogger('进程管理')
 
-export interface ProcessInfo {
+interface ProcessInfo {
   pid: number
   name: string
   commandLine: string

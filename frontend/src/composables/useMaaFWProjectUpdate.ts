@@ -7,13 +7,13 @@ import type { MaaFWAutoUpdateMode } from '@/types/script'
 
 export type { MaaFWAutoUpdateMode }
 
-export const MAAFW_AUTO_UPDATE_MODES: readonly MaaFWAutoUpdateMode[] = [
+const MAAFW_AUTO_UPDATE_MODES: readonly MaaFWAutoUpdateMode[] = [
   'Off',
   'BeforeRun',
   'AfterRun',
 ] as const
 
-export const isMaaFWAutoUpdateMode = (value: unknown): value is MaaFWAutoUpdateMode =>
+const isMaaFWAutoUpdateMode = (value: unknown): value is MaaFWAutoUpdateMode =>
   typeof value === 'string' && (MAAFW_AUTO_UPDATE_MODES as readonly string[]).includes(value)
 
 /**
@@ -32,25 +32,16 @@ export const resolveAutoUpdateMode = (
   return 'BeforeRun'
 }
 
-export type MaaFWCdkStatus =
-  | 'ok'
-  | 'absent'
-  | 'expired'
-  | 'invalid'
-  | 'quota'
-  | 'mismatched'
-  | 'blocked'
-
 /** 项目更新的下载源；与 MaaFWScriptConfig['Update']['Source'] 一致。 */
-export type MaaFWUpdateSource = 'MirrorChyan' | 'GitHub'
+type MaaFWUpdateSource = 'MirrorChyan' | 'GitHub'
 
-export interface MaaFWCdkResultLike {
+interface MaaFWCdkResultLike {
   cdkStatus?: string | null
   cdkMessage?: string | null
   cdkExpiredTime?: number | string | null
 }
 
-export interface MaaFWCdkWarning {
+interface MaaFWCdkWarning {
   status: string
   /** 后端给的中文一句话；可能为空，页面需要兜底文案。 */
   message: string
@@ -75,7 +66,7 @@ export const resolveCdkWarning = (
   return { status, message }
 }
 
-export interface MaaFWCdkExpiry {
+interface MaaFWCdkExpiry {
   /** 到期时间（本地时区），供页面格式化。 */
   expiresAt: Date
   /** 距今剩余天数，向上取整；已过期为 0 或负数。 */

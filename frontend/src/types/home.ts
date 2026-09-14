@@ -27,7 +27,7 @@ export interface HomeModuleDescriptor {
   visible: boolean
 }
 
-export interface ActivityInfo {
+interface ActivityInfo {
   Tip: string
   StageName: string
   UtcStartTime: string
@@ -51,12 +51,12 @@ export interface ResourceItem {
   Activity: Pick<ActivityInfo, 'Tip' | 'StageName'>
 }
 
-export interface StageOption {
+interface StageOption {
   label: string
   value: string | null
 }
 
-export interface StageOverview {
+interface StageOverview {
   Activity: ActivityItem[]
   Resource: ResourceItem[]
   Options: StageOption[]
@@ -69,7 +69,7 @@ export interface ProxyInfo {
   ErrorInfo: Record<string, unknown>
 }
 
-export interface EndfieldActivityItem {
+interface EndfieldActivityItem {
   Id: string
   Name: string
   StartTime: string
@@ -78,7 +78,7 @@ export interface EndfieldActivityItem {
   Tags: string[]
 }
 
-export interface EndfieldPoolItem {
+interface EndfieldPoolItem {
   Id: string
   Name: string
   Type: string
@@ -132,24 +132,7 @@ export interface SraActivityOverview {
   activities: SraActivityItem[]
 }
 
-export type StarRailActivityOverview = SraActivityOverview
-export type GenshinActivityOverview = SraActivityOverview
-export type ZenlessZoneZeroActivityOverview = SraActivityOverview
-export type WutheringWavesActivityOverview = SraActivityOverview
-export type NevernessToEvernessActivityOverview = SraActivityOverview
 export type Reverse1999ActivityOverview = SraActivityOverview
-
-export const createEmptySraActivityOverview = (): SraActivityOverview => ({
-  Available: false,
-  Stale: false,
-  Message: '',
-  version: '',
-  versionName: '',
-  cover: '',
-  startTime: '',
-  endTime: '',
-  activities: [],
-})
 
 export interface HomeOverviewResponse {
   Stage: StageOverview

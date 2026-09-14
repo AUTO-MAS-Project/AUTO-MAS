@@ -19,10 +19,6 @@ export interface MirrorConfig extends MirrorSource {
   recommended?: boolean
 }
 
-export interface MirrorCategory {
-  [key: string]: MirrorConfig[]
-}
-
 /**
  * 云端镜像源配置
  */

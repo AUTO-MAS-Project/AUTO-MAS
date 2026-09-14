@@ -28,7 +28,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
-from app.utils.io import replace_dir
+from app.utils.io import mark_native_config_injected, swap_in_dir
 
 from .tools.backup_archive import archive_mas_runtime_backup
 
@@ -127,7 +127,12 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            replace_dir(self.mas_config_dir, self.script_config_path)
+            swap_in_dir(self.mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             src_file = self.mas_config_dir / self.script_config_path.name
             if src_file.exists():
@@ -157,7 +162,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     "未找到 OK-NTE 配置目录，请在 GUI 中保存后再点击保存配置"
                 )
 
-            replace_dir(self.script_config_path, self.mas_config_dir)
+            swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-NTE 配置已保存到: {self.mas_config_dir}")
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             if not self.script_config_path.exists():

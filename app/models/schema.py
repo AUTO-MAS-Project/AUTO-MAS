@@ -269,6 +269,9 @@ class BetterGIScriptDirsOut(OutBase):
     autoPathingDir: Optional[str] = Field(default=None, description="地图追踪任务目录")
     oneDragonDir: Optional[str] = Field(default=None, description="一条龙配置目录")
     scriptGroupDir: Optional[str] = Field(default=None, description="配置组目录")
+    keyMouseScriptDir: Optional[str] = Field(
+        default=None, description="键鼠脚本（录制）目录"
+    )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
 class ZzzOdInstanceOut(BaseModel):
     """zzz-od 实例（账号）信息"""
@@ -632,7 +635,22 @@ class MaaEndEssenceTargetGroup(BaseModel):
     options: List[ComboBoxItem] = Field(..., description="该类型可选武器")
 
 
+class MaaEndAutoCollectGroup(BaseModel):
+    value: str = Field(..., description="上游路线选项名")
+    label: str = Field(..., description="采集分类展示名")
+    region: str = Field(..., description="上游地区开关名，旧版为空")
+    regionLabel: str = Field(..., description="地区展示名")
+    configKey: Literal["AutoCollectRoutes", "AutoCollectCommonRoutes"] = Field(
+        ..., description="用户路线配置字段"
+    )
+    options: List[ComboBoxItem] = Field(..., description="该分类的动态路线")
+    defaultCases: list[str] = Field(..., description="上游默认路线")
+
+
 class MaaEndOptionsOut(OutBase):
+    autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
+        default_factory=list, description="MaaEnd 自动采集地区与分类"
+    )
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
     essenceLocations: List[ComboBoxItem] = Field(
@@ -1264,9 +1282,10 @@ class UserIndexItem(BaseModel):
 class MaaUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Id: Optional[str] = Field(default=None, description="用户ID")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     Server: Optional[
         Literal["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
@@ -1435,8 +1454,11 @@ class GeneralUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本/用户/直控）"
+    )
     IfUseMasConfig: Optional[bool] = Field(
-        default=None, description="是否使用用户独立脚本配置"
+        default=None, description="兼容旧版用户独立配置开关"
     )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
@@ -1502,7 +1524,7 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     Id: Optional[str] = Field(default=None, description="账号")
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None,
-        description="配置来源（脚本共享、用户独立、直控优先读取脚本原配置）",
+        description="配置来源（脚本/用户/直控）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置覆盖 OK-WW 高频任务字段"
@@ -1555,8 +1577,8 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本/用户/直控）"
     )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
@@ -1612,6 +1634,30 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
+
+
+class OneDragonPlanStep(BaseModel):
+    """一条龙执行计划中的单个步骤（执行层实例）。"""
+
+    uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
+    kind: Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"] = (
+        Field(..., description="步骤来源类型")
+    )
+    name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
+    enabled: bool = Field(default=True, description="是否启用该步骤")
+    settings: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="该步骤的 per-任务执行层参数（camelCase 键，按 kind 白名单校验）",
+    )
+
+
+class OneDragonPlan(BaseModel):
+    """一条龙执行计划（Plan），替代/并列于可视化队列 Queue。"""
+
+    version: int = Field(default=1, description="Plan 结构版本")
+    steps: List[OneDragonPlanStep] = Field(
+        default_factory=list, description="有序步骤列表"
+    )
 
 
 class BetterGIUserConfig_OneDragon(BaseModel):
@@ -1694,9 +1740,12 @@ class ZzzOdUserConfig_Info(BaseModel):
 
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
-    Mode: Optional[Literal["用户", "直控"]] = Field(
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None,
-        description="配置来源（用户=本配置字段，直控=zzz-od 原生配置）",
+        description="配置来源（脚本/用户/直控）",
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
     )
     SlotIdx: Optional[int] = Field(
         default=None,
@@ -1797,6 +1846,10 @@ class BAAHUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本/用户/直控）"
+    )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
@@ -2141,35 +2194,6 @@ class MaaEndUserConfig_Info(BaseModel):
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
 
-MaaEndAutoCollectRoute = Literal[
-    "Route1",
-    "Route2",
-    "Route3",
-    "Route4",
-    "Route5",
-    "Route6",
-    "Route7",
-    "Route8",
-    "Route9",
-    "Route10",
-    "Route11",
-    "Route12",
-    "Route13",
-    "Route14",
-    "Route15",
-]
-MaaEndAutoCollectCommonRoute = Literal[
-    "CommonRoute1",
-    "CommonRoute2",
-    "CommonRoute3",
-    "CommonRoute4",
-    "CommonRoute5",
-    "CommonRoute6",
-    "CommonRoute7",
-    "CommonRoute8",
-]
-
-
 class MaaEndUserConfig_Task(BaseModel):
     SanityTaskType: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
@@ -2228,10 +2252,10 @@ class MaaEndUserConfig_Task(BaseModel):
     AutoCollectMode: Optional[Literal["Distributed", "Concentrated"]] = Field(
         default=None, description="自动采集路线安排：分散或集中"
     )
-    AutoCollectRoutes: Optional[list[MaaEndAutoCollectRoute]] = Field(
+    AutoCollectRoutes: Optional[list[str]] = Field(
         default=None, description="自动采集区域资源路线"
     )
-    AutoCollectCommonRoutes: Optional[list[MaaEndAutoCollectCommonRoute]] = Field(
+    AutoCollectCommonRoutes: Optional[list[str]] = Field(
         default=None, description="自动采集通用资源路线"
     )
     DailyOnceTasks: Optional[str] = Field(
@@ -2317,9 +2341,10 @@ class SrcUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     Server: Optional[
         Literal[
             "CN-Official",
@@ -2609,6 +2634,8 @@ class HSRUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID（账号）")
     Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(default=None, description="配置来源（脚本/用户/直控）")
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置（与配置来源独立）")
     Server: Optional[Literal["CN-Official"]] = Field(
         default=None, description="游戏服务器"
     )
@@ -2983,6 +3010,12 @@ class M9AUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
     )
@@ -3079,6 +3112,12 @@ class MaaFWUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
     )
@@ -4020,7 +4059,9 @@ class EmulatorDeleteIn(BaseModel):
 
 class EmulatorOperateIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-    operate: Literal["open", "close", "show"] = Field(..., description="操作类型")
+    operate: Literal["open", "close", "show", "hide"] = Field(
+        ..., description="操作类型"
+    )
     index: str = Field(..., description="模拟器索引")
 
 
@@ -4099,6 +4140,10 @@ class Emulator2SearchOut(OutBase):
 
 class Emulator2DevicesIn(BaseModel):
     emulatorId: str = Field(..., description="配置ID")
+    withSettings: bool = Field(
+        default=True,
+        description="是否连四项设置与稳定模式一起读; 状态轮询传 false, 只取在线状态与 ADB 地址",
+    )
 
 
 class Emulator2PathAddIn(BaseModel):
@@ -4552,6 +4597,21 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+
+
+class WSEmulatorOperationData(BaseModel):
+    """模拟器操作结束通知 (type=emulator.operation.finished, id=EmulatorManager)
+
+    启动 / 关闭是后台任务, 接口一调用就返回; 界面靠这条消息知道那一次操作什么时候真正结束。
+    """
+
+    emulatorId: str = Field(..., description="模拟器配置 ID")
+    index: str = Field(..., description="设备索引 (Emulator 2.0 下是设备号)")
+    operate: Literal["open", "close", "show", "hide"] = Field(
+        ..., description="操作类型"
+    )
+    ok: bool = Field(..., description="是否成功")
+    message: str = Field(default="", description="失败原因; 成功时为空")
 
 
 class WSTaskUserInfoData(BaseModel):

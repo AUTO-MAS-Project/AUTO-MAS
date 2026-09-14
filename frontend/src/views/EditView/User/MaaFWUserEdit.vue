@@ -14,7 +14,7 @@
         <template #title>
           <div class="card-title">
             <img
-              :src="getScriptIcon('MaaFW', projectIconUrl)"
+              :src="projectIconUrl || SCRIPT_LOGOS.MaaFW"
               alt="MaaFW"
               width="22"
               height="22"
@@ -41,9 +41,11 @@
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
             @preset-menu-click="handlePresetMenuClick"
+            @mode-change="handleConfigModeChange"
           />
 
           <TaskQueueSection
+            v-if="formData.Info.Mode !== '直控'"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -113,7 +115,7 @@ import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { getScriptIcon, maafwScriptIcon } from '@/utils/scriptIcon'
+import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
@@ -222,7 +224,7 @@ const handleProjectIconError = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement | null
   if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
   image.dataset.maafwIconFallbackApplied = 'true'
-  image.src = maafwScriptIcon
+  image.src = SCRIPT_LOGOS.MaaFW
 }
 const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
@@ -237,6 +239,9 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
   Info: {
     Name: '',
     Status: true,
+    Mode: '用户',
+    // 快速配置：独立于配置来源的用户级开关（生成模型 MaaFWUserConfig_Info 已含该字段）
+    IfQuickConfig: true,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -756,6 +761,13 @@ const handleFieldSave = async (key: string, value: unknown) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
   })
+}
+
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 const savePresetAndSnapshot = async () => {

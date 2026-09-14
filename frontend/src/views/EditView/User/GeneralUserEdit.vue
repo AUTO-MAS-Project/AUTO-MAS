@@ -151,9 +151,11 @@
             </a-col>
             <a-col :span="24">
               <GeneralConfigModeSelector
-                :model-value="formData.Info.IfUseMasConfig"
+                :model-value="formData.Info.Mode ?? '用户'"
+                :options="generalConfigModeOptions"
                 :disabled="loading"
                 :saving="configModeSaving"
+                :alert-message="t('edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
               />
             </a-col>
@@ -261,6 +263,8 @@ const getDefaultGeneralUserData = () => ({
     Notes: '',
     Status: true,
     RemainedDay: -1,
+    // 配置来源三态（脚本/用户/直控）
+    Mode: '用户',
     IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
@@ -357,37 +361,71 @@ const handleFieldSave = async (key: string, value: any) => {
   }, key)
 }
 
-const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'boolean') return
-  if (
-    isInitializing.value ||
-    configModeSaving.value ||
-    !userId ||
-    formData.Info.IfUseMasConfig === value
-  ) {
-    return
-  }
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+const generalConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'database' | 'setting'
+}> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useScriptS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: t('edit.useScriptSCurrent'),
+    icon: 'setting',
+  },
+]
 
-  const previousValue = formData.Info.IfUseMasConfig
-  formData.Info.IfUseMasConfig = value
+// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存
+// 注意：IfUseMasConfig 是旧的两态字段，仍被 BetterGI 槽位逻辑消费，故保留并与之对齐写入。
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  if (isInitializing.value || configModeSaving.value || !userId) return
+  if (formData.Info.Mode === value) return
+
+  const previousMode = formData.Info.Mode
+  const previousIfUseMas = formData.Info.IfUseMasConfig
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  formData.Info.IfUseMasConfig = value !== '直控'
   configModeSaving.value = true
 
   try {
     const saved = await updateUser(scriptId, userId, {
-      Info: { IfUseMasConfig: value },
+      Info: {
+        Mode: formData.Info.Mode as '脚本' | '用户' | '直控',
+        IfUseMasConfig: formData.Info.IfUseMasConfig,
+      },
     })
 
     if (!saved) {
-      formData.Info.IfUseMasConfig = previousValue
+      formData.Info.Mode = previousMode
+      formData.Info.IfUseMasConfig = previousIfUseMas
       return
     }
 
     await loadUserData()
-    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+    logger.info(`配置来源已切换为: ${formData.Info.Mode}`)
   } finally {
     configModeSaving.value = false
   }
 }
+
 
 // 注意：移除了 watch 自动保存，现在由各控件的 @change/@blur 事件触发保存
 

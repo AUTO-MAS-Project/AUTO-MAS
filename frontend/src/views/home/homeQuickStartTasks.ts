@@ -6,18 +6,18 @@ export interface HomeTaskOption {
   value: string
 }
 
-export interface HomeTaskStartFailure {
+interface HomeTaskStartFailure {
   taskLabel: string
   reason: string
 }
 
-export interface HomeTaskStartResult {
+interface HomeTaskStartResult {
   taskId: string
   selectedTaskId: string
   taskLabel: string
 }
 
-export interface HomeTaskLaunchOutcome {
+interface HomeTaskLaunchOutcome {
   started: HomeTaskStartResult[]
   failed: HomeTaskStartFailure[]
 }

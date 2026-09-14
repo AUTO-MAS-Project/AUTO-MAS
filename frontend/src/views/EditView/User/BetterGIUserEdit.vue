@@ -19,7 +19,7 @@
 
       <a-space size="middle">
         <a-tooltip
-          v-if="!showBettergiConfigMask && !pageLoading && formData.Info.IfUseMasConfig"
+          v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
           placement="bottom"
         >
           <template #title>
@@ -271,11 +271,19 @@
             <a-row :gutter="24">
               <a-col :span="24">
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.IfUseMasConfig"
+                  :model-value="formData.Info.Mode"
+                  :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
                   @change="handleConfigModeChange"
                 />
+                <a-switch
+                  v-model:checked="formData.Info.IfQuickConfig"
+                  :disabled="pageLoading"
+                  style="margin-top: 12px"
+                  @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
+                />
+                <span style="margin-left: 8px">{{ t('edit.quickConfig') }}</span>
               </a-col>
             </a-row>
 
@@ -313,7 +321,7 @@
             </div>
 
             <a-alert
-              v-if="!formData.Info.IfUseMasConfig"
+              v-if="formData.Info.Mode === '直控' && !formData.Info.IfQuickConfig"
               type="info"
               show-icon
               class="mode-guide-alert"
@@ -326,7 +334,7 @@
             </a-alert>
 
             <a-alert
-              v-if="formData.Info.IfUseMasConfig"
+              v-if="masConfigEnabled"
               type="info"
               show-icon
               class="mode-guide-alert config-flow-hint"
@@ -355,35 +363,38 @@
                   </template>
                   <a-select
                     :value="
-                      formData.Info.IfUseMasConfig
+                      masConfigEnabled
                         ? MAS_ONE_DRAGON_SLOT_NAME
                         : formData.Task.OneDragonConfigName
                     "
                     :options="
-                      formData.Info.IfUseMasConfig
+                      masConfigEnabled
                         ? [{ label: MAS_ONE_DRAGON_SLOT_NAME, value: MAS_ONE_DRAGON_SLOT_NAME }]
                         : oneDragonConfigOptions
                     "
                     :placeholder="t('edit.bettergiPickOneDragonName')"
                     size="large"
-                    :disabled="formData.Info.IfUseMasConfig"
+                    :disabled="masConfigEnabled"
                     show-search
                     option-filter-prop="label"
                     class="modern-input"
                     @dropdown-visible-change="
                       (open: boolean) => {
-                        if (open && !formData.Info.IfUseMasConfig) void loadOneDragonConfigs()
+                        if (open && !masConfigEnabled) void loadOneDragonConfigs()
                       }
                     "
                     @change="
-                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
+                      (v: string) => {
+                        formData.Task.OneDragonConfigName = v
+                        saveField('Task.OneDragonConfigName', v)
+                      }
                     "
                   />
                 </a-form-item>
               </a-col>
               <!-- 独立配置模式：领取奖励队伍；脚本直控模式：配置 BetterGI（打开 BGI 原生界面） -->
               <a-col :span="12">
-                <a-form-item v-if="formData.Info.IfUseMasConfig">
+                <a-form-item v-if="masConfigEnabled">
                   <template #label>
                     <span class="form-label">
                       {{ t('edit.bettergiDailyRewardParty') }}
@@ -394,7 +405,7 @@
                   </template>
                   <a-input
                     v-model:value="formData.OneDragon.DailyRewardPartyName"
-                    :disabled="!formData.Info.IfUseMasConfig"
+                    :disabled="!masConfigEnabled"
                     :placeholder="t('edit.bettergiEnterDailyRewardParty')"
                     size="large"
                     class="modern-input"
@@ -427,7 +438,7 @@
             </a-row>
 
             <!-- 战斗队伍/战斗策略与一条龙队列：仅「用户独立配置」下按用户可配 -->
-            <template v-if="formData.Info.IfUseMasConfig">
+            <template v-if="masConfigEnabled">
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -599,7 +610,7 @@
                             class="group-row-action-btn"
                             type="text"
                             size="small"
-                            :disabled="isGroupFrozen(item)"
+                            :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
                             aria-label="修改配置组名称"
                             @click.stop="openRenameModal(item)"
                           >
@@ -695,7 +706,7 @@
                     :script-id="scriptId"
                     :user-id="userId"
                     :kind="selectedGroupIdentity.kind"
-                    :group-name="selectedGroupIdentity.key"
+                    :group-name="projectEditorGroupName"
                     :folder-name="projectEditorFolder"
                     :display-name="projectEditorDisplayName"
                     :editable="groupsEditable"
@@ -776,7 +787,8 @@
             </div>
           </a-modal>
 
-          <!-- 修改名称弹窗：编辑当前行的后名（仅显示别名，不复制真实配置组） -->
+          <!-- 修改名称弹窗：前名（配置组名称，仅前端展示的组级别名）与后名（名称备注，区分同名实例）分栏编辑。
+               默认/专项两类的前名沿用系统固定名，窗口内锁定只读；两者都不进入 key，运行仍按原配置组执行。 -->
           <a-modal
             v-model:open="renameModal.open"
             :title="t('edit.bettergiRenameTitle')"
@@ -793,15 +805,39 @@
               <p v-if="renameModal.source" class="rename-group-source">
                 {{ t('edit.bettergiRenameSource', { name: renameModal.source.key }) }}
               </p>
-              <a-input
-                v-model:value="renameModal.suffix"
-                :placeholder="t('edit.bettergiRenamePlaceholder')"
-                :status="renameModal.error ? 'error' : ''"
-                size="large"
-                :maxlength="40"
-                @input="renameModal.error = ''"
-                @press-enter="confirmRename"
-              />
+              <a-form layout="horizontal" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">{{ t('edit.bettergiRenameNameLabel') }}</span>
+                  </template>
+                  <a-input
+                    v-model:value="renameModal.name"
+                    :placeholder="t('edit.bettergiRenameNamePlaceholder')"
+                    :status="renameModal.error ? 'error' : ''"
+                    :disabled="renameNameLocked"
+                    size="large"
+                    :maxlength="40"
+                    @input="renameModal.error = ''"
+                    @press-enter="confirmRename"
+                  />
+                </a-form-item>
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">{{ t('edit.bettergiRenameSuffixLabel') }}</span>
+                  </template>
+                  <a-input
+                    v-model:value="renameModal.suffix"
+                    :placeholder="t('edit.bettergiRenamePlaceholder')"
+                    size="large"
+                    :maxlength="40"
+                    @input="renameModal.error = ''"
+                    @press-enter="confirmRename"
+                  />
+                </a-form-item>
+              </a-form>
+              <p v-if="renameNameLocked" class="rename-group-note">
+                {{ t('edit.bettergiRenameLockedTip') }}
+              </p>
               <p v-if="renameModal.error" class="rename-group-error">
                 {{ renameModal.error }}
               </p>
@@ -882,9 +918,9 @@
                       <template #icon><PlayCircleOutlined /></template>
                       {{ t('edit.bettergiOpenBgi') }}
                     </a-button>
-                    <a-button size="small" @click="openBettergiDir('oneDragon')">
+                    <a-button size="small" @click="openBettergiDir('keyMouse')">
                       <template #icon><FolderOpenOutlined /></template>
-                      {{ t('edit.bettergiOpenOneDragonDir') }}
+                      {{ t('edit.bettergiOpenKeyMouseDir') }}
                     </a-button>
                     <a-button size="small" @click="openBettergiDir('scriptGroup')">
                       <template #icon><FolderOpenOutlined /></template>
@@ -959,6 +995,40 @@
                       {{ t('edit.bettergiGroupFrozen') }}
                     </a-tag>
                     <a-tag v-else-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
+                      {{ t('edit.bettergiInQueue') }}
+                    </a-tag>
+                  </div>
+                </div>
+              </a-tab-pane>
+
+              <!-- Tab4：录制（KeyMouseScript 键鼠脚本） -->
+              <a-tab-pane key="keymouse" :tab="t('edit.bettergiTabKeyMouse')">
+                <div
+                  v-if="!addModal.keyMouseCandidates.length"
+                  class="add-dragon-candidates-empty"
+                >
+                  <a-empty :description="t('edit.bettergiKeyMouseEmptyDir')" />
+                </div>
+                <div v-else class="add-dragon-candidates">
+                  <div
+                    v-for="(candidate, index) in addModal.keyMouseCandidates"
+                    :key="`${candidate.kind}:${candidate.key}`"
+                    class="add-dragon-candidate"
+                    :class="{
+                      'add-dragon-candidate-picked': isChipAdded(candidate),
+                      'add-dragon-candidate-disabled': isCandidateBlocked(candidate),
+                    }"
+                    @click="handleKeyMouseCandidateClick(candidate, index, $event)"
+                  >
+                    <a-tag
+                      size="small"
+                      class="add-dragon-candidate-tag"
+                      :class="kindTagClass(candidate.kind)"
+                    >
+                      {{ groupPrefix(candidate) }}
+                    </a-tag>
+                    <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
+                    <a-tag v-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
                       {{ t('edit.bettergiInQueue') }}
                     </a-tag>
                   </div>
@@ -1160,6 +1230,34 @@ const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 const configModeSaving = ref(false)
+const bettergiConfigModeOptions: Array<{
+  title: string
+  description: string
+  value: string
+  icon: 'database' | 'file' | 'setting'
+}> = [
+  {
+    title: t('edit.scriptConfiguration'),
+    description: t('edit.scriptConfiguration'),
+    value: '脚本',
+    icon: 'file',
+  },
+  {
+    title: t('edit.perUserConfiguration'),
+    description: t('edit.perUserConfiguration'),
+    value: '用户',
+    icon: 'database',
+  },
+  {
+    title: t('edit.scriptDirectControl'),
+    description: t('edit.useScriptSCurrent'),
+    value: '直控',
+    icon: 'setting',
+  },
+]
+const masConfigEnabled = computed(
+  () => formData.Info.Mode !== '直控' || formData.Info.IfQuickConfig
+)
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -1194,6 +1292,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Id: '',
     Password: '',
     RemainedDay: -1,
+    Mode: '用户',
+    IfQuickConfig: true,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
@@ -1295,7 +1395,7 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
 }
 
 const toggleGroup = (value: string) => {
-  if (!formData.Info.IfUseMasConfig) return
+  if (!masConfigEnabled.value) return
   const set = new Set(formData.OneDragon.Groups)
   if (set.has(value)) {
     set.delete(value)
@@ -1365,14 +1465,14 @@ const strategyPickerCurrentValue = computed<string>(() => {
   return String(dragonSettings.value[field.key] ?? '')
 })
 const openStrategyPicker = async () => {
-  if (!formData.Info.IfUseMasConfig) return
+  if (!masConfigEnabled.value) return
   strategyPickerTargetField.value = null
   await loadStrategyOptions()
   strategyPickerOpen.value = true
 }
 // 右栏「首领讨伐-讨伐目标」字段发起：把弹窗目标指向该字段再打开
 const openStrategyPickerForField = async (field: DragonSettingField) => {
-  if (!formData.Info.IfUseMasConfig) return
+  if (!masConfigEnabled.value) return
   strategyPickerTargetField.value = field
   await loadStrategyOptions()
   strategyPickerOpen.value = true
@@ -1399,6 +1499,7 @@ const {
   selectedKeys: selectedCustomGroupKeys,
   syncFromForm: syncCustomGroupsFromForm,
   loadFromBettergi: loadCustomGroupsFromBettergi,
+  listFromBettergi: listBgiCustomGroups,
   toggleMaster: toggleCustomGroupsMaster,
   deleteSelected: deleteSelectedCustomGroups,
   toggleEnabled: toggleCustomGroupEnabled,
@@ -1408,8 +1509,8 @@ const {
   userId: () => userId.value,
   oneDragon: () => formData.OneDragon,
   configName: () => dragonConfigName.value,
-  masConfig: () => formData.Info.IfUseMasConfig,
-  editable: () => formData.Info.IfUseMasConfig,
+  masConfig: () => masConfigEnabled.value,
+  editable: () => masConfigEnabled.value,
   saveField,
 })
 
@@ -1430,11 +1531,20 @@ const {
 // Groups / CustomGroups 承载，体力作战为本地虚拟项不落库。
 const STAMINA_COMBAT_KEY = '__mas_stamina_combat__'
 
-type ConfigGroupKind = 'builtin' | 'stamina' | 'custom' | 'js' | 'pathing' | 'scriptgroup'
+type ConfigGroupKind =
+  | 'builtin'
+  | 'stamina'
+  | 'custom'
+  | 'js'
+  | 'pathing'
+  | 'scriptgroup'
+  | 'keymouse'
 
 type ConfigGroupIdentity = {
   kind: ConfigGroupKind
   key: string // builtin/custom/js/pathing: 组名字面量或相对路径；stamina: STAMINA_COMBAT_KEY
+  /** 前名（配置组名称）：仅前端展示的组级别名，不进入 key、不影响运行；留空按来源类型回退默认名 */
+  displayName?: string
   /** 后名（后缀别名）：仅作显示用，不进入 key；执行仍按 key（前名/基名）归一。留空即旧式「自动秘境」 */
   suffix?: string
   /** 队列行唯一实例标识：允许同一配置组重复添加时，每行都有独立 uid（拖拽/删除按行实例） */
@@ -1481,9 +1591,9 @@ const builtinGroupLabels = computed<Record<string, string>>(() =>
 )
 
 // 左侧是否可编辑/可展示列表（受「MAS 独立配置」总开关约束）
-const groupsEditable = computed(() => formData.Info.IfUseMasConfig)
+const groupsEditable = computed(() => masConfigEnabled.value)
 const groupsShowCustom = computed(
-  () => formData.OneDragon.IfUseCustomGroups && formData.Info.IfUseMasConfig
+  () => formData.OneDragon.IfUseCustomGroups && masConfigEnabled.value
 )
 
 // 前缀 tag 文案
@@ -1492,16 +1602,18 @@ const groupPrefix = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'stamina') return t('edit.bettergiGroupKindStamina')
   if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
   if (item.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
-  // JS 脚本与现有自定义组同属「自定义」来源（按需求：JS 的 tag 改为自定义）
+  if (item.kind === 'keymouse') return t('edit.bettergiGroupKindKeyMouse')
+  // JS 脚本与现有自定义组同属「脚本」来源（按需求：JS 的 tag 改为脚本）
   return t('edit.bettergiGroupKindCustom')
 }
 
 // 前缀 tag 颜色（队列行/右栏详情/候选弹窗统一走同一套）：默认=灰、专项=紫、配置组=橘、
-// 自定义&JS=蓝、路径=绿
+// 脚本&JS=蓝、路径=绿、配置组=橙、录制=绯红
 const kindTagClass = (kind: ConfigGroupKind): string => {
   if (kind === 'stamina') return 'gi-kind-tag-stamina'
   if (kind === 'pathing') return 'gi-kind-tag-pathing'
   if (kind === 'scriptgroup') return 'gi-kind-tag-scriptgroup'
+  if (kind === 'keymouse') return 'gi-kind-tag-keymouse'
   if (kind === 'custom' || kind === 'js') return 'gi-kind-tag-custom'
   return 'gi-kind-tag-default'
 }
@@ -1522,6 +1634,13 @@ const scriptGroupOptions = ref<{ label: string; value: string }[]>([])
 const isScriptGroupName = (name: string): boolean =>
   scriptGroupOptions.value.some(o => o.value === name)
 
+// BetterGI「录制」候选：{RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
+const keyMouseOptions = ref<{ label: string; value: string }[]>([])
+
+// CustomGroups 中某名字是否命中 BetterGI KeyMouseScript 录制目录（来源为录制时队列行标为录制前缀）
+const isKeyMouseName = (name: string): boolean =>
+  keyMouseOptions.value.some(o => o.value === name)
+
 // JS 目录名 → manifest 中文显示名（候选/队列展示用；找不到时回退目录名）
 const jsDisplayName = (folder: string): string =>
   jsScriptOptions.value.find(o => o.value === folder)?.label || folder
@@ -1535,6 +1654,7 @@ const bettergiDirs = ref<{
   autoPathingDir?: string
   oneDragonDir?: string
   scriptGroupDir?: string
+  keyMouseScriptDir?: string
   exePath?: string
 }>({})
 // 当前选中的目录节点 key（相对路径）
@@ -1563,13 +1683,21 @@ const pathingFileSet = computed<Set<string>>(() => {
 const isPathingName = (name: string): boolean =>
   pathingTreeDirs.value.length > 0 && pathingFileSet.value.has(name)
 
+// 前名（配置组名称）按来源类型回退的默认显示名（未自定义别名时使用）
+const defaultGroupBaseLabel = (item: ConfigGroupIdentity): string => {
+  if (item.kind === 'builtin') return builtinGroupLabels.value[item.key] ?? item.key
+  if (item.kind === 'stamina') return t('edit.bettergiGroupStamina')
+  if (item.kind === 'js') return jsDisplayName(item.key)
+  if (item.kind === 'pathing') return pathingDisplayName(item.key)
+  return item.key
+}
+
+// 前名：用户自定义的「配置组名称」优先，未设置时回退默认名
+const groupBaseLabel = (item: ConfigGroupIdentity): string =>
+  item.displayName || defaultGroupBaseLabel(item)
+
 const groupLabel = (item: ConfigGroupIdentity): string => {
-  let base: string
-  if (item.kind === 'builtin') base = builtinGroupLabels.value[item.key] ?? item.key
-  else if (item.kind === 'stamina') base = t('edit.bettergiGroupStamina')
-  else if (item.kind === 'js') base = jsDisplayName(item.key)
-  else if (item.kind === 'pathing') base = pathingDisplayName(item.key)
-  else base = item.key
+  const base = groupBaseLabel(item)
   // 后名（后缀）仅作显示别名，与旧式「自动秘境」并存：有后缀显示「前名-后名」，无则仅前名
   return item.suffix ? `${base}-${item.suffix}` : base
 }
@@ -1586,9 +1714,13 @@ const COMBAT_BUILTIN_SET = new Set<string>([
 //   2) 改后名不会改变步骤名，已保存的每实例设置不会丢失。
 // uid 最小者沿用基名（兼容旧 Plan 中已存在的「自动秘境」步骤），其余为「基名-uid」。
 const stepNameIn = (row: ConfigGroupIdentity, rows: ConfigGroupIdentity[]): string => {
-  if (row.kind !== 'builtin' || !COMBAT_BUILTIN_SET.has(row.key)) return row.key
+  // 体力作战是本地虚拟项，无实例概念
+  if (row.kind === 'stamina') return row.key
+  // 战斗组的实例命名规则推广到全部可重复配置组：uid 最小者沿用基名（兼容旧 Plan 中
+  // 已存在的「自动秘境」步骤），其余为「基名-{uid}」。自定义组由此获得每实例身份，
+  // 开关与设置各自独立（与「后名」解耦：后名仅作显示别名）。
   const uids = rows
-    .filter(i => i.kind === 'builtin' && i.key === row.key)
+    .filter(i => i.kind === row.kind && i.key === row.key)
     .map(i => i.uid ?? 0)
   const firstUid = uids.length ? Math.min(...uids) : (row.uid ?? 0)
   return row.uid === firstUid ? row.key : `${row.key}-${row.uid}`
@@ -1654,6 +1786,11 @@ const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void>
   }
 }
 
+// 「配置组名称」（前名）是否锁定：默认（内置 8 组）与专项（体力作战）沿用系统固定名，
+// 只允许改「名称备注」；其余来源（配置组 / JS 脚本 / 路径 / 录制 / 自定义）可自定义前名。
+const isNameLocked = (item: ConfigGroupIdentity): boolean =>
+  item.kind === 'builtin' || item.kind === 'stamina'
+
 // 是否被体力作战冻结（启用体力作战时三个刷取内置组冻结）
 const isGroupFrozen = (item: ConfigGroupIdentity): boolean =>
   item.kind === 'builtin' &&
@@ -1667,7 +1804,8 @@ const groupEnabled = (item: ConfigGroupIdentity): boolean => {
   }
   if (item.kind === 'builtin') return formData.OneDragon.Groups.includes(item.key)
   if (item.kind === 'stamina') return staminaCombatEnabled.value
-  return Boolean(customGroupsTable.value.find(r => r.name === item.key)?.enabled)
+  // 自定义组：每实例独立启停（行实例自带 enabled），与战斗组实例行为一致
+  return item.enabled !== false
 }
 
 // 队列是否包含某配置组
@@ -1735,21 +1873,35 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
     let kind: ConfigGroupKind
     if (builtinNames.has(name)) {
       kind = 'builtin' // 后端也会把内置组名强制归一为 builtin，这里双保险
-    } else if (rec.kind === 'js' || rec.kind === 'pathing' || rec.kind === 'scriptgroup') {
+    } else if (
+      rec.kind === 'js' ||
+      rec.kind === 'pathing' ||
+      rec.kind === 'scriptgroup' ||
+      rec.kind === 'keymouse'
+    ) {
       kind = rec.kind
     } else {
       kind = resolveStoredRowKind(name)
     }
+    const displayName = typeof rec.displayName === 'string' ? rec.displayName : undefined
     const suffix = typeof rec.suffix === 'string' ? rec.suffix : undefined
     const uid = typeof rec.uid === 'number' ? rec.uid : undefined
     const planUid = typeof rec.planUid === 'string' ? rec.planUid : undefined
-    rows.push(makeDragonRow({ kind, key: name, suffix, uid, planUid }))
+    const enabled = typeof rec.enabled === 'boolean' ? rec.enabled : undefined
+    rows.push(makeDragonRow({ kind, key: name, displayName, suffix, uid, planUid, enabled }))
   }
-  // 第二遍：战斗组每实例启用状态来自 Plan，按「行实例 uid」定位步骤名（与后名解耦）
+  // 第二遍：战斗组每实例启用状态来自 Plan；自定义组来自队列条目自带的 enabled。
+  // 存量数据无该字段时回退按名查自定义组管理表，避免把用户已关闭的组误判为启用。
   const planEnabled = readPlanEnabled()
   for (const r of rows) {
     if (r.kind === 'builtin' && COMBAT_BUILTIN_SET.has(r.key)) {
       r.enabled = planEnabled.get(stepNameIn(r, rows)) ?? true
+    } else if (
+      r.kind !== 'builtin' &&
+      r.kind !== 'stamina' &&
+      r.enabled === undefined
+    ) {
+      r.enabled = customGroupsTable.value.find(x => x.name === r.key)?.enabled ?? true
     }
   }
   // uid 已持久化：让自增序号跳过已用值，避免新行与既有行 uid 撞号
@@ -1770,11 +1922,24 @@ const persistDragonQueue = () => {
     .filter(i => i.kind !== 'stamina')
     .map(i => {
       let planUid: string | undefined
+      const stepName = stepNameIn(i, dragonList.value)
       if (i.kind === 'builtin' && COMBAT_BUILTIN_SET.has(i.key)) {
-        const stepName = stepNameIn(i, dragonList.value)
         planUid = planSteps.find(s => s && s.name === stepName)?.uid
       }
-      return { kind: i.kind, name: i.key, suffix: i.suffix, uid: i.uid, planUid }
+      const entry: Record<string, unknown> = {
+        kind: i.kind,
+        name: i.key,
+        displayName: i.displayName,
+        suffix: i.suffix,
+        uid: i.uid,
+        planUid,
+      }
+      // 实例名（组名-{uid}）：非首实例才有，供后端定位该实例独立的设置副本。
+      // 内置组不写：BGI 一条龙只认内置基名，实例名会导致任务无法识别。
+      if (stepName !== i.key && i.kind !== 'builtin') entry.step = stepName
+      // 自定义组每实例开关（战斗组启用状态走 Plan，不写此字段）
+      if (i.kind !== 'builtin') entry.enabled = i.enabled !== false
+      return entry
     })
   void saveField('OneDragon.Queue', JSON.stringify(entries))
   // 存在战斗实例时确保执行层开启：否则 Plan 中的 per-instance 设置/启停不会被运行时消费
@@ -1813,8 +1978,20 @@ const initDragonList = () => {
     // 自定义组仅在总开关开启时并入（来自 BetterGI 现有配置 / CustomGroups）
     if (groupsShowCustom.value) {
       for (const row of customGroupsTable.value) {
-        const kind: ConfigGroupKind = resolveStoredRowKind(row.name)
-        pushDragon(order, { kind, key: row.name })
+        // 仅真实自定义组并入队列；路径/录制/ScriptGroup 各有独立入队口径，不在此镜像
+        if (resolveStoredRowKind(row.name) !== 'custom') continue
+        pushDragon(order, { kind: 'custom', key: row.name })
+      }
+    }
+    // 与 readStoredQueue 第二遍一致：战斗组每实例启用态来自 Plan，自定义组缺省按管理表回退。
+    // 新用户（无持久化队列）必须在此回显，否则战斗开关恒为默认开启、关闭后刷新即回弹
+    // （一旦手动加一项使队列非空、走 if 分支才会正确显示，正是此 bug 的表象）。
+    const planEnabledInit = readPlanEnabled()
+    for (const r of order) {
+      if (r.kind === 'builtin' && COMBAT_BUILTIN_SET.has(r.key)) {
+        r.enabled = planEnabledInit.get(stepNameIn(r, order)) ?? true
+      } else if (r.kind !== 'builtin' && r.kind !== 'stamina' && r.enabled === undefined) {
+        r.enabled = customGroupsTable.value.find(x => x.name === r.key)?.enabled ?? true
       }
     }
     dragonList.value = order
@@ -1824,10 +2001,11 @@ const initDragonList = () => {
   appendCustomRows()
 }
 
-// 由存储的自定义组名推断队列行来源类型：命中 JS 脚本目录→js；命中 AutoPathing 文件→pathing；
-// 命中 ScriptGroup 配置组目录→scriptgroup；其余→custom
+// 由存储的自定义组名推断队列行来源类型：命中 JS 脚本目录→js；命中录制目录→keymouse；
+// 命中 AutoPathing 文件→pathing；命中 ScriptGroup 配置组目录→scriptgroup；其余→custom
 const resolveStoredRowKind = (name: string): ConfigGroupKind => {
   if (isJsScriptName(name)) return 'js'
+  if (isKeyMouseName(name)) return 'keymouse'
   if (isPathingName(name)) return 'pathing'
   if (isScriptGroupName(name)) return 'scriptgroup'
   return 'custom'
@@ -1838,10 +2016,9 @@ const appendCustomRows = () => {
   if (!dragonListReady || !groupsShowCustom.value) return
   let appended = false
   for (const row of customGroupsTable.value) {
-    const item: ConfigGroupIdentity = {
-      kind: resolveStoredRowKind(row.name),
-      key: row.name,
-    }
+    // 仅真实自定义组镜像进队列；路径/录制/ScriptGroup 名各有独立入队口径，避免被当成配置组补进一条龙
+    if (resolveStoredRowKind(row.name) !== 'custom') continue
+    const item: ConfigGroupIdentity = { kind: 'custom', key: row.name }
     if (!inDragon(item)) {
       dragonList.value.push(makeDragonRow(item))
       appended = true
@@ -1923,8 +2100,9 @@ const toggleConfigGroup = (item: ConfigGroupIdentity) => {
   } else if (item.kind === 'stamina') {
     toggleStaminaCombat()
   } else {
-    const row = customGroupsTable.value.find(r => r.name === item.key)
-    if (row) toggleCustomGroupEnabled(row)
+    // 自定义组：翻转本行实例的 enabled 并落库（每实例独立，不再按名共用开关）
+    item.enabled = !(item.enabled !== false)
+    persistDragonQueue()
   }
 }
 
@@ -1943,6 +2121,8 @@ const addToDragon = (item: ConfigGroupIdentity) => {
     }
   } else if (item.kind === 'stamina') {
     staminaInDragon.value = true
+  } else if (item.kind === 'pathing' || item.kind === 'keymouse') {
+    // 路径/录制为独立队列项，不写入 CustomGroups（避免被当成自定义配置组污染一条龙）
   } else {
     // 自定义组：确保进入 CustomGroups（启用）并打开总开关
     if (addCustomGroupByName(item.key)) {
@@ -1952,8 +2132,10 @@ const addToDragon = (item: ConfigGroupIdentity) => {
       if (row && !row.enabled) toggleCustomGroupEnabled(row)
     }
   }
-  // 追加到队列末尾：生成带唯一 uid 的行实例（重复开关开启时允许同一配置多次添加）
-  dragonList.value.push(makeDragonRow(item))
+  // 追加到队列末尾：生成带唯一 uid 的行实例（重复开关开启时允许同一配置多次添加）。
+  // 同组已有自定义前名时沿用到新实例，避免队列里同一个配置组显示两个名字。
+  const alias = dragonList.value.find(i => i.kind === item.kind && i.key === item.key)?.displayName
+  dragonList.value.push(makeDragonRow(alias ? { ...item, displayName: alias } : item))
   persistDragonQueue()
 }
 
@@ -2465,7 +2647,12 @@ const currentGroupSettingSections = computed<DragonSettingSection[]>(() => {
 const isProjectEditorGroup = computed<boolean>(() => {
   const sel = selectedGroupIdentity.value
   if (!sel) return false
-  return sel.kind === 'scriptgroup' || sel.kind === 'js' || sel.kind === 'pathing'
+  return (
+    sel.kind === 'scriptgroup' ||
+    sel.kind === 'js' ||
+    sel.kind === 'pathing' ||
+    sel.kind === 'keymouse'
+  )
 })
 // 双击读设置的目标脚本目录：js 时即脚本目录名（key）；scriptgroup/pathing 无目录参数（由 json 内 folderName 决定）
 const projectEditorFolder = computed<string>(() => {
@@ -2476,6 +2663,13 @@ const projectEditorFolder = computed<string>(() => {
 const projectEditorDisplayName = computed<string>(() => {
   const sel = selectedGroupIdentity.value
   return sel ? groupLabel(sel) : ''
+})
+// 右栏设置的读写键：按「实例名」（首实例=基名，其余=基名-{uid}）定位 per-user 副本，
+// 使同一配置组的多份各自保存设置、互不串台。首实例实例名即基名，兼容存量设置副本。
+// 注意：读设置 UI/目录（projectEditorFolder）仍用基名——BGI 目录只认基名。
+const projectEditorGroupName = computed<string>(() => {
+  const sel = selectedGroupIdentity.value
+  return sel ? stepNameOf(sel) : ''
 })
 
 // 每周秘境秘境候选目录（官方 tp.json 扫描；只随 scriptId，不随用户/配置组）
@@ -2513,7 +2707,7 @@ const hasGroupSettingFields = computed<boolean>(
 const MAS_ONE_DRAGON_SLOT_NAME = 'MAS独立配置'
 // 右栏任务设置读写的配置名：独立模式固定为 MAS 槽位名；否则用户所选一条龙名（默认配置兜底）
 const dragonConfigName = computed<string>(() =>
-  formData.Info.IfUseMasConfig
+  masConfigEnabled
     ? MAS_ONE_DRAGON_SLOT_NAME
     : formData.Task.OneDragonConfigName || '默认配置'
 )
@@ -2580,7 +2774,7 @@ const loadDragonGroupSettings = async () => {
   dragonSettingsLoading.value = true
   try {
     // 四份数据互不依赖，并行拉取
-    const globalUserId = formData.Info.IfUseMasConfig ? userId.value : undefined
+    const globalUserId = masConfigEnabled ? userId.value : undefined
     const [dragon, globalDomain, globalStygian, catalog] = await Promise.all([
       fetchOneDragonSettings(scriptId, userId.value, dragonConfigName.value, stepNameOf(sel)),
       needGlobalDomainSettings.value
@@ -2636,7 +2830,7 @@ const saveDragonGroupSettings = (
       tasks.push(
         saveGlobalDomainSettings(
           scriptId,
-          formData.Info.IfUseMasConfig ? userId.value : undefined,
+          masConfigEnabled.value ? userId.value : undefined,
           globalDomainSettings.value,
           stepNameOf(sel)
         ).then(() => {
@@ -2648,7 +2842,7 @@ const saveDragonGroupSettings = (
       tasks.push(
         saveGlobalStygianSettings(
           scriptId,
-          formData.Info.IfUseMasConfig ? userId.value : undefined,
+          masConfigEnabled.value ? userId.value : undefined,
           globalStygianSettings.value,
           stepNameOf(sel)
         ).then(() => {
@@ -2865,6 +3059,20 @@ const handleGroupCandidateClick = (
 ) =>
   handleListCandidateClick(addModal.groupCandidates, groupCandidateAnchor, candidate, index, event)
 
+// 录制 标签页：KeyMouseScript 候选点击
+const handleKeyMouseCandidateClick = (
+  candidate: ConfigGroupIdentity,
+  index: number,
+  event: MouseEvent
+) =>
+  handleListCandidateClick(
+    addModal.keyMouseCandidates,
+    keyMouseCandidateAnchor,
+    candidate,
+    index,
+    event
+  )
+
 // ---- 添加弹窗（标签页：配置组/JS脚本/地图追踪）----
 // 气泡列表元素：一条龙实例身份 + 弹窗内自增 uid（用于去重展示/删除，与队列行 uid 无关）
 type AddChipItem = ConfigGroupIdentity & { chipUid: number }
@@ -2873,13 +3081,15 @@ const addModal = reactive({
   open: false,
   items: [] as AddChipItem[],
   draft: '',
-  activeTab: 'scriptgroup' as 'scriptgroup' | 'js' | 'pathing',
+  activeTab: 'scriptgroup' as 'scriptgroup' | 'js' | 'pathing' | 'keymouse',
   /** true=配置组编辑器内「添加脚本」：冻结「配置组」标签页，仅可从 JS脚本/地图追踪选择加入配置组 */
   addToGroupMode: false,
   /** JS脚本 标签页候选：自定义组 + JS 脚本（不含默认/专项/配置组，那些归「配置组」标签页） */
   candidates: [] as ConfigGroupIdentity[],
   /** 配置组 标签页候选：8 内置（默认）+ 体力作战（专项）+ ScriptGroup 目录内容 */
   groupCandidates: [] as ConfigGroupIdentity[],
+  /** 录制 标签页候选：KeyMouseScript 目录下的键鼠脚本 */
+  keyMouseCandidates: [] as ConfigGroupIdentity[],
 })
 
 // 添加弹窗标题/确定按钮文案（按模式分流）
@@ -3048,8 +3258,12 @@ const isChipAdded = (candidate: ConfigGroupIdentity): boolean =>
 const jsCandidateAnchor = ref(-1)
 // 配置组 候选项 Shift 区间锚点（index in addModal.groupCandidates）
 const groupCandidateAnchor = ref(-1)
+// 录制 候选项 Shift 区间锚点（index in addModal.keyMouseCandidates）
+const keyMouseCandidateAnchor = ref(-1)
 // 地图追踪文件行 Shift 区间锚点（index in selectedPathingFiles）
 const pathingFileAnchor = ref(-1)
+// BetterGI 现有自定义组名（仅作弹窗候选；打开弹窗不再合并进管理表，避免自动入队）
+const bgiCustomCandidates = ref<string[]>([])
 
 // 加载可加入一条龙的 BetterGI 自定义 JS 脚本（实时扫描，反映玩家手工放置/订阅的脚本）
 const loadJsScripts = async () => {
@@ -3085,12 +3299,34 @@ const loadScriptGroups = async () => {
   }
 }
 
+// 加载 BetterGI「录制」候选（BGI User/KeyMouseScript 下的键鼠脚本文件名）。
+const loadKeyMouseScripts = async () => {
+  try {
+    const resp =
+      await BetterGiService.getBettergiKeyMouseScriptsApiApiScriptsBettergiKeyMouseScriptsGet(
+        scriptId
+      )
+    keyMouseOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { label: string; value: string } =>
+        item.label != null && item.value != null
+      )
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
 // 组装候选项，按标签页拆分：
-//  - addModal.candidates（JS脚本 标签页）：JS 脚本 + 不在 ScriptGroup 目录的现有自定义组
+//  - addModal.candidates（JS脚本 标签页）：JS 脚本 + 仅 custom 来源的现有自定义组
 //  - addModal.groupCandidates（配置组 标签页）：8 内置（默认）+ 体力作战（专项）+ ScriptGroup 目录内容
 // 现有自定义组若命中 ScriptGroup 目录（如「锄地一条龙」），在配置组标签页以 ScriptGroup 形式出现，
 // 故 JS脚本 标签页剔除，避免同一配置两个入口。
 const buildCandidates = () => {
+  // 录制 标签页候选：KeyMouseScript 目录下的键鼠脚本（与其他标签页一样可加入队列）
+  addModal.keyMouseCandidates = keyMouseOptions.value.map(opt => ({
+    kind: 'keymouse' as const,
+    key: opt.value,
+  }))
   // addToGroupMode（配置组内添加脚本）只允许可执行的 JS 脚本目录与地图追踪路径；
   // 原有自定义组（custom）不写入配置组 projects，故 JS脚本 标签仅列 js 候选。
   if (addModal.addToGroupMode) {
@@ -3102,7 +3338,17 @@ const buildCandidates = () => {
   const jsTaken = new Set<string>()
   for (const row of customGroupsTable.value) {
     const name = row.name
-    if (!isScriptGroupName(name) && !jsTaken.has(name)) {
+    // 现有自定义组按真实来源归类：仅「自定义组(custom)」入列 JS脚本 标签页；
+    // 命中 JS脚本/路径/录制/ScriptGroup 目录的名字各有专属标签页，避免同一配置多处出现。
+    const kind = resolveStoredRowKind(name)
+    if (kind === 'custom' && !jsTaken.has(name)) {
+      jsItems.push({ kind: 'custom', key: name })
+      jsTaken.add(name)
+    }
+  }
+  // BetterGI 现有、但尚未入管理表的自定义组仅作候选：用户显式确认才入队（不再打开即自动入队）
+  for (const name of bgiCustomCandidates.value) {
+    if (!jsTaken.has(name) && !customGroupsTable.value.some(r => r.name === name)) {
       jsItems.push({ kind: 'custom', key: name })
       jsTaken.add(name)
     }
@@ -3141,25 +3387,47 @@ const openAddToDragonModal = async () => {
   await openAddModalCommon('scriptgroup')
 }
 
-// 配置组编辑器「添加脚本」：复用同一弹窗但冻结「配置组」标签，只可加 JS 脚本/地图追踪到配置组
+// 配置组编辑器「添加脚本」：复用同一弹窗但冻结「配置组」标签，只可加 JS 脚本/地图追踪/录制到配置组。
+// 适用 scriptgroup / 录制(keymouse) / 脚本(js) / 路径(pathing) 四类：后两者以 per-user ScriptGroup 副本充当配置组。
 const openAddScriptToGroup = async () => {
   const sel = selectedGroupIdentity.value
-  if (!sel || sel.kind !== 'scriptgroup' || !groupsEditable.value) return
+  if (
+    !sel ||
+    (sel.kind !== 'scriptgroup' &&
+      sel.kind !== 'keymouse' &&
+      sel.kind !== 'js' &&
+      sel.kind !== 'pathing') ||
+    !groupsEditable.value
+  )
+    return
   addModal.addToGroupMode = true
   await openAddModalCommon('js')
 }
 
-const openAddModalCommon = async (defaultTab: 'scriptgroup' | 'js' | 'pathing') => {
+const openAddModalCommon = async (
+  defaultTab: 'scriptgroup' | 'js' | 'pathing' | 'keymouse'
+) => {
   addModal.items = []
   addModal.draft = ''
   addModal.activeTab = defaultTab
   jsCandidateAnchor.value = -1
   groupCandidateAnchor.value = -1
+  keyMouseCandidateAnchor.value = -1
   pathingFileAnchor.value = -1
   clearChipSelection()
   addModal.open = true
-  await loadCustomGroupsFromBettergi()
-  await Promise.all([loadJsScripts(), loadScriptGroups(), loadBettergiDirs(), loadPathingTree()])
+  // 仅读取 BetterGI 现有自定义组作为弹窗候选；不再合并进管理表，避免打开弹窗即自动入队
+  const bgiGroups = await listBgiCustomGroups()
+  bgiCustomCandidates.value = bgiGroups
+    .map(r => r.name)
+    .filter(n => resolveStoredRowKind(n) === 'custom')
+  await Promise.all([
+    loadJsScripts(),
+    loadScriptGroups(),
+    loadKeyMouseScripts(),
+    loadBettergiDirs(),
+    loadPathingTree(),
+  ])
   buildCandidates()
 }
 
@@ -3186,6 +3454,21 @@ const toScriptGroupProjectRow = (item: AddChipItem): Record<string, unknown> | n
       allowJsNotification: true,
       allowJsHTTPHash: '',
       jsScriptSettingsObject: {},
+    }
+  }
+  if (item.kind === 'keymouse') {
+    const rec = String(item.key || '').trim()
+    if (!rec) return null
+    return {
+      name: rec,
+      folderName: rec,
+      index: 0,
+      type: 'KeyMouse',
+      status: 'Enabled',
+      schedule: 'Daily',
+      runNum: 1,
+      allowJsNotification: true,
+      allowJsHTTPHash: '',
     }
   }
   if (item.kind === 'pathing') {
@@ -3227,6 +3510,7 @@ const loadBettergiDirs = async () => {
         autoPathingDir: resp.autoPathingDir ?? undefined,
         oneDragonDir: resp.oneDragonDir ?? undefined,
         scriptGroupDir: resp.scriptGroupDir ?? undefined,
+        keyMouseScriptDir: resp.keyMouseScriptDir ?? undefined,
         exePath: resp.exePath ?? undefined,
       }
     }
@@ -3238,16 +3522,18 @@ const loadBettergiDirs = async () => {
 // BetterGI 官方在线脚本站（本地检出目录无法跳转其内部页面，改用网页版脚本仓库）
 const BGI_SCRIPT_SITE = 'https://s.bettergi.com/'
 
-// 打开某目录（脚本目录 / 任务目录 / 一条龙 / 配置组）；脚本仓库走在线网页
-const openBettergiDir = async (kind: 'jsScript' | 'autoPathing' | 'oneDragon' | 'scriptGroup') => {
+// 打开某目录（脚本目录 / 路径目录 / 录制 / 配置组）；脚本仓库走在线网页
+const openBettergiDir = async (
+  kind: 'jsScript' | 'autoPathing' | 'keyMouse' | 'scriptGroup'
+) => {
   if (!bettergiDirs.value.jsScriptDir) await loadBettergiDirs()
   const target =
     kind === 'jsScript'
       ? bettergiDirs.value.jsScriptDir
       : kind === 'autoPathing'
         ? bettergiDirs.value.autoPathingDir
-        : kind === 'oneDragon'
-          ? bettergiDirs.value.oneDragonDir
+        : kind === 'keyMouse'
+          ? bettergiDirs.value.keyMouseScriptDir
           : bettergiDirs.value.scriptGroupDir
   if (!target) {
     message.warning(t('edit.bettergiPathingEmptyTree'))
@@ -3490,6 +3776,13 @@ const canDuplicateGroup = (item: ConfigGroupIdentity): boolean => {
   return item.kind !== 'stamina'
 }
 
+// 是否可重命名：专项（体力作战）是本地虚拟项、不落库，改名无法保存故不提供入口；
+// 默认（内置）与其余来源都可打开弹窗，其中「配置组名称」是否可改由 isNameLocked 决定。
+const canRenameGroup = (item: ConfigGroupIdentity): boolean => {
+  if (!item) return false
+  return item.kind !== 'stamina'
+}
+
 // 直接复制相同：把当前行作为新实例追加到队列末尾（不改名、不写新副本，等同再添加一次该组）
 const duplicateSameGroup = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value || isGroupFrozen(item)) return
@@ -3546,24 +3839,33 @@ const confirmDuplicateGroup = () => {
   }
 }
 
-// ---- 修改名称：编辑当前行后名（仅显示别名，不复制真实配置组）----
+// ---- 修改名称：前名（配置组名称，仅前端展示）与后名（名称备注）分栏编辑 ----
 const renameModal = reactive<{
   open: boolean
   saving: boolean
+  name: string
   suffix: string
   error: string
   source: ConfigGroupIdentity | null
 }>({
   open: false,
   saving: false,
+  name: '',
   suffix: '',
   error: '',
   source: null,
 })
 
+// 弹窗内「配置组名称」是否锁定：默认/专项两类沿用系统固定名，只开放「名称备注」
+const renameNameLocked = computed<boolean>(
+  () => !!renameModal.source && isNameLocked(renameModal.source)
+)
+
 const openRenameModal = (item: ConfigGroupIdentity) => {
-  if (!groupsEditable.value) return
+  if (!groupsEditable.value || !canRenameGroup(item)) return
   renameModal.source = item
+  // 预填当前生效名（自定义别名优先，否则来源默认名），便于在现名基础上修改
+  renameModal.name = groupBaseLabel(item)
   renameModal.suffix = item.suffix ?? ''
   renameModal.error = ''
   renameModal.open = true
@@ -3574,11 +3876,20 @@ const confirmRename = () => {
   const source = renameModal.source
   if (!source) return
   renameModal.error = ''
-  const clean = (renameModal.suffix || '').trim().replace(/^-+|-+$/g, '')
+  const name = (renameModal.name || '').trim().replace(/-+$/, '')
+  const suffix = (renameModal.suffix || '').trim().replace(/^-+|-+$/g, '')
+  // 前名填回来源默认名时视为未自定义（清空别名），默认名日后变化仍可跟随
+  const nextDisplay = name && name !== defaultGroupBaseLabel(source) ? name : undefined
   renameModal.saving = true
   try {
-    // 直接改写当前队列行实例的后名（item 即 dragonList 中的元素引用）
-    source.suffix = clean || undefined
+    // 前名是组级别名：同 kind+key 的所有队列行统一显示；后名（名称备注）仅当前行实例。
+    // 两者都不进入 key，实际运行仍按原配置组执行。
+    if (!isNameLocked(source)) {
+      for (const row of dragonList.value) {
+        if (row.kind === source.kind && row.key === source.key) row.displayName = nextDisplay
+      }
+    }
+    source.suffix = suffix || undefined
     renameModal.open = false
     persistDragonQueue()
     message.success(t('edit.bettergiRenameDone', { name: groupLabel(source) }))
@@ -3595,38 +3906,21 @@ watch(
 )
 
 watch(
-  () => formData.Info.IfUseMasConfig,
+  () => masConfigEnabled.value,
   () => {
-    if (!formData.Info.IfUseMasConfig) selectedGroupIdentity.value = null
+    if (!masConfigEnabled.value) selectedGroupIdentity.value = null
   }
 )
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'boolean') return
-  if (
-    isInitializing.value ||
-    configModeSaving.value ||
-    !userId.value ||
-    formData.Info.IfUseMasConfig === value
-  ) {
-    return
-  }
-
-  const previousValue = formData.Info.IfUseMasConfig
-  formData.Info.IfUseMasConfig = value
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  if (isInitializing.value || configModeSaving.value || !userId.value || formData.Info.Mode === value) return
+  const previousValue = formData.Info.Mode
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
   configModeSaving.value = true
-
   try {
-    const saved = await updateUser(scriptId, userId.value, {
-      Info: { IfUseMasConfig: value },
-    })
-
-    if (!saved) {
-      formData.Info.IfUseMasConfig = previousValue
-      return
-    }
-
-    logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
+    const saved = await updateUser(scriptId, userId.value, { Info: { Mode: formData.Info.Mode } })
+    if (!saved) formData.Info.Mode = previousValue
   } finally {
     configModeSaving.value = false
   }
@@ -3727,11 +4021,12 @@ const loadUser = async () => {
 
 onMounted(async () => {
   if (await loadScriptInfo()) {
-    // 先加载 JsScript 候选 / ScriptGroup 配置组目录 / AutoPathing 树 / 常用目录，
-    // initDragonList 才能把自定义组中命中脚本目录、配置组目录或路径文件的行标为对应来源
+    // 先加载 JsScript 候选 / ScriptGroup 配置组目录 / KeyMouseScript 录制目录 / AutoPathing 树 / 常用目录，
+    // initDragonList 才能把自定义组中命中脚本目录、配置组目录、录制目录或路径文件的行标为对应来源
     await Promise.all([
       loadJsScripts(),
       loadScriptGroups(),
+      loadKeyMouseScripts(),
       loadBettergiDirs(),
       loadPathingTree(),
       loadStrategyOptions(),
@@ -4255,6 +4550,40 @@ onUnmounted(() => {
   line-height: 1.5;
 }
 
+/* 修改配置组名称弹窗：前名（配置组名称）+ 后名（名称备注） */
+.rename-group-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rename-group-form :deep(.ant-form-item) {
+  margin-bottom: 0;
+}
+.rename-group-source {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+  word-break: break-all;
+}
+.rename-group-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ant-color-warning);
+  line-height: 1.6;
+}
+.rename-group-tip {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  line-height: 1.6;
+}
+.rename-group-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ant-color-error);
+  line-height: 1.5;
+}
+
 .bettergi-groups-detail-pane {
   min-height: 180px;
   padding: 16px;
@@ -4420,7 +4749,7 @@ onUnmounted(() => {
 }
 
 /* 前缀 tag 统一配色（antd 预设风格：浅色底 + 同色系深色文字）：
-   默认=灰、专项=紫、自定义&JS=蓝、路径=绿 */
+   默认=灰、专项=紫、脚本&JS=蓝、路径=绿、配置组=橙、录制=绯红 */
 .gi-kind-tag-default {
   background: #f0f0f0;
   border-color: #d9d9d9;
@@ -4449,6 +4778,12 @@ onUnmounted(() => {
   background: #fff7e6;
   border-color: #ffd591;
   color: #d46b08;
+}
+
+.gi-kind-tag-keymouse {
+  background: #fff1f0;
+  border-color: #ffa39e;
+  color: #dc143c;
 }
 
 .add-dragon-candidates-empty {
