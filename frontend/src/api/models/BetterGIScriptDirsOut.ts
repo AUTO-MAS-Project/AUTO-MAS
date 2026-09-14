@@ -39,6 +39,10 @@ export type BetterGIScriptDirsOut = {
      */
     scriptGroupDir?: (string | null);
     /**
+     * 键鼠脚本（录制）目录
+     */
+    keyMouseScriptDir?: (string | null);
+    /**
      * BetterGI 主程序路径
      */
     exePath?: (string | null);
