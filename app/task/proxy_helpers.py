@@ -41,7 +41,6 @@ import psutil
 
 __all__ = [
     "append_push_log",
-    "ensure_task_entry",
     "find_pids_by_name",
     "push_dispatch_log",
     "quick_config_takeover",
@@ -190,27 +189,3 @@ def quick_config_takeover(
     return True
 
 
-def ensure_task_entry(
-    tasks: list[dict[str, object]],
-    template: dict[str, object],
-    *,
-    matches: Callable[[dict[str, object]], bool],
-) -> dict[str, object]:
-    """在原生任务列表中定位目标任务，不存在则按固定形状追加空任务 dict。
-
-    快速配置写入需要定位目标任务而目标不存在时（S6），专项给出原生任务条目
-    的固定字段形状 template（含 enabled / IsEnable=False 的空任务键），
-    matches 判定目标条目（通常按任务名/ID）。命中直接返回原条目；未命中把
-    template 的副本追加进 tasks 后返回，调用方随后写入面板值——由专项启动
-    后自行补足默认值。
-
-    结构不可解析（tasks 非列表）时抛 TypeError，由调用方按覆写失败处理：
-    只有「连固定格式都建不出来」才算失败，不允许跳过或报错退出。
-    """
-
-    for task in tasks:
-        if matches(task):
-            return task
-    entry = dict(template)
-    tasks.append(entry)
-    return entry

@@ -375,7 +375,7 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: ZzzOdUserConfig = self.user_config[self.cur_user_uid]
-        # 配置来源三态（脚本/用户=本配置字段 / 直控=zzz-od 原生配置）
+        # 配置来源三态（脚本/用户=本配置字段注入运行 / 直控=zzz-od 原生配置）
         self.mode = read_config_source(self.cur_user_config)
         # 账号切换方式（脚本级下拉，仅用户态生效）：
         # 多实例切换=多用户注入多实例槽一轮跑；单实例切换=逐用户独立会话
@@ -702,10 +702,12 @@ class AutoProxyTask(TaskExecuteBase):
         except ValueError as e:
             return str(e)
 
-        if self.mode not in ("用户", "直控"):
+        # 配置来源三态：脚本/用户=按该用户的 MAS 配置注入运行（脚本=脚本级共享
+        # 配置载体，仍落到该用户绑定槽）；直控=原生裸跑零注入。
+        if self.mode not in ("脚本", "用户", "直控"):
             return f"不支持的配置来源: {self.mode}"
 
-        if self.mode == "用户":
+        if self.mode in ("脚本", "用户"):
             # 同脚本用户名唯一（绑定槽名与统计都依赖名字区分）
             names = [
                 str(cfg.get("Info", "Name") or "").strip()

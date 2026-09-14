@@ -1094,7 +1094,7 @@ const pushLogModeOptions = [
   { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
 
-// 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
 const configModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
