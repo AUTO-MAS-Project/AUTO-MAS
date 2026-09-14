@@ -270,6 +270,7 @@ export default {
     notifyServerChan: 'ServerChan',
     notifyStatistics: 'Statistics',
     notifyRecruit: 'Top-tier recruitment alerts',
+    notifyDropStatistics: 'Drop statistics',
     notifyMail: 'Email',
     maaAnnihilation: 'Annihilation',
     maaAnnihilationHint:

@@ -272,6 +272,7 @@ export default {
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
+    notifyDropStatistics: 'ドロップ統計',
     notifyMail: 'メール通知',
     maaAnnihilation: '殲滅作戦',
     maaAnnihilationHint:

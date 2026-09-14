@@ -1026,6 +1026,7 @@
             :loading="pageLoading"
             :script-id="scriptId"
             :user-id="userId"
+            show-drop-statistics
             @save="saveField"
           />
         </a-form>

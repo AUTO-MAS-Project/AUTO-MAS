@@ -44,6 +44,7 @@ from .tools import (
     one_dragon_bridge,
     push_notification,
 )
+from .tools.drop_statistics import parse_drop_lines
 from .tools.one_dragon_plan import (
     BUILTIN_COMBAT_STEP_NAMES,
     build_combat_steps,
@@ -53,6 +54,10 @@ from .tools.one_dragon_plan import (
 from .tools.one_dragon_report import parse_one_dragon_report
 
 logger = get_logger("BetterGI 自动代理")
+
+# 掉落统计（数据源 = BGI 的「奖励识别」）可覆盖的战斗步骤基名：BGI 只在自动秘境与
+# 自动首领讨伐暴露了 RewardRecognitionEnabled（幽境危战无此能力，故不列入）。
+_REWARD_RECOGNITION_STEP_BASES = frozenset({"自动秘境", "自动首领讨伐"})
 
 # BetterGI 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 BetterGIScriptEdit.vue 的 BGI_EXE_NAME 保持同步，改这里时需同步改前端
@@ -320,6 +325,24 @@ class AutoProxyTask(TaskExecuteBase):
                     _step["settings"] = _settings
                 if not _settings.get(_field):
                     _settings[_field] = _default_party
+        # 掉落统计（用户级开关，默认开）：数据源是 BGI 的「奖励识别」，因此开启时
+        # 强制把本次会跑的战斗步骤打开识别（执行层走 Plan.settings），并在运行前把
+        # BGI 全局 autoDomainConfig.rewardRecognitionEnabled 置 true（覆盖原生一条龙）。
+        self.drop_statistics_enabled = bool(
+            self.cur_user_config.get("Notify", "IfSendDropStatistics")
+        )
+        if self.drop_statistics_enabled:
+            for _step in self.plan_combat_steps:
+                if (
+                    resolve_base_name(str(_step.get("name", "")))
+                    not in _REWARD_RECOGNITION_STEP_BASES
+                ):
+                    continue
+                _settings = _step.get("settings")
+                if not isinstance(_settings, dict):
+                    _settings = {}
+                    _step["settings"] = _settings
+                _settings["rewardRecognitionEnabled"] = True
         self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
@@ -388,6 +411,8 @@ class AutoProxyTask(TaskExecuteBase):
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
             exclude_task_names=_exclude,
+            # 掉落统计：开启时强制打开首领讨伐的奖励识别（原生路径读槽位顶层字段）
+            boss_reward_recognition=True if self.drop_statistics_enabled else None,
         )
         # 通用战斗队伍/策略先补写进全局 config.json（秘境/地脉花/幽境危战读取段）；
         # 优先级：右栏配置 > 顶部通用（通用仅兜底）
@@ -414,6 +439,11 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(
                 f"已物化用户 {self.cur_user_item.name} 的秘境刷取配置到全局 config.json"
             )
+        # 掉落统计：把「启用奖励识别」写进全局 autoDomainConfig 段。必须排在用户副本
+        # 物化**之后**（副本里的值可能是关，先写会被覆盖回 false）；该叶子已含在运行时
+        # 快照集合内，运行结束随队伍/策略一起还原，不留残留。
+        if self.drop_statistics_enabled:
+            one_dragon.apply_global_reward_recognition(self.script_root_path)
         logger.info(
             f"已写入用户 {self.cur_user_item.name} 的独立一条龙配置（槽位 "
             f"{one_dragon.launch_slot_name()}），物化配置组 {len(self._materialized_script_groups)} 个"
@@ -1027,11 +1057,23 @@ class AutoProxyTask(TaskExecuteBase):
             if one_dragon_report:
                 break
 
+        # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
+        # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，
+        # 因此不挑轮次；识别未开启或日志里没有该行时结果为空表，通知里整块省略。
+        drop_statistics: dict[str, int] = {}
+        if self.drop_statistics_enabled:
+            drop_lines: list[str] = []
+            for item in runs:
+                drop_lines.extend(item.content)
+            drop_statistics = parse_drop_lines(drop_lines)
+
         if statistic_paths:
             try:
                 statistics = await Config.merge_statistic_info(statistic_paths)
                 if one_dragon_report:
                     statistics["one_dragon_steps"] = one_dragon_report
+                if drop_statistics:
+                    statistics["drop_statistics"] = drop_statistics
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")

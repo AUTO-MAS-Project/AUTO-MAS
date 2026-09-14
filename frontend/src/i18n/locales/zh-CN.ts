@@ -269,6 +269,7 @@ export default {
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
     notifyRecruit: '公开招募高资喜报',
+    notifyDropStatistics: '掉落统计',
     notifyMail: '邮件通知',
     maaAnnihilation: '剿灭作战',
     maaAnnihilationHint:
