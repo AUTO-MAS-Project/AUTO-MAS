@@ -268,6 +268,15 @@ async def _run_configured_community_sign_in(
                 )
                 if not updated_token or updated_token == tokens.get(field, ""):
                     continue
+                # 收尾兜底写回前重读存量：签到期间该凭据可能已被其他链路（如
+                # 养成练度拉取）轮换写新；存量偏离本轮起点说明已有更新者，
+                # 保留新值，避免把可能已被服务作废的旧 token 覆盖回去。
+                if read_community_token(account, field) != tokens.get(field, ""):
+                    logger.warning(
+                        f"[{account_name}] {field}已在签到期间被其他链路更新，"
+                        "跳过收尾回写"
+                    )
+                    continue
                 async with credential_update_lock:
                     await save_credential_update(field, updated_token, retry=True)
 

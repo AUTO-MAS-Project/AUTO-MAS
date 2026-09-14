@@ -90,6 +90,49 @@ class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
 
 
+class MaaDepotInventoryOut(OutBase):
+    data: List[ComboBoxItem] = Field(
+        ..., description="库存选项（label=数量字符串，value=物品ID）"
+    )
+    recognizedAt: Optional[str] = Field(
+        None, description="最近识别时间（本地 ISO 格式）；无法确定识别时间时为 None"
+    )
+
+
+class MaaCultivateGoalOptionItem(BaseModel):
+    value: str = Field(..., description="目标 ID（专精=skillId，模组=uniEquipId）")
+    label: str = Field(..., description="目标名称（模组带分支码）")
+    maxLevel: int = Field(default=0, description="可达档位上限（按非空消耗档数）")
+
+
+class MaaCultivateOperatorOptionItem(BaseModel):
+    value: str = Field(..., description="干员 ID")
+    label: str = Field(..., description="干员名")
+    rarity: int = Field(default=0, description="稀有度")
+    profession: str = Field(default="", description="职业")
+    maxElite: int = Field(
+        default=0, description="精英化可达档位上限（1/2/3★ 与上游缺数据者恒 0）"
+    )
+    dataMissing: bool = Field(
+        default=False,
+        description="有精英化体系但需求数据缺失（区别于 1/2/3★ 结构上不设精英化）",
+    )
+    skills: List[MaaCultivateGoalOptionItem] = Field(
+        default_factory=list,
+        description="专精目标选项（value=skillId，label=技能名）",
+    )
+    modules: List[MaaCultivateGoalOptionItem] = Field(
+        default_factory=list,
+        description="模组目标选项（value=uniEquipId，label=模组名（分支））",
+    )
+
+
+class MaaCultivateOperatorsOut(OutBase):
+    data: List[MaaCultivateOperatorOptionItem] = Field(
+        default_factory=list, description="干员目录（含目标编辑用名称目录）"
+    )
+
+
 class CultivatePreviewIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
     userId: str = Field(..., description="用户ID")
@@ -111,6 +154,23 @@ class CultivatePreviewItem(BaseModel):
     )
 
 
+class CultivateOperatorProgression(BaseModel):
+    """单个目标干员的当前练度（编辑器"当前等级 → 目标等级"展示用）。"""
+
+    operatorId: str = Field(..., description="干员 ID")
+    source: str = Field(
+        ..., description="练度来源（skland/local/manual）；default 表示无实测数据"
+    )
+    elite: int = Field(..., description="当前精英化阶段 0-2")
+    level: int = Field(..., description="当前干员等级")
+    masteries: Dict[str, int] = Field(
+        default_factory=dict, description="当前专精等级（skillId → 0-3）"
+    )
+    modules: Dict[str, int] = Field(
+        default_factory=dict, description="当前模组等级（uniEquipId → 0-3）"
+    )
+
+
 class CultivatePreviewOut(OutBase):
     stages: List[CultivatePreviewItem] = Field(
         ..., description="刷取计划（按推荐关执行的材料条目）"
@@ -125,7 +185,13 @@ class CultivatePreviewOut(OutBase):
         default=None,
         description="可估算刷取条目的期望理智合计（不含固定产出关）；无可估算条目时为空",
     )
-    hasProgression: bool = Field(..., description="是否存在干员识别档案")
+    hasProgression: bool = Field(
+        ..., description="练度数据是否可用（本地识别档案或森空岛快照）"
+    )
+    progressions: List[CultivateOperatorProgression] = Field(
+        default_factory=list,
+        description="目标干员当前练度；source=default 表示无实测数据（按 0 估算）",
+    )
     hasInventory: bool = Field(..., description="是否存在仓库识别档案")
 
 
@@ -1476,6 +1542,12 @@ class MaaUserConfig_Task(BaseModel):
     )
     CultivateSkipDuringResourceCollection: Optional[bool] = Field(
         default=None, description="资源收集期跳过养成计划"
+    )
+    CultivateSklandAccount: Optional[str] = Field(
+        default=None, description="森空岛绑定的签到账号组 UUID（空=未绑定）"
+    )
+    CultivateSklandUid: Optional[str] = Field(
+        default=None, description="森空岛绑定角色的游戏 uid（非森空岛 userId）"
     )
 
 

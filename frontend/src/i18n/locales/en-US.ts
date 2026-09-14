@@ -343,6 +343,7 @@ export default {
     extractFieldsFromWindow: 'Extract fields from a window bounded by the start and end patterns',
     targetStock: 'Target stock',
     stock: 'Stock',
+    stockRecognizedAt: 'Recognized at {time}',
     resource: 'Resource',
     preset: 'Preset',
     claimRewards: 'Claim rewards',

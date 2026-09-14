@@ -844,14 +844,37 @@ async def get_maa_depot_stage_candidates(
 @router.post(
     "/maa/depot/inventory",
     tags=["Get"],
-    summary="MAA 仓库库存（label=数量字符串，value=物品ID）",
+    summary="MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）",
+    response_model=MaaDepotInventoryOut,
+    status_code=200,
+)
+async def get_maa_depot_inventory(
+    script: ScriptDeleteIn = Body(...), userId: str = Body(...)
+) -> MaaDepotInventoryOut:
+
+    try:
+        raw_data, recognized_at = await Config.get_maa_depot_inventory(
+            script.scriptId, userId
+        )
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return MaaDepotInventoryOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return MaaDepotInventoryOut(data=data, recognizedAt=recognized_at)
+
+
+@router.post(
+    "/maa/cultivate/skland/bindings",
+    tags=["Get"],
+    summary="森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）",
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_maa_depot_inventory(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
+async def get_maa_cultivate_skland_bindings() -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_depot_inventory(script.scriptId)
+        raw_data = await Config.get_maa_cultivate_skland_bindings()
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         return ComboBoxOut(
@@ -863,22 +886,22 @@ async def get_maa_depot_inventory(script: ScriptDeleteIn = Body(...)) -> ComboBo
 @router.post(
     "/maa/cultivate/operators",
     tags=["Get"],
-    summary="MAA 干员养成选择器目录（一图流全量表，稀有度降序）",
-    response_model=ComboBoxOut,
+    summary="MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）",
+    response_model=MaaCultivateOperatorsOut,
     status_code=200,
 )
 async def get_maa_cultivate_operators(
     script: ScriptDeleteIn = Body(...), userId: str = Body(...)
-) -> ComboBoxOut:
+) -> MaaCultivateOperatorsOut:
 
     try:
         raw_data = await Config.get_maa_cultivate_operators(script.scriptId, userId)
-        data = [ComboBoxItem(**item) for item in raw_data]
+        data = [MaaCultivateOperatorOptionItem(**item) for item in raw_data]
     except Exception as e:
-        return ComboBoxOut(
+        return MaaCultivateOperatorsOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
         )
-    return ComboBoxOut(data=data)
+    return MaaCultivateOperatorsOut(data=data)
 
 
 @router.post(
@@ -904,6 +927,7 @@ async def get_maa_cultivate_preview(
             stages=[],
             demands=[],
             unobtainable=[],
+            progressions=[],
             hasProgression=False,
             hasInventory=False,
         )
@@ -912,6 +936,10 @@ async def get_maa_cultivate_preview(
         demands=data["demands"],
         unobtainable=data["unobtainable"],
         totalExpectedSanity=data.get("totalExpectedSanity"),
+        progressions=[
+            CultivateOperatorProgression(**item)
+            for item in data.get("progressions", [])
+        ],
         hasProgression=bool(data.get("availability", {}).get("has_progression")),
         hasInventory=bool(data.get("availability", {}).get("has_inventory")),
     )

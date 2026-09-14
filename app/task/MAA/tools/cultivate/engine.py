@@ -134,12 +134,28 @@ def _stage_unusable(
 ) -> bool:
     """关卡是否结构性不可用（缺失/无关卡代码/被黑名单排除）。
 
-    只做与时间、星期无关的结构判定：固定产出资源关有固定开放日，按当天
-    过滤会让用户在不开放的日子拿不到该材料，开放时间由 MAA 执行时判断。
+    只做与时间、星期无关的结构判定；当天是否开放（星期关、活动窗）由调用
+    方按 today 另行判断——MAA 对"认识但今天不开"的关不做次日顺延，整条
+    跳过（v6.17.5 实测）。
     """
 
     meta = data.stages.get(stage_id)
     return meta is None or not meta.stage_code or meta.stage_code in blacklist
+
+
+def _stage_closed_today(
+    stage_id: str, data: CultivateDataSet, weekday: int | None
+) -> bool:
+    """关卡今天是否未开放（星期关，weekday 为 None 时不判断）。"""
+
+    if weekday is None:
+        return False
+    meta = data.stages.get(stage_id)
+    return (
+        meta is not None
+        and meta.open_weekdays is not None
+        and weekday not in meta.open_weekdays
+    )
 
 
 def _direct_cost(
@@ -198,6 +214,11 @@ def _best_path(
         return memo[item_id]
 
     candidates: list[tuple[float, dict[str, float]]] = []
+    # 资源关固定产出（采购凭证/龙门币等）：无掉落统计、单次产量未知，按 0
+    # 中性成本视为"可获取"——用于配方路径可行性（如芯片助剂 ← 采购凭证×90）；
+    # 实际刷取与理智估算仍由 acquire/build_plan 的固定产出关分支处理
+    if item_id in data.fixed_source_stages:
+        candidates.append((0.0, {item_id: 1.0}))
     direct_cost = _direct_cost(item_id, data, now_ms, weekday, blacklist)
     if direct_cost is not None:
         candidates.append((direct_cost, {item_id: 1.0}))
@@ -278,8 +299,8 @@ def synthesize(
             sources_by_item.setdefault(item_id, requirement.sources)
             continue
         # 资源关固定产出（龙门币 ← CE-6、采购凭证 ← AP-5 等）：只按资源关
-        # 处理，不参与掉落统计与合成折算。不在此过滤开放日，开放时间由
-        # MAA 执行时自行判断（与 recommend_stages 口径一致）。
+        # 处理，不参与掉落统计与合成折算。本函数只决定"折算到哪里刷"，
+        # 需求原样保留；当天是否产刷取条目由 recommend_stages 按开放日判断。
         fixed_stage_id = data.fixed_source_stages.get(item_id)
         if fixed_stage_id is not None:
             if _stage_unusable(fixed_stage_id, data, blacklist):
@@ -365,8 +386,10 @@ def recommend_stages(
     统计口径与库存保持选择器一致：单件期望理智 = 理智 ÷ 每次期望掉落，
     只衡量目标材料本身，不计关卡副产物。
 
-    过滤：活动关时间窗、资源本/芯片本星期开放规则、用户黑名单。
-    无可用候选的材料不产条目（仍保留在 demands 供 UI 展示缺口）。
+    过滤：活动关时间窗、资源本/芯片本星期开放规则（含固定产出资源关）、
+    用户黑名单。无可用候选的材料不产条目（仍保留在 demands 供 UI 展示缺口）；
+    星期关今天不开同样不产条目——缺口判定以本函数结果为准，敞开的话会让
+    刷不到的材料持续抑制库存保持。
     """
 
     now_ms = int(datetime.combine(today, dt_time.min).timestamp()) * 1000
@@ -405,14 +428,16 @@ def recommend_stages(
         # 直接给出对应关。期望次数/理智不可算（产出恒定但单次产量未知），
         # 保持 0.0 中性值，由 MAA 按保有量目标执行时现算。
         #
-        # 不做星期过滤：资源关有固定开放日，若在此按当天过滤，用户在不开放
-        # 的日子选该材料就拿不到任何关卡、无法保存计划。MAA 执行时会自行
-        # 判断开放时间并安排到开放日刷取，计划层不该替它做这个决定。
+        # 星期关今天不开放时不产条目：MAA 对"认识但今天不开"的关整条跳过
+        # （不做次日顺延），产条目只会让缺口判定成立、白白抑制库存保持，
+        # 开放日下一轮自然回来（编辑器候选仍给出该关，供用户提前保存计划）。
         if best_stage is None:
             fixed_stage_id = data.fixed_source_stages.get(requirement.item_id)
             if fixed_stage_id is None or _stage_unusable(
                 fixed_stage_id, data, blacklist
             ):
+                continue
+            if _stage_closed_today(fixed_stage_id, data, weekday):
                 continue
             entries.append(
                 FarmEntry(

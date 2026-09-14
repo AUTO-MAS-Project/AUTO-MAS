@@ -145,12 +145,17 @@ class ProviderContext:
 
     ``file_cache`` 供 provider 在单次编排内缓存识别文件解析结果（同目录
     多干员多次取数只读一次磁盘）；provider 不跨调用持有状态，缓存随
-    context 生命周期走。
+    context 生命周期走。森空岛整表快照由异步驱动层（cultivate/skland.py）
+    拉取后注入，skland 适配器只做同步查表（决策 38）。
     """
 
     maa_data_dir: Path | None = None  # MAA 安装目录 data/，local 适配器读取用
     manual_progressions: Mapping[str, Progression] = field(default_factory=dict)
     file_cache: dict[str, Any] = field(default_factory=dict)
+    skland_progressions: Mapping[str, Progression] = field(
+        default_factory=dict
+    )  # player/info 整表解析结果；空映射 = 未拉取/不可用，链短路落 local
+    skland_captured_at: int = 0  # 快照拉取时刻（epoch 秒）
 
 
 @runtime_checkable

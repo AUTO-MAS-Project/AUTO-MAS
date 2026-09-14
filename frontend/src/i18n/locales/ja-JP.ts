@@ -345,6 +345,7 @@ export default {
     extractFieldsFromWindow: '開始／終了の正規表現で囲んだ範囲からフィールドを抽出します',
     targetStock: '目標在庫',
     stock: '在庫',
+    stockRecognizedAt: '認識日時: {time}',
     resource: 'リソース',
     preset: 'プリセット',
     claimRewards: '報酬を受け取る',
