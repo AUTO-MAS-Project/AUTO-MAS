@@ -89,12 +89,8 @@ const emit = defineEmits<{ (e: 'add-script'): void }>()
 const bodyRef = ref<InstanceType<typeof BettergiGroupProjectBody> | null>(null)
 
 const shellPaneKey = 'project-editor'
-// 标签栏标题：来源类型（配置组/JS脚本/路径），与父级 detail header 的组名不重复
-const shellTabLabel = computed<string>(() => {
-  if (props.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
-  if (props.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
-  return t('edit.bettergiGroupKindCustom')
-})
+// 标签栏标题：脚本/路径/录制本质都是「配置组 + 脚本队列」，统一显示为「配置组」
+const shellTabLabel = computed<string>(() => t('edit.bettergiGroupKindScriptGroup'))
 // 放大弹窗标题：当前组/脚本显示名
 const zoomTitle = computed<string>(
   () => props.displayName || props.groupName || shellTabLabel.value
@@ -107,6 +103,7 @@ defineExpose({
   reload: () => bodyRef.value?.reload(),
   addProjects: (rows: unknown[]) => bodyRef.value?.addProjects(rows as never[]),
   removeSelectedProjects: () => bodyRef.value?.removeSelectedProjects(),
+  clearProjects: () => bodyRef.value?.clearProjects(),
 })
 </script>
 
