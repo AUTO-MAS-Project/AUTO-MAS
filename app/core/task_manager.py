@@ -246,10 +246,15 @@ class Task(TaskExecuteBase):
         task_info: TaskInfo,
         script_identities: list[WSTaskScriptIdentityData],
         script_reservations: _ScriptTaskReservations | None = None,
+        script_run_days: list[list[str]] | None = None,
     ):
         super().__init__()
         self.task_info = task_info
         self.script_identities = script_identities
+        # 队列项限定的运行周几，与 script_identities 一一对应；非队列任务为 None。
+        # 以任务创建那一刻的星期为准，队列跨过午夜后后面的项不会按第二天算。
+        self.script_run_days = script_run_days
+        self.run_weekday = datetime.now().strftime("%A")
         self.script_reservations = script_reservations or _ScriptTaskReservations()
         self.is_closing = False
         self._exit_result = "success"
@@ -692,6 +697,13 @@ class Task(TaskExecuteBase):
         await ensure_desktop_available()
         await self._run_script_list(start_index)
 
+    def _is_script_scheduled_today(self, index: int) -> bool:
+        """队列项的运行周几不含创建任务当天时跳过；非队列任务与缺省项一律运行。"""
+
+        if self.script_run_days is None or index >= len(self.script_run_days):
+            return True
+        return self.run_weekday in self.script_run_days[index]
+
     async def _run_script_list(self, start_index: int) -> None:
         for self.task_info.current_index in range(
             start_index, len(self.task_info.script_list)
@@ -711,6 +723,13 @@ class Task(TaskExecuteBase):
                         level="error",
                         message=f"任务 {script_item.name} 对应脚本已被删除",
                     ),
+                )
+                continue
+
+            if not self._is_script_scheduled_today(self.task_info.current_index):
+                script_item.status = "跳过"
+                logger.info(
+                    f"跳过任务: {current_script_uid}, 队列项未安排在 {self.run_weekday} 运行"
                 )
                 continue
 
@@ -849,15 +868,23 @@ class _TaskManager:
         self._startup_queue_running = False
 
     @staticmethod
-    def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
-        """返回队列中实际引用的脚本 ID。"""
+    def _queue_script_entries(
+        queue_id: uuid.UUID,
+    ) -> list[tuple[uuid.UUID, list[str]]]:
+        """返回队列中实际引用的脚本 ID 及该队列项限定的运行周几。"""
 
         return [
-            uuid.UUID(script_id)
+            (uuid.UUID(script_id), list(queue_item.get("Schedule", "Days")))
             for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
             if (script_id := str(queue_item.get("Info", "ScriptId") or "").strip())
             and script_id != "-"
         ]
+
+    @classmethod
+    def _queue_script_ids(cls, queue_id: uuid.UUID) -> list[uuid.UUID]:
+        """返回队列中实际引用的脚本 ID。"""
+
+        return [script_id for script_id, _ in cls._queue_script_entries(queue_id)]
 
     @staticmethod
     def _script_identity(script_id: uuid.UUID) -> WSTaskScriptIdentityData:
@@ -1067,18 +1094,23 @@ class _TaskManager:
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
-        # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用
-        target_script_ids = (
-            self._queue_script_ids(queue_id)
-            if queue_id is not None
-            else [script_uid]
-            if script_uid is not None
-            else []
-        )
+        # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用；
+        # 队列项限定的运行周几随身份一起冻结，顺序执行时据此跳过
+        script_run_days: list[list[str]] | None = None
+        if queue_id is not None:
+            queue_entries = [
+                entry
+                for entry in self._queue_script_entries(queue_id)
+                if entry[0] in Config.ScriptConfig
+            ]
+            target_script_ids = [script_id for script_id, _ in queue_entries]
+            script_run_days = [days for _, days in queue_entries]
+        elif script_uid is not None and script_uid in Config.ScriptConfig:
+            target_script_ids = [script_uid]
+        else:
+            target_script_ids = []
         script_identities = [
-            self._script_identity(script_id)
-            for script_id in target_script_ids
-            if script_id in Config.ScriptConfig
+            self._script_identity(script_id) for script_id in target_script_ids
         ]
 
         reservation_owner = str(task_uid)
@@ -1113,6 +1145,7 @@ class _TaskManager:
                 self.task_info[task_uid],
                 script_identities,
                 self._script_reservations,
+                script_run_days=script_run_days,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,

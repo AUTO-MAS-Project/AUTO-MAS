@@ -2925,6 +2925,7 @@ export default {
       add: '添加任务',
       colIndex: '序号',
       colScript: '脚本任务',
+      colDays: '运行周几',
       colActions: '操作',
       dragSort: '拖拽排序',
       selectScript: '请选择脚本',

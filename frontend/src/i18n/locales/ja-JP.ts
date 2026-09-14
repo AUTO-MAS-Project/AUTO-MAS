@@ -2682,6 +2682,7 @@ export default {
       add: 'タスクを追加',
       colIndex: '番号',
       colScript: 'スクリプトタスク',
+      colDays: '実行曜日',
       colActions: '操作',
       dragSort: 'ドラッグして並び替え',
       selectScript: 'スクリプトを選択してください',
