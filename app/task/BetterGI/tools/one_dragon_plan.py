@@ -346,6 +346,44 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
 }
 
 
+def plan_steps_to_native_settings(
+    steps: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """把 Plan 战斗步骤的 settings 反转成「右栏/原生键」字典，按组基名归集。
+
+    用途：直控来源 + 快速配置开启时把面板值写进 BGI 原生配置——与执行层方向相反
+    （执行层是原生键 → Plan settings）。落点由调用方按存储归属分派：
+    首领讨伐/地脉花 → 一条龙文件；秘境 → 全局 ``autoDomainConfig`` 段；
+    幽境危战 → 全局 ``autoStygianOnslaughtConfig`` 段。
+
+    - 只收 ``RIGHTBAR_TO_PLAN`` 登记过的键（即 ``BUILTIN_STEP_SETTING_KEYS`` 白名单）；
+    - 只收**非空**值：留空的字段保持原生配置现有值，避免把面板空值灌进原生配置；
+    - 结构化/全局共享字段（秘境每周表、地脉花每工作日 country/type、maxArtifactStar）
+      不在本表内，按注释约定留在原生存储，不参与对齐。
+
+    Returns:
+        ``{组基名: {原生键: 值}}``；无战斗步骤或无可对齐字段时返回空 dict。
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for step in steps or []:
+        if not isinstance(step, dict):
+            continue
+        base = _resolve_base_name(str(step.get("name", "")))
+        mapping = RIGHTBAR_TO_PLAN.get(base)
+        if not mapping:
+            continue
+        settings = step.get("settings")
+        if not isinstance(settings, dict):
+            continue
+        bucket = out.setdefault(base, {})
+        for native_key, plan_key in mapping.items():
+            value = settings.get(plan_key)
+            if value is None or value == "":
+                continue
+            bucket[native_key] = value
+    return {key: value for key, value in out.items() if value}
+
+
 # ── 每周配置：右栏平铺键 ↔ Plan 嵌套结构 ───────────────────────────────
 # 前端 weekly 表格仍用 BGI 原生平铺键（MondayPartyName / LeyLineMondayCountry …），
 # 后端落盘时重组为 Plan settings 内的嵌套对象，执行层 main.js 按「今天星期」取值。

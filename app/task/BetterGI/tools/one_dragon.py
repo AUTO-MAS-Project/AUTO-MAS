@@ -1402,6 +1402,7 @@ def write_native_one_dragon(
     manage_custom_groups: bool = False,
     queue: list[dict[str, Any]] | None = None,
     exclude_task_names: list[str] | None = None,
+    native_step_settings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """把面板值写入 **BGI 原生一条龙配置**（直控来源 + 快速配置开启时使用）。
 
@@ -1448,6 +1449,18 @@ def write_native_one_dragon(
                 _wd["default"][_team_key] = party_name
             if auto_boss_strategy_name:
                 _wd["default"]["strategy"] = auto_boss_strategy_name
+    # 四项战斗组的 per-任务设置（见 one_dragon_plan.RIGHTBAR_TO_PLAN 的存储归属注释）：
+    # 首领讨伐/地脉花落本文件；秘境/幽境落全局 config.json 各自段——两个写入函数的
+    # 白名单会自行只收属于自己的键，此处按组名分派即可。
+    if native_step_settings:
+        for _group in ("自动首领讨伐", "自动地脉花"):
+            config.update(native_step_settings.get(_group) or {})
+        _domain = native_step_settings.get("自动秘境") or {}
+        if _domain:
+            write_global_domain_settings(root, _domain)
+        _stygian = native_step_settings.get("自动幽境危战") or {}
+        if _stygian:
+            write_global_stygian_settings(root, _stygian)
     write_file(path, config)
     return config
 

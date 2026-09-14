@@ -49,6 +49,7 @@ from .tools.one_dragon_plan import (
     BUILTIN_COMBAT_STEP_NAMES,
     build_combat_steps,
     parse_one_dragon_plan,
+    plan_steps_to_native_settings,
     resolve_base_name,
 )
 from .tools.one_dragon_report import parse_one_dragon_report
@@ -508,6 +509,9 @@ class AutoProxyTask(TaskExecuteBase):
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
             exclude_task_names=exclude_task_names,
+            # 四项战斗组的 per-任务设置（树脂/奖励识别/秘境界/首领名…）：
+            # 直控下执行层不跑，Plan 只有这里会落到原生配置
+            native_step_settings=plan_steps_to_native_settings(self.plan_combat_steps),
         )
         if written is None:
             return
