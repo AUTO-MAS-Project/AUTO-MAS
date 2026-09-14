@@ -7,7 +7,7 @@
 // ⚠️ 待实机复核（技术路径文档 #4/#5/#7）：
 //   - settings 注入方式（全局 `settings` 还是脚本参数）、脚本入口约定；
 //   - 地脉花 useAdventurerHandbook 语义反转（AutoPlan 记录需取反）；
-//   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算；
+//   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算（已落地，见 dispatchCombat 自动秘境分支）；
 //   - 字段名以目标版本 bettergi.d.ts 复核（本文件依据 bettergi-scripts-list 0.64 附近 d.ts）。
 
 const COMBAT_STEPS = ["自动秘境", "自动地脉花", "自动幽境危战", "自动首领讨伐"];
@@ -122,13 +122,39 @@ async function dispatchCombat(step) {
         masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
         return;
       }
-      const p = new AutoDomainParam(s.domainRoundNum != null ? s.domainRoundNum : 1);
+      // 轮数换算（原文件头 TODO #7）：前端右栏不暴露 domainRoundNum，直接取默认值 1
+      // 会让 BGI 的 AutoDomain 只刷 1 轮就「正常返回」（不抛异常）——表现为第二轮角色
+      // 一动不动、攒够超时后反复 ESC 回主界面、最后被 MAS 记成 MAS_STEP_DONE 成功。
+      // 这里按「指定树脂刷取次数」求和换算轮数：浓缩/须臾/脆弱/原粹每次各计 1 轮。
+      const resinRounds =
+        (s.condensedResinUseCount || 0) +
+        (s.transientResinUseCount || 0) +
+        (s.fragileResinUseCount || 0) +
+        (s.originalResinUseCount || 0);
+      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现；这里只规范化一次，
+      // 并把这个结果同时用于「模式判断」与下面的 Param 透传，避免两处得出相反结论
+      // （例如字符串 "false" 会被 !! 转成 true，BGI 就会收到
+      // 「模式=树脂耗尽 / 参数=指定次数」的矛盾设置）。
+      const specifyResinUse = s.specifyResinUse === true || s.specifyResinUse === "true";
+      let roundNum;
+      if (specifyResinUse) {
+        // 指定次数模式：轮数 = 各树脂次数之和；次数全为 0 时回退步骤级配置
+        roundNum = resinRounds > 0 ? resinRounds : s.domainRoundNum != null ? s.domainRoundNum : 1;
+      } else {
+        // 耗尽模式：不设轮数上界，由 BGI 在体力耗尽时自行正常结束
+        // （实测收尾行「体力耗尽或者设置轮次已达标，结束自动秘境」，不抛异常）。
+        // 不回退 s.domainRoundNum：耗尽模式与「限定轮数」互斥，该键前端从不产出，
+        // 回退只会让残留它的旧设置被意外截断。
+        roundNum = 999;
+      }
+      const p = new AutoDomainParam(roundNum);
       if (partyName) p.partyName = partyName;
       if (domainName) p.domainName = domainName;
       if (reward != null) p.sundaySelectedValue = String(reward);
       if (s.autoArtifactSalvage != null) p.autoArtifactSalvage = !!s.autoArtifactSalvage;
       if (s.maxArtifactStar != null) p.maxArtifactStar = String(s.maxArtifactStar);
-      if (s.specifyResinUse != null) p.specifyResinUse = !!s.specifyResinUse;
+      // 用上面规范化后的值，确保与轮数换算取到同一个模式
+      if (s.specifyResinUse != null) p.specifyResinUse = specifyResinUse;
       if (s.originalResinUseCount != null) p.originalResinUseCount = s.originalResinUseCount;
       if (s.condensedResinUseCount != null) p.condensedResinUseCount = s.condensedResinUseCount;
       if (s.transientResinUseCount != null) p.transientResinUseCount = s.transientResinUseCount;
