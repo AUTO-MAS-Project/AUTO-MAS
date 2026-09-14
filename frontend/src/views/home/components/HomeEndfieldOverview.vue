@@ -27,14 +27,14 @@
       class="status-alert"
     />
 
-    <!-- 卡池大横幅撤掉了，改成和活动一样的小行，避免和上方的轮播横幅重复一张大图 -->
+    <!-- 卡池头像按原始方形展示，和同期活动横图分开排版。 -->
     <section v-if="overview.Pools.length" class="activity-section">
       <div class="activity-section-header">
         <span>{{ t('home.endfield.poolSection') }}</span>
       </div>
 
       <div class="activity-grid">
-        <div v-for="pool in overview.Pools" :key="pool.Id" class="activity-item">
+        <div v-for="pool in overview.Pools" :key="pool.Id" class="activity-item pool-item">
           <div class="activity-thumbnail">
             <PictureOutlined
               v-if="!pool.ImageUrl || failedImageIds.has(pool.Id)"
@@ -310,6 +310,41 @@ const handleImageError = (itemId: string) => {
 
 .activity-meta :deep(.ant-statistic-content) {
   line-height: 1;
+}
+
+.activity-section:first-child {
+  margin-top: 0;
+}
+
+.pool-item {
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  padding: 12px;
+  gap: 16px;
+  border-radius: 10px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.pool-item .activity-thumbnail {
+  height: 88px;
+  border-radius: 8px;
+}
+.pool-item .activity-thumbnail img {
+  object-fit: contain;
+}
+.pool-item .activity-title-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.pool-item .activity-name {
+  white-space: normal;
+}
+.pool-item .pool-up {
+  margin-top: 6px;
+  white-space: normal;
+}
+.activity-meta {
+  flex-wrap: wrap;
 }
 
 @media (max-width: 900px) {
