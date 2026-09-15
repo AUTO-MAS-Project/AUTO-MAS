@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
+from app.task.BetterGI.tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES
 from app.utils import resource_path
 from app.utils.io import read_file, write_file
 
@@ -2507,7 +2508,16 @@ def apply_groups(
             new_order.append(uid)
             if name in _BUILTIN_ONE_DRAGON_GROUPS:
                 present_builtin.add(name)
-                new_enabled[uid] = name in selected_set
+                if name in BUILTIN_COMBAT_STEP_NAMES:
+                    # 战斗 4 项（秘境/地脉花/幽境危战/首领讨伐）：启停由「Groups 纳入」
+                    # 与「队列条目 enabled（= Plan.step.enabled）」共同决定。前端关闭战斗组
+                    # 开关只把队列条目的 enabled 置 false，基名仍保留在队列供运行时纳入，
+                    # 故不能仅凭 Groups 置位，否则出现「界面关了、原生一条龙仍跑」的错位。
+                    new_enabled[uid] = (name in selected_set) and bool(
+                        entry.get("enabled", True)
+                    )
+                else:
+                    new_enabled[uid] = name in selected_set
             elif "enabled" in entry:
                 # 每实例独立开关（队列条目自带 enabled），与战斗组实例行为一致
                 new_enabled[uid] = bool(entry["enabled"])
