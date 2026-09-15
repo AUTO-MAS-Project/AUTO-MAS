@@ -41,30 +41,14 @@
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
             @preset-menu-click="handlePresetMenuClick"
-            @mode-change="handleConfigModeChange"
-            @open-restore="restoreOpen = true"
           />
 
-          <a-flex
-            class="section-header"
-            justify="space-between"
-            align="center"
-            wrap="wrap"
-            gap="small"
-          >
+          <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
+               任务队列始终显示。两个字段仍留在配置模型里，只是不再提供入口。 -->
+          <div class="section-header">
             <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
-            <a-space>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing || isSaving"
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
-            </a-space>
-          </a-flex>
+          </div>
           <TaskQueueSection
-            v-if="formData.Info.IfQuickConfig"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -822,21 +806,6 @@ const handleFieldSave = async (key: string, value: unknown) => {
       logger.error(`保存失败: ${errorMsg}`)
       return false
     })
-}
-
-const handleQuickConfigChange = async (value: boolean) => {
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
-}
-
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
-const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 const savePresetAndSnapshot = async () => {

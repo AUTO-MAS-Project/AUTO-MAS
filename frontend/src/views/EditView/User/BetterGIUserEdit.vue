@@ -286,19 +286,10 @@
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
+                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
-                <a-form-item v-if="!masConfigEnabled" :label="t('edit.bettergiOneDragonName')">
-                  <a-select
-                    v-model:value="formData.Task.OneDragonConfigName"
-                    :options="oneDragonConfigOptions"
-                    :disabled="pageLoading || isSaving"
-                    @dropdown-visible-change="(open: boolean) => open && loadOneDragonConfigs()"
-                    @change="
-                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
-                    "
-                  />
-                </a-form-item>
               </a-col>
             </a-row>
 
@@ -323,32 +314,43 @@
         </a-form>
       </a-card>
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>
-          {{ t('edit.taskConfiguration') }}
-          <a-tooltip :title="t('edit.bettergiTaskConfigHint')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
-        </h3>
-        <a-space>
-          <span>{{ t('edit.enableQuickConfiguration') }}</span>
-          <a-switch
-            :checked="formData.Info.IfQuickConfig"
-            :disabled="pageLoading || isInitializing || isSaving"
-            :aria-label="t('edit.enableQuickConfiguration')"
-            @change="handleQuickConfigChange"
-          />
-          <a-button size="small" @click="restoreOpen = true">
-            <template #icon>
-              <HistoryOutlined />
-            </template>
-            {{ t('edit.configRestoreTitle') }}
-          </a-button>
-        </a-space>
-      </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
+      <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
+            <a-flex
+              class="section-header"
+              justify="space-between"
+              align="center"
+              wrap="wrap"
+              gap="small"
+            >
+              <h3>
+                {{ t('edit.taskConfiguration') }}
+                <a-tooltip :title="t('edit.bettergiTaskConfigHint')">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </h3>
+              <a-button size="small" @click="restoreOpen = true">
+                <template #icon>
+                  <HistoryOutlined />
+                </template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </a-flex>
+
+            <a-alert
+              v-if="formData.Info.Mode === '直控'"
+              type="info"
+              show-icon
+              class="mode-guide-alert"
+            >
+              <template #message>
+                <span class="mode-guide-message">
+                  {{ t('edit.bettergiDirectModeAlert') }}
+                </span>
+              </template>
+            </a-alert>
+
             <a-alert
               v-if="masConfigEnabled"
               type="info"
@@ -1128,83 +1130,14 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.notificationSettings') }}</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  {{ t('edit.notifyStatistics') }}
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  {{ t('edit.notifyMail') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  :placeholder="t('edit.enterRecipientAddress')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  {{ t('edit.notifyServerChan') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  :placeholder="t('edit.enterSendkey')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="userId"
+            show-drop-statistics
+            @save="saveField"
+          />
         </a-form>
       </a-card>
     </div>
@@ -1293,7 +1226,7 @@ import {
   saveGlobalStygianSettings,
   saveOneDragonSettings,
 } from '@/composables/useBettergiOneDragonSettings'
-import WebhookManager from '@/components/WebhookManager.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
@@ -1338,12 +1271,14 @@ const bettergiConfigModeOptions: Array<{
   },
   {
     title: t('edit.scriptDirectControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    description: t('edit.useScriptSCurrent'),
     value: '直控',
     icon: 'setting',
   },
 ]
-const masConfigEnabled = computed(() => formData.Info.IfQuickConfig)
+// 面板可见性由**配置来源**决定（维护者决策：放弃把快速配置当作来源开关）：直控 = 用 BGI
+// 所选原生配置（显示原生「一条龙名称」与「配置 BetterGI」，MAS 不接管）；脚本/用户 = MAS 面板。
+const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -1739,6 +1674,12 @@ const scriptGroupOptions = ref<{ label: string; value: string }[]>([])
 // CustomGroups 中某名字是否命中 BetterGI ScriptGroup 配置组目录
 const isScriptGroupName = (name: string): boolean =>
   scriptGroupOptions.value.some(o => o.value === name)
+
+// MAS 自建的配置组：运行期物化产物（MAS-{短id}-自定义配置组N / MAS-{短id}-执行层段N）
+// 与切号组（MAS切换账号）、执行层资源模板组（MAS一条龙）。它们只应存在于运行期或
+// BGI 副本目录，不该出现在「添加配置组」弹窗的「配置组」候选里。
+const isMasOwnGroup = (name: string): boolean =>
+  name.startsWith('MAS-') || name === 'MAS切换账号' || name === 'MAS一条龙'
 
 // BetterGI「录制」候选：{RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
 const keyMouseOptions = ref<{ label: string; value: string }[]>([])
@@ -3826,10 +3767,18 @@ const buildCandidates = () => {
     groupTaken.add(STAMINA_COMBAT_KEY)
   }
   for (const opt of scriptGroupOptions.value) {
-    if (!groupTaken.has(opt.value)) {
-      groupItems.push({ kind: 'scriptgroup', key: opt.value })
-      groupTaken.add(opt.value)
-    }
+    if (groupTaken.has(opt.value)) continue
+    // 「配置组」候选只应有三类：默认组、专项组、BGI User/ScriptGroup 里真实存在的配置组。
+    // 后端为识别队列行会把该用户的 per-user 副本名一并返回，其中：
+    //   1) 「脚本/录制」类自定义项的副本名与脚本目录名/录制名同名（OCRCountResin、
+    //      提瓦特记事本DHXYHO…）——它们归属「脚本」「录制」标签页，不是配置组；
+    //   2) MAS 自建组（MAS-{短id}-自定义配置组N / MAS-{短id}-执行层段N / MAS切换账号 /
+    //      MAS一条龙）——运行期物化产物，用户不该在这里看到。
+    // 二者在此剔除（2026-09-16 实机：添加自定义配置组后它们会冒进候选列表）。
+    if (isMasOwnGroup(opt.value)) continue
+    if (isJsScriptName(opt.value) || isKeyMouseName(opt.value)) continue
+    groupItems.push({ kind: 'scriptgroup', key: opt.value })
+    groupTaken.add(opt.value)
   }
   addModal.groupCandidates = groupItems
 }

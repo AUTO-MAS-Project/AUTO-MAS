@@ -226,8 +226,12 @@ class BetterGIManager(TaskExecuteBase):
                 error_count = sum(
                     1 for user in self.script_info.user_list if user.status == "异常"
                 )
+                # 「部分失败」（执行层有步骤失败但已跳过继续、不判负）必须计入已完成：
+                # 它既不算异常也不算等待，否则 completed/uncompleted 两侧都漏掉它，数字对不上
                 over_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "完成"
+                    1
+                    for user in self.script_info.user_list
+                    if user.status in ("完成", "部分失败")
                 )
                 wait_count = sum(
                     1 for user in self.script_info.user_list if user.status == "等待"

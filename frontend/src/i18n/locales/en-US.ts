@@ -270,6 +270,7 @@ export default {
     notifyServerChan: 'ServerChan',
     notifyStatistics: 'Statistics',
     notifyRecruit: 'Top-tier recruitment alerts',
+    notifyDropStatistics: 'Drop statistics',
     notifyMail: 'Email',
     maaAnnihilation: 'Annihilation',
     maaAnnihilationHint:
@@ -1399,7 +1400,7 @@ export default {
     useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
     quickConfig: 'Quick configuration',
     configSourceHint:
-      'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
+      'Script configuration lets every user share one script-level source; per-user configuration gives each user a source of their own; script-direct control uses the native BGI config and is shared by users on that source.',
     configSourceHintBase:
       "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
     nativeConfigSourceDescription: "Use the script's current native configuration.",
@@ -1637,14 +1638,17 @@ export default {
     bettergiDirectModeAlert:
       'Script-controlled mode: enter the OneDragon config name this user uses below (a config that already exists in BetterGI); configure scripts inside BetterGI (click "Configure BetterGI" to open it).',
     bettergiSwitchToMasConfig: 'Switch to per-user config',
-    bettergiMasConfigHowTo: 'How to use per-user config',
+    bettergiMasConfigHowTo: 'How to use task configuration',
     bettergiMasConfigHowTo1a:
       "This user's One Dragon is on a per-user profile: tasks and custom groups are configured on this page as the MAS source of truth (no need to open BetterGI's One Dragon page). MAS launches One Dragon from the fixed slot",
     bettergiMasConfigSlotName: 'MAS独立配置',
     bettergiMasConfigHowTo1b:
       'and cleans the slot up afterwards. Your own BetterGI profiles (such as 默认配置) stay untouched: the same-named real profile is neither read nor affected by this page.',
     bettergiMasConfigHowTo2:
-      "Battle party and battle strategy below: leave them empty to keep BetterGI's current settings (an empty strategy means picking automatically from the party). Once filled in, they apply to the four combat tasks in One Dragon (ley line blossoms, domains, boss runs and Stygian Onslaught), replacing BetterGI's defaults for those tasks.",
+      'The battle party and battle strategy below are the fallback for every combat task (ley line blossoms, domains, boss runs and Stygian Onslaught). An empty party means "do not switch party" (keep the party you entered the task with); an empty strategy lets BetterGI pick one from the party. If a task matches a battle scene in the team table, the party and strategy of that row win.',
+    bettergiTeamHowToTitle: 'How to use team settings',
+    bettergiTeamHowTo:
+      'With the team table enabled, combat tasks (auto domain / auto ley line blossom / auto boss) look it up first: a row matching the battle scene is preferred, and one is picked at random when several match; tasks without a match fall back to the battle party / battle strategy above. Row 0, General, covers every scene and cannot be deleted. Party and strategy names must match what already exists in BetterGI (use "Open strategy folder" to browse strategy files).',
     bettergiOneDragonName: 'One Dragon profile',
     bettergiOneDragonNameHint:
       'Fixed to MAS独立配置 while per-user config is on and cannot be changed. With per-user config off (direct mode) it picks the BetterGI profile to use; defaults to 默认配置',
@@ -3444,7 +3448,7 @@ export default {
         SRC: 'Star Rail automation and multi-account runs',
         MaaEnd: 'Dedicated MFW adapter',
         M9A: 'Reverse: 1999 automation',
-        MaaFW: 'Hosts a MaaFramework project',
+        MaaFW: 'Runs any MaaFramework project that ships an interface.json',
         Okww: 'Dedicated ok-script task runner',
         OkNte: 'Neverness to Everness OK-NTE automation',
         HSR: 'March7th / SRA dual-script support',
