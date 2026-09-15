@@ -189,6 +189,10 @@ def archive_mas_runtime_backup(script_id, user_id) -> None:
 | `dir_files(source)` | 目录 → 相对文件集 |
 | `file_set_hash(files)` | 文件集指纹（rel 键 + 大小 + 字节） |
 | `config_root_key(config_path)` | 物理配置根的稳定身份指纹（规范化绝对路径短哈希），项目级原生池分桶用 |
+| `OVERLAY_SIDECAR_NAME` | 字段侧车统一文件名 `_mas_overlay.json`（跨专项单一常量，勿另立） |
+| `read_overlay_sidecar(backup_dir, *, file_name=…)` | 读归档内字段侧车；不存在/损坏返回 None |
+| `mask_account(value)` | 账号脱敏（11 位手机号保前 3 后 4，其余原样） |
+| `restore_files(backup_dir, target_root, rel_keys=None, *, dir_map=None)` | 按相对键写回（**replace 语义**）：先删「备份内出现的受管键/子树」再写，备份外的用户数据保留；`dir_map` 用于 rel 键前缀映射到外部共享根（此时只删备份内出现的相对路径，绝不整根删） |
 
 ### 5.2 专项必须提供 / 可自定义的接口（放专项模块）
 

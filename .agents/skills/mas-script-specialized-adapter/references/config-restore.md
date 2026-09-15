@@ -331,6 +331,20 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 - `onRestored(target, item)`：一键恢复成功后父组件处理（mas 恢复含字段回填 →
   刷新表单；脚本级由组件自行刷新列表）。
 
+**恢复入口必须恒可达（MaaFW 互补双入口范式）**：恢复按钮若放在条件渲染区块
+内（如 MAA/M9A 的任务区块 `v-if="Mode !== '直控'"`、Okww 快速配置卡、HSR 的
+体力配置 `v-if="dailyStageEngine"`），条件不成立时用户会完全失去入口。规则：
+- 主入口所在的区块，其 `v-if` 不成立时，必须在**常驻区块**（基本信息标题行）
+  补一个**反向条件**的兜底按钮（`v-if="Mode === '直控'"` 等），点击
+  `restoreOpen = true`（子组件则 `emit('openRestore')` + 父组件
+  `@open-restore="restoreOpen = true"`）；
+- 兜底条件 = 「主入口不可见」的**完整补集**，不能只写一半——HSR 曾有
+  `!dailyStageEngine` 兜底但主入口还要求 `controlMode === 'managed'`，直控+有引擎
+  时双入口同灭（修法：`controlMode !== 'managed' || !dailyStageEngine`）；
+- 兜底按钮的 `@click` 必须是**单个表达式或方法调用**（如 `restoreOpen = true`）；
+  多行多语句内联会被 oxfmt 折叠成无分号、Vue 模板解析失败（踩坑），需要多步
+  逻辑就提取成 script 方法。
+
 ### 3.2 内置预览渲染（适配的专项直接用，不用插槽）
 
 - `user` 池：基本信息（`info`）+ 账号（`account`）+ 任务编排清单（`tasks`，
