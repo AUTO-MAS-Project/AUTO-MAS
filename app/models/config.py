@@ -85,6 +85,66 @@ from .schema import TagItem
 logger = get_logger("配置模型")
 
 
+def infrast_plan_mode(plans: list[dict]) -> str:
+    """排班表的时段形态: period=全带时段, rotate=全不带, mixed=混合, empty=无班次。
+
+    前提: ``plans`` 元素为 dict(``infrast_format_problem`` 已先行校验)。
+    """
+
+    if not plans:
+        return "empty"
+    has_period = [bool(plan.get("period")) for plan in plans]
+    if all(has_period):
+        return "period"
+    if any(has_period):
+        return "mixed"
+    return "rotate"
+
+
+def infrast_plan_state(custom_infrast: str | None) -> str:
+    """排班表状态: period/rotate/mixed(时段不一致, 不可用)/empty(缺省或不可解析)。"""
+
+    try:
+        data = json.loads(custom_infrast)
+    except (json.JSONDecodeError, TypeError):
+        return "empty"
+    plans = data.get("plans") if isinstance(data, dict) else None
+    if not isinstance(plans, list) or not all(isinstance(plan, dict) for plan in plans):
+        return "empty"
+    return infrast_plan_mode(plans)
+
+
+def infrast_format_problem(infrast_data: Any) -> str | None:
+    """校验自定义基建排班表的格式不变量, 返回问题描述; None 表示格式可用。
+
+    不变量: plans 非空且元素为对象, 且各班次要么全部带 period 要么全部不带。
+    混合格式在 MAA 侧会被静默按"有时段的班按时段命中, 其余永不命中"解释,
+    MAS 不猜测这种意图, 统一按无效处理。
+    """
+    if not isinstance(infrast_data, dict):
+        return "排班表不是有效的 JSON 对象"
+    plans = infrast_data.get("plans")
+    if not isinstance(plans, list) or not plans:
+        return "排班表没有任何班次"
+    if not all(isinstance(plan, dict) for plan in plans):
+        return "排班表的班次格式不正确"
+    if infrast_plan_mode(plans) == "mixed":
+        return "排班表时段配置不一致（部分班次有时间段、部分没有）"
+    return None
+
+
+def load_infrast_plans(custom_infrast: str | None) -> tuple[list[dict], str | None]:
+    """解析自定义基建排班 JSON, 返回 (plans, problem); problem 非 None 时 plans 为 []。"""
+    try:
+        data = json.loads(custom_infrast)
+    except (json.JSONDecodeError, TypeError):
+        return [], "排班表不是有效的 JSON"
+    problem = infrast_format_problem(data)
+    if problem is not None:
+        return [], problem
+    return data.get("plans", []), None
+
+
 def init_maaend_task_config(config) -> None:
     """初始化 MaaEnd 托管任务配置"""
 
@@ -779,10 +839,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_InfrastName = ConfigItem(
             "Info", "InfrastName", "-", VirtualConfigValidator(self.getInfrastName)
         )
-        ## 基建配置索引
-        self.Info_InfrastIndex = ConfigItem(
-            "Info", "InfrastIndex", "-", VirtualConfigValidator(self.getInfrastIndex)
-        )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -849,10 +905,6 @@ class MaaUserConfig(ConfigBase):
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
-        )
-        ## 基建配置索引数据
-        self.Data_InfrastIndex = ConfigItem(
-            "Data", "InfrastIndex", "0", legacy_group="Info"
         )
 
         ## Task ------------------------------------------------------------
@@ -971,28 +1023,6 @@ class MaaUserConfig(ConfigBase):
             return str(infrast_data["id"])
         else:
             return "未命名自定义基建"
-
-    def getInfrastIndex(self) -> str:
-
-        if self.get("Info", "InfrastMode") != "Custom":
-            return "-1"
-
-        infrast_data = json.loads(self.get("Data", "CustomInfrast"))
-
-        if len(infrast_data.get("plans", [])) == 0:
-            return "-1"
-
-        for i, plan in enumerate(infrast_data.get("plans", [])):
-            for t in plan.get("period", []):
-                if (
-                    datetime.strptime(t[0], "%H:%M").time()
-                    <= datetime.now().time()
-                    <= datetime.strptime(t[1], "%H:%M").time()
-                ):
-                    return str(i)
-
-        else:
-            return self.get("Data", "InfrastIndex") or "0"
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""

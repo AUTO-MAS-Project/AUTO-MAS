@@ -211,10 +211,6 @@ export function useScriptApi() {
                           maaUserData.Info?.InfrastName !== undefined
                             ? maaUserData.Info.InfrastName
                             : '',
-                        InfrastIndex:
-                          maaUserData.Info?.InfrastIndex !== undefined
-                            ? maaUserData.Info.InfrastIndex
-                            : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
                         Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',

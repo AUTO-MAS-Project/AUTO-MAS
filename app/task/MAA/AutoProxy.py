@@ -32,7 +32,12 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models.config import (
+    MaaConfig,
+    MaaUserConfig,
+    infrast_plan_mode,
+    load_infrast_plans,
+)
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
@@ -1437,7 +1442,10 @@ class AutoProxyTask(TaskExecuteBase):
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
                 )
-                if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
+                infrast_plans, infrast_problem = load_infrast_plans(
+                    self.cur_user_config.get("Data", "CustomInfrast")
+                )
+                if infrast_problem is None:
                     infrast_path.parent.mkdir(parents=True, exist_ok=True)
                     infrast_path.write_text(
                         self.cur_user_config.get("Data", "CustomInfrast"),
@@ -1453,25 +1461,31 @@ class AutoProxyTask(TaskExecuteBase):
                             "DescriptionPost": infrast.get("description_post", ""),
                             "Period": infrast.get("period", []),
                         }
-                        for index, infrast in enumerate(
-                            json.loads(
-                                self.cur_user_config.get("Data", "CustomInfrast")
-                            ).get("plans", [])
-                        )
+                        for index, infrast in enumerate(infrast_plans)
                     ]
-                    task_set["Infrast"]["PlanSelect"] = int(
-                        self.cur_user_config.get("Info", "InfrastIndex")
-                    )
+                    # PlanSelect 保留用户存档中的值(不按轮次改写)——带时段表默认 -1=MAA
+                    # 按时段自动选班; 手动选班/无时段表的轮换推进均由 MAA 原生「自动保存
+                    # 为下个计划」完成, 经运行后配置回写管道存回每用户存档
+                    if (
+                        infrast_plan_mode(infrast_plans) == "rotate"
+                        and task_set["Infrast"].get("PlanSelect", -1) == -1
+                    ):
+                        # 无时段表: 缺省与显式「自动换班」(-1)都归一到第一班开始轮换。
+                        # -1 时 MAA 匹配不到时段, 会永远跑第一班且无法推进(并打错误日志)
+                        task_set["Infrast"]["PlanSelect"] = 0
                 else:
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
+                        f"用户 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
                     )
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(
                             level="warning",
-                            message=f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件",
+                            message=(
+                                f"用户 {self.cur_user_item.name} 的{infrast_problem}，"
+                                f"将使用普通基建模式"
+                            ),
                         ),
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
@@ -1879,20 +1893,6 @@ class AutoProxyTask(TaskExecuteBase):
                 "ProxyTimes",
                 self.cur_user_config.get("Data", "ProxyTimes") + 1,
             )
-
-            if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
-                await self.cur_user_config.set(
-                    "Data",
-                    "InfrastIndex",
-                    str(
-                        (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)
-                        % len(
-                            json.loads(
-                                self.cur_user_config.get("Data", "CustomInfrast")
-                            ).get("plans", [])
-                        )
-                    ),
-                )
 
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")

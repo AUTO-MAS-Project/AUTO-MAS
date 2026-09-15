@@ -775,27 +775,78 @@ async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/user/infrastructure/plan-select",
+    tags=["Update"],
+    summary="设置基建班次",
+    response_model=UserInfrastPlanSelectOut,
+    status_code=200,
+)
+async def set_infrast_plan_select(
+    user: UserInfrastPlanSelectIn = Body(...),
+) -> UserInfrastPlanSelectOut:
+    try:
+        index = await Config.set_infrast_plan_select(
+            user.scriptId, user.userId, user.index
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_infrast_plan_select失败: {type(e).__name__}: {e}"
+        )
+        return UserInfrastPlanSelectOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", index=-1
+        )
+    return UserInfrastPlanSelectOut(index=index)
+
+
+@router.post(
+    "/user/infrastructure/plan-select/get",
+    tags=["Get"],
+    summary="获取当前基建班次",
+    response_model=UserInfrastPlanSelectOut,
+    status_code=200,
+)
+async def get_infrast_plan_select(
+    user: UserDeleteIn = Body(...),
+) -> UserInfrastPlanSelectOut:
+    try:
+        index = await Config.get_infrast_plan_select(user.scriptId, user.userId)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_infrast_plan_select失败: {type(e).__name__}: {e}"
+        )
+        return UserInfrastPlanSelectOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", index=-1
+        )
+    return UserInfrastPlanSelectOut(index=index)
+
+
+@router.post(
     "/user/combox/infrastructure",
     tags=["Get"],
     summary="用户自定义基建排班可选项",
-    response_model=ComboBoxOut,
+    response_model=UserInfrastPlanComboxOut,
     status_code=200,
 )
-async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> ComboBoxOut:
+async def get_user_combox_infrastructure(
+    user: UserDeleteIn = Body(...),
+) -> UserInfrastPlanComboxOut:
 
     try:
-        raw_data = await Config.get_user_combox_infrastructure(
-            user.scriptId, user.userId
-        )
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        result = await Config.get_user_combox_infrastructure(user.scriptId, user.userId)
+        data = [UserInfrastPlanComboxItem(**item) for item in result["data"]]
+        state = result["state"]
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_user_combox_infrastructure失败: {type(e).__name__}: {e}"
         )
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        return UserInfrastPlanComboxOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            state="empty",
+            data=[],
         )
-    return ComboBoxOut(data=data)
+    return UserInfrastPlanComboxOut(state=state, data=data)
 
 
 @router.post(
