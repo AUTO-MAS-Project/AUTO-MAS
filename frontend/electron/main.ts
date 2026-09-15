@@ -17,6 +17,7 @@ import {
   type Rectangle,
 } from 'electron'
 import * as fs from 'fs'
+import { inspectDevBuildArtifacts } from './devBuildArtifacts'
 import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
@@ -641,6 +642,20 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+/**
+ * 源码环境下缺少 dev server 时，前端只能读 dist/。dist 缺失或陈旧都会让开发者
+ * 误以为跑的是当前源码，所以这里显式报错退出，绝不静默复用已有产物。
+ */
+function assertDevBuildArtifacts(): void {
+  const issue = inspectDevBuildArtifacts(app.getAppPath())
+  if (!issue) return
+
+  const message = `源码环境下前端构建产物不可用：${issue.reason}\n\n${issue.hint}`
+  logger.error(message)
+  dialog.showErrorBox('AUTO-MAS 前端构建产物不可用', message)
+  throw new Error(message)
+}
+
 function createWindow() {
   logger.info('开始创建主窗口')
 
@@ -882,6 +897,11 @@ function createWindow() {
     win.loadURL(devServer)
   } else {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
+    if (!app.isPackaged) {
+      // 源码环境下没有 dev server 就只能读 dist。dist 可能不存在，也可能是很久以前
+      // 构建的陈旧产物——两者都会让开发者误以为自己跑的是当前源码，所以必须显式拦住。
+      assertDevBuildArtifacts()
+    }
     logger.info(`加载生产环境页面: ${indexHtmlPath}`)
     win.loadFile(indexHtmlPath)
   }
