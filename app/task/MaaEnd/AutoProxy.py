@@ -768,6 +768,13 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.set_maaend(emulator_info)
 
+            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置"
+                )
+                break
+
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
@@ -1380,6 +1387,12 @@ class AutoProxyTask(TaskExecuteBase):
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+            self.retryable = False
+        elif any(
+            message in log
+            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+        ):
+            self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
             self.retryable = False
         elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
