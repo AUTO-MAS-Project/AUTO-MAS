@@ -381,6 +381,16 @@ const previewRows = computed(() => {
       label: t('edit.configRestorePreviewBilibili'),
       src: 'account',
     },
+    {
+      key: 'use_custom_win_title',
+      label: t('edit.configRestorePreviewUseCustomWinTitle'),
+      src: 'account',
+    },
+    {
+      key: 'custom_win_title',
+      label: t('edit.configRestorePreviewCustomWinTitle'),
+      src: 'account',
+    },
     { key: 'remained_day', label: t('edit.daysLeft'), src: 'info' },
     { key: 'notes', label: t('edit.note'), src: 'info' },
     { key: 'push_log_mode', label: t('edit.collectNodeDetails'), src: 'info' },

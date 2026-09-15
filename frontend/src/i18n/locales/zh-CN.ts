@@ -1871,6 +1871,8 @@ export default {
     configRestorePreviewAccount: '账号',
     configRestorePreviewPassword: '密码',
     configRestorePreviewBilibili: 'B服账号名',
+    configRestorePreviewUseCustomWinTitle: '自定义窗口标题',
+    configRestorePreviewCustomWinTitle: '窗口标题',
     zzzodPreviewUnlimited: '不限',
     zzzodOpenNativeConfig: '在一条龙内配置',
     zzzodOpenNativeConfigHint:
@@ -1982,6 +1984,8 @@ export default {
     zzzodBilibiliAccount: 'B服账号名',
     zzzodEnterBilibiliAccount: '请输入B服登录账号名',
     zzzodBilibiliAccountHint: 'B服登录面板中已保存的账号名',
+    zzzodUseCustomWinTitle: '自定义窗口标题',
+    zzzodCustomWinTitle: '窗口标题',
     zzzodOneDragonConfig: '任务配置',
     zzzodOneDragonConfigHint:
       '保存在本用户配置中，运行时由 MAS 写入一条龙；打开开关的任务会按顺序执行',

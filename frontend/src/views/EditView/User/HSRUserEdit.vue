@@ -32,8 +32,11 @@
           <div class="form-section form-section-flat">
             <div class="section-header">
               <h3>{{ t('edit.basicInfo') }}</h3>
-              <!-- 体力配置区块隐藏（未给 Daily 配引擎）时，恢复入口兜底到这里 -->
-              <div v-if="!dailyStageEngine" class="section-header-actions">
+              <!-- 体力配置区块隐藏（直控模式，或未给 Daily 配引擎）时，恢复入口兜底到这里 -->
+              <div
+                v-if="controlMode !== 'managed' || !dailyStageEngine"
+                class="section-header-actions"
+              >
                 <a-button size="small" @click="restoreOpen = true">
                   <template #icon>
                     <HistoryOutlined />

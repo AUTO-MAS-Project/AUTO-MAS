@@ -1989,6 +1989,8 @@ const previewFieldLabels: Record<string, string> = {
   account: t('edit.zzzodAccount'),
   password: t('edit.password'),
   bilibili_account_name: t('edit.zzzodBilibiliAccount'),
+  use_custom_win_title: t('edit.zzzodUseCustomWinTitle'),
+  custom_win_title: t('edit.zzzodCustomWinTitle'),
 }
 
 // 枚举值为后端/一条龙原生取值（驱动文案映射需保持原样），展示走词表

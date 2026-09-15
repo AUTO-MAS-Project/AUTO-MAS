@@ -2,6 +2,15 @@
   <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.basicInfo') }}</h3>
+      <!-- 任务队列区块隐藏（直控模式）时，恢复入口兜底到这里 -->
+      <div v-if="formData.Info.Mode === '直控'" class="section-header-actions">
+        <a-button size="small" @click="emit('openRestore')">
+          <template #icon>
+            <HistoryOutlined />
+          </template>
+          {{ t('edit.configRestoreTitle') }}
+        </a-button>
+      </div>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
@@ -157,7 +166,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
@@ -215,6 +224,7 @@ const emit = defineEmits<{
   save: [key: string, value: any]
   modeChange: [value: boolean | string]
   quickConfigChange: [value: boolean]
+  openRestore: []
 }>()
 
 const emitSave = (key: string, value: any) => {
@@ -234,6 +244,12 @@ const emitSave = (key: string, value: any) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-header h3 {

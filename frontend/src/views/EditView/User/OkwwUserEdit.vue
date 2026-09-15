@@ -51,6 +51,15 @@
           <div class="form-section">
             <div class="section-header">
               <h3>{{ t('edit.basicInfo') }}</h3>
+              <!-- 任务配置卡片隐藏（关闭快速配置）时，恢复入口兜底到这里 -->
+              <div v-if="!formData.Info.IfQuickConfig" class="section-header-actions">
+                <a-button size="small" @click="restoreOpen = true">
+                  <template #icon>
+                    <HistoryOutlined />
+                  </template>
+                  {{ t('edit.configRestoreTitle') }}
+                </a-button>
+              </div>
             </div>
 
             <a-row :gutter="24">

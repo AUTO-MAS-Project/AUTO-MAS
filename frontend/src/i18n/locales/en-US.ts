@@ -1940,6 +1940,8 @@ export default {
     configRestorePreviewAccount: 'Account',
     configRestorePreviewPassword: 'Password',
     configRestorePreviewBilibili: 'Bilibili account name',
+    configRestorePreviewUseCustomWinTitle: 'Custom window title',
+    configRestorePreviewCustomWinTitle: 'Window title',
     zzzodPreviewUnlimited: 'Unlimited',
     zzzodOpenNativeConfig: 'Configure in OneDragon',
     zzzodOpenNativeConfigHint:
@@ -2059,6 +2061,8 @@ export default {
     zzzodBilibiliAccount: 'Bilibili account name',
     zzzodEnterBilibiliAccount: 'Enter the Bilibili account name',
     zzzodBilibiliAccountHint: 'The account name saved in the Bilibili login panel',
+    zzzodUseCustomWinTitle: 'Custom window title',
+    zzzodCustomWinTitle: 'Window title',
     zzzodOneDragonConfig: 'Task configuration',
     zzzodOneDragonConfigHint:
       'Stored in this user config; MAS writes them into the one-dragon at run time. Tasks with the switch on run in order',

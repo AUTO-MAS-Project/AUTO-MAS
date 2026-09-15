@@ -61,6 +61,7 @@
             @save="handleFieldSave"
             @mode-change="handleConfigModeChange"
             @quick-config-change="handleQuickConfigChange"
+            @open-restore="restoreOpen = true"
           />
 
           <!-- 任务配置：明确区分剿灭与日常的两次 MAA 启动（直控时隐藏，配置由脚本原生维护） -->

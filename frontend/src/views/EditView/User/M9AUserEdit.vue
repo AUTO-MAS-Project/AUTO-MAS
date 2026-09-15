@@ -23,6 +23,7 @@
             @save="handleFieldSave"
             @mode-change="handleConfigModeChange"
             @quick-config-change="handleQuickConfigChange"
+            @open-restore="restoreOpen = true"
           />
 
           <TaskQueueSection
