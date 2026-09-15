@@ -1,24 +1,16 @@
 <template>
   <div class="form-section">
     <div class="section-header section-header-with-action">
-      <a-space>
-        <a-button
-          :loading="interfaceLoading"
-          :disabled="!scriptPath"
-          @click="emit('reloadInterface')"
-        >
-          <template #icon>
-            <FileSearchOutlined />
-          </template>
-          {{ t('edit.readInterface') }}
-        </a-button>
-        <a-button size="small" @click="emit('openRestore')">
-          <template #icon>
-            <HistoryOutlined />
-          </template>
-          {{ t('edit.configRestoreTitle') }}
-        </a-button>
-      </a-space>
+      <a-button
+        :loading="interfaceLoading"
+        :disabled="!scriptPath"
+        @click="emit('reloadInterface')"
+      >
+        <template #icon>
+          <FileSearchOutlined />
+        </template>
+        {{ t('edit.readInterface') }}
+      </a-button>
     </div>
 
     <div v-if="interfaceLoading" class="task-loading">
@@ -333,7 +325,6 @@ import {
   ArrowUpOutlined,
   DeleteOutlined,
   FileSearchOutlined,
-  HistoryOutlined,
   HolderOutlined,
   PlusOutlined,
   ThunderboltOutlined,
@@ -395,7 +386,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:addTaskCascaderValue': [value: string[]]
   'update:showPresetModal': [value: boolean]
-  openRestore: []
   reloadInterface: []
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]

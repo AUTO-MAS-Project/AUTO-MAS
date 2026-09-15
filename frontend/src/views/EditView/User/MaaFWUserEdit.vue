@@ -45,9 +45,21 @@
 
           <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
                任务队列始终显示。两个字段仍留在配置模型里，只是不再提供入口。 -->
-          <div class="section-header">
+          <a-flex
+            class="section-header"
+            justify="space-between"
+            align="center"
+            wrap="wrap"
+            gap="small"
+          >
             <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
-          </div>
+            <a-button size="small" @click="restoreOpen = true">
+              <template #icon>
+                <HistoryOutlined />
+              </template>
+              {{ t('edit.configRestoreTitle') }}
+            </a-button>
+          </a-flex>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -65,7 +77,6 @@
             :task-snapshot="taskSnapshot"
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
-            @open-restore="restoreOpen = true"
             @reorder-tasks="applyQueuedTaskIds"
             @reload-interface="reloadInterface"
             @add-task-cascader-change="handleAddTaskCascaderChange"
@@ -149,6 +160,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
+import { HistoryOutlined } from '@ant-design/icons-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
