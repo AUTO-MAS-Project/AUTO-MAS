@@ -46,7 +46,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col v-if="formData.Info.IfQuickConfig" :xs="24" :md="6">
+      <a-col :xs="24" :md="6">
         <a-form-item :label="t('edit.applyPreset')">
           <a-dropdown
             trigger="click"
@@ -128,17 +128,6 @@
       </a-col>
     </a-row>
     <a-alert class="account-record-alert" type="info" show-icon :message="accountRecordTooltip" />
-
-    <a-row :gutter="24">
-      <a-col :span="24">
-        <GeneralConfigModeSelector
-          :model-value="formData.Info.Mode || '用户'"
-          :options="maafwConfigModeOptions"
-          :alert-message="t('edit.configSourceHintBase')"
-          @change="emit('modeChange', $event)"
-        />
-      </a-col>
-    </a-row>
   </div>
 </template>
 
@@ -147,40 +136,8 @@ import { useI18n } from 'vue-i18n'
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface'
 import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWPresetInfo, MaaFWUserConfig } from '@/types/script'
-import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
-
-// 配置来源卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-const maafwConfigModeOptions: Array<{
-  label: string
-  value: '脚本' | '用户' | '直控'
-  title: string
-  description: string
-  icon: 'database' | 'file' | 'setting'
-}> = [
-  {
-    label: t('edit.script'),
-    value: '脚本',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
-    icon: 'database',
-  },
-  {
-    label: t('edit.user'),
-    value: '用户',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('edit.directControl'),
-    value: '直控',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
-    icon: 'setting',
-  },
-]
 
 type MaaFWUserFormData = MaaFWUserConfig & {
   userName: string
@@ -202,7 +159,6 @@ defineProps<{
 const emit = defineEmits<{
   save: [key: string, value: unknown]
   presetMenuClick: [event: MenuInfo]
-  modeChange: [value: boolean | string]
 }>()
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name

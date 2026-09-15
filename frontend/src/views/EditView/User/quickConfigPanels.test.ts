@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { parse } from '@vue/compiler-sfc'
 
 describe('quick configuration panel visibility', () => {
-  for (const name of ['MAA', 'M9A', 'SRC', 'MaaFW', 'MaaEnd', 'Okww', 'OkNte', 'BetterGI']) {
+  for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte', 'BetterGI']) {
     it(`${name} keeps its switch outside the conditional panel`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
@@ -12,7 +12,6 @@ describe('quick configuration panel visibility', () => {
           MAA: '<TaskPipelineSection',
           M9A: '<TaskQueueSection',
           SRC: '<StageConfigSection',
-          MaaFW: '<TaskQueueSection',
         }[name] || '<a-card v-if="formData.Info.IfQuickConfig"'
       const start = template.indexOf(panel)
       expect(start).toBeGreaterThan(-1)
@@ -28,6 +27,20 @@ describe('quick configuration panel visibility', () => {
       expect(source).toContain('formData.Info.IfQuickConfig = previous')
     })
   }
+
+  it('MaaFW has neither a quick configuration switch nor a config source selector', () => {
+    // MaaFW 是通用引擎，没有可退回的原生配置；两个控件对它没有所指，页面不再提供入口。
+    const page = readFileSync(new URL('./MaaFWUserEdit.vue', import.meta.url), 'utf8')
+    const section = readFileSync(
+      new URL('./MaaFWUserEdit/BasicInfoSection.vue', import.meta.url),
+      'utf8'
+    )
+    expect(page).not.toContain('handleQuickConfigChange')
+    expect(page).not.toContain('v-if="formData.Info.IfQuickConfig"')
+    expect(page).not.toContain('handleConfigModeChange')
+    expect(section).not.toContain('GeneralConfigModeSelector')
+    expect(section).not.toContain('v-if="formData.Info.IfQuickConfig"')
+  })
 
   it('keeps the source selector free of quick configuration props and events', () => {
     const source = readFileSync(new URL('./GeneralConfigModeSelector.vue', import.meta.url), 'utf8')
