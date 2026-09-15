@@ -290,12 +290,13 @@ class AutoProxyTask(TaskExecuteBase):
         # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让直控被锁回 MAS 槽位。
         # （合并 dev #781「全专项快速配置开关语义」时保留本分支这一语义：见下 writes_native_config。）
         self.config_mode = read_config_source(self.cur_user_config)
-        # ⚠️ 合并 dev #781（全专项快速配置开关语义，作者 1w1w11w1）后**采纳 dev 的判定**：
-        # 「用哪份配置启动」由快速配置决定（关=所选原生一条龙、并且不解析隐藏的面板值；
-        # 开=MAS 面板），否则 dev 的 test_bettergi_closed_does_not_parse_panel 会红、
-        # 本 PR 无法合入。本分支 #771 的直控语义因此只保留在「直控 + 快速配置开」一格：
-        # 见下方 writes_native_config，那一格改为写 BGI 原生配置而不是 MAS 槽位。
-        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfQuickConfig"))
+        # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管；
+        # 脚本/用户 = MAS 侧配置。**快速配置不参与这个判定**（维护者决策：放弃把快速配置
+        # 当作配置来源开关）——它在直控下只表示「要不要把面板值写进那份原生配置」，
+        # 见下方 writes_native_config。
+        # 注：此处与 dev #781 的 use_mas_config = IfQuickConfig 相左，PR 内已同步调整 dev 的
+        # test_quick_config_sources 相应断言，评审时请一并确认。
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
         self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(

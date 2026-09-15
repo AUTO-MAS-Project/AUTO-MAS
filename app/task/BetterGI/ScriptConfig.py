@@ -27,6 +27,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import ProcessManager, get_logger
 from app.utils.platform import IS_ELEVATED
 
@@ -57,8 +58,9 @@ class ScriptConfigTask(TaskExecuteBase):
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 与 AutoProxy 同口径：采纳 dev #781，由快速配置决定用哪份配置启动
-            self.use_mas_config = bool(user_config.get("Info", "IfQuickConfig"))
+            # 直控来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
+            mode = read_config_source(user_config)
+            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False

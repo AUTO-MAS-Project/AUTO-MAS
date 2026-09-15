@@ -1235,11 +1235,9 @@ const bettergiConfigModeOptions: Array<{
     icon: 'setting',
   },
 ]
-// 合并 dev #781 后**采纳 dev 判定**：面板可见性与「快速配置」开关一致——关闭时只运行所选
-// 原生一条龙，不展示也不物化隐藏的面板值（dev 的 test_quick_config_sources 覆盖此处）。
-// 本分支 #771 在「直控 + 快速配置开」那一格仍改为写 BGI 原生配置（后端 writes_native_config
-// 决定），前端沿用 dev 的可见性规则，避免与已合入 dev 的语义二次分叉。
-const masConfigEnabled = computed(() => formData.Info.IfQuickConfig)
+// 面板可见性由**配置来源**决定（维护者决策：放弃把快速配置当作来源开关）：直控 = 用 BGI
+// 所选原生配置（显示原生「一条龙名称」与「配置 BetterGI」，MAS 不接管）；脚本/用户 = MAS 面板。
+const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
