@@ -50,11 +50,29 @@
             :server-options="serverOptions"
             @save="handleFieldSave"
             @mode-change="handleConfigModeChange"
-            @quick-config-change="handleQuickConfigChange"
           />
 
           <!-- 关卡配置组件 -->
+          <a-flex
+            class="section-header"
+            justify="space-between"
+            align="center"
+            wrap="wrap"
+            gap="small"
+          >
+            <h3>{{ t('edit.stageConfiguration') }}</h3>
+            <a-space>
+              <span>{{ t('edit.enableQuickConfiguration') }}</span>
+              <a-switch
+                :checked="formData.Info.IfQuickConfig"
+                :disabled="loading || isInitializing || isSaving"
+                :aria-label="t('edit.enableQuickConfiguration')"
+                @change="handleQuickConfigChange"
+              />
+            </a-space>
+          </a-flex>
           <StageConfigSection
+            v-if="formData.Info.IfQuickConfig"
             v-model:form-data="formData"
             :loading="loading"
             @save="handleFieldSave"
@@ -122,7 +140,7 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, isSaving } = useSaveQueue()
 
 // SRC配置相关状态
 const srcConfigLoading = ref(false)
@@ -232,7 +250,7 @@ const handleFieldSave = async (key: string, value: any) => {
     value = formData.Info.Name
   }
 
-  await enqueue(async () => {
+  return await enqueue(async () => {
     try {
       const parts = key.split('.')
       let userData: Record<string, any> = {}
@@ -250,6 +268,7 @@ const handleFieldSave = async (key: string, value: any) => {
       if (success) {
         logger.info(`字段已保存: ${key}`)
       }
+      return success
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`保存字段失败: ${errorMsg}`)
@@ -259,8 +278,11 @@ const handleFieldSave = async (key: string, value: any) => {
 
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
   formData.Info.IfQuickConfig = value
-  await handleFieldSave('Info.IfQuickConfig', value)
+  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
 }
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存

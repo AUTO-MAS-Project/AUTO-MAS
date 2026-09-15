@@ -196,15 +196,16 @@ def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]
     return script_uid, script_config
 
 
-def _oknte_legacy_mas_config_dir(script_id: str) -> Path:
-    script_uid, _ = _oknte_script_config(script_id)
-    return Path.cwd() / "data" / str(script_uid) / "Default" / "ConfigFile"
-
-
 def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
-    script_uid, _ = _oknte_script_config(script_id)
+    from app.task.OkNte.tools.backup_archive import ensure_quick_config_dir
+
+    script_uid, script_config = _oknte_script_config(script_id)
     user_uid = uuid.UUID(user_id)
-    return Path.cwd() / "data" / str(script_uid) / str(user_uid) / "ConfigFile"
+    if user_uid not in script_config.UserData:
+        raise ValueError("OK-NTE 用户不存在，请刷新后重试")
+    if script_config.is_locked:
+        raise ValueError("OK-NTE 正在运行，请结束任务后编辑")
+    return ensure_quick_config_dir(str(script_uid), str(user_uid), script_config)
 
 
 def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
@@ -3488,8 +3489,7 @@ async def clear_hsr_direct_config_api(
 async def get_oknte_configs_list(script_id: str, user_id: str):
     """
     获取 OK-NTE 配置文件列表及 schema 定义。
-    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-    若为空则自动从 ok-nte configs 目录初始化默认配置。
+    读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
 
     Args:
         script_id: OK-NTE 脚本 ID
@@ -3500,11 +3500,9 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
     """
     try:
         import json
-        import shutil
 
         from app.task.OkNte.config_schema import (
             build_fields_for_config,
-            ensure_oknte_daily_routine_configs,
             get_all_config_info,
             load_oknte_option_labels,
         )
@@ -3515,37 +3513,15 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
         root_path = script_config.get("Info", "RootPath")
         option_labels = load_oknte_option_labels(root_path) if root_path else {}
 
-        # 用户配置目录；旧版 Default 目录仅作为升级后的初始化来源。
+        # 面板与来源分别保存；切换来源不重置面板。
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
 
-        # ok-nte 源配置目录（用于自动初始化）
-        legacy_config_dir = _oknte_legacy_mas_config_dir(script_id)
-        oknte_configs_dir = (
-            legacy_config_dir
-            if legacy_config_dir.is_dir() and any(legacy_config_dir.iterdir())
-            else None
-        )
-        if oknte_configs_dir is None:
-            raw_config_path = script_config.get("Script", "ConfigPath")
-            oknte_configs_dir = Path(raw_config_path) if raw_config_path else None
-        if not oknte_configs_dir or not oknte_configs_dir.exists():
-            if root_path:
-                root = Path(root_path)
-                packaged_dir = root / "data" / "apps" / "ok-nte" / "working" / "configs"
-                source_dir = root / "configs"
-                oknte_configs_dir = (
-                    packaged_dir if packaged_dir.is_dir() else source_dir
-                )
-
-        # 自动初始化：用户目录为空时从旧版共享目录或 ok-nte configs 复制默认配置
-        need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
-        if need_init and oknte_configs_dir and oknte_configs_dir.is_dir():
-            mas_config_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(oknte_configs_dir, mas_config_dir, dirs_exist_ok=True)
-        mas_config_dir.mkdir(parents=True, exist_ok=True)
-        ensure_oknte_daily_routine_configs(mas_config_dir)
-
         configs_info = get_all_config_info()
+        if script_config.get("Script", "ConfigPathMode") == "File":
+            filename = Path(script_config.get("Script", "ConfigPath")).name
+            configs_info = [
+                info for info in configs_info if info["filename"] == filename
+            ]
 
         # 读取 per-user JSON 配置，通过 build_fields_for_config 构建字段列表
         result = []
@@ -3623,6 +3599,11 @@ async def batch_update_oknte_configs(
         # 写入用户配置目录
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
+        _, script_config = _oknte_script_config(script_id)
+        if script_config.get("Script", "ConfigPathMode") == "File":
+            filename = Path(script_config.get("Script", "ConfigPath")).name
+            if set(configs) - {filename}:
+                raise ValueError("单文件模式只能编辑所选配置文件")
 
         updated_files = []
         for filename, data in configs.items():

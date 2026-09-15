@@ -1309,7 +1309,8 @@ export default {
     configSourceHint:
       '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
     configSourceHintBase:
-      '脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用脚本原有配置，MAS 不写入配置，快速配置为独立开关。',
+      '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
+    nativeConfigSourceDescription: '使用脚本当前的原生配置。',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
     leaveWithoutSavingUnsaved: '确定要离开吗？未保存的更改可能会丢失。',

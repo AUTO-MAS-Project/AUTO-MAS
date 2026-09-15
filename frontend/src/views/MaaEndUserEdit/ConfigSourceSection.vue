@@ -7,9 +7,6 @@
           :options="maaEndConfigModeOptions"
           :disabled="loading"
           :alert-message="t('edit.configSourceHintBase')"
-          :quick-config="formData.Info.IfQuickConfig"
-          :quick-config-disabled="presetSupported === false"
-          @quick-config-change="emitSave('Info.IfQuickConfig', $event)"
           @change="$emit('modeChange', $event)"
         />
       </a-col>
@@ -71,8 +68,7 @@ import { computed } from 'vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
-const emit = defineEmits<{
-  save: [key: string, value: any]
+defineEmits<{
   configure: []
   importConfig: []
   scriptConfig: []
@@ -82,7 +78,6 @@ const emit = defineEmits<{
 const formData = defineModel<any>('formData', { required: true })
 defineProps<{
   loading: boolean
-  presetSupported?: boolean
   configLoading?: boolean
   importLoading?: boolean
   showConfigMask?: boolean
@@ -113,10 +108,6 @@ const maaEndConfigModeOptions: Array<{
     icon: 'setting',
   },
 ]
-
-const emitSave = (key: string, value: any) => {
-  emit('save', key, value)
-}
 
 const currentConfigModeLabel = computed(() => {
   if (formData.value.Info.Mode === '直控') return '脚本直控'
