@@ -20,10 +20,13 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 项目目录与运行
 
-- 项目根一律取脚本配置的 `Info.Path`，读点共六处：`embedded_manager.check` /
-  `_run_project_update` / `_ensure_project_environment`、`runner_task`、`api/scripts.py` 的
-  `/maafw/update` 与更新源外壳提示；另有 `/maafw/preview`、`/maafw/agent-env/prepare` 由前端传
-  `path`。要改项目根语义，先把这些读点收敛到一个助手。
+- 项目根有两类来源，改语义时要分开数：
+  - **按脚本配置读 `Info.Path`** 的六处：`embedded_manager.check` / `_run_project_update` /
+    `_ensure_project_environment`、`runner_task`、`api/scripts.py` 里的 `/maafw/update`
+    （按 scriptId 取脚本配置）与更新源外壳提示。
+  - **由请求显式传 `path`** 的两个端点：`/maafw/preview`、`/maafw/agent-env/prepare`，前端
+    把编辑页当前的路径传过来，不经过脚本配置。
+  要改项目根语义，先把第一类收敛到一个助手，再决定第二类是继续收 `path` 还是改按 scriptId 解析。
 - 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU）。MaaFramework 原生运行时
   由运行池提供，运行时以覆盖层铺进 `<项目>/maafw/` 并留 `.auto_mas_maafw_native_runtime.json`
   标记；带标记的 `maafw/` 是运行期产物，指纹与更新都把它当产物处理。
@@ -66,8 +69,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 用户配置上的 `Info.Mode`（脚本/用户/直控）**没有任何 MaaFW 代码消费**；运行器只读
   `Info.IfQuickConfig`（关闭时按项目原生默认值跑，不下发任务快照与预设）。不要在 MaaFW 上
   按三态写逻辑。
-- 新的 `interface.json` 项目默认就用 MaaFW 类型；只有需要原生会话、登录/切号、专属界面这类
-  MaaFW 给不了的东西时才立专项，并在专项目录写明理由。
+- 新的 `interface.json` 项目默认用 MaaFW 类型即可运行；需要更精细的控制时（原生编辑器会话、
+  登录/切号、按游戏语义组织的专属界面、对上游资源文件的动态读取等）可以立专项，MaaEnd 就是
+  这种情况。立专项时在专项目录写明它比通用 MaaFW 多控制了什么。
 
 ## 测试与排障
 
