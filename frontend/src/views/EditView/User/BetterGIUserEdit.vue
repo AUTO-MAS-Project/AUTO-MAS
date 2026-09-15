@@ -275,15 +275,10 @@
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
+                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
-                <a-switch
-                  v-model:checked="formData.Info.IfQuickConfig"
-                  :disabled="pageLoading"
-                  style="margin-top: 12px"
-                  @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
-                />
-                <span style="margin-left: 8px">{{ t('edit.quickConfig') }}</span>
               </a-col>
             </a-row>
 
@@ -321,7 +316,7 @@
             </div>
 
             <a-alert
-              v-if="formData.Info.Mode === '直控' && !formData.Info.IfQuickConfig"
+              v-if="formData.Info.Mode === '直控'"
               type="info"
               show-icon
               class="mode-guide-alert"
@@ -1216,9 +1211,10 @@ const bettergiConfigModeOptions: Array<{
     icon: 'setting',
   },
 ]
-const masConfigEnabled = computed(
-  () => formData.Info.Mode !== '直控' || formData.Info.IfQuickConfig
-)
+// 配置来源决定任务配置区的形态：直控 = 用 BGI 所选原生配置（下方「一条龙名称」可选、
+// 可点「配置 BetterGI」打开原生界面），MAS 不接管；脚本/用户 = MAS 侧配置面板。
+// 快速配置不再参与这里的判定，否则「直控」会被快速配置（默认开）锁回 MAS 槽位。
+const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -4215,6 +4211,13 @@ watch(
     if (!masConfigEnabled.value) selectedGroupIdentity.value = null
   }
 )
+
+// 快速配置开关（用户级，独立于配置来源）：统一走 GeneralConfigModeSelector 的表单项，
+// 不再单独渲染一个裸开关——两个入口指向同一个 Info.IfQuickConfig，容易让人分不清哪个是真实开关。
+const handleQuickConfigChange = (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  void saveField('Info.IfQuickConfig', value)
+}
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
