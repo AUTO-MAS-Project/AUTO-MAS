@@ -18,6 +18,15 @@
       </template>
     </a-alert>
 
+    <a-alert v-if="editable" type="info" show-icon class="mode-guide-alert">
+      <template #message>
+        <span class="mode-guide-message">{{ t('edit.bettergiTeamHowToTitle') }}</span>
+      </template>
+      <template #description>
+        <p>{{ t('edit.bettergiTeamHowTo') }}</p>
+      </template>
+    </a-alert>
+
     <p v-if="!teamsOn" class="team-off-tip">{{ t('edit.bettergiTeamOffTip') }}</p>
 
     <template v-else>
