@@ -97,6 +97,22 @@ def _bettergi_user_config(script_config: RuntimeBetterGIConfig, user_id: str):
     return user_config
 
 
+def _bettergi_owner_id(script_config: RuntimeBetterGIConfig, user_id: str) -> str:
+    """MAS 侧 per-user 副本的 owner 维度：由该用户的配置来源决定。
+
+    「脚本」来源的用户共读共写脚本级那一份（``one_dragon.SCRIPT_LEVEL_OWNER``），
+    「用户」来源各用各的副本；直控不读 MAS 副本，返回原 id 仅供调用方统一口径。
+    只在读写 per-user 副本时使用——校验用户是否存在仍走 ``_bettergi_user_id``。
+    """
+
+    from app.task.BetterGI.tools import one_dragon
+    from app.task.proxy_helpers import read_config_source
+
+    return one_dragon.owner_user_id(
+        user_id, read_config_source(_bettergi_user_config(script_config, user_id))
+    )
+
+
 def _read_combat_from_plan(
     script_config, user_id: str, group: str, source: str, data: dict
 ) -> dict:
@@ -1705,7 +1721,10 @@ async def get_bettergi_custom_groups_api(
                 raise ValueError("用户独立配置下必须提供 userId")
             _bettergi_user_id(script_config, userId)
             items = one_dragon.list_user_custom_groups(
-                root, scriptId, userId, one_dragon.launch_slot_name()
+                root,
+                scriptId,
+                _bettergi_owner_id(script_config, userId),
+                one_dragon.launch_slot_name(),
             )
         else:
             items = one_dragon.list_custom_groups(
@@ -2154,7 +2173,7 @@ async def get_bettergi_one_dragon_settings_api(
         from app.task.BetterGI.tools import one_dragon
 
         data = one_dragon.read_user_one_dragon_settings(
-            root, scriptId, userId, configName
+            root, scriptId, _bettergi_owner_id(script_config, userId), configName
         )
         # 战斗4项：用 Plan 中的执行层参数回显右栏（原生副本已不再存这些字段）。
         # 第三参必须传 groupName（内置组名），传 configName 会导致 Plan 回显失效。
@@ -2210,7 +2229,11 @@ async def save_bettergi_one_dragon_settings_api(
             await user_config.set("OneDragon", "Plan", new_plan)
         if native_leftover:
             one_dragon.write_user_one_dragon_settings(
-                root, req.scriptId, req.userId, req.configName, native_leftover
+                root,
+                req.scriptId,
+                _bettergi_owner_id(script_config, req.userId),
+                req.configName,
+                native_leftover,
             )
         return OutBase(
             code=200,
