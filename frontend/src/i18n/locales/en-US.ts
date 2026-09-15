@@ -1504,6 +1504,30 @@ export default {
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
+    maafwEmbeddedTitle: 'Run from an embedded copy',
+    maafwEmbeddedHint:
+      'When on, AUTO-MAS copies only the files interface.json declares into its own directory and runs and updates that copy; the original directory is no longer referenced or modified. Turn it off to go back to the original directory.',
+    maafwEmbeddedOffHint:
+      'Currently running directly in the directory above; project updates are written there too.',
+    maafwEmbeddedSourceDirectory: 'Source directory',
+    maafwEmbeddedSourceHint:
+      'The embedded copy was imported from this directory; picking another one re-imports the copy and leaves the original untouched.',
+    maafwEmbeddedCopyHealthy: 'Copy intact',
+    maafwEmbeddedCopyMissing: 'Copy missing; it is rebuilt from the source before the next run',
+    maafwEmbeddedSaved: 'Copy saves {percent}% ({source} → {copy})',
+    maafwEmbeddedShell: 'Shell: {shell}',
+    maafwEmbeddedRuntime: 'Runtime MaaFramework {version} (as bundled by the source)',
+    maafwEmbeddedSourceVersion: 'Source version {version}',
+    maafwEmbeddedImportedAt: 'Imported {time}',
+    maafwEmbeddedSourceMissing:
+      'Source directory no longer exists: runs are unaffected, but re-import is unavailable',
+    maafwEmbeddedReimport: 'Re-import',
+    maafwEmbeddedReimportHint:
+      'Project the copy again from the current source directory; use it after updating the source by hand.',
+    maafwEmbeddedDisableConfirmTitle: 'Leave embedded mode?',
+    maafwEmbeddedDisableConfirm:
+      'This deletes the AUTO-MAS copy and runs from the original directory again. The original was never modified.',
+    maafwEmbeddedDisableOk: 'Leave embedded mode',
     pickEmulatorInstancePassed:
       'Pick the emulator instance passed to the MFW ADB controller at run time',
     pickHowGameControlled: 'Pick how the game is controlled',

@@ -2923,57 +2923,6 @@ class MaaFWConfig(ConfigBase):
         ## 投影报告（省下多少、外壳家族、排除条数与原因），JSON 字符串
         self.Embedded_Report = ConfigItem("Embedded", "Report", "{ }", JSONValidator())
 
-        ## Managed --------------------------------------------------------
-        ## 是否由 Project Store 和 Runtime Pool 托管项目资源
-        self.Managed_Enabled = ConfigItem("Managed", "Enabled", False, BoolValidator())
-        self.Managed_ProjectId = ConfigItem("Managed", "ProjectId", "")
-        self.Managed_StoreId = ConfigItem("Managed", "StoreId", "")
-        self.Managed_Version = ConfigItem("Managed", "Version", "")
-        self.Managed_RuntimeConstraint = ConfigItem("Managed", "RuntimeConstraint", "")
-        self.Managed_ProjectManifest = ConfigItem(
-            "Managed", "ProjectManifest", "{ }", JSONValidator(dict)
-        )
-        self.Managed_CheckoutPath = ConfigItem("Managed", "CheckoutPath", "")
-        self.Managed_PendingUpgrade = ConfigItem(
-            "Managed", "PendingUpgrade", "{ }", JSONValidator(dict)
-        )
-        self.Managed_LastOperation = ConfigItem(
-            "Managed", "LastOperation", "{ }", JSONValidator(dict)
-        )
-
-        ## ManagedRuntime -------------------------------------------------
-        self.ManagedRuntime_RuntimeId = ConfigItem("ManagedRuntime", "RuntimeId", "")
-        self.ManagedRuntime_PoolId = ConfigItem("ManagedRuntime", "PoolId", "")
-        self.ManagedRuntime_PythonExecutable = ConfigItem(
-            "ManagedRuntime", "PythonExecutable", ""
-        )
-        self.ManagedRuntime_VenvPath = ConfigItem("ManagedRuntime", "VenvPath", "")
-        self.ManagedRuntime_RuntimeBinding = ConfigItem(
-            "ManagedRuntime", "RuntimeBinding", "{ }", JSONValidator(dict)
-        )
-
-        ## ManagedRemote --------------------------------------------------
-        self.ManagedRemote_Source = ConfigItem(
-            "ManagedRemote",
-            "Source",
-            "MirrorChyan",
-            OptionsValidator(["MirrorChyan", "GitHub"]),
-        )
-        self.ManagedRemote_Channel = ConfigItem(
-            "ManagedRemote", "Channel", "stable", OptionsValidator(["stable", "beta"])
-        )
-        self.ManagedRemote_MirrorChyanRID = ConfigItem(
-            "ManagedRemote", "MirrorChyanRID", ""
-        )
-        self.ManagedRemote_MirrorChyanCDK = ConfigItem(
-            "ManagedRemote", "MirrorChyanCDK", "", EncryptValidator()
-        )
-        self.ManagedRemote_GitHubRepo = ConfigItem("ManagedRemote", "GitHubRepo", "")
-        self.ManagedRemote_GitHubTag = ConfigItem("ManagedRemote", "GitHubTag", "")
-        self.ManagedRemote_GitHubAssetPattern = ConfigItem(
-            "ManagedRemote", "GitHubAssetPattern", r"\.zip$"
-        )
-
         ## Run -------------------------------------------------------------
         ## 运行引擎，决定「谁来跑」：
         ## 代理次数限制

@@ -4,6 +4,9 @@
 /* eslint-disable */
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWEmbeddedIn } from '../models/MaaFWEmbeddedIn';
+import type { MaaFWEmbeddedReimportIn } from '../models/MaaFWEmbeddedReimportIn';
+import type { MaaFWEmbeddedStatusOut } from '../models/MaaFWEmbeddedStatusOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
@@ -12,6 +15,85 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class MaaFwService {
+    /**
+     * 查看 MFW 脚本的内嵌副本状态
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 启用内嵌：按 Info.Path 导入副本
+     * 按 interface 白名单把 Info.Path 投影成副本，此后运行、预览、更新都在副本上。
+     *
+     * 来源目录一个字节不动，也不再被引用；退出内嵌就回到它。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static enableMaafwEmbeddedApiScriptsMaafwEmbeddedEnablePost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/enable',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 换来源目录并重新导入副本
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
+        requestBody: MaaFWEmbeddedReimportIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/reimport',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 退出内嵌：删副本，回到来源目录
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static disableMaafwEmbeddedApiScriptsMaafwEmbeddedDisablePost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/disable',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 预览 MFW interface
      * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。

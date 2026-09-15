@@ -3,7 +3,9 @@
 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），MaaFramework 与
 Python 由运行池和隔离 venv 提供。所以一份发行包里真正需要落盘的只有：
 interface.json 及其 ``import``、resource 声明的目录、controller 的附加资源、languages
-文件、agent 与 pretask 引用的文件所在目录、依赖清单（requirements.txt 之类）。其余
+文件、agent 与 pretask 引用的文件所在目录、依赖清单（requirements.txt 之类）。另外
+带上 interface 里各层级的 ``icon`` 与顶层 ``welcome`` 指向的文件——它们不参与运行，
+但 AUTO-MAS 的用户页会展示，都是几 KB 的小文件；找不到就静默跳过，不算错。其余
 一律不要——不是"删掉外壳"，而是"只拿声明了的"。分类表只在两处起作用：白名单目标
 内部（比如 agent 目录里的 ``__pycache__``），以及保守模式下的整棵根。
 
@@ -31,6 +33,12 @@ from typing import Any
 import json5
 
 MAX_REPORT_ITEMS = 128
+
+# 副本根目录的投影标记：记来源自带 MaaFramework 的版本。原生库本身不进副本（由
+# 运行池按这个版本提供），但版本必须跟着走——agent 与 runner 之间有协议版本号，
+# 钉错了只会表现为「AgentClient 连接超时」。更新落地时若包里带了新的原生库，
+# 标记随包一起换。文件名以 .auto_mas 开头，更新器的残留清理不会碰它。
+PROJECTION_MARKER_NAME = ".auto_mas_maafw_projection.json"
 
 EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".git": "source-control",
@@ -229,6 +237,8 @@ class ProjectionPlan:
     excluded_reasons: dict[str, str]
     source_tree_bytes: int
     projected_bytes: int
+    # 来源自带 MaaFramework 的实测版本（PEP 440）；没有原生库时为 None。
+    bundled_maafw_version: str | None = None
 
     def report(self) -> dict[str, Any]:
         """给界面看的精简报告。数字在这里算好，前端不重算。"""
@@ -264,6 +274,7 @@ class ProjectionPlan:
             "interfaceBase": self.rules.base_relative.as_posix(),
             "agents": [dict(agent) for agent in self.rules.agents],
             "warnings": list(self.rules.warnings),
+            "bundledMaaFWVersion": self.bundled_maafw_version or "",
         }
 
 
@@ -436,6 +447,45 @@ def _normalize_declared_path(raw: str, base_relative: Path, label: str) -> Path:
             continue
         parts.append(part)
     return Path(*parts) if parts else ROOT
+
+
+def collect_ui_asset_paths(data: Any) -> list[str]:
+    """interface 里所有层级的 ``icon`` 字符串，加上顶层 ``welcome``。"""
+
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "icon" and isinstance(value, str) and value.strip():
+                    found.append(value)
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(data)
+    if isinstance(data, dict):
+        welcome = _text(data.get("welcome"))
+        if welcome:
+            found.append(welcome)
+    return found
+
+
+def _normalize_ui_asset_path(raw: str, base_relative: Path) -> Path | None:
+    """界面素材路径：允许 ``/assets/logo.png`` 这种以 / 开头的项目根相对写法；
+    远程 URL、data: URI、逃出项目的一律当没有。"""
+
+    value = str(raw).strip().replace("\\", "/")
+    if not value or value.startswith(("http://", "https://", "data:")):
+        return None
+    if len(value) > 1 and value[1] == ":":
+        return None
+    try:
+        return _normalize_declared_path(value.lstrip("/"), base_relative, "icon")
+    except ProjectionError:
+        return None
 
 
 def looks_like_local_path(value: str) -> bool:
@@ -731,6 +781,13 @@ def build_projection_rules(
                         required_label=f"controller[{index}].{key}",
                         allow_excluded_root=True,
                     )
+
+        # 界面素材：只在文件确实在时保留，缺了不记警告——发行包里 icon 指向不存在
+        # 的文件很常见，那是上游的事，不该把投影报告刷满。
+        for raw_asset in collect_ui_asset_paths(data):
+            asset_relative = _normalize_ui_asset_path(raw_asset, base_relative)
+            if asset_relative is not None and view.is_file(asset_relative):
+                add_target(asset_relative, complete=True, required_label=None)
 
         languages = data.get("languages")
         if isinstance(languages, dict):
@@ -1057,7 +1114,31 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
         excluded_reasons=excluded_reasons,
         source_tree_bytes=sum(sizes.values()),
         projected_bytes=sum(sizes[path] for path in copied_files),
+        bundled_maafw_version=probe_bundled_maafw_version(root),
     )
+
+
+def probe_bundled_maafw_version(root: Path) -> str | None:
+    """来源（或更新包）自带 MaaFramework 原生库的版本；探测逻辑与 runner 共用。"""
+
+    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        probe_bundled_maafw_version as _probe,
+    )
+
+    return _probe(root)
+
+
+def projection_marker_payload(bundled_maafw_version: str | None) -> dict[str, Any]:
+    return {"version": 1, "bundledMaaFWVersion": bundled_maafw_version or ""}
+
+
+def write_projection_marker(root: Path, bundled_maafw_version: str | None) -> Path:
+    marker = root / PROJECTION_MARKER_NAME
+    marker.write_text(
+        json.dumps(projection_marker_payload(bundled_maafw_version), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return marker
 
 
 def materialize_projection(
@@ -1094,6 +1175,8 @@ def materialize_projection(
         shutil.copy2(source, destination)
         if progress is not None:
             progress(index, total)
+    # 原生库没跟过来，版本要跟过来。
+    write_projection_marker(target, plan.bundled_maafw_version)
 
 
 # --------------------------------------------------------------------------

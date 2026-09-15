@@ -1282,6 +1282,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Notify: {
     Enabled: false,
     IfSendStatistic: false,
+    // 与后端 Notify_IfSendDropStatistics 的默认值一致；重新生成 API 类型后成了必填项。
+    IfSendDropStatistics: true,
     IfSendMail: false,
     ToAddress: '',
     IfServerChan: false,

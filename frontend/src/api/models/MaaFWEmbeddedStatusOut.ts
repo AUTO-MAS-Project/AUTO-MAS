@@ -2,9 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaEndPlanConfig_Output } from './MaaEndPlanConfig_Output';
-import type { MaaPlanConfig } from './MaaPlanConfig';
-export type PlanCreateOut = {
+import type { MaaFWEmbeddedStatusData } from './MaaFWEmbeddedStatusData';
+export type MaaFWEmbeddedStatusOut = {
     /**
      * 状态码
      */
@@ -18,12 +17,8 @@ export type PlanCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的计划ID
+     * 内嵌状态
      */
-    planId: string;
-    /**
-     * 计划配置数据
-     */
-    data: (MaaPlanConfig | MaaEndPlanConfig_Output);
+    data?: (MaaFWEmbeddedStatusData | null);
 };
 

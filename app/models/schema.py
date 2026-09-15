@@ -3450,56 +3450,6 @@ class MaaFWConfig_Embedded(BaseModel):
     )
 
 
-class MaaFWConfig_Managed(BaseModel):
-    Enabled: Optional[bool] = Field(default=None, description="是否启用托管资源")
-    ProjectId: Optional[str] = Field(default=None, description="Project Store 项目 ID")
-    StoreId: Optional[str] = Field(default=None, description="Project Store 实例身份")
-    Version: Optional[str] = Field(default=None, description="当前不可变项目版本")
-    RuntimeConstraint: Optional[str] = Field(
-        default=None, description="MaaFW 运行时约束"
-    )
-    ProjectManifest: Optional[str] = Field(
-        default=None, description="项目资源清单 JSON"
-    )
-    CheckoutPath: Optional[str] = Field(
-        default=None, description="脚本专属可写 checkout 路径"
-    )
-    PendingUpgrade: Optional[str] = Field(
-        default=None, description="待确认升级事务 JSON"
-    )
-    LastOperation: Optional[str] = Field(default=None, description="最近资源操作 JSON")
-
-
-class MaaFWConfig_ManagedRuntime(BaseModel):
-    RuntimeId: Optional[str] = Field(default=None, description="共享运行时 ID")
-    PoolId: Optional[str] = Field(default=None, description="Runtime Pool 实例身份")
-    PythonExecutable: Optional[str] = Field(
-        default=None, description="共享运行时 Python"
-    )
-    VenvPath: Optional[str] = Field(default=None, description="共享运行时虚拟环境")
-    RuntimeBinding: Optional[str] = Field(
-        default=None, description="共享运行时绑定 JSON"
-    )
-
-
-class MaaFWConfig_ManagedRemote(BaseModel):
-    Source: Optional[Literal["MirrorChyan", "GitHub"]] = Field(
-        default=None, description="托管资源远程来源"
-    )
-    Channel: Optional[Literal["stable", "beta"]] = Field(
-        default=None, description="托管资源更新渠道"
-    )
-    MirrorChyanRID: Optional[str] = Field(
-        default=None, description="MirrorChyan 资源 ID"
-    )
-    MirrorChyanCDK: Optional[str] = Field(default=None, description="MirrorChyan CDK")
-    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库")
-    GitHubTag: Optional[str] = Field(default=None, description="GitHub release tag")
-    GitHubAssetPattern: Optional[str] = Field(
-        default=None, description="GitHub asset 匹配模式"
-    )
-
-
 class MaaFWConfig_Selection(BaseModel):
     """MaaFW 选择项的 API DTO。
 
@@ -3532,15 +3482,6 @@ class MaaFWConfig(BaseModel):
     )
     Embedded: Optional[MaaFWConfig_Embedded] = Field(
         default=None, description="内嵌副本"
-    )
-    Managed: Optional[MaaFWConfig_Managed] = Field(
-        default=None, description="托管项目资源"
-    )
-    ManagedRuntime: Optional[MaaFWConfig_ManagedRuntime] = Field(
-        default=None, description="共享运行时绑定"
-    )
-    ManagedRemote: Optional[MaaFWConfig_ManagedRemote] = Field(
-        default=None, description="托管资源远程来源"
     )
     Run: Optional[MaaFWConfig_Run] = Field(default=None, description="脚本运行配置")
     Selection: Optional[MaaFWConfig_Selection] = Field(
@@ -3768,6 +3709,10 @@ class MaaFWEmbeddedProjection(BaseModel):
     shellFamilies: List[str] = Field(default_factory=list, description="移除的外壳家族")
     conservative: bool = Field(default=False, description="是否退回保守模式")
     warnings: List[str] = Field(default_factory=list, description="投影警告")
+    bundledMaaFWVersion: str = Field(
+        default="",
+        description="来源自带 MaaFramework 的版本（PEP 440），运行池按它钉运行时",
+    )
 
 
 class MaaFWEmbeddedStatusData(BaseModel):

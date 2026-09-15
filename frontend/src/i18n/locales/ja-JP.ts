@@ -1431,6 +1431,30 @@ export default {
       'interface.json を含むプロジェクトフォルダを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
     pickLocalDirectory: 'ローカルフォルダを選択',
+    maafwEmbeddedTitle: 'AUTO-MAS の内蔵コピーで実行',
+    maafwEmbeddedHint:
+      'オンにすると AUTO-MAS は interface が宣言するファイルだけを自分のフォルダへコピーし、実行も更新もそのコピー上で行います。元のフォルダは参照も変更もされません。オフにすると元のフォルダに戻ります。',
+    maafwEmbeddedOffHint:
+      '現在は上のフォルダで直接実行しており、プロジェクト更新もそこへ書き込まれます。',
+    maafwEmbeddedSourceDirectory: '元フォルダ',
+    maafwEmbeddedSourceHint:
+      '内蔵コピーはこのフォルダから取り込みました。別のフォルダを選ぶとコピーを取り込み直し、元フォルダには触れません。',
+    maafwEmbeddedCopyHealthy: 'コピーは正常',
+    maafwEmbeddedCopyMissing: 'コピーがありません。次回実行前に元フォルダから再作成します',
+    maafwEmbeddedSaved: 'コピーで {percent}% 削減（{source} → {copy}）',
+    maafwEmbeddedShell: 'シェル：{shell}',
+    maafwEmbeddedRuntime: 'ランタイム MaaFramework {version}（元パッケージ同梱と同じ）',
+    maafwEmbeddedSourceVersion: '元バージョン {version}',
+    maafwEmbeddedImportedAt: '取り込み日時 {time}',
+    maafwEmbeddedSourceMissing:
+      '元フォルダが存在しません。実行には影響しませんが、取り込み直しはできません',
+    maafwEmbeddedReimport: '取り込み直す',
+    maafwEmbeddedReimportHint:
+      '現在の元フォルダからコピーを作り直します。元フォルダを手動で更新したときに使います。',
+    maafwEmbeddedDisableConfirmTitle: '内蔵モードを終了しますか？',
+    maafwEmbeddedDisableConfirm:
+      'AUTO-MAS のコピーを削除し、元のフォルダで実行するようになります。元のフォルダは一度も変更されていません。',
+    maafwEmbeddedDisableOk: '内蔵モードを終了',
     pickEmulatorInstancePassed:
       '実行時に MFW の ADB controller へ渡すエミュレータのインスタンスを選びます',
     pickHowGameControlled: 'ゲームの制御方式を選びます',

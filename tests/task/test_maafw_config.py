@@ -37,17 +37,15 @@ class MaaFWConfigTest(unittest.TestCase):
                 "Game": 6,
                 "Update": 8,
                 "Embedded": 4,
-                "Managed": 9,
-                "ManagedRuntime": 5,
-                "ManagedRemote": 7,
                 "Run": 6,
                 "Selection": 3,
             },
         )
         # 第一层删除后少了 Run.Engine 与 Game.{Path,LaunchURL,ProcessPath,ProcessName}；
         # 自动更新接线新增 Update.AutoUpdateMode，带包启动新增 Game.PackageName，
-        # 故 Update 组 8 项、Game 组 6 项；内嵌副本新增 Embedded 组 4 项，总计 66
-        self.assertEqual(_item_count(script), 66)
+        # 故 Update 组 8 项、Game 组 6 项；内嵌副本新增 Embedded 组 4 项；第三层
+        # 托管（Managed / ManagedRuntime / ManagedRemote，21 项）随 #696 一并退场，总计 45
+        self.assertEqual(_item_count(script), 45)
         self.assertNotIn("Engine", script._config_item_index["Run"])
         self.assertIn("DailyOnceTasks", script._config_item_index["Run"])
         self.assertIn("WeeklyOnceTasks", script._config_item_index["Run"])
@@ -203,9 +201,7 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
                 "Device",
                 "Game",
                 "Update",
-                "Managed",
-                "ManagedRuntime",
-                "ManagedRemote",
+                "Embedded",
                 "Run",
                 "Selection",
             },

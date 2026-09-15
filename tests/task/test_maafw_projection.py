@@ -16,6 +16,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
     apply_package_transaction,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
+    PROJECTION_MARKER_NAME,
     ProjectionError,
     build_projection_plan,
     build_projection_rules,
@@ -25,6 +26,24 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
     materialize_projection,
     package_projection_rules,
 )
+from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    pin_agent_maafw_requirement,
+    probe_bundled_maafw_version,
+    resolve_project_maafw_requirement,
+)
+from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+    project_environment_fingerprint,
+)
+
+# 照抄真实原生库里的排布（见 test_maafw_agent_maafw_pin.py）：版本号是一条 NUL 结尾
+# 的 C 字符串，前后都是别的字符串。
+_DLL_TEMPLATE = (
+    b"\x00\x00\x00\x00latest_id\x00\x00\x00\x00%s\x00DoNothing\x00\x00\x00MaaAdbC"
+)
+
+
+def _bundled_dll(version: str) -> bytes:
+    return _DLL_TEMPLATE % version.encode("ascii")
 
 
 def _write(path: Path, text: str = "x") -> None:
@@ -60,6 +79,8 @@ def _release(root: Path, interface: str | None = None) -> Path:
     _write(root / "python/python.exe", "exe" * 100)
     _write(root / "python/python312.dll", "dll" * 100)
     _write(root / "MFW.exe", "shell" * 100)
+    (root / "maafw").mkdir(exist_ok=True)
+    (root / "maafw/MaaFramework.dll").write_bytes(_bundled_dll("v5.11.1"))
     _write(root / "libs/Avalonia.dll", "dll" * 100)
     _write(root / "runtimes/win-x64/native/x.dll", "dll" * 100)
     _write(root / "debug/maa.log", "log")
@@ -83,10 +104,42 @@ class TestWhitelist:
         assert reasons["MFW.exe"] == "ui-shell"
         assert reasons["python/python.exe"] == "embedded-python"
         assert reasons["runtimes/win-x64/native/x.dll"] == "embedded-runtime"
+        assert reasons["maafw/MaaFramework.dll"] == "embedded-runtime"
         assert reasons["agent/__pycache__/main.cpython-312.pyc"] == "cache"
         # 声明目录里的缓存也剔，白名单不是免检。
         assert reasons["resource/base/__pycache__/junk.pyc"] == "cache"
         assert reasons["README.md"] == "not-required-by-runtime-projection"
+
+    def test_ui_assets_named_by_interface_are_kept(self, tmp_path: Path) -> None:
+        # AUTO-MAS 用户页会展示项目图标、任务图标与 welcome；这些不参与运行但要带上。
+        # 图标路径常以 / 开头（项目根相对），远程 URL 与不存在的文件都静默跳过。
+        interface = _interface(
+            icon="/assets/logo/logo.png",
+            welcome="README.md",
+            task=[
+                {"name": "A", "entry": "A", "icon": "./assets/icons/a.png"},
+                {"name": "B", "entry": "B", "icon": "https://x/b.png"},
+                {"name": "C", "entry": "C", "icon": "assets/icons/missing.png"},
+            ],
+            option={"opt": {"cases": [{"name": "c", "icon": "assets/icons/c.png"}]}},
+        )
+        root = _release(tmp_path / "src", interface)
+        _write(root / "assets/logo/logo.png", "png")
+        _write(root / "assets/icons/a.png", "png")
+        _write(root / "assets/icons/c.png", "png")
+        _write(root / "assets/screenshots/big.png", "png" * 100)
+
+        plan = build_projection_plan(root)
+        kept = {path.as_posix() for path in plan.copied_files}
+
+        assert {
+            "assets/logo/logo.png",
+            "assets/icons/a.png",
+            "assets/icons/c.png",
+        } <= kept
+        assert "README.md" in kept
+        assert "assets/screenshots/big.png" not in kept
+        assert not any("missing.png" in warning for warning in plan.rules.warnings)
 
     def test_stripped_interpreter_is_a_warning_not_an_error(
         self, tmp_path: Path
@@ -221,6 +274,88 @@ class TestMaterialize:
         assert not (tmp_path / "out/MFW.exe").exists()
         assert not (tmp_path / "out/python").exists()
         assert seen[-1] == (len(plan.copied_files), len(plan.copied_files))
+
+
+class TestRuntimePin:
+    """原生库不进副本，但它的版本必须进：agent 与 runner 的协议版本号跨版本连不上。"""
+
+    def test_materialized_copy_pins_the_bundled_runtime_version(
+        self, tmp_path: Path
+    ) -> None:
+        source = _release(tmp_path / "src")
+        plan = build_projection_plan(source)
+        copy = tmp_path / "copy"
+
+        materialize_projection(plan, copy)
+
+        assert plan.report()["bundledMaaFWVersion"] == "5.11.1"
+        assert not (copy / "maafw").exists()
+        marker = json.loads((copy / PROJECTION_MARKER_NAME).read_text(encoding="utf-8"))
+        assert marker["bundledMaaFWVersion"] == "5.11.1"
+        # runner 侧所有钉版本的入口都经过这一个探测函数。
+        assert probe_bundled_maafw_version(copy) == "5.11.1"
+        assert resolve_project_maafw_requirement(copy) == "maafw==5.11.1"
+        assert pin_agent_maafw_requirement(copy, ["MaaFw", "json5"]) == [
+            "maafw==5.11.1",
+            "json5",
+        ]
+
+    def test_pin_change_invalidates_the_prepared_environment(
+        self, tmp_path: Path
+    ) -> None:
+        # 环境准备按项目指纹去重；标记换了版本就不能再沿用上一份运行环境。
+        source = _release(tmp_path / "src")
+        copy = tmp_path / "copy"
+        materialize_projection(build_projection_plan(source), copy)
+        before = project_environment_fingerprint(copy)
+
+        (source / "maafw/MaaFramework.dll").write_bytes(_bundled_dll("v5.12.3"))
+        materialize_projection(build_projection_plan(source), copy)
+
+        assert probe_bundled_maafw_version(copy) == "5.12.3"
+        assert project_environment_fingerprint(copy) != before
+
+    def test_source_without_native_runtime_leaves_the_pin_empty(
+        self, tmp_path: Path
+    ) -> None:
+        source = _release(tmp_path / "src")
+        (source / "maafw/MaaFramework.dll").unlink()
+        plan = build_projection_plan(source)
+        copy = tmp_path / "copy"
+
+        materialize_projection(plan, copy)
+
+        assert plan.report()["bundledMaaFWVersion"] == ""
+        assert probe_bundled_maafw_version(copy) is None
+
+    def test_update_package_refreshes_the_pin(self, tmp_path: Path) -> None:
+        # v1 副本钉 5.11.1；全量包带 5.12.3 的原生库：库不落盘，标记换成 5.12.3。
+        source = _release(tmp_path / "src")
+        copy = tmp_path / "copy"
+        materialize_projection(build_projection_plan(source), copy)
+        package = tmp_path / "v1.1.0.zip"
+        with zipfile.ZipFile(package, "w") as archive:
+            archive.writestr("interface.json", _interface(version="v1.1.0", agent=None))
+            archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 2}}')
+            archive.writestr("maafw/MaaFramework.dll", _bundled_dll("v5.12.3"))
+            archive.writestr("MFW.exe", "shell")
+
+        result = apply_package_transaction(
+            copy,
+            package,
+            operation_root=tmp_path / "operations",
+            projection=True,
+        )
+
+        assert result.get("applied") is not False
+        assert not (copy / "maafw").exists()
+        assert probe_bundled_maafw_version(copy) == "5.12.3"
+        manifest_path = next(
+            (tmp_path / "maafw_project_state").rglob("resource-manifest.json")
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert PROJECTION_MARKER_NAME in manifest["files"]
+        assert "maafw/MaaFramework.dll" not in manifest["files"]
 
 
 class TestPackageRules:

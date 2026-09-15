@@ -63,6 +63,9 @@ import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWEmbeddedIn } from '../models/MaaFWEmbeddedIn';
+import type { MaaFWEmbeddedReimportIn } from '../models/MaaFWEmbeddedReimportIn';
+import type { MaaFWEmbeddedStatusOut } from '../models/MaaFWEmbeddedStatusOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
@@ -887,6 +890,85 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查看 MFW 脚本的内嵌副本状态
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 启用内嵌：按 Info.Path 导入副本
+     * 按 interface 白名单把 Info.Path 投影成副本，此后运行、预览、更新都在副本上。
+     *
+     * 来源目录一个字节不动，也不再被引用；退出内嵌就回到它。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static enableMaafwEmbeddedApiScriptsMaafwEmbeddedEnablePost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/enable',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 换来源目录并重新导入副本
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
+        requestBody: MaaFWEmbeddedReimportIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/reimport',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 退出内嵌：删副本，回到来源目录
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static disableMaafwEmbeddedApiScriptsMaafwEmbeddedDisablePost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/disable',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -2076,8 +2158,7 @@ export class Service {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 ok-nte configs 目录初始化默认配置。
+     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
      * script_id: OK-NTE 脚本 ID

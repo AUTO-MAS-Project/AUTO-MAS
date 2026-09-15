@@ -513,9 +513,12 @@ def _project_package_entries(
     send_log: Callable[[str], None] | None,
 ) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...]]:
     from .projection import (
+        PROJECTION_MARKER_NAME,
         ProjectionError,
         filter_package_entries,
         package_projection_rules,
+        probe_bundled_maafw_version,
+        write_projection_marker,
     )
 
     try:
@@ -530,17 +533,29 @@ def _project_package_entries(
             send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
         for warning in rules.warnings:
             send_log(f"内嵌投影：{warning}")
+    kept_file_table = {
+        relative: source for relative, source in files.items() if relative in kept_files
+    }
+    kept_hash_table = {
+        relative: digest
+        for relative, digest in hashes.items()
+        if relative in kept_files
+    }
+    # 包里带了原生库（全量包必带，差量包在它变了时带）：原生库本身不落盘，但它的
+    # 版本要随这次更新换进副本的投影标记，否则 agent 侧还钉着上一版。标记作为本次
+    # 落地的一个条目进事务、进清单，与其余文件同进同退。
+    bundled_version = probe_bundled_maafw_version(payload_root)
+    if bundled_version:
+        marker = write_projection_marker(payload_root, bundled_version)
+        kept_file_table[PROJECTION_MARKER_NAME] = marker
+        kept_hash_table[PROJECTION_MARKER_NAME] = hashlib.sha256(
+            marker.read_bytes()
+        ).hexdigest()
+        if send_log is not None:
+            send_log(f"内嵌投影：来源自带 MaaFramework {bundled_version}，已记入副本")
     return (
-        {
-            relative: source
-            for relative, source in files.items()
-            if relative in kept_files
-        },
-        {
-            relative: digest
-            for relative, digest in hashes.items()
-            if relative in kept_files
-        },
+        kept_file_table,
+        kept_hash_table,
         tuple(relative for relative in deleted if relative in kept_deleted),
     )
 
