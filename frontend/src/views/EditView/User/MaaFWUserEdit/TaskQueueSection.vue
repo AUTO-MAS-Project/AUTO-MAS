@@ -3,12 +3,6 @@
     <div class="section-header section-header-with-action">
       <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
       <a-space>
-        <a-button size="small" @click="emit('openRestore')">
-          <template #icon>
-            <HistoryOutlined />
-          </template>
-          {{ t('edit.configRestoreTitle') }}
-        </a-button>
         <a-button
           :loading="interfaceLoading"
           :disabled="!scriptPath"
@@ -18,6 +12,12 @@
             <FileSearchOutlined />
           </template>
           {{ t('edit.readInterface') }}
+        </a-button>
+        <a-button size="small" @click="emit('openRestore')">
+          <template #icon>
+            <HistoryOutlined />
+          </template>
+          {{ t('edit.configRestoreTitle') }}
         </a-button>
       </a-space>
     </div>

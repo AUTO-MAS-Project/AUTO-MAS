@@ -690,6 +690,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = () => {
@@ -703,7 +705,7 @@ interface OkNtePreviewFileView {
   summary: Array<{ key: string; value: string }>
 }
 const previewFiles = (raw: unknown): OkNtePreviewFileView[] =>
-  (raw as { files?: OkNtePreviewFileView[] } | null)?.files ?? []
+  (raw as { fileCards?: OkNtePreviewFileView[] } | null)?.fileCards ?? []
 
 // 一键恢复成功：MAS 目录回到该时点，重拉动态表单——否则旧表单值在下次
 // 保存时全量写回、静默撤销刚做的恢复（ok-nte 原生恢复不影响本页表单）

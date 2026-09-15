@@ -8,12 +8,7 @@
       :description="`${t('edit.maaendConfigurationWindowOpen')}\n${t('edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
-        <a-button
-          v-if="maaEndTaskId"
-          type="primary"
-          size="large"
-          @click="handleSaveMaaEndConfig"
-        >
+        <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
           {{ t('edit.saveConfiguration') }}
         </a-button>
       </template>
@@ -203,11 +198,7 @@
           <template v-for="f in previewFiles(raw)" :key="f.name">
             <h4 class="maaend-preview-title">{{ f.label }}</h4>
             <a-descriptions :column="1" size="small" bordered class="maaend-preview-box">
-              <a-descriptions-item
-                v-for="row in f.summary"
-                :key="row.key"
-                :label="row.key"
-              >
+              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
@@ -713,12 +704,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -726,6 +712,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = () => {
@@ -739,7 +727,7 @@ interface MaaEndPreviewFileView {
   summary: Array<{ key: string; value: string }>
 }
 const previewFiles = (raw: unknown): MaaEndPreviewFileView[] =>
-  (raw as { files?: MaaEndPreviewFileView[] } | null)?.files ?? []
+  (raw as { fileCards?: MaaEndPreviewFileView[] } | null)?.fileCards ?? []
 
 // 一键恢复成功：mas 恢复含页面快速配置回填，重拉表单——否则旧表单值在
 // 下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单

@@ -228,26 +228,7 @@
       :script-desc="t('edit.generalConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
-    >
-      <!-- 通用脚本配置格式任意（透传），预览为文件清单粒度 -->
-      <template #preview="{ raw }">
-        <a-empty
-          v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
-        />
-        <a-descriptions
-          v-else
-          :column="1"
-          size="small"
-          bordered
-          class="general-preview-box"
-        >
-          <a-descriptions-item v-for="f in previewFiles(raw)" :key="f.name" :label="f.name">
-            {{ f.size }}
-          </a-descriptions-item>
-        </a-descriptions>
-      </template>
-    </ConfigRestoreSection>
+    />
   </div>
 </template>
 
@@ -256,7 +237,13 @@ import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { ArrowLeftOutlined, EyeOutlined, HistoryOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  EyeOutlined,
+  HistoryOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -779,12 +766,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -792,19 +774,13 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = () => {
   restoreOpen.value = true
 }
-
-// 预览响应原文（unknown）收敛为文件清单视图：泛用组件的 raw 插槽不带专项类型
-interface GeneralPreviewFile {
-  name: string
-  size: string
-}
-const previewFiles = (raw: unknown): GeneralPreviewFile[] =>
-  (raw as { files?: GeneralPreviewFile[] } | null)?.files ?? []
 
 // 一键恢复成功：General 无字段回填（MAS 编辑页字段不参与配置内容），仅关弹窗
 const handleRestored = async () => {
@@ -969,10 +945,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.general-preview-box {
-  width: 100%;
 }
 
 .section-header h3 {

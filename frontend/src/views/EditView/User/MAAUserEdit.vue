@@ -180,11 +180,7 @@
           <template v-for="f in previewFiles(raw)" :key="f.name">
             <h4 class="maa-preview-title">{{ f.label }}</h4>
             <a-descriptions :column="1" size="small" bordered class="maa-preview-box">
-              <a-descriptions-item
-                v-for="row in f.summary"
-                :key="row.key"
-                :label="row.key"
-              >
+              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
@@ -200,11 +196,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  EyeOutlined,
-  HistoryOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -1332,12 +1324,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -1345,6 +1332,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = () => {
@@ -1358,7 +1347,7 @@ interface MaaPreviewFileView {
   summary: Array<{ key: string; value: string }>
 }
 const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
-  (raw as { files?: MaaPreviewFileView[] } | null)?.files ?? []
+  (raw as { fileCards?: MaaPreviewFileView[] } | null)?.fileCards ?? []
 
 // 一键恢复成功：mas 恢复含页面核心配置（Info/Task）回填，重拉表单——否则
 // 旧表单值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单

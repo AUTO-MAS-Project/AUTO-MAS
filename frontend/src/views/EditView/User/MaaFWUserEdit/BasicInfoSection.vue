@@ -3,6 +3,15 @@
   <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.basicInfo') }}</h3>
+      <!-- 任务队列区块隐藏（直控模式）时，恢复入口兜底到这里 -->
+      <div v-if="formData.Info.Mode === '直控'" class="section-header-actions">
+        <a-button size="small" @click="emit('openRestore')">
+          <template #icon>
+            <HistoryOutlined />
+          </template>
+          {{ t('edit.configRestoreTitle') }}
+        </a-button>
+      </div>
     </div>
 
     <a-row :gutter="24">
@@ -147,7 +156,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface'
-import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWPresetInfo, MaaFWUserConfig } from '@/types/script'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
@@ -205,6 +214,7 @@ const emit = defineEmits<{
   save: [key: string, value: unknown]
   presetMenuClick: [event: MenuInfo]
   modeChange: [value: boolean | string]
+  openRestore: []
 }>()
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name
@@ -220,9 +230,18 @@ const emitSave = (key: string, value: unknown) => {
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-header h3 {

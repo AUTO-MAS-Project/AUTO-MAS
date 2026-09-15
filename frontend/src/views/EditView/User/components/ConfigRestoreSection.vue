@@ -68,26 +68,30 @@
         :format-value="formatValue"
         :field-label="fieldLabel"
       >
-        <!-- 用户级：基本信息 + 账号 + 任务编排 -->
+        <!-- 用户级：基本信息 + 账号 + 任务编排；载荷无字段语义时不渲染空表，
+             但保留「无可展示摘要」提示（与脚本级一致的基座默认兜底） -->
         <template v-if="currentTarget?.kind === 'user'">
-          <h4 class="preview-section-title">{{ t('edit.basicInfo') }}</h4>
-          <a-descriptions :column="1" size="small" bordered class="preview-box">
-            <a-descriptions-item v-for="row in previewRows" :key="row.label" :label="row.label">
-              {{ row.value }}
-            </a-descriptions-item>
-          </a-descriptions>
-          <h4 class="preview-section-title">{{ t('edit.configRestorePreviewTasks') }}</h4>
-          <div v-if="previewData.tasks.length" class="preview-task-list">
-            <span
-              v-for="task in previewData.tasks"
-              :key="task.app_id"
-              class="preview-task-tag"
-              :class="{ active: task.enabled }"
-            >
-              {{ task.app_name }}
-            </span>
-          </div>
-          <a-empty v-else :description="t('edit.configRestorePreviewNoTasks')" />
+          <template v-if="previewRows.length || previewData.tasks.length">
+            <h4 class="preview-section-title">{{ t('edit.basicInfo') }}</h4>
+            <a-descriptions :column="1" size="small" bordered class="preview-box">
+              <a-descriptions-item v-for="row in previewRows" :key="row.label" :label="row.label">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+            <h4 class="preview-section-title">{{ t('edit.configRestorePreviewTasks') }}</h4>
+            <div v-if="previewData.tasks.length" class="preview-task-list">
+              <span
+                v-for="task in previewData.tasks"
+                :key="task.app_id"
+                class="preview-task-tag"
+                :class="{ active: task.enabled }"
+              >
+                {{ task.app_name }}
+              </span>
+            </div>
+            <a-empty v-else :description="t('edit.configRestorePreviewNoTasks')" />
+          </template>
+          <a-empty v-else :description="t('edit.configRestorePreviewEmpty')" />
         </template>
         <!-- 脚本级：实例列表可展开查看账号/任务明细 -->
         <template v-else>
@@ -128,6 +132,31 @@
           </a-collapse>
         </template>
       </slot>
+      <!-- ══ 备份文件（基座统一兜底：预览载荷的标准 files 字段）══
+           归档内文件清单恒渲染在预览区最下方（默认收起，标题带数量），
+           路径为超链接，点击查看原始内容；专项未提供 files 字段时不渲染，
+           未实现 readFile 时点击提示后端原因 -->
+      <a-collapse v-if="previewFiles.length" class="preview-files-collapse" :bordered="false">
+        <a-collapse-panel>
+          <template #header>
+            <span class="preview-files-title">
+              {{ `${t('edit.configRestoreBackupFiles')} (${previewFiles.length})` }}
+            </span>
+          </template>
+          <div class="preview-file-list">
+            <button
+              v-for="f in previewFiles"
+              :key="f.path"
+              type="button"
+              class="preview-file-link"
+              @click="openBackupFile(f)"
+            >
+              <span class="preview-file-path">{{ f.path }}</span>
+              <span class="preview-file-size">{{ formatFileSize(f.size) }}</span>
+            </button>
+          </div>
+        </a-collapse-panel>
+      </a-collapse>
     </a-spin>
     <div class="preview-actions">
       <!-- 「查看详细配置」依赖父组件的 onDetail 回调（恢复 + 拉起查看会话）；
@@ -141,6 +170,28 @@
         {{ t('edit.close') }}
       </a-button>
     </div>
+  </a-modal>
+
+  <!-- ══ 备份文件内容（只读；等宽原文 + 复制）══ -->
+  <a-modal
+    :open="fileOpen"
+    :footer="null"
+    width="720px"
+    :body-style="{ maxHeight: '65vh', overflowY: 'auto' }"
+    @update:open="fileOpen = $event"
+  >
+    <template #title>
+      <div class="file-modal-title">
+        <span class="file-modal-path">{{ fileItem?.path }}</span>
+        <a-button type="text" size="small" @click="copyFileContent">
+          {{ t('edit.configRestoreCopy') }}
+        </a-button>
+      </div>
+    </template>
+    <a-spin :spinning="fileLoading">
+      <p v-if="fileError" class="restore-desc">{{ fileError }}</p>
+      <pre v-else class="backup-file-content">{{ fileContent }}</pre>
+    </a-spin>
   </a-modal>
 </template>
 
@@ -190,6 +241,18 @@ const props = defineProps<{
       data?: Record<string, unknown> | null
     }>
     restore: (target: string, time: string) => Promise<{ code?: number; message?: string }>
+    /** 只读读取备份内文本文件（预览「备份文件」点击查看；未提供时点击提示） */
+    readFile?: (
+      target: string,
+      time: string,
+      path: string
+    ) => Promise<{
+      code?: number
+      message?: string
+      path?: string
+      size?: number
+      content?: string
+    }>
   }
   /** 预览字段标签映射（key → 展示标题） */
   fieldLabels?: Record<string, string>
@@ -367,6 +430,65 @@ const handlePreviewDetail = () => {
   props.onDetail?.(restoreTarget.value, previewItem.value)
 }
 
+// ══ 备份文件（预览载荷标准 files 字段；点击查看原始内容）══
+interface BackupFileItem {
+  path: string
+  size: number
+}
+
+const previewFiles = computed<BackupFileItem[]>(() => {
+  const raw = previewRaw.value as { files?: BackupFileItem[] } | null
+  // 只渲染标准条目（path+size）；专项自定义摘要卡用其它键名（fileCards），
+  // 由专项 #preview 插槽自行渲染
+  return (raw?.files ?? []).filter(f => typeof f?.path === 'string')
+})
+
+const formatFileSize = (size: number): string => {
+  if (!Number.isFinite(size) || size < 0) return '—'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const fileOpen = ref(false)
+const fileLoading = ref(false)
+const fileError = ref('')
+const fileItem = ref<BackupFileItem | null>(null)
+const fileContent = ref('')
+
+const openBackupFile = async (item: BackupFileItem) => {
+  if (!previewItem.value) return
+  fileOpen.value = true
+  fileLoading.value = true
+  fileError.value = ''
+  fileItem.value = item
+  fileContent.value = ''
+  try {
+    if (!props.api.readFile) {
+      throw new Error(t('edit.configRestoreFileUnsupported'))
+    }
+    const resp = await props.api.readFile(restoreTarget.value, previewItem.value.time, item.path)
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.configRestoreFileFailed'))
+    }
+    fileContent.value = resp.content ?? ''
+  } catch (e) {
+    fileError.value = e instanceof Error ? e.message : t('edit.configRestoreFileFailed')
+  } finally {
+    fileLoading.value = false
+  }
+}
+
+const copyFileContent = async () => {
+  if (!fileContent.value) return
+  try {
+    await navigator.clipboard.writeText(fileContent.value)
+    message.success(t('edit.configRestoreCopied'))
+  } catch {
+    message.error(t('edit.configRestoreFileFailed'))
+  }
+}
+
 // ══ 一键恢复 ══
 const doRestore = async (item: BackupItem) => {
   const resp = await props.api.restore(restoreTarget.value, item.time)
@@ -468,6 +590,83 @@ const confirmRestore = (item: BackupItem) => {
 
 .preview-instance-name {
   font-weight: 600;
+}
+
+/* 备份文件节：默认收起的折叠面板（标题带文件数），路径为超链接样式，整行可点 */
+.preview-files-collapse {
+  background: transparent;
+}
+
+.preview-files-collapse :deep(.ant-collapse-header) {
+  padding: 8px 0;
+}
+
+.preview-files-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.preview-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-file-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s;
+}
+
+.preview-file-link:hover {
+  border-color: var(--ant-color-primary);
+}
+
+.preview-file-path {
+  color: var(--ant-color-primary);
+  word-break: break-all;
+}
+
+.preview-file-size {
+  flex-shrink: 0;
+  color: var(--ant-color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 文件内容弹窗：标题路径 + 复制按钮；正文等宽原文 */
+.file-modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 24px;
+}
+
+.file-modal-path {
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.backup-file-content {
+  margin: 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--ant-color-fill-tertiary);
+  color: var(--ant-color-text);
+  font-family: var(--font-monospace, 'Consolas', 'Monaco', monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .preview-actions {

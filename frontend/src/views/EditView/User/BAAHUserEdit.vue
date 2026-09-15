@@ -256,7 +256,11 @@
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
-            <div v-for="g in s.groups ?? []" :key="`${s.name}-${g.name}`" class="baah-preview-group">
+            <div
+              v-for="g in s.groups ?? []"
+              :key="`${s.name}-${g.name}`"
+              class="baah-preview-group"
+            >
               <div class="baah-preview-group-name">{{ g.name }}</div>
               <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
                 <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
@@ -567,12 +571,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -580,6 +579,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = () => {

@@ -386,11 +386,7 @@
           <template v-for="f in previewFiles(raw)" :key="f.name">
             <h4 class="okww-preview-title">{{ f.label }}</h4>
             <a-descriptions :column="1" size="small" bordered class="okww-preview-box">
-              <a-descriptions-item
-                v-for="row in f.summary"
-                :key="row.key"
-                :label="row.key"
-              >
+              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
@@ -758,6 +754,14 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
 }
 
 const openRestoreModal = () => {
@@ -771,7 +775,7 @@ interface OkwwPreviewFileView {
   summary: Array<{ key: string; value: string }>
 }
 const previewFiles = (raw: unknown): OkwwPreviewFileView[] =>
-  (raw as { files?: OkwwPreviewFileView[] } | null)?.files ?? []
+  (raw as { fileCards?: OkwwPreviewFileView[] } | null)?.fileCards ?? []
 
 // 一键恢复成功：mas 恢复含快速配置覆盖层字段回填，重拉表单——否则旧表单
 // 值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单

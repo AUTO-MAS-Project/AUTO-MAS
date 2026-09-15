@@ -1806,6 +1806,11 @@ export default {
     configRestorePreviewEmpty: '该备份无可展示的配置摘要',
     configRestorePreviewActive: '活跃',
     configRestoreListFailed: '加载备份列表失败',
+    configRestoreBackupFiles: '备份文件',
+    configRestoreCopy: '复制',
+    configRestoreCopied: '已复制到剪贴板',
+    configRestoreFileFailed: '读取备份文件失败',
+    configRestoreFileUnsupported: '该备份类别不支持查看文件内容',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
     configRestoreDetailConfirm:

@@ -74,10 +74,7 @@
           class="m9a-preview-collapse"
           :bordered="false"
         >
-          <a-collapse-panel
-            v-for="inst in previewInstances(raw)"
-            :key="inst.name"
-          >
+          <a-collapse-panel v-for="inst in previewInstances(raw)" :key="inst.name">
             <template #header>
               <span class="m9a-preview-instance-name">{{ inst.name }}</span>
             </template>
@@ -416,12 +413,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -429,6 +421,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = () => {

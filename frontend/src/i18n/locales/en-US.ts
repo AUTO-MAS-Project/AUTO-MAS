@@ -1153,8 +1153,7 @@ export default {
       'The MaaEnd setup session is about to time out and will be saved in 30 seconds',
     maaendViewingTitle: 'Viewing MaaEnd config',
     maaendViewingDesc: 'The MaaEnd window shows the selected backup, for viewing only.',
-    maaendViewingDesc2:
-      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    maaendViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     maaendViewClose: 'Close viewer',
     scriptLevelMaaendConfiguration2:
       'The script-level MaaEnd configuration window is open — finish the setup there.',
@@ -1872,6 +1871,11 @@ export default {
     configRestorePreviewEmpty: 'Nothing to preview in this backup',
     configRestorePreviewActive: 'Active',
     configRestoreListFailed: 'Failed to load backups',
+    configRestoreBackupFiles: 'Backup files',
+    configRestoreCopy: 'Copy',
+    configRestoreCopied: 'Copied to clipboard',
+    configRestoreFileFailed: 'Failed to read the backup file',
+    configRestoreFileUnsupported: 'This backup category does not support viewing file contents',
     configRestoreDetailView: 'View details',
     configRestoreDetailHint:
       'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
@@ -1911,8 +1915,7 @@ export default {
       'The ok-ww setup session is about to time out and will be saved in 30 seconds',
     okwwViewingTitle: 'Viewing ok-ww config',
     okwwViewingDesc: 'The ok-ww window shows the selected backup, for viewing only.',
-    okwwViewingDesc2:
-      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    okwwViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     okwwViewClose: 'Close viewer',
     // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
     maaConfigRestoreScriptDesc:
@@ -1926,8 +1929,7 @@ export default {
       'The MAA setup session is about to time out and will be saved in 30 seconds',
     maaViewingTitle: 'Viewing MAA config',
     maaViewingDesc: 'The MAA window shows the selected backup, for viewing only.',
-    maaViewingDesc2:
-      'Viewing temporarily switches the config; click "Close viewer" when done.',
+    maaViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     maaViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',

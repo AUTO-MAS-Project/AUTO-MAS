@@ -4433,6 +4433,14 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
 }
 
 interface BettergiPreviewRow {

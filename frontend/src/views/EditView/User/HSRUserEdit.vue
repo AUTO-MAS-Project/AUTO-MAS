@@ -32,7 +32,8 @@
           <div class="form-section form-section-flat">
             <div class="section-header">
               <h3>{{ t('edit.basicInfo') }}</h3>
-              <div class="section-header-actions">
+              <!-- 体力配置区块隐藏（未给 Daily 配引擎）时，恢复入口兜底到这里 -->
+              <div v-if="!dailyStageEngine" class="section-header-actions">
                 <a-button size="small" @click="restoreOpen = true">
                   <template #icon>
                     <HistoryOutlined />
@@ -198,6 +199,7 @@
               :stage-options-loading="hsrStageOptionsLoading"
               :stage-options-error="hsrStageOptionsError"
               @save="handleFieldSave"
+              @open-restore="restoreOpen = true"
             />
             <ManagedTaskSection
               :snapshot="managedConfigSnapshot"
@@ -1055,12 +1057,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -1068,6 +1065,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 interface HSRPreviewRow {
@@ -1260,6 +1259,9 @@ const loadUserData = async () => {
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
 }
 

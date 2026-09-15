@@ -854,10 +854,7 @@
                           size="small"
                           type="text"
                           class="task-config-gear"
-                          @click="
-                            jumpTipVisible[card.app_id] = false
-                            handleZzzodConfig()
-                          "
+                          @click="jumpFromTaskCard(card.app_id)"
                         >
                           <template #icon><ExportOutlined /></template>
                         </a-button>
@@ -2051,6 +2048,14 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
 }
 
 const openRestoreModal = () => {
@@ -2225,6 +2230,12 @@ const handleZzzodConfig = () => {
   }
   if (!userId.value) return
   void startSession(userId.value)
+}
+
+// 任务卡跳转：先关跳转提示再进入配置会话
+const jumpFromTaskCard = (appId: string) => {
+  jumpTipVisible.value[appId] = false
+  handleZzzodConfig()
 }
 
 const handleSaveZzzodConfig = () => {

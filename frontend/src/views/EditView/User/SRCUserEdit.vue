@@ -354,12 +354,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -367,6 +362,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 interface SrcPreviewRow {
@@ -633,8 +630,7 @@ const startConfigSession = async (viewOnly: boolean) => {
       )
     } else {
       message.error(
-        response?.message ||
-          (viewOnly ? t('edit.srcViewStartFailed') : t('edit.couldNotStartSrc'))
+        response?.message || (viewOnly ? t('edit.srcViewStartFailed') : t('edit.couldNotStartSrc'))
       )
     }
   } catch (error) {
