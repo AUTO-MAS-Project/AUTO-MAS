@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { ConfigBackupEnsureIn } from '../models/ConfigBackupEnsureIn';
 import type { ConfigBackupEnsureOut } from '../models/ConfigBackupEnsureOut';
+import type { ConfigBackupFileOut } from '../models/ConfigBackupFileOut';
 import type { ConfigBackupListOut } from '../models/ConfigBackupListOut';
 import type { ConfigBackupPreviewOut } from '../models/ConfigBackupPreviewOut';
 import type { ConfigBackupRestoreIn } from '../models/ConfigBackupRestoreIn';
@@ -104,6 +105,39 @@ export class BackupService {
                 'userId': userId,
                 'time': time,
                 'target': target,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）
+     * 路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。
+     * @param scriptId
+     * @param userId
+     * @param time
+     * @param target
+     * @param path
+     * @returns ConfigBackupFileOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigBackupFileApiApiScriptsBackupFileGet(
+        scriptId: string,
+        userId: string,
+        time: string,
+        target: string,
+        path: string,
+    ): CancelablePromise<ConfigBackupFileOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/file',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'time': time,
+                'target': target,
+                'path': path,
             },
             errors: {
                 422: `Validation Error`,

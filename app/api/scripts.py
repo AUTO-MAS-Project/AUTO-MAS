@@ -2517,7 +2517,7 @@ async def save_bettergi_script_group_api(
         projects = (req.data or {}).get("projects")
         if not isinstance(projects, list):
             raise ValueError("projects 必须为数组（按执行顺序的项目列表）")
-        out = one_dragon.write_user_script_group(
+        one_dragon.write_user_script_group(
             root, req.scriptId, req.userId, req.name, req.data
         )
         return OutBase(
@@ -3770,6 +3770,41 @@ async def get_config_backup_preview_api(
             time=time,
             target=target,
             data={},
+        )
+
+
+@router.get(
+    "/backup/file",
+    tags=["Backup"],
+    summary="只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）",
+    response_model=ConfigBackupFileOut,
+    status_code=200,
+)
+async def get_config_backup_file_api(
+    scriptId: str, userId: str, time: str, target: str, path: str
+) -> ConfigBackupFileOut:
+    """路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。"""
+
+    try:
+        data = await Config.get_config_backup_file(
+            scriptId, userId, time, target=target, path=path
+        )
+        return ConfigBackupFileOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        return ConfigBackupFileOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,
+            path=path,
+            size=0,
+            content="",
         )
 
 
