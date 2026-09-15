@@ -40,6 +40,7 @@ from pathlib import Path
 from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
+from ..resource_loader import try_load_maaend_options
 from ..ScriptConfig import maaend_config_mode
 from .backup_archive import (
     build_backup_file_summary,
@@ -155,7 +156,30 @@ async def _mas_root(ctx: RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
+def _route_options(ctx: RestoreContext) -> dict[str, tuple]:
+    """自动采集路线可选值：从本体资源动态派生（与 AutoProxy 同一入口）。
+
+    上游已移除固定路线词表（#745 起按本体资源读入），按 configKey 归组；
+    资源不可读时返回空映射（预览退化为只显示已选数量）。
+    """
+
+    path = str(ctx.script_config.get("Info", "Path")).strip()
+    if not path:
+        return {}
+    options = try_load_maaend_options(Path(path)) or {}
+    groups = options.get("autoCollectGroups") or []
+    return {
+        key: tuple(
+            option["value"]
+            for group in groups
+            if group["configKey"] == key
+            for option in group["options"]
+        )
+        for key in ("AutoCollectRoutes", "AutoCollectCommonRoutes")
+    }
+
+
+def _overlay_preview_payload(ctx: RestoreContext, backup: Path | None, ts: str) -> dict:
     """mas 池预览载荷：覆盖层字段分区 + ConfigFile 副本摘要（与 native 同口径）。
 
     覆盖层侧车按「MAS 独有（查看详细配置看不到）/ MaaEnd 对应（可在 MaaEnd
@@ -173,12 +197,14 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
     overlay = read_overlay_sidecar(backup)
     if overlay is None:
         return {"fileCards": file_cards}
-    return {"fileCards": build_overlay_summary(overlay) + file_cards}
+    return {
+        "fileCards": build_overlay_summary(overlay, _route_options(ctx)) + file_cards
+    }
 
 
 async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return _overlay_preview_payload(
-        get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
+        ctx, get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
     )
 
 

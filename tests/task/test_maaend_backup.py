@@ -249,7 +249,17 @@ def test_overlay_preview_sections(tmp_path: Path) -> None:
         "AutoCollectCommonRoutes": ["CommonRoute1"],
         "DailyOnceTasks": ["Sanity", "VisitFriends"],
     }
-    sections = {section["name"]: section for section in build_overlay_summary(overlay)}
+    # 路线选项总数随本体资源动态派生，测试显式传入固化分母口径
+    route_options = {
+        "AutoCollectRoutes": tuple(f"Route{index}" for index in range(1, 16)),
+        "AutoCollectCommonRoutes": tuple(
+            f"CommonRoute{index}" for index in range(1, 9)
+        ),
+    }
+    sections = {
+        section["name"]: section
+        for section in build_overlay_summary(overlay, route_options)
+    }
     assert set(sections) == {"mas-only", "tasks", "config"}
 
     # MAS 独有区：MaaEnd GUI 无对应概念的调度类字段

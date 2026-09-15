@@ -67,7 +67,7 @@ from .resource_loader import (
     maaend_task_supported,
 )
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
-from .tools import login, push_notification, replace_account_switch_task
+from .tools import push_notification, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("MaaEnd 自动代理")

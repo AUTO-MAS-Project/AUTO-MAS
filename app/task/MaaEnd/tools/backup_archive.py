@@ -54,7 +54,6 @@ from app.utils.config_archive import (
     restore_dir,
 )
 from app.utils.constants import (
-    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_TASK_GROUPS,
@@ -824,16 +823,28 @@ def _rewards_set_visible(overlay: dict) -> bool:
     return _REWARDS_OPTION_REWARDS_FLAG.get(current, False)
 
 
-def _route_count_text(overlay: dict, key: str, options: tuple) -> str:
-    """采集路线显示为已选数量（路线名列表过长，逐条展示无阅读价值）。"""
+def _route_count_text(overlay: dict, key: str, options: tuple | None) -> str:
+    """采集路线显示为已选数量（路线名列表过长，逐条展示无阅读价值）。
+
+    选项总数由调用方从本体资源派生（随版本动态变化）；不可用时退化为
+    只显示已选数量。
+    """
 
     routes = overlay.get(key)
     selected = len(routes) if isinstance(routes, list) else 0
+    if not options:
+        return f"已选 {selected} 条"
     return f"已选 {selected} / {len(options)} 条"
 
 
-def build_overlay_summary(overlay: dict) -> list[dict]:
+def build_overlay_summary(
+    overlay: dict, route_options: dict[str, tuple] | None = None
+) -> list[dict]:
     """覆盖层字段侧车的分区预览（mas 池预览用，纯读）。
+
+    ``route_options`` 为自动采集两类路线的当前可选值（按 configKey 索引，
+    从本体资源动态派生），用于展示「已选 X / Y 条」的分母；缺省（资源
+    不可读）退化为只显示已选数量。
 
     返回三个分区（前端按文件集逐区渲染）：**任务启用**用罗列行（启用了
     哪些），**配置内容**用表单行（具体刷本等细节），二者按**概念是否有
@@ -932,7 +943,7 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
                     {
                         "key": label,
                         "value": _route_count_text(
-                            overlay, field, MAAEND_AUTO_COLLECT_ROUTE_OPTIONS[field]
+                            overlay, field, (route_options or {}).get(field)
                         ),
                     }
                 )
