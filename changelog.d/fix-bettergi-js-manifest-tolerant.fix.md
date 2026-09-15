@@ -1,1 +1,1 @@
-BetterGI专项 一条龙的 JS 脚本列表不再因为某个脚本的 manifest.json 格式有误而整体加载失败
+BetterGI专项 修复某个第三方 JS 脚本异常时一条龙的 JS 脚本列表整体加载失败的问题
