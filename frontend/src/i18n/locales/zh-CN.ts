@@ -325,6 +325,19 @@ export default {
     maaCustomInfrastFileHint: '从 MAA 导出的自定义基建 JSON 文件',
     maaCustomInfrastPlan: '自定义基建排班',
     maaCustomInfrastPlanHint: '从已导入的配置中选择当前使用的排班',
+    maaCustomInfrastPlanHintPeriod:
+      '排班表含时间段，自动模式按时间段换班；选择具体班次将从该班开始轮换',
+    maaCustomInfrastPlanHintRotate:
+      '排班表无时间段，「自动换班」从第一班起顺序轮换；选择具体班次将从该班开始轮换',
+    maaCustomInfrastPlanHintMixed: '排班表时段配置不一致，运行时将使用普通基建模式',
+    maaCustomInfrastPlanAuto: '自动换班',
+    maaCustomInfrastPlanAutoPeriod: '自动换班（按时段）',
+    maaCustomInfrastPlanAutoRotate: '自动换班（从第一班起）',
+    maaCustomInfrastPlanWithPeriod: '{name}（{period}）',
+    maaCustomInfrastPlanManualHint: '已从 {name} 开始按顺序轮换；选「自动换班」恢复默认',
+    maaCustomInfrastPlanManualHintIndex: '已从第 {index} 项开始按顺序轮换；选「自动换班」恢复默认',
+    maaCustomInfrastPlanSelected: '已选择从 {name} 开始轮换',
+    maaCustomInfrastPlanSelectFailed: '设置基建班次失败',
     maaDaily: '日常任务',
     maaSwitchTheme: '更换主题',
     maaSwitchThemeHint:
@@ -1310,7 +1323,8 @@ export default {
     configSourceHint:
       '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
     configSourceHintBase:
-      '脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用脚本原有配置，MAS 不写入配置，快速配置为独立开关。',
+      '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
+    nativeConfigSourceDescription: '使用脚本当前的原生配置。',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
     leaveWithoutSavingUnsaved: '确定要离开吗？未保存的更改可能会丢失。',
@@ -3223,7 +3237,7 @@ export default {
         SRC: '星穹铁道自动化与多账号代理',
         MaaEnd: 'MFW 专项适配脚本',
         M9A: '重返未来：1999 自动化脚本',
-        MaaFW: '托管 MaaFramework 项目',
+        MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',
         OkNte: '异环 OK-NTE 自动化脚本',
         HSR: '三月七 / SRA 双脚本适配',

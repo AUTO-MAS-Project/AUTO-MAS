@@ -286,10 +286,16 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管
         # （一条龙配置名回到 Task.OneDragonConfigName，前端也据此显示原生控件）；
         # 脚本/用户 = MAS 侧配置（脚本级共享 / per-user 独立）。
-        # 注：快速配置不再参与这里的判定——它在直控下的语义是「要不要把面板值写入
+        # 注：快速配置不参与这里的判定——它在直控下的语义是「要不要把面板值写入
         # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让直控被锁回 MAS 槽位。
+        # （合并 dev #781「全专项快速配置开关语义」时保留本分支这一语义：见下 writes_native_config。）
         self.config_mode = read_config_source(self.cur_user_config)
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
+        # ⚠️ 合并 dev #781（全专项快速配置开关语义，作者 1w1w11w1）后**采纳 dev 的判定**：
+        # 「用哪份配置启动」由快速配置决定（关=所选原生一条龙、并且不解析隐藏的面板值；
+        # 开=MAS 面板），否则 dev 的 test_bettergi_closed_does_not_parse_panel 会红、
+        # 本 PR 无法合入。本分支 #771 的直控语义因此只保留在「直控 + 快速配置开」一格：
+        # 见下方 writes_native_config，那一格改为写 BGI 原生配置而不是 MAS 槽位。
+        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfQuickConfig"))
         # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
         self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
@@ -370,25 +376,41 @@ class AutoProxyTask(TaskExecuteBase):
                 str(self.cur_user_config.get("Task", "OneDragonConfigName") or "")
             )
         )
-        self.one_dragon_groups = list(
-            self.cur_user_config.get("OneDragon", "Groups") or []
+        self.one_dragon_groups = (
+            list(self.cur_user_config.get("OneDragon", "Groups") or [])
+            if self.use_mas_config
+            else []
         )
-        self.use_custom_groups = bool(
+        self.use_custom_groups = self.use_mas_config and bool(
             self.cur_user_config.get("OneDragon", "IfUseCustomGroups")
         )
-        self.one_dragon_custom_groups = one_dragon.parse_custom_groups(
-            self.cur_user_config.get("OneDragon", "CustomGroups") or ""
+        self.one_dragon_custom_groups = (
+            one_dragon.parse_custom_groups(
+                self.cur_user_config.get("OneDragon", "CustomGroups") or ""
+            )
+            if self.use_mas_config
+            else []
         )
         # 「队伍配置」总开关与队伍表：开启时按「战斗场景」选队（第 1 层优先级）；
         # 关闭时数据保留但除通用队伍外一律不参与匹配（通用队伍照旧生效）。
-        self.use_teams = bool(self.cur_user_config.get("OneDragon", "IfUseTeams"))
-        self.one_dragon_teams = team_resolver.parse_teams(
-            self.cur_user_config.get("OneDragon", "Teams") or ""
+        self.use_teams = self.use_mas_config and bool(
+            self.cur_user_config.get("OneDragon", "IfUseTeams")
+        )
+        self.one_dragon_teams = (
+            team_resolver.parse_teams(
+                self.cur_user_config.get("OneDragon", "Teams") or ""
+            )
+            if self.use_mas_config
+            else []
         )
         # 可视化队列（有序条目，含重复实例）：决定运行时 TaskOrder 重建顺序；
         # 为空/非法时 write_user_one_dragon 回退旧行为（沿用副本 TaskOrder 相对顺序）
-        self.one_dragon_queue = one_dragon.parse_one_dragon_queue(
-            self.cur_user_config.get("OneDragon", "Queue") or ""
+        self.one_dragon_queue = (
+            one_dragon.parse_one_dragon_queue(
+                self.cur_user_config.get("OneDragon", "Queue") or ""
+            )
+            if self.use_mas_config
+            else []
         )
         # 直控模式（非用户独立配置）下 MAS 不干预一条龙：禁用执行层与自定义项执行层，
         # 仅按所选实配名裸跑 BGI 一条龙（启动参数已固定 startOneDragon <configName>）。
@@ -408,8 +430,14 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.custom_exec_enabled = self.use_execution_layer and bool(self.custom_exec_items)
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
-        _plan_steps = parse_one_dragon_plan(
-            self.cur_user_config.get("OneDragon", "Plan") or ""
+        # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
+        # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
+        # 条件比 dev #781 宽一档：直控 + 快速配置时**要**算 Plan——那一路由
+        # _write_native_one_dragon 把 Plan 写成原生设置，不算出来就没内容可写。
+        _plan_steps = (
+            parse_one_dragon_plan(self.cur_user_config.get("OneDragon", "Plan") or "")
+            if (self.use_mas_config or getattr(self, "writes_native_config", False))
+            else []
         )
         # 这次实际跑谁：Plan 中启用、且队列行启用、且组开关允许的战斗 4 项（各带自身 settings）。
         self.plan_combat_steps = build_combat_steps(
@@ -424,7 +452,11 @@ class AutoProxyTask(TaskExecuteBase):
         # 队伍字段，与路径 A（write_user_one_dragon 把 PartyName 写入秘境/首领，并经
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
         # 队伍字段为空时注入，已显式设置的队伍不覆盖。
-        _default_party = str(self.cur_user_config.get("OneDragon", "PartyName") or "").strip()
+        _default_party = (
+            str(self.cur_user_config.get("OneDragon", "PartyName") or "").strip()
+            if (self.use_mas_config or getattr(self, "writes_native_config", False))
+            else ""
+        )
         if _default_party:
             _TEAM_FIELD_BY_BASE = {
                 "自动秘境": "partyName",

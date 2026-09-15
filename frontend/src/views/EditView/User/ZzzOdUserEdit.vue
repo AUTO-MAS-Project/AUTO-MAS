@@ -148,10 +148,8 @@
                   :model-value="formData.Info.Mode"
                   :options="configModeOptions"
                   :disabled="pageLoading"
-                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   :alert-message="configModeAlert"
                   @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -1182,12 +1180,6 @@ const createUserImmediately = async (): Promise<boolean> => {
 
 // 保存串行化队列：以 promise 链取代布尔互斥，连续保存按序写回不丢
 let saveChain: Promise<boolean> = Promise.resolve(true)
-
-// 快速配置开关：与配置来源独立，真实保存
-const handleQuickConfigChange = async (value: boolean) => {
-  formData.Info.IfQuickConfig = value
-  await saveField('Info.IfQuickConfig', value)
-}
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)

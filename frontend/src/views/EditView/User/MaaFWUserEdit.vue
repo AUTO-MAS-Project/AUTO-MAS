@@ -41,11 +41,14 @@
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
             @preset-menu-click="handlePresetMenuClick"
-            @mode-change="handleConfigModeChange"
           />
 
+          <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
+               任务队列始终显示。两个字段仍留在配置模型里，只是不再提供入口。 -->
+          <div class="section-header">
+            <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
+          </div>
           <TaskQueueSection
-            v-if="formData.Info.Mode !== '直控'"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -739,7 +742,7 @@ const applyUserData = (userData: Partial<MaaFWUserConfig>) => {
 const handleFieldSave = async (key: string, value: unknown) => {
   if (isInitializing.value || !userId) return
 
-  await enqueueSave(async () => {
+  return await enqueueSave(async () => {
     const parts = key.split('.')
     let userData: Record<string, unknown> = {}
     let current = userData
@@ -757,17 +760,13 @@ const handleFieldSave = async (key: string, value: unknown) => {
     const success = await updateUser(scriptId, userId, userData)
     if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
     logger.info(`用户配置已保存: ${key}`)
-  }).catch(error => {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
   })
-}
-
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
-const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+    .then(() => true)
+    .catch(error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      return false
+    })
 }
 
 const savePresetAndSnapshot = async () => {

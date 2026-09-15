@@ -1,0 +1,71 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { parse } from '@vue/compiler-sfc'
+
+describe('quick configuration panel visibility', () => {
+  for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte', 'BetterGI']) {
+    it(`${name} keeps its switch outside the conditional panel`, () => {
+      const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
+      const template = parse(source).descriptor.template!.content
+      const panel =
+        {
+          MAA: '<TaskPipelineSection',
+          M9A: '<TaskQueueSection',
+          SRC: '<StageConfigSection',
+        }[name] || '<a-card v-if="formData.Info.IfQuickConfig"'
+      const start = template.indexOf(panel)
+      expect(start).toBeGreaterThan(-1)
+      expect(template.slice(start, template.indexOf('>', start))).toContain(
+        'v-if="formData.Info.IfQuickConfig"'
+      )
+      expect(template.indexOf('@change="handleQuickConfigChange"')).toBeLessThan(start)
+      expect(template).not.toContain('@quick-config-change=')
+      expect(template.match(/@change="handleQuickConfigChange"/g)).toHaveLength(1)
+      expect(source).toMatch(
+        /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
+      )
+      expect(source).toContain('formData.Info.IfQuickConfig = previous')
+    })
+  }
+
+  it('MaaFW has neither a quick configuration switch nor a config source selector', () => {
+    // MaaFW 是通用引擎，没有可退回的原生配置；两个控件对它没有所指，页面不再提供入口。
+    const page = readFileSync(new URL('./MaaFWUserEdit.vue', import.meta.url), 'utf8')
+    const section = readFileSync(
+      new URL('./MaaFWUserEdit/BasicInfoSection.vue', import.meta.url),
+      'utf8'
+    )
+    expect(page).not.toContain('handleQuickConfigChange')
+    expect(page).not.toContain('v-if="formData.Info.IfQuickConfig"')
+    expect(page).not.toContain('handleConfigModeChange')
+    expect(section).not.toContain('GeneralConfigModeSelector')
+    expect(section).not.toContain('v-if="formData.Info.IfQuickConfig"')
+  })
+
+  it('keeps the source selector free of quick configuration props and events', () => {
+    const source = readFileSync(new URL('./GeneralConfigModeSelector.vue', import.meta.url), 'utf8')
+    expect(source).not.toMatch(/quickConfig|quick-config|enableQuickConfiguration/)
+  })
+
+  it('flushes BetterGI task settings before hiding the panel', () => {
+    const source = readFileSync(new URL('./BetterGIUserEdit.vue', import.meta.url), 'utf8')
+    const handler = source.slice(
+      source.indexOf('const handleQuickConfigChange ='),
+      source.indexOf('const toggleGroup =')
+    )
+    expect(handler.indexOf('await saveDragonGroupSettings(true, dragonGroupSaveSel)')).toBeLessThan(
+      handler.indexOf('formData.Info.IfQuickConfig = value')
+    )
+    expect(handler).toMatch(/!\(await saveDragonGroupSettings\([\s\S]*?\)\)\s*\)\s*return/)
+    expect(source).toContain('masConfigEnabled.value\n')
+    expect(source).toContain('const globalUserId = masConfigEnabled.value ?')
+  })
+
+  for (const name of ['General', 'HSR', 'BAAH', 'ZzzOd']) {
+    it(`${name} has no inactive or newly invented quick switch`, () => {
+      const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
+      const template = parse(source).descriptor.template!.content
+      expect(template).not.toMatch(/quick-config|enableQuickConfiguration|Info.IfQuickConfig/)
+    })
+  }
+})

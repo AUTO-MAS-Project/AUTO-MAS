@@ -9,6 +9,14 @@ def test_scalar_change_merged():
     assert archive == {"a": 2}
 
 
+def test_unchanged_injection_does_not_replace_source():
+    archive = {"Gui": {"PostActions": 0}}
+    assert not _merge_maa_changes(
+        archive, {"Gui": {"PostActions": 8}}, {"Gui": {"PostActions": 8}}
+    )
+    assert archive == {"Gui": {"PostActions": 0}}
+
+
 def test_new_key_merged():
     archive = {}
     assert _merge_maa_changes(archive, {}, {"b": "x"})

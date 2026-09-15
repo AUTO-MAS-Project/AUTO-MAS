@@ -279,6 +279,17 @@
                   @change="handleConfigModeChange"
                   @quick-config-change="handleQuickConfigChange"
                 />
+                <a-form-item v-if="!masConfigEnabled" :label="t('edit.bettergiOneDragonName')">
+                  <a-select
+                    v-model:value="formData.Task.OneDragonConfigName"
+                    :options="oneDragonConfigOptions"
+                    :disabled="pageLoading || isSaving"
+                    @dropdown-visible-change="(open: boolean) => open && loadOneDragonConfigs()"
+                    @change="
+                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
+                    "
+                  />
+                </a-form-item>
               </a-col>
             </a-row>
 
@@ -303,7 +314,19 @@
         </a-form>
       </a-card>
 
-      <a-card class="config-card" style="margin-top: 24px">
+      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
+        <h3>{{ t('edit.taskConfiguration') }}</h3>
+        <a-space>
+          <span>{{ t('edit.enableQuickConfiguration') }}</span>
+          <a-switch
+            :checked="formData.Info.IfQuickConfig"
+            :disabled="pageLoading || isInitializing || isSaving"
+            :aria-label="t('edit.enableQuickConfiguration')"
+            @change="handleQuickConfigChange"
+          />
+        </a-space>
+      </a-flex>
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
@@ -1151,6 +1174,7 @@ import {
   type BetterGIUserConfig,
 } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useBettergiGuiSession } from '@/composables/useBettergiGuiSession'
 import { useBettergiCustomGroups } from '@/composables/useBettergiCustomGroups'
@@ -1206,15 +1230,16 @@ const bettergiConfigModeOptions: Array<{
   },
   {
     title: t('edit.scriptDirectControl'),
-    description: t('edit.useScriptSCurrent'),
+    description: t('edit.nativeConfigSourceDescription'),
     value: '直控',
     icon: 'setting',
   },
 ]
-// 配置来源决定任务配置区的形态：直控 = 用 BGI 所选原生配置（下方「一条龙名称」可选、
-// 可点「配置 BetterGI」打开原生界面），MAS 不接管；脚本/用户 = MAS 侧配置面板。
-// 快速配置不再参与这里的判定，否则「直控」会被快速配置（默认开）锁回 MAS 槽位。
-const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
+// 合并 dev #781 后**采纳 dev 判定**：面板可见性与「快速配置」开关一致——关闭时只运行所选
+// 原生一条龙，不展示也不物化隐藏的面板值（dev 的 test_quick_config_sources 覆盖此处）。
+// 本分支 #771 在「直控 + 快速配置开」那一格仍改为写 BGI 原生配置（后端 writes_native_config
+// 决定），前端沿用 dev 的可见性规则，避免与已合入 dev 的语义二次分叉。
+const masConfigEnabled = computed(() => formData.Info.IfQuickConfig)
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -1314,7 +1339,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 // 保存串行化队列：以 promise 链取代布尔 isSaving 互斥。布尔守卫会在「上一次保存尚未返回」时
 // 丢弃紧随其后的保存（自定义配置组连续勾选/删除即可触发），造成前后端状态失步；队列则逐条按序
 // 写回，不再丢保存。
-let saveChain: Promise<boolean> = Promise.resolve(true)
+const { enqueue, isSaving } = useSaveQueue()
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
@@ -1348,9 +1373,28 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
     }
   }
 
-  const run = saveChain.then(persist, persist)
-  saveChain = run
-  return run
+  return enqueue(persist)
+}
+
+const handleQuickConfigChange = async (value: boolean) => {
+  if (!value) {
+    if (dragonGroupAutoSaveTimer) {
+      clearTimeout(dragonGroupAutoSaveTimer)
+      dragonGroupAutoSaveTimer = null
+    }
+    while (
+      dragonSettingsDirty.value ||
+      globalDomainSettingsDirty.value ||
+      globalStygianSettingsDirty.value
+    ) {
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
+    }
+  }
+  const previous = formData.Info.IfQuickConfig
+  formData.Info.IfQuickConfig = value
+  if (!(await saveField('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
 }
 
 const toggleGroup = (value: string) => {
@@ -3019,7 +3063,9 @@ const hasGroupSettingFields = computed<boolean>(() =>
 const MAS_ONE_DRAGON_SLOT_NAME = 'MAS独立配置'
 // 右栏任务设置读写的配置名：独立模式固定为 MAS 槽位名；否则用户所选一条龙名（默认配置兜底）
 const dragonConfigName = computed<string>(() =>
-  masConfigEnabled ? MAS_ONE_DRAGON_SLOT_NAME : formData.Task.OneDragonConfigName || '默认配置'
+  masConfigEnabled.value
+    ? MAS_ONE_DRAGON_SLOT_NAME
+    : formData.Task.OneDragonConfigName || '默认配置'
 )
 
 // 当前组的字段是否需要全局秘境段（触发 globalDomain 加载/保存）
@@ -3080,7 +3126,7 @@ const loadDragonGroupSettings = async () => {
   dragonSettingsLoading.value = true
   try {
     // 四份数据互不依赖，并行拉取
-    const globalUserId = masConfigEnabled ? userId.value : undefined
+    const globalUserId = masConfigEnabled.value ? userId.value : undefined
     const [dragon, globalDomain, globalStygian, catalog] = await Promise.all([
       fetchOneDragonSettings(scriptId, userId.value, dragonConfigName.value, stepNameOf(sel)),
       needGlobalDomainSettings.value
@@ -3120,39 +3166,42 @@ const saveDragonGroupSettings = (
     if (!sel || sel.kind !== 'builtin' || !userId.value) return false
     const tasks: Promise<unknown>[] = []
     if (dragonSettingsDirty.value) {
+      const settings = dragonSettings.value
       tasks.push(
         saveOneDragonSettings(
           scriptId,
           userId.value,
           dragonConfigName.value,
-          dragonSettings.value,
+          settings,
           stepNameOf(sel)
         ).then(() => {
-          dragonSettingsDirty.value = false
+          if (dragonSettings.value === settings) dragonSettingsDirty.value = false
         })
       )
     }
     if (globalDomainSettingsDirty.value) {
+      const settings = globalDomainSettings.value
       tasks.push(
         saveGlobalDomainSettings(
           scriptId,
           masConfigEnabled.value ? userId.value : undefined,
-          globalDomainSettings.value,
+          settings,
           stepNameOf(sel)
         ).then(() => {
-          globalDomainSettingsDirty.value = false
+          if (globalDomainSettings.value === settings) globalDomainSettingsDirty.value = false
         })
       )
     }
     if (globalStygianSettingsDirty.value) {
+      const settings = globalStygianSettings.value
       tasks.push(
         saveGlobalStygianSettings(
           scriptId,
           masConfigEnabled.value ? userId.value : undefined,
-          globalStygianSettings.value,
+          settings,
           stepNameOf(sel)
         ).then(() => {
-          globalStygianSettingsDirty.value = false
+          if (globalStygianSettings.value === settings) globalStygianSettingsDirty.value = false
         })
       )
     }
@@ -4225,13 +4274,6 @@ watch(
     if (!masConfigEnabled.value) selectedGroupIdentity.value = null
   }
 )
-
-// 快速配置开关（用户级，独立于配置来源）：统一走 GeneralConfigModeSelector 的表单项，
-// 不再单独渲染一个裸开关——两个入口指向同一个 Info.IfQuickConfig，容易让人分不清哪个是真实开关。
-const handleQuickConfigChange = (value: boolean) => {
-  formData.Info.IfQuickConfig = value
-  void saveField('Info.IfQuickConfig', value)
-}
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
