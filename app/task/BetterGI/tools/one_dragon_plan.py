@@ -504,6 +504,31 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
     return out
 
 
+def is_combat_group(group: str) -> bool:
+    """是否为带执行层 Plan 的战斗 4 项组名（支持 ``自动秘境-副本A`` 形式的后缀名）。"""
+    base = _resolve_base_name(group)
+    return base in RIGHTBAR_TO_PLAN
+
+
+def plan_combat_bases(plan_steps: list[dict[str, Any]]) -> set[str]:
+    """Plan 中「配过实例」的战斗步骤基名集合（**不区分启停**）。
+
+    回答的是「该战斗组归谁负责」：只要 Plan 里有它的实例，就归执行层——开则由战斗段
+    执行，关则本次不跑（不应再退回原生副本，否则界面关了还会漏跑）。
+    与 ``build_combat_steps`` 的分工：本函数看归属（不看 ``enabled`` / ``Groups``），
+    后者看本次实际跑谁。
+    """
+    bases: set[str] = set()
+    for step in plan_steps or []:
+        if not isinstance(step, dict):
+            continue
+        base = _resolve_base_name(str(step.get("name", "")))
+        if base in BUILTIN_COMBAT_STEP_NAMES:
+            bases.add(base)
+    return bases
+
+
+
 def build_combat_steps(
     plan_steps: list[dict[str, Any]],
     queue: list[dict[str, Any]] | None = None,

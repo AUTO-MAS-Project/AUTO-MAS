@@ -1249,6 +1249,53 @@ def ensure_keymouse_groups(
         write_file(copy_path, _make_keymouse_script_group(name, rec))
 
 
+def resolve_custom_group(
+    root: Path, script_id: str, user_id: str, name: str, base: str
+) -> dict[str, Any]:
+    """把一个自定义项解析成一份「可执行的完整配置组」dict（含 ``config`` 与 ``projects``）。
+
+    解析顺序（与执行层「段」与逐项物化共用，避免两处漂移）：
+    1) 该实例自己的 per-user 副本 → 2) 基名副本 → 3) 录制（KeyMouse）自动生成
+    → 4) 脚本（JsScript）→ 5) 路径（AutoPathing）→ 6) BGI 现有配置组。
+
+    解析不到（无副本且 BGI 目录也无同名资产）返回空 ``{}``，由调用方决定回退基名或跳过。
+    3)~5) 会顺手把生成的单项目配置组写入 per-user 副本（与旧物化行为一致：右栏能提前看到内容）。
+    """
+    copy = _read_per_user_copy(script_id, user_id, name)
+    if not (isinstance(copy, dict) and copy) and base != name:
+        copy = _read_per_user_copy(script_id, user_id, base)
+    if isinstance(copy, dict) and copy:
+        return copy
+
+    # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
+    rec = _keymouse_file_for(root, base)
+    if rec:
+        copy = _make_keymouse_script_group(name, rec)
+        _safe_write_per_user_copy(script_id, user_id, name, copy)
+        return copy
+
+    # 脚本（JS）：引用 JsScript 下的脚本文件夹 → 单 Javascript 项目配置组
+    js = _js_script_file_for(root, base)
+    if js:
+        copy = _make_js_script_group(js)
+        _safe_write_per_user_copy(script_id, user_id, name, copy)
+        return copy
+
+    # 路径（地图追踪）：引用 AutoPathing 下的路径文件 → 单 Pathing 项目配置组
+    pt = _pathing_file_for(root, base)
+    if pt:
+        copy = _make_pathing_group(pt)
+        _safe_write_per_user_copy(script_id, user_id, name, copy)
+        return copy
+
+    # 引用 BGI 已有配置组：以 BGI 实配为底稿（BGI 只认基名，故按 base 读取）
+    try:
+        existing = read_script_group(root, base)
+    except ValueError:
+        existing = {}
+    return existing if isinstance(existing, dict) and existing else {}
+
+
 def materialize_user_script_groups(
     root: Path,
     script_id: str,
@@ -1292,43 +1339,14 @@ def materialize_user_script_groups(
         # 实例名（形如「组名-{行uid}」）→ 基名：BGI 目录只认基名，且首实例/存量数据
         # 的副本就按基名存，回退与解析都用它。缺省即实例名等于基名。
         base = instance_base.get(name) or name
-        # 1) 该实例自己的 per-user 设置副本（多实例各自独立，互不串台）
-        copy = _read_per_user_copy(script_id, user_id, name)
-        # 2) 回退：基名副本（首实例与存量数据均按基名存）
-        if not (isinstance(copy, dict) and copy) and base != name:
-            copy = _read_per_user_copy(script_id, user_id, base)
-        if not (isinstance(copy, dict) and copy):
-            # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
-            rec = _keymouse_file_for(root, base)
-            if rec:
-                copy = _make_keymouse_script_group(name, rec)
-                _safe_write_per_user_copy(script_id, user_id, name, copy)
-            else:
-                # 脚本（JS）：引用 JsScript 下的脚本文件夹 → 物化为单 Javascript 项目配置组，
-                # 使其可由 --startGroups 执行层直连（去耦合：不再依赖 BGI 一条龙裸名解析分支）
-                js = _js_script_file_for(root, base)
-                if js:
-                    copy = _make_js_script_group(js)
-                    _safe_write_per_user_copy(script_id, user_id, name, copy)
-                else:
-                    # 路径（地图追踪）：引用 AutoPathing 下的路径文件 → 物化为单 Pathing 项目配置组
-                    pt = _pathing_file_for(root, base)
-                    if pt:
-                        copy = _make_pathing_group(pt)
-                        _safe_write_per_user_copy(script_id, user_id, name, copy)
-                    else:
-                        # 引用 BGI 已有配置组：以 BGI 实配为底稿物化（四类统一编号命名，
-                        # 前后名彻底解耦）。BGI 只认基名，故按 base 读取。
-                        try:
-                            existing = read_script_group(root, base)
-                        except ValueError:
-                            existing = {}
-                        if not (isinstance(existing, dict) and existing):
-                            # 无法解析：回退基名交 BGI 自解析（实例名对 BGI 无意义）
-                            if base != name:
-                                defs[uid] = base
-                            continue
-                        copy = existing
+        # 解析（副本 → 录制/脚本/路径合成 → BGI 实配）统一由 resolve_custom_group 承担，
+        # 与执行层「切段」共用同一套顺序，避免两处漂移。
+        copy = resolve_custom_group(root, script_id, user_id, name, base)
+        if not copy:
+            # 无法解析：回退基名交 BGI 自解析（实例名对 BGI 无意义）
+            if base != name:
+                defs[uid] = base
+            continue
         idx += 1
         prefixed = f"MAS-{_mas_user_short_id(user_id)}-自定义配置组{idx}"
         copy["name"] = prefixed
@@ -1411,7 +1429,7 @@ def write_user_one_dragon(
     queue: list[dict[str, Any]] | None = None,
     exclude_task_names: list[str] | None = None,
     boss_reward_recognition: bool | None = None,
-    exclude_materialized_custom_groups: bool = False,
+    materialize_custom_groups: bool = True,
 ) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
@@ -1516,18 +1534,14 @@ def write_user_one_dragon(
         _s = str(_e.get("step") or "").strip()
         if _n and _s and _s != _n:
             _instance_base[_s] = _n
-    materialized = materialize_user_script_groups(
-        root, script_id, user_id, slot_config, _instance_base
-    )
-    # 路径 B（自定义项执行层）：把已物化的自定义配置组（MAS-{短id}-自定义配置组{N}）从原生槽位剔除，
-    # 避免与 --startGroups 执行层重复执行。组名直接取自本次物化结果（materialized 的路径 stem），
-    # 不依赖短 id/原名，与 materialize_user_script_groups 的编号规则完全同源。排除必须在物化之后：
-    # 若在 apply_groups 后即剔除，materialize 会因 TaskDefinitions 无对应项而不生成组文件。
-    if exclude_materialized_custom_groups:
-        _custom_prefix = f"MAS-{_mas_user_short_id(user_id)}-自定义配置组"
-        _exclude_tasks(
-            slot_config,
-            [p.stem for p in materialized if str(p.stem).startswith(_custom_prefix)],
+    # 逐项物化（``User/ScriptGroup/MAS-{短id}-自定义配置组{N}.json``）只服务于
+    # 「原生一条龙承接自定义项」这条路径。执行层接管时（``materialize_custom_groups=False``）
+    # 自定义项改由 ``one_dragon_bridge`` 按队列切「段」承载，这里不再物化；调用方已把这些
+    # 项的名字并进 ``exclude_task_names``，从原生副本剔除，避免两边重复执行。
+    materialized: list[Path] = []
+    if materialize_custom_groups:
+        materialized = materialize_user_script_groups(
+            root, script_id, user_id, slot_config, _instance_base
         )
 
     slot_path = one_dragon_slot_path(root)
