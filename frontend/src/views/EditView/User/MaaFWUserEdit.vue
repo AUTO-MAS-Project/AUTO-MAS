@@ -53,18 +53,29 @@
             gap="small"
           >
             <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
-            <a-button size="small" @click="restoreOpen = true">
-              <template #icon>
-                <HistoryOutlined />
-              </template>
-              {{ t('edit.configRestoreTitle') }}
-            </a-button>
+            <a-space>
+              <a-button
+                :loading="interfaceLoading"
+                :disabled="!scriptPath"
+                @click="reloadInterface()"
+              >
+                <template #icon>
+                  <FileSearchOutlined />
+                </template>
+                {{ t('edit.readInterface') }}
+              </a-button>
+              <a-button size="small" @click="restoreOpen = true">
+                <template #icon>
+                  <HistoryOutlined />
+                </template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </a-space>
           </a-flex>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
-            :script-path="scriptPath"
             :preview-data="previewData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :available-tasks="availableTasks"
@@ -78,7 +89,6 @@
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
             @reorder-tasks="applyQueuedTaskIds"
-            @reload-interface="reloadInterface"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
             @append-preset-template="appendPresetTemplate"
@@ -160,7 +170,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
-import { HistoryOutlined } from '@ant-design/icons-vue'
+import { FileSearchOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
