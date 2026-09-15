@@ -62,6 +62,7 @@ logger = get_logger("森空岛练度源")
 
 SKLAND_CACHE_TTL_SECONDS = 300  # 预览复用窗口；注入前以 force=True 强刷（决策 38）
 SKLAND_FAILURE_TTL_SECONDS = 60  # 失败负缓存：预览连点时不反复打外部接口
+SKLAND_ROLE_TTL_SECONDS = 300  # 绑定下拉角色列表复用窗口；角色增减滞后至多一个窗口
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,11 @@ CredentialSaver = Callable[[str, str], Awaitable[None]]
 _cache: dict[
     tuple[str, str], tuple[float, tuple[Mapping[str, Progression], int] | None]
 ] = {}
+
+# 角色列表缓存：键 账号组 uid → (过期时刻, 角色元组)。绑定端点每次展开都
+# 遍历全部账号组刷新凭据，代价高；只缓存非空成功结果——凭据缺失的空元组
+# 零网络成本不缓存，失败路径保持原语义（调用方逐组记日志跳过）。
+_role_entries_cache: dict[str, tuple[float, tuple[CommunityActivityRole, ...]]] = {}
 
 
 async def fetch_skland_progression(
@@ -200,14 +206,27 @@ async def fetch_skland_role_entries(
     load_credential: CredentialLoader,
     save_credential: CredentialSaver | None = None,
     proxy: str | None = None,
+    now: float | None = None,
 ) -> tuple[CommunityActivityRole, ...]:
     """拉取账号组在明日方舟的角色条目（绑定下拉用，方案 T4.4）。
 
     只需账号组引用，不需要已选游戏 uid——角色列表正是 uid 的来源。
     解析复用便签的 normalize_skland_roles（覆盖无 appCode 分组等响应
     变体）；与练度拉取共用同一把签到流程锁；凭据缺失返回空元组，
-    上游失败抛错由调用方转错误提示。
+    上游失败抛错由调用方转错误提示。非空结果按账号组 TTL 缓存，
+    角色增减最迟一个窗口后可见。
+
+    Args:
+        account_uid: 签到账号组 UUID。
+        load_credential: 按账号组 uid 取 SklandToken 原文（解密后）。
+        save_credential: token 轮换后回写账号组（不传则只跳过回写）。
+        proxy: 出网代理；now 仅测试注入。
     """
+
+    current = time.time() if now is None else now
+    cached = _role_entries_cache.get(account_uid)
+    if cached is not None and cached[0] > current:
+        return cached[1]
 
     async with skland_sign_lock:
         raw = await load_credential(account_uid)
@@ -231,7 +250,13 @@ async def fetch_skland_role_entries(
                 device_id=device_id,
                 proxy=proxy,
             )
-            return normalize_skland_roles(payload).roles_for_game("明日方舟")
+            roles = normalize_skland_roles(payload).roles_for_game("明日方舟")
+            if roles:
+                _role_entries_cache[account_uid] = (
+                    current + SKLAND_ROLE_TTL_SECONDS,
+                    roles,
+                )
+            return roles
 
 
 def clear_skland_progression_cache() -> None:
@@ -240,12 +265,20 @@ def clear_skland_progression_cache() -> None:
     _cache.clear()
 
 
+def clear_skland_role_entries_cache() -> None:
+    """清空角色列表缓存（测试用；生产路径靠 TTL 自然过期）。"""
+
+    _role_entries_cache.clear()
+
+
 __all__ = [
     "CredentialLoader",
     "CredentialSaver",
-    "SklandAccountRef",
     "SKLAND_CACHE_TTL_SECONDS",
+    "SklandAccountRef",
+    "SKLAND_ROLE_TTL_SECONDS",
     "clear_skland_progression_cache",
+    "clear_skland_role_entries_cache",
     "fetch_skland_progression",
     "fetch_skland_role_entries",
 ]
