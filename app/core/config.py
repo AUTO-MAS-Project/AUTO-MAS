@@ -2553,6 +2553,43 @@ class AppConfig(GlobalConfig):
             return None
         return data if isinstance(data, dict) and data else None
 
+    @staticmethod
+    def _maa_scheme_name(config_dir: Path, data: dict) -> str:
+        """MAA 生效方案名, 与 AutoProxy.set_maa 的方案归一判定对称。
+
+        多方案配置下 set_maa 把 gui.json 的 Current 方案复制进 gui.new.json 的
+        Default 再注入, 故运行时读到的队列就是 Current 方案(该方案不在
+        gui.new.json 里时才是 Default)。基建班次要落在同一方案, 否则写进去的
+        班次会被方案归一覆盖。``data`` 为已读取的 gui.new.json 内容。
+        """
+
+        try:
+            gui = read_file(config_dir / "gui.json")
+        except (OSError, json.JSONDecodeError):
+            return "Default"
+        current = gui.get("Current") if isinstance(gui, dict) else None
+        configurations = data.get("Configurations")
+        if (
+            isinstance(current, str)
+            and current not in ("", "Default")
+            and isinstance(configurations, dict)
+            and isinstance(configurations.get(current), dict)
+        ):
+            return current
+        return "Default"
+
+    @staticmethod
+    def _maa_task_queue(data: dict, scheme: str) -> Any:
+        """取 MAA 配置中指定方案的任务队列; 结构不符返回 None。"""
+
+        configurations = data.get("Configurations")
+        if not isinstance(configurations, dict):
+            return None
+        configuration = configurations.get(scheme)
+        if not isinstance(configuration, dict):
+            return None
+        return configuration.get("TaskQueue")
+
     async def set_infrast_plan_select(
         self, script_id: str, user_id: str, index: int
     ) -> int:
@@ -2560,32 +2597,56 @@ class AppConfig(GlobalConfig):
 
         index 与 MAA 原生语义一致: -1=按时段自动, 0..n-1=从该班开始顺序轮换;
         轮换推进由 MAA 原生「自动保存为下个计划」完成并经运行后回写管道存回存档。
+        写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
         """
 
         script_uid = uuid.UUID(script_id)
-        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+        user_uid = uuid.UUID(user_id)
+        script_config = self.ScriptConfig[script_uid]
+        if not isinstance(script_config, MaaConfig):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建班次")
         if index < -1:
             raise ValueError("基建班次索引不能小于 -1")
 
-        path = self._infrast_config_dir(script_id, user_id) / "gui.new.json"
-        data = self._read_maa_config(path)
+        # 显式班次要落在 -1..班次数-1 内: MAA 侧只会把越界值静默修正成第一班
+        # 或直接报错, 与其静默改掉用户的选择不如在入口拒绝; -1 是默认值无需校验
+        if index >= 0:
+            if user_uid not in script_config.UserData:
+                raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
+            plans, problem = load_infrast_plans(
+                script_config.UserData[user_uid].get("Data", "CustomInfrast")
+            )
+            if problem is not None:
+                raise ValueError(f"自定义基建排班不可用, 无法设置基建班次: {problem}")
+            if index >= len(plans):
+                raise ValueError(
+                    f"基建班次索引 {index} 超出排班表范围, 该排班表共 {len(plans)} 个班次"
+                )
+
+        config_dir = self._infrast_config_dir(script_id, user_id)
+        data = self._read_maa_config(config_dir / "gui.new.json")
         if data is None:
-            return index
-        queue = data.get("Configurations", {}).get("Default", {}).get("TaskQueue")
+            raise ValueError("未找到或无法读取该用户的 MAA 配置, 无法设置基建班次")
+        scheme = self._maa_scheme_name(config_dir, data)
+        queue = self._maa_task_queue(data, scheme)
         if not isinstance(queue, list):
+            raise ValueError(
+                f"MAA 配置的方案「{scheme}」缺少任务队列, 无法设置基建班次"
+            )
+        tasks = [
+            task
+            for task in queue
+            if isinstance(task, dict) and task.get("TaskType") == "Infrast"
+        ]
+        if not tasks:
+            raise ValueError(
+                f"MAA 配置的方案「{scheme}」中没有基建任务, 无法设置基建班次"
+            )
+        if all(task.get("PlanSelect") == index for task in tasks):
             return index
-        changed = False
-        for task in queue:
-            if (
-                isinstance(task, dict)
-                and task.get("TaskType") == "Infrast"
-                and task.get("PlanSelect") != index
-            ):
-                task["PlanSelect"] = index
-                changed = True
-        if changed:
-            write_file(path, data)
+        for task in tasks:
+            task["PlanSelect"] = index
+        write_file(config_dir / "gui.new.json", data)
         return index
 
     async def get_infrast_plan_select(self, script_id: str, user_id: str) -> int:
@@ -2596,11 +2657,11 @@ class AppConfig(GlobalConfig):
             return -1
         if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
             return -1
-        path = self._infrast_config_dir(script_id, user_id) / "gui.new.json"
-        data = self._read_maa_config(path)
+        config_dir = self._infrast_config_dir(script_id, user_id)
+        data = self._read_maa_config(config_dir / "gui.new.json")
         if data is None:
             return -1
-        queue = data.get("Configurations", {}).get("Default", {}).get("TaskQueue")
+        queue = self._maa_task_queue(data, self._maa_scheme_name(config_dir, data))
         if not isinstance(queue, list):
             return -1
         for task in queue:
