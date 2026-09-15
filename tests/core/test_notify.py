@@ -39,10 +39,6 @@ class _Notify:
         self.calls.append("ServerChan")
         self.sent.append(str(kwargs["content"]))
 
-    async def send_cmcc_newmsg(self, **kwargs) -> None:
-        self.calls.append("中国移动新消息")
-        self.sent.append(str(kwargs["content"]))
-
     async def WebhookPush(self, **kwargs) -> None:
         self.calls.append("Webhook")
         self.sent.append(str(kwargs["content"]))
@@ -107,18 +103,6 @@ def test_dispatch_retries_false_result() -> None:
     assert list(result.failed) == []
     assert result.attempted == 1
     assert notify.calls == ["Koishi", "Koishi"]
-
-
-def test_dispatch_sends_cmcc_newmsg_with_signed_text() -> None:
-    notify = _Notify()
-    target = NotifyTarget(name="全局", cmcc_newmsg_api_key="ak_test")
-
-    with patch("app.core.notify.Notify", notify):
-        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
-
-    assert list(result.succeeded) == ["全局 中国移动新消息"]
-    assert notify.calls == ["中国移动新消息"]
-    assert notify.sent == ["标题\n\n正文\n\nAUTO-MAS 敬上"]
 
 
 def test_dispatch_reports_named_webhook_failure() -> None:
