@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { parse } from '@vue/compiler-sfc'
 
 describe('quick configuration panel visibility', () => {
-  for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte', 'BetterGI']) {
+  // BetterGI 不在列：本 PR 决定「快速配置不作为配置来源开关」，该页面恢复原貌——
+  // 任务配置卡片常显、开关回到 GeneralConfigModeSelector 内（按来源而非开关决定面板形态）。
+  for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
     it(`${name} keeps its switch outside the conditional panel`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
@@ -42,9 +44,10 @@ describe('quick configuration panel visibility', () => {
     expect(section).not.toContain('v-if="formData.Info.IfQuickConfig"')
   })
 
-  it('keeps the source selector free of quick configuration props and events', () => {
+  it('keeps the source selector quick configuration opt-in only', () => {
+    // 选择器里的快速配置项只在调用方声明了 v-model 时渲染，未接入的专项不会出现死开关。
     const source = readFileSync(new URL('./GeneralConfigModeSelector.vue', import.meta.url), 'utf8')
-    expect(source).not.toMatch(/quickConfig|quick-config|enableQuickConfiguration/)
+    expect(source).toContain('v-if="quickConfig !== undefined"')
   })
 
   it('flushes BetterGI task settings before hiding the panel', () => {

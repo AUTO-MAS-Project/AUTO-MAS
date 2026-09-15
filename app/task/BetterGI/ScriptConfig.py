@@ -27,10 +27,11 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import ProcessManager, get_logger
 from app.utils.platform import IS_ELEVATED
 
-from .AutoProxy import _BGI_REL_EXE
+from .AutoProxy import _BGI_REL_EXE, _BGI_UNKILLABLE_HINT, _wait_bgi_exit
 from .tools import one_dragon
 
 logger = get_logger("BetterGI 脚本设置")
@@ -53,11 +54,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按来源和快速配置决定。
+        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按配置来源决定。
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            self.use_mas_config = bool(user_config.get("Info", "IfQuickConfig"))
+            # 直控来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
+            mode = read_config_source(user_config)
+            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
@@ -95,7 +98,15 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def final_task(self) -> None:
         self.wait_event.set()
-        await self._kill_processes()
+        if not await self._kill_processes():
+            # 本任务只负责把 BGI 界面开起来，结束时若关不掉它会一直留着（且 MAS 管不了它），
+            # 下次任务带参启动会被这个单实例吞掉 → 任务卡住、游戏不启动。故必须明确告知用户。
+            logger.warning(f"BetterGI 设置界面未能自动关闭：{_BGI_UNKILLABLE_HINT}")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="warning", message=_BGI_UNKILLABLE_HINT),
+            )
         if not self.crashed:
             logger.success("BetterGI 直控配置已打开（任务配置请以 MAS 前端为准）")
             self.cur_user_item.status = "完成"
@@ -120,7 +131,13 @@ class ScriptConfigTask(TaskExecuteBase):
             ),
         )
 
-    async def _kill_processes(self) -> None:
+    async def _kill_processes(self) -> bool:
+        """中止 BetterGI 进程。
+
+        Returns:
+            bool: 已确认无 BetterGI 残留时返回 True；仍有实例存活（MAS 无权终止它，常见于
+                BGI 由 MAS 以管理员权限启动而 MAS 未提权）时返回 False。
+        """
         try:
             await self.process_manager.kill()
         except Exception as e:
@@ -130,3 +147,11 @@ class ScriptConfigTask(TaskExecuteBase):
             await System.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BetterGI 进程失败: {e}")
+
+        remaining = await _wait_bgi_exit()
+        if remaining:
+            logger.warning(
+                f"BetterGI 进程仍存活（PID: {remaining}）：{_BGI_UNKILLABLE_HINT}"
+            )
+            return False
+        return True
