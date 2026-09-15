@@ -1476,7 +1476,7 @@ export default {
     maafwEmbeddedSaved: '副本省下 {percent}%（{source} → {copy}）',
     maafwEmbeddedShell: '外壳：{shell}',
     maafwEmbeddedRuntime: '运行时 MaaFramework {version}（与来源自带的一致）',
-    maafwEmbeddedSourceVersion: '来源版本 {version}',
+    maafwEmbeddedSourceVersion: '导入自来源 {version}',
     maafwEmbeddedImportedAt: '导入于 {time}',
     maafwEmbeddedSourceMissing: '来源目录已不存在：运行不受影响，但无法重新导入',
     maafwEmbeddedReimport: '重新导入',

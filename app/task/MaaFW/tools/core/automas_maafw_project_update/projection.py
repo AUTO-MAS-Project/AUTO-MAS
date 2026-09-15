@@ -24,6 +24,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -366,6 +367,12 @@ class _FileView:
         located = self.locate(relative)
         return located is not None and located.is_file()
 
+    def read_text(self, relative: Path) -> str:
+        located = self.locate(relative)
+        if located is None or not located.is_file():
+            raise OSError(f"not a file: {relative.as_posix()}")
+        return located.read_text(encoding="utf-8-sig")
+
     def is_dir(self, relative: Path) -> bool:
         located = self.locate(relative)
         return located is not None and located.is_dir()
@@ -470,6 +477,26 @@ def collect_ui_asset_paths(data: Any) -> list[str]:
         welcome = _text(data.get("welcome"))
         if welcome:
             found.append(welcome)
+    return found
+
+
+# welcome（README）里以 Markdown / HTML 写法引用的本地图片。只认这两种写法，
+# 只取相对路径；远程 URL、data: URI 由 _normalize_ui_asset_path 过滤。
+_WELCOME_IMAGE_RE = re.compile(
+    r"!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^)\s]+))(?:\s+\"[^\"]*\")?\s*\)"
+    r"|<img\b[^>]*?\bsrc\s*=\s*[\"']([^\"']+)[\"']",
+    re.IGNORECASE,
+)
+
+
+def collect_welcome_image_paths(text: str) -> list[str]:
+    """welcome 文件正文里引用的图片路径，按出现顺序去重。"""
+
+    found: list[str] = []
+    for match in _WELCOME_IMAGE_RE.finditer(text):
+        raw = next((group for group in match.groups() if group), "").strip()
+        if raw and raw not in found:
+            found.append(raw)
     return found
 
 
@@ -788,6 +815,26 @@ def build_projection_rules(
             asset_relative = _normalize_ui_asset_path(raw_asset, base_relative)
             if asset_relative is not None and view.is_file(asset_relative):
                 add_target(asset_relative, complete=True, required_label=None)
+
+        # welcome 正文里引用的图片：说明页会按项目根去取，缺了就是一排裂图。先按
+        # welcome 文件所在目录解析（Markdown 的习惯），再退到项目根；都不在就算了。
+        welcome_raw = _text(data.get("welcome"))
+        welcome_relative = (
+            _normalize_ui_asset_path(welcome_raw, base_relative)
+            if welcome_raw
+            else None
+        )
+        if welcome_relative is not None and view.is_file(welcome_relative):
+            try:
+                welcome_text = view.read_text(welcome_relative)
+            except (OSError, UnicodeDecodeError):
+                welcome_text = ""
+            for raw_image in collect_welcome_image_paths(welcome_text):
+                for anchor in (welcome_relative.parent, base_relative):
+                    image_relative = _normalize_ui_asset_path(raw_image, anchor)
+                    if image_relative is not None and view.is_file(image_relative):
+                        add_target(image_relative, complete=True, required_label=None)
+                        break
 
         languages = data.get("languages")
         if isinstance(languages, dict):

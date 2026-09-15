@@ -545,14 +545,24 @@ def _project_package_entries(
     # 版本要随这次更新换进副本的投影标记，否则 agent 侧还钉着上一版。标记作为本次
     # 落地的一个条目进事务、进清单，与其余文件同进同退。
     bundled_version = probe_bundled_maafw_version(payload_root)
+    marker: Path | None = None
     if bundled_version:
         marker = write_projection_marker(payload_root, bundled_version)
+        if send_log is not None:
+            send_log(f"内嵌投影：来源自带 MaaFramework {bundled_version}，已记入副本")
+    else:
+        # 包里没带原生库（差量包常见，全量包极少）：把副本现有的标记原样带进本次
+        # 落地，否则全量包会把它当上一版残留清掉，钉版本的依据就没了。
+        existing = project_path / PROJECTION_MARKER_NAME
+        if existing.is_file():
+            marker = payload_root / PROJECTION_MARKER_NAME
+            if not marker.exists():
+                shutil.copy2(existing, marker)
+    if marker is not None:
         kept_file_table[PROJECTION_MARKER_NAME] = marker
         kept_hash_table[PROJECTION_MARKER_NAME] = hashlib.sha256(
             marker.read_bytes()
         ).hexdigest()
-        if send_log is not None:
-            send_log(f"内嵌投影：来源自带 MaaFramework {bundled_version}，已记入副本")
     return (
         kept_file_table,
         kept_hash_table,

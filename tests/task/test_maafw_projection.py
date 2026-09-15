@@ -141,6 +141,30 @@ class TestWhitelist:
         assert "assets/screenshots/big.png" not in kept
         assert not any("missing.png" in warning for warning in plan.rules.warnings)
 
+    def test_images_referenced_by_welcome_are_kept(self, tmp_path: Path) -> None:
+        # 说明页按项目根取图；先按 README 所在目录解析，再退到项目根，远程与缺失的跳过。
+        interface = _interface(welcome="docs/README.md")
+        root = _release(tmp_path / "src", interface)
+        _write(
+            root / "docs/README.md",
+            '# hi\n![a](img/a.png)\n<img src="../assets/b.png">\n'
+            "![r](https://x/y.png)\n![m](img/missing.png)\n![root](assets/c.png)\n",
+        )
+        _write(root / "docs/img/a.png", "png")
+        _write(root / "assets/b.png", "png")
+        _write(root / "assets/c.png", "png")
+        _write(root / "assets/unrelated.png", "png")
+
+        kept = {path.as_posix() for path in build_projection_plan(root).copied_files}
+
+        assert {
+            "docs/README.md",
+            "docs/img/a.png",
+            "assets/b.png",
+            "assets/c.png",
+        } <= kept
+        assert "assets/unrelated.png" not in kept
+
     def test_stripped_interpreter_is_a_warning_not_an_error(
         self, tmp_path: Path
     ) -> None:
@@ -327,6 +351,43 @@ class TestRuntimePin:
 
         assert plan.report()["bundledMaaFWVersion"] == ""
         assert probe_bundled_maafw_version(copy) is None
+
+    def test_package_without_native_runtime_keeps_the_existing_pin(
+        self, tmp_path: Path
+    ) -> None:
+        # 全量包不带原生库时，标记若不进本次清单会被当作上一版残留清掉。
+        source = _release(tmp_path / "src")
+        copy = tmp_path / "copy"
+        materialize_projection(build_projection_plan(source), copy)
+        package = tmp_path / "v1.1.0.zip"
+        with zipfile.ZipFile(package, "w") as archive:
+            archive.writestr("interface.json", _interface(version="v1.1.0", agent=None))
+            archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 2}}')
+
+        apply_package_transaction(
+            copy,
+            package,
+            operation_root=tmp_path / "operations",
+            projection=True,
+        )
+        # 装过一次就有清单了；再来一个同样不带原生库的全量包，标记仍要活着。
+        package2 = tmp_path / "v1.2.0.zip"
+        with zipfile.ZipFile(package2, "w") as archive:
+            archive.writestr("interface.json", _interface(version="v1.2.0", agent=None))
+            archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 3}}')
+        apply_package_transaction(
+            copy,
+            package2,
+            operation_root=tmp_path / "operations",
+            projection=True,
+        )
+
+        assert probe_bundled_maafw_version(copy) == "5.11.1"
+        manifest_path = next(
+            (tmp_path / "maafw_project_state").rglob("resource-manifest.json")
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert PROJECTION_MARKER_NAME in manifest["files"]
 
     def test_update_package_refreshes_the_pin(self, tmp_path: Path) -> None:
         # v1 副本钉 5.11.1；全量包带 5.12.3 的原生库：库不落盘，标记换成 5.12.3。

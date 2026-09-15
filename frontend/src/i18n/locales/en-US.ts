@@ -1517,7 +1517,7 @@ export default {
     maafwEmbeddedSaved: 'Copy saves {percent}% ({source} → {copy})',
     maafwEmbeddedShell: 'Shell: {shell}',
     maafwEmbeddedRuntime: 'Runtime MaaFramework {version} (as bundled by the source)',
-    maafwEmbeddedSourceVersion: 'Source version {version}',
+    maafwEmbeddedSourceVersion: 'Imported from source {version}',
     maafwEmbeddedImportedAt: 'Imported {time}',
     maafwEmbeddedSourceMissing:
       'Source directory no longer exists: runs are unaffected, but re-import is unavailable',
