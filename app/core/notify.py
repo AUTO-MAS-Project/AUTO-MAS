@@ -346,7 +346,7 @@ def _target_channels(target: NotifyTarget) -> dict[str, str]:
         channel = f"{target.name} ServerChan"
         channels[channel] = channel
     if target.cmcc_newmsg_api_key is not None:
-        channel = f"{target.name} 中国移动新消息"
+        channel = f"{target.name} 中国移动5G短信"
         channels[channel] = channel
     for uid, webhook in target.webhooks:
         channels[f"{target.name} Webhook {uid}"] = (
@@ -510,12 +510,12 @@ async def dispatch(
                 )
 
         if target.cmcc_newmsg_api_key is not None:
-            channel = f"{target.name} 中国移动新消息"
+            channel = f"{target.name} 中国移动5G短信"
             should_send, missing = _recipient_action(
                 target.cmcc_newmsg_api_key,
                 target.empty_policy,
                 channel=channel,
-                hint=f"{target.name}中国移动新消息 API Key",
+                hint=f"{target.name}中国移动5G短信 API Key",
             )
             if missing:
                 miss(channel)

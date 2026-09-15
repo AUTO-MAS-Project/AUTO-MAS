@@ -359,7 +359,7 @@ const handleWebhookChange = async () => {
       <div class="section-header">
         <h3>{{ t('setting.notify.cmccNewMsgSection') }}</h3>
         <a
-          href="https://5gvas01.cmicmaap.com/aifile/public/file/channel-guide.md"
+          href="https://doc.auto-mas.top/docs/advanced-features/notification.html"
           class="section-doc-link"
           :title="t('setting.notify.cmccNewMsgDoc')"
           @click="handleExternalLink"

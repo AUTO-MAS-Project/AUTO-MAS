@@ -298,7 +298,7 @@ class Notification:
             content=content,
             proxy=Config.proxy,
         )
-        logger.success(f"中国移动新消息通知已提交: {title}")
+        logger.success(f"中国移动5G短信通知已提交: {title}")
 
     async def send_openclaw_weixin(self, title: str, content: str) -> None:
         """通过微信 Claw 通道推送通知。
