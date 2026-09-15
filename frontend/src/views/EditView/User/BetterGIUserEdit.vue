@@ -279,17 +279,6 @@
                   @change="handleConfigModeChange"
                   @quick-config-change="handleQuickConfigChange"
                 />
-                <a-form-item v-if="!masConfigEnabled" :label="t('edit.bettergiOneDragonName')">
-                  <a-select
-                    v-model:value="formData.Task.OneDragonConfigName"
-                    :options="oneDragonConfigOptions"
-                    :disabled="pageLoading || isSaving"
-                    @dropdown-visible-change="(open: boolean) => open && loadOneDragonConfigs()"
-                    @change="
-                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
-                    "
-                  />
-                </a-form-item>
               </a-col>
             </a-row>
 
@@ -314,19 +303,7 @@
         </a-form>
       </a-card>
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('edit.taskConfiguration') }}</h3>
-        <a-space>
-          <span>{{ t('edit.enableQuickConfiguration') }}</span>
-          <a-switch
-            :checked="formData.Info.IfQuickConfig"
-            :disabled="pageLoading || isInitializing || isSaving"
-            :aria-label="t('edit.enableQuickConfiguration')"
-            @change="handleQuickConfigChange"
-          />
-        </a-space>
-      </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
+      <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
@@ -1230,7 +1207,7 @@ const bettergiConfigModeOptions: Array<{
   },
   {
     title: t('edit.scriptDirectControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    description: t('edit.useScriptSCurrent'),
     value: '直控',
     icon: 'setting',
   },
