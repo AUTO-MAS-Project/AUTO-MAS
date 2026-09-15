@@ -20,14 +20,14 @@ from datetime import datetime
 
 from app.core import Config
 from app.core.notify import (
+    SIGNATURE,
     DispatchResult,
     NotifyPayload,
-    dispatch_task_report,
-    global_target,
-    should_send_result,
+    dispatch,
+    statistic_targets,
 )
 from app.models.config import BetterGIUserConfig
-from app.services import Notify
+from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
 logger = get_logger("BetterGI 通知工具")
@@ -35,11 +35,23 @@ logger = get_logger("BetterGI 通知工具")
 _STEP_TIME_FMT = "%H:%M:%S"
 
 # 各发信渠道的正文长度上限（按需在分步表之外决定用完整版还是简略版）：
-#   邮件(网页 HTML)：无实际字数瓶颈 → 始终用完整版（含「一条龙分步执行」表）。
+#   邮件(网页 HTML)：无实际字数瓶颈 → 模板渲染完整版（含「一条龙分步执行」表）。
 #   ServerChan/Server酱 desp：上限约 32KB → 完整版，超过预算安全回退简略版。
 #   自定义 Webhook（企业微信 text 2048 字节 / Discord 2000 字符 / Telegram 4096 字符）：聊天机器人
 #   存在真实每消息字数瓶颈 → 始终用简略版（回退旧的 4 字段汇总），避免分步表被静默截断/丢弃。
+# 分流只决定「哪个渠道拿哪份正文」，投递本身一律交 app.core.notify.dispatch。
 _SERVERCHAN_MAX_BYTES = 30 * 1024
+
+
+def _signed(text: str, *, serverchan: bool = False) -> str:
+    """按 ``NotifyPayload`` 的默认口径补签名（ServerChan 另把换行折成双换行）。
+
+    只用于需要覆盖 payload 默认正文的两个渠道：聊天机器人类 Webhook 的简略版，
+    以及 ServerChan 超预算时的降级版。
+    """
+
+    body = text.replace("\n", "\n\n") if serverchan else text
+    return f"{body}\n\n{SIGNATURE}"
 
 
 def _step_duration(step: dict) -> str:
@@ -94,13 +106,7 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "统计信息":
-        if user_config is None or not (
-            user_config.get("Notify", "Enabled")
-            and user_config.get("Notify", "IfSendStatistic")
-        ):
-            return DispatchResult()
-
-        # 简略版（所有渠道的兜底）：仅 4 字段汇总，旧版格式
+        # 简略版（聊天机器人类渠道的兜底）：仅 4 字段汇总，旧版格式
         message_text = (
             f"用户: {message['user_info']}\n"
             f"开始时间: {message['start_time']}\n"
@@ -118,69 +124,28 @@ async def push_notification(
             message
         )
 
-        if user_config.get("Notify", "IfSendMail"):
-            if user_config.get("Notify", "ToAddress"):
-                # 邮件无实际字数瓶颈，始终发完整版（含分步表）
-                await Notify.send_mail(
-                    "网页",
-                    title,
-                    message_html,
-                    user_config.get("Notify", "ToAddress"),
-                )
-            else:
-                logger.warning("用户邮箱地址为空, 无法发送 BetterGI 用户通知")
+        # 正文只按渠道分流，投递一律交 dispatch：目标渠道（全局 + 用户）、渠道级重试、
+        # 失败隔离与 DispatchResult 都由 app.core.notify 负责。
+        serverchan_text = None
+        if len(message_text_full.encode("utf-8")) > _SERVERCHAN_MAX_BYTES:
+            # Server酱 desp 上限约 32KB：分步表很小时用完整版，超预算回退简略版
+            serverchan_text = _signed(message_text, serverchan=True)
+            logger.warning("Server酱内容超过字数上限，已回退为简略版（不含分步表）")
 
-        if user_config.get("Notify", "IfServerChan"):
-            if user_config.get("Notify", "ServerChanKey"):
-                # Server酱 desp 上限约 32KB：分步表很小时用完整版，超预算回退简略版
-                serverchan_content = message_text_full
-                if len(serverchan_content.encode("utf-8")) > _SERVERCHAN_MAX_BYTES:
-                    serverchan_content = message_text
-                    logger.warning(
-                        "Server酱内容超过字数上限，已回退为简略版（不含分步表）"
-                    )
-                await Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_content.replace(chr(10), chr(10) * 2)}\n\nAUTO-MAS 敬上",
-                    user_config.get("Notify", "ServerChanKey"),
-                )
-            else:
-                logger.warning("用户ServerChan密钥为空, 无法发送 BetterGI 用户通知")
-
-        for webhook in user_config.Notify_CustomWebhooks.values():
-            # Webhook 目标多为聊天机器人（企业微信 2048 字节 / Discord 2000 字符 / Telegram
-            # 4096 字符），有真实字数瓶颈 → 用回简略版，避免分步表塞爆被静默丢弃。
-            await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
-        return DispatchResult()
+        return await dispatch(
+            NotifyPayload(
+                title=title,
+                text=message_text_full,
+                html=message_html,
+                serverchan_text=serverchan_text,
+                webhook_text=_signed(message_text),
+            ),
+            statistic_targets(user_config),
+        )
 
     if mode != "代理结果":
         return DispatchResult()
 
-    if not should_send_result(message, task_info=task_info):
-        return DispatchResult()
-
-    message_text = (
-        f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
-        f"已完成数: {message['completed_count']}, "
-        f"未完成数: {message['uncompleted_count']}\n\n"
-        f"{message['result']}"
-    )
-    message_html = Config.notify_env.get_template("general_result.html").render(message)
-    counts = (
-        f"已完成用户数: {message['completed_count']}, "
-        f"未完成用户数: {message['uncompleted_count']}"
-    )
-    return await dispatch_task_report(
-        NotifyPayload(
-            title=title,
-            text=message_text,
-            html=message_html,
-            system_title=message.get("system_title")
-            or title.replace("报告", "已完成！"),
-            system_message=counts,
-            system_ticker=counts,
-            system_timeout=10,
-        ),
-        [global_target(include_system=True)],
-        task_info,
-    )
+    # 与其余专项一致：正文模板差异保留在本模块（default general_result.html），
+    # 推送时机、社区签到摘要注入、渠道级重试与已送达渠道去重交共用核心。
+    return await push_proxy_result(title=title, message=message, task_info=task_info)

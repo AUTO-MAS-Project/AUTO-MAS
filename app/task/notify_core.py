@@ -20,9 +20,9 @@
 
 """各专项通知工具共用的「代理结果」推送核心。
 
-SRC / HSR / MaaEnd / OkNte / general / Okww / MAA / M9A / MaaFW 的代理结果
-分支原本逐字重复，仅模板名、签名分隔符与跳过日志存在授权差异，统一收敛到
-本模块。各专项的统计信息分支差异较大，保留在各自 notify 模块内。
+SRC / HSR / MaaEnd / OkNte / general / Okww / MAA / M9A / MaaFW / BetterGI 的
+代理结果分支原本逐字重复，仅模板名、签名分隔符与跳过日志存在授权差异，统一
+收敛到本模块。各专项的统计信息分支差异较大，保留在各自 notify 模块内。
 """
 
 from typing import Any
