@@ -52,6 +52,7 @@ from .tools import (
     read_overlay_values,
     team_resolver,
 )
+from .tools.drop_statistics import parse_drop_lines
 from .tools.one_dragon_plan import (
     build_combat_steps,
     parse_one_dragon_plan,
@@ -59,7 +60,6 @@ from .tools.one_dragon_plan import (
     plan_steps_to_native_settings,
     resolve_base_name,
 )
-from .tools.drop_statistics import parse_drop_lines
 from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,

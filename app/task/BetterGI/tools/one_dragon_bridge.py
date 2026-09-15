@@ -28,7 +28,6 @@
 from __future__ import annotations
 
 import json
-from contextlib import suppress
 from pathlib import Path
 from shutil import copy2
 from typing import Any
