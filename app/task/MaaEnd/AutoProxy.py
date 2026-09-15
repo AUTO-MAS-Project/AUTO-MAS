@@ -46,6 +46,26 @@ from app.task.general.tools import execute_script_task
 logger = get_logger("MaaEnd 自动代理")
 
 
+def _disable_removed_tasks(
+    maaend_tasks: list[dict[str, object]],
+    task_i18n: dict[str, str],
+) -> set[str]:
+    """禁用当前 MaaEnd 版本已移除的任务条目，返回被移除的任务名。
+
+    MaaEnd 更新可能删除或合并旧任务，其加载配置时会静默移除无效条目；
+    若注入的运行配置里只剩这类条目，MaaEnd 会以“没有启用的任务”拒绝启动，
+    自动代理也会因该任务永不回报完成而反复重试。
+    """
+
+    removed_names: set[str] = set()
+    for task in maaend_tasks:
+        task_name = str(task.get("taskName"))
+        if task_name.startswith("__MXU_") or task_name in task_i18n:
+            continue
+        task["enabled"] = False
+        removed_names.add(task_name)
+    return removed_names
+
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
 
@@ -315,6 +335,13 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
             await self.set_maaend(emulator_info)
+
+            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置"
+                )
+                break
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
@@ -590,6 +617,8 @@ class AutoProxyTask(TaskExecuteBase):
             "task.SceneManager.focus.color_match_failed_prefix"
         ]
 
+        removed_task_names = _disable_removed_tasks(maaend_tasks, maaend_i18n)
+
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
 
         def get_task_book_name(task: dict[str, object]) -> str:
@@ -631,6 +660,9 @@ class AutoProxyTask(TaskExecuteBase):
                 if task["taskName"].startswith("__MXU_"):
                     continue
 
+                if task["taskName"] in removed_task_names:
+                    continue
+
                 task_enabled = task["enabled"]
                 if if_quick_config:
                     if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
@@ -670,8 +702,13 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_name = get_task_book_name(task)
-            if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
-                task["enabled"] = self.task_dict[task_name][task["id"]]
+            if str(task.get("taskName")) in removed_task_names:
+                task["enabled"] = False
+                if task_name in self.task_dict:
+                    self.task_dict[task_name].pop(task["id"], None)
+                continue
+
+            task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
 
             if not task["enabled"]:
                 continue
@@ -758,6 +795,16 @@ class AutoProxyTask(TaskExecuteBase):
                     "caseNames": [sanity_task_key["AutoEssenceSpecifiedLocation"]],
                 }
 
+        # 只跟踪本轮实际启用的任务，避免禁用条目占用同名任务的结果位置。
+        enabled_ids = {
+            task["id"] for task in maaend_tasks if task.get("enabled", False)
+        }
+        self.task_dict = {
+            name: {task_id: True for task_id in tasks if task_id in enabled_ids}
+            for name, tasks in self.task_dict.items()
+            if any(task_id in enabled_ids for task_id in tasks)
+        }
+
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
@@ -815,6 +862,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
         if "资源加载失败" in log:
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+        elif any(
+            message in log
+            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+        ):
+            self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
+            self.retryable = False
         elif "快捷键开始任务：失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log:
