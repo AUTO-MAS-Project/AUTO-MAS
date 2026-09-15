@@ -269,6 +269,7 @@ export default {
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
     notifyRecruit: '公开招募高资喜报',
+    notifyDropStatistics: '掉落统计',
     notifyMail: '邮件通知',
     maaAnnihilation: '剿灭作战',
     maaAnnihilationHint:
@@ -1320,7 +1321,7 @@ export default {
     useScriptS: '使用脚本配置，不与用户独立配置隔离。',
     quickConfig: '快速配置',
     configSourceHint:
-      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
+      '「脚本配置」为不同用户选择同一脚本来源；「用户独立配置」为不同用户选择不同配置来源；「直控配置」为 BGI 原生配置，并由直控用户共享。',
     configSourceHintBase:
       '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
     nativeConfigSourceDescription: '使用脚本当前的原生配置。',
@@ -1548,14 +1549,17 @@ export default {
     bettergiDirectModeAlert:
       '「脚本直控配置」：请在下方填写该用户使用的一条龙名称（BetterGI 中已有的配置名），脚本内容请在 BetterGI 中配置（可点「配置 BetterGI」打开）。',
     bettergiSwitchToMasConfig: '切换到用户独立配置',
-    bettergiMasConfigHowTo: '如何使用「用户独立配置」',
+    bettergiMasConfigHowTo: '如何使用「任务配置」',
     bettergiMasConfigHowTo1a:
       '该用户的一条龙已走独立配置，任务与自定义配置组均在本页以 MAS 前端为准配置（无需打开 BGI「一条龙」页面编辑）。MAS 运行时以固定槽位',
     bettergiMasConfigSlotName: '「MAS独立配置」',
     bettergiMasConfigHowTo1b:
       '启动一条龙，结束后自动清理槽位；你原有的 BGI 实配（如「默认配置」）全程零接触——同名实配不会被读取、也不受这里编辑影响。',
     bettergiMasConfigHowTo2:
-      '下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。',
+      '下方面板的通用战斗队伍 / 通用战斗策略是所有战斗任务的兜底：自动地脉花、自动秘境、自动首领讨伐、自动幽境危战都会用到它。队伍留空表示不切换队伍（沿用进任务时的当前队伍），策略留空表示由 BetterGI 根据队伍自动选择；若某个任务在「队伍配置」里命中了战斗场景，则优先使用该行填写的队伍与策略。',
+    bettergiTeamHowToTitle: '如何使用「队伍配置」',
+    bettergiTeamHowTo:
+      '开启「队伍配置」后，战斗任务（自动秘境 / 自动地脉花 / 自动首领讨伐）会先查这张表：命中「战斗场景」的行优先采用，多行同时命中时随机取一行；未命中的任务回落到上方「通用战斗队伍 / 通用战斗策略」。第 0 行「通用」兜底所有场景，不可删除。队伍名与策略名需与 BetterGI 中已有的一致（可点「打开策略目录」查看策略文件）。',
     bettergiOneDragonName: '一条龙名称',
     bettergiOneDragonNameHint:
       '用户独立配置时固定为「MAS独立配置」，不可更改；关闭「用户独立配置」后此处用于选择 BetterGI 实配（直控模式），默认为「默认配置」',
@@ -3236,7 +3240,7 @@ export default {
         SRC: '星穹铁道自动化与多账号代理',
         MaaEnd: 'MFW 专项适配脚本',
         M9A: '重返未来：1999 自动化脚本',
-        MaaFW: '托管 MaaFramework 项目',
+        MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',
         OkNte: '异环 OK-NTE 自动化脚本',
         HSR: '三月七 / SRA 双脚本适配',

@@ -616,8 +616,7 @@ async def _discover_project_update_detailed(
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
     send_update_log(f"MirrorChyan RID: {rid}")
-    if interface_model.mirrorchyan_multiplatform:
-        send_update_log("MirrorChyan platform: win/x86_64")
+    send_update_log("MirrorChyan platform: win/x86_64")
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
@@ -936,11 +935,14 @@ async def _query_mirrorchyan_latest(
         send_update_log("本地无可信更新基线，改为请求全量包")
     else:
         params["current_version"] = current_version
-    if interface_model.mirrorchyan_multiplatform:
-        # 实测 os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；
-        # 这里沿用 GitHub 资产命名的那套写法。
-        params["os"] = "win"
-        params["arch"] = "x86_64"
+    # os / arch 一律带上，不看 interface.json 的 mirrorchyan_multiplatform：
+    # 该字段只是发布方给打包器的提示，MAA_Punish 这类分平台发布的项目根本没写它，
+    # 而 Mirror 酱对分平台 rid 不带 os/arch 直接回 8001「资源不存在」，运行前
+    # 更新检查就整条失败。实测单平台 rid（AUTO_MAS）多带这两个参数照常回 200，
+    # os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；这里沿用 GitHub
+    # 资产命名的那套写法。
+    params["os"] = "win"
+    params["arch"] = "x86_64"
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:

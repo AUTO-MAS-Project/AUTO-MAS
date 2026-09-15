@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
+from app.task.BetterGI.tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES
 from app.utils import get_logger, resource_path
 from app.utils.io import read_file, write_file
 
@@ -70,6 +71,12 @@ _MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
 _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
+
+# 右栏「通用战斗策略」留空时的解析结果（公开别名）。
+# 策略侧没有"不指定"这种语义：BGI 各处对空策略的回退是「读全局 autoFightConfig」
+# （AutoLeyLineOutcropTask.BuildLeyLineAutoFightConfig / AutoDomainParam.SetCombatStrategyPath）
+# 或直接抛「策略文件不存在」，所以留空必须解析成一个确定值，否则会沿用 BGI 配置里的旧策略。
+DEFAULT_COMBAT_STRATEGY = _AUTO_BOSS_BUILTIN_STRATEGY
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
 
@@ -107,10 +114,14 @@ _GLOBAL_TEAM_LEAVES = (
 )
 
 # 通用战斗策略落到的叶子路径
+# autoBossConfig 也要写：执行层「自动首领讨伐」走 dispatcher.runAutoBossTask(new AutoBossParam())，
+# 而 AutoBossParam 无参构造只读 autoBossConfig（不读一条龙里的 AutoBossStrategyName），
+# 若此处不写，右栏清空策略后它仍会用 BGI 自己的 autoBossConfig.strategyName 旧值。
 _GLOBAL_STRATEGY_LEAVES = (
     ("autoFightConfig", "strategyName"),
     ("autoLeyLineOutcropConfig", "fightConfig", "strategyName"),
     ("autoStygianOnslaughtConfig", "strategyName"),
+    ("autoBossConfig", "strategyName"),
 )
 
 # 全部待补写叶子路径：apply 用分组，快照/还原用全集
@@ -209,8 +220,11 @@ def read_script_group(root: Path, name: str) -> dict[str, Any]:
     配置组 json 的结构：``{index, name, config, projects: [...]}``，其中
     ``projects`` 为组内脚本项目数组（每项含 name/folderName/index/type/status/
     schedule/runNum/allowJsNotification/allowJsHTTPHash/jsScriptSettingsObject）。
-    文件不存在或非法时返回空 dict。
+    文件不存在或非法时返回空 dict；名字含路径分隔符（路径类引用）同样返回空 dict，
+    不抛「配置组名非法」——读路径对用户操作必须容错（见 is_file_safe_script_group_name）。
     """
+    if not is_file_safe_script_group_name(name):
+        return {}
     sg_dir = root / _SCRIPT_GROUP_REL_DIR
     path = sg_dir / f"{resolve_script_group_name(name)}.json"
     data = read_file(path)
@@ -225,6 +239,19 @@ def resolve_script_group_name(name: str) -> str:
     if any(c in name for c in ("/", "\\", "..")):
         raise ValueError(f"配置组名非法: {name!r}")
     return name
+
+
+def is_file_safe_script_group_name(name: str) -> bool:
+    """该名字能否用作 ScriptGroup 文件名 / per-user 副本名。
+
+    AutoPathing 的路线名（形如 ``矿物/星银矿石/大剑@Tool_x/01-…``）在 BGI 里是合法的
+    一条龙引用，但含 ``/`` 不能作文件名。**读路径与非必要的写路径必须先用本函数判定**
+    并从容跳过：否则右栏为「路径」步骤取详情/保存时会把
+    ``ValueError: 配置组名非法`` 直接弹给用户（2026-09-16 实机两次复现）。
+    真正的落盘写入仍走 ``resolve_script_group_name`` 的严格校验，防路径穿越。
+    """
+    cleaned = (name or "").strip()
+    return bool(cleaned) and not any(c in cleaned for c in ("/", "\\", ".."))
 
 
 def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
@@ -501,6 +528,11 @@ def read_user_script_group(
     这样右栏能直接看到录制项目，且运行时 ``materialize_user_script_groups`` 亦据此物化，
     不依赖队列落库路径是否触发过 ``ensure_keymouse_groups``。
     """
+    # 名字含路径分隔符的引用（如 AutoPathing 路线名）：在 BGI 里合法、可作一条龙引用，
+    # 但不是 ScriptGroup 文件名、也没有 per-user 副本。此处**不得**抛「配置组名非法」——
+    # 右栏为「路径」步骤取详情会命中，抛错会直接把 ValueError 弹给用户（2026-09-16 实机）。
+    if not is_file_safe_script_group_name(name):
+        return {}
     name = resolve_script_group_name(name)
     copy = read_file(per_user_script_group_path(script_id, user_id, name))
     if isinstance(copy, dict) and copy:
@@ -523,12 +555,18 @@ def read_user_script_group(
 
 def write_user_script_group(
     root: Path, script_id: str, user_id: str, name: str, config: dict[str, Any]
-) -> Path:
+) -> Path | None:
     """把用户编辑后的配置组 json 写回 per-user 副本（不触碰 BGI 同名实配）。
 
     ``config`` 传入的是完整配置组 json（含 projects 数组顺序与每项的
     jsScriptSettingsObject）；写前同步 ``name`` 字段。缺目录自动补建。
+
+    ``name`` 含路径分隔符（路径类引用）时**不落盘**并返回 ``None``：这类内容由路径文件
+    驱动、本就没有 per-user 副本，保存属于无意义操作，不应报错打扰用户
+    （2026-09-16 实机：对路径步骤保存/离开时弹「配置组名非法」）。
     """
+    if not is_file_safe_script_group_name(name):
+        return None
     name = resolve_script_group_name(name)
     config = dict(config or {})
     config["name"] = name
@@ -1249,6 +1287,53 @@ def ensure_keymouse_groups(
         write_file(copy_path, _make_keymouse_script_group(name, rec))
 
 
+def resolve_custom_group(
+    root: Path, script_id: str, user_id: str, name: str, base: str
+) -> dict[str, Any]:
+    """把一个自定义项解析成一份「可执行的完整配置组」dict（含 ``config`` 与 ``projects``）。
+
+    解析顺序（与执行层「段」与逐项物化共用，避免两处漂移）：
+    1) 该实例自己的 per-user 副本 → 2) 基名副本 → 3) 录制（KeyMouse）自动生成
+    → 4) 脚本（JsScript）→ 5) 路径（AutoPathing）→ 6) BGI 现有配置组。
+
+    解析不到（无副本且 BGI 目录也无同名资产）返回空 ``{}``，由调用方决定回退基名或跳过。
+    3)~5) 会顺手把生成的单项目配置组写入 per-user 副本（与旧物化行为一致：右栏能提前看到内容）。
+    """
+    copy = _read_per_user_copy(script_id, user_id, name)
+    if not (isinstance(copy, dict) and copy) and base != name:
+        copy = _read_per_user_copy(script_id, user_id, base)
+    if isinstance(copy, dict) and copy:
+        return copy
+
+    # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
+    rec = _keymouse_file_for(root, base)
+    if rec:
+        copy = _make_keymouse_script_group(name, rec)
+        _safe_write_per_user_copy(script_id, user_id, name, copy)
+        return copy
+
+    # 脚本（JS）：引用 JsScript 下的脚本文件夹 → 单 Javascript 项目配置组
+    js = _js_script_file_for(root, base)
+    if js:
+        copy = _make_js_script_group(js)
+        _safe_write_per_user_copy(script_id, user_id, name, copy)
+        return copy
+
+    # 路径（地图追踪）：引用 AutoPathing 下的路径文件 → 单 Pathing 项目配置组
+    pt = _pathing_file_for(root, base)
+    if pt:
+        copy = _make_pathing_group(pt)
+        _safe_write_per_user_copy(script_id, user_id, name, copy)
+        return copy
+
+    # 引用 BGI 已有配置组：以 BGI 实配为底稿（BGI 只认基名，故按 base 读取）
+    try:
+        existing = read_script_group(root, base)
+    except ValueError:
+        existing = {}
+    return existing if isinstance(existing, dict) and existing else {}
+
+
 def materialize_user_script_groups(
     root: Path,
     script_id: str,
@@ -1292,43 +1377,14 @@ def materialize_user_script_groups(
         # 实例名（形如「组名-{行uid}」）→ 基名：BGI 目录只认基名，且首实例/存量数据
         # 的副本就按基名存，回退与解析都用它。缺省即实例名等于基名。
         base = instance_base.get(name) or name
-        # 1) 该实例自己的 per-user 设置副本（多实例各自独立，互不串台）
-        copy = _read_per_user_copy(script_id, user_id, name)
-        # 2) 回退：基名副本（首实例与存量数据均按基名存）
-        if not (isinstance(copy, dict) and copy) and base != name:
-            copy = _read_per_user_copy(script_id, user_id, base)
-        if not (isinstance(copy, dict) and copy):
-            # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
-            rec = _keymouse_file_for(root, base)
-            if rec:
-                copy = _make_keymouse_script_group(name, rec)
-                _safe_write_per_user_copy(script_id, user_id, name, copy)
-            else:
-                # 脚本（JS）：引用 JsScript 下的脚本文件夹 → 物化为单 Javascript 项目配置组，
-                # 使其可由 --startGroups 执行层直连（去耦合：不再依赖 BGI 一条龙裸名解析分支）
-                js = _js_script_file_for(root, base)
-                if js:
-                    copy = _make_js_script_group(js)
-                    _safe_write_per_user_copy(script_id, user_id, name, copy)
-                else:
-                    # 路径（地图追踪）：引用 AutoPathing 下的路径文件 → 物化为单 Pathing 项目配置组
-                    pt = _pathing_file_for(root, base)
-                    if pt:
-                        copy = _make_pathing_group(pt)
-                        _safe_write_per_user_copy(script_id, user_id, name, copy)
-                    else:
-                        # 引用 BGI 已有配置组：以 BGI 实配为底稿物化（四类统一编号命名，
-                        # 前后名彻底解耦）。BGI 只认基名，故按 base 读取。
-                        try:
-                            existing = read_script_group(root, base)
-                        except ValueError:
-                            existing = {}
-                        if not (isinstance(existing, dict) and existing):
-                            # 无法解析：回退基名交 BGI 自解析（实例名对 BGI 无意义）
-                            if base != name:
-                                defs[uid] = base
-                            continue
-                        copy = existing
+        # 解析（副本 → 录制/脚本/路径合成 → BGI 实配）统一由 resolve_custom_group 承担，
+        # 与执行层「切段」共用同一套顺序，避免两处漂移。
+        copy = resolve_custom_group(root, script_id, user_id, name, base)
+        if not copy:
+            # 无法解析：回退基名交 BGI 自解析（实例名对 BGI 无意义）
+            if base != name:
+                defs[uid] = base
+            continue
         idx += 1
         prefixed = f"MAS-{_mas_user_short_id(user_id)}-自定义配置组{idx}"
         copy["name"] = prefixed
@@ -1398,6 +1454,89 @@ def _exclude_tasks(config: dict, task_names: list[str]) -> dict:
     return config
 
 
+def read_native_one_dragon(root: Path, config_name: str) -> dict[str, Any] | None:
+    """读取 BGI 原生一条龙配置（直控来源的快照与比对用）。
+
+    不存在、非 JSON 对象或为空时返回 None——调用方据此判断"这份原生配置不可接管"。
+    """
+    config = read_file(one_dragon_path(root, resolve_config_name(config_name)))
+    return config if isinstance(config, dict) and config else None
+
+
+def write_native_one_dragon(
+    root: Path,
+    config_name: str,
+    groups: list[str],
+    daily_reward_party_name: str = "",
+    party_name: str = "",
+    auto_boss_strategy_name: str = "",
+    custom_groups: list[dict[str, Any]] | None = None,
+    manage_custom_groups: bool = False,
+    queue: list[dict[str, Any]] | None = None,
+    exclude_task_names: list[str] | None = None,
+    native_step_settings: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """把面板值写入 **BGI 原生一条龙配置**（直控来源 + 快速配置开启时使用）。
+
+    与 ``write_user_one_dragon`` 的区别：
+    - 种子是**该原生配置自身**（保留用户的一条龙结构与自定义组定义，不回退内置模板）；
+    - 写入目标是**同一个原生文件**，不创建 MAS 槽位、不物化 ``MAS-`` 前缀配置组；
+    - 调用方负责运行前快照、运行/异常结束还原（见 AutoProxy 的
+      ``_backup_one_dragon_config`` / ``_restore_one_dragon_config``）。
+
+    非组字段（领取奖励队伍 / 战斗队伍 / 战斗策略 / 周表默认行）与槽位路径同口径：
+    仅在非空时写入，留空则保持原生配置现有值。
+
+    Returns:
+        写入后的配置 dict；原生配置不存在或非法时返回 None（不凭空造一份）。
+    """
+    name = resolve_config_name(config_name)
+    path = one_dragon_path(root, name)
+    config = read_file(path)
+    if not isinstance(config, dict) or not config:
+        return None
+    config = apply_groups(
+        config,
+        groups,
+        custom_groups=custom_groups,
+        manage_customs=manage_custom_groups,
+        queue=queue,
+    )
+    if exclude_task_names:
+        config = _exclude_tasks(config, exclude_task_names)
+    if daily_reward_party_name:
+        config["DailyRewardPartyName"] = daily_reward_party_name
+    if party_name:
+        config["PartyName"] = party_name
+        # 一条龙自动首领讨伐从 AutoBossTeamName 取队伍（OneDragonTaskItem.cs）
+        config["AutoBossTeamName"] = party_name
+    if auto_boss_strategy_name:
+        config["AutoBossStrategyName"] = auto_boss_strategy_name
+    # 通用战斗队伍/策略权威覆盖周表「默认」行（与槽位路径同口径，理由见
+    # write_user_one_dragon：默认行即「通用队伍」映射，否则其旧值会遮挡通用值）
+    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+        _wd = config.get(_wd_key)
+        if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
+            if party_name:
+                _wd["default"][_team_key] = party_name
+            if auto_boss_strategy_name:
+                _wd["default"]["strategy"] = auto_boss_strategy_name
+    # 四项战斗组的 per-任务设置（见 one_dragon_plan.RIGHTBAR_TO_PLAN 的存储归属注释）：
+    # 首领讨伐/地脉花落本文件；秘境/幽境落全局 config.json 各自段——两个写入函数的
+    # 白名单会自行只收属于自己的键，此处按组名分派即可。
+    if native_step_settings:
+        for _group in ("自动首领讨伐", "自动地脉花"):
+            config.update(native_step_settings.get(_group) or {})
+        _domain = native_step_settings.get("自动秘境") or {}
+        if _domain:
+            write_global_domain_settings(root, _domain)
+        _stygian = native_step_settings.get("自动幽境危战") or {}
+        if _stygian:
+            write_global_stygian_settings(root, _stygian)
+    write_file(path, config)
+    return config
+
+
 def write_user_one_dragon(
     root: Path,
     script_id: str,
@@ -1410,7 +1549,8 @@ def write_user_one_dragon(
     manage_custom_groups: bool = False,
     queue: list[dict[str, Any]] | None = None,
     exclude_task_names: list[str] | None = None,
-    exclude_materialized_custom_groups: bool = False,
+    boss_reward_recognition: bool | None = None,
+    materialize_custom_groups: bool = True,
 ) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
@@ -1473,6 +1613,10 @@ def write_user_one_dragon(
         slot_config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         slot_config["AutoBossStrategyName"] = auto_boss_strategy_name
+    if boss_reward_recognition is not None:
+        # 掉落统计：强制开启首领讨伐的「奖励识别」。一条龙原生路径读的正是这个顶层字段
+        # （OneDragonTaskItem.cs:157），执行层另经 Plan.settings 写入 Param，两条路径都覆盖。
+        slot_config["AutoBossRewardRecognitionEnabled"] = bool(boss_reward_recognition)
     # 通用战斗队伍/策略权威覆盖周表「默认」行：周表默认行本即「通用队伍」映射，
     # 应与顶部「通用战斗队伍/策略」同源生效，否则会以其旧值遮挡通用队伍/策略
     # （main.js 选队：秘境 todayRow||defaultRow||s.partyName 与 todayRow||defaultRow||s.combatStrategyPath；
@@ -1511,18 +1655,14 @@ def write_user_one_dragon(
         _s = str(_e.get("step") or "").strip()
         if _n and _s and _s != _n:
             _instance_base[_s] = _n
-    materialized = materialize_user_script_groups(
-        root, script_id, user_id, slot_config, _instance_base
-    )
-    # 路径 B（自定义项执行层）：把已物化的自定义配置组（MAS-{短id}-自定义配置组{N}）从原生槽位剔除，
-    # 避免与 --startGroups 执行层重复执行。组名直接取自本次物化结果（materialized 的路径 stem），
-    # 不依赖短 id/原名，与 materialize_user_script_groups 的编号规则完全同源。排除必须在物化之后：
-    # 若在 apply_groups 后即剔除，materialize 会因 TaskDefinitions 无对应项而不生成组文件。
-    if exclude_materialized_custom_groups:
-        _custom_prefix = f"MAS-{_mas_user_short_id(user_id)}-自定义配置组"
-        _exclude_tasks(
-            slot_config,
-            [p.stem for p in materialized if str(p.stem).startswith(_custom_prefix)],
+    # 逐项物化（``User/ScriptGroup/MAS-{短id}-自定义配置组{N}.json``）只服务于
+    # 「原生一条龙承接自定义项」这条路径。执行层接管时（``materialize_custom_groups=False``）
+    # 自定义项改由 ``one_dragon_bridge`` 按队列切「段」承载，这里不再物化；调用方已把这些
+    # 项的名字并进 ``exclude_task_names``，从原生副本剔除，避免两边重复执行。
+    materialized: list[Path] = []
+    if materialize_custom_groups:
+        materialized = materialize_user_script_groups(
+            root, script_id, user_id, slot_config, _instance_base
         )
 
     slot_path = one_dragon_slot_path(root)
@@ -1566,10 +1706,13 @@ def _set_leaf(config: dict, leaf: tuple[str, ...], value: str) -> bool:
 
 
 def _apply_leaves(root: Path, leaves, value: str) -> None:
-    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段；空值不写。"""
+    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段。
+
+    ``value`` **允许为空串**，表示"明确清空该叶子"：通用战斗队伍为空即"不切换队伍"，
+    必须把全局段清掉，否则 BGI 原生路径（地脉花/幽境危战直读全局段）会沿用旧队伍。
+    空值不写会让"清空"退化成"不覆盖"，正是「右栏已清空却仍切旧队伍」的成因。
+    """
     value = (value or "").strip()
-    if not value:
-        return
     with GLOBAL_CONFIG_LOCK:
         config = read_file(_global_config_path(root))
         if not isinstance(config, dict):
@@ -1585,18 +1728,58 @@ def apply_global_battle_team(root: Path, party_name: str) -> None:
     """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
 
     首领讨伐走一条龙 ``AutoBossTeamName``（见 ``write_user_one_dragon``）；地脉花/幽境危战
-    由 BGI 直读全局段，故在此补写。保留同段其余字段；空值不覆盖。
+    由 BGI 直读全局段，故在此补写。保留同段其余字段。
+
+    与 ``apply_global_battle_strategy`` 一致，**空值也写**：空队伍即"不切换队伍"，必须把
+    全局段清成空串，否则原生路径会沿用 BGI 旧队伍（右栏已清空却仍切队）。本次写入由
+    ``snapshot_global_battle_config`` / ``restore_global_battle_config`` 在运行结束还原。
     """
     _apply_leaves(root, _GLOBAL_TEAM_LEAVES, party_name)
 
 
 def apply_global_battle_strategy(root: Path, strategy_name: str) -> None:
-    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战读取。
+    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战/首领讨伐读取。
 
-    首领讨伐走一条龙 ``AutoBossStrategyName``（见 ``write_user_one_dragon``）；其余三项
-    由 BGI 直读全局段。保留同段其余字段；空值不覆盖。
+    BGI 对"步骤级策略为空"的原生回退就是读这几个全局段
+    （地脉花 ``BuildLeyLineAutoFightConfig`` 在 ``FightConfig.StrategyName`` 为空时
+    ``CopyFromAutoFightConfig(全局)``、秘境 ``AutoDomainParam.SetCombatStrategyPath()``
+    读全局 ``autoFightConfig``），所以本函数必须保证全局是**确定值**。
+
+    与 ``apply_global_battle_team`` 不同，这里**空值也要写**：留空不写会让上述回退拿到
+    BGI 配置里的旧策略（表现为「右栏已清空策略却仍用旧策略」）。故留空解析为内置的
+    「根据队伍自动选择」。保留同段其余字段。
     """
-    _apply_leaves(root, _GLOBAL_STRATEGY_LEAVES, strategy_name)
+    _apply_leaves(
+        root,
+        _GLOBAL_STRATEGY_LEAVES,
+        (strategy_name or "").strip() or DEFAULT_COMBAT_STRATEGY,
+    )
+
+
+def apply_global_reward_recognition(root: Path) -> None:
+    """把「启用奖励识别」写进 BetterGI 全局 config.json 的 ``autoDomainConfig`` 段。
+
+    「奖励识别」（BGI 侧 ``RewardRecognitionEnabled``）是掉落统计的唯一数据源。自动秘境
+    的 ``AutoDomainParam.SetDefault()`` 会从该段拷贝 ``RewardRecognitionEnabled``，一条龙
+    原生路径与执行层 ``new AutoDomainParam(...)`` 共用同一处，因此只需写这一个叶子，
+    即可保证「开启掉落统计 → 识别一定发生」。
+
+    该叶子已包含在 ``_ALL_RUNTIME_GLOBAL_LEAVES`` 内，运行结束由
+    ``restore_global_battle_config`` 随其余运行时叶子一起还原，不留残留。
+    """
+
+    with GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            config = {}
+        segment = config.get(_GLOBAL_DOMAIN_CONFIG_SEGMENT)
+        if not isinstance(segment, dict):
+            segment = {}
+            config[_GLOBAL_DOMAIN_CONFIG_SEGMENT] = segment
+        if segment.get("rewardRecognitionEnabled") is True:
+            return
+        segment["rewardRecognitionEnabled"] = True
+        write_file(_global_config_path(root), config)
 
 
 def _restore_leaf(config: dict, leaf: tuple[str, ...], existed: bool, value) -> bool:
@@ -2362,7 +2545,16 @@ def apply_groups(
             new_order.append(uid)
             if name in _BUILTIN_ONE_DRAGON_GROUPS:
                 present_builtin.add(name)
-                new_enabled[uid] = name in selected_set
+                if name in BUILTIN_COMBAT_STEP_NAMES:
+                    # 战斗 4 项（秘境/地脉花/幽境危战/首领讨伐）：启停由「Groups 纳入」
+                    # 与「队列条目 enabled（= Plan.step.enabled）」共同决定。前端关闭战斗组
+                    # 开关只把队列条目的 enabled 置 false，基名仍保留在队列供运行时纳入，
+                    # 故不能仅凭 Groups 置位，否则出现「界面关了、原生一条龙仍跑」的错位。
+                    new_enabled[uid] = (name in selected_set) and bool(
+                        entry.get("enabled", True)
+                    )
+                else:
+                    new_enabled[uid] = name in selected_set
             elif "enabled" in entry:
                 # 每实例独立开关（队列条目自带 enabled），与战斗组实例行为一致
                 new_enabled[uid] = bool(entry["enabled"])

@@ -3730,6 +3730,11 @@ class BetterGIUserConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否统计掉落（BGI「奖励识别」）：默认开启；开启后运行前强制打开奖励识别，
+        ## 并把日志里的逐轮识别结果汇总进统计通知
+        self.Notify_IfSendDropStatistics = ConfigItem(
+            "Notify", "IfSendDropStatistics", True, BoolValidator()
+        )
         ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 

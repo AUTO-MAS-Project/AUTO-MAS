@@ -914,6 +914,13 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.set_maaend(emulator_info)
 
+            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置"
+                )
+                break
+
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
@@ -1623,8 +1630,14 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_name = get_task_book_name(task)
-            if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
-                task["enabled"] = self.task_dict[task_name][task["id"]]
+            if str(task.get("taskName")) in removed_task_names:
+                task["enabled"] = False
+                if task_name in self.task_dict:
+                    self.task_dict[task_name].pop(task["id"], None)
+                continue
+
+            if task_name_value != _MAAEND_CLOSE_GAME_TASK:
+                task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
@@ -1773,6 +1786,16 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 self._write_auto_essence_options(task, sanity_task_key)
 
+        # 只跟踪本轮实际启用的任务，避免禁用条目占用同名任务的结果位置。
+        enabled_ids = {
+            task["id"] for task in maaend_tasks if task.get("enabled", False)
+        }
+        self.task_dict = {
+            name: {task_id: True for task_id in tasks if task_id in enabled_ids}
+            for name, tasks in self.task_dict.items()
+            if any(task_id in enabled_ids for task_id in tasks)
+        }
+
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
@@ -1790,6 +1813,12 @@ class AutoProxyTask(TaskExecuteBase):
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+            self.retryable = False
+        elif any(
+            message in log
+            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+        ):
+            self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
             self.retryable = False
         elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"

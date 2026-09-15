@@ -228,6 +228,25 @@
         </div>
         {% endif %}
 
+        {# 掉落统计：由 BGI「奖励识别」的逐轮日志汇总而来，按数量降序（当前仅 BetterGI 专项填该字段） #}
+        {% if drop_statistics %}
+        <div class="content">
+            <p class="result-label">掉落统计</p>
+            <table>
+                <tr>
+                    <th>掉落物品</th>
+                    <th>数量</th>
+                </tr>
+                {% for name, count in drop_statistics | dictsort(by='value', reverse=true) %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endif %}
+
         <p class="signature">AUTO-MAS 敬上</p>
 
         <div class="footer">
