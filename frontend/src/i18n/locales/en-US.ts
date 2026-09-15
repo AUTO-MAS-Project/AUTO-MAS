@@ -1358,7 +1358,8 @@ export default {
     configSourceHint:
       'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
     configSourceHintBase:
-      "Script uses the shared script-level configuration, User uses this user's own configuration; Direct control uses the script's existing configuration and MAS never writes it. Quick configuration is a separate switch.",
+      "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
+    nativeConfigSourceDescription: "Use the script's current native configuration.",
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',
@@ -3541,6 +3542,15 @@ export default {
       serverChanKey: 'ServerChan key',
       serverChanKeyTip: 'The ServerChan SendKey — see the docs for how to get one',
       serverChanPlaceholder: 'Enter the ServerChan SendKey',
+      cmccNewMsgSection: 'China Mobile 5G messaging (free, China Mobile numbers only)',
+      cmccNewMsgDoc: 'Open the notification guide',
+      cmccNewMsgEnable: 'Enable China Mobile 5G messaging notifications',
+      cmccNewMsgTip:
+        'Receive task notifications free through China Mobile 5G New Messaging (RCS); China Mobile numbers only',
+      cmccNewMsgApiKey: 'Channel API key',
+      cmccNewMsgApiKeyTip:
+        'Provided by the China Mobile 5G messaging Channel administrator; starts with ak_ or app_',
+      cmccNewMsgApiKeyPlaceholder: 'Enter the China Mobile 5G messaging Channel API key',
       koishiSection: 'Koishi',
       koishiEnable: 'Enable Koishi notifications',
       koishiTip: 'Push notifications through Koishi',

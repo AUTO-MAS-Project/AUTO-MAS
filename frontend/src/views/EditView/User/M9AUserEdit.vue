@@ -22,11 +22,28 @@
             :loading="loading"
             @save="handleFieldSave"
             @mode-change="handleConfigModeChange"
-            @quick-config-change="handleQuickConfigChange"
           />
 
+          <a-flex
+            class="section-header"
+            justify="space-between"
+            align="center"
+            wrap="wrap"
+            gap="small"
+          >
+            <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
+            <a-space>
+              <span>{{ t('edit.enableQuickConfiguration') }}</span>
+              <a-switch
+                :checked="formData.Info.IfQuickConfig"
+                :disabled="loading || isInitializing || isSaving"
+                :aria-label="t('edit.enableQuickConfiguration')"
+                @change="handleQuickConfigChange"
+              />
+            </a-space>
+          </a-flex>
           <TaskQueueSection
-            v-if="formData.Info.Mode !== '直控'"
+            v-if="formData.Info.IfQuickConfig"
             v-model:task-queue="taskQueue"
             :script-id="scriptId"
             :loading="loading"
@@ -81,7 +98,7 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, isSaving } = useSaveQueue()
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
@@ -174,7 +191,7 @@ watch(
 const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || !userId) return
 
-  await enqueue(async () => {
+  return await enqueue(async () => {
     try {
       const parts = key.split('.')
       let userData: Record<string, any> = {}
@@ -190,8 +207,9 @@ const handleFieldSave = async (key: string, value: any) => {
         userData = { Info: { Name: value } }
       }
 
-      await updateUser(scriptId, userId, userData)
-      logger.info(`用户配置已保存: ${key}`)
+      const success = await updateUser(scriptId, userId, userData)
+      if (success) logger.info(`用户配置已保存: ${key}`)
+      return success
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`保存失败: ${errorMsg}`)
@@ -201,8 +219,11 @@ const handleFieldSave = async (key: string, value: any) => {
 
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
   formData.Info.IfQuickConfig = value
-  await handleFieldSave('Info.IfQuickConfig', value)
+  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
 }
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存

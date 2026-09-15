@@ -3757,11 +3757,8 @@ class BetterGIUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append({"text": f"上次：{last_status}", "color": "green"})
 
-        # 用户独立配置：一条龙固定走「MAS独立配置」槽位（名称冻结），仅直控来源
-        # 显示脚本原生配置名。判据用配置来源 Mode 而非旧版 IfUseMasConfig——
-        # 后者是「用户独立配置」时代的遗留开关，直控+关闭时它仍为 True 会让标签
-        # 谎称 MAS 独立配置，与运行时「直控零写入」的实际行为矛盾。
-        if self.get("Info", "Mode") != "直控":
+        # 快速配置开启时运行 MAS 槽位，关闭时运行所选原生配置。
+        if self.get("Info", "IfQuickConfig"):
             config_name = "MAS独立配置"
         else:
             config_name = self.get("Task", "OneDragonConfigName") or "未设置"
@@ -4729,6 +4726,14 @@ class GlobalConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否启用中国移动新消息通知
+        self.Notify_IfCMCCNewMsg = ConfigItem(
+            "Notify", "IfCMCCNewMsg", False, BoolValidator()
+        )
+        ## 中国移动新消息 Channel API Key
+        self.Notify_CMCCNewMsgApiKey = ConfigItem(
+            "Notify", "CMCCNewMsgApiKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 

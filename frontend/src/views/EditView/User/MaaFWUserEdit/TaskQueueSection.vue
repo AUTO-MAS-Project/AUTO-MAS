@@ -1,7 +1,6 @@
 <template>
   <div class="form-section">
     <div class="section-header section-header-with-action">
-      <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
       <a-space>
         <a-button
           :loading="interfaceLoading"

@@ -1,7 +1,6 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.taskConfiguration') }}</h3>
       <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
     </div>
 

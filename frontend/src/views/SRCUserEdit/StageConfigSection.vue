@@ -1,9 +1,5 @@
 <template>
   <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.stageConfiguration') }}</h3>
-    </div>
-
     <!-- 第一行：刷取类型 | 当前生效关卡 -->
     <a-row :gutter="24">
       <a-col :span="12">

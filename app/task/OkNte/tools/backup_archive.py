@@ -43,7 +43,6 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -51,6 +50,7 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
+from app.utils.io import atomic_write, swap_in_dir
 
 from ..config_schema import (
     _FALLBACK_LABELS,
@@ -58,6 +58,7 @@ from ..config_schema import (
     DAILY_ROUTINE_CONFIGS_FILE,
     DAILY_ROUTINE_ITEMS,
     DAILY_ROUTINE_TASK_FILE,
+    ensure_oknte_daily_routine_configs,
 )
 
 logger = get_logger("OK-NTE 配置备份")
@@ -107,6 +108,34 @@ def mas_config_dir(script_id: str, user_id: str) -> Path:
     return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
 
 
+def quick_config_dir(script_id: str, user_id: str) -> Path:
+    return mas_config_dir(script_id, user_id).with_name("QuickConfig")
+
+
+def ensure_quick_config_dir(script_id: str, user_id: str, script_config) -> Path:
+    """仅首次从旧用户配置或来源初始化面板；后续切来源不覆盖已保存值。"""
+
+    target = quick_config_dir(script_id, user_id)
+    if not target.exists() or not any(target.iterdir()):
+        source = mas_config_dir(script_id, user_id)
+        if not source.is_dir() or not any(source.iterdir()):
+            source = mas_config_dir(script_id, "Default")
+        if not source.is_dir() or not any(source.iterdir()):
+            raw_path = str(script_config.get("Script", "ConfigPath") or "").strip()
+            if not raw_path:
+                raise ValueError("请先设置 OK-NTE 配置路径")
+            source = Path(raw_path)
+        if source.is_file():
+            atomic_write(target / source.name, source.read_bytes())
+        elif source.is_dir():
+            swap_in_dir(source, target)
+        else:
+            raise FileNotFoundError("请先在 OK-NTE 中保存设置")
+    if script_config.get("Script", "ConfigPathMode") == "Folder":
+        ensure_oknte_daily_routine_configs(target)
+    return target
+
+
 def collect_config_files(config_path: Path, mode: str) -> dict[str, Path] | None:
     """收集当前原生配置文件集；配置不存在（或目录为空）返回 ``None``。
 
@@ -142,9 +171,15 @@ def archive_mas_backup(
     """
 
     mas_dir = Path(mas_dir)
-    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+    quick_dir = mas_dir.with_name("QuickConfig")
+    files = dir_files(mas_dir) if mas_dir.is_dir() else {}
+    if quick_dir.is_dir():
+        files.update(
+            {f"QuickConfig/{name}": path for name, path in dir_files(quick_dir).items()}
+        )
+    if not files:
         return None
-    dest = archive_dir(mas_dir, mas_backup_root(script_id, user_id), force=force)
+    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("用户 MAS 配置无变化，跳过归档")
         return None
@@ -168,9 +203,16 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
     """把归档恢复到 MAS 用户 ConfigFile（恢复前自动归档当前，误恢复可找回）。"""
 
     mas_dir = Path(mas_dir)
-    if mas_dir.is_dir() and any(mas_dir.iterdir()):
-        archive_mas_backup(script_id, user_id, mas_dir, force=True)
+    archive_mas_backup(script_id, user_id, mas_dir, force=True)
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+    restored_quick = mas_dir / "QuickConfig"
+    quick_dir = quick_config_dir(script_id, user_id)
+    if restored_quick.is_dir():
+        swap_in_dir(restored_quick, quick_dir)
+        shutil.rmtree(restored_quick)
+    else:
+        # 旧备份没有分开的面板目录，以旧配置恢复面板，避免残留较新的覆盖值。
+        swap_in_dir(mas_dir, quick_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
 
 
@@ -333,6 +375,8 @@ def build_backup_file_summary(
     （恢复时仍会随备份完整写回）。
     """
 
+    if (backup_dir / "QuickConfig").is_dir():
+        backup_dir = backup_dir / "QuickConfig"
     files: list[dict] = []
     for rel in sorted(dir_files(backup_dir)):
         if "/" in rel or not rel.lower().endswith(".json"):
