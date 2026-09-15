@@ -442,6 +442,11 @@ class EmulatorConfig(ConfigBase):
         self.Info_ForceKillOnClose = ConfigItem(
             "Info", "ForceKillOnClose", False, BoolValidator()
         )
+        ## 启动 MuMu 实例前先关闭已在运行的实例并强力清理残留进程
+        ## 用于已有非管理员实例导致新实例无法以管理员身份启动的场景; 会关掉全部实例, 多开慎用
+        self.Info_ForceKillBeforeLaunch = ConfigItem(
+            "Info", "ForceKillBeforeLaunch", False, BoolValidator()
+        )
 
         super().__init__()
 

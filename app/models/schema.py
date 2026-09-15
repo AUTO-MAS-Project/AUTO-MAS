@@ -801,6 +801,9 @@ class EmulatorConfig_Info(BaseModel):
     ForceKillOnClose: Optional[bool] = Field(
         default=None, description="关闭 MuMu 时强力清理残留进程"
     )
+    ForceKillBeforeLaunch: Optional[bool] = Field(
+        default=None, description="启动 MuMu 前先关闭已在运行的实例并强力清理残留进程"
+    )
 
 
 class EmulatorConfig(BaseModel):

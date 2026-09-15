@@ -2126,6 +2126,9 @@ export default {
     forceCloseLabel: 'Force close',
     forceCloseTip:
       'Kill leftover MuMu processes by name. May affect other instances — use with care.',
+    forceCleanLaunchLabel: 'Force clean before launch',
+    forceCleanLaunchTip:
+      'Shut down every running MuMu instance and kill leftover processes before launching, so an existing non-admin instance no longer blocks an elevated launch. Closes all running MuMu instances — unsaved data may be lost.',
     on: 'On',
     off: 'Off',
     deviceList: 'Devices',

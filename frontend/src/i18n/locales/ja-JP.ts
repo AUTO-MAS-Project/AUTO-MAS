@@ -1788,6 +1788,9 @@ export default {
     forceCloseLabel: '強制終了',
     forceCloseTip:
       'プロセス名で MuMu の残留プロセスを終了します。他のインスタンスに影響する場合があるため、多重起動時は注意してください。',
+    forceCleanLaunchLabel: '起動前に強制クリーンアップ',
+    forceCleanLaunchTip:
+      '起動前に実行中の MuMu インスタンスをすべて終了し、残留プロセスを終了します。通常権限のインスタンスが残っていて管理者権限で起動できない問題に対処します。実行中の MuMu インスタンスはすべて閉じられ、未保存のデータは失われる可能性があります。',
     on: 'オン',
     off: 'オフ',
     deviceList: 'デバイス一覧',

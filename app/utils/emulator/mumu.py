@@ -47,6 +47,8 @@ MUMU_FORCE_KILL_KEYWORDS = (
     "mumunxmain",
     "mumuvmmheadless",
 )
+# 强力清理后等进程真正退出的上限（秒），kill 是异步的，发完信号不等于已经没了
+MUMU_FORCE_KILL_WAIT_SECONDS = 10
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
 
@@ -281,6 +283,11 @@ class MumuManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
+        # 启动前强力清理要放在检查多开器窗口之前：清理会把多开器一起关掉，
+        # 之后按「启动前没开多开器」的口径处理启动过程中弹出的窗口
+        if self.config.get("Info", "ForceKillBeforeLaunch"):
+            await self._force_clear_before_launch()
+
         if_close_mumu_nx = await self.find_mumu_nx_window() is None
 
         # 启动实例前关闭 MuMu 应用保活
@@ -392,25 +399,137 @@ class MumuManager(DeviceBase):
             if self.config.get("Info", "ForceKillOnClose"):
                 self._force_kill_mumu_processes()
 
-    def _force_kill_mumu_processes(self) -> None:
-        """按 MuMu 固定进程白名单清理关闭后的残留进程。"""
+    async def _list_running_instances(self) -> dict[str, str]:
+        """列出在线或启动中的实例，返回 ``{索引: 名称}``。"""
 
+        data_json = self._decode_polluted_json(
+            await self.get_device_info("all"), self._has_device_entries
+        )
+        return {
+            str(value["index"]): str(value["name"])
+            for value in self._extract_device_entries(data_json)
+            if self._get_status_from_data(value) != DeviceStatus.OFFLINE
+        }
+
+    async def _force_clear_before_launch(self) -> None:
+        """启动前关闭已在运行的 MuMu 实例并强力清理残留进程。
+
+        已有非管理员权限的实例在跑时，MuMu 会拒绝新实例以管理员身份启动，
+        所以先对在线 / 启动中的实例逐个 ``control shutdown`` 并等它们下线，
+        再按固定进程白名单强力清理。清理范围是整台机器上的 MuMu 进程，
+        与「强力关闭」相同，会关掉全部实例。
+
+        Raises:
+            RuntimeError: 残留进程无法结束。
+        """
+
+        running = await self._list_running_instances()
+        if running:
+            logger.warning(
+                "启动前强力清理：将关闭 MuMu 实例 "
+                + "、".join(f"{index}({name})" for index, name in running.items())
+            )
+            for index in running:
+                try:
+                    result = await ProcessRunner.run_process(
+                        self.emulator_path,
+                        "control",
+                        "-v",
+                        index,
+                        "shutdown",
+                        timeout=self.config.get("Info", "MaxWaitTime"),
+                        if_merge_std=True,
+                        breakaway=True,
+                    )
+                except Exception as e:
+                    logger.warning(f"关闭 MuMu 实例 {index} 失败: {e}")
+                else:
+                    if result.returncode != 0:
+                        logger.warning(
+                            f"关闭 MuMu 实例 {index} 失败: {result.stdout.strip()}"
+                        )
+
+            deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            while time.monotonic() < deadline:
+                # 实例退出过程中 info 偶尔会失败，和 getStatus 一样只记日志继续等
+                try:
+                    running = await self._list_running_instances()
+                except Exception as e:
+                    logger.warning(f"等待 MuMu 实例关闭时读取实例状态失败: {e}")
+                else:
+                    if not running:
+                        logger.info("已在运行的 MuMu 实例均已关闭")
+                        break
+                await asyncio.sleep(1)
+            else:
+                logger.warning(
+                    "等待 MuMu 实例关闭超时，仍在运行: "
+                    + "、".join(running)
+                    + "，转为强力清理"
+                )
+        else:
+            logger.info("启动前强力清理：没有在运行的 MuMu 实例")
+
+        alive = await self._wait_processes_exit(self._force_kill_mumu_processes())
+        if alive:
+            raise RuntimeError(
+                "启动前强力清理失败，以下 MuMu 进程无法结束: "
+                + "、".join(self._describe_process(proc) for proc in alive)
+            )
+
+    def _force_kill_mumu_processes(self) -> list[psutil.Process]:
+        """按 MuMu 固定进程白名单清理残留进程。
+
+        Returns:
+            list[psutil.Process]: 命中白名单、已发过结束信号的进程；调用方要确认
+            它们真的退出时用 :meth:`_wait_processes_exit` 再等一次。
+        """
+
+        targets = [
+            proc
+            for proc in psutil.process_iter(["pid", "name", "exe"])
+            if self._is_mumu_force_kill_target(
+                proc.info.get("name") or "", proc.info.get("exe") or ""
+            )
+        ]
+        if not targets:
+            logger.info("未发现需要强力清理的 MuMu 残留进程")
+            return []
+
+        logger.info(
+            "强力清理 MuMu 残留进程: "
+            + "、".join(self._describe_process(proc) for proc in targets)
+        )
         killed_count = 0
-        for proc in psutil.process_iter(["pid", "name", "exe"]):
+        for proc in targets:
             try:
-                proc_name = proc.info.get("name") or ""
-                proc_exe = proc.info.get("exe") or ""
-                if not self._is_mumu_force_kill_target(proc_name, proc_exe):
-                    continue
-
                 killed_count += self._kill_process_tree(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
                 logger.warning(f"强力清理 MuMu 残留进程失败: {e}")
 
-        if killed_count > 0:
-            logger.info(f"MuMu 残留进程清理完成，共结束 {killed_count} 个进程")
-        else:
-            logger.info("未发现需要强力清理的 MuMu 残留进程")
+        logger.info(f"MuMu 残留进程清理完成，共结束 {killed_count} 个进程")
+        return targets
+
+    @staticmethod
+    async def _wait_processes_exit(
+        procs: list[psutil.Process],
+    ) -> list[psutil.Process]:
+        """等待进程退出，返回超时仍存活的进程。
+
+        ``is_running`` 同时比对 pid 与创建时间，多开器被 MuMu 服务保活拉起的
+        新进程不会被当成没杀掉的旧进程。
+        """
+
+        deadline = time.monotonic() + MUMU_FORCE_KILL_WAIT_SECONDS
+        alive = list(procs)
+        while alive and time.monotonic() < deadline:
+            await asyncio.sleep(0.2)
+            alive = [proc for proc in alive if proc.is_running()]
+        return alive
+
+    @staticmethod
+    def _describe_process(proc: psutil.Process) -> str:
+        return f"{proc.info.get('name') or '?'}({proc.pid})"
 
     def _kill_process_tree(self, proc: psutil.Process) -> int:
         killed_count = 0
