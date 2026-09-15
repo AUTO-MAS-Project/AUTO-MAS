@@ -68,6 +68,12 @@ _MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
 _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
+
+# 右栏「通用战斗策略」留空时的解析结果（公开别名）。
+# 策略侧没有"不指定"这种语义：BGI 各处对空策略的回退是「读全局 autoFightConfig」
+# （AutoLeyLineOutcropTask.BuildLeyLineAutoFightConfig / AutoDomainParam.SetCombatStrategyPath）
+# 或直接抛「策略文件不存在」，所以留空必须解析成一个确定值，否则会沿用 BGI 配置里的旧策略。
+DEFAULT_COMBAT_STRATEGY = _AUTO_BOSS_BUILTIN_STRATEGY
 # 自定义策略文件所在目录（{RootPath}/User/AutoFight/*.txt）
 _AUTO_FIGHT_REL_DIR = Path("User") / "AutoFight"
 
@@ -105,10 +111,14 @@ _GLOBAL_TEAM_LEAVES = (
 )
 
 # 通用战斗策略落到的叶子路径
+# autoBossConfig 也要写：执行层「自动首领讨伐」走 dispatcher.runAutoBossTask(new AutoBossParam())，
+# 而 AutoBossParam 无参构造只读 autoBossConfig（不读一条龙里的 AutoBossStrategyName），
+# 若此处不写，右栏清空策略后它仍会用 BGI 自己的 autoBossConfig.strategyName 旧值。
 _GLOBAL_STRATEGY_LEAVES = (
     ("autoFightConfig", "strategyName"),
     ("autoLeyLineOutcropConfig", "fightConfig", "strategyName"),
     ("autoStygianOnslaughtConfig", "strategyName"),
+    ("autoBossConfig", "strategyName"),
 )
 
 # 全部待补写叶子路径：apply 用分组，快照/还原用全集
@@ -1561,10 +1571,13 @@ def _set_leaf(config: dict, leaf: tuple[str, ...], value: str) -> bool:
 
 
 def _apply_leaves(root: Path, leaves, value: str) -> None:
-    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段；空值不写。"""
+    """把 ``value`` 补写到 config.json 的若干叶子路径，保留同段其余字段。
+
+    ``value`` **允许为空串**，表示"明确清空该叶子"：通用战斗队伍为空即"不切换队伍"，
+    必须把全局段清掉，否则 BGI 原生路径（地脉花/幽境危战直读全局段）会沿用旧队伍。
+    空值不写会让"清空"退化成"不覆盖"，正是「右栏已清空却仍切旧队伍」的成因。
+    """
     value = (value or "").strip()
-    if not value:
-        return
     with GLOBAL_CONFIG_LOCK:
         config = read_file(_global_config_path(root))
         if not isinstance(config, dict):
@@ -1580,18 +1593,32 @@ def apply_global_battle_team(root: Path, party_name: str) -> None:
     """把通用战斗队伍补写进 BetterGI 全局配置，供一条龙的地脉花/幽境危战读取。
 
     首领讨伐走一条龙 ``AutoBossTeamName``（见 ``write_user_one_dragon``）；地脉花/幽境危战
-    由 BGI 直读全局段，故在此补写。保留同段其余字段；空值不覆盖。
+    由 BGI 直读全局段，故在此补写。保留同段其余字段。
+
+    与 ``apply_global_battle_strategy`` 一致，**空值也写**：空队伍即"不切换队伍"，必须把
+    全局段清成空串，否则原生路径会沿用 BGI 旧队伍（右栏已清空却仍切队）。本次写入由
+    ``snapshot_global_battle_config`` / ``restore_global_battle_config`` 在运行结束还原。
     """
     _apply_leaves(root, _GLOBAL_TEAM_LEAVES, party_name)
 
 
 def apply_global_battle_strategy(root: Path, strategy_name: str) -> None:
-    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战读取。
+    """把通用战斗策略补写进 BetterGI 全局配置，供一条龙的秘境/地脉花/幽境危战/首领讨伐读取。
 
-    首领讨伐走一条龙 ``AutoBossStrategyName``（见 ``write_user_one_dragon``）；其余三项
-    由 BGI 直读全局段。保留同段其余字段；空值不覆盖。
+    BGI 对"步骤级策略为空"的原生回退就是读这几个全局段
+    （地脉花 ``BuildLeyLineAutoFightConfig`` 在 ``FightConfig.StrategyName`` 为空时
+    ``CopyFromAutoFightConfig(全局)``、秘境 ``AutoDomainParam.SetCombatStrategyPath()``
+    读全局 ``autoFightConfig``），所以本函数必须保证全局是**确定值**。
+
+    与 ``apply_global_battle_team`` 不同，这里**空值也要写**：留空不写会让上述回退拿到
+    BGI 配置里的旧策略（表现为「右栏已清空策略却仍用旧策略」）。故留空解析为内置的
+    「根据队伍自动选择」。保留同段其余字段。
     """
-    _apply_leaves(root, _GLOBAL_STRATEGY_LEAVES, strategy_name)
+    _apply_leaves(
+        root,
+        _GLOBAL_STRATEGY_LEAVES,
+        (strategy_name or "").strip() or DEFAULT_COMBAT_STRATEGY,
+    )
 
 
 def apply_global_reward_recognition(root: Path) -> None:
