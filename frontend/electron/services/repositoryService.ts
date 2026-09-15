@@ -39,111 +39,78 @@ function killProcessTree(proc: ReturnType<typeof spawn>): void {
 }
 
 /**
- * 结束【本应用自带 git】的残留进程。
+ * 删除仓库目录；被残留 git 进程占住时先清理它们再删。
  *
- * 上一次 clone/fetch 超时被半途终止后，git 会留下仍在运行、且工作目录停在 repo 内的
- * 子进程（git-remote-https / git.exe）。这类孤儿的 cwd 占着 repo，会让删除目录一直报
- * EPERM，重试再多次也没用，用户只能重启电脑。这里按可执行文件路径把它们清理掉：
- * 只匹配我们自己的 environment/git 下的 git，不会误伤用户系统的其他 git 进程。
- *
- * 注意安装目录可能是 junction（ExecutablePath 会显示真实目标路径），因此 junction 路径
- * 与 realpath 解析后的路径都要匹配。
+ * 上一次 clone/fetch 超时只结束了父进程，git 子进程会成为孤儿，工作目录停在 repo 内，
+ * 导致删除一直 EPERM、只能重启电脑。这里按可执行文件路径清理自家 environment/git 下的
+ * 残留 git；junction 安装时 ExecutablePath 显示真实路径，故 junction 与 realpath 都要匹配。
  */
-async function killLeftoverBundledGitProcesses(gitExe: string): Promise<void> {
-  if (process.platform !== 'win32') return
-
-  const gitDir = path.dirname(path.dirname(gitExe)) // <appRoot>/environment/git
-  const prefixes = [gitDir.toLowerCase()]
+async function removeRepoDir(repoPath: string, gitExe: string): Promise<void> {
   try {
-    prefixes.push(fs.realpathSync(gitDir).toLowerCase())
+    fs.rmSync(repoPath, { recursive: true, force: true })
+    return
   } catch {
-    // 目录不存在时无需处理。
+    // 目录被占用，先从残留 git 进程手里抢回来。
   }
 
-  const script =
-    "Get-CimInstance Win32_Process -Filter \"Name='git.exe'\" | " +
-    'Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress'
-
-  const pids = await new Promise<number[]>(resolve => {
-    execFile(
-      'powershell',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-      (_error, stdout) => {
-        try {
-          const raw = (stdout ?? '').replace(/^\uFEFF/, '').trim()
-          if (!raw) return resolve([])
-          const parsed = JSON.parse(raw)
-          const items = Array.isArray(parsed) ? parsed : [parsed]
-          resolve(
-            items
-              .filter(item => {
-                const exe = String(item?.ExecutablePath ?? '').toLowerCase()
-                return exe && prefixes.some(prefix => exe.startsWith(prefix))
-              })
-              .map(item => Number(item?.ProcessId))
-              .filter(pid => Number.isInteger(pid) && pid > 0)
-          )
-        } catch {
-          resolve([])
-        }
-      }
-    )
-  })
-
-  if (pids.length === 0) return
-  logger.warn(`清理残留 git 进程：${pids.join(', ')}`)
-  await Promise.all(
-    pids.map(
-      pid =>
-        new Promise<void>(resolve => {
-          execFile('taskkill', ['/pid', String(pid), '/t', '/f'], () => resolve())
-        })
-    )
-  )
-}
-
-/**
- * 递归删除目录并对 Windows 文件占用做有限重试。
- *
- * 强杀进程树后子进程句柄可能在几百毫秒后才真正释放，立即 rmSync 仍可能撞上
- * EBUSY/EPERM；重试即可，不必再让用户重启。目录不存在视为删除成功。
- */
-async function removeDirectoryWithRetry(
-  target: string,
-  retries: number = 5,
-  delayMs: number = 300,
-  onStuck?: () => Promise<void>
-): Promise<boolean> {
-  let recovered = false
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  if (process.platform === 'win32') {
+    const gitDir = path.dirname(path.dirname(gitExe))
+    const prefixes = [gitDir.toLowerCase()]
     try {
-      fs.rmSync(target, { recursive: true, force: true })
-      return true
-    } catch (error) {
-      if (!fs.existsSync(target)) return true
-      const code = (error as NodeJS.ErrnoException)?.code
-      const retryable = code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY'
-      if (!retryable) {
-        logger.warn('删除目录失败（' + (code ?? '未知错误') + '）：' + target)
-        return false
-      }
-      // 第一次撞上占用时，尝试清掉上一轮遗留的 git 孤儿进程后再删；成功才继续等待重试。
-      if (onStuck && !recovered) {
-        recovered = true
-        await onStuck()
-        continue
-      }
-      if (attempt === retries) {
-        logger.warn('删除目录失败（' + (code ?? '未知错误') + '）：' + target)
-        return false
-      }
-      await new Promise(resolve => setTimeout(resolve, delayMs))
+      prefixes.push(fs.realpathSync(gitDir).toLowerCase())
+    } catch {
+      // git 尚未安装，没有需要清理的进程。
+    }
+
+    const stdout = await new Promise<string>(resolve => {
+      execFile(
+        'powershell',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "Get-CimInstance Win32_Process -Filter \"Name='git.exe'\" | Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress",
+        ],
+        { windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+        (_error, out) => resolve(out ?? '')
+      )
+    })
+
+    let items: Array<{ ProcessId?: number; ExecutablePath?: string }> = []
+    try {
+      const parsed = JSON.parse(stdout.replace(/^\uFEFF/, '').trim() || '[]')
+      items = Array.isArray(parsed) ? parsed : [parsed]
+    } catch {
+      // 解析失败时按没有残留进程处理，删除会在下面再试一次。
+    }
+
+    const pids = items
+      .filter(item => {
+        const exe = String(item.ExecutablePath ?? '').toLowerCase()
+        return exe !== '' && prefixes.some(prefix => exe.startsWith(prefix))
+      })
+      .map(item => Number(item.ProcessId))
+      .filter(pid => Number.isInteger(pid) && pid > 0)
+
+    if (pids.length > 0) {
+      logger.warn(`清理残留 git 进程：${pids.join(', ')}`)
+      await Promise.all(
+        pids.map(
+          pid =>
+            new Promise<void>(resolve => {
+              execFile('taskkill', ['/pid', String(pid), '/t', '/f'], () => resolve())
+            })
+        )
+      )
     }
   }
-  return !fs.existsSync(target)
-}
 
+  try {
+    fs.rmSync(repoPath, { recursive: true, force: true })
+  } catch {
+    throw new Error('仓库目录被占用且无法删除，请关闭占用该目录的程序后重试')
+  }
+}
 // ==================== 类型定义 ====================
 
 export interface RepositoryCheckResult {
@@ -291,13 +258,8 @@ export class RepositoryService {
     const gitDir = path.join(this.repoPath, '.git')
     if (!fs.existsSync(gitDir)) {
       logger.info('repo 文件夹存在但不是 Git 仓库')
-      // 清理无效的 repo 文件夹；被占用删不掉时直接判失败，避免在残缺目录上继续 clone
-      const removed = await removeDirectoryWithRetry(this.repoPath, 5, 300, () =>
-        killLeftoverBundledGitProcesses(this.gitExe)
-      )
-      if (!removed) {
-        return { exists: true, isGitRepo: false, isHealthy: false }
-      }
+      // 清理无效的 repo 文件夹
+      await removeRepoDir(this.repoPath, this.gitExe)
       return { exists: false, isGitRepo: false, isHealthy: false }
     }
 
@@ -311,25 +273,15 @@ export class RepositoryService {
         return { exists: true, isGitRepo: true, isHealthy: true, currentBranch }
       } else {
         logger.warn('本地仓库存在问题，需要清理')
-        // 清理有问题的仓库；删不掉则保留为失败状态，交给上层报错而非继续写入
-        const removed = await removeDirectoryWithRetry(this.repoPath, 5, 300, () =>
-        killLeftoverBundledGitProcesses(this.gitExe)
-      )
-        if (!removed) {
-          return { exists: true, isGitRepo: true, isHealthy: false }
-        }
+        // 清理有问题的仓库
+        await removeRepoDir(this.repoPath, this.gitExe)
         return { exists: false, isGitRepo: false, isHealthy: false }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`检查仓库健康状态失败: ${errorMsg}`)
-      // 清理有问题的仓库；删不掉则按现存但不健康处理，避免在锁目录上继续 clone
-      const removed = await removeDirectoryWithRetry(this.repoPath, 5, 300, () =>
-        killLeftoverBundledGitProcesses(this.gitExe)
-      )
-      if (!removed) {
-        return { exists: true, isGitRepo: true, isHealthy: false }
-      }
+      // 清理有问题的仓库
+      await removeRepoDir(this.repoPath, this.gitExe)
       return { exists: false, isGitRepo: false, isHealthy: false }
     }
   }
@@ -501,9 +453,7 @@ export class RepositoryService {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`克隆仓库失败: ${errorMsg}`)
       // 清理失败残留的半成品仓库，避免下次在残缺 .git 上反复失败（旧版只能手删 repo）
-      await removeDirectoryWithRetry(this.repoPath, 5, 300, () =>
-        killLeftoverBundledGitProcesses(this.gitExe)
-      )
+      await removeRepoDir(this.repoPath, this.gitExe)
       return { success: false, error: errorMsg }
     }
   }
@@ -677,14 +627,9 @@ export class RepositoryService {
    * 克隆仓库
    */
   private async cloneRepository(repoUrl: string): Promise<void> {
-    // 确保 repo 目录不存在；被占用删不掉就直接失败，不在残缺目录上 clone
+    // 确保 repo 目录不存在
     if (fs.existsSync(this.repoPath)) {
-      const removed = await removeDirectoryWithRetry(this.repoPath, 5, 300, () =>
-        killLeftoverBundledGitProcesses(this.gitExe)
-      )
-      if (!removed) {
-        throw new Error('旧的仓库目录被占用且无法删除，请关闭占用程序后重试')
-      }
+      await removeRepoDir(this.repoPath, this.gitExe)
     }
 
     await new Promise<void>((resolve, reject) => {
