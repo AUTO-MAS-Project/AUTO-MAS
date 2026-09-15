@@ -124,18 +124,24 @@ def build_targets() -> list[OperatorTarget]:
 
 
 def build_snapshots() -> dict[str, ProgressionSnapshot]:
+    # 专精/模组维度需要携带观测的源（skland/manual）才参与需求计算；
+    # local/default 下该维度未观测、目标暂停展开（见专精模组降级用例）
     return {
         "char_1": ProgressionSnapshot(
-            source="local",
+            source="skland",
             timestamp=1000,
             data=Progression(elite=1, level=60, masteries={}, modules={}),
         ),
-        # char_2 故意缺席：干员未拥有，走 default 全量起算
+        "char_2": ProgressionSnapshot(
+            source="skland",
+            timestamp=1000,
+            data=Progression(elite=0, level=0, masteries={}, modules={}),
+        ),
     }
 
 
 def test_build_requirements_respects_interval_and_progression() -> None:
-    """区间需求：精一消耗在 current=1 时不重复计入；未拥有干员全量起算。"""
+    """区间需求：精一消耗在 current=1 时不重复计入；未观测干员从 0 全量起算。"""
 
     requirements = {
         requirement.item_id: requirement
@@ -149,6 +155,63 @@ def test_build_requirements_respects_interval_and_progression() -> None:
     assert requirements["3302"].amount == 8
     assert requirements["30012"].amount == 10  # char_2 未拥有，精0/专0 全量
     assert requirements["mod_unlock_token"].amount == 2
+
+
+def test_build_requirements_pauses_unobserved_mastery_module() -> None:
+    """专精/模组维度未观测（local/default）时暂停展开，精英化照常。
+
+    森空岛拉取失败降级 local 后，OperBox 无专精/模组字段、空表是"没数据"
+    不是"没养成"：按 0 起算会把已达档位材料重刷一遍并虚增缺口抑制库存
+    保持（评审整改）。达成检测不受影响，目标保留，观测恢复后自动续刷。
+    """
+
+    data = build_dataset()
+    # local 源（OperBox 结构性无专精/模组字段）：只保留精英化需求
+    local_snapshots = {
+        "char_1": ProgressionSnapshot(
+            "local", 1000, Progression(elite=1, level=60, masteries={}, modules={})
+        )
+    }
+    local_targets = [
+        OperatorTarget(
+            "char_1",
+            (
+                Goal("elite", "", 2, "in_progress"),
+                Goal("mastery", "skill_1", 2, "not_started"),
+            ),
+        )
+    ]
+    local_requirements = {
+        requirement.item_id: requirement.amount
+        for requirement in build_requirements(
+            local_targets, local_snapshots, data.demands
+        )
+    }
+    assert local_requirements == {"30115": 1, "30013": 3}  # 精一→精二，无 3301/3302
+
+    # 快照缺席（default 兜底）：同样只保留精英化需求
+    # （char_2 的模组需求真实存在，旧行为会展开 30012/mod_unlock_token）
+    default_requirements = {
+        requirement.item_id: requirement.amount
+        for requirement in build_requirements(
+            [OperatorTarget("char_2", (Goal("module", "mod_1", 1),))], {}, data.demands
+        )
+    }
+    assert default_requirements == {}
+
+    # skland 观测恢复：专精重新展开（masteries 空表=真观测，从 0 全量起算）
+    skland_snapshots = {
+        "char_1": ProgressionSnapshot(
+            "skland", 1000, Progression(elite=1, level=60, masteries={}, modules={})
+        )
+    }
+    skland_requirements = {
+        requirement.item_id: requirement.amount
+        for requirement in build_requirements(
+            local_targets, skland_snapshots, data.demands
+        )
+    }
+    assert skland_requirements == {"30115": 1, "30013": 7, "3301": 4, "3302": 8}
 
 
 def test_aggregate_sums_sources() -> None:
@@ -905,7 +968,8 @@ def test_fixed_source_items_farmable_in_full_pipeline() -> None:
         fixed_source_stages={"4001": "st_main", "4006": "st_chip"},
     )
     targets = [OperatorTarget("char_1", (Goal("module", "mod_1", 1, "not_started"),))]
-    snapshots = {"char_1": ProgressionSnapshot("local", 1, Progression(0, 1, {}, {}))}
+    # module 维度需携带观测的源才展开需求（local 视为未观测），路由测试用 skland 载体
+    snapshots = {"char_1": ProgressionSnapshot("skland", 1, Progression(0, 1, {}, {}))}
     plan = build_plan(targets=targets, snapshots=snapshots, data=data, today=TODAY)
 
     entries = {(entry.item_id, entry.stage_code) for entry in plan.entries}
@@ -974,7 +1038,8 @@ def test_fixed_source_stage_closed_today_yields_no_entry_and_no_gap() -> None:
         fixed_source_stages={"4001": "st_ca"},  # CA-5：周一不开
     )
     targets = [OperatorTarget("char_1", (Goal("module", "mod_1", 1, "not_started"),))]
-    snapshots = {"char_1": ProgressionSnapshot("local", 1, Progression(0, 1, {}, {}))}
+    # module 维度需携带观测的源才展开需求（local 视为未观测），路由测试用 skland 载体
+    snapshots = {"char_1": ProgressionSnapshot("skland", 1, Progression(0, 1, {}, {}))}
 
     closed = build_plan(targets=targets, snapshots=snapshots, data=data, today=TODAY)
     assert closed.entries == ()

@@ -50,6 +50,18 @@ from .types import (
 # 合成路径搜索的深度上限（composite 表无环，防御性限制）
 _MAX_PATH_DEPTH = 5
 
+# 专精/模组维度只有这些源携带真实观测值。local（OperBoxData 结构性无
+# 专精/模组字段）与 default（兜底全零）的空表是"未观测"而不是"没养成"：
+# 按 0 起算会把已达档位的材料重刷一遍，并虚增缺口抑制库存保持。森空岛
+# 拉取失败降级 local 时，专精/模组目标应暂停展开而不是从头补刷。
+_MASTERY_MODULE_SOURCES = frozenset({"skland", "manual"})
+
+
+def _mastery_module_observed(snapshot: ProgressionSnapshot | None) -> bool:
+    """快照是否携带真实专精/模组观测（未观测时该维度不参与需求计算）。"""
+
+    return snapshot is not None and snapshot.source in _MASTERY_MODULE_SOURCES
+
 
 def _goal_current_level(progression: Progression, goal: Goal) -> int:
     """从练度取目标维度的当前等级（干员未拥有时用 default 全 0 起算）。"""
@@ -70,7 +82,9 @@ def build_requirements(
 
     等级路径严格顺序不可跳级：区间=逐档求和，天然包含中间档材料
     （中间档是要真实消耗的，属正确行为）。已达成（achieved）与待确认
-    （pending_confirm，可能已养成但无法自证）的目标不参与计算。
+    （pending_confirm，可能已养成但无法自证）的目标不参与计算；专精/模组
+    目标在快照未携带该维度观测（森空岛降级 local/default）时同样不参与
+    ——达成检测不受影响，目标保留，观测恢复后自动续刷。
     """
 
     requirements: dict[str, Requirement] = {}
@@ -81,6 +95,9 @@ def build_requirements(
             # 已达成不参与计算；待确认（可能已养成但无法自证）暂停刷取，
             # 避免用户确认前无限补刷——确认后移除，否认则恢复 in_progress
             if goal.state in ("achieved", "pending_confirm"):
+                continue
+            # 专精/模组未观测时 current 恒为 0，展开会从第一档重算需求
+            if goal.kind != "elite" and not _mastery_module_observed(snapshot):
                 continue
             current = _goal_current_level(progression, goal)
             for entry in demands.get(target.operator_id, ()):

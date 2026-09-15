@@ -299,6 +299,7 @@ export default {
     maaCultivatePickOperators: 'オペレーターを選択',
     maaCultivatePickOperatorsHint: '一図流の全テーブルから育成するオペレーターを選択します',
     maaCultivateNoOperators: 'オペレーターカタログを利用できません',
+    maaCultivateElite0: '昇進 0',
     maaCultivateElite1: '昇進 1',
     maaCultivateElite2: '昇進 2',
     maaCultivateRemove: '削除',
@@ -331,11 +332,14 @@ export default {
     maaCultivateSklandBoundRole: 'バインド済みロール',
     maaCultivateSklandUnboundHint: '森空島未バインドでは昇進目標のみ設定できます',
     maaCultivateSklandLockedHint: '森空島をバインドすると特化/モジュール目標を設定できます',
+    maaCultivateSklandDegradedHint:
+      '森空島の練度が一時的に取得できません。特化/モジュール目標は一時停止中で、回復後に自動的に再開します',
     maaCultivateGoalElite: '昇進',
     maaCultivateGoalNone: '目標を設定しない',
     maaCultivateCurrent: '現在',
     maaCultivateCurrentUnknown: '現在 ？',
-    maaCultivateCurrentUnknownHint: '練度データなし。昇進 0 / 特化 0 として見積もり',
+    maaCultivateCurrentUnknownHint:
+      '練度データなし：昇進は昇進 0 として見積もり。森空島データのない特化/モジュールは一時停止',
     maaCultivateGoalLevel1: 'レベル 1',
     maaCultivateGoalLevel2: 'レベル 2',
     maaCultivateGoalLevel3: 'レベル 3',

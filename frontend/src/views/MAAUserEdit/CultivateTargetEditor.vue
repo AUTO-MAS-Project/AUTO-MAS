@@ -190,6 +190,9 @@
           <div v-if="!sklandBound" class="skland-feedback skland-hint">
             {{ t('edit.maaCultivateSklandLockedHint') }}
           </div>
+          <div v-else-if="sklandDegraded" class="skland-feedback skland-hint">
+            {{ t('edit.maaCultivateSklandDegradedHint') }}
+          </div>
         </div>
         <a-empty
           v-else
@@ -524,8 +527,9 @@ const toggleGroup = (operatorId: string) => {
   collapsedGroups.value = next
 }
 
-// 精英化只有精 1/精 2 两档；可达上限来自目录（决策 40），0 = 不设可选档位
+// 精英化只有精 0/精 1/精 2 三档；可达上限来自目录（决策 40），0 = 不设可选档位
 const ELITE_LABEL_KEYS: Record<number, string> = {
+  0: 'edit.maaCultivateElite0',
   1: 'edit.maaCultivateElite1',
   2: 'edit.maaCultivateElite2',
 }
@@ -605,30 +609,41 @@ interface FlatGoalLine {
 
 type ProgressionInfo = ReturnType<typeof progressionOf>
 
+// 精英化只认 local/default 也算未知（无任何档案）；专精/模组只有
+// 森空岛/手填源携带观测，local（OperBox 结构性无此字段）与 default
+// （兜底）的空表是"未观测"而非"当前 0"，按 0 展示会误导用户重刷已达档位
+const MASTERY_MODULE_SOURCES = new Set(['skland', 'manual'])
+
 const currentUnknownOf = (prog: ProgressionInfo) => !prog || prog.source === 'default'
+
+// 专精/模组维度的未知判定：与后端 build_requirements 的暂停口径一致
+const dimensionUnknownOf = (prog: ProgressionInfo, kind: CultivateGoalKind) =>
+  kind !== 'elite' && !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default')
 
 const currentTextOf = (
   prog: ProgressionInfo,
   kind: CultivateGoalKind,
   targetId: string
 ): string => {
-  if (currentUnknownOf(prog)) {
+  const unknown = kind === 'elite' ? currentUnknownOf(prog) : dimensionUnknownOf(prog, kind)
+  if (unknown) {
     return t('edit.maaCultivateCurrentUnknown')
   }
   if (kind === 'elite') {
-    return `${t('edit.maaCultivateCurrent')} 精 ${prog!.elite}`
+    const eliteLabel = ELITE_LABEL_KEYS[prog!.elite]
+    return `${t('edit.maaCultivateCurrent')} ${eliteLabel ? t(eliteLabel) : prog!.elite}`
   }
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
   return `${t('edit.maaCultivateCurrent')} ${levels?.[targetId] ?? 0}`
 }
 
-// 当前档位数值；练度未知（source=default）返回 null（无法判定达成）
+// 当前档位数值；维度未知（精英化无档案 / 专精模组非森空岛观测）返回 null
 const currentLevelOf = (
   prog: ProgressionInfo,
   kind: CultivateGoalKind,
   targetId: string
 ): number | null => {
-  if (currentUnknownOf(prog)) return null
+  if (kind === 'elite' ? currentUnknownOf(prog) : dimensionUnknownOf(prog, kind)) return null
   if (kind === 'elite') return prog!.elite
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
   return levels?.[targetId] ?? 0
@@ -677,7 +692,7 @@ const eliteLineOf = (row: CultivateTargetRow): FlatGoalLine => {
 
 const itemLinesOf = (row: CultivateTargetRow, kind: 'mastery' | 'module'): FlatGoalLine[] => {
   const prog = progressionOf(row.operatorId)
-  const unknown = currentUnknownOf(prog)
+  const unknown = dimensionUnknownOf(prog, kind)
   return itemsOf(row, kind).map(item => {
     const saved = savedGoalOf(row, kind, item.value)
     const savedLevel = saved?.toLevel ?? 0
@@ -720,6 +735,18 @@ const goalGridsOf = (row: CultivateTargetRow) =>
       lines: itemLinesOf(row, kind).filter(line => !line.achieved && !line.maxed),
     }))
     .filter(grid => grid.lines.length)
+
+// 已绑定但本次快照未携带专精/模组观测（森空岛拉取失败降级本地档案）：
+// 目标保留、暂停刷取，须明确提示用户，而不是让「当前 ？」默默出现
+const sklandDegraded = computed(
+  () =>
+    sklandBound.value &&
+    rows.value.some(
+      row =>
+        (goalsOf(row, 'mastery').length > 0 || goalsOf(row, 'module').length > 0) &&
+        dimensionUnknownOf(progressionOf(row.operatorId), 'mastery')
+    )
+)
 
 // 目标行变化 → 防抖后请求需求预览（竞态守卫在父级加载器里）。
 // 组件随 PipelineRow 展开销毁重建：重进页面/重新展开时 rows 不再变化，

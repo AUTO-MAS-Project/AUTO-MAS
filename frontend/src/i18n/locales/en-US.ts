@@ -298,6 +298,7 @@ export default {
     maaCultivatePickOperators: 'Select operators',
     maaCultivatePickOperatorsHint: 'Pick operators to train from the full Yituliu table',
     maaCultivateNoOperators: 'Operator catalog unavailable',
+    maaCultivateElite0: 'Elite 0',
     maaCultivateElite1: 'Elite 1',
     maaCultivateElite2: 'Elite 2',
     maaCultivateRemove: 'Remove',
@@ -329,11 +330,14 @@ export default {
     maaCultivateSklandBoundRole: 'Bound role',
     maaCultivateSklandUnboundHint: 'Only Elite goals are available before binding Skland',
     maaCultivateSklandLockedHint: 'Bind Skland to set mastery/module goals',
+    maaCultivateSklandDegradedHint:
+      'Skland progression is temporarily unavailable; mastery/module goals are paused and will resume automatically',
     maaCultivateGoalElite: 'Elite',
     maaCultivateGoalNone: 'No goal',
     maaCultivateCurrent: 'Current',
     maaCultivateCurrentUnknown: 'Current ?',
-    maaCultivateCurrentUnknownHint: 'No progression data; estimated as Elite 0 / Mastery 0',
+    maaCultivateCurrentUnknownHint:
+      'No progression data: elite is estimated as Elite 0; mastery/module without Skland data are paused',
     maaCultivateGoalLevel1: 'Level 1',
     maaCultivateGoalLevel2: 'Level 2',
     maaCultivateGoalLevel3: 'Level 3',
