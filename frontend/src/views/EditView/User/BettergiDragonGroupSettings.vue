@@ -657,8 +657,8 @@
               class="bettergi-domain-picker-item"
               :class="{ active: region === pickRegion }"
               @click="
-                pickRegion = region
-                pickDomain = ''
+                pickRegion = region;
+                pickDomain = '';
                 pickRewardIndex = null
               "
             >
@@ -740,7 +740,7 @@
               class="bettergi-domain-picker-item"
               :class="{ active: region === pickBossRegion }"
               @click="
-                pickBossRegion = region
+                pickBossRegion = region;
                 pickBossName = ''
               "
             >

@@ -855,7 +855,7 @@
                           type="text"
                           class="task-config-gear"
                           @click="
-                            jumpTipVisible[card.app_id] = false
+                            jumpTipVisible[card.app_id] = false;
                             handleZzzodConfig()
                           "
                         >
