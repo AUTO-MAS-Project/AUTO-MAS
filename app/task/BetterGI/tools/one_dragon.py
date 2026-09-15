@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
+from app.task.proxy_helpers import CONFIG_SOURCE_SCRIPT
 from app.utils import resource_path
 from app.utils.io import read_file, write_file
 
@@ -65,6 +66,11 @@ _DEFAULT_CONFIG_NAME = "默认配置"
 # 绝不覆盖 BGI 同名的用户实配（{RootPath}/User/OneDragon/{用户所选名}.json 全程零接触）。
 # 该槽位由 MAS 独占、运行后删除；名称避免与常见用户配置名冲突。
 _MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
+
+# 脚本级共享配置的 owner 标识：「脚本」来源的用户共读共写同一份 per-user 形态的副本
+# （``data/{script_id}/Default/...``），与 MAA 的 ``data/{script_id}/Default/ConfigFile``
+# 同构。它不是真实用户，只作路径维度，由 ``_validate_user_id`` 显式放行这一个字面量。
+SCRIPT_LEVEL_OWNER = "Default"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
 _AUTO_BOSS_BUILTIN_STRATEGY = "根据队伍自动选择"
@@ -370,17 +376,29 @@ def _validate_script_id(script_id: str) -> str:
 
 
 def _validate_user_id(user_id: str) -> str:
-    """校验用户 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
+    """校验用户 ID 可安全拼入 ``data/`` 相对路径：合法 UUID，或脚本级保留 id。
 
-    MAS 的 BetterGI 用户 id 恒为 UUID；不合法抛 ``ValueError``
+    MAS 的 BetterGI 用户 id 恒为 UUID；``SCRIPT_LEVEL_OWNER`` 是「脚本配置」来源共用
+    的脚本级目录名（非 UUID，单独放行）。其余不合法值抛 ``ValueError``
     （防目录穿越/越权读写其他用户或脚本目录）。
     """
     value = str(user_id or "").strip()
+    if value == SCRIPT_LEVEL_OWNER:
+        return value
     try:
         uuid.UUID(value)
     except ValueError as e:
         raise ValueError(f"非法的用户 ID: {user_id!r}") from e
     return value
+
+
+def owner_user_id(user_id: str, mode: str) -> str:
+    """按配置来源决定 per-user 副本的 owner 维度。
+
+    「脚本」来源 = 脚本级共享一份（``SCRIPT_LEVEL_OWNER``），其余来源（用户 / 直控）
+    = 该用户自己的副本。直控不读 MAS 副本，此处仅为调用方统一口径，不再各自判断。
+    """
+    return SCRIPT_LEVEL_OWNER if mode == CONFIG_SOURCE_SCRIPT else user_id
 
 
 def _validate_file_stem(name: str) -> str:
