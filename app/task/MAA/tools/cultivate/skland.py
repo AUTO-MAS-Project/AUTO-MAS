@@ -212,7 +212,7 @@ async def fetch_skland_role_entries(
     async with skland_sign_lock:
         raw = await load_credential(account_uid)
         if not raw:
-            return []
+            return ()
 
         async with create_skland_client(proxy=proxy) as client:
             device_id = await get_cached_device_id(proxy, client=client)

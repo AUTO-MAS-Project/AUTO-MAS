@@ -153,8 +153,8 @@
               >
             </div>
             <!-- 目标列表：选中干员即列出全部专精+全部模组（精英化在标题行），
-                 每个目标一行：选择器 → 超限 → 名称 → 当前 → 状态；未设目标=
-                 空选项（清空即移除），没有添加/删除流程。未绑定时只读：配置
+                 每个目标一行：名称 → 当前 → 超限/状态标签 → 档位选择器（最右成列）；
+                 未设目标=空选项（清空即移除），没有添加/删除流程。未绑定时只读：配置
                  里的目标不因绑定失效而在界面上消失，仍可见可清，避免留下
                  看不见又清不掉的条目 -->
             <div v-show="!isGroupCollapsed(row)">
@@ -511,7 +511,7 @@ const operatorLabelById = computed(
 )
 const operatorName = (operatorId: string) => operatorLabelById.value.get(operatorId) ?? operatorId
 
-// 每个干员组独立折叠（默认展开）：标题行保留精英化信息，专精/模组九宫格可收起
+// 每个干员组独立折叠（默认展开）：标题行保留精英化信息，专精/模组逐行列表可收起
 const collapsedGroups = ref<Set<string>>(new Set())
 const isGroupCollapsed = (row: CultivateTargetRow) => collapsedGroups.value.has(row.operatorId)
 const toggleGroup = (operatorId: string) => {
@@ -737,7 +737,8 @@ onMounted(() => {
   if (rows.value.length) {
     props.loadCultivatePreview(serializeCultivateTargets(rows.value))
   }
-  // 已绑定时拉一次角色列表以回显角色名（未绑定不请求；下拉展开也会刷新）
+  // 已绑定时拉一次角色列表以回显角色名（未绑定不请求；已加载过则复用，
+  // 仅下拉为空时由展开触发加载，要刷新须重进编辑页）
   if (sklandBound.value) {
     props.loadSklandRoleOptions()
   }
@@ -902,7 +903,7 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   opacity: 0.55;
 }
 
-/* 目标列表：每个目标一行 选择器 → 超限 → 名称 → 当前 → 状态；
+/* 目标列表：每个目标一行 名称 → 当前 → 超限/状态标签 → 档位选择器（最右）；
    左缩进与标题行的「精英化」标签对齐（箭头 22 + 间距 8） */
 .goal-list {
   display: flex;

@@ -252,6 +252,10 @@ const sklandRoleError = ref('')
 const cultivateOperatorOptionsLoading = ref(false)
 const cultivateOperatorOptionsError = ref('')
 
+// 干员目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存；
+// 序列号守卫防绑定变更连发两次加载时的乱序覆盖）
+let cultivateOperatorCatalogSeq = 0
+
 // 养成需求预览（纯计算不落库；序列号守卫防快速编辑时的乱序覆盖）
 const cultivatePreview = ref<CultivatePreviewOut | null>(null)
 const cultivatePreviewLoading = ref(false)
@@ -982,6 +986,9 @@ const loadDepotInventory = async () => {
 }
 
 const loadCultivateOperatorOptions = async () => {
+  // 绑定变更的两字段保存分属两个 await 周期，watch 会以半绑定/完整状态各
+  // 触发一次加载；seq 守卫丢弃乱序返回的过期响应（与预览加载同款）
+  const seq = ++cultivateOperatorCatalogSeq
   cultivateOperatorOptionsLoading.value = true
   cultivateOperatorOptionsError.value = ''
   try {
@@ -989,6 +996,7 @@ const loadCultivateOperatorOptions = async () => {
       script: { scriptId },
       userId,
     })
+    if (seq !== cultivateOperatorCatalogSeq) return
     if (response.code !== 200) {
       cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
       return
@@ -1014,11 +1022,12 @@ const loadCultivateOperatorOptions = async () => {
         })),
       }))
   } catch (error) {
+    if (seq !== cultivateOperatorCatalogSeq) return
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载干员目录失败: ${errorMsg}`)
     cultivateOperatorOptionsError.value = '加载干员目录失败'
   } finally {
-    cultivateOperatorOptionsLoading.value = false
+    if (seq === cultivateOperatorCatalogSeq) cultivateOperatorOptionsLoading.value = false
   }
 }
 
