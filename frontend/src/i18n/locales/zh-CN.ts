@@ -3236,7 +3236,7 @@ export default {
         SRC: '星穹铁道自动化与多账号代理',
         MaaEnd: 'MFW 专项适配脚本',
         M9A: '重返未来：1999 自动化脚本',
-        MaaFW: '托管 MaaFramework 项目',
+        MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',
         OkNte: '异环 OK-NTE 自动化脚本',
         HSR: '三月七 / SRA 双脚本适配',

@@ -2995,7 +2995,7 @@ export default {
         SRC: 'スターレイルの自動化と複数アカウント代行',
         MaaEnd: 'MFW 専用アダプター',
         M9A: 'リバース：1999 の自動化',
-        MaaFW: 'MaaFramework プロジェクトを実行します',
+        MaaFW: 'interface.json を持つ MaaFramework プロジェクトをそのまま実行',
         Okww: 'ok-script 専用のタスクランナー',
         OkNte: 'Neverness to Everness（OK-NTE）の自動化',
         HSR: '三月なのか / SRA の 2 種類に対応',

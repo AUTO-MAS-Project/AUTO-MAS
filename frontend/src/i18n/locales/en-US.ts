@@ -3328,7 +3328,7 @@ export default {
         SRC: 'Star Rail automation and multi-account runs',
         MaaEnd: 'Dedicated MFW adapter',
         M9A: 'Reverse: 1999 automation',
-        MaaFW: 'Hosts a MaaFramework project',
+        MaaFW: 'Runs any MaaFramework project that ships an interface.json',
         Okww: 'Dedicated ok-script task runner',
         OkNte: 'Neverness to Everness OK-NTE automation',
         HSR: 'March7th / SRA dual-script support',
