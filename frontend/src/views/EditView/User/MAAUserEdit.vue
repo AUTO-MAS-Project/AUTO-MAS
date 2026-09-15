@@ -98,7 +98,10 @@
             :infrastructure-importing="infrastructureImporting"
             :infrastructure-options="infrastructureOptions"
             :infrastructure-options-loading="infrastructureOptionsLoading"
+            :infrast-plan-select="infrastPlanSelect"
+            :infrast-plan-state="infrastPlanState"
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
+            @select-infrast-plan="handleInfrastPlanSelectChange"
             @save="handleFieldSave"
           >
             <template #fight-detail>
@@ -238,7 +241,11 @@ let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
 const infrastructureImporting = ref(false)
-const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
+const infrastructureOptions = ref<Array<{ label: string; value: string; period?: string | null }>>(
+  []
+)
+const infrastPlanState = ref('empty')
+const infrastPlanSelect = ref(-1)
 const infrastructureOptionsLoading = ref(false)
 
 // 库存保持物品选项
@@ -530,7 +537,6 @@ const getDefaultMAAUserData = () => ({
     IfQuickConfig: true,
     InfrastMode: 'Normal',
     InfrastName: '',
-    InfrastIndex: '',
     Annihilation: 'Annihilation',
     Stage: '1-7',
     StageMode: 'Fixed',
@@ -1047,6 +1053,27 @@ const loadStageModeOptions = async () => {
   }
 }
 
+// 手动选班 = 把轮换起点拨到该班（写入 MAA 配置, 由 MAA 原生推进）
+const handleInfrastPlanSelectChange = async (index: number, label: string) => {
+  try {
+    const result = await Service.setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost({
+      scriptId: scriptId,
+      userId: userId,
+      index: index,
+    })
+    if (!result || result.code !== 200) {
+      message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
+      return
+    }
+    infrastPlanSelect.value = index
+    message.success(t('edit.maaCustomInfrastPlanSelected', { name: label }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`设置基建班次失败: ${errorMsg}`)
+    message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
+  }
+}
+
 // 选择并导入基建配置文件
 const selectAndImportInfrastructureConfig = async () => {
   if (!isEdit.value) {
@@ -1075,12 +1102,10 @@ const selectAndImportInfrastructureConfig = async () => {
         // 从文件路径中提取文件名作为 InfrastName
         const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
         formData.Info.InfrastName = fileName.replace('.json', '')
-        // 清空 InfrastIndex，等待用户从下拉框中选择
-        formData.Info.InfrastIndex = ''
 
         message.success(t('edit.baseConfigurationImported'))
 
-        // 重新加载基建配置选项
+        // 重新加载基建配置选项与当前班次
         await loadInfrastructureOptions()
       } else {
         message.error(t('edit.couldNotImportBase'))
@@ -1110,7 +1135,19 @@ const loadInfrastructureOptions = async () => {
       infrastructureOptions.value = result.data.map((item: any) => ({
         label: item.label,
         value: item.value,
+        period: item.period ?? null,
       }))
+      infrastPlanState.value = result.state ?? 'empty'
+    }
+
+    const current = await Service.getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
+      {
+        scriptId: scriptId,
+        userId: userId,
+      }
+    )
+    if (current && current.code === 200) {
+      infrastPlanSelect.value = current.index
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

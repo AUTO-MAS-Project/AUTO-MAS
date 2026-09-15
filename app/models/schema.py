@@ -1411,7 +1411,6 @@ class MaaUserConfig_Info(BaseModel):
         default=None, description="基建模式"
     )
     InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
-    InfrastIndex: Optional[str] = Field(default=None, description="基建方案索引")
     Password: Optional[str] = Field(default=None, description="密码")
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
@@ -4168,6 +4167,29 @@ class UserReorderIn(UserInBase):
 class UserSetIn(UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
+class UserInfrastPlanSelectIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    userId: str = Field(..., description="用户ID")
+    index: int = Field(default=-1, ge=-1, description="基建班次索引（-1=按时段自动）")
+
+
+class UserInfrastPlanSelectOut(OutBase):
+    index: int = Field(..., description="当前基建班次索引（-1=按时段自动）")
+
+
+class UserInfrastPlanComboxItem(BaseModel):
+    label: str = Field(..., description="班次展示名")
+    value: str = Field(..., description="班次索引, 即 MAA PlanSelect 值")
+    period: Optional[str] = Field(default=None, description="时段文本, 无时段为 None")
+
+
+class UserInfrastPlanComboxOut(OutBase):
+    state: Literal["period", "rotate", "mixed", "empty"] = Field(
+        ..., description="排班表时段形态（mixed=时段不一致不可用）"
+    )
+    data: List[UserInfrastPlanComboxItem] = Field(..., description="班次选项")
 
 
 class EmulatorGetIn(BaseModel):

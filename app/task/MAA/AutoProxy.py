@@ -32,7 +32,13 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models.config import (
+    MaaConfig,
+    MaaUserConfig,
+    infrast_plan_mode,
+    load_infrast_plans,
+    maa_scheme_name,
+)
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
@@ -286,7 +292,10 @@ def _merge_maa_changes(
 ) -> bool:
     """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
 
-    只透传新增与修改, 删除不透传; 顶层结构不匹配(如写盘半截被截断)整体跳过。
+    只透传运行期(相对基线)真正发生的变更, 新增与修改透传、删除不透传; MAS 托管
+    注入自己改写的键(baseline 与 current 相同、仅与存档不同)不能被带回存档,
+    否则运行一次就会把用户自己的配置抹成注入值。顶层结构不匹配(如写盘半截被
+    截断)整体跳过。
     """
 
     if type(archive) is not type(baseline) or type(baseline) is not type(current):
@@ -313,6 +322,39 @@ def _merge_maa_changes(
             elif base_value != value and archive.get(key) != value:
                 archive[key] = deepcopy(value)
                 changed = True
+    return changed
+
+
+def _merge_maa_config_file(
+    archive: dict, baseline: dict, current: dict, scheme: str
+) -> bool:
+    """按生效方案合并一份 MAA 配置, 返回是否有变更。
+
+    set_maa 会把存档 Current 方案的内容复制进运行目录的 Default 再运行, 运行期
+    的变更因此都记在 Default 键上; 存档生效方案不是 Default 时, 把合并目标临时
+    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。
+    """
+
+    if scheme == "Default":
+        return _merge_maa_changes(archive, baseline, current)
+
+    configurations = archive.get("Configurations")
+    if not isinstance(configurations, dict) or not isinstance(
+        configurations.get(scheme), dict
+    ):
+        return _merge_maa_changes(archive, baseline, current)
+
+    original_default = configurations.get("Default")
+    configurations["Default"] = configurations[scheme]
+    try:
+        changed = _merge_maa_changes(archive, baseline, current)
+    finally:
+        merged = configurations["Default"]
+        if original_default is None:
+            del configurations["Default"]
+        else:
+            configurations["Default"] = original_default
+        configurations[scheme] = merged
     return changed
 
 
@@ -1364,7 +1406,10 @@ class AutoProxyTask(TaskExecuteBase):
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
                 )
-                if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
+                infrast_plans, infrast_problem = load_infrast_plans(
+                    self.cur_user_config.get("Data", "CustomInfrast")
+                )
+                if infrast_problem is None:
                     infrast_path.parent.mkdir(parents=True, exist_ok=True)
                     infrast_path.write_text(
                         self.cur_user_config.get("Data", "CustomInfrast"),
@@ -1380,25 +1425,31 @@ class AutoProxyTask(TaskExecuteBase):
                             "DescriptionPost": infrast.get("description_post", ""),
                             "Period": infrast.get("period", []),
                         }
-                        for index, infrast in enumerate(
-                            json.loads(
-                                self.cur_user_config.get("Data", "CustomInfrast")
-                            ).get("plans", [])
-                        )
+                        for index, infrast in enumerate(infrast_plans)
                     ]
-                    task_set["Infrast"]["PlanSelect"] = int(
-                        self.cur_user_config.get("Info", "InfrastIndex")
-                    )
+                    # PlanSelect 保留用户存档中的值(不按轮次改写)——带时段表默认 -1=MAA
+                    # 按时段自动选班; 手动选班/无时段表的轮换推进均由 MAA 原生「自动保存
+                    # 为下个计划」完成, 经运行后配置回写管道存回每用户存档
+                    if (
+                        infrast_plan_mode(infrast_plans) == "rotate"
+                        and task_set["Infrast"].get("PlanSelect", -1) == -1
+                    ):
+                        # 无时段表: 缺省与显式「自动换班」(-1)都归一到第一班开始轮换。
+                        # -1 时 MAA 匹配不到时段, 会永远跑第一班且无法推进(并打错误日志)
+                        task_set["Infrast"]["PlanSelect"] = 0
                 else:
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
+                        f"用户 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
                     )
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(
                             level="warning",
-                            message=f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件",
+                            message=(
+                                f"用户 {self.cur_user_item.name} 的{infrast_problem}，"
+                                f"将使用普通基建模式"
+                            ),
                         ),
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
@@ -1588,7 +1639,13 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             archive_new = deepcopy(archive)
-            if not _merge_maa_changes(archive_new, baseline[name], current):
+            # 运行期写盘的是归一后的 Default 方案, 生效方案不是 Default 时合并回该方案键
+            if not _merge_maa_config_file(
+                archive_new,
+                baseline[name],
+                current,
+                maa_scheme_name(archive_dir, archive),
+            ):
                 continue
             write_file(archive_dir / name, archive_new)
             logger.info(
@@ -1871,23 +1928,6 @@ class AutoProxyTask(TaskExecuteBase):
                 "ProxyTimes",
                 self.cur_user_config.get("Data", "ProxyTimes") + 1,
             )
-
-            if (
-                self.cur_user_config.get("Info", "IfQuickConfig")
-                and self.cur_user_config.get("Info", "InfrastIndex") != "-1"
-            ):
-                await self.cur_user_config.set(
-                    "Data",
-                    "InfrastIndex",
-                    str(
-                        (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)
-                        % len(
-                            json.loads(
-                                self.cur_user_config.get("Data", "CustomInfrast")
-                            ).get("plans", [])
-                        )
-                    ),
-                )
 
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")

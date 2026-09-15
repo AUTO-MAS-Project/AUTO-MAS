@@ -301,6 +301,21 @@ export default {
     maaCustomInfrastFileHint: 'The custom infrastructure JSON exported from MAA',
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
+    maaCustomInfrastPlanHintPeriod:
+      'Shifts carry time periods: auto mode picks by time; picking a shift starts rotation from it',
+    maaCustomInfrastPlanHintRotate:
+      'Shifts have no time periods: auto rotation starts from the first shift; picking a shift starts rotation from it',
+    maaCustomInfrastPlanHintMixed:
+      'Inconsistent time periods across shifts: normal infrast mode will be used at runtime',
+    maaCustomInfrastPlanAuto: 'Auto rotation',
+    maaCustomInfrastPlanAutoPeriod: 'Auto rotation (by time period)',
+    maaCustomInfrastPlanAutoRotate: 'Auto rotation (from first shift)',
+    maaCustomInfrastPlanWithPeriod: '{name} ({period})',
+    maaCustomInfrastPlanManualHint: 'Rotation starts from {name}; pick auto to restore default',
+    maaCustomInfrastPlanManualHintIndex:
+      'Rotation starts from shift {index}; pick auto to restore default',
+    maaCustomInfrastPlanSelected: 'Rotation will start from {name}',
+    maaCustomInfrastPlanSelectFailed: 'Failed to set the infrastructure shift',
     maaDaily: 'Daily tasks',
     maaSwitchTheme: 'Switch theme',
     maaSwitchThemeHint:
