@@ -185,6 +185,7 @@
                       :get-popup-container="
                         (triggerNode: HTMLElement) => triggerNode.parentElement!
                       "
+
                       allow-clear
                       @change="(v: unknown) => setField(item.name, v == null ? '' : String(v))"
                     />
@@ -203,6 +204,7 @@
                       :get-popup-container="
                         (triggerNode: HTMLElement) => triggerNode.parentElement!
                       "
+
                       @change="(v: unknown) => setField(item.name, Array.isArray(v) ? v : [])"
                     />
                   </div>
