@@ -265,6 +265,15 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     return all_stage_drops
 
 
+def _clear_readonly_and_retry(func, path, _exc_info):
+    """rmtree 的 onexc：Windows 上只读文件（发行包里的 .git 对象之类）会让删除失败。"""
+
+    import stat
+
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 class AppConfig(GlobalConfig):
     VERSION = "v5.5.0-beta.6"
 
@@ -920,6 +929,11 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.remove(uid)
         if (Path.cwd() / f"data/{uid}").exists():
             shutil.rmtree(Path.cwd() / f"data/{uid}")
+        # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
+        # 快照），所以这里单独删。
+        embedded_copy = Path.cwd() / "data" / "maafw_projects" / str(uid)
+        if embedded_copy.exists():
+            shutil.rmtree(embedded_copy, onexc=_clear_readonly_and_retry)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""

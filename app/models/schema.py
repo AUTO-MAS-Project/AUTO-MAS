@@ -3436,6 +3436,20 @@ class MaaFWConfig_Run(BaseModel):
     )
 
 
+class MaaFWConfig_Embedded(BaseModel):
+    Enabled: Optional[bool] = Field(
+        default=None,
+        description="是否由 AUTO-MAS 内嵌副本运行；副本路径由脚本 ID 推出，不可手改",
+    )
+    SourceVersion: Optional[str] = Field(
+        default=None, description="导入时来源的 interface 版本"
+    )
+    ImportedAt: Optional[str] = Field(default=None, description="导入时间")
+    Report: Optional[Any] = Field(
+        default=None, description="投影报告：省下多少、外壳家族、排除条数与原因"
+    )
+
+
 class MaaFWConfig_Managed(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用托管资源")
     ProjectId: Optional[str] = Field(default=None, description="Project Store 项目 ID")
@@ -3516,6 +3530,9 @@ class MaaFWConfig(BaseModel):
     Update: Optional[MaaFWConfig_Update] = Field(
         default=None, description="项目更新配置"
     )
+    Embedded: Optional[MaaFWConfig_Embedded] = Field(
+        default=None, description="内嵌副本"
+    )
     Managed: Optional[MaaFWConfig_Managed] = Field(
         default=None, description="托管项目资源"
     )
@@ -3532,7 +3549,11 @@ class MaaFWConfig(BaseModel):
 
 
 class MaaFWInterfacePreviewIn(BaseModel):
-    path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+    path: str = Field(default="", description="MaaFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="给了脚本 ID 就按脚本解析有效根（内嵌副本优先），忽略 path",
+    )
 
 
 class MaaFWAdbEmulatorExtraCapabilityInfo(BaseModel):
@@ -3723,6 +3744,51 @@ class MaaFWInterfacePreviewOut(OutBase):
     )
 
 
+class MaaFWEmbeddedIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+
+
+class MaaFWEmbeddedReimportIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    sourcePath: str = Field(
+        ..., min_length=1, description="新的来源目录，会写入 Info.Path"
+    )
+
+
+class MaaFWEmbeddedProjection(BaseModel):
+    sourceSizeBytes: int = Field(default=0, description="来源目录字节数")
+    payloadSizeBytes: int = Field(default=0, description="副本字节数")
+    savedBytes: int = Field(default=0, description="省下的字节数")
+    savedPercent: float = Field(default=0.0, description="省下的比例")
+    excludedCount: int = Field(default=0, description="排除的路径数")
+    excludedReasons: Dict[str, str] = Field(
+        default_factory=dict, description="排除路径与原因（最多 128 条）"
+    )
+    excludedTruncated: bool = Field(default=False, description="排除清单是否被截断")
+    shellFamilies: List[str] = Field(default_factory=list, description="移除的外壳家族")
+    conservative: bool = Field(default=False, description="是否退回保守模式")
+    warnings: List[str] = Field(default_factory=list, description="投影警告")
+
+
+class MaaFWEmbeddedStatusData(BaseModel):
+    enabled: bool = Field(default=False, description="是否内嵌")
+    copyPath: str = Field(default="", description="副本目录（只读展示）")
+    copyHealthy: bool = Field(default=False, description="副本是否完整")
+    sourcePath: str = Field(default="", description="来源目录（Info.Path）")
+    sourceExists: bool = Field(default=False, description="来源目录是否还在")
+    sourceVersion: str = Field(default="", description="导入时来源的 interface 版本")
+    importedAt: str = Field(default="", description="导入时间")
+    report: Optional[MaaFWEmbeddedProjection] = Field(
+        default=None, description="投影报告"
+    )
+
+
+class MaaFWEmbeddedStatusOut(OutBase):
+    data: Optional[MaaFWEmbeddedStatusData] = Field(
+        default=None, description="内嵌状态"
+    )
+
+
 class MaaFWProjectUpdateIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
     action: Literal["check", "apply"] = Field(
@@ -3768,8 +3834,11 @@ class MaaFWProjectUpdateOut(OutBase):
 
 
 class MaaFWAgentEnvPrepareIn(BaseModel):
-    path: str = Field(..., description="MFW 项目根目录，应包含 interface.json")
-    scriptId: Optional[str] = Field(default=None, description="脚本 ID，仅用于日志定位")
+    path: str = Field(default="", description="MFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="脚本 ID；内嵌脚本按它解析副本目录，此时 path 可留空",
+    )
     force: bool = Field(
         default=False,
         description="忽略指纹缓存强制重新准备，供用户手动重试使用",

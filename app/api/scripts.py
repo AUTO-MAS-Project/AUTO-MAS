@@ -22,6 +22,7 @@
 
 
 import asyncio
+import json
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -51,6 +52,17 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _public_package_source,
     detect_maafw_project_shell_hint,
+)
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    EmbeddedProjectError,
+    embedded_project_dir,
+    embedded_status,
+    ensure_embedded_copy,
+    import_embedded_project,
+    is_embedded,
+    remove_tree,
+    resolve_maafw_project_root,
+    shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
@@ -319,12 +331,58 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
         "channel": credentials.channel,
         "package_source": credentials.package_source,
     }
-    project_path = _config_text(script_config, "Info", "Path")
-    if project_path:
-        shell_hint = detect_maafw_project_shell_hint(Path(project_path))
-        if shell_hint:
-            config["project_shell_hint"] = shell_hint
+    if is_embedded(script_config):
+        # 副本里没有 MFW.exe / maafw/ 可扫，外壳家族从导入报告取。
+        shell_hint = shell_hint_from_report(script_config)
+    else:
+        project_path = _config_text(script_config, "Info", "Path")
+        shell_hint = (
+            detect_maafw_project_shell_hint(Path(project_path)) if project_path else ""
+        )
+    if shell_hint:
+        config["project_shell_hint"] = shell_hint
     return config
+
+
+async def _maafw_effective_root(
+    script_id: str | None, fallback_path: str
+) -> tuple[Path | None, str]:
+    """按脚本解析有效根；内嵌脚本副本缺失时先从来源重建。
+
+    返回 ``(root, error)``：root 为 None 时 error 是给用户的一句话。
+    """
+
+    if script_id:
+        try:
+            script_config = _maafw_script_config(script_id)
+        except (KeyError, ValueError, TypeError) as exc:
+            return None, f"MFW 脚本无效: {exc}"
+        if is_embedded(script_config):
+            try:
+                rebuilt = await asyncio.to_thread(
+                    ensure_embedded_copy, script_id, script_config
+                )
+            except EmbeddedProjectError as exc:
+                return None, str(exc)
+            if rebuilt is not None:
+                await Config.update_script(
+                    script_id,
+                    {
+                        "Embedded": {
+                            "Report": json.dumps(rebuilt["report"], ensure_ascii=False),
+                            "SourceVersion": rebuilt["sourceVersion"],
+                            "ImportedAt": rebuilt["importedAt"],
+                        }
+                    },
+                )
+        root = resolve_maafw_project_root(script_id, script_config)
+        if not str(root).strip():
+            return None, "请先设置 MFW 项目路径"
+        return root.resolve(), ""
+    value = str(fallback_path or "").strip()
+    if not value:
+        return None, "请先设置 MFW 项目路径"
+    return Path(value).resolve(), ""
 
 
 SCRIPT_BOOK = {
@@ -1067,6 +1125,185 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+def _embedded_status_out(script_id: str, script_config: Any) -> MaaFWEmbeddedStatusOut:
+    status = embedded_status(script_id, script_config)
+    report = status.get("report") or {}
+    return MaaFWEmbeddedStatusOut(
+        data=MaaFWEmbeddedStatusData(
+            enabled=bool(status["enabled"]),
+            copyPath=str(status["copyPath"]),
+            copyHealthy=bool(status["copyHealthy"]),
+            sourcePath=str(status["sourcePath"]),
+            sourceExists=bool(status["sourceExists"]),
+            sourceVersion=str(status["sourceVersion"]),
+            importedAt=str(status["importedAt"]),
+            report=MaaFWEmbeddedProjection(**_pick_projection_fields(report))
+            if report
+            else None,
+        )
+    )
+
+
+def _pick_projection_fields(report: Mapping[str, Any]) -> dict[str, Any]:
+    keys = MaaFWEmbeddedProjection.model_fields.keys()
+    return {key: report[key] for key in keys if key in report}
+
+
+async def _embed_from_source(
+    script_id: str, source_path: str
+) -> tuple[MaaFWEmbeddedStatusOut | None, str]:
+    """导入副本并把报告写回配置。失败时原因原样带出——闸门理由就是用户要看的东西。"""
+
+    try:
+        imported = await asyncio.to_thread(
+            import_embedded_project, script_id, source_path
+        )
+    except EmbeddedProjectError as exc:
+        return None, str(exc)
+    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
+        return None, f"{type(exc).__name__}: {exc}"
+    await Config.update_script(
+        script_id,
+        {
+            "Embedded": {
+                "Enabled": True,
+                "Report": json.dumps(imported["report"], ensure_ascii=False),
+                "SourceVersion": imported["sourceVersion"],
+                "ImportedAt": imported["importedAt"],
+            }
+        },
+    )
+    return None, ""
+
+
+@router.post(
+    "/maafw/embedded/status",
+    tags=["MaaFW"],
+    summary="查看 MFW 脚本的内嵌副本状态",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def get_maafw_embedded_status(
+    payload: MaaFWEmbeddedIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    return _embedded_status_out(payload.scriptId, script_config)
+
+
+@router.post(
+    "/maafw/embedded/enable",
+    tags=["MaaFW"],
+    summary="启用内嵌：按 Info.Path 导入副本",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def enable_maafw_embedded(
+    payload: MaaFWEmbeddedIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    """按 interface 白名单把 Info.Path 投影成副本，此后运行、预览、更新都在副本上。
+
+    来源目录一个字节不动，也不再被引用；退出内嵌就回到它。
+    """
+
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    source = str(script_config.get("Info", "Path") or "").strip()
+    if not source:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message="请先在项目路径里选一个 MFW 项目目录"
+        )
+    _failed, error = await _embed_from_source(payload.scriptId, source)
+    if error:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"启用内嵌失败: {error}"
+        )
+    out = _embedded_status_out(payload.scriptId, _maafw_script_config(payload.scriptId))
+    report = out.data.report if out.data else None
+    out.message = (
+        f"已内嵌，省下 {report.savedPercent:.2f}%；原目录未改动" if report else "已内嵌"
+    )
+    return out
+
+
+@router.post(
+    "/maafw/embedded/reimport",
+    tags=["MaaFW"],
+    summary="换来源目录并重新导入副本",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def reimport_maafw_embedded(
+    payload: MaaFWEmbeddedReimportIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    try:
+        _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    source = str(payload.sourcePath or "").strip()
+    _failed, error = await _embed_from_source(payload.scriptId, source)
+    if error:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"重新导入失败: {error}"
+        )
+    # 导入成功才把来源写进 Info.Path：失败时旧副本与旧来源都原样不动。
+    await Config.update_script(payload.scriptId, {"Info": {"Path": source}})
+    out = _embedded_status_out(payload.scriptId, _maafw_script_config(payload.scriptId))
+    out.message = "已按新来源重新导入"
+    return out
+
+
+@router.post(
+    "/maafw/embedded/disable",
+    tags=["MaaFW"],
+    summary="退出内嵌：删副本，回到来源目录",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def disable_maafw_embedded(
+    payload: MaaFWEmbeddedIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    await Config.update_script(
+        payload.scriptId,
+        {
+            "Embedded": {
+                "Enabled": False,
+                "Report": "{ }",
+                "SourceVersion": "",
+                "ImportedAt": "",
+            }
+        },
+    )
+    try:
+        await asyncio.to_thread(remove_tree, embedded_project_dir(payload.scriptId))
+    except Exception as exc:  # noqa: BLE001 - 副本没删干净不该让退出失败
+        logger.warning(f"退出内嵌时删除副本失败: {exc}")
+    out = _embedded_status_out(payload.scriptId, _maafw_script_config(payload.scriptId))
+    source = str(script_config.get("Info", "Path") or "").strip()
+    out.message = (
+        "已退出内嵌，回到来源目录"
+        if source and Path(source).is_dir()
+        else "已退出内嵌；来源目录已不存在，请重新选择项目目录"
+    )
+    return out
+
+
 @router.post(
     "/maafw/preview",
     tags=["MaaFW"],
@@ -1079,8 +1316,10 @@ async def preview_maafw_interface(
 ) -> MaaFWInterfacePreviewOut:
     """读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。"""
 
+    root_path, error = await _maafw_effective_root(payload.scriptId, payload.path)
+    if root_path is None:
+        return MaaFWInterfacePreviewOut(code=400, status="error", message=error)
     try:
-        root_path = Path(payload.path).resolve()
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)
         preview = await asyncio.to_thread(
             build_interface_preview_data,
@@ -1135,12 +1374,9 @@ async def update_maafw_project(
             code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
 
-    project_value = str(script_config.get("Info", "Path") or "").strip()
-    if not project_value:
-        return MaaFWProjectUpdateOut(
-            code=400, status="error", message="请先设置 MFW 项目路径"
-        )
-    root_path = Path(project_value).resolve()
+    root_path, error = await _maafw_effective_root(payload.scriptId, "")
+    if root_path is None:
+        return MaaFWProjectUpdateOut(code=400, status="error", message=error)
     if not root_path.is_dir():
         return MaaFWProjectUpdateOut(
             code=400,
@@ -1250,6 +1486,8 @@ async def update_maafw_project(
             source_config=source_config,
             proxy=proxy,
             send_log=_maafw_update_send_log,
+            # 内嵌副本：落地只写 interface 白名单内的条目。
+            projection=is_embedded(script_config),
         )
     except MaaFWProjectUpdateError as exc:
         return MaaFWProjectUpdateOut(
@@ -1412,12 +1650,9 @@ async def prepare_maafw_agent_env(
             }
         )
 
-    project_value = str(payload.path or "").strip()
-    if not project_value:
-        return MaaFWAgentEnvPrepareOut(
-            code=400, status="error", message="请先设置 MFW 项目路径"
-        )
-    root_path = Path(project_value).resolve()
+    root_path, error = await _maafw_effective_root(payload.scriptId, payload.path)
+    if root_path is None:
+        return MaaFWAgentEnvPrepareOut(code=400, status="error", message=error)
     if not root_path.is_dir():
         return MaaFWAgentEnvPrepareOut(
             code=400,

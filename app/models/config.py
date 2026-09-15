@@ -2909,6 +2909,20 @@ class MaaFWConfig(ConfigBase):
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
         self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
+        ## Embedded -------------------------------------------------------
+        ## 由 AUTO-MAS 内嵌一份按 interface 白名单投影的副本来运行。副本在
+        ## data/maafw_projects/<脚本 uuid>/，由脚本 ID 推出、不进配置、用户不可手改；
+        ## Info.Path 继续存用户选的来源目录。更新落地时同样只写白名单内的条目。
+        self.Embedded_Enabled = ConfigItem(
+            "Embedded", "Enabled", False, BoolValidator()
+        )
+        ## 导入时来源的 interface 版本，仅展示
+        self.Embedded_SourceVersion = ConfigItem("Embedded", "SourceVersion", "")
+        ## 导入时间，仅展示
+        self.Embedded_ImportedAt = ConfigItem("Embedded", "ImportedAt", "")
+        ## 投影报告（省下多少、外壳家族、排除条数与原因），JSON 字符串
+        self.Embedded_Report = ConfigItem("Embedded", "Report", "{ }", JSONValidator())
+
         ## Managed --------------------------------------------------------
         ## 是否由 Project Store 和 Runtime Pool 托管项目资源
         self.Managed_Enabled = ConfigItem("Managed", "Enabled", False, BoolValidator())
