@@ -45,8 +45,10 @@
 >   `GeneralUserEdit.vue`——ConfigFile 恒按用户（无 owner 解耦、无侧车：
 >   MAS 编辑页字段不注入原生配置，不属于配置内容，见 §1.1.4 末段）；原生
 >   配置为用户自填 ConfigPath（File/Folder 两态），预览为**文件清单粒度**
->   （配置格式任意透传，不解析内容）；提供「查看详细配置」（viewOnly，
->   脚本级跳过下发直接读 `task_info.view_only`，无需构造参数与 manager 透传）
+>   （配置格式任意透传，不解析内容，直接吃基座标准 `files` 注入，零定制
+>   preview——声明式零定制样板）；提供「查看详细配置」（viewOnly，
+>   脚本级跳过下发直接读 `task_info.view_only`，无需构造参数与 manager 透传）；
+>   **通用性专项**：native 池收敛到脚本级（§1.1.1b）
 > - **SRC（自包含式 + 页面字段侧车，有会话）**：`app/task/SRC/tools/restore_service.py` +
 >   `SRCUserEdit.vue`——MAA 孪生形态（ConfigFile 目录副本 + Stage/Server 侧车
 >   + ScriptConfig 会话 + manager 任务级原生快照）；native 恢复前守卫 Temp
@@ -56,15 +58,18 @@
 > - **BetterGI（自包含式 + per-user 副本目录 + 字段侧车，有会话）**：
 >   `app/task/BetterGI/tools/restore_service.py` + `BetterGIUserEdit.vue`——
 >   前端端点直接读写 per-user 副本（OneDragon/ScriptGroup/GlobalDomain，
->   即页面编辑对象，恒按用户、无 owner 解耦）；native = BGI 全局
->   `User/config.json` + 一条龙实配 `User/OneDragon/*.json`（用户在 BGI GUI
->   直接编辑的对象，排除 MAS 运行时槽位），两池「已启用任务」同标签同口径，
->   详见 examples-bettergi.md
+>   即页面编辑对象，恒按用户、无 owner 解耦）；mas 池**不含**全局
+>   `User/config.json`——它是安装根级单份共享的 BGI 全局态，不属任何
+>   MAS 用户，MAS 字段经运行/查看会话物化写入、触碰前由 native 池存底；
+>   native = BGI 全局 `User/config.json` + 一条龙实配 `User/OneDragon/*.json`
+>   （用户在 BGI GUI 直接编辑的对象，排除 MAS 运行时槽位），两池「已启用
+>   任务」同标签同口径，详见 examples-bettergi.md
 > - **MaaFW（自包含式 + 纯字段侧车，无会话）**：`app/task/MaaFW/tools/
 >   restore_service.py` + `MaaFWUserEdit.vue`——M9A 同线：mas 池是纯字段
 >   侧车（Info/Task.SelectedPreset/TaskSnapshot/Device 段，无 per-user 目录），
 >   native = 项目 `config/` + `interface.json`（运行时物化处，排除 resource/
->   资产）；无原生 GUI 遮罩会话
+>   资产）；无原生 GUI 遮罩会话；**通用性专项**：native 池收敛到脚本级
+>   （§1.1.1b——MaaFW 项目属于绑定它的脚本，跨脚本共享备份没有意义）
 > - **HSR（自包含式 + 纯字段侧车，无会话，一对多两引擎）**：
 >   `app/task/HSR/tools/restore_service.py` + `HSRUserEdit.vue`——mas 池是
 >   纯字段侧车收录 **MAS 用户配置全量**（Info.Mode 仅预览 + TaskSwitch/
@@ -103,6 +108,23 @@
 
 实现上：池函数一律用 `ctx.user_id` 定位归档根；`mas_dir`（归档/恢复目标）由
 专项按 owner 解析后显式传入 `archive_mas_backup` / `restore_mas_backup`。
+
+#### 1.1.1b 通用性专项的 native 池收敛到脚本级（General/MaaFW 规则）
+
+**通用性专项**（一个 ScriptType 接入**任意第三方项目/脚本**，不是特定软件的
+适配——现有 General 通用脚本、MaaFW 的 MaaFramework 项目接入，后续同类
+专项一律照此）的 native 池归档根必须**收敛到脚本级**：
+
+- 归档根 = `data/{script_id}/{Xxx}Backups/native/{config_root_key(路径)}`，
+  生命周期**随脚本实例**（脚本删除，备份随之失去意义）；
+- 池内仍保留 `config_root_key` 二级分桶——脚本内换绑项目/配置路径后，旧
+  备份不与新路径混淆；
+- **不要**做成全局项目级桶（`data/{Xxx}Backups/native/{key}`）——通用性
+  专项的「项目」本质是该脚本绑定的资源，跨脚本共享备份没有意义。
+
+判定标准：外部目录是否**真被多个脚本并发共享**。是（如 SRA appdata、
+BetterGI 全局 User/ 是安装根级共享目录）→ 按物理根指纹项目级分桶、跨脚本
+共享、不随脚本删除；否（general/MaaFW 的项目只属于绑定它的脚本）→ 脚本级。
 
 #### 1.1.2 覆盖层字段侧车（Okww）
 
@@ -173,45 +195,67 @@ mas 池是**纯字段侧车**——归档内唯一文件就是 `_mas_overlay.jso
 
 ## 2. 后端调用方法
 
-### 2.1 池声明（专项唯一要写的接入逻辑）
+### 2.1 池声明（专项唯一要写的接入逻辑，声明式）
+
+池只声明**专项知识**——归档什么（`files`）+ 放哪里（`backup_root`）+ 恢复语义
+（`restore`）+ 可选定制预览（`preview`）；其余全部由基座派生：
 
 ```python
-# app/task/OkNte/tools/restore_service.py（节选，签名与实装一致）
+# app/task/HSR/tools/restore_service.py（节选，签名与实装一致）
 from app.utils.config_restore import ConfigRestorePool
 
-RESTORE_SCRIPT_NAME = "ok-nte"      # 专项统一名（文案 {script} 插值，不是脚本实例名）
+RESTORE_SCRIPT_NAME = "hsr"        # 专项统一名（文案 {script} 插值，不是脚本实例名）
 
-async def _list_mas(ctx) -> list[str]:
-    return list_mas_backups(ctx.script_id, ctx.user_id)
+async def _mas_files(ctx) -> dict[str, str] | None:
+    """归档什么：相对键 → Path 或内存内容（str 按 UTF-8 / bytes 原样）。"""
+    _user_guard(ctx)               # 守卫在池函数内（自包含优先；门面内部状态经 ctx.config）
+    overlay = read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)])
+    if not overlay:
+        return None                # 无可归档内容 → snapshot 报无变化
+    return {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
+
+async def _mas_root(ctx) -> Path | None:
+    """放哪里：归档根（含分桶规则，不含时间戳目录）。
+
+    返回 None 表示当前无可归档根（脚本路径未配置等）——list 为空、snapshot
+    报无变化，**不抛错**（用户未配置路径时编辑页不该报错）。
+    """
+    return mas_backup_root(ctx.script_id, ctx.user_id)
 
 async def _preview_mas(ctx, ts: str) -> dict:
-    return _preview_payload(ctx, ts, get_mas_backup_dir(ctx.script_id, ctx.user_id, ts))
+    # 可选定制预览（反读摘要）；载荷**不要**手工拼 files 字段——
+    # service.preview 会自动注入归档内文件清单
+    return build_overlay_preview(read_overlay_sidecar(...))
 
 async def _restore_mas(ctx, ts: str) -> object:
-    _user_guard(ctx)  # 守卫在池函数内（自包含优先；需门面内部状态时经 ctx.config）
-    restore_mas_backup(ctx.script_id, ctx.user_id, ts,
-                       mas_config_dir(ctx.script_id, ctx.user_id))
-    # 字段回填等恢复后语义放这里
-
-async def _snapshot_mas(ctx) -> dict:
-    dest = archive_mas_backup(ctx.script_id, ctx.user_id,
-                              mas_config_dir(ctx.script_id, ctx.user_id))
-    times = list_mas_backups(ctx.script_id, ctx.user_id)
-    return {"created": dest is not None, "time": times[0] if times else ""}
+    _user_guard(ctx)
+    # 恢复前存底（force 归档当前）+ 恢复 + 字段回填等专项语义
+    ...
 
 RESTORE_POOLS = [
-    ConfigRestorePool(key="mas", kind="user", list_backups=_list_mas,
-                      preview=_preview_mas, restore=_restore_mas, snapshot=_snapshot_mas),
+    ConfigRestorePool(key="mas", kind="user", files=_mas_files,
+                      backup_root=_mas_root, preview=_preview_mas, restore=_restore_mas),
     ConfigRestorePool(key="native", kind="script", ...),  # 同上，脚本级
 ]
 ```
 
+基座从 `files` + `backup_root` 自动派生（显式回调优先于派生）：
+
+| 自动派生 | 实现 |
+| --- | --- |
+| `list` | `list_times(backup_root)`（root None → 空列表） |
+| `snapshot`（`ensure`） | `archive_files(files(ctx), backup_root(ctx))`——指纹去重、保留清理全在公共原语；无可归档内容/无归档根报无变化 |
+| `read_file` | `read_backup_text(归档目录, rel_path)`（防穿越 + 1 MiB 上限） |
+| files 兜底 | `service.preview` 为未带 `files` 键的载荷注入归档内文件清单（前端「备份文件」节渲染） |
+
 要点：
 - 池函数是普通函数，显式收 `RestoreContext(config, script_config, script_id, user_id)`，
   **不闭包捕获** → 可直接单测。
-- `snapshot` 返回 `{"created": bool, "time": str}`，供三时机 `ensure`。
-- `preview` / `restore` / `snapshot` 可省略（None 表示该池不支持对应能力，服务层
-  返回明确错误；`list_backups` 必填）。
+- `snapshot` 语义 `{"created": bool, "time": str}`，供三时机 `ensure`。
+- `restore` 缺省表示该池不支持恢复；`preview` 缺省 = files 兜底载荷。
+- 归档收集逻辑若被**运行前归档线**（manager / AutoProxy）共用，抽公开的
+  `collect_mas_files` / `collect_native_files` 供两处调用，**不要复制两份**。
+- 侧车内容直接给内存 JSON（`archive_files` 支持内存内容），**不要临时文件**。
 
 ### 2.2 分发接线（core 门面，接入时唯一要动的公共文件）
 
@@ -240,6 +284,7 @@ return build_restore_service(
 | `service.ensure(key)` | `POST /api/scripts/backup/ensure` | 三时机按需归档（前端进入/退出编辑页调用） |
 | `service.restore(key, ts)` | `POST /api/scripts/backup/restore` | 一键恢复（restore 回调内已含恢复前存底） |
 | `service.preview(key, ts)` | `GET /api/scripts/backup/preview` | 预览载荷（`data` 结构由专项定义） |
+| `service.read_backup_file(key, ts, path)` | `GET /api/scripts/backup/file` | 只读读取备份内文本文件（「备份文件」点击查看，§3.4） |
 
 `target` 是自由字符串，取值由专项池定义；非法 key 统一 400。恢复接口在专项
 restore 回调返回对象（前端当前不消费，保留扩展）。
@@ -280,13 +325,17 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 
 - `api.preview` 响应：兼容顶层 `info/account/tasks/instances` 结构**和**通用端点
   把专项载荷包进 `data` 的形态；`#preview` 插槽的 `raw` 即后端预览响应原文。
+- `api.readFile(target, time, path)`：只读读取备份内文件（包装
+  `GET /backup/file`）。**接入必填**（12 个已接入专项全部提供，HSR 先例），
+  缺失时「备份文件」链接点击提示不支持——新接入漏掉它属于接线 bug。
 - `onRestored(target, item)`：一键恢复成功后父组件处理（mas 恢复含字段回填 →
   刷新表单；脚本级由组件自行刷新列表）。
 
 ### 3.2 内置预览渲染（适配的专项直接用，不用插槽）
 
 - `user` 池：基本信息（`info`）+ 账号（`account`）+ 任务编排清单（`tasks`，
-  `enabled` 高亮）；
+  `enabled` 高亮）；载荷无字段语义时不渲染空表，回落「无可展示摘要」空态
+  提示（与脚本级一致的基座默认兜底，文件折叠节仍显示）；
 - `script` 池：实例折叠列表（`instances`，每条含 account/tasks）。
 
 预览结构约定（ZzzOd 用这套）：`info` / `account`（`{key,value}`）、`tasks`
@@ -334,17 +383,46 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
   从任务 optionValues 反读理智任务/基质选项，取值文本用源码固化 zh_cn
   词表、不读本体运行时资源）；仅隶属一侧的字段（MAA 的当前方案/连接
   地址/启动游戏）才单独展示，两池行集因此允许不同，但重叠部分逐字一致。
+- **两池同等存在的文件共用渲染**：同一配置文件同时被 mas 副本与 native
+  本体归档时（MAA 的 gui.json、MaaEnd 的 mxu-MaaEnd.json），mas 预览除
+  侧车分区外必须以与 native 相同的摘要口径渲染该文件——副本恢复时会
+  完整写回，**预览范围必须与恢复范围一致**；「副本值可能被运行时覆盖、
+  展示会误导」不构成省略理由，用分区/卡片结构隔离即可（侧车在前、文件
+  摘要在后，生效值以侧车分区为准）。两池文件集互斥的专项（ZzzOd：mas
+  槽归 mas 池、其余归 onedragon 池）不适用。
 - **敏感值脱敏**：账号等敏感字段在预览中脱敏展示（如手机号 `130****6220`），
   侧车原值仍完整保存（恢复需要）。
 - **不确定展示什么 = 先询问**：专项对「这个备份对用户意味着什么」拿不准时，
   **先向维护者 / 用户确认预览内容，再实现**；不要自己拍脑袋放几个字段充数。
   预览字段选择是产品决策，不是实现细节。
 
+### 3.4 备份文件兜底（基座统一渲染，专项提供数据即可）
+
+预览摘要永远可能漏字段，基座在预览区**最下方**统一渲染「备份文件」节作为
+兜底——用户点开任意文件看原始内容，摘要漏了什么都能在这里找到：
+
+- **协议**：预览载荷顶层可选字段 `files: [{path, size}]`（归档内相对路径 +
+  字节数）。专项 preview 返回带 `files` → 基座渲染；不带 → 不渲染。两个池
+  都可以带（mas 池只有侧车文件时也列出，用户能确认侧车到底存了什么）。
+- **渲染归基座**：`ConfigRestoreSection` 在 `#preview` 插槽**之后**固定渲染
+  文件节（默认收起的折叠面板，标题带文件数；行内超链接样式 + 大小），点击
+  弹只读内容框（等宽原文 + 复制按钮）。
+  专项 `#preview` 插槽**不要再渲染 files 节**（会重复）；专项 sections 里
+  旧的文件清单节应迁出为标准 `files` 字段（HSR 先例）。
+- **读取**：点击 → `api.readFile`（池 `read_file` 回调）→
+  `config_archive.read_backup_text` 校验（路径限归档内防穿越、1 MiB 上限、
+  utf-8 读取）；越界/超限/池未实现统一 400，基座把 message 显示在内容框。
+- **声明式免拼装**：池声明 `files` + `backup_root` 后，`service.preview`
+  自动为未带 `files` 键的载荷注入清单、`read_file` 自动派生——专项零额外
+  代码即获得兜底；旧式手工拼装（Okww/MAA/MaaEnd/OkNte 逐文件摘要卡）保留，
+  键存在时基座不注入。General 原先的 `fileList` 定制清单已删除（与标准
+  `files` 完全重复），前后端统一走兜底节。
+
 ## 4. 可自定义点（不符合专项实际情况时才用）
 
 | 项 | 用途 | 说明 |
 | --- | --- | --- |
-| `#preview` 插槽 | **完全接管预览区** | 字段型专项（M9A/HSR…）用自身结构渲染键值摘要；OkNte 按 `raw.files` 逐文件渲染摘要表 |
+| `#preview` 插槽 | **完全接管预览摘要区** | 字段型专项（M9A/HSR…）用自身结构渲染键值摘要；**备份文件清单不进插槽**——由基座按 `raw.files`（§3.4）统一渲染兜底 |
 | `#preview-title` 插槽 | 覆盖预览弹窗标题/说明 | 缺省「配置预览 · 时间」 |
 | `fieldLabels` / `formatValue` | 预览字段标签与枚举词表 | 内置渲染用 |
 | `userDesc` / `scriptDesc` | 描述文案覆写 | 专项归档时机措辞与通用不同时（如 ok-nte 的脚本级/用户级归档措辞） |

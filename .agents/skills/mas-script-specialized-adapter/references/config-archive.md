@@ -60,16 +60,19 @@ data/{script_id}/OkNteBackups/
     └── 20260910-215808/…             ← 单份时间戳归档
 ```
 
-- **项目级（自包含式适配器默认，OkNte/ZzzOd 原生池）**：native 挂到项目级根
-  （`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
+- **项目级（特定软件适配器默认，OkNte/ZzzOd/BetterGI 原生池）**：native 挂到
+  项目级根（`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
   `config_root_key(路径)` = 规范化绝对路径的短哈希：同一份物理配置无论被哪
   个脚本引用都归同一个池，跨脚本共享、不随脚本删除（同一路径必然同格式，
   不会混池）。
-- **脚本级（通用适配器兜底，如 General）**：native 仍挂在自己脚本目录下
-  `data/{script_id}/{Script}Backups/native`——配置路径可随意更改、无法判定
-  软件身份，项目级会键漂移混池。
-- **判定标准**：能否明确「路径对应的软件」——能（专项安装目录/配置路径）才
-  允许项目级；不能（通用脚本任意路径）保持脚本级或明确警示风险。
+- **脚本级（通用性专项强制，General/MaaFW 原生池）**：native 挂在自己脚本
+  目录下 `data/{script_id}/{Script}Backups/native/{key}`——通用性专项（接入
+  任意第三方项目/脚本，不是特定软件适配）的「项目」本质属于绑定它的单个
+  脚本实例，跨脚本共享备份没有意义；`key` 二级分桶防脚本内换绑路径混淆。
+  详见 config-restore.md §1.1.1b。
+- **判定标准**：专项类型优先——**通用性专项（General/MaaFW 及后续同类）
+  一律脚本级**；特定软件适配器（多实例可能指向同一安装，如 OkNte/ZzzOd/
+  BetterGI）才允许项目级共享。
 
 布局函数（`project_backup_root` / `mas_backup_root` / `native_backup_root(config_path)`
 / `mas_config_dir`）必须落在专项模块内，命名与路径规则对齐 OkNte 范本。
