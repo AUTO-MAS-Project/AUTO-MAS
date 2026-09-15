@@ -18,11 +18,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""BetterGI 配置恢复服务：MAS 用户配置池 / BetterGI 原生配置池。
+"""BetterGI 配置恢复服务：MAS 用户配置池 / BetterGI 原生配置池（声明式池）。
 
-池函数显式收 :class:`~app.utils.config_restore.RestoreContext`，全部逻辑
-自包含（守卫走 ``ctx.script_config.UserData``，路径走专项字段与 per-user
-副本），不依赖核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
+池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
+``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
+（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+备份文件级原语见同目录 ``backup_archive``。
 
 mas 池 = 「MAS 为该用户维护的全部配置」：per-user 副本目录（OneDragon /
 ScriptGroup / GlobalDomain，前端端点直接读写）+ 页面字段侧车（OneDragon
@@ -41,14 +42,16 @@ from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
-    archive_mas_backup,
-    archive_native_backup,
+    _OVERLAY_SIDECAR_NAME,
+    _collect_mas_files,
     build_mas_preview,
     build_native_preview,
+    collect_native_files,
     get_mas_backup_dir,
     group_overlay,
-    list_mas_backups,
-    list_native_backups,
+    mas_backup_root,
+    native_backup_root,
+    overlay_sidecar_content,
     read_overlay_sidecar,
     read_overlay_values,
     restore_mas_backup,
@@ -75,8 +78,22 @@ def _root_path(ctx: RestoreContext) -> Path | None:
     return Path(raw) if raw else None
 
 
-async def _list_mas(ctx: RestoreContext) -> list[str]:
-    return list_mas_backups(ctx.script_id, ctx.user_id)
+# ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
+
+
+async def _mas_files(ctx: RestoreContext) -> dict[str, Path | str] | None:
+    """归档内容 = per-user 副本文件集 + 页面字段侧车（内存 JSON）。"""
+
+    _user_guard(ctx)
+    files: dict[str, Path | str] = dict(_collect_mas_files(ctx.script_id, ctx.user_id))
+    overlay = read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)])
+    if overlay:
+        files[_OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
+    return files or None
+
+
+async def _mas_root(ctx: RestoreContext) -> Path:
+    return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
 async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
@@ -102,24 +119,23 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
         await user.update(group_overlay(restored_overlay))
 
 
-async def _snapshot_mas(ctx: RestoreContext) -> dict:
-    _user_guard(ctx)
-    dest = archive_mas_backup(
-        ctx.script_id,
-        ctx.user_id,
-        overlay=read_overlay_values(
-            ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-        ),
-    )
-    times = list_mas_backups(ctx.script_id, ctx.user_id)
-    return {"created": dest is not None, "time": times[0] if times else ""}
+# ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _list_native(ctx: RestoreContext) -> list[str]:
+async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+    """归档内容 = BetterGI 全局主配置（缺失项跳过）。"""
+
     root_path = _root_path(ctx)
     if root_path is None:
-        return []
-    return list_native_backups(root_path)
+        return None
+    return collect_native_files(root_path) or None
+
+
+async def _native_root(ctx: RestoreContext) -> Path | None:
+    root_path = _root_path(ctx)
+    if root_path is None:
+        return None
+    return native_backup_root(root_path)
 
 
 async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
@@ -136,28 +152,21 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> object:
     restore_native_backup(root_path, ts)
 
 
-async def _snapshot_native(ctx: RestoreContext) -> dict:
-    root_path = _root_path(ctx)
-    dest = archive_native_backup(root_path) if root_path is not None else None
-    times = list_native_backups(root_path) if root_path is not None else []
-    return {"created": dest is not None, "time": times[0] if times else ""}
-
-
 RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        list_backups=_list_mas,
+        files=_mas_files,
+        backup_root=_mas_root,
         preview=_preview_mas,
         restore=_restore_mas,
-        snapshot=_snapshot_mas,
     ),
     ConfigRestorePool(
         key="native",
         kind="script",
-        list_backups=_list_native,
+        files=_native_files,
+        backup_root=_native_root,
         preview=_preview_native,
         restore=_restore_native,
-        snapshot=_snapshot_native,
     ),
 ]

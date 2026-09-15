@@ -23,7 +23,8 @@ SRC 与 MAA 同构（ConfigFile 目录副本 + 页面字段侧车 + manager Temp
 Id/Password 等执行域字段不进备份），native 池 = 安装目录 config/ 整目录。
 验证侧车归档/回填、跨用户隔离、native 闭环（含 Temp.ready 恢复守卫——
 待恢复快照残留时拒绝恢复，防止恢复结果被下次任务回滚覆盖）、关键字段
-反读预览（关卡词表翻译），以及池回调真实调用链与 owner 解析。
+反读预览（关卡词表翻译），以及 service 级真实调用链（声明式快照、
+基座 files 注入）与 owner 解析。
 """
 
 import asyncio
@@ -71,7 +72,10 @@ _SRC_JSON = {
         "Scheduler": {"Enable": False},
         "Ornament": {"Dungeon": "Divergent_Universe_Eternal_Comedy"},
     },
-    "Weekly": {"Scheduler": {"Enable": True}, "Weekly": {"Name": "Echo_of_War_Divine_Seed"}},
+    "Weekly": {
+        "Scheduler": {"Enable": True},
+        "Weekly": {"Name": "Echo_of_War_Divine_Seed"},
+    },
     "Rogue": {
         "Scheduler": {"Enable": True},
         "RogueWorld": {"World": "Simulated_Universe_World_8"},
@@ -175,7 +179,11 @@ def test_mas_backup_restore_loop_with_user_isolation(
 
     monkeypatch.chdir(tmp_path)
     script_id, user_id = "s-0002", "u-0001"
-    overlay = {"Channel": "Relic", "Relic": "Cavern_of_Corrosion_Path_of_Insight", "Mode": "用户"}
+    overlay = {
+        "Channel": "Relic",
+        "Relic": "Cavern_of_Corrosion_Path_of_Insight",
+        "Mode": "用户",
+    }
     config_file_dir = mas_config_dir(script_id, user_id)
     _write_config_file(config_file_dir)
 
@@ -189,9 +197,9 @@ def test_mas_backup_restore_loop_with_user_isolation(
     )
     assert restored_overlay == overlay
     assert (
-        json.loads((config_file_dir / "src.json").read_text("utf-8"))["Dungeon"]["Dungeon"][
-            "Name"
-        ]
+        json.loads((config_file_dir / "src.json").read_text("utf-8"))["Dungeon"][
+            "Dungeon"
+        ]["Name"]
         == _SRC_JSON["Dungeon"]["Dungeon"]["Name"]
     )
     # 侧车文件不留在 ConfigFile（不污染脚本 GUI）
@@ -291,10 +299,7 @@ def test_native_preview_falls_back_to_template(
     first = archive_native_backup(config_dir)
     assert first is not None
     payload = build_native_preview(config_dir, first.name)
-    rows = {
-        row["key"]: row["value"]
-        for row in payload["sections"][0]["rows"]
-    }
+    rows = {row["key"]: row["value"] for row in payload["sections"][0]["rows"]}
     assert rows["服务器"] == "官服"
     assert rows["每日副本"] == "开启"
 
@@ -332,16 +337,14 @@ def test_overlay_preview_sections(
 def test_restore_service_callbacks_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """池回调真实调用链：snapshot（含播种）→ preview → restore（回填）+ owner 解析。"""
+    """service 级真实调用链：声明式 snapshot（含播种）→ preview（files 注入）
+    → restore（回填）+ owner 解析。"""
 
     from app.task.SRC.tools.restore_service import (
-        _list_mas,
-        _preview_mas,
-        _restore_mas,
-        _restore_native,
-        _snapshot_mas,
-        _snapshot_native,
+        RESTORE_POOLS,
+        RESTORE_SCRIPT_NAME,
     )
+    from app.utils.config_restore import RestoreContext, build_restore_service
 
     monkeypatch.chdir(tmp_path)
     script_id = "s-0004"
@@ -359,26 +362,35 @@ def test_restore_service_callbacks_roundtrip(
         get=lambda g, k: str(config_dir.parent) if (g, k) == ("Info", "Path") else "",
         UserData={uid: user},
     )
-    ctx = SimpleNamespace(
+    ctx = RestoreContext(
         config=None,
         script_config=script_config,
         script_id=script_id,
         user_id=str(uid),
     )
+    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
 
     # 脚本态 owner=Default：快照播种并归档到共享 Default 目录，池按用户分桶
-    created = asyncio.run(_snapshot_mas(ctx))
+    created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
     assert mas_config_dir(script_id, "Default").is_dir()  # 播种生效
-    assert list_mas_backups(script_id, str(uid)) == [created["time"]]
+    assert asyncio.run(service.list("mas")) == [created["time"]]
 
-    payload = asyncio.run(_preview_mas(ctx, created["time"]))
+    payload = asyncio.run(service.preview("mas", created["time"]))
     sections = {s["name"]: s for s in payload["sections"]}
     src_rows = {row["key"]: row["value"] for row in sections["src"]["rows"]}
     assert src_rows["服务器"] == "官服"
+    # 归档内文件清单由基座注入（ConfigFile 副本 + 页面字段侧车）
+    assert "_mas_overlay.json" in {f["path"] for f in payload["files"]}
+
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(
+        service.read_backup_file("mas", created["time"], "_mas_overlay.json")
+    )
+    assert "Relic" in content["content"]
 
     # 恢复前把当前终态存底 → 回填 Stage 段（Mode 排除）
-    asyncio.run(_restore_mas(ctx, created["time"]))
+    asyncio.run(service.restore("mas", created["time"]))
     assert len(user.updated) == 1
     assert user.updated[0]["Stage"]["Relic"] == "Cavern_of_Corrosion_Path_of_Insight"
     assert user.updated[0]["Info"]["Server"] == "CN-Official"
@@ -386,9 +398,9 @@ def test_restore_service_callbacks_roundtrip(
     # 恢复前存底与最新份内容一致 → 跳过（不产生冗余条目）
     assert len(list_mas_backups(script_id, str(uid))) == 1
 
-    # 直控用户：恢复报错；全新直控用户（池无历史条目）列表为空
+    # 直控用户：恢复报错；快照报无变化（无可归档内容）；自身池列表为空
     direct_user = _FakeUser({"Info.Mode": "直控"})
-    ctx_direct = SimpleNamespace(
+    ctx_direct = RestoreContext(
         config=None,
         script_config=SimpleNamespace(
             get=script_config.get, UserData={uid: direct_user}
@@ -396,10 +408,13 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
+    service_direct = build_restore_service(
+        ctx_direct, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+    )
     with pytest.raises(ValueError):
-        asyncio.run(_restore_mas(ctx_direct, created["time"]))
+        asyncio.run(service_direct.restore("mas", created["time"]))
     fresh_uid = uuid.uuid4()
-    ctx_fresh_direct = SimpleNamespace(
+    ctx_fresh_direct = RestoreContext(
         config=None,
         script_config=SimpleNamespace(
             get=script_config.get, UserData={fresh_uid: direct_user}
@@ -407,12 +422,21 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(fresh_uid),
     )
-    assert asyncio.run(_list_mas(ctx_fresh_direct)) == []
+    service_fresh_direct = build_restore_service(
+        ctx_fresh_direct, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+    )
+    assert asyncio.run(service_fresh_direct.ensure("mas")) == {
+        "created": False,
+        "time": "",
+    }
+    assert asyncio.run(service_fresh_direct.list("mas")) == []
 
     # native：快照 + 恢复（守卫由 backup_archive 层测试覆盖）
-    created_native = asyncio.run(_snapshot_native(ctx))
+    created_native = asyncio.run(service.ensure("native"))
     assert created_native["created"] is True
-    asyncio.run(_restore_native(ctx, created_native["time"]))
+    payload_native = asyncio.run(service.preview("native", created_native["time"]))
+    assert {f["path"] for f in payload_native["files"]} == {"src.json", "deploy.yaml"}
+    asyncio.run(service.restore("native", created_native["time"]))
     assert list_native_backups(config_dir)  # 恢复成功，池有条目
 
 

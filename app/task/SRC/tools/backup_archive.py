@@ -54,13 +54,11 @@ SRC 特有的目录布局、侧车、恢复语义（恢复前强制归档当前�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from app.task.SRC.tools.config import is_src_config_available
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -156,17 +154,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把页面核心字段写到临时文件（参与归档指纹，归档后即删）。"""
-
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
-
-
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
     """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
 
@@ -203,6 +190,19 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
+def collect_mas_files(mas_dir: Path) -> dict[str, Path]:
+    """收集 MAS 配置目录文件集（目录缺失或为空返回空 dict）。
+
+    供声明式池声明归档内容（``files`` 回调）；:func:`archive_mas_backup`
+    亦复用本函数收集目录部分。
+    """
+
+    mas_dir = Path(mas_dir)
+    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+        return {}
+    return dir_files(mas_dir)
+
+
 def archive_mas_backup(
     script_id: str,
     user_id: str,
@@ -215,23 +215,17 @@ def archive_mas_backup(
     ``user_id`` 是池归属（恒按用户分桶）；``mas_dir`` 是归档/恢复目标
     路径，由调用方按三态 owner 解析（脚本态共享 Default 目录、用户态
     独立目录）——池与目标解耦。侧车参与指纹：只改页面配置、未动
-    ConfigFile 时同样新建归档。目录不存在或为空时无可恢复内容，返回
-    ``None``；``force=True`` 恢复前存底（内容与最新份一致时同样跳过）。
+    ConfigFile 时同样新建归档（内存 JSON 写入，免临时文件）。目录不存在
+    或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前存底
+    （内容与最新份一致时同样跳过）。
     """
 
-    mas_dir = Path(mas_dir)
-    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+    files = dict(collect_mas_files(mas_dir))
+    if not files:
         return None
-    files = dir_files(mas_dir)
-    temp_sidecar: Path | None = None
     if overlay:
-        temp_sidecar = _sidecar_temp_file(overlay)
-        files[_OVERLAY_SIDECAR_NAME] = temp_sidecar
-    try:
-        dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
-    finally:
-        if temp_sidecar is not None:
-            temp_sidecar.unlink(missing_ok=True)
+        files[_OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -322,6 +316,19 @@ def native_backup_root(config_path: str | Path) -> Path:
     return project_backup_root() / "native" / config_root_key(config_path)
 
 
+def collect_native_files(config_path: str | Path) -> dict[str, Path]:
+    """收集 SRC 安装目录 config/ 文件集（目录缺失或配置入口不可解析返回空 dict）。
+
+    供声明式池声明归档内容（``files`` 回调）；:func:`archive_native_backup`
+    亦复用本函数。
+    """
+
+    config_path = Path(config_path)
+    if not config_path.is_dir() or not is_src_config_available(config_path):
+        return {}
+    return dir_files(config_path)
+
+
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
     """归档 SRC 安装目录 config/ 当前状态（整目录）。
 
@@ -330,9 +337,10 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     """
 
     config_path = Path(config_path)
-    if not config_path.is_dir() or not is_src_config_available(config_path):
+    files = collect_native_files(config_path)
+    if not files:
         return None
-    dest = archive_dir(config_path, native_backup_root(config_path), force=force)
+    dest = archive_files(files, native_backup_root(config_path), force=force)
     if dest is None:
         logger.info("SRC 原生配置无变化，跳过归档")
         return None
@@ -410,10 +418,17 @@ def build_overlay_preview(overlay: dict) -> dict:
 
     src_rows: list[dict] = []
     if "Server" in overlay:
-        src_rows.append(_row("服务器", _SERVER_LABELS.get(str(overlay["Server"]), overlay["Server"])))
+        src_rows.append(
+            _row(
+                "服务器", _SERVER_LABELS.get(str(overlay["Server"]), overlay["Server"])
+            )
+        )
     if "Channel" in overlay:
         src_rows.append(
-            _row("刷取类型", _CHANNEL_LABELS.get(str(overlay["Channel"]), overlay["Channel"]))
+            _row(
+                "刷取类型",
+                _CHANNEL_LABELS.get(str(overlay["Channel"]), overlay["Channel"]),
+            )
         )
     for key, label in (
         ("Relic", "遗器关卡"),
@@ -432,7 +447,9 @@ def build_overlay_preview(overlay: dict) -> dict:
             )
         )
     if "UseFuel" in overlay:
-        src_rows.append(_row("使用燃料", "开启" if bool(overlay["UseFuel"]) else "关闭"))
+        src_rows.append(
+            _row("使用燃料", "开启" if bool(overlay["UseFuel"]) else "关闭")
+        )
     if "FuelReserve" in overlay:
         src_rows.append(_row("保留燃料", overlay["FuelReserve"]))
     if src_rows:
@@ -503,16 +520,24 @@ def build_native_preview(config_path: str | Path, ts: str) -> dict:
     rows.append(
         {
             "key": "每日副本",
-            "value": "开启" if (dungeon.get("Scheduler") or {}).get("Enable") else "关闭",
+            "value": "开启"
+            if (dungeon.get("Scheduler") or {}).get("Enable")
+            else "关闭",
         }
     )
     if dungeon_stage.get("NameAtDoubleRelic") not in (None, "do_not_use"):
         rows.append(
-            {"key": "遗器关卡", "value": _stage_text(dungeon_stage["NameAtDoubleRelic"])}
+            {
+                "key": "遗器关卡",
+                "value": _stage_text(dungeon_stage["NameAtDoubleRelic"]),
+            }
         )
     if dungeon_stage.get("NameAtDoubleCalyx") not in (None, "do_not_use"):
         rows.append(
-            {"key": "材料关卡", "value": _stage_text(dungeon_stage["NameAtDoubleCalyx"])}
+            {
+                "key": "材料关卡",
+                "value": _stage_text(dungeon_stage["NameAtDoubleCalyx"]),
+            }
         )
     if dungeon_stage.get("Name") not in (None,):
         rows.append({"key": "主副本关卡", "value": _stage_text(dungeon_stage["Name"])})
@@ -522,22 +547,31 @@ def build_native_preview(config_path: str | Path, ts: str) -> dict:
         rows.append(
             {
                 "key": "使用储备开拓力",
-                "value": "开启" if bool(trailblaze["ExtractReservedTrailblazePower"]) else "关闭",
+                "value": "开启"
+                if bool(trailblaze["ExtractReservedTrailblazePower"])
+                else "关闭",
             }
         )
     if "UseFuel" in trailblaze:
         rows.append(
-            {"key": "使用燃料", "value": "开启" if bool(trailblaze["UseFuel"]) else "关闭"}
+            {
+                "key": "使用燃料",
+                "value": "开启" if bool(trailblaze["UseFuel"]) else "关闭",
+            }
         )
     if "FuelReserve" in trailblaze:
-        rows.append({"key": "保留燃料", "value": _summary_text(trailblaze["FuelReserve"])})
+        rows.append(
+            {"key": "保留燃料", "value": _summary_text(trailblaze["FuelReserve"])}
+        )
 
     ornament = data.get("Ornament") or {}
     ornament_stage = ornament.get("Ornament") or {}
     rows.append(
         {
             "key": "饰品提取",
-            "value": "开启" if (ornament.get("Scheduler") or {}).get("Enable") else "关闭",
+            "value": "开启"
+            if (ornament.get("Scheduler") or {}).get("Enable")
+            else "关闭",
         }
     )
     if ornament_stage.get("Dungeon") not in (None, "do_not_use"):
@@ -550,7 +584,9 @@ def build_native_preview(config_path: str | Path, ts: str) -> dict:
     rows.append(
         {
             "key": "历战余响",
-            "value": "开启" if (weekly.get("Scheduler") or {}).get("Enable") else "关闭",
+            "value": "开启"
+            if (weekly.get("Scheduler") or {}).get("Enable")
+            else "关闭",
         }
     )
     if weekly_stage.get("Name") not in (None, "do_not_use"):

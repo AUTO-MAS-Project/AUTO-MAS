@@ -5,8 +5,8 @@
 #
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
+#   published by the Free Software Foundation, either version 3 or (at your option)
+#   any later version.
 #
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
@@ -16,12 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MaaEnd 配置恢复池声明：owner 解析 + 用户守卫 + 本体播种，供基座统一分发。
+"""MaaEnd 配置恢复服务：MAS 用户配置池 / MaaEnd 原生配置池（声明式池）。
 
-池函数显式收 :class:`~app.utils.config_restore.RestoreContext`，全部逻辑
-自包含（守卫与 owner 解析走 ``ctx.script_config.UserData``，路径走专项
-字段与 :func:`~app.task.MaaEnd.ScriptConfig.maaend_config_mode`），不依赖
-核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
+池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
+``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
+（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+备份文件级原语见同目录 ``backup_archive``。
 
 mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 整目录 + 快速配置
 覆盖层字段侧车。MaaEnd 用户页的任务配置卡片（快速配置）字段存在
@@ -38,20 +38,20 @@ import uuid
 from pathlib import Path
 
 from app.utils import get_logger
-from app.utils.config_restore import ConfigRestorePool
+from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from ..ScriptConfig import maaend_config_mode
 from .backup_archive import (
-    archive_mas_backup,
-    archive_native_backup,
     build_backup_file_summary,
     build_overlay_summary,
+    collect_mas_files,
+    collect_native_files,
     get_mas_backup_dir,
     get_native_backup_dir,
     group_overlay,
-    list_mas_backups,
-    list_native_backups,
+    mas_backup_root,
     mas_config_dir,
+    native_backup_root,
     read_overlay_sidecar,
     read_overlay_values,
     restore_mas_backup,
@@ -64,14 +64,14 @@ RESTORE_SCRIPT_NAME = "maaend"
 """专项统一名（文案参数化用）"""
 
 
-def _user_guard(ctx) -> None:
+def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
         raise ValueError("MaaEnd 用户不存在，请刷新后重试")
 
 
-def _mas_owner(ctx) -> str | None:
+def _mas_owner(ctx: RestoreContext) -> str | None:
     """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
 
     脚本态共享 ``Default``、用户态用当前用户目录，与
@@ -90,20 +90,20 @@ def _mas_owner(ctx) -> str | None:
     return ctx.user_id if mode == "用户" else "Default"
 
 
-def _native_config_path(ctx) -> Path | None:
+def _native_config_path(ctx: RestoreContext) -> Path | None:
     """MaaEnd 安装目录 config/；未配置脚本路径返回 ``None``。"""
 
     raw = str(ctx.script_config.get("Info", "Path") or "").strip()
     return Path(raw) / "config" if raw else None
 
 
-def _mas_dir_for_owner(ctx, owner: str) -> Path:
+def _mas_dir_for_owner(ctx: RestoreContext, owner: str) -> Path:
     """按 owner 求 MAS 配置目录（归档/恢复目标路径）。"""
 
     return mas_config_dir(ctx.script_id, owner)
 
 
-def _seed_mas_dir(ctx, mas_dir: Path) -> None:
+def _seed_mas_dir(ctx: RestoreContext, mas_dir: Path) -> None:
     """MAS 配置目录缺失时从 MaaEnd 安装目录 config/ 播种。
 
     会话（ScriptConfigTask ``set_maaend``）本就会在目录缺配置文件时回灌，
@@ -125,62 +125,64 @@ def _seed_mas_dir(ctx, mas_dir: Path) -> None:
     logger.info(f"已从 MaaEnd 本体播种 MAS 配置目录: {mas_dir}")
 
 
-async def _list_mas(ctx) -> list[str]:
-    return list_mas_backups(ctx.script_id, ctx.user_id)
+# ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _list_native(ctx) -> list[str]:
-    config_path = _native_config_path(ctx)
-    if config_path is None:
-        return []
-    return list_native_backups(config_path)
+async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
+    """归档内容 = owner 目录 ConfigFile 副本 + 覆盖层字段侧车（内存 JSON）。
+
+    归档前播种 owner 目录（缺失时从 MaaEnd 本体 config/ 回灌）；直控/
+    无法判态（owner 为 ``None``）或目录仍缺失/为空时返回 ``None``（无可
+    归档内容）。
+    """
+
+    _user_guard(ctx)
+    owner = _mas_owner(ctx)
+    if owner is None:
+        return None
+    mas_dir = _mas_dir_for_owner(ctx, owner)
+    _seed_mas_dir(ctx, mas_dir)
+    return (
+        collect_mas_files(
+            mas_dir,
+            read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)]),
+        )
+        or None
+    )
+
+
+async def _mas_root(ctx: RestoreContext) -> Path:
+    return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
 def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
-    """mas 池预览载荷：覆盖层字段分区预览（MAS 独有配置 + MaaEnd 对应配置）。
+    """mas 池预览载荷：覆盖层字段分区 + ConfigFile 副本摘要（与 native 同口径）。
 
-    ConfigFile 里的 mxu-MaaEnd.json 任务开关/选项在快速配置开启时运行时
-    会被表单覆盖、不是生效值，展示它只会误导（与表单对不上）；这里只
-    展示与页面同源的侧车字段，且按「MAS 独有（查看详细配置看不到）/
-    MaaEnd 对应（可在 MaaEnd GUI 对照）」分区。理智任务详情的基质模式/
-    地点等取值文本来自源码固化 zh_cn 词表（不依赖本体运行时）。旧版备份
-    无侧车，无可展示内容。
+    覆盖层侧车按「MAS 独有（查看详细配置看不到）/ MaaEnd 对应（可在 MaaEnd
+    GUI 对照）」分区展示页面字段。ConfigFile 副本里的 mxu-MaaEnd.json 与
+    native 池共用同一摘要口径（:func:`build_backup_file_summary`）——副本
+    恢复时会完整写回，预览范围必须与恢复范围一致（两池同等存在的文件共用
+    渲染）；快速配置开启时副本里的任务开关/选项运行时会被表单覆盖，生效值
+    以侧车分区为准。理智任务详情的取值文本来自源码固化 zh_cn 词表（不依赖
+    本体运行时）。旧版备份无侧车，只剩文件摘要。
     """
 
     if backup is None:
         raise ValueError(f"备份不存在: {ts}")
+    file_cards = build_backup_file_summary(backup)
     overlay = read_overlay_sidecar(backup)
     if overlay is None:
-        return {"files": []}
-    return {"files": build_overlay_summary(overlay)}
+        return {"fileCards": file_cards}
+    return {"fileCards": build_overlay_summary(overlay) + file_cards}
 
 
-def _preview_payload(ctx, ts: str, backup: Path | None) -> dict:
-    """native 池预览载荷：mxu-MaaEnd.json 摘要（实例与任务启用清单）。
-
-    载荷必须是 dict（通用预览响应模型的 ``data`` 字段），文件列表挂在
-    ``files`` 键下，前端 ``#preview`` 插槽按 ``raw.files`` 消费。
-    """
-
-    if backup is None:
-        raise ValueError(f"备份不存在: {ts}")
-    return {"files": build_backup_file_summary(backup)}
-
-
-async def _preview_mas(ctx, ts: str) -> dict:
+async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return _overlay_preview_payload(
         get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
     )
 
 
-async def _preview_native(ctx, ts: str) -> dict:
-    config_path = _native_config_path(ctx)
-    if config_path is None:
-        return {"files": []}
-    return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
-
-
-async def _restore_mas(ctx, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
@@ -199,54 +201,67 @@ async def _restore_mas(ctx, ts: str) -> object:
         await user.update(group_overlay(restored_overlay))
 
 
-async def _restore_native(ctx, ts: str) -> object:
+# ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
+
+
+async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+    """归档内容 = MaaEnd 安装目录 config/ 整目录（缺失/为空返回 ``None``）。"""
+
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return None
+    return collect_native_files(config_path) or None
+
+
+async def _native_root(ctx: RestoreContext) -> Path | None:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return None
+    return native_backup_root(config_path)
+
+
+def _preview_payload(ctx: RestoreContext, ts: str, backup: Path | None) -> dict:
+    """native 池预览载荷：mxu-MaaEnd.json 摘要（实例与任务启用清单）。
+
+    载荷必须是 dict（通用预览响应模型的 ``data`` 字段）；摘要卡挂
+    ``fileCards`` 键（专项自定义结构，与基座标准 ``files`` 归档清单分离），
+    前端 ``#preview`` 插槽按 ``raw.fileCards`` 消费。
+    """
+
+    if backup is None:
+        raise ValueError(f"备份不存在: {ts}")
+    return {"fileCards": build_backup_file_summary(backup)}
+
+
+async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return {"fileCards": []}
+    return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
+
+
+async def _restore_native(ctx: RestoreContext, ts: str) -> object:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 MaaEnd 脚本路径")
     restore_native_backup(config_path, ts)
 
 
-async def _snapshot_mas(ctx) -> dict:
-    _user_guard(ctx)
-    owner = _mas_owner(ctx)
-    dest = None
-    if owner:
-        mas_dir = _mas_dir_for_owner(ctx, owner)
-        _seed_mas_dir(ctx, mas_dir)
-        dest = archive_mas_backup(
-            ctx.script_id,
-            ctx.user_id,
-            mas_dir,
-            overlay=read_overlay_values(
-                ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-            ),
-        )
-    times = list_mas_backups(ctx.script_id, ctx.user_id)
-    return {"created": dest is not None, "time": times[0] if times else ""}
-
-
-async def _snapshot_native(ctx) -> dict:
-    config_path = _native_config_path(ctx)
-    dest = archive_native_backup(config_path) if config_path is not None else None
-    times = list_native_backups(config_path) if config_path is not None else []
-    return {"created": dest is not None, "time": times[0] if times else ""}
-
-
 RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        list_backups=_list_mas,
+        files=_mas_files,
+        backup_root=_mas_root,
         preview=_preview_mas,
         restore=_restore_mas,
-        snapshot=_snapshot_mas,
     ),
     ConfigRestorePool(
         key="native",
         kind="script",
-        list_backups=_list_native,
+        files=_native_files,
+        backup_root=_native_root,
         preview=_preview_native,
         restore=_restore_native,
-        snapshot=_snapshot_native,
     ),
 ]

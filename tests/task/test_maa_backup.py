@@ -23,8 +23,11 @@ config/，验证两池归档的指纹去重、恢复闭环（含恢复前强制�
 归档的缺目录容错、脚本模式多用户隔离与备份预览摘要的纯逻辑。
 """
 
+import asyncio
 import json
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -489,3 +492,85 @@ def test_seed_mas_dir_from_install(tmp_path: Path) -> None:
     other = tmp_path / "data" / "s2" / "ConfigFile"
     _seed_mas_dir(empty_ctx, other)
     assert not other.exists()
+
+
+def test_restore_service_callbacks_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """service 级真实调用链：声明式 snapshot（含播种）→ preview → restore。"""
+
+    from app.task.MAA.tools import restore_service as rs
+    from app.utils.config_restore import RestoreContext, build_restore_service
+
+    monkeypatch.chdir(tmp_path)
+    script_id, uid = "s-0005", uuid.uuid4()
+    install = tmp_path / "MAA" / "config"
+    install.mkdir(parents=True)
+    (install / "gui.json").write_text(
+        json.dumps(
+            {
+                "Current": "Default",
+                "Configurations": {"Default": {"Connect.Address": "127.0.0.1:16384"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _FakeUser:
+        def __init__(self):
+            self.updated: list[dict] = []
+
+        def get(self, section: str, key: str):
+            data = {
+                "Info": {"Mode": "用户", "Server": "Official"},
+                "Task": {"IfFight": True},
+            }
+            return data.get(section, {}).get(key)
+
+        async def update(self, values: dict) -> None:
+            self.updated.append(values)
+
+    user = _FakeUser()
+    script_config = SimpleNamespace(
+        get=lambda g, k: {("Info", "Path"): str(tmp_path / "MAA")}.get((g, k), ""),
+        UserData={uid: user},
+    )
+    ctx = RestoreContext(
+        config=None, script_config=script_config, script_id=script_id, user_id=str(uid)
+    )
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+
+    # mas：目录缺失 → 播种后声明式归档（侧车读取自 ctx 用户配置）
+    created = asyncio.run(service.ensure("mas"))
+    assert created["created"] is True and created["time"]
+    mas_dir = tmp_path / "data" / script_id / str(uid) / "ConfigFile"
+    assert (mas_dir / "gui.json").is_file()  # 播种生效
+
+    payload = asyncio.run(service.preview("mas", created["time"]))
+    assert "fileCards" in payload  # 定制预览自带侧车分区载荷
+    assert {section["name"] for section in payload["fileCards"]} == {
+        "mas-only",
+        "maa",
+        "gui.json",  # 副本里的 gui.json 摘要与 native 池同口径共用渲染
+    }
+
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(
+        service.read_backup_file("mas", created["time"], "_mas_overlay.json")
+    )
+    assert "IfFight" in content["content"]
+
+    # 恢复：文件回滚 + 侧车按段回填（Mode 仅预览不回填）
+    asyncio.run(service.restore("mas", created["time"]))
+    assert user.updated == [{"Info": {"Server": "Official"}, "Task": {"IfFight": True}}]
+
+    # native：快照 + 恢复闭环（预览载荷带 fileCards 键）
+    created_native = asyncio.run(service.ensure("native"))
+    assert created_native["created"] is True
+    payload_native = asyncio.run(service.preview("native", created_native["time"]))
+    assert "fileCards" in payload_native
+    # 同一份 gui.json 两池同口径：mas 摘要行与 native 完全一致
+    mas_gui = next(c for c in payload["fileCards"] if c["name"] == "gui.json")
+    native_gui = next(c for c in payload_native["fileCards"] if c["name"] == "gui.json")
+    assert mas_gui["summary"] == native_gui["summary"]
+    asyncio.run(service.restore("native", created_native["time"]))

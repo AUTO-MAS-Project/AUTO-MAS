@@ -25,6 +25,7 @@ config/，验证两池归档的指纹去重、恢复闭环（含恢复前强制�
 
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -389,10 +390,10 @@ def test_preview_mas_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         script_config=SimpleNamespace(get=lambda g, k: str(tmp_path / "MaaEnd")),
     )
     payload = asyncio.run(_preview_mas(ctx, ts))
-    files = {f["name"]: f for f in payload["files"]}
+    cards = {f["name"]: f for f in payload["fileCards"]}
     # 夹具只有开关没有账号/理智选项，配置内容区无行时整体省略
-    assert set(files) == {"mas-only", "tasks"}
-    tasks_rows = {row["key"]: row["value"] for row in files["tasks"]["summary"]}
+    assert set(cards) == {"mas-only", "tasks"}
+    tasks_rows = {row["key"]: row["value"] for row in cards["tasks"]["summary"]}
     assert tasks_rows["已启用任务"] == "理智作战"
 
 
@@ -410,3 +411,96 @@ def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:
 
     assert get_mas_backup_dir(script_id, user_id, "20260913-000000") is None
     assert get_mas_backup_dir(script_id, user_id, "../../../evil") is None
+
+
+def test_restore_service_callbacks_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """service 级真实调用链：声明式 snapshot（含播种）→ preview → restore。"""
+
+    from types import SimpleNamespace
+
+    from app.task.MaaEnd.tools import restore_service as rs
+    from app.utils.config_restore import RestoreContext, build_restore_service
+
+    monkeypatch.chdir(tmp_path)
+    script_id, uid = "s-0006", uuid.uuid4()
+    install = tmp_path / "MaaEnd" / "config"
+    install.mkdir(parents=True)
+    (install / "mxu-MaaEnd.json").write_text(
+        json.dumps(
+            {
+                "instances": [
+                    {
+                        "id": "automas",
+                        "name": "AUTO-MAS",
+                        "tasks": [{"taskName": "MAA_END_SANITY", "enabled": True}],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class _FakeUser:
+        def __init__(self):
+            self.updated: list[dict] = []
+
+        def get(self, section: str, key: str):
+            data = {
+                "Info": {"Mode": "用户", "Id": "13084046220"},
+                "Task": {"IfQuickConfig": False},
+            }
+            return data.get(section, {}).get(key)
+
+        async def update(self, values: dict) -> None:
+            self.updated.append(values)
+
+    user = _FakeUser()
+    script_config = SimpleNamespace(
+        get=lambda g, k: {("Info", "Path"): str(tmp_path / "MaaEnd")}.get((g, k), ""),
+        UserData={uid: user},
+    )
+    ctx = RestoreContext(
+        config=None, script_config=script_config, script_id=script_id, user_id=str(uid)
+    )
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+
+    # mas：目录缺失 → 播种后声明式归档（侧车读取自 ctx 用户配置）
+    created = asyncio.run(service.ensure("mas"))
+    assert created["created"] is True and created["time"]
+    mas_dir = tmp_path / "data" / script_id / str(uid) / "ConfigFile"
+    assert (mas_dir / "mxu-MaaEnd.json").is_file()  # 播种生效
+
+    payload = asyncio.run(service.preview("mas", created["time"]))
+    assert "fileCards" in payload  # 定制预览自带侧车分区载荷
+    # 快速配置关闭时任务启用/配置细节隐藏，但账号行不受门控（config 区仍在）
+    assert {section["name"] for section in payload["fileCards"]} == {
+        "mas-only",
+        "config",
+        "mxu-MaaEnd.json",  # 副本里的 mxu 摘要与 native 池同口径共用渲染
+    }
+
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(
+        service.read_backup_file("mas", created["time"], "_mas_overlay.json")
+    )
+    assert "13084046220" in content["content"]
+
+    # 恢复：文件回滚 + 侧车按段回填（Mode 仅预览不回填）
+    asyncio.run(service.restore("mas", created["time"]))
+    assert user.updated == [{"Info": {"Id": "13084046220"}}]
+
+    # native：快照 + 恢复闭环（预览载荷带 fileCards 键）
+    created_native = asyncio.run(service.ensure("native"))
+    assert created_native["created"] is True
+    payload_native = asyncio.run(service.preview("native", created_native["time"]))
+    assert "fileCards" in payload_native
+    # 同一份 mxu 文件两池同口径：mas 摘要行与 native 完全一致
+    mas_mxu = next(c for c in payload["fileCards"] if c["name"] == "mxu-MaaEnd.json")
+    native_mxu = next(
+        c for c in payload_native["fileCards"] if c["name"] == "mxu-MaaEnd.json"
+    )
+    assert mas_mxu["summary"] == native_mxu["summary"]
+    asyncio.run(service.restore("native", created_native["time"]))

@@ -38,9 +38,10 @@ import json
 import shutil
 from pathlib import Path
 
+import yaml
+
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -48,7 +49,7 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import read_file
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -159,7 +160,7 @@ def native_registry_file(root: Path) -> Path:
     return _one_dragon_file(root)
 
 
-def _onedragon_files(root: Path) -> dict[str, Path]:
+def collect_onedragon_files(root: Path) -> dict[str, Path]:
     """当前一条龙原生配置的文件集：one_dragon.yml（原生注册表）+ 注册表内原生实例目录。
 
     注册表源走 :func:`native_registry_file`（视图在盘时读 sidecar 原件）；
@@ -198,7 +199,7 @@ def archive_onedragon_backup(root: Path, force: bool = False) -> Path | None:
     冗余条目）；跳过返回 ``None``，否则返回归档目录。
     """
 
-    files = _onedragon_files(root)
+    files = collect_onedragon_files(root)
     if not files:
         raise ValueError(f"一条龙原生配置不存在: {root}")
 
@@ -263,6 +264,29 @@ def restore_onedragon_backup(root: Path, ts: str) -> None:
 # ══════════════════ MAS 用户配置（绑定槽） ══════════════════
 
 
+def mas_user_info_content(meta: dict) -> str:
+    """信息字段快照的 YAML 内容（与 ``write_file`` 落盘序列化一致，免临时文件）。"""
+
+    return yaml.safe_dump(meta, allow_unicode=True, sort_keys=False)
+
+
+def collect_mas_files(
+    slot_dir: str | Path, meta: dict | None = None
+) -> dict[str, "Path | str"]:
+    """收集 MAS 用户槽文件集 + 信息字段快照（内存 YAML，免临时落盘）。
+
+    槽目录不存在时无可归档内容，返回空 dict（信息快照不单独入档）。
+    """
+
+    slot_dir = Path(slot_dir)
+    files: dict[str, "Path | str"] = {}
+    if slot_dir.is_dir():
+        files.update(dir_files(slot_dir))
+    if meta and files:
+        files[MAS_USER_INFO_FILE] = mas_user_info_content(meta)
+    return files
+
+
 def archive_mas_backup(
     script_id: str,
     slot_idx: int,
@@ -277,33 +301,18 @@ def archive_mas_backup(
     信息字段快照（见 :data:`MAS_USER_INFO_FILE`），写入后 ``list/preview/
     restore`` 可在不触碰当前配置的情况下还原该时点的基本信息卡内容。
 
-    指纹一致性：``mas_user_info.yml`` 必须在 ``archive_dir`` 内部指纹对比
-    之前已存在于源目录内（否则新归档目录比旧目录多 1 个文件、hash 永远
-    不等 → MAS 池每轮都新建一份，第 11 次起最旧的被清）。本函数把 meta
-    临时写入源槽做指纹对比，归档后立刻清理临时文件——归档目录内仍保留
-    完整 ``mas_user_info.yml`` 副本。
+    指纹一致性：``mas_user_info.yml`` 以内存 YAML 随文件集一起入档
+    （:func:`archive_files` 支持内存内容），不落临时文件进源槽；归档目录
+    内保留完整副本，源槽目录永不污染。
     """
 
-    staged_meta_path: Path | None = None
-    if meta:
-        # 临时把 meta 写进源目录，dir_files 自动收录，让指纹对比看到这一文件
-        staged_meta_path = slot_dir / MAS_USER_INFO_FILE
-        write_file(staged_meta_path, meta)
-    try:
-        dest = archive_dir(slot_dir, mas_backup_root(script_id, slot_idx), force=force)
-    finally:
-        # 即便 archive_dir 抛错也清理临时文件，避免污染源 slot_dir
-        if staged_meta_path is not None:
-            try:
-                staged_meta_path.unlink()
-            except OSError as e:
-                logger.warning(f"清理临时 {MAS_USER_INFO_FILE} 失败: {e}")
+    files = collect_mas_files(slot_dir, meta)
+    if not files:
+        return None
+    dest = archive_files(files, mas_backup_root(script_id, slot_idx), force=force)
     if dest is None:
         logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
         return None
-    if meta:
-        # 归档目录内保留完整副本（list/preview/restore 消费该文件）
-        write_file(dest / MAS_USER_INFO_FILE, meta)
 
     logger.info(f"槽 {slot_idx:02d} MAS 配置已归档: {dest.name}")
     return dest

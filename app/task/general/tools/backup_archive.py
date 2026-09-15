@@ -47,7 +47,6 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -81,19 +80,38 @@ def mas_config_dir(script_id: str, user_id: str) -> Path:
     return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
 
 
-def native_backup_root(config_path: str | Path) -> Path:
-    """脚本原生配置的项目级归档目录：``data/GeneralBackups/native/{key}``。
+def native_backup_root(script_id: str, config_path: str | Path) -> Path:
+    """脚本原生配置的**脚本级**归档目录：``data/{script_id}/GeneralBackups/native/{key}``。
 
-    ``key`` 是物理配置根的指纹——File 态取文件自身路径、Folder 态取目录
-    路径，同一份物理配置跨脚本实例共享、不随脚本删除。
+    通用脚本（脚本级 owner）：归档生命周期随脚本实例；``key`` 仍取物理
+    配置根指纹（File 态取文件自身路径、Folder 态取目录路径），脚本内换绑
+    配置路径后旧备份不与新配置混淆。
     """
 
     return (
-        Path.cwd() / "data" / "GeneralBackups" / "native" / config_root_key(config_path)
+        Path.cwd()
+        / "data"
+        / script_id
+        / "GeneralBackups"
+        / "native"
+        / config_root_key(config_path)
     )
 
 
 # ══════════════════ MAS 配置副本（目录型，恒按用户） ══════════════════
+
+
+def collect_mas_files(mas_dir: Path) -> dict[str, Path]:
+    """收集用户 ConfigFile 目录文件集（目录缺失或为空返回空 dict）。
+
+    供声明式池声明归档内容（``files`` 回调）；:func:`archive_mas_backup`
+    亦复用本函数。
+    """
+
+    mas_dir = Path(mas_dir)
+    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+        return {}
+    return dir_files(mas_dir)
 
 
 def archive_mas_backup(
@@ -107,10 +125,10 @@ def archive_mas_backup(
     不播种。
     """
 
-    mas_dir = Path(mas_dir)
-    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+    files = collect_mas_files(mas_dir)
+    if not files:
         return None
-    dest = archive_dir(mas_dir, mas_backup_root(script_id, user_id), force=force)
+    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("用户 %s 的 MAS 配置无变化，跳过归档", user_id)
         return None
@@ -159,30 +177,42 @@ def archive_mas_runtime_backup(script_id: str, user_id: str, mas_dir: Path) -> N
 # ══════════════════ 脚本原生配置（ConfigPath，File/Folder 两态） ══════════════════
 
 
-def archive_native_backup(
-    config_path: Path, config_mode: str, force: bool = False
-) -> Path | None:
-    """归档脚本原生配置当前状态（Folder 整目录 / File 单文件）。
+def collect_native_files(config_path: str | Path, config_mode: str) -> dict[str, Path]:
+    """收集脚本原生配置文件集（Folder 整目录 / File 单文件）。
 
-    归档落到项目级池（按物理配置根指纹分桶），与脚本实例解耦。
-    路径不存在时无可归档内容，返回 ``None``；``config_mode`` 取
-    ``Script.ConfigPathMode``（``Folder`` / ``File``）。
+    路径不存在（或 Folder 目录为空）返回空 dict；未知模式记警告后返回
+    空 dict。供声明式池声明归档内容（``files`` 回调），也供
+    :func:`archive_native_backup` 复用。
     """
 
     config_path = Path(config_path)
     if config_mode == "Folder":
         if not config_path.is_dir() or not any(config_path.iterdir()):
-            return None
-        dest = archive_dir(config_path, native_backup_root(config_path), force=force)
-    elif config_mode == "File":
+            return {}
+        return dir_files(config_path)
+    if config_mode == "File":
         if not config_path.is_file():
-            return None
-        dest = archive_files(
-            {config_path.name: config_path}, native_backup_root(config_path), force=force
-        )
-    else:
-        logger.warning(f"未知的配置路径模式，跳过归档: {config_mode}")
+            return {}
+        return {config_path.name: config_path}
+    logger.warning(f"未知的配置路径模式，跳过归档: {config_mode}")
+    return {}
+
+
+def archive_native_backup(
+    script_id: str, config_path: Path, config_mode: str, force: bool = False
+) -> Path | None:
+    """归档脚本原生配置当前状态（Folder 整目录 / File 单文件）。
+
+    归档落到**脚本级池**（``data/{script_id}/``，生命周期随脚本实例；
+    池内按物理配置根指纹二级分桶）。路径不存在时无可归档内容，返回
+    ``None``；``config_mode`` 取 ``Script.ConfigPathMode``（``Folder`` /
+    ``File``）。
+    """
+
+    files = collect_native_files(config_path, config_mode)
+    if not files:
         return None
+    dest = archive_files(files, native_backup_root(script_id, config_path), force=force)
     if dest is None:
         logger.info("通用脚本原生配置无变化，跳过归档")
         return None
@@ -190,33 +220,37 @@ def archive_native_backup(
     return dest
 
 
-def list_native_backups(config_path: str | Path) -> list[str]:
+def list_native_backups(script_id: str, config_path: str | Path) -> list[str]:
     """脚本原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return list_times(native_backup_root(script_id, config_path))
 
 
-def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
+def get_native_backup_dir(
+    script_id: str, config_path: str | Path, ts: str
+) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return get_backup_dir(native_backup_root(script_id, config_path), ts)
 
 
-def restore_native_backup(config_path: Path, config_mode: str, ts: str) -> None:
+def restore_native_backup(
+    script_id: str, config_path: Path, config_mode: str, ts: str
+) -> None:
     """把归档恢复到脚本原生配置（恢复前强制存底当前，误恢复可找回）。
 
     Folder 态整目录替换；File 态取备份内的单文件（File 池每份归档只含
     ``ConfigPath.name`` 一个文件）覆盖目标。
     """
 
-    backup_dir = get_native_backup_dir(config_path, ts)
+    backup_dir = get_native_backup_dir(script_id, config_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     config_path = Path(config_path)
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
-    archive_native_backup(config_path, config_mode, force=True)
+    archive_native_backup(script_id, config_path, config_mode, force=True)
     if config_mode == "Folder":
-        restore_dir(native_backup_root(config_path), ts, config_path)
+        restore_dir(native_backup_root(script_id, config_path), ts, config_path)
     elif config_mode == "File":
         files = dir_files(backup_dir)
         if not files:
@@ -229,31 +263,3 @@ def restore_native_backup(config_path: Path, config_mode: str, ts: str) -> None:
     else:
         raise ValueError(f"未知的配置路径模式: {config_mode}")
     logger.info("通用脚本原生配置已恢复备份 %s", ts)
-
-
-# ══════════════════ 备份预览摘要（文件清单粒度） ══════════════════
-
-
-def _human_size(size: int) -> str:
-    """字节数转人性化文本。"""
-
-    value = float(size)
-    for unit in ("B", "KB", "MB", "GB"):
-        if value < 1024 or unit == "GB":
-            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    return f"{value:.1f} GB"
-
-
-def build_file_list_preview(backup_dir: Path) -> dict:
-    """备份文件清单（预览用，纯读）。
-
-    通用脚本配置格式任意（透传），MAS 不解析内容——预览只列文件相对
-    路径与大小；详细内容经「查看详细配置」在脚本 GUI 里查看。
-    """
-
-    files = [
-        {"name": rel, "size": _human_size(path.stat().st_size)}
-        for rel, path in sorted(dir_files(backup_dir).items())
-    ]
-    return {"files": files}

@@ -54,7 +54,6 @@ HSR 特有的两引擎目标解析、侧车、恢复语义（恢复前强制归�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 import yaml
@@ -217,17 +216,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把页面核心字段写到临时文件（参与归档指纹，归档后即删）。"""
-
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
-
-
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
     """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
 
@@ -250,19 +238,19 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 def archive_mas_backup(
     script_id: str, user_id: str, overlay: dict | None, force: bool = False
 ) -> Path | None:
-    """归档页面核心字段侧车到用户池（指纹去重，无变化跳过）。"""
+    """归档页面核心字段侧车到用户池（指纹去重，无变化跳过）。
+
+    侧车以内存 JSON 直接入档（:func:`archive_files` 支持内存内容），免临时
+    文件。
+    """
 
     if not overlay:
         return None
-    temp_sidecar = _sidecar_temp_file(overlay)
-    try:
-        dest = archive_files(
-            {_OVERLAY_SIDECAR_NAME: temp_sidecar},
-            mas_backup_root(script_id, user_id),
-            force=force,
-        )
-    finally:
-        temp_sidecar.unlink(missing_ok=True)
+    dest = archive_files(
+        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        mas_backup_root(script_id, user_id),
+        force=force,
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -639,16 +627,8 @@ def build_native_preview(sra_app_data: str | Path, ts: str) -> dict:
                 {"name": f"sra:{stem}", "label": f"SRA 配置档案 · {stem}", "rows": rows}
             )
 
-    sections.append(
-        {
-            "name": "files",
-            "label": "备份文件",
-            "rows": [
-                {"key": rel, "value": f"{path.stat().st_size} B"}
-                for rel, path in sorted(files.items())
-            ],
-        }
-    )
+    # 归档文件清单由 service.preview 统一注入标准 ``files`` 字段
+    # （基座兜底），专项预览载荷只负责摘要 sections
     return {"sections": sections}
 
 

@@ -5,8 +5,8 @@
 #
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
+#   published by the Free Software Foundation, either version 3 or (at your option)
+#   any later version.
 #
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
@@ -16,11 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-WW 配置恢复池声明：三态 owner 解析 + 用户守卫，供基座统一分发。
+"""OK-WW 配置恢复服务：MAS 用户配置池 / ok-ww 原生配置池（声明式池）。
 
-池函数显式收 :class:`~app.utils.config_restore.RestoreContext`，全部逻辑
-自包含（守卫与 owner 解析走 ``ctx.script_config.UserData``，路径走专项
-字段），不依赖核心门面内部方法。备份文件级原语见同目录 ``backup_archive``。
+池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
+``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
+（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+备份文件级原语见同目录 ``backup_archive``。
 
 mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 快速配置
 覆盖层字段侧车。页面任务配置卡片的字段存在 MAS 用户配置里、运行时才覆盖
@@ -34,19 +35,19 @@ ZzzOd 字段回填模式），预览与页面认知才一致。**池恒按用户
 import uuid
 from pathlib import Path
 
-from app.utils.config_restore import ConfigRestorePool
+from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from ..AutoProxy import _OKWW_REL_CONFIG_DIR, _okww_config_mode
 from .backup_archive import (
-    archive_mas_backup,
-    archive_native_backup,
     build_backup_file_summary,
     build_overlay_summary,
+    collect_mas_files,
+    collect_native_files,
     get_mas_backup_dir,
     get_native_backup_dir,
-    list_mas_backups,
-    list_native_backups,
+    mas_backup_root,
     mas_config_dir,
+    native_backup_root,
     read_overlay_sidecar,
     read_overlay_values,
     restore_mas_backup,
@@ -57,14 +58,14 @@ RESTORE_SCRIPT_NAME = "ok-ww"
 """专项统一名（文案参数化用）"""
 
 
-def _user_guard(ctx) -> None:
+def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
         raise ValueError("OK-WW 用户不存在，请刷新后重试")
 
 
-def _mas_owner(ctx) -> str | None:
+def _mas_owner(ctx: RestoreContext) -> str | None:
     """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
 
     脚本态共享 ``Default``、用户态用当前用户目录，与
@@ -87,41 +88,44 @@ def _mas_owner(ctx) -> str | None:
     return ctx.user_id if mode == "用户" else "Default"
 
 
-def _native_config_path(ctx) -> Path | None:
+def _native_config_path(ctx: RestoreContext) -> Path | None:
     """ok-ww 原生 working 配置目录；未配置脚本路径返回 ``None``。"""
 
     raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
     return Path(raw) / _OKWW_REL_CONFIG_DIR if raw else None
 
 
-def _mas_dir_for_owner(ctx, owner: str) -> Path:
+def _mas_dir_for_owner(ctx: RestoreContext, owner: str) -> Path:
     """按三态 owner 求 MAS 配置目录（归档/恢复目标路径）。"""
 
     return mas_config_dir(ctx.script_id, owner)
 
 
-async def _list_mas(ctx) -> list[str]:
-    return list_mas_backups(ctx.script_id, ctx.user_id)
+# ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _list_native(ctx) -> list[str]:
-    config_path = _native_config_path(ctx)
-    if config_path is None:
-        return []
-    return list_native_backups(config_path)
+async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
+    """归档内容 = owner 目录 ConfigFile 副本 + 覆盖层字段侧车（内存 JSON）。
 
-
-def _preview_payload(ctx, ts: str, backup: Path | None) -> dict:
-    """native 池预览载荷：MAS 任务配置文件（日常任务，ok-ww 直接消费、
-    文件值即生效值），其余文件经「查看详细配置」恢复后在 ok-ww GUI 查看。
-
-    载荷必须是 dict（通用预览响应模型的 ``data`` 字段），文件列表挂在
-    ``files`` 键下，前端 ``#preview`` 插槽按 ``raw.files`` 消费。
+    直控/无法判态（owner 为 ``None``）或目录缺失/为空时返回 ``None``
+    （无可归档内容）。
     """
 
-    if backup is None:
-        raise ValueError(f"备份不存在: {ts}")
-    return {"files": build_backup_file_summary(backup)}
+    _user_guard(ctx)
+    owner = _mas_owner(ctx)
+    if owner is None:
+        return None
+    return (
+        collect_mas_files(
+            _mas_dir_for_owner(ctx, owner),
+            read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)]),
+        )
+        or None
+    )
+
+
+async def _mas_root(ctx: RestoreContext) -> Path:
+    return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
 def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
@@ -137,9 +141,9 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
         raise ValueError(f"备份不存在: {ts}")
     overlay = read_overlay_sidecar(backup)
     if overlay is None:
-        return {"files": []}
+        return {"fileCards": []}
     return {
-        "files": [
+        "fileCards": [
             {
                 "name": "overlay",
                 "label": "任务配置（快速配置）",
@@ -149,20 +153,13 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
     }
 
 
-async def _preview_mas(ctx, ts: str) -> dict:
+async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return _overlay_preview_payload(
         get_mas_backup_dir(ctx.script_id, ctx.user_id, ts), ts
     )
 
 
-async def _preview_native(ctx, ts: str) -> dict:
-    config_path = _native_config_path(ctx)
-    if config_path is None:
-        return {"files": []}
-    return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
-
-
-async def _restore_mas(ctx, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
@@ -181,52 +178,68 @@ async def _restore_mas(ctx, ts: str) -> object:
         await user.update({"Task": restored_overlay})
 
 
-async def _restore_native(ctx, ts: str) -> object:
+# ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
+
+
+async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+    """归档内容 = ok-ww 原生 working 配置整目录（缺失/为空返回 ``None``）。"""
+
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return None
+    return collect_native_files(config_path) or None
+
+
+async def _native_root(ctx: RestoreContext) -> Path | None:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return None
+    return native_backup_root(config_path)
+
+
+def _preview_payload(ctx: RestoreContext, ts: str, backup: Path | None) -> dict:
+    """native 池预览载荷：MAS 任务配置文件（日常任务，ok-ww 直接消费、
+    文件值即生效值），其余文件经「查看详细配置」恢复后在 ok-ww GUI 查看。
+
+    载荷必须是 dict（通用预览响应模型的 ``data`` 字段）；摘要卡挂
+    ``fileCards`` 键（专项自定义结构，与基座标准 ``files`` 归档清单分离），
+    前端 ``#preview`` 插槽按 ``raw.fileCards`` 消费。
+    """
+
+    if backup is None:
+        raise ValueError(f"备份不存在: {ts}")
+    return {"fileCards": build_backup_file_summary(backup)}
+
+
+async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return {"fileCards": []}
+    return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
+
+
+async def _restore_native(ctx: RestoreContext, ts: str) -> object:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 ok-ww 脚本路径")
     restore_native_backup(config_path, ts)
 
 
-async def _snapshot_mas(ctx) -> dict:
-    _user_guard(ctx)
-    owner = _mas_owner(ctx)
-    dest = None
-    if owner:
-        dest = archive_mas_backup(
-            ctx.script_id,
-            ctx.user_id,
-            _mas_dir_for_owner(ctx, owner),
-            overlay=read_overlay_values(
-                ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-            ),
-        )
-    times = list_mas_backups(ctx.script_id, ctx.user_id)
-    return {"created": dest is not None, "time": times[0] if times else ""}
-
-
-async def _snapshot_native(ctx) -> dict:
-    config_path = _native_config_path(ctx)
-    dest = archive_native_backup(config_path) if config_path is not None else None
-    times = list_native_backups(config_path) if config_path is not None else []
-    return {"created": dest is not None, "time": times[0] if times else ""}
-
-
 RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        list_backups=_list_mas,
+        files=_mas_files,
+        backup_root=_mas_root,
         preview=_preview_mas,
         restore=_restore_mas,
-        snapshot=_snapshot_mas,
     ),
     ConfigRestorePool(
         key="native",
         kind="script",
-        list_backups=_list_native,
+        files=_native_files,
+        backup_root=_native_root,
         preview=_preview_native,
         restore=_restore_native,
-        snapshot=_snapshot_native,
     ),
 ]

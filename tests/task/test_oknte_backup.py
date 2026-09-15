@@ -23,7 +23,9 @@
 归档的缺目录容错与备份预览摘要的纯逻辑。
 """
 
+import asyncio
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -267,15 +269,15 @@ def test_preview_payload_is_dict(tmp_path: Path) -> None:
         json.dumps({"daily_anomaly": {"目标消耗体力": 180}}), encoding="utf-8"
     )
     payload = _preview_payload(_Ctx(), "20260910-215808", backup)
-    assert set(payload) == {"files"}
+    assert set(payload) == {"fileCards"}
     # 其余配置文件不进预览（经「查看详细配置」恢复后在 ok-nte GUI 查看）
-    assert [f["name"] for f in payload["files"]] == [
+    assert [f["name"] for f in payload["fileCards"]] == [
         "DailyRoutineTask.json",
         "DailyRoutineTaskConfigs.json",
     ]
-    routine_rows = {r["key"]: r["value"] for r in payload["files"][0]["summary"]}
+    routine_rows = {r["key"]: r["value"] for r in payload["fileCards"][0]["summary"]}
     assert routine_rows["已启用任务"] == "异象界域"
-    configs_rows = {r["key"]: r["value"] for r in payload["files"][1]["summary"]}
+    configs_rows = {r["key"]: r["value"] for r in payload["fileCards"][1]["summary"]}
     assert configs_rows["异象界域·目标消耗体力"] == "180"
 
     # 备份不存在仍抛 ValueError
@@ -284,3 +286,74 @@ def test_preview_payload_is_dict(tmp_path: Path) -> None:
         raise AssertionError("应当抛出 ValueError")
     except ValueError:
         pass
+
+
+def test_restore_service_declarative_pools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """service 级真实调用链：声明式 snapshot → preview（files 键）→ read_file。"""
+
+    from types import SimpleNamespace
+
+    from app.task.OkNte.tools import restore_service as rs
+    from app.utils.config_restore import RestoreContext, build_restore_service
+
+    monkeypatch.chdir(tmp_path)
+    script_id, uid = "s-0004", uuid.uuid4()
+    config_dir = tmp_path / "native" / "configs"
+    config_dir.mkdir(parents=True)
+    (config_dir / "DailyRoutineTask.json").write_text(
+        json.dumps({"Routine Items": [{"id": "coffee", "enabled": True}]}),
+        encoding="utf-8",
+    )
+
+    script_config = SimpleNamespace(
+        get=lambda g, k: {
+            ("Script", "ConfigPath"): str(config_dir),
+            ("Script", "ConfigPathMode"): "Folder",
+        }.get((g, k), ""),
+        UserData={uid: object()},
+    )
+    ctx = RestoreContext(
+        config=None, script_config=script_config, script_id=script_id, user_id=str(uid)
+    )
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+
+    # native（Folder）：声明式归档 + 定制预览（fileCards 为逐文件摘要载荷）+ 派生 read_file
+    created = asyncio.run(service.ensure("native"))
+    assert created["created"] is True and created["time"]
+    payload = asyncio.run(service.preview("native", created["time"]))
+    assert "fileCards" in payload
+    assert [f["name"] for f in payload["fileCards"]] == ["DailyRoutineTask.json"]
+    content = asyncio.run(
+        service.read_backup_file("native", created["time"], "DailyRoutineTask.json")
+    )
+    assert "Routine Items" in content["content"]
+    asyncio.run(service.restore("native", created["time"]))
+
+    # mas：声明式归档（ConfigFile 目录），恢复守卫保留
+    mas_dir = tmp_path / "data" / script_id / str(uid) / "ConfigFile"
+    mas_dir.mkdir(parents=True)
+    (mas_dir / "CoffeeTask.json").write_text("{}", encoding="utf-8")
+    created_mas = asyncio.run(service.ensure("mas"))
+    assert created_mas["created"] is True
+    payload_mas = asyncio.run(service.preview("mas", created_mas["time"]))
+    assert "fileCards" in payload_mas and payload_mas["fileCards"] == []
+
+    # 原生配置缺失：报无变化不抛错
+    empty = build_restore_service(
+        RestoreContext(
+            config=None,
+            script_config=SimpleNamespace(
+                get=lambda g, k: {("Script", "ConfigPath"): str(tmp_path / "nope")}.get(
+                    (g, k), ""
+                ),
+                UserData={uid: object()},
+            ),
+            script_id=script_id,
+            user_id=str(uid),
+        ),
+        rs.RESTORE_SCRIPT_NAME,
+        rs.RESTORE_POOLS,
+    )
+    assert asyncio.run(empty.ensure("native")) == {"created": False, "time": ""}

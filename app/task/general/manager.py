@@ -297,13 +297,14 @@ class GeneralManager(TaskExecuteBase):
         self._recover_previous_run()
         self._snapshot_external_config()
 
-        # 任务级一次性归档脚本原生配置（项目级池，指纹去重，失败不阻断
+        # 任务级一次性归档脚本原生配置（脚本级池，指纹去重，失败不阻断
         # 任务）：此刻 ConfigPath 仍是任务动手前的完整现场，必须在任何
         # 换入/写入前归档
         from .tools.backup_archive import archive_native_backup
 
         with suppress(Exception):
             archive_native_backup(
+                self.script_info.script_id,
                 self.script_config_path,
                 self.script_config.get("Script", "ConfigPathMode"),
             )

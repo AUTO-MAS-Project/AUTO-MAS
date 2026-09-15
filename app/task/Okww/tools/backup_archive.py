@@ -43,12 +43,10 @@ ok-ww 特有的 owner 目录布局、覆盖层侧车、恢复语义（恢复前�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -136,15 +134,22 @@ def read_overlay_values(config) -> dict:
     }
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把覆盖层字段写到临时文件（参与归档指纹，归档后即删）。"""
+def collect_mas_files(
+    mas_dir: str | Path, overlay: dict | None = None
+) -> dict[str, "Path | str"]:
+    """收集 MAS 配置目录文件集 + 覆盖层字段侧车（缺失/为空时返回空 dict）。
 
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
+    侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
+    目录不存在或为空时无可归档内容，侧车不单独入档。
+    """
+
+    mas_dir = Path(mas_dir)
+    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+        return {}
+    files: dict[str, "Path | str"] = dict(dir_files(mas_dir))
+    if overlay:
+        files[_OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+    return files
 
 
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
@@ -172,25 +177,17 @@ def archive_mas_backup(
     ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按三态 owner 解析（脚本态
     共享 Default 目录、用户态独立目录）——池与目标解耦。
-    侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档。
+    侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
+    （内存 JSON 直接入档，免临时文件）。
     目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
     存底（不清理历史条目；内容与最新份一致时同样跳过——当前配置已存放在
     该份备份中，误恢复可从它找回）。
     """
 
-    mas_dir = Path(mas_dir)
-    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+    files = collect_mas_files(mas_dir, overlay)
+    if not files:
         return None
-    files = dir_files(mas_dir)
-    temp_sidecar: Path | None = None
-    if overlay:
-        temp_sidecar = _sidecar_temp_file(overlay)
-        files[_OVERLAY_SIDECAR_NAME] = temp_sidecar
-    try:
-        dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
-    finally:
-        if temp_sidecar is not None:
-            temp_sidecar.unlink(missing_ok=True)
+    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -263,6 +260,18 @@ def archive_mas_runtime_backup(
 # ══════════════════ 脚本原生配置（working/configs 整目录） ══════════════════
 
 
+def collect_native_files(config_path: str | Path) -> dict[str, Path]:
+    """收集 ok-ww 原生 working 配置文件集（相对键 → 当前路径）。
+
+    目录不存在或为空时无可归档内容，返回空 dict。
+    """
+
+    config_path = Path(config_path)
+    if not config_path.is_dir() or not any(config_path.iterdir()):
+        return {}
+    return dir_files(config_path)
+
+
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
     """归档 ok-ww 原生 working 配置当前状态（整目录）。
 
@@ -270,10 +279,10 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     目录不存在或为空时无可归档内容，返回 ``None``。
     """
 
-    config_path = Path(config_path)
-    if not config_path.is_dir() or not any(config_path.iterdir()):
+    files = collect_native_files(config_path)
+    if not files:
         return None
-    dest = archive_dir(config_path, native_backup_root(config_path), force=force)
+    dest = archive_files(files, native_backup_root(config_path), force=force)
     if dest is None:
         logger.info("ok-ww 原生配置无变化，跳过归档")
         return None

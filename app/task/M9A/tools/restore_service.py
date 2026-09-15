@@ -18,7 +18,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""M9A 配置恢复服务：MAS 用户字段池 / M9A 本体原生配置池。
+"""M9A 配置恢复服务：MAS 用户字段池 / M9A 本体原生配置池（声明式池）。
+
+池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
+``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
+（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+备份文件级原语见同目录 ``backup_archive``。
 
 - ``mas`` 池（用户级）：M9A 没有 per-user ConfigFile 目录，池内容是
   **纯字段侧车**（Info 核心 + Task.Queue 原始值 + Display 展示快照）；
@@ -34,6 +39,7 @@
 ScriptConfig 遮罩会话，不提供「查看详细配置」入口。
 """
 
+import json
 import uuid
 from pathlib import Path
 
@@ -41,15 +47,16 @@ from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
+    _OVERLAY_SIDECAR_NAME,
     archive_mas_backup,
-    archive_native_backup,
     build_display_overlay,
     build_native_preview,
     build_overlay_preview,
+    collect_native_files,
     get_mas_backup_dir,
     group_overlay,
-    list_mas_backups,
-    list_native_backups,
+    mas_backup_root,
+    native_backup_root,
     read_overlay_sidecar,
     read_overlay_values,
     restore_mas_backup,
@@ -90,8 +97,20 @@ def _native_config_path(ctx: RestoreContext) -> Path | None:
     return Path(raw) / "config" if raw else None
 
 
-async def _list_mas(ctx: RestoreContext) -> list[str]:
-    return list_mas_backups(ctx.script_id, ctx.user_id)
+async def _mas_files(ctx: RestoreContext) -> dict[str, str]:
+    """归档内容 = 页面核心字段侧车（含展示快照，内存 JSON 免临时文件）。
+
+    守卫沿用原快照语义：用户不存在时抛 ``ValueError``。
+    """
+
+    _user_guard(ctx)
+    user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+    overlay = build_display_overlay(read_overlay_values(user), _task_loader(ctx))
+    return {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
+
+
+async def _mas_root(ctx: RestoreContext) -> Path:
+    return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
 async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
@@ -123,18 +142,18 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
         logger.info("用户 %s 的 MAS 字段已恢复备份 %s", ctx.user_id, ts)
 
 
-async def _snapshot_mas(ctx: RestoreContext) -> dict:
-    _user_guard(ctx)
-    user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    overlay = build_display_overlay(read_overlay_values(user), _task_loader(ctx))
-    dest = archive_mas_backup(ctx.script_id, ctx.user_id, overlay)
-    times = list_mas_backups(ctx.script_id, ctx.user_id)
-    return {"created": dest is not None, "time": times[0] if times else ""}
+async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+    """归档内容 = M9A 安装目录 config/ 整目录（缺失或为空返回 ``None``）。"""
 
-
-async def _list_native(ctx: RestoreContext) -> list[str]:
     config_path = _native_config_path(ctx)
-    return list_native_backups(config_path) if config_path is not None else []
+    if config_path is None:
+        return None
+    return collect_native_files(config_path) or None
+
+
+async def _native_root(ctx: RestoreContext) -> Path | None:
+    config_path = _native_config_path(ctx)
+    return native_backup_root(config_path) if config_path is not None else None
 
 
 async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
@@ -151,28 +170,21 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> object:
     restore_native_backup(config_path, ts)
 
 
-async def _snapshot_native(ctx: RestoreContext) -> dict:
-    config_path = _native_config_path(ctx)
-    dest = archive_native_backup(config_path) if config_path is not None else None
-    times = list_native_backups(config_path) if config_path is not None else []
-    return {"created": dest is not None, "time": times[0] if times else ""}
-
-
 RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        list_backups=_list_mas,
+        files=_mas_files,
+        backup_root=_mas_root,
         preview=_preview_mas,
         restore=_restore_mas,
-        snapshot=_snapshot_mas,
     ),
     ConfigRestorePool(
         key="native",
         kind="script",
-        list_backups=_list_native,
+        files=_native_files,
+        backup_root=_native_root,
         preview=_preview_native,
         restore=_restore_native,
-        snapshot=_snapshot_native,
     ),
 ]

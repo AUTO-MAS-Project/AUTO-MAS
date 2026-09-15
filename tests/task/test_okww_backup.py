@@ -31,6 +31,7 @@ from pathlib import Path
 import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
+from app.task.Okww.tools import restore_service as rs
 from app.task.Okww.tools.backup_archive import (
     archive_mas_backup,
     archive_mas_runtime_backup,
@@ -42,14 +43,7 @@ from app.task.Okww.tools.backup_archive import (
     restore_mas_backup,
     restore_native_backup,
 )
-from app.task.Okww.tools.restore_service import (
-    _list_mas,
-    _mas_owner,
-    _preview_mas,
-    _preview_payload,
-    _restore_mas,
-    _snapshot_mas,
-)
+from app.utils.config_restore import RestoreContext, build_restore_service
 
 
 class _FakeUserConfig:
@@ -89,12 +83,12 @@ class _FakeScriptConfig:
         return {"Info": {"RootPath": self._root}}.get(section, {}).get(key)
 
 
-class _Ctx:
-    def __init__(self, script_config: _FakeScriptConfig, user_id: str):
-        self.config = None
-        self.script_config = script_config
-        self.script_id = "s-1"
-        self.user_id = user_id
+def _ctx(script_config: _FakeScriptConfig, user_id: str) -> RestoreContext:
+    """构造显式恢复上下文（config 桩为 None：池逻辑不依赖核心门面）。"""
+
+    return RestoreContext(
+        config=None, script_config=script_config, script_id="s-1", user_id=user_id
+    )
 
 
 def test_mas_backup_dedup_and_restore_loop(
@@ -267,39 +261,40 @@ def test_mas_owner_respects_mode() -> None:
 
     uid = str(uuid.uuid4())
 
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户")}), uid)
-    assert _mas_owner(ctx) == uid
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户")}), uid)
+    assert rs._mas_owner(ctx) == uid
 
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("脚本")}), uid)
-    assert _mas_owner(ctx) == "Default"
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("脚本")}), uid)
+    assert rs._mas_owner(ctx) == "Default"
 
     # 旧值 简洁/详细 迁移后等价于 脚本/用户
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("简洁")}), uid)
-    assert _mas_owner(ctx) == "Default"
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("详细")}), uid)
-    assert _mas_owner(ctx) == uid
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("简洁")}), uid)
+    assert rs._mas_owner(ctx) == "Default"
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("详细")}), uid)
+    assert rs._mas_owner(ctx) == uid
 
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("直控")}), uid)
-    assert _mas_owner(ctx) is None
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("直控")}), uid)
+    assert rs._mas_owner(ctx) is None
 
     # 用户不存在 / user_id 非法（脚本级入口传 Default）：无法判态返回 None
-    assert _mas_owner(_Ctx(_FakeScriptConfig({}), str(uuid.uuid4()))) is None
-    assert _mas_owner(_Ctx(_FakeScriptConfig({}), "Default")) is None
+    assert rs._mas_owner(_ctx(_FakeScriptConfig({}), str(uuid.uuid4()))) is None
+    assert rs._mas_owner(_ctx(_FakeScriptConfig({}), "Default")) is None
 
 
-def test_list_mas_and_restore_guard_for_direct_control(
+def test_direct_control_user_mas_pool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """直控用户无 MAS 配置：列表为空，恢复/归档拒绝而非静默落错目录。"""
+    """直控用户无 MAS 配置：列表为空，恢复拒绝而非静默落错目录（service 级）。"""
 
     monkeypatch.chdir(tmp_path)
     uid = str(uuid.uuid4())
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("直控")}), uid)
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("直控")}), uid)
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
 
-    assert asyncio.run(_list_mas(ctx)) == []
+    assert asyncio.run(service.list("mas")) == []
     with pytest.raises(ValueError):
-        asyncio.run(_restore_mas(ctx, "20260913-000000"))
-    snapshot = asyncio.run(_snapshot_mas(ctx))
+        asyncio.run(service.restore("mas", "20260913-000000"))
+    snapshot = asyncio.run(service.ensure("mas"))
     assert snapshot == {"created": False, "time": ""}
 
 
@@ -316,18 +311,20 @@ def test_mas_preview_shows_overlay_sidecar(
         "MaterialSelection": "Shell Credit",
         "AdditionalTasks": ["Check Weekly Garden"],
     }
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户", task)}), uid)
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户", task)}), uid)
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
 
-    # ConfigFile 存在（归档前置）→ 归档（侧车读取自 ctx 用户配置）→ 预览只展示侧车字段
+    # ConfigFile 存在（归档前置）→ service.ensure 归档（侧车读取自 ctx 用户配置）
     mas_dir = tmp_path / "data" / "s-1" / uid / "ConfigFile"
     mas_dir.mkdir(parents=True)
     (mas_dir / "DailyTask.json").write_text("{}", encoding="utf-8")
-    snap = asyncio.run(_snapshot_mas(ctx))
+    snap = asyncio.run(service.ensure("mas"))
     assert snap["created"] is True
-    payload = asyncio.run(_preview_mas(ctx, snap["time"]))
-    files = payload["files"]
-    assert len(files) == 1 and files[0]["label"] == "任务配置（快速配置）"
-    rows = {row["key"]: row["value"] for row in files[0]["summary"]}
+    payload = asyncio.run(service.preview("mas", snap["time"]))
+    assert "fileCards" in payload  # 定制预览自带侧车摘要载荷
+    cards = payload["fileCards"]
+    assert len(cards) == 1 and cards[0]["label"] == "任务配置（快速配置）"
+    rows = {row["key"]: row["value"] for row in cards[0]["summary"]}
     assert rows == {
         "启动任务（-t N）": "1",
         "消耗体力刷取": "凝素领域",
@@ -335,19 +332,25 @@ def test_mas_preview_shows_overlay_sidecar(
         "每日任务后运行的附加任务": "检查每周乐园",
     }
 
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(
+        service.read_backup_file("mas", snap["time"], "DailyTask.json")
+    )
+    assert content["path"] == "DailyTask.json"
+
     # 无侧车（旧版备份）：预览为空，不误导
     from app.task.Okww.tools.restore_service import _overlay_preview_payload
 
     empty_backup = tmp_path / "legacy"
     empty_backup.mkdir()
-    assert _overlay_preview_payload(empty_backup, snap["time"]) == {"files": []}
+    assert _overlay_preview_payload(empty_backup, snap["time"]) == {"fileCards": []}
 
 
 def test_preview_payload_keeps_whitelist(tmp_path: Path) -> None:
     """预览只保留 MAS 任务配置文件，载荷挂 files 键；字段/取值翻译正确。"""
 
     uid = str(uuid.uuid4())
-    ctx = _Ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户")}), uid)
+    ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户")}), uid)
     backup = tmp_path / "backup"
     backup.mkdir()
     (backup / "DailyTask.json").write_text(
@@ -371,9 +374,9 @@ def test_preview_payload_keeps_whitelist(tmp_path: Path) -> None:
     )
     (backup / "Other.json").write_text(json.dumps({"k": "v"}), encoding="utf-8")
 
-    payload = _preview_payload(ctx, "20260913-000000", backup)
-    assert set(payload) == {"files"}
-    by_name = {f["name"]: f for f in payload["files"]}
+    payload = rs._preview_payload(ctx, "20260913-000000", backup)
+    assert set(payload) == {"fileCards"}
+    by_name = {f["name"]: f for f in payload["fileCards"]}
     assert set(by_name) == {"DailyTask.json"}
 
     daily = by_name["DailyTask.json"]
@@ -386,7 +389,7 @@ def test_preview_payload_keeps_whitelist(tmp_path: Path) -> None:
 
     # 备份不存在抛 ValueError
     with pytest.raises(ValueError):
-        _preview_payload(ctx, "missing", None)
+        rs._preview_payload(ctx, "missing", None)
 
 
 def test_build_backup_file_summary_edges(tmp_path: Path) -> None:

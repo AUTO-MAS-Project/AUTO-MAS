@@ -22,7 +22,8 @@ BAAH 的用户身份 = BAAH 侧 JSON 文件名（Info.ConfigName），MAS 不持
 本体：mas 池是元字段侧车（ConfigName 可回填，Mode/IfQuickConfig 仅预览），
 native 池按当前 ConfigName 动态解析目标文件（用户配置 + 软件配置）。
 验证侧车归档/回填、native 闭环（含配置名改名后恢复覆盖语义）、关键字段
-反读预览，以及池回调真实调用链。
+反读预览，以及 service 级真实调用链（声明式快照、基座 files 注入、
+未配置路径不报错）。
 """
 
 import asyncio
@@ -213,14 +214,13 @@ def test_overlay_preview_sections(
 def test_restore_service_callbacks_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """池回调真实调用链：snapshot → preview → restore（签名回归 + 回填）。"""
+    """service 级真实调用链：声明式 snapshot → preview（files 注入）→ restore。"""
 
     from app.task.BAAH.tools.restore_service import (
-        _preview_mas,
-        _restore_mas,
-        _snapshot_mas,
-        _snapshot_native,
+        RESTORE_POOLS,
+        RESTORE_SCRIPT_NAME,
     )
+    from app.utils.config_restore import RestoreContext, build_restore_service
 
     monkeypatch.chdir(tmp_path)
     script_id = "s-0002"
@@ -244,33 +244,56 @@ def test_restore_service_callbacks_roundtrip(
         ),
         UserData={uid: user},
     )
-    ctx = SimpleNamespace(
+    ctx = RestoreContext(
         config=None,
         script_config=script_config,
         script_id=script_id,
         user_id=str(uid),
     )
+    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
 
-    # mas：snapshot → preview → restore 回填（Mode/IfQuickConfig 排除）
-    created = asyncio.run(_snapshot_mas(ctx))
+    # mas：声明式 snapshot → preview（files 注入）→ restore 回填
+    created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
-    payload = asyncio.run(_preview_mas(ctx, created["time"]))
+    mas_ts = created["time"]
+    payload = asyncio.run(service.preview("mas", created["time"]))
     assert "baah" in {s["name"] for s in payload["sections"]}
+    assert payload["files"] == [
+        {
+            "path": "_mas_overlay.json",
+            "size": (
+                get_mas_backup_dir(script_id, str(uid), created["time"])
+                / "_mas_overlay.json"
+            )
+            .stat()
+            .st_size,
+        }
+    ]
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(
+        service.read_backup_file("mas", created["time"], "_mas_overlay.json")
+    )
+    assert "ConfigName" in content["content"]
 
-    asyncio.run(_restore_mas(ctx, created["time"]))
+    asyncio.run(service.restore("mas", created["time"]))
     assert len(user.updated) == 1
     assert user.updated[0]["Info"]["ConfigName"] == "account1"
     assert "Mode" not in user.updated[0]["Info"]
     # 恢复前存底与最新份内容一致 → 跳过（不产生冗余条目）
     assert len(list_mas_backups(script_id, str(uid))) == 1
 
-    # native：snapshot（按 ConfigName 动态解析）+ 空名用户报错
-    created = asyncio.run(_snapshot_native(ctx))
+    # native：快照（按 ConfigName 动态解析，基座注入文件清单）+ 未填配置名报错
+    created = asyncio.run(service.ensure("native"))
     assert created["created"] is True
+    payload_native = asyncio.run(service.preview("native", created["time"]))
+    assert {f["path"] for f in payload_native["files"]} == {
+        "account1.json",
+        "software_config.json",
+    }
     empty_user = SimpleNamespace(
         get=lambda g, k: {("Info", "ConfigName"): ""}.get((g, k))
     )
-    ctx_empty = SimpleNamespace(
+    ctx_empty = RestoreContext(
         config=None,
         script_config=SimpleNamespace(
             get=lambda g, k: str(config_dir.parent / "BAAH.exe"),
@@ -279,8 +302,24 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
+    service_empty = build_restore_service(ctx_empty, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
     with pytest.raises(ValueError):
-        asyncio.run(_snapshot_native(ctx_empty))
+        asyncio.run(service_empty.ensure("native"))
+
+    # 未配置 BAAHPath：native 列表为空（backup_root 返回 None，不抛错）
+    ctx_no_root = RestoreContext(
+        config=None,
+        script_config=SimpleNamespace(get=lambda g, k: "", UserData={uid: user}),
+        script_id=script_id,
+        user_id=str(uid),
+    )
+    service_no_root = build_restore_service(
+        ctx_no_root, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+    )
+    # 未配置 BAAHPath 只影响 native 池（归档根返回 None → 列表为空）；
+    # mas 池根恒存在，历史备份照常可见（对齐 BetterGI 样板断言）
+    assert asyncio.run(service_no_root.list("mas")) == [mas_ts]
+    assert asyncio.run(service_no_root.list("native")) == []
 
 
 def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:

@@ -18,7 +18,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""通用脚本配置恢复服务：MAS 用户配置副本池 / 脚本原生配置池。
+"""通用脚本配置恢复服务：MAS 用户配置副本池 / 脚本原生配置池（声明式池）。
+
+池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
+``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
+（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+备份文件级原语见同目录 ``backup_archive``。
 
 - ``mas`` 池（用户级）：该用户的 ``ConfigFile`` 目录副本（General 恒按
   用户隔离，无 MAA 式 owner 解耦），恢复 = 整目录回写；MAS 编辑页字段
@@ -26,10 +31,14 @@
 - ``native`` 池（脚本级）：用户自填的 ``Script.ConfigPath``（Folder 整
   目录 / File 单文件两态），按物理配置根指纹分桶，恢复前强制存底当前。
 
+两池均无定制 preview：通用脚本配置格式任意（透传），MAS 不解析内容，
+预览直接吃基座标准 ``files`` 注入（归档内文件清单，前端「备份文件」
+兜底节渲染），详细内容经「查看详细配置」（viewOnly 会话）在脚本 GUI
+里查看。General 是声明式接入的零定制样板。
+
 归档时机：manager ``prepare``（任务级 native 一次）、运行/会话下发前
 （AutoProxy / ScriptConfig）、编辑界面进入（native）/ 退出（mas）由前端
-``ensure`` 触发。预览为文件清单粒度（配置格式任意透传），详细内容经
-「查看详细配置」（viewOnly 会话）在脚本 GUI 里查看。
+``ensure`` 触发。
 """
 
 import uuid
@@ -39,14 +48,11 @@ from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
-    archive_mas_backup,
-    archive_native_backup,
-    build_file_list_preview,
-    get_mas_backup_dir,
-    get_native_backup_dir,
-    list_mas_backups,
-    list_native_backups,
+    collect_mas_files,
+    collect_native_files,
+    mas_backup_root,
     mas_config_dir,
+    native_backup_root,
     restore_mas_backup,
     restore_native_backup,
 )
@@ -77,15 +83,15 @@ def _native_config_mode(ctx: RestoreContext) -> str:
     return str(ctx.script_config.get("Script", "ConfigPathMode") or "Folder")
 
 
-async def _list_mas(ctx: RestoreContext) -> list[str]:
-    return list_mas_backups(ctx.script_id, ctx.user_id)
+async def _mas_files(ctx: RestoreContext) -> dict[str, Path] | None:
+    """归档内容 = 用户 ConfigFile 目录（恒按用户，无侧车；空目录返回 ``None``）。"""
+
+    _user_guard(ctx)
+    return collect_mas_files(mas_config_dir(ctx.script_id, ctx.user_id)) or None
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
-    backup_dir = get_mas_backup_dir(ctx.script_id, ctx.user_id, ts)
-    if backup_dir is None:
-        raise ValueError(f"备份不存在: {ts}")
-    return build_file_list_preview(backup_dir)
+async def _mas_root(ctx: RestoreContext) -> Path:
+    return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
 async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
@@ -95,63 +101,42 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
     )
 
 
-async def _snapshot_mas(ctx: RestoreContext) -> dict:
-    _user_guard(ctx)
-    dest = archive_mas_backup(
-        ctx.script_id, ctx.user_id, mas_config_dir(ctx.script_id, ctx.user_id)
-    )
-    times = list_mas_backups(ctx.script_id, ctx.user_id)
-    return {"created": dest is not None, "time": times[0] if times else ""}
+async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+    """归档内容 = ConfigPath 当前状态（Folder 整目录 / File 单文件；缺失返回 ``None``）。"""
 
-
-async def _list_native(ctx: RestoreContext) -> list[str]:
-    config_path = _native_config_path(ctx)
-    return list_native_backups(config_path) if config_path is not None else []
-
-
-async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     config_path = _native_config_path(ctx)
     if config_path is None:
-        return {"files": []}
-    backup_dir = get_native_backup_dir(config_path, ts)
-    if backup_dir is None:
-        raise ValueError(f"备份不存在: {ts}")
-    return build_file_list_preview(backup_dir)
+        return None
+    return collect_native_files(config_path, _native_config_mode(ctx)) or None
+
+
+async def _native_root(ctx: RestoreContext) -> Path | None:
+    config_path = _native_config_path(ctx)
+    if config_path is None:
+        return None
+    return native_backup_root(ctx.script_id, config_path)
 
 
 async def _restore_native(ctx: RestoreContext, ts: str) -> object:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置脚本配置路径")
-    restore_native_backup(config_path, _native_config_mode(ctx), ts)
-
-
-async def _snapshot_native(ctx: RestoreContext) -> dict:
-    config_path = _native_config_path(ctx)
-    dest = (
-        archive_native_backup(config_path, _native_config_mode(ctx))
-        if config_path is not None
-        else None
-    )
-    times = list_native_backups(config_path) if config_path is not None else []
-    return {"created": dest is not None, "time": times[0] if times else ""}
+    restore_native_backup(ctx.script_id, config_path, _native_config_mode(ctx), ts)
 
 
 RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        list_backups=_list_mas,
-        preview=_preview_mas,
+        files=_mas_files,
+        backup_root=_mas_root,
         restore=_restore_mas,
-        snapshot=_snapshot_mas,
     ),
     ConfigRestorePool(
         key="native",
         kind="script",
-        list_backups=_list_native,
-        preview=_preview_native,
+        files=_native_files,
+        backup_root=_native_root,
         restore=_restore_native,
-        snapshot=_snapshot_native,
     ),
 ]

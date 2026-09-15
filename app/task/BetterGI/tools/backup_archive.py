@@ -60,7 +60,6 @@ BetterGI 特有的副本布局、字段侧车、恢复语义（恢复前强制�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from app.utils import get_logger
@@ -171,15 +170,10 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把页面字段写到临时文件（参与归档指纹，归档后即删）。"""
+def overlay_sidecar_content(overlay: dict) -> str:
+    """页面字段侧车的内存 JSON（:func:`archive_files` 内存内容，免临时文件）。"""
 
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
+    return json.dumps(overlay, ensure_ascii=False, indent=2)
 
 
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
@@ -239,17 +233,11 @@ def archive_mas_backup(
     """
 
     files = _collect_mas_files(script_id, user_id)
-    temp_sidecar: Path | None = None
     if overlay:
-        temp_sidecar = _sidecar_temp_file(overlay)
-        files[_OVERLAY_SIDECAR_NAME] = temp_sidecar
+        files[_OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
     if not files:
         return None
-    try:
-        dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
-    finally:
-        if temp_sidecar is not None:
-            temp_sidecar.unlink(missing_ok=True)
+    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -325,7 +313,9 @@ def native_backup_root(root_path: str | Path) -> Path:
     被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return Path.cwd() / "data" / "BetterGIBackups" / "native" / config_root_key(root_path)
+    return (
+        Path.cwd() / "data" / "BetterGIBackups" / "native" / config_root_key(root_path)
+    )
 
 
 def global_config_path(root_path: str | Path) -> Path:
@@ -334,7 +324,7 @@ def global_config_path(root_path: str | Path) -> Path:
     return Path(root_path) / _BGI_GLOBAL_CONFIG_REL
 
 
-def _collect_native_files(root_path: Path) -> dict[str, Path]:
+def collect_native_files(root_path: Path) -> dict[str, Path]:
     """收集 native 归档目标文件集（相对键 → 文件路径）。
 
     - ``config.json``：全局主配置（MAS 运行触碰）；
@@ -363,7 +353,7 @@ def archive_native_backup(root_path: str | Path, force: bool = False) -> Path | 
     """
 
     root_path = Path(root_path)
-    files = _collect_native_files(root_path)
+    files = collect_native_files(root_path)
     if not files:
         return None
     dest = archive_files(files, native_backup_root(root_path), force=force)
@@ -440,9 +430,11 @@ def _parse_json_list(raw) -> list:
             loaded = json.loads(raw)
         except Exception:
             return []
-        return [item for item in loaded if isinstance(item, dict)] if isinstance(
-            loaded, list
-        ) else []
+        return (
+            [item for item in loaded if isinstance(item, dict)]
+            if isinstance(loaded, list)
+            else []
+        )
     return []
 
 
@@ -537,8 +529,7 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     }
     if files:
         file_rows = [
-            {"key": rel, "value": f"{size} B"}
-            for rel, size in sorted(files.items())
+            {"key": rel, "value": f"{size} B"} for rel, size in sorted(files.items())
         ]
         sections.append({"name": "copies", "label": "用户配置副本", "rows": file_rows})
     return {"sections": sections}
@@ -649,7 +640,9 @@ def build_native_preview(root_path: str | Path, ts: str) -> dict:
             )
         if not rows:
             rows.append({"key": "文件", "value": f"{len(files)} 个（无 config.json）"})
-        return {"sections": [{"name": "bgi", "label": "BetterGI 全局配置", "rows": rows}]}
+        return {
+            "sections": [{"name": "bgi", "label": "BetterGI 全局配置", "rows": rows}]
+        }
 
     data = global_data
 
@@ -677,9 +670,7 @@ def build_native_preview(root_path: str | Path, ts: str) -> dict:
     boss = _seg("autoBossConfig")
     if boss:
         rows.append({"key": "自动首领队伍", "value": _text(boss.get("teamName"))})
-        rows.append(
-            {"key": "自动首领策略", "value": _text(boss.get("strategyName"))}
-        )
+        rows.append({"key": "自动首领策略", "value": _text(boss.get("strategyName"))})
 
     ley = _seg("autoLeyLineOutcropConfig")
     if ley:
@@ -701,4 +692,3 @@ def build_native_preview(root_path: str | Path, ts: str) -> dict:
         )
 
     return {"sections": [{"name": "bgi", "label": "BetterGI 全局配置", "rows": rows}]}
-

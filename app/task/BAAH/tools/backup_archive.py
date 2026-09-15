@@ -51,7 +51,6 @@ mas 池当前只有元字段（配置来源/快速配置/配置文件名）—�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from app.task.BAAH.tools.config_manager import (
@@ -105,17 +104,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把侧车写到临时文件（参与归档指纹，归档后即删）。"""
-
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
-
-
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
     """读取归档内的字段侧车；不存在或损坏返回 ``None``。"""
 
@@ -140,15 +128,11 @@ def archive_mas_backup(
 ) -> Path | None:
     """归档 MAS 页面字段侧车到用户池（指纹去重，无变化跳过）。"""
 
-    temp_sidecar = _sidecar_temp_file(overlay)
-    try:
-        dest = archive_files(
-            {_OVERLAY_SIDECAR_NAME: temp_sidecar},
-            mas_backup_root(script_id, user_id),
-            force=force,
-        )
-    finally:
-        temp_sidecar.unlink(missing_ok=True)
+    dest = archive_files(
+        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        mas_backup_root(script_id, user_id),
+        force=force,
+    )
     if dest is None:
         logger.info("用户 %s 的 MAS 配置无变化，跳过归档", user_id)
         return None
@@ -217,6 +201,25 @@ def resolve_native_targets(config_dir: Path, config_name: str) -> dict[str, Path
     return targets
 
 
+def collect_native_files(config_dir: str | Path, config_name: str) -> dict[str, Path]:
+    """收集当前配置名的归档目标文件集（用户配置 + 软件配置）。
+
+    配置目录缺失、配置名非法或用户配置文件不存在时返回空 dict（缺失项
+    跳过）；供声明式池声明归档内容（``files`` 回调），也供
+    :func:`archive_native_backup` 复用。
+    """
+
+    config_dir = Path(config_dir)
+    if not config_dir.is_dir():
+        return {}
+    try:
+        targets = resolve_native_targets(config_dir, config_name)
+    except (ValueError, FileNotFoundError) as e:
+        logger.info(f"跳过 BAAH 配置归档: {e}")
+        return {}
+    return targets
+
+
 def archive_native_backup(
     config_dir: Path, config_name: str, user_id: str, force: bool = False
 ) -> Path | None:
@@ -228,12 +231,8 @@ def archive_native_backup(
     """
 
     config_dir = Path(config_dir)
-    if not config_dir.is_dir():
-        return None
-    try:
-        targets = resolve_native_targets(config_dir, config_name)
-    except (ValueError, FileNotFoundError) as e:
-        logger.info(f"跳过 BAAH 配置归档: {e}")
+    targets = collect_native_files(config_dir, config_name)
+    if not targets:
         return None
     dest = archive_files(targets, native_backup_root(config_dir, user_id), force=force)
     if dest is None:

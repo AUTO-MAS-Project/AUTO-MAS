@@ -112,9 +112,7 @@ def _write_per_user_copies(script_id: str, user_id: str) -> Path:
     (sg / "锄大地.json").write_text(json.dumps({"name": "锄大地"}), encoding="utf-8")
     gd = user_root / "GlobalDomain"
     gd.mkdir(parents=True)
-    (gd / "settings.json").write_text(
-        json.dumps({"resinCount": 2}), encoding="utf-8"
-    )
+    (gd / "settings.json").write_text(json.dumps({"resinCount": 2}), encoding="utf-8")
     return user_root
 
 
@@ -198,7 +196,9 @@ def test_mas_backup_restore_loop_with_user_isolation(
     (mas_user_dir(script_id, user_id) / "OneDragon" / "MAS独立配置.json").write_text(
         bad, encoding="utf-8"
     )
-    restored_overlay = restore_mas_backup(script_id, user_id, first.name, overlay=overlay)
+    restored_overlay = restore_mas_backup(
+        script_id, user_id, first.name, overlay=overlay
+    )
     assert restored_overlay == overlay
     restored = json.loads(
         (mas_user_dir(script_id, user_id) / "OneDragon" / "MAS独立配置.json").read_text(
@@ -243,10 +243,13 @@ def test_native_backup_restore_loop(
         json.dumps({"TaskOrder": []}), encoding="utf-8"
     )
     restore_native_backup(root, first.name)
-    assert json.loads((root / "User" / "config.json").read_text("utf-8")) == _GLOBAL_CONFIG
-    assert json.loads(
-        (root / "User" / "OneDragon" / "默认配置.json").read_text("utf-8")
-    ) == _ONE_DRAGON_FLOW_CONFIG
+    assert (
+        json.loads((root / "User" / "config.json").read_text("utf-8")) == _GLOBAL_CONFIG
+    )
+    assert (
+        json.loads((root / "User" / "OneDragon" / "默认配置.json").read_text("utf-8"))
+        == _ONE_DRAGON_FLOW_CONFIG
+    )
     assert len(list_native_backups(root)) == 2  # 恢复前存底（内容已变 → 新增）
 
     # 两类都缺失时跳过归档
@@ -293,7 +296,10 @@ def test_overlay_and_mas_preview_sections(
         "UseExecutionLayer": True,
         "Resource": "官服",
         "Queue": json.dumps(
-            [{"kind": "builtin", "name": "领取邮件"}, {"kind": "builtin", "name": "自动秘境"}]
+            [
+                {"kind": "builtin", "name": "领取邮件"},
+                {"kind": "builtin", "name": "自动秘境"},
+            ]
         ),
         "Plan": json.dumps(
             [
@@ -306,7 +312,9 @@ def test_overlay_and_mas_preview_sections(
     first = archive_mas_backup(script_id, user_id, overlay=overlay)
     assert first is not None
 
-    payload = build_mas_preview(get_mas_backup_dir(script_id, user_id, first.name), overlay)
+    payload = build_mas_preview(
+        get_mas_backup_dir(script_id, user_id, first.name), overlay
+    )
     sections = {s["name"]: s for s in payload["sections"]}
     assert set(sections) == {"mas-only", "bgi", "copies"}
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["rows"]}
@@ -328,16 +336,13 @@ def test_overlay_and_mas_preview_sections(
 def test_restore_service_callbacks_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """池回调真实调用链：snapshot → preview → restore（回填 + native 闭环）。"""
+    """service 级真实调用链：声明式 snapshot → preview（files 注入）→ restore。"""
 
     from app.task.BetterGI.tools.restore_service import (
-        _list_mas,
-        _preview_mas,
-        _restore_mas,
-        _restore_native,
-        _snapshot_mas,
-        _snapshot_native,
+        RESTORE_POOLS,
+        RESTORE_SCRIPT_NAME,
     )
+    from app.utils.config_restore import RestoreContext, build_restore_service
 
     monkeypatch.chdir(tmp_path)
     script_id = "s-0004"
@@ -357,20 +362,22 @@ def test_restore_service_callbacks_roundtrip(
         get=lambda g, k: str(root) if (g, k) == ("Info", "RootPath") else "",
         UserData={uid: user},
     )
-    ctx = SimpleNamespace(
+    ctx = RestoreContext(
         config=None,
         script_config=script_config,
         script_id=script_id,
         user_id=user_id,
     )
+    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
 
-    # mas：snapshot → preview → restore 回填（Mode 排除）
-    created = asyncio.run(_snapshot_mas(ctx))
+    # mas：snapshot → preview（files 注入）→ restore 回填（Mode 排除）
+    created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
-    payload = asyncio.run(_preview_mas(ctx, created["time"]))
+    payload = asyncio.run(service.preview("mas", created["time"]))
     assert "bgi" in {s["name"] for s in payload["sections"]}
+    assert "_mas_overlay.json" in {f["path"] for f in payload["files"]}
 
-    asyncio.run(_restore_mas(ctx, created["time"]))
+    asyncio.run(service.restore("mas", created["time"]))
     assert len(user.updated) == 1
     assert user.updated[0]["OneDragon"]["Groups"] == ["自动秘境"]
     assert user.updated[0]["Switch"]["Resource"] == "官服"
@@ -379,9 +386,10 @@ def test_restore_service_callbacks_roundtrip(
     # 恢复前存底与最新份内容一致 → 跳过（不产生冗余条目）
     assert len(list_mas_backups(script_id, user_id)) == 1
 
-    # 用户不存在：列表为空、恢复报错
+    # 用户不存在于 UserData：恢复报错（守卫）；ghost 在 UserData 但无字段
+    # 时 snapshot 报无变化（无可归档内容）
     ghost_uid = uuid.uuid4()
-    ctx_ghost = SimpleNamespace(
+    ctx_ghost = RestoreContext(
         config=None,
         script_config=SimpleNamespace(
             get=script_config.get, UserData={ghost_uid: _FakeUser({})}
@@ -389,28 +397,32 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(ghost_uid),
     )
+    service_ghost = build_restore_service(ctx_ghost, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    ghost_created = asyncio.run(service_ghost.ensure("mas"))
+    assert ghost_created == {"created": False, "time": ""}
     with pytest.raises(ValueError):
-        asyncio.run(_restore_mas(ctx_ghost, created["time"]))
+        asyncio.run(service_ghost.restore("mas", created["time"]))
 
     # native：snapshot + 恢复闭环
-    created_native = asyncio.run(_snapshot_native(ctx))
+    created_native = asyncio.run(service.ensure("native"))
     assert created_native["created"] is True
-    asyncio.run(_restore_native(ctx, created_native["time"]))
+    payload_native = asyncio.run(service.preview("native", created_native["time"]))
+    assert {f["path"] for f in payload_native["files"]} >= {"config.json"}
+    asyncio.run(service.restore("native", created_native["time"]))
     assert list_native_backups(root)
 
-    # 未配置 RootPath：native 列表为空
-    ctx_no_root = SimpleNamespace(
+    # 未配置 RootPath：native 列表为空（backup_root 返回 None，不抛错）
+    ctx_no_root = RestoreContext(
         config=None,
-        script_config=SimpleNamespace(
-            get=lambda g, k: "", UserData={uid: user}
-        ),
+        script_config=SimpleNamespace(get=lambda g, k: "", UserData={uid: user}),
         script_id=script_id,
         user_id=user_id,
     )
-    assert asyncio.run(_list_mas(ctx_no_root)) == [created["time"]]
-    from app.task.BetterGI.tools.restore_service import _list_native
-
-    assert asyncio.run(_list_native(ctx_no_root)) == []
+    service_no_root = build_restore_service(
+        ctx_no_root, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+    )
+    assert asyncio.run(service_no_root.list("mas")) == [created["time"]]
+    assert asyncio.run(service_no_root.list("native")) == []
 
 
 def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:

@@ -1677,41 +1677,6 @@ class AppConfig(GlobalConfig):
 
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
-    async def ensure_zzzod_mas_backup(self, script_id: str, user_id: str) -> dict:
-        """确保 MAS 用户绑定槽有当前状态的备份（指纹去重，无变化跳过）。
-
-        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽时跳过
-        （没有可恢复的内容），返回 ``created=False``。
-        """
-
-        from app.task.ZzzOd.tools import (
-            archive_mas_config_backup,
-            collect_mas_user_info,
-            instance_dir,
-            list_mas_backups,
-        )
-
-        _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
-        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
-        slot_dir = instance_dir(self._zzzod_script_root(script_id), slot)
-        if slot <= 0 or not slot_dir.is_dir():
-            return {"created": False, "time": ""}
-
-        # 统一入口：归档前物化本页账号+编排进槽（账号/编排只存在 UserData，
-        # 槽要注入才带；不物化会漏、恢复会把本页字段清空），见文档 §3.1 陷阱
-        dest = archive_mas_config_backup(
-            script_id,
-            slot,
-            slot_dir,
-            user_cfg,
-            meta=collect_mas_user_info(user_cfg),
-        )
-        times = list_mas_backups(script_id, slot)
-        return {
-            "created": dest is not None,
-            "time": times[0] if times else "",
-        }
-
     async def restore_zzzod_backup(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> int:
@@ -2449,6 +2414,20 @@ class AppConfig(GlobalConfig):
 
         payload = await self.restore_service(script_id, user_id).preview(target, ts)
         return {"time": ts, "target": target, "data": payload}
+
+    async def get_config_backup_file(
+        self, script_id: str, user_id: str, ts: str, target: str, path: str
+    ) -> dict:
+        """只读读取指定备份内一个文本文件（预览「查看原始文件」用）。
+
+        路径限归档内相对路径（防穿越）、大小受限（1 MiB），由
+        ``config_archive.read_backup_text`` 与专项池函数保证。
+        """
+
+        content = await self.restore_service(script_id, user_id).read_backup_file(
+            target, ts, path
+        )
+        return {"time": ts, "target": target, **content}
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]

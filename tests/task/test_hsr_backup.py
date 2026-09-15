@@ -42,6 +42,7 @@ from app.task.HSR.tools.backup_archive import (
     group_overlay,
     list_mas_backups,
     list_native_backups,
+    mas_backup_root,
     read_overlay_values,
     restore_mas_backup,
     restore_native_backup,
@@ -297,7 +298,10 @@ def test_native_preview_field_rows(
 
     payload = build_native_preview(sra, first.name)
     sections = {s["name"]: s for s in payload["sections"]}
-    assert set(sections) == {"m7a", "sra:Default", "files"}
+    assert set(sections) == {"m7a", "sra:Default"}
+    # 标准 files 字段由 service.preview 统一注入（见 service 级测试），
+    # 专项预览函数只负责摘要 sections
+    assert "files" not in payload
 
     m7a_rows = {row["key"]: row["value"] for row in sections["m7a"]["rows"]}
     assert m7a_rows["清体力"] == "开启"
@@ -319,13 +323,35 @@ def test_native_preview_field_rows(
     assert sra_rows["货币战争"] == "关闭"
     assert sra_rows["完成后动作"] == "退出游戏"
 
-    file_rows = {row["key"] for row in sections["files"]["rows"]}
-    assert file_rows == {
-        "M7A/config.yaml",
-        "SRA/cache.json",
-        "SRA/configs/Default.json",
-        "SRA/settings.json",
-    }
+
+def test_read_backup_file_and_mas_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """查看原始文件：归档内相对路径读取、防穿越拒绝、mas 侧车进 files。"""
+
+    from app.utils.config_archive import read_backup_text
+
+    monkeypatch.chdir(tmp_path)
+    m7a = _make_m7a_root(tmp_path)
+    sra = _make_sra_appdata(tmp_path)
+    first = archive_native_backup(m7a, sra)
+    assert first is not None
+
+    payload = read_backup_text(first, "M7A/config.yaml")
+    assert payload["path"] == "M7A/config.yaml"
+    assert payload["content"] == _M7A_CONFIG
+
+    with pytest.raises(ValueError, match="非法的文件路径"):
+        read_backup_text(first, "../outside.yaml")
+    with pytest.raises(ValueError, match="文件不存在"):
+        read_backup_text(first, "SRA/missing.json")
+
+    # mas 池预览的标准 files 字段（侧车文件）
+    overlay = {"Managed.TaskMapping": json.dumps({"每日清体力": "M7A"})}
+    mas_dir = archive_mas_backup("s-0001", "u-0001", overlay)
+    assert mas_dir is not None
+    mas_payload = read_backup_text(mas_dir, "_mas_overlay.json")
+    assert "TaskMapping" in mas_payload["content"]
 
 
 def test_sra_reward_values_named_and_legacy() -> None:
@@ -423,9 +449,10 @@ def test_overlay_preview_sections(
 def test_restore_service_callbacks_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """池回调真实调用链：snapshot → preview → restore（回填 + native 闭环）。"""
+    """service 级真实调用链：声明式 snapshot → preview（files 注入）→ restore。"""
 
     from app.task.HSR.tools import restore_service as rs
+    from app.utils.config_restore import RestoreContext, build_restore_service
 
     monkeypatch.chdir(tmp_path)
     script_id = "s-0003"
@@ -449,25 +476,46 @@ def test_restore_service_callbacks_roundtrip(
         }.get((g, k), ""),
         UserData={uid: user},
     )
-    ctx = SimpleNamespace(
+    ctx = RestoreContext(
         config=None,
         script_config=script_config,
         script_id=script_id,
         user_id=str(uid),
     )
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
 
-    created = asyncio.run(rs._snapshot_mas(ctx))
+    # mas：声明式 snapshot（侧车内存 JSON）→ 定制 preview + 基座 files 注入
+    created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
-    payload = asyncio.run(rs._preview_mas(ctx, created["time"]))
+    payload = asyncio.run(service.preview("mas", created["time"]))
     assert "managed" in {s["name"] for s in payload["sections"]}
+    sidecar_path = (
+        mas_backup_root(script_id, str(uid)) / created["time"] / "_mas_overlay.json"
+    )
+    assert payload["files"] == [
+        {"path": "_mas_overlay.json", "size": sidecar_path.stat().st_size}
+    ]
 
-    asyncio.run(rs._restore_mas(ctx, created["time"]))
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(
+        service.read_backup_file("mas", created["time"], "_mas_overlay.json")
+    )
+    assert "TaskMapping" in content["content"]
+
+    asyncio.run(service.restore("mas", created["time"]))
     assert len(user.updated) == 1
     assert "TaskMapping" in user.updated[0]["Managed"]
     assert "Info" not in user.updated[0]  # Mode 仅预览
 
-    # native：快照 + 恢复闭环
-    created_native = asyncio.run(rs._snapshot_native(ctx))
+    # native：快照 + 恢复闭环（files 由基座注入）
+    created_native = asyncio.run(service.ensure("native"))
     assert created_native["created"] is True
-    asyncio.run(rs._restore_native(ctx, created_native["time"]))
+    payload_native = asyncio.run(service.preview("native", created_native["time"]))
+    assert {f["path"] for f in payload_native["files"]} == {
+        "M7A/config.yaml",
+        "SRA/cache.json",
+        "SRA/configs/Default.json",
+        "SRA/settings.json",
+    }
+    asyncio.run(service.restore("native", created_native["time"]))
     assert list_native_backups(sra)

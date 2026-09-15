@@ -43,7 +43,6 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -129,6 +128,18 @@ def collect_config_files(config_path: Path, mode: str) -> dict[str, Path] | None
 # ══════════════════ MAS 用户配置 ══════════════════
 
 
+def collect_mas_files(mas_dir: str | Path) -> dict[str, Path]:
+    """收集 MAS 用户 ConfigFile 文件集（相对键 → 当前路径）。
+
+    目录不存在或为空时无可归档内容，返回空 dict。
+    """
+
+    mas_dir = Path(mas_dir)
+    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+        return {}
+    return dir_files(mas_dir)
+
+
 def archive_mas_backup(
     script_id: str,
     user_id: str,
@@ -142,10 +153,10 @@ def archive_mas_backup(
     该份备份中，误恢复可从它找回）。
     """
 
-    mas_dir = Path(mas_dir)
-    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
+    files = collect_mas_files(mas_dir)
+    if not files:
         return None
-    dest = archive_dir(mas_dir, mas_backup_root(script_id, user_id), force=force)
+    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("用户 MAS 配置无变化，跳过归档")
         return None

@@ -42,12 +42,10 @@ M9A 特有的侧车、恢复语义（恢复前强制归档当前）与预览摘�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -202,17 +200,6 @@ def build_display_overlay(overlay: dict, task_loader=None) -> dict:
     return overlay
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把侧车写到临时文件（参与归档指纹，归档后即删）。"""
-
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
-
-
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
     """读取归档内的字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
 
@@ -252,20 +239,17 @@ def archive_mas_backup(
     """归档 MAS 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
 
     M9A 无 per-user 目录，侧车是归档内唯一文件；只改表单也会因侧车内容
-    变化新建归档。``overlay`` 侧车原样保存（含 ``Display`` 展示快照）；
-    ``force=True`` 恢复前存底（不清理历史条目；内容与最新份一致时同样
-    跳过——当前字段已存放在该份备份中，误恢复可从它找回）。
+    变化新建归档（内存 JSON 写入，免临时文件）。``overlay`` 侧车原样保存
+    （含 ``Display`` 展示快照）；``force=True`` 恢复前存底（不清理历史
+    条目；内容与最新份一致时同样跳过——当前字段已存放在该份备份中，误
+    恢复可从它找回）。
     """
 
-    temp_sidecar = _sidecar_temp_file(overlay)
-    try:
-        dest = archive_files(
-            {_OVERLAY_SIDECAR_NAME: temp_sidecar},
-            mas_backup_root(script_id, user_id),
-            force=force,
-        )
-    finally:
-        temp_sidecar.unlink(missing_ok=True)
+    dest = archive_files(
+        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        mas_backup_root(script_id, user_id),
+        force=force,
+    )
     if dest is None:
         logger.info("用户 %s 的 MAS 配置无变化，跳过归档", user_id)
         return None
@@ -305,6 +289,19 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
 # ══════════════════ M9A 本体原生配置（安装目录 config/ 整目录） ══════════════════
 
 
+def collect_native_files(config_path: str | Path) -> dict[str, Path]:
+    """收集 M9A 安装目录 config/ 文件集（目录缺失或为空返回空 dict）。
+
+    供声明式池声明归档内容（``files`` 回调）；:func:`archive_native_backup`
+    亦复用本函数。
+    """
+
+    config_path = Path(config_path)
+    if not config_path.is_dir() or not any(config_path.iterdir()):
+        return {}
+    return dir_files(config_path)
+
+
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
     """归档 M9A 安装目录 config/ 当前状态（整目录）。
 
@@ -312,10 +309,10 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     目录不存在或为空时无可归档内容，返回 ``None``。
     """
 
-    config_path = Path(config_path)
-    if not config_path.is_dir() or not any(config_path.iterdir()):
+    files = collect_native_files(config_path)
+    if not files:
         return None
-    dest = archive_dir(config_path, native_backup_root(config_path), force=force)
+    dest = archive_files(files, native_backup_root(config_path), force=force)
     if dest is None:
         logger.info("M9A 原生配置无变化，跳过归档")
         return None

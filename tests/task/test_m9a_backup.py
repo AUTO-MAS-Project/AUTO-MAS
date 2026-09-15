@@ -21,7 +21,8 @@
 M9A 无 per-user ConfigFile 目录：mas 池是纯字段侧车（Info 核心 + Queue
 原始值 + Display 展示快照），native 池是安装目录 config/ 整目录。用临时
 目录与鸭子类型配置对象验证两池归档的指纹去重、恢复闭环、选项翻译与
-降级、预览分区摘要，以及 restore/snapshot/preview 池回调的真实调用链。
+降级、预览分区摘要，以及 service 级真实调用链（声明式快照、基座
+files 注入）。
 """
 
 import asyncio
@@ -293,13 +294,13 @@ def test_native_preview_reads_all_instances(
 def test_restore_service_callbacks_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """池回调真实调用链：snapshot → preview → restore 字段回填（含 Mode 排除）。"""
+    """service 级真实调用链：声明式 snapshot → preview（files 注入）→ restore 回填。"""
 
     from app.task.M9A.tools.restore_service import (
-        _preview_mas,
-        _restore_mas,
-        _snapshot_mas,
+        RESTORE_POOLS,
+        RESTORE_SCRIPT_NAME,
     )
+    from app.utils.config_restore import RestoreContext, build_restore_service
 
     monkeypatch.chdir(tmp_path)
     script_id = "s-0003"
@@ -316,26 +317,39 @@ def test_restore_service_callbacks_roundtrip(
         get=lambda g, k: str(tmp_path / "M9A") if (g, k) == ("Info", "Path") else "",
         UserData={uid: user},
     )
-    ctx = SimpleNamespace(
+    ctx = RestoreContext(
         config=None,
         script_config=script_config,
         script_id=script_id,
         user_id=str(uid),
     )
+    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
 
     # snapshot：归档当前字段（含展示快照）
-    created = asyncio.run(_snapshot_mas(ctx))
+    created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
     ts = created["time"]
 
-    # preview：真实池回调（签名回归——池函数签名改动漏改调用点会在此暴露）
-    payload = asyncio.run(_preview_mas(ctx, ts))
+    # preview：定制摘要 + 基座注入归档内文件清单（侧车唯一文件）
+    payload = asyncio.run(service.preview("mas", ts))
     sections = {s["name"] for s in payload["sections"]}
     assert "m9a" in sections
+    assert payload["files"] == [
+        {
+            "path": "_mas_overlay.json",
+            "size": (get_mas_backup_dir(script_id, str(uid), ts) / "_mas_overlay.json")
+            .stat()
+            .st_size,
+        }
+    ]
+
+    # 声明式 read_file（基座从 backup_root 派生）
+    content = asyncio.run(service.read_backup_file("mas", ts, "_mas_overlay.json"))
+    assert "Resource" in content["content"]
 
     # restore：回填 UserData，Mode/Display 排除；恢复前当前字段强制存底
     user._values["Info.Resource"] = "B服"
-    asyncio.run(_restore_mas(ctx, ts))
+    asyncio.run(service.restore("mas", ts))
     assert len(user.updated) == 1
     grouped = user.updated[0]
     assert grouped["Info"]["Resource"] == "官服"
