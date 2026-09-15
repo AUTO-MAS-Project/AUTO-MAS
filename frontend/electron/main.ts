@@ -641,6 +641,29 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+/**
+ * 开发环境的不变式：前端必须由 vite 开发服务器提供。
+ *
+ * 在加载前端**之前**先校验，而不是等加载失败再兜底——否则一旦
+ * VITE_DEV_SERVER_URL 缺失，加载逻辑会静默回退去读 dist/，让开发者
+ * 以为跑的是当前源码。开发环境下任何异常都应优先指出，不能静默换一条路。
+ *
+ * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
+ */
+function assertDevelopmentRuntime(): void {
+  if (app.isPackaged) return
+  if (process.env.VITE_DEV_SERVER_URL) return
+
+  const message =
+    '开发环境未设置 VITE_DEV_SERVER_URL：前端必须由 vite 开发服务器提供，' +
+    '不会回退读取 dist/ 中的构建产物。\n\n' +
+    '请使用 yarn dev 启动（会同时拉起 vite 与 electron）。'
+  logger.error(message)
+  dialog.showErrorBox('AUTO-MAS 开发环境启动方式不正确', message)
+  app.quit()
+  process.exit(1)
+}
+
 function createWindow() {
   logger.info('开始创建主窗口')
 
@@ -876,6 +899,7 @@ function createWindow() {
   }
 
   win.setMenuBarVisibility(false)
+  assertDevelopmentRuntime()
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)

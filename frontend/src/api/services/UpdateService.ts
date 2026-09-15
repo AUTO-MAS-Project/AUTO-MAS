@@ -16,6 +16,8 @@ import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
 import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
+import type { UserInfrastPlanSelectIn } from '../models/UserInfrastPlanSelectIn';
+import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOut';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
@@ -131,6 +133,25 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost(
+        requestBody: UserInfrastPlanSelectIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -133,18 +133,6 @@ export interface SraActivityOverview {
   activities: SraActivityItem[]
 }
 
-export const createEmptySraActivityOverview = (): SraActivityOverview => ({
-  Available: false,
-  Stale: false,
-  Message: '',
-  version: '',
-  versionName: '',
-  cover: '',
-  startTime: '',
-  endTime: '',
-  activities: [],
-})
-
 export type Reverse1999ActivityOverview = SraActivityOverview
 export type BlueArchiveActivityOverview = SraActivityOverview
 
@@ -161,6 +149,18 @@ export interface BlueArchiveServerOverview {
   label: string
   overview: BlueArchiveActivityOverview
 }
+
+export const createEmptySraActivityOverview = (message = ''): SraActivityOverview => ({
+  Available: false,
+  Stale: false,
+  Message: message,
+  version: '',
+  versionName: '',
+  cover: '',
+  startTime: '',
+  endTime: '',
+  activities: [],
+})
 
 export interface HomeOverviewResponse {
   Stage: StageOverview

@@ -18,6 +18,7 @@
 
 import asyncio
 import shutil
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
@@ -27,10 +28,15 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import read_config_source, user_uses_quick_config
 from app.utils import ProcessManager, get_logger
 from app.utils.io import mark_native_config_injected, swap_in_dir
 
-from .tools.backup_archive import archive_mas_runtime_backup
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    ensure_quick_config_dir,
+    mas_config_dir,
+)
 
 logger = get_logger("OK-NTE 脚本设置")
 
@@ -74,13 +80,23 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config_path: Path = Path(
             self.script_config.get("Script", "ConfigPath")
         )
-        self.mas_config_dir: Path = (
-            Path.cwd()
-            / "data"
-            / self.script_info.script_id
-            / self.cur_user_item.user_id
-            / "ConfigFile"
+        self.mas_config_dir: Path | None = mas_config_dir(
+            self.script_info.script_id, self.cur_user_item.user_id
         )
+        if self.cur_user_item.user_id != "Default":
+            cfg = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            if self.view_only or user_uses_quick_config(cfg):
+                self.mas_config_dir = ensure_quick_config_dir(
+                    self.script_info.script_id,
+                    self.cur_user_item.user_id,
+                    script_config,
+                )
+            elif read_config_source(cfg) == "直控":
+                self.mas_config_dir = None
+            elif read_config_source(cfg) == "脚本":
+                self.mas_config_dir = mas_config_dir(
+                    self.script_info.script_id, "Default"
+                )
 
     async def check(self) -> str:
         return "Pass"
@@ -122,7 +138,11 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("OK-NTE 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
-        if not self.mas_config_dir.exists() or not any(self.mas_config_dir.iterdir()):
+        if (
+            self.mas_config_dir is None
+            or not self.mas_config_dir.exists()
+            or not any(self.mas_config_dir.iterdir())
+        ):
             logger.info("未找到用户级 OK-NTE 配置，使用脚本当前配置启动 GUI")
             return
 
@@ -152,6 +172,11 @@ class ScriptConfigTask(TaskExecuteBase):
         # 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("OK-NTE 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
+
+        if self.mas_config_dir is None:
+            # 直控 GUI 的保存属于原生来源，不能被 manager 的任务快照撤销。
             self.cur_user_item.status = "完成"
             return
 

@@ -139,10 +139,8 @@
           :model-value="formData.Info.Mode"
           :options="maaConfigModeOptions"
           :disabled="loading"
-          :quick-config="formData.Info.IfQuickConfig ?? true"
           :alert-message="t('edit.configSourceHintBase')"
           @change="emit('modeChange', $event)"
-          @quick-config-change="emit('quickConfigChange', $event)"
         />
       </a-col>
     </a-row>
@@ -208,7 +206,7 @@ const maaConfigModeOptions: Array<{
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: '直接使用脚本原生配置，MAS 不写入配置',
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -216,7 +214,6 @@ const maaConfigModeOptions: Array<{
 const emit = defineEmits<{
   save: [key: string, value: any]
   modeChange: [value: boolean | string]
-  quickConfigChange: [value: boolean]
 }>()
 
 const emitSave = (key: string, value: any) => {

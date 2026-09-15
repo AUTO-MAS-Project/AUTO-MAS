@@ -169,6 +169,14 @@ class NotifyPayload:
         return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
 
     @property
+    def cmcc_newmsg_content(self) -> str:
+        """返回中国移动新消息正文。"""
+
+        text = self.signed_text
+        heading = self.standalone_title or self.title
+        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
+
+    @property
     def system_content(self) -> str:
         """返回系统通知正文。"""
 
@@ -183,6 +191,7 @@ class NotifyTarget:
     system: bool = False
     mail_to: str | None = None
     serverchan_key: str | None = None
+    cmcc_newmsg_api_key: str | None = None
     webhooks: Iterable[tuple[str, Any]] = ()
     koishi: bool = False
     openclaw_weixin: bool = False
@@ -234,6 +243,11 @@ def global_target(
         serverchan_key=(
             Config.get("Notify", "ServerChanKey")
             if Config.get("Notify", "IfServerChan")
+            else None
+        ),
+        cmcc_newmsg_api_key=(
+            Config.get("Notify", "CMCCNewMsgApiKey")
+            if Config.get("Notify", "IfCMCCNewMsg")
             else None
         ),
         webhooks=_webhooks(Config.Notify_CustomWebhooks),
@@ -330,6 +344,9 @@ def _target_channels(target: NotifyTarget) -> dict[str, str]:
         channels[channel] = channel
     if target.serverchan_key is not None:
         channel = f"{target.name} ServerChan"
+        channels[channel] = channel
+    if target.cmcc_newmsg_api_key is not None:
+        channel = f"{target.name} 中国移动5G短信"
         channels[channel] = channel
     for uid, webhook in target.webhooks:
         channels[f"{target.name} Webhook {uid}"] = (
@@ -489,6 +506,26 @@ async def dispatch(
                         title=payload.title,
                         content=payload.serverchan_content,
                         send_key=t.serverchan_key,
+                    ),
+                )
+
+        if target.cmcc_newmsg_api_key is not None:
+            channel = f"{target.name} 中国移动5G短信"
+            should_send, missing = _recipient_action(
+                target.cmcc_newmsg_api_key,
+                target.empty_policy,
+                channel=channel,
+                hint=f"{target.name}中国移动5G短信 API Key",
+            )
+            if missing:
+                miss(channel)
+            if should_send:
+                await attempt(
+                    channel,
+                    lambda t=target: Notify.send_cmcc_newmsg(
+                        title=payload.title,
+                        content=payload.cmcc_newmsg_content,
+                        api_key=t.cmcc_newmsg_api_key,
                     ),
                 )
 

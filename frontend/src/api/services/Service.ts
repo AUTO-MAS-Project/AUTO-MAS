@@ -137,6 +137,9 @@ import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
 import type { UserInBase } from '../models/UserInBase';
+import type { UserInfrastPlanComboxOut } from '../models/UserInfrastPlanComboxOut';
+import type { UserInfrastPlanSelectIn } from '../models/UserInfrastPlanSelectIn';
+import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOut';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
@@ -667,14 +670,52 @@ export class Service {
         });
     }
     /**
+     * 设置基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost(
+        requestBody: UserInfrastPlanSelectIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 用户自定义基建排班可选项
      * @param requestBody
-     * @returns ComboBoxOut Successful Response
+     * @returns UserInfrastPlanComboxOut Successful Response
      * @throws ApiError
      */
     public static getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost(
         requestBody: UserDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
+    ): CancelablePromise<UserInfrastPlanComboxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/combox/infrastructure',

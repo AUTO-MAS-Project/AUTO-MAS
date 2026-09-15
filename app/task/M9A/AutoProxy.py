@@ -23,6 +23,7 @@
 import asyncio
 import json
 import re
+import shutil
 import time
 import uuid
 from datetime import datetime
@@ -38,7 +39,11 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
-from app.task.proxy_helpers import CONFIG_SOURCE_SCRIPT, resolve_config_source
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
+    resolve_config_source,
+    user_uses_quick_config,
+)
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import mark_native_config_injected, read_file, write_file
@@ -200,6 +205,11 @@ class AutoProxyTask(TaskExecuteBase):
                 queue = []
                 resource = "官服"
                 account = ""
+            elif not user_uses_quick_config(self.cur_user_config):
+                # 原生队列不经过面板解析、过滤或完成记录裁剪。
+                queue = []
+                resource = self.cur_user_config.get("Info", "Resource") or "官服"
+                account = self.cur_user_config.get("Info", "Account") or ""
             else:
                 queue, queue_error = self._load_user_queue()
                 resource = self.cur_user_config.get("Info", "Resource") or "官服"
@@ -280,23 +290,15 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
-            # 两段式：来源决定是否下发 MAS 托管配置，快速配置决定是否把面板值
-            # 写进 M9A 原生配置。
-            # - 脚本/用户来源：写（面板值即本次运行配置）
-            # - 直控+开启：写面板值，任务结束按既有快照恢复
-            # - 直控+关闭：完全用 M9A 安装目录现有的原生配置，零写入
-            if self.direct_control and not self.cur_user_config.get(
-                "Info", "IfQuickConfig"
-            ):
-                logger.info("M9A 直控配置：直接使用脚本原生配置，跳过 MAS 配置写入")
-            else:
-                # 写入 M9A 配置
-                await self.write_m9a_config(queue, emulator_info, resource, account)
+            await self.write_m9a_config(queue, emulator_info, resource, account)
 
             # 启动 M9A
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
             self.wait_event.clear()
-            await self.m9a_process_manager.open_process(self.m9a_exe_path)
+            args = (
+                [] if self.is_virtual_update_user else ["--autostart", "-i", "default"]
+            )
+            await self.m9a_process_manager.open_process(self.m9a_exe_path, *args)
             self.m9a_started = True
             # 等待 M9A 处理日志文件与初始化
             logger.info("等待 M9A 初始化...")
@@ -315,7 +317,9 @@ class AutoProxyTask(TaskExecuteBase):
             await self.m9a_log_monitor.stop()
             await self._stop_failure_quiet_waiter()
 
-            if not self.is_virtual_update_user:
+            if not self.is_virtual_update_user and user_uses_quick_config(
+                self.cur_user_config
+            ):
                 completed_entries = self._collect_completed_task_entries()
                 self.completed_task_entries.update(completed_entries)
                 await self._update_completed_task_state(completed_entries)
@@ -491,8 +495,48 @@ class AutoProxyTask(TaskExecuteBase):
             await System.kill_process(self.m9a_exe_path)
 
         try:
+            # 队列模板来自所选来源，不能读到上一用户刚注入的任务。
+            if not self.is_virtual_update_user:
+                native = (
+                    Path.cwd()
+                    / f"data/{self.script_info.script_id}/Temp/instances/default.json"
+                )
+                source = native
+                if not self.direct_control:
+                    owner = (
+                        "Default"
+                        if self.config_mode == CONFIG_SOURCE_SCRIPT
+                        else str(self.cur_user_uid)
+                    )
+                    saved = (
+                        Path.cwd()
+                        / f"data/{self.script_info.script_id}/{owner}/ConfigFile/default.json"
+                    )
+                    if not saved.is_file() and source.is_file():
+                        saved.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(source, saved)
+                    source = saved
+                if (
+                    source.is_file()
+                    and source.resolve() != self.m9a_tasks_path.resolve()
+                ):
+                    self.m9a_tasks_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, self.m9a_tasks_path)
+                elif not source.is_file() and user_uses_quick_config(
+                    self.cur_user_config
+                ):
+                    # 无来源模板时沿用最小配置策略，不能读上一用户的运行期文件。
+                    self.m9a_tasks_path.unlink(missing_ok=True)
             if self.is_virtual_update_user:
                 config = await self._build_virtual_config()
+            elif not user_uses_quick_config(self.cur_user_config):
+                if not source.is_file():
+                    raise FileNotFoundError("请先在 M9A 中保存默认实例的任务配置")
+                config = read_file(source)
+                if emulator_info and emulator_info.adb_address != "Unknown":
+                    config["Connect.Address"] = emulator_info.adb_address
+                config["BeforeTask"] = "StartupSoftwareAndScript"
+                config["AfterTask"] = "CloseEmulatorAndMFA"
             else:
                 emulator_id = self.script_config.get("Emulator", "Id")
                 emulator_index = self.script_config.get("Emulator", "Index")
