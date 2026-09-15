@@ -114,11 +114,41 @@ class CommandPlanTest(unittest.TestCase):
         self.assertEqual(self._plans([]), [])
 
     def test_bare_command_is_classified_external(self) -> None:
-        plan = self._plans({"child_exec": "python"})[0]
+        plan = self._plans({"child_exec": "node"})[0]
         self.assertEqual(plan.runtimeKind, "external")
-        self.assertEqual(plan.executable, "python")
+        self.assertEqual(plan.executable, "node")
         self.assertIsNone(plan.executableExists)
         self.assertIsNone(plan.fallbackReason)
+
+    def test_bare_python_is_routed_to_the_isolated_venv(self) -> None:
+        # worker 跑在运行池 venv 里，Windows 上裸 python 会被 CreateProcess 解析到
+        # 基解释器（那里没有 maa），与用户 PATH 无关；不能原样交给 PATH。
+        for child_exec in ("python", "python3", "PYTHON.EXE", "pythonw"):
+            with self.subTest(child_exec=child_exec):
+                plan = self._plans({"child_exec": child_exec})[0]
+                self.assertEqual(plan.runtimeKind, "isolated_venv")
+                self.assertEqual(plan.childExec, child_exec)
+                self.assertIsNotNone(plan.isolatedVenvPath)
+                self.assertEqual(
+                    Path(plan.isolatedVenvPath).parent,
+                    self.managed.resolve(),
+                )
+                self.assertEqual(
+                    Path(plan.executable),
+                    Path(plan.isolatedVenvPath)
+                    / ("Scripts" if os.name == "nt" else "bin")
+                    / ("python.exe" if os.name == "nt" else "python"),
+                )
+                self.assertFalse(plan.executableExists)
+                self.assertIn("隔离 venv", plan.fallbackReason or "")
+
+    def test_bare_python_shares_the_venv_with_the_bundled_python_fallback(self) -> None:
+        agent_dir = self.project / "agent"
+        agent_dir.mkdir()
+        (agent_dir / "main.py").write_text("", encoding="utf-8")
+        bare = self._plans({"child_exec": "python"})[0]
+        bundled = self._plans({"child_exec": "./python/python.exe"})[0]
+        self.assertEqual(bare.isolatedVenvPath, bundled.isolatedVenvPath)
 
     def test_project_dir_token_is_expanded_in_exec_and_args(self) -> None:
         agent_dir = self.project / "agent"
@@ -247,7 +277,12 @@ class AgentEnvServiceTest(unittest.TestCase):
         self.assertEqual(plans, [])
 
     def test_classify_falls_back_to_external(self) -> None:
-        self.assertEqual(self.service.classify({"child_exec": "python"}), "external")
+        self.assertEqual(self.service.classify({"child_exec": "node"}), "external")
+
+    def test_classify_reports_bare_python_as_isolated_venv(self) -> None:
+        self.assertEqual(
+            self.service.classify({"child_exec": "python"}), "isolated_venv"
+        )
 
 
 if __name__ == "__main__":
