@@ -20,7 +20,9 @@
 
     <a-alert v-if="editable" type="info" show-icon class="mode-guide-alert">
       <template #message>
-        <span class="mode-guide-message">{{ t('edit.bettergiTeamHowToTitle') }}</span>
+        <span class="mode-guide-message team-howto-title">
+          {{ t('edit.bettergiTeamHowToTitle') }}
+        </span>
       </template>
       <template #description>
         <p>{{ t('edit.bettergiTeamHowTo') }}</p>
@@ -926,5 +928,9 @@ defineExpose({ syncFromForm })
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.team-howto-title {
+  font-weight: 600;
 }
 </style>

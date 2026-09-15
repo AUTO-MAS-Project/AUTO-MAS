@@ -1603,7 +1603,7 @@ export default {
       'and cleans the slot up afterwards. Your own BetterGI profiles (such as 默认配置) stay untouched: the same-named real profile is neither read nor affected by this page.',
     bettergiMasConfigHowTo2:
       'The battle party and battle strategy above are the fallback for every combat task (ley line blossoms, domains, boss runs and Stygian Onslaught). An empty party means "do not switch party" (keep the party you entered the task with); an empty strategy lets BetterGI pick one from the party. If a task matches a battle scene in the team table, the party and strategy of that row win.',
-    bettergiTeamHowToTitle: 'Team settings under per-user config',
+    bettergiTeamHowToTitle: 'How to use team settings',
     bettergiTeamHowTo:
       'With the team table enabled, combat tasks (auto domain / auto ley line blossom / auto boss) look it up first: a row matching the battle scene is preferred, and one is picked at random when several match; tasks without a match fall back to the battle party / battle strategy above. Row 0, General, covers every scene and cannot be deleted. Party and strategy names must match what already exists in BetterGI (use "Open strategy folder" to browse strategy files).',
     bettergiOneDragonName: 'One Dragon profile',
