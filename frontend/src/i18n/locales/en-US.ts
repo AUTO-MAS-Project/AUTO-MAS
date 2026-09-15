@@ -1343,7 +1343,8 @@ export default {
     configSourceHint:
       'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
     configSourceHintBase:
-      "Script uses the shared script-level configuration, User uses this user's own configuration; Direct control uses the script's existing configuration and MAS never writes it. Quick configuration is a separate switch.",
+      "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
+    nativeConfigSourceDescription: "Use the script's current native configuration.",
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',

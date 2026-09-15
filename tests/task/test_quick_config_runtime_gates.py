@@ -1,4 +1,4 @@
-"""直控+快速配置接管与开关门控的专项运行时回归测试（t3）
+"""快速配置与来源独立的专项运行时回归测试。
 
 锁住 S3/S4/S5 的专项落地（缺口专项 + Okww F13 修复），全部走生产代码路径：
 
@@ -6,7 +6,7 @@
   直控+开启只写 DailyTask.json 快速配置子集；脚本/用户来源保持现状。
 - MaaFW：直控+开启=build_plan 应用用户托管值（任务快照/预设）；
   直控+关闭=纯 interface 默认。
-- OkNte：直控+开启=DailyRoutine 面板子集写入原生 working 配置；
+- OkNte：开启=独立面板文件写入原生 working 配置；
   直控+关闭=零写入。
 - ZzzOd：直控+开启=用户面板字段写入绑定实例槽（备份→注入→恢复）；
   直控+关闭=裸跑零写入。
@@ -63,15 +63,16 @@ def _okww_task(mode: str, quick: bool) -> OkwwAutoProxyTask:
     return task
 
 
-def test_okww_direct_closed_writes_nothing(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", ["脚本", "用户", "直控"])
+def test_okww_direct_closed_writes_nothing(tmp_path: Path, mode: str) -> None:
     """直控+关闭：Basic Options.json 与 DailyTask.json 都零写入（F13）。"""
 
-    task = _okww_task("直控", quick=False)
+    task = _okww_task(mode, quick=False)
     task.script_config_path = tmp_path / "configs"
 
     task._apply_mas_overrides()
 
-    assert not (tmp_path / "configs").exists()
+    assert not (tmp_path / "configs" / "DailyTask.json").exists()
 
 
 def test_okww_direct_quick_writes_only_daily_task(tmp_path: Path) -> None:
@@ -148,14 +149,17 @@ def _maafw_task(mode: str, quick: bool, **task_fields: Any) -> Any:
     return task
 
 
-def test_maafw_direct_closed_builds_interface_defaults() -> None:
+@pytest.mark.parametrize("mode", ["脚本", "用户", "直控"])
+def test_maafw_direct_closed_builds_interface_defaults(mode: str) -> None:
     """直控+关闭：build_plan 不带用户任务快照/预设（纯 interface 默认）。"""
 
     from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
         MaaFWRunnerService,
     )
 
-    task = _maafw_task("直控", quick=False)
+    task = _maafw_task(
+        mode, quick=False, snapshot="invalid hidden JSON", preset="hidden"
+    )
     interface = MagicMock()
     interface.controller = []
     interface.resource = []
@@ -168,7 +172,8 @@ def test_maafw_direct_closed_builds_interface_defaults() -> None:
     assert kwargs.get("selected_preset") is None
 
 
-def test_maafw_direct_quick_applies_user_values() -> None:
+@pytest.mark.parametrize("mode", ["脚本", "用户", "直控"])
+def test_maafw_direct_quick_applies_user_values(mode: str) -> None:
     """直控+开启：build_plan 应用用户托管值（任务快照/预设），与脚本/用户来源同路径。"""
 
     from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
@@ -176,7 +181,7 @@ def test_maafw_direct_quick_applies_user_values() -> None:
     )
 
     task = _maafw_task(
-        "直控", quick=True, snapshot='{"daily": {"enabled": true}}', preset=""
+        mode, quick=True, snapshot='{"daily": {"enabled": true}}', preset=""
     )
     interface = MagicMock()
     interface.controller = []
@@ -221,9 +226,14 @@ def _oknte_task(user_config: _Cfg, script_config: Any) -> OkNteAutoProxyTask:
     return task
 
 
-def test_oknte_direct_quick_writes_panel_subset(tmp_path: Path) -> None:
-    """直控+开启：把该用户 DailyRoutine 面板子集写入原生 working 配置（不整目录下发）。"""
+@pytest.mark.parametrize("mode", ["脚本", "用户", "直控"])
+@pytest.mark.parametrize("quick", [False, True])
+def test_oknte_panel_is_independent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, quick: bool
+) -> None:
+    """面板与来源分别落盘；旧测试只覆盖日常两件套，不能代表完整编辑器。"""
 
+    monkeypatch.chdir(tmp_path)
     native = tmp_path / "native_configs"
     native.mkdir()
     (native / "DailyRoutineTask.json").write_text(
@@ -249,22 +259,38 @@ def test_oknte_direct_quick_writes_panel_subset(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    task = _oknte_task(_Cfg("直控", quick=True), _OkNteScriptConfig(native))
+    (mas_dir / "AutoCombatTask.json").write_text('{"enabled": true}', encoding="utf-8")
+    task = _oknte_task(_Cfg(mode, quick=quick), _OkNteScriptConfig(native))
     task.script_exe_path = tmp_path / "ok-nte.exe"
-    task._ensure_oknte_mas_config_dir = MagicMock(return_value=mas_dir)  # type: ignore[method-assign]
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "DailyRoutineTask.json").write_bytes(
+        (native / "DailyRoutineTask.json").read_bytes()
+    )
+    task._ensure_oknte_mas_config_dir = MagicMock(return_value=source)
 
     with (
         patch("app.task.OkNte.AutoProxy.System.kill_process"),
-        patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap,
+        patch(
+            "app.task.OkNte.AutoProxy.ensure_quick_config_dir", return_value=mas_dir
+        ) as panel,
         patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive,
     ):
         asyncio.run(task.set_oknte())
 
-    swap.assert_not_called()
-    archive.assert_not_called()
+    assert panel.call_count == int(quick)
+    assert archive.call_count == int(mode != "直控" or quick)
     data = json.loads((native / "DailyRoutineTask.json").read_text(encoding="utf-8"))
-    assert data["Routine Items"][0]["enabled"] is True
-    assert data["Exit After Task"] is False
+    assert data["Routine Items"][0]["enabled"] is quick
+    assert data["Exit After Task"] is not quick
+    assert (native / "AutoCombatTask.json").exists() is quick
+    assert task.daily_activity_required is quick
+    assert (
+        json.loads((source / "DailyRoutineTask.json").read_text(encoding="utf-8"))[
+            "Exit After Task"
+        ]
+        is True
+    )
 
 
 # ── ZzzOd：直控+开启=面板字段写入绑定实例槽，任务后恢复 ──────────────────

@@ -210,22 +210,6 @@ class M9AManager(TaskExecuteBase):
                 baseline=dir_fingerprint(self.temp_path),
             )
 
-            if not direct_control:
-                instances_dir = self.m9a_config_path / "instances"
-                if instances_dir.exists():
-                    for json_file in instances_dir.glob("*.json"):
-                        # default.json 是 AutoProxy.build_config 的配置模板：把用户在 M9A
-                        # 里设的实例级选项带进本次运行。连它一起删，每轮第一个用户必然落到
-                        # 「无法读取配置模板，使用最小默认配置」，后续用户读到的还是 MAS 自己
-                        # 刚写的那份——用户的实例配置从来没生效过。
-                        if json_file.name.casefold() == "default.json":
-                            continue
-                        try:
-                            json_file.unlink()
-                            logger.info(f"已删除原始配置文件：{json_file}")
-                        except Exception as e:
-                            logger.warning(f"删除原始配置文件 {json_file} 失败：{e}")
-
         # 构建用户列表
         self.script_info.user_list = [
             UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")

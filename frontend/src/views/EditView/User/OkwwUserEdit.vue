@@ -98,24 +98,6 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.enableQuickConfiguration') }}
-                      <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.IfQuickConfig"
-                    size="large"
-                    :options="quickConfigOptions"
-                    @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
                       {{ t('edit.collectNodeDetails') }}
                       <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
@@ -213,13 +195,21 @@
         </a-form>
       </a-card>
 
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card" style="margin-top: 24px">
+      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
+        <h3>{{ t('edit.taskConfiguration') }}</h3>
+        <a-space>
+          <span>{{ t('edit.enableQuickConfiguration') }}</span>
+          <a-switch
+            :checked="formData.Info.IfQuickConfig"
+            :disabled="pageLoading || isInitializing || isSaving"
+            :aria-label="t('edit.enableQuickConfiguration')"
+            @change="handleQuickConfigChange"
+          />
+        </a-space>
+      </a-flex>
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.taskConfiguration') }}</h3>
-            </div>
-
             <a-row :gutter="24">
               <a-col :span="12">
                 <a-form-item>
@@ -401,11 +391,6 @@ let okwwConfigTimeout: number | null = null
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
   { label: '国际服（Global）', value: '国际服' },
-]
-
-const quickConfigOptions = [
-  { label: t('edit.enabled3'), value: true },
-  { label: t('edit.off'), value: false },
 ]
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
@@ -623,28 +608,38 @@ const saveField = async (key: string, value: unknown) => {
     formData.userName = String(value || '')
   }
 
-  await enqueue(async () => {
+  return await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId.value, patch)
+      return await updateUser(scriptId, userId.value, patch)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
     }
   }, key)
 }
 
+const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
+  formData.Info.IfQuickConfig = value
+  if (!(await saveField('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
+}
+
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  await updateUser(scriptId, userId.value, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      WhichToFarm: formData.Task.WhichToFarm,
-      WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-      WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-      MaterialSelection: formData.Task.MaterialSelection,
-      FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-      AdditionalTasks: formData.Task.AdditionalTasks,
-    },
-  })
+  await enqueue(() =>
+    updateUser(scriptId, userId.value, {
+      Task: {
+        TaskIndex: formData.Task.TaskIndex,
+        WhichToFarm: formData.Task.WhichToFarm,
+        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
+        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
+        MaterialSelection: formData.Task.MaterialSelection,
+        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
+        AdditionalTasks: formData.Task.AdditionalTasks,
+      },
+    })
+  )
 }
 
 const handleTaskIndexChange = async (value: 1 | 7) => {

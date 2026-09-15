@@ -28,6 +28,7 @@ from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.proxy_helpers import user_uses_direct_control, user_uses_quick_config
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -40,15 +41,9 @@ from app.utils.io import (
 )
 
 from .AutoProxy import AutoProxyTask
-from .config_schema import DAILY_ROUTINE_CONFIGS_FILE, DAILY_ROUTINE_TASK_FILE
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
-
-# 直控+快速配置的 DailyRoutine 面板子集文件（见 AutoProxy._apply_oknte_quick_config）：
-# File 模式的既有快照只覆盖单配置文件，须把子集文件一并纳入快照，
-# 保证运行后原样恢复（Folder 模式由整目录快照天然覆盖）
-_OKNTE_QUICK_CONFIG_FILES = (DAILY_ROUTINE_TASK_FILE, DAILY_ROUTINE_CONFIGS_FILE)
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -188,12 +183,6 @@ class OkNteManager(TaskExecuteBase):
                 elif self.script_config.get("Script", "ConfigPathMode") == "File":
                     self.temp_path.mkdir(parents=True, exist_ok=True)
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
-                    # 直控+快速配置把 DailyRoutine 面板子集写在配置文件同级目录：
-                    # File 模式快照一并纳入，保证运行后原样恢复
-                    for name in _OKNTE_QUICK_CONFIG_FILES:
-                        src = self.script_config_path.parent / name
-                        if src.is_file():
-                            shutil.copy(src, self.temp_path / name)
 
             # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
             # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
@@ -231,6 +220,14 @@ class OkNteManager(TaskExecuteBase):
             return
         # 复原属于收尾清理, 失败不应掩盖任务本身的异常, 也不应中断后续解锁与回写
         try:
+            if self.task_info.mode == "ScriptConfig" and not self.task_info.view_only:
+                user_id = self.task_info.user_id
+                if user_id and user_id != "Default":
+                    cfg = self.user_config[uuid.UUID(user_id)]
+                    if user_uses_direct_control(cfg) and not user_uses_quick_config(
+                        cfg
+                    ):
+                        return
             if self.script_config.get("Script", "ConfigPathMode") == "Folder":
                 if not self.had_original_script_config:
                     logger.info(
@@ -252,14 +249,6 @@ class OkNteManager(TaskExecuteBase):
                     )
                     with suppress(FileNotFoundError):
                         self.script_config_path.unlink()
-                # 复原快速配置面板子集（快照过的才复原，未快照过的在写入侧
-                # 也不会新造，见 AutoProxy._apply_oknte_quick_config）
-                for name in _OKNTE_QUICK_CONFIG_FILES:
-                    if (self.temp_path / name).exists():
-                        shutil.copy(
-                            self.temp_path / name,
-                            self.script_config_path.parent / name,
-                        )
         except Exception as e:
             logger.opt(exception=True).warning(f"复原 OK-NTE 脚本配置失败: {e}")
         finally:

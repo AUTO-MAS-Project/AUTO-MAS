@@ -28,7 +28,6 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils.platform import IS_ELEVATED
 
 from .AutoProxy import _BGI_REL_EXE
@@ -58,11 +57,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 直控+关闭=不写；其余组合都写面板值
-            mode = read_config_source(user_config)
-            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT or bool(
-                user_config.get("Info", "IfQuickConfig")
-            )
+            self.use_mas_config = bool(user_config.get("Info", "IfQuickConfig"))
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False

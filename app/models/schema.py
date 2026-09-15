@@ -1688,6 +1688,9 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None, description="配置来源（脚本/用户/直控）"
     )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
 
@@ -1742,6 +1745,9 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
 
 
 class OneDragonPlanStep(BaseModel):
