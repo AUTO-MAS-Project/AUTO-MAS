@@ -316,7 +316,11 @@ class AutoProxyTask(TaskExecuteBase):
             for rule in OKWW_PUSH_RULES:
                 self.log_collect.collect(*rule)
 
-        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
+        self.task_index = (
+            int(self.cur_user_config.get("Task", "TaskIndex"))
+            if self.cur_user_config.get("Info", "IfQuickConfig")
+            else OkwwUserConfig().get("Task", "TaskIndex")
+        )
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
@@ -397,12 +401,16 @@ class AutoProxyTask(TaskExecuteBase):
                 config_mode,
             )
             swap_in_dir(mas_config_dir, self.script_config_path)
-            mark_native_config_injected(
-                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
-                self.script_config_path,
-                script_id=self.script_info.script_id,
-            )
+        else:
+            source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if source.is_dir():
+                swap_in_dir(source, self.script_config_path)
         self._apply_mas_overrides()
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.script_config_path,
+            script_id=self.script_info.script_id,
+        )
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 
     async def _push_dispatch_log(self, line: str) -> None:

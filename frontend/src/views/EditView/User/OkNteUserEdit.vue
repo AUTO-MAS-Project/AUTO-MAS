@@ -144,10 +144,8 @@
                   :model-value="formData.Info.Mode"
                   :options="oknteConfigModeOptions"
                   :disabled="pageLoading"
-                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -286,22 +284,32 @@
         </a-form>
       </a-card>
 
-      <!-- OK-NTE 配置编辑器（配置恢复按钮经插槽统一放在编辑器标题行右侧） -->
-      <a-card class="config-card" style="margin-top: 24px">
+      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
+        <h3>{{ t('edit.okNteConfiguration') }}</h3>
+        <a-space>
+          <a-button size="small" @click="openRestoreModal">
+            <template #icon><HistoryOutlined /></template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
+          <span>{{ t('edit.enableQuickConfiguration') }}</span>
+          <a-switch
+            :checked="formData.Info.IfQuickConfig"
+            :disabled="pageLoading || isInitializing || isSaving || configEditorSaving"
+            :aria-label="t('edit.enableQuickConfiguration')"
+            @change="handleQuickConfigChange"
+          />
+        </a-space>
+      </a-flex>
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
         <OkNteConfigEditor
           v-if="activeUserId"
+          ref="configEditor"
           :script-id="scriptId"
           :user-id="activeUserId"
           :refresh-token="oknteConfigRefreshToken"
+          @saving-change="configEditorSaving = $event"
           @saved="handleConfigSaved"
-        >
-          <template #header-actions>
-            <a-button size="small" @click="openRestoreModal">
-              <template #icon><HistoryOutlined /></template>
-              {{ t('edit.configRestoreTitle') }}
-            </a-button>
-          </template>
-        </OkNteConfigEditor>
+        />
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -398,7 +406,9 @@ const scriptName = ref('OK-NTE脚本')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, isSaving } = useSaveQueue()
+const configEditor = ref<InstanceType<typeof OkNteConfigEditor> | null>(null)
+const configEditorSaving = ref(false)
 const oknteConfigRefreshToken = ref(0)
 
 /** OK-NTE 已适配任务（-t 1..19）；新版上游 DailyRoutineTask 是 -t 2 */
@@ -431,7 +441,7 @@ const oknteConfigModeOptions: Array<{
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: t('edit.useScriptSCurrent'),
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -547,8 +557,12 @@ const createUserImmediately = async () => {
 
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
+  if (!value && configEditor.value && !(await configEditor.value.saveAll())) return
+  const previous = formData.Info.IfQuickConfig
   formData.Info.IfQuickConfig = value
-  await saveField('Info.IfQuickConfig', value)
+  if (!(await saveField('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -574,9 +588,9 @@ const saveField = async (key: string, value: unknown) => {
     formData.userName = String(value || '')
   }
 
-  await enqueue(async () => {
+  return await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId, patch)
+      return await updateUser(scriptId, userId, patch)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
     }
@@ -608,6 +622,7 @@ const handleOkNteConfig = async () => {
     message.error(t('edit.createUserBeforeConfiguring'))
     return
   }
+  if (configEditor.value && !(await configEditor.value.saveAll())) return
   await startSession(userId)
 }
 
@@ -694,7 +709,8 @@ const restoreApi = {
     Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
-const openRestoreModal = () => {
+const openRestoreModal = async () => {
+  if (configEditor.value && !(await configEditor.value.saveAll())) return
   restoreOpen.value = true
 }
 

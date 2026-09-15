@@ -3225,6 +3225,15 @@ export default {
       serverChanKey: 'ServerChan キー',
       serverChanKeyTip: 'ServerChan の SendKey です。取得方法はドキュメントをご覧ください',
       serverChanPlaceholder: 'ServerChan の SendKey を入力してください',
+      cmccNewMsgSection: '中国移動 5G メッセージ通知（無料・中国移動の番号限定）',
+      cmccNewMsgDoc: '通知機能ガイドを開く',
+      cmccNewMsgEnable: '中国移動 5G メッセージ通知を有効にする',
+      cmccNewMsgTip:
+        '中国移動の 5G New Messaging（RCS）でタスク通知を無料受信できます。中国移動の番号限定です',
+      cmccNewMsgApiKey: 'Channel API キー',
+      cmccNewMsgApiKeyTip:
+        '中国移動 5G メッセージ Channel の管理者から提供される、ak_ または app_ で始まるキーです',
+      cmccNewMsgApiKeyPlaceholder: '中国移動 5G メッセージ Channel API キーを入力してください',
       koishiSection: 'Koishi',
       koishiEnable: 'Koishi 通知を有効にする',
       koishiTip: 'Koishi で通知を送信します',

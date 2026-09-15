@@ -1,11 +1,7 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.taskConfiguration') }}</h3>
       <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
-      <div class="section-header-actions">
-        <slot name="header-actions" />
-      </div>
     </div>
 
     <a-alert
@@ -287,18 +283,15 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaCustomInfrastPlan')"
-                  :hint="t('edit.maaCustomInfrastPlanHint')"
-                />
+                <LabelWithHint :text="t('edit.maaCustomInfrastPlan')" :hint="infrastHint" />
               </template>
               <a-select
-                :value="formData.Info.InfrastIndex"
-                :options="infrastructureOptions"
+                :value="String(infrastPlanSelect)"
+                :options="infrastSelectOptions"
                 :loading="infrastructureOptionsLoading"
                 :disabled="loading"
                 :placeholder="t('edit.pickCustomBaseLayout')"
-                @change="emitSave('Info.InfrastIndex', $event)"
+                @change="handleInfrastPlanChange"
               />
             </a-form-item>
           </a-col>
@@ -373,6 +366,8 @@ import {
 const { t } = useI18n()
 
 type SelectOption = { label: string; value: string }
+// 基建班次选项：时段由后端随选项下发（前端拿不到 Data.CustomInfrast）
+type InfrastPlanOption = { label: string; value: string; period?: string | null }
 
 const formData = defineModel<any>('formData', { required: true })
 
@@ -407,12 +402,17 @@ const props = defineProps<{
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean
-  infrastructureOptions: SelectOption[]
+  infrastructureOptions: InfrastPlanOption[]
   infrastructureOptionsLoading: boolean
+  /** 当前基建班次索引（-1=按时段自动；来自 MAA 配置，MAA 原生推进） */
+  infrastPlanSelect: number
+  /** 排班表时段形态（后端判定: period/rotate/mixed/empty） */
+  infrastPlanState: string
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  selectInfrastPlan: [index: number, label: string]
   selectAndImportInfrastructureConfig: []
 }>()
 const emitSave = (key: string, value: any) => emit('save', key, value)
@@ -466,11 +466,62 @@ const activitySummary = computed(() =>
   })
 )
 
+// 自动换班随表型带上语义（时段表=按钟点选班；无时段表=从第一班起轮换）
+const infrastAutoLabel = computed(() => {
+  if (props.infrastPlanState === 'period') return t('edit.maaCustomInfrastPlanAutoPeriod')
+  if (props.infrastPlanState === 'rotate') return t('edit.maaCustomInfrastPlanAutoRotate')
+  return t('edit.maaCustomInfrastPlanAuto')
+})
+
+// 班次标签补时段，让"哪班对应哪段时间"在控件里可见（时段随选项由后端下发）
+const infrastLabelWithPeriod = (option: InfrastPlanOption) =>
+  option.period
+    ? t('edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
+    : option.label
+
+const infrastSelectOptions = computed(() => [
+  { label: infrastAutoLabel.value, value: '-1' },
+  ...props.infrastructureOptions.map(option => ({
+    label: infrastLabelWithPeriod(option),
+    value: option.value,
+  })),
+])
+
+// 选中项在选项表里的标签（越界等解析不到时为 undefined）
+const infrastSelectLabel = computed(
+  () =>
+    infrastSelectOptions.value.find(option => option.value === String(props.infrastPlanSelect))
+      ?.label
+)
+
+// 选班事件带上标签，父组件提示直接可用（含时段的班名），无需重复拼装
+const handleInfrastPlanChange = (value: string | number) => {
+  const key = String(value)
+  emit(
+    'selectInfrastPlan',
+    Number(value),
+    infrastSelectOptions.value.find(option => option.value === key)?.label ?? key
+  )
+}
+
+const infrastHint = computed(() => {
+  if (props.infrastPlanSelect !== -1) {
+    return infrastSelectLabel.value
+      ? t('edit.maaCustomInfrastPlanManualHint', { name: infrastSelectLabel.value })
+      : t('edit.maaCustomInfrastPlanManualHintIndex', {
+          index: props.infrastPlanSelect + 1,
+        })
+  }
+  if (props.infrastPlanState === 'period') return t('edit.maaCustomInfrastPlanHintPeriod')
+  if (props.infrastPlanState === 'rotate') return t('edit.maaCustomInfrastPlanHintRotate')
+  if (props.infrastPlanState === 'mixed') return t('edit.maaCustomInfrastPlanHintMixed')
+  return t('edit.maaCustomInfrastPlanHint')
+})
+
 const infrastSummary = computed(() => {
-  const scheduleLabel = props.infrastructureOptions.find(
-    option => option.value === formData.value.Info.InfrastIndex
-  )?.label
-  const customLabel = [formData.value.Info.InfrastName, scheduleLabel].filter(Boolean).join(' · ')
+  const customLabel = [formData.value.Info.InfrastName, infrastSelectLabel.value]
+    .filter(Boolean)
+    .join(' · ')
   return summarizeInfrast(
     formData.value.Task.IfInfrast,
     formData.value.Info.InfrastMode,
@@ -510,14 +561,6 @@ const greenTicketStoreSummary = computed(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
 .section-header h3 {

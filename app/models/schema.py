@@ -1129,6 +1129,12 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
+    IfCMCCNewMsg: Optional[bool] = Field(
+        default=None, description="是否启用中国移动新消息通知"
+    )
+    CMCCNewMsgApiKey: Optional[str] = Field(
+        default=None, description="中国移动新消息 Channel API Key"
+    )
 
 
 class OpenClawWeixinQrStartOut(OutBase):
@@ -1425,7 +1431,6 @@ class MaaUserConfig_Info(BaseModel):
         default=None, description="基建模式"
     )
     InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
-    InfrastIndex: Optional[str] = Field(default=None, description="基建方案索引")
     Password: Optional[str] = Field(default=None, description="密码")
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
@@ -1702,6 +1707,9 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
     Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
         default=None, description="配置来源（脚本/用户/直控）"
     )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
 
@@ -1756,6 +1764,9 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
 
 
 class OneDragonPlanStep(BaseModel):
@@ -4176,6 +4187,29 @@ class UserReorderIn(UserInBase):
 class UserSetIn(UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
+class UserInfrastPlanSelectIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    userId: str = Field(..., description="用户ID")
+    index: int = Field(default=-1, ge=-1, description="基建班次索引（-1=按时段自动）")
+
+
+class UserInfrastPlanSelectOut(OutBase):
+    index: int = Field(..., description="当前基建班次索引（-1=按时段自动）")
+
+
+class UserInfrastPlanComboxItem(BaseModel):
+    label: str = Field(..., description="班次展示名")
+    value: str = Field(..., description="班次索引, 即 MAA PlanSelect 值")
+    period: Optional[str] = Field(default=None, description="时段文本, 无时段为 None")
+
+
+class UserInfrastPlanComboxOut(OutBase):
+    state: Literal["period", "rotate", "mixed", "empty"] = Field(
+        ..., description="排班表时段形态（mixed=时段不一致不可用）"
+    )
+    data: List[UserInfrastPlanComboxItem] = Field(..., description="班次选项")
 
 
 class EmulatorGetIn(BaseModel):

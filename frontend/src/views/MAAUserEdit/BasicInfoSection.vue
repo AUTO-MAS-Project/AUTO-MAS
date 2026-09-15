@@ -2,15 +2,6 @@
   <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.basicInfo') }}</h3>
-      <!-- 任务配置区块隐藏（直控模式）时，恢复入口兜底到这里 -->
-      <div v-if="formData.Info.Mode === '直控'" class="section-header-actions">
-        <a-button size="small" @click="emit('openRestore')">
-          <template #icon>
-            <HistoryOutlined />
-          </template>
-          {{ t('edit.configRestoreTitle') }}
-        </a-button>
-      </div>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
@@ -148,10 +139,8 @@
           :model-value="formData.Info.Mode"
           :options="maaConfigModeOptions"
           :disabled="loading"
-          :quick-config="formData.Info.IfQuickConfig ?? true"
           :alert-message="t('edit.configSourceHintBase')"
           @change="emit('modeChange', $event)"
-          @quick-config-change="emit('quickConfigChange', $event)"
         />
       </a-col>
     </a-row>
@@ -179,7 +168,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
@@ -217,7 +206,7 @@ const maaConfigModeOptions: Array<{
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: '直接使用脚本原生配置，MAS 不写入配置',
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -225,8 +214,6 @@ const maaConfigModeOptions: Array<{
 const emit = defineEmits<{
   save: [key: string, value: any]
   modeChange: [value: boolean | string]
-  quickConfigChange: [value: boolean]
-  openRestore: []
 }>()
 
 const emitSave = (key: string, value: any) => {
@@ -246,12 +233,6 @@ const emitSave = (key: string, value: any) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .section-header h3 {

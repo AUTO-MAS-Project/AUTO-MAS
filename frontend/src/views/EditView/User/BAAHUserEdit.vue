@@ -178,10 +178,8 @@
                 :model-value="formData.Info.Mode"
                 :options="baahConfigModeOptions"
                 :disabled="loading"
-                :quick-config="formData.Info.IfQuickConfig ?? true"
                 :alert-message="t('edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
-                @quick-config-change="handleQuickConfigChange"
               />
             </a-col>
           </a-row>
@@ -318,7 +316,6 @@ const getDefaultBAAHUserData = () => ({
     Name: '',
     Status: true,
     Mode: '用户',
-    IfQuickConfig: true,
     RemainedDay: -1,
     ConfigName: '',
     Notes: '',
@@ -406,16 +403,10 @@ const baahConfigModeOptions: Array<{
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: '直接使用脚本原生配置，MAS 不写入配置',
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
-
-// 快速配置开关：与配置来源独立，真实保存
-const handleQuickConfigChange = async (value: boolean) => {
-  formData.Info.IfQuickConfig = value
-  await handleFieldSave('Info.IfQuickConfig', value)
-}
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
 const handleConfigModeChange = async (value: boolean | string) => {

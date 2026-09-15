@@ -45,8 +45,26 @@
             @open-restore="restoreOpen = true"
           />
 
+          <a-flex
+            class="section-header"
+            justify="space-between"
+            align="center"
+            wrap="wrap"
+            gap="small"
+          >
+            <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
+            <a-space>
+              <span>{{ t('edit.enableQuickConfiguration') }}</span>
+              <a-switch
+                :checked="formData.Info.IfQuickConfig"
+                :disabled="loading || isInitializing || isSaving"
+                :aria-label="t('edit.enableQuickConfiguration')"
+                @change="handleQuickConfigChange"
+              />
+            </a-space>
+          </a-flex>
           <TaskQueueSection
-            v-if="formData.Info.Mode !== '直控'"
+            v-if="formData.Info.IfQuickConfig"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -779,7 +797,7 @@ const applyUserData = (userData: Partial<MaaFWUserConfig>) => {
 const handleFieldSave = async (key: string, value: unknown) => {
   if (isInitializing.value || !userId) return
 
-  await enqueueSave(async () => {
+  return await enqueueSave(async () => {
     const parts = key.split('.')
     let userData: Record<string, unknown> = {}
     let current = userData
@@ -797,10 +815,21 @@ const handleFieldSave = async (key: string, value: unknown) => {
     const success = await updateUser(scriptId, userId, userData)
     if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
     logger.info(`用户配置已保存: ${key}`)
-  }).catch(error => {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
   })
+    .then(() => true)
+    .catch(error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      return false
+    })
+}
+
+const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
+  formData.Info.IfQuickConfig = value
+  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
 }
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存

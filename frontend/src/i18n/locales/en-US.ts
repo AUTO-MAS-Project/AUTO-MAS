@@ -301,6 +301,21 @@ export default {
     maaCustomInfrastFileHint: 'The custom infrastructure JSON exported from MAA',
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
+    maaCustomInfrastPlanHintPeriod:
+      'Shifts carry time periods: auto mode picks by time; picking a shift starts rotation from it',
+    maaCustomInfrastPlanHintRotate:
+      'Shifts have no time periods: auto rotation starts from the first shift; picking a shift starts rotation from it',
+    maaCustomInfrastPlanHintMixed:
+      'Inconsistent time periods across shifts: normal infrast mode will be used at runtime',
+    maaCustomInfrastPlanAuto: 'Auto rotation',
+    maaCustomInfrastPlanAutoPeriod: 'Auto rotation (by time period)',
+    maaCustomInfrastPlanAutoRotate: 'Auto rotation (from first shift)',
+    maaCustomInfrastPlanWithPeriod: '{name} ({period})',
+    maaCustomInfrastPlanManualHint: 'Rotation starts from {name}; pick auto to restore default',
+    maaCustomInfrastPlanManualHintIndex:
+      'Rotation starts from shift {index}; pick auto to restore default',
+    maaCustomInfrastPlanSelected: 'Rotation will start from {name}',
+    maaCustomInfrastPlanSelectFailed: 'Failed to set the infrastructure shift',
     maaDaily: 'Daily tasks',
     maaSwitchTheme: 'Switch theme',
     maaSwitchThemeHint:
@@ -1385,7 +1400,8 @@ export default {
     configSourceHint:
       'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
     configSourceHintBase:
-      "Script uses the shared script-level configuration, User uses this user's own configuration; Direct control uses the script's existing configuration and MAS never writes it. Quick configuration is a separate switch.",
+      "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
+    nativeConfigSourceDescription: "Use the script's current native configuration.",
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',
@@ -3639,6 +3655,15 @@ export default {
       serverChanKey: 'ServerChan key',
       serverChanKeyTip: 'The ServerChan SendKey — see the docs for how to get one',
       serverChanPlaceholder: 'Enter the ServerChan SendKey',
+      cmccNewMsgSection: 'China Mobile 5G messaging (free, China Mobile numbers only)',
+      cmccNewMsgDoc: 'Open the notification guide',
+      cmccNewMsgEnable: 'Enable China Mobile 5G messaging notifications',
+      cmccNewMsgTip:
+        'Receive task notifications free through China Mobile 5G New Messaging (RCS); China Mobile numbers only',
+      cmccNewMsgApiKey: 'Channel API key',
+      cmccNewMsgApiKeyTip:
+        'Provided by the China Mobile 5G messaging Channel administrator; starts with ak_ or app_',
+      cmccNewMsgApiKeyPlaceholder: 'Enter the China Mobile 5G messaging Channel API key',
       koishiSection: 'Koishi',
       koishiEnable: 'Enable Koishi notifications',
       koishiTip: 'Push notifications through Koishi',

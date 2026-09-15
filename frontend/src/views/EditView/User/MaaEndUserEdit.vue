@@ -64,11 +64,9 @@
             <ConfigSourceSection
               v-model:form-data="formData"
               :loading="loading"
-              :preset-supported="presetSupported"
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
               :show-config-mask="showMaaEndConfigMask"
-              @save="handleFieldSave"
               @configure="handleMaaEndConfig"
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
@@ -76,27 +74,35 @@
             />
           </a-card>
 
-          <a-card id="section-task" class="section-card">
-            <template #title>{{ t('edit.taskConfiguration') }}</template>
-            <template #extra>
-              <div class="task-extra-actions">
-                <a-button
-                  v-if="formData.Info.IfQuickConfig && isSanityPlanMode"
-                  type="link"
-                  class="plans-button"
-                  @click="handleGoToPlans"
-                >
-                  <template #icon><CalendarOutlined /></template>
-                  {{ t('edit.goPlan') }}
-                </a-button>
-                <a-button size="small" @click="openRestoreModal">
-                  <template #icon><HistoryOutlined /></template>
-                  {{ t('edit.configRestoreTitle') }}
-                </a-button>
-              </div>
-            </template>
+          <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
+            <h3>{{ t('edit.taskConfiguration') }}</h3>
+            <a-space>
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+              <a-button
+                v-if="formData.Info.IfQuickConfig && isSanityPlanMode"
+                type="link"
+                class="plans-button"
+                @click="handleGoToPlans"
+              >
+                <template #icon><CalendarOutlined /></template>
+                {{ t('edit.goPlan') }}
+              </a-button>
+              <span>{{ t('edit.enableQuickConfiguration') }}</span>
+              <a-switch
+                :checked="formData.Info.IfQuickConfig"
+                :disabled="
+                  loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
+                "
+                :aria-label="t('edit.enableQuickConfiguration')"
+                @change="handleQuickConfigChange"
+              />
+            </a-space>
+          </a-flex>
+          <a-card v-if="formData.Info.IfQuickConfig" class="section-card">
             <TaskConfigSection
-              v-if="formData.Info.IfQuickConfig"
               :form-data="formData"
               :loading="loading"
               :if-quick-config="formData.Info.IfQuickConfig"
@@ -110,13 +116,6 @@
               :plan-mode-config="planModeConfig"
               @save="handleFieldSave"
               @save-batch="handleFieldsSave"
-            />
-            <a-divider v-if="formData.Info.IfQuickConfig" />
-            <h3 class="daily-once-title">{{ t('edit.maaEndDailyOnceTasks') }}</h3>
-            <DailyOnceSection
-              :value="formData.Task.DailyOnceTasks"
-              :loading="loading"
-              @save="handleFieldSave('Task.DailyOnceTasks', $event)"
             />
           </a-card>
 
@@ -139,6 +138,16 @@
               @save="handleFieldSave"
             />
           </a-card>
+
+          <a-collapse id="section-limits" class="optional-section" :bordered="false">
+            <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
+              <DailyOnceSection
+                :value="formData.Task.DailyOnceTasks"
+                :loading="loading"
+                @save="handleFieldSave('Task.DailyOnceTasks', $event)"
+              />
+            </a-collapse-panel>
+          </a-collapse>
 
           <a-collapse id="section-script" class="optional-section" :bordered="false">
             <a-collapse-panel key="script" :header="t('comp.extraScripts')">
@@ -274,6 +283,7 @@ const {
 
 const formRef = ref<FormInstance>()
 const isInitializing = ref(true)
+const isSaving = ref(false)
 // 保存请求不再驱动整页 loading，避免每次自动保存都让表单快速闪动。
 const loading = computed(() => isInitializing.value)
 const maaEndOptionsLoading = ref(false)
@@ -303,7 +313,7 @@ const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
-// 任务卡片始终保留：关闭快速配置后仍可设置每日执行限制。
+// 每日执行限制属于调度，独立于快速配置。
 const anchorItems = computed(() => {
   const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
   items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
@@ -315,6 +325,7 @@ const anchorItems = computed(() => {
     )
   }
   items.push(
+    { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') },
     { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
     { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
   )
@@ -453,6 +464,7 @@ const saveUserFields = async (changes: FieldChange[]) => {
   if (fieldSavePromise) return fieldSavePromise
 
   const savePromise = (async (): Promise<boolean> => {
+    isSaving.value = true
     let currentChanges: Array<[string, any]> = []
     try {
       while (pendingFieldSaves.size > 0) {
@@ -485,6 +497,7 @@ const saveUserFields = async (changes: FieldChange[]) => {
       logger.error(`保存用户字段异常: ${errorMessage}`)
       return false
     } finally {
+      isSaving.value = false
       fieldSavePromise = null
     }
   })()
@@ -499,7 +512,15 @@ const handleFieldSave = async (key: string, value: any) => {
   } else {
     setNestedValue(formData, key, value)
   }
-  await saveUserFields([{ key, value }])
+  return await saveUserFields([{ key, value }])
+}
+
+const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
+  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
+    pendingFieldSaves.delete('Info.IfQuickConfig')
+    formData.Info.IfQuickConfig = previous
+  }
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -607,13 +628,14 @@ const normalizeQuickConfig = async () => {
     infoPayload.IfQuickConfig = formData.Info.IfQuickConfig
   }
 
-  if (!presetSupported.value && formData.Info.IfQuickConfig) {
-    formData.Info.IfQuickConfig = false
+  if (maaEndOptionsLoaded.value && !presetSupported.value && formData.Info.IfQuickConfig) {
     infoPayload.IfQuickConfig = false
   }
 
   if (Object.keys(infoPayload).length) {
-    await updateUser(scriptId, userId, { Info: infoPayload })
+    if (await updateUser(scriptId, userId, { Info: infoPayload })) {
+      Object.assign(formData.Info, infoPayload)
+    }
   }
 }
 
@@ -910,12 +932,6 @@ onUnmounted(() => {
   margin: 0 0 8px;
   font-size: 14px;
   font-weight: 600;
-}
-
-.task-extra-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .plans-button {

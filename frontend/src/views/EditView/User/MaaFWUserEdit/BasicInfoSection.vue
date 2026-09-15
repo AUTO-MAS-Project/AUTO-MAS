@@ -55,7 +55,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :md="6">
+      <a-col v-if="formData.Info.IfQuickConfig" :xs="24" :md="6">
         <a-form-item :label="t('edit.applyPreset')">
           <a-dropdown
             trigger="click"
@@ -143,10 +143,8 @@
         <GeneralConfigModeSelector
           :model-value="formData.Info.Mode || '用户'"
           :options="maafwConfigModeOptions"
-          :quick-config="formData.Info.IfQuickConfig ?? true"
           :alert-message="t('edit.configSourceHintBase')"
           @change="emit('modeChange', $event)"
-          @quick-config-change="emitSave('Info.IfQuickConfig', $event)"
         />
       </a-col>
     </a-row>
@@ -188,7 +186,7 @@ const maafwConfigModeOptions: Array<{
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: '直接使用脚本原生配置，MAS 不写入配置',
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]

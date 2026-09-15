@@ -214,25 +214,9 @@ class M9AManager(TaskExecuteBase):
 
             # 任务级一次性归档 M9A 原生配置（项目级池，指纹去重，失败不阻断
             # 任务）：此刻 config/ 仍是任务动手前的完整现场（replace_dir 是
-            # 复制不动源目录），必须在随后的 instances 清理与注入前归档
+            # 复制不动源目录），必须在随后的实例注入前归档
             with suppress(Exception):
                 archive_native_backup(self.m9a_config_path)
-
-            if not direct_control:
-                instances_dir = self.m9a_config_path / "instances"
-                if instances_dir.exists():
-                    for json_file in instances_dir.glob("*.json"):
-                        # default.json 是 AutoProxy.build_config 的配置模板：把用户在 M9A
-                        # 里设的实例级选项带进本次运行。连它一起删，每轮第一个用户必然落到
-                        # 「无法读取配置模板，使用最小默认配置」，后续用户读到的还是 MAS 自己
-                        # 刚写的那份——用户的实例配置从来没生效过。
-                        if json_file.name.casefold() == "default.json":
-                            continue
-                        try:
-                            json_file.unlink()
-                            logger.info(f"已删除原始配置文件：{json_file}")
-                        except Exception as e:
-                            logger.warning(f"删除原始配置文件 {json_file} 失败：{e}")
 
         # 构建用户列表
         self.script_info.user_list = [

@@ -59,6 +59,10 @@ export type OkNteUserConfig_Info = {
      */
     Password?: (string | null);
     /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
+    /**
      * 游戏资源
      */
     Resource?: (string | null);

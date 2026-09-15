@@ -51,15 +51,6 @@
           <div class="form-section">
             <div class="section-header">
               <h3>{{ t('edit.basicInfo') }}</h3>
-              <!-- 任务配置卡片隐藏（关闭快速配置）时，恢复入口兜底到这里 -->
-              <div v-if="!formData.Info.IfQuickConfig" class="section-header-actions">
-                <a-button size="small" @click="restoreOpen = true">
-                  <template #icon>
-                    <HistoryOutlined />
-                  </template>
-                  {{ t('edit.configRestoreTitle') }}
-                </a-button>
-              </div>
             </div>
 
             <a-row :gutter="24">
@@ -113,24 +104,6 @@
                   :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
                 />
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.enableQuickConfiguration') }}
-                      <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.IfQuickConfig"
-                    size="large"
-                    :options="quickConfigOptions"
-                    @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
-                  />
-                </a-form-item>
               </a-col>
               <a-col :span="12">
                 <a-form-item>
@@ -233,19 +206,25 @@
         </a-form>
       </a-card>
 
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card" style="margin-top: 24px">
+      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
+        <h3>{{ t('edit.taskConfiguration') }}</h3>
+        <a-space>
+          <a-button size="small" @click="openRestoreModal">
+            <template #icon><HistoryOutlined /></template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
+          <span>{{ t('edit.enableQuickConfiguration') }}</span>
+          <a-switch
+            :checked="formData.Info.IfQuickConfig"
+            :disabled="pageLoading || isInitializing || isSaving"
+            :aria-label="t('edit.enableQuickConfiguration')"
+            @change="handleQuickConfigChange"
+          />
+        </a-space>
+      </a-flex>
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.taskConfiguration') }}</h3>
-              <div class="section-header-actions">
-                <a-button size="small" @click="openRestoreModal">
-                  <template #icon><HistoryOutlined /></template>
-                  {{ t('edit.configRestoreTitle') }}
-                </a-button>
-              </div>
-            </div>
-
             <a-row :gutter="24">
               <a-col :span="12">
                 <a-form-item>
@@ -463,11 +442,6 @@ const resourceOptions = [
   { label: '国际服（Global）', value: '国际服' },
 ]
 
-const quickConfigOptions = [
-  { label: t('edit.enabled3'), value: true },
-  { label: t('edit.off'), value: false },
-]
-
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
   { label: t('edit.pushLogModeOff'), value: '关闭' },
@@ -644,28 +618,38 @@ const saveField = async (key: string, value: unknown) => {
     formData.userName = String(value || '')
   }
 
-  await enqueue(async () => {
+  return await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId.value, patch)
+      return await updateUser(scriptId, userId.value, patch)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
     }
   }, key)
 }
 
+const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
+  formData.Info.IfQuickConfig = value
+  if (!(await saveField('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
+}
+
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  await updateUser(scriptId, userId.value, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      WhichToFarm: formData.Task.WhichToFarm,
-      WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-      WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-      MaterialSelection: formData.Task.MaterialSelection,
-      FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-      AdditionalTasks: formData.Task.AdditionalTasks,
-    },
-  })
+  await enqueue(() =>
+    updateUser(scriptId, userId.value, {
+      Task: {
+        TaskIndex: formData.Task.TaskIndex,
+        WhichToFarm: formData.Task.WhichToFarm,
+        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
+        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
+        MaterialSelection: formData.Task.MaterialSelection,
+        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
+        AdditionalTasks: formData.Task.AdditionalTasks,
+      },
+    })
+  )
 }
 
 const handleTaskIndexChange = async (value: 1 | 7) => {
@@ -905,12 +889,6 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .form-label {

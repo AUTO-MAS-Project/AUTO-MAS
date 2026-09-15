@@ -58,5 +58,9 @@ export type BetterGIUserConfig_Info = {
      * 密码
      */
     Password?: (string | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
 };
 
