@@ -20,5 +20,9 @@ export type ConfigBackupListOut = {
      * 备份列表（时间倒序）
      */
     data: Array<ConfigBackupItemOut>;
+    /**
+     * 当前配置来源三态（脚本/用户/直控）；非三态专项为 null
+     */
+    mode?: (string | null);
 };
 

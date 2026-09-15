@@ -496,7 +496,8 @@ def test_restore_service_callbacks_roundtrip(
     sidecar_path = (
         mas_backup_root(script_id, str(uid)) / created["time"] / "_mas_overlay.json"
     )
-    assert payload["files"] == [
+    # 归档元数据 _mas_mode 不进用户文件清单断言（侧车是唯一内容文件）
+    assert [f for f in payload["files"] if f["path"] != "_mas_mode"] == [
         {"path": "_mas_overlay.json", "size": sidecar_path.stat().st_size}
     ]
 

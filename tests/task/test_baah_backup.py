@@ -258,7 +258,8 @@ def test_restore_service_callbacks_roundtrip(
     mas_ts = created["time"]
     payload = asyncio.run(service.preview("mas", created["time"]))
     assert "baah" in {s["name"] for s in payload["sections"]}
-    assert payload["files"] == [
+    # 归档元数据 _mas_mode 不进用户文件清单断言（侧车是唯一内容文件）
+    assert [f for f in payload["files"] if f["path"] != "_mas_mode"] == [
         {
             "path": "_mas_overlay.json",
             "size": (
@@ -318,7 +319,9 @@ def test_restore_service_callbacks_roundtrip(
     )
     # 未配置 BAAHPath 只影响 native 池（归档根返回 None → 列表为空）；
     # mas 池根恒存在，历史备份照常可见（对齐 BetterGI 样板断言）
-    assert asyncio.run(service_no_root.list("mas")) == [mas_ts]
+    assert [item["time"] for item in asyncio.run(service_no_root.list("mas"))] == [
+        mas_ts
+    ]
     assert asyncio.run(service_no_root.list("native")) == []
     # 未配置 BAAHPath：ensure(native) 报无变化而非抛错（编辑页进入静默）
     assert asyncio.run(service_no_root.ensure("native")) == {

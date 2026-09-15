@@ -104,9 +104,7 @@ export function useMaaGuiSession() {
           clearSession()
         }),
       ]
-      message.success(
-        viewOnly ? t('edit.maaViewOpened') : t('edit.maaSessionOpened')
-      )
+      message.success(viewOnly ? t('edit.maaViewOpened') : t('edit.maaSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         maaConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)

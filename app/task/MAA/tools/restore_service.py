@@ -70,6 +70,18 @@ def _user_guard(ctx: RestoreContext) -> None:
         raise ValueError("MAA 用户不存在，请刷新后重试")
 
 
+async def _set_mode(ctx: RestoreContext, mode: str) -> None:
+    """跨来源恢复确认后把 ``Info.Mode`` 写回备份时点（tri_state 必须）。
+
+    基座校验到备份 Mode ≠ 当前 Mode 时回调；写回后 restore 按当前 Mode
+    解析 owner，恢复目标自然就是备份 Mode 的目录（跨来源恢复 = 目录
+    重定向 + 状态切回）。
+    """
+
+    user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+    await user.update({"Info": {"Mode": mode}})
+
+
 def _mas_owner(ctx: RestoreContext) -> str | None:
     """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
 
@@ -252,6 +264,8 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
+        mas_mode="tri_state",
+        set_mode=_set_mode,
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

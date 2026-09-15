@@ -51,6 +51,31 @@ _TS_PATTERN = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
 OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
 """MAS 页面字段侧车文件名（跨专项统一；只存归档内，恢复时分离回填，不落配置目录）"""
 
+MODE_FILE_NAME = "_mas_mode"
+"""备份时点的配置来源标注文件名（内容为三态 Mode 原文，如「脚本」「用户」）。
+
+供备份列表类型标签与跨来源恢复校验用；只存归档内，不是配置内容。
+"""
+
+
+def write_backup_mode(backup_dir: Path, mode: str) -> None:
+    """把配置来源 Mode 写入归档目录（备份时点标注；列表标签/恢复校验用）。"""
+
+    (Path(backup_dir) / MODE_FILE_NAME).write_text(str(mode), encoding="utf-8")
+
+
+def read_backup_mode(backup_dir: Path) -> str | None:
+    """读取归档记录的配置来源 Mode；无记录（旧版备份）或损坏返回 ``None``。"""
+
+    path = Path(backup_dir) / MODE_FILE_NAME
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+    return text or None
+
 
 def config_root_key(config_path: str | Path) -> str:
     """物理配置根的稳定身份指纹。
@@ -164,7 +189,14 @@ def _archive(
         protect = frozenset(times) | protect
     if times:
         try:
-            latest = dir_files(store_root / times[0])
+            # 备份元数据（_mas_mode，归档后写入、不在 payload 里）不参与指纹
+            # 对比，计入会让去重恒失效；_mas_overlay.json 侧车是 payload 内的
+            # 用户数据，必须参与（只改侧车字段也要新建归档）
+            latest = {
+                k: v
+                for k, v in dir_files(store_root / times[0]).items()
+                if k != MODE_FILE_NAME
+            }
             if file_set_hash(latest) == file_set_hash(files):
                 return None
         except OSError as e:
@@ -295,15 +327,22 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     backup_dir = get_backup_dir(store_root, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    if not dir_files(backup_dir):
+    restored = {
+        rel: path
+        for rel, path in dir_files(backup_dir).items()
+        if rel != MODE_FILE_NAME  # 模式标注不是配置内容，不落目标目录
+    }
+    if not restored:
         raise ValueError(f"备份内容为空: {ts}")
     target = Path(target)
-    # 先清再拷，copytree 加 dirs_exist_ok=True：目标残留目录被占用时
-    # 不再「部分已删、备份一个没拷回」；与 #564 写法保持一致。
-    # 删除走 force_rmtree：目标带只读文件（如脚本自带的 .git 对象）时
-    # 普通 rmtree 删不掉，残留会让随后的 copytree 覆盖失败。
+    # 先清再拷，逐文件写回：目标残留目录被占用时不再「部分已删、备份一个
+    # 没拷回」；删除走 force_rmtree：目标带只读文件（如脚本自带的 .git 对象）
+    # 时普通 rmtree 删不掉，残留会让随后的写回失败。
     force_rmtree(target)
-    shutil.copytree(backup_dir, target, dirs_exist_ok=True)
+    for rel, path in restored.items():
+        dest = target / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, dest)
 
 
 def read_backup_text(
@@ -409,7 +448,9 @@ def restore_files(
     backup_dir = Path(backup_dir)
     target_root = Path(target_root)
     managed = (
-        sorted(rel_keys) if rel_keys is not None else sorted(dir_files(backup_dir))
+        sorted(rel_keys)
+        if rel_keys is not None
+        else sorted(rel for rel in dir_files(backup_dir) if rel != MODE_FILE_NAME)
     )
     if not managed:
         raise ValueError(f"备份内容为空: {backup_dir.name}")

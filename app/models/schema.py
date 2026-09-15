@@ -566,10 +566,18 @@ class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
     time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="备份时点的配置来源三态（脚本/用户）；无标注（旧版备份或未声明三态）为 null",
+    )
 
 
 class ConfigBackupListOut(OutBase):
     data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="当前配置来源三态（脚本/用户/直控）；非三态专项为 null",
+    )
 
 
 class ConfigBackupRestoreIn(BaseModel):

@@ -376,7 +376,9 @@ def test_restore_service_callbacks_roundtrip(
     created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
     assert mas_config_dir(script_id, "Default").is_dir()  # 播种生效
-    assert asyncio.run(service.list("mas")) == [created["time"]]
+    assert [item["time"] for item in asyncio.run(service.list("mas"))] == [
+        created["time"]
+    ]
 
     payload = asyncio.run(service.preview("mas", created["time"]))
     sections = {s["name"]: s for s in payload["sections"]}

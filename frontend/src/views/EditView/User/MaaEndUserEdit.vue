@@ -237,6 +237,7 @@ import {
   type MaaEndSanityConfig,
 } from '@/utils/maaEndProtocolSpace'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
@@ -743,13 +744,29 @@ const handleRestored = async (target: string) => {
 // mas 备份：恢复到 MAS 目录后启动查看会话（下发为查看的必经复制，GUI 所见
 // 即备份）；原生备份：恢复到 MaaEnd 本体后启动脚本级查看会话（跳过下发，
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) => {
+// 与一键恢复同口径：单弹窗文案，跨配置来源时换标题并追加来源切换说明
+// （确认后由基座把配置来源切回备份时点再恢复）。
+const handleRestoreView = (
+  target: string,
+  item: { time: string; mode?: string | null },
+  currentMode?: string | null
+) => {
+  const { title, paragraphs } = buildRestoreConfirm(
+    t,
+    {
+      title: t('edit.configRestoreDetailView'),
+      desc: t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
+    },
+    item.mode,
+    currentMode
+  )
   Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
+    title,
     content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME })
+      'div',
+      paragraphs.map(text =>
+        h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+      )
     ),
     okText: t('edit.configRestoreConfirmOk'),
     cancelText: t('edit.cancel'),

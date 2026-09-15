@@ -128,6 +128,7 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
+        mas_mode="user_only",
         files=_mas_files,
         backup_root=_mas_root,
         restore=_restore_mas,

@@ -104,9 +104,7 @@ export function useOkwwGuiSession() {
           clearSession()
         }),
       ]
-      message.success(
-        viewOnly ? t('edit.okwwViewOpened') : t('edit.okwwSessionOpened')
-      )
+      message.success(viewOnly ? t('edit.okwwViewOpened') : t('edit.okwwSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         okwwConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)

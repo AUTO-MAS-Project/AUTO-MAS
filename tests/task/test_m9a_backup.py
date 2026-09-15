@@ -334,7 +334,8 @@ def test_restore_service_callbacks_roundtrip(
     payload = asyncio.run(service.preview("mas", ts))
     sections = {s["name"] for s in payload["sections"]}
     assert "m9a" in sections
-    assert payload["files"] == [
+    # 归档元数据 _mas_mode 不进用户文件清单断言（侧车是唯一内容文件）
+    assert [f for f in payload["files"] if f["path"] != "_mas_mode"] == [
         {
             "path": "_mas_overlay.json",
             "size": (get_mas_backup_dir(script_id, str(uid), ts) / "_mas_overlay.json")

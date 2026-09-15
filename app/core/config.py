@@ -2386,11 +2386,19 @@ class AppConfig(GlobalConfig):
 
     async def list_config_backups(
         self, script_id: str, user_id: str, target: str
-    ) -> list[dict]:
-        """列出配置备份（时间倒序）。target 取值由专项池定义。"""
+    ) -> dict:
+        """列出配置备份（时间倒序，每项带配置来源标注）与当前来源。
+
+        返回 ``{"items": [{"time", "mode"}], "mode": 当前来源或 None}``；
+        当前来源只在三态池返回（前端据此比对是否需要跨来源提示）。
+        target 取值由专项池定义。
+        """
 
         service = self.restore_service(script_id, user_id)
-        return [{"time": ts} for ts in await service.list(target)]
+        return {
+            "items": await service.list(target),
+            "mode": await service.current_mode(target),
+        }
 
     async def ensure_config_backup(
         self, script_id: str, user_id: str, target: str
@@ -2406,7 +2414,7 @@ class AppConfig(GlobalConfig):
     async def restore_config_backup(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> dict:
-        """把指定备份恢复到目标位置（恢复前存底由专项池函数自理）。"""
+        """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。"""
 
         await self.restore_service(script_id, user_id).restore(target, ts)
         return {"target": target}

@@ -1888,6 +1888,18 @@ export default {
     configRestoreConfirmTitle: 'Overwrite current config',
     configRestoreConfirmDesc:
       'Restores the config at this point in time to its location. The current config is backed up automatically before restoring and can be recovered anytime via "Config restore". Continue?',
+    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    configRestoreModeScript: 'Script-level',
+    configRestoreModeUser: 'User-level',
+    configRestoreModeDirect: 'Direct control',
+    // 当前配置来源（仅三态专项返回，与备份标签比对是否需要跨来源提示）
+    configRestoreCurrentSource: 'Current config source: {mode}',
+    // 跨配置来源恢复（备份来源与当前来源不一致）：单弹窗内换标题并追加说明
+    configRestoreCrossSourceTitle: 'Restore from another config source',
+    configRestoreCrossSourceDesc:
+      'This backup was created in {backup} config, while the current config source is {current}. Continuing switches the config source to {backup} and then writes the config there.',
+    configRestoreCrossSourceShared:
+      'Script-level config is shared by every user of this script; restoring overwrites the config other users are currently using.',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the ok-nte native config; restoring applies directly to ok-nte itself. Created automatically (dedup) when opening this edit page, before running ok-nte or opening its config UI, latest 10 kept',

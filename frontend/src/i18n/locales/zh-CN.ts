@@ -1822,6 +1822,18 @@ export default {
     configRestoreConfirmTitle: '覆盖当前配置',
     configRestoreConfirmDesc:
       '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    configRestoreModeScript: '脚本级',
+    configRestoreModeUser: '用户级',
+    configRestoreModeDirect: '直控',
+    // 当前配置来源（仅三态专项返回，与备份标签比对是否需要跨来源提示）
+    configRestoreCurrentSource: '当前配置来源：{mode}',
+    // 跨配置来源恢复（备份来源与当前来源不一致）：单弹窗内换标题并追加说明
+    configRestoreCrossSourceTitle: '跨配置来源恢复',
+    configRestoreCrossSourceDesc:
+      '该备份来自{backup}配置，当前为{current}。继续恢复会把配置来源切换为{backup}，再写入对应配置。',
+    configRestoreCrossSourceShared:
+      '脚本级配置由本脚本的全部用户共享，恢复会覆盖其他用户当前使用的配置。',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',

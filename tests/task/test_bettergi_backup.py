@@ -474,7 +474,9 @@ def test_restore_service_callbacks_roundtrip(
     service_no_root = build_restore_service(
         ctx_no_root, RESTORE_SCRIPT_NAME, RESTORE_POOLS
     )
-    assert asyncio.run(service_no_root.list("mas")) == [created["time"]]
+    assert [item["time"] for item in asyncio.run(service_no_root.list("mas"))] == [
+        created["time"]
+    ]
     assert asyncio.run(service_no_root.list("native")) == []
 
 

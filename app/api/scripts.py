@@ -3664,8 +3664,9 @@ async def list_config_backups_api(
         return ConfigBackupListOut(
             code=200,
             status="success",
-            message=f"共 {len(data)} 份备份",
-            data=[ConfigBackupItemOut(**item) for item in data],
+            message=f"共 {len(data['items'])} 份备份",
+            mode=data["mode"],
+            data=[ConfigBackupItemOut(**item) for item in data["items"]],
         )
     except Exception as e:
         return ConfigBackupListOut(
@@ -3719,11 +3720,16 @@ async def restore_config_backup_api(
     script: ConfigBackupRestoreIn = Body(...),
 ) -> ConfigBackupRestoreOut:
     """恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
-    用户配置并按需回填前端表单。"""
+    用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+    由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
+    来源比对给出。"""
 
     try:
         data = await Config.restore_config_backup(
-            script.scriptId, script.userId, script.time, target=script.target
+            script.scriptId,
+            script.userId,
+            script.time,
+            target=script.target,
         )
         return ConfigBackupRestoreOut(
             code=200,

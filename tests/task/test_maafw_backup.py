@@ -275,7 +275,10 @@ def test_restore_service_callbacks_roundtrip(
     assert created["created"] is True and created["time"]
     payload = asyncio.run(service.preview("mas", created["time"]))
     assert "maafw" in {s["name"] for s in payload["sections"]}
-    assert {f["path"] for f in payload["files"]} == {"_mas_overlay.json"}
+    # 归档元数据 _mas_mode 不进用户文件清单断言（侧车是唯一内容文件）
+    assert {f["path"] for f in payload["files"] if f["path"] != "_mas_mode"} == {
+        "_mas_overlay.json"
+    }
 
     asyncio.run(service.restore("mas", created["time"]))
     assert len(user.updated) == 1

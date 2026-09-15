@@ -109,6 +109,30 @@
 实现上：池函数一律用 `ctx.user_id` 定位归档根；`mas_dir`（归档/恢复目标）由
 专项按 owner 解析后显式传入 `archive_mas_backup` / `restore_mas_backup`。
 
+#### 1.1.1a 三态来源必须显式声明（mas 池的 `mas_mode`）
+
+三态（脚本 / 用户 / 直控）不是靠基座猜的：**每个专项的 mas 池必须声明
+`mas_mode`**，基座据此标注备份来源、校验跨来源恢复。取值与义务：
+
+| `mas_mode` | 适用 | 归档标注 | 恢复校验 |
+| --- | --- | --- | --- |
+| `tri_state` | owner 随 `Info.Mode` 切换（脚本=共享 `Default`、用户=独立目录、直控=无 MAS 配置）——MAA / MaaEnd / Okww / SRC | 备份时点 Mode | 跨来源自动切回（必须同时声明 `set_mode`） |
+| `user_only` | 恒按用户目录、备份内容与 Mode 无关——OkNte / BetterGI / General / **ZzzOd** | 恒「用户」 | 不校验（备份内容与 Mode 无关） |
+| `sidecar_only` | 纯字段侧车、无目录副本——M9A / MaaFW / HSR / BAAH | 实际 Mode（仅作标签） | 不校验（恢复是字段回填，Mode 仅预览不回填） |
+
+- `current_mode` 缺省读统一字段 `UserData.Info.Mode`，专项结构特殊时才覆写；
+  `set_mode`（把 `Info.Mode` 写回备份时点）**只有 `tri_state` 需要**，缺省时
+  跨来源恢复直接报错拒绝，避免「目录写过去了状态没切回」的半恢复。
+- 备份元数据 `_mas_mode` 由基座归档时写入（**不参与指纹**，见存档文档），
+  列表项 `mode` 即读它；旧备份无标注 `mode=None`（不显示标签、不触发跨来源）。
+- **不要**给 `kind="script"` 池声明 `mas_mode`（仅 `kind="user"` 有意义，基座
+  会忽略）；也不要自行读 `_mas_mode` 做校验——标签与跨来源判定统一走基座。
+- 前端共用件 `frontend/src/utils/configRestoreMode.ts`（`isCrossSourceRestore` /
+  `buildRestoreConfirm` / `sourceLabelKey` / `sourceTagColor`）：跨来源确认
+  **单弹窗**——标题换 `configRestoreCrossSourceTitle`、正文追加
+  `configRestoreCrossSourceDesc`（备份来源 ≠ 当前来源时），备份为脚本级时再追加
+  `configRestoreCrossSourceShared`（共享配置会被覆盖）。各页不要再各写一份比对。
+
 #### 1.1.1b 通用性专项的 native 池收敛到脚本级（General/MaaFW 规则）
 
 **通用性专项**（一个 ScriptType 接入**任意第三方项目/脚本**，不是特定软件的
@@ -233,8 +257,11 @@ async def _restore_mas(ctx, ts: str) -> object:
     ...
 
 RESTORE_POOLS = [
-    ConfigRestorePool(key="mas", kind="user", files=_mas_files,
-                      backup_root=_mas_root, preview=_preview_mas, restore=_restore_mas),
+    # mas 池必须声明三态来源；tri_state 还必须给 set_mode（跨来源恢复切换用）
+    ConfigRestorePool(key="mas", kind="user", mas_mode="sidecar_only",
+                      files=_mas_files, backup_root=_mas_root,
+                      preview=_preview_mas, restore=_restore_mas),
+    #                  tri_state → 另传 set_mode=_set_mode（写回 Info.Mode）
     ConfigRestorePool(key="native", kind="script", ...),  # 同上，脚本级
 ]
 ```
@@ -280,9 +307,9 @@ return build_restore_service(
 
 | 服务方法 | 端点 | 用途 |
 | --- | --- | --- |
-| `service.list(key)` | `GET /api/scripts/backup/list` | 时间倒序备份列表 |
+| `service.list(key)` | `GET /api/scripts/backup/list` | 时间倒序备份列表（每项带来源标注 `mode`）+ 响应 `mode` = 当前来源（仅三态池） |
 | `service.ensure(key)` | `POST /api/scripts/backup/ensure` | 三时机按需归档（前端进入/退出编辑页调用） |
-| `service.restore(key, ts)` | `POST /api/scripts/backup/restore` | 一键恢复（restore 回调内已含恢复前存底） |
+| `service.restore(key, ts)` | `POST /api/scripts/backup/restore` | 一键恢复（restore 回调内已含恢复前存底；三态跨来源时基座先 `set_mode` 切回备份时点） |
 | `service.preview(key, ts)` | `GET /api/scripts/backup/preview` | 预览载荷（`data` 结构由专项定义） |
 | `service.read_backup_file(key, ts, path)` | `GET /api/scripts/backup/file` | 只读读取备份内文本文件（「备份文件」点击查看，§3.4） |
 
@@ -300,8 +327,10 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 | 一键恢复 | 确认（`Modal.confirm`，共用词条）→ `api.restore` → 成功关弹窗 + `onRestored` |
 | 查看详细配置 | 底部按钮，**onDetail 未传时不渲染**（避免无响应按钮）→ onDetail 回调 |
 | 预览 | 内置渲染 or `#preview` 插槽；弹窗内 **56vh 限高滚动**（`preview-scroll`），专项不要加滚动容器 |
+| 配置来源标签 | 备份行按列表项 `mode` 渲染（脚本级蓝 / 用户级绿 / 直控橙，`sourceTagColor`）；描述行下方显示「当前配置来源」（仅三态池有值），供用户与标签比对 |
+| 跨来源恢复 | **单弹窗**：`buildRestoreConfirm`（§1.1.1a）在跨来源时换标题 + 追加来源切换说明；不加二次确认步骤、不改按钮语义 |
 | 文案 | `{script}` 用 `scriptName`（专项统一名）插值 |
-| 预览冲突确认 | 「查看详细配置」确认弹窗：共用词条 `configRestoreDetailView`（标题）/ `configRestoreDetailConfirm`（正文）/ `configRestoreConfirmOk`（确认），红色正文 `h('p')`。**正文必须是用户话术**（§5.1），不写后端机制 |
+| 预览冲突确认 | 「查看详细配置」确认弹窗：共用词条 `configRestoreDetailView`（标题）/ `configRestoreDetailConfirm`（正文）/ `configRestoreConfirmOk`（确认），红色正文 `h('p')`；与一键恢复**同口径**走 `buildRestoreConfirm`（跨来源同样追加说明）。**正文必须是用户话术**（§5.1），不写后端机制 |
 
 ### 3.1 props（可传参部分）
 
@@ -330,6 +359,9 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
   缺失时「备份文件」链接点击提示不支持——新接入漏掉它属于接线 bug。
 - `onRestored(target, item)`：一键恢复成功后父组件处理（mas 恢复含字段回填 →
   刷新表单；脚本级由组件自行刷新列表）。
+- `onDetail(target, item, currentMode)`：`item.mode` 是备份来源、`currentMode`
+  是当前来源（仅三态非空）；专项的「查看详细配置」确认文案用
+  `buildRestoreConfirm` 组装，与一键恢复同口径（§3 表）。
 
 **恢复入口必须恒可达（MaaFW 互补双入口范式）**：恢复按钮若放在条件渲染区块
 内（如 MAA/M9A 的任务区块 `v-if="Mode !== '直控'"`、Okww 快速配置卡、HSR 的
@@ -461,6 +493,8 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 
 - **面向用户只讲「要做什么 + 别运行脚本」，绝不解释后端机制**——恢复/下发/
   复制/注入/回写等内部逻辑一律不写进弹窗：用户不关心实现，写进来反而误导。
+  唯一的例外是三态跨来源（`buildRestoreConfirm` 追加的来源切换与共享覆盖提示，
+  §1.1.1a）：它描述的是用户可感知的后果（配置来源会切换、其他用户配置被覆盖）。
 - 文案必须**通用、易懂**：不提任何专项独有概念（如「切换任务开关」「编排」），
   专项确有额外会话内提醒时用专项词条叠加，不污染通用词条（见 §6）。
 - 误覆盖有保护：恢复前系统先归档当前配置（指纹去重：与已有备份相同则不新增
@@ -550,6 +584,8 @@ showOknteViewMask.value = viewOnly
 
 - [ ] 池表：`kind` user 池在前、script 池在后；`RESTORE_SCRIPT_NAME`=专项统一名，
       与前端 `scriptName` 一致
+- [ ] mas 池已声明 `mas_mode`（tri_state / user_only / sidecar_only，§1.1.1a）；
+      `tri_state` 同时给了 `set_mode`；备份列表标签与跨来源提示走共用件，未自写比对
 - [ ] 池函数普通函数收 `RestoreContext`；守卫在池内；非法 key 由服务层 400
 - [ ] 池回调（preview/restore/snapshot）要有**直接调用的测试**——只测载荷
       构建函数抓不住签名改动漏改调用点的问题（MaaEnd 曾漏：`_preview_mas`

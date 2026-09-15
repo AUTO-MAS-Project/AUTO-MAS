@@ -184,7 +184,9 @@ def test_restore_service_declarative_pools(
     # mas：物化 + 信息快照随声明式归档入档
     created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]
-    assert asyncio.run(service.list("mas")) == [created["time"]]
+    assert [item["time"] for item in asyncio.run(service.list("mas"))] == [
+        created["time"]
+    ]
     content = asyncio.run(
         service.read_backup_file("mas", created["time"], MAS_USER_INFO_FILE)
     )

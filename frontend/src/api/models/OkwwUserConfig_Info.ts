@@ -23,10 +23,6 @@ export type OkwwUserConfig_Info = {
      */
     Mode?: ('脚本' | '用户' | '直控' | null);
     /**
-     * 是否启用快速配置覆盖 OK-WW 高频任务字段
-     */
-    IfQuickConfig?: (boolean | null);
-    /**
      * 兼容旧版用户独立配置开关
      */
     IfUseMasConfig?: (boolean | null);
@@ -58,6 +54,10 @@ export type OkwwUserConfig_Info = {
      * 账号
      */
     Id?: (string | null);
+    /**
+     * 是否启用快速配置覆盖 OK-WW 高频任务字段
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 游戏资源
      */

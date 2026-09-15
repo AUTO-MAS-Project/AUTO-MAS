@@ -160,7 +160,9 @@ def test_restore_service_callbacks_roundtrip(
     ts = created["time"]
     payload = asyncio.run(service.preview("mas", ts))
     # 无定制 preview：文件清单由基座统一注入标准 files 键（兜底节渲染）
-    assert {f["path"] for f in payload["files"]} == {"config.ini"}
+    assert {f["path"] for f in payload["files"] if f["path"] != "_mas_mode"} == {
+        "config.ini"
+    }
     # 声明式 read_file（基座从 backup_root 派生）
     content = asyncio.run(service.read_backup_file("mas", ts, "config.ini"))
     assert content["content"] == "v = 1\n"

@@ -2142,7 +2142,9 @@ export class Service {
     /**
      * 把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）
      * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
-     * 用户配置并按需回填前端表单。
+     * 用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+     * 由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
+     * 来源比对给出。
      * @param requestBody
      * @returns ConfigBackupRestoreOut Successful Response
      * @throws ApiError

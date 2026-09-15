@@ -19,13 +19,23 @@
           ? (userDesc ?? t('edit.configRestoreMasDesc', { script: scriptName }))
           : (scriptDesc ?? t('edit.configRestoreScriptDesc', { script: scriptName }))
       }}
+      <!-- 当前配置来源（三态专项才有；用户靠它与备份标签对比是否需要跨来源恢复） -->
+      <span v-if="currentSource" class="restore-current-source">
+        {{ t('edit.configRestoreCurrentSource', { mode: t(sourceLabelKey(currentSource)) }) }}
+      </span>
     </p>
     <a-spin :spinning="backupsLoading">
       <a-empty v-if="!backups.length" :description="t('edit.configRestoreEmpty')" />
       <a-list v-else :data-source="backups" size="small" row-key="time">
         <template #renderItem="{ item }">
           <a-list-item>
-            <span class="backup-time">{{ formatBackupTime(item.time) }}</span>
+            <div class="backup-main">
+              <span class="backup-time">{{ formatBackupTime(item.time) }}</span>
+              <!-- 备份时点的配置来源标签（脚本级/用户级/直控；旧版备份无标注不显示） -->
+              <a-tag v-if="item.mode" :color="modeTag(item.mode).color">
+                {{ modeTag(item.mode).label }}
+              </a-tag>
+            </div>
             <a-space>
               <a-button type="link" size="small" @click="handlePreview(item)">
                 {{ t('edit.configRestorePreview') }}
@@ -199,6 +209,7 @@
 import { computed, h, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
+import { buildRestoreConfirm, sourceLabelKey, sourceTagColor } from '@/utils/configRestoreMode'
 
 const { t } = useI18n()
 
@@ -219,7 +230,9 @@ const props = defineProps<{
     list: (target: string) => Promise<{
       code?: number
       message?: string
-      data?: Array<{ time: string }>
+      data?: Array<{ time: string; mode?: string | null }>
+      /** 当前配置来源（仅三态专项返回；据此比对是否需要跨来源提示） */
+      mode?: string | null
     }>
     preview: (
       target: string,
@@ -240,7 +253,13 @@ const props = defineProps<{
       /** 通用端点把专项载荷包在 data 里；缺省回落到顶层平铺结构 */
       data?: Record<string, unknown> | null
     }>
-    restore: (target: string, time: string) => Promise<{ code?: number; message?: string }>
+    restore: (
+      target: string,
+      time: string
+    ) => Promise<{
+      code?: number
+      message?: string
+    }>
     /** 只读读取备份内文本文件（预览「备份文件」点击查看；未提供时点击提示） */
     readFile?: (
       target: string,
@@ -263,8 +282,13 @@ const props = defineProps<{
   formatValue?: (key: string, raw: string) => string
   /** 恢复后回调（一键恢复成功后通知父组件刷新表单等） */
   onRestored?: (target: string, item: { time: string }) => void
-  /** 查看详细配置回调（父组件执行恢复 + 拉起脚本查看会话） */
-  onDetail?: (target: string, item: { time: string }) => void
+  /** 查看详细配置回调（父组件执行恢复 + 拉起脚本查看会话）。
+      第三个参数为当前配置来源（仅三态专项非空），供专项比对跨来源并追加提示。 */
+  onDetail?: (
+    target: string,
+    item: { time: string; mode?: string | null },
+    currentMode?: string | null
+  ) => void
 }>()
 
 const emit = defineEmits<{
@@ -295,13 +319,23 @@ const targetOptions = computed(() =>
 // ══ 备份列表 ══
 interface BackupItem {
   time: string
+  /** 备份时点的配置来源（脚本/用户/直控）；无标注为 null */
+  mode?: string | null
 }
 
 const backups = ref<BackupItem[]>([])
 const backupsLoading = ref(false)
+/** 当前配置来源（仅三态专项非空）：与备份标签比对决定是否提示跨来源 */
+const currentSource = ref<string | null>(null)
 
 const formatBackupTime = (ts: string) =>
   `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`
+
+/** 配置来源标签（备份时点 Info.Mode → 文案与标签色）；未知值按用户级兜底 */
+const modeTag = (mode: string): { label: string; color: string } => ({
+  label: t(sourceLabelKey(mode)),
+  color: sourceTagColor(mode),
+})
 
 const loadBackups = async () => {
   backupsLoading.value = true
@@ -311,6 +345,7 @@ const loadBackups = async () => {
       throw new Error(resp.message || t('edit.configRestoreListFailed'))
     }
     backups.value = resp.data ?? []
+    currentSource.value = resp.mode ?? null
   } catch (e) {
     message.error(e instanceof Error ? e.message : t('edit.configRestoreListFailed'))
   } finally {
@@ -433,11 +468,11 @@ const handlePreview = async (item: BackupItem) => {
   }
 }
 
-// 预览弹窗内「查看详细配置」：关掉预览，走父组件详情动作
+// 预览弹窗内「查看详细配置」：关掉预览，走父组件详情动作（带备份来源与当前来源）
 const handlePreviewDetail = () => {
   if (!previewItem.value) return
   previewOpen.value = false
-  props.onDetail?.(restoreTarget.value, previewItem.value)
+  props.onDetail?.(restoreTarget.value, previewItem.value, currentSource.value)
 }
 
 // ══ 备份文件（预览载荷标准 files 字段；点击查看原始内容）══
@@ -500,29 +535,42 @@ const copyFileContent = async () => {
 }
 
 // ══ 一键恢复 ══
-const doRestore = async (item: BackupItem) => {
+const runRestore = async (item: BackupItem) => {
   const resp = await props.api.restore(restoreTarget.value, item.time)
   if (resp.code !== 200) {
     throw new Error(resp.message || t('edit.configRestoreFailed'))
   }
-  message.success(t('edit.configRestoreSuccess'))
+  return resp
 }
 
+const finishRestore = async (item: BackupItem) => {
+  message.success(t('edit.configRestoreSuccess'))
+  props.onRestored?.(restoreTarget.value, item)
+  await loadBackups()
+}
+
+/** 恢复确认（单弹窗）：跨来源时换标题并追加来源切换说明，确认后由基座切来源再恢复 */
 const confirmRestore = (item: BackupItem) => {
+  const { title, paragraphs } = buildRestoreConfirm(
+    t,
+    { title: t('edit.configRestoreConfirmTitle'), desc: t('edit.configRestoreConfirmDesc') },
+    item.mode,
+    currentSource.value
+  )
   Modal.confirm({
-    title: t('edit.configRestoreConfirmTitle'),
+    title,
     content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreConfirmDesc')
+      'div',
+      paragraphs.map(text =>
+        h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+      )
     ),
     okText: t('edit.configRestoreAction'),
     okType: 'danger',
     onOk: async () => {
       try {
-        await doRestore(item)
-        props.onRestored?.(restoreTarget.value, item)
-        await loadBackups()
+        await runRestore(item)
+        await finishRestore(item)
       } catch (e) {
         message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
       }
@@ -550,6 +598,18 @@ const confirmRestore = (item: BackupItem) => {
   margin: 0 0 12px;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
+}
+
+/* 当前配置来源：与描述同段换行展示，供用户比对各备份的来源标签 */
+.restore-current-source {
+  display: block;
+  margin-top: 2px;
+}
+
+.backup-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .backup-time {

@@ -23,7 +23,15 @@
 
 from pathlib import Path
 
-from app.utils.config_archive import archive_files, file_set_hash
+from app.utils.config_archive import (
+    MODE_FILE_NAME,
+    archive_files,
+    file_set_hash,
+    read_backup_mode,
+    restore_dir,
+    restore_files,
+    write_backup_mode,
+)
 
 
 def test_archive_files_memory_content(tmp_path: Path) -> None:
@@ -51,3 +59,37 @@ def test_archive_files_memory_content(tmp_path: Path) -> None:
         == file_set_hash({"f": text})
         == file_set_hash({"f": text.encode("utf-8")})
     )
+
+
+def test_restore_dir_excludes_mode_metadata(tmp_path: Path) -> None:
+    """归档含 _mas_mode 元数据时 restore_dir 不把它落回目标目录（整目录替换）。"""
+
+    root = tmp_path / "pool"
+    dest = archive_files({"a.json": '{"x": 1}'}, root)
+    assert dest is not None
+    write_backup_mode(dest, "脚本")
+    assert read_backup_mode(dest) == "脚本"
+
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.json").write_text("{}", encoding="utf-8")
+    (target / "leftover.txt").write_text("old", encoding="utf-8")
+    restore_dir(root, dest.name, target)
+    assert (target / "a.json").read_text("utf-8") == '{"x": 1}'  # 内容找回
+    assert not (target / MODE_FILE_NAME).exists()  # 元数据不落配置目录
+    assert not (target / "leftover.txt").exists()  # 整目录替换语义不变
+
+
+def test_restore_files_excludes_mode_metadata(tmp_path: Path) -> None:
+    """restore_files 默认受管键排除顶级 _ 前缀元数据（_mas_mode 不落目标）。"""
+
+    root = tmp_path / "pool"
+    dest = archive_files({"a.json": '{"x": 1}'}, root)
+    assert dest is not None
+    write_backup_mode(dest, "脚本")
+
+    target = tmp_path / "target"
+    target.mkdir()
+    restore_files(dest, target)
+    assert (target / "a.json").read_text("utf-8") == '{"x": 1}'
+    assert not (target / MODE_FILE_NAME).exists()
