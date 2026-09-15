@@ -3526,6 +3526,15 @@ export default {
       serverChanKey: 'ServerChan key',
       serverChanKeyTip: 'The ServerChan SendKey — see the docs for how to get one',
       serverChanPlaceholder: 'Enter the ServerChan SendKey',
+      cmccNewMsgSection: 'China Mobile 5G messaging (free, China Mobile numbers only)',
+      cmccNewMsgDoc: 'Open the notification guide',
+      cmccNewMsgEnable: 'Enable China Mobile 5G messaging notifications',
+      cmccNewMsgTip:
+        'Receive task notifications free through China Mobile 5G New Messaging (RCS); China Mobile numbers only',
+      cmccNewMsgApiKey: 'Channel API key',
+      cmccNewMsgApiKeyTip:
+        'Provided by the China Mobile 5G messaging Channel administrator; starts with ak_ or app_',
+      cmccNewMsgApiKeyPlaceholder: 'Enter the China Mobile 5G messaging Channel API key',
       koishiSection: 'Koishi',
       koishiEnable: 'Enable Koishi notifications',
       koishiTip: 'Push notifications through Koishi',

@@ -4601,6 +4601,14 @@ class GlobalConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否启用中国移动新消息通知
+        self.Notify_IfCMCCNewMsg = ConfigItem(
+            "Notify", "IfCMCCNewMsg", False, BoolValidator()
+        )
+        ## 中国移动新消息 Channel API Key
+        self.Notify_CMCCNewMsgApiKey = ConfigItem(
+            "Notify", "CMCCNewMsgApiKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 

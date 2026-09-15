@@ -1109,6 +1109,12 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
+    IfCMCCNewMsg: Optional[bool] = Field(
+        default=None, description="是否启用中国移动新消息通知"
+    )
+    CMCCNewMsgApiKey: Optional[str] = Field(
+        default=None, description="中国移动新消息 Channel API Key"
+    )
 
 
 class OpenClawWeixinQrStartOut(OutBase):
