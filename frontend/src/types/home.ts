@@ -156,7 +156,6 @@ export const createEmptySraActivityOverview = (message = ''): SraActivityOvervie
   Message: message,
   version: '',
   versionName: '',
-  cover: '',
   startTime: '',
   endTime: '',
   activities: [],
