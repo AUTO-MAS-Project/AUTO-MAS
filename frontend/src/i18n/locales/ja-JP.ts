@@ -94,6 +94,7 @@ export default {
     logFileLoadedP0: 'ログファイルを読み込みました（{p0} 行）',
     cancel: 'キャンセル',
     configuring: '設定中',
+    openConfigFolder: '設定フォルダーを開く',
     dragReorder: 'ドラッグして並び替え',
     confirmExit: '終了の確認',
     webhookDeleted: 'Webhook を削除しました',

@@ -94,6 +94,7 @@ export default {
     logFileLoadedP0: '日志文件加载成功，共加载 {p0} 行',
     cancel: '取消',
     configuring: '正在配置',
+    openConfigFolder: '配置文件夹',
     dragReorder: '拖拽排序',
     confirmExit: '确认关闭',
     webhookDeleted: 'Webhook 删除成功',
