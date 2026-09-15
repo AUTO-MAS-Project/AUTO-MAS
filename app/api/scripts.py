@@ -55,6 +55,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    discard_copy_update_baseline,
     embedded_project_dir,
     embedded_status,
     ensure_embedded_copy,
@@ -63,6 +64,10 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     remove_tree,
     resolve_maafw_project_root,
     shell_hint_from_report,
+)
+from app.task.MaaFW.tools.embedded.project_path import (
+    release_project_path,
+    try_reserve_project_path,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
@@ -1149,11 +1154,28 @@ def _pick_projection_fields(report: Mapping[str, Any]) -> dict[str, Any]:
     return {key: report[key] for key in keys if key in report}
 
 
+_EMBEDDED_SCRIPT_BUSY = "脚本正在运行，运行结束后再操作内嵌"
+_EMBEDDED_COPY_BUSY = "该 MFW 项目正在更新或准备环境，请稍后重试"
+
+
+def _embedded_busy_reason(script_config: Any) -> str:
+    """运行中不许动副本：换树会让正在跑的 worker 失去资源，写配置也会被锁拒绝。"""
+
+    return _EMBEDDED_SCRIPT_BUSY if getattr(script_config, "is_locked", False) else ""
+
+
 async def _embed_from_source(
     script_id: str, source_path: str
 ) -> tuple[MaaFWEmbeddedStatusOut | None, str]:
-    """导入副本并把报告写回配置。失败时原因原样带出——闸门理由就是用户要看的东西。"""
+    """导入副本并把报告写回配置。失败时原因原样带出——闸门理由就是用户要看的东西。
 
+    副本路径与 `/maafw/update`、`/agent-env/prepare` 共用同一把项目锁：更新落地或
+    环境准备进行到一半时换树，两边都会坏。
+    """
+
+    reservation = await try_reserve_project_path(embedded_project_dir(script_id))
+    if reservation is None:
+        return None, _EMBEDDED_COPY_BUSY
     try:
         imported = await asyncio.to_thread(
             import_embedded_project, script_id, source_path
@@ -1162,6 +1184,8 @@ async def _embed_from_source(
         return None, str(exc)
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
         return None, f"{type(exc).__name__}: {exc}"
+    finally:
+        await release_project_path(reservation)
     await Config.update_script(
         script_id,
         {
@@ -1216,6 +1240,8 @@ async def enable_maafw_embedded(
         return MaaFWEmbeddedStatusOut(
             code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
+    if busy := _embedded_busy_reason(script_config):
+        return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
     source = str(script_config.get("Info", "Path") or "").strip()
     if not source:
         return MaaFWEmbeddedStatusOut(
@@ -1245,11 +1271,13 @@ async def reimport_maafw_embedded(
     payload: MaaFWEmbeddedReimportIn = Body(...),
 ) -> MaaFWEmbeddedStatusOut:
     try:
-        _maafw_script_config(payload.scriptId)
+        script_config = _maafw_script_config(payload.scriptId)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWEmbeddedStatusOut(
             code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
+    if busy := _embedded_busy_reason(script_config):
+        return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
     source = str(payload.sourcePath or "").strip()
     _failed, error = await _embed_from_source(payload.scriptId, source)
     if error:
@@ -1279,21 +1307,34 @@ async def disable_maafw_embedded(
         return MaaFWEmbeddedStatusOut(
             code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
-    await Config.update_script(
-        payload.scriptId,
-        {
-            "Embedded": {
-                "Enabled": False,
-                "Report": "{ }",
-                "SourceVersion": "",
-                "ImportedAt": "",
-            }
-        },
-    )
+    if busy := _embedded_busy_reason(script_config):
+        return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
+    copy_dir = embedded_project_dir(payload.scriptId)
+    reservation = await try_reserve_project_path(copy_dir)
+    if reservation is None:
+        return MaaFWEmbeddedStatusOut(
+            code=409, status="error", message=_EMBEDDED_COPY_BUSY
+        )
     try:
-        await asyncio.to_thread(remove_tree, embedded_project_dir(payload.scriptId))
-    except Exception as exc:  # noqa: BLE001 - 副本没删干净不该让退出失败
-        logger.warning(f"退出内嵌时删除副本失败: {exc}")
+        await Config.update_script(
+            payload.scriptId,
+            {
+                "Embedded": {
+                    "Enabled": False,
+                    "Report": "{ }",
+                    "SourceVersion": "",
+                    "ImportedAt": "",
+                }
+            },
+        )
+        try:
+            await asyncio.to_thread(remove_tree, copy_dir)
+            # 副本没了，更新器记的清单也一起丢；重新启用后第一次更新要走全量包。
+            await asyncio.to_thread(discard_copy_update_baseline, payload.scriptId)
+        except Exception as exc:  # noqa: BLE001 - 副本没删干净不该让退出失败
+            logger.warning(f"退出内嵌时删除副本失败: {exc}")
+    finally:
+        await release_project_path(reservation)
     out = _embedded_status_out(payload.scriptId, _maafw_script_config(payload.scriptId))
     source = str(script_config.get("Info", "Path") or "").strip()
     out.message = (

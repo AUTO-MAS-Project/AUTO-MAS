@@ -16,8 +16,8 @@ export type MaaFWConfig_Embedded = {
      */
     ImportedAt?: (string | null);
     /**
-     * 投影报告：省下多少、外壳家族、排除条数与原因
+     * 投影报告 JSON 文本：省下多少、外壳家族、排除条数与原因
      */
-    Report?: null;
+    Report?: (string | null);
 };
 

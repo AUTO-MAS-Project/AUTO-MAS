@@ -304,11 +304,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if is_embedded(script_config):
             # 副本缺失（复制脚本、手删、磁盘迁移）时从来源重建一次；来源也没了才报错。
             try:
+                # 在工作线程里回调：必须走线程安全的转发，直接给 _append_update_log
+                # 会在写 script_info.log 时撞上「no running event loop」。
                 rebuilt = await asyncio.to_thread(
                     ensure_embedded_copy,
                     script_id,
                     script_config,
-                    send_log=self._append_update_log,
+                    send_log=self._threadsafe_update_log(),
                 )
             except EmbeddedProjectError as exc:
                 return str(exc)

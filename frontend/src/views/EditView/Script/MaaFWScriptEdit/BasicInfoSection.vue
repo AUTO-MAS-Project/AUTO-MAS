@@ -382,7 +382,7 @@ const embeddedImportedAt = computed(() => {
 }
 
 .embedded-meta-warn {
-  color: var(--ant-color-warning-text);
+  color: var(--ant-color-warning);
   white-space: normal;
 }
 

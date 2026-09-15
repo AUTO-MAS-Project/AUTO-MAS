@@ -40,6 +40,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
+    discard_update_baseline,
+)
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
     ProjectionError,
     build_projection_plan,
@@ -103,6 +106,23 @@ def _clear_readonly_and_retry(
 def remove_tree(path: Path) -> None:
     if path.exists():
         shutil.rmtree(path, onexc=_clear_readonly_and_retry)
+
+
+def _update_operation_root(base: Path | None) -> Path:
+    """更新器的 operation 根；与 ``project_update/state.py`` 的默认值同一口径。"""
+
+    return (
+        (base if base is not None else Path.cwd()) / "data" / "maafw_update_operations"
+    )
+
+
+def discard_copy_update_baseline(script_id: str, base: Path | None = None) -> bool:
+    """副本被整体换掉（重新导入）或删掉（退出内嵌）之后，丢掉更新器记的清单。"""
+
+    return discard_update_baseline(
+        embedded_project_dir(script_id, base),
+        operation_root=_update_operation_root(base),
+    )
 
 
 def copy_is_healthy(copy_dir: Path) -> bool:
@@ -174,6 +194,9 @@ def import_embedded_project(
             old_dir.rename(final_dir)
         raise
     remove_tree(old_dir)
+    # 树整棵换了，更新器上一次记下的清单已经对不上；不丢掉的话后面每次更新都会
+    # 以「文件被本地修改」失败，而且没有别的入口能清它。
+    discard_copy_update_baseline(script_id, base)
 
     report = plan.report()
     report["sourcePath"] = str(source)
@@ -276,6 +299,7 @@ __all__ = [
     "EMBEDDED_PROJECTS_DIR",
     "EmbeddedProjectError",
     "copy_is_healthy",
+    "discard_copy_update_baseline",
     "embedded_project_dir",
     "embedded_projects_root",
     "embedded_status",

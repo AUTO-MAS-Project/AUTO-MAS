@@ -27,6 +27,8 @@ SCRIPT_ID = "3bc42771-7d59-49fb-99b4-8c86202907b0"
 class FakeScriptConfig:
     """只实现路由用到的 get()；update_script 的写入通过 apply() 回灌进来。"""
 
+    is_locked = False
+
     def __init__(self, path: str = "", enabled: bool = False) -> None:
         self.values: dict[tuple[str, str], Any] = {
             ("Info", "Path"): path,
@@ -142,6 +144,55 @@ class TestEnable:
         assert env.config.get("Embedded", "Enabled") is False
         assert env.writes == []
         assert not env.copy_dir.exists()
+
+
+class TestBusyGuards:
+    """运行中不许动副本；副本被更新 / 环境准备占着时也不许换树。"""
+
+    @pytest.mark.asyncio
+    async def test_running_script_is_rejected_before_touching_disk(self, env) -> None:
+        source = _source(env.tmp / "src")
+        env.config.apply({"Info": {"Path": str(source)}})
+        env.config.is_locked = True
+
+        for call in (
+            lambda: scripts.enable_maafw_embedded(MaaFWEmbeddedIn(scriptId=SCRIPT_ID)),
+            lambda: scripts.reimport_maafw_embedded(
+                MaaFWEmbeddedReimportIn(scriptId=SCRIPT_ID, sourcePath=str(source))
+            ),
+            lambda: scripts.disable_maafw_embedded(MaaFWEmbeddedIn(scriptId=SCRIPT_ID)),
+        ):
+            out = await call()
+            assert out.code == 400
+            assert "正在运行" in out.message
+
+        assert not env.copy_dir.exists()
+        assert env.writes == []
+
+    @pytest.mark.asyncio
+    async def test_copy_reserved_by_update_blocks_enable_and_disable(self, env) -> None:
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+
+        source = _source(env.tmp / "src")
+        env.config.apply({"Info": {"Path": str(source)}})
+        key = await try_reserve_project_path(env.copy_dir)
+        try:
+            out = await scripts.enable_maafw_embedded(
+                MaaFWEmbeddedIn(scriptId=SCRIPT_ID)
+            )
+            assert out.code == 400 and "稍后重试" in out.message
+            assert not env.copy_dir.exists()
+            env.config.apply({"Embedded": {"Enabled": True}})
+            out = await scripts.disable_maafw_embedded(
+                MaaFWEmbeddedIn(scriptId=SCRIPT_ID)
+            )
+            assert out.code == 409
+            assert env.config.get("Embedded", "Enabled") is True
+        finally:
+            await release_project_path(key)
 
 
 class TestReimportAndDisable:

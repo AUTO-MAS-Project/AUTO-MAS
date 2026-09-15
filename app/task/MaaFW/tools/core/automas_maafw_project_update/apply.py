@@ -92,6 +92,27 @@ def has_trusted_update_baseline(
         return False
 
 
+def discard_update_baseline(
+    project_path: Path,
+    *,
+    operation_root: Path | None = None,
+) -> bool:
+    """丢掉 MAS 为该项目记下的更新清单，让下一次更新走「无可信基线 → 全量包」。
+
+    调用时机是**项目树被 MAS 自己整体换掉**之后（内嵌副本重新导入、退出内嵌删副本）：
+    清单里记的是上一棵树的文件哈希，留着只会让每次落地都以「managed project file
+    was modified locally」失败。只删清单目录，不碰 operation 目录。
+    """
+
+    state_dir = _resolve_project_state_dir(
+        Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
+    )
+    if state_dir.is_symlink() or not state_dir.is_dir():
+        return False
+    shutil.rmtree(state_dir)
+    return True
+
+
 def _owned_state_path(path: Path, state_dir: Path) -> Path:
     candidate = path.expanduser().resolve(strict=False)
     base = state_dir.expanduser().resolve(strict=False)

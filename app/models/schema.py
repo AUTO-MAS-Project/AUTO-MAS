@@ -3445,8 +3445,9 @@ class MaaFWConfig_Embedded(BaseModel):
         default=None, description="导入时来源的 interface 版本"
     )
     ImportedAt: Optional[str] = Field(default=None, description="导入时间")
-    Report: Optional[Any] = Field(
-        default=None, description="投影报告：省下多少、外壳家族、排除条数与原因"
+    Report: Optional[str] = Field(
+        default=None,
+        description="投影报告 JSON 文本：省下多少、外壳家族、排除条数与原因",
     )
 
 

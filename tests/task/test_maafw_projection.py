@@ -141,6 +141,25 @@ class TestWhitelist:
         assert "assets/screenshots/big.png" not in kept
         assert not any("missing.png" in warning for warning in plan.rules.warnings)
 
+    def test_native_runtime_directory_never_enters_the_copy(
+        self, tmp_path: Path
+    ) -> None:
+        # 保守模式（opaque agent）整棵根是目标，maafw/ 也得靠分类表挡住。
+        interface = _interface(
+            agent={"type": "custom", "child_exec": "./agent/run.exe"}
+        )
+        root = _release(tmp_path / "src", interface)
+        _write(root / "agent/run.exe", "exe")
+        (root / "maafw/MaaAgentClient.dll").write_bytes(b"dll")
+
+        plan = build_projection_plan(root)
+        kept = {path.as_posix() for path in plan.copied_files}
+
+        assert plan.rules.conservative is True
+        assert not any(path.startswith("maafw/") for path in kept)
+        assert plan.excluded_reasons["maafw/MaaAgentClient.dll"] == "embedded-runtime"
+        assert plan.report()["bundledMaaFWVersion"] == "5.11.1"
+
     def test_images_referenced_by_welcome_are_kept(self, tmp_path: Path) -> None:
         # 说明页按项目根取图；先按 README 所在目录解析，再退到项目根，远程与缺失的跳过。
         interface = _interface(welcome="docs/README.md")

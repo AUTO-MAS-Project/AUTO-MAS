@@ -4,9 +4,9 @@
 Python 由运行池和隔离 venv 提供。所以一份发行包里真正需要落盘的只有：
 interface.json 及其 ``import``、resource 声明的目录、controller 的附加资源、languages
 文件、agent 与 pretask 引用的文件所在目录、依赖清单（requirements.txt 之类）。另外
-带上 interface 里各层级的 ``icon`` 与顶层 ``welcome`` 指向的文件——它们不参与运行，
-但 AUTO-MAS 的用户页会展示，都是几 KB 的小文件；找不到就静默跳过，不算错。其余
-一律不要——不是"删掉外壳"，而是"只拿声明了的"。分类表只在两处起作用：白名单目标
+带上 interface 里各层级的 ``icon``（用户页展示项目 / 任务图标）与顶层 ``welcome``
+及其正文引用的图片（给说明页备着）——它们不参与运行，都是小文件；找不到就静默
+跳过，不算错。其余一律不要——不是"删掉外壳"，而是"只拿声明了的"。分类表只在两处起作用：白名单目标
 内部（比如 agent 目录里的 ``__pycache__``），以及保守模式下的整棵根。
 
 三条与旧 Project Store 投影不同的取舍：
@@ -57,6 +57,8 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     "mfw": "ui-shell",
     "maapicli": "ui-shell",
     "node_modules": "ui-runtime",
+    # 发行包自带的原生库目录：副本里由运行池按投影标记的版本提供，整目录不进。
+    "maafw": "embedded-runtime",
     "runtime": "embedded-runtime",
     "runtimes": "embedded-runtime",
     "python": "embedded-python",

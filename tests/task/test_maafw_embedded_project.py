@@ -5,6 +5,7 @@
 时的自修复口径、外壳提示只能从报告取。全部在临时目录里，不碰真实发行包。
 """
 
+import asyncio
 import json
 import os
 import stat
@@ -16,9 +17,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
+from app.models.config import MaaFWConfig
+from app.models.task import ScriptItem, TaskItem
 from app.task.MaaFW import embedded_manager
+from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
+    apply_package_transaction,
+    has_trusted_update_baseline,
+)
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    discard_copy_update_baseline,
     embedded_project_dir,
     embedded_status,
     ensure_embedded_copy,
@@ -170,6 +178,130 @@ class TestImport:
             import_embedded_project(
                 SCRIPT_ID, embedded_project_dir(SCRIPT_ID, tmp_path), base=tmp_path
             )
+
+
+class TestUpdateBaseline:
+    """副本整棵换掉后，更新器上一次记的清单必须跟着作废。"""
+
+    def _package(self, tmp_path: Path, version: str) -> Path:
+        import zipfile
+
+        package = tmp_path / f"{version}.zip"
+        with zipfile.ZipFile(package, "w") as archive:
+            archive.writestr(
+                "interface.json",
+                json.dumps(
+                    {
+                        "name": "Demo",
+                        "version": version,
+                        "resource": [{"name": "x", "path": "./resource/base"}],
+                    }
+                ),
+            )
+            archive.writestr("resource/base/a.json", '{"v": 2}')
+        return package
+
+    def test_reimport_discards_the_recorded_baseline(self, tmp_path: Path) -> None:
+        source = _source(tmp_path / "src")
+        import_embedded_project(SCRIPT_ID, source, base=tmp_path)
+        copy = embedded_project_dir(SCRIPT_ID, tmp_path)
+        operation_root = tmp_path / "data" / "maafw_update_operations"
+        apply_package_transaction(
+            copy,
+            self._package(tmp_path, "v1.1.0"),
+            operation_root=operation_root,
+            projection=True,
+        )
+        assert has_trusted_update_baseline(copy, operation_root=operation_root)
+
+        # 用户手动更新了来源，点「重新导入」：树换了，清单不能留。
+        import_embedded_project(
+            SCRIPT_ID, _source(tmp_path / "v2", "v2.0.0"), base=tmp_path
+        )
+
+        assert not has_trusted_update_baseline(copy, operation_root=operation_root)
+        # 再来一个包要能正常落地，而不是「文件被本地修改」。
+        result = apply_package_transaction(
+            copy,
+            self._package(tmp_path, "v2.1.0"),
+            operation_root=operation_root,
+            projection=True,
+        )
+        assert result.get("applied") is not False
+
+    def test_discard_is_a_no_op_without_a_baseline(self, tmp_path: Path) -> None:
+        assert discard_copy_update_baseline(SCRIPT_ID, tmp_path) is False
+
+
+class _Task(TaskItem):
+    async def on_change(self) -> None:
+        return None
+
+
+class TestCheckSelfHeal:
+    """check() 的自修复跑在工作线程里；日志回调必须线程安全，否则整个任务崩在第一行。"""
+
+    @pytest.mark.asyncio
+    async def test_check_rebuilds_missing_copy_without_touching_the_loop_from_a_thread(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        from app.task.MaaFW import embedded_manager
+
+        monkeypatch.chdir(tmp_path)
+        source = _source(tmp_path / "src")
+        config = MaaFWConfig()
+        await config.load(
+            {"Info": {"Path": str(source)}, "Embedded": {"Enabled": True}}
+        )
+
+        task = _Task(
+            mode="AutoProxy",
+            task_id="t",
+            queue_id=None,
+            script_id=SCRIPT_ID,
+            user_id=None,
+        )
+        script_item = ScriptItem(script_id=SCRIPT_ID, name="demo", status="等待")
+        task.script_list = [script_item]  # 真实绑定：写 log 会走 schedule_on_change
+        manager = embedded_manager.MaaFWEmbeddedManager.__new__(
+            embedded_manager.MaaFWEmbeddedManager
+        )
+        manager.task_info = task
+        manager.script_info = script_item
+        manager.project_update_logs = []
+        manager.script_config = None
+
+        threads: list[str] = []
+
+        def fake_ensure(script_id, script_config, *, base=None, send_log=None):
+            threads.append(threading.current_thread().name)
+            send_log("[MFW 内嵌] 副本缺失或损坏，正在从来源目录重新导入")
+            return import_embedded_project(script_id, str(source), base=base)
+
+        update_script = AsyncMock()
+        fake_host = SimpleNamespace(
+            ScriptConfig={uuid.UUID(SCRIPT_ID): config}, update_script=update_script
+        )
+        with (
+            patch.object(embedded_manager, "ensure_embedded_copy", fake_ensure),
+            patch.object(embedded_manager, "Config", fake_host),
+        ):
+            # 副本此刻不存在：自修复后有效根存在，check() 会往下走到锁配置；把锁
+            # 换成空操作并让用户列表为空，它就在「没有可运行用户」处正常返回。
+            monkeypatch.setattr(config, "lock", AsyncMock())
+            result = await manager.check()
+
+        assert threads and threads[0] != threading.main_thread().name
+        assert "no running event loop" not in result
+        assert (embedded_project_dir(SCRIPT_ID, tmp_path) / "interface.json").is_file()
+        update_script.assert_awaited_once()
+        written = update_script.await_args.args[1]["Embedded"]
+        assert json.loads(written["Report"])["shellFamilies"] == ["MFW"]
+        # 让 call_soon_threadsafe 排进来的日志写入跑完，日志确实到了 script_info。
+        await asyncio.sleep(0)
+        assert "重新导入" in script_item.log
 
 
 class TestSelfHeal:
