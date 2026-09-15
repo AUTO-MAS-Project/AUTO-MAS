@@ -40,8 +40,10 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
-from app.utils import resource_path
+from app.utils import get_logger, resource_path
 from app.utils.io import read_file, write_file
+
+logger = get_logger("BetterGI 一条龙配置")
 
 # 8 个内置一条龙配置组：单一来源为 app/models/config.py 的 _BGI_BUILTIN_ONE_DRAGON_GROUPS，
 # 此处仅别名引用，避免双份硬编码随版本漂移。
@@ -152,7 +154,15 @@ def list_js_scripts(root: Path) -> list[tuple[str, str]]:
                 continue
             folder = p.name.strip()
             display = folder
-            data = read_file(manifest)
+            try:
+                data = read_file(manifest)
+            except (OSError, ValueError) as e:
+                # manifest.json 是玩家订阅/手放的第三方文件，这里只用它取显示名；
+                # 坏一个不该让整个列表拿不到，显示名退回目录名，BetterGI 仍按目录名定位。
+                logger.warning(
+                    f"JS 脚本 {folder} 的 manifest.json 无法解析，显示名按目录名处理: {e}"
+                )
+                data = None
             if isinstance(data, dict) and isinstance(data.get("name"), str):
                 display = data["name"].strip() or folder
             if folder and not any(f == folder for f, _ in items):
