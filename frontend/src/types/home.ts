@@ -134,6 +134,17 @@ export interface SraActivityOverview {
 
 export type Reverse1999ActivityOverview = SraActivityOverview
 
+export const createEmptySraActivityOverview = (message = ''): SraActivityOverview => ({
+  Available: false,
+  Stale: false,
+  Message: message,
+  version: '',
+  versionName: '',
+  startTime: '',
+  endTime: '',
+  activities: [],
+})
+
 export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>
