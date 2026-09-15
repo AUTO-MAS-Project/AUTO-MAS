@@ -34,6 +34,35 @@ export function getAppRoot(): string {
   return path.dirname(app.getPath('exe'))
 }
 
+/**
+ * 递归删除环境目录并对 Windows 文件占用做有限重试。
+ *
+ * 安装被中断后，残留进程句柄或杀软扫描会让首次删除撞上 EBUSY/EPERM/ENOTEMPTY；
+ * 短暂等待后重试即可，目录不存在视为删除成功。
+ */
+export async function removeEnvironmentDirWithRetry(
+  target: string,
+  retries: number = 5,
+  delayMs: number = 300
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true })
+      return true
+    } catch (error) {
+      if (!fs.existsSync(target)) return true
+      const code = (error as NodeJS.ErrnoException)?.code
+      const retryable = code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY'
+      if (!retryable || attempt === retries) {
+        logger.warn('删除环境目录失败（' + (code ?? '未知错误') + '）：' + target)
+        return false
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+  return !fs.existsSync(target)
+}
+
 // ==================== 类型定义 ====================
 
 export interface EnvironmentCheckResult {
@@ -601,8 +630,15 @@ export class GitInstaller extends BaseEnvironmentInstaller {
       logger.info(`Git 版本: ${version}`)
       return { exeExists: true, canRun: true, version }
     } catch (error) {
-      logger.error(`Git 无法正常运行: ${error}`)
-      return { exeExists: true, canRun: false, error: String(error) }
+      // 上次安装中断（如下载/解压/移动被杀）会留下 exe 存在但不可运行的残缺目录。
+      // 旧版在此直接判失败，用户只能手动删除 environment 后重装；这里主动清理残缺目录，
+      // 让同一次安装流程把它当作缺失重新下载安装。
+      logger.error(`Git 无法正常运行，清理残缺安装后重装: ${error}`)
+      const removed = await removeEnvironmentDirWithRetry(this.gitPath)
+      if (!removed) {
+        return { exeExists: true, canRun: false, error: String(error) }
+      }
+      return { exeExists: false, canRun: false }
     }
   }
 
