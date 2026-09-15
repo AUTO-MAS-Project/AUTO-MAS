@@ -1828,6 +1828,14 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
     )
 
 
+class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
+    """BetterGI 单独通知（在通用字段上增加掉落统计开关）"""
+
+    IfSendDropStatistics: Optional[bool] = Field(
+        default=None, description="是否统计掉落（BGI「奖励识别」汇总，默认开启）"
+    )
+
+
 class BetterGIUserConfig(BaseModel):
     Info: Optional[BetterGIUserConfig_Info] = Field(
         default=None, description="用户信息"
@@ -1844,7 +1852,7 @@ class BetterGIUserConfig(BaseModel):
     Data: Optional[BetterGIUserConfig_Data] = Field(
         default=None, description="用户数据"
     )
-    Notify: Optional[GeneralUserConfig_Notify] = Field(
+    Notify: Optional[BetterGIUserConfig_Notify] = Field(
         default=None, description="单独通知"
     )
 

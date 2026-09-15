@@ -30,6 +30,8 @@ from app.models.config import BetterGIUserConfig
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
+from .drop_statistics import format_drop_statistics
+
 logger = get_logger("BetterGI 通知工具")
 
 _STEP_TIME_FMT = "%H:%M:%S"
@@ -118,8 +120,14 @@ async def push_notification(
             if (steps := message.get("one_dragon_steps"))
             else ""
         )
-        # 完整版：4 字段 + 「一条龙分步执行」
-        message_text_full = f"{message_text}{steps_text}"
+        # 掉落统计（BGI 奖励识别）：物品 + 数量两列，排在「一条龙分步执行」之后
+        drops_text = (
+            f"\n\n{drops}"
+            if (drops := format_drop_statistics(message.get("drop_statistics")))
+            else ""
+        )
+        # 完整版：4 字段 + 「一条龙分步执行」+ 掉落统计
+        message_text_full = f"{message_text}{steps_text}{drops_text}"
         message_html = Config.notify_env.get_template("general_statistics.html").render(
             message
         )

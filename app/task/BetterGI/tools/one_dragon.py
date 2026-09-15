@@ -1400,6 +1400,7 @@ def write_user_one_dragon(
     manage_custom_groups: bool = False,
     queue: list[dict[str, Any]] | None = None,
     exclude_task_names: list[str] | None = None,
+    boss_reward_recognition: bool | None = None,
     exclude_materialized_custom_groups: bool = False,
 ) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
@@ -1463,6 +1464,10 @@ def write_user_one_dragon(
         slot_config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         slot_config["AutoBossStrategyName"] = auto_boss_strategy_name
+    if boss_reward_recognition is not None:
+        # 掉落统计：强制开启首领讨伐的「奖励识别」。一条龙原生路径读的正是这个顶层字段
+        # （OneDragonTaskItem.cs:157），执行层另经 Plan.settings 写入 Param，两条路径都覆盖。
+        slot_config["AutoBossRewardRecognitionEnabled"] = bool(boss_reward_recognition)
     # 通用战斗队伍/策略权威覆盖周表「默认」行：周表默认行本即「通用队伍」映射，
     # 应与顶部「通用战斗队伍/策略」同源生效，否则会以其旧值遮挡通用队伍/策略
     # （main.js 选队：秘境 todayRow||defaultRow||s.partyName 与 todayRow||defaultRow||s.combatStrategyPath；
@@ -1587,6 +1592,32 @@ def apply_global_battle_strategy(root: Path, strategy_name: str) -> None:
     由 BGI 直读全局段。保留同段其余字段；空值不覆盖。
     """
     _apply_leaves(root, _GLOBAL_STRATEGY_LEAVES, strategy_name)
+
+
+def apply_global_reward_recognition(root: Path) -> None:
+    """把「启用奖励识别」写进 BetterGI 全局 config.json 的 ``autoDomainConfig`` 段。
+
+    「奖励识别」（BGI 侧 ``RewardRecognitionEnabled``）是掉落统计的唯一数据源。自动秘境
+    的 ``AutoDomainParam.SetDefault()`` 会从该段拷贝 ``RewardRecognitionEnabled``，一条龙
+    原生路径与执行层 ``new AutoDomainParam(...)`` 共用同一处，因此只需写这一个叶子，
+    即可保证「开启掉落统计 → 识别一定发生」。
+
+    该叶子已包含在 ``_ALL_RUNTIME_GLOBAL_LEAVES`` 内，运行结束由
+    ``restore_global_battle_config`` 随其余运行时叶子一起还原，不留残留。
+    """
+
+    with GLOBAL_CONFIG_LOCK:
+        config = read_file(_global_config_path(root))
+        if not isinstance(config, dict):
+            config = {}
+        segment = config.get(_GLOBAL_DOMAIN_CONFIG_SEGMENT)
+        if not isinstance(segment, dict):
+            segment = {}
+            config[_GLOBAL_DOMAIN_CONFIG_SEGMENT] = segment
+        if segment.get("rewardRecognitionEnabled") is True:
+            return
+        segment["rewardRecognitionEnabled"] = True
+        write_file(_global_config_path(root), config)
 
 
 def _restore_leaf(config: dict, leaf: tuple[str, ...], existed: bool, value) -> bool:
