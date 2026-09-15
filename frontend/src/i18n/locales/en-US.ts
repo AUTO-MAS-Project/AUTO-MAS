@@ -1357,7 +1357,7 @@ export default {
     useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
     quickConfig: 'Quick configuration',
     configSourceHint:
-      'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
+      'Script configuration lets every user share one script-level source; per-user configuration gives each user a source of their own; script-direct control uses the native BGI config and is shared by users on that source.',
     configSourceHintBase:
       "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
     nativeConfigSourceDescription: "Use the script's current native configuration.",

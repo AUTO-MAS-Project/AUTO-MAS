@@ -1321,7 +1321,7 @@ export default {
     useScriptS: '使用脚本配置，不与用户独立配置隔离。',
     quickConfig: '快速配置',
     configSourceHint:
-      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
+      '「脚本配置」为不同用户选择同一脚本来源；「用户独立配置」为不同用户选择不同配置来源；「直控配置」为 BGI 原生配置，并由直控用户共享。',
     configSourceHintBase:
       '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
     nativeConfigSourceDescription: '使用脚本当前的原生配置。',
