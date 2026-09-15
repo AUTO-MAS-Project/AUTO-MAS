@@ -4,8 +4,8 @@
 
 - Okww F13：直控下（开关开与关）Basic Options.json 写入次数必须为 0；
   直控+开启只写 DailyTask.json 快速配置子集；脚本/用户来源保持现状。
-- MaaFW：直控+开启=build_plan 应用用户托管值（任务快照/预设）；
-  直控+关闭=纯 interface 默认。
+- MaaFW：不看来源也不看开关，build_plan 一律应用用户页上的任务快照/预设——
+  MaaFW 没有可退回的原生配置，开关在界面上也已不提供，隐藏的旧值不能改变运行结果。
 - OkNte：开启=独立面板文件写入原生 working 配置；
   直控+关闭=零写入。
 - ZzzOd：直控+开启=用户面板字段写入绑定实例槽（备份→注入→恢复）；
@@ -150,15 +150,15 @@ def _maafw_task(mode: str, quick: bool, **task_fields: Any) -> Any:
 
 
 @pytest.mark.parametrize("mode", ["脚本", "用户", "直控"])
-def test_maafw_direct_closed_builds_interface_defaults(mode: str) -> None:
-    """直控+关闭：build_plan 不带用户任务快照/预设（纯 interface 默认）。"""
+def test_maafw_ignores_hidden_quick_config_switch(mode: str) -> None:
+    """开关为关时照样应用用户任务快照：界面已不提供该开关，隐藏值不能改变运行结果。"""
 
     from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
         MaaFWRunnerService,
     )
 
     task = _maafw_task(
-        mode, quick=False, snapshot="invalid hidden JSON", preset="hidden"
+        mode, quick=False, snapshot='{"daily": {"enabled": true}}', preset=""
     )
     interface = MagicMock()
     interface.controller = []
@@ -167,9 +167,7 @@ def test_maafw_direct_closed_builds_interface_defaults(mode: str) -> None:
         task._build_run_plan(interface)
 
     assert bp.call_count == 1
-    kwargs = bp.call_args.kwargs
-    assert kwargs.get("task_snapshot") is None
-    assert kwargs.get("selected_preset") is None
+    assert bp.call_args.kwargs.get("task_snapshot") == {"daily": {"enabled": True}}
 
 
 @pytest.mark.parametrize("mode", ["脚本", "用户", "直控"])
