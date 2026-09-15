@@ -37,12 +37,13 @@ from .engine import (
     synthesize,
 )
 from .providers import (
+    SklandProgressionProvider,
     has_oper_box_data,
-    load_oper_box_index,
     load_oper_box_names,
     parse_depot_payload,
     parse_oper_box_names,
     parse_oper_box_payload,
+    parse_player_info_payload,
     resolve_inventory,
     resolve_progression,
 )
@@ -50,11 +51,16 @@ from .service import (
     DepotCultivateService,
     depot_cultivate_service,
     dump_cultivate_targets,
-    filter_catalog_by_elite,
     get_certifying_chain,
     get_inventory_chain,
     get_progression_chain,
     parse_cultivate_targets,
+)
+from .skland import (
+    SklandAccountRef,
+    clear_skland_progression_cache,
+    fetch_skland_progression,
+    fetch_skland_role_entries,
 )
 from .types import (
     Achievement,
@@ -88,6 +94,8 @@ from .yituliu import (
 
 __all__ = [
     "Achievement",
+    "SklandAccountRef",
+    "SklandProgressionProvider",
     "CultivateDataSet",
     "CultivatePlan",
     "DemandEntry",
@@ -109,6 +117,9 @@ __all__ = [
     "YituliuDataError",
     "aggregate",
     "apply_achievements",
+    "clear_skland_progression_cache",
+    "fetch_skland_progression",
+    "fetch_skland_role_entries",
     "build_plan",
     "build_requirements",
     "dataset_from_json",
@@ -116,7 +127,6 @@ __all__ = [
     "dataset_to_json",
     "download_dataset",
     "dump_cultivate_targets",
-    "filter_catalog_by_elite",
     "get_dataset_cached",
     "get_certifying_chain",
     "get_inventory_chain",
@@ -125,12 +135,12 @@ __all__ = [
     "has_oper_box_data",
     "judge_achievements",
     "load_dataset",
-    "load_oper_box_index",
     "load_oper_box_names",
     "parse_cultivate_targets",
     "parse_depot_payload",
     "parse_oper_box_names",
     "parse_oper_box_payload",
+    "parse_player_info_payload",
     "recommend_stages",
     "resolve_inventory",
     "resolve_progression",

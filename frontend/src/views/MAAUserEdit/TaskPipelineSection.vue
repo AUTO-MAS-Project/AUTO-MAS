@@ -169,7 +169,7 @@
         </a-row>
       </PipelineRow>
 
-      <!-- 干员养成：一次性目标（PR2 仅精英化），排活动关优先之后、库存保持之前（队列 #3） -->
+      <!-- 干员养成：一次性目标（精英化 / 绑定森空岛后的专精·模组），排活动关优先之后、库存保持之前（队列 #3） -->
       <PipelineRow
         :name="t('edit.maaCultivate')"
         :summary="cultivateSummary"
@@ -181,9 +181,13 @@
         <CultivateTargetEditor
           :form-data="formData"
           :loading="loading"
-          :operator-options="cultivateOperatorOptions"
+          :operator-catalog="cultivateOperatorCatalog"
           :operator-options-loading="cultivateOperatorOptionsLoading"
           :operator-options-error="cultivateOperatorOptionsError"
+          :skland-role-options="sklandRoleOptions"
+          :skland-role-loading="sklandRoleLoading"
+          :skland-role-error="sklandRoleError"
+          :load-skland-role-options="loadSklandRoleOptions"
           :item-options="depotItemOptions"
           :cultivate-preview="cultivatePreview"
           :cultivate-preview-loading="cultivatePreviewLoading"
@@ -211,6 +215,7 @@
           :stage-candidates="depotStageCandidates"
           :stage-candidates-loading="depotStageCandidatesLoading"
           :inventory="depotInventory"
+          :depot-inventory-time="depotInventoryTime"
           :load-stage-candidates="loadDepotStageCandidates"
           @save="emitSave"
         />
@@ -350,6 +355,10 @@ import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
+import type {
+  CultivateGoalOption as GoalOption,
+  CultivateOperatorCatalogEntry as OperatorCatalogEntry,
+} from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
 import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
 import {
@@ -385,12 +394,20 @@ const props = defineProps<{
   depotStageCandidates: Record<string, SelectOption[]>
   /** 正在加载候选的物品 ID 列表 */
   depotStageCandidatesLoading: string[]
-  /** 仓库库存映射（itemId → 数量，安装级） */
+  /** 仓库库存映射（itemId → 数量，当前用户识别档案） */
   depotInventory: Record<string, number>
+  /** 库存档案的最近识别时间（本地格式；空串=未识别） */
+  depotInventoryTime: string
   /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
   loadDepotStageCandidates: (itemId: string) => Promise<void>
-  /** 干员目录（一图流全量表；[] 表示已加载但为空） */
-  cultivateOperatorOptions: SelectOption[]
+  /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
+  cultivateOperatorCatalog: OperatorCatalogEntry[]
+  /** 森空岛绑定下拉：合并所有已配置凭据账号组的角色 */
+  sklandRoleOptions: SelectOption[]
+  sklandRoleLoading: boolean
+  sklandRoleError: string
+  /** 按需加载角色列表（下拉展开时触发，父级负责请求） */
+  loadSklandRoleOptions: () => Promise<void>
   cultivateOperatorOptionsLoading: boolean
   cultivateOperatorOptionsError: string
   /** 养成需求预览（后端纯计算结果） */

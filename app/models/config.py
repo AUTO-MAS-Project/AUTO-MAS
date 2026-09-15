@@ -1075,6 +1075,14 @@ class MaaUserConfig(ConfigBase):
         self.Task_CultivateSkipDuringResourceCollection = ConfigItem(
             "Task", "CultivateSkipDuringResourceCollection", False, BoolValidator()
         )
+        ## 森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）
+        self.Task_CultivateSklandAccount = ConfigItem(
+            "Task", "CultivateSklandAccount", "", StringValidator()
+        )
+        ## 森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）
+        self.Task_CultivateSklandUid = ConfigItem(
+            "Task", "CultivateSklandUid", "", StringValidator()
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
