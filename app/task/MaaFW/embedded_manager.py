@@ -30,6 +30,7 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 import uuid
@@ -46,6 +47,13 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    EmbeddedProjectError,
+    ensure_embedded_copy,
+    is_embedded,
+    resolve_maafw_project_root,
+    shell_hint_from_report,
+)
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
@@ -292,10 +300,37 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
 
-        project_value = str(script_config.get("Info", "Path") or "").strip()
-        if not project_value:
-            return "请设置 MFW 项目路径"
-        if not Path(project_value).resolve().is_dir():
+        script_id = str(self.script_info.script_id)
+        if is_embedded(script_config):
+            # 副本缺失（复制脚本、手删、磁盘迁移）时从来源重建一次；来源也没了才报错。
+            try:
+                # 在工作线程里回调：必须走线程安全的转发，直接给 _append_update_log
+                # 会在写 script_info.log 时撞上「no running event loop」。
+                rebuilt = await asyncio.to_thread(
+                    ensure_embedded_copy,
+                    script_id,
+                    script_config,
+                    send_log=self._threadsafe_update_log(),
+                )
+            except EmbeddedProjectError as exc:
+                return str(exc)
+            if rebuilt is not None:
+                await Config.update_script(
+                    script_id,
+                    {
+                        "Embedded": {
+                            "Report": json.dumps(rebuilt["report"], ensure_ascii=False),
+                            "SourceVersion": rebuilt["sourceVersion"],
+                            "ImportedAt": rebuilt["importedAt"],
+                        }
+                    },
+                )
+        else:
+            project_value = str(script_config.get("Info", "Path") or "").strip()
+            if not project_value:
+                return "请设置 MFW 项目路径"
+        project_root = resolve_maafw_project_root(script_id, script_config)
+        if not project_root.resolve().is_dir():
             return "请设置包含 interface.json 的 MFW 项目目录"
 
         # 与其他专项同一口径：运行期间锁住脚本配置，界面上的改动会被拒绝。
@@ -320,8 +355,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
 
+        # 自检看的是有效根：内嵌脚本的运行池版本钉在副本的投影标记上，不在来源目录。
         environment_problem = await asyncio.to_thread(
-            describe_unusable_runtime, Path(project_value)
+            describe_unusable_runtime, project_root
         )
         if environment_problem:
             return environment_problem
@@ -460,13 +496,23 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             update_maafw_project_if_needed,
         )
 
+        source_config: dict[str, Any] = {"package_source": credentials.package_source}
+        embedded = is_embedded(self.script_config)
+        if embedded:
+            # 副本里没有 MFW.exe / maafw/ 可扫，外壳家族只能从导入报告取；不回填，
+            # M9A 这种同版本同时发 -MXU.zip 与 -MFAA.zip 的项目会选错资产。
+            shell_hint = shell_hint_from_report(self.script_config)
+            if shell_hint:
+                source_config["project_shell_hint"] = shell_hint
         kwargs: dict[str, Any] = {
             "mirror_cdk": credentials.cdk,
             "channel": credentials.channel,
             # 下载源由用户显式选定，核心包不再自动分流。
-            "source_config": {"package_source": credentials.package_source},
+            "source_config": source_config,
             "send_log": self._threadsafe_update_log(),
             "project_lock_already_held": False,
+            # 内嵌副本：落地时只写 interface 白名单内的条目，副本永远是瘦的。
+            "projection": embedded,
         }
         # 核心包签名正在收敛：``interface_model`` 位置参数可能被拿掉（改为包内
         # 自己读）。按实际签名决定传不传，两种形态都能跑。
@@ -489,7 +535,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
-        project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
+        project_path = resolve_maafw_project_root(
+            str(self.script_info.script_id), self.script_config
+        ).resolve()
 
         credentials = resolve_update_credentials(self.script_config)
         self._append_update_log(
@@ -604,7 +652,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
-        project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
+        project_path = resolve_maafw_project_root(
+            str(self.script_info.script_id), self.script_config
+        ).resolve()
 
         # 更新已经放掉了项目锁。拿不到说明另有准备/运行在跑，那份准备一样管用。
         reservation_key = await try_reserve_project_path(project_path)

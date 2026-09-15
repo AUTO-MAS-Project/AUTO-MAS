@@ -52,6 +52,7 @@ from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
+from .embedded_project import resolve_maafw_project_root
 from .game_package import resolve_game_package
 from .project_path import release_project_path, try_reserve_project_path
 
@@ -332,7 +333,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.project_path = Path(self.script_config.get("Info", "Path")).resolve()
+        self.project_path = resolve_maafw_project_root(
+            str(self.script_info.script_id), self.script_config
+        ).resolve()
         self.interface_model: MaaFWInterface | None = None
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None

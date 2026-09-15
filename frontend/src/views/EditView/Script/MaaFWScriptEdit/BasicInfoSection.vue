@@ -27,9 +27,19 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwProjectDirectory')">
+            <a-tooltip
+              :title="
+                embeddedStatus.enabled
+                  ? t('edit.maafwEmbeddedSourceHint')
+                  : t('edit.pickMfwProjectDirectory')
+              "
+            >
               <span class="form-label">
-                {{ t('edit.localProjectDirectory') }}
+                {{
+                  embeddedStatus.enabled
+                    ? t('edit.maafwEmbeddedSourceDirectory')
+                    : t('edit.localProjectDirectory')
+                }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -46,7 +56,7 @@
             <a-button
               size="large"
               class="path-button"
-              :disabled="interfaceLoading || updateApplying"
+              :disabled="interfaceLoading || updateApplying || embeddedBusy"
               @click="emit('select-path')"
             >
               <template #icon>
@@ -58,7 +68,7 @@
               size="large"
               class="path-button"
               :loading="interfaceLoading"
-              :disabled="!maafwConfig.Info.Path || updateApplying"
+              :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
               @click="emit('preview-interface')"
             >
               <template #icon>
@@ -70,6 +80,86 @@
         </a-form-item>
       </a-col>
     </a-row>
+
+    <!-- 内嵌：AUTO-MAS 按 interface 白名单投影一份瘦副本并在副本上运行、更新；
+         副本目录由脚本 ID 推出，不展示为可编辑项；来源目录（Info.Path）保持不动。 -->
+    <div class="embedded-panel" :class="{ 'embedded-panel-on': embeddedStatus.enabled }">
+      <div class="embedded-head">
+        <div class="embedded-switch">
+          <a-switch
+            :checked="embeddedStatus.enabled"
+            :loading="embeddedBusy"
+            :disabled="!maafwConfig.Info.Path || interfaceLoading || updateApplying"
+            @change="
+              (checked: boolean | string | number) => emit('toggle-embedded', Boolean(checked))
+            "
+          />
+          <a-tooltip :title="t('edit.maafwEmbeddedHint')">
+            <span class="form-label">
+              {{ t('edit.maafwEmbeddedTitle') }}
+              <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+            </span>
+          </a-tooltip>
+        </div>
+        <a-space v-if="embeddedStatus.enabled" size="small">
+          <a-tooltip :title="t('edit.maafwEmbeddedReimportHint')">
+            <a-button
+              size="small"
+              :loading="embeddedBusy"
+              :disabled="!embeddedStatus.sourceExists || interfaceLoading || updateApplying"
+              @click="emit('reimport-embedded')"
+            >
+              <template #icon>
+                <ReloadOutlined />
+              </template>
+              {{ t('edit.maafwEmbeddedReimport') }}
+            </a-button>
+          </a-tooltip>
+        </a-space>
+      </div>
+      <div v-if="embeddedStatus.enabled" class="embedded-meta">
+        <a-tag v-if="embeddedStatus.copyHealthy" color="success" class="embedded-tag">
+          {{ t('edit.maafwEmbeddedCopyHealthy') }}
+        </a-tag>
+        <a-tag v-else color="warning" class="embedded-tag">
+          {{ t('edit.maafwEmbeddedCopyMissing') }}
+        </a-tag>
+        <span v-if="embeddedStatus.report" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedSaved', {
+              percent: (embeddedStatus.report.savedPercent ?? 0).toFixed(1),
+              source: formatEmbeddedBytes(embeddedStatus.report.sourceSizeBytes),
+              copy: formatEmbeddedBytes(embeddedStatus.report.payloadSizeBytes),
+            })
+          }}
+        </span>
+        <span v-if="embeddedShellFamilies" class="embedded-meta-item">
+          {{ t('edit.maafwEmbeddedShell', { shell: embeddedShellFamilies }) }}
+        </span>
+        <span v-if="embeddedStatus.report?.bundledMaaFWVersion" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedRuntime', { version: embeddedStatus.report.bundledMaaFWVersion })
+          }}
+        </span>
+        <span v-if="embeddedStatus.report?.bundledPythonVersion" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedPython', { version: embeddedStatus.report.bundledPythonVersion })
+          }}
+        </span>
+        <span v-if="embeddedStatus.sourceVersion" class="embedded-meta-item">
+          {{ t('edit.maafwEmbeddedSourceVersion', { version: embeddedStatus.sourceVersion }) }}
+        </span>
+        <span v-if="embeddedImportedAt" class="embedded-meta-item">
+          {{ t('edit.maafwEmbeddedImportedAt', { time: embeddedImportedAt }) }}
+        </span>
+        <span v-if="!embeddedStatus.sourceExists" class="embedded-meta-item embedded-meta-warn">
+          {{ t('edit.maafwEmbeddedSourceMissing') }}
+        </span>
+      </div>
+      <div v-else class="embedded-meta embedded-meta-off">
+        {{ t('edit.maafwEmbeddedOffHint') }}
+      </div>
+    </div>
 
     <div v-if="previewData" class="interface-summary">
       <div class="interface-project-bar">
@@ -118,18 +208,21 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   FileSearchOutlined,
   FolderOpenOutlined,
   InboxOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons-vue'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
+import { formatEmbeddedBytes, type MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
   formData: { type: ScriptType; name: string; path: string }
   rules: { name: unknown[]; path: unknown[] }
@@ -139,13 +232,31 @@ defineProps<{
   interfaceStats: Array<{ label: string; value: number }>
   /** 项目更新正在落盘：此时读 interface 会读到半成品，按钮一律禁用。 */
   updateApplying: boolean
+  /** 内嵌副本状态：由父组件从后端拉取；导入几十到几百 MB 时 busy 为 true。 */
+  embeddedStatus: MaaFWEmbeddedStatus
+  embeddedBusy: boolean
 }>()
 
 const emit = defineEmits<{
   change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
   'select-path': []
   'preview-interface': []
+  'toggle-embedded': [enabled: boolean]
+  'reimport-embedded': []
 }>()
+
+const embeddedShellFamilies = computed(() =>
+  (props.embeddedStatus.report?.shellFamilies ?? []).join(' / ')
+)
+
+// 后端给的是带时区的 ISO 文本；界面上只要到分钟。
+const embeddedImportedAt = computed(() => {
+  const raw = props.embeddedStatus.importedAt
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+})
 </script>
 
 <style scoped>
@@ -224,6 +335,60 @@ const emit = defineEmits<{
   background: var(--ant-color-primary-bg);
   color: var(--ant-color-primary);
   font-weight: 600;
+}
+
+.embedded-panel {
+  margin: -8px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.embedded-panel-on {
+  border-color: var(--ant-color-primary-border);
+  background: var(--ant-color-primary-bg);
+}
+
+.embedded-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.embedded-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.embedded-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.embedded-meta-off {
+  color: var(--ant-color-text-tertiary);
+}
+
+.embedded-tag {
+  margin: 0;
+}
+
+.embedded-meta-item {
+  white-space: nowrap;
+}
+
+.embedded-meta-warn {
+  color: var(--ant-color-warning);
+  white-space: normal;
 }
 
 .interface-summary {

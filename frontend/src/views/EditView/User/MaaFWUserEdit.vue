@@ -892,7 +892,7 @@ const reloadInterface = async (showMessage = true) => {
   }
 
   previewData.value = null
-  const data = await previewInterface(scriptPath.value)
+  const data = await previewInterface(scriptPath.value, scriptId)
   if (data) {
     previewData.value = markRaw(data)
     taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data)

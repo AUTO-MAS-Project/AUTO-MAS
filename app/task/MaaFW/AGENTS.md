@@ -8,7 +8,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
-  `update_credentials`、`project_path`、`env_cache`、`game_package`）。要读 `Config`、发通知、
+  `update_credentials`、`project_path`、`env_cache`、`game_package`、`embedded_project`）。要读 `Config`、发通知、
   碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/automas_maafw_*`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -20,16 +20,28 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 项目目录与运行
 
-- 项目根有两类来源，改语义时要分开数：
-  - **按脚本配置读 `Info.Path`** 的六处：`embedded_manager.check` / `_run_project_update` /
-    `_ensure_project_environment`、`runner_task`、`api/scripts.py` 里的 `/maafw/update`
-    （按 scriptId 取脚本配置）与更新源外壳提示。
-  - **由请求显式传 `path`** 的两个端点：`/maafw/preview`、`/maafw/agent-env/prepare`，前端
-    把编辑页当前的路径传过来，不经过脚本配置。
-  要改项目根语义，先把第一类收敛到一个助手，再决定第二类是继续收 `path` 还是改按 scriptId 解析。
-- 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU）。MaaFramework 原生运行时
-  由运行池提供，运行时以覆盖层铺进 `<项目>/maafw/` 并留 `.auto_mas_maafw_native_runtime.json`
-  标记；带标记的 `maafw/` 是运行期产物，指纹与更新都把它当产物处理。
+- **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
+  ——内嵌脚本是 `data/maafw_projects/<脚本 uuid>/` 的副本，否则是 `Info.Path`。manager 三处、
+  `runner_task`、`api/scripts.py` 的 `/maafw/update` 都走它；`/maafw/preview`、
+  `/maafw/agent-env/prepare` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
+  新增任何"读项目目录"的代码不要再各自读 `Info.Path`。
+- **内嵌副本**：按 interface 白名单投影（`project_update/projection.py`），副本路径由脚本 ID
+  推出、不进配置、不可手改；`Info.Path` 永远是来源目录，来源一个字节不动、也不由 MAS 删。
+  导入在 `data/maafw_projects/.staging/` 里投影完再原子换入，失败不动旧副本；副本缺失且来源
+  还在时 check / preview / update 入口自修复。删脚本连带删副本。
+- 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU）。副本里去掉了 `maafw/`
+  与自带 `python/`，两者由运行池提供——但版本必须与来源自带的一致：agent 与 runner 之间有
+  协议版本号，跨版本只表现为「AgentClient 连接超时」；agent 又常写死 Python 大版本
+  （create-maa-project 模板要求 >=3.13,<3.14，宿主 3.12 建的隔离 venv 会被它拒绝，宿主只看到
+  「Agent 进程已退出」）。投影时把两者写进副本根 `.auto_mas_maafw_projection.json`
+  （`bundledMaaFWVersion` / `bundledPythonVersion`），runner 的 `probe_bundled_maafw_version`
+  没原生库时读前者，`agent_env/env.py` 按后者向运行池要同大版本的解释器建隔离 venv（已有
+  venv 版本不对就重建）；更新落地时随包换、进清单，也在环境指纹里。`contracts.py` 里那个
+  `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往项目里铺运行时。
+- **agent 不是 Python 时，`maafw/` 整目录留在副本里**：Go / C++ 的二进制 agent 启动时从
+  `<项目>/maafw` 加载 `MaaFramework.dll` / `MaaAgentServer.dll`（实测 MaaYYs 的 agent.exe，
+  找不到直接 fatal 退出）。这时 runner 也用同一份库（与路径模式一致，项目的自定义构建随之保住），
+  副本省下的比例会明显小于 Python agent 的项目（MaaYYs 29%，M9A 89%）。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
@@ -63,6 +75,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `debug` / `logs` / `temp` / `__pycache__` 与 `config/maa_option.json` 不计入指纹。
 - 全量与差量包的落地条目都只从 `apply.py: build_package_plan` 枚举（`files` / `hashes` /
   `deleted` 三张表）。要改"哪些文件落盘"只动这一处，孤儿清理、基线、回滚会自然跟随。
+  内嵌脚本传 `projection=True`，三张表在 `_project_package_entries` 里按同一份白名单过滤，
+  投影标记也在那里随包换入。
 - 无可信基线时请求整包；整包落地也会清理包内资源目录下的孤儿文件，但保留用户内容目录与
   运行时目录（口径见 `tests/task/test_maafw_project_update_orphans.py`）。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。
@@ -70,9 +84,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 与专项的区别（别照搬）
 
 - 没有 `ScriptConfig.py`，没有原生编辑器会话，没有配置备份恢复。
-- 用户配置上的 `Info.Mode`（脚本/用户/直控）**没有任何 MaaFW 代码消费**；运行器只读
-  `Info.IfQuickConfig`（关闭时按项目原生默认值跑，不下发任务快照与预设）。不要在 MaaFW 上
-  按三态写逻辑。
+- 用户配置上的 `Info.Mode`（脚本/用户/直控）与 `Info.IfQuickConfig` **没有任何 MaaFW 代码
+  消费**（#788 起运行器也不再读后者，用户页上配的任务队列就是要跑的内容）；两个字段只是
+  还留在模型里。不要在 MaaFW 上按三态写逻辑。
 - 新的 `interface.json` 项目默认用 MaaFW 类型即可运行；需要更精细的控制时（原生编辑器会话、
   登录/切号、按游戏语义组织的专属界面、对上游资源文件的动态读取等）可以立专项，MaaEnd 就是
   这种情况。立专项时在专项目录写明它比通用 MaaFW 多控制了什么。

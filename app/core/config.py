@@ -265,6 +265,15 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     return all_stage_drops
 
 
+def _clear_readonly_and_retry(func, path, _exc_info):
+    """rmtree 的 onexc：Windows 上只读文件（发行包里的 .git 对象之类）会让删除失败。"""
+
+    import stat
+
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 class AppConfig(GlobalConfig):
     VERSION = "v5.5.0-beta.6"
 
@@ -920,6 +929,11 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.remove(uid)
         if (Path.cwd() / f"data/{uid}").exists():
             shutil.rmtree(Path.cwd() / f"data/{uid}")
+        # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
+        # 快照），所以这里单独删。
+        embedded_copy = Path.cwd() / "data" / "maafw_projects" / str(uid)
+        if embedded_copy.exists():
+            shutil.rmtree(embedded_copy, onexc=_clear_readonly_and_retry)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -4525,16 +4539,21 @@ class AppConfig(GlobalConfig):
         from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
             collect_orphan_agent_venvs,
         )
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            resolve_maafw_project_root,
+        )
 
         root = Path.cwd() / "config" / "maafw_agent_venvs"
         if not root.is_dir():
             return
 
+        # 按有效根算存活集合：内嵌脚本的 venv 是按副本路径哈希的，拿来源目录去算
+        # 会把副本的 venv 当孤儿删掉。
         live_paths = [
             path
-            for config in self.ScriptConfig.values()
+            for uid, config in self.ScriptConfig.items()
             if isinstance(config, MaaFWConfig)
-            and (path := str(config.get("Info", "Path") or "").strip())
+            and (path := str(resolve_maafw_project_root(str(uid), config)).strip())
         ]
 
         # 目录名是 Path.resolve() 之后的路径哈希，而 resolve() 只在路径**当下
@@ -4566,6 +4585,51 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    async def clean_maafw_embedded_copies(self) -> None:
+        """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
+
+        导入在 ``.staging/`` 里投影完再换入，进程中途退出会留下半成品；删脚本时
+        副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
+        内容，启动期没有任务在跑，直接清。目录名必须是 uuid 形状才会被当作副本。
+        """
+
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            STAGING_DIR_NAME,
+            embedded_projects_root,
+            remove_tree,
+        )
+
+        root = embedded_projects_root()
+        if not root.is_dir():
+            return
+        staging = root / STAGING_DIR_NAME
+        if staging.is_dir():
+            for leftover in staging.iterdir():
+                try:
+                    remove_tree(leftover)
+                except OSError as exc:
+                    logger.warning(
+                        f"MFW 内嵌 staging 半成品清理失败: {leftover} - {exc}"
+                    )
+                    continue
+                logger.info(f"已清理 MFW 内嵌导入半成品: {leftover}")
+        live = {str(uid) for uid in self.ScriptConfig.keys()}
+        for child in root.iterdir():
+            if child.name == STAGING_DIR_NAME or not child.is_dir():
+                continue
+            try:
+                uuid.UUID(child.name)
+            except ValueError:
+                continue
+            if child.name in live:
+                continue
+            try:
+                remove_tree(child)
+            except OSError as exc:
+                logger.warning(f"MFW 内嵌副本孤儿清理失败: {child} - {exc}")
+                continue
+            logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
 
     async def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
@@ -4613,13 +4677,19 @@ class AppConfig(GlobalConfig):
             return
 
         from app.models.config import MaaFWConfig
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            resolve_maafw_project_root,
+        )
 
         cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
         deleted_count = 0
-        for script_config in self.ScriptConfig.values():
+        for uid, script_config in self.ScriptConfig.items():
             if not isinstance(script_config, MaaFWConfig):
                 continue
-            project_path = str(script_config.get("Info", "Path") or "").strip()
+            # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
+            project_path = str(
+                resolve_maafw_project_root(str(uid), script_config)
+            ).strip()
             if not project_path:
                 continue
             debug_folder = Path(project_path) / "debug"

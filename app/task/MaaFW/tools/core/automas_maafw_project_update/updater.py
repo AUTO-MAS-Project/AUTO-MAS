@@ -302,6 +302,7 @@ async def update_maafw_project_if_needed(
     progress: ProgressCallback | None = None,
     post_validate: Callable[[Path], Any] | None = None,
     project_lock_already_held: bool = False,
+    projection: bool = False,
 ) -> MaaFWProjectUpdateResult:
     send_update_log = send_log or (lambda _: None)
     current_version = interface_model.version or ""
@@ -472,6 +473,7 @@ async def update_maafw_project_if_needed(
             progress=progress,
             post_validate=post_validate,
             project_lock_already_held=project_lock_already_held,
+            projection=projection,
         )
     except Exception as exc:
         detail = _sanitize_log_message(str(exc))
@@ -820,6 +822,7 @@ async def apply_maafw_project_update(
     post_validate: Callable[[Path], Any] | None = None,
     script_id: str | None = None,
     project_lock_already_held: bool = False,
+    projection: bool = False,
 ) -> dict[str, Any]:
     send_update_log = send_log or (lambda _: None)
     download_url = str(candidate.download_url or "").strip()
@@ -883,6 +886,7 @@ async def apply_maafw_project_update(
             target_version=candidate.to_version or candidate.version,
             post_validate=post_validate,
             project_lock_already_held=project_lock_already_held,
+            projection=projection,
             send_log=send_update_log,
             progress=lambda stage, payload: _report_progress(
                 progress,

@@ -269,32 +269,18 @@ export interface MaaFWScriptConfig {
      */
     IfAutoUpdate?: boolean
   }
-  Managed: {
+  /**
+   * 内嵌副本：开着时运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
+   * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 仍是用户选的来源目录。
+   */
+  Embedded: {
     Enabled: boolean
-    ProjectId: string
-    StoreId: string
-    Version: string
-    RuntimeConstraint: string
-    ProjectManifest: string
-    CheckoutPath: string
-    PendingUpgrade: string
-    LastOperation: string
-  }
-  ManagedRuntime: {
-    RuntimeId: string
-    PoolId: string
-    PythonExecutable: string
-    VenvPath: string
-    RuntimeBinding: string
-  }
-  ManagedRemote: {
-    Source: 'MirrorChyan' | 'GitHub'
-    Channel: 'stable' | 'beta'
-    MirrorChyanRID: string
-    MirrorChyanCDK: string
-    GitHubRepo: string
-    GitHubTag: string
-    GitHubAssetPattern: string
+    /** 导入时来源的 interface 版本，仅展示。 */
+    SourceVersion: string
+    /** 导入时间，仅展示。 */
+    ImportedAt: string
+    /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
+    Report: string
   }
   Run: {
     ProxyTimesLimit: number

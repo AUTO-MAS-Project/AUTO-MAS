@@ -54,9 +54,13 @@
             :preview-project-title="previewProjectTitle"
             :interface-stats="interfaceStats"
             :update-applying="updateApplying"
+            :embedded-status="embeddedStatus"
+            :embedded-busy="embeddedBusy"
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
+            @toggle-embedded="handleToggleEmbedded"
+            @reimport-embedded="handleReimportEmbedded"
           />
 
           <a-alert
@@ -176,13 +180,18 @@ import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { message } from 'ant-design-vue'
+import { Modal, message } from 'ant-design-vue'
 import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import { WS_MAAFW_ENV_PREPARE_PROGRESS } from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
+import {
+  EMPTY_EMBEDDED_STATUS,
+  useMaaFWEmbeddedApi,
+  type MaaFWEmbeddedStatus,
+} from '@/composables/useMaaFWEmbeddedApi'
 import {
   getDefaultMaaFWScriptConfig,
   isMaaFWUpdateChannel,
@@ -221,6 +230,8 @@ const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
+const { getEmbeddedStatus, enableEmbedded, reimportEmbedded, disableEmbedded } =
+  useMaaFWEmbeddedApi()
 
 const scriptId = route.params.id as string
 
@@ -433,7 +444,8 @@ const runPreview = async () => {
   }
   previewLoading.value = true
   try {
-    const response = await previewMaaFWInterface(path)
+    // 带 scriptId：内嵌脚本读的是 AUTO-MAS 的副本，path 只在没有脚本时兜底。
+    const response = await previewMaaFWInterface(path, scriptId)
     if (!response || response.code !== 200 || !response.data) {
       previewData.value = null
       message.error(response?.message || 'MaaFW interface 预览失败，请检查后端服务与项目目录')
@@ -560,6 +572,16 @@ const selectMaaFWPath = async () => {
     }
     const path = await window.electronAPI.selectFolder()
     if (!path) return
+    if (embeddedStatus.value.enabled) {
+      // 内嵌时换目录 = 换来源并重新导入；Info.Path 由后端在导入成功后写入，
+      // 失败时旧副本与旧来源都原样不动，这里也就不动本地草稿。
+      const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, path))
+      if (!ok) return
+      maafwConfig.Info.Path = path
+      formData.path = path
+      await runPreviewOnNewRoot()
+      return
+    }
     maafwConfig.Info.Path = path
     formData.path = path
     await handleChange('Info', 'Path', path)
@@ -568,6 +590,76 @@ const selectMaaFWPath = async () => {
     logger.error(`选择项目目录失败: ${error instanceof Error ? error.message : String(error)}`)
     message.error(t('edit.couldNotPickFolder'))
   }
+}
+
+// ---- 内嵌副本 ----
+// 状态只从后端拿：副本在不在、来源在不在都是磁盘上的事实，本地草稿说了不算。
+const embeddedStatus = ref<MaaFWEmbeddedStatus>({ ...EMPTY_EMBEDDED_STATUS })
+const embeddedBusy = ref(false)
+
+const refreshEmbeddedStatus = async () => {
+  try {
+    const { status } = await getEmbeddedStatus(scriptId)
+    embeddedStatus.value = status
+    maafwConfig.Embedded.Enabled = status.enabled
+  } catch (error) {
+    logger.error(`读取内嵌状态失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+// 有效根换了（开关内嵌、换来源、重新导入）：Info.Path 文本可能没变，但后端按
+// scriptId 解析到的目录已经不是同一个，运行环境要在新根上重新准备一次。这里只
+// 清掉页面内「这个路径备好过」的记忆；后端仍按项目指纹去重，不会真的重装。
+const runPreviewOnNewRoot = async () => {
+  envPreparedPath.value = ''
+  await runPreview()
+}
+
+/** 跑一个内嵌动作：成功回填状态并提示后端文案，失败提示原因；返回是否成功。 */
+const runEmbeddedAction = async (
+  action: () => Promise<{ status: MaaFWEmbeddedStatus; message: string }>
+): Promise<boolean> => {
+  if (embeddedBusy.value) return false
+  embeddedBusy.value = true
+  try {
+    const { status, message: text } = await action()
+    embeddedStatus.value = status
+    maafwConfig.Embedded.Enabled = status.enabled
+    if (text) message.success(text)
+    return true
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error))
+    return false
+  } finally {
+    embeddedBusy.value = false
+  }
+}
+
+const handleToggleEmbedded = async (enabled: boolean) => {
+  if (enabled) {
+    if (!maafwConfig.Info.Path) return
+    const ok = await runEmbeddedAction(() => enableEmbedded(scriptId))
+    // 有效根换成了副本：重新读一遍 interface，顺带把副本的运行环境备好。
+    if (ok) await runPreviewOnNewRoot()
+    return
+  }
+  Modal.confirm({
+    title: t('edit.maafwEmbeddedDisableConfirmTitle'),
+    content: t('edit.maafwEmbeddedDisableConfirm'),
+    okText: t('edit.maafwEmbeddedDisableOk'),
+    cancelText: t('common.cancel'),
+    onOk: async () => {
+      const ok = await runEmbeddedAction(() => disableEmbedded(scriptId))
+      if (ok) await runPreviewOnNewRoot()
+    },
+  })
+}
+
+const handleReimportEmbedded = async () => {
+  const source = maafwConfig.Info.Path.trim()
+  if (!source) return
+  const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, source))
+  if (ok) await runPreviewOnNewRoot()
 }
 
 const updateChecking = ref(false)
@@ -625,6 +717,7 @@ onMounted(async () => {
     if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
       await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
     }
+    await refreshEmbeddedStatus()
     if (maafwConfig.Info.Path) {
       await runPreview()
     }
