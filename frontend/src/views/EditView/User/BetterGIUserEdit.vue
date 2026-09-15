@@ -1592,6 +1592,12 @@ const scriptGroupOptions = ref<{ label: string; value: string }[]>([])
 const isScriptGroupName = (name: string): boolean =>
   scriptGroupOptions.value.some(o => o.value === name)
 
+// MAS 自建的配置组：运行期物化产物（MAS-{短id}-自定义配置组N / MAS-{短id}-执行层段N）
+// 与切号组（MAS切换账号）、执行层资源模板组（MAS一条龙）。它们只应存在于运行期或
+// BGI 副本目录，不该出现在「添加配置组」弹窗的「配置组」候选里。
+const isMasOwnGroup = (name: string): boolean =>
+  name.startsWith('MAS-') || name === 'MAS切换账号' || name === 'MAS一条龙'
+
 // BetterGI「录制」候选：{RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
 const keyMouseOptions = ref<{ label: string; value: string }[]>([])
 
@@ -3673,10 +3679,18 @@ const buildCandidates = () => {
     groupTaken.add(STAMINA_COMBAT_KEY)
   }
   for (const opt of scriptGroupOptions.value) {
-    if (!groupTaken.has(opt.value)) {
-      groupItems.push({ kind: 'scriptgroup', key: opt.value })
-      groupTaken.add(opt.value)
-    }
+    if (groupTaken.has(opt.value)) continue
+    // 「配置组」候选只应有三类：默认组、专项组、BGI User/ScriptGroup 里真实存在的配置组。
+    // 后端为识别队列行会把该用户的 per-user 副本名一并返回，其中：
+    //   1) 「脚本/录制」类自定义项的副本名与脚本目录名/录制名同名（OCRCountResin、
+    //      提瓦特记事本DHXYHO…）——它们归属「脚本」「录制」标签页，不是配置组；
+    //   2) MAS 自建组（MAS-{短id}-自定义配置组N / MAS-{短id}-执行层段N / MAS切换账号 /
+    //      MAS一条龙）——运行期物化产物，用户不该在这里看到。
+    // 二者在此剔除（2026-09-16 实机：添加自定义配置组后它们会冒进候选列表）。
+    if (isMasOwnGroup(opt.value)) continue
+    if (isJsScriptName(opt.value) || isKeyMouseName(opt.value)) continue
+    groupItems.push({ kind: 'scriptgroup', key: opt.value })
+    groupTaken.add(opt.value)
   }
   addModal.groupCandidates = groupItems
 }

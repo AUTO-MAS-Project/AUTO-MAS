@@ -2522,6 +2522,14 @@ async def save_bettergi_script_group_api(
         out = one_dragon.write_user_script_group(
             root, req.scriptId, req.userId, req.name, req.data
         )
+        if out is None:
+            # 路径类引用（名字含 /）由路径文件驱动、没有 per-user 副本：按成功返回，
+            # 不把「配置组名非法」弹给用户（2026-09-16 实机）
+            return OutBase(
+                code=200,
+                status="success",
+                message=f"{req.name} 是路径类引用，内容由路径文件决定，无需保存副本",
+            )
         return OutBase(
             code=200,
             status="success",

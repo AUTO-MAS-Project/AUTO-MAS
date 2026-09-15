@@ -210,8 +210,11 @@ def read_script_group(root: Path, name: str) -> dict[str, Any]:
     配置组 json 的结构：``{index, name, config, projects: [...]}``，其中
     ``projects`` 为组内脚本项目数组（每项含 name/folderName/index/type/status/
     schedule/runNum/allowJsNotification/allowJsHTTPHash/jsScriptSettingsObject）。
-    文件不存在或非法时返回空 dict。
+    文件不存在或非法时返回空 dict；名字含路径分隔符（路径类引用）同样返回空 dict，
+    不抛「配置组名非法」——读路径对用户操作必须容错（见 is_file_safe_script_group_name）。
     """
+    if not is_file_safe_script_group_name(name):
+        return {}
     sg_dir = root / _SCRIPT_GROUP_REL_DIR
     path = sg_dir / f"{resolve_script_group_name(name)}.json"
     data = read_file(path)
@@ -226,6 +229,19 @@ def resolve_script_group_name(name: str) -> str:
     if any(c in name for c in ("/", "\\", "..")):
         raise ValueError(f"配置组名非法: {name!r}")
     return name
+
+
+def is_file_safe_script_group_name(name: str) -> bool:
+    """该名字能否用作 ScriptGroup 文件名 / per-user 副本名。
+
+    AutoPathing 的路线名（形如 ``矿物/星银矿石/大剑@Tool_x/01-…``）在 BGI 里是合法的
+    一条龙引用，但含 ``/`` 不能作文件名。**读路径与非必要的写路径必须先用本函数判定**
+    并从容跳过：否则右栏为「路径」步骤取详情/保存时会把
+    ``ValueError: 配置组名非法`` 直接弹给用户（2026-09-16 实机两次复现）。
+    真正的落盘写入仍走 ``resolve_script_group_name`` 的严格校验，防路径穿越。
+    """
+    cleaned = (name or "").strip()
+    return bool(cleaned) and not any(c in cleaned for c in ("/", "\\", ".."))
 
 
 def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
@@ -502,6 +518,11 @@ def read_user_script_group(
     这样右栏能直接看到录制项目，且运行时 ``materialize_user_script_groups`` 亦据此物化，
     不依赖队列落库路径是否触发过 ``ensure_keymouse_groups``。
     """
+    # 名字含路径分隔符的引用（如 AutoPathing 路线名）：在 BGI 里合法、可作一条龙引用，
+    # 但不是 ScriptGroup 文件名、也没有 per-user 副本。此处**不得**抛「配置组名非法」——
+    # 右栏为「路径」步骤取详情会命中，抛错会直接把 ValueError 弹给用户（2026-09-16 实机）。
+    if not is_file_safe_script_group_name(name):
+        return {}
     name = resolve_script_group_name(name)
     copy = read_file(per_user_script_group_path(script_id, user_id, name))
     if isinstance(copy, dict) and copy:
@@ -524,12 +545,18 @@ def read_user_script_group(
 
 def write_user_script_group(
     root: Path, script_id: str, user_id: str, name: str, config: dict[str, Any]
-) -> Path:
+) -> Path | None:
     """把用户编辑后的配置组 json 写回 per-user 副本（不触碰 BGI 同名实配）。
 
     ``config`` 传入的是完整配置组 json（含 projects 数组顺序与每项的
     jsScriptSettingsObject）；写前同步 ``name`` 字段。缺目录自动补建。
+
+    ``name`` 含路径分隔符（路径类引用）时**不落盘**并返回 ``None``：这类内容由路径文件
+    驱动、本就没有 per-user 副本，保存属于无意义操作，不应报错打扰用户
+    （2026-09-16 实机：对路径步骤保存/离开时弹「配置组名非法」）。
     """
+    if not is_file_safe_script_group_name(name):
+        return None
     name = resolve_script_group_name(name)
     config = dict(config or {})
     config["name"] = name

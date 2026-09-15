@@ -6,7 +6,7 @@
 //
 // ⚠️ 待实机复核（技术路径文档 #4/#5/#7）：
 //   - settings 注入方式（全局 `settings` 还是脚本参数）、脚本入口约定；
-//   - 地脉花 useAdventurerHandbook 语义反转（AutoPlan 记录需取反）；
+//   - ~~地脉花 useAdventurerHandbook 语义反转~~（2026-09-15 实机确认同名同义，已改直通）；
 //   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算（已落地，见 dispatchCombat 自动秘境分支）；
 //   - 字段名以目标版本 bettergi.d.ts 复核（本文件依据 bettergi-scripts-list 0.64 附近 d.ts）。
 
@@ -231,8 +231,11 @@ async function dispatchCombat(step) {
       if (s.isResinExhaustionMode != null) p.isResinExhaustionMode = !!s.isResinExhaustionMode;
       if (s.openModeCountMin != null) p.openModeCountMin = !!s.openModeCountMin;
       // 前端「不使用冒险之证寻路」勾选=true 表示不通过冒险之证，与 BGI Param 的
-      // useAdventurerHandbook 语义相反，此处取反后透传（原 TODO(#4) 已据 UI 语义落地）。
-      if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !s.useAdventurerHandbook;
+      // useAdventurerHandbook **同名同义**（BGI 原生配置里 true 也是「不使用」），直接透传。
+      // ⚠️ 2026-09-15 实机修正：此处原先按「语义相反」取反，于是用户不勾选（= 要用冒险之证）
+      // 时反而给 BGI 传了 true，BGI 报「当前已勾选不使用冒险之证寻路」并导致地脉花失败；
+      // 同一份 Plan 走原生一条龙（one_dragon_plan 直通不取反）时却正常，两条路径行为不一致。
+      if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !!s.useAdventurerHandbook;
       // 「跳过准备流程」(LeyLineOneDragonMode) 因 BGI 未向 JS 暴露注入点，在 MAS 接管路径
       // 下无效，已从右栏移除；此处不再消费该键（如将来 BGI 提供注入点可在此补回）。
       // 地脉花无原生超时，不兜底（前端默认 0=不限制）；仅当显式 >0 时透传。

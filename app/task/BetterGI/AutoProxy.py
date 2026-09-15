@@ -32,7 +32,12 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source, push_dispatch_log
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_DIRECT,
+    find_pids_by_name,
+    push_dispatch_log,
+    read_config_source,
+)
 from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
@@ -52,10 +57,20 @@ from .tools.one_dragon_plan import (
     plan_steps_to_native_settings,
     resolve_base_name,
 )
-from .tools.one_dragon_report import parse_one_dragon_report
+from .tools.drop_statistics import parse_drop_lines
+from .tools.one_dragon_report import (
+    parse_execution_layer_report,
+    parse_one_dragon_report,
+)
 
 logger = get_logger("BetterGI 自动代理")
 
+# 掉落统计（数据源 = BGI 的「奖励识别」）可覆盖的战斗步骤基名：BGI 只在自动秘境与
+# 自动首领讨伐暴露了 RewardRecognitionEnabled（幽境危战无此能力，故不列入）。
+# ⚠️ 该常量与下面的强制开启逻辑、parse_drop_lines 调用、statistics["drop_statistics"]
+#    写入，曾在合并 9 个 PR 时整段丢失（解析模块与通知模板都在、调用点没了，表现为
+#    「开了掉落统计但通知里没有掉落表」）。补回时四处必须一起补，只补解析仍是空表。
+_REWARD_RECOGNITION_STEP_BASES = frozenset({"自动秘境", "自动首领讨伐"})
 # 一条龙队列中「走路径 B 执行层（--startGroups）」的自定义类型：配置组 / 脚本 / 路径 / 录制。
 # 与 BUILTIN_COMBAT_STEP_NAMES 的内置战斗 4 项并列——战斗 4 项由 MASOneDragon 自编排执行层接管，
 # 本集合由 --startGroups 逐个配置组直连执行（均物化为 MAS-{短id}-自定义配置组{N} 配置组后运行）。
@@ -110,6 +125,11 @@ _BGI_MISSING_CONFIG_RE = re.compile(
     r"MAS_STEP_MISSING_CONFIG:\s*(\S+)\s+(\S+)\s+([^\r\n]+)"
 )
 
+# 执行层「部分失败」汇总标记（main.js 收尾打出）：捕获组 = 失败并已被跳过的步数。
+# 按 2026-09-09 决策单步失败仍不判负（跳过继续、计入成功），但必须据此把状态改成
+# 「部分失败」并让通知带上分步表，否则会出现「地脉花没打却显示成功」（2026-09-15 实机）。
+_MAS_PLAN_DONE_WITH_FAILURES_RE = re.compile(r"MAS_PLAN_DONE_WITH_FAILURES\s+(\d+)")
+
 # 切换账号单独执行的超时（秒），超时视为失败并继续一条龙
 _BGI_SWITCH_TIMEOUT_SECONDS = 600
 
@@ -117,6 +137,38 @@ _BGI_SWITCH_TIMEOUT_SECONDS = 600
 # 执行层空闲超时：on_log 每次收到日志即续期；仅当日志静默超过该时长才判定卡死。
 # （旧实现为固定 900s 墙钟，多实例执行层总耗时可超 20 分钟会被误杀——2026-09-08 实机排障。）
 _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS = 300
+
+# BetterGI 是单实例：带参启动（startOneDragon / --startGroups）会被已在运行的实例吞掉，
+# 而对侧不会执行任何任务——表现为「一直卡住、游戏不启动」（2026-09-15 实机：MAS 未提权 +
+# Run/UseAdmin=true 时 BGI 被 runas 提权启动，MAS 反而无权终止自己拉起的这个进程）。
+# 故旧实例杀不掉时必须立即中止并给出可操作原因，不能继续启动后干等。
+_BGI_UNKILLABLE_HINT = (
+    "BetterGI 旧进程无法终止（它可能由 MAS 以管理员权限启动，而 MAS 自身未提权）："
+    "请先手动关闭 BetterGI，或以管理员身份运行 MAS 后重试"
+)
+
+# 「杀进程后按进程名复核」的轮询参数：taskkill 报成功 ≠ 进程已消失（2026-09-15 实机：
+# 报成功 3ms 后仍能扫到残留，导致误判「杀不掉」并白中止一次），必须留出真正退出的时间。
+_BGI_EXIT_VERIFY_ATTEMPTS = 6
+_BGI_EXIT_VERIFY_INTERVAL = 0.5
+
+
+async def _wait_bgi_exit(
+    attempts: int = _BGI_EXIT_VERIFY_ATTEMPTS,
+    interval: float = _BGI_EXIT_VERIFY_INTERVAL,
+) -> list[int]:
+    """按进程名轮询等待 BetterGI 完全退出，返回仍未退出的 PID 列表（空列表=已退干净）。
+
+    两条都必须按进程名复核：``taskkill`` 返回成功不代表进程已经消失；
+    ``System.kill_process`` 还会把「读不到 exe 路径」的提权实例归入 uncertain_pids 而漏判成功。
+    """
+    remaining: list[int] = []
+    for _ in range(attempts):
+        remaining = await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME)
+        if not remaining:
+            return []
+        await asyncio.sleep(interval)
+    return remaining
 
 # BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
 # TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
@@ -391,6 +443,25 @@ class AutoProxyTask(TaskExecuteBase):
                     _step["settings"] = _settings
                 if not _settings.get(_field):
                     _settings[_field] = _default_party
+        # 掉落统计（用户级开关，默认开）：数据源是 BGI 的「奖励识别」，因此开启时强制把
+        # 本次会跑的战斗步骤打开识别（执行层走 Plan.settings），并在运行前把 BGI 全局
+        # autoDomainConfig.rewardRecognitionEnabled 置 true（覆盖原生一条龙路径）。
+        self.drop_statistics_enabled = bool(
+            self.cur_user_config.get("Notify", "IfSendDropStatistics")
+        )
+        if self.drop_statistics_enabled:
+            for _step in self.plan_combat_steps:
+                if (
+                    resolve_base_name(str(_step.get("name", "")))
+                    not in _REWARD_RECOGNITION_STEP_BASES
+                ):
+                    continue
+                _settings = _step.get("settings")
+                if not isinstance(_settings, dict):
+                    _settings = {}
+                    _step["settings"] = _settings
+                _settings["rewardRecognitionEnabled"] = True
+
         # 第 1 层（最高优先级）：队伍配置表按「战斗场景」匹配选队，写入独立的
         # masTeamOverride / masStrategyOverride，由执行层 main.js 以最高优先级读取，
         # 从而压过每周行与步骤级字段（「按任务决定队伍」优先于「按日期决定」）。
@@ -416,6 +487,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 执行层「段」组文件与组名（按左栏队列顺序切分，运行结束删除）
         self._materialized_exec_groups: list[Path] = []
         self.exec_group_names: list[str] = []
+        # 执行层「部分失败」的步数：单步失败已跳过继续、不判负，但状态/通知要标出来
+        self.partial_failed_steps = 0
 
     def _resolve_log_file_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
@@ -484,6 +557,8 @@ class AutoProxyTask(TaskExecuteBase):
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
             exclude_task_names=sorted(_exclude) or None,
+            # 掉落统计：开启时强制打开首领讨伐的奖励识别（原生路径读槽位顶层字段）
+            boss_reward_recognition=True if self.drop_statistics_enabled else None,
             # 执行层接管时不再逐项物化自定义配置组（避免与「段」重复）
             materialize_custom_groups=not self.custom_exec_enabled,
         )
@@ -530,6 +605,11 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(
                 f"已物化用户 {self.cur_user_item.name} 的秘境刷取配置到全局 config.json"
             )
+        # 掉落统计：把「启用奖励识别」写进全局 autoDomainConfig 段。必须排在用户副本
+        # 物化**之后**（副本里的值可能是关，先写会被覆盖回 false）；该叶子已含在运行时
+        # 快照集合内，运行结束随队伍/策略一起还原，不留残留。
+        if self.drop_statistics_enabled:
+            one_dragon.apply_global_reward_recognition(self.script_root_path)
         logger.info(
             f"已写入用户 {self.cur_user_item.name} 的独立一条龙配置（槽位 "
             f"{one_dragon.launch_slot_name()}），物化配置组 {len(self._materialized_script_groups)} 个"
@@ -754,6 +834,18 @@ class AutoProxyTask(TaskExecuteBase):
             )
             return
 
+        # 启动原生一条龙前先确认没有杀不掉的旧实例：BGI 单实例下带参启动会被已有实例吞掉，
+        # 表现为「一直卡住、游戏不启动」；而 wait_event 只在收到日志时才会被唤醒，一行日志
+        # 都没有时会无限等下去（2026-09-15 实机排障）。
+        if not await self.kill_managed_process():
+            self.cur_user_item.status = "异常"
+            self.script_info.log = _BGI_UNKILLABLE_HINT
+            logger.error(
+                f"用户 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
+            )
+            await self._push_dispatch_log(f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}")
+            return
+
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
             if self.run_book:
@@ -772,6 +864,18 @@ class AutoProxyTask(TaskExecuteBase):
                     Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
                     "脚本前任务",
                 )
+
+            # 重试前同样确认没有杀不掉的旧实例：BGI 单实例下带参启动会被它吞掉，重试毫无意义
+            # （2026-09-15 实机：3 次重试全打在同一个无法终止的实例上）
+            if not await self.kill_managed_process():
+                self.cur_user_item.status = "异常"
+                self.cur_user_log.status = _BGI_UNKILLABLE_HINT
+                self.script_info.log = _BGI_UNKILLABLE_HINT
+                logger.error(
+                    f"用户 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
+                )
+                await self._push_dispatch_log(f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}")
+                return
 
             await self._push_dispatch_log(
                 f"启动 BetterGI: startOneDragon {self.launch_config_name}"
@@ -796,6 +900,12 @@ class AutoProxyTask(TaskExecuteBase):
             await self.log_monitor.start_monitor_file(
                 self._resolve_log_file_path, self.log_start_time
             )
+
+            # 启动后若一个 BetterGI 都不剩（参数被旧单实例吞掉 / 进程秒退），直接置失败并唤醒
+            # 等待，避免 wait_event 永远等不到日志行而无限卡住（2026-09-15 实机排障）。
+            if not await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME):
+                self.cur_user_log.status = "BetterGI 启动后立即退出（可能有旧实例在运行）"
+                self.wait_event.set()
 
             self.wait_event.clear()
             await self.wait_event.wait()
@@ -876,8 +986,14 @@ class AutoProxyTask(TaskExecuteBase):
             f"{self.script_exe_path} --startGroups {' '.join(group_names)}"
         )
 
-        # 杀旧进程，保证单实例下 --startGroups 由新进程执行
-        await self.kill_managed_process()
+        # 杀旧进程，保证单实例下 --startGroups 由新进程执行。杀不掉必须中止：否则新进程的
+        # 参数会被那个旧实例吞掉，执行层永远等不到结束标记，只能干等到空闲超时（2026-09-15 实机）
+        if not await self.kill_managed_process():
+            failure_reason = _BGI_UNKILLABLE_HINT
+            exec_log.status = failure_reason
+            logger.error(f"用户 {self.cur_user_item.name} 执行层未启动：{failure_reason}")
+            await self._push_dispatch_log(f"执行层未启动：{failure_reason}")
+            return False
 
         result: dict[str, bool] = {"success": False, "started": False}
         done_event = asyncio.Event()
@@ -897,6 +1013,8 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         step_failed = 0
+        # 失败并已被跳过的步数（取 main.js 收尾的汇总标记，比逐行计数更可靠）
+        partial_failed = 0
         # 必填配置缺失的步骤（用户可读原因）：与 step_failed 不同，它会让本次执行层判负
         missing_config: list[str] = []
         # 失败原因，收尾时写入 exec_log.status；成功统一为项目契约 "Success!"
@@ -905,14 +1023,18 @@ class AutoProxyTask(TaskExecuteBase):
         last_activity = time.monotonic()
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity, step_failed, done_groups, failure_reason
+            nonlocal last_activity, step_failed, partial_failed, done_groups
+            nonlocal failure_reason
             last_activity = time.monotonic()
             log = "".join(log_content)
             # 与原生一条龙的 check_log 同构：把执行层日志写进本次运行记录，
             # 历史日志、统计通知与掉落统计都从这条记录取数据
             exec_log.content = log_content
-            # 单步失败只统计（执行层会跳过继续），不据此判负
+            # 单步失败只统计（执行层会跳过继续），不据此判负；另外取 main.js 收尾的
+            # 汇总标记（失败且已跳过的步数），用于把状态改成「部分失败」
             step_failed = log.count("MAS_STEP_FAIL")
+            if (pm := _MAS_PLAN_DONE_WITH_FAILURES_RE.search(log)) is not None:
+                partial_failed = int(pm.group(1))
             for reason in _missing_config_reasons(log):
                 if reason not in missing_config:
                     missing_config.append(reason)
@@ -929,10 +1051,8 @@ class AutoProxyTask(TaskExecuteBase):
                 result["success"] = False
                 failure_reason = "执行层失败（命中致命日志）"
                 done_event.set()
-            elif (
-                result["started"]
-                and not await self.bettergi_process_manager.is_running()
-            ):
+            elif result["started"] and not await self._bgi_alive():
+                # 按进程名判定：BGI 自提权重启换 PID 不代表执行层已死
                 failure_reason = "执行层进程在结束标记前退出"
                 done_event.set()
 
@@ -960,6 +1080,13 @@ class AutoProxyTask(TaskExecuteBase):
                         await asyncio.wait_for(done_event.wait(), timeout=1.0)
                     except asyncio.TimeoutError:
                         pass
+                    # 已启动却查不到被跟踪的进程：可能是参数被旧单实例吞掉（新进程秒退），
+                    # 也可能是 BGI 自行提权重启导致 PID 变了——按进程名复核，确实一个都不剩
+                    # 才判失败，避免把「自重启」误判成退出。
+                    if result["started"] and not await self._bgi_alive():
+                        failure_reason = "执行层进程在结束标记前退出"
+                        done_event.set()
+                        break
                     # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
                     if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
                         result["success"] = False
@@ -993,6 +1120,11 @@ class AutoProxyTask(TaskExecuteBase):
         # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
         # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
         exec_log.status = "Success!" if result["success"] else failure_reason
+        if result["success"] and partial_failed:
+            # 有步骤失败并已跳过：按 2026-09-09 决策不判负（不重试、计入成功），但状态不能再
+            # 报「成功」——否则出现「任务没跑完却显示成功」（2026-09-15 实机：地脉花未打）。
+            self.partial_failed_steps = partial_failed
+            exec_log.status = f"部分失败：{partial_failed} 个步骤未完成（已跳过继续）"
 
         if result["success"]:
             if step_failed:
@@ -1001,7 +1133,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"但 {step_failed} 个步骤失败（已跳过并继续后续步骤）"
                 )
                 await self._push_dispatch_log(
-                    f"执行层完成，{step_failed} 个步骤失败已跳过"
+                    f"执行层完成，{step_failed} 个步骤失败已跳过（结果记为部分失败）"
                 )
             else:
                 await self._push_dispatch_log("执行层完成")
@@ -1064,8 +1196,13 @@ class AutoProxyTask(TaskExecuteBase):
             f"{self.script_exe_path} --startGroups {account_switch.GROUP_NAME}"
         )
 
-        # 2. 杀旧进程，保证单实例下 --startGroups 由新进程执行
-        await self.kill_managed_process()
+        # 2. 杀旧进程，保证单实例下 --startGroups 由新进程执行；杀不掉必须中止（同执行层）
+        if not await self.kill_managed_process():
+            logger.error(
+                f"用户 {self.cur_user_item.name} 切换账号未启动：{_BGI_UNKILLABLE_HINT}"
+            )
+            await self._push_dispatch_log(f"切换账号未启动：{_BGI_UNKILLABLE_HINT}")
+            return False
 
         # 3. 脚本缺失（用户误删/初次使用）：首轮只保证订阅就绪，交给 BGI 启动后的后台
         # 自动更新补位；仅当上一轮 BGI 运行结束后脚本仍缺失，才清理本地仓库强制重建。
@@ -1125,10 +1262,7 @@ class AutoProxyTask(TaskExecuteBase):
             elif any(n in log for n in switch_group_fail):
                 switch_result["success"] = False
                 switch_success.set()
-            elif (
-                switch_result["started"]
-                and not await self.bettergi_process_manager.is_running()
-            ):
+            elif switch_result["started"] and not await self._bgi_alive():
                 # 进程已启动（search_process 确认过）后又在任务完成前退出
                 switch_success.set()
 
@@ -1225,7 +1359,8 @@ class AutoProxyTask(TaskExecuteBase):
                 if _one_dragon_sequence_done(log):
                     log_status = "Success!"
                     user_item_status = "完成"
-                elif not await self.bettergi_process_manager.is_running():
+                elif not await self._bgi_alive():
+                    # 按进程名判定：BGI 自提权重启会换 PID，跟踪 PID 失效 ≠ 任务已死
                     log_status = "BetterGI 在完成任务前退出"
                     user_item_status = "异常"
                 elif "[ERR]" in log and self.is_log_stalled(
@@ -1292,15 +1427,41 @@ class AutoProxyTask(TaskExecuteBase):
         runs = list(self.cur_user_item.log_record.values())
         success_runs = [item for item in runs if item.status == "Success!"]
         for item in reversed(success_runs or runs):
-            one_dragon_report = parse_one_dragon_report("".join(item.content))
+            content = "".join(item.content)
+            # 原生一条龙与执行层各有一套标记，任一路径解析出步骤即用（共用同一张表）
+            one_dragon_report = parse_one_dragon_report(
+                content
+            ) or parse_execution_layer_report(content)
             if one_dragon_report:
                 break
+
+        # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
+        # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，
+        # 因此不挑轮次；识别未开启或日志里没有该行时结果为空表，通知里整块省略。
+        drop_statistics: dict[str, int] = {}
+        if self.drop_statistics_enabled:
+            drop_lines: list[str] = []
+            for item in runs:
+                drop_lines.extend(item.content)
+            drop_statistics = parse_drop_lines(drop_lines)
+            # 必须留痕：这一块此前完全静默，出问题时无从判断是「开关没读到」「日志里没有
+            # 识别行」还是「解析为空」，只能靠翻历史日志手工复现（2026-09-16 实机排障）
+            logger.info(
+                f"用户 {self.cur_user_item.name} 掉落统计：合并 {len(runs)} 轮日志 "
+                f"{len(drop_lines)} 行，解析到 {len(drop_statistics)} 项物品"
+            )
+        else:
+            logger.info(
+                f"用户 {self.cur_user_item.name} 未开启「统计掉落物品」，跳过掉落解析"
+            )
 
         if statistic_paths:
             try:
                 statistics = await Config.merge_statistic_info(statistic_paths)
                 if one_dragon_report:
                     statistics["one_dragon_steps"] = one_dragon_report
+                if drop_statistics:
+                    statistics["drop_statistics"] = drop_statistics
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1308,7 +1469,17 @@ class AutoProxyTask(TaskExecuteBase):
                 statistics["user_result"] = (
                     "代理任务全部完成" if self.run_book else self.cur_user_item.result
                 )
+                if self.run_book and self.partial_failed_steps:
+                    # 不判负，但执行结果要说清有几个步骤没做完，不能写「全部完成」
+                    statistics["user_result"] = (
+                        f"代理任务完成（{self.partial_failed_steps} 个步骤失败已跳过）"
+                    )
                 success_symbol = "√" if self.run_book else "X"
+                # 统计通知的字段清单：用于确认分步表/掉落表这类可选区块到底有没有下发
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 统计通知字段: "
+                    f"{sorted(statistics.keys())}"
+                )
                 await push_notification(
                     "统计信息",
                     f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
@@ -1348,7 +1519,10 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config.get("Data", "ProxyTimes") + 1,
             )
             await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
-            self.cur_user_item.status = "完成"
+            # 部分失败仍算成功（不判负、照常计次），但状态要能看到，不能显示成「完成」
+            self.cur_user_item.status = (
+                "部分失败" if self.partial_failed_steps else "完成"
+            )
             logger.success(f"用户 {self.cur_user_uid} 的 BetterGI 自动代理任务已完成")
         else:
             await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
@@ -1435,8 +1609,29 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.warning(f"关闭游戏进程 {image} 失败: {e}")
         await self._push_dispatch_log("游戏进程已关闭")
 
-    async def kill_managed_process(self) -> None:
-        """中止 BetterGI 进程（游戏进程由 BetterGI 自身管理）。"""
+    async def _bgi_alive(self) -> bool:
+        """是否还有任意 BetterGI 存活。
+
+        BGI 自己会重启并提权（它的设置里要求管理员、或启动游戏需要管理员时会这样），重启后
+        **MAS 启动时跟踪的那个 PID 已经退出**，而真正的任务在**新进程**里继续跑、日志也仍写在
+        同一个文件里。所以「进程是否还在」必须按进程名判断：只看跟踪 PID 会把这种自重启误判成
+        「在完成任务前退出」，白跑满 3 次重试（2026-09-15 实机：MAS 报 3 次失败，而 BGI 其实
+        已把游戏启动并跑完了一条龙）。
+        """
+        if await self.bettergi_process_manager.is_running():
+            return True
+        return bool(await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME))
+
+    async def kill_managed_process(self) -> bool:
+        """中止 BetterGI 进程（游戏进程由 BetterGI 自身管理）。
+
+        Returns:
+            bool: 已确认无 BetterGI 残留时返回 True；仍有实例存活（MAS 无权终止它）时返回
+                False——BGI 单实例，带参启动会被已有实例吞掉（任务卡住、游戏不启动），
+                调用方必须据此中止而不是继续启动。
+                注意 ``System.kill_process`` 对「读不到 exe 路径」的提权进程会归入
+                uncertain_pids 而漏判为成功，故末尾必须按进程名复核一遍。
+        """
         if self.bettergi_process_manager is not None:
             try:
                 await self.bettergi_process_manager.kill()
@@ -1449,3 +1644,11 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.script_exe_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 BetterGI 主进程失败: {e}")
+
+        remaining = await _wait_bgi_exit()
+        if remaining:
+            logger.warning(
+                f"BetterGI 进程仍存活（PID: {remaining}）：{_BGI_UNKILLABLE_HINT}"
+            )
+            return False
+        return True
