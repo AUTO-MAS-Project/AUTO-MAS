@@ -207,10 +207,10 @@ def archive_mas_backup(
     """
 
     files = dict(collect_mas_files(mas_dir))
-    if not files:
-        return None
     if overlay:
         files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+    if not files:
+        return None
     dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
@@ -251,8 +251,9 @@ def restore_mas_backup(
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     mas_dir = Path(mas_dir)
-    if mas_dir.is_dir() and any(mas_dir.iterdir()):
-        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
+    # 恢复前存底不设目录条件：目标目录缺失/为空时页面字段（overlay）仍需
+    # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判
+    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:

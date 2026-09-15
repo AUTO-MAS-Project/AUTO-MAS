@@ -174,16 +174,18 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 def collect_mas_files(
     mas_dir: str | Path, overlay: dict | None = None
 ) -> dict[str, "Path | str"]:
-    """收集 MAS 配置目录文件集 + 覆盖层字段侧车（缺失/为空时返回空 dict）。
+    """收集 MAS 配置目录文件集 + 覆盖层字段侧车（相对键 → 路径/内存内容）。
 
     侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
-    目录不存在或为空时无可归档内容，侧车不单独入档。
+    目录缺失或为空时仅归档侧车——用户级目录要等首次运行物化，页面字段
+    （Info/Task 侧车）不能因目录未建而一起丢（否则从未运行的用户切来源、
+    改配置后退出，mas 池永远为空）。
     """
 
     mas_dir = Path(mas_dir)
-    if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
-        return {}
-    files: dict[str, "Path | str"] = dict(dir_files(mas_dir))
+    files: dict[str, "Path | str"] = {}
+    if mas_dir.is_dir():
+        files.update(dir_files(mas_dir))
     if overlay:
         files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
     return files
@@ -203,7 +205,7 @@ def archive_mas_backup(
     共享 Default 目录、用户态独立目录）——池与目标解耦。
     侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
     （内存 JSON 直接入档，免临时文件）。
-    目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
+    目录与侧车皆空时无可归档内容返回 ``None``；``force=True`` 恢复前
     存底（不清理历史条目；内容与最新份一致时同样跳过——当前配置已存放在
     该份备份中，误恢复可从它找回）。
     """
@@ -251,8 +253,9 @@ def restore_mas_backup(
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     mas_dir = Path(mas_dir)
-    if mas_dir.is_dir() and any(mas_dir.iterdir()):
-        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
+    # 恢复前存底不设目录条件：目标目录缺失/为空时页面字段（overlay）仍需
+    # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判
+    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:

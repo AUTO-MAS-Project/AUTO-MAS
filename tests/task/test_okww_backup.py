@@ -144,6 +144,37 @@ def test_mas_backup_dedup_and_restore_loop(
     assert archive_mas_backup(script_id, owner, tmp_path / "elsewhere") is None
 
 
+def test_mas_backup_overlay_only_when_dir_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """用户级目录未物化（从未运行）时侧车仍入档：切来源/改页面字段可备份。
+
+    回归：collect 曾在目录缺失/为空时连侧车一起丢，导致从未运行的用户
+    切配置来源、改页面配置后退出，mas 池永远为空。
+    """
+
+    monkeypatch.chdir(tmp_path)
+    script_id, owner = "s-0003", "u-0003"
+    missing = tmp_path / "data" / script_id / owner / "ConfigFile"  # 从未创建
+    overlay = {"Mode": "用户", "TaskIndex": 1}
+
+    first = archive_mas_backup(script_id, owner, missing, overlay=overlay)
+    assert first is not None
+    assert (first / "_mas_overlay.json").is_file()
+    # 仅侧车入档：归档里没有其他文件
+    assert [p.name for p in first.iterdir() if p.is_file()] == ["_mas_overlay.json"]
+
+    # 目录与侧车皆空 → 无可归档内容
+    assert archive_mas_backup(script_id, owner, missing) is None
+
+    # 恢复仅侧车备份：覆盖层回填，侧车不留在 ConfigFile；恢复前存底与
+    # 该份一致 → 跳过，不产生冗余条目
+    restored = restore_mas_backup(script_id, owner, first.name, missing, overlay=overlay)
+    assert restored == overlay
+    assert not (missing / "_mas_overlay.json").exists()
+    assert len(list_mas_backups(script_id, owner)) == 1
+
+
 def test_mas_restore_legacy_backup_without_sidecar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

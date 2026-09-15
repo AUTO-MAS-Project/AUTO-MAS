@@ -155,8 +155,8 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     mas_dir = Path(mas_dir)
-    if mas_dir.is_dir() and any(mas_dir.iterdir()):
-        archive_mas_backup(script_id, user_id, mas_dir, force=True)
+    # 恢复前存底不设目录条件：目标缺失/为空时无可存底内容由 archive 自判
+    archive_mas_backup(script_id, user_id, mas_dir, force=True)
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     logger.info("用户 %s 的 MAS 配置已恢复备份 %s", user_id, ts)
 
