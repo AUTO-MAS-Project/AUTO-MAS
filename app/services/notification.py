@@ -288,6 +288,18 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
+    async def send_cmcc_newmsg(self, title: str, content: str, api_key: str) -> None:
+        """通过中国移动新消息（5G 消息）提交通知。"""
+
+        from app.services.cmcc_newmsg import send_cmcc_newmsg
+
+        await send_cmcc_newmsg(
+            api_key=api_key,
+            content=content,
+            proxy=Config.proxy,
+        )
+        logger.success(f"中国移动新消息通知已提交: {title}")
+
     async def send_openclaw_weixin(self, title: str, content: str) -> None:
         """通过微信 Claw 通道推送通知。
 
