@@ -34,6 +34,7 @@ import pytest
 import app.core  # noqa: F401  # 初始化宿主配置
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_backup,
+    archive_mas_runtime_backup,
     archive_native_backup,
     build_native_preview,
     build_overlay_preview,
@@ -289,6 +290,36 @@ def test_restore_service_callbacks_roundtrip(
     assert {f["path"] for f in payload_native["files"]} >= {"interface.json"}
     asyncio.run(service.restore("native", created_native["time"]))
     assert list_native_backups(script_id, project)
+
+
+def test_archive_mas_runtime_backup_per_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """运行物化前存底原语：按用户归档侧车，指纹去重、跨用户隔离。"""
+
+    monkeypatch.chdir(tmp_path)
+    script_id = "s-0005"
+    user_a, user_b = "u-aaa", "u-bbb"
+    overlay = {
+        "Mode": "用户",
+        "SelectedPreset": "p1",
+        "TaskSnapshot": json.dumps(
+            {"taskOrder": ["刷圣遗物"], "taskChecked": {"刷圣遗物": True}}
+        ),
+    }
+    archive_mas_runtime_backup(script_id, user_a, overlay)
+    assert len(list_mas_backups(script_id, user_a)) == 1
+    # 指纹去重：同一字段内容不重复归档
+    archive_mas_runtime_backup(script_id, user_a, overlay)
+    assert len(list_mas_backups(script_id, user_a)) == 1
+    # 跨用户隔离：另一用户池独立，归档内容为各自的侧车
+    archive_mas_runtime_backup(script_id, user_b, dict(overlay, SelectedPreset="p2"))
+    assert len(list_mas_backups(script_id, user_b)) == 1
+    backup_b = get_mas_backup_dir(
+        script_id, user_b, list_mas_backups(script_id, user_b)[0]
+    )
+    overlay_b = json.loads((backup_b / "_mas_overlay.json").read_text("utf-8"))
+    assert overlay_b["SelectedPreset"] == "p2"
 
 
 def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:

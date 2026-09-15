@@ -23,13 +23,14 @@
 （``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 快速配置
-覆盖层字段侧车。页面任务配置卡片的字段存在 MAS 用户配置里、运行时才覆盖
-进 DailyTask.json——备份/恢复两端都带上覆盖层字段（恢复后回填表单，对齐
-ZzzOd 字段回填模式），预览与页面认知才一致。**池恒按用户分桶**（侧车是
-用户级的，脚本态多用户若共享一个 Default 池会互相污染）；三态 owner
-（脚本=Default 共享目录、用户=独立目录、直控=无）只决定归档/恢复目标
-路径，与运行下发（``_okww_mas_config_dir``）同一套来源规则。
+mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 侧车
+（Info.Id 账号 + 快速配置覆盖层字段）。页面任务配置卡片的字段存在 MAS
+用户配置里、运行时才覆盖进 DailyTask.json——备份/恢复两端都带上侧车字段
+（恢复后按段回填表单，对齐 ZzzOd / MAA 字段回填模式），预览与页面认知
+才一致。**池恒按用户分桶**（侧车是用户级的，脚本态多用户若共享一个
+Default 池会互相污染）；三态 owner（脚本=Default 共享目录、用户=独立
+目录、直控=无）只决定归档/恢复目标路径，与运行下发
+（``_okww_mas_config_dir``）同一套来源规则。
 """
 
 import uuid
@@ -45,6 +46,7 @@ from .backup_archive import (
     collect_native_files,
     get_mas_backup_dir,
     get_native_backup_dir,
+    group_overlay,
     mas_backup_root,
     mas_config_dir,
     native_backup_root,
@@ -129,26 +131,29 @@ async def _mas_root(ctx: RestoreContext) -> Path:
 
 
 def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
-    """mas 池预览载荷：覆盖层字段侧车（备份时点的 MAS 页面表单值）。
+    """mas 池预览载荷：覆盖层字段侧车卡 + ConfigFile 副本摘要（与 native 同口径）。
 
-    ConfigFile 里的 DailyTask.json 覆盖层字段在快速配置开启时运行时会被
-    表单覆盖、不是生效值，展示它只会误导（与表单对不上）；这里只展示与
-    页面同源的侧车字段，来源配置本体经「查看详细配置」在 ok-ww GUI 查看。
-    旧版备份无侧车，无可展示内容。
+    ConfigFile 副本（含 DailyTask.json）恢复时会完整写回，预览范围必须与
+    恢复范围一致——两池同等存在的文件共用渲染
+    （:func:`build_backup_file_summary`）。覆盖层字段（快速配置）展示的是
+    备份时点的 MAS 页面表单值，运行时才覆盖进 DailyTask.json；来源配置本体
+    经「查看详细配置」在 ok-ww GUI 查看。旧版备份无侧车，只剩文件摘要。
     """
 
     if backup is None:
         raise ValueError(f"备份不存在: {ts}")
+    file_cards = build_backup_file_summary(backup)
     overlay = read_overlay_sidecar(backup)
     if overlay is None:
-        return {"fileCards": []}
+        return {"fileCards": file_cards}
     return {
         "fileCards": [
             {
                 "name": "overlay",
                 "label": "任务配置（快速配置）",
                 "summary": build_overlay_summary(overlay),
-            }
+            },
+            *file_cards,
         ]
     }
 
@@ -173,9 +178,10 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
         overlay=read_overlay_values(user),
     )
     if restored_overlay:
-        # 覆盖层字段回填（对齐 ZzzOd 字段回填模式）：文件回滚的同时把表单
-        # 字段回到备份时点，否则旧表单值下次保存会静默覆盖回滚结果
-        await user.update({"Task": restored_overlay})
+        # 侧车字段按段分组回填（Info 账号 / Task 覆盖层，对齐 MAA 分组回填）：
+        # 文件回滚的同时把表单字段回到备份时点，否则旧表单值下次保存会静默
+        # 覆盖回滚结果
+        await user.update(group_overlay(restored_overlay))
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

@@ -1996,24 +1996,26 @@ class AppConfig(GlobalConfig):
 
         预览是纯展示（恢复直接回写备份文件内容，不经此值），密码明文没有
         理由出现在响应里；其余字段缺失时合并默认值（无值前端兜底 ``—``）。
+        自定义窗口标题两字段一并展示（``use_custom_win_title`` 转是否——
+        ``custom_win_title`` 是启用时的标题，两行都显示，简单化）。
         mas 与 onedragon 两个预览分支共用。
         """
 
         from app.task.ZzzOd.tools.zzz_od_config import DEFAULT_GAME_ACCOUNT
 
+        def _value(key: str) -> str:
+            if key == "password" and account.get(key):
+                return "••••••••"
+            if key == "use_custom_win_title":
+                return "是" if account.get(key) else "否"
+            return str(
+                account[key]
+                if account.get(key) is not None
+                else DEFAULT_GAME_ACCOUNT.get(key, "")
+            )
+
         return [
-            {
-                "key": key,
-                "value": (
-                    "••••••••"
-                    if key == "password" and account.get(key)
-                    else str(
-                        account[key]
-                        if account.get(key) is not None
-                        else DEFAULT_GAME_ACCOUNT.get(key, "")
-                    )
-                ),
-            }
+            {"key": key, "value": _value(key)}
             for key in (
                 "game_region",
                 "game_path",
@@ -2021,6 +2023,8 @@ class AppConfig(GlobalConfig):
                 "account",
                 "password",
                 "bilibili_account_name",
+                "use_custom_win_title",
+                "custom_win_title",
             )
         ]
 

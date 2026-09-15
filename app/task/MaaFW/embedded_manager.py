@@ -46,7 +46,11 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.task.MaaFW.tools.backup_archive import archive_native_backup
+from app.task.MaaFW.tools.backup_archive import (
+    archive_mas_runtime_backup,
+    archive_native_backup,
+    read_overlay_values,
+)
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
@@ -705,6 +709,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 结算该用户的代理次数、剩余天数并释放项目锁），因此每个用户各建一个。
         for index in range(len(self.runnable_user_uids)):
             self.script_info.current_index = index
+            user_id = self.runnable_user_uids[index]
+            # 物化前归档本用户 MAS 字段侧车（下发前存底；指纹去重，
+            # 失败只记日志不阻断任务——与 native 归档同一语义）
+            with suppress(Exception):
+                archive_mas_runtime_backup(
+                    self.script_info.script_id,
+                    str(user_id),
+                    overlay=read_overlay_values(self.user_config[user_id]),
+                )
             self.inner_task = self._build_inner_task()
             self._inner_finalized = False
             try:

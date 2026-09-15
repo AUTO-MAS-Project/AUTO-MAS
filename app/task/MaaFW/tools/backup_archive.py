@@ -45,19 +45,20 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    mask_account,
+    read_overlay_sidecar,
+    restore_files,
 )
 
 logger = get_logger("MaaFW 配置备份")
 
 # ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
-
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面核心字段侧车文件名（归档内唯一文件；恢复时读出回填，不落任何目录）"""
 
 _OVERLAY_INFO_KEYS = ("Mode", "IfQuickConfig", "Account", "Controller", "Resource")
 """MAS 编辑页核心字段（UserData.Info，运行时物化进项目配置）"""
@@ -131,28 +132,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def _mask_account(value) -> str:
-    """账号脱敏：11 位手机号保留前 3 后 4，其余原样。"""
-
-    text = str(value)
-    if len(text) == 11 and text.isdigit():
-        return f"{text[:3]}****{text[7:]}"
-    return text
-
-
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/MaaFWBackups/mas/{user_id}``（恒按用户）。"""
 
@@ -171,7 +150,7 @@ def archive_mas_backup(
     if not overlay:
         return None
     dest = archive_files(
-        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
         mas_backup_root(script_id, user_id),
         force=force,
     )
@@ -292,25 +271,16 @@ def restore_native_backup(script_id: str, project_path: str | Path, ts: str) -> 
     """把归档恢复到 MaaFW 项目（恢复前自动归档当前，误恢复可找回）。
 
     按归档内相对键写回（``interface.json`` → 项目根、``config/*`` →
-    项目 ``config/``）；只覆盖归档内包含的文件，不动 ``resource/`` 等资产。
+    项目 ``config/``）；replace 语义：``config/`` 子树整棵按备份替换，残留
+    的同前缀文件一并清除，不动 ``resource/`` 等备份外资产。
     """
 
     backup_dir = get_native_backup_dir(script_id, project_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     project_path = Path(project_path)
-    files = dir_files(backup_dir)
-    if not files:
-        raise ValueError(f"备份内容为空: {ts}")
     archive_native_backup(script_id, project_path, force=True)
-    for rel, path in files.items():
-        target = (
-            project_path / _INTERFACE_FILE
-            if rel == _INTERFACE_FILE
-            else project_path / rel
-        )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(path.read_bytes())
+    restore_files(backup_dir, project_path)
     logger.info(f"MaaFW 项目配置已恢复备份 {ts}")
 
 
@@ -381,7 +351,7 @@ def build_overlay_preview(overlay: dict) -> dict:
             {"key": "已启用任务", "value": "、".join(names) if names else "无"}
         )
     if "Account" in overlay:
-        task_rows.append({"key": "账号", "value": _mask_account(overlay["Account"])})
+        task_rows.append({"key": "账号", "value": mask_account(overlay["Account"])})
     for key in ("Controller", "Resource"):
         if key in overlay:
             task_rows.append(

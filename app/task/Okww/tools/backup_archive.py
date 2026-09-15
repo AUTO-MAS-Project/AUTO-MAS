@@ -30,10 +30,11 @@
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
-``mas`` 池的内容 = ConfigFile 整目录 + **快速配置覆盖层字段侧车**：页面
-任务配置卡片的字段存在 MAS 用户配置里、运行时才覆盖进 DailyTask.json，
-不在 ConfigFile 中——侧车让「MAS 用户配置备份」真正覆盖用户在 MAS 页面
-配的东西，恢复时随文件一起回滚并回填表单（对齐 ZzzOd 字段回填模式）。
+``mas`` 池的内容 = ConfigFile 整目录 + **侧车字段**：Info.Id（账号，运行
+时被 AutoProxy 消费）+ 快速配置覆盖层字段（页面任务配置卡片，运行时才覆盖
+进 DailyTask.json，不在 ConfigFile 中）——侧车让「MAS 用户配置备份」真正
+覆盖用户在 MAS 页面配的东西，恢复时随文件一起回滚并回填表单（对齐
+ZzzOd / MAA 字段回填模式）。
 MAS 配置目录 owner 由用户当前的 ``Info.Mode`` 三态决定（脚本=Default 共
 享、用户=独立目录、直控=无 MAS 配置），解析逻辑见 ``restore_service``。
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
@@ -47,11 +48,14 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    mask_account,
+    read_overlay_sidecar,
     restore_dir,
 )
 
@@ -106,8 +110,14 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 
 # ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
 
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""覆盖层字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落入 ConfigFile）"""
+_OVERLAY_INFO_KEYS = ("Id", "Mode")
+"""侧车收录的 MAS 用户 Info 段字段：账号 Id（运行时被 AutoProxy 消费，
+页面认知的一部分，进侧车随备份走、恢复回填；对齐 MAA 收账号先例）
+与 Mode（配置文件来源，仅预览不回填）"""
+
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+"""仅预览不回填的字段：配置来源决定运行下发方式（脚本/用户/直控），
+恢复时以当前值为准，回填旧值会静默翻转用户态/脚本态。"""
 
 _OVERLAY_TASK_KEYS = (
     "TaskIndex",
@@ -120,18 +130,45 @@ _OVERLAY_TASK_KEYS = (
 )
 """快速配置覆盖层字段（MAS 用户配置 Task 段，运行时覆盖进 DailyTask.json）"""
 
+_OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
+"""侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
+
+_OVERLAY_KEY_GROUP = {
+    key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
+}
+"""平铺侧车键 → 配置段（恢复回填分组用）"""
+
 
 def read_overlay_values(config) -> dict:
-    """读取配置对象的快速配置覆盖层字段（鸭子类型，仅需 ``get(group, key)``）。
+    """读取配置对象的侧车字段：Info.Id/Mode（账号 + 配置文件来源）+ Task
+    快速配置覆盖层字段。
 
-    值为 ``None``（配置项不存在）的键不纳入侧车。
+    鸭子类型，仅需 ``get(group, key)``；值为 ``None``（配置项不存在）的键
+    不纳入侧车。
     """
 
-    return {
-        key: value
-        for key in _OVERLAY_TASK_KEYS
-        if (value := config.get("Task", key)) is not None
-    }
+    values: dict = {}
+    for group, keys in _OVERLAY_KEY_GROUPS.items():
+        for key in keys:
+            if (value := config.get(group, key)) is not None:
+                values[key] = value
+    return values
+
+
+def group_overlay(overlay: dict) -> dict[str, dict]:
+    """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。
+
+    旧版备份无组归属的键回退到 Task 段（历史行为）；侧车键名与 Task
+    覆盖层字段键名一致，无冲突。仅预览字段（配置文件来源）不回填：
+    恢复目标目录由当前模式决定，回填旧值会静默改变用户态/脚本态。
+    """
+
+    grouped: dict[str, dict] = {}
+    for key, value in overlay.items():
+        if key in _OVERLAY_PREVIEW_ONLY_KEYS:
+            continue
+        grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
+    return grouped
 
 
 def collect_mas_files(
@@ -148,21 +185,8 @@ def collect_mas_files(
         return {}
     files: dict[str, "Path | str"] = dict(dir_files(mas_dir))
     if overlay:
-        files[_OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
     return files
-
-
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的覆盖层字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
 
 
 def archive_mas_backup(
@@ -232,7 +256,7 @@ def restore_mas_backup(
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:
-        (mas_dir / _OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+        (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
@@ -376,10 +400,12 @@ _FILE_TO_OVERLAY_KEY = {
 """DailyTask.json 文件字段名 → MAS 用户配置 Task 键名（同一概念的两种 owner）"""
 
 _OVERLAY_FIELD_LABELS = {
+    "Id": "账号",
+    "Mode": "配置文件来源",
     **{overlay: _FIELD_LABELS[file] for file, overlay in _FILE_TO_OVERLAY_KEY.items()},
     "TaskIndex": "启动任务（-t N）",
 }
-"""覆盖层字段（MAS Task 键名）中文标签，文件字段词表派生 + 页面专属键补充"""
+"""覆盖层字段（侧车键名）中文标签，文件字段词表派生 + 页面专属键补充"""
 
 _OVERLAY_ENUM_VALUE_LABELS = {
     overlay: _ENUM_VALUE_LABELS[file]
@@ -465,8 +491,10 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
 
 
 def _overlay_value(key: str, value) -> str:
-    """覆盖层字段值转展示文本（枚举词表翻译、布尔转是否、超长截断）。"""
+    """覆盖层字段值转展示文本（账号脱敏、枚举词表翻译、布尔转是否、超长截断）。"""
 
+    if key == "Id":
+        return mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = _OVERLAY_ENUM_VALUE_LABELS.get(key)
@@ -477,13 +505,22 @@ def _overlay_value(key: str, value) -> str:
 
 
 def build_overlay_summary(overlay: dict) -> list[dict]:
-    """覆盖层字段侧车的摘要行（mas 池预览用，纯读）。
+    """侧车字段的摘要行（mas 池预览用，纯读）。
 
-    展示的是备份时点的 MAS 页面表单值（快速配置覆盖层字段），与用户在
-    任务配置卡片所见同源，运行时才会覆盖进 DailyTask.json。
+    展示的是备份时点的 MAS 页面表单值（账号 + 快速配置覆盖层字段），与
+    用户在任务配置卡片所见同源，运行时才会覆盖进 DailyTask.json。
     """
 
     rows: list[dict] = []
+    if "Mode" in overlay:
+        rows.append(
+            {
+                "key": _OVERLAY_FIELD_LABELS["Mode"],
+                "value": _overlay_value("Mode", overlay["Mode"]),
+            }
+        )
+    if "Id" in overlay:
+        rows.append({"key": "账号", "value": _overlay_value("Id", overlay["Id"])})
     for key in _OVERLAY_TASK_KEYS:
         if key not in overlay or key not in _OVERLAY_FIELD_LABELS:
             continue

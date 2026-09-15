@@ -333,6 +333,59 @@ def test_overlay_and_mas_preview_sections(
     }
 
 
+def test_overlay_teams_fields_in_sidecar_and_preview() -> None:
+    """队伍配置 2 字段进侧车，预览 BetterGI 对应区含队伍行（Teams 只给数量）。"""
+
+    from app.task.BetterGI.tools.backup_archive import build_overlay_preview
+
+    overlay = {
+        "Mode": "用户",
+        "IfUseTeams": True,
+        "Teams": json.dumps(
+            [
+                {
+                    "name": "上半主力",
+                    "strategy": "根据队伍自动选择",
+                    "scenes": {"domain": True, "leyline": True, "boss": False},
+                    "note": "",
+                    "enabled": True,
+                },
+                {
+                    "name": "下半主力",
+                    "strategy": "",
+                    "scenes": {"domain": False, "leyline": False, "boss": True},
+                    "note": "",
+                    "enabled": True,
+                },
+            ],
+            ensure_ascii=False,
+        ),
+    }
+    sections = {s["name"]: s for s in build_overlay_preview(overlay)["sections"]}
+    bgi_rows = {row["key"]: row["value"] for row in sections["bgi"]["rows"]}
+    assert bgi_rows["使用队伍配置"] == "开启"
+    assert bgi_rows["队伍配置"] == "已配置 2 支队伍"
+
+    # 空队伍表 / 坏 JSON 兜底
+    empty = build_overlay_preview({"IfUseTeams": False, "Teams": json.dumps([])})[
+        "sections"
+    ]
+    empty_rows = {row["key"]: row["value"] for row in empty[0]["rows"]}
+    assert empty_rows["使用队伍配置"] == "关闭"
+    assert empty_rows["队伍配置"] == "无"
+
+    # 侧车读取与分组：IfUseTeams/Teams 都在 OneDragon 段
+    user = SimpleNamespace(
+        get=lambda g, k: {
+            ("OneDragon", "IfUseTeams"): True,
+            ("OneDragon", "Teams"): overlay["Teams"],
+        }.get((g, k))
+    )
+    values = read_overlay_values(user)
+    assert set(values) == {"IfUseTeams", "Teams"}
+    assert group_overlay(values)["OneDragon"]["IfUseTeams"] is True
+
+
 def test_restore_service_callbacks_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

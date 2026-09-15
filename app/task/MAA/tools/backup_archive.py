@@ -46,11 +46,14 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    mask_account,
+    read_overlay_sidecar,
     restore_dir,
 )
 from app.utils.constants import MAA_TASKS, MAA_TASKS_ZH
@@ -107,9 +110,6 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 
 # ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
 
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面核心字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落入 ConfigFile）"""
-
 _OVERLAY_INFO_KEYS = (
     "Server",
     "Id",
@@ -144,6 +144,10 @@ _OVERLAY_TASK_KEYS = (
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
+    "IfCultivate",
+    "CultivateTargets",
+    "CultivateSkipDuringActivity",
+    "CultivateSkipDuringResourceCollection",
     "DepotMaintainPlans",
 )
 """MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
@@ -189,6 +193,10 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
+    "IfCultivate",
+    "CultivateTargets",
+    "CultivateSkipDuringActivity",
+    "CultivateSkipDuringResourceCollection",
     "IfGreenTicketStore",
     "DepotMaintainPlans",
 )
@@ -212,6 +220,10 @@ _OVERLAY_FIELD_LABELS = {
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",
     "ActivityMedicineNumb": "活动理智药",
+    "IfCultivate": "干员养成",
+    "CultivateTargets": "养成目标",
+    "CultivateSkipDuringActivity": "活动期间跳过",
+    "CultivateSkipDuringResourceCollection": "资源收集期间跳过",
     "DepotMaintainPlans": "库存保持计划",
     "MedicineNumb": "吃理智药",
     "SeriesNumb": "连战次数",
@@ -282,15 +294,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def _mask_account(value) -> str:
-    """账号脱敏：11 位手机号保留前 3 后 4，其余原样。"""
-
-    text = str(value)
-    if len(text) == 11 and text.isdigit():
-        return f"{text[:3]}****{text[7:]}"
-    return text
-
-
 def collect_mas_files(
     mas_dir: str | Path, overlay: dict | None = None
 ) -> dict[str, "Path | str"]:
@@ -305,21 +308,8 @@ def collect_mas_files(
         return {}
     files: dict[str, "Path | str"] = dict(dir_files(mas_dir))
     if overlay:
-        files[_OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
     return files
-
-
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
 
 
 def archive_mas_backup(
@@ -389,7 +379,7 @@ def restore_mas_backup(
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:
-        (mas_dir / _OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+        (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
@@ -644,7 +634,7 @@ def _task_queue_rows(queue) -> list[dict]:
             label = _TASK_SWITCH_LABELS[task_type]
             rows.append({"key": label, "value": _bool_text(task["IsEnable"])})
         if task_type == "StartUp" and task.get("AccountName"):
-            rows.append({"key": "账号", "value": _mask_account(task["AccountName"])})
+            rows.append({"key": "账号", "value": mask_account(task["AccountName"])})
         if task_type == "Fight":
             rows.extend(_fight_task_rows(task))
         if task_type == "Infrast" and task.get("Mode") is not None:
@@ -734,7 +724,7 @@ def _overlay_value(key: str, value) -> str:
     """侧车字段值转展示文本（枚举词表、账号脱敏、布尔转是否、超长截断）。"""
 
     if key == "Id":
-        return _mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
+        return mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = {
@@ -758,6 +748,17 @@ def _overlay_value(key: str, value) -> str:
         try:
             plans = json.loads(value) if isinstance(value, str) else value
             text = f"{len(plans)} 个计划" if isinstance(plans, list) and plans else "无"
+        except Exception:
+            text = "已配置"
+    elif key == "CultivateTargets":
+        # JSON 串存养成目标列表，预览只给数量（不臆造目标内容，恢复仍整串写回）
+        try:
+            targets = json.loads(value) if isinstance(value, str) else value
+            text = (
+                f"已配置 {len(targets)} 个目标"
+                if isinstance(targets, list) and targets
+                else "无"
+            )
         except Exception:
             text = "已配置"
     else:
@@ -791,7 +792,7 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
 
     - **MAS 独有配置**：MAA GUI 无对应概念、「查看详细配置」看不到的
       字段，必须全量展示（配置文件来源/关卡配置模式/剿灭开始星期/活动关
-      优先三项/绿票商店/库存保持计划）；
+      优先三项/干员养成四项/绿票商店/库存保持计划）；
     - **MAA 配置**：与 MAA GUI 概念对应的字段（服务器/账号/任务开关/
       战斗参数/剿灭/基建），关卡为合成后的具体刷本内容。
 

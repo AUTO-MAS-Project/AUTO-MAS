@@ -29,9 +29,10 @@
   恢复 = 回填 BAAHUserConfig（来源/快速配置排除）。
 - ``native`` 池（脚本级）：按当前用户 ``ConfigName`` 动态解析的用户配置
   JSON + 软件配置，恢复前强制归档当前；恢复写到当前 ConfigName 指向的
-  文件（覆盖语义）。归档根未配置 BAAHPath 时返回 ``None``（列表为空、
-  快照报无变化，不抛错）；``files`` 回调保留守卫（用户不存在/未填
-  配置名时抛错，与恢复同口径）。
+  文件（覆盖语义）。未配置 BAAHPath 时 ``backup_root`` / ``files`` 均返回
+  ``None``（列表为空、快照报无变化、预览不注入，不抛错——编辑页
+  ensure(native) 静默）；``files`` 回调保留守卫（用户不存在/未填配置名时
+  抛错，与恢复同口径）。
 
 归档时机：AutoProxy 托管写入前（任务级，核心时机）、编辑界面进入
 （native）/ 退出（mas）由前端 ``ensure`` 触发。BAAH 无遮罩会话，不提供
@@ -46,7 +47,7 @@ from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
-    _OVERLAY_SIDECAR_NAME,
+    OVERLAY_SIDECAR_NAME,
     archive_mas_backup,
     build_native_preview,
     build_overlay_preview,
@@ -87,13 +88,28 @@ def _config_name(ctx: RestoreContext) -> str:
     return name
 
 
-def _config_dir(ctx: RestoreContext) -> str:
-    """BAAH 配置目录（BAAHPath 派生；未配置脚本路径时抛错）。"""
+def _config_dir_or_none(ctx: RestoreContext) -> str | None:
+    """BAAH 配置目录（BAAHPath 派生）；未配置脚本路径时返回 ``None``。
+
+    供 ``files`` / ``preview`` 等只读回调静默降级用——与基座
+    ``backup_root`` 返回 ``None`` 的 None 防御语义对齐（列表为空、快照报
+    无变化、预览不注入、读文件报无可读），用户未配置路径时编辑页不该报错。
+    恢复回调仍走 :func:`_config_dir`（恢复是显式用户操作，未配置报错合理）。
+    """
 
     raw = str(ctx.script_config.get("Script", "BAAHPath") or "").strip()
     if not raw:
-        raise ValueError("请先设置 BAAH 主程序路径")
+        return None
     return str(Path(raw).parent / CONFIG_DIR_NAME)
+
+
+def _config_dir(ctx: RestoreContext) -> str:
+    """BAAH 配置目录（BAAHPath 派生；未配置脚本路径时抛错）。"""
+
+    config_dir = _config_dir_or_none(ctx)
+    if config_dir is None:
+        raise ValueError("请先设置 BAAH 主程序路径")
+    return config_dir
 
 
 async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
@@ -104,7 +120,7 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
     overlay = read_overlay_values(user)
     if not overlay:
         return None
-    return {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
+    return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
 
 
 async def _mas_root(ctx: RestoreContext) -> Path:
@@ -137,12 +153,17 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
 async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
     """归档内容 = 当前 ConfigName 的用户配置 + 软件配置（缺失项跳过）。
 
-    守卫与解析沿用原快照语义：用户不存在、未配置 BAAHPath 或未填
-    配置名时抛 ``ValueError``（与恢复同口径，由服务层转 400）。
+    未配置 BAAHPath 时返回 ``None``（无可归档根，快照报无变化、不抛错——
+    编辑页 ensure(native) 静默，与基座 ``backup_root`` 返回 ``None`` 的
+    None 防御语义对齐）；用户不存在、未填配置名仍抛 ``ValueError``（与
+    恢复同口径，由服务层转 400）。
     """
 
     _user_guard(ctx)
-    return collect_native_files(_config_dir(ctx), _config_name(ctx)) or None
+    config_dir = _config_dir_or_none(ctx)
+    if config_dir is None:
+        return None
+    return collect_native_files(config_dir, _config_name(ctx)) or None
 
 
 async def _native_root(ctx: RestoreContext) -> Path | None:
@@ -155,7 +176,12 @@ async def _native_root(ctx: RestoreContext) -> Path | None:
 
 
 async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
-    return build_native_preview(_config_dir(ctx), ctx.user_id, ts)
+    """反读备份内用户配置关键字段；未配置 BAAHPath 时返回空载荷（不抛错）。"""
+
+    config_dir = _config_dir_or_none(ctx)
+    if config_dir is None:
+        return {"sections": []}
+    return build_native_preview(config_dir, ctx.user_id, ts)
 
 
 async def _restore_native(ctx: RestoreContext, ts: str) -> object:

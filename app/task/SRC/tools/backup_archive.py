@@ -59,11 +59,13 @@ from pathlib import Path
 from app.task.SRC.tools.config import is_src_config_available
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    read_overlay_sidecar,
     restore_dir,
 )
 from app.utils.constants import STARRAIL_STAGE_BOOK
@@ -71,9 +73,6 @@ from app.utils.constants import STARRAIL_STAGE_BOOK
 logger = get_logger("SRC 配置备份")
 
 # ══════════════════ MAS 用户配置（池按用户，目标路径按 owner） ══════════════════
-
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面核心字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落入 ConfigFile）"""
 
 _OVERLAY_STAGE_KEYS = (
     "Channel",
@@ -154,19 +153,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def backup_root(script_id: str) -> Path:
     """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/SrcBackups``。"""
 
@@ -224,7 +210,7 @@ def archive_mas_backup(
     if not files:
         return None
     if overlay:
-        files[_OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
     dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
@@ -270,7 +256,7 @@ def restore_mas_backup(
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:
-        (mas_dir / _OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+        (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
@@ -434,7 +420,7 @@ def build_overlay_preview(overlay: dict) -> dict:
         ("Relic", "遗器关卡"),
         ("Materials", "材料关卡"),
         ("Ornament", "饰品关卡"),
-        ("EchoOfWar", "历战余响"),
+        ("EchoOfWar", "历战余响关卡"),
         ("SimulatedUniverseWorld", "模拟宇宙世界"),
     ):
         if key in overlay:

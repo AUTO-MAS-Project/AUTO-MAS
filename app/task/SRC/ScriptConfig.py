@@ -214,9 +214,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各自持有共享 Default 目录的快照），目标路径才按 owner 解析。
         # native 池由 manager.prepare 在任务级一次性归档
         overlay = (
-            read_overlay_values(
-                self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            )
+            read_overlay_values(self.user_config[uuid.UUID(self.cur_user_item.user_id)])
             if self.cur_user_item.user_id != "Default"
             else None
         )

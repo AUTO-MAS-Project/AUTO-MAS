@@ -60,11 +60,14 @@ import yaml
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    read_overlay_sidecar,
+    restore_files,
 )
 
 from .managed_config import SRA_REWARD_LABELS
@@ -73,9 +76,6 @@ from .sra_runtime import build_sra_tasklist_description
 logger = get_logger("HSR 配置备份")
 
 # ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
-
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面核心字段侧车文件名（归档内唯一文件；恢复时读出回填，不落任何目录）"""
 
 _OVERLAY_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "Info": (
@@ -216,19 +216,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/HSRBackups/mas/{user_id}``（恒按用户）。"""
 
@@ -247,7 +234,7 @@ def archive_mas_backup(
     if not overlay:
         return None
     dest = archive_files(
-        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
         mas_backup_root(script_id, user_id),
         force=force,
     )
@@ -365,25 +352,24 @@ def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) ->
     """把归档恢复到两引擎原生位置（恢复前自动归档当前，误恢复可找回）。
 
     按归档内相对键写回：``M7A/*`` → M7A 安装根、``SRA/*`` → SRA appdata；
-    只覆盖归档内包含的文件。
+    replace 语义：SRA ``configs/`` 子树整棵按备份替换，残留的同前缀文件
+    一并清除（:func:`restore_files` 经 ``dir_map`` 双根管理，引擎根目录
+    本身绝不删除）。
     """
 
     backup_dir = get_native_backup_dir(sra_app_data, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    files = dir_files(backup_dir)
-    if not files:
-        raise ValueError(f"备份内容为空: {ts}")
     archive_native_backup(m7a_root, sra_app_data, force=True)
-    for rel, path in files.items():
-        if rel.startswith("M7A/"):
-            if m7a_root is None:
-                continue
-            target = Path(m7a_root) / rel[len("M7A/") :]
-        else:
-            target = sra_app_data / rel[len("SRA/") :]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(path.read_bytes())
+    dir_map = {"SRA": Path(sra_app_data)}
+    if m7a_root is not None:
+        dir_map["M7A"] = Path(m7a_root)
+    rel_keys = (
+        None
+        if m7a_root is not None
+        else [rel for rel in dir_files(backup_dir) if not rel.startswith("M7A/")]
+    )
+    restore_files(backup_dir, sra_app_data, rel_keys=rel_keys, dir_map=dir_map)
     logger.info(f"HSR 原生配置已恢复备份 {ts}")
 
 
@@ -450,8 +436,8 @@ def _overlay_row(flat_key: str, value) -> dict:
 def build_overlay_preview(overlay: dict) -> dict:
     """mas 池预览：MAS 用户配置全量分区（侧车收录什么就展示什么）。
 
-    分区：MAS 独有配置（来源/服务器/脚本/直控引擎/备注）→ 任务配置
-    （任务开关/副本）→ 通知 → 托管配置（映射/覆盖）→ 直控快照。
+    分区：MAS 独有配置（来源/用户名/启用状态/服务器/脚本/直控引擎/备注）
+    → 任务配置（任务开关/副本）→ 通知 → 托管配置（映射/覆盖）→ 直控快照。
     """
 
     sections: list[dict] = []
@@ -462,6 +448,15 @@ def build_overlay_preview(overlay: dict) -> dict:
     mas_rows: list[dict] = []
     if has("Info", "Mode"):
         mas_rows.append(_overlay_row("Info.Mode", overlay["Info.Mode"]))
+    if has("Info", "Name"):
+        mas_rows.append(_overlay_row("Info.Name", overlay["Info.Name"]))
+    if has("Info", "Status"):
+        mas_rows.append(
+            {
+                "key": "启用状态",
+                "value": "是" if overlay["Info.Status"] else "否",
+            }
+        )
     if has("Info", "Server"):
         server = str(overlay["Info.Server"])
         mas_rows.append(

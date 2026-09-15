@@ -42,7 +42,7 @@ from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
-    _OVERLAY_SIDECAR_NAME,
+    OVERLAY_SIDECAR_NAME,
     _collect_mas_files,
     build_mas_preview,
     build_native_preview,
@@ -88,7 +88,7 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, Path | str] | None:
     files: dict[str, Path | str] = dict(_collect_mas_files(ctx.script_id, ctx.user_id))
     overlay = read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)])
     if overlay:
-        files[_OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
+        files[OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
     return files or None
 
 

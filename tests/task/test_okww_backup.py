@@ -38,8 +38,10 @@ from app.task.Okww.tools.backup_archive import (
     archive_native_backup,
     build_backup_file_summary,
     get_mas_backup_dir,
+    group_overlay,
     list_mas_backups,
     list_native_backups,
+    read_overlay_sidecar,
     restore_mas_backup,
     restore_native_backup,
 )
@@ -47,15 +49,16 @@ from app.utils.config_restore import RestoreContext, build_restore_service
 
 
 class _FakeUserConfig:
-    """最小用户配置桩：支撑 ``get("Info", "Mode")`` 与 ``get("Task", key)``。"""
+    """最小用户配置桩：支撑 ``get("Info", "Mode"/"Id")`` 与 ``get("Task", key)``。"""
 
-    def __init__(self, mode: str, task: dict | None = None):
+    def __init__(self, mode: str, task: dict | None = None, info: dict | None = None):
         self._mode = mode
         self._task = task or {}
+        self._info = info or {}
 
     def get(self, section: str, key: str):
         if section == "Info":
-            return {"Mode": self._mode}.get(key)
+            return {**{"Mode": self._mode}, **self._info}.get(key)
         if section == "Task":
             return self._task.get(key)
         return None
@@ -326,6 +329,7 @@ def test_mas_preview_shows_overlay_sidecar(
     assert len(cards) == 1 and cards[0]["label"] == "任务配置（快速配置）"
     rows = {row["key"]: row["value"] for row in cards[0]["summary"]}
     assert rows == {
+        "配置文件来源": "用户",
         "启动任务（-t N）": "1",
         "消耗体力刷取": "凝素领域",
         "模拟领域材料": "贝币",
@@ -344,6 +348,86 @@ def test_mas_preview_shows_overlay_sidecar(
     empty_backup = tmp_path / "legacy"
     empty_backup.mkdir()
     assert _overlay_preview_payload(empty_backup, snap["time"]) == {"fileCards": []}
+
+
+def test_mas_preview_file_cards_and_masked_account(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mas 预览 = 侧车卡 + ConfigFile 文件卡；侧车含账号 Id 且预览脱敏。"""
+
+    monkeypatch.chdir(tmp_path)
+    uid = str(uuid.uuid4())
+    config = _FakeUserConfig(
+        "用户",
+        {"WhichToFarm": "Tacet Suppression", "TaskIndex": 1},
+        {"Id": "13800138000"},
+    )
+    ctx = _ctx(_FakeScriptConfig({uid: config}), uid)
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+
+    # ConfigFile 含 MAS 管理的 DailyTask.json 字段 → 文件卡应进预览
+    # （预览范围 = 恢复范围，两池同等存在的文件共用渲染）
+    mas_dir = tmp_path / "data" / "s-1" / uid / "ConfigFile"
+    mas_dir.mkdir(parents=True)
+    (mas_dir / "DailyTask.json").write_text(
+        json.dumps({"Which to Farm": "Tacet Suppression"}), encoding="utf-8"
+    )
+    snap = asyncio.run(service.ensure("mas"))
+    assert snap["created"] is True
+
+    # 侧车收录账号 Id（完整原值，恢复回填需要）
+    from app.task.Okww.tools.backup_archive import (
+        get_mas_backup_dir,
+        read_overlay_sidecar,
+    )
+
+    sidecar = read_overlay_sidecar(get_mas_backup_dir("s-1", uid, snap["time"]))
+    assert sidecar["Id"] == "13800138000"
+
+    payload = asyncio.run(service.preview("mas", snap["time"]))
+    cards = payload["fileCards"]
+    by_name = {card["name"]: card for card in cards}
+    assert "overlay" in by_name and "DailyTask.json" in by_name
+
+    # 预览账号行脱敏（11 位手机号保留前 3 后 4），明文不出现在载荷里
+    rows = {row["key"]: row["value"] for row in by_name["overlay"]["summary"]}
+    assert rows["账号"] == "138****8000"
+    assert "13800138000" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_mas_overlay_keeps_mode_preview_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """侧车收录 Info.Mode（配置文件来源），预览展示但恢复回填排除（对齐同类）。"""
+
+    monkeypatch.chdir(tmp_path)
+    uid = str(uuid.uuid4())
+    config = _FakeUserConfig("用户", {"TaskIndex": 1})
+    ctx = _ctx(_FakeScriptConfig({uid: config}), uid)
+    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+
+    mas_dir = tmp_path / "data" / "s-1" / uid / "ConfigFile"
+    mas_dir.mkdir(parents=True)
+    (mas_dir / "DailyTask.json").write_text("{}", encoding="utf-8")
+    snap = asyncio.run(service.ensure("mas"))
+    assert snap["created"] is True
+
+    # 侧车含 Mode 完整原值
+    sidecar = read_overlay_sidecar(get_mas_backup_dir("s-1", uid, snap["time"]))
+    assert sidecar["Mode"] == "用户"
+
+    # 预览含「配置文件来源」行（mask 前的原文不出现，Mode 无敏感值故原样）
+    payload = asyncio.run(service.preview("mas", snap["time"]))
+    cards = payload["fileCards"]
+    overlay_card = next(c for c in cards if c["name"] == "overlay")
+    rows = {row["key"]: row["value"] for row in overlay_card["summary"]}
+    assert rows["配置文件来源"] == "用户"
+
+    # 恢复回填分组排除 Mode（回填旧来源会静默翻转脚本态/用户态/直控）；
+    # Mode 是 Info 组唯一键，被剔除后 Info 组不生成
+    grouped = group_overlay(dict(sidecar))
+    assert "Info" not in grouped
+    assert "Mode" not in grouped
 
 
 def test_preview_payload_keeps_whitelist(tmp_path: Path) -> None:

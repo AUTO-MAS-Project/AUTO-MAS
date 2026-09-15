@@ -46,20 +46,20 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    mask_account,
+    read_overlay_sidecar,
     restore_dir,
 )
 
 logger = get_logger("M9A 配置备份")
 
 # ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
-
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面核心字段侧车文件名（归档内唯一文件；恢复时读出回填，不落任何目录）"""
 
 _OVERLAY_INFO_KEYS = ("Mode", "IfQuickConfig", "Resource", "Account")
 """MAS 编辑页核心字段（UserData.Info，运行时经 build_config 写入原生实例）"""
@@ -108,15 +108,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
             continue
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
     return grouped
-
-
-def _mask_account(value) -> str:
-    """账号脱敏：11 位手机号保留前 3 后 4，其余原样。"""
-
-    text = str(value)
-    if len(text) == 11 and text.isdigit():
-        return f"{text[:3]}****{text[7:]}"
-    return text
 
 
 def build_queue_display(queue: list, task_loader=None) -> list[dict]:
@@ -200,19 +191,6 @@ def build_display_overlay(overlay: dict, task_loader=None) -> dict:
     return overlay
 
 
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/M9ABackups/mas/{user_id}``。
 
@@ -246,7 +224,7 @@ def archive_mas_backup(
     """
 
     dest = archive_files(
-        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
         mas_backup_root(script_id, user_id),
         force=force,
     )
@@ -397,7 +375,7 @@ def build_overlay_preview(overlay: dict) -> dict:
     if "Resource" in overlay:
         m9a_rows.append(_row("服务器资源", overlay["Resource"]))
     if overlay.get("Account"):
-        m9a_rows.append(_row("账号", _mask_account(overlay["Account"])))
+        m9a_rows.append(_row("账号", mask_account(overlay["Account"])))
     queue_display = (overlay.get(_DISPLAY_KEY) or {}).get("Queue")
     if isinstance(queue_display, list) and queue_display:
         names = "、".join(
@@ -502,7 +480,7 @@ def _native_instance_rows(data: dict) -> list[dict]:
             {"key": "已启用任务", "value": "、".join(filter(None, names)) or "无"}
         )
         if account:
-            rows.append({"key": "账号", "value": _mask_account(account)})
+            rows.append({"key": "账号", "value": mask_account(account)})
     if data.get("Connect.Address"):
         rows.append(
             {"key": "连接地址", "value": _summary_text(data["Connect.Address"])}

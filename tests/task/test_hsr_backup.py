@@ -386,6 +386,8 @@ def test_overlay_preview_sections(
     payload = build_overlay_preview(
         {
             "Info.Mode": "用户",
+            "Info.Name": "昵称A",
+            "Info.Status": True,
             "Info.Server": "CN-Official",
             "Info.RemainedDay": 30,
             "Info.IfScriptBeforeTask": True,
@@ -423,6 +425,8 @@ def test_overlay_preview_sections(
 
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["rows"]}
     assert mas_rows["配置来源"] == "用户"
+    assert mas_rows["用户名"] == "昵称A"
+    assert mas_rows["启用状态"] == "是"
     assert mas_rows["服务器"] == "官服"
     assert mas_rows["剩余天数"] == "30"
     assert mas_rows["任务前脚本"] == "启用 · scripts/pre.bat"

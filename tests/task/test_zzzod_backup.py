@@ -219,3 +219,23 @@ def test_restore_service_declarative_pools(
     )
     assert asyncio.run(bare.ensure("onedragon")) == {"created": False, "time": ""}
     assert get_mas_backup_dir("s-0002", 2, "20260915-000000") is None
+
+
+def test_preview_account_fields_includes_win_title() -> None:
+    """门面预览账号卡：自定义窗口标题两字段进预览，开关转是否。"""
+
+    from app.core.config import AppConfig
+
+    # 缺失时合并默认值：开关否、标题空
+    defaults = {f["key"]: f["value"] for f in AppConfig._preview_account_fields({})}
+    assert defaults["use_custom_win_title"] == "否"
+    assert defaults["custom_win_title"] == ""
+
+    enabled = {
+        f["key"]: f["value"]
+        for f in AppConfig._preview_account_fields(
+            {"use_custom_win_title": True, "custom_win_title": "我的窗口"}
+        )
+    }
+    assert enabled["use_custom_win_title"] == "是"
+    assert enabled["custom_win_title"] == "我的窗口"

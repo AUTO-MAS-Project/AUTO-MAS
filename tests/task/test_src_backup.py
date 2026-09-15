@@ -330,7 +330,9 @@ def test_overlay_preview_sections(
     assert src_rows["服务器"] == "官服"
     assert src_rows["刷取类型"] == "遗器"
     assert src_rows["遗器关卡"] == "遗器：领航员 & 名冶（观火之径）"
-    assert src_rows["历战余响"] == "禁用"  # STARRAIL_STAGE_BOOK 哨兵
+    assert (
+        src_rows["历战余响关卡"] == "禁用"
+    )  # STARRAIL_STAGE_BOOK 哨兵（与 native 池同标签）
     assert src_rows["保留燃料"] == "5"
 
 

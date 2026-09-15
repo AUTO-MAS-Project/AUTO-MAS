@@ -425,6 +425,67 @@ def test_overlay_preview_shows_core_fields(tmp_path: Path) -> None:
     assert "Mode" not in grouped["Info"]
 
 
+def test_overlay_cultivate_fields_in_sidecar_and_preview() -> None:
+    """干员养成 4 字段进侧车，预览 MAS 独有区含养成行（目标只给数量不臆造）。"""
+
+    from app.task.MAA.tools.backup_archive import (
+        build_overlay_summary,
+        read_overlay_values,
+    )
+
+    class _FakeUserConfig:
+        _data = {
+            "Task": {
+                "IfCultivate": True,
+                "CultivateTargets": json.dumps(
+                    [
+                        {"operatorId": "char_001", "name": "能天使", "goals": []},
+                        {"operatorId": "char_002", "name": "银灰", "goals": []},
+                    ],
+                    ensure_ascii=False,
+                ),
+                "CultivateSkipDuringActivity": True,
+                "CultivateSkipDuringResourceCollection": False,
+            }
+        }
+
+        def get(self, section: str, key: str):
+            return self._data.get(section, {}).get(key)
+
+    # 侧车含 4 个干员养成字段（read_overlay_values 走 _OVERLAY_TASK_KEYS）
+    values = read_overlay_values(_FakeUserConfig())
+    assert set(values) == {
+        "IfCultivate",
+        "CultivateTargets",
+        "CultivateSkipDuringActivity",
+        "CultivateSkipDuringResourceCollection",
+    }
+
+    # 预览：养成 4 行全部在 MAS 独有区；养成目标只显示数量
+    sections = {s["name"]: s for s in build_overlay_summary(values)}
+    mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["summary"]}
+    assert mas_rows == {
+        "干员养成": "是",
+        "养成目标": "已配置 2 个目标",
+        "活动期间跳过": "是",
+        "资源收集期间跳过": "否",
+    }
+    assert "maa" not in sections
+
+    # 空目标 / 坏 JSON 的展示兜底
+    empty = build_overlay_summary(
+        {
+            "IfCultivate": False,
+            "CultivateTargets": "[]",
+            "CultivateSkipDuringActivity": False,
+            "CultivateSkipDuringResourceCollection": False,
+        }
+    )
+    empty_rows = {row["key"]: row["value"] for row in empty[0]["summary"]}
+    assert empty_rows["干员养成"] == "否"
+    assert empty_rows["养成目标"] == "无"
+
+
 def test_read_overlay_values_covers_both_groups() -> None:
     """read_overlay_values 覆盖 Info/Task 两段，None 值键跳过。"""
 

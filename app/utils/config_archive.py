@@ -28,8 +28,10 @@
 """
 
 import hashlib
+import json
 import re
 import shutil
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +47,9 @@ _TIME_FORMAT = "%Y%m%d-%H%M%S"
 
 _TS_PATTERN = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
 """归档目录名白名单：仅接受本模块生成的时间戳命名（含同秒顺延序号后缀）"""
+
+OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
+"""MAS 页面字段侧车文件名（跨专项统一；只存归档内，恢复时分离回填，不落配置目录）"""
 
 
 def config_root_key(config_path: str | Path) -> str:
@@ -332,3 +337,116 @@ def read_backup_text(
         raise ValueError(f"文件超出可查看大小上限（{size} > {max_bytes} 字节）")
     content = target.read_text(encoding="utf-8-sig", errors="replace")
     return {"path": str(rel_path), "size": size, "content": content}
+
+
+def read_overlay_sidecar(
+    backup_dir: Path, *, file_name: str = OVERLAY_SIDECAR_NAME
+) -> dict | None:
+    """读取归档内 MAS 字段侧车；不存在（旧版备份）或损坏返回 ``None``。
+
+    Args:
+        backup_dir: 归档目录（:func:`get_backup_dir` 的返回值）。
+        file_name: 侧车文件名（默认 :data:`OVERLAY_SIDECAR_NAME`）。
+
+    Returns:
+        侧车字典；文件缺失或内容损坏/非对象时返回 ``None``。
+    """
+
+    sidecar = Path(backup_dir) / file_name
+    if not sidecar.is_file():
+        return None
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def mask_account(value) -> str:
+    """账号脱敏：11 位纯数字手机号保留前 3 后 4，其余原样。"""
+
+    text = str(value)
+    if len(text) == 11 and text.isdigit():
+        return f"{text[:3]}****{text[7:]}"
+    return text
+
+
+def restore_files(
+    backup_dir: Path,
+    target_root: Path,
+    rel_keys: Iterable[str] | None = None,
+    *,
+    dir_map: Mapping[str, Path] | None = None,
+) -> None:
+    """按相对键把备份文件写回目标目录（replace 语义：先清理受管键再写入）。
+
+    ``rel_keys`` 限定本次管理的相对键（默认归档内全部文件）；每个键的目标
+    路径 = ``dir_map.get(顶级键, target_root)`` 下对应位置（未传 ``dir_map``
+    时恒为 ``target_root / rel``，专项内相对键与目标路径同构的常规场景）。
+
+    写回前先清理受管键管辖的既有内容，杜绝跨恢复残留：
+
+    - 未走 ``dir_map`` 的顶级键若是目录前缀（如 ``OneDragon/``、``config/``），
+      它是 target_root 下的专用子目录，整棵子树先删再写（残留的同前缀文件
+      一并移除，恢复后该键下与备份完全一致）；根级文件（如 ``config.json``）
+      只删该文件；
+    - 走 ``dir_map`` 的顶级键（HSR 的 ``M7A/``、``SRA/`` 对应外部引擎根）：
+      目标根是共享目录，绝不整根删除，只删备份内出现的相对路径文件，以及
+      备份内出现的子目录（整棵，如 ``SRA/configs/``）。
+
+    target_root 内未被管理的其它内容（备份外的用户数据）原样保留。
+
+    Args:
+        backup_dir: 归档目录（:func:`get_backup_dir` 的返回值）。
+        target_root: 恢复目标根目录。
+        rel_keys: 本次管理的相对键；默认归档内全部文件。
+        dir_map: 顶级键 → 目标根目录映射（多根恢复场景，如 HSR 两引擎）。
+
+    Raises:
+        ValueError: 归档内无文件或受管相对键为空。
+    """
+
+    backup_dir = Path(backup_dir)
+    target_root = Path(target_root)
+    managed = (
+        sorted(rel_keys) if rel_keys is not None else sorted(dir_files(backup_dir))
+    )
+    if not managed:
+        raise ValueError(f"备份内容为空: {backup_dir.name}")
+
+    # 按顶级键分组（第一段路径；无斜杠的键自身即顶级文件）
+    top_keys: dict[str, list[str]] = {}
+    for rel in managed:
+        top, _, _ = rel.partition("/")
+        top_keys.setdefault(top, []).append(rel)
+
+    # 先清理受管键管辖的既有内容
+    for top, rels in top_keys.items():
+        if dir_map and top in dir_map:
+            # dir_map 映射：目标根是共享目录，只删备份内出现的路径/子目录
+            base = dir_map[top]
+            heads: dict[str, bool] = {}
+            for rel in rels:
+                suffix = rel[len(top) + 1 :]
+                head, _, rest = suffix.partition("/")
+                heads[head] = heads.get(head, False) or bool(rest)
+            for head, has_sub in heads.items():
+                target = base / head
+                if has_sub:  # 备份内含该子树全部文件（如 SRA/configs/）
+                    force_rmtree(target)
+                else:
+                    target.unlink(missing_ok=True)
+        elif any("/" in rel for rel in rels):
+            # 默认映射 + 目录前缀：该子树完全由备份管理，整棵替换
+            force_rmtree(target_root / top)
+        else:
+            (target_root / top).unlink(missing_ok=True)
+
+    # 再按相对键逐文件写回
+    for rel in managed:
+        if dir_map and (top := rel.partition("/")[0]) in dir_map:
+            target = dir_map[top] / rel[len(top) + 1 :]
+        else:
+            target = target_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(backup_dir / rel, target)

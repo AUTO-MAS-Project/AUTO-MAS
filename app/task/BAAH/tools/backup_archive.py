@@ -59,19 +59,18 @@ from app.task.BAAH.tools.config_manager import (
 )
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    read_overlay_sidecar,
 )
 
 logger = get_logger("BAAH 配置备份")
 
 # ══════════════════ MAS 用户字段侧车 ══════════════════
-
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面字段侧车文件名（恢复时读出回填，不落入 BAAH 目录）"""
 
 _OVERLAY_INFO_KEYS = ("Mode", "IfQuickConfig", "ConfigName")
 """MAS 编辑页字段（UserData.Info；当前均为元字段，预留未来扩展）"""
@@ -104,19 +103,6 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     return grouped
 
 
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的字段侧车；不存在或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/BAAHBackups/mas/{user_id}``（恒按用户）。"""
 
@@ -129,7 +115,7 @@ def archive_mas_backup(
     """归档 MAS 页面字段侧车到用户池（指纹去重，无变化跳过）。"""
 
     dest = archive_files(
-        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
         mas_backup_root(script_id, user_id),
         force=force,
     )

@@ -320,6 +320,15 @@ def test_restore_service_callbacks_roundtrip(
     # mas 池根恒存在，历史备份照常可见（对齐 BetterGI 样板断言）
     assert asyncio.run(service_no_root.list("mas")) == [mas_ts]
     assert asyncio.run(service_no_root.list("native")) == []
+    # 未配置 BAAHPath：ensure(native) 报无变化而非抛错（编辑页进入静默）
+    assert asyncio.run(service_no_root.ensure("native")) == {
+        "created": False,
+        "time": "",
+    }
+    # 未配置 BAAHPath：native 预览返回空载荷（不抛错、不注入文件清单）
+    assert asyncio.run(service_no_root.preview("native", "20260101-000000")) == {
+        "sections": []
+    }
 
 
 def test_get_mas_backup_dir_guards_timestamp(tmp_path: Path) -> None:

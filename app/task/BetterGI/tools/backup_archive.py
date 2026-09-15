@@ -64,19 +64,19 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
     get_backup_dir,
     list_times,
+    read_overlay_sidecar,
+    restore_files,
 )
 
 logger = get_logger("BetterGI 配置备份")
 
 # ══════════════════ MAS 用户配置（per-user 副本 + 字段侧车） ══════════════════
-
-_OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
-"""页面字段侧车文件名（只在归档内；恢复时分离回填 MAS 用户配置，不落副本目录）"""
 
 _OVERLAY_KEY_GROUPS = {
     "Info": ("Mode",),
@@ -86,6 +86,8 @@ _OVERLAY_KEY_GROUPS = {
         "DailyRewardPartyName",
         "PartyName",
         "AutoBossStrategyName",
+        "IfUseTeams",
+        "Teams",
         "IfUseCustomGroups",
         "CustomGroups",
         "Queue",
@@ -110,6 +112,8 @@ _OVERLAY_BGI_ORDER = (
     "DailyRewardPartyName",
     "PartyName",
     "AutoBossStrategyName",
+    "IfUseTeams",
+    "Teams",
     "IfUseCustomGroups",
     "CustomGroups",
     "Queue",
@@ -127,6 +131,8 @@ _OVERLAY_FIELD_LABELS = {
     "DailyRewardPartyName": "领取奖励队伍",
     "PartyName": "战斗队伍",
     "AutoBossStrategyName": "战斗策略",
+    "IfUseTeams": "使用队伍配置",
+    "Teams": "队伍配置",
     "IfUseCustomGroups": "管理自定义配置组",
     "CustomGroups": "自定义配置组",
     "Queue": "一条龙队列",
@@ -176,19 +182,6 @@ def overlay_sidecar_content(overlay: dict) -> str:
     return json.dumps(overlay, ensure_ascii=False, indent=2)
 
 
-def read_overlay_sidecar(backup_dir: Path) -> dict | None:
-    """读取归档内的页面字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
-
-    sidecar = Path(backup_dir) / _OVERLAY_SIDECAR_NAME
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 def mas_user_dir(script_id: str, user_id: str) -> Path:
     """per-user 根目录：``data/{script_id}/{user_id}``（OneDragon/ScriptGroup/GlobalDomain 的父级）。"""
 
@@ -234,7 +227,7 @@ def archive_mas_backup(
 
     files = _collect_mas_files(script_id, user_id)
     if overlay:
-        files[_OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
+        files[OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
     if not files:
         return None
     dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
@@ -274,7 +267,7 @@ def restore_mas_backup(
     user_root = mas_user_dir(script_id, user_id)
     files = dir_files(backup_dir)
     for rel, path in files.items():
-        if rel == _OVERLAY_SIDECAR_NAME:
+        if rel == OVERLAY_SIDECAR_NAME:
             continue
         target = user_root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -379,27 +372,18 @@ def get_native_backup_dir(root_path: str | Path, ts: str) -> Path | None:
 def restore_native_backup(root_path: str | Path, ts: str) -> None:
     """把归档恢复到 BetterGI 安装目录（恢复前自动归档当前，误恢复可找回）。
 
-    按归档内相对键写回：``config.json`` → ``{RootPath}/User/config.json``、
-    ``OneDragon/{名}.json`` → ``{RootPath}/User/OneDragon/{名}.json``；只覆盖
-    归档内包含的文件。
+    按归档内相对键写回（``config.json`` → ``{RootPath}/User/config.json``、
+    ``OneDragon/{名}.json`` → ``{RootPath}/User/OneDragon/{名}.json``）。
+    replace 语义：OneDragon 子树整棵按备份替换，跨恢复残留的同前缀文件
+    一并清除（:func:`restore_files` 管理）。
     """
 
     backup_dir = get_native_backup_dir(root_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     root_path = Path(root_path)
-    files = dir_files(backup_dir)
-    if not files:
-        raise ValueError(f"备份内容为空: {ts}")
     archive_native_backup(root_path, force=True)
-    for rel, path in files.items():
-        target = (
-            root_path / _BGI_GLOBAL_CONFIG_REL.parent / rel
-            if rel.startswith("OneDragon/")
-            else root_path / _BGI_GLOBAL_CONFIG_REL
-        )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(path.read_bytes())
+    restore_files(backup_dir, root_path / _BGI_GLOBAL_CONFIG_REL.parent)
     logger.info(f"BetterGI 原生配置已恢复备份 {ts}")
 
 
@@ -451,6 +435,10 @@ def _overlay_value_text(key: str, value) -> str:
     if key == "Groups":
         names = [str(name) for name in value or [] if str(name)]
         return "、".join(names) if names else "无"
+    if key == "Teams":
+        # 队伍配置表 JSON 数组（不含序号 0 通用队伍），预览只给数量
+        items = _parse_json_list(value)
+        return f"已配置 {len(items)} 支队伍" if items else "无"
     if key == "CustomGroups":
         items = _parse_json_list(value)
         names = [
@@ -525,7 +513,7 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     files = {
         rel: path.stat().st_size
         for rel, path in dir_files(backup_dir).items()
-        if rel != _OVERLAY_SIDECAR_NAME
+        if rel != OVERLAY_SIDECAR_NAME
     }
     if files:
         file_rows = [
