@@ -3714,6 +3714,10 @@ class MaaFWEmbeddedProjection(BaseModel):
         default="",
         description="来源自带 MaaFramework 的版本（PEP 440），运行池按它钉运行时",
     )
+    bundledPythonVersion: str = Field(
+        default="",
+        description="来源自带 Python 的大版本（如 3.13），隔离 venv 按它选解释器",
+    )
 
 
 class MaaFWEmbeddedStatusData(BaseModel):

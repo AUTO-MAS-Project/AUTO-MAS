@@ -141,6 +141,11 @@
             t('edit.maafwEmbeddedRuntime', { version: embeddedStatus.report.bundledMaaFWVersion })
           }}
         </span>
+        <span v-if="embeddedStatus.report?.bundledPythonVersion" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedPython', { version: embeddedStatus.report.bundledPythonVersion })
+          }}
+        </span>
         <span v-if="embeddedStatus.sourceVersion" class="embedded-meta-item">
           {{ t('edit.maafwEmbeddedSourceVersion', { version: embeddedStatus.sourceVersion }) }}
         </span>

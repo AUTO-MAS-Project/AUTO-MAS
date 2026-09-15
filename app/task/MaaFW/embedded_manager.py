@@ -355,8 +355,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
 
+        # 自检看的是有效根：内嵌脚本的运行池版本钉在副本的投影标记上，不在来源目录。
         environment_problem = await asyncio.to_thread(
-            describe_unusable_runtime, Path(project_value)
+            describe_unusable_runtime, project_root
         )
         if environment_problem:
             return environment_problem

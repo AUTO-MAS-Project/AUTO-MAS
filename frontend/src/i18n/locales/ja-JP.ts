@@ -1444,6 +1444,7 @@ export default {
     maafwEmbeddedSaved: 'コピーで {percent}% 削減（{source} → {copy}）',
     maafwEmbeddedShell: 'シェル：{shell}',
     maafwEmbeddedRuntime: 'ランタイム MaaFramework {version}（元パッケージ同梱と同じ）',
+    maafwEmbeddedPython: 'Agent の Python {version}（元パッケージ同梱と同じ）',
     maafwEmbeddedSourceVersion: '取り込み元 {version}',
     maafwEmbeddedImportedAt: '取り込み日時 {time}',
     maafwEmbeddedSourceMissing:

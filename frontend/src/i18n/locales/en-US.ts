@@ -1517,6 +1517,7 @@ export default {
     maafwEmbeddedSaved: 'Copy saves {percent}% ({source} → {copy})',
     maafwEmbeddedShell: 'Shell: {shell}',
     maafwEmbeddedRuntime: 'Runtime MaaFramework {version} (as bundled by the source)',
+    maafwEmbeddedPython: 'Agent Python {version} (as bundled by the source)',
     maafwEmbeddedSourceVersion: 'Imported from source {version}',
     maafwEmbeddedImportedAt: 'Imported {time}',
     maafwEmbeddedSourceMissing:

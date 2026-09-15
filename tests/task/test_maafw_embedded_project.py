@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
-from app.models.config import MaaFWConfig
+from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.task import ScriptItem, TaskItem
 from app.task.MaaFW import embedded_manager
 from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
@@ -280,6 +280,14 @@ class TestCheckSelfHeal:
             send_log("[MFW 内嵌] 副本缺失或损坏，正在从来源目录重新导入")
             return import_embedded_project(script_id, str(source), base=base)
 
+        # 一个可运行的用户，让 check() 一路走到运行前自检与 Pass。
+        await config.UserData.add(MaaFWUserConfig)
+        checked_roots: list[Path] = []
+
+        def fake_self_check(project_path: Path) -> str | None:
+            checked_roots.append(project_path)
+            return None
+
         update_script = AsyncMock()
         fake_host = SimpleNamespace(
             ScriptConfig={uuid.UUID(SCRIPT_ID): config}, update_script=update_script
@@ -287,15 +295,19 @@ class TestCheckSelfHeal:
         with (
             patch.object(embedded_manager, "ensure_embedded_copy", fake_ensure),
             patch.object(embedded_manager, "Config", fake_host),
+            patch.object(
+                embedded_manager, "describe_unusable_runtime", fake_self_check
+            ),
         ):
-            # 副本此刻不存在：自修复后有效根存在，check() 会往下走到锁配置；把锁
-            # 换成空操作并让用户列表为空，它就在「没有可运行用户」处正常返回。
             monkeypatch.setattr(config, "lock", AsyncMock())
             result = await manager.check()
 
         assert threads and threads[0] != threading.main_thread().name
-        assert "no running event loop" not in result
-        assert (embedded_project_dir(SCRIPT_ID, tmp_path) / "interface.json").is_file()
+        assert result == "Pass"
+        copy_dir = embedded_project_dir(SCRIPT_ID, tmp_path)
+        assert (copy_dir / "interface.json").is_file()
+        # 运行前自检看的是副本（运行池版本钉在副本的标记上），不是来源目录。
+        assert checked_roots == [copy_dir]
         update_script.assert_awaited_once()
         written = update_script.await_args.args[1]["Embedded"]
         assert json.loads(written["Report"])["shellFamilies"] == ["MFW"]
