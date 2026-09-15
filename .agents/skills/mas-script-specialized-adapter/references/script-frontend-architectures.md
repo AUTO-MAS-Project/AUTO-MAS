@@ -8,6 +8,7 @@
 
 | 上游信号 | 架构线 | 本仓参照 |
 | --- | --- | --- |
+| 任何带 `interface.json` 的 MaaFramework 项目 | **默认不立专项**，用通用 `MaaFW` 类型即可运行；只有需要原生编辑器会话、登录/切号、专属界面这类 MaaFW 给不了的东西时才走下面两线，并写明理由 | `MaaFW`（见 `app/task/MaaFW/AGENTS.md`） |
 | `from ok import OK`、`ok-script`、README 含 `-t` / `-e` | **ok-script 线** | `Okww`（鸣潮）、`OkNte`（异环） |
 | README/依赖写明 MXU、PI V2、`interface.json`，或 Tauri + React/TS 壳 | **MXU 线** | `MaaEnd` |
 | Avalonia / MFAA，`interface.json` + C# 客户端 | **MFAA 线** | `M9A` |
