@@ -41,7 +41,6 @@ MaaFW 特有的侧车、恢复语义（恢复前强制归档当前）与预览�
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 from app.utils import get_logger
@@ -141,17 +140,6 @@ def _mask_account(value) -> str:
     return text
 
 
-def _sidecar_temp_file(overlay: dict) -> Path:
-    """把页面核心字段写到临时文件（参与归档指纹，归档后即删）。"""
-
-    fd = tempfile.NamedTemporaryFile(
-        "w", suffix=f"{_OVERLAY_SIDECAR_NAME}.tmp", delete=False, encoding="utf-8"
-    )
-    json.dump(overlay, fd, ensure_ascii=False, indent=2)
-    fd.close()
-    return Path(fd.name)
-
-
 def read_overlay_sidecar(backup_dir: Path) -> dict | None:
     """读取归档内的页面核心字段侧车；不存在（旧版备份）或损坏返回 ``None``。"""
 
@@ -176,20 +164,17 @@ def archive_mas_backup(
 ) -> Path | None:
     """归档页面核心字段侧车到用户池（指纹去重，无变化跳过）。
 
-    纯侧车：归档内唯一文件是 ``_mas_overlay.json``（无目录部分）。
+    纯侧车：归档内唯一文件是 ``_mas_overlay.json``（无目录部分）；以内存
+    JSON 直接入档（:func:`archive_files` 支持内存内容），免临时文件。
     """
 
     if not overlay:
         return None
-    temp_sidecar = _sidecar_temp_file(overlay)
-    try:
-        dest = archive_files(
-            {_OVERLAY_SIDECAR_NAME: temp_sidecar},
-            mas_backup_root(script_id, user_id),
-            force=force,
-        )
-    finally:
-        temp_sidecar.unlink(missing_ok=True)
+    dest = archive_files(
+        {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
+        mas_backup_root(script_id, user_id),
+        force=force,
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -230,20 +215,29 @@ _INTERFACE_FILE = "interface.json"
 """MaaFW 项目 interface 定义（任务定义与物化 preset 处）"""
 
 
-def native_backup_root(project_path: str | Path) -> Path:
-    """MaaFW 项目配置的项目级归档根：``data/MaaFWBackups/native/{key}``。
+def native_backup_root(script_id: str, project_path: str | Path) -> Path:
+    """MaaFW 项目配置的**脚本级**归档根：``data/{script_id}/MaaFWBackups/native/{key}``。
 
-    ``key`` 是物理项目根的指纹（:func:`config_root_key`）——同一份项目无论
-    被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
+    MaaFW 是通用性专项（接入任意 MaaFW 项目，项目属于单个脚本实例）：
+    归档生命周期随脚本；``key`` 仍取物理项目根指纹，脚本内换绑项目后旧
+    备份不与新项目混淆。
     """
 
-    return Path.cwd() / "data" / "MaaFWBackups" / "native" / config_root_key(project_path)
+    return (
+        Path.cwd()
+        / "data"
+        / script_id
+        / "MaaFWBackups"
+        / "native"
+        / config_root_key(project_path)
+    )
 
 
-def archive_native_backup(project_path: str | Path, force: bool = False) -> Path | None:
-    """归档 MaaFW 项目 ``config/`` 目录 + ``interface.json``（指纹去重）。
+def collect_native_files(project_path: str | Path) -> dict[str, Path]:
+    """收集 MaaFW 项目配置文件集（相对键 → 当前路径；缺失项跳过）。
 
-    项目缺 ``config/`` 与 ``interface.json`` 时无可归档内容，返回 ``None``。
+    - ``interface.json``：任务定义与物化 preset 处；
+    - ``config/**``：项目配置目录（运行时物化处，排除 resource/ 资产）。
     """
 
     project_path = Path(project_path)
@@ -255,9 +249,24 @@ def archive_native_backup(project_path: str | Path, force: bool = False) -> Path
     if config_dir.is_dir():
         for rel, path in dir_files(config_dir).items():
             files[f"config/{rel}"] = path
+    return files
+
+
+def archive_native_backup(
+    script_id: str, project_path: str | Path, force: bool = False
+) -> Path | None:
+    """归档 MaaFW 项目 ``config/`` 目录 + ``interface.json``（指纹去重）。
+
+    归档落到**脚本级池**（``data/{script_id}/``，生命周期随脚本实例）。
+    项目缺 ``config/`` 与 ``interface.json`` 时无可归档内容，返回 ``None``。
+    """
+
+    files = collect_native_files(project_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(project_path), force=force)
+    dest = archive_files(
+        files, native_backup_root(script_id, project_path), force=force
+    )
     if dest is None:
         logger.info("MaaFW 项目配置无变化，跳过归档")
         return None
@@ -265,33 +274,35 @@ def archive_native_backup(project_path: str | Path, force: bool = False) -> Path
     return dest
 
 
-def list_native_backups(project_path: str | Path) -> list[str]:
+def list_native_backups(script_id: str, project_path: str | Path) -> list[str]:
     """MaaFW 项目配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(project_path))
+    return list_times(native_backup_root(script_id, project_path))
 
 
-def get_native_backup_dir(project_path: str | Path, ts: str) -> Path | None:
+def get_native_backup_dir(
+    script_id: str, project_path: str | Path, ts: str
+) -> Path | None:
     """取指定时间戳的项目配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(project_path), ts)
+    return get_backup_dir(native_backup_root(script_id, project_path), ts)
 
 
-def restore_native_backup(project_path: str | Path, ts: str) -> None:
+def restore_native_backup(script_id: str, project_path: str | Path, ts: str) -> None:
     """把归档恢复到 MaaFW 项目（恢复前自动归档当前，误恢复可找回）。
 
     按归档内相对键写回（``interface.json`` → 项目根、``config/*`` →
     项目 ``config/``）；只覆盖归档内包含的文件，不动 ``resource/`` 等资产。
     """
 
-    backup_dir = get_native_backup_dir(project_path, ts)
+    backup_dir = get_native_backup_dir(script_id, project_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     project_path = Path(project_path)
     files = dir_files(backup_dir)
     if not files:
         raise ValueError(f"备份内容为空: {ts}")
-    archive_native_backup(project_path, force=True)
+    archive_native_backup(script_id, project_path, force=True)
     for rel, path in files.items():
         target = (
             project_path / _INTERFACE_FILE
@@ -347,9 +358,7 @@ def build_overlay_preview(overlay: dict) -> dict:
                 if isinstance(overlay[key], bool)
                 else _summary_text(overlay[key])
             )
-            mas_rows.append(
-                {"key": _OVERLAY_FIELD_LABELS[key], "value": value}
-            )
+            mas_rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": value})
     if mas_rows:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
@@ -372,13 +381,14 @@ def build_overlay_preview(overlay: dict) -> dict:
             {"key": "已启用任务", "value": "、".join(names) if names else "无"}
         )
     if "Account" in overlay:
-        task_rows.append(
-            {"key": "账号", "value": _mask_account(overlay["Account"])}
-        )
+        task_rows.append({"key": "账号", "value": _mask_account(overlay["Account"])})
     for key in ("Controller", "Resource"):
         if key in overlay:
             task_rows.append(
-                {"key": _OVERLAY_FIELD_LABELS[key], "value": _summary_text(overlay[key])}
+                {
+                    "key": _OVERLAY_FIELD_LABELS[key],
+                    "value": _summary_text(overlay[key]),
+                }
             )
     if task_rows:
         sections.append({"name": "maafw", "label": "MaaFW 配置", "rows": task_rows})
@@ -387,7 +397,10 @@ def build_overlay_preview(overlay: dict) -> dict:
     for key in _OVERLAY_DEVICE_KEYS:
         if key in overlay and str(overlay[key]).strip():
             device_rows.append(
-                {"key": _OVERLAY_FIELD_LABELS[key], "value": _summary_text(overlay[key])}
+                {
+                    "key": _OVERLAY_FIELD_LABELS[key],
+                    "value": _summary_text(overlay[key]),
+                }
             )
     if device_rows:
         sections.append({"name": "device", "label": "设备覆盖", "rows": device_rows})
@@ -395,7 +408,7 @@ def build_overlay_preview(overlay: dict) -> dict:
     return {"sections": sections}
 
 
-def build_native_preview(project_path: str | Path, ts: str) -> dict:
+def build_native_preview(script_id: str, project_path: str | Path, ts: str) -> dict:
     """native 池预览：反读归档内 interface.json 的任务/方案概览。
 
     MaaFW 项目配置的核心是 interface.json（任务定义、preset 与选中方案）。
@@ -404,7 +417,7 @@ def build_native_preview(project_path: str | Path, ts: str) -> dict:
     选项（maa_option.json）为引擎级内部设置，不进预览。
     """
 
-    backup_dir = get_native_backup_dir(project_path, ts)
+    backup_dir = get_native_backup_dir(script_id, project_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     files = dir_files(backup_dir)
@@ -415,14 +428,17 @@ def build_native_preview(project_path: str | Path, ts: str) -> dict:
     interface_rel = _INTERFACE_FILE
     if interface_rel in files:
         try:
-            interface = json.loads(
-                files[interface_rel].read_text(encoding="utf-8-sig")
-            )
+            interface = json.loads(files[interface_rel].read_text(encoding="utf-8-sig"))
         except Exception:  # noqa: BLE001 - 坏 JSON 不阻断预览
             interface = None
         if isinstance(interface, dict):
             if interface.get("version") is not None:
-                rows.append({"key": "interface 版本", "value": _summary_text(interface["version"])})
+                rows.append(
+                    {
+                        "key": "interface 版本",
+                        "value": _summary_text(interface["version"]),
+                    }
+                )
             tasks = interface.get("tasks")
             if isinstance(tasks, dict) and tasks:
                 rows.append(
