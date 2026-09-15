@@ -137,6 +137,7 @@ def apply_package_transaction(
     send_log: Callable[[str], None] | None = None,
     progress: Callable[[str, dict[str, Any]], None] | None = None,
     project_lock_already_held: bool = False,
+    projection: bool = False,
 ) -> dict[str, Any]:
     """Apply a package using a durable stage/backup transaction.
 
@@ -214,6 +215,8 @@ def apply_package_transaction(
                 expected_package_type=expected_package_type,
                 from_version=from_version,
                 target_version=target_version,
+                projection=projection,
+                send_log=send_log,
             )
             _validate_plan_base(root, plan, old_manifest, current)
             if plan.package_type == "full":
@@ -412,6 +415,8 @@ def build_package_plan(
     expected_package_type: ArtifactType | None = None,
     from_version: str | None = None,
     target_version: str | None = None,
+    projection: bool = False,
+    send_log: Callable[[str], None] | None = None,
 ) -> PackagePlan:
     changes_path = _find_changes_file(package_root, extract_dir)
     changes = _load_json(changes_path) if changes_path else {}
@@ -481,6 +486,12 @@ def build_package_plan(
         safe_relative_path(relative)
     if package_type == "full" and not _has_interface_file(package_root):
         raise UpdateApplyError("full update package must contain interface.json")
+    if projection:
+        # 内嵌副本：只按 interface 白名单落盘。这是唯一的枚举口，三张表一起过滤，
+        # 下游的清单、孤儿清理、回滚看到的就都是瘦树。
+        files, hashes, deleted = _project_package_entries(
+            payload_root, project_path, files, hashes, deleted, send_log
+        )
     return PackagePlan(
         package_type=package_type,
         package_root=package_root,
@@ -490,6 +501,47 @@ def build_package_plan(
         base_version=base_version,
         base_fingerprint=base_fingerprint,
         target_version=declared_target or target_version,
+    )
+
+
+def _project_package_entries(
+    payload_root: Path,
+    project_path: Path,
+    files: dict[str, Path],
+    hashes: dict[str, str],
+    deleted: tuple[str, ...],
+    send_log: Callable[[str], None] | None,
+) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...]]:
+    from .projection import (
+        ProjectionError,
+        filter_package_entries,
+        package_projection_rules,
+    )
+
+    try:
+        rules = package_projection_rules(payload_root, project_path)
+    except ProjectionError as exc:
+        raise UpdateApplyError(f"projection rules unavailable: {exc}") from exc
+    kept_files, dropped_files = filter_package_entries(rules, files)
+    kept_deleted, _dropped_deleted = filter_package_entries(rules, deleted)
+    if send_log is not None:
+        dropped_count = len(dropped_files)
+        if dropped_count:
+            send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
+        for warning in rules.warnings:
+            send_log(f"内嵌投影：{warning}")
+    return (
+        {
+            relative: source
+            for relative, source in files.items()
+            if relative in kept_files
+        },
+        {
+            relative: digest
+            for relative, digest in hashes.items()
+            if relative in kept_files
+        },
+        tuple(relative for relative in deleted if relative in kept_deleted),
     )
 
 
