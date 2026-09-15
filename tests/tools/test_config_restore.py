@@ -24,6 +24,7 @@
 """
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -111,3 +112,78 @@ def test_dispatch_rejects_unknown_and_missing() -> None:
         asyncio.run(service.restore("native", "t1"))
     with pytest.raises(ValueError):
         asyncio.run(service.ensure("native"))
+
+
+async def _decl_files(ctx) -> dict[str, str] | None:
+    if ctx.script_id == "no-content":
+        return None
+    return {"_mas_overlay.json": '{"Mode": "用户"}'}
+
+
+async def _decl_root(ctx) -> Path | None:
+    if ctx.script_id == "no-root":
+        return None
+    return Path.cwd() / "data" / ctx.script_id / "test-decl"
+
+
+DECL_POOL = ConfigRestorePool(
+    key="decl",
+    kind="user",
+    files=_decl_files,
+    backup_root=_decl_root,
+    restore=_restore,
+)
+
+
+def test_declarative_derivation(tmp_path, monkeypatch) -> None:
+    """声明式派生：files+backup_root → list/snapshot/read_file/files 兜底注入。"""
+
+    monkeypatch.chdir(tmp_path)
+    ctx = _ctx()
+    service = build_restore_service(ctx, "测试", [DECL_POOL])
+
+    # snapshot 落盘 → list 出现 → preview 注入标准 files → read_file 可读
+    created = asyncio.run(service.ensure("decl"))
+    assert created["created"] is True and created["time"]
+    assert asyncio.run(service.list("decl")) == [created["time"]]
+    payload = asyncio.run(service.preview("decl", created["time"]))
+    assert payload["files"] == [
+        {
+            "path": "_mas_overlay.json",
+            "size": len('{"Mode": "用户"}'.encode("utf-8")),
+        }
+    ]
+    content = asyncio.run(
+        service.read_backup_file("decl", created["time"], "_mas_overlay.json")
+    )
+    assert '"Mode"' in content["content"]
+
+    # 无可归档内容：snapshot 报无变化（不产生条目）
+    no_content = build_restore_service(
+        RestoreContext(ctx.config, ctx.script_config, "no-content", ctx.user_id),
+        "测试",
+        [DECL_POOL],
+    )
+    assert asyncio.run(no_content.ensure("decl")) == {"created": False, "time": ""}
+
+
+def test_declarative_none_root_is_silent(tmp_path, monkeypatch) -> None:
+    """backup_root 返回 None（如脚本路径未配置）：list 空 / snapshot 无变化 /
+    preview 不注入不炸 / read_file 报无可读——而不是 TypeError。"""
+
+    monkeypatch.chdir(tmp_path)
+    no_root = build_restore_service(
+        RestoreContext(_ctx().config, _ctx().script_config, "no-root", "u1"),
+        "测试",
+        [DECL_POOL],
+    )
+    assert asyncio.run(no_root.list("decl")) == []
+    assert asyncio.run(no_root.ensure("decl")) == {"created": False, "time": ""}
+    assert asyncio.run(no_root.preview("decl", "whatever")) == {}
+    with pytest.raises(ValueError):
+        asyncio.run(no_root.read_backup_file("decl", "whatever", "x.json"))
+    # restore 是显式回调（专项语义），不依赖声明式 root，正常执行
+    assert asyncio.run(no_root.restore("decl", "whatever")) == {
+        "restored": "whatever",
+        "user": "u1",
+    }

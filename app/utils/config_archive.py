@@ -100,14 +100,15 @@ def dir_files(source: Path) -> dict[str, Path]:
     return files
 
 
-def file_set_hash(files: dict[str, Path]) -> str:
+def file_set_hash(files: dict[str, "Path | str | bytes"]) -> str:
     """计算文件集指纹：相对键 + 大小 + 字节内容的组合哈希。
 
     文件集合的变化（增删文件）与内容变化都会使指纹改变；相对键的排序保证
-    指纹与收集顺序无关。
+    指纹与收集顺序无关。值为 ``str`` 按 UTF-8 编码、``bytes`` 原样参与
+    （内存内容见 :func:`archive_files`）。
 
     Args:
-        files: 相对路径键 → 文件路径的映射（见 :func:`dir_files`）。
+        files: 相对路径键 → 文件路径或内存内容的映射。
 
     Returns:
         十六进制 SHA-256 摘要。
@@ -115,14 +116,24 @@ def file_set_hash(files: dict[str, Path]) -> str:
 
     digest = hashlib.sha256()
     for rel in sorted(files):
-        path = files[rel]
-        digest.update(f"f:{rel}:{path.stat().st_size}:".encode())
-        digest.update(path.read_bytes())
+        content = _coerce_bytes(files[rel])
+        digest.update(f"f:{rel}:{len(content)}:".encode())
+        digest.update(content)
     return digest.hexdigest()
 
 
+def _coerce_bytes(source: "Path | str | bytes") -> bytes:
+    """把文件源统一成字节内容（``Path`` 读盘，``str`` 按 UTF-8，``bytes`` 原样）。"""
+
+    if isinstance(source, bytes):
+        return source
+    if isinstance(source, str):
+        return source.encode("utf-8")
+    return Path(source).read_bytes()
+
+
 def _archive(
-    files: dict[str, Path],
+    files: dict[str, "Path | str | bytes"],
     store_root: Path,
     *,
     keep: int,
@@ -160,10 +171,13 @@ def _archive(
         serial += 1
         dest = store_root / f"{datetime.now().strftime(_TIME_FORMAT)}-{serial}"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    for rel, path in files.items():
+    for rel, source in files.items():
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+        if isinstance(source, Path):
+            shutil.copyfile(source, target)
+        else:
+            target.write_bytes(_coerce_bytes(source))
 
     for old in list_times(store_root)[keep:]:
         if old in protect:  # force 归档（恢复前存底）不清任何现存归档
@@ -174,7 +188,7 @@ def _archive(
 
 
 def archive_files(
-    files: dict[str, Path],
+    files: dict[str, "Path | str | bytes"],
     store_root: Path,
     *,
     keep: int = KEEP_COUNT,
@@ -183,10 +197,12 @@ def archive_files(
     """按文件集归档：相对键结构原样存入新时间戳目录。
 
     适用于备份「分散在多个目录、只挑其中一部分」的文件集合；指纹去重后
-    无变化返回 ``None``，否则返回归档目录。
+    无变化返回 ``None``，否则返回归档目录。值支持三种来源：``Path``（拷贝
+    磁盘文件）、``str``（按 UTF-8 编码写入，页面字段侧车用，免临时文件）、
+    ``bytes``（原样写入）。
 
     Args:
-        files: 相对路径键 → 文件路径的映射（见 :func:`dir_files`）。
+        files: 相对路径键 → 文件路径或内存内容的映射。
         store_root: 归档根目录（该目录 = 一份独立的保留池）。
         keep: 保留份数，超出清理最旧；默认 :data:`KEEP_COUNT`。
         force: 恢复/覆盖前存底用：不做超时清理（protect 全部现存条目），
@@ -283,3 +299,36 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     # 普通 rmtree 删不掉，残留会让随后的 copytree 覆盖失败。
     force_rmtree(target)
     shutil.copytree(backup_dir, target, dirs_exist_ok=True)
+
+
+def read_backup_text(
+    backup_dir: Path, rel_path: str, *, max_bytes: int = 1024 * 1024
+) -> dict:
+    """只读读取归档目录内一个文本文件（预览「查看原始文件」用）。
+
+    Args:
+        backup_dir: 归档目录（:func:`get_backup_dir` 的返回值）。
+        rel_path: 归档内相对路径（如 ``M7A/config.yaml``）。
+        max_bytes: 允许读取的最大字节数（默认 1 MiB），超出拒绝。
+
+    Returns:
+        ``{"path": rel_path, "size": 字节数, "content": 文本内容}``。
+
+    Raises:
+        ValueError: 备份目录不存在、路径越界（防 ``../`` 穿越）、目标不是
+            归档内的普通文件，或超出大小上限。
+    """
+
+    root = Path(backup_dir).resolve()
+    if not root.is_dir():
+        raise ValueError(f"备份不存在: {backup_dir.name}")
+    target = (root / rel_path).resolve()
+    if not target.is_relative_to(root):
+        raise ValueError(f"非法的文件路径: {rel_path}")
+    if not target.is_file():
+        raise ValueError(f"文件不存在: {rel_path}")
+    size = target.stat().st_size
+    if size > max_bytes:
+        raise ValueError(f"文件超出可查看大小上限（{size} > {max_bytes} 字节）")
+    content = target.read_text(encoding="utf-8-sig", errors="replace")
+    return {"path": str(rel_path), "size": size, "content": content}
