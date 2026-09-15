@@ -880,10 +880,20 @@ function createWindow() {
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
     win.loadURL(devServer)
-  } else {
+  } else if (app.isPackaged) {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
     logger.info(`加载生产环境页面: ${indexHtmlPath}`)
     win.loadFile(indexHtmlPath)
+  } else {
+    // 开发环境必须走 vite 开发服务器（yarn dev 会设置 VITE_DEV_SERVER_URL）。
+    // 回退读 dist/ 会静默加载任意陈旧的构建产物，让开发者以为跑的是当前源码，故直接报错退出。
+    const message =
+      '开发环境未设置 VITE_DEV_SERVER_URL，无法加载前端。\n\n' +
+      '请用 yarn dev 启动（同时拉起 vite 开发服务器），不要直接运行 electron。'
+    logger.error(message)
+    dialog.showErrorBox('AUTO-MAS 开发环境启动方式不正确', message)
+    app.quit()
+    return
   }
 
   // 窗口事件处理
@@ -1076,9 +1086,15 @@ function createLogWindow(file?: LogWindowFile) {
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     logWindow.loadURL(`${devServer}#${hash}`)
-  } else {
+  } else if (app.isPackaged) {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
     logWindow.loadFile(indexHtmlPath, { hash })
+  } else {
+    // 与主窗口一致：开发环境不回退读 dist/，主窗口已在此时报错退出。
+    logger.error('开发环境未设置 VITE_DEV_SERVER_URL，无法加载日志窗口')
+    logWindow.destroy()
+    logWindow = null
+    return
   }
 
   logWindow.once('ready-to-show', () => {
