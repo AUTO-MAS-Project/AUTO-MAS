@@ -113,6 +113,65 @@ def _bettergi_owner_id(script_config: RuntimeBetterGIConfig, user_id: str) -> st
     )
 
 
+def _bettergi_uses_script_source(
+    script_config: RuntimeBetterGIConfig, user_id: str
+) -> bool:
+    """该用户是否是「脚本」来源——一条龙编排读写脚本级共享段而不是自己的用户配置。"""
+
+    from app.task.proxy_helpers import CONFIG_SOURCE_SCRIPT, read_config_source
+
+    return (
+        read_config_source(_bettergi_user_config(script_config, user_id))
+        == CONFIG_SOURCE_SCRIPT
+    )
+
+
+def _bettergi_owner_config(script_config: RuntimeBetterGIConfig, user_id: str):
+    """一条龙编排的读写对象：「脚本」来源 → 脚本级共享段；其余 → 该用户自己的配置。
+
+    Info / Task / Switch 段（来源、名称、账号等）始终属于用户自己，不走本入口。
+    """
+
+    return (
+        script_config
+        if _bettergi_uses_script_source(script_config, user_id)
+        else _bettergi_user_config(script_config, user_id)
+    )
+
+
+async def _bettergi_apply_script_level_source(
+    script_config: RuntimeBetterGIConfig, data: dict
+) -> dict:
+    """把「脚本」来源用户的一条龙编排整段换成脚本级共享段的内容（只改 OneDragon 段）。
+
+    来源为「用户」的用户原样返回；脚本级段读不到时保持用户级值，不阻断读取。
+    """
+
+    from app.task.proxy_helpers import CONFIG_SOURCE_SCRIPT
+
+    if not isinstance(script_config, RuntimeBetterGIConfig) or not isinstance(
+        data, dict
+    ):
+        return data
+    try:
+        shared = (await script_config.toDict()).get("OneDragon")
+    except Exception:  # pragma: no cover - 读取失败退回用户级值
+        return data
+    if not isinstance(shared, dict):
+        return data
+    for cfg in data.values():
+        if not isinstance(cfg, dict):
+            continue
+        if (cfg.get("Info") or {}).get("Mode") != CONFIG_SOURCE_SCRIPT:
+            continue
+        one_dragon_cfg = cfg.get("OneDragon")
+        if isinstance(one_dragon_cfg, dict):
+            one_dragon_cfg.update(shared)
+        else:
+            cfg["OneDragon"] = dict(shared)
+    return data
+
+
 def _read_combat_from_plan(
     script_config, user_id: str, group: str, source: str, data: dict
 ) -> dict:
@@ -125,7 +184,7 @@ def _read_combat_from_plan(
     )
     if not mapping:
         return data
-    user_config = _bettergi_user_config(script_config, user_id)
+    user_config = _bettergi_owner_config(script_config, user_id)
     plan_json = user_config.get("OneDragon", "Plan") or ""
     data.update(
         one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {}
@@ -174,7 +233,7 @@ def _route_combat_to_plan(
     extra = one_dragon_plan.extract_weekly_struct(target_group, settings)
     if not plan_settings and not extra:
         return settings, None
-    user_config = _bettergi_user_config(script_config, user_id)
+    user_config = _bettergi_owner_config(script_config, user_id)
     plan_json = user_config.get("OneDragon", "Plan") or ""
     new_plan = one_dragon_plan.merge_rightbar_into_plan(
         plan_json, target_group, plan_settings, extra=extra or None
@@ -619,6 +678,10 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
         index = [UserIndexItem(**_) for _ in index]
+        # 「脚本配置」来源的用户：一条龙编排整段取自脚本级共享段
+        data = await _bettergi_apply_script_level_source(
+            Config.ScriptConfig[uuid.UUID(user.scriptId)], data
+        )
         data = {
             uid: USER_BOOK[
                 type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
@@ -690,7 +753,7 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             from app.task.BetterGI.tools import one_dragon_plan
 
             script_cfg = Config.ScriptConfig[uuid.UUID(user.scriptId)]
-            uc = script_cfg.UserData[uuid.UUID(user.userId)]
+            uc = _bettergi_owner_config(script_cfg, user.userId)
             plan = uc.get("OneDragon", "Plan") or ""
             groups = uc.get("OneDragon", "Groups") or []
             new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
@@ -723,6 +786,16 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             )
 
     try:
+        # 「脚本配置」来源：OneDragon 整段写入脚本级共享段，Info / Task / Switch 仍写用户级
+        script_cfg = Config.ScriptConfig[uuid.UUID(user.scriptId)]
+        shared_od = data.get("OneDragon") if isinstance(data, dict) else None
+        if (
+            isinstance(shared_od, dict)
+            and isinstance(script_cfg, RuntimeBetterGIConfig)
+            and _bettergi_uses_script_source(script_cfg, user.userId)
+        ):
+            await script_cfg.update({"OneDragon": shared_od})
+            data.pop("OneDragon", None)
         await Config.update_user(user.scriptId, user.userId, data)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
@@ -2225,8 +2298,8 @@ async def save_bettergi_one_dragon_settings_api(
             script_config, req.userId, req.groupName, req.settings, "dragon"
         )
         if new_plan is not None:
-            user_config = _bettergi_user_config(script_config, req.userId)
-            await user_config.set("OneDragon", "Plan", new_plan)
+            owner_config = _bettergi_owner_config(script_config, req.userId)
+            await owner_config.set("OneDragon", "Plan", new_plan)
         if native_leftover:
             one_dragon.write_user_one_dragon_settings(
                 root,
@@ -2280,9 +2353,9 @@ async def set_one_dragon_plan_step_enabled(
     try:
         script_config = _bettergi_script_config(scriptId)
         _bettergi_user_id(script_config, userId)
-        user_config = _bettergi_user_config(script_config, userId)
+        owner_config = _bettergi_owner_config(script_config, userId)
         plan = one_dragon_plan.parse_one_dragon_plan(
-            user_config.get("OneDragon", "Plan") or ""
+            owner_config.get("OneDragon", "Plan") or ""
         )
         target = next((s for s in plan if s.get("name") == name), None)
         if target is None:
@@ -2297,7 +2370,7 @@ async def set_one_dragon_plan_step_enabled(
             )
         else:
             target["enabled"] = enabled
-        await user_config.set("OneDragon", "Plan", one_dragon_plan.plan_to_json(plan))
+        await owner_config.set("OneDragon", "Plan", one_dragon_plan.plan_to_json(plan))
         return OutBase(
             code=200,
             status="success",
@@ -2341,7 +2414,9 @@ async def get_bettergi_global_domain_settings_api(
         from app.task.BetterGI.tools import one_dragon
 
         data = (
-            one_dragon.read_user_global_domain_settings(root, scriptId, userId)
+            one_dragon.read_user_global_domain_settings(
+                root, scriptId, _bettergi_owner_id(script_config, userId)
+            )
             if userId
             else one_dragon.read_global_domain_settings(root)
         )
@@ -2394,11 +2469,13 @@ async def save_bettergi_global_domain_settings_api(
                 script_config, req.userId, req.groupName, req.settings, "globalDomain"
             )
             if new_plan is not None:
-                user_config = _bettergi_user_config(script_config, req.userId)
-                await user_config.set("OneDragon", "Plan", new_plan)
+                owner_config = _bettergi_owner_config(script_config, req.userId)
+                await owner_config.set("OneDragon", "Plan", new_plan)
             if native_leftover:
                 one_dragon.write_user_global_domain_settings(
-                    req.scriptId, req.userId, native_leftover
+                    req.scriptId,
+                    _bettergi_owner_id(script_config, req.userId),
+                    native_leftover,
                 )
         else:
             one_dragon.write_global_domain_settings(root, req.settings)
@@ -2445,7 +2522,9 @@ async def get_bettergi_global_stygian_settings_api(
         from app.task.BetterGI.tools import one_dragon
 
         data = (
-            one_dragon.read_user_global_stygian_settings(root, scriptId, userId)
+            one_dragon.read_user_global_stygian_settings(
+                root, scriptId, _bettergi_owner_id(script_config, userId)
+            )
             if userId
             else one_dragon.read_global_stygian_settings(root)
         )
@@ -2498,11 +2577,13 @@ async def save_bettergi_global_stygian_settings_api(
                 script_config, req.userId, req.groupName, req.settings, "globalStygian"
             )
             if new_plan is not None:
-                user_config = _bettergi_user_config(script_config, req.userId)
-                await user_config.set("OneDragon", "Plan", new_plan)
+                owner_config = _bettergi_owner_config(script_config, req.userId)
+                await owner_config.set("OneDragon", "Plan", new_plan)
             if native_leftover:
                 one_dragon.write_user_global_stygian_settings(
-                    req.scriptId, req.userId, native_leftover
+                    req.scriptId,
+                    _bettergi_owner_id(script_config, req.userId),
+                    native_leftover,
                 )
         else:
             one_dragon.write_global_stygian_settings(root, req.settings)

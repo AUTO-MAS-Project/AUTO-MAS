@@ -55,9 +55,16 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按来源和快速配置决定。
         self.use_mas_config = True
+        # per-user 副本的 owner：「脚本」来源的用户共用脚本级那一份
+        self.owner_user_id = one_dragon.SCRIPT_LEVEL_OWNER
         if self.cur_user_item.user_id != "Default":
+            from app.task.proxy_helpers import read_config_source
+
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
             self.use_mas_config = bool(user_config.get("Info", "IfQuickConfig"))
+            self.owner_user_id = one_dragon.owner_user_id(
+                self.cur_user_item.user_id, read_config_source(user_config)
+            )
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
@@ -71,7 +78,7 @@ class ScriptConfigTask(TaskExecuteBase):
         with suppress(Exception):
             # 按用户短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）
             one_dragon.cleanup_leftover_mas_groups(
-                self.root_path, self.script_info.script_id, self.cur_user_item.user_id
+                self.root_path, self.script_info.script_id, self.owner_user_id
             )
         with suppress(Exception):
             # 仅删除确由 MAS 写入的槽位（owner/backup 标记校验在函数内）
