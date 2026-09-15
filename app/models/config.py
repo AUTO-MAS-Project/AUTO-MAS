@@ -51,6 +51,7 @@ from app.utils.constants import (
     STARRAIL_STAGE_BOOK,
     UTC4,
 )
+from app.utils.io import read_file
 
 from . import schema as schema_model
 from .ConfigBase import (
@@ -192,6 +193,54 @@ def load_infrast_plans(custom_infrast: str | None) -> tuple[list[dict], str | No
     if problem is not None:
         return [], problem
     return data.get("plans", []), None
+
+
+def read_maa_config(path: Path) -> dict | None:
+    """读取 MAA gui.new.json 配置; 缺失或损坏返回 None(损坏另记警告)。"""
+
+    try:
+        data = read_file(path)
+    except (OSError, json.JSONDecodeError):
+        logger.opt(exception=True).warning(f"读取 MAA 配置失败: {path}")
+        return None
+    return data if isinstance(data, dict) and data else None
+
+
+def maa_scheme_name(config_dir: Path, data: dict) -> str:
+    """MAA 生效方案名, 与 AutoProxy.set_maa 的方案归一判定对称。
+
+    多方案配置下 set_maa 把 gui.json 的 Current 方案复制进 gui.new.json 的
+    Default 再注入, 故运行时读到的队列就是 Current 方案(该方案不在
+    gui.new.json 里时才是 Default)。读取与回写都要落在同一方案, 否则写进去的
+    班次会被方案归一覆盖。``data`` 为已读取的 gui.new.json 内容。
+    """
+
+    try:
+        gui = read_file(config_dir / "gui.json")
+    except (OSError, json.JSONDecodeError):
+        return "Default"
+    current = gui.get("Current") if isinstance(gui, dict) else None
+    configurations = data.get("Configurations")
+    if (
+        isinstance(current, str)
+        and current not in ("", "Default")
+        and isinstance(configurations, dict)
+        and isinstance(configurations.get(current), dict)
+    ):
+        return current
+    return "Default"
+
+
+def maa_task_queue(data: dict, scheme: str) -> Any:
+    """取 MAA 配置中指定方案的任务队列; 结构不符返回 None。"""
+
+    configurations = data.get("Configurations")
+    if not isinstance(configurations, dict):
+        return None
+    configuration = configurations.get(scheme)
+    if not isinstance(configuration, dict):
+        return None
+    return configuration.get("TaskQueue")
 
 
 def init_maaend_task_config(config) -> None:

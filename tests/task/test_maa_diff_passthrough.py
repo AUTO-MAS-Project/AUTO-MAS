@@ -1,12 +1,63 @@
 """MAA 配置 diff 透传的最小回归测试(纯逻辑)。"""
 
-from app.task.MAA.AutoProxy import _merge_maa_changes, _merge_task_queue
+from app.task.MAA.AutoProxy import (
+    _merge_maa_changes,
+    _merge_maa_config_file,
+    _merge_task_queue,
+)
 
 
 def test_scalar_change_merged():
     archive = {"a": 1}
     assert _merge_maa_changes(archive, {"a": 1}, {"a": 2})
     assert archive == {"a": 2}
+
+
+def test_injected_key_not_written_back():
+    # baseline 与 current 一致而仅与存档不同, 说明是 MAS 托管注入自己改写的,
+    # 不能回流存档, 否则运行一次就把用户选中的方案抹成注入值
+    archive = {"Current": "SchemeX"}
+    assert not _merge_maa_changes(
+        archive, {"Current": "Default"}, {"Current": "Default"}
+    )
+    assert archive == {"Current": "SchemeX"}
+
+
+def test_scheme_redirect_targets_active_scheme():
+    # 运行期写盘的是归一后的 Default, 存档生效方案不是 Default 时变更要落回该方案键
+    archive = {
+        "Configurations": {
+            "SchemeX": {
+                "TaskQueue": [{"TaskType": "Mall", "Name": "信用收支", "T": "旧"}]
+            },
+            "Default": {
+                "TaskQueue": [{"TaskType": "Mall", "Name": "信用收支", "T": "自有"}]
+            },
+        }
+    }
+    baseline = {
+        "Configurations": {
+            "SchemeX": {
+                "TaskQueue": [{"TaskType": "Mall", "Name": "信用收支", "T": "旧"}]
+            },
+            "Default": {
+                "TaskQueue": [{"TaskType": "Mall", "Name": "信用收支", "T": "旧"}]
+            },
+        }
+    }
+    current = {
+        "Configurations": {
+            "SchemeX": {
+                "TaskQueue": [{"TaskType": "Mall", "Name": "信用收支", "T": "旧"}]
+            },
+            "Default": {
+                "TaskQueue": [{"TaskType": "Mall", "Name": "信用收支", "T": "新"}]
+            },
+        }
+    }
+    assert _merge_maa_config_file(archive, baseline, current, "SchemeX")
+    assert archive["Configurations"]["SchemeX"]["TaskQueue"][0]["T"] == "新"
+    assert archive["Configurations"]["Default"]["TaskQueue"][0]["T"] == "自有"
 
 
 def test_new_key_merged():

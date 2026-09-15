@@ -83,6 +83,9 @@ from app.models.config import (
     infrast_format_problem,
     infrast_plan_state,
     load_infrast_plans,
+    maa_scheme_name,
+    maa_task_queue,
+    read_maa_config,
 )
 from app.models.schema import PlanComboxConsumer
 from app.utils import get_logger, is_supervised, resource_path
@@ -96,7 +99,7 @@ from app.utils.constants import (
     UTC4,
     UTC8,
 )
-from app.utils.io import force_rmtree, read_file, write_file
+from app.utils.io import force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
@@ -2542,53 +2545,53 @@ class AppConfig(GlobalConfig):
                 return Path(script_config.get("Info", "Path")) / "config"
         return Path.cwd() / f"data/{script_id}/{user_id}/ConfigFile"
 
-    @staticmethod
-    def _read_maa_config(path: Path) -> dict | None:
-        """读取 MAA gui.new.json 配置; 缺失或损坏返回 None(损坏另记警告)。"""
+    def _infrast_plans(
+        self, script_id: str, user_id: str
+    ) -> tuple[list[dict], str | None, str]:
+        """生效排班表 (plans, problem, state), 与运行时使用的那份同源。
 
-        try:
-            data = read_file(path)
-        except (OSError, json.JSONDecodeError):
-            logger.opt(exception=True).warning(f"读取 MAA 配置失败: {path}")
-            return None
-        return data if isinstance(data, dict) and data else None
-
-    @staticmethod
-    def _maa_scheme_name(config_dir: Path, data: dict) -> str:
-        """MAA 生效方案名, 与 AutoProxy.set_maa 的方案归一判定对称。
-
-        多方案配置下 set_maa 把 gui.json 的 Current 方案复制进 gui.new.json 的
-        Default 再注入, 故运行时读到的队列就是 Current 方案(该方案不在
-        gui.new.json 里时才是 Default)。基建班次要落在同一方案, 否则写进去的
-        班次会被方案归一覆盖。``data`` 为已读取的 gui.new.json 内容。
+        直控且关闭快速配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
+        排班表只存在原生的 Infrast 任务里(InfrastPlan 不落盘, 事实源是
+        Filename 指向的排班文件); 其余组合(托管 / 直控+快速配置)都由 MAS
+        注入存档排班表。若不加区分地对直控读 MAS 存档, 直控用户的班次会被
+        空存档误拒; 反过来在直控+快速配置下读原生配置, 又会与运行时不一致。
         """
 
-        try:
-            gui = read_file(config_dir / "gui.json")
-        except (OSError, json.JSONDecodeError):
-            return "Default"
-        current = gui.get("Current") if isinstance(gui, dict) else None
-        configurations = data.get("Configurations")
-        if (
-            isinstance(current, str)
-            and current not in ("", "Default")
-            and isinstance(configurations, dict)
-            and isinstance(configurations.get(current), dict)
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        user_config = script_config.UserData[uuid.UUID(user_id)]
+        if user_config.get("Info", "Mode") != "直控" or user_config.get(
+            "Info", "IfQuickConfig"
         ):
-            return current
-        return "Default"
+            raw = user_config.get("Data", "CustomInfrast")
+            plans, problem = load_infrast_plans(raw)
+            return plans, problem, infrast_plan_state(raw)
 
-    @staticmethod
-    def _maa_task_queue(data: dict, scheme: str) -> Any:
-        """取 MAA 配置中指定方案的任务队列; 结构不符返回 None。"""
-
-        configurations = data.get("Configurations")
-        if not isinstance(configurations, dict):
-            return None
-        configuration = configurations.get(scheme)
-        if not isinstance(configuration, dict):
-            return None
-        return configuration.get("TaskQueue")
+        config_dir = self._infrast_config_dir(script_id, user_id)
+        data = read_maa_config(config_dir / "gui.new.json")
+        if data is None:
+            return [], "未找到或无法读取 MAA 原生配置", "empty"
+        queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+        if not isinstance(queue, list):
+            return [], "MAA 原生配置缺少任务队列", "empty"
+        for task in queue:
+            if not isinstance(task, dict) or task.get("TaskType") != "Infrast":
+                continue
+            if task.get("Mode") != "Custom":
+                return [], "MAA 原生配置未启用自定义基建", "empty"
+            filename = task.get("Filename")
+            if not isinstance(filename, str) or not filename.strip():
+                return [], "MAA 原生配置没有指定排班文件", "empty"
+            path = Path(filename.strip())
+            if not path.is_file():
+                return [], f"MAA 原生排班文件不存在: {path.name}", "empty"
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                logger.opt(exception=True).warning(f"读取 MAA 原生排班文件失败: {path}")
+                return [], f"MAA 原生排班文件无法读取: {path.name}", "empty"
+            plans, problem = load_infrast_plans(text)
+            return plans, problem, infrast_plan_state(text)
+        return [], "MAA 原生配置中没有基建任务", "empty"
 
     async def set_infrast_plan_select(
         self, script_id: str, user_id: str, index: int
@@ -2613,9 +2616,7 @@ class AppConfig(GlobalConfig):
         if index >= 0:
             if user_uid not in script_config.UserData:
                 raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
-            plans, problem = load_infrast_plans(
-                script_config.UserData[user_uid].get("Data", "CustomInfrast")
-            )
+            plans, problem, _ = self._infrast_plans(script_id, user_id)
             if problem is not None:
                 raise ValueError(f"自定义基建排班不可用, 无法设置基建班次: {problem}")
             if index >= len(plans):
@@ -2624,11 +2625,11 @@ class AppConfig(GlobalConfig):
                 )
 
         config_dir = self._infrast_config_dir(script_id, user_id)
-        data = self._read_maa_config(config_dir / "gui.new.json")
+        data = read_maa_config(config_dir / "gui.new.json")
         if data is None:
             raise ValueError("未找到或无法读取该用户的 MAA 配置, 无法设置基建班次")
-        scheme = self._maa_scheme_name(config_dir, data)
-        queue = self._maa_task_queue(data, scheme)
+        scheme = maa_scheme_name(config_dir, data)
+        queue = maa_task_queue(data, scheme)
         if not isinstance(queue, list):
             raise ValueError(
                 f"MAA 配置的方案「{scheme}」缺少任务队列, 无法设置基建班次"
@@ -2658,10 +2659,10 @@ class AppConfig(GlobalConfig):
         if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
             return -1
         config_dir = self._infrast_config_dir(script_id, user_id)
-        data = self._read_maa_config(config_dir / "gui.new.json")
+        data = read_maa_config(config_dir / "gui.new.json")
         if data is None:
             return -1
-        queue = self._maa_task_queue(data, self._maa_scheme_name(config_dir, data))
+        queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
         if not isinstance(queue, list):
             return -1
         for task in queue:
@@ -2687,8 +2688,7 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取用户自定义基建排班下拉框信息")
 
         user_config = script_config.UserData[user_uid]
-        raw_infrast = user_config.get("Data", "CustomInfrast")
-        plans, problem = load_infrast_plans(raw_infrast)
+        plans, problem, state = self._infrast_plans(script_id, user_id)
         # 仅自定义模式下不可用才值得提醒; 普通模式空排班表是正常状态
         if problem is not None and user_config.get("Info", "InfrastMode") == "Custom":
             logger.warning(f"自定义基建排班不可用, 下拉选项按空返回: {problem}")
@@ -2712,7 +2712,7 @@ class AppConfig(GlobalConfig):
 
         logger.success("用户自定义基建排班下拉框信息获取成功")
 
-        return {"state": infrast_plan_state(raw_infrast), "data": data}
+        return {"state": state, "data": data}
 
     async def get_maa_depot_items(self, script_id: str) -> list[dict[str, str]]:
         """获取 MAA 库存保持物品选项。"""
