@@ -38,7 +38,12 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
 from urllib.parse import urlparse
 
-from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
+from app.utils import (
+    dpapi_decrypt,
+    dpapi_encrypt,
+    get_logger,
+    looks_like_dpapi_blob,
+)
 from app.utils.constants import (
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
@@ -304,6 +309,11 @@ class JSONValidator(ValidatorBase):
         )
 
 
+# 密文读不出来时对外给出的占位值。界面据此提示用户重新设置，
+# 存量密文本身不会被它覆盖。
+UNREADABLE_SECRET_PLACEHOLDER = "数据损坏, 请重新设置"
+
+
 class EncryptValidator(ValidatorBase):
     """加密数据验证器"""
 
@@ -320,7 +330,7 @@ class EncryptValidator(ValidatorBase):
         if self.validate(value):
             return value
         logger.warning("加密配置项无法解密, 已替换为占位值, 请重新设置")
-        return dpapi_encrypt("数据损坏, 请重新设置")
+        return dpapi_encrypt(UNREADABLE_SECRET_PLACEHOLDER)
 
 
 class VirtualConfigValidator(ValidatorBase):
@@ -758,11 +768,18 @@ class ConfigItem:
             值是否真正发生了变化
         """
 
-        if (
-            dpapi_decrypt(self.value)
-            if isinstance(self.validator, EncryptValidator)
-            else self.value
-        ) == value:
+        if isinstance(self.validator, EncryptValidator):
+            try:
+                is_unchanged = dpapi_decrypt(self.value) == value
+            except Exception:
+                # 当前密文本机解不开（多为同机另一个 Windows 账户所写），
+                # 无从比较。此处一律按「有变化」处理放行，否则用户想重新
+                # 填一遍账号密码时会卡在这一行抛错，连覆盖都做不到。
+                is_unchanged = False
+        else:
+            is_unchanged = self.value == value
+
+        if is_unchanged:
             return False
 
         if self.is_locked:
@@ -777,12 +794,13 @@ class ConfigItem:
             self.value = value
 
         if isinstance(self.validator, EncryptValidator):
-            if self.validator.validate(self.value):
-                self.value = self.value
-            else:
+            # 传进来的既可能是用户新填的明文，也可能是 load() 从配置文件读回的
+            # 密文，只按结构区分：已经是密文就原样存下，本机解不开也不例外。
+            # 那多半是同一台机器上另一个 Windows 账户写的，再加密一层会把它变成
+            # 永远恢复不了的乱码，并随 load() 的脏标记写回配置文件。
+            if not looks_like_dpapi_blob(self.value):
                 self.value = dpapi_encrypt(self.value)
-
-        if not self.validator.validate(self.value):
+        elif not self.validator.validate(self.value):
             try:
                 self.value = self.validator.correct(self.value)
             except Exception:
@@ -799,16 +817,23 @@ class ConfigItem:
         获取配置项值
         """
 
+        is_encrypted_item = isinstance(self.validator, EncryptValidator)
+
         try:
-            v = (
-                self.value
-                if self.validator.validate(self.value)
-                else self.validator.correct(self.value)
-            )
+            if self.validator.validate(self.value):
+                v = self.value
+            elif is_encrypted_item and looks_like_dpapi_blob(self.value):
+                # 结构完好但本机解不开的密文，多半属于同一台机器上的另一个
+                # Windows 账户。落盘口径原样返回，否则 toDict 会比对出差异、
+                # 把存量密文当脏数据覆盖掉；读取口径给占位提示，让界面提示
+                # 重新设置。
+                return UNREADABLE_SECRET_PLACEHOLDER if if_decrypt else self.value
+            else:
+                v = self.validator.correct(self.value)
         except Exception:
             v = ""
 
-        if isinstance(self.validator, EncryptValidator) and if_decrypt:
+        if is_encrypted_item and if_decrypt:
             return dpapi_decrypt(v)
         return v
 

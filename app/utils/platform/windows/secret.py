@@ -1,8 +1,24 @@
 import base64
 
 from app.utils.platform.common.errors import UnsupportedPlatformError
+from app.utils.platform.common.secret import looks_like_dpapi_blob
+
+__all__ = [
+    "looks_like_dpapi_blob",
+    "dpapi_encrypt",
+    "dpapi_decrypt",
+    "supports_secret_storage",
+    "is_secret_storage_error",
+]
 
 _SECRET_STORAGE_PROBE = "AUTO-MAS secret storage probe"
+
+# 默认的 DPAPI 作用域绑定当前 Windows 账户，同一台机器上的另一个账户解不开。
+# 一份安装被多个本地账户共用时（配置目录只有一份），换账户启动就会读不出已存的
+# 账号密码。改用机器作用域后同机各账户都能解密；解密侧不需要对应改动，作用域写在
+# 密文里，CryptUnprotectData 与 .NET ProtectedData 都会忽略调用方传入的作用域，
+# 因此既能读回旧的用户态密文，SRA 也能照常解开 MAS 写给它的密文。
+CRYPTPROTECT_LOCAL_MACHINE = 0x4
 
 
 def _win32crypt():
@@ -23,7 +39,12 @@ def dpapi_encrypt(
         return ""
 
     encrypted = _win32crypt().CryptProtectData(
-        note.encode("utf-8"), description, entropy, None, None, 0
+        note.encode("utf-8"),
+        description,
+        entropy,
+        None,
+        None,
+        CRYPTPROTECT_LOCAL_MACHINE,
     )
     return base64.b64encode(encrypted).decode("utf-8")
 
