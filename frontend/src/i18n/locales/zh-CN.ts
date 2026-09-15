@@ -1545,6 +1545,9 @@ export default {
     bettergiServerTwHkMo: '港澳台服',
     bettergiTaskConfigHint:
       '勾选要执行的一条龙内置配置组；选择「脚本直控配置」时由 BetterGI 原生配置决定，不可编辑',
+    bettergiScriptModeShared: '「脚本配置」：编排由所有选此项的用户共用',
+    bettergiScriptModeSharedHint:
+      '本来源下的一条龙编排（队列、内置分组、自定义分组、队伍与战斗策略、任务设置）是脚本级共用的一份，这里的改动会同时影响所有选「脚本配置」的用户；用户级设置（名称、账号、UID、备注等）仍各自独立。',
     bettergiDirectModeAlert:
       '「脚本直控配置」：请在下方填写该用户使用的一条龙名称（BetterGI 中已有的配置名），脚本内容请在 BetterGI 中配置（可点「配置 BetterGI」打开）。',
     bettergiSwitchToMasConfig: '切换到用户独立配置',

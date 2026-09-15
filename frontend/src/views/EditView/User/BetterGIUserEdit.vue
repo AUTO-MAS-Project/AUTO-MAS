@@ -328,6 +328,22 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <a-alert
+              v-if="formData.Info.Mode === '脚本'"
+              type="info"
+              show-icon
+              class="mode-guide-alert config-flow-hint"
+            >
+              <template #message>
+                <span class="config-flow-title">{{ t('edit.bettergiScriptModeShared') }}</span>
+              </template>
+              <template #description>
+                <p class="config-flow-desc config-flow-p">
+                  {{ t('edit.bettergiScriptModeSharedHint') }}
+                </p>
+              </template>
+            </a-alert>
+
+            <a-alert
               v-if="masConfigEnabled"
               type="info"
               show-icon

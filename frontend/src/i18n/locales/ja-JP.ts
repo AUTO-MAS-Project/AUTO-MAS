@@ -1520,6 +1520,9 @@ export default {
     bettergiServerTwHkMo: '台港澳',
     bettergiTaskConfigHint:
       '実行する一条龍の組み込み設定グループを選択します。「スクリプト直接制御」を選んだ場合は BetterGI 側の設定に従うため、ここは編集できません',
+    bettergiScriptModeShared: '「スクリプト設定」：編成はこのソースを選んだ全ユーザーで共有',
+    bettergiScriptModeSharedHint:
+      'このソースでは一条龍の編成（キュー、組み込みグループ、カスタムグループ、チームと戦闘設定、タスク設定）がスクリプト単位で共有され、ここでの変更は「スクリプト設定」を選んだ全ユーザーに反映されます。ユーザー単位の設定（名前・アカウント・UID・メモなど）は個別のままです。',
     bettergiDirectModeAlert:
       '「スクリプト直接制御」モード：下欄でこのユーザーが使う一条龍名（BetterGI に存在する設定名）を入力してください。スクリプトの設定は BetterGI 内で行います（「BetterGI を設定」をクリックして開けます）。',
     bettergiSwitchToMasConfig: 'ユーザー独立設定に切り替える',

@@ -4101,6 +4101,55 @@ class BetterGIConfig(ConfigBase):
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
+        ## OneDragon（脚本级共享编排）----------------------------------------
+        ## 与 BetterGIUserConfig 的 OneDragon 段同段同名、同默认值：配置来源为「脚本」的
+        ## 用户，其一条龙编排（分组/队列/队伍/计划…）读写本段而不是各自的用户配置，
+        ## 从而「改一处、所有选脚本的用户一起变」。来源为「用户」的用户仍用自己那份。
+        ## 字段语义与默认值以 BetterGIUserConfig 为准，改动需两处同步（有单测对齐）。
+        ## 一条龙要执行的内置配置组（按组名，默认全部 8 组开启）
+        self.OneDragon_Groups = ConfigItem(
+            "OneDragon",
+            "Groups",
+            list(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+            MultipleOptionsValidator(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+        )
+        ## 领取奖励队伍（对应 BetterGI 一条龙的 DailyRewardPartyName，留空不覆盖）
+        self.OneDragon_DailyRewardPartyName = ConfigItem(
+            "OneDragon", "DailyRewardPartyName", ""
+        )
+        ## 战斗队伍（对应 BetterGI 一条龙的通用 PartyName，留空不覆盖）
+        self.OneDragon_PartyName = ConfigItem("OneDragon", "PartyName", "")
+        ## 战斗策略（对应 BetterGI 一条龙的 AutoBossStrategyName，留空不覆盖）
+        self.OneDragon_AutoBossStrategyName = ConfigItem(
+            "OneDragon", "AutoBossStrategyName", ""
+        )
+        ## 「队伍配置」总开关；语义同用户配置
+        self.OneDragon_IfUseTeams = ConfigItem(
+            "OneDragon", "IfUseTeams", False, BoolValidator()
+        )
+        ## 队伍配置表（JSON 数组字符串）
+        self.OneDragon_Teams = ConfigItem(
+            "OneDragon", "Teams", "[]", JSONValidator(list)
+        )
+        ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置）
+        self.OneDragon_IfUseCustomGroups = ConfigItem(
+            "OneDragon", "IfUseCustomGroups", False, BoolValidator()
+        )
+        ## 自定义配置组列表（JSON 数组字符串）
+        self.OneDragon_CustomGroups = ConfigItem(
+            "OneDragon", "CustomGroups", "[]", JSONValidator(list)
+        )
+        ## 一条龙队列（可视化编排，JSON 数组字符串，顺序即执行顺序）
+        self.OneDragon_Queue = ConfigItem(
+            "OneDragon", "Queue", "[]", JSONValidator(list)
+        )
+        ## 一条龙执行计划（Plan）JSON 字符串
+        self.OneDragon_Plan = ConfigItem("OneDragon", "Plan", "", StringValidator())
+        ## 是否启用「直连执行层」
+        self.OneDragon_UseExecutionLayer = ConfigItem(
+            "OneDragon", "UseExecutionLayer", True, BoolValidator()
+        )
+
         self.UserData = MultipleConfig([BetterGIUserConfig])
 
         super().__init__()
