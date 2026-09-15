@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -344,7 +344,6 @@ def test_restore_service_callbacks_roundtrip(
 
     from app.task.SRC.tools.restore_service import (
         RESTORE_POOLS,
-        RESTORE_SCRIPT_NAME,
     )
     from app.utils.config_restore import RestoreContext, build_restore_service
 
@@ -370,7 +369,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
-    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service = build_restore_service(ctx, RESTORE_POOLS)
 
     # 脚本态 owner=Default：快照播种并归档到共享 Default 目录，池按用户分桶
     created = asyncio.run(service.ensure("mas"))
@@ -413,7 +412,7 @@ def test_restore_service_callbacks_roundtrip(
         user_id=str(uid),
     )
     service_direct = build_restore_service(
-        ctx_direct, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+        ctx_direct, RESTORE_POOLS
     )
     with pytest.raises(ValueError):
         asyncio.run(service_direct.restore("mas", created["time"]))
@@ -427,7 +426,7 @@ def test_restore_service_callbacks_roundtrip(
         user_id=str(fresh_uid),
     )
     service_fresh_direct = build_restore_service(
-        ctx_fresh_direct, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+        ctx_fresh_direct, RESTORE_POOLS
     )
     assert asyncio.run(service_fresh_direct.ensure("mas")) == {
         "created": False,

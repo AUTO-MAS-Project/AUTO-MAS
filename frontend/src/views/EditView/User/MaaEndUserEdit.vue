@@ -77,10 +77,6 @@
           <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
             <h3>{{ t('edit.taskConfiguration') }}</h3>
             <a-space>
-              <a-button size="small" @click="openRestoreModal">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
               <a-button
                 v-if="formData.Info.IfQuickConfig && isSanityPlanMode"
                 type="link"
@@ -99,6 +95,10 @@
                 :aria-label="t('edit.enableQuickConfiguration')"
                 @change="handleQuickConfigChange"
               />
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
             </a-space>
           </a-flex>
           <a-card v-if="formData.Info.IfQuickConfig" class="section-card">
@@ -772,51 +772,56 @@ const handleRestoreView = (
   target: string,
   item: { time: string; mode?: string | null },
   currentMode?: string | null
-) => {
-  const { title, paragraphs } = buildRestoreConfirm(
-    t,
-    {
-      title: t('edit.configRestoreDetailView'),
-      desc: t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
-    },
-    item.mode,
-    currentMode
-  )
-  Modal.confirm({
-    title,
-    content: h(
-      'div',
-      paragraphs.map(text =>
-        h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
-      )
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+) =>
+  new Promise<boolean>(resolve => {
+    const { title, paragraphs } = buildRestoreConfirm(
+      t,
+      {
+        title: t('edit.configRestoreDetailView'),
+        desc: t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
+      },
+      item.mode,
+      currentMode
+    )
+    Modal.confirm({
+      title,
+      content: h(
+        'div',
+        paragraphs.map(text =>
+          h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+        )
+      ),
+      okType: 'danger',
+      okText: t('edit.configRestoreConfirmOk'),
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await startSession(userId, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-        restoreOpen.value = false
-        if (target === 'mas') {
-          await startSession(userId, true)
-        } else {
-          await startSession(scriptId, true)
-        }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
-}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // 配合——进入归档原生配置当前状态（MAS 触碰前原始态），退出归档 MAS 配置
@@ -831,6 +836,7 @@ const ensureMaaEndBackup = async (target: 'mas' | 'native') => {
     })
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 

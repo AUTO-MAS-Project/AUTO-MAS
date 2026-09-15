@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -57,9 +57,6 @@ from .backup_archive import (
 
 logger = get_logger("MaaFW 配置恢复")
 
-RESTORE_SCRIPT_NAME = "maafw"
-"""专项统一名（文案参数化用）"""
-
 
 def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把字段回填进孤儿配置。"""
@@ -101,7 +98,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_overlay_preview(overlay) if overlay else {"sections": []}
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 恢复前把当前字段终态存底（force），误恢复可找回
@@ -139,7 +136,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return build_native_preview(ctx.script_id, project_path, ts)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     project_path = _project_path(ctx)
     if project_path is None:
         raise ValueError("请先设置 MaaFW 项目路径")

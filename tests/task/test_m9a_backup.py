@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -220,7 +220,7 @@ def test_overlay_preview_sections(
     sections = {s["name"]: s for s in payload["sections"]}
     assert set(sections) == {"mas-only", "m9a", "task-details"}
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["rows"]}
-    assert mas_rows == {"配置文件来源": "用户", "启用快速配置": "开启"}
+    assert mas_rows == {"配置文件来源": "用户"}
     m9a_rows = {row["key"]: row["value"] for row in sections["m9a"]["rows"]}
     assert m9a_rows["账号"] == "130****5678"
     assert m9a_rows["已启用任务"] == "常规作战、自动深眠"
@@ -298,7 +298,6 @@ def test_restore_service_callbacks_roundtrip(
 
     from app.task.M9A.tools.restore_service import (
         RESTORE_POOLS,
-        RESTORE_SCRIPT_NAME,
     )
     from app.utils.config_restore import RestoreContext, build_restore_service
 
@@ -323,7 +322,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
-    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service = build_restore_service(ctx, RESTORE_POOLS)
 
     # snapshot：归档当前字段（含展示快照）
     created = asyncio.run(service.ensure("mas"))

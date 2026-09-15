@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -179,7 +179,7 @@ def test_restore_service_declarative_pools(
     write_file(instance_dir(od_root, 2) / "game_account.yml", {"account": "slot"})
 
     ctx = _ctx(str(od_root), uid, 2)
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     # mas：物化 + 信息快照随声明式归档入档
     created = asyncio.run(service.ensure("mas"))
@@ -201,14 +201,14 @@ def test_restore_service_declarative_pools(
 
     # 未绑定槽（slot<=0）：mas 池列表为空、归档报无变化
     unbound = build_restore_service(
-        _ctx(str(od_root), uuid.uuid4(), 0), rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS
+        _ctx(str(od_root), uuid.uuid4(), 0), rs.RESTORE_POOLS
     )
     assert asyncio.run(unbound.ensure("mas")) == {"created": False, "time": ""}
     assert asyncio.run(unbound.list("mas")) == []
 
     # 安装路径未配置：两个池都不抛错，报无变化（mas 用未用过的槽位，池为空）
     no_path = build_restore_service(
-        _ctx("", uuid.uuid4(), 3), rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS
+        _ctx("", uuid.uuid4(), 3), rs.RESTORE_POOLS
     )
     assert asyncio.run(no_path.ensure("mas")) == {"created": False, "time": ""}
     assert asyncio.run(no_path.ensure("onedragon")) == {"created": False, "time": ""}
@@ -217,7 +217,7 @@ def test_restore_service_declarative_pools(
     empty_root = tmp_path / "empty-zzzod"
     empty_root.mkdir()
     bare = build_restore_service(
-        _ctx(str(empty_root), uuid.uuid4(), 0), rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS
+        _ctx(str(empty_root), uuid.uuid4(), 0), rs.RESTORE_POOLS
     )
     assert asyncio.run(bare.ensure("onedragon")) == {"created": False, "time": ""}
     assert get_mas_backup_dir("s-0002", 2, "20260915-000000") is None

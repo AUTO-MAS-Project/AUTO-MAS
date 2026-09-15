@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -60,9 +60,6 @@ from .backup_archive import (
 
 logger = get_logger("BetterGI 配置恢复")
 
-RESTORE_SCRIPT_NAME = "bettergi"
-"""专项统一名（文案参数化用）"""
-
 
 def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
@@ -104,7 +101,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_mas_preview(backup_dir, overlay)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
@@ -145,7 +142,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return build_native_preview(root_path, ts)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     root_path = _root_path(ctx)
     if root_path is None:
         raise ValueError("请先设置 BetterGI 脚本路径")

@@ -266,7 +266,6 @@ def test_overlay_preview_sections(tmp_path: Path) -> None:
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["summary"]}
     assert mas_rows == {
         "配置文件来源": "脚本",
-        "快速配置": "是",
         "每日仅执行一次": "理智任务、拜访好友",
     }
 
@@ -318,7 +317,6 @@ def test_overlay_preview_gates_quick_config_fields(tmp_path: Path) -> None:
 
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["summary"]}
     assert mas_rows == {
-        "快速配置": "否",
         "每日仅执行一次": "拜访好友",
     }
 
@@ -401,8 +399,9 @@ def test_preview_mas_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     )
     payload = asyncio.run(_preview_mas(ctx, ts))
     cards = {f["name"]: f for f in payload["fileCards"]}
-    # 夹具只有开关没有账号/理智选项，配置内容区无行时整体省略
-    assert set(cards) == {"mas-only", "tasks"}
+    # 夹具只有开关没有账号/理智选项，mas-only（无 Mode/每日仅执行一次行）
+    # 与配置内容区无行时整体省略
+    assert set(cards) == {"tasks"}
     tasks_rows = {row["key"]: row["value"] for row in cards["tasks"]["summary"]}
     assert tasks_rows["已启用任务"] == "理智作战"
 
@@ -475,7 +474,7 @@ def test_restore_service_callbacks_roundtrip(
     ctx = RestoreContext(
         config=None, script_config=script_config, script_id=script_id, user_id=str(uid)
     )
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     # mas：目录缺失 → 播种后声明式归档（侧车读取自 ctx 用户配置）
     created = asyncio.run(service.ensure("mas"))

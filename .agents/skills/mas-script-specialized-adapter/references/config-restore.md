@@ -1,9 +1,11 @@
 # 配置读档（Restore）：恢复语义、前端展示与调用方法
 
-> 适用：专项需要在用户/脚本配置页提供「配置恢复」（历史备份列表 / 预览 /
-> 查看详细配置 / 一键恢复）时。本文件讲「读」的完整链路——**恢复了什么、
-> 后端怎么调、前端通用封装的一致性、专项可自定义点、查看会话**；「存」的那
-> 一半（收录逻辑、时机、布局、预览内容来源）见 [config-archive.md](config-archive.md)。
+> 适用：**新专项一律主动接入**，存量专项改到配置读写时同步补齐——配置恢复
+> （历史备份列表 / 预览 / 查看详细配置 / 一键恢复）是 MAS 领域的标配能力，
+> 不是可选项，仅确无任何配置文件落盘的专项可豁免。本文件讲「读」的完整链路
+> ——**恢复了什么、后端怎么调、前端通用封装的一致性、专项可自定义点、查看
+> 会话**；「存」的那一半（收录逻辑、时机、布局、预览内容来源）见
+> [config-archive.md](config-archive.md)。
 >
 > **接入前先定模式**：守卫/预览/快照/恢复只依赖 `script_config` + 备份文件
 > → **自包含式**（逻辑全在专项 tools，范本 OkNte）；需操作门面全局状态
@@ -106,7 +108,8 @@
   直控无 MAS 配置。脚本态多用户各自持有共享目录的快照（内容重复但完整），
   恢复任一备份 = 把共享目录回滚到该用户归档时点（覆盖语义，确认弹窗已提示）。
 
-实现上：池函数一律用 `ctx.user_id` 定位归档根；`mas_dir`（归档/恢复目标）由
+实现上：池函数一般用 `ctx.user_id` 定位归档根（ZzzOd 例外：mas 池按绑定槽
+`Info.SlotIdx` 分桶，等效按用户）；`mas_dir`（归档/恢复目标）由
 专项按 owner 解析后显式传入 `archive_mas_backup` / `restore_mas_backup`。
 
 #### 1.1.1a 三态来源必须显式声明（mas 池的 `mas_mode`）
@@ -225,10 +228,9 @@ mas 池是**纯字段侧车**——归档内唯一文件就是 `_mas_overlay.jso
 （`restore`）+ 可选定制预览（`preview`）；其余全部由基座派生：
 
 ```python
-# app/task/HSR/tools/restore_service.py（节选，签名与实装一致）
+# app/task/HSR/tools/restore_service.py（节选，行为与实装一致）
 from app.utils.config_restore import ConfigRestorePool
-
-RESTORE_SCRIPT_NAME = "hsr"        # 专项统一名（文案 {script} 插值，不是脚本实例名）
+from app.utils.config_archive import OVERLAY_SIDECAR_NAME
 
 async def _mas_files(ctx) -> dict[str, str] | None:
     """归档什么：相对键 → Path 或内存内容（str 按 UTF-8 / bytes 原样）。"""
@@ -236,13 +238,14 @@ async def _mas_files(ctx) -> dict[str, str] | None:
     overlay = read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)])
     if not overlay:
         return None                # 无可归档内容 → snapshot 报无变化
-    return {_OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
+    return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
 
 async def _mas_root(ctx) -> Path | None:
     """放哪里：归档根（含分桶规则，不含时间戳目录）。
 
     返回 None 表示当前无可归档根（脚本路径未配置等）——list 为空、snapshot
     报无变化，**不抛错**（用户未配置路径时编辑页不该报错）。
+    恒可构造归档根的专项把返回类型标成 ``Path`` 即可。
     """
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
@@ -251,9 +254,10 @@ async def _preview_mas(ctx, ts: str) -> dict:
     # service.preview 会自动注入归档内文件清单
     return build_overlay_preview(read_overlay_sidecar(...))
 
-async def _restore_mas(ctx, ts: str) -> object:
+async def _restore_mas(ctx, ts: str) -> None:
     _user_guard(ctx)
-    # 恢复前存底（force 归档当前）+ 恢复 + 字段回填等专项语义
+    # 恢复前存底（force 归档当前）+ 恢复 + 字段回填等专项语义；
+    # 返回值当前无消费方（门面层丢弃）
     ...
 
 RESTORE_POOLS = [
@@ -288,15 +292,12 @@ RESTORE_POOLS = [
 
 ```python
 elif isinstance(script_config, OkNteConfig):
-    from app.task.OkNte.tools.restore_service import (
-        RESTORE_POOLS,
-        RESTORE_SCRIPT_NAME,
-    )
+    from app.task.OkNte.tools.restore_service import RESTORE_POOLS
 ...
 return build_restore_service(
     RestoreContext(config=self, script_config=script_config,
                    script_id=script_id, user_id=user_id),
-    RESTORE_SCRIPT_NAME, RESTORE_POOLS,
+    RESTORE_POOLS,
 )
 ```
 
@@ -313,8 +314,9 @@ return build_restore_service(
 | `service.preview(key, ts)` | `GET /api/scripts/backup/preview` | 预览载荷（`data` 结构由专项定义） |
 | `service.read_backup_file(key, ts, path)` | `GET /api/scripts/backup/file` | 只读读取备份内文本文件（「备份文件」点击查看，§3.4） |
 
-`target` 是自由字符串，取值由专项池定义；非法 key 统一 400。恢复接口在专项
-restore 回调返回对象（前端当前不消费，保留扩展）。
+`target` 是自由字符串，取值由专项池定义；非法 key 统一 400。专项 restore
+回调可返回对象，但当前在门面层被丢弃（响应体仅 `target`），恢复后的回填等
+语义在回调内自理。
 
 ## 3. 前端展示的一致性（通用封装已就位）
 
@@ -323,10 +325,10 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 
 | 行为 | 约定 |
 | --- | --- |
-| 弹窗结构 | 顶部 = segmented（双池）+ 备份时间列表；点时间 → 预览弹窗 |
+| 弹窗结构 | 顶部 = segmented（双池）+ 备份时间列表；列表行「预览」按钮 → 预览弹窗 |
 | 一键恢复 | 确认（`Modal.confirm`，共用词条）→ `api.restore` → 成功关弹窗 + `onRestored` |
 | 查看详细配置 | 底部按钮，**onDetail 未传时不渲染**（避免无响应按钮）→ onDetail 回调 |
-| 预览 | 内置渲染 or `#preview` 插槽；弹窗内 **56vh 限高滚动**（`preview-scroll`），专项不要加滚动容器 |
+| 预览 | 内置渲染 or `#preview` 插槽；滚动由弹窗 body-style 限高（`maxHeight: 70vh`）承担——body 是唯一滚动容器，专项不要加滚动容器；「查看详细配置 / 关闭」按钮在 footer 常驻，不随 body 滚动 |
 | 配置来源标签 | 备份行按列表项 `mode` 渲染（脚本级蓝 / 用户级绿 / 直控橙，`sourceTagColor`）；描述行下方显示「当前配置来源」（仅三态池有值），供用户与标签比对 |
 | 跨来源恢复 | **单弹窗**：`buildRestoreConfirm`（§1.1.1a）在跨来源时换标题 + 追加来源切换说明；不加二次确认步骤、不改按钮语义 |
 | 文案 | `{script}` 用 `scriptName`（专项统一名）插值 |
@@ -361,15 +363,17 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
   刷新表单；脚本级由组件自行刷新列表）。
 - `onDetail(target, item, currentMode)`：`item.mode` 是备份来源、`currentMode`
   是当前来源（仅三态非空）；专项的「查看详细配置」确认文案用
-  `buildRestoreConfirm` 组装，与一键恢复同口径（§3 表）。
+  `buildRestoreConfirm` 组装，与一键恢复同口径（§3 表）。**返回
+  `Promise<boolean>`**：`true` = 已恢复（组件据此关闭预览弹窗），
+  `false` / 异常 = 取消或失败（保持预览打开）。
 
-**恢复入口必须恒可达（MaaFW 互补双入口范式）**：恢复按钮若放在条件渲染区块
-内（如 MAA/M9A 的任务区块 `v-if="Mode !== '直控'"`、Okww 快速配置卡、HSR 的
-体力配置 `v-if="dailyStageEngine"`），条件不成立时用户会完全失去入口。规则：
+**恢复入口必须恒可达（MaaFW/HSR 互补双入口范式）**：恢复按钮若放在条件渲染
+区块内（如 Okww 快速配置卡、HSR 的体力配置 `v-if="dailyStageEngine"`、MaaFW
+的任务队列区 `v-if="IfQuickConfig"`），条件不成立时用户会完全失去入口。规则：
 - 主入口所在的区块，其 `v-if` 不成立时，必须在**常驻区块**（基本信息标题行）
-  补一个**反向条件**的兜底按钮（`v-if="Mode === '直控'"` 等），点击
-  `restoreOpen = true`（子组件则 `emit('openRestore')` + 父组件
-  `@open-restore="restoreOpen = true"`）；
+  补一个**反向条件**的兜底按钮（如 HSR `v-if="!dailyStageEngine"`、MaaFW
+  `v-if="!IfQuickConfig"`），点击 `restoreOpen = true`（子组件则
+  `emit('openRestore')` + 父组件 `@open-restore="restoreOpen = true"`）；
 - 兜底条件 = 「主入口不可见」的**完整补集**，不能只写一半——HSR 曾有
   `!dailyStageEngine` 兜底但主入口还要求 `controlMode === 'managed'`，直控+有引擎
   时双入口同灭（修法：`controlMode !== 'managed' || !dailyStageEngine`）；
@@ -488,8 +492,8 @@ restore 回调返回对象（前端当前不消费，保留扩展）。
 「查看详细配置」对用户只说一句（词条 `configRestoreDetailConfirm`），标题
 `configRestoreDetailView`，按钮 `取消` / `configRestoreConfirmOk`（确认）：
 
-> 即将打开脚本页面查看配置，请确保查看期间未运行任何同名脚本，否则可能产生
-> 配置覆盖。
+> 即将打开脚本页面查看配置，将会临时覆盖当前配置，请确保查看期间不要运行
+> 任何同名脚本，否则可能产生配置冲突，若出现意外，可使用配置恢复功能恢复。
 
 - **面向用户只讲「要做什么 + 别运行脚本」，绝不解释后端机制**——恢复/下发/
   复制/注入/回写等内部逻辑一律不写进弹窗：用户不关心实现，写进来反而误导。
@@ -529,7 +533,8 @@ Modal.confirm(共用词条, 红色正文) → api.restore → 关弹窗
   `oknteViewingTitle / ViewingDesc / ViewingDesc2 / ViewClose / ViewOpened /
   SessionOpened / SessionFailed / StopFailed / StartFailed / SessionTimeoutWarn`。
 - **清理死词条**：重构后不再被引用的词条从全部语种删除（先 `rg` 确认零引用）。
-- 专项统一名只进 `scriptName` / `RESTORE_SCRIPT_NAME`，不散落进词条。
+- 专项统一名只进前端 `scriptName` prop（`{script}` 插值用），不散落进词条；
+  后端不存专项统一名（池函数与消息无需它）。
 
 ## 7. 前端接入样例（OkNte 完整片段）
 
@@ -582,8 +587,10 @@ showOknteViewMask.value = viewOnly
 
 ## 8. 检查清单
 
-- [ ] 池表：`kind` user 池在前、script 池在后；`RESTORE_SCRIPT_NAME`=专项统一名，
-      与前端 `scriptName` 一致
+- [ ] **主动接入**：新专项一律声明池并接线（标配能力，不是可选项），存量专项
+      改到配置读写时同步补齐；仅确无任何配置文件落盘的专项可豁免
+- [ ] 池表：`kind` user 池在前、script 池在后；前端 `scriptName` prop =
+      专项统一名（`{script}` 插值用）
 - [ ] mas 池已声明 `mas_mode`（tri_state / user_only / sidecar_only，§1.1.1a）；
       `tri_state` 同时给了 `set_mode`；备份列表标签与跨来源提示走共用件，未自写比对
 - [ ] 池函数普通函数收 `RestoreContext`；守卫在池内；非法 key 由服务层 400
@@ -592,15 +599,15 @@ showOknteViewMask.value = viewOnly
       旧签名调用致预览 500）
 - [ ] 分发链加一个 elif 分支即可；**未**新增端点/模型/门面包装方法
 - [ ] 恢复回调：先 force 归档当前 → 回写 → 恢复后语义；查看会话结束不回写
-- [ ] 恢复按钮放**「任务配置」类区块的标题行右侧**（`section-header` +
-      `header-actions` 插槽/small 按钮，区域唯一按钮）；页面没有任务配置类
-      区块时才退挂「基本信息」标题行——用户靠任务配置区的备份恢复任务配置；
-      无「已保存/未保存」标签、无脏点
-- [ ] `onMounted` ensure(native)、`onUnmounted` ensure(mas)+stopSession；遮罩关闭
-      watch 刷新表单（配置与查看会话都要）
+- [ ] 恢复按钮放**「任务配置」类区块的标题行右侧**（`section-header` 标题行
+      的 `header-actions` 容器内放 small 按钮，区域唯一按钮）；页面没有任务
+      配置类区块时才退挂「基本信息」标题行——用户靠任务配置区的备份恢复任务
+      配置；无「已保存/未保存」标签、无脏点
+- [ ] `onMounted` ensure(native)；`onUnmounted` **先 stopSession 再**
+      ensure(mas)（禁止并行）；遮罩关闭 watch 刷新表单（配置与查看会话都要）
 - [ ] 「查看详细配置」= 确认（共用词条，**正文用户话术 §5.1**）→ restore → 打开
       脚本查看页面（viewOnly）+ GuiSessionMask；流程不做自创变体
-- [ ] 预览：内置渲染 or `#preview`（按 `raw` 消费）；56vh 滚动；不额外加滚动容器
+- [ ] 预览：内置渲染 or `#preview`（按 `raw` 消费）；弹窗 body 限高滚动，不额外加滚动容器；操作按钮在 footer 常驻
 - [ ] 词条 zh+en；死词条已清理；`{script}` 用专项统一名
 - [ ] `tests/tools/test_config_restore.py`（基座绑定）与 `tests/task/test_<script>_backup.py`
       全绿；typecheck / ruff 通过

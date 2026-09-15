@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -39,9 +39,6 @@ import uuid
 from pathlib import Path
 
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
-
-RESTORE_SCRIPT_NAME = "一条龙"
-"""专项统一名（文案参数化用）"""
 
 
 def _mas_user(ctx: RestoreContext):
@@ -113,8 +110,8 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     )
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
-    return await ctx.config.restore_zzzod_backup(
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+    await ctx.config.restore_zzzod_backup(
         ctx.script_id, ctx.user_id, ts, target="mas"
     )
 
@@ -148,8 +145,8 @@ async def _preview_onedragon(ctx: RestoreContext, ts: str) -> dict:
     )
 
 
-async def _restore_onedragon(ctx: RestoreContext, ts: str) -> object:
-    return await ctx.config.restore_zzzod_backup(
+async def _restore_onedragon(ctx: RestoreContext, ts: str) -> None:
+    await ctx.config.restore_zzzod_backup(
         ctx.script_id, ctx.user_id, ts, target="onedragon"
     )
 

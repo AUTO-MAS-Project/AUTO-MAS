@@ -615,6 +615,7 @@ const ensureBAAHBackup = async (target: 'mas' | 'native') => {
     })
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 

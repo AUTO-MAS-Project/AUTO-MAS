@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -206,7 +206,7 @@ def test_overlay_preview_sections(
     sections = {s["name"]: s for s in payload["sections"]}
     assert set(sections) == {"mas-only", "baah"}
     mas_rows = {row["key"]: row["value"] for row in sections["mas-only"]["rows"]}
-    assert mas_rows == {"配置文件来源": "用户", "启用快速配置": "开启"}
+    assert mas_rows == {"配置文件来源": "用户"}
     baah_rows = {row["key"]: row["value"] for row in sections["baah"]["rows"]}
     assert baah_rows == {"BAAH 配置文件名": "account1"}
 
@@ -218,7 +218,6 @@ def test_restore_service_callbacks_roundtrip(
 
     from app.task.BAAH.tools.restore_service import (
         RESTORE_POOLS,
-        RESTORE_SCRIPT_NAME,
     )
     from app.utils.config_restore import RestoreContext, build_restore_service
 
@@ -250,7 +249,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
-    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service = build_restore_service(ctx, RESTORE_POOLS)
 
     # mas：声明式 snapshot → preview（files 注入）→ restore 回填
     created = asyncio.run(service.ensure("mas"))
@@ -303,7 +302,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
-    service_empty = build_restore_service(ctx_empty, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service_empty = build_restore_service(ctx_empty, RESTORE_POOLS)
     with pytest.raises(ValueError):
         asyncio.run(service_empty.ensure("native"))
 
@@ -315,7 +314,7 @@ def test_restore_service_callbacks_roundtrip(
         user_id=str(uid),
     )
     service_no_root = build_restore_service(
-        ctx_no_root, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+        ctx_no_root, RESTORE_POOLS
     )
     # 未配置 BAAHPath 只影响 native 池（归档根返回 None → 列表为空）；
     # mas 池根恒存在，历史备份照常可见（对齐 BetterGI 样板断言）

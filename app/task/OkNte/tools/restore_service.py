@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -51,9 +51,6 @@ from .backup_archive import (
     restore_native_backup,
 )
 
-RESTORE_SCRIPT_NAME = "ok-nte"
-"""专项统一名（文案参数化用）"""
-
 
 def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
@@ -76,6 +73,7 @@ def _native_config_path(ctx: RestoreContext) -> tuple[Path | None, str]:
 async def _mas_files(ctx: RestoreContext) -> dict[str, Path] | None:
     """归档内容 = MAS 用户 ConfigFile 副本（缺失/为空返回 ``None``）。"""
 
+    _user_guard(ctx)
     return collect_mas_files(mas_config_dir(ctx.script_id, ctx.user_id)) or None
 
 
@@ -107,7 +105,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return _preview_payload(ctx, ts, get_mas_backup_dir(ctx.script_id, ctx.user_id, ts))
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     restore_mas_backup(
         ctx.script_id, ctx.user_id, ts, mas_config_dir(ctx.script_id, ctx.user_id)
@@ -140,7 +138,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     config_path, mode = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 OK-NTE 配置路径")

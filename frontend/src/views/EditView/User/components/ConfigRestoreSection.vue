@@ -53,7 +53,6 @@
   <!-- ══ 配置预览：备份摘要（纯读不恢复）══ -->
   <a-modal
     :open="previewOpen"
-    :footer="null"
     width="540px"
     :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
     @update:open="previewOpen = $event"
@@ -64,7 +63,7 @@
         {{ `${t('edit.configRestorePreviewTitle')} · ${previewTime}` }}
       </slot>
     </template>
-    <a-spin :spinning="previewLoading" class="preview-scroll">
+    <a-spin :spinning="previewLoading">
       <p v-if="previewError" class="restore-desc">{{ previewError }}</p>
       <!-- 自定义预览：专项通过 #preview 插槽完全接管预览区（字段型适配器等）；
            raw 为后端预览响应原文（内置 info/account/tasks/instances 之外的
@@ -168,18 +167,21 @@
         </a-collapse-panel>
       </a-collapse>
     </a-spin>
-    <div class="preview-actions">
-      <!-- 「查看详细配置」依赖父组件的 onDetail 回调（恢复 + 拉起查看会话）；
-           专项未提供时不渲染，避免出现无响应的按钮 -->
-      <a-tooltip v-if="onDetail" :title="t('edit.configRestoreDetailHint', { script: scriptName })">
-        <a-button @click="handlePreviewDetail">
-          {{ t('edit.configRestoreDetailView') }}
+    <template #footer>
+      <!-- 操作按钮常驻弹窗底部（footer 不随 body 滚动）；「查看详细配置」
+           依赖父组件的 onDetail 回调（恢复 + 拉起查看会话），专项未提供时
+           不渲染，避免出现无响应的按钮 -->
+      <div class="preview-actions">
+        <a-tooltip v-if="onDetail" :title="t('edit.configRestoreDetailHint', { script: scriptName })">
+          <a-button @click="handlePreviewDetail">
+            {{ t('edit.configRestoreDetailView') }}
+          </a-button>
+        </a-tooltip>
+        <a-button @click="previewOpen = false">
+          {{ t('edit.close') }}
         </a-button>
-      </a-tooltip>
-      <a-button @click="previewOpen = false">
-        {{ t('edit.close') }}
-      </a-button>
-    </div>
+      </div>
+    </template>
   </a-modal>
 
   <!-- ══ 备份文件内容（只读；等宽原文 + 复制）══ -->
@@ -283,12 +285,14 @@ const props = defineProps<{
   /** 恢复后回调（一键恢复成功后通知父组件刷新表单等） */
   onRestored?: (target: string, item: { time: string }) => void
   /** 查看详细配置回调（父组件执行恢复 + 拉起脚本查看会话）。
-      第三个参数为当前配置来源（仅三态专项非空），供专项比对跨来源并追加提示。 */
+      第三个参数为当前配置来源（仅三态专项非空），供专项比对跨来源并追加提示。
+      返回 ``Promise<boolean>``（true=已恢复）——组件据此决定预览弹窗是否关闭，
+      取消/失败保持预览打开。 */
   onDetail?: (
     target: string,
     item: { time: string; mode?: string | null },
     currentMode?: string | null
-  ) => void
+  ) => Promise<boolean>
 }>()
 
 const emit = defineEmits<{
@@ -347,6 +351,10 @@ const loadBackups = async () => {
     backups.value = resp.data ?? []
     currentSource.value = resp.mode ?? null
   } catch (e) {
+    // 失败时清空列表与当前来源：残留上一次（可能是切 target 前）的数据
+    // 会诱导用户对着过期列表做恢复判断
+    backups.value = []
+    currentSource.value = null
     message.error(e instanceof Error ? e.message : t('edit.configRestoreListFailed'))
   } finally {
     backupsLoading.value = false
@@ -468,11 +476,16 @@ const handlePreview = async (item: BackupItem) => {
   }
 }
 
-// 预览弹窗内「查看详细配置」：关掉预览，走父组件详情动作（带备份来源与当前来源）
-const handlePreviewDetail = () => {
+// 预览弹窗内「查看详细配置」：走父组件详情动作（带备份来源与当前来源）。
+// 确认/恢复成功后才关预览——取消或失败时保持预览打开，避免重看要重新点开
+const handlePreviewDetail = async () => {
   if (!previewItem.value) return
-  previewOpen.value = false
-  props.onDetail?.(restoreTarget.value, previewItem.value, currentSource.value)
+  const restored = await props.onDetail?.(
+    restoreTarget.value,
+    previewItem.value,
+    currentSource.value
+  )
+  if (restored !== false) previewOpen.value = false
 }
 
 // ══ 备份文件（预览载荷标准 files 字段；点击查看原始内容）══
@@ -617,11 +630,7 @@ const confirmRestore = (item: BackupItem) => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 预览内容限高在弹窗内滚动，摘要过长不撑破窗口 */
-.preview-scroll {
-  max-height: 56vh;
-  overflow-y: auto;
-}
+/* 预览弹窗滚动由 body-style 限高承担（基座约定：body 是唯一滚动容器） */
 
 /* 配置预览弹窗：摘要表格与任务标签 */
 .preview-box {
@@ -743,6 +752,5 @@ const confirmRestore = (item: BackupItem) => {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 16px;
 }
 </style>

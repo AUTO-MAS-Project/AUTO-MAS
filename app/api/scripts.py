@@ -3689,7 +3689,8 @@ async def batch_update_oknte_configs(
 async def list_config_backups_api(
     scriptId: str, userId: str, target: str
 ) -> ConfigBackupListOut:
-    """运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。"""
+    """返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+    来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
 
     try:
         data = await Config.list_config_backups(scriptId, userId, target)
@@ -3701,6 +3702,7 @@ async def list_config_backups_api(
             data=[ConfigBackupItemOut(**item) for item in data["items"]],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份列表查询失败: {e}")
         return ConfigBackupListOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3732,6 +3734,7 @@ async def ensure_config_backup_api(
             **data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置按需归档失败: {e}")
         return ConfigBackupEnsureOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3770,6 +3773,7 @@ async def restore_config_backup_api(
             target=data["target"],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份恢复失败: {e}")
         return ConfigBackupRestoreOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3801,6 +3805,7 @@ async def get_config_backup_preview_api(
             **data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份预览失败: {e}")
         return ConfigBackupPreviewOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3834,6 +3839,7 @@ async def get_config_backup_file_api(
             **data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份文件读取失败: {e}")
         return ConfigBackupFileOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",

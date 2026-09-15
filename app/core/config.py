@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -2320,62 +2320,50 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, ZzzOdConfig):
             from app.task.ZzzOd.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, OkNteConfig):
             from app.task.OkNte.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, OkwwConfig):
             from app.task.Okww.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, MaaConfig):
             from app.task.MAA.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, MaaEndConfig):
             from app.task.MaaEnd.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, M9AConfig):
             from app.task.M9A.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, GeneralConfig):
             from app.task.general.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, BAAHConfig):
             from app.task.BAAH.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, SrcConfig):
             from app.task.SRC.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, BetterGIConfig):
             from app.task.BetterGI.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, MaaFWConfig):
             from app.task.MaaFW.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, HSRConfig):
             from app.task.HSR.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         else:
             raise ValueError("该专项暂不支持配置恢复")
@@ -2386,7 +2374,6 @@ class AppConfig(GlobalConfig):
                 script_id=script_id,
                 user_id=user_id,
             ),
-            RESTORE_SCRIPT_NAME,
             RESTORE_POOLS,
         )
 

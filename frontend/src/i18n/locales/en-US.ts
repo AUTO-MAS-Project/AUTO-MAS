@@ -1163,6 +1163,7 @@ export default {
     maaendSessionOpened: 'MaaEnd setup opened',
     maaendSessionStartFailed: 'Could not start the MaaEnd setup session',
     maaendSessionStopFailed: 'Could not stop the MaaEnd setup session',
+    maaendSessionSaveFailed: 'Could not save the MaaEnd configuration',
     maaendViewOpened: 'MaaEnd viewer opened',
     maaendSessionTimeoutWarn:
       'The MaaEnd setup session is about to time out and will be saved in 30 seconds',
@@ -1887,6 +1888,8 @@ export default {
     configRestorePreviewEmpty: 'Nothing to preview in this backup',
     configRestorePreviewActive: 'Active',
     configRestoreListFailed: 'Failed to load backups',
+    configRestoreEnsureFailed:
+      'Automatic config backup failed; this change may not have a restore point',
     configRestoreBackupFiles: 'Backup files',
     configRestoreCopy: 'Copy',
     configRestoreCopied: 'Copied to clipboard',

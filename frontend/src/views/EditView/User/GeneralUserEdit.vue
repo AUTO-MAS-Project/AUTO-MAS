@@ -791,41 +791,46 @@ const handleRestored = async () => {
 // mas 备份：恢复到该用户 ConfigFile 后启动查看会话（目录副本型下发，GUI
 // 所见即备份）；原生备份：恢复到脚本配置路径后启动脚本级查看会话（跳过
 // 下发，原生配置即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) => {
-  Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+const handleRestoreView = (target: string, item: { time: string }) =>
+  new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await handleGeneralConfig(true, userId)
+          } else {
+            await handleGeneralConfig(true, scriptId)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-        restoreOpen.value = false
-        if (target === 'mas') {
-          await handleGeneralConfig(true, userId)
-        } else {
-          await handleGeneralConfig(true, scriptId)
-        }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
-}
 
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档脚本原生配置当前状态
 // （MAS 触碰前原始态，用户可能刚在脚本 GUI 里改过），退出归档该用户
@@ -840,6 +845,7 @@ const ensureGeneralBackup = async (target: 'mas' | 'native') => {
     })
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 

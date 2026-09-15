@@ -64,6 +64,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    MODE_FILE_NAME,
     OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
@@ -255,6 +256,12 @@ def restore_mas_backup(
 ) -> dict | None:
     """把用户池归档恢复到 per-user 副本（恢复前自动归档当前，误恢复可找回）。
 
+    恢复走基座 ``restore_files`` 的 replace 语义：受管副本子目录
+    （OneDragon/ScriptGroup/GlobalDomain）整棵替换为备份时点内容，副本内
+    备份之外的残留一并清理，恢复结果与备份完全一致；per-user 根目录其余
+    内容（切号脚本残留等）原样保留。侧车与模式标注不写回副本，侧车读回
+    供调用方回填 UserData 后即分离删除。
+
     返回该备份的侧车（供调用方回填 UserData；旧版备份无侧车返回
     ``None``），侧车文件随即从副本目录中分离删除，不留在 per-user 里。
     """
@@ -263,15 +270,17 @@ def restore_mas_backup(
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     archive_mas_backup(script_id, user_id, overlay=overlay, force=True)
-    # 把归档内副本文件（按 OneDragon/… 相对键）逐一写回 per-user 根目录
+    # 把归档内副本文件（按 OneDragon/… 相对键）写回 per-user 根目录
     user_root = mas_user_dir(script_id, user_id)
-    files = dir_files(backup_dir)
-    for rel, path in files.items():
-        if rel == OVERLAY_SIDECAR_NAME:
-            continue
-        target = user_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(path.read_bytes())
+    restore_files(
+        backup_dir,
+        user_root,
+        rel_keys=(
+            rel
+            for rel in dir_files(backup_dir)
+            if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+        ),
+    )
     restored_overlay = read_overlay_sidecar(backup_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
@@ -281,10 +290,14 @@ def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> N
     """运行物化前归档 per-user 副本 + 页面字段到用户池。
 
     运行会把字段物化进副本与 BGI 槽位、覆盖副本内容，物化前存底；指纹
-    去重，失败不阻断运行（调用方以 ``suppress`` 包裹）。
+    去重，失败只记日志，绝不中止随后的运行或会话（归档是现场保护，不是
+    前置条件）。
     """
 
-    archive_mas_backup(script_id, user_id, overlay=overlay)
+    try:
+        archive_mas_backup(script_id, user_id, overlay=overlay)
+    except Exception:
+        logger.opt(exception=True).warning("BetterGI 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
 
 
 # ══════════════════ BetterGI 原生配置（全局 config.json + 一条龙实配） ══════════════════
@@ -507,13 +520,17 @@ def build_overlay_preview(overlay: dict) -> dict:
 
 
 def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
-    """mas 池预览载荷：字段分区 + 副本文件摘要（相对键 + 大小）。"""
+    """mas 池预览载荷：字段分区 + 副本文件摘要（相对键 + 大小）。
+
+    副本摘要排除备份元数据（``_mas_mode`` / ``_mas_overlay.json``）——
+    前者由基座列表标签消费，后者已在本预览的字段分区里展示。
+    """
 
     sections = build_overlay_preview(overlay or {})["sections"]
     files = {
         rel: path.stat().st_size
         for rel, path in dir_files(backup_dir).items()
-        if rel != OVERLAY_SIDECAR_NAME
+        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
     }
     if files:
         file_rows = [

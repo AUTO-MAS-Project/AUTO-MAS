@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -64,9 +64,6 @@ from .backup_archive import (
 from .config_manager import CONFIG_DIR_NAME
 
 logger = get_logger("BAAH 配置恢复")
-
-RESTORE_SCRIPT_NAME = "baah"
-"""专项统一名（文案参数化用）"""
 
 
 def _user_guard(ctx: RestoreContext) -> None:
@@ -137,7 +134,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_overlay_preview(overlay)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 恢复前把当前字段终态存底（force），误恢复可找回
@@ -184,7 +181,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return build_native_preview(config_dir, ctx.user_id, ts)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     restore_native_backup(_config_dir(ctx), _config_name(ctx), ctx.user_id, ts)
 

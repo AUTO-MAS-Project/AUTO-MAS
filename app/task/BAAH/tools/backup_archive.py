@@ -301,10 +301,6 @@ def build_overlay_preview(overlay: dict) -> dict:
     mas_rows: list[dict] = []
     if "Mode" in overlay:
         mas_rows.append(_row("配置文件来源", overlay["Mode"]))
-    if "IfQuickConfig" in overlay:
-        mas_rows.append(
-            _row("启用快速配置", "开启" if bool(overlay["IfQuickConfig"]) else "关闭")
-        )
     if mas_rows:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 

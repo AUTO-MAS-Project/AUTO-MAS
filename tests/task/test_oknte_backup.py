@@ -317,7 +317,7 @@ def test_restore_service_declarative_pools(
     ctx = RestoreContext(
         config=None, script_config=script_config, script_id=script_id, user_id=str(uid)
     )
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     # native（Folder）：声明式归档 + 定制预览（fileCards 为逐文件摘要载荷）+ 派生 read_file
     created = asyncio.run(service.ensure("native"))
@@ -353,7 +353,6 @@ def test_restore_service_declarative_pools(
             script_id=script_id,
             user_id=str(uid),
         ),
-        rs.RESTORE_SCRIPT_NAME,
         rs.RESTORE_POOLS,
     )
     assert asyncio.run(empty.ensure("native")) == {"created": False, "time": ""}

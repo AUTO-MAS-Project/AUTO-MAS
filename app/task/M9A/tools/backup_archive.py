@@ -328,8 +328,6 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
 _SUMMARY_VALUE_LIMIT = 50
 """摘要字段值的最大字符数（超出截断）"""
 
-_QUICK_CONFIG_LABELS = {True: "开启", False: "关闭"}
-
 
 def _summary_text(value) -> str:
     """摘要标量值转展示文本（超长截断）。"""
@@ -362,12 +360,6 @@ def build_overlay_preview(overlay: dict) -> dict:
     mas_rows: list[dict] = []
     if "Mode" in overlay:
         mas_rows.append(_row("配置文件来源", overlay["Mode"]))
-    if "IfQuickConfig" in overlay:
-        mas_rows.append(
-            _row(
-                "启用快速配置", _QUICK_CONFIG_LABELS.get(bool(overlay["IfQuickConfig"]))
-            )
-        )
     if mas_rows:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 

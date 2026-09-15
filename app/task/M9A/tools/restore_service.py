@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -65,9 +65,6 @@ from .backup_archive import (
 
 logger = get_logger("M9A 配置恢复")
 
-RESTORE_SCRIPT_NAME = "m9a"
-"""专项统一名（文案参数化用）"""
-
 
 def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把字段回填进孤儿目录。"""
@@ -123,7 +120,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_overlay_preview(overlay)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 恢复前把当前字段终态存底（force），误恢复可找回
@@ -163,7 +160,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return build_native_preview(config_path, ts, _task_loader(ctx))
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 M9A 脚本路径")

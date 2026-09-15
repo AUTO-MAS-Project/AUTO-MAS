@@ -3,8 +3,8 @@
   <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.basicInfo') }}</h3>
-      <!-- 任务队列区块隐藏（直控模式）时，恢复入口兜底到这里 -->
-      <div v-if="formData.Info.Mode === '直控'" class="section-header-actions">
+      <!-- 任务队列区块隐藏（快速配置关闭）时，恢复入口兜底到这里 -->
+      <div v-if="!formData.Info.IfQuickConfig" class="section-header-actions">
         <a-button size="small" @click="emit('openRestore')">
           <template #icon>
             <HistoryOutlined />

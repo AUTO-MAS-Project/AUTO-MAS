@@ -267,9 +267,16 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> None:
-    """运行物化前归档本用户字段侧车（物化会写原生配置，字段本身先存底）。"""
+    """运行物化前归档本用户字段侧车（物化会写原生配置，字段本身先存底）。
 
-    archive_mas_backup(script_id, user_id, overlay)
+    指纹去重，失败只记日志，绝不中止随后的运行或会话（归档是现场保护，
+    不是前置条件）。
+    """
+
+    try:
+        archive_mas_backup(script_id, user_id, overlay)
+    except Exception:
+        logger.opt(exception=True).warning("HSR 运行前 MAS 字段侧车归档失败，已跳过（不阻断任务）")
 
 
 # ══════════════════ M7A + SRA 原生配置（两引擎） ══════════════════

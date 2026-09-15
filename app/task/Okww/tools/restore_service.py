@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -55,9 +55,6 @@ from .backup_archive import (
     restore_mas_backup,
     restore_native_backup,
 )
-
-RESTORE_SCRIPT_NAME = "ok-ww"
-"""专项统一名（文案参数化用）"""
 
 
 def _user_guard(ctx: RestoreContext) -> None:
@@ -162,7 +159,7 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
         "fileCards": [
             {
                 "name": "overlay",
-                "label": "任务配置（快速配置）",
+                "label": "任务配置",
                 "summary": build_overlay_summary(overlay),
             },
             *file_cards,
@@ -176,7 +173,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     )
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
@@ -236,7 +233,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 ok-ww 脚本路径")

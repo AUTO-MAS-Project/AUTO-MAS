@@ -281,7 +281,10 @@ def archive_mas_runtime_backup(
     （见 :func:`archive_native_backup`）。
     """
 
-    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    try:
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    except Exception:
+        logger.opt(exception=True).warning("ok-ww 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
 
 
 # ══════════════════ 脚本原生配置（working/configs 整目录） ══════════════════

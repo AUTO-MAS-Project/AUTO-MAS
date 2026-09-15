@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -323,7 +323,7 @@ def test_direct_control_user_mas_pool(
     monkeypatch.chdir(tmp_path)
     uid = str(uuid.uuid4())
     ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("直控")}), uid)
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     assert asyncio.run(service.list("mas")) == []
     with pytest.raises(ValueError):
@@ -346,7 +346,7 @@ def test_mas_preview_shows_overlay_sidecar(
         "AdditionalTasks": ["Check Weekly Garden"],
     }
     ctx = _ctx(_FakeScriptConfig({uid: _FakeUserConfig("用户", task)}), uid)
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     # ConfigFile 存在（归档前置）→ service.ensure 归档（侧车读取自 ctx 用户配置）
     mas_dir = tmp_path / "data" / "s-1" / uid / "ConfigFile"
@@ -357,7 +357,7 @@ def test_mas_preview_shows_overlay_sidecar(
     payload = asyncio.run(service.preview("mas", snap["time"]))
     assert "fileCards" in payload  # 定制预览自带侧车摘要载荷
     cards = payload["fileCards"]
-    assert len(cards) == 1 and cards[0]["label"] == "任务配置（快速配置）"
+    assert len(cards) == 1 and cards[0]["label"] == "任务配置"
     rows = {row["key"]: row["value"] for row in cards[0]["summary"]}
     assert rows == {
         "配置文件来源": "用户",
@@ -394,7 +394,7 @@ def test_mas_preview_file_cards_and_masked_account(
         {"Id": "13800138000"},
     )
     ctx = _ctx(_FakeScriptConfig({uid: config}), uid)
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     # ConfigFile 含 MAS 管理的 DailyTask.json 字段 → 文件卡应进预览
     # （预览范围 = 恢复范围，两池同等存在的文件共用渲染）
@@ -435,7 +435,7 @@ def test_mas_overlay_keeps_mode_preview_only(
     uid = str(uuid.uuid4())
     config = _FakeUserConfig("用户", {"TaskIndex": 1})
     ctx = _ctx(_FakeScriptConfig({uid: config}), uid)
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     mas_dir = tmp_path / "data" / "s-1" / uid / "ConfigFile"
     mas_dir.mkdir(parents=True)

@@ -404,7 +404,10 @@ def archive_mas_runtime_backup(
     :func:`archive_native_backup`）。
     """
 
-    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    try:
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    except Exception:
+        logger.opt(exception=True).warning("MAA 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
 
 
 # ══════════════════ 脚本原生配置（安装目录 config/ 整目录） ══════════════════

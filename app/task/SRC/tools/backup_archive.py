@@ -270,13 +270,18 @@ def archive_mas_runtime_backup(
 ) -> None:
     """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
 
-    运行回写与会话保存会覆盖它，下发前存底；指纹去重，``mas_dir`` 由
-    调用方按当前用户三态解析（脚本态=Default 共享目录、用户态=独立目录）。
-    ``overlay`` 为当前用户的页面核心字段。native 池与此处无关：原生配置
-    跨用户共享，由 manager ``prepare`` 在任务级一次性归档。
+    运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
+    绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
+    ``mas_dir`` 由调用方按当前用户三态解析（脚本态=Default 共享目录、
+    用户态=独立目录）。``overlay`` 为当前用户的页面核心字段。native 池
+    与此处无关：原生配置跨用户共享，由 manager ``prepare`` 在任务级
+    一次性归档。
     """
 
-    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    try:
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    except Exception:
+        logger.opt(exception=True).warning("SRC 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
 
 
 # ══════════════════ SRC 原生配置（安装目录 config/ 整目录） ══════════════════

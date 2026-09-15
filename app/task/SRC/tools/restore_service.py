@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -64,9 +64,6 @@ from .backup_archive import (
 )
 
 logger = get_logger("SRC 配置恢复")
-
-RESTORE_SCRIPT_NAME = "src"
-"""专项统一名（文案参数化用）"""
 
 
 def _user_guard(ctx: RestoreContext) -> None:
@@ -176,7 +173,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_overlay_preview(overlay)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
@@ -216,7 +213,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     return build_native_preview(config_path, ts)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 SRC 脚本路径")

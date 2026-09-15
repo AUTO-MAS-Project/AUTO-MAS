@@ -201,7 +201,6 @@ _QUICK_CONFIG_TASKS = (*MAAEND_TASKS, MAAEND_DELIVERY_TASK, MAAEND_AUTO_COLLECT_
 _OVERLAY_FIELD_LABELS = {
     "Mode": "配置文件来源",
     "Id": "账号",
-    "IfQuickConfig": "快速配置",
     "SanityMode": "理智任务配置模式",
     "IfSeizeDeliveryJobs": "抢委托送货",
     "SeizeDeliveryJobsReward": "送货最低接取价格（万）",
@@ -423,7 +422,10 @@ def archive_mas_runtime_backup(
     （见 :func:`archive_native_backup`）。
     """
 
-    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    try:
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+    except Exception:
+        logger.opt(exception=True).warning("MaaEnd 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
 
 
 # ══════════════════ 脚本原生配置（安装目录 config/ 整目录） ══════════════════
@@ -508,7 +510,12 @@ def _summary_value(value) -> str:
 
 
 def _select_instance(config: dict) -> dict | None:
-    """按 MXU 语义选择配置实例（AUTO-MAS 实例优先，其次最近活跃）。"""
+    """按 MXU 语义选择配置实例（AUTO-MAS 实例优先，其次最近活跃）。
+
+    读 MXU 配置内部字段（``lastActiveInstanceId``，与 AutoProxy/ScriptConfig
+    的实例选择链同构）：上游变更后表现为返回 None → 预览缺实例行，不影响
+    恢复与归档内容。
+    """
 
     instances = config.get("instances")
     if not isinstance(instances, list):
@@ -844,13 +851,6 @@ def build_overlay_summary(
     if "Mode" in overlay:
         mas_rows.append(
             {"key": "配置文件来源", "value": _overlay_value("Mode", overlay["Mode"])}
-        )
-    if "IfQuickConfig" in overlay:
-        mas_rows.append(
-            {
-                "key": "快速配置",
-                "value": _overlay_value("IfQuickConfig", overlay["IfQuickConfig"]),
-            }
         )
     if "DailyOnceTasks" in overlay:
         mas_rows.append({"key": "每日仅执行一次", "value": _daily_once_text(overlay)})

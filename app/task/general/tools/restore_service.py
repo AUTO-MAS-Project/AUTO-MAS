@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -59,9 +59,6 @@ from .backup_archive import (
 
 logger = get_logger("通用脚本配置恢复")
 
-RESTORE_SCRIPT_NAME = "general"
-"""专项统一名（文案参数化用）"""
-
 
 def _user_guard(ctx: RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
@@ -94,7 +91,7 @@ async def _mas_root(ctx: RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> object:
+async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     restore_mas_backup(
         ctx.script_id, ctx.user_id, ts, mas_config_dir(ctx.script_id, ctx.user_id)
@@ -117,7 +114,7 @@ async def _native_root(ctx: RestoreContext) -> Path | None:
     return native_backup_root(ctx.script_id, config_path)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> object:
+async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     config_path = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置脚本配置路径")

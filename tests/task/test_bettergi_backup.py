@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -393,7 +393,6 @@ def test_restore_service_callbacks_roundtrip(
 
     from app.task.BetterGI.tools.restore_service import (
         RESTORE_POOLS,
-        RESTORE_SCRIPT_NAME,
     )
     from app.utils.config_restore import RestoreContext, build_restore_service
 
@@ -421,7 +420,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=user_id,
     )
-    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service = build_restore_service(ctx, RESTORE_POOLS)
 
     # mas：snapshot → preview（files 注入）→ restore 回填（Mode 排除）
     created = asyncio.run(service.ensure("mas"))
@@ -450,7 +449,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(ghost_uid),
     )
-    service_ghost = build_restore_service(ctx_ghost, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service_ghost = build_restore_service(ctx_ghost, RESTORE_POOLS)
     ghost_created = asyncio.run(service_ghost.ensure("mas"))
     assert ghost_created == {"created": False, "time": ""}
     with pytest.raises(ValueError):
@@ -472,7 +471,7 @@ def test_restore_service_callbacks_roundtrip(
         user_id=user_id,
     )
     service_no_root = build_restore_service(
-        ctx_no_root, RESTORE_SCRIPT_NAME, RESTORE_POOLS
+        ctx_no_root, RESTORE_POOLS
     )
     assert [item["time"] for item in asyncio.run(service_no_root.list("mas"))] == [
         created["time"]

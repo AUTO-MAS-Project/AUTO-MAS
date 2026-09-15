@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -242,7 +242,6 @@ def test_restore_service_callbacks_roundtrip(
 
     from app.task.MaaFW.tools.restore_service import (
         RESTORE_POOLS,
-        RESTORE_SCRIPT_NAME,
     )
     from app.utils.config_restore import RestoreContext, build_restore_service
 
@@ -269,7 +268,7 @@ def test_restore_service_callbacks_roundtrip(
         script_id=script_id,
         user_id=str(uid),
     )
-    service = build_restore_service(ctx, RESTORE_SCRIPT_NAME, RESTORE_POOLS)
+    service = build_restore_service(ctx, RESTORE_POOLS)
 
     created = asyncio.run(service.ensure("mas"))
     assert created["created"] is True and created["time"]

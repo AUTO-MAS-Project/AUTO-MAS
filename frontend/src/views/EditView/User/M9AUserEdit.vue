@@ -33,10 +33,6 @@
           >
             <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
             <a-space>
-              <a-button size="small" @click="openRestoreModal">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
               <span>{{ t('edit.enableQuickConfiguration') }}</span>
               <a-switch
                 :checked="formData.Info.IfQuickConfig"
@@ -44,6 +40,10 @@
                 :aria-label="t('edit.enableQuickConfiguration')"
                 @change="handleQuickConfigChange"
               />
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
             </a-space>
           </a-flex>
           <TaskQueueSection
@@ -493,6 +493,7 @@ const ensureM9ABackup = async (target: 'mas' | 'native') => {
     })
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 

@@ -52,6 +52,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.log_detect import (
     detect_echo_of_war_completion,
@@ -1578,6 +1579,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             self.runtime.m7a_runner = m7a_runner
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
+
+        # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
+        # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
+        # prepare 在任务级一次性归档）
+        archive_mas_runtime_backup(
+            script_id, uid, read_overlay_values(user_cfg)
+        )
 
         full_queue = self._build_user_queue(
             user_item=user_item,

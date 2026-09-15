@@ -400,7 +400,15 @@ def archive_mas_config_backup(
     导入覆盖前 / 恢复前存底）都必须经本函数**，否则备份缺账号，预览与恢复
     回填全会落空。裸快照原语 :func:`archive_mas_backup` 不再直接对外用于
     「MAS 配置快照」语义（仅 :func:`restore_mas_backup` 内部恢复前存底使用）。
+
+    失败语义分两段：物化（写槽）失败照常抛出——注入/会话依赖物化结果，
+    半成品槽不该继续；快照（指纹归档）失败只记日志返回 ``None``——归档是
+    现场保护，不是前置条件。
     """
 
     materialize_user_fields(slot_dir, user_config)
-    return archive_mas_backup(script_id, slot_idx, slot_dir, force=force, meta=meta)
+    try:
+        return archive_mas_backup(script_id, slot_idx, slot_dir, force=force, meta=meta)
+    except Exception:
+        logger.opt(exception=True).warning("ZZZ-OD 用户槽配置快照失败，已跳过（不阻断注入/会话）")
+        return None

@@ -568,7 +568,7 @@ class ConfigBackupItemOut(BaseModel):
     time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
     mode: Optional[str] = Field(
         default=None,
-        description="备份时点的配置来源三态（脚本/用户）；无标注（旧版备份或未声明三态）为 null",
+        description="备份时点的配置来源三态（脚本/用户/直控）；无标注（旧版备份或未声明三态）为 null",
     )
 
 
@@ -630,7 +630,7 @@ class ConfigBackupFileOut(OutBase):
     path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
     size: int = Field(..., description="文件字节数")
     content: str = Field(
-        ..., description="文本内容（utf-8 读取；超出大小上限返回 400）"
+        ..., description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）"
     )
 
 

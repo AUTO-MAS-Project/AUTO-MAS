@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -599,7 +599,7 @@ def test_restore_service_callbacks_roundtrip(
     ctx = RestoreContext(
         config=None, script_config=script_config, script_id=script_id, user_id=str(uid)
     )
-    service = build_restore_service(ctx, rs.RESTORE_SCRIPT_NAME, rs.RESTORE_POOLS)
+    service = build_restore_service(ctx, rs.RESTORE_POOLS)
 
     # mas：目录缺失 → 播种后声明式归档（侧车读取自 ctx 用户配置）
     created = asyncio.run(service.ensure("mas"))

@@ -209,10 +209,6 @@
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
         <h3>{{ t('edit.taskConfiguration') }}</h3>
         <a-space>
-          <a-button size="small" @click="openRestoreModal">
-            <template #icon><HistoryOutlined /></template>
-            {{ t('edit.configRestoreTitle') }}
-          </a-button>
           <span>{{ t('edit.enableQuickConfiguration') }}</span>
           <a-switch
             :checked="formData.Info.IfQuickConfig"
@@ -220,6 +216,10 @@
             :aria-label="t('edit.enableQuickConfiguration')"
             @change="handleQuickConfigChange"
           />
+          <a-button size="small" @click="openRestoreModal">
+            <template #icon><HistoryOutlined /></template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
         </a-space>
       </a-flex>
       <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
@@ -791,51 +791,56 @@ const handleRestoreView = (
   target: string,
   item: { time: string; mode?: string | null },
   currentMode?: string | null
-) => {
-  const { title, paragraphs } = buildRestoreConfirm(
-    t,
-    {
-      title: t('edit.configRestoreDetailView'),
-      desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
-    },
-    item.mode,
-    currentMode
-  )
-  Modal.confirm({
-    title,
-    content: h(
-      'div',
-      paragraphs.map(text =>
-        h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
-      )
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId: userId.value,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+) =>
+  new Promise<boolean>(resolve => {
+    const { title, paragraphs } = buildRestoreConfirm(
+      t,
+      {
+        title: t('edit.configRestoreDetailView'),
+        desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
+      },
+      item.mode,
+      currentMode
+    )
+    Modal.confirm({
+      title,
+      content: h(
+        'div',
+        paragraphs.map(text =>
+          h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+        )
+      ),
+      okType: 'danger',
+      okText: t('edit.configRestoreConfirmOk'),
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId: userId.value,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await startSession(userId.value, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-        restoreOpen.value = false
-        if (target === 'mas') {
-          await startSession(userId.value, true)
-        } else {
-          await startSession(scriptId, true)
-        }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
-}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 下发处）配合——进入归档原生配置当前状态（MAS
@@ -850,6 +855,7 @@ const ensureOkwwBackup = async (target: 'mas' | 'native') => {
     })
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 
@@ -862,9 +868,12 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // 退出编辑页：归档 MAS 配置终态（编辑会话包络），并结束未关闭的会话
-  void ensureOkwwBackup('mas')
-  void stopSession()
+  // 退出编辑页：先停会话再归档 MAS 配置终态——并行会与 final_task 的回写
+  // 撞车，归档到半程状态；会话未开时 stopSession 自身早退，不影响归档时机
+  void (async () => {
+    await stopSession()
+    await ensureOkwwBackup('mas')
+  })()
 })
 </script>
 

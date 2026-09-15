@@ -331,12 +331,6 @@
           </a-tooltip>
         </h3>
         <a-space>
-          <a-button size="small" @click="restoreOpen = true">
-            <template #icon>
-              <HistoryOutlined />
-            </template>
-            {{ t('edit.configRestoreTitle') }}
-          </a-button>
           <span>{{ t('edit.enableQuickConfiguration') }}</span>
           <a-switch
             :checked="formData.Info.IfQuickConfig"
@@ -344,6 +338,12 @@
             :aria-label="t('edit.enableQuickConfiguration')"
             @change="handleQuickConfigChange"
           />
+          <a-button size="small" @click="restoreOpen = true">
+            <template #icon>
+              <HistoryOutlined />
+            </template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
         </a-space>
       </a-flex>
       <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
@@ -4488,41 +4488,46 @@ const handleRestored = async (target: string) => {
 // mas 备份：恢复到 per-user 副本后启动用户级查看会话（BGI GUI 所见即
 // 副本）；原生备份：恢复到 BGI 全局后启动脚本级查看会话（打开 BGI 看
 // 原生配置）。查看会话结束不回写（BetterGI 配置会话本就无回写）。
-const handleRestoreView = (target: string, item: { time: string }) => {
-  Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: BETTERGI_DISPLAY_NAME })
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId: userId.value,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+const handleRestoreView = (target: string, item: { time: string }) =>
+  new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: BETTERGI_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId: userId.value,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await startSession(userId.value, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-        restoreOpen.value = false
-        if (target === 'mas') {
-          await startSession(userId.value, true)
-        } else {
-          await startSession(scriptId, true)
-        }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
-}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行物化前的双池归档
 // （AutoProxy）配合——进入归档 BGI 全局配置当前状态（MAS 触碰前原始态），
@@ -4537,6 +4542,7 @@ const ensureBettergiBackup = async (target: 'mas' | 'native') => {
     })
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 
