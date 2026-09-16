@@ -645,14 +645,17 @@ export class RepositoryService {
    * 复制文件到根目录
    */
   private async copyToRoot(): Promise<void> {
+    // .git 放最后：它是「当前部署的是哪个版本」的依据，先复制的话，一旦 app/ 复制
+    // 中断，残缺的源码看起来已经是最新版，标题栏不再提示更新，用户也就失去重新拉取
+    // 代码的入口。
     const itemsToCopy = [
-      '.git',
       'app',
       'res',
       'main.py',
       'requirements.txt',
       'LICENSE',
       'README.md',
+      '.git',
     ]
 
     for (const item of itemsToCopy) {
@@ -665,28 +668,64 @@ export class RepositoryService {
       }
 
       try {
-        // 删除目标文件/目录
-        if (fs.existsSync(dstPath)) {
-          if (fs.statSync(dstPath).isDirectory()) {
-            fs.rmSync(dstPath, { recursive: true, force: true })
-          } else {
-            fs.unlinkSync(dstPath)
-          }
-        }
-
-        // 复制文件/目录
-        if (fs.statSync(srcPath).isDirectory()) {
-          this.copyDirectory(srcPath, dstPath)
-        } else {
-          fs.copyFileSync(srcPath, dstPath)
-        }
-
+        this.replaceItem(srcPath, dstPath)
         logger.info(`复制完成: ${item}`)
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`复制失败: ${item}, 错误信息: ${errorMsg}`)
         throw error
       }
+    }
+  }
+
+  /**
+   * 用一个源条目原子替换目标条目
+   *
+   * 先整体复制到 `<目标>.new`，再改名换入；改名是同一卷内的元数据操作，几乎不会
+   * 半途失败。原来的「先 rmSync 掉目标、再逐文件 copyFileSync」一旦中断（进程被杀、
+   * 单个文件撞杀软或占用），留下的是一个残缺的 app/，缺哪个模块取决于复制停在哪一步，
+   * 后端下次启动直接 ModuleNotFoundError 且没有提示。
+   *
+   * 换入失败时把旧目标改名回去，宁可停在旧版本，也不让目标处于缺失或半新半旧的状态。
+   */
+  private replaceItem(srcPath: string, dstPath: string): void {
+    const staged = `${dstPath}.new`
+    const backup = `${dstPath}.old`
+
+    // 部署根目录可能还不存在（首次部署到空目录），copyFileSync 不会自建父目录
+    fs.mkdirSync(path.dirname(dstPath), { recursive: true })
+
+    // 上次中断可能留下的残留
+    fs.rmSync(staged, { recursive: true, force: true })
+    fs.rmSync(backup, { recursive: true, force: true })
+
+    try {
+      // 1. 完整复制到暂存位置，这一步失败不会碰到现有目标
+      if (fs.statSync(srcPath).isDirectory()) {
+        this.copyDirectory(srcPath, staged)
+      } else {
+        fs.copyFileSync(srcPath, staged)
+      }
+
+      // 2. 换入：目标先让位，再把暂存改名成目标
+      const hadTarget = fs.existsSync(dstPath)
+      if (hadTarget) {
+        fs.renameSync(dstPath, backup)
+      }
+      try {
+        fs.renameSync(staged, dstPath)
+      } catch (error) {
+        if (hadTarget) {
+          fs.renameSync(backup, dstPath)
+        }
+        throw error
+      }
+
+      // 3. 换入成功，清掉旧副本
+      fs.rmSync(backup, { recursive: true, force: true })
+    } catch (error) {
+      fs.rmSync(staged, { recursive: true, force: true })
+      throw error
     }
   }
 
