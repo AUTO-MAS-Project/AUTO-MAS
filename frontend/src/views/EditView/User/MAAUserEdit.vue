@@ -30,11 +30,12 @@
       :maa-config-loading="maaConfigLoading"
       :show-maa-config-mask="showMAAConfigMask"
       :loading="loading"
+      :config-locked="configLocked"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-form
           ref="formRef"
@@ -161,11 +162,13 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -228,6 +231,7 @@ const reportFieldSaveFailure = () => {
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 // 脚本信息
 const scriptName = ref('')
@@ -777,6 +781,8 @@ const loadScriptInfo = async () => {
 
 // 新增模式下立即创建用户
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {
@@ -1055,6 +1061,7 @@ const loadStageModeOptions = async () => {
 
 // 手动选班 = 把轮换起点拨到该班（写入 MAA 配置, 由 MAA 原生推进）
 const handleInfrastPlanSelectChange = async (index: number, label: string) => {
+  if (configLocked.value) return
   try {
     const result = await Service.setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost({
       scriptId: scriptId,
@@ -1080,6 +1087,7 @@ const selectAndImportInfrastructureConfig = async () => {
     message.warning(t('edit.saveUserBeforeImporting'))
     return
   }
+  if (configLocked.value) return
 
   try {
     // 选择文件
@@ -1158,6 +1166,7 @@ const loadInfrastructureOptions = async () => {
 }
 
 const handleMAAConfig = async () => {
+  if (configLocked.value) return
   try {
     maaConfigLoading.value = true
 

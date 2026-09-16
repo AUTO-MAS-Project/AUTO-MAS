@@ -266,6 +266,7 @@ export default {
     highlightColorsPreview: 'Highlight colors and preview',
   },
   edit: {
+    configLocked: 'A task is running, so this configuration is locked until it finishes',
     close: 'Close',
     notifyServerChan: 'ServerChan',
     notifyStatistics: 'Statistics',

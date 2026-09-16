@@ -25,7 +25,7 @@
             ghost
             size="large"
             :loading="zzzodConfigLoading"
-            :disabled="pageLoading || !userId"
+            :disabled="pageLoading || !userId || configLocked"
             @click="handleZzzodConfig"
           >
             <template #icon>
@@ -91,7 +91,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -906,7 +906,8 @@
       <!-- ══ 配置恢复（通用组件：列表 / 预览 / 查看详细 / 一键恢复）══ -->
       <ConfigRestoreSection
         v-model:open="restoreOpen"
-        :script-name="ZZZOD_DISPLAY_NAME"
+        :disabled="configLocked"
+      :script-name="ZZZOD_DISPLAY_NAME"
         :targets="restoreTargets"
         :api="restoreApi"
         :field-labels="previewFieldLabels"
@@ -958,11 +959,13 @@
           </div>
         </a-spin>
       </a-modal>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1010,6 +1013,7 @@ const { getScript } = useScriptApi()
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref(t('edit.zzzodScriptFallbackName'))
 
 const pageLoading = ref(true)
@@ -1163,6 +1167,8 @@ const handleNameBlur = async () => {
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     message.error(userApiError.value || t('edit.couldNotCreateUser'))
@@ -1324,6 +1330,7 @@ const openAddInstance = () => {
 }
 
 const confirmAddInstance = async () => {
+  if (configLocked.value) return
   const name = instanceName.value.trim()
   if (!name) {
     message.error(t('edit.zzzodInstanceNameRequired'))
@@ -1361,6 +1368,7 @@ const openRenameInstance = (inst: ZzzOdInstanceOut) => {
 }
 
 const confirmRenameInstance = async () => {
+  if (configLocked.value) return
   const target = renameTarget.value
   const name = instanceName.value.trim()
   if (!target || !name) {
@@ -1405,6 +1413,7 @@ const openDeleteInstance = (inst: ZzzOdInstanceOut) => {
 }
 
 const deleteInstance = async (inst: ZzzOdInstanceOut) => {
+  if (configLocked.value) return
   instanceOpLoading.value = true
   try {
     const resp = await Service.deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost({
@@ -1431,6 +1440,7 @@ const deleteInstance = async (inst: ZzzOdInstanceOut) => {
 }
 
 const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) => {
+  if (configLocked.value) return
   try {
     const resp = await Service.setZzzodInstanceActiveInOdApiApiScriptsZzzodInstancesActiveInOdPost({
       scriptId,
@@ -1448,6 +1458,7 @@ const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) 
 
 /** 切换实例「运行前切换账号」：一条龙原生能力（force_login_before_run），MAS 不干涉 */
 const toggleInstanceForceLogin = async (inst: ZzzOdInstanceOut, value: boolean) => {
+  if (configLocked.value) return
   try {
     const resp = await Service.setZzzodInstanceForceLoginApiApiScriptsZzzodInstancesForceLoginPost({
       scriptId,
@@ -1473,6 +1484,7 @@ const isRequiredAccountKey = (key: string) => {
 
 /** 显式设为当前活跃：「仅运行当前」运行时跑的就是它；直控页编辑不自动改活跃 */
 const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
+  if (configLocked.value) return
   instanceOpLoading.value = true
   try {
     const resp = await Service.setZzzodActiveInstanceApiApiScriptsZzzodInstancesSetActivePost({
@@ -1501,7 +1513,7 @@ const teamsRef = ref<InstanceType<typeof ZzzOdPredefinedTeams> | null>(null)
 // 点击「导入」：确认将用母版实例覆盖当前独立用户配置后再执行
 // （后端在覆盖前会强制归档当前 MAS 配置，可在「配置恢复」中找回）
 const confirmImport = () => {
-  if (importSourceIdx.value === null) return
+  if (importSourceIdx.value === null || configLocked.value) return
   Modal.confirm({
     title: t('edit.zzzodImportConfirmTitle'),
     content: t('edit.zzzodImportConfirmDesc'),
@@ -1511,6 +1523,7 @@ const confirmImport = () => {
 }
 
 const importFromInstance = async () => {
+  if (configLocked.value) return
   const sourceIdx = importSourceIdx.value
   if (sourceIdx === null || !userId.value) return
   importLoading.value = true
@@ -1625,6 +1638,7 @@ const handleNativeInstanceChange = async (instanceIdx: number) => {
  * 与直控页当前编辑哪个实例无关，独立保存 */
 const runModeSaving = ref(false)
 const handleNativeInstanceRunChange = async () => {
+  if (configLocked.value) return
   runModeSaving.value = true
   try {
     const resp = await Service.setZzzodInstanceRunModeApiApiScriptsZzzodInstancesRunModePost({
@@ -1673,6 +1687,7 @@ const saveNativeConfig = async (
   section: NativeSaveSection = 'all',
   silent = false
 ): Promise<boolean> => {
+  if (configLocked.value) return true
   if (nativeInstanceIdx.value === null) return false
   nativeSaving.value = true
   try {
@@ -1868,6 +1883,7 @@ const flushAllTaskConfigSaves = () => {
 }
 
 const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value: any) => {
+  if (configLocked.value) return
   // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
   // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
   if (value === null || value === undefined || Number.isNaN(value)) return
@@ -1936,6 +1952,7 @@ const openPlanModal = async (card: TaskCard, fields?: TaskConfigField[]) => {
 
 /** 弹窗保存：plan_list 提交整表（后端按 plan_id 保留已运行进度），其余字段提交当前值 */
 const savePlanModal = async () => {
+  if (configLocked.value) return
   planModal.saving = true
   try {
     const values: Record<string, any> = {}
@@ -2064,6 +2081,7 @@ const handleRestored = (target: string) => {
 }
 
 const handleRestoreView = (target: string, item: { time: string }) => {
+  if (configLocked.value) return
   const isMas = target === 'mas'
   // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
   // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
@@ -2208,6 +2226,7 @@ const {
 } = useZzzodGuiSession()
 
 const handleZzzodConfig = () => {
+  if (configLocked.value) return
   if (formData.Info.Mode === '直控') {
     // 直控：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
     // 界面里的改动即真实落地一条龙原始配置（会话关闭后页面自动刷新）。

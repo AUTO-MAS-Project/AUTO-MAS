@@ -30,11 +30,12 @@
       :src-config-loading="srcConfigLoading"
       :show-src-config-mask="showSrcConfigMask"
       :loading="loading"
+      :config-locked="configLocked"
       @handle-s-r-c-config="handleSRCConfig"
       @handle-cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-form
           ref="formRef"
@@ -95,11 +96,13 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -153,6 +156,7 @@ let srcConfigTimeout: number | null = null
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 // 脚本信息
 const scriptName = ref('')
@@ -363,6 +367,7 @@ const handleCancel = () => {
 
 // 处理SRC配置
 const handleSRCConfig = async () => {
+  if (configLocked.value) return
   try {
     srcConfigLoading.value = true
 
@@ -501,6 +506,11 @@ if (!userId) {
   onMounted(async () => {
     // 等待脚本信息加载完成
     await loadScriptInfo()
+    if (configLocked.value) {
+      isInitializing.value = false
+      return
+    }
+
     // 创建新用户
     const result = await addUser(scriptId)
     if (result && result.userId) {

@@ -269,6 +269,7 @@ export default {
     highlightColorsPreview: 'ハイライト色とプレビュー',
   },
   edit: {
+    configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',

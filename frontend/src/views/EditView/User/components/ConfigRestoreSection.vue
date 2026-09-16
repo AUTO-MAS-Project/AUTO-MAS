@@ -7,6 +7,13 @@
     width="520px"
     @update:open="onOpenChange"
   >
+    <a-alert
+      v-if="disabled"
+      class="restore-lock-alert"
+      type="warning"
+      show-icon
+      :message="t('edit.configLocked')"
+    />
     <a-segmented
       v-model:value="restoreTarget"
       block
@@ -30,7 +37,7 @@
               <a-button type="link" size="small" @click="handlePreview(item)">
                 {{ t('edit.configRestorePreview') }}
               </a-button>
-              <a-button size="small" @click="confirmRestore(item)">
+              <a-button size="small" :disabled="disabled" @click="confirmRestore(item)">
                 {{ t('edit.configRestoreAction') }}
               </a-button>
             </a-space>
@@ -133,7 +140,7 @@
       <!-- 「查看详细配置」依赖父组件的 onDetail 回调（恢复 + 拉起查看会话）；
            专项未提供时不渲染，避免出现无响应的按钮 -->
       <a-tooltip v-if="onDetail" :title="t('edit.configRestoreDetailHint', { script: scriptName })">
-        <a-button @click="handlePreviewDetail">
+        <a-button :disabled="disabled" @click="handlePreviewDetail">
           {{ t('edit.configRestoreDetailView') }}
         </a-button>
       </a-tooltip>
@@ -159,6 +166,8 @@ const { t } = useI18n()
 const props = defineProps<{
   /** 弹窗开关（v-model） */
   open: boolean
+  /** 配置写入锁定（任务运行中禁用恢复与查看详细） */
+  disabled?: boolean
   /** 脚本名（文案参数化用，如「一条龙」） */
   scriptName: string
   /** 目标池：顺序即 segmented 展示顺序（MAS 在前脚本在后） */
@@ -362,7 +371,7 @@ const handlePreview = async (item: BackupItem) => {
 
 // 预览弹窗内「查看详细配置」：关掉预览，走父组件详情动作
 const handlePreviewDetail = () => {
-  if (!previewItem.value) return
+  if (props.disabled || !previewItem.value) return
   previewOpen.value = false
   props.onDetail?.(restoreTarget.value, previewItem.value)
 }
@@ -377,6 +386,7 @@ const doRestore = async (item: BackupItem) => {
 }
 
 const confirmRestore = (item: BackupItem) => {
+  if (props.disabled) return
   Modal.confirm({
     title: t('edit.configRestoreConfirmTitle'),
     content: h(
@@ -400,6 +410,10 @@ const confirmRestore = (item: BackupItem) => {
 </script>
 
 <style scoped>
+.restore-lock-alert {
+  margin-bottom: 12px;
+}
+
 .restore-target-switch {
   margin-bottom: 12px;
 }

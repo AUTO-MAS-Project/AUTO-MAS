@@ -33,7 +33,7 @@
       @handle-cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <div class="page-layout">
         <a-form
           ref="formRef"
@@ -175,11 +175,13 @@
           />
         </aside>
       </div>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -242,6 +244,7 @@ const maaEndOptionsLoaded = ref(false)
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
 const controllerProtocol = ref<string | null>(null)
@@ -640,6 +643,7 @@ const cleanupConfigSession = () => {
 }
 
 const handleMaaEndConfig = async () => {
+  if (configLocked.value) return
   try {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
@@ -695,6 +699,7 @@ const handleMaaEndConfig = async () => {
 }
 
 const handleImportMaaEndConfig = async () => {
+  if (configLocked.value) return
   try {
     maaEndImportLoading.value = true
     if (formData.Info.Mode === '直控') {
@@ -743,6 +748,11 @@ onMounted(async () => {
   await loadScriptInfo()
   await loadMaaEndOptions()
   await loadSanityModeOptions()
+
+  if (!isEdit.value && configLocked.value) {
+    isInitializing.value = false
+    return
+  }
 
   if (isEdit.value) {
     await loadUserData()

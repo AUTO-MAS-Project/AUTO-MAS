@@ -8,7 +8,7 @@
       config-label="配置 ok-ww"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
-      :config-disabled="pageLoading || !userId"
+      :config-disabled="pageLoading || !userId || configLocked"
       @config="handleOkwwConfig"
       @cancel="handleCancel"
     />
@@ -34,7 +34,7 @@
       </div>
     </teleport>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -337,11 +337,13 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -375,6 +377,7 @@ const { subscribe, unsubscribe } = useWebSocket()
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
@@ -567,6 +570,8 @@ const handleCancel = async () => {
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     const errorMessage = userApiError.value || '创建用户失败'
@@ -652,6 +657,7 @@ const handleTaskIndexChange = async (value: 1 | 7) => {
 }
 
 const handleOkwwConfig = async () => {
+  if (configLocked.value) return
   if (!userId.value) return
   try {
     okwwConfigLoading.value = true

@@ -247,6 +247,7 @@ import {
 import draggable from 'vuedraggable'
 import { BetterGiService } from '@/api'
 import type { BetterGIScriptGroupSaveIn, BetterGIScriptGroupDetailOut } from '@/api'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
 
@@ -286,6 +287,7 @@ const emit = defineEmits<{
 }>()
 
 const logger = window.electronAPI.getLogger('BetterGI配置组项目编辑')
+const { configLocked } = useScriptConfigLock(() => props.scriptId)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -501,7 +503,7 @@ const reload = async () => {
 
 // 拖拽排序结束 / 各保存路径统一写回 per-user 副本；写前规范化 index 并剔除 _uid
 const persistProjects = async () => {
-  if (!isScriptGroup.value || saving.value) return
+  if (!isScriptGroup.value || saving.value || configLocked.value) return
   saving.value = true
   try {
     const rows = projects.value.map((item, idx) => {

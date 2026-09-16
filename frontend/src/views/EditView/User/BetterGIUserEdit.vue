@@ -32,7 +32,7 @@
             ghost
             size="large"
             :loading="bettergiConfigLoading"
-            :disabled="pageLoading || !userId"
+            :disabled="pageLoading || !userId || configLocked"
             @click="handleBettergiConfig"
           >
             <template #icon>
@@ -47,7 +47,7 @@
           ghost
           size="large"
           :loading="bettergiConfigLoading"
-          :disabled="pageLoading || !userId"
+          :disabled="pageLoading || !userId || configLocked"
           @click="handleBettergiConfig"
         >
           <template #icon>
@@ -96,7 +96,7 @@
       </div>
     </teleport>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -1185,11 +1185,13 @@
           </div>
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1250,6 +1252,7 @@ const { getScript } = useScriptApi()
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 
 const pageLoading = ref(true)
@@ -1362,6 +1365,8 @@ const formData = reactive<BetterGIUserFormData>({
 
 // saveField 需在自定义配置组 composable 之前定义（后者在 persist/toggle 中调用它）
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     message.error(userApiError.value || t('edit.couldNotCreateUser'))
@@ -1815,7 +1820,7 @@ const updatePlanStepEnabled = (name: string, enabled: boolean) => {
 
 // 调用后端：按步骤名翻转 Plan 中某战斗实例的启用状态
 const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void> => {
-  if (!scriptId || !userId.value) return
+  if (!scriptId || !userId.value || configLocked.value) return
   try {
     const resp =
       await BetterGiService.setOneDragonPlanStepEnabledApiScriptsBettergiOneDragonPlanStepEnabledPost(
@@ -3198,6 +3203,7 @@ const saveDragonGroupSettings = (
 ): Promise<boolean> => {
   const sel = selOverride ?? selectedGroupIdentity.value
   const run = dragonGroupSaveChain.then(async () => {
+    if (configLocked.value) return true
     if (!sel || sel.kind !== 'builtin' || !userId.value) return false
     const tasks: Promise<unknown>[] = []
     if (dragonSettingsDirty.value) {
@@ -4334,6 +4340,7 @@ const {
 } = useBettergiGuiSession()
 
 const handleBettergiConfig = () => {
+  if (configLocked.value) return
   if (!userId.value) return
   void startSession(userId.value)
 }

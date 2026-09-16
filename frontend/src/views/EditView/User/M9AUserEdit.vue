@@ -8,7 +8,7 @@
       @handle-cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-form
           ref="formRef"
@@ -64,11 +64,13 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -103,6 +105,7 @@ const { enqueue, isSaving } = useSaveQueue()
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const taskQueue = ref<M9ATaskQueueItem[]>([])
@@ -256,6 +259,8 @@ const loadScriptInfo = async () => {
 }
 
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {

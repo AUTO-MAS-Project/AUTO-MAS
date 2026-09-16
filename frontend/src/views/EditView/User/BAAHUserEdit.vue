@@ -26,7 +26,7 @@
     </a-space>
   </div>
 
-  <div class="user-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
@@ -217,10 +217,12 @@
         <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -251,6 +253,7 @@ const isSaving = ref(false) // 标记是否正在保存
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 // 脚本信息
 const scriptName = ref('')
@@ -419,6 +422,8 @@ const loadScriptInfo = async () => {
 
 // 新增模式下立即创建用户
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {

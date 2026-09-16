@@ -37,7 +37,7 @@
     </template>
   </ScriptEditHeader>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.maaendScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag class="type-tag">MaaEnd</a-tag>
@@ -440,10 +440,11 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
