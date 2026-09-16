@@ -28,6 +28,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
@@ -58,7 +59,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 class MaaEndManager(TaskExecuteBase):
     """MaaEnd 控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -73,6 +79,7 @@ class MaaEndManager(TaskExecuteBase):
         self.temp_path: Path | None = None
         self.had_original_script_config = False
         self.script_config_mode = "脚本"
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -137,7 +144,10 @@ class MaaEndManager(TaskExecuteBase):
 
         # 初始化模拟器管理器
         if self.controller_protocol == "Adb":
-            self.emulator_manager = await EmulatorManager.get_emulator_instance(
+            device_provider = (
+                self._device_provider or EmulatorManager.get_emulator_instance
+            )
+            self.emulator_manager = await device_provider(
                 self.script_config.get("Game", "EmulatorId")
             )
         else:

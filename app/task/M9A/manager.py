@@ -29,6 +29,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import M9AConfig, M9AUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
@@ -60,7 +61,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {"AutoProxy": AutoProxyTask}
 class M9AManager(TaskExecuteBase):
     """M9A 调度器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -73,6 +79,7 @@ class M9AManager(TaskExecuteBase):
         self.auto_update_fix_enabled = False
         self._virtual_user_old_version = None
         self._virtual_user_new_version = None
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验 M9A 配置是否可用"""
@@ -193,7 +200,8 @@ class M9AManager(TaskExecuteBase):
         )
 
         # 初始化模拟器管理器
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
