@@ -19,8 +19,6 @@
 from pathlib import Path
 from typing import Callable
 
-import yaml
-
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 from app.utils import get_logger
@@ -144,9 +142,7 @@ class HSRM7AControl:
             | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
             | m7a.M7A_FINISH_ACTION_PATCH_WHITELIST
         )
-        current_config = (
-            yaml.safe_load(config_path.read_text(encoding="utf-8-sig")) or {}
-        )
+        current_config = m7a.load_m7a_yaml(config_path.read_text(encoding="utf-8-sig"))
         if not isinstance(current_config, dict):
             raise ValueError(f"M7A config.yaml 顶层必须是对象: {config_path}")
         patched_config = m7a.merge_whitelist(

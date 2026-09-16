@@ -76,7 +76,11 @@ from .tools.run_model import (
     external_result_failure_summary,
 )
 from .tools.sra_control import HSRSRAControl
-from .tools.sra_runtime import cleanup_sra_temp_config
+from .tools.sra_runtime import (
+    SRA_REWARD_REDEEM_CODE_KEY,
+    SRA_REWARD_REDEEM_CODE_LEGACY_KEY,
+    cleanup_sra_temp_config,
+)
 from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
@@ -753,8 +757,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="ReceiveRewards",
             user_cfg=user_cfg,
         )
-        field_key = "rewards.6" if engine == "SRA" else "reward_redemption_code_enable"
-        selected = bool(values.get(field_key, True))
+        if engine == "SRA":
+            # SRA 2.22.0 起兑换码开关是具名键，旧 profile 仍是数组下标 6
+            selected = bool(
+                values.get(
+                    SRA_REWARD_REDEEM_CODE_KEY,
+                    values.get(SRA_REWARD_REDEEM_CODE_LEGACY_KEY, True),
+                )
+            )
+        else:
+            selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
