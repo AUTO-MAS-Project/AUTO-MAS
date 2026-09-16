@@ -180,13 +180,13 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import { GetService } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import {
   WS_MAAFW_ENV_PREPARE_PROGRESS,
   WS_MAAFW_PROJECT_UPDATE_PROGRESS,
 } from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
@@ -232,7 +232,6 @@ type PeriodKey = (typeof PERIOD_KEYS)[number]
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
-const { getSettings } = useSettingsApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
 const scriptId = route.params.id as string
@@ -661,8 +660,11 @@ const cdkPrefilled = ref(false)
 const prefillMirrorChyanCdk = async () => {
   if (maafwConfig.Update.MirrorChyanCDK.trim()) return
   try {
-    const settings = await getSettings()
-    const globalCdk = (settings?.Update?.MirrorChyanCDK ?? '').trim()
+    // 直接调生成的客户端而不是 useSettingsApi().getSettings()：后者失败时会弹
+    // 「获取设置失败」的红色提示，与本页无关，预填只是锦上添花，静默跳过即可。
+    const response = await GetService.getScriptsApiSettingGetPost()
+    if (response.code !== 200) return
+    const globalCdk = (response.data?.Update?.MirrorChyanCDK ?? '').trim()
     // 等待期间用户可能已经自己敲进去了，再查一次
     if (!globalCdk || maafwConfig.Update.MirrorChyanCDK.trim()) return
     maafwConfig.Update.MirrorChyanCDK = globalCdk
