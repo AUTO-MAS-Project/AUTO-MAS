@@ -20,6 +20,7 @@ from .apply import (
     UpdateApplyError,
     apply_package_transaction,
     has_trusted_update_baseline,
+    update_baseline_matches_project,
 )
 from .contracts import normalise_sha256, project_fingerprint
 from .state import (
@@ -355,6 +356,20 @@ async def update_maafw_project_if_needed(
         # projectFingerprint，而从未经 MAS 更新过的项目根本没有那份 manifest，
         # 于是「首次更新」必然被拒——这就是自举死锁。探测是只读的，不建目录。
         prefer_full = not has_trusted_update_baseline(project_path)
+        if prefer_full:
+            send_update_log("本地无可信更新基线，改为请求全量包")
+        elif str(merged_source_config.get("mirror_cdk") or "").strip():
+            # 有清单也不等于项目没变：M9A 的 agent 每次启动都热更新
+            # data/activity/*.json，指纹一变差量包同样会在 apply 阶段被拒。
+            # 只有配了 CDK 才可能拿到差量包，所以只在这时花那 ~2s 全项目哈希。
+            if not await asyncio.to_thread(
+                update_baseline_matches_project, project_path
+            ):
+                prefer_full = True
+                send_update_log(
+                    "项目内容与更新基线不一致（脚本自行热更新或手动改过文件），"
+                    "差量包无法套用，改为请求全量包"
+                )
         (
             discovery,
             version_check,
@@ -927,13 +942,12 @@ async def _query_mirrorchyan_latest(
     }
     if mirror_cdk:
         params["cdk"] = mirror_cdk
-    if prefer_full:
-        # 不带 current_version：MirrorChyan 的 current_version 是差量包的计算基准
-        # （文档标为「推荐」而非必填），不给它就没法算差量，返回的是全量包。
-        # 项目还没有可信基线时必须走这条路——差量包在 _validate_plan_base 里
-        # 对不上 projectFingerprint 会被拒，导致「首次更新永远装不上」。
-        send_update_log("本地无可信更新基线，改为请求全量包")
-    else:
+    if not prefer_full:
+        # prefer_full 时不带 current_version：MirrorChyan 的 current_version 是差量包
+        # 的计算基准（文档标为「推荐」而非必填），不给它就没法算差量，返回的是
+        # 全量包。项目没有可信基线、或基线指纹已对不上时必须走这条路——差量包在
+        # _validate_plan_base 里对不上 projectFingerprint 会被拒。为什么要全量由
+        # 调用方在决定 prefer_full 时记日志，这里不重复。
         params["current_version"] = current_version
     # os / arch 一律带上，不看 interface.json 的 mirrorchyan_multiplatform：
     # 该字段只是发布方给打包器的提示，MAA_Punish 这类分平台发布的项目根本没写它，
