@@ -26,6 +26,7 @@ export default {
   comp: {
     changelog: {
       empty: 'このバージョンの更新履歴はまだありません',
+      loadFailed: '更新履歴の読み込みに失敗しました。更新のダウンロードは可能です',
     },
     editUser: 'ユーザーを編集',
     addUser2: 'ユーザーを追加',
