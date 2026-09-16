@@ -32,6 +32,18 @@
           <div class="form-section form-section-flat">
             <div class="section-header">
               <h3>{{ t('edit.basicInfo') }}</h3>
+              <!-- 体力配置区块隐藏（直控模式，或未给 Daily 配引擎）时，恢复入口兜底到这里 -->
+              <div
+                v-if="controlMode !== 'managed' || !dailyStageEngine"
+                class="section-header-actions"
+              >
+                <a-button size="small" @click="restoreOpen = true">
+                  <template #icon>
+                    <HistoryOutlined />
+                  </template>
+                  {{ t('edit.configRestoreTitle') }}
+                </a-button>
+              </div>
             </div>
             <a-row :gutter="24">
               <a-col :span="8">
@@ -190,6 +202,7 @@
               :stage-options-loading="hsrStageOptionsLoading"
               :stage-options-error="hsrStageOptionsError"
               @save="handleFieldSave"
+              @open-restore="restoreOpen = true"
             />
             <ManagedTaskSection
               :snapshot="managedConfigSnapshot"
@@ -317,19 +330,56 @@
         </a-form>
       </a-card>
     </div>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :script-name="HSR_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.hsrConfigRestoreUserDesc')"
+      :script-desc="t('edit.hsrConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+    >
+      <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewSections(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="s in previewSections(raw)" :key="s.name">
+            <h4 class="hsr-preview-title">{{ s.label }}</h4>
+            <a-descriptions
+              v-if="s.rows && s.rows.length"
+              :column="1"
+              size="small"
+              bordered
+              class="hsr-preview-box"
+            >
+              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import hsrLogo from '@/assets/hsr.png'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
@@ -488,12 +538,16 @@ const controlModeOptions = [
 ]
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：HSR 运行时脚本态与用户态同分支（native_control 仅按 直控/其余 折进 Control.Mode），
+// 选了也不生效——禁用并悬停说明原因
 const hsrConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
@@ -501,6 +555,8 @@ const hsrConfigModeOptions: Array<{
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.user'),
@@ -996,6 +1052,71 @@ const loadCapabilities = async () => {
   }
 }
 
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：HSR 统一叫「hsr」
+const HSR_DISPLAY_NAME = 'hsr'
+const restoreOpen = ref(false)
+
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+interface HSRPreviewRow {
+  key: string
+  value: string
+}
+interface HSRPreviewSection {
+  name: string
+  label: string
+  rows?: HSRPreviewRow[]
+}
+const previewSections = (raw: unknown): HSRPreviewSection[] =>
+  (raw as { sections?: HSRPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填字段（托管配置等），需重拉表单；native 恢复写
+// 两引擎原生配置，MAS 表单不受影响
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    await loadUserData()
+    if (controlMode.value === 'managed') await loadManagedConfig()
+  }
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：进入归档两引擎原生配置当前状态
+// （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
+const ensureHSRBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
 onMounted(async () => {
   if (!scriptId) {
     message.error(t('edit.missingScriptIdParameter'))
@@ -1020,6 +1141,8 @@ onMounted(async () => {
     } else {
       await createUserImmediately()
     }
+    // 编辑界面进入：归档两引擎原生配置当前状态（须在 userId 就绪后）
+    void ensureHSRBackup('native')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
@@ -1027,6 +1150,11 @@ onMounted(async () => {
   } finally {
     isInitializing.value = false
   }
+})
+
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 用户字段侧车终态（编辑会话包络；HSR 无遮罩会话）
+  void ensureHSRBackup('mas')
 })
 
 const createUserImmediately = async () => {
@@ -1142,7 +1270,28 @@ const loadUserData = async () => {
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
+.hsr-preview-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--ant-color-text);
+}
+
+.hsr-preview-box {
+  margin-bottom: 8px;
 }
 
 .section-header h3 {

@@ -272,6 +272,7 @@ export default {
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
+    notifyDropStatistics: 'ドロップ統計',
     notifyMail: 'メール通知',
     maaAnnihilation: '殲滅作戦',
     maaAnnihilationHint:
@@ -425,12 +426,9 @@ export default {
     p0PathSelected: '{p0}のパスを選択しました',
     switchedPlanModeP0: 'プランモードに切り替えました：{p0}',
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
-    startedP0MaaendConfiguration: '{p0} の MaaEnd 設定を開始しました',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
-    startedMaaSetupUser: 'ユーザー {p0} の MAA 設定を開始しました',
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
-    openedOkWwSettings: '{p0} の ok-ww 設定を開きました',
     readP0: '{p0} を読み込みました',
     addedP0Tasks: 'タスクを {p0} 件追加しました',
     configurationSessionUserP02:
@@ -1058,7 +1056,6 @@ export default {
     onlyProcessesStartedBy:
       'このタスクが起動し、MAS が所有するプロセスのみを終了します。手動で開いたプロセスを誤って終了することはありません',
     optional: '任意',
-    couldNotStartMaa: 'MAA の設定を開始できませんでした',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
@@ -1340,9 +1337,11 @@ export default {
     useScriptS: 'スクリプトの設定を使い、ユーザー専用の設定とは切り離しません。',
     quickConfig: 'クイック設定',
     configSourceHint:
-      '同じスクリプトでもユーザーごとに設定の取得元を選べます。直接制御の設定はスクリプト自身が管理し、直接制御のユーザー間で共有されます。',
+      '「スクリプト設定」は複数ユーザーで同じスクリプト単位の取得元を共有し、「ユーザー個別の設定」はユーザーごとに別々の取得元を使い、「スクリプト直接制御」は BGI のネイティブ設定を使い、その取得元を選んだユーザー間で共有されます。',
     configSourceHintBase:
       'スクリプトはスクリプト共有の設定、ユーザーはこのユーザー専用の設定を使います。直接制御はスクリプト本来の設定をそのまま使い、MAS は書き込みません。クイック設定は独立したスイッチです。',
+    // 「スクリプト」設定元が無効になっているときのホバー理由（文言統一）
+    scriptModeDisabled: '非対応',
     ok: 'OK',
     deleteThisTask2: 'このタスクを削除しますか？',
     leaveWithoutSavingUnsaved: '移動しますか？保存していない変更は失われる場合があります。',
@@ -1582,14 +1581,17 @@ export default {
     bettergiDirectModeAlert:
       '「スクリプト直接制御」モード：下欄でこのユーザーが使う一条龍名（BetterGI に存在する設定名）を入力してください。スクリプトの設定は BetterGI 内で行います（「BetterGI を設定」をクリックして開けます）。',
     bettergiSwitchToMasConfig: 'ユーザー独立設定に切り替える',
-    bettergiMasConfigHowTo: '「ユーザー独立設定」の使い方',
+    bettergiMasConfigHowTo: '「タスク設定」の使い方',
     bettergiMasConfigHowTo1a:
       'このユーザーの一条龍は独立設定で動作し、タスクとカスタム設定グループはこのページ（MAS 側）で設定します（BetterGI の「一条龍」ページを開く必要はありません）。MAS は固定スロット',
     bettergiMasConfigSlotName: '「MAS独立配置」',
     bettergiMasConfigHowTo1b:
       'から一条龍を起動し、終了後にスロットを自動クリーンアップします。既存の BetterGI 設定（「默认配置」など）には一切触れません——同名の実設定は読み込まれず、ここでの編集の影響も受けません。',
     bettergiMasConfigHowTo2:
-      '下の共通戦闘パーティー / 共通戦闘ストラテジー：空欄のままにすると BetterGI の現在の設定が使われます（ストラテジーが空欄の場合は「パーティーに応じて自動選択」）。入力すると、一条龍内の戦闘を伴う 4 つのタスク（地脈の花、秘境、ボス討伐、幽境危戦）に適用され、BetterGI の既定のパーティーとストラテジーを置き換えます。',
+      '下の共通戦闘パーティー / 共通戦闘ストラテジーは、すべての戦闘タスク（地脈の花・秘境・ボス討伐・幽境危戦）のフォールバックです。パーティーを空欄にするとパーティーを切り替えず（タスク開始時のパーティーを維持）、ストラテジーを空欄にすると BetterGI がパーティーに応じて自動選択します。いずれかのタスクがチーム表の「戦闘シーン」に一致した場合は、その行のパーティーとストラテジーが優先されます。',
+    bettergiTeamHowToTitle: '「パーティー設定」の使い方',
+    bettergiTeamHowTo:
+      'パーティー設定をオンにすると、戦闘タスク（自動秘境 / 自動地脈の花 / 自動ボス討伐）はまずこの表を参照します。「戦闘シーン」に一致した行を優先採用し、複数一致した場合はランダムに 1 行選びます。一致しないタスクは上の共通戦闘パーティー / ストラテジーにフォールバックします。0 行目の「汎用」はすべてのシーンの受け皿で、削除できません。パーティー名とストラテジー名は BetterGI に存在するものと一致させてください（「戦略フォルダを開く」で確認できます）。',
     bettergiOneDragonName: '一条龍の設定名',
     bettergiOneDragonNameHint:
       'ユーザー独立設定がオンの間は「MAS独立配置」に固定され変更できません。オフ（直接制御モード）では使用する BetterGI 設定を選択します。既定は「默认配置」です',
@@ -3054,7 +3056,7 @@ export default {
         SRC: 'スターレイルの自動化と複数アカウント代行',
         MaaEnd: 'MFW 専用アダプター',
         M9A: 'リバース：1999 の自動化',
-        MaaFW: 'MaaFramework プロジェクトを実行します',
+        MaaFW: 'interface.json を持つ MaaFramework プロジェクトをそのまま実行',
         Okww: 'ok-script 専用のタスクランナー',
         OkNte: 'Neverness to Everness（OK-NTE）の自動化',
         HSR: '三月なのか / SRA の 2 種類に対応',

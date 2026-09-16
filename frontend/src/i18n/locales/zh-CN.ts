@@ -269,6 +269,7 @@ export default {
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
     notifyRecruit: '公开招募高资喜报',
+    notifyDropStatistics: '掉落统计',
     notifyMail: '邮件通知',
     maaAnnihilation: '剿灭作战',
     maaAnnihilationHint:
@@ -427,12 +428,9 @@ export default {
     p0PathSelected: '{p0}路径选择成功',
     switchedPlanModeP0: '已切换到计划模式：{p0}',
     loadedP0P1Log: '已加载 {p0} 行日志（共 {p1} 行）',
-    startedP0MaaendConfiguration: '已启动 {p0} MaaEnd 配置',
     importedP0ConfigurationFile: '已导入{p0}配置文件',
-    startedMaaSetupUser: '已开始配置用户 {p0} 的MAA设置',
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
-    openedOkWwSettings: '已打开{p0}的 ok-ww 设置',
     readP0: '已读取 {p0}',
     addedP0Tasks: '成功添加 {p0} 个任务',
     configurationSessionUserP02: '用户 {p0} 的配置会话已超时（30分钟），正在自动保存配置...',
@@ -1081,7 +1079,6 @@ export default {
     onlyProcessesStartedBy:
       '只关闭由本次任务启动且归 MAS 所有的目标进程，不会误杀用户手动打开的进程',
     optional: '可选',
-    couldNotStartMaa: '启动MAA配置失败',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
@@ -1145,6 +1142,50 @@ export default {
       '当前 ok-ww 安装中没有可用的设置目录。首次下载后，请先返回脚本列表点击“配置 ok-ww”，在本体中保存一次设置，再重新添加用户。',
     maaendConfigurationWindowOpen:
       '当前正在为这个用户打开 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
+    // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaendConfigRestoreScriptDesc:
+      'MaaEnd 原生配置的备份，恢复会直接作用于 MaaEnd 本体；打开本编辑页、运行 MaaEnd 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
+    m9aConfigRestoreUserDesc:
+      'MAS 编辑页核心配置（任务队列、服务器资源等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    m9aConfigRestoreScriptDesc:
+      'M9A 本体配置的备份，恢复会直接作用于 M9A 本体；进入本编辑页或运行 M9A 前会自动去重创建，保留最近 10 份',
+    // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
+    generalConfigRestoreUserDesc:
+      '该用户脚本配置的备份，恢复会直接作用于 MAS 配置页；运行或打开配置界面前会自动去重创建，保留最近 10 份',
+    generalConfigRestoreScriptDesc:
+      '脚本配置路径的备份，恢复会直接作用于脚本本体；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    generalViewingTitle: '正在查看脚本配置',
+    generalViewingDesc: '正在以只读方式打开该份备份的脚本配置。',
+    generalViewingDesc2: '查看完成后，请点击"关闭查看"按钮结束查看会话，脚本配置将保持原状。',
+    generalViewClose: '关闭查看',
+    // BAAH 配置恢复（无遮罩会话；native 按用户绑定的配置文件名动态归档）
+    baahConfigRestoreUserDesc:
+      'MAS 编辑页配置（配置文件绑定等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    baahConfigRestoreScriptDesc:
+      '当前绑定配置文件的备份，恢复会直接覆盖 BAAH 里的同名配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // SRC 配置恢复（native 恢复前拒绝接管待恢复快照，防止被任务回滚覆盖）
+    srcConfigRestoreUserDesc:
+      'MAS 配置的备份（关卡配置等页面字段与用户配置目录），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    srcConfigRestoreScriptDesc:
+      'SRC 安装目录 config 文件夹的备份，恢复会直接覆盖 SRC 本体配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    srcViewingTitle: '正在查看 SRC 配置',
+    srcViewingDesc: 'SRC 界面显示的是所选备份的内容，仅供查看。',
+    srcViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    srcViewClose: '关闭查看',
+    srcViewOpened: '已打开 SRC 查看',
+    srcViewStartFailed: '打开 SRC 查看失败',
+    // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
+    maaendSessionOpened: '已打开 MaaEnd 设置',
+    maaendSessionStartFailed: '启动 MaaEnd 设置失败',
+    maaendSessionStopFailed: '停止 MaaEnd 设置失败',
+    maaendSessionSaveFailed: '保存 MaaEnd 配置失败',
+    maaendViewOpened: '已打开 MaaEnd 查看',
+    maaendSessionTimeoutWarn: 'MaaEnd 设置会话即将超时，30 秒后自动保存',
+    maaendViewingTitle: '正在查看 MaaEnd 配置',
+    maaendViewingDesc: 'MaaEnd 界面显示的是所选备份的内容，仅供查看。',
+    maaendViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaendViewClose: '关闭查看',
     scriptLevelMaaendConfiguration2:
       '当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
     okNteGuiConfiguration: '当前正在进行该用户的 OK-NTE GUI 配置，请在 OK-NTE 界面完成相关设置。',
@@ -1347,10 +1388,12 @@ export default {
     useScriptS: '使用脚本配置，不与用户独立配置隔离。',
     quickConfig: '快速配置',
     configSourceHint:
-      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
+      '「脚本配置」为不同用户选择同一脚本来源；「用户独立配置」为不同用户选择不同配置来源；「直控配置」为 BGI 原生配置，并由直控用户共享。',
     configSourceHintBase:
       '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
     nativeConfigSourceDescription: '使用脚本当前的原生配置。',
+    // 「脚本」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
+    scriptModeDisabled: '不支持',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
     leaveWithoutSavingUnsaved: '确定要离开吗？未保存的更改可能会丢失。',
@@ -1575,14 +1618,17 @@ export default {
     bettergiDirectModeAlert:
       '「脚本直控配置」：请在下方填写该用户使用的一条龙名称（BetterGI 中已有的配置名），脚本内容请在 BetterGI 中配置（可点「配置 BetterGI」打开）。',
     bettergiSwitchToMasConfig: '切换到用户独立配置',
-    bettergiMasConfigHowTo: '如何使用「用户独立配置」',
+    bettergiMasConfigHowTo: '如何使用「任务配置」',
     bettergiMasConfigHowTo1a:
       '该用户的一条龙已走独立配置，任务与自定义配置组均在本页以 MAS 前端为准配置（无需打开 BGI「一条龙」页面编辑）。MAS 运行时以固定槽位',
     bettergiMasConfigSlotName: '「MAS独立配置」',
     bettergiMasConfigHowTo1b:
       '启动一条龙，结束后自动清理槽位；你原有的 BGI 实配（如「默认配置」）全程零接触——同名实配不会被读取、也不受这里编辑影响。',
     bettergiMasConfigHowTo2:
-      '下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。',
+      '下方面板的通用战斗队伍 / 通用战斗策略是所有战斗任务的兜底：自动地脉花、自动秘境、自动首领讨伐、自动幽境危战都会用到它。队伍留空表示不切换队伍（沿用进任务时的当前队伍），策略留空表示由 BetterGI 根据队伍自动选择；若某个任务在「队伍配置」里命中了战斗场景，则优先使用该行填写的队伍与策略。',
+    bettergiTeamHowToTitle: '如何使用「队伍配置」',
+    bettergiTeamHowTo:
+      '开启「队伍配置」后，战斗任务（自动秘境 / 自动地脉花 / 自动首领讨伐）会先查这张表：命中「战斗场景」的行优先采用，多行同时命中时随机取一行；未命中的任务回落到上方「通用战斗队伍 / 通用战斗策略」。第 0 行「通用」兜底所有场景，不可删除。队伍名与策略名需与 BetterGI 中已有的一致（可点「打开策略目录」查看策略文件）。',
     bettergiOneDragonName: '一条龙名称',
     bettergiOneDragonNameHint:
       '用户独立配置时固定为「MAS独立配置」，不可更改；关闭「用户独立配置」后此处用于选择 BetterGI 实配（直控模式），默认为「默认配置」',
@@ -1676,6 +1722,27 @@ export default {
     bettergiSessionTimeoutWarn: 'BetterGI 设置会话即将超时，30 秒后自动保存',
     bettergiSettingsSaved: 'BetterGI 设置已保存',
     bettergiSettingsSaveFailed: '保存 BetterGI 设置失败',
+    // BetterGI 配置恢复（mas=per-user 副本 + 页面字段；native=全局 config.json）
+    bettergiConfigRestoreUserDesc:
+      'MAS 配置的备份（用户配置副本与页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    bettergiConfigRestoreScriptDesc:
+      'BetterGI 全局主配置（config.json）的备份，恢复会直接覆盖 BetterGI 全局设置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    bettergiViewingTitle: '正在查看 BetterGI 配置',
+    bettergiViewingDesc: 'BetterGI 界面显示的是所选备份的内容，仅供查看。',
+    bettergiViewingDesc2: '查看期间将临时打开配置；查看完成后请点击「关闭查看」结束。',
+    bettergiViewClose: '关闭查看',
+    bettergiViewOpened: '已打开 BetterGI 查看',
+    bettergiViewStartFailed: '打开 BetterGI 查看失败',
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    maafwConfigRestoreUserDesc:
+      'MAS 配置的备份（任务快照与设备覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    maafwConfigRestoreScriptDesc:
+      'MaaFW 项目配置（config 文件夹与 interface.json）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
+    hsrConfigRestoreUserDesc:
+      'MAS 配置的备份（任务映射与托管覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    hsrConfigRestoreScriptDesc:
+      'HSR 原生配置的备份（M7A config.yaml 与 SRA settings/cache/configs），恢复会直接覆盖原生配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
     // BAAH 专项
     baahScriptConfiguration: 'BAAH 脚本配置',
     baahScriptNameHint: '用于区分不同的 BAAH 脚本实例',
@@ -1787,6 +1854,12 @@ export default {
     configRestorePreviewEmpty: '该备份无可展示的配置摘要',
     configRestorePreviewActive: '活跃',
     configRestoreListFailed: '加载备份列表失败',
+    configRestoreEnsureFailed: '配置自动备份失败，本次更改可能没有恢复点',
+    configRestoreBackupFiles: '备份文件',
+    configRestoreCopy: '复制',
+    configRestoreCopied: '已复制到剪贴板',
+    configRestoreFileFailed: '读取备份文件失败',
+    configRestoreFileUnsupported: '该备份类别不支持查看文件内容',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
     configRestoreDetailConfirm:
@@ -1798,6 +1871,18 @@ export default {
     configRestoreConfirmTitle: '覆盖当前配置',
     configRestoreConfirmDesc:
       '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    configRestoreModeScript: '脚本级',
+    configRestoreModeUser: '用户级',
+    configRestoreModeDirect: '直控',
+    // 当前配置来源（仅三态专项返回，与备份标签比对是否需要跨来源提示）
+    configRestoreCurrentSource: '当前配置来源：{mode}',
+    // 跨配置来源恢复（备份来源与当前来源不一致）：单弹窗内换标题并追加说明
+    configRestoreCrossSourceTitle: '跨配置来源恢复',
+    configRestoreCrossSourceDesc:
+      '该备份来自{backup}配置，当前为{current}。继续恢复会把配置来源切换为{backup}，再写入对应配置。',
+    configRestoreCrossSourceShared:
+      '脚本级配置由本脚本的全部用户共享，恢复会覆盖其他用户当前使用的配置。',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',
@@ -1812,6 +1897,32 @@ export default {
     oknteViewingDesc: 'ok-nte 界面显示的是所选备份的内容，仅供查看。',
     oknteViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     oknteViewClose: '关闭查看',
+    // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    okwwConfigRestoreScriptDesc:
+      'ok-ww 原生配置的备份，恢复会直接作用于 ok-ww 本体；打开本编辑页、运行 ok-ww 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // ok-ww 原生设置/查看会话（措辞对齐 ok-nte / 一条龙）
+    okwwSessionOpened: '已打开 ok-ww 设置',
+    okwwSessionStartFailed: '启动 ok-ww 设置失败',
+    okwwSessionStopFailed: '停止 ok-ww 设置失败',
+    okwwViewOpened: '已打开 ok-ww 查看',
+    okwwSessionTimeoutWarn: 'ok-ww 设置会话即将超时，30 秒后自动保存',
+    okwwViewingTitle: '正在查看 ok-ww 配置',
+    okwwViewingDesc: 'ok-ww 界面显示的是所选备份的内容，仅供查看。',
+    okwwViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    okwwViewClose: '关闭查看',
+    // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaConfigRestoreScriptDesc:
+      'MAA 原生配置的备份，恢复会直接作用于 MAA 本体；打开本编辑页、运行 MAA 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // MAA 原生设置/查看会话（措辞对齐 ok-ww / ok-nte / 一条龙）
+    maaSessionOpened: '已打开 MAA 设置',
+    maaSessionStartFailed: '启动 MAA 设置失败',
+    maaSessionStopFailed: '停止 MAA 设置失败',
+    maaViewOpened: '已打开 MAA 查看',
+    maaSessionTimeoutWarn: 'MAA 设置会话即将超时，30 秒后自动保存',
+    maaViewingTitle: '正在查看 MAA 配置',
+    maaViewingDesc: 'MAA 界面显示的是所选备份的内容，仅供查看。',
+    maaViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaViewClose: '关闭查看',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
@@ -1821,6 +1932,8 @@ export default {
     configRestorePreviewAccount: '账号',
     configRestorePreviewPassword: '密码',
     configRestorePreviewBilibili: 'B服账号名',
+    configRestorePreviewUseCustomWinTitle: '自定义窗口标题',
+    configRestorePreviewCustomWinTitle: '窗口标题',
     zzzodPreviewUnlimited: '不限',
     zzzodOpenNativeConfig: '在一条龙内配置',
     zzzodOpenNativeConfigHint:
@@ -1932,6 +2045,8 @@ export default {
     zzzodBilibiliAccount: 'B服账号名',
     zzzodEnterBilibiliAccount: '请输入B服登录账号名',
     zzzodBilibiliAccountHint: 'B服登录面板中已保存的账号名',
+    zzzodUseCustomWinTitle: '自定义窗口标题',
+    zzzodCustomWinTitle: '窗口标题',
     zzzodOneDragonConfig: '任务配置',
     zzzodOneDragonConfigHint:
       '保存在本用户配置中，运行时由 MAS 写入一条龙；打开开关的任务会按顺序执行',
@@ -3263,7 +3378,7 @@ export default {
         SRC: '星穹铁道自动化与多账号代理',
         MaaEnd: 'MFW 专项适配脚本',
         M9A: '重返未来：1999 自动化脚本',
-        MaaFW: '托管 MaaFramework 项目',
+        MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',
         OkNte: '异环 OK-NTE 自动化脚本',
         HSR: '三月七 / SRA 双脚本适配',
@@ -3408,11 +3523,11 @@ export default {
     display: {
       section: '虚拟显示器',
       intro:
-        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 会一直盯着桌面：没有任何真实显示输出时自动挂一块虚拟显示器，真实显示器一回来就自动拆掉；任务正在跑时会等这轮任务结束再拆，不会把脚本脚下的屏抽掉。{driverLink}，MAS 不附带驱动。',
+        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 会一直盯着桌面：没有任何真实显示输出时自动挂一块虚拟显示器；真实显示器一回来，没有任务在跑就立即拆掉，有任务在跑则不拆——拆屏会把窗口挪到接回的显示器上，PC 端游戏任务会因此出错——改为在接回的显示器右下角弹窗询问，本轮任务结束后再自动拆除。{driverLink}，MAS 不附带驱动。',
       introDriverLink: '需先自行安装 Parsec 虚拟显示驱动',
       enable: '启用虚拟显示器',
       enableTip:
-        'MAS 运行期间持续监测：检测不到任何真实显示输出时自动挂上，真实显示器恢复后自动拆掉（任务正在跑时等这轮任务结束）；显示器正常工作时不会多挂一块。程序若被强制结束，下次启动时会清理掉遗留的那块。',
+        'MAS 运行期间持续监测：检测不到任何真实显示输出时自动挂上，真实显示器恢复后自动拆掉（任务正在跑时不拆，改为在接回的显示器上弹窗询问，任务结束后自动拆）；显示器正常工作时不会多挂一块。程序若被强制结束，下次启动时会清理掉遗留的那块。',
       mode: '刷新率',
       modeTip:
         '分辨率固定为 1920x1080——只有这一档 Windows 会按 100% 显示，游戏窗口不必经过 DPI 缩放；更高的分辨率会被自动放大，反而把问题带回来。虚拟屏只用来跑脚本，高刷没有意义。',
@@ -3422,6 +3537,23 @@ export default {
       checkTip:
         '依次检查驱动装没装、能不能调用、以及能否真的挂出一块屏。最后一步会短暂改变桌面显示器布局。',
       checkAction: '开始检测',
+      detach: '立即拆除',
+      detachTip:
+        '手动拆掉 MAS 此刻挂着的虚拟显示器，任务在不在跑都照拆——正在跑 PC 端游戏任务时拆屏会把游戏窗口挪走，这一轮任务可能因此出错。拆掉之后如果桌面上仍然没有任何真实显示输出，下一轮巡检会重新挂上；要彻底停用请关闭上面的开关。',
+      detachAction: '拆除虚拟显示器',
+      detachDone: '已拆除虚拟显示器',
+      detachNothing: '当前没有挂载虚拟显示器',
+      detachFailed: '拆除请求失败',
+      holdingNow: '当前挂载：{holding}',
+      holdingNone: '当前未挂载虚拟显示器',
+      prompt: {
+        title: '真实显示器已恢复',
+        body: '检测到显示器 {devices} 已接回，但当前有任务正在运行，MAS 暂未拆除虚拟显示器。现在拆除会把窗口挪到接回的显示器上、尺寸也可能改变，PC 端游戏任务会因此出错；选择保留的话，本轮任务结束后会自动拆除。',
+        keep: '保留，任务结束后自动拆除',
+        detach: '现在拆除',
+        detaching: '正在拆除…',
+        detachFailed: '拆除失败：{reason}',
+      },
       checkFailed: '检测请求失败',
       checkPassed: '检测通过',
       checkIssue: '检测未通过',

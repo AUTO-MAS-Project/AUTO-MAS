@@ -31,8 +31,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   由运行池提供，运行时以覆盖层铺进 `<项目>/maafw/` 并留 `.auto_mas_maafw_native_runtime.json`
   标记；带标记的 `maafw/` 是运行期产物，指纹与更新都把它当产物处理。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
-  `project_python`；声明的是自带 Python 模式但文件不存在 → 该项目专属隔离 venv
-  （`isolated_venv`，按项目路径哈希定位）；其余 → `external`。目录里没有 Python **不是错误**。
+  `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
+  （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
+  定位）；其余 → `external`。目录里没有 Python **不是错误**。裸 `python` 不能原样交给 PATH：
+  worker 跑在运行池 venv 里，Windows 上 `CreateProcess` 先按父进程（基解释器）所在目录找，
+  且用的是父进程的 PATH，传给子进程的 `env["PATH"]` 不参与查找，结果永远是没装 `maa` 的
+  基解释器。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
@@ -65,7 +69,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 与专项的区别（别照搬）
 
-- 没有 `ScriptConfig.py`，没有原生编辑器会话，没有配置备份恢复。
+- 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
+  （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
 - 用户配置上的 `Info.Mode`（脚本/用户/直控）**没有任何 MaaFW 代码消费**；运行器只读
   `Info.IfQuickConfig`（关闭时按项目原生默认值跑，不下发任务快照与预设）。不要在 MaaFW 上
   按三态写逻辑。

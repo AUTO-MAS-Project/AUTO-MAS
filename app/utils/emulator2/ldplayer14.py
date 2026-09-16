@@ -763,12 +763,13 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         raise RuntimeError(f"删除雷电实例 {native_index} 失败：它仍然在列表中")
 
     async def prepare_launch(self, idx: str) -> None:
-        """启动前按旧版全局开关应用「大雷主人模式」。
+        """启动前按旧版全局开关应用「大雷主人模式」的安卓桌面层。
 
         ``globalsetting --cleanmode`` 是**整个安装**的全局开关，宿主只在 VM 冷启动时把它
         作为 ``phone.cleanmode`` 推进客户机，所以放在启动前、每次都设：开着设 1、关着设 0，
         和旧配置的处理口径一致。已经在跑的其他实例要到它们下次冷启动才会跟着变。
-        设不上只记警告，不拦启动。
+        宿主窗口那层（加载页轮播、开机全屏页）``cleanmode`` 管不到，由门面按安装统一处理，
+        见 :func:`~.master_mode.apply_host_mode`。设不上只记警告，不拦启动。
         """
         enabled = is_master_mode_enabled()
         try:

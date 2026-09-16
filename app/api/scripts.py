@@ -2274,8 +2274,10 @@ async def set_one_dragon_plan_step_enabled(
     """按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
 
     步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
-    「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
-    一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+    「后名」解耦，改名不会丢设置。本接口只写 Plan（不改原生副本文件），但它是前端
+    队列行的启停开关：运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层，
+    且 AutoProxy 会把 Plan 中配过实例的战斗组整体从原生副本剔除——因此 enabled=false
+    的最终语义是「本次不跑」，而不是「退回原生一条龙跑」。
 
     步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
     后端无步骤可写，刷新后回退。
@@ -2600,6 +2602,14 @@ async def save_bettergi_script_group_api(
         out = one_dragon.write_user_script_group(
             root, req.scriptId, req.userId, req.name, req.data
         )
+        if out is None:
+            # 路径类引用（名字含 /）由路径文件驱动、没有 per-user 副本：按成功返回，
+            # 不把「配置组名非法」弹给用户（2026-09-16 实机）
+            return OutBase(
+                code=200,
+                status="success",
+                message=f"{req.name} 是路径类引用，内容由路径文件决定，无需保存副本",
+            )
         return OutBase(
             code=200,
             status="success",
@@ -3717,17 +3727,20 @@ async def batch_update_oknte_configs(
 async def list_config_backups_api(
     scriptId: str, userId: str, target: str
 ) -> ConfigBackupListOut:
-    """运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。"""
+    """返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+    来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
 
     try:
         data = await Config.list_config_backups(scriptId, userId, target)
         return ConfigBackupListOut(
             code=200,
             status="success",
-            message=f"共 {len(data)} 份备份",
-            data=[ConfigBackupItemOut(**item) for item in data],
+            message=f"共 {len(data['items'])} 份备份",
+            mode=data["mode"],
+            data=[ConfigBackupItemOut(**item) for item in data["items"]],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份列表查询失败: {e}")
         return ConfigBackupListOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3759,6 +3772,7 @@ async def ensure_config_backup_api(
             **data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置按需归档失败: {e}")
         return ConfigBackupEnsureOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3779,11 +3793,16 @@ async def restore_config_backup_api(
     script: ConfigBackupRestoreIn = Body(...),
 ) -> ConfigBackupRestoreOut:
     """恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
-    用户配置并按需回填前端表单。"""
+    用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+    由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
+    来源比对给出。"""
 
     try:
         data = await Config.restore_config_backup(
-            script.scriptId, script.userId, script.time, target=script.target
+            script.scriptId,
+            script.userId,
+            script.time,
+            target=script.target,
         )
         return ConfigBackupRestoreOut(
             code=200,
@@ -3792,6 +3811,7 @@ async def restore_config_backup_api(
             target=data["target"],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份恢复失败: {e}")
         return ConfigBackupRestoreOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3823,6 +3843,7 @@ async def get_config_backup_preview_api(
             **data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份预览失败: {e}")
         return ConfigBackupPreviewOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -3830,6 +3851,42 @@ async def get_config_backup_preview_api(
             time=time,
             target=target,
             data={},
+        )
+
+
+@router.get(
+    "/backup/file",
+    tags=["Backup"],
+    summary="只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）",
+    response_model=ConfigBackupFileOut,
+    status_code=200,
+)
+async def get_config_backup_file_api(
+    scriptId: str, userId: str, time: str, target: str, path: str
+) -> ConfigBackupFileOut:
+    """路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。"""
+
+    try:
+        data = await Config.get_config_backup_file(
+            scriptId, userId, time, target=target, path=path
+        )
+        return ConfigBackupFileOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份文件读取失败: {e}")
+        return ConfigBackupFileOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,
+            path=path,
+            size=0,
+            content="",
         )
 
 

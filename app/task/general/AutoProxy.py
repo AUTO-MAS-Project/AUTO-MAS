@@ -41,6 +41,7 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import (
     LogMonitor,
     ProcessInfo,
@@ -53,7 +54,6 @@ from app.utils import (
     load_patterns,
     strptime,
 )
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils.constants import UTC4
 from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
@@ -627,6 +627,17 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.use_mas_config:
             logger.info("脚本直控配置：跳过写入脚本配置")
             return
+
+        # 下发前归档 MAS 配置到用户池（下发源，运行回写 update_config 会覆盖
+        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按用户
+        from .tools.backup_archive import archive_mas_runtime_backup
+
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            self.cur_user_uid,
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+        )
 
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":

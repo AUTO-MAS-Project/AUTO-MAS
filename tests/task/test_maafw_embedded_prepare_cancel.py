@@ -14,7 +14,6 @@ import time
 import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.task.MaaFW.tools.embedded import runner_task
 
 

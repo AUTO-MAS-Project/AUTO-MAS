@@ -47,6 +47,7 @@ from .AutoProxy import (
 )
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 from .Update import WuwaUpdateTask
 
 logger = get_logger("OK-WW 调度器")
@@ -207,6 +208,13 @@ class OkwwManager(TaskExecuteBase):
             ):
                 self.had_original_script_config = True
 
+            # 任务级一次性归档 ok-ww 原生配置（项目级池，指纹去重，失败不
+            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——下发/覆盖处按用户归档会把上一轮下发的 MAS
+            # 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
+            with suppress(Exception):
+                archive_native_backup(self.script_config_path)
+
     async def _restore_script_config_from_temp(self) -> None:
         if not (
             self.task_info.mode in ("AutoProxy", "ScriptConfig")
@@ -279,6 +287,8 @@ class OkwwManager(TaskExecuteBase):
                     self.script_info,
                     self.script_config,
                     self.user_config,
+                    # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+                    view_only=self.task_info.view_only,
                 )
             )
             return
@@ -412,10 +422,15 @@ class OkwwManager(TaskExecuteBase):
                     await script_cfg.unlock()
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功后保留脚本原生 GUI 写回的配置。"""
+        """直控配置会话成功后保留脚本原生 GUI 写回的配置。
+
+        查看会话（view_only）不在此列：只读预览结束后原生现场必须按任务前
+        快照还原，不能把 GUI 里的临时改动当作直控保存保留下来。
+        """
 
         return (
             self.task_info.mode == "ScriptConfig"
+            and not self.task_info.view_only
             and self.script_config_mode == "直控"
             and bool(self.script_info.user_list)
             and self.script_info.user_list[0].status == "完成"

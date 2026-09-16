@@ -577,6 +577,7 @@ const greenTicketStoreSummary = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .section-header h3 {

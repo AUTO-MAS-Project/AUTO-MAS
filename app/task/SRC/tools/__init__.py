@@ -21,6 +21,24 @@
 #   Contact: DLmaster_361@163.com
 
 
+from .backup_archive import (
+    archive_mas_backup,
+    archive_mas_runtime_backup,
+    archive_native_backup,
+    build_native_preview,
+    build_overlay_preview,
+    get_mas_backup_dir,
+    get_native_backup_dir,
+    group_overlay,
+    list_mas_backups,
+    list_native_backups,
+    mas_backup_root,
+    mas_config_dir,
+    read_overlay_sidecar,
+    read_overlay_values,
+    restore_mas_backup,
+    restore_native_backup,
+)
 from .config import (
     SrcConfigSnapshotState,
     has_committed_src_user_config_transaction,
@@ -72,4 +90,20 @@ __all__ = [
     "SrcConfigSnapshotState",
     "validate_src_installation",
     "write_src_config_snapshot_state",
+    "archive_mas_backup",
+    "archive_mas_runtime_backup",
+    "archive_native_backup",
+    "build_native_preview",
+    "build_overlay_preview",
+    "get_mas_backup_dir",
+    "get_native_backup_dir",
+    "group_overlay",
+    "list_mas_backups",
+    "list_native_backups",
+    "mas_backup_root",
+    "mas_config_dir",
+    "read_overlay_sidecar",
+    "read_overlay_values",
+    "restore_mas_backup",
+    "restore_native_backup",
 ]

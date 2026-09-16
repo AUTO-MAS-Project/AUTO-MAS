@@ -38,8 +38,10 @@ const performanceStore = usePerformanceStore()
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
 
-// 判断是否为独立页面（不需要 AppLayout 的页面）
-const isStandalonePage = computed(() => route.name === 'Logs')
+// 判断是否为独立页面（不需要 AppLayout 的页面：日志窗口、虚拟显示器询问弹窗）
+const isStandalonePage = computed(
+  () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
+)
 
 onMounted(async () => {
   logger.info('App组件已挂载')
@@ -87,8 +89,8 @@ onMounted(async () => {
       <AppLayout />
     </div>
 
-    <!-- 开发构建才带调试面板 -->
-    <DebugPanel v-if="DebugPanel" />
+    <!-- 开发构建才带调试面板；独立小窗口（日志、虚拟显示器询问）里它会盖住内容，不挂 -->
+    <DebugPanel v-if="DebugPanel && !isStandalonePage" />
 
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">

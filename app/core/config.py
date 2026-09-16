@@ -1693,41 +1693,6 @@ class AppConfig(GlobalConfig):
 
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
-    async def ensure_zzzod_mas_backup(self, script_id: str, user_id: str) -> dict:
-        """确保 MAS 用户绑定槽有当前状态的备份（指纹去重，无变化跳过）。
-
-        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽时跳过
-        （没有可恢复的内容），返回 ``created=False``。
-        """
-
-        from app.task.ZzzOd.tools import (
-            archive_mas_config_backup,
-            collect_mas_user_info,
-            instance_dir,
-            list_mas_backups,
-        )
-
-        _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
-        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
-        slot_dir = instance_dir(self._zzzod_script_root(script_id), slot)
-        if slot <= 0 or not slot_dir.is_dir():
-            return {"created": False, "time": ""}
-
-        # 统一入口：归档前物化本页账号+编排进槽（账号/编排只存在 UserData，
-        # 槽要注入才带；不物化会漏、恢复会把本页字段清空），见文档 §3.1 陷阱
-        dest = archive_mas_config_backup(
-            script_id,
-            slot,
-            slot_dir,
-            user_cfg,
-            meta=collect_mas_user_info(user_cfg),
-        )
-        times = list_mas_backups(script_id, slot)
-        return {
-            "created": dest is not None,
-            "time": times[0] if times else "",
-        }
-
     async def restore_zzzod_backup(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> int:
@@ -1898,7 +1863,8 @@ class AppConfig(GlobalConfig):
             slot_dir = root / "config" / f"{slot:02d}"
             if slot_dir.is_dir():
                 # 覆盖前存底走统一入口（先物化再快照）：不物化的「导入前」
-                # 备份缺账号，恢复它会把本页账号清空
+                # 备份缺账号，恢复它会把本页账号清空。导入是覆盖性操作，
+                # 存底失败必须中止导入，否则覆盖前现场彻底丢失
                 archive_mas_config_backup(
                     script_id,
                     slot,
@@ -1906,6 +1872,7 @@ class AppConfig(GlobalConfig):
                     user_cfg,
                     force=True,
                     meta=collect_mas_user_info(user_cfg),
+                    fail_on_snapshot_error=True,
                 )
 
         native_root, instance = self._zzzod_native_instance(script_id, instance_idx)
@@ -2047,24 +2014,26 @@ class AppConfig(GlobalConfig):
 
         预览是纯展示（恢复直接回写备份文件内容，不经此值），密码明文没有
         理由出现在响应里；其余字段缺失时合并默认值（无值前端兜底 ``—``）。
+        自定义窗口标题两字段一并展示（``use_custom_win_title`` 转是否——
+        ``custom_win_title`` 是启用时的标题，两行都显示，简单化）。
         mas 与 onedragon 两个预览分支共用。
         """
 
         from app.task.ZzzOd.tools.zzz_od_config import DEFAULT_GAME_ACCOUNT
 
+        def _value(key: str) -> str:
+            if key == "password" and account.get(key):
+                return "••••••••"
+            if key == "use_custom_win_title":
+                return "是" if account.get(key) else "否"
+            return str(
+                account[key]
+                if account.get(key) is not None
+                else DEFAULT_GAME_ACCOUNT.get(key, "")
+            )
+
         return [
-            {
-                "key": key,
-                "value": (
-                    "••••••••"
-                    if key == "password" and account.get(key)
-                    else str(
-                        account[key]
-                        if account.get(key) is not None
-                        else DEFAULT_GAME_ACCOUNT.get(key, "")
-                    )
-                ),
-            }
+            {"key": key, "value": _value(key)}
             for key in (
                 "game_region",
                 "game_path",
@@ -2072,6 +2041,8 @@ class AppConfig(GlobalConfig):
                 "account",
                 "password",
                 "bilibili_account_name",
+                "use_custom_win_title",
+                "custom_win_title",
             )
         ]
 
@@ -2361,12 +2332,50 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, ZzzOdConfig):
             from app.task.ZzzOd.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
             )
         elif isinstance(script_config, OkNteConfig):
             from app.task.OkNte.tools.restore_service import (
                 RESTORE_POOLS,
-                RESTORE_SCRIPT_NAME,
+            )
+        elif isinstance(script_config, OkwwConfig):
+            from app.task.Okww.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, MaaConfig):
+            from app.task.MAA.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, MaaEndConfig):
+            from app.task.MaaEnd.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, M9AConfig):
+            from app.task.M9A.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, GeneralConfig):
+            from app.task.general.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, BAAHConfig):
+            from app.task.BAAH.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, SrcConfig):
+            from app.task.SRC.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, BetterGIConfig):
+            from app.task.BetterGI.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, MaaFWConfig):
+            from app.task.MaaFW.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, HSRConfig):
+            from app.task.HSR.tools.restore_service import (
+                RESTORE_POOLS,
             )
         else:
             raise ValueError("该专项暂不支持配置恢复")
@@ -2377,17 +2386,24 @@ class AppConfig(GlobalConfig):
                 script_id=script_id,
                 user_id=user_id,
             ),
-            RESTORE_SCRIPT_NAME,
             RESTORE_POOLS,
         )
 
     async def list_config_backups(
         self, script_id: str, user_id: str, target: str
-    ) -> list[dict]:
-        """列出配置备份（时间倒序）。target 取值由专项池定义。"""
+    ) -> dict:
+        """列出配置备份（时间倒序，每项带配置来源标注）与当前来源。
+
+        返回 ``{"items": [{"time", "mode"}], "mode": 当前来源或 None}``；
+        当前来源只在三态池返回（前端据此比对是否需要跨来源提示）。
+        target 取值由专项池定义。
+        """
 
         service = self.restore_service(script_id, user_id)
-        return [{"time": ts} for ts in await service.list(target)]
+        return {
+            "items": await service.list(target),
+            "mode": await service.current_mode(target),
+        }
 
     async def ensure_config_backup(
         self, script_id: str, user_id: str, target: str
@@ -2403,7 +2419,16 @@ class AppConfig(GlobalConfig):
     async def restore_config_backup(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> dict:
-        """把指定备份恢复到目标位置（恢复前存底由专项池函数自理）。"""
+        """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。
+
+        恢复是覆盖性写配置操作：脚本锁着（任务/配置会话运行中）时拒绝，
+        否则 mas 池「先换目录再回填 UserData」会在 update 处撞锁，留下
+        目录已换、字段未回填的半恢复现场。
+        """
+
+        uid = uuid.UUID(script_id)
+        if self.ScriptConfig[uid].is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法恢复配置")
 
         await self.restore_service(script_id, user_id).restore(target, ts)
         return {"target": target}
@@ -2415,6 +2440,20 @@ class AppConfig(GlobalConfig):
 
         payload = await self.restore_service(script_id, user_id).preview(target, ts)
         return {"time": ts, "target": target, "data": payload}
+
+    async def get_config_backup_file(
+        self, script_id: str, user_id: str, ts: str, target: str, path: str
+    ) -> dict:
+        """只读读取指定备份内一个文本文件（预览「查看原始文件」用）。
+
+        路径限归档内相对路径（防穿越）、大小受限（1 MiB），由
+        ``config_archive.read_backup_text`` 与专项池函数保证。
+        """
+
+        content = await self.restore_service(script_id, user_id).read_backup_file(
+            target, ts, path
+        )
+        return {"time": ts, "target": target, **content}
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]

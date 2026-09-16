@@ -270,6 +270,7 @@ export default {
     notifyServerChan: 'ServerChan',
     notifyStatistics: 'Statistics',
     notifyRecruit: 'Top-tier recruitment alerts',
+    notifyDropStatistics: 'Drop statistics',
     notifyMail: 'Email',
     maaAnnihilation: 'Annihilation',
     maaAnnihilationHint:
@@ -438,12 +439,9 @@ export default {
     p0PathSelected: '{p0} path selected',
     switchedPlanModeP0: 'Switched to plan mode: {p0}',
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
-    startedP0MaaendConfiguration: 'Started the {p0} MaaEnd configuration',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
-    startedMaaSetupUser: 'Started the MAA setup for user {p0}',
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
-    openedOkWwSettings: 'Opened the ok-ww settings for {p0}',
     readP0: 'Read {p0}',
     addedP0Tasks: 'Added {p0} tasks',
     configurationSessionUserP02:
@@ -1112,7 +1110,6 @@ export default {
     onlyProcessesStartedBy:
       'Only processes started by this task and owned by MAS are closed; processes you opened yourself are left alone',
     optional: 'Optional',
-    couldNotStartMaa: 'Could not start the MAA configuration',
     couldNotStartSrc: 'Could not start the SRC configuration',
     checkGameUpdateBefore: 'Check for a game update before launching',
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
@@ -1186,6 +1183,53 @@ export default {
       'The current ok-ww install has no settings directory. After the first download, go back to the script list, click "Configure ok-ww", save the settings once inside ok-ww, and then add the user again.',
     maaendConfigurationWindowOpen:
       'The MaaEnd configuration window is open for this user — finish the setup there.',
+    // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaendConfigRestoreScriptDesc:
+      'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
+    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
+    m9aConfigRestoreUserDesc:
+      'Backups of the core MAS edit-page fields (task queue, server resource, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    m9aConfigRestoreScriptDesc:
+      'Backups of the M9A native config; restoring applies directly to M9A itself. Created automatically (dedup) when opening this edit page or before running M9A, latest 10 kept',
+    // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
+    generalConfigRestoreUserDesc:
+      'Backups of this user script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept',
+    generalConfigRestoreScriptDesc:
+      'Backups of the script config path; restoring applies directly to the script itself. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    generalViewingTitle: 'Viewing script config',
+    generalViewingDesc: 'Opening the backed-up script config in read-only mode.',
+    generalViewingDesc2:
+      'When finished, click "Close viewer" to end the viewing session; the script config will stay untouched.',
+    generalViewClose: 'Close viewer',
+    // BAAH 配置恢复（无遮罩会话；native 按用户绑定的配置文件名动态归档）
+    baahConfigRestoreUserDesc:
+      'Backups of the MAS edit-page fields (config binding, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    baahConfigRestoreScriptDesc:
+      'Backups of the bound BAAH config file; restoring overwrites the config with the same name in BAAH. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    // SRC 配置恢复（native 恢复前拒绝接管待恢复快照，防止被任务回滚覆盖）
+    srcConfigRestoreUserDesc:
+      'Backups of the MAS config (stage fields and the user config directory); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    srcConfigRestoreScriptDesc:
+      'Backups of the config folder in the SRC installation; restoring overwrites the native SRC config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    srcViewingTitle: 'Viewing SRC configuration',
+    srcViewingDesc: 'The SRC UI shows the selected backup, for viewing only.',
+    srcViewingDesc2:
+      'The config is temporarily switched during viewing; click "Close Viewer" when finished.',
+    srcViewClose: 'Close Viewer',
+    srcViewOpened: 'SRC viewer opened',
+    srcViewStartFailed: 'Failed to open the SRC viewer',
+    // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
+    maaendSessionOpened: 'MaaEnd setup opened',
+    maaendSessionStartFailed: 'Could not start the MaaEnd setup session',
+    maaendSessionStopFailed: 'Could not stop the MaaEnd setup session',
+    maaendSessionSaveFailed: 'Could not save the MaaEnd configuration',
+    maaendViewOpened: 'MaaEnd viewer opened',
+    maaendSessionTimeoutWarn:
+      'The MaaEnd setup session is about to time out and will be saved in 30 seconds',
+    maaendViewingTitle: 'Viewing MaaEnd config',
+    maaendViewingDesc: 'The MaaEnd window shows the selected backup, for viewing only.',
+    maaendViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
+    maaendViewClose: 'Close viewer',
     scriptLevelMaaendConfiguration2:
       'The script-level MaaEnd configuration window is open — finish the setup there.',
     okNteGuiConfiguration:
@@ -1414,10 +1458,12 @@ export default {
     useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
     quickConfig: 'Quick configuration',
     configSourceHint:
-      'Different users of the same script can use different configuration sources; direct control configuration is maintained by the script itself and shared by direct control users.',
+      'Script configuration lets every user share one script-level source; per-user configuration gives each user a source of their own; script-direct control uses the native BGI config and is shared by users on that source.',
     configSourceHintBase:
       "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
     nativeConfigSourceDescription: "Use the script's current native configuration.",
+    // Tooltip reason when the "Script" config source is disabled (unified wording)
+    scriptModeDisabled: 'Not supported',
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',
@@ -1652,14 +1698,17 @@ export default {
     bettergiDirectModeAlert:
       'Script-controlled mode: enter the OneDragon config name this user uses below (a config that already exists in BetterGI); configure scripts inside BetterGI (click "Configure BetterGI" to open it).',
     bettergiSwitchToMasConfig: 'Switch to per-user config',
-    bettergiMasConfigHowTo: 'How to use per-user config',
+    bettergiMasConfigHowTo: 'How to use task configuration',
     bettergiMasConfigHowTo1a:
       "This user's One Dragon is on a per-user profile: tasks and custom groups are configured on this page as the MAS source of truth (no need to open BetterGI's One Dragon page). MAS launches One Dragon from the fixed slot",
     bettergiMasConfigSlotName: 'MAS独立配置',
     bettergiMasConfigHowTo1b:
       'and cleans the slot up afterwards. Your own BetterGI profiles (such as 默认配置) stay untouched: the same-named real profile is neither read nor affected by this page.',
     bettergiMasConfigHowTo2:
-      "Battle party and battle strategy below: leave them empty to keep BetterGI's current settings (an empty strategy means picking automatically from the party). Once filled in, they apply to the four combat tasks in One Dragon (ley line blossoms, domains, boss runs and Stygian Onslaught), replacing BetterGI's defaults for those tasks.",
+      'The battle party and battle strategy below are the fallback for every combat task (ley line blossoms, domains, boss runs and Stygian Onslaught). An empty party means "do not switch party" (keep the party you entered the task with); an empty strategy lets BetterGI pick one from the party. If a task matches a battle scene in the team table, the party and strategy of that row win.',
+    bettergiTeamHowToTitle: 'How to use team settings',
+    bettergiTeamHowTo:
+      'With the team table enabled, combat tasks (auto domain / auto ley line blossom / auto boss) look it up first: a row matching the battle scene is preferred, and one is picked at random when several match; tasks without a match fall back to the battle party / battle strategy above. Row 0, General, covers every scene and cannot be deleted. Party and strategy names must match what already exists in BetterGI (use "Open strategy folder" to browse strategy files).',
     bettergiOneDragonName: 'One Dragon profile',
     bettergiOneDragonNameHint:
       'Fixed to MAS独立配置 while per-user config is on and cannot be changed. With per-user config off (direct mode) it picks the BetterGI profile to use; defaults to 默认配置',
@@ -1762,6 +1811,28 @@ export default {
       'The BetterGI setup session is about to time out and will be saved in 30 seconds',
     bettergiSettingsSaved: 'BetterGI settings saved',
     bettergiSettingsSaveFailed: 'Could not save the BetterGI settings',
+    // BetterGI 配置恢复（mas=per-user 副本 + 页面字段；native=全局 config.json）
+    bettergiConfigRestoreUserDesc:
+      'Backups of the MAS config (per-user config copies and page fields); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    bettergiConfigRestoreScriptDesc:
+      'Backups of the BetterGI global config (config.json); restoring overwrites the global BetterGI settings. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    bettergiViewingTitle: 'Viewing BetterGI configuration',
+    bettergiViewingDesc: 'The BetterGI UI shows the selected backup, for viewing only.',
+    bettergiViewingDesc2:
+      'The config is temporarily opened during viewing; click "Close Viewer" when finished.',
+    bettergiViewClose: 'Close Viewer',
+    bettergiViewOpened: 'BetterGI viewer opened',
+    bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    maafwConfigRestoreUserDesc:
+      'Backups of the MAS config (task snapshot and device overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    maafwConfigRestoreScriptDesc:
+      'Backups of the MaaFW project config (config folder and interface.json); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+    // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
+    hsrConfigRestoreUserDesc:
+      'Backups of the MAS config (task mapping and managed overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
+    hsrConfigRestoreScriptDesc:
+      'Backups of the HSR native config (M7A config.yaml and SRA settings/cache/configs); restoring overwrites the native config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // BAAH dedicated adapter
     baahScriptConfiguration: 'BAAH script settings',
     baahScriptNameHint: 'Distinguishes this BAAH script instance from others',
@@ -1881,6 +1952,13 @@ export default {
     configRestorePreviewEmpty: 'Nothing to preview in this backup',
     configRestorePreviewActive: 'Active',
     configRestoreListFailed: 'Failed to load backups',
+    configRestoreEnsureFailed:
+      'Automatic config backup failed; this change may not have a restore point',
+    configRestoreBackupFiles: 'Backup files',
+    configRestoreCopy: 'Copy',
+    configRestoreCopied: 'Copied to clipboard',
+    configRestoreFileFailed: 'Failed to read the backup file',
+    configRestoreFileUnsupported: 'This backup category does not support viewing file contents',
     configRestoreDetailView: 'View details',
     configRestoreDetailHint:
       'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
@@ -1893,6 +1971,18 @@ export default {
     configRestoreConfirmTitle: 'Overwrite current config',
     configRestoreConfirmDesc:
       'Restores the config at this point in time to its location. The current config is backed up automatically before restoring and can be recovered anytime via "Config restore". Continue?',
+    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    configRestoreModeScript: 'Script-level',
+    configRestoreModeUser: 'User-level',
+    configRestoreModeDirect: 'Direct control',
+    // 当前配置来源（仅三态专项返回，与备份标签比对是否需要跨来源提示）
+    configRestoreCurrentSource: 'Current config source: {mode}',
+    // 跨配置来源恢复（备份来源与当前来源不一致）：单弹窗内换标题并追加说明
+    configRestoreCrossSourceTitle: 'Restore from another config source',
+    configRestoreCrossSourceDesc:
+      'This backup was created in {backup} config, while the current config source is {current}. Continuing switches the config source to {backup} and then writes the config there.',
+    configRestoreCrossSourceShared:
+      'Script-level config is shared by every user of this script; restoring overwrites the config other users are currently using.',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the ok-nte native config; restoring applies directly to ok-nte itself. Created automatically (dedup) when opening this edit page, before running ok-nte or opening its config UI, latest 10 kept',
@@ -1908,6 +1998,34 @@ export default {
     oknteViewingDesc: 'The ok-nte window shows the selected backup, for viewing only.',
     oknteViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     oknteViewClose: 'Close viewer',
+    // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    okwwConfigRestoreScriptDesc:
+      'Backups of the ok-ww native config; restoring applies directly to ok-ww itself. Created automatically (dedup) when opening this edit page, before running ok-ww or opening its config UI, latest 10 kept',
+    // ok-ww 原生设置/查看会话（措辞对齐 ok-nte / 一条龙）
+    okwwSessionOpened: 'ok-ww setup opened',
+    okwwSessionStartFailed: 'Could not start the ok-ww setup session',
+    okwwSessionStopFailed: 'Could not stop the ok-ww setup session',
+    okwwViewOpened: 'ok-ww viewer opened',
+    okwwSessionTimeoutWarn:
+      'The ok-ww setup session is about to time out and will be saved in 30 seconds',
+    okwwViewingTitle: 'Viewing ok-ww config',
+    okwwViewingDesc: 'The ok-ww window shows the selected backup, for viewing only.',
+    okwwViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
+    okwwViewClose: 'Close viewer',
+    // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaConfigRestoreScriptDesc:
+      'Backups of the MAA native config; restoring applies directly to MAA itself. Created automatically (dedup) when opening this edit page, before running MAA or opening its config UI, latest 10 kept',
+    // MAA 原生设置/查看会话（措辞对齐 ok-ww / ok-nte / 一条龙）
+    maaSessionOpened: 'MAA setup opened',
+    maaSessionStartFailed: 'Could not start the MAA setup session',
+    maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaViewOpened: 'MAA viewer opened',
+    maaSessionTimeoutWarn:
+      'The MAA setup session is about to time out and will be saved in 30 seconds',
+    maaViewingTitle: 'Viewing MAA config',
+    maaViewingDesc: 'The MAA window shows the selected backup, for viewing only.',
+    maaViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
+    maaViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',
     configRestorePreviewLauncher: 'Launcher',
@@ -1917,6 +2035,8 @@ export default {
     configRestorePreviewAccount: 'Account',
     configRestorePreviewPassword: 'Password',
     configRestorePreviewBilibili: 'Bilibili account name',
+    configRestorePreviewUseCustomWinTitle: 'Custom window title',
+    configRestorePreviewCustomWinTitle: 'Window title',
     zzzodPreviewUnlimited: 'Unlimited',
     zzzodOpenNativeConfig: 'Configure in OneDragon',
     zzzodOpenNativeConfigHint:
@@ -2036,6 +2156,8 @@ export default {
     zzzodBilibiliAccount: 'Bilibili account name',
     zzzodEnterBilibiliAccount: 'Enter the Bilibili account name',
     zzzodBilibiliAccountHint: 'The account name saved in the Bilibili login panel',
+    zzzodUseCustomWinTitle: 'Custom window title',
+    zzzodCustomWinTitle: 'Window title',
     zzzodOneDragonConfig: 'Task configuration',
     zzzodOneDragonConfigHint:
       'Stored in this user config; MAS writes them into the one-dragon at run time. Tasks with the switch on run in order',
@@ -3386,7 +3508,7 @@ export default {
         SRC: 'Star Rail automation and multi-account runs',
         MaaEnd: 'Dedicated MFW adapter',
         M9A: 'Reverse: 1999 automation',
-        MaaFW: 'Hosts a MaaFramework project',
+        MaaFW: 'Runs any MaaFramework project that ships an interface.json',
         Okww: 'Dedicated ok-script task runner',
         OkNte: 'Neverness to Everness OK-NTE automation',
         HSR: 'March7th / SRA dual-script support',
@@ -3535,11 +3657,11 @@ export default {
     display: {
       section: 'Virtual display',
       intro:
-        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS keeps watching the desktop: it attaches a virtual display whenever there is no real display output at all, and removes it as soon as a real monitor comes back. If a run is in progress it waits for that run to finish first, so the screen is never pulled out from under a running script. {driverLink}; MAS does not ship it.',
+        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS keeps watching the desktop: it attaches a virtual display whenever there is no real display output at all. When a real monitor comes back it is removed right away if nothing is running; while a run is in progress it stays — removing it moves windows onto the returning monitor and breaks PC game runs — and MAS instead asks you with a prompt in the bottom-right corner of the returning monitor, then removes it automatically once the run finishes. {driverLink}; MAS does not ship it.',
       introDriverLink: 'You must install the Parsec virtual display driver yourself',
       enable: 'Enable virtual display',
       enableTip:
-        'Monitored continuously while MAS runs: attached when no real display output is detected, removed once a real monitor comes back (waiting for the current run to finish if one is in progress). Nothing is added while a monitor works normally. If the program is force-killed, the leftover display is cleaned up on the next start.',
+        'Monitored continuously while MAS runs: attached when no real display output is detected, removed once a real monitor comes back (if a run is in progress it stays and MAS asks you on the returning monitor instead; it is removed once the run finishes). Nothing is added while a monitor works normally. If the program is force-killed, the leftover display is cleaned up on the next start.',
       mode: 'Refresh rate',
       modeTip:
         'The resolution is fixed at 1920x1080 — it is the only one Windows shows at 100%, so the game window never goes through DPI scaling. Higher resolutions get scaled up automatically, which brings the problem back. A virtual display only runs scripts, so a high refresh rate buys nothing.',
@@ -3549,6 +3671,23 @@ export default {
       checkTip:
         'Checks whether the driver is installed, whether it can be driven, and whether a display can actually be attached. The last step briefly changes your monitor layout.',
       checkAction: 'Run check',
+      detach: 'Remove now',
+      detachTip:
+        'Manually removes the virtual display MAS is holding right now, whether or not a run is in progress — during a PC game run this moves the game window and the run may fail. If there is still no real display output afterwards, the next check attaches it again; turn off the switch above to stop it entirely.',
+      detachAction: 'Remove virtual display',
+      detachDone: 'Virtual display removed',
+      detachNothing: 'No virtual display is attached right now',
+      detachFailed: 'Remove request failed',
+      holdingNow: 'Currently attached: {holding}',
+      holdingNone: 'No virtual display attached',
+      prompt: {
+        title: 'Real display is back',
+        body: 'Monitor {devices} has been reconnected, but a run is in progress, so MAS has kept the virtual display for now. Removing it moves windows onto the reconnected monitor and may resize them, which breaks PC game runs. If you keep it, it is removed automatically once this run finishes.',
+        keep: 'Keep it, remove after the run',
+        detach: 'Remove now',
+        detaching: 'Removing…',
+        detachFailed: 'Remove failed: {reason}',
+      },
       checkFailed: 'Check request failed',
       checkPassed: 'Check passed',
       checkIssue: 'Check did not pass',

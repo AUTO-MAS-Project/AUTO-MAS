@@ -23,7 +23,7 @@
         ghost
         size="large"
         :loading="generalConfigLoading"
-        @click="handleGeneralConfig"
+        @click="handleGeneralConfig()"
       >
         <template #icon>
           <SettingOutlined />
@@ -51,19 +51,33 @@
     </a-space>
   </div>
 
-  <!-- 通用配置遮罩层 -->
+  <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
   <teleport to="body">
     <div v-if="showGeneralConfigMask" class="maa-config-mask">
       <div class="mask-content">
         <div class="mask-icon">
-          <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+          <EyeOutlined
+            v-if="generalSessionViewOnly"
+            :style="{ fontSize: '48px', color: '#1890ff' }"
+          />
+          <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
         </div>
-        <h2 class="mask-title">{{ t('edit.generalConfigurationProgress') }}</h2>
-        <p class="mask-description">
-          {{ t('edit.generalConfigurationThisUser') }}
-          <br />
-          配置完成后，请点击"保存配置"按钮来结束配置会话。
-        </p>
+        <template v-if="generalSessionViewOnly">
+          <h2 class="mask-title">{{ t('edit.generalViewingTitle') }}</h2>
+          <p class="mask-description">
+            {{ t('edit.generalViewingDesc') }}
+            <br />
+            {{ t('edit.generalViewingDesc2') }}
+          </p>
+        </template>
+        <template v-else>
+          <h2 class="mask-title">{{ t('edit.generalConfigurationProgress') }}</h2>
+          <p class="mask-description">
+            {{ t('edit.generalConfigurationThisUser') }}
+            <br />
+            配置完成后，请点击"保存配置"按钮来结束配置会话。
+          </p>
+        </template>
         <div class="mask-actions">
           <a-button
             v-if="generalTaskId"
@@ -71,7 +85,7 @@
             size="large"
             @click="handleSaveGeneralConfig"
           >
-            {{ t('edit.saveConfiguration') }}
+            {{ generalSessionViewOnly ? t('edit.generalViewClose') : t('edit.saveConfiguration') }}
           </a-button>
         </div>
       </div>
@@ -85,6 +99,12 @@
         <div class="form-section">
           <div class="section-header">
             <h3>{{ t('edit.basicInfo') }}</h3>
+            <div class="section-header-actions">
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </div>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
@@ -197,15 +217,33 @@
         />
       </a-form>
     </a-card>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :script-name="GENERAL_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.generalConfigRestoreUserDesc')"
+      :script-desc="t('edit.generalConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+      :on-detail="handleRestoreView"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { message, Modal } from 'ant-design-vue'
+import {
+  ArrowLeftOutlined,
+  EyeOutlined,
+  HistoryOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -222,6 +260,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 
 const { t } = useI18n()
 
@@ -253,6 +292,7 @@ const configModeSaving = ref(false)
 const generalSubscriptionIds = ref<string[]>([])
 const generalTaskId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
+const generalSessionViewOnly = ref(false) // 当前会话是否为查看（只读）会话
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
 
@@ -362,12 +402,16 @@ const handleFieldSave = async (key: string, value: any) => {
 }
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：通用脚本运行/配置始终按 per-user 目录（AutoProxy/ScriptConfig 均不区分脚本态），
+// 选了也不生效——禁用并悬停说明原因
 const generalConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
@@ -375,6 +419,8 @@ const generalConfigModeOptions: Array<{
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.user'),
@@ -533,9 +579,10 @@ const loadUserData = async () => {
   }
 }
 
-const handleGeneralConfig = async () => {
+const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
   try {
     generalConfigLoading.value = true
+    generalSessionViewOnly.value = viewOnly
 
     // 先立即显示遮罩以避免后端延迟导致无法感知
     showGeneralConfigMask.value = true
@@ -556,9 +603,12 @@ const handleGeneralConfig = async () => {
     }
 
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
+    // 查看会话（viewOnly）：mas 备份传 userId（目录副本型下发），native
+    // 备份传 scriptId（脚本级，原生配置即备份）
     const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
+      taskId: targetId ?? userId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+      viewOnly,
     })
 
     logger.debug(`通用配置 start 接口返回: ${response}`)
@@ -581,8 +631,8 @@ const handleGeneralConfig = async () => {
         subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
           const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
-          // 根据结果显示不同消息
-          if (data.outcome === 'success') {
+          // 根据结果显示不同消息（查看会话只读不保存，不打扰用户）
+          if (data.outcome === 'success' && !generalSessionViewOnly.value) {
             message.success(t('edit.configurationUserP0Done', { p0: formData.userName }))
           }
           // 清理连接
@@ -606,34 +656,30 @@ const handleGeneralConfig = async () => {
       configTimedOut.value = false
       message.success(t('edit.startedGeneralSetupUser', { p0: formData.userName }))
 
-      // 设置 30 分钟超时自动断开
+      // 设置 30 分钟超时自动断开（查看会话静默关闭；配置会话提醒 + 自动保存）
       generalConfigTimeout = window.setTimeout(
         async () => {
           if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
-            // 超时后自动保存配置
-            message.warning(t('edit.configurationSessionUserP02', { p0: formData.userName }))
-            logger.warn('配置会话已超时，自动执行保存操作')
+            const taskId = generalTaskId.value
+            const response = await Service.stopTaskApiDispatchStopPost({ taskId })
 
-            try {
-              const taskId = generalTaskId.value
-              const response = await Service.stopTaskApiDispatchStopPost({ taskId })
-
-              if (response && response.code === 200) {
-                for (const subscriptionId of generalSubscriptionIds.value) {
-                  unsubscribe(subscriptionId)
-                }
-                generalSubscriptionIds.value = []
-                generalTaskId.value = null
-                showGeneralConfigMask.value = false
-                configTimedOut.value = false
-                message.success(t('edit.configurationSessionTimedOut'))
-              } else {
-                message.error(response?.message || '自动保存配置失败，请手动保存')
+            if (response && response.code === 200) {
+              for (const subscriptionId of generalSubscriptionIds.value) {
+                unsubscribe(subscriptionId)
               }
-            } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : String(error)
-              logger.error(`超时自动保存配置失败: ${errorMsg}`)
-              message.error(t('edit.automaticSaveFailedSave'))
+              generalSubscriptionIds.value = []
+              generalTaskId.value = null
+              showGeneralConfigMask.value = false
+              configTimedOut.value = false
+              if (generalSessionViewOnly.value) {
+                logger.info('通用脚本查看会话已超时，静默关闭')
+              } else {
+                message.success(t('edit.configurationSessionTimedOut'))
+              }
+            } else if (generalSessionViewOnly.value) {
+              logger.error(response?.message || '查看会话超时关闭失败')
+            } else {
+              message.error(response?.message || '自动保存配置失败，请手动保存')
               // 失败时保留按钮让用户手动操作
               configTimedOut.value = true
             }
@@ -671,13 +717,18 @@ const handleSaveGeneralConfig = async () => {
       }
       generalSubscriptionIds.value = []
       generalTaskId.value = null
+      const wasViewOnly = generalSessionViewOnly.value
       showGeneralConfigMask.value = false
       configTimedOut.value = false
       if (generalConfigTimeout) {
         window.clearTimeout(generalConfigTimeout)
         generalConfigTimeout = null
       }
-      message.success(t('edit.generalConfigurationThisUser2'))
+      if (wasViewOnly) {
+        logger.info('通用脚本查看会话已关闭，配置保持原状')
+      } else {
+        message.success(t('edit.generalConfigurationThisUser2'))
+      }
     } else {
       message.error(response.message || '保存配置失败')
     }
@@ -705,14 +756,149 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-onMounted(() => {
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：通用脚本统一叫「general」
+const GENERAL_DISPLAY_NAME = 'general'
+const restoreOpen = ref(false)
+
+// 目标池顺序 = segmented 展示顺序：MAS 用户配置（在前）、脚本原生配置（在后）
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+// 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+const openRestoreModal = () => {
+  restoreOpen.value = true
+}
+
+// 一键恢复成功：General 无字段回填（MAS 编辑页字段不参与配置内容），仅关弹窗
+const handleRestored = async () => {
+  restoreOpen.value = false
+}
+
+// 「查看详细配置」语义（对齐一条龙）：恢复该时点 + 拉起查看会话预览。
+// mas 备份：恢复到该用户 ConfigFile 后启动查看会话（目录副本型下发，GUI
+// 所见即备份）；原生备份：恢复到脚本配置路径后启动脚本级查看会话（跳过
+// 下发，原生配置即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
+const handleRestoreView = (target: string, item: { time: string }) =>
+  new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await handleGeneralConfig(true, userId)
+          } else {
+            await handleGeneralConfig(true, scriptId)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
+        }
+      },
+      onCancel: () => resolve(false),
+    })
+  })
+
+// 编辑界面归档（进入/退出时机，指纹去重）：进入归档脚本原生配置当前状态
+// （MAS 触碰前原始态，用户可能刚在脚本 GUI 里改过），退出归档该用户
+// ConfigFile 副本终态；运行/会话下发前归档挂在 AutoProxy/ScriptConfig
+const ensureGeneralBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
+// 停止当前配置/查看会话（清理订阅与任务），供离开页面时兜底
+const stopGeneralSession = async () => {
+  const taskId = generalTaskId.value
+  if (!taskId || generalSubscriptionIds.value.length === 0) return
+  try {
+    await Service.stopTaskApiDispatchStopPost({ taskId })
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+  for (const subscriptionId of generalSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
+  }
+  generalSubscriptionIds.value = []
+  generalTaskId.value = null
+  showGeneralConfigMask.value = false
+  configTimedOut.value = false
+  if (generalConfigTimeout) {
+    window.clearTimeout(generalConfigTimeout)
+    generalConfigTimeout = null
+  }
+}
+
+onMounted(async () => {
   if (!scriptId) {
     message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
 
-  loadScriptInfo()
+  // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
+  // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
+  await loadScriptInfo()
+  await nextTick()
+  void ensureGeneralBackup('native')
+})
+
+onUnmounted(() => {
+  // 退出编辑页：先停会话（避免会话仍在下发/回写时归档到半程状态）再归档
+  // 该用户 ConfigFile 副本终态——顺序化与后端任务收尾闭环
+  void (async () => {
+    await stopGeneralSession()
+    await ensureGeneralBackup('mas')
+  })()
 })
 </script>
 
@@ -763,6 +949,15 @@ onMounted(() => {
   margin-bottom: 6px;
   padding-bottom: 8px;
   border-bottom: 2px solid var(--ant-color-border-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-header h3 {

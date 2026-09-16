@@ -632,10 +632,18 @@ class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
     time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="备份时点的配置来源三态（脚本/用户/直控）；无标注（旧版备份或未声明三态）为 null",
+    )
 
 
 class ConfigBackupListOut(OutBase):
     data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="当前配置来源三态（脚本/用户/直控）；非三态专项为 null",
+    )
 
 
 class ConfigBackupRestoreIn(BaseModel):
@@ -677,6 +685,18 @@ class ConfigBackupPreviewOut(OutBase):
     data: dict = Field(
         ...,
         description="专项预览载荷（如 zzz-od 的 info/account/tasks/instances 或 ok-nte 的 files）",
+    )
+
+
+class ConfigBackupFileOut(OutBase):
+    """备份内文本文件内容（只读；路径限归档内相对路径，防穿越）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
+    size: int = Field(..., description="文件字节数")
+    content: str = Field(
+        ..., description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）"
     )
 
 
@@ -1115,7 +1135,17 @@ class VirtualDisplayCheckResultItem(BaseModel):
 class VirtualDisplayCheckOut(OutBase):
     driverVersion: Optional[int] = Field(default=None, description="驱动次版本号")
     monitors: str = Field(default="", description="检测时的显示器概况")
+    holding: Optional[str] = Field(
+        default=None,
+        description="守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此显示当前挂着哪块",
+    )
     results: list[VirtualDisplayCheckResultItem] = Field(default_factory=list)
+
+
+class VirtualDisplayDetachOut(OutBase):
+    detached: bool = Field(
+        default=False, description="有没有真的拆掉一块屏；没挂着时为 False"
+    )
 
 
 class GlobalConfig_Voice(BaseModel):
@@ -1905,6 +1935,14 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
     )
 
 
+class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
+    """BetterGI 单独通知（在通用字段上增加掉落统计开关）"""
+
+    IfSendDropStatistics: Optional[bool] = Field(
+        default=None, description="是否统计掉落（BGI「奖励识别」汇总，默认开启）"
+    )
+
+
 class BetterGIUserConfig(BaseModel):
     Info: Optional[BetterGIUserConfig_Info] = Field(
         default=None, description="用户信息"
@@ -1921,7 +1959,7 @@ class BetterGIUserConfig(BaseModel):
     Data: Optional[BetterGIUserConfig_Data] = Field(
         default=None, description="用户数据"
     )
-    Notify: Optional[GeneralUserConfig_Notify] = Field(
+    Notify: Optional[BetterGIUserConfig_Notify] = Field(
         default=None, description="单独通知"
     )
 
@@ -4983,6 +5021,29 @@ class WSPowerSignData(BaseModel):
     """电源标志更新数据 (id=Main, type=power.sign.updated)"""
 
     signal: str = Field(..., description="电源操作信号")
+
+
+class WSDisplayMonitorRectData(BaseModel):
+    """一块显示器的工作区（去掉任务栏），物理像素、桌面坐标。"""
+
+    left: int = Field(..., description="左边界")
+    top: int = Field(..., description="上边界")
+    right: int = Field(..., description="右边界")
+    bottom: int = Field(..., description="下边界")
+
+
+class WSDisplayDetachPromptData(BaseModel):
+    """真实显示器回来了但有任务在跑, 问用户要不要拆虚拟屏 (id=Main, type=display.detach.prompt)
+
+    虚拟屏是主显示器, 回来的真实屏只是第二块, 任务栏和主窗口都留在看不见的那块上,
+    所以弹窗必须放到 `monitor` 指的那块屏上, 前端据此把它摆到该屏右下角。
+    """
+
+    returned: list[str] = Field(..., description="回来的真实显示设备名列表")
+    monitor: Optional[WSDisplayMonitorRectData] = Field(
+        default=None,
+        description="回来那块屏的工作区; 读不到时为空, 前端自行挑一块非主显示器",
+    )
 
 
 class WSGameSignResultData(BaseModel):

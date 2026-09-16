@@ -852,10 +852,7 @@
                           size="small"
                           type="text"
                           class="task-config-gear"
-                          @click="
-                            jumpTipVisible[card.app_id] = false;
-                            handleZzzodConfig()
-                          "
+                          @click="jumpFromTaskCard(card.app_id)"
                         >
                           <template #icon><ExportOutlined /></template>
                         </a-button>
@@ -1080,12 +1077,16 @@ const pushLogModeOptions = [
 ]
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：一条龙运行时脚本态与用户态同分支（AutoProxy 均按该用户字段注入绑定槽），
+// 不存在可共享的脚本级配置树，选了也不生效——禁用并悬停说明原因
 const configModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
@@ -1093,6 +1094,8 @@ const configModeOptions: Array<{
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.zzzodModeUser'),
@@ -1984,6 +1987,8 @@ const previewFieldLabels: Record<string, string> = {
   account: t('edit.zzzodAccount'),
   password: t('edit.password'),
   bilibili_account_name: t('edit.zzzodBilibiliAccount'),
+  use_custom_win_title: t('edit.zzzodUseCustomWinTitle'),
+  custom_win_title: t('edit.zzzodCustomWinTitle'),
 }
 
 // 枚举值为后端/一条龙原生取值（驱动文案映射需保持原样），展示走词表
@@ -2043,6 +2048,14 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
 }
 
 const openRestoreModal = () => {
@@ -2063,50 +2076,55 @@ const handleRestored = (target: string) => {
   }
 }
 
-const handleRestoreView = (target: string, item: { time: string }) => {
-  const isMas = target === 'mas'
-  // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
-  // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
-  // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
-  // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
-  Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId: userId.value,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
-        // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+const handleRestoreView = (target: string, item: { time: string }) =>
+  new Promise<boolean>(resolve => {
+    const isMas = target === 'mas'
+    // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
+    // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
+    // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
+    // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId: userId.value,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
+          // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (isMas) {
+            // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
+            // （槽内容即恢复的备份，不注入基线、不回读字段）
+            await startSession(userId.value, true)
+          } else {
+            // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
+            // 与 MAS 侧完全无关
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-        restoreOpen.value = false
-        if (isMas) {
-          // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
-          // （槽内容即恢复的备份，不注入基线、不回读字段）
-          await startSession(userId.value, true)
-        } else {
-          // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
-          // 与 MAS 侧完全无关
-          await startSession(scriptId, true)
-        }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
-}
 
 // ══ 一条龙任务（OneDragon.AppList JSON 字段，打开页面即可开关）══
 // 卡片结构与操作封装见 useZzzOdTaskBoard（用户模式与直控模式共用）
@@ -2217,6 +2235,12 @@ const handleZzzodConfig = () => {
   }
   if (!userId.value) return
   void startSession(userId.value)
+}
+
+// 任务卡跳转：先关跳转提示再进入配置会话
+const jumpFromTaskCard = (appId: string) => {
+  jumpTipVisible.value[appId] = false
+  handleZzzodConfig()
 }
 
 const handleSaveZzzodConfig = () => {
@@ -2340,13 +2364,16 @@ onUnmounted(() => {
   flushAllTaskConfigSaves()
   // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
   // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
-  // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目
-  if (formData.Info.Mode === '直控') {
-    void ensureDirectBackup()
-  } else {
-    void ensureUserExitBackups()
-  }
-  void stopSession()
+  // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
+  // 先停会话再归档——并行会与回写撞车，归档到半程状态
+  void (async () => {
+    await stopSession()
+    if (formData.Info.Mode === '直控') {
+      await ensureDirectBackup()
+    } else {
+      await ensureUserExitBackups()
+    }
+  })()
 })
 </script>
 

@@ -182,6 +182,7 @@
                       :value="String(fieldValue(item.name) ?? '')"
                       :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :get-popup-container="(triggerNode: HTMLElement) => triggerNode.parentElement!"
                       allow-clear
                       @change="(v: unknown) => setField(item.name, v == null ? '' : String(v))"
                     />
@@ -197,6 +198,7 @@
                       :value="fieldListValue(item.name)"
                       :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :get-popup-container="(triggerNode: HTMLElement) => triggerNode.parentElement!"
                       @change="(v: unknown) => setField(item.name, Array.isArray(v) ? v : [])"
                     />
                   </div>
@@ -662,25 +664,54 @@ const isTruthy = (v: unknown): boolean => {
   return Boolean(v)
 }
 
-// 控件类型归一：脚本 settings.json 的 type 写法并不统一（也可能缺失），
-// 仅按字面量判断会把「该是下拉/开关」的项退化成纯文本框。这里做两层兜底：
-// 1) 常见别名归一（switch/bool/combo/multi_select 等）；
-// 2) 仍未知时按结构推断——有 options 必为下拉，default 为布尔必为开关。
+// 控件类型归一：以 BetterGI 官方 settings.json 的 type 枚举为权威来源
+// （官方仅 input-text / select / checkbox，开发文档补充 multi-checkbox / separator，共 5 种），
+// 同时兼容社区常见别名（switch/bool/combo/multi_select/multi-select 等）。
+// BetterGI 自身渲染也是「按 type 分发、未知时按数据形态推断」，与这里一致：
+//   有 options 必为下拉/多选，default 为布尔必为开关，default 为数组必为多选。
+// 结构兜底的目的就是避免「该是下拉/开关/多选」的项退化成纯文本框。
+const CONTROL_TYPE_ALIASES: Record<string, string> = {
+  // 文本类
+  'input-text': 'input-text',
+  'text': 'input-text',
+  'input': 'input-text',
+  'textarea': 'input-text',
+  // 下拉类
+  'select': 'select',
+  'dropdown': 'select',
+  'combo': 'select',
+  'combobox': 'select',
+  'radio': 'select',
+  // 开关类
+  'checkbox': 'checkbox',
+  'switch': 'checkbox',
+  'bool': 'checkbox',
+  'boolean': 'checkbox',
+  'toggle': 'checkbox',
+  // 多选类
+  'multi-checkbox': 'multi-checkbox',
+  'multicheckbox': 'multi-checkbox',
+  'multi_select': 'multi-checkbox',
+  'multi-select': 'multi-checkbox',
+  'multiselect': 'multi-checkbox',
+  'multiSelect': 'multi-checkbox',
+  // 分隔类
+  'separator': 'separator',
+  'section': 'separator',
+  'divider': 'separator',
+}
+
 const controlTypeOf = (item: Record<string, any>): string => {
   const raw = String(item?.type ?? '')
     .trim()
     .toLowerCase()
-  if (raw === 'separator') return 'separator'
-  if (raw === 'multi-checkbox' || raw === 'multicheckbox' || raw === 'multi_select') {
-    return 'multi-checkbox'
-  }
-  if (raw === 'checkbox' || raw === 'switch' || raw === 'bool' || raw === 'boolean') {
-    return 'checkbox'
-  }
-  if (raw === 'select' || raw === 'dropdown' || raw === 'combo' || raw === 'combobox') {
-    return 'select'
-  }
-  if (Array.isArray(item?.options) && item.options.length > 0) return 'select'
+  if (raw && CONTROL_TYPE_ALIASES[raw]) return CONTROL_TYPE_ALIASES[raw]
+  // 无 type 或 type 未知时，按 BetterGI 思路从数据形态推断：
+  const hasOptions = Array.isArray(item?.options) && item.options.length > 0
+  const isArrayDefault = Array.isArray(item?.default)
+  if (hasOptions && isArrayDefault) return 'multi-checkbox'
+  if (hasOptions) return 'select'
+  if (isArrayDefault) return 'multi-checkbox'
   if (typeof item?.default === 'boolean') return 'checkbox'
   return 'input-text'
 }

@@ -37,6 +37,16 @@ MXU 可对接任意符合 PI V2 的 Maa 项目；本仓 `MaaEnd` 类型指「按
 - 配置遮罩语义与在 MXU 里手动改 `config/` 目的一致、入口不同；不要两边各写一份逻辑。
 - 用户级配置与脚本级 `Default/ConfigFile` 的来源语义要与 MXU `config/` 对齐。
 
+## 配置恢复接入要求
+
+已接入通用配置恢复（mas/native 双池 + 快速配置侧车 + viewOnly 查看会话），机制见 [config-restore.md](config-restore.md)；后续改动**必须符合**：
+
+- **三态池**：脚本态=共享 `Default`、用户态=独立目录、**直控无 MAS 配置目录**——mas 池对直控用户为空（列表空、恢复报错），native 池不受影响。
+- **会话包络与运行下发同 owner**：`ScriptConfigTask` 的下发源/回写目标用 `maaend_mas_config_dir`（owner 制），session 前归档该目录；运行前归档在 AutoProxy `set_maaend`（直控跳过）。
+- **快速配置覆盖层侧车**：任务开关/理智任务选项/送货/采集等字段存在 UserData.Task、运行时才覆盖进 mxu 配置——mas 池用侧车承载并回填表单（对齐 ok-ww）。
+- **直控会话的保留判定**：manager `_keep_script_config_changes` 必须排除 viewOnly（查看结束还原任务前快照，不保留 GUI 写回）。
+- **预览词表固化、零本体运行时依赖**：任务名/基质刷取模式/地区等标签取自上游源码 zh_cn 词表摘录（`locales/interface/zh_cn.json`、`tasks/*/*.json` 的 option cases），固化进 MAS 侧；**不要读本体资源或调本体加载器做预览**。任务名缺失回退 `customName` → 原名；目标武器名数量大且随版本漂移，展示已选数量。
+
 ## 同框架新专项
 
 新游戏仍发布为 PI V2 + MXU 壳时：先确认外置 GUI 确实是 MXU → 读上游 `interface.json` / `config/` 说明 → 复制任务目录与表面、改 `ScriptType`、Hub、`mxu-*.json` 文件名常量 → 需要横切计划时再加计划表。
