@@ -314,7 +314,7 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
@@ -375,7 +375,7 @@ class MumuManager(DeviceBase):
             # 参考命令 MuMuManager.exe control -v 2 shutdown
 
             if result.returncode != 0:
-                raise RuntimeError(f"命令执行失败: {result.stdout}")
+                raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
             deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
             while time.monotonic() < deadline:
@@ -617,7 +617,7 @@ class MumuManager(DeviceBase):
             breakaway=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
         return await self.getStatus(idx)
 
@@ -633,7 +633,7 @@ class MumuManager(DeviceBase):
         )
         if result.returncode != 0:
             logger.error(f"获取模拟器 {idx} 信息失败: {result.stdout.strip()}")
-            raise RuntimeError(f"命令执行失败: {result.stdout.strip()}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
         return result.stdout.strip()
 
@@ -648,7 +648,7 @@ class MumuManager(DeviceBase):
             breakaway=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout.strip()}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
         return result.stdout.strip()
 
