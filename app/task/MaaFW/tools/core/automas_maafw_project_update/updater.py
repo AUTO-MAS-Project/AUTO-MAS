@@ -645,10 +645,6 @@ async def _discover_project_update_detailed(
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
-    else:
-        send_update_log(
-            "MirrorChyan CDK 未配置：仍可通过 Mirror酱 查版本，但拿不到下载地址"
-        )
 
     # **查版本一律不带 CDK。** Mirror 酱在有更新且 CDK 有效时会签发一个一次性
     # 下载地址，而它能计数的就是这一下签发——带着 CDK 查一次版本就可能扣掉一次
