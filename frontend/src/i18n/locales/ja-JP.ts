@@ -879,6 +879,7 @@ export default {
     user: 'ユーザー',
     directControl: '直接制御',
     waitTime: '待機時間',
+    waitTimeSeconds: '待機時間（秒）',
     statistics: '統計情報',
     script: 'スクリプト',
     automatic: '自動選択',
@@ -914,11 +915,9 @@ export default {
     maaPathSelected: 'MAA のパスを選択しました',
     masOnlyTakesOver: 'スクリプトか自分で起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
-    actualGameExeMas: 'MAS が直接起動する実際のゲーム exe',
     tasksManagedByMas: 'MAS が管理するタスク',
     masManagedConfigurationOff: 'MAS 管理の設定は無効になっています',
     masManagesGame: 'MAS がゲームを管理',
-    mfwAdbControllerUses: 'MFW の ADB controller はこのエミュレータ設定を使います',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
       'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
@@ -970,9 +969,7 @@ export default {
     giveYourScriptConfiguration: '見分けやすいスクリプト設定名を付けてください',
     saveSeparateConfigurationThis:
       'このユーザー専用の設定を保存します。実行前に読み込み、終了時にタスクのポリシーに従って保存します。',
-    giveProjectNameYou: '見分けやすいプロジェクト名を付けてください',
     mainProgramPath: 'メインプログラムのパス',
-    commandLineArgumentsPassed: 'exe 起動モードのときだけ起動対象に渡されるコマンドライン引数',
     writtenCurrentUserS:
       'MAS がローカルのゲームを起動する間だけ、現在のユーザーのレジストリに書き込んでウィンドウモードに切り替えます。タスクの完了・失敗・手動停止でゲームを閉じたあと、元の値に戻します',
     appliesMarch7thDivergentUniverse:
@@ -987,12 +984,6 @@ export default {
       '行頭からキーワードまでを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
     launchGameBeforeTask: 'タスク前にゲームを起動',
     closeGameAfterTask: 'タスク後にゲームを終了',
-    onceTaskCompletesNormally:
-      'そのタスクが今日 1 回正常に完了すると、今日それ以降の実行は自動的にスキップされます',
-    onceTaskCompletesNormally2:
-      'そのタスクが今週 1 回正常に完了すると、今週それ以降の実行は自動的にスキップされます',
-    onceTaskCompletesNormally3:
-      'そのタスクが今月 1 回正常に完了すると、今月それ以降の実行は自動的にスキップされます',
     failureLog: 'タスク失敗ログ',
     taskNumbersMatchOk: 'タスク番号は OK-NTE のタスク一覧と一致します',
     taskNumbersMatchOk2: 'タスク番号は ok-ww のタスク一覧と一致します',
@@ -1059,8 +1050,6 @@ export default {
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
     howLongWaitAfter2: 'ゲーム起動後に待つ時間',
-    howLongWaitReal:
-      '起動対象を実行してから、実際のゲームプロセス／ウィンドウが現れるまで待つ時間（秒）',
     extraArgumentsUsedWhen:
       'スクリプトのタスクを開始するときに付ける追加コマンド。詳しい書式は公式ドキュメントをご覧ください',
     couldNotStartGeneral: '汎用設定を開始できませんでした',
@@ -1323,7 +1312,7 @@ export default {
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
-      'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
+      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
@@ -1502,8 +1491,6 @@ export default {
     trackChildProcesses: '子プロセスも追跡する',
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
-    pickMfwControllerThat:
-      'ADB や Win32 など、どの制御方式を使うかを決める MFW コントローラーを選びます',
     pickMfwResourceLeave:
       'MFW のリソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
     pickMfwProject: 'MFW プロジェクトを選択',
@@ -1519,8 +1506,6 @@ export default {
       'interface.json を含むプロジェクトフォルダを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
     pickLocalDirectory: 'ローカルフォルダを選択',
-    pickEmulatorInstancePassed:
-      '実行時に MFW の ADB controller へ渡すエミュレータのインスタンスを選びます',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:

@@ -50,12 +50,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneToday') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneToday') }}</span>
           </template>
           <a-select
             :value="dailyOnceTasks"
@@ -74,12 +69,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally2')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneThis') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneThis') }}</span>
           </template>
           <a-select
             :value="weeklyOnceTasks"
@@ -98,12 +88,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally3')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneThis2') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneThis2') }}</span>
           </template>
           <a-select
             :value="monthlyOnceTasks"
@@ -125,7 +110,6 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWScriptConfig } from '@/types/script'
 
 const { t } = useI18n()

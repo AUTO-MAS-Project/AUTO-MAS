@@ -9,12 +9,7 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwControllerThat')">
-              <span class="form-label">
-                {{ t('edit.controlMode') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.controlMode') }}</span>
           </template>
           <a-select
             v-model:value="maafwConfig.Info.Controller"
@@ -70,12 +65,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwAdbControllerUses')">
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.emulator') }}</span>
               </template>
               <a-select
                 v-model:value="maafwConfig.Emulator.Id"
@@ -99,12 +89,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.pickEmulatorInstancePassed')">
-                  <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.emulatorInstance') }}</span>
               </template>
               <a-input
                 v-if="
@@ -216,12 +201,7 @@
           <a-col v-if="launchMode === 'DirectExe'" :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.actualGameExeMas')">
-                  <span class="form-label">
-                    {{ t('edit.gameExecutable') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.gameExecutable') }}</span>
               </template>
               <a-input-group compact class="path-input-group">
                 <a-input
@@ -267,12 +247,7 @@
           <a-col :span="6">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.commandLineArgumentsPassed')">
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.launchArguments') }}</span>
               </template>
               <a-input
                 v-model:value="maafwConfig.Game.Arguments"
@@ -286,12 +261,7 @@
           <a-col :span="6">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.howLongWaitReal')">
-                  <span class="form-label">
-                    {{ t('edit.waitTime') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.waitTimeSeconds') }}</span>
               </template>
               <a-input-number
                 v-model:value="maafwConfig.Game.WaitTime"

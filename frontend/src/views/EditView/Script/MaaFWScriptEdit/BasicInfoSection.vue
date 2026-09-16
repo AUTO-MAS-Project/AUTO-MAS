@@ -8,12 +8,7 @@
       <a-col :span="8">
         <a-form-item name="name">
           <template #label>
-            <a-tooltip :title="t('edit.giveProjectNameYou')">
-              <span class="form-label">
-                {{ t('edit.scriptName') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.scriptName') }}</span>
           </template>
           <a-input
             v-model:value="formData.name"
@@ -95,24 +90,28 @@
             {{ envTone === 'failed' ? t('edit.envRetry') : t('edit.prepareRuntimeEnv') }}
           </a-button>
         </div>
-        <div ref="envLogBoxRef" class="env-log-box">
-          <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
-            {{ t('edit.envPanelPlaceholder') }}
-          </div>
-          <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
-            {{ line }}
-          </div>
-          <div
-            v-if="envTone !== 'idle'"
-            class="env-log-status"
-            :class="`env-log-status--${envTone}`"
-          >
-            <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
-            <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
-            <CloseCircleOutlined v-else class="env-log-status-icon" />
-            <span>{{ envStatusText }}</span>
-            <div v-if="envTone === 'failed'" class="env-log-status-hint">
-              {{ t('edit.envFailedHint') }}
+        <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
+             日志再多也不会把面板撑高，底边永远和表格齐 -->
+        <div class="env-log-wrap">
+          <div ref="envLogBoxRef" class="env-log-box">
+            <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
+              {{ t('edit.envPanelPlaceholder') }}
+            </div>
+            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
+              {{ line }}
+            </div>
+            <div
+              v-if="envTone !== 'idle'"
+              class="env-log-status"
+              :class="`env-log-status--${envTone}`"
+            >
+              <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
+              <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
+              <CloseCircleOutlined v-else class="env-log-status-icon" />
+              <span>{{ envStatusText }}</span>
+              <div v-if="envTone === 'failed'" class="env-log-status-hint">
+                {{ t('edit.envFailedHint') }}
+              </div>
             </div>
           </div>
         </div>
@@ -339,10 +338,11 @@ watch(
   margin-bottom: 8px;
 }
 
-/* 六个数字而已，用不着 small 档默认的 8px 16px 内距，压紧一点 */
+/* 六个数字而已，用不着 small 档默认的 8px 16px 内距，压紧一点。
+   antd 自己的选择器比 scoped :deep 更具体，不加 !important 压不过去 */
 .interface-table :deep(.ant-descriptions-item-label),
 .interface-table :deep(.ant-descriptions-item-content) {
-  padding: 4px 12px;
+  padding: 4px 12px !important;
   font-size: 13px;
 }
 
@@ -386,11 +386,13 @@ watch(
   min-width: 0;
 }
 
+/* 与左边表头同高（24px）同下距（8px），日志框顶边才能和表格顶边齐 */
 .env-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  height: 24px;
   margin-bottom: 8px;
 }
 
@@ -402,10 +404,16 @@ watch(
   color: var(--ant-color-text);
 }
 
-/* 高度写死到和左边三行表格一样（表头齐平后剩下的就是三行的高度）；日志再长也只在框里滚。
-   不用 flex 撑：窄屏折成上下两块时没有参照，会缩成一条线 */
+/* 面板标题行与表头等高（24px + 8px 下距），下面剩的高度全给日志框 */
+.env-log-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
 .env-log-box {
-  height: 90px;
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   padding: 8px 10px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -497,6 +505,11 @@ watch(
 @media (max-width: 768px) {
   .interface-body {
     grid-template-columns: 1fr;
+  }
+
+  /* 折成上下两块后没有左边表格做参照，给日志框一个固定高度 */
+  .env-log-wrap {
+    min-height: 160px;
   }
 }
 </style>

@@ -932,6 +932,7 @@ export default {
     user: 'User',
     directControl: 'Direct control',
     waitTime: 'Wait time',
+    waitTimeSeconds: 'Wait time (s)',
     statistics: 'Statistics',
     script: 'Script',
     automatic: 'Automatic',
@@ -966,11 +967,9 @@ export default {
     maaPathSelected: 'MAA path selected',
     masOnlyTakesOver: 'The script or you start and stop it; MAS only takes over the running window',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
-    actualGameExeMas: 'The actual game exe MAS launches',
     tasksManagedByMas: 'Tasks managed by MAS',
     masManagedConfigurationOff: 'MAS-managed configuration is off',
     masManagesGame: 'MAS manages the game',
-    mfwAdbControllerUses: 'The MFW ADB controller uses this emulator configuration',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
@@ -1022,10 +1021,7 @@ export default {
     giveYourScriptConfiguration: 'Give your script configuration a name you will recognize',
     saveSeparateConfigurationThis:
       'Save a separate configuration for this user, loaded before a run and saved afterwards per the task policy.',
-    giveProjectNameYou: 'Give the project a name you will recognize',
     mainProgramPath: 'Main program path',
-    commandLineArgumentsPassed:
-      'Command line arguments passed to the launch target; exe launch mode only',
     writtenCurrentUserS:
       "Written to the current user's registry only while MAS launches the local game, switching it to windowed mode; the original value is restored when the task finishes, fails, or is stopped and the game closes",
     appliesMarch7thDivergentUniverse:
@@ -1040,12 +1036,6 @@ export default {
       'Cut from the start of the line to the keyword; tick "include" to remove the keyword too, otherwise keep it',
     launchGameBeforeTask: 'Launch the game before the task',
     closeGameAfterTask: 'Close the game after the task',
-    onceTaskCompletesNormally:
-      'Once the task completes normally today, later runs today are skipped',
-    onceTaskCompletesNormally2:
-      'Once the task completes normally this week, later runs this week are skipped',
-    onceTaskCompletesNormally3:
-      'Once the task completes normally this month, later runs this month are skipped',
     failureLog: 'Failure log',
     taskNumbersMatchOk: 'Task numbers match the OK-NTE task list',
     taskNumbersMatchOk2: 'Task numbers match the ok-ww task list',
@@ -1113,8 +1103,6 @@ export default {
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
     howLongWaitAfter2: 'How long to wait after the game launches',
-    howLongWaitReal:
-      'How long to wait for the real game process/window after the target launches, in seconds',
     extraArgumentsUsedWhen:
       'Extra arguments used when starting the script task; see the online docs for the syntax',
     couldNotStartGeneral: 'Could not start the general configuration',
@@ -1433,7 +1421,7 @@ export default {
       'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
     updateChannel: 'Update channel',
     cdkTip:
-      "Used only for this script's project updates and unrelated to the CDK in global settings; required when MirrorChyan is the update source",
+      'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source',
     cdkPlaceholder: 'Enter the MirrorChyan CDK',
     cdkHint: 'Required when MirrorChyan is the update source; get one on the MirrorChyan site',
     cdkGetLink: 'Get a MirrorChyan CDK',
@@ -1622,8 +1610,6 @@ export default {
     trackChildProcesses: 'Track child processes',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
-    pickMfwControllerThat:
-      'Pick the MFW controller that decides whether ADB, Win32, or another control method is used',
     pickMfwResourceLeave:
       'Pick the MFW resource; leave empty to auto-pick the first resource matching the control method',
     pickMfwProject: 'Pick the MFW project',
@@ -1639,8 +1625,6 @@ export default {
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
-    pickEmulatorInstancePassed:
-      'Pick the emulator instance passed to the MFW ADB controller at run time',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
