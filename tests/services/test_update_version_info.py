@@ -36,3 +36,23 @@ def test_returns_empty_when_nothing_newer():
 
     assert select_newer_version_info(info, "v5.5.0-beta.3") == {}
     assert select_newer_version_info(info, "v5.5.0") == {}
+
+
+def test_skips_keys_that_are_not_versions():
+    """Mirror 酱的日志键不是版本号时只丢日志，不能让更新检查抛异常。"""
+
+    info = {
+        "placeholder": {"x": ["a"]},
+        "v5.5.0-beta.3": {"新增功能": ["b"]},
+        "release note": {"x": ["c"]},
+    }
+
+    assert select_newer_version_info(info, "v5.5.0-beta.2") == {
+        "v5.5.0-beta.3": {"新增功能": ["b"]}
+    }
+
+
+def test_returns_empty_when_every_key_is_broken():
+    info = {"placeholder": {}, "version": "oops"}
+
+    assert select_newer_version_info(info, "v5.5.0-beta.1") == {}

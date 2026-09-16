@@ -70,14 +70,24 @@ def select_newer_version_info(
     """挑出比当前版本新的版本段，按版本号降序排列，保留每段的分类归属。
 
     版本号用 packaging 比较而不是字符串比较，否则 beta.10 会排到 beta.2 前面。
+    认不出是版本号的键、或结构不对的版本段直接跳过：更新日志来自 Mirror 酱，
+    内容坏掉时只该丢日志，不该让整条更新检查失败。
     """
 
     current = version.parse(current_version)
-    newer = [
-        (version.parse(ver), ver, info)
-        for ver, info in version_info.items()
-        if version.parse(ver) > current
-    ]
+    newer = []
+    for raw_version, info in version_info.items():
+        try:
+            parsed = version.parse(raw_version)
+        except version.InvalidVersion:
+            logger.warning(f"更新日志里的版本号无法识别, 已跳过: {raw_version!r}")
+            continue
+        if not isinstance(info, dict):
+            logger.warning(f"更新日志的版本段结构异常, 已跳过: {raw_version!r}")
+            continue
+        if parsed > current:
+            newer.append((parsed, raw_version, info))
+
     newer.sort(key=lambda item: item[0], reverse=True)
     return {ver: info for _, ver, info in newer}
 
