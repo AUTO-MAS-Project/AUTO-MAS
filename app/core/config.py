@@ -930,9 +930,11 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.remove(uid)
         # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
         # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
-        # 再点这个脚本还会报「配置项不存在」。
-        if (Path.cwd() / f"data/{uid}").exists():
-            force_rmtree(Path.cwd() / f"data/{uid}")
+        # 再点这个脚本还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
+        # 还有 sleep 重试），放线程里跑，别让事件循环跟着等。
+        script_data_dir = Path.cwd() / f"data/{uid}"
+        if script_data_dir.exists():
+            await asyncio.to_thread(force_rmtree, script_data_dir)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -2540,8 +2542,9 @@ class AppConfig(GlobalConfig):
 
         await script_config.UserData.remove(user_uid)
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
-        if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
-            force_rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
+        user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
+        if user_data_dir.exists():
+            await asyncio.to_thread(force_rmtree, user_data_dir)
 
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
