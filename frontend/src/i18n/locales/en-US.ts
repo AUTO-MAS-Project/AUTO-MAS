@@ -23,6 +23,7 @@ export default {
   comp: {
     changelog: {
       empty: 'No changelog for this version yet',
+      loadFailed: 'Failed to load the changelog; the update can still be downloaded',
     },
     editUser: 'Edit user',
     addUser2: 'Add a user',

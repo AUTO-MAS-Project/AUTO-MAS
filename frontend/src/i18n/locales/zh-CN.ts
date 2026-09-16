@@ -25,6 +25,7 @@ export default {
   comp: {
     changelog: {
       empty: '本版本暂无更新日志',
+      loadFailed: '更新日志加载失败，可直接下载更新',
     },
     editUser: '编辑用户',
     addUser2: '添加用户',
