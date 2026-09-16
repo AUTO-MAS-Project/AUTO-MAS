@@ -32,7 +32,17 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+)
 
 import httpx
 import truststore
@@ -2813,8 +2823,14 @@ class AppConfig(GlobalConfig):
             proxy=self.proxy,
         )
 
-    async def get_maa_depot_inventory(self, script_id: str) -> list[dict[str, str]]:
-        """获取 MAA 仓库库存（安装级 DepotData；label=数量，value=物品ID）。"""
+    async def get_maa_depot_inventory(
+        self, script_id: str, user_id: str
+    ) -> tuple[list[dict[str, str]], str | None]:
+        """获取当前用户档案的仓库库存（label=数量，value=物品ID）与识别时间。
+
+        查询链只读用户档案（决策 31）：多用户共用 MAA 安装时不再可能读到
+        他人数字；档案由运行期识别采集写入（T1.17），缺失 = 该用户未识别。
+        """
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         if not isinstance(script_config, MaaConfig):
@@ -2822,44 +2838,68 @@ class AppConfig(GlobalConfig):
 
         from app.task.MAA.tools.cultivate import depot_cultivate_service
 
-        data_dir = Path(script_config.get("Info", "Path")) / "data"
-        inventory = await depot_cultivate_service.inventory(maa_data_dir=data_dir)
-        if inventory is None:
+        archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
+        result = await depot_cultivate_service.inventory(maa_data_dir=archive_dir)
+        if result is None:
             raise FileNotFoundError(
-                f"未找到 MAA 仓库数据: {data_dir / 'DepotData.json'}，"
-                "请先在 MAA 中执行一次仓库识别"
+                f"未找到用户识别档案: {archive_dir / 'DepotData.json'}，"
+                "请先运行一次代理完成仓库识别"
             )
-        return [
+        inventory, recognized_at = result
+        recognized_iso = (
+            datetime.fromtimestamp(recognized_at).isoformat(timespec="seconds")
+            if recognized_at > 0
+            else None
+        )
+        items = [
             {"label": str(count), "value": item_id}
             for item_id, count in sorted(inventory.items())
         ]
+        return items, recognized_iso
 
     async def get_maa_cultivate_operators(
         self, script_id: str, user_id: str
-    ) -> list[dict[str, str]]:
-        """获取干员养成选择器目录（一图流全量表兜底，方案决策 11）。
+    ) -> list[dict[str, object]]:
+        """获取干员养成选择器目录（一图流全量表兜底，方案决策 11/38）。
 
-        按用户档案剔除已精 2 的干员（PR2 仅精英化目标，决策 32 配套）；
-        档案缺失或未识别时不过滤（练度未知宁多勿少）。
+        goal-aware 过滤：无森空岛快照时退化"剔已精 2"，绑定后按
+        "精2 ∧ 专精全满 ∧ 模组全满"剔除；skills/modules 为目标编辑行
+        展示用名称目录（仅 UI 消费，不进内核契约）。
         """
 
-        from app.task.MAA.tools.cultivate import depot_cultivate_service
+        from app.task.MAA.tools.cultivate import (
+            depot_cultivate_service,
+            parse_cultivate_targets,
+        )
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         if not isinstance(script_config, MaaConfig):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
 
+        skland = await self.get_maa_cultivate_skland_progression(script_id, user_id)
         archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
+        # 已存目标引用的干员一律保留在选择器目录里：目录同时是编辑行的名称
+        # 来源，被过滤掉的干员会让已存目标显示成内部 ID（决策 40）
+        try:
+            raw_targets = json.loads(
+                script_config.UserData[uuid.UUID(user_id)].get(
+                    "Task", "CultivateTargets"
+                )
+                or "[]"
+            )
+        except (KeyError, TypeError, ValueError):
+            raw_targets = []
+        keep_ids = [
+            target.operator_id for target in parse_cultivate_targets(raw_targets)
+        ]
         catalog = await depot_cultivate_service.operator_catalog(
             config_path=self.config_path,
             proxy=self.proxy,
             maa_data_dir=archive_dir,
+            skland=skland,
+            keep_ids=keep_ids,
         )
-        return [
-            {"label": item["label"], "value": item["value"]}
-            for item in catalog
-            if item.get("label") and item.get("value")
-        ]
+        return [item for item in catalog if item.get("label") and item.get("value")]
 
     async def _maa_item_names(self, script_id: str) -> dict[str, str]:
         """MAA 物品 id→名称全量映射（不受选择器排除规则影响，预览展示用）。"""
@@ -2889,6 +2929,126 @@ class AppConfig(GlobalConfig):
         self._maa_item_name_cache[item_index_path] = (mtime_ns, names)
         return names
 
+    def _maa_cultivate_skland_callbacks(
+        self,
+    ) -> tuple[
+        Callable[[str], Awaitable[str | None]],
+        Callable[[str, str], Awaitable[None]],
+    ]:
+        """构造森空岛凭据的读/写回调（签名 token 本体只存签到域，决策 38）。
+
+        读走 EncryptValidator 的自动解密，写走 set 时的自动加密；账号组
+        不存在时读返回 None、写静默跳过（绑定引用失效的降级口径）。
+        """
+
+        async def load_credential(account_uid: str) -> str | None:
+            try:
+                account = self.ToolsConfig.GameSign_Accounts[uuid.UUID(account_uid)]
+            except (KeyError, ValueError):
+                return None
+            raw = account.get("GameSignAccount", "SklandToken")
+            return str(raw) if raw else None
+
+        async def save_credential(account_uid: str, serialized: str) -> None:
+            try:
+                account = self.ToolsConfig.GameSign_Accounts[uuid.UUID(account_uid)]
+            except (KeyError, ValueError):
+                return
+            await account.set("GameSignAccount", "SklandToken", serialized)
+
+        return load_credential, save_credential
+
+    def _maa_cultivate_skland_ref(
+        self, script_config: MaaConfig, user_id: str
+    ) -> tuple[str, str] | None:
+        """读用户配置的森空岛绑定；未绑定时返回 None。"""
+
+        user_config = script_config.UserData[uuid.UUID(user_id)]
+        account_uid = str(
+            user_config.get("Task", "CultivateSklandAccount") or ""
+        ).strip()
+        game_uid = str(user_config.get("Task", "CultivateSklandUid") or "").strip()
+        if not account_uid or not game_uid:
+            return None
+        return account_uid, game_uid
+
+    async def get_maa_cultivate_skland_progression(
+        self, script_id: str, user_id: str, *, force: bool = False
+    ) -> tuple[Mapping[str, Any], int] | None:
+        """取当前用户绑定的森空岛练度快照（带 TTL 缓存）；未绑定返回 None。
+
+        预览走缓存（force=False），注入前强刷（force=True，决策 38）；
+        拉取失败由驱动层降级为 None，绝不影响注入/预览主流程。
+        """
+
+        from app.task.MAA.tools.cultivate.skland import (
+            SklandAccountRef,
+            fetch_skland_progression,
+        )
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+        ref = self._maa_cultivate_skland_ref(script_config, user_id)
+        if ref is None:
+            return None
+        load_credential, save_credential = self._maa_cultivate_skland_callbacks()
+        return await fetch_skland_progression(
+            SklandAccountRef(account_uid=ref[0], game_uid=ref[1]),
+            load_credential=load_credential,
+            save_credential=save_credential,
+            proxy=self.proxy,
+            force=force,
+        )
+
+    async def get_maa_cultivate_skland_bindings(self) -> list[dict[str, str]]:
+        """列出所有已配置森空岛凭据的账号组的明日方舟角色（绑定下拉用）。
+
+        账号级遍历而非读取用户绑定——角色列表正是绑定的来源。选项 value
+        为 "账号组UUID|游戏uid" 复合值，保存时由前端拆回两个字段；同名
+        角色（同号重复入组）按 uid 去重；单账号组失败跳过不阻塞其他组。
+        未配置任何森空岛凭据或没拉到角色时抛错，由路由统一转错误响应。
+        """
+
+        from app.task.MAA.tools.cultivate.skland import fetch_skland_role_entries
+
+        load_credential, save_credential = self._maa_cultivate_skland_callbacks()
+        candidates: list[str] = []
+        for account_uid, account in self.ToolsConfig.GameSign_Accounts.items():
+            raw = str(account.get("GameSignAccount", "SklandToken") or "")
+            if raw:
+                candidates.append(str(account_uid))
+        if not candidates:
+            raise ValueError("签到设置中尚未配置森空岛凭据，请先在签到设置中添加")
+
+        options: list[dict[str, str]] = []
+        seen_roles: set[str] = set()
+        for account_uid in candidates:
+            try:
+                roles = await fetch_skland_role_entries(
+                    account_uid,
+                    load_credential=load_credential,
+                    save_credential=save_credential,
+                    proxy=self.proxy,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"账号组 {account_uid} 的森空岛角色拉取失败，已跳过: {e}"
+                )
+                continue
+            for role in roles:
+                uid = str(role.role_uid or "").strip()
+                if not uid or uid in seen_roles:
+                    continue
+                seen_roles.add(uid)
+                name = role.role_name or uid
+                options.append({"label": name, "value": f"{account_uid}|{uid}"})
+        if not options:
+            raise ValueError(
+                "未在签到账号组中找到明日方舟角色，请确认森空岛账号已绑定游戏角色"
+            )
+        return options
+
     async def get_maa_cultivate_preview(
         self, script_id: str, user_id: str, targets: str
     ) -> dict[str, object]:
@@ -2913,18 +3073,39 @@ class AppConfig(GlobalConfig):
             raw_targets = []
 
         archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
-        plan, availability = await depot_cultivate_service.preview_cultivate(
+        # 森空岛练度走 TTL 缓存（预览不打网络；决策 38），未绑定/失败降级 None
+        skland = await self.get_maa_cultivate_skland_progression(script_id, user_id)
+        (
+            plan,
+            availability,
+            progressions,
+        ) = await depot_cultivate_service.preview_cultivate(
             targets=parse_cultivate_targets(raw_targets),
             maa_data_dir=archive_dir,
             config_path=self.config_path,
             proxy=self.proxy,
+            skland=skland,
         )
+        # 目标干员当前练度（编辑器"当前等级 → 目标等级"展示用）；
+        # source=default 表示无实测数据，前端按"？"展示
+        progression_out = [
+            {
+                "operatorId": operator_id,
+                "source": snapshot.source,
+                "elite": snapshot.data.elite,
+                "level": snapshot.data.level,
+                "masteries": dict(snapshot.data.masteries),
+                "modules": dict(snapshot.data.modules),
+            }
+            for operator_id, snapshot in progressions.items()
+        ]
         if plan is None:
             # 空计划先短路：物品索引读不出来也不该把空预览变 500
             return {
                 "stages": [],
                 "demands": [],
                 "unobtainable": [],
+                "progressions": progression_out,
                 "availability": availability,
             }
         # 物品名从 item_index 全量取（双芯片等选择器排除项也有名称）
@@ -2970,6 +3151,7 @@ class AppConfig(GlobalConfig):
             "totalExpectedSanity": (
                 round(sum(computable_sanity), 1) if computable_sanity else None
             ),
+            "progressions": progression_out,
             "availability": availability,
         }
 

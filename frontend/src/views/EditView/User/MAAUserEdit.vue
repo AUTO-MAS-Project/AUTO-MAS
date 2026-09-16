@@ -99,8 +99,13 @@
             :depot-stage-candidates="depotStageCandidates"
             :depot-stage-candidates-loading="depotStageCandidatesLoading"
             :depot-inventory="depotInventory"
+            :depot-inventory-time="depotInventoryTime"
+            :skland-role-options="sklandRoleOptions"
+            :load-skland-role-options="loadSklandRoleOptions"
+            :skland-role-loading="sklandRoleLoading"
+            :skland-role-error="sklandRoleError"
             :load-depot-stage-candidates="loadDepotStageCandidates"
-            :cultivate-operator-options="cultivateOperatorOptions"
+            :cultivate-operator-catalog="cultivateOperatorCatalog"
             :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
             :cultivate-operator-options-error="cultivateOperatorOptionsError"
             :cultivate-preview="cultivatePreview"
@@ -233,6 +238,7 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
+import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -298,11 +304,21 @@ const depotItemOptionsError = ref('')
 const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
 const depotStageCandidatesLoading = ref<string[]>([])
 const depotInventory = ref<Record<string, number>>({})
+const depotInventoryTime = ref('')
 
-// 干员养成选择器目录（一图流全量表，随快照缓存）
-const cultivateOperatorOptions = ref<Array<{ label: string; value: string }>>([])
+// 干员养成选择器目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存）
+const cultivateOperatorCatalog = ref<CultivateOperatorCatalogEntry[]>([])
+
+// 森空岛绑定下拉：合并所有已配置凭据账号组的角色（下拉展开时按需加载）
+const sklandRoleOptions = ref<Array<{ label: string; value: string }>>([])
+const sklandRoleLoading = ref(false)
+const sklandRoleError = ref('')
 const cultivateOperatorOptionsLoading = ref(false)
 const cultivateOperatorOptionsError = ref('')
+
+// 干员目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存；
+// 序列号守卫防绑定变更连发两次加载时的乱序覆盖）
+let cultivateOperatorCatalogSeq = 0
 
 // 养成需求预览（纯计算不落库；序列号守卫防快速编辑时的乱序覆盖）
 const cultivatePreview = ref<CultivatePreviewOut | null>(null)
@@ -606,6 +622,8 @@ const getDefaultMAAUserData = () => ({
     CultivateTargets: '[]',
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,
+    CultivateSklandAccount: '',
+    CultivateSklandUid: '',
   },
   Notify: {
     Enabled: false,
@@ -881,8 +899,10 @@ const loadUserData = async () => {
 
         // 干员目录按用户档案过滤已精 2（PR2 仅精英化），须在 userId 就绪后加载。
         // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
-        // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）
-        await loadCultivateOperatorOptions()
+        // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）。
+        // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
+        // 慢时库存列被串行阻塞
+        await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
       } else {
         message.error(t('edit.userDoesNotExist'))
         handleCancel()
@@ -1015,7 +1035,8 @@ const loadDepotStageCandidates = async (itemId: string) => {
 const loadDepotInventory = async () => {
   try {
     const response = await Service.getMaaDepotInventoryApiScriptsMaaDepotInventoryPost({
-      scriptId,
+      script: { scriptId },
+      userId,
     })
     if (response.code !== 200) return
     const inventory: Record<string, number> = {}
@@ -1023,6 +1044,7 @@ const loadDepotInventory = async () => {
       if (option.value) inventory[option.value] = Number(option.label) || 0
     }
     depotInventory.value = inventory
+    depotInventoryTime.value = (response.recognizedAt || '').replace('T', ' ')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载 MAA 仓库库存失败: ${errorMsg}`)
@@ -1030,6 +1052,9 @@ const loadDepotInventory = async () => {
 }
 
 const loadCultivateOperatorOptions = async () => {
+  // 绑定变更的两字段保存分属两个 await 周期，watch 会以半绑定/完整状态各
+  // 触发一次加载；seq 守卫丢弃乱序返回的过期响应（与预览加载同款）
+  const seq = ++cultivateOperatorCatalogSeq
   cultivateOperatorOptionsLoading.value = true
   cultivateOperatorOptionsError.value = ''
   try {
@@ -1037,21 +1062,83 @@ const loadCultivateOperatorOptions = async () => {
       script: { scriptId },
       userId,
     })
+    if (seq !== cultivateOperatorCatalogSeq) return
     if (response.code !== 200) {
       cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
       return
     }
-    cultivateOperatorOptions.value = response.data
+    cultivateOperatorCatalog.value = (response.data ?? [])
       .filter(option => option.value)
-      .map(option => ({ label: option.label, value: option.value as string }))
+      .map(option => ({
+        value: option.value,
+        label: option.label,
+        rarity: option.rarity ?? 0,
+        profession: option.profession ?? '',
+        maxElite: option.maxElite ?? 2,
+        dataMissing: option.dataMissing ?? false,
+        skills: (option.skills ?? []).map(item => ({
+          label: item.label,
+          value: item.value as string,
+          maxLevel: item.maxLevel ?? 0,
+        })),
+        modules: (option.modules ?? []).map(item => ({
+          label: item.label,
+          value: item.value as string,
+          maxLevel: item.maxLevel ?? 0,
+        })),
+      }))
   } catch (error) {
+    if (seq !== cultivateOperatorCatalogSeq) return
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载干员目录失败: ${errorMsg}`)
     cultivateOperatorOptionsError.value = '加载干员目录失败'
   } finally {
-    cultivateOperatorOptionsLoading.value = false
+    if (seq === cultivateOperatorCatalogSeq) cultivateOperatorOptionsLoading.value = false
   }
 }
+
+const loadSklandRoleOptions = async () => {
+  // 该端点要遍历所有已配置森空岛凭据的账号组做凭据刷新+角色拉取，代价高；
+  // 每次展开任务行都会重新挂载编辑器并触发回显请求，故已加载过就直接复用
+  // （要刷新列表：离开编辑页重进，或下拉为空时由展开下拉触发）
+  if (sklandRoleOptions.value.length) return
+  sklandRoleLoading.value = true
+  sklandRoleError.value = ''
+  try {
+    const response =
+      await Service.getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost()
+    if (response.code !== 200) {
+      sklandRoleError.value = response.message || '加载绑定角色失败'
+      sklandRoleOptions.value = []
+      return
+    }
+    sklandRoleOptions.value = response.data.map(option => ({
+      label: option.label,
+      value: option.value as string,
+    }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载森空岛绑定角色失败: ${errorMsg}`)
+    sklandRoleError.value = '加载绑定角色失败'
+    sklandRoleOptions.value = []
+  } finally {
+    sklandRoleLoading.value = false
+  }
+}
+
+// 绑定变化（绑定↔解绑、或换绑到另一角色）后：选择器目录需按森空岛快照
+// 重新过滤（精 2 干员绑定后恢复可见，解除绑定回到剔精 2 口径），预览也要
+// 按新练度重算——故比较账号|角色的复合值而不只是绑定与否
+watch(
+  () => `${formData.Task?.CultivateSklandAccount ?? ''}|${formData.Task?.CultivateSklandUid ?? ''}`,
+  (next, prev) => {
+    if (isInitializing.value || !userId || next === prev) return
+    loadCultivateOperatorOptions()
+    if (formData.Task?.CultivateTargets) {
+      loadCultivatePreview(formData.Task.CultivateTargets)
+    }
+  }
+)
 
 const loadCultivatePreview = async (targetsJson: string) => {
   const seq = ++cultivatePreviewSeq
@@ -1511,7 +1598,6 @@ onMounted(async () => {
   loadStageModeOptions()
   loadActivityStageOptions()
   loadDepotItemOptions()
-  loadDepotInventory()
   // 进入编辑页：归档 MAA 原生配置当前状态（MAS 触碰前的原始态）
   void ensureMaaBackup('native')
 

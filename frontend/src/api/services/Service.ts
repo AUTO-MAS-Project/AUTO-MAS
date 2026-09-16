@@ -20,6 +20,7 @@ import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettin
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
+import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
 import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CommunityActivityOut } from '../models/CommunityActivityOut';
@@ -61,6 +62,8 @@ import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { HSRUpdateIn } from '../models/HSRUpdateIn';
 import type { HSRUpdateOut } from '../models/HSRUpdateOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
+import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
@@ -764,14 +767,14 @@ export class Service {
         });
     }
     /**
-     * MAA 仓库库存（label=数量字符串，value=物品ID）
+     * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
      * @param requestBody
-     * @returns ComboBoxOut Successful Response
+     * @returns MaaDepotInventoryOut Successful Response
      * @throws ApiError
      */
     public static getMaaDepotInventoryApiScriptsMaaDepotInventoryPost(
-        requestBody: ScriptDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
+        requestBody: Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post,
+    ): CancelablePromise<MaaDepotInventoryOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/depot/inventory',
@@ -783,14 +786,25 @@ export class Service {
         });
     }
     /**
-     * MAA 干员养成选择器目录（一图流全量表，稀有度降序）
-     * @param requestBody
+     * 森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）
      * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/skland/bindings',
+        });
+    }
+    /**
+     * MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）
+     * @param requestBody
+     * @returns MaaCultivateOperatorsOut Successful Response
      * @throws ApiError
      */
     public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
         requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
-    ): CancelablePromise<ComboBoxOut> {
+    ): CancelablePromise<MaaCultivateOperatorsOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/cultivate/operators',

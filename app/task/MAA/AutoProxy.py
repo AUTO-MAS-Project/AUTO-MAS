@@ -1046,7 +1046,16 @@ class AutoProxyTask(TaskExecuteBase):
             )
             if not targets:
                 return
-            context = ProviderContext(maa_data_dir=self._cultivate_archive_dir())
+            # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
+            # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
+            skland = await Config.get_maa_cultivate_skland_progression(
+                str(self.script_info.script_id), str(self.cur_user_uid)
+            )
+            context = ProviderContext(
+                maa_data_dir=self._cultivate_archive_dir(),
+                skland_progressions=skland[0] if skland else {},
+                skland_captured_at=skland[1] if skland else 0,
+            )
             snapshots = {
                 target.operator_id: resolve_progression(
                     target.operator_id, get_certifying_chain(), context
@@ -1107,6 +1116,11 @@ class AutoProxyTask(TaskExecuteBase):
             return None, False, False
 
         try:
+            # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
+            # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
+            skland = await Config.get_maa_cultivate_skland_progression(
+                str(self.script_info.script_id), str(self.cur_user_uid), force=True
+            )
             (
                 updated_targets,
                 plan,
@@ -1118,6 +1132,7 @@ class AutoProxyTask(TaskExecuteBase):
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
+                skland=skland,
             )
         except Exception as e:
             logger.opt(exception=True).warning(
