@@ -5112,6 +5112,22 @@ CLASS_BOOK = {
 }
 """配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
+USER_CONFIG_BOOK = {
+    MaaConfig: MaaUserConfig,
+    MaaEndConfig: MaaEndUserConfig,
+    SrcConfig: SrcUserConfig,
+    M9AConfig: M9AUserConfig,
+    MaaFWConfig: MaaFWUserConfig,
+    GeneralConfig: GeneralUserConfig,
+    OkwwConfig: OkwwUserConfig,
+    OkNteConfig: OkNteUserConfig,
+    HSRConfig: HSRUserConfig,
+    BetterGIConfig: BetterGIUserConfig,
+    ZzzOdConfig: ZzzOdUserConfig,
+    BAAHConfig: BAAHUserConfig,
+}
+"""用户配置映射表: 脚本配置类 → 用户配置类, AppConfig.add_user 按此分发"""
+
 PLAN_BOOK = {
     "MaaPlanConfig": {
         "create_type": "MaaPlan",

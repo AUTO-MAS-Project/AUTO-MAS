@@ -57,6 +57,7 @@ from jinja2 import Environment, FileSystemLoader
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
+    USER_CONFIG_BOOK,
     BAAHConfig,
     BAAHUserConfig,
     BetterGIConfig,
@@ -1097,14 +1098,13 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
         # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid, config = await script_config.UserData.add(MaaUserConfig)
-        elif isinstance(script_config, SrcConfig):
-            uid, config = await script_config.UserData.add(SrcUserConfig)
-        elif isinstance(script_config, GeneralConfig):
-            uid, config = await script_config.UserData.add(GeneralUserConfig)
-        elif isinstance(script_config, OkwwConfig):
-            uid, config = await script_config.UserData.add(OkwwUserConfig)
+        user_config_cls = USER_CONFIG_BOOK.get(type(script_config))
+        if user_config_cls is None:
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+        uid, config = await script_config.UserData.add(user_config_cls)
+
+        # OK-WW 用户还须从脚本当前配置初始化 MAS 用户目录。
+        if isinstance(script_config, OkwwConfig):
             try:
                 await self.ensure_okww_user_config(
                     script_id=script_id,
@@ -1115,24 +1115,6 @@ class AppConfig(GlobalConfig):
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
                 await script_config.UserData.remove(uid)
                 raise
-        elif isinstance(script_config, OkNteConfig):
-            uid, config = await script_config.UserData.add(OkNteUserConfig)
-        elif isinstance(script_config, MaaEndConfig):
-            uid, config = await script_config.UserData.add(MaaEndUserConfig)
-        elif isinstance(script_config, M9AConfig):
-            uid, config = await script_config.UserData.add(M9AUserConfig)
-        elif isinstance(script_config, MaaFWConfig):
-            uid, config = await script_config.UserData.add(MaaFWUserConfig)
-        elif isinstance(script_config, HSRConfig):
-            uid, config = await script_config.UserData.add(HSRUserConfig)
-        elif isinstance(script_config, BetterGIConfig):
-            uid, config = await script_config.UserData.add(BetterGIUserConfig)
-        elif isinstance(script_config, ZzzOdConfig):
-            uid, config = await script_config.UserData.add(ZzzOdUserConfig)
-        elif isinstance(script_config, BAAHConfig):
-            uid, config = await script_config.UserData.add(BAAHUserConfig)
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         return uid, config
 
