@@ -20,45 +20,29 @@
 
 """碧蓝档案活动排期查询。
 
-数据取自 Kivo 古书馆时间轴。该接口对 Origin 做了白名单校验，只放行 kivo.wiki
-自己的来源，浏览器直连必定 403，所以由服务端直接请求（不带 Origin）。
-
-对外提供两个口径：调度侧只要「当前有没有进行中的活动」，界面还要知道活动
-叫什么、什么时候开始结束。第三方接口不可用不应挡住脚本执行，因此取数失败
+活动数据来自上游已有的 Kivo 中转接口（``POST /api/info/bluearchive/activity``），
+本模块只把它翻译成两个口径：调度侧只要「当前有没有进行中的活动」，界面还要知道
+活动叫什么、什么时候开始结束。第三方接口不可用不应挡住脚本执行，因此取数失败
 一律返回 None，由调用方退回默认行为。
 """
 
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
-
-import httpx
+from typing import Literal
 
 from app.utils import get_logger
 
 logger = get_logger("碧蓝档案活动")
 
-## 地址末尾的斜杠不能省：少写会被 301 重定向到带斜杠的版本，而 httpx 默认不跟随
-BLUEARCHIVE_TIMELINE_URL = "https://api.kivo.wiki/api/v1/timeline/"
-
-## 活动排期变化很慢，缓存十分钟，避免每个用户、每次调度都打这个第三方接口
-ACTIVITY_CACHE_TTL = 600
-
 ## 时间轴按开始时间倒序返回，当前进行中的活动必定落在最前面若干条里
 ACTIVITY_PAGE_SIZE = 100
 ACTIVITY_MAX_PAGES = 2
-
-## 第三方接口的请求超时（秒）
-REQUEST_TIMEOUT = 20
 
 ## 只有「活动」算活动，卡池、掉落加倍、维护等分类不算
 WANTED_TYPE = "Event"
 
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
-
-## 只缓存原始条目：判定结果与「当前时刻」相关，缓存起来会在跨过活动起止时间后失真
-_cache: dict[str, tuple[float, tuple[Mapping[str, object], ...]]] = {}
 
 
 @dataclass(frozen=True)
@@ -150,50 +134,52 @@ def collect_activities(
     return (running[0] if running else None, upcoming[0] if upcoming else None)
 
 
-async def _fetch_timeline(line_type: BlueArchiveLineType) -> tuple[Mapping[str, object], ...]:
-    """分页取回指定服的活动时间轴。
+async def _fetch_page(
+    line_type: BlueArchiveLineType, page: int
+) -> list[Mapping[str, object]] | None:
+    """取回一页时间轴条目。
+
+    取数复用上游 ``POST /api/info/bluearchive/activity`` 的转发逻辑与它自带的缓存，
+    本模块不再自己维护 Kivo 的地址、请求头与缓存。
 
     Args:
         line_type: 服务器标识，取 Kivo 的原文拼写。
+        page: 页码，从 1 开始。
 
     Returns:
-        tuple[Mapping[str, object], ...]: 原始时间轴条目。
-
-    Raises:
-        httpx.HTTPError: 请求失败或响应状态异常。
-        ValueError: 响应不是预期的 JSON 结构。
+        list[Mapping[str, object]] | None: 该页条目；取数失败为 None。
     """
 
-    items: list[Mapping[str, object]] = []
+    ## 局部导入：避免模块导入期与 app.api.info 形成环
+    from app.api.info import get_bluearchive_activity
+    from app.models.schema import BlueArchiveActivityIn
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        for page in range(1, ACTIVITY_MAX_PAGES + 1):
-            response = await client.get(
-                BLUEARCHIVE_TIMELINE_URL,
-                params={
-                    "line_type": line_type,
-                    "page": page,
-                    "page_size": ACTIVITY_PAGE_SIZE,
-                },
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                    "Accept": "application/json",
-                },
-            )
-            response.raise_for_status()
-            payload: Any = response.json()
+    response = await get_bluearchive_activity(
+        BlueArchiveActivityIn(
+            line_type=line_type,
+            page=page,
+            page_size=ACTIVITY_PAGE_SIZE,
+        )
+    )
+    if response.code != 200:
+        logger.warning(
+            f"获取碧蓝档案活动排期失败({line_type} 第 {page} 页): {response.message}"
+        )
+        return None
 
-            batch = payload.get("data", {}).get("timeline") if isinstance(payload, dict) else None
-            if not isinstance(batch, list) or not batch:
-                break
+    kivo = response.data.get("data")
+    batch = kivo.get("timeline") if isinstance(kivo, Mapping) else None
+    if not isinstance(batch, list):
+        logger.warning(f"碧蓝档案活动排期结构异常({line_type} 第 {page} 页)")
+        return None
 
-            items.extend(item for item in batch if isinstance(item, dict))
-
-    return tuple(items)
+    return [item for item in batch if isinstance(item, Mapping)]
 
 
-async def _timeline(line_type: BlueArchiveLineType) -> tuple[Mapping[str, object], ...] | None:
-    """取回时间轴，命中缓存时直接复用。
+async def _timeline(
+    line_type: BlueArchiveLineType,
+) -> tuple[Mapping[str, object], ...] | None:
+    """分页取回指定服的活动时间轴。
 
     Args:
         line_type: 服务器标识。
@@ -202,22 +188,19 @@ async def _timeline(line_type: BlueArchiveLineType) -> tuple[Mapping[str, object
         tuple[Mapping[str, object], ...] | None: 时间轴条目；取数失败为 None。
     """
 
-    now = time.time()
-    cached = _cache.get(line_type)
-    if cached is not None and now - cached[0] < ACTIVITY_CACHE_TTL:
-        return cached[1]
+    items: list[Mapping[str, object]] = []
 
-    try:
-        items = await _fetch_timeline(line_type)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"获取碧蓝档案活动排期失败({line_type}): {type(e).__name__}: {e}"
-        )
-        ## 失败不写缓存：下次调度应当重新尝试，而不是把一次失败沿用十分钟
-        return None
+    for page in range(1, ACTIVITY_MAX_PAGES + 1):
+        batch = await _fetch_page(line_type, page)
+        if batch is None:
+            ## 失败不返回半截结果：调用方应当退回默认行为
+            return None
+        if not batch:
+            break
 
-    _cache[line_type] = (now, items)
-    return items
+        items.extend(batch)
+
+    return tuple(items)
 
 
 async def has_running_activity(line_type: BlueArchiveLineType) -> bool | None:

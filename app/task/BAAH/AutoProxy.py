@@ -43,11 +43,7 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
-from app.task.proxy_helpers import (
-    CONFIG_SOURCE_USER,
-    append_push_log,
-    resolve_config_source,
-)
+from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
