@@ -406,6 +406,7 @@ export type { ValidationError } from './models/ValidationError';
 export type { VersionOut } from './models/VersionOut';
 export type { VirtualDisplayCheckOut } from './models/VirtualDisplayCheckOut';
 export { VirtualDisplayCheckResultItem } from './models/VirtualDisplayCheckResultItem';
+export type { VirtualDisplayDetachOut } from './models/VirtualDisplayDetachOut';
 export type { Webhook } from './models/Webhook';
 export type { Webhook_Data } from './models/Webhook_Data';
 export type { Webhook_Info } from './models/Webhook_Info';

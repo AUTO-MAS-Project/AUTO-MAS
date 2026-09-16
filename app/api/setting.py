@@ -41,6 +41,7 @@ from app.models.schema import (
     SettingUpdateIn,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
+    VirtualDisplayDetachOut,
     Webhook,
     WebhookCreateOut,
     WebhookDeleteIn,
@@ -353,6 +354,36 @@ async def check_virtual_display() -> VirtualDisplayCheckOut:
                 )
             ],
         )
+
+
+@router.post(
+    "/virtual-display/detach",
+    tags=["Action"],
+    summary="立即拆除虚拟显示器",
+    response_model=VirtualDisplayDetachOut,
+    status_code=200,
+)
+async def detach_virtual_display() -> VirtualDisplayDetachOut:
+    """用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+
+    任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+    的话下一轮会重新挂上——要彻底停用得关开关。
+    """
+
+    from app.core.desktop_guard import DesktopGuard
+
+    try:
+        detached = await DesktopGuard.detach_now("用户手动拆除")
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"detach_virtual_display失败: {type(e).__name__}: {e}"
+        )
+        return VirtualDisplayDetachOut(
+            code=500, status="error", message=f"拆除失败: {str(e)}"
+        )
+    if not detached:
+        return VirtualDisplayDetachOut(message="当前没有挂载虚拟显示器")
+    return VirtualDisplayDetachOut(detached=True, message="已拆除虚拟显示器")
 
 
 @router.post(
