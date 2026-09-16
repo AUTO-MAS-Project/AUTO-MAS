@@ -70,6 +70,8 @@ UPDATE_PROGRESS = "update.progress"
 
 # MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用脚本 ID
 MAAFW_ENV_PREPARE_PROGRESS = "maafw.env-prepare.progress"
+# MFW 项目手动更新过程（检查 / 下载 / 覆盖 / 校验与逐行日志），id 用脚本 ID
+MAAFW_PROJECT_UPDATE_PROGRESS = "maafw.project-update.progress"
 UPDATE_COMPLETED = "update.completed"
 UPDATE_FAILED = "update.failed"
 UPDATE_CANCELLED = "update.cancelled"

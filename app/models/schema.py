@@ -5133,6 +5133,42 @@ class WSMaaFWEnvPrepareProgressData(BaseModel):
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
 
 
+class WSMaaFWProjectUpdateProgressData(BaseModel):
+    """MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress)
+
+    检查与应用两条路径共用；``stage="log"`` 只带一行新增日志，其余阶段带
+    当前进度。速度由后端按已下载字节的时间差计算并节流，前端不必再算。
+    """
+
+    stage: str = Field(
+        ...,
+        description=(
+            "阶段：checking / downloading / downloaded / plan_validated / staged / "
+            "applying / post_validating / committed / rolled_back / completed / "
+            "failed / log"
+        ),
+    )
+    status: str = Field(..., description="running / success / failed")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+    percent: Optional[float] = Field(
+        default=None, description="当前阶段进度百分比（下载 / 覆盖），未知时为 null"
+    )
+    downloadedBytes: Optional[int] = Field(default=None, description="已下载字节数")
+    totalBytes: Optional[int] = Field(
+        default=None, description="更新包总字节数，服务端未给出时为 null"
+    )
+    speedBytesPerSec: Optional[float] = Field(
+        default=None, description="下载速度 (B/s)，首个采样点为 null"
+    )
+    packageKind: Optional[str] = Field(
+        default=None,
+        description="更新包类型：full 全量 / incremental 增量，未知时为 null",
+    )
+    appliedFiles: Optional[int] = Field(default=None, description="已覆盖文件数")
+    totalFiles: Optional[int] = Field(default=None, description="本次要覆盖的文件总数")
+
+
 class WSUpdateCompletedData(BaseModel):
     """更新下载完成数据 (id=Update, type=update.completed)。"""
 

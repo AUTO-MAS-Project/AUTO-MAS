@@ -55,6 +55,9 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
 )
+from app.task.MaaFW.tools.embedded.update_progress import (
+    MaaFWUpdateProgressTracker,
+)
 from app.utils import get_logger
 from app.utils.paths import SOURCE_ROOT
 from app.utils.security import sanitize_log_message
@@ -228,12 +231,6 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 _maafw_env_logger = get_logger("MFW 运行环境")
-
-
-def _maafw_update_send_log(line: str) -> None:
-    """更新实现的逐行日志回调；写日志前先打码，避免 CDK 等敏感值落盘。"""
-
-    _maafw_update_logger.info(sanitize_log_message(str(line)))
 
 
 def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
@@ -1200,33 +1197,66 @@ async def update_maafw_project(
         f"cdk={'已配置' if source_config['mirror_cdk'] else '未配置'}"
     )
 
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
+
+    # 编辑页「更新过程」面板：阶段、下载 / 覆盖进度与逐行日志全程推给前端。
+    # 更新实现的回调既会从事件循环里来（下载在协程里跑），也会从工作线程里来
+    # （apply_package_transaction 跑在 to_thread 里），统一跨回循环再发。
+    tracker = MaaFWUpdateProgressTracker()
+    loop = asyncio.get_running_loop()
+
+    def publish_progress(data: WSMaaFWProjectUpdateProgressData | None) -> None:
+        if data is None:
+            return
+        asyncio.run_coroutine_threadsafe(
+            Publisher.send(
+                id=payload.scriptId,
+                type=ws_protocol.MAAFW_PROJECT_UPDATE_PROGRESS,
+                data=data,
+            ),
+            loop,
+        )
+
+    def send_update_log(line: str) -> None:
+        # 写日志前先打码，避免 CDK 等敏感值落盘；WS 通道走同一份打码结果。
+        text = sanitize_log_message(str(line))
+        _maafw_update_logger.info(text)
+        publish_progress(tracker.log(text))
+
+    def report_progress(event: dict[str, Any]) -> None:
+        publish_progress(tracker.event(event))
+
     if payload.action == "check":
+        publish_progress(tracker.checking())
         try:
             discovery = await discover_maafw_project_update(
                 interface,
                 current_version=current_version,
                 source_config=source_config,
                 proxy=proxy,
-                send_log=_maafw_update_send_log,
+                send_log=send_update_log,
                 # 只问有没有新版本：带 CDK 去换下载地址会扣一次今日额度，
                 # 而用户可能只是随手点了下「检查更新」。真更新时再取。
                 version_only=True,
             )
         except MaaFWProjectUpdateError as exc:
-            return MaaFWProjectUpdateOut(
-                code=400, status="error", message=f"MFW 更新检查失败: {exc}"
-            )
+            message = f"MFW 更新检查失败: {exc}"
+            publish_progress(tracker.finished(success=False, message=message))
+            return MaaFWProjectUpdateOut(code=400, status="error", message=message)
         except Exception as exc:
             logger.opt(exception=True).warning(
                 f"update_maafw_project失败: {type(exc).__name__}: {exc}"
             )
-            return MaaFWProjectUpdateOut(
-                code=500, status="error", message=f"MFW 更新检查失败: {exc}"
-            )
+            message = f"MFW 更新检查失败: {exc}"
+            publish_progress(tracker.finished(success=False, message=message))
+            return MaaFWProjectUpdateOut(code=500, status="error", message=message)
 
         if discovery is None:
+            message = f"MFW 项目已是最新版本: {current_version or '未知'}"
+            publish_progress(tracker.finished(success=True, message=message))
             return MaaFWProjectUpdateOut(
-                message=f"MFW 项目已是最新版本: {current_version or '未知'}",
+                message=message,
                 data=MaaFWProjectUpdateData(
                     checked=True, currentVersion=current_version
                 ),
@@ -1252,6 +1282,17 @@ async def update_maafw_project(
         unavailable_reason = getattr(discovery, "unavailable_reason", "")
         if not installable and unavailable_reason:
             message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
+        publish_progress(
+            tracker.finished(
+                success=True,
+                message=_maafw_update_message_with_cdk(message, extra),
+                package_kind=(
+                    getattr(candidate, "package_type", None)
+                    if candidate is not None
+                    else None
+                ),
+            )
+        )
         return MaaFWProjectUpdateOut(
             message=_maafw_update_message_with_cdk(message, extra),
             data=MaaFWProjectUpdateData(
@@ -1270,6 +1311,8 @@ async def update_maafw_project(
         # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
         # 漏了就会退回缺省的 GitHub——check 说走 Mirror 酱、apply 却从 GitHub
         # 下载，正是本次设计要禁掉的静默换源。
+        # 检查 / 下载 / 覆盖 / 校验的收尾事件（completed / failed）由更新实现
+        # 自己经 progress 发出，这里不再补发。
         result = await update_maafw_project_if_needed(
             root_path,
             interface,
@@ -1277,7 +1320,8 @@ async def update_maafw_project(
             channel=source_config["channel"],
             source_config=source_config,
             proxy=proxy,
-            send_log=_maafw_update_send_log,
+            send_log=send_update_log,
+            progress=report_progress,
         )
     except MaaFWProjectUpdateError as exc:
         return MaaFWProjectUpdateOut(
