@@ -665,8 +665,6 @@ export default {
     pcClient: 'PC クライアント',
     tomlFiles: 'TOML ファイル',
     urlProtocolEG: 'URL プロトコル（Starward など）',
-    win32ControlMethodCan:
-      'Win32 の制御方式では起動と検出を分けられます。起動対象はプログラムを立ち上げるだけで、検出対象が実際のゲームウィンドウを特定します。',
     yamlFiles: 'YAML ファイル',
     resetManagedOverrides: '元の設定にリセット',
     resetManagedOverridesHint:
@@ -1412,8 +1410,12 @@ export default {
       'MAS が選択したゲーム exe を起動し、実行終了後に閉じます。ゲームがすでに起動している場合は引き継ぐだけで、再起動も終了もしません。',
     launchModeAttachOnlyDesc:
       'MAS はプログラムを起動も終了もしません。スクリプトか自分でゲームを起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます。',
-    mfwForceResolutionTip:
-      'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に 1920×1080 のウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
+    mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
+    mfwUnityResolutionOff: '変更しない',
+    mfwUnityResolutionTip:
+      'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
+    mfwDirectOnlyAdbWin32:
+      'AUTO-MAS MaaFW Direct が連携できるのは ADB / Win32 のみです。その他の制御方式はプロジェクト元の UI をご利用ください。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
     thisConfigurationFileHas: 'この設定ファイルに編集できる項目はありません',

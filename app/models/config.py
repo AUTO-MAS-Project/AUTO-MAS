@@ -2855,11 +2855,14 @@ class MaaFWConfig(ConfigBase):
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
-        ## DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率固定为
-        ## 1920×1080 窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。
-        ## 只对 Unity 引擎的游戏有效；游戏已在运行时不改。
-        self.Game_ForceResolution1920x1080 = ConfigItem(
-            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        ## DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选
+        ## 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。
+        ## 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。
+        self.Game_UnityResolution = ConfigItem(
+            "Game",
+            "UnityResolution",
+            "Off",
+            OptionsValidator(["Off", "1920x1080", "1280x720"]),
         )
         ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
         ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；

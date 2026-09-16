@@ -710,8 +710,6 @@ export default {
     pcClient: 'PC客户端',
     tomlFiles: 'TOML 文件',
     urlProtocolEG: 'URL协议(如Starward)',
-    win32ControlMethodCan:
-      'Win32 控制方式支持启动与检测分离：启动目标只负责拉起程序，检测目标负责定位实际游戏窗口。',
     yamlFiles: 'YAML 文件',
     resetManagedOverrides: '重置为源配置',
     resetManagedOverridesHint: '清除你在 MAS 里改过的所有覆盖值，重新读取 SRA / 三月七助手当前配置',
@@ -1458,8 +1456,12 @@ export default {
       'MAS 会启动你选的游戏 exe，运行结束后关闭它；发现游戏已在运行时只接管，不重复启动也不替你关闭。',
     launchModeAttachOnlyDesc:
       'MAS 不会启动或关闭任何程序，由脚本或你自己负责启停游戏，MAS 只接管已运行的窗口。',
-    mfwForceResolutionTip:
-      '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成 1920×1080 窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
+    mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
+    mfwUnityResolutionOff: '不修改',
+    mfwUnityResolutionTip:
+      '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
+    mfwDirectOnlyAdbWin32:
+      'AUTO-MAS MaaFW Direct 只联动 ADB / Win32，其他控制方式建议使用项目原 UI。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
     thisSubtaskHasNo: '该子任务暂无可编辑字段',
     thisConfigurationFileHas: '该配置文件暂无可编辑的字段',

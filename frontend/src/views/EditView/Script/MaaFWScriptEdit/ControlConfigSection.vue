@@ -63,13 +63,13 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-alert v-if="controlNoticeLines.length" class="control-strategy-alert" type="info" show-icon>
-      <template #message>
-        <div v-for="line in controlNoticeLines" :key="line" class="control-notice-line">
-          {{ line }}
-        </div>
-      </template>
-    </a-alert>
+    <a-alert
+      v-if="unsupportedControllerOptions.length"
+      class="control-strategy-alert"
+      type="info"
+      show-icon
+      :message="unsupportedControllerMessage"
+    />
 
     <Transition name="control-fade" mode="out-in">
       <div v-if="isAdbController" key="adb">
@@ -289,24 +289,20 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwForceResolutionTip')">
+                <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
                   <span class="form-label">
-                    {{ t('edit.run1920x1080WindowedMode') }}
+                    {{ t('edit.mfwUnityResolution') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
               </template>
-              <a-switch
-                v-model:checked="maafwConfig.Game.ForceResolution1920x1080"
-                :checked-children="t('edit.on2')"
-                :un-checked-children="t('edit.off')"
+              <a-select
+                v-model:value="maafwConfig.Game.UnityResolution"
+                size="large"
+                style="width: 100%"
+                :options="unityResolutionOptions"
                 @change="
-                  emit(
-                    'change',
-                    'Game',
-                    'ForceResolution1920x1080',
-                    maafwConfig.Game.ForceResolution1920x1080
-                  )
+                  (value: string | number) => emit('change', 'Game', 'UnityResolution', value)
                 "
               />
             </a-form-item>
@@ -329,6 +325,7 @@ import type {
   MaaFWResourceInfo,
   MaaFWLaunchMode,
   MaaFWScriptConfig,
+  MaaFWUnityResolution,
 } from '@/types/script'
 
 const { t } = useI18n()
@@ -372,22 +369,19 @@ const launchModeDescription = computed(() =>
     : t('edit.launchModeDirectExeDesc')
 )
 
-// 「有 controller 不支持」与「Win32 启停分离」两条说明合成一个提示框，一行一条
-const controlNoticeLines = computed(() => {
-  const lines: string[] = []
-  if (props.unsupportedControllerOptions.length) lines.push(props.unsupportedControllerMessage)
-  if (props.isDesktopController) lines.push(t('edit.win32ControlMethodCan'))
-  return lines
-})
+// 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
+const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(
+  () => [
+    { label: t('edit.mfwUnityResolutionOff'), value: 'Off' },
+    { label: '1920×1080', value: '1920x1080' },
+    { label: '1280×720', value: '1280x720' },
+  ]
+)
 </script>
 
 <style scoped>
 .form-section {
   margin-bottom: 40px;
-}
-
-.control-notice-line + .control-notice-line {
-  margin-top: 4px;
 }
 
 .section-header {

@@ -88,7 +88,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PackageName: '',
     Arguments: '',
     WaitTime: 60,
-    ForceResolution1920x1080: false,
+    UnityResolution: 'Off',
   },
   Update: {
     AutoUpdateMode: 'BeforeRun',
@@ -172,12 +172,8 @@ export function useMaaFWControlConfig(
   const unsupportedControllerOptions = computed(() =>
     controllerOptions.value.filter(controller => !isDirectControllerType(controller.type))
   )
-  const unsupportedControllerMessage = computed(() => {
-    const names = unsupportedControllerOptions.value
-      .map(controller => `${controller.label || controller.name}(${controller.type})`)
-      .join('、')
-    return `AUTO-MAS MaaFW Direct 只联动 ADB / Win32；${names} 建议使用项目原 UI。`
-  })
+  // 不逐个点名不支持的 controller：列表一长就是一坨，用户只需要知道「其他的去原 UI」
+  const unsupportedControllerMessage = computed(() => t('edit.mfwDirectOnlyAdbWin32'))
 
   const getDefaultControllerName = () => {
     const wantsAdb = maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-'

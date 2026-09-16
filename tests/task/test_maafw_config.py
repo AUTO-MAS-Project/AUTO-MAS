@@ -212,7 +212,7 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
         )
         # 默认让 MAS 启动游戏；「使用其他方式启停」（AttachOnly）要用户显式选
         self.assertEqual(dumped["Game"]["LaunchMode"], "DirectExe")
-        self.assertIs(dumped["Game"]["ForceResolution1920x1080"], False)
+        self.assertEqual(dumped["Game"]["UnityResolution"], "Off")
         self.assertNotIn("CloseOnFinish", dumped["Game"])
         self.assertIn("Id", dumped["Emulator"])
 

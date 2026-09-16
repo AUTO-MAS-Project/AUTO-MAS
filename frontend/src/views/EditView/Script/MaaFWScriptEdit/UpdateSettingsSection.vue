@@ -142,53 +142,56 @@
       />
     </template>
 
-    <div v-if="previewData" class="update-meta-line">
-      <span class="update-meta-item">
-        <span class="update-meta-label">{{ t('edit.currentVersion') }}</span>
-        <span class="update-meta-value">{{
-          previewData.project.version || t('edit.notDeclared')
-        }}</span>
-      </span>
-      <span class="update-meta-item">
-        <span class="update-meta-label">GitHub</span>
-        <span class="update-meta-value">{{
-          previewData.project.github || t('edit.notDeclared')
-        }}</span>
-      </span>
-    </div>
-
-    <div class="update-process">
-      <div class="update-process-header">
-        <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
-        <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
-      </div>
-      <div v-if="updateProgress.phase === 'idle'" class="update-process-placeholder">
-        {{ t('edit.updateProcessPlaceholder') }}
-      </div>
-      <template v-else>
-        <div class="update-process-summary" :class="`update-process-summary--${summaryTone}`">
-          <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-process-icon" />
-          <CheckCircleOutlined v-else-if="summaryTone === 'success'" class="update-process-icon" />
-          <CloseCircleOutlined v-else class="update-process-icon" />
-          <span class="update-process-phase">{{ phaseLabel }}</span>
-          <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
+    <!-- 左边两个小框沿用原来的信息格，右边原 RID / 多平台的位置换成更新过程面板 -->
+    <div v-if="previewData" class="update-info-grid">
+      <div class="update-info-item">
+        <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
+        <div class="update-info-value">
+          {{ previewData.project.version || t('edit.notDeclared') }}
         </div>
-        <a-progress
-          v-if="barPercent !== null"
-          :percent="barPercent"
-          size="small"
-          :status="summaryTone === 'failed' ? 'exception' : 'active'"
-          class="update-process-bar"
-        />
-        <div ref="logBoxRef" class="update-log-box">
-          <div v-if="!updateProgress.logs.length" class="update-log-line update-log-line--empty">
-            {{ t('edit.updateProcessNoLogYet') }}
-          </div>
-          <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
-            {{ line }}
-          </div>
+      </div>
+      <div class="update-info-item">
+        <div class="update-info-label">GitHub</div>
+        <div class="update-info-value">
+          {{ previewData.project.github || t('edit.notDeclared') }}
         </div>
-      </template>
+      </div>
+      <div class="update-process">
+        <div class="update-process-header">
+          <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
+          <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
+        </div>
+        <div v-if="updateProgress.phase === 'idle'" class="update-process-placeholder">
+          {{ t('edit.updateProcessPlaceholder') }}
+        </div>
+        <template v-else>
+          <div class="update-process-summary" :class="`update-process-summary--${summaryTone}`">
+            <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-process-icon" />
+            <CheckCircleOutlined
+              v-else-if="summaryTone === 'success'"
+              class="update-process-icon"
+            />
+            <CloseCircleOutlined v-else class="update-process-icon" />
+            <span class="update-process-phase">{{ phaseLabel }}</span>
+            <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
+          </div>
+          <a-progress
+            v-if="barPercent !== null"
+            :percent="barPercent"
+            size="small"
+            :status="summaryTone === 'failed' ? 'exception' : 'active'"
+            class="update-process-bar"
+          />
+          <div ref="logBoxRef" class="update-log-box">
+            <div v-if="!updateProgress.logs.length" class="update-log-line update-log-line--empty">
+              {{ t('edit.updateProcessNoLogYet') }}
+            </div>
+            <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
+              {{ line }}
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -442,35 +445,48 @@ watch(
   margin-top: 4px;
 }
 
-.update-meta-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  margin-top: 4px;
-  font-size: 13px;
+/* 沿用原来四格的几何：左边两格是信息小框，右边两格的位置给过程面板 */
+.update-info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 8px;
 }
 
-.update-meta-item {
-  display: inline-flex;
-  gap: 6px;
+.update-info-item {
   min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
 }
 
-.update-meta-label {
+.update-info-label {
   color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
-.update-meta-value {
+.update-info-value {
+  margin-top: 4px;
   color: var(--ant-color-text);
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
 /* 过程面板只用边框分隔，不铺底色：深色主题下成块的底色会把页面切得花 */
 .update-process {
-  margin-top: 16px;
+  grid-column: span 2;
+  min-width: 0;
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+  .update-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .update-process-header {

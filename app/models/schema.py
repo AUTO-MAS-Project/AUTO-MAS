@@ -3531,9 +3531,9 @@ class MaaFWConfig_Game(BaseModel):
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
     )
-    ForceResolution1920x1080: Optional[bool] = Field(
+    UnityResolution: Optional[Literal["Off", "1920x1080", "1280x720"]] = Field(
         default=None,
-        description="DirectExe 模式下启动游戏前临时把 Unity 注册表分辨率固定为 1920×1080 窗口，关闭后恢复",
+        description="DirectExe 模式下启动 Unity 游戏前临时把注册表分辨率改成所选窗口尺寸，关闭后恢复；Off 不修改",
     )
     PackageName: Optional[str] = Field(
         default=None,

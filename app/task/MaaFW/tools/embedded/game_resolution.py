@@ -1,4 +1,4 @@
-"""按 exe 路径反查 Unity 游戏的注册表，临时固定 1920×1080 窗口分辨率并可靠恢复。
+"""按 exe 路径反查 Unity 游戏的注册表，临时改成指定尺寸的窗口分辨率并可靠恢复。
 
 Unity 播放器把 PlayerPrefs 存在 ``HKCU\\Software\\<公司名>\\<产品名>``，两个名字就写在
 ``<exe 同名>_Data\\app.info`` 的前两行——所以只要用户选了游戏本体的 exe，就能反查到
@@ -45,21 +45,43 @@ _LEGACY_IS_FULLSCREEN_VALUE = "Screenmanager Is Fullscreen mode_h3981298716"
 _WINDOW_WIDTH_VALUE = "Screenmanager Resolution Window Width_h2524650974"
 _WINDOW_HEIGHT_VALUE = "Screenmanager Resolution Window Height_h1684712807"
 
-TARGET_WIDTH = 1920
-TARGET_HEIGHT = 1080
 _FULLSCREEN_MODE_WINDOWED = 3
 
-# 写入值表：全部 REG_DWORD。原本不存在的键在恢复时会被删掉，多写无害。
-_TARGET_VALUES: tuple[tuple[str, int], ...] = (
-    (_WIDTH_VALUE, TARGET_WIDTH),
-    (_HEIGHT_VALUE, TARGET_HEIGHT),
-    (_WINDOW_WIDTH_VALUE, TARGET_WIDTH),
-    (_WINDOW_HEIGHT_VALUE, TARGET_HEIGHT),
-    (_USE_NATIVE_VALUE, 0),
-    (_FULLSCREEN_MODE_VALUE, _FULLSCREEN_MODE_WINDOWED),
-    (_LEGACY_IS_FULLSCREEN_VALUE, 0),
+# 受管键：写入时全部 REG_DWORD，恢复时按快照回写、原本不存在的删掉，多写无害。
+MANAGED_VALUES: tuple[str, ...] = (
+    _WIDTH_VALUE,
+    _HEIGHT_VALUE,
+    _WINDOW_WIDTH_VALUE,
+    _WINDOW_HEIGHT_VALUE,
+    _USE_NATIVE_VALUE,
+    _FULLSCREEN_MODE_VALUE,
+    _LEGACY_IS_FULLSCREEN_VALUE,
 )
-MANAGED_VALUES: tuple[str, ...] = tuple(name for name, _ in _TARGET_VALUES)
+
+#: 脚本配置 ``Game.UnityResolution`` 的可选值 → (宽, 高)。``Off`` 不在表里，表示不改。
+RESOLUTION_PRESETS: dict[str, tuple[int, int]] = {
+    "1920x1080": (1920, 1080),
+    "1280x720": (1280, 720),
+}
+
+
+def parse_resolution_option(value: object) -> tuple[int, int] | None:
+    """把 ``Game.UnityResolution`` 的配置值解析成 (宽, 高)；``Off`` / 空 / 未知返回 None。"""
+
+    return RESOLUTION_PRESETS.get(str(value or "").strip())
+
+
+def _target_values(width: int, height: int) -> tuple[tuple[str, int], ...]:
+    return (
+        (_WIDTH_VALUE, width),
+        (_HEIGHT_VALUE, height),
+        (_WINDOW_WIDTH_VALUE, width),
+        (_WINDOW_HEIGHT_VALUE, height),
+        (_USE_NATIVE_VALUE, 0),
+        (_FULLSCREEN_MODE_VALUE, _FULLSCREEN_MODE_WINDOWED),
+        (_LEGACY_IS_FULLSCREEN_VALUE, 0),
+    )
+
 
 # 同一个注册表键同时只能有一个覆盖者，否则后者的快照会把前者写入的目标值当原值恢复。
 # 按键路径而不是全局互斥：不同 MFW 脚本可能同时跑不同的游戏。
@@ -98,10 +120,18 @@ def resolve_unity_registry_path(exe_path: Path) -> str | None:
 
 
 class UnityGameResolutionOverride:
-    """在 MAS 启动游戏前临时写入 1920×1080 窗口模式，游戏关闭后恢复全部原值和类型。"""
+    """在 MAS 启动游戏前临时写入指定尺寸的窗口模式，游戏关闭后恢复全部原值和类型。"""
 
-    def __init__(self, registry_path: str, registry_module: Any | None = None) -> None:
+    def __init__(
+        self,
+        registry_path: str,
+        width: int,
+        height: int,
+        registry_module: Any | None = None,
+    ) -> None:
         self.registry_path = registry_path
+        self.width = int(width)
+        self.height = int(height)
         self._registry = registry_module if registry_module is not None else _winreg
         self._snapshot: dict[str, _RegistryValueSnapshot] = {}
         self._active = False
@@ -109,14 +139,22 @@ class UnityGameResolutionOverride:
 
     @classmethod
     def for_executable(
-        cls, exe_path: Path, registry_module: Any | None = None
+        cls,
+        exe_path: Path,
+        width: int,
+        height: int,
+        registry_module: Any | None = None,
     ) -> UnityGameResolutionOverride | None:
         """按 exe 反查注册表路径；不是 Unity 游戏返回 None。"""
 
         registry_path = resolve_unity_registry_path(exe_path)
         if registry_path is None:
             return None
-        return cls(registry_path, registry_module=registry_module)
+        return cls(registry_path, width, height, registry_module=registry_module)
+
+    @property
+    def label(self) -> str:
+        return f"{self.width}×{self.height}"
 
     def apply(self) -> bool:
         """首次调用先快照再写目标值，返回 True；已生效时只重写目标值，返回 False。"""
@@ -208,7 +246,7 @@ class UnityGameResolutionOverride:
 
     def _write_targets(self, registry: Any) -> None:
         with self._open_key(registry) as key:
-            for name, value in _TARGET_VALUES:
+            for name, value in _target_values(self.width, self.height):
                 registry.SetValueEx(key, name, 0, registry.REG_DWORD, value)
 
     def _restore_snapshot(self, registry: Any, *, suppress_errors: bool) -> list[str]:
@@ -239,8 +277,8 @@ class UnityGameResolutionOverride:
 
 __all__ = [
     "MANAGED_VALUES",
-    "TARGET_HEIGHT",
-    "TARGET_WIDTH",
+    "RESOLUTION_PRESETS",
     "UnityGameResolutionOverride",
+    "parse_resolution_option",
     "resolve_unity_registry_path",
 ]

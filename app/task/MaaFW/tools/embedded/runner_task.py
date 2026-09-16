@@ -58,7 +58,7 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .game_package import resolve_game_package
-from .game_resolution import UnityGameResolutionOverride
+from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .project_path import release_project_path, try_reserve_project_path
 
 logger = get_logger("MaaFW 插件自动代理")
@@ -1740,25 +1740,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.opened_game = True
         await self._activate_desktop_game_window(game_path)
 
-    def _force_resolution_enabled(self) -> bool:
-        return bool(self.script_config.get("Game", "ForceResolution1920x1080"))
+    def _unity_resolution_target(self) -> tuple[int, int] | None:
+        """``Game.UnityResolution`` 选了尺寸就返回 (宽, 高)，Off 返回 None。"""
+
+        return parse_resolution_option(
+            self.script_config.get("Game", "UnityResolution")
+        )
 
     def _note_resolution_override_skipped(self) -> None:
-        """游戏已在运行时不能中途改分辨率，开了开关的用户要知道这轮没改。"""
+        """游戏已在运行时不能中途改分辨率，选了尺寸的用户要知道这轮没改。"""
 
-        if self._force_resolution_enabled():
+        if self._unity_resolution_target() is not None:
             self._append_log("检测到游戏已在运行，本轮不会中途修改分辨率")
 
     async def _apply_game_resolution_override(self, game_path: Path) -> None:
-        """按 exe 反查 Unity 注册表并临时写入 1920×1080 窗口模式。
+        """按 exe 反查 Unity 注册表并临时写入所选尺寸的窗口模式。
 
         失败不阻断启动：这只是帮用户过脚本侧的分辨率闸门，改不成就按当前分辨率
         启动，闸门该报什么由脚本自己报，比在这里把整轮打掉更贴题。
         """
 
-        if not self._force_resolution_enabled():
+        target = self._unity_resolution_target()
+        if target is None:
             return
-        override = UnityGameResolutionOverride.for_executable(game_path)
+        override = UnityGameResolutionOverride.for_executable(game_path, *target)
         if override is None:
             self._append_log(
                 f"未找到 {game_path.name} 的 Unity app.info，无法反查注册表，"
@@ -1773,8 +1778,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
         self.game_resolution_override = override
         self._append_log(
-            f"已临时把 HKCU\\{override.registry_path} 的分辨率设为 1920×1080 窗口模式，"
-            "游戏关闭后恢复原值"
+            f"已临时把 HKCU\\{override.registry_path} 的分辨率设为 "
+            f"{override.label} 窗口模式，游戏关闭后恢复原值"
         )
 
     async def _restore_game_resolution_override(self) -> None:

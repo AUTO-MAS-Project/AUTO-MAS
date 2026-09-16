@@ -718,8 +718,6 @@ export default {
     pcClient: 'PC client',
     tomlFiles: 'TOML files',
     urlProtocolEG: 'URL protocol (e.g. Starward)',
-    win32ControlMethodCan:
-      'The Win32 control method can split launching from detection: the launch target only starts the program, and the detect target finds the real game window.',
     yamlFiles: 'YAML files',
     resetManagedOverrides: 'Reset to the source configuration',
     resetManagedOverridesHint:
@@ -1532,8 +1530,12 @@ export default {
       'MAS launches the game exe you picked and closes it when the run ends; if the game is already running, MAS only takes it over without relaunching or closing it.',
     launchModeAttachOnlyDesc:
       'MAS neither launches nor closes anything; the script or you start and stop the game, and MAS only takes over the running window.',
-    mfwForceResolutionTip:
-      'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily sets 1920×1080 windowed mode, restoring the original values after the game closes; nothing is changed if the game is already running.',
+    mfwUnityResolution: 'Try to set the resolution of Unity games',
+    mfwUnityResolutionOff: 'Leave unchanged',
+    mfwUnityResolutionTip:
+      'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
+    mfwDirectOnlyAdbWin32:
+      'AUTO-MAS MaaFW Direct only drives ADB / Win32; use the project’s own UI for other control methods.',
     thisNameAlsoWritten:
       'This name is also written to M7A/SRA as the Trailblazer name for Currency War',
     thisSubtaskHasNo: 'This subtask has no editable fields',

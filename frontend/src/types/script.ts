@@ -216,6 +216,8 @@ export type HSRScriptConfig = HSRConfig
 
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
 export type MaaFWLaunchMode = 'DirectExe' | 'AttachOnly'
+/** 启动 Unity 游戏前临时改成的窗口分辨率；Off 不修改。 */
+export type MaaFWUnityResolution = 'Off' | '1920x1080' | '1280x720'
 
 /** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
 export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
@@ -253,8 +255,8 @@ export interface MaaFWScriptConfig {
     PackageName: string
     Arguments: string
     WaitTime: number
-    /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时固定 1920×1080 窗口，关闭后恢复。 */
-    ForceResolution1920x1080: boolean
+    /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
+    UnityResolution: MaaFWUnityResolution
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */

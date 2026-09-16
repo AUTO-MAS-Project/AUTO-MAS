@@ -42,7 +42,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
-  DirectExe 下发现游戏已在运行时也只接管、不关。`Game.ForceResolution1920x1080` 走
+  DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
+  1280x720）走
   `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
