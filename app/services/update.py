@@ -82,6 +82,35 @@ def select_newer_version_info(
     return {ver: info for _, ver, info in newer}
 
 
+def parse_release_note(release_note: object) -> Dict[str, Dict[str, List[str]]]:
+    """解析 Mirror 酱返回的更新日志。
+
+    日志正文是 release_note 首行里一条被 HTML 注释包裹的 JSON。Mirror 酱对
+    release_note 有长度上限，日志过长时它返回的首行是截断过的、不完整的 JSON，
+    此时只丢掉更新日志本身：「检测到更新」这个结论必须留住，否则用户连新版本
+    提示都看不到。
+    """
+
+    if not isinstance(release_note, str) or not release_note.strip():
+        logger.warning("Mirror 酱未返回更新日志")
+        return {}
+
+    first_line = release_note.splitlines()[0].strip()
+    try:
+        parsed = json.loads(re.sub(r"^<!--\s*(.*?)\s*-->$", r"\1", first_line))
+    except json.JSONDecodeError as error:
+        logger.warning(
+            f"更新日志无法解析, 本次只提示更新: {type(error).__name__}: {error}"
+        )
+        return {}
+
+    if not isinstance(parsed, dict):
+        logger.warning("更新日志不是预期的版本字典格式, 本次只提示更新")
+        return {}
+
+    return parsed
+
+
 class _UpdateHandler:
     def __init__(self) -> None:
         self.is_locked: bool = False
@@ -324,7 +353,8 @@ class _UpdateHandler:
 
         try:
             version_info = await self._request_version_info(self.current_version)
-            download_url = version_info["data"].get("url")
+            data = version_info.get("data")
+            download_url = data.get("url") if isinstance(data, dict) else None
         except Exception as error:
             logger.warning(
                 f"刷新 Mirror 酱下载地址失败: {type(error).__name__}: {error}"
@@ -390,23 +420,19 @@ class _UpdateHandler:
         logger.success("获取版本信息成功")
         self.last_check_time = datetime.now()
 
-        self.remote_version = version_info["data"]["version_name"]
+        data = version_info.get("data")
+        if not isinstance(data, dict):
+            raise Exception("Mirror 酱返回的数据不完整, 请稍后重试")
+
+        self.remote_version = data.get("version_name")
         if self.remote_version is None:
             raise Exception("Mirror 酱未返回版本号, 请稍后重试")
-        self.mirror_chyan_download_url = version_info["data"].get("url")
+        self.mirror_chyan_download_url = data.get("url")
 
         if version.parse(self.remote_version) > version.parse(current_version):
-            # 版本更新信息
-            version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
-                re.sub(
-                    r"^<!--\s*(.*?)\s*-->$",
-                    r"\1",
-                    version_info["data"]["release_note"].splitlines()[0].strip(),
-                )
-            )
-
+            # 版本更新信息: 更新日志读取失败只丢日志, 不影响「需要更新」这个结论
             self.update_version_info = select_newer_version_info(
-                version_info_json, current_version
+                parse_release_note(data.get("release_note")), current_version
             )
 
             result = (True, self.remote_version, self.update_version_info)
