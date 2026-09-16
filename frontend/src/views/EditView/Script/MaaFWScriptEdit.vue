@@ -717,8 +717,10 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* 上面是基础信息区的 40px 底距，下面紧接控制方式区的标题，这里要自己留出间距 */
 .env-prepare-alert {
   margin-top: 4px;
+  margin-bottom: 32px;
 }
 
 .env-agent-line {

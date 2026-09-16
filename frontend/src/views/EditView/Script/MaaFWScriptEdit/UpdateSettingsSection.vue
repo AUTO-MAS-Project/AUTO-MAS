@@ -108,24 +108,9 @@
       </a-col>
     </a-row>
 
-    <a-alert
-      v-if="updateError"
-      class="update-alert"
-      type="error"
-      show-icon
-      :message="updateError"
-    />
-    <template v-else-if="updateResult">
-      <a-alert
-        class="update-alert"
-        :type="updateResultType"
-        show-icon
-        :message="updateResult.message"
-      >
-        <template v-if="updateResultDetail" #description>
-          <span class="update-result-detail">{{ updateResultDetail }}</span>
-        </template>
-      </a-alert>
+    <!-- 检查 / 更新的结果不再单独弹一条绿色 alert：过程面板的状态行已经用强调色写了同一句；
+         只有 CDK 有问题时才额外提示，那是面板里没有的信息 -->
+    <template v-if="updateResult && !updateError">
       <a-alert
         v-if="cdkWarningMessage"
         class="update-alert"
@@ -176,6 +161,12 @@
           <CloseCircleOutlined v-else class="update-process-icon" />
           <span class="update-process-phase">{{ phaseLabel }}</span>
           <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
+        </div>
+        <div
+          v-if="updateProgress.phase === 'completed' && updateResultDetail"
+          class="update-result-detail"
+        >
+          {{ updateResultDetail }}
         </div>
         <a-progress
           v-if="barPercent !== null"
@@ -258,12 +249,6 @@ const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUp
   { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
 ])
 
-const updateResultType = computed<'success' | 'warning' | 'info'>(() => {
-  if (!props.updateResult) return 'info'
-  if (props.updateResult.updated || !props.updateResult.updateAvailable) return 'success'
-  return 'warning'
-})
-
 const sourceLabel = (source: string | null | undefined) => {
   const normalized = (source ?? '').trim().toLowerCase()
   if (!normalized) return ''
@@ -272,7 +257,7 @@ const sourceLabel = (source: string | null | undefined) => {
   return source ?? ''
 }
 
-// 检查结果的补充信息：版本名 + 实际下载来源。旧后端不返回这些字段时整行不显示。
+// 检查结果的补充信息：版本名 + 实际下载来源，跟在面板状态行下面。旧后端不返回这些字段时整行不显示。
 const updateResultDetail = computed(() => {
   const result = props.updateResult
   if (!result) return ''
@@ -421,6 +406,8 @@ watch(
 }
 
 .update-result-detail {
+  margin-top: 2px;
+  padding-left: 22px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
@@ -553,8 +540,21 @@ watch(
   color: var(--ant-color-error);
 }
 
+/* 状态词用强调色：成功绿、失败红、进行中主色，代替原来单独的一条结果 alert */
 .update-process-phase {
   font-weight: 600;
+}
+
+.update-process-summary--running .update-process-phase {
+  color: var(--ant-color-primary);
+}
+
+.update-process-summary--success .update-process-phase {
+  color: var(--ant-color-success);
+}
+
+.update-process-summary--failed .update-process-phase {
+  color: var(--ant-color-error);
 }
 
 .update-process-detail {
