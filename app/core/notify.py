@@ -426,7 +426,7 @@ class Notifier(Protocol):
 
     async def send_mail(
         self,
-        mode: Literal["文本", "网页"],
+        mode: MailMode,
         title: str,
         content: str,
         to_address: str,

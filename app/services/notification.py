@@ -33,7 +33,7 @@ from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from typing import Literal
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
@@ -42,6 +42,10 @@ from plyer import notification
 from app.models.config import Webhook
 from app.utils import LazyProxy, get_logger, resource_path
 from app.utils.constants import UTC4
+
+# 仅供类型标注；MailMode 定义在 app.core.notify，运行期导入会与本模块成环
+if TYPE_CHECKING:
+    from app.core.notify import MailMode
 
 logger = get_logger("通知服务")
 
@@ -209,7 +213,7 @@ class Notification:
 
     async def send_mail(
         self,
-        mode: Literal["文本", "网页"],
+        mode: "MailMode",
         title: str,
         content: str,
         to_address: str,
@@ -221,7 +225,7 @@ class Notification:
 
         Parameters
         ----------
-        mode: Literal["文本", "网页"]
+        mode: MailMode
             邮件内容模式, 支持 "文本" 和 "网页"
         title: str
             邮件标题
