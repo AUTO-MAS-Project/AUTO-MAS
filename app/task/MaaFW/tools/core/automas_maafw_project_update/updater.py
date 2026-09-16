@@ -435,6 +435,13 @@ async def update_maafw_project_if_needed(
         version=discovery.version,
         metadata_source=discovery.source,
         package_source=discovery.package_source,
+        # 全量 / 差量在这一步就定了（apply 的 plan_validated 只是再确认一遍），
+        # 前端要在下载阶段就能标出包类型。
+        package_type=(
+            discovery.candidate.package_type
+            if discovery.candidate is not None
+            else None
+        ),
     )
 
     if not discovery.installable:
