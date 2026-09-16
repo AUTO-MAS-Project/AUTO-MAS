@@ -1192,12 +1192,17 @@ const bettergiConfigModeOptions: Array<{
   description: string
   value: string
   icon: 'database' | 'file' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     title: t('edit.scriptConfiguration'),
     description: t('edit.scriptConfiguration'),
     value: '脚本',
     icon: 'file',
+    // 「脚本」运行时与「用户」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     title: t('edit.perUserConfiguration'),

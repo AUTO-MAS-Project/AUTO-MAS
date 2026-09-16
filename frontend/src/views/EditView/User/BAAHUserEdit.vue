@@ -323,12 +323,16 @@ watch(
 )
 
 // 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：BAAH 运行始终按用户独立配置注入（任务模块不消费 Info.Mode），
+// 选了也不生效——禁用并悬停说明原因
 const baahConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
@@ -336,6 +340,8 @@ const baahConfigModeOptions: Array<{
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.user'),

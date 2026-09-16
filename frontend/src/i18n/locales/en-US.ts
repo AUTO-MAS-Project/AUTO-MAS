@@ -1361,6 +1361,8 @@ export default {
     configSourceHintBase:
       "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
     nativeConfigSourceDescription: "Use the script's current native configuration.",
+    // Tooltip reason when the "Script" config source is disabled (unified wording)
+    scriptModeDisabled: 'Not supported',
     ok: 'OK',
     deleteThisTask2: 'Delete this task?',
     leaveWithoutSavingUnsaved: 'Leave without saving? Unsaved changes may be lost.',
