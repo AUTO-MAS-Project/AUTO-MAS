@@ -1219,9 +1219,11 @@ class _TaskManager:
                     task_item_list = list(self.task_handler.values())
                     for task_item in task_item_list:
                         if not task_item.is_closing:
+                            logger.info("等待全部任务中的子任务结束...")
                             task_item.cancel()
                             task_item.is_closing = True
                             await task_item.accomplish.wait()
+                            logger.info("全部任务中的一个子任务已结束")
                     cleanup_tasks = [
                         cleanup for cleanup in self._cleanup_tasks if not cleanup.done()
                     ]

@@ -74,7 +74,8 @@ class MumuManager(DeviceBase):
         return adb_path if adb_path.exists() else None
 
     async def _get_app_state(self, idx: str, package_name: str) -> str | None:
-        logger.debug(f"查询 MuMu 应用状态: {idx} - {package_name}")
+        started_at = time.monotonic()
+        logger.info(f"查询 MuMu 应用状态: {idx} - {package_name}")
         try:
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -90,7 +91,10 @@ class MumuManager(DeviceBase):
                 breakaway=True,
             )
         except Exception as e:
-            logger.warning(f"获取 MuMu 应用状态失败: {e}")
+            logger.warning(
+                f"获取 MuMu 应用状态失败: {e} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒"
+            )
             return None
 
         if result.returncode != 0:
@@ -103,7 +107,10 @@ class MumuManager(DeviceBase):
                 lambda v: isinstance(v, dict) and isinstance(v.get("state"), str),
             )
         except json.JSONDecodeError as e:
-            logger.warning(f"解析 MuMu 应用状态失败: {e}")
+            logger.warning(
+                f"解析 MuMu 应用状态失败: {e} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒"
+            )
             return None
 
         if not isinstance(data, dict) or not isinstance(data.get("state"), str):
@@ -111,7 +118,10 @@ class MumuManager(DeviceBase):
             return None
 
         state = data["state"].strip().lower()
-        logger.info(f"MuMu 应用状态: {idx} - {package_name} - {state}")
+        logger.info(
+            f"MuMu 应用状态: {idx} - {package_name} - {state} - 用时: "
+            f"{time.monotonic() - started_at:.3f}秒"
+        )
         return state
 
     @staticmethod
@@ -130,8 +140,10 @@ class MumuManager(DeviceBase):
         )
 
     async def _wait_app_foreground(self, idx: str, package_name: str) -> bool:
+        started_at = time.monotonic()
         logger.info(f"开始检查 MuMu 应用前台状态: {idx} - {package_name}")
         for attempt in range(6):
+            attempt_started_at = time.monotonic()
             try:
                 result = await ProcessRunner.run_process(
                     self.emulator_path,
@@ -147,22 +159,39 @@ class MumuManager(DeviceBase):
                     breakaway=True,
                 )
             except Exception as e:
-                logger.debug(f"检查 MuMu 应用前台状态失败: {e}")
+                logger.info(
+                    f"检查 MuMu 应用前台状态失败({attempt + 1}/6): {e} - 用时: "
+                    f"{time.monotonic() - attempt_started_at:.3f}秒"
+                )
             else:
                 if result.returncode == 0 and self._is_app_foreground(
                     result.stdout, package_name
                 ):
-                    logger.info(f"MuMu 应用已进入前台: {idx} - {package_name}")
+                    logger.info(
+                        f"MuMu 应用已进入前台: {idx} - {package_name} - "
+                        f"第 {attempt + 1}/6 次，用时: "
+                        f"{time.monotonic() - started_at:.3f}秒"
+                    )
                     return True
+                logger.info(
+                    f"MuMu 应用未进入前台({attempt + 1}/6): "
+                    f"{idx} - {package_name} - returncode={result.returncode} - "
+                    f"用时: {time.monotonic() - attempt_started_at:.3f}秒"
+                )
                 if result.returncode != 0:
                     logger.debug(f"检查 MuMu 应用前台状态失败: {result.stdout.strip()}")
 
             if attempt < 5:
                 await asyncio.sleep(1)
 
+        logger.warning(
+            f"MuMu 应用前台检查超时: {idx} - {package_name} - 用时: "
+            f"{time.monotonic() - started_at:.3f}秒"
+        )
         return False
 
     async def _ensure_app_foreground(self, idx: str, package_name: str) -> bool:
+        started_at = time.monotonic()
         logger.info(f"开始检查 MuMu 应用运行状态: {idx} - {package_name}")
         state = await self._get_app_state(idx, package_name)
         if state != "running":
@@ -170,6 +199,7 @@ class MumuManager(DeviceBase):
                 f"MuMu 应用未运行，执行补启动: {idx} - {package_name} - {state}"
             )
             try:
+                launch_started_at = time.monotonic()
                 result = await ProcessRunner.run_process(
                     self.emulator_path,
                     "control",
@@ -185,14 +215,25 @@ class MumuManager(DeviceBase):
                 )
                 if result.returncode != 0:
                     logger.warning(f"MuMu 应用补启动失败: {result.stdout.strip()}")
+                else:
+                    logger.info(
+                        f"MuMu 应用补启动命令已完成: {idx} - {package_name} - "
+                        f"用时: {time.monotonic() - launch_started_at:.3f}秒"
+                    )
             except Exception as e:
                 logger.warning(f"MuMu 应用补启动失败: {e}")
 
+        foreground_started_at = time.monotonic()
         if await self._wait_app_foreground(idx, package_name):
             return True
+        logger.info(
+            f"首次前台检查未通过: {idx} - {package_name} - 用时: "
+            f"{time.monotonic() - foreground_started_at:.3f}秒"
+        )
 
         logger.warning(f"MuMu 应用未进入前台，尝试使用 monkey 补启动: {package_name}")
         try:
+            monkey_started_at = time.monotonic()
             result = await ProcessRunner.run_process(
                 self.emulator_path,
                 "adb",
@@ -209,14 +250,24 @@ class MumuManager(DeviceBase):
             )
             if result.returncode != 0:
                 logger.warning(f"MuMu monkey 补启动失败: {result.stdout.strip()}")
+            else:
+                logger.info(
+                    f"MuMu monkey 补启动命令已完成: {idx} - {package_name} - "
+                    f"用时: {time.monotonic() - monkey_started_at:.3f}秒"
+                )
         except Exception as e:
             logger.warning(f"MuMu monkey 补启动失败: {e}")
 
+        foreground_started_at = time.monotonic()
         if await self._wait_app_foreground(idx, package_name):
             return True
 
         logger.warning(
             f"MuMu 应用补启动后仍未进入前台，将继续运行: {idx} - {package_name}"
+        )
+        logger.info(
+            f"MuMu 应用前台保启动结束: {idx} - {package_name} - 结果: 失败 - "
+            f"总用时: {time.monotonic() - started_at:.3f}秒"
         )
         return False
 
@@ -271,6 +322,7 @@ class MumuManager(DeviceBase):
             logger.warning(f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}")
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        started_at = time.monotonic()
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         from app.core import Config
@@ -281,7 +333,10 @@ class MumuManager(DeviceBase):
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
-                logger.info(f"模拟器已在线，跳过应用启动检查: {idx} - {package_name}")
+                logger.info(
+                    f"模拟器已在线，跳过应用启动检查: {idx} - {package_name} - "
+                    f"用时: {time.monotonic() - started_at:.3f}秒"
+                )
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
                 return (await self.getInfo(idx))[idx]
@@ -291,12 +346,18 @@ class MumuManager(DeviceBase):
             await asyncio.sleep(0.1)
 
         else:
+            logger.warning(
+                f"模拟器初始状态检查超时: {idx} - {package_name} - "
+                f"当前状态: {status} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒"
+            )
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
         if_close_mumu_nx = await self.find_mumu_nx_window() is None
 
         # 启动实例前关闭 MuMu 应用保活
         logger.info(f"关闭 MuMu 应用保活: {idx}")
+        keepalive_started_at = time.monotonic()
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "setting",
@@ -313,7 +374,13 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"设置 app_keptlive 失败: {result.stdout}")
 
+        logger.info(
+            f"MuMu 应用保活设置完成: {idx} - 用时: "
+            f"{time.monotonic() - keepalive_started_at:.3f}秒"
+        )
+
         logger.info(f"执行 MuMu 启动命令: {idx} - {package_name}")
+        launch_started_at = time.monotonic()
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "control",
@@ -330,7 +397,11 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        logger.info(f"MuMu 启动命令已完成，等待实例在线: {idx}")
+        logger.info(
+            f"MuMu 启动命令已完成，等待实例在线: {idx} - 用时: "
+            f"{time.monotonic() - launch_started_at:.3f}秒"
+        )
+        online_started_at = time.monotonic()
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
@@ -339,7 +410,10 @@ class MumuManager(DeviceBase):
             if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
-                logger.info(f"模拟器已在线: {idx} - {package_name}")
+                logger.info(
+                    f"模拟器已在线: {idx} - {package_name} - 用时: "
+                    f"{time.monotonic() - online_started_at:.3f}秒"
+                )
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
                 if package_name:
@@ -359,6 +433,11 @@ class MumuManager(DeviceBase):
             await asyncio.sleep(0.1)
         else:
             diagnosis = await self._describe_launch_failure(idx)
+            logger.warning(
+                f"模拟器启动等待超时: {idx} - {package_name} - "
+                f"当前状态: {status} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒"
+            )
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(
                     f"模拟器 {idx} 启动失败, 状态码: {status}{diagnosis}"
@@ -372,6 +451,7 @@ class MumuManager(DeviceBase):
         return ""
 
     async def close(self, idx: str) -> DeviceStatus:
+        started_at = time.monotonic()
         try:
             status = await self.getStatus(idx)
             if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
@@ -393,10 +473,18 @@ class MumuManager(DeviceBase):
             if result.returncode != 0:
                 raise RuntimeError(f"命令执行失败: {result.stdout}")
 
+            logger.info(
+                f"MuMu 关闭命令已完成: {idx} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒"
+            )
             deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
             while time.monotonic() < deadline:
                 status = await self.getStatus(idx)
                 if status == DeviceStatus.OFFLINE:
+                    logger.info(
+                        f"模拟器已关闭: {idx} - 用时: "
+                        f"{time.monotonic() - started_at:.3f}秒"
+                    )
                     return DeviceStatus.OFFLINE
                 await asyncio.sleep(0.1)
 

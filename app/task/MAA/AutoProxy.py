@@ -917,7 +917,15 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
+                logger.info(
+                    f"MAA 进程已创建: {self.maa_exe_path} - "
+                    f"PID: {self.maa_process_manager.main_pid}"
+                )
                 await asyncio.sleep(1)  # 等待 MAA 处理日志文件
+                logger.info(
+                    "MAA 进程等待日志文件后状态: "
+                    f"running={await self.maa_process_manager.is_running()}"
+                )
                 await self.maa_log_monitor.start_monitor_file(
                     self._resolve_log_file_path, self.log_start_time
                 )
@@ -1831,17 +1839,27 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
+        started_at = datetime.now()
 
         if self.check_result != "Pass":
+            logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
 
+        logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
+        logger.info("MAA 收尾: 停止 MAA 进程")
         await self.maa_process_manager.kill()
+        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
         await System.kill_process(self.maa_exe_path)
+        logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
+
+        logger.info(
+            f"MAA 任务收尾完成 - 用时: {(datetime.now() - started_at).total_seconds():.3f}秒"
+        )
 
         user_logs_list = []
         if_six_star = False
