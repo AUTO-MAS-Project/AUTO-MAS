@@ -100,19 +100,25 @@ type ConfigModeOption = {
   disabledReason?: string
 }
 
-const props = defineProps<{
-  modelValue: boolean | string
-  disabled?: boolean
-  saving?: boolean
-  options?: ConfigModeOption[]
-  alertMessage?: string
-  /**
-   * 快速配置开关（用户级，独立于 Info.Mode）。
-   * 传 undefined 表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
-   */
-  quickConfig?: boolean
-  quickConfigDisabled?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean | string
+    disabled?: boolean
+    saving?: boolean
+    options?: ConfigModeOption[]
+    alertMessage?: string
+    /**
+     * 快速配置开关（用户级，独立于 Info.Mode）。
+     * 未传入表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
+     * 必须显式 default: undefined：Boolean prop 未声明 default 时 Vue 会
+     * casting 成 false，「不传」与「显式传 false」无法区分，守卫
+     * v-if="quickConfig !== undefined" 将永远通过（#781 移除绑定后的真实事故）。
+     */
+    quickConfig?: boolean | undefined
+    quickConfigDisabled?: boolean
+  }>(),
+  { quickConfig: undefined, quickConfigDisabled: undefined }
+)
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
 // 引用不到 useI18n() 返回的 t，编译期直接报错（typecheck 与单测都发现不了，

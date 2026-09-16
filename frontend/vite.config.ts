@@ -83,6 +83,9 @@ export default defineConfig(({ command }) => {
       port: DEV_SERVER_PORT,
       // 端口被占用时直接失败，避免静默换端口后 Electron 仍加载另一实例的页面
       strictPort: true,
+      // dev 模块响应禁用一切 HTTP 缓存：no-cache 仍允许浏览器存储旧响应、部分场景
+      // 不回源校验，曾导致渲染层加载陈旧模块（页面结构与最新代码拼接的诡异状态）
+      headers: { 'Cache-Control': 'no-store' },
       watch: {
         // 只排除构建产物，environment 不会被 Vite 监听（因为没有被 import）
         ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
