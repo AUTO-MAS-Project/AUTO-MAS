@@ -44,7 +44,12 @@ from app.utils.platform import IS_WINDOWS
 from .adb import parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
 from .bosskey import BossKey, read_boss_key
-from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
+from .master_mode import (
+    apply_ldplayer_data_ini,
+    is_master_mode_enabled,
+    ldplayer_clean_mode_args,
+    ldplayer_data_ini_path,
+)
 from .settings import (
     InstanceSettings,
     SettingsConflictError,
@@ -763,14 +768,20 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         raise RuntimeError(f"删除雷电实例 {native_index} 失败：它仍然在列表中")
 
     async def prepare_launch(self, idx: str) -> None:
-        """启动前按旧版全局开关应用「大雷主人模式」。
+        """启动前按旧版全局开关应用「大雷主人模式」，安卓桌面和宿主窗口两层各设各的。
 
         ``globalsetting --cleanmode`` 是**整个安装**的全局开关，宿主只在 VM 冷启动时把它
         作为 ``phone.cleanmode`` 推进客户机，所以放在启动前、每次都设：开着设 1、关着设 0，
         和旧配置的处理口径一致。已经在跑的其他实例要到它们下次冷启动才会跟着变。
-        设不上只记警告，不拦启动。
+        宿主窗口那层（加载页轮播、开机全屏页）``cleanmode`` 管不到，
+        走渠道配置 ``data\\data.ini``，``dnplayer.exe`` 每次启动都重读，改完下次启动就生效。
+        两层互不牵连，哪层设不上只记警告，不拦启动。
         """
         enabled = is_master_mode_enabled()
+        await self._apply_clean_mode(idx, enabled)
+        self._apply_host_mode(idx, enabled)
+
+    async def _apply_clean_mode(self, idx: str, enabled: bool) -> None:
         try:
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -779,7 +790,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
                 if_merge_std=True,
                 breakaway=True,
             )
-        except Exception as e:  # noqa: BLE001 - 见 docstring
+        except Exception as e:  # noqa: BLE001 - 见 prepare_launch
             logger.warning(f"设置雷电「大雷主人模式」失败，实例 {idx} 照常启动: {e}")
             return
         if result.returncode != 0:
@@ -791,6 +802,21 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         logger.info(
             f"雷电「大雷主人模式」已{'开启' if enabled else '关闭'}，实例 {idx} 冷启动后生效"
         )
+
+    def _apply_host_mode(self, idx: str, enabled: bool) -> None:
+        path = ldplayer_data_ini_path(self.emulator_path.parent)
+        try:
+            changed = apply_ldplayer_data_ini(path, enabled)
+        except (OSError, ValueError) as e:
+            logger.warning(
+                f"写入雷电渠道配置 {path} 失败，实例 {idx} 的宿主窗口推广位维持现状: {e}"
+            )
+            return
+        if changed:
+            logger.info(
+                f"雷电渠道配置 {path} 已按「大雷主人模式」"
+                f"{'关闭' if enabled else '还原'}宿主窗口推广位，实例 {idx} 本次启动生效"
+            )
 
     async def _block_ads_via_adb(self, idx: str) -> None:
         """保留父类兼容入口，但不禁用游戏中心。

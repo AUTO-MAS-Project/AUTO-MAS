@@ -21,7 +21,9 @@
 """Emulator 2.0 的「大雷主人模式」。
 
 沿用全局 ``Function.IfBlockAd`` 开关，启动时应用或恢复设置；失败只记警告。
-雷电使用安装级 ``globalsetting --cleanmode``，VM 冷启动后生效，游戏中心仍可打开。
+雷电分两层：安装级 ``globalsetting --cleanmode`` 管安卓桌面，VM 冷启动后生效，游戏中心仍可打开；
+宿主窗口那层（加载页轮播、开机全屏页）``cleanmode`` 管不到，走渠道配置
+``data\\data.ini`` 的 ``adshow`` / ``launchadshow``，见 :func:`apply_ldplayer_data_ini`。
 MuMu 处理宿主缓存及五个桌面组件，关闭时撤销占位并恢复组件；组件状态跨重启保留。
 ``MuMuManager sh`` 不要求开启 ``root_permission``；组件必须用 ``pm disable``，
 ``pm disable-user`` 会静默返回 default，不能代替。
@@ -73,6 +75,132 @@ def is_master_mode_enabled() -> bool:
 def ldplayer_clean_mode_args(enabled: bool) -> tuple[str, ...]:
     """``ldconsole globalsetting --cleanmode 1|0`` 的参数。"""
     return ("globalsetting", "--cleanmode", "1" if enabled else "0")
+
+
+#: 雷电渠道配置 ``<安装目录>\data\data.ini`` 里管宿主窗口推广位的两个键。
+#: ``dnplayer.exe`` 每次实例启动都用 ``GetPrivateProfileStringW`` 读 ``[setting]`` 段：
+#: 缺省当 ``1``，只有字面 ``0`` 算关；``adshow`` 是总闸，``launchadshow`` 单管加载页轮播，
+#: 两个都要为 ``0`` 加载页才不画。定制版安装包就是靠这个文件关推广的。
+LDPLAYER_HOST_KEYS: tuple[str, ...] = ("adshow", "launchadshow")
+
+#: 记录本模式往 ``data.ini`` 写过哪些键及其原值，关闭时只撤自己写的：
+#: 渠道自带的 ``0`` 不动，用户显式写的 ``1`` 原样还回去。
+LDPLAYER_MARKER_KEY = "automas_master_mode"
+
+#: 标记值里「原来没有这个键」的写法。
+_LDPLAYER_ABSENT = "-"
+
+_LDPLAYER_SECTION = "setting"
+
+
+def ldplayer_data_ini_path(install_dir: Path) -> Path:
+    """雷电渠道配置的位置：``ldconsole.exe`` 所在目录下的 ``data\\data.ini``。"""
+    return install_dir / "data" / "data.ini"
+
+
+def _ini_value(raw: str) -> str:
+    """按 ``GetPrivateProfileString`` 的口径取值：去首尾空白，再去一层成对引号。"""
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return value
+
+
+def _split_ini(text: str) -> list[tuple[str | None, str | None, str]]:
+    """把 INI 拆成 ``(所在段, 键, 原始行)``；段与键都已 casefold，非键行的键为 ``None``。"""
+    rows: list[tuple[str | None, str | None, str]] = []
+    section: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].strip().casefold()
+            rows.append((section, None, line))
+            continue
+        key: str | None = None
+        if "=" in line and not stripped.startswith((";", "#")):
+            key = line.split("=", 1)[0].strip().casefold()
+        rows.append((section, key, line))
+    return rows
+
+
+def apply_ldplayer_data_ini(path: Path, enabled: bool) -> bool:
+    """按开关写入或撤销 ``data.ini`` 里的宿主推广开关，返回文件是否被改动。
+
+    开着：把 :data:`LDPLAYER_HOST_KEYS` 都写成 ``0``，并用 :data:`LDPLAYER_MARKER_KEY`
+    记下每个键的原值（没有就记 ``-``）；标记已存在时不重写，免得把自己写的 ``0`` 当原值。
+    关着：只在有标记时动手，按标记把键删掉或还回原值，再去掉标记；没标记说明从没开过，
+    文件一个字都不碰。文件本身按原编码写回（有 UTF-16 BOM 就保持 UTF-16，否则按字节
+    原样保留），新行统一 CRLF，写临时文件后替换。
+    """
+    raw = path.read_bytes() if path.is_file() else b""
+    utf16 = raw.startswith(b"\xff\xfe")
+    text = raw.decode("utf-16") if utf16 else raw.decode("latin-1")
+    rows = _split_ini(text)
+
+    in_section = [i for i, (sec, _, _) in enumerate(rows) if sec == _LDPLAYER_SECTION]
+    current: dict[str, str] = {}
+    key_rows: dict[str, int] = {}
+    for i in in_section:
+        _, key, line = rows[i]
+        if key is not None:
+            key_rows[key] = i
+            current[key] = _ini_value(line.split("=", 1)[1])
+
+    if enabled:
+        if LDPLAYER_MARKER_KEY not in current:
+            originals = {
+                key: current.get(key, _LDPLAYER_ABSENT) for key in LDPLAYER_HOST_KEYS
+            }
+            if all(v == "0" for v in originals.values()):
+                return False  # 渠道包本来就关着，不留标记，关闭模式时也不用还
+            marker = ",".join(f"{k}:{v}" for k, v in originals.items())
+            wanted = {key: "0" for key in LDPLAYER_HOST_KEYS}
+            wanted[LDPLAYER_MARKER_KEY] = marker
+        else:
+            wanted = {key: "0" for key in LDPLAYER_HOST_KEYS}
+        if all(current.get(k) == v for k, v in wanted.items()):
+            return False
+        remove: set[str] = set()
+    else:
+        marker = current.get(LDPLAYER_MARKER_KEY)
+        if marker is None:
+            return False
+        wanted = {}
+        remove = {LDPLAYER_MARKER_KEY}
+        for item in marker.split(","):
+            key, _, original = item.partition(":")
+            key = key.strip().casefold()
+            if key not in LDPLAYER_HOST_KEYS:
+                continue
+            if original == _LDPLAYER_ABSENT:
+                remove.add(key)
+            else:
+                wanted[key] = original
+
+    lines: list[str | None] = [line for _, _, line in rows]
+    for key in remove:
+        if key in key_rows:
+            lines[key_rows[key]] = None
+    new_lines: list[str] = []
+    for key, value in wanted.items():
+        if key in key_rows:
+            lines[key_rows[key]] = f"{key}={value}"
+        else:
+            new_lines.append(f"{key}={value}")
+    if new_lines:
+        # 插在 [setting] 段末尾；没有这个段就在文件末尾补一个
+        if in_section:
+            last = in_section[-1]
+            lines[last + 1 : last + 1] = new_lines
+        else:
+            lines.extend([f"[{_LDPLAYER_SECTION}]", *new_lines])
+    output = "\r\n".join(line for line in lines if line is not None) + "\r\n"
+
+    encoded = output.encode("utf-16") if utf16 else output.encode("latin-1")
+    tmp = path.with_name(path.name + ".automas-tmp")
+    tmp.write_bytes(encoded)
+    os.replace(tmp, path)
+    return True
 
 
 # ---- MuMu：安卓端 ----------------------------------------------------------
