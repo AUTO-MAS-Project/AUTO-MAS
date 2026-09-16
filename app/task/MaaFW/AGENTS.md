@@ -69,7 +69,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 与专项的区别（别照搬）
 
-- 没有 `ScriptConfig.py`，没有原生编辑器会话，没有配置备份恢复。
+- 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
+  （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
 - 用户配置上的 `Info.Mode`（脚本/用户/直控）**没有任何 MaaFW 代码消费**；运行器只读
   `Info.IfQuickConfig`（关闭时按项目原生默认值跑，不下发任务快照与预设）。不要在 MaaFW 上
   按三态写逻辑。

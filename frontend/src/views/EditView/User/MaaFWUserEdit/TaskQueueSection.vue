@@ -1,20 +1,5 @@
 <template>
   <div class="form-section">
-    <div class="section-header section-header-with-action">
-      <a-space>
-        <a-button
-          :loading="interfaceLoading"
-          :disabled="!scriptPath"
-          @click="emit('reloadInterface')"
-        >
-          <template #icon>
-            <FileSearchOutlined />
-          </template>
-          {{ t('edit.readInterface') }}
-        </a-button>
-      </a-space>
-    </div>
-
     <div v-if="interfaceLoading" class="task-loading">
       <a-spin :tip="t('edit.readingInterfaceJson')">
         <a-alert
@@ -326,7 +311,6 @@ import {
   ArrowDownOutlined,
   ArrowUpOutlined,
   DeleteOutlined,
-  FileSearchOutlined,
   HolderOutlined,
   PlusOutlined,
   ThunderboltOutlined,
@@ -368,7 +352,6 @@ type PresetTemplate = {
 
 const props = defineProps<{
   interfaceLoading: boolean
-  scriptPath: string
   previewData: MaaFWInterfacePreviewData | null
   interfaceDependentDisabled: boolean
   availableTasks: MaaFWTaskInfo[]
@@ -388,7 +371,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:addTaskCascaderValue': [value: string[]]
   'update:showPresetModal': [value: boolean]
-  reloadInterface: []
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]
   appendPresetTemplate: [presetName: string]
@@ -498,13 +480,6 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   margin-bottom: 16px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header-with-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 
 .section-header h3 {
@@ -833,7 +808,6 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 }
 
 @media (max-width: 768px) {
-  .section-header-with-action,
   .column-header {
     flex-direction: column;
     align-items: stretch;

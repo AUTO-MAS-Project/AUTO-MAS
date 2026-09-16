@@ -23,6 +23,7 @@
 import asyncio
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -47,6 +48,7 @@ from .ScriptConfig import ScriptConfigTask
 from .tools import (
     SrcConfigSnapshotState,
     SrcProcessState,
+    archive_native_backup,
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
@@ -215,6 +217,11 @@ class SrcManager(TaskExecuteBase):
 
         # 备份本次任务开始前的原始配置
         self._backup_src_config_to_temp()
+
+        # 归档原生配置到持久保留池（指纹去重，失败不阻断任务——Temp 快照
+        # 已保证原生安全，这里提供的是跨会话可找回的历史）
+        with suppress(Exception):
+            archive_native_backup(self.src_set_path)
         self.prepared = True
 
     async def _initialize_recovery_context(self) -> None:
@@ -502,6 +509,35 @@ class SrcManager(TaskExecuteBase):
             Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         )
 
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+
+        直控会话 MAS 零写入（ScriptConfig 直控分支直接 return），安装
+        config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
+        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与
+        用户脚本态会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
+        MAS 目录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留
+        任何现场改动，结束后也还原任务前快照。
+        """
+
+        if self.task_info.mode != "ScriptConfig" or self.task_info.view_only:
+            return False
+        if not (
+            self.script_info.user_list
+            and self.script_info.user_list[0].status == "完成"
+        ):
+            return False
+        user_id = self.script_info.user_list[0].user_id
+        if user_id == "Default":
+            return False
+        try:
+            mode = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            ).strip()
+        except (KeyError, ValueError, TypeError):
+            return False
+        return mode == "直控"
+
     def _backup_src_config_to_temp(self) -> None:
         """完整复制配置后，再提交为可恢复的 Temp 快照。"""
 
@@ -772,12 +808,16 @@ class SrcManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            task_kwargs: dict = {"src_installation_id": self.src_installation_id}
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            if self.task_info.mode == "ScriptConfig":
+                task_kwargs["view_only"] = self.task_info.view_only
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
-                src_installation_id=self.src_installation_id,
+                **task_kwargs,
             )
             try:
                 await self.spawn(task)
@@ -821,9 +861,11 @@ class SrcManager(TaskExecuteBase):
                     raise RuntimeError(
                         f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
                     )
-                self._restore_src_config_from_temp(
-                    expected_installation_id=self.src_installation_id,
-                )
+                # 直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
+                if not self._keep_script_config_changes():
+                    self._restore_src_config_from_temp(
+                        expected_installation_id=self.src_installation_id,
+                    )
                 self._retire_src_config_snapshot()
             else:
                 logger.warning(f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}")

@@ -45,11 +45,14 @@ from app.utils.platform import IS_ELEVATED
 
 from .tools import (
     account_switch,
+    archive_mas_runtime_backup,
     one_dragon,
     one_dragon_bridge,
     push_notification,
+    read_overlay_values,
     team_resolver,
 )
+from .tools.drop_statistics import parse_drop_lines
 from .tools.one_dragon_plan import (
     build_combat_steps,
     parse_one_dragon_plan,
@@ -57,7 +60,6 @@ from .tools.one_dragon_plan import (
     plan_steps_to_native_settings,
     resolve_base_name,
 )
-from .tools.drop_statistics import parse_drop_lines
 from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,
@@ -836,6 +838,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 用户独立配置：先备份现场再写入，结束后 (final_task/on_crash) 还原
         self._backup_one_dragon_config()
+        # 物化前归档本用户 per-user 副本 + 页面字段（运行会把字段物化进副本
+        # 与 BGI 槽位、覆盖副本内容；指纹去重，失败不阻断运行）。native 池
+        # 由 manager.prepare 在任务级一次性归档
+        with suppress(Exception):
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                read_overlay_values(self.cur_user_config),
+            )
         self._write_one_dragon_config()
 
         # 路径 B：执行层（战斗段 + 自定义项）在**一次** BGI 进程里按左栏队列顺序跑完，

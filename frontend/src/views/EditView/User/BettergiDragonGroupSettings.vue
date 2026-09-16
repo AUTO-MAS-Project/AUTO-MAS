@@ -656,11 +656,7 @@
               :key="region"
               class="bettergi-domain-picker-item"
               :class="{ active: region === pickRegion }"
-              @click="
-                pickRegion = region;
-                pickDomain = '';
-                pickRewardIndex = null
-              "
+              @click="onPickRegionClick(region)"
             >
               {{ region }}
             </div>
@@ -739,10 +735,7 @@
               :key="region"
               class="bettergi-domain-picker-item"
               :class="{ active: region === pickBossRegion }"
-              @click="
-                pickBossRegion = region;
-                pickBossName = ''
-              "
+              @click="onPickBossRegionClick(region)"
             >
               {{ region }}
             </div>
@@ -1115,6 +1108,12 @@ const closeDomainPicker = (): void => {
   domainPickerOpen.value = false
   domainPickerRow.value = null
 }
+// 点击地区（第一级）：切换地区并重置下级选择
+const onPickRegionClick = (region: string): void => {
+  pickRegion.value = region
+  pickDomain.value = ''
+  pickRewardIndex.value = null
+}
 // 点击秘境（第二级）：圣遗物第三级不可选，奖励清空等确认；否则等待选奖励
 const onPickDomainClick = (item: BetterGIDomainCatalogItem): void => {
   pickDomain.value = item.name
@@ -1252,6 +1251,11 @@ const bossDisplayValue = (field: DragonSettingField): string => {
   const hit = props.bossCatalog.find(item => item.name === raw)
   if (hit) return hit.label
   return raw
+}
+// 点击地区（第一级）：切换地区并重置首领选择
+const onPickBossRegionClick = (region: string): void => {
+  pickBossRegion.value = region
+  pickBossName.value = ''
 }
 // 弹窗打开：以已存首领反查地区并预置高亮
 const openBossFieldPicker = (field: DragonSettingField): void => {

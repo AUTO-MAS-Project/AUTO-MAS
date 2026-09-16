@@ -45,6 +45,8 @@ class ScriptConfigTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: BetterGIConfig,
         user_config: MultipleConfig[BetterGIUserConfig],
+        *,
+        view_only: bool = False,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -53,6 +55,11 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        # view_only=True 时为查看会话（如「查看历史备份」）：只读打开 BetterGI
+        # 查看原生配置（BGI GUI 即原生，所见即备份）。BetterGI 配置会话本就
+        # 无参打开、无基线注入/无回写（任务配置以 MAS 前端为准），viewOnly
+        # 与配置会话共享同一打开路径，无需额外分支
+        self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按配置来源决定。
         self.use_mas_config = True
@@ -118,10 +125,6 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
-        # 异常退出也先快照（固化 GUI 中已保存的编辑）再清理 MAS 运行时槽位，避免残留与丢编辑
-        if self.use_mas_config:
-            with suppress(Exception):
-                self._snapshot_one_dragon_config()
         self._cleanup_leftover_slot()
         await Publisher.send(
             id=self.task_info.task_id,

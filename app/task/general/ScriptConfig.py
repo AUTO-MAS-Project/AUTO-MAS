@@ -128,9 +128,28 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await System.kill_process(self.script_set_exe_path)
 
-        if not self.use_mas_config:
+        # 查看会话的脚本级入口：原生配置即所选备份，跳过下发（用户级为目录
+        # 副本型，强制照常下发——GUI 所见即备份，不受直控门控影响）
+        if self.task_info.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("通用脚本查看会话跳过配置下发: 原生配置即所选备份")
+            return
+
+        if not self.use_mas_config and not self.task_info.view_only:
             logger.info("脚本直控配置：跳过写入脚本配置")
             return
+
+        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
+        # 失败不阻断会话）。General 的 ConfigFile 恒按用户，无 owner 解耦；
+        # 查看会话的 ConfigFile 即刚恢复的备份，无需再归档
+        if not self.task_info.view_only:
+            from .tools.backup_archive import archive_mas_runtime_backup
+
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                self.cur_user_item.user_id,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
+            )
 
         if (
             self.script_config.get("Script", "ConfigPathMode") == "Folder"
@@ -171,6 +190,13 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.general_process_manager.kill()
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
+
+        # 查看会话：只读预览，不把 GUI 内的改动回写 MAS 配置副本（原生配置
+        # 现场由 manager 的任务前快照还原）
+        if self.task_info.view_only:
+            logger.success("通用脚本查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
 
         if not self.use_mas_config:
             logger.info("脚本直控配置：跳过回写用户独立配置")

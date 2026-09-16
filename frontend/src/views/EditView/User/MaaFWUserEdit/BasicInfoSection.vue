@@ -174,9 +174,18 @@ const emitSave = (key: string, value: unknown) => {
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-header h3 {

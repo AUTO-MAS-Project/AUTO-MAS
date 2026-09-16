@@ -566,10 +566,18 @@ class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
     time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="备份时点的配置来源三态（脚本/用户/直控）；无标注（旧版备份或未声明三态）为 null",
+    )
 
 
 class ConfigBackupListOut(OutBase):
     data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="当前配置来源三态（脚本/用户/直控）；非三态专项为 null",
+    )
 
 
 class ConfigBackupRestoreIn(BaseModel):
@@ -611,6 +619,18 @@ class ConfigBackupPreviewOut(OutBase):
     data: dict = Field(
         ...,
         description="专项预览载荷（如 zzz-od 的 info/account/tasks/instances 或 ok-nte 的 files）",
+    )
+
+
+class ConfigBackupFileOut(OutBase):
+    """备份内文本文件内容（只读；路径限归档内相对路径，防穿越）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
+    size: int = Field(..., description="文件字节数")
+    content: str = Field(
+        ..., description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）"
     )
 
 
