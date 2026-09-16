@@ -19,11 +19,13 @@
 """直控模式：实例原生配置的页面编辑原语（强绑定 one_dragon 原始 YAML）。
 
 与用户模式的字段化配置（ConfigItem 为事实源、运行时注入绑定槽）不同，
-直控页面直接读写所选实例目录下的 ``game_account.yml`` 与
+直控页面直接读写所选实例目录下的 ``game_account.yml``、``game.yml`` 与
 ``one_dragon/_group.yml``——页面即 zzz-od 原生配置编辑器的 web 化入口，
 保存立即落盘，不经过注入/备份/恢复，所见即所得。
 
 - 账号字段：数据驱动元数据表（键 = zzz-od YAML 字段名），白名单过滤写回；
+- 启动参数：固定字段集（含 dx12 便捷开关，写回时合并进高级参数），
+  白名单过滤、值未变跳过；
 - 任务编排：读取原生 ``app_list``（enabled 保持原样）并与应用目录可选项
   合并；保存时只把启用项写回 ``_group.yml``（缺席 = 不加入编排，与
   zzz-od 原生语义一致）。
@@ -35,13 +37,18 @@ from app.models.schema import ComboBoxItem
 
 from .zzz_od_config import (
     DEFAULT_GAME_ACCOUNT,
+    DEFAULT_GAME_LAUNCH_ARGS,
     ZZZOD_GAME_LANGUAGE_LABELS,
     ZZZOD_GAME_REGION_LABELS,
     instance_dir,
+    merge_dx12_argument,
     read_app_group,
+    read_game,
     read_game_account,
     read_instance_run,
+    split_dx12_argument,
     write_app_group,
+    write_game,
     write_game_account,
     write_instance_run,
 )
@@ -144,6 +151,79 @@ def save_native_account_fields(root, slot_idx: int, values: dict[str, str]) -> N
         patch[key] = new_val
     if patch:
         write_game_account(slot_path.parent, patch)
+
+
+def read_native_launch_args(root, slot_idx: int) -> dict[str, Any]:
+    """读取实例原生启动参数（game.yml，缺失字段合并上游 BasicGameConfig 默认值）。
+
+    ``-use-d3d12`` 从高级参数拆出为独立 ``dx12`` 开关（MAS 便捷字段，与
+    用户模式同构）；返回的 ``launch_argument_advance`` 只含其余参数。
+    """
+
+    data = read_game(instance_dir(root, int(slot_idx)))
+    has_dx12, advance_rest = split_dx12_argument(
+        str(data.get("launch_argument_advance") or "")
+    )
+    merged: dict[str, Any] = {"dx12": has_dx12, "launch_argument_advance": advance_rest}
+    for key, default in DEFAULT_GAME_LAUNCH_ARGS.items():
+        if key == "launch_argument_advance":
+            continue
+        value = data.get(key)
+        merged[key] = default if value is None else value
+    return merged
+
+
+def save_native_launch_args(root, slot_idx: int, values: dict[str, Any]) -> None:
+    """白名单过滤后写回实例原生 game.yml 启动参数（页面所见即所得）。
+
+    与 :func:`save_native_account_fields` 同款「值未变跳过」语义；布尔字段
+    按真值比较（关闭总开关等「回默认」操作同样落盘覆盖）。``dx12`` 开关
+    合并进 ``launch_argument_advance`` 后落盘（game.yml 无独立键）；六键
+    之外的 game.yml 内容（HDR、输入方式等）原样保留。
+    """
+
+    unknown = set(values) - set(DEFAULT_GAME_LAUNCH_ARGS) - {"dx12"}
+    if unknown:
+        raise ValueError(f"不支持的启动参数字段: {', '.join(sorted(unknown))}")
+
+    slot_dir = instance_dir(root, int(slot_idx))
+    existing = read_game(slot_dir)
+    patch: dict[str, Any] = {}
+    for key, new_val in values.items():
+        # dx12 与 launch_argument_advance 由下方合并块统一处理（写盘前合并）
+        if key in ("dx12", "launch_argument_advance"):
+            continue
+        if key not in DEFAULT_GAME_LAUNCH_ARGS:
+            continue
+        expected_type = type(DEFAULT_GAME_LAUNCH_ARGS[key])
+        if expected_type is bool:
+            new_val = bool(new_val)
+        else:
+            new_val = str(new_val or "").strip()
+        old_val = existing.get(key)
+        # 原文件缺失 + 新值=默认 → 保持文件干净不写
+        if old_val is None and new_val == DEFAULT_GAME_LAUNCH_ARGS[key]:
+            continue
+        # 值未变跳过；其余（含改回默认）落盘
+        if old_val is not None and expected_type is bool:
+            if bool(old_val) == new_val:
+                continue
+        elif old_val is not None and str(old_val) == new_val:
+            continue
+        patch[key] = new_val
+    if "launch_argument_advance" in values or "dx12" in values:
+        merged_advance = merge_dx12_argument(
+            str(values.get("launch_argument_advance") or ""),
+            bool(values.get("dx12")),
+        )
+        old_advance = existing.get("launch_argument_advance")
+        if old_advance is None:
+            if merged_advance != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]:
+                patch["launch_argument_advance"] = merged_advance
+        elif str(old_advance) != merged_advance:
+            patch["launch_argument_advance"] = merged_advance
+    if patch:
+        write_game(slot_dir, patch)
 
 
 def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:

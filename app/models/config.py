@@ -4198,6 +4198,37 @@ class ZzzOdUserConfig(ConfigBase):
         ## 自定义窗口标题
         self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
 
+        ## 一条龙游戏启动参数（game.yml 六字段，照抄上游 BasicGameConfig
+        ## 默认值与取值；一条龙启动游戏时消费，总开关关闭则全部不生效）：
+        ## 启动参数总开关
+        self.Game_LaunchArgument = ConfigItem(
+            "Game", "LaunchArgument", False, BoolValidator()
+        )
+        ## 窗口尺寸（上游枚举原值）
+        self.Game_ScreenSize = ConfigItem(
+            "Game",
+            "ScreenSize",
+            "1920x1080",
+            OptionsValidator(["1920x1080", "2560x1440", "3840x2160"]),
+        )
+        ## 全屏模式（上游枚举原值为字符串：'0'=窗口化 '1'=全屏）
+        self.Game_FullScreen = ConfigItem(
+            "Game", "FullScreen", "0", OptionsValidator(["0", "1"])
+        )
+        ## 无边框窗口（一条龙拼参时转 -popupwindow）
+        self.Game_PopupWindow = ConfigItem("Game", "PopupWindow", False, BoolValidator())
+        ## DX12 启动（MAS 便捷开关：注入时把 -use-d3d12 合并进一条龙的
+        ## launch_argument_advance；上游无独立字段，勾选框是唯一权威）
+        self.Game_Dx12 = ConfigItem("Game", "Dx12", False, BoolValidator())
+        ## 显示器序号（上游枚举原值为字符串）
+        self.Game_Monitor = ConfigItem(
+            "Game", "Monitor", "1", OptionsValidator(["1", "2", "3", "4"])
+        )
+        ## 高级参数（原样透传给一条龙拼接，上游不解析，不做 shlex 校验）
+        self.Game_LaunchArgumentAdvance = ConfigItem(
+            "Game", "LaunchArgumentAdvance", "", StringValidator()
+        )
+
         ## OneDragon -------------------------------------------------------
         ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
         ## 数组顺序即执行顺序；enabled=false 的任务由 zzz-od 跳过）

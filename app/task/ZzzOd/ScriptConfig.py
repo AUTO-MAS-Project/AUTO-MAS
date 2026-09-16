@@ -54,9 +54,11 @@ from .tools import (
     instance_dir,
     normalize_app_group_entries,
     read_app_group,
+    read_game,
     read_game_account,
     restore_instance_view,
     set_active_instance,
+    split_dx12_argument,
     write_instance_view,
 )
 
@@ -193,10 +195,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     async def _readback_user_fields(self, slot: int) -> None:
-        """把 GUI 会话落盘的账号字段与任务编排回读到 MAS 用户字段。
+        """把 GUI 会话落盘的账号字段、启动参数与任务编排回读到 MAS 用户字段。
 
         - 区服/路径/语言/B服名：无条件回读（客观字段，槽值即真相）；
         - 账号/密码：槽值非空才回读（留空=沿用登录态语义，避免清空被读回）；
+        - 启动参数：无条件回读，-use-d3d12 拆到 Dx12 开关（勾选框为唯一权威）；
         - 任务编排：取 ``_group.yml`` 全量条目顺序（含未启用项）整表进 AppList
           （运行侧 parse_user_apps 只消费启用项，未启用项原位保留顺序）。
         """
@@ -218,6 +221,26 @@ class ScriptConfigTask(TaskExecuteBase):
             await cfg.set("Game", "Account", str(account.get("account")))
         if str(account.get("password") or "").strip():
             await cfg.set("Game", "Password", str(account.get("password")))
+        # 启动参数：客观字段无条件回读（GUI 内改了 -use-d3d12 等也要同步回
+        # MAS 字段，否则下次注入会被本页旧值覆盖）；缺失键合并上游默认值；
+        # -use-d3d12 拆到 Dx12 开关，高级参数只存其余部分（勾选框为唯一权威）
+        game_cfg = read_game(slot_dir)
+        await cfg.set(
+            "Game", "LaunchArgument", bool(game_cfg.get("launch_argument", False))
+        )
+        await cfg.set(
+            "Game", "ScreenSize", str(game_cfg.get("screen_size") or "1920x1080")
+        )
+        await cfg.set("Game", "FullScreen", str(game_cfg.get("full_screen") or "0"))
+        await cfg.set(
+            "Game", "PopupWindow", bool(game_cfg.get("popup_window", False))
+        )
+        has_dx12, advance_rest = split_dx12_argument(
+            str(game_cfg.get("launch_argument_advance") or "")
+        )
+        await cfg.set("Game", "Dx12", has_dx12)
+        await cfg.set("Game", "LaunchArgumentAdvance", advance_rest)
+        await cfg.set("Game", "Monitor", str(game_cfg.get("monitor") or "1"))
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
         await cfg.set("OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False))
         logger.info(
