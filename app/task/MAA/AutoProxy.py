@@ -25,6 +25,7 @@ import calendar
 import json
 import re
 import shutil
+import time
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -1839,11 +1840,11 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-        started_at = datetime.now()
-
         if self.check_result != "Pass":
             logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
+
+        started_at = time.monotonic()
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
@@ -1856,10 +1857,6 @@ class AutoProxyTask(TaskExecuteBase):
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
-
-        logger.info(
-            f"MAA 任务收尾完成 - 用时: {(datetime.now() - started_at).total_seconds():.3f}秒"
-        )
 
         user_logs_list = []
         if_six_star = False
@@ -1965,6 +1962,8 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
+
+        logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
