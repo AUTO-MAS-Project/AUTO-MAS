@@ -1,7 +1,9 @@
 """MaaFW 任务报告推送。"""
 
 import base64
+import io
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from app.core import Config
@@ -16,6 +18,52 @@ from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 通知工具")
+
+# 一份通知最多带几张失败截图，多了取最后几张（最终停在哪更要紧）。
+# 邮件里每张 JPEG 约 100~300 KB；PNG 原图留在 history 目录里不动。
+NOTIFY_SCREENSHOT_LIMIT = 4
+NOTIFY_SCREENSHOT_JPEG_QUALITY = 85
+
+
+def load_screenshot_images(
+    shots: Sequence[tuple[str, Path]],
+) -> list[tuple[str, MailInlineImage]]:
+    """把失败截图读进来并转成 JPEG，供邮件内嵌与 Webhook 图片段使用。
+
+    worker 只能存 PNG（它那边没有编码器），一张 1280 宽的游戏画面动辄 1 MB，
+    几张下来邮件就太胖；这里用宿主的 Pillow 转成 JPEG，体积能压到十分之一。
+    转不动（Pillow 异常）就原样带 PNG；文件读不到就跳过这张，通知照发。
+    """
+
+    images: list[tuple[str, MailInlineImage]] = []
+    for index, (label, path) in enumerate(shots, start=1):
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            logger.warning(f"读取失败截图失败，通知里不带这张: {path}: {exc}")
+            continue
+        cid = f"maafw-failure-{index}"
+        try:
+            from PIL import Image
+
+            with Image.open(io.BytesIO(data)) as image:
+                buffer = io.BytesIO()
+                image.convert("RGB").save(
+                    buffer, format="JPEG", quality=NOTIFY_SCREENSHOT_JPEG_QUALITY
+                )
+            images.append((label, MailInlineImage(cid, buffer.getvalue(), "jpeg")))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"失败截图转 JPEG 失败，改用原图: {path}: {exc}")
+            images.append((label, MailInlineImage(cid, data, "png")))
+    return images
+
+
+def screenshot_entries(
+    images: Sequence[tuple[str, MailInlineImage]],
+) -> list[dict[str, str]]:
+    """模板里「失败截图」块要的 ``{cid, label}`` 列表。"""
+
+    return [{"cid": image.cid, "label": label} for label, image in images]
 
 
 async def push_notification(
@@ -38,15 +86,16 @@ async def push_notification(
               task_details
         task_info: 任务信息，代理结果模式用于签到汇总的渠道级重试。
         user_config: 用户配置，统计信息模式用于发送用户独立通知。
-        images: 统计信息模式随信附上的失败截图；邮件按 cid 内嵌全部，
-            Webhook 只有一个 ``{image_base64}`` 槽位，放最后一张。
+        images: 随信附上的失败截图；邮件按 cid 内嵌全部，Webhook 只有一个
+            ``{image_base64}`` 槽位，放最后一张。模板靠 ``message["screenshots"]``
+            （``screenshot_entries``）知道每张的 cid 与标签。
     """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
         return await push_proxy_result(
-            title=title, message=message, task_info=task_info
+            title=title, message=message, task_info=task_info, images=images
         )
     if mode == "统计信息":
         return await _push_statistics(title, message, user_config, images)

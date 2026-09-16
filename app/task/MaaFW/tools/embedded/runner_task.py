@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import os
 import queue
@@ -24,7 +23,6 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
-from app.services.notification import MailInlineImage
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.MaaFW.tools.core.automas_maafw_controller_win32.service import (
@@ -49,6 +47,11 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.notify import push_notification
+from app.task.MaaFW.tools.notify.report import (
+    NOTIFY_SCREENSHOT_LIMIT,
+    load_screenshot_images,
+    screenshot_entries,
+)
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
@@ -119,10 +122,6 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 _RELAY_YIELD_EVERY_LINES = 50
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
-# 统计通知最多带几张失败截图，多了取最后几张（最终停在哪更要紧）。
-# 邮件里每张 JPEG 约 100~300 KB；PNG 原图留在 history 目录里不动。
-_NOTIFY_SCREENSHOT_LIMIT = 4
-_NOTIFY_SCREENSHOT_JPEG_QUALITY = 85
 
 # 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
 # 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
@@ -1923,11 +1922,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
 
     def _collect_failure_screenshots(self) -> list[tuple[str, Path]]:
-        """挑出要随统计通知发出去的失败截图（标签, 路径）。
+        """本用户要随通知发出去的失败截图（标签, 路径），按时间顺序。
 
         最终成功的运行不带图：任务详情那边成功时也只留合并后的完成清单，
-        早先尝试的失败画面对已经跑通的一轮没有意义。多次尝试都失败时按时间
-        顺序取最后 ``_NOTIFY_SCREENSHOT_LIMIT`` 张。
+        早先尝试的失败画面对已经跑通的一轮没有意义。张数上限由消费方裁。
         """
 
         if self.run_complete:
@@ -1936,7 +1934,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         for report in self._attempt_reports:
             for label, path in report.get("screenshots", ()):
                 shots.append((f"第 {report['attempt']} 次尝试 · {label}", path))
-        return shots[-_NOTIFY_SCREENSHOT_LIMIT:]
+        return shots
+
+    def report_screenshots(self) -> list[tuple[str, Path]]:
+        """给脚本级「代理结果」报告用的失败截图，标签带上用户名以区分多用户。"""
+
+        return [
+            (f"{self.cur_user_item.name} · {label}", path)
+            for label, path in self._collect_failure_screenshots()
+        ]
 
     def _build_task_details(self) -> str:
         """汇总各次尝试的任务详情。
@@ -2002,11 +2008,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             statistics["task_details"] = self._build_task_details()
             images = await asyncio.to_thread(
-                _load_notify_screenshots, self._collect_failure_screenshots()
+                load_screenshot_images,
+                self._collect_failure_screenshots()[-NOTIFY_SCREENSHOT_LIMIT:],
             )
-            statistics["screenshots"] = [
-                {"cid": image.cid, "label": label} for label, image in images
-            ]
+            statistics["screenshots"] = screenshot_entries(images)
             statistics["user_result"] = (
                 "代理任务全部完成"
                 if self.run_complete
@@ -2057,39 +2062,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_info.log = "".join(self.cur_user_log.content[-80:])
         else:
             self.script_info.log = str(message)
-
-
-def _load_notify_screenshots(
-    shots: list[tuple[str, Path]],
-) -> list[tuple[str, MailInlineImage]]:
-    """把失败截图读进来并转成 JPEG，供邮件内嵌与 Webhook 图片段使用。
-
-    worker 只能存 PNG（它那边没有编码器），一张 1280 宽的游戏画面动辄 1 MB，
-    几张下来邮件就太胖；这里用宿主的 Pillow 转成 JPEG，体积能压到十分之一。
-    转不动（文件缺失、Pillow 异常）就原样带 PNG；再不行就跳过这张，通知照发。
-    """
-
-    images: list[tuple[str, MailInlineImage]] = []
-    for index, (label, path) in enumerate(shots, start=1):
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            logger.warning(f"读取失败截图失败，通知里不带这张: {path}: {exc}")
-            continue
-        cid = f"maafw-failure-{index}"
-        try:
-            from PIL import Image
-
-            with Image.open(io.BytesIO(data)) as image:
-                buffer = io.BytesIO()
-                image.convert("RGB").save(
-                    buffer, format="JPEG", quality=_NOTIFY_SCREENSHOT_JPEG_QUALITY
-                )
-            images.append((label, MailInlineImage(cid, buffer.getvalue(), "jpeg")))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"失败截图转 JPEG 失败，改用原图: {path}: {exc}")
-            images.append((label, MailInlineImage(cid, data, "png")))
-    return images
 
 
 def _maafw_runner_jobs_dir() -> Path:

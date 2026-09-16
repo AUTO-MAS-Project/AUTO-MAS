@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from app.task import notify_core
 from app.task.MaaFW.tools.core.automas_maafw_runner import runner as runner_module
 from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWDeviceConfig,
@@ -16,12 +17,13 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWTaskRunPlan,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.runner import MaaFWRunner
-from app.task.MaaFW.tools.embedded import runner_task as runner_task_module
-from app.task.MaaFW.tools.embedded.runner_task import (
-    MaaFWPluginAutoProxyTask,
-    _load_notify_screenshots,
-)
+from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
 from app.task.MaaFW.tools.notify import report as report_module
+from app.task.MaaFW.tools.notify.report import (
+    NOTIFY_SCREENSHOT_LIMIT,
+    load_screenshot_images,
+    screenshot_entries,
+)
 
 # ---------------------------------------------------------------- worker 侧
 
@@ -161,7 +163,7 @@ def test_load_notify_screenshots_converts_to_jpeg_and_skips_missing(
     junk = tmp_path / "b.png"
     junk.write_bytes(b"not an image")
 
-    images = _load_notify_screenshots(
+    images = load_screenshot_images(
         [("第 1 次尝试 · 登录", good), ("缺失", tmp_path / "x.png"), ("坏图", junk)]
     )
 
@@ -175,14 +177,19 @@ def test_load_notify_screenshots_converts_to_jpeg_and_skips_missing(
     assert images[1][1].data == b"not an image"
 
 
+class _UserItem:
+    name = "小明"
+
+
 def _host_task(run_complete: bool, reports: list[dict[str, Any]]) -> Any:
     task = MaaFWPluginAutoProxyTask.__new__(MaaFWPluginAutoProxyTask)
     task.run_complete = run_complete
     task._attempt_reports = reports
+    task.cur_user_item = _UserItem()
     return task
 
 
-def test_collect_failure_screenshots_labels_attempts_and_caps() -> None:
+def test_collect_failure_screenshots_labels_attempts_in_order() -> None:
     reports = [
         {
             "attempt": 1,
@@ -194,19 +201,32 @@ def test_collect_failure_screenshots_labels_attempts_and_caps() -> None:
             "screenshots": [("登录", Path("4.png")), ("日常", Path("5.png"))],
         },
     ]
-    shots = _host_task(False, reports)._collect_failure_screenshots()
+    task = _host_task(False, reports)
+    shots = task._collect_failure_screenshots()
     assert [label for label, _ in shots] == [
+        "第 1 次尝试 · 登录",
         "第 1 次尝试 · 日常",
         "第 2 次尝试 · 登录",
         "第 3 次尝试 · 登录",
         "第 3 次尝试 · 日常",
     ]
-    assert [path.name for _, path in shots] == ["2.png", "3.png", "4.png", "5.png"]
+    # 上限由消费方裁：统计通知与脚本级报告都取最后 NOTIFY_SCREENSHOT_LIMIT 张。
+    assert NOTIFY_SCREENSHOT_LIMIT == 4
+    assert [p.name for _, p in shots[-NOTIFY_SCREENSHOT_LIMIT:]] == [
+        "2.png",
+        "3.png",
+        "4.png",
+        "5.png",
+    ]
+    # 脚本级报告是多用户合并的，标签要带用户名。
+    assert task.report_screenshots()[0][0] == "小明 · 第 1 次尝试 · 登录"
 
 
 def test_collect_failure_screenshots_empty_when_run_completed() -> None:
     reports = [{"attempt": 1, "screenshots": [("登录", Path("1.png"))]}]
-    assert _host_task(True, reports)._collect_failure_screenshots() == []
+    task = _host_task(True, reports)
+    assert task._collect_failure_screenshots() == []
+    assert task.report_screenshots() == []
 
 
 def test_statistics_payload_carries_mail_images_and_webhook_image(
@@ -275,7 +295,43 @@ def test_statistics_payload_without_images_has_no_screenshot_block(
     assert payload.mail_images == ()
     assert payload.webhook_image_base64 is None
     assert "失败截图" not in payload.html
-    assert runner_task_module._NOTIFY_SCREENSHOT_LIMIT == 4
+
+
+def test_proxy_result_payload_carries_images(monkeypatch: pytest.MonkeyPatch) -> None:
+    """脚本级「代理结果」（仅失败时真正会发的那封）同样内嵌截图。"""
+
+    captured: dict[str, Any] = {}
+
+    async def fake_dispatch_task_report(
+        payload: Any, targets: Any, task_info: Any, **kw: Any
+    ) -> Any:
+        captured["payload"] = payload
+        return notify_core.DispatchResult()
+
+    monkeypatch.setattr(notify_core, "dispatch_task_report", fake_dispatch_task_report)
+    monkeypatch.setattr(notify_core, "should_send_result", lambda *a, **k: True)
+    monkeypatch.setattr(notify_core, "global_target", lambda **k: None)
+    images = [report_module.MailInlineImage("maafw-failure-1", b"one", "jpeg")]
+    message = {
+        "title": "自动代理任务报告",
+        "script_name": "MFW",
+        "start_time": "s",
+        "end_time": "e",
+        "completed_count": 0,
+        "uncompleted_count": 1,
+        "result": "小明: 登录失败",
+        "screenshots": screenshot_entries([("小明 · 第 1 次尝试 · 登录", images[0])]),
+    }
+    asyncio.run(
+        report_module.push_notification(
+            mode="代理结果", title="T", message=message, images=images
+        )
+    )
+    payload = captured["payload"]
+    assert payload.mail_images == tuple(images)
+    assert payload.webhook_image_base64 == base64.b64encode(b"one").decode("ascii")
+    assert 'src="cid:maafw-failure-1"' in payload.html
+    assert "小明 · 第 1 次尝试 · 登录" in payload.html
 
 
 def test_host_side_result_model_keeps_screenshots() -> None:
@@ -298,4 +354,38 @@ def test_host_side_result_model_keeps_screenshots() -> None:
     result = models.MaaFWRunResult.model_validate(payload)
     assert [(s.task, s.path) for s in result.failureScreenshots] == [
         ("登录", "C:/h/1.png")
+    ]
+
+
+def test_manager_accumulates_screenshots_across_users() -> None:
+    """管理器在每位用户收尾时攒下截图，最后一起随「代理结果」发出。"""
+
+    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+
+    class _Inner:
+        def __init__(self, shots: list[tuple[str, Path]]) -> None:
+            self.shots = shots
+            self.finalized = False
+
+        async def final_task(self) -> None:
+            self.finalized = True
+
+        def report_screenshots(self) -> list[tuple[str, Path]]:
+            return self.shots
+
+    manager = MaaFWEmbeddedManager.__new__(MaaFWEmbeddedManager)
+    manager._failure_screenshots = []
+    for shots in (
+        [("小明 · 第 1 次尝试 · 登录", Path("a.png"))],
+        [],
+        [("小红 · 第 2 次尝试 · 日常", Path("b.png"))],
+    ):
+        manager.inner_task = _Inner(shots)  # type: ignore[assignment]
+        manager._inner_finalized = False
+        asyncio.run(manager._finalize_inner_task())
+        assert manager.inner_task.finalized
+
+    assert [label for label, _ in manager._failure_screenshots] == [
+        "小明 · 第 1 次尝试 · 登录",
+        "小红 · 第 2 次尝试 · 日常",
     ]
