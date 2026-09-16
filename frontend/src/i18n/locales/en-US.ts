@@ -1516,6 +1516,9 @@ export default {
     launchGameOtherWay: 'Start and stop the game another way',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
+    adbStrategyPerDevice: 'Decided at run time',
+    adbStrategyEmulatorExtras: 'EmulatorExtras',
+    adbStrategyDefault: 'Default',
     prepareRuntimeEnv: 'Prepare runtime environment',
     envPanelPlaceholder:
       'The environment preparation steps show up here after the interface is read',

@@ -132,12 +132,16 @@
           </a-col>
         </a-row>
 
-        <a-row :gutter="24" class="control-detail-row">
+        <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
+        <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
               <template #label>
                 <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
-                  <span class="form-label">{{ t('edit.mfwGamePackageName') }}</span>
+                  <span class="form-label">
+                    {{ t('edit.mfwGamePackageName') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
                 </a-tooltip>
               </template>
               <a-input
@@ -148,17 +152,19 @@
               />
             </a-form-item>
           </a-col>
+          <!-- 控制策略表放在包名右边：截图 / 输入两行，撑满整列高度 -->
+          <a-col :span="12" class="control-strategy-col">
+            <a-descriptions :column="1" size="small" bordered class="control-strategy-summary">
+              <a-descriptions-item
+                v-for="item in adbControlStrategyItems"
+                :key="item.label"
+                :label="item.label"
+              >
+                {{ item.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-col>
         </a-row>
-
-        <a-descriptions :column="3" size="small" bordered class="control-strategy-summary">
-          <a-descriptions-item
-            v-for="item in adbControlStrategyItems"
-            :key="item.label"
-            :label="item.label"
-          >
-            {{ item.value }}
-          </a-descriptions-item>
-        </a-descriptions>
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
@@ -424,8 +430,40 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
   margin-top: 16px;
 }
 
+/* 右列整体是 flex，表格撑满列高（列高 = 左边 a-form-item 的标签 + 输入框 + 底距），再减去
+   与 a-form-item 相同的底距（本项目全局把它定成 20px），上下边就与左边对齐；两行均分高度 */
+.control-strategy-col {
+  display: flex;
+}
+
 .control-strategy-summary {
-  margin-top: 8px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-bottom: 20px;
+}
+
+/* view 也做成 flex 列，表格作为 flex 项被拉到满高（height:100% 在这里解析不出来，差 3px） */
+.control-strategy-summary :deep(.ant-descriptions-view) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.control-strategy-summary :deep(.ant-descriptions-view table) {
+  flex: 1;
+}
+
+.control-strategy-summary :deep(.ant-descriptions-item-label),
+.control-strategy-summary :deep(.ant-descriptions-item-content) {
+  padding: 4px 12px !important;
+  font-size: 13px;
+}
+
+.control-strategy-summary :deep(.ant-descriptions-item-label) {
+  width: 28%;
+  color: var(--ant-color-text-secondary);
 }
 
 .control-fade-enter-active,
