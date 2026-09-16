@@ -29,19 +29,18 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   推出、不进配置、不可手改；`Info.Path` 永远是来源目录，来源一个字节不动、也不由 MAS 删。
   导入在 `data/maafw_projects/.staging/` 里投影完再原子换入，失败不动旧副本；副本缺失且来源
   还在时 check / preview / update 入口自修复。删脚本连带删副本。
-- 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU）。副本里去掉了 `maafw/`
-  与自带 `python/`，两者由运行池提供——但版本必须与来源自带的一致：agent 与 runner 之间有
-  协议版本号，跨版本只表现为「AgentClient 连接超时」；agent 又常写死 Python 大版本
-  （create-maa-project 模板要求 >=3.13,<3.14，宿主 3.12 建的隔离 venv 会被它拒绝，宿主只看到
-  「Agent 进程已退出」）。投影时把两者写进副本根 `.auto_mas_maafw_projection.json`
-  （`bundledMaaFWVersion` / `bundledPythonVersion`），runner 的 `probe_bundled_maafw_version`
-  没原生库时读前者，`agent_env/env.py` 按后者向运行池要同大版本的解释器建隔离 venv（已有
-  venv 版本不对就重建）；更新落地时随包换、进清单，也在环境指纹里。`contracts.py` 里那个
-  `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往项目里铺运行时。
-- **agent 不是 Python 时，`maafw/` 整目录留在副本里**：Go / C++ 的二进制 agent 启动时从
-  `<项目>/maafw` 加载 `MaaFramework.dll` / `MaaAgentServer.dll`（实测 MaaYYs 的 agent.exe，
-  找不到直接 fatal 退出）。这时 runner 也用同一份库（与路径模式一致，项目的自定义构建随之保住），
-  副本省下的比例会明显小于 Python agent 的项目（MaaYYs 29%，M9A 89%）。
+- 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），副本去掉的只有外壳、
+  .NET 托管库、界面用的运行时、缓存与日志。**项目自带的运行时原样带走**：MaaFramework 原生库
+  目录（`maafw/`，MFAAvalonia 布局下是 `runtimes/win-x64/native`）与 agent 自带的解释器目录
+  （`python/`）。理由是真机上两个项目两种死法：M9A 的 agent 写死 Python >=3.13,<3.14，用宿主
+  3.12 建的隔离 venv 起来即退（宿主只看到「Agent 进程已退出」）；MaaYYs 的 Go agent.exe 启动
+  时从 `<项目>/maafw` 加载 MaaFramework，找不到直接 fatal。自带的 DLL 可能是自定义构建、
+  site-packages 里可能有 requirements.txt 没写的包，「按版本从运行池重建等价环境」验证不完。
+  带走之后 runner（`project_maafw_runtime_path` 优先项目自带）与 agent 用的就是发行包里那份，
+  与路径模式完全一致；运行池只在项目本来就没自带时兜底——也与路径模式一致。代价是省下的
+  比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
+  `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
+  项目里铺运行时。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希

@@ -534,14 +534,9 @@ def _project_package_entries(
     send_log: Callable[[str], None] | None,
 ) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...]]:
     from .projection import (
-        PROJECTION_MARKER_NAME,
         ProjectionError,
         filter_package_entries,
         package_projection_rules,
-        probe_bundled_maafw_version,
-        probe_bundled_python_version,
-        read_projection_marker,
-        write_projection_marker,
     )
 
     try:
@@ -556,38 +551,17 @@ def _project_package_entries(
             send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
         for warning in rules.warnings:
             send_log(f"内嵌投影：{warning}")
-    kept_file_table = {
-        relative: source for relative, source in files.items() if relative in kept_files
-    }
-    kept_hash_table = {
-        relative: digest
-        for relative, digest in hashes.items()
-        if relative in kept_files
-    }
-    # 包里带了原生库 / 自带解释器（全量包必带，差量包在它们变了时带）：本身不落盘，
-    # 但版本要随这次更新换进副本的投影标记，否则 agent 侧还钉着上一版；包里没带的
-    # 那一项沿用副本现有标记，别让全量包把标记当上一版残留清掉。标记作为本次落地
-    # 的一个条目进事务、进清单，与其余文件同进同退。
-    existing = read_projection_marker(project_path)
-    new_maafw = probe_bundled_maafw_version(payload_root)
-    new_python = probe_bundled_python_version(payload_root, rules)
-    merged_maafw = new_maafw or str(existing.get("bundledMaaFWVersion") or "")
-    merged_python = new_python or str(existing.get("bundledPythonVersion") or "")
-    if send_log is not None and new_maafw:
-        send_log(f"内嵌投影：来源自带 MaaFramework {new_maafw}，已记入副本")
-    if send_log is not None and new_python:
-        send_log(f"内嵌投影：来源自带 Python {new_python}，已记入副本")
-    if existing or merged_maafw or merged_python:
-        marker = write_projection_marker(
-            payload_root, merged_maafw or None, merged_python or None
-        )
-        kept_file_table[PROJECTION_MARKER_NAME] = marker
-        kept_hash_table[PROJECTION_MARKER_NAME] = hashlib.sha256(
-            marker.read_bytes()
-        ).hexdigest()
     return (
-        kept_file_table,
-        kept_hash_table,
+        {
+            relative: source
+            for relative, source in files.items()
+            if relative in kept_files
+        },
+        {
+            relative: digest
+            for relative, digest in hashes.items()
+            if relative in kept_files
+        },
         tuple(relative for relative in deleted if relative in kept_deleted),
     )
 

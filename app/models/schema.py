@@ -3712,11 +3712,11 @@ class MaaFWEmbeddedProjection(BaseModel):
     warnings: List[str] = Field(default_factory=list, description="投影警告")
     bundledMaaFWVersion: str = Field(
         default="",
-        description="来源自带 MaaFramework 的版本（PEP 440），运行池按它钉运行时",
+        description="项目自带 MaaFramework 的版本（PEP 440）；原生库目录原样带入副本",
     )
     bundledPythonVersion: str = Field(
         default="",
-        description="来源自带 Python 的大版本（如 3.13），隔离 venv 按它选解释器",
+        description="agent 自带 Python 的大版本（如 3.13）；解释器目录原样带入副本",
     )
 
 

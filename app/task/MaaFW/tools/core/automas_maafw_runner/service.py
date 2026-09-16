@@ -42,9 +42,6 @@ _PROJECT_ENVIRONMENT_INPUTS = (
     "interface.json",
     "interface.jsonc",
     ".auto_mas_maafw_project.json",
-    # 内嵌副本的投影标记：记着来源自带 MaaFramework 的版本，直接决定运行池选哪个
-    # 运行时；重新导入/更新换了版本，环境就得重备。
-    ".auto_mas_maafw_projection.json",
     "requirements.txt",
     "pyproject.toml",
     "uv.lock",

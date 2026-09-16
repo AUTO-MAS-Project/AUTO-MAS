@@ -4,7 +4,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -165,36 +164,7 @@ def build_agent_env_manifest(project_path: str | Path) -> dict[str, object]:
         "interfaceHash": _project_interface_hash(resolved_project_path),
         "requirementsHash": _project_agent_requirements_hash(resolved_project_path),
         "requirements": _load_project_agent_requirements(resolved_project_path),
-        # 内嵌副本要求的 Python 大版本（来源自带解释器的版本）；换了就得重建 venv。
-        "pythonRequirement": read_projected_python_requirement(resolved_project_path)
-        or "",
     }
-
-
-# 与 project_update/projection.py 的 PROJECTION_MARKER_NAME 同名；这里不 import 那个
-# 包（它带着更新器的整套依赖），只读这一个键。
-_PROJECTION_MARKER_NAME = ".auto_mas_maafw_projection.json"
-_PYTHON_MINOR_RE = re.compile(r"^3\.(\d{1,2})$")
-
-
-def read_projected_python_requirement(project_path: str | Path) -> str | None:
-    """内嵌副本的投影标记里记的自带 Python 大版本（如 ``3.13``）；没有就是 None。
-
-    投影把项目自带的 ``python/`` 去掉了，agent 却常写死大版本（create-maa-project
-    模板要求 ``>=3.13,<3.14``）：隔离 venv 必须用同一个大版本的解释器来建，否则
-    agent 起来就退出，宿主只看到「Agent 进程已退出」。
-    """
-
-    try:
-        data = json.loads(
-            (Path(project_path) / _PROJECTION_MARKER_NAME).read_text(encoding="utf-8")
-        )
-    except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    raw = str(data.get("bundledPythonVersion") or "").strip()
-    return raw if _PYTHON_MINOR_RE.match(raw) else None
 
 
 def write_agent_compat_shims(venv_path: str | Path) -> Path:
@@ -309,22 +279,11 @@ def _prepare_isolated_venv_env(
     )
 
     log(f"[Python环境] 准备隔离 venv: {venv_path}")
-    required_python = read_projected_python_requirement(project_path)
-    if required_python:
-        bootstrap_python = _bootstrap_python_for_requirement(
-            required_python, bootstrap_python, log
-        )
     had_valid_venv = _is_valid_venv_path(venv_path)
     if _should_rebuild_isolated_venv(venv_path, project_path, log):
         _reset_isolated_venv(venv_path, log)
         had_valid_venv = False
     _ensure_isolated_venv(venv_path, log, bootstrap_python=bootstrap_python)
-    if required_python and not _venv_python_matches(venv_path, required_python):
-        raise MaaFWAgentEnvError(
-            f"隔离 venv 的 Python 不是项目要求的 {required_python}"
-            f"（pyvenv.cfg: {_venv_python_version(venv_path) or '未知'}）；"
-            "请检查运行池能否提供该版本的 Python"
-        )
     write_agent_compat_shims(venv_path)
 
     test_env = _build_agent_env_for_pip(project_path)
@@ -356,74 +315,6 @@ def _prepare_isolated_venv_env(
 
     _write_isolated_venv_manifest(venv_path, project_path)
     return venv_path
-
-
-def _venv_python_version(venv_path: Path) -> str | None:
-    try:
-        text = (venv_path / "pyvenv.cfg").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    for line in text.splitlines():
-        key, _, value = line.partition("=")
-        if key.strip().casefold() in {"version", "version_info"}:
-            return value.strip()
-    return None
-
-
-def _venv_python_matches(venv_path: Path, required_minor: str) -> bool:
-    version = _venv_python_version(venv_path)
-    return bool(version) and version.startswith(required_minor + ".")
-
-
-def _python_reports_minor(python: str, required_minor: str) -> bool:
-    try:
-        result = subprocess.run(
-            [
-                python,
-                "-c",
-                "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')",
-            ],
-            capture_output=True,
-            timeout=VENV_PROBE_TIMEOUT,
-            text=True,
-            env=strip_host_python_environment(),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0 and result.stdout.strip() == required_minor
-
-
-def _bootstrap_python_for_requirement(
-    required_minor: str,
-    bootstrap_python: str | None,
-    log: Callable[[str], None],
-) -> str | None:
-    """给隔离 venv 找一个大版本对得上的引导解释器。
-
-    调用方给的引导解释器版本合适就用它；否则向运行池要同大版本的托管解释器
-    （必要时下载，与运行池自己的解释器同一套目录、镜像与缓存）。运行池给不出时
-    退回原引导解释器——建出来的 venv 会在版本校验处被拦下，报得清楚。
-    """
-
-    if bootstrap_python and _python_reports_minor(bootstrap_python, required_minor):
-        return bootstrap_python
-    log(f"[Python环境] 项目要求 Python {required_minor}，向运行池获取同版本解释器")
-    try:
-        from ..automas_maafw_runtime_pool import MaaFWRuntimePoolService
-
-        resolved = MaaFWRuntimePoolService().pool.resolve_python(
-            {"implementation": "cpython", "constraint": f"=={required_minor}.*"},
-            allow_install=True,
-        )
-    except Exception as exc:  # noqa: BLE001 - 给不出就退回并把原因写进日志
-        log(f"[Python环境] 运行池无法提供 Python {required_minor}: {exc}")
-        return bootstrap_python
-    executable = str((resolved or {}).get("executable") or "").strip()
-    if not executable:
-        log(f"[Python环境] 运行池没有 Python {required_minor} 可用，沿用默认引导解释器")
-        return bootstrap_python
-    log(f"[Python环境] 隔离 venv 引导解释器: {executable}（Python {required_minor}）")
-    return executable
 
 
 def _is_valid_venv_path(venv_path: Path) -> bool:
@@ -555,15 +446,6 @@ def _should_rebuild_isolated_venv(
     if manifest.get("requirementsHash") != expected["requirementsHash"]:
         log("[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv")
         return True
-    required_python = str(expected.get("pythonRequirement") or "")
-    if required_python and not _venv_python_matches(venv_path, required_python):
-        # 老清单没有这一项，或项目换了自带解释器的大版本：现有 venv 的解释器
-        # 对不上，agent 起来就会退出，必须重建。
-        log(
-            f"[Python环境] 隔离 venv 的 Python（{_venv_python_version(venv_path) or '未知'}）"
-            f"不是项目要求的 {required_python}，将重建"
-        )
-        return True
     return False
 
 
@@ -587,8 +469,6 @@ def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> b
         manifest.get("projectPath") == expected["projectPath"]
         and manifest.get("interfaceHash") == expected["interfaceHash"]
         and manifest.get("requirementsHash") == expected["requirementsHash"]
-        and str(manifest.get("pythonRequirement") or "")
-        == str(expected.get("pythonRequirement") or "")
     )
 
 

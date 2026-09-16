@@ -1516,8 +1516,8 @@ export default {
     maafwEmbeddedCopyMissing: 'Copy missing; it is rebuilt from the source before the next run',
     maafwEmbeddedSaved: 'Copy saves {percent}% ({source} → {copy})',
     maafwEmbeddedShell: 'Shell: {shell}',
-    maafwEmbeddedRuntime: 'Runtime MaaFramework {version} (as bundled by the source)',
-    maafwEmbeddedPython: 'Agent Python {version} (as bundled by the source)',
+    maafwEmbeddedRuntime: 'MaaFramework {version} (bundled by the project, copied as is)',
+    maafwEmbeddedPython: 'Agent Python {version} (bundled by the project, copied as is)',
     maafwEmbeddedSourceVersion: 'Imported from source {version}',
     maafwEmbeddedImportedAt: 'Imported {time}',
     maafwEmbeddedSourceMissing:

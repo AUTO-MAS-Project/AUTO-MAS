@@ -7,21 +7,17 @@
 """
 
 import json
+import os
 import shutil
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
-    build_agent_env_manifest,
-    read_projected_python_requirement,
-)
 from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
     apply_package_transaction,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
-    PROJECTION_MARKER_NAME,
     ProjectionError,
     build_projection_plan,
     build_projection_rules,
@@ -35,9 +31,6 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     pin_agent_maafw_requirement,
     probe_bundled_maafw_version,
     resolve_project_maafw_requirement,
-)
-from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
-    project_environment_fingerprint,
 )
 
 # 照抄真实原生库里的排布（见 test_maafw_agent_maafw_pin.py）：版本号是一条 NUL 结尾
@@ -104,12 +97,15 @@ class TestWhitelist:
             "resource/base/image/x.png",
             "agent/main.py",
             "requirements.txt",
+            # 项目自带的运行时原样带走：agent 的解释器目录与 MaaFramework 原生库目录。
+            "python/python.exe",
+            "python/python313.dll",
+            "maafw/MaaFramework.dll",
         }
         reasons = plan.excluded_reasons
         assert reasons["MFW.exe"] == "ui-shell"
-        assert reasons["python/python.exe"] == "embedded-python"
+        # 外壳自己的运行时目录里没有 MaaFramework，照常剔除。
         assert reasons["runtimes/win-x64/native/x.dll"] == "embedded-runtime"
-        assert reasons["maafw/MaaFramework.dll"] == "embedded-runtime"
         assert reasons["agent/__pycache__/main.cpython-312.pyc"] == "cache"
         # 声明目录里的缓存也剔，白名单不是免检。
         assert reasons["resource/base/__pycache__/junk.pyc"] == "cache"
@@ -146,19 +142,31 @@ class TestWhitelist:
         assert "assets/screenshots/big.png" not in kept
         assert not any("missing.png" in warning for warning in plan.rules.warnings)
 
-    def test_python_agent_project_drops_the_native_runtime(
+    def test_bundled_runtime_is_kept_verbatim_for_python_agents_too(
         self, tmp_path: Path
     ) -> None:
-        # Python agent 的 binding 自带原生库，maafw/ 整目录不进副本（含没列进分类表的 DLL）。
+        # runner 优先加载项目自带的原生库（可能是自定义构建），整目录带走，与路径模式一致；
+        # 目录里的外壳程序与缓存照常剔除。
         root = _release(tmp_path / "src")
         (root / "maafw/MaaAgentClient.dll").write_bytes(b"dll")
+        _write(root / "maafw/MaaPiCli.exe", "shell")
+        _write(root / "python/Lib/site-packages/maa/bin/MaaFramework.dll", "dll")
+        _write(root / "python/Lib/site-packages/numpy/__pycache__/x.pyc", "pyc")
 
         plan = build_projection_plan(root)
         kept = {path.as_posix() for path in plan.copied_files}
 
-        assert not any(path.startswith("maafw/") for path in kept)
-        assert plan.excluded_reasons["maafw/MaaAgentClient.dll"] == "embedded-runtime"
+        assert {
+            "maafw/MaaFramework.dll",
+            "maafw/MaaAgentClient.dll",
+            "python/python.exe",
+            "python/python313.dll",
+            "python/Lib/site-packages/maa/bin/MaaFramework.dll",
+        } <= kept
+        assert "maafw/MaaPiCli.exe" not in kept
+        assert "python/Lib/site-packages/numpy/__pycache__/x.pyc" not in kept
         assert plan.report()["bundledMaaFWVersion"] == "5.11.1"
+        assert plan.report()["bundledPythonVersion"] == "3.13"
 
     @pytest.mark.parametrize(
         "agent",
@@ -257,14 +265,19 @@ class TestWhitelist:
         } <= kept
         assert "assets/unrelated.png" not in kept
 
-    def test_stripped_interpreter_is_a_warning_not_an_error(
+    def test_missing_interpreter_is_a_warning_not_an_error(
         self, tmp_path: Path
     ) -> None:
-        # 自带 Python 被投影掉由 planner 落到隔离 venv 兜底，不是发行包不合规。
-        plan = build_projection_plan(_release(tmp_path / "src"))
+        # 声明了自带 Python 但包里没发（靠安装脚本事后下载的那种）：planner 落到隔离 venv
+        # 兜底，不是发行包不合规。
+        root = _release(tmp_path / "src")
+        shutil.rmtree(root / "python")
+
+        plan = build_projection_plan(root)
 
         assert any("隔离 venv" in warning for warning in plan.rules.warnings)
         assert plan.rules.agents[0]["classification"] == "python"
+        assert plan.report()["bundledPythonVersion"] == ""
 
     def test_report_numbers_come_from_the_scan(self, tmp_path: Path) -> None:
         plan = build_projection_plan(_release(tmp_path / "src"))
@@ -388,14 +401,16 @@ class TestMaterialize:
             encoding="utf-8"
         ) == "png"
         assert not (tmp_path / "out/MFW.exe").exists()
-        assert not (tmp_path / "out/python").exists()
+        assert not (tmp_path / "out/libs").exists()
+        # 自带解释器原样带走。
+        assert (tmp_path / "out/python/python.exe").is_file()
         assert seen[-1] == (len(plan.copied_files), len(plan.copied_files))
 
 
-class TestRuntimePin:
-    """原生库不进副本，但它的版本必须进：agent 与 runner 的协议版本号跨版本连不上。"""
+class TestBundledRuntimeKept:
+    """项目自带的原生库与解释器原样进副本；运行时读的就是目录里的东西，没有第二份真相。"""
 
-    def test_materialized_copy_pins_the_bundled_runtime_version(
+    def test_materialized_copy_keeps_runtime_and_interpreter(
         self, tmp_path: Path
     ) -> None:
         source = _release(tmp_path / "src")
@@ -404,16 +419,11 @@ class TestRuntimePin:
 
         materialize_projection(plan, copy)
 
-        assert plan.report()["bundledMaaFWVersion"] == "5.11.1"
-        assert plan.report()["bundledPythonVersion"] == "3.13"
-        assert not (copy / "maafw").exists()
-        marker = json.loads((copy / PROJECTION_MARKER_NAME).read_text(encoding="utf-8"))
-        assert marker["bundledMaaFWVersion"] == "5.11.1"
-        # 自带解释器被投影掉了，但 agent 要的 Python 大版本要留下来给隔离 venv 用。
-        assert marker["bundledPythonVersion"] == "3.13"
-        assert read_projected_python_requirement(copy) == "3.13"
-        assert build_agent_env_manifest(copy)["pythonRequirement"] == "3.13"
-        # runner 侧所有钉版本的入口都经过这一个探测函数。
+        assert (copy / "maafw/MaaFramework.dll").read_bytes() == _bundled_dll("v5.11.1")
+        assert (copy / "python/python.exe").is_file()
+        assert (copy / "python/python313.dll").is_file()
+        assert not any(name.startswith(".auto_mas") for name in os.listdir(copy))
+        # runner 侧所有钉版本的入口都从目录里的库读，与路径模式同一条路。
         assert probe_bundled_maafw_version(copy) == "5.11.1"
         assert resolve_project_maafw_requirement(copy) == "maafw==5.11.1"
         assert pin_agent_maafw_requirement(copy, ["MaaFw", "json5"]) == [
@@ -421,26 +431,11 @@ class TestRuntimePin:
             "json5",
         ]
 
-    def test_pin_change_invalidates_the_prepared_environment(
-        self, tmp_path: Path
-    ) -> None:
-        # 环境准备按项目指纹去重；标记换了版本就不能再沿用上一份运行环境。
-        source = _release(tmp_path / "src")
-        copy = tmp_path / "copy"
-        materialize_projection(build_projection_plan(source), copy)
-        before = project_environment_fingerprint(copy)
-
-        (source / "maafw/MaaFramework.dll").write_bytes(_bundled_dll("v5.12.3"))
-        materialize_projection(build_projection_plan(source), copy)
-
-        assert probe_bundled_maafw_version(copy) == "5.12.3"
-        assert project_environment_fingerprint(copy) != before
-
-    def test_source_without_native_runtime_leaves_the_pin_empty(
+    def test_source_without_native_runtime_reports_nothing(
         self, tmp_path: Path
     ) -> None:
         source = _release(tmp_path / "src")
-        (source / "maafw/MaaFramework.dll").unlink()
+        shutil.rmtree(source / "maafw")
         plan = build_projection_plan(source)
         copy = tmp_path / "copy"
 
@@ -449,11 +444,10 @@ class TestRuntimePin:
         assert plan.report()["bundledMaaFWVersion"] == ""
         assert probe_bundled_maafw_version(copy) is None
 
-    def test_update_package_refreshes_the_python_pin_and_keeps_the_other(
+    def test_update_package_replaces_runtime_and_interpreter(
         self, tmp_path: Path
     ) -> None:
-        # 包里只换了自带解释器（3.13 → 3.12）、没带原生库：Python 版本跟着换，
-        # MaaFramework 版本沿用副本现有的。
+        # 全量包带来新的原生库与解释器：照常落地，版本从新库里读。
         source = _release(tmp_path / "src")
         copy = tmp_path / "copy"
         materialize_projection(build_projection_plan(source), copy)
@@ -462,66 +456,8 @@ class TestRuntimePin:
             archive.writestr("interface.json", _interface(version="v1.1.0"))
             archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 2}}')
             archive.writestr("agent/main.py", "print('hi')")
-            archive.writestr("python/python.exe", "exe")
+            archive.writestr("python/python.exe", "exe2")
             archive.writestr("python/python312.dll", "dll")
-
-        apply_package_transaction(
-            copy,
-            package,
-            operation_root=tmp_path / "operations",
-            projection=True,
-        )
-
-        assert not (copy / "python").exists()
-        assert read_projected_python_requirement(copy) == "3.12"
-        assert probe_bundled_maafw_version(copy) == "5.11.1"
-
-    def test_package_without_native_runtime_keeps_the_existing_pin(
-        self, tmp_path: Path
-    ) -> None:
-        # 全量包不带原生库时，标记若不进本次清单会被当作上一版残留清掉。
-        source = _release(tmp_path / "src")
-        copy = tmp_path / "copy"
-        materialize_projection(build_projection_plan(source), copy)
-        package = tmp_path / "v1.1.0.zip"
-        with zipfile.ZipFile(package, "w") as archive:
-            archive.writestr("interface.json", _interface(version="v1.1.0", agent=None))
-            archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 2}}')
-
-        apply_package_transaction(
-            copy,
-            package,
-            operation_root=tmp_path / "operations",
-            projection=True,
-        )
-        # 装过一次就有清单了；再来一个同样不带原生库的全量包，标记仍要活着。
-        package2 = tmp_path / "v1.2.0.zip"
-        with zipfile.ZipFile(package2, "w") as archive:
-            archive.writestr("interface.json", _interface(version="v1.2.0", agent=None))
-            archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 3}}')
-        apply_package_transaction(
-            copy,
-            package2,
-            operation_root=tmp_path / "operations",
-            projection=True,
-        )
-
-        assert probe_bundled_maafw_version(copy) == "5.11.1"
-        manifest_path = next(
-            (tmp_path / "maafw_project_state").rglob("resource-manifest.json")
-        )
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert PROJECTION_MARKER_NAME in manifest["files"]
-
-    def test_update_package_refreshes_the_pin(self, tmp_path: Path) -> None:
-        # v1 副本钉 5.11.1；全量包带 5.12.3 的原生库：库不落盘，标记换成 5.12.3。
-        source = _release(tmp_path / "src")
-        copy = tmp_path / "copy"
-        materialize_projection(build_projection_plan(source), copy)
-        package = tmp_path / "v1.1.0.zip"
-        with zipfile.ZipFile(package, "w") as archive:
-            archive.writestr("interface.json", _interface(version="v1.1.0", agent=None))
-            archive.writestr("resource/base/pipeline/a.json", '{"A": {"v": 2}}')
             archive.writestr("maafw/MaaFramework.dll", _bundled_dll("v5.12.3"))
             archive.writestr("MFW.exe", "shell")
 
@@ -533,14 +469,41 @@ class TestRuntimePin:
         )
 
         assert result.get("applied") is not False
-        assert not (copy / "maafw").exists()
+        assert (copy / "python/python.exe").read_text(encoding="utf-8") == "exe2"
+        assert (copy / "python/python312.dll").is_file()
+        assert not (copy / "MFW.exe").exists()
         assert probe_bundled_maafw_version(copy) == "5.12.3"
         manifest_path = next(
             (tmp_path / "maafw_project_state").rglob("resource-manifest.json")
         )
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert PROJECTION_MARKER_NAME in manifest["files"]
-        assert "maafw/MaaFramework.dll" not in manifest["files"]
+        assert "maafw/MaaFramework.dll" in manifest["files"]
+        assert "MFW.exe" not in manifest["files"]
+
+    def test_package_without_runtime_leaves_the_copy_runtime_alone(
+        self, tmp_path: Path
+    ) -> None:
+        # 差量包 / 不带运行时的包：副本里的原生库与解释器原样留着。
+        source = _release(tmp_path / "src")
+        copy = tmp_path / "copy"
+        materialize_projection(build_projection_plan(source), copy)
+        for version in ("v1.1.0", "v1.2.0"):
+            package = tmp_path / f"{version}.zip"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("interface.json", _interface(version=version))
+                archive.writestr(
+                    "resource/base/pipeline/a.json", f'{{"A": "{version}"}}'
+                )
+                archive.writestr("agent/main.py", "print('hi')")
+            apply_package_transaction(
+                copy,
+                package,
+                operation_root=tmp_path / "operations",
+                projection=True,
+            )
+
+        assert probe_bundled_maafw_version(copy) == "5.11.1"
+        assert (copy / "python/python313.dll").is_file()
 
 
 class TestPackageRules:

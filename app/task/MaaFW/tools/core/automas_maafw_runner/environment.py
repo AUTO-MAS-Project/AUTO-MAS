@@ -622,12 +622,6 @@ def _runtime_constraint_text(value: Any) -> str:
 # 这两个用内置运行跑不起来，属已知边界而非缺陷——太老的不支持是正常的。
 PROJECT_MAAFW_DLL_NAME = "MaaFramework.dll"
 
-# 内嵌副本根目录的投影标记。投影把项目自带的 maafw/ 去掉了（原生库由运行池提供），
-# 但「这个项目是按哪个版本的 MaaFramework 发行的」不能跟着丢：agent 侧的
-# AgentServer 与 runner 侧的 AgentClient 有协议版本号，跨版本只会表现为连不上。
-# 所以投影时把来源自带库的实测版本写在这里，没有原生库时从这里钉。
-PROJECTION_MARKER_NAME = ".auto_mas_maafw_projection.json"
-
 # 兜底搜索的最大深度。真实布局最深是 ``runtimes/<rid>/native``（3 层），
 # 留一层余量吸收未来的挪动；再深就会扫进 ``python/Lib/site-packages/maa/bin``
 # 那种项目自带解释器的副本，那是 agent 的，不是外壳的。
@@ -783,7 +777,7 @@ def probe_bundled_maafw_version(project_path: Path) -> str | None:
 
     runtime_path = project_maafw_runtime_path(project_path)
     if runtime_path is None:
-        return read_projected_bundled_maafw_version(project_path)
+        return None
     try:
         data = (runtime_path / PROJECT_MAAFW_DLL_NAME).read_bytes()
     except OSError:
@@ -797,25 +791,6 @@ def probe_bundled_maafw_version(project_path: Path) -> str | None:
         return None
     try:
         return str(Version(found.pop()))
-    except InvalidVersion:
-        return None
-
-
-def read_projected_bundled_maafw_version(project_path: Path) -> str | None:
-    """内嵌副本：从投影标记里读来源自带原生库的版本（已是 PEP 440）。"""
-
-    marker = Path(project_path) / PROJECTION_MARKER_NAME
-    try:
-        data = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    raw = str(data.get("bundledMaaFWVersion") or "").strip()
-    if not raw:
-        return None
-    try:
-        return str(Version(raw))
     except InvalidVersion:
         return None
 

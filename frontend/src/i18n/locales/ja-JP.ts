@@ -1443,8 +1443,8 @@ export default {
     maafwEmbeddedCopyMissing: 'コピーがありません。次回実行前に元フォルダから再作成します',
     maafwEmbeddedSaved: 'コピーで {percent}% 削減（{source} → {copy}）',
     maafwEmbeddedShell: 'シェル：{shell}',
-    maafwEmbeddedRuntime: 'ランタイム MaaFramework {version}（元パッケージ同梱と同じ）',
-    maafwEmbeddedPython: 'Agent の Python {version}（元パッケージ同梱と同じ）',
+    maafwEmbeddedRuntime: 'MaaFramework {version}（プロジェクト同梱、そのままコピー）',
+    maafwEmbeddedPython: 'Agent の Python {version}（プロジェクト同梱、そのままコピー）',
     maafwEmbeddedSourceVersion: '取り込み元 {version}',
     maafwEmbeddedImportedAt: '取り込み日時 {time}',
     maafwEmbeddedSourceMissing:

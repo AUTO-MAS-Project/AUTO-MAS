@@ -1,19 +1,20 @@
 """按 ProjectInterface 白名单把一个 MaaFW 发行包投影成只含内置运行所需文件的树。
 
-内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），MaaFramework 与
-Python 由运行池和隔离 venv 提供。所以一份发行包里真正需要落盘的只有：
+内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），去掉的就是它们：
+外壳程序、.NET 托管库、界面用的运行时、缓存与日志。一份发行包里要落盘的是：
 interface.json 及其 ``import``、resource 声明的目录、controller 的附加资源、languages
-文件、agent 与 pretask 引用的文件所在目录、依赖清单（requirements.txt 之类）。另外
-带上 interface 里各层级的 ``icon``（用户页展示项目 / 任务图标）与顶层 ``welcome``
-及其正文引用的图片（给说明页备着）——它们不参与运行，都是小文件；找不到就静默
-跳过，不算错。其余一律不要——不是"删掉外壳"，而是"只拿声明了的"。
+文件、agent 与 pretask 引用的文件所在目录、依赖清单（requirements.txt 之类），以及
+**项目自带的运行时原样带走**——MaaFramework 原生库目录（``maafw/`` 或
+``runtimes/<rid>/native``）与 agent 自带的 Python 解释器目录（``python/``）。另外带上
+interface 里各层级的 ``icon``（用户页展示项目 / 任务图标）与顶层 ``welcome`` 及其
+正文引用的图片（给说明页备着）——小文件，找不到就静默跳过。其余一律不要。
 
-一个例外：**agent 不是 Python 时，项目自带的 MaaFramework 原生库目录整体保留。**
-Python agent 的 binding 自带原生库（pip 的 maafw 包），副本去掉 ``maafw/`` 没事；
-Go / C++ 之类的二进制 agent 却在启动时从项目目录加载 ``MaaFramework.dll`` 与
-``MaaAgentServer.dll``（实测 MaaYYs 的 agent.exe：libDir=<项目>/maafw，找不到直接
-fatal 退出）。这时 runner 也会用同一份库（``project_maafw_runtime_path`` 优先项目
-自带），与路径模式完全一致，项目的自定义构建也就跟着保住了。分类表只在两处起作用：白名单目标
+运行时为什么原样带走而不是靠运行池重建：真机上两个项目两种死法——M9A 的 agent
+写死 Python >=3.13,<3.14，用宿主 3.12 建的隔离 venv 起来即退；MaaYYs 的 Go agent.exe
+启动时从 <项目>/maafw 加载 MaaFramework，找不到直接 fatal。项目自带的 DLL 可能是
+自定义构建、site-packages 里可能有 requirements.txt 没写的东西，"按版本从运行池
+重建一份等价环境"这条路验证不完。带走之后 runner 与 agent 用的就是发行包里的那份，
+与路径模式完全一致；运行池只在项目本来就没自带时兜底——也与路径模式一致。分类表只在两处起作用：白名单目标
 内部（比如 agent 目录里的 ``__pycache__``），以及保守模式下的整棵根。
 
 三条与旧 Project Store 投影不同的取舍：
@@ -41,14 +42,6 @@ from typing import Any
 import json5
 
 MAX_REPORT_ITEMS = 128
-
-# 副本根目录的投影标记：记来源自带 MaaFramework 的版本与自带 Python 的大版本。
-# 原生库和解释器本身都不进副本（由运行池按这两个版本提供），但版本必须跟着走：
-# agent 与 runner 之间有协议版本号，钉错了只表现为「AgentClient 连接超时」；agent
-# 又常写死 Python 大版本（create-maa-project 模板要求 >=3.13,<3.14），用宿主 3.12
-# 建的隔离 venv 会被它直接拒绝。更新落地时包里带了新库 / 新解释器，标记随包一起换。
-# 文件名以 .auto_mas 开头，更新器的残留清理不会碰它。
-PROJECTION_MARKER_NAME = ".auto_mas_maafw_projection.json"
 
 EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".git": "source-control",
@@ -173,9 +166,9 @@ class TargetMode:
 
     complete: bool
     allow_excluded_root: bool
-    # 项目自带的原生运行时目录（非 Python agent 要从里面加载库）：分类表里
-    # ``embedded-runtime`` 那一类在这里放行，外壳程序与缓存照常剔除。
-    native_runtime: bool = False
+    # 项目自带的运行时目录（原生库 / 解释器）原样带走：分类表里 ``embedded-runtime``
+    # 与 ``embedded-python`` 两类在这里放行，外壳程序与缓存照常剔除。
+    verbatim_runtime: bool = False
 
 
 @dataclass(frozen=True)
@@ -252,9 +245,9 @@ class ProjectionPlan:
     excluded_reasons: dict[str, str]
     source_tree_bytes: int
     projected_bytes: int
-    # 来源自带 MaaFramework 的实测版本（PEP 440）；没有原生库时为 None。
+    # 给界面看的信息：来源自带 MaaFramework 的实测版本（PEP 440）与 agent 自带解释器的
+    # 大版本（如 "3.13"）。两者都随目录原样进副本，运行时读的是目录里的东西，不是这里。
     bundled_maafw_version: str | None = None
-    # agent 自带解释器的大版本（如 "3.13"）；没有自带解释器时为 None。
     bundled_python_version: str | None = None
 
     def report(self) -> dict[str, Any]:
@@ -360,7 +353,7 @@ def target_exclusion_reason(
         reason = exclusion_reason(path.relative_to(target), is_directory=is_directory)
     else:
         reason = exclusion_reason(Path(path.name), is_directory=is_directory)
-    if mode.native_runtime and reason == "embedded-runtime":
+    if mode.verbatim_runtime and reason in {"embedded-runtime", "embedded-python"}:
         return None
     return reason
 
@@ -679,7 +672,7 @@ def build_projection_rules(
         allow_excluded_root: bool = False,
         required_path: Path | None = None,
         python_interpreter: bool = False,
-        native_runtime: bool = False,
+        verbatim_runtime: bool = False,
     ) -> None:
         exists = view.exists(relative)
         if not exists:
@@ -712,14 +705,14 @@ def build_projection_rules(
                 targets[relative] = TargetMode(
                     previous.complete or complete,
                     previous.allow_excluded_root or allow_excluded_root,
-                    previous.native_runtime or native_runtime,
+                    previous.verbatim_runtime or verbatim_runtime,
                 )
             return
         previous = targets.get(relative, TargetMode(False, False))
         targets[relative] = TargetMode(
             previous.complete or complete,
             previous.allow_excluded_root or allow_excluded_root,
-            previous.native_runtime or native_runtime,
+            previous.verbatim_runtime or verbatim_runtime,
         )
         if required_label:
             exact = required_path or relative
@@ -901,12 +894,17 @@ def build_projection_rules(
                 )
                 if view.exists(exec_relative):
                     discovered.append(exec_relative.as_posix())
+                    # 自带解释器所在目录原样带走：里面的 site-packages 就是这个项目
+                    # 实际跑起来的环境，运行池重建的不等价（版本、自定义构建、
+                    # requirements 没写的包）。其它 agent 文件所在目录只是保留根。
                     add_target(
                         _retention_root(exec_relative, view),
-                        complete=False,
+                        complete=interpreter,
                         required_label=label,
                         required_path=exec_relative,
+                        allow_excluded_root=interpreter,
                         python_interpreter=interpreter,
+                        verbatim_runtime=interpreter,
                     )
                     _add_root_python_siblings(
                         exec_relative, view, targets, base_relative
@@ -988,22 +986,28 @@ def build_projection_rules(
             ):
                 add_target(entry, complete=False, required_label=None)
 
-    # 非 Python 的 agent 从项目目录加载 MaaFramework；把自带的原生库目录整体留下。
-    if any(agent.get("classification") != "python" for agent in agents):
-        runtime_relative = _bundled_native_runtime_dir(roots, base_relative)
-        if runtime_relative is not None:
-            add_target(
-                runtime_relative,
-                complete=True,
-                required_label="agent native runtime",
-                allow_excluded_root=True,
-                native_runtime=True,
-            )
-        elif strict:
-            warnings.append(
-                "agent 不是 Python，但项目里没有自带的 MaaFramework 原生库目录；"
-                "agent 若要从项目目录加载库，运行时会失败。"
-            )
+    # 项目自带的 MaaFramework 原生库目录原样带走：runner 优先加载它（与路径模式一致），
+    # 非 Python 的 agent 更是启动时就从 <项目>/maafw 加载。
+    runtime_relative = _bundled_native_runtime_dir(roots, base_relative)
+    for candidate in {runtime_relative, base_relative / "maafw"}:
+        if candidate is None or not view.is_dir(candidate):
+            continue
+        add_target(
+            candidate,
+            complete=True,
+            required_label="bundled native runtime",
+            allow_excluded_root=True,
+            verbatim_runtime=True,
+        )
+    if (
+        runtime_relative is None
+        and strict
+        and any(agent.get("classification") != "python" for agent in agents)
+    ):
+        warnings.append(
+            "agent 不是 Python，但项目里没有自带的 MaaFramework 原生库目录；"
+            "agent 若要从项目目录加载库，运行时会失败。"
+        )
 
     conservative = opaque_found
     if conservative:
@@ -1213,10 +1217,12 @@ _PYTHON_DLL_RE = re.compile(r"^python3(\d{1,2})\.dll$", re.IGNORECASE)
 def _bundled_native_runtime_dir(
     roots: tuple[Path, ...], base_relative: Path
 ) -> Path | None:
-    """项目自带 MaaFramework 原生库所在目录（相对 source_root）；没有就 None。
+    """项目自带 MaaFramework 原生库所在目录（相对 ``source_root``）；没有就 None。
 
     查找逻辑与 runner 同一套（``project_maafw_runtime_path``：先 ``maafw/``，再
-    ``runtimes/<rid>/native``，再有界搜索），叠加视图里先看包、再看项目。
+    ``runtimes/<rid>/native``，再有界搜索），叠加视图里先看包、再看项目。MFAAvalonia
+    布局下找到的是 ``runtimes/win-x64/native``，那里除了 MaaFramework 还有外壳自己的
+    原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。
     """
 
     from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
@@ -1260,16 +1266,6 @@ def probe_bundled_python_version(root: Path, rules: ProjectionRules) -> str | No
     return None
 
 
-def read_projection_marker(root: Path) -> dict[str, Any]:
-    """副本根的投影标记；缺失或坏掉时给空字典。"""
-
-    try:
-        data = json.loads((root / PROJECTION_MARKER_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def probe_bundled_maafw_version(root: Path) -> str | None:
     """来源（或更新包）自带 MaaFramework 原生库的版本；探测逻辑与 runner 共用。"""
 
@@ -1278,34 +1274,6 @@ def probe_bundled_maafw_version(root: Path) -> str | None:
     )
 
     return _probe(root)
-
-
-def projection_marker_payload(
-    bundled_maafw_version: str | None,
-    bundled_python_version: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "version": 1,
-        "bundledMaaFWVersion": bundled_maafw_version or "",
-        "bundledPythonVersion": bundled_python_version or "",
-    }
-
-
-def write_projection_marker(
-    root: Path,
-    bundled_maafw_version: str | None,
-    bundled_python_version: str | None = None,
-) -> Path:
-    marker = root / PROJECTION_MARKER_NAME
-    marker.write_text(
-        json.dumps(
-            projection_marker_payload(bundled_maafw_version, bundled_python_version),
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return marker
 
 
 def materialize_projection(
@@ -1342,10 +1310,6 @@ def materialize_projection(
         shutil.copy2(source, destination)
         if progress is not None:
             progress(index, total)
-    # 原生库与解释器没跟过来，版本要跟过来。
-    write_projection_marker(
-        target, plan.bundled_maafw_version, plan.bundled_python_version
-    )
 
 
 # --------------------------------------------------------------------------
