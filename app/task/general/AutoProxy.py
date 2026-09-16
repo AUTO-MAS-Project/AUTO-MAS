@@ -571,6 +571,14 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
+        # 源是用户填的脚本配置位置，可能不存在（路径填错、脚本还没生成过配置）。
+        # 跳过并说明即可，不能先清掉 MAS 侧副本再抛 FileNotFoundError。
+        if not self.script_config_path.exists():
+            logger.warning(
+                f"跳过配置回写: 脚本配置路径不存在 {self.script_config_path}"
+            )
+            return
+
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             shutil.rmtree(
                 Path.cwd()
@@ -584,6 +592,11 @@ class AutoProxyTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            # Folder 分支靠 copytree 自建目标目录，File 分支的 copy 不会，补上
+            (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+            ).mkdir(parents=True, exist_ok=True)
             shutil.copy(
                 self.script_config_path,
                 Path.cwd()
@@ -639,8 +652,16 @@ class AutoProxyTask(TaskExecuteBase):
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
         )
 
-        # 导入配置文件
+        # 导入配置文件。MAS 侧还没为这个用户存过配置时（新建用户后直接跑自动代理）
+        # 跳过下发、让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径，
+        # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if not (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+            ).exists():
+                logger.warning("MAS 中尚无该用户的配置, 跳过配置下发")
+                return
             swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
@@ -652,6 +673,13 @@ class AutoProxyTask(TaskExecuteBase):
                 script_id=self.script_info.script_id,
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            if not (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+                / self.script_config_path.name
+            ).exists():
+                logger.warning("MAS 中尚无该用户的配置文件, 跳过配置下发")
+                return
             shutil.copy(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
