@@ -279,25 +279,6 @@ export function useMaaFWControlConfig(
     return previewData.value?.controlCapabilities.emulatorExtras[emulatorType] || null
   })
 
-  const adbControlStrategyMessage = computed(() => {
-    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
-      return '未选择模拟器时，ADB controller 将使用 MaaFW 默认 ADB 控制策略'
-    }
-    if (!previewData.value) {
-      return '读取 interface 后会展示当前 MaaFW 包可用的模拟器增强能力'
-    }
-
-    if (isMultiEmulatorConfig.value) {
-      return '该配置纳管了多个模拟器，EmulatorExtras 能力按所选设备在运行时判定'
-    }
-
-    const capability = selectedEmulatorCapability.value
-    if (capability?.screencap || capability?.input) {
-      return `已根据 ${selectedEmulatorLabel.value} 和当前 MaaFW 包能力启用可用的 EmulatorExtras`
-    }
-    return `${selectedEmulatorLabel.value} 当前没有可用的 EmulatorExtras 能力，运行时使用 MaaFW 默认 ADB 控制策略`
-  })
-
   const adbControlStrategyItems = computed(() => {
     const capability = selectedEmulatorCapability.value
     const perDevice = isMultiEmulatorConfig.value
@@ -473,7 +454,6 @@ export function useMaaFWControlConfig(
     resourceOptions,
     interfaceDependentDisabled,
     selectedEmulatorLabel,
-    adbControlStrategyMessage,
     adbControlStrategyItems,
     resolveControllerName,
     resolveResourceName,

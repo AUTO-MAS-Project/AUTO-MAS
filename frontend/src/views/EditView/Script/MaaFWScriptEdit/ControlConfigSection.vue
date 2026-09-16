@@ -150,12 +150,6 @@
           </a-col>
         </a-row>
 
-        <a-alert
-          class="control-strategy-alert"
-          type="info"
-          show-icon
-          :message="adbControlStrategyMessage"
-        />
         <a-descriptions :column="3" size="small" bordered class="control-strategy-summary">
           <a-descriptions-item
             v-for="item in adbControlStrategyItems"
@@ -312,7 +306,6 @@ const props = defineProps<{
   isAdbController: boolean
   isDesktopController: boolean
   resourceOptions: MaaFWResourceInfo[]
-  adbControlStrategyMessage: string
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
@@ -429,10 +422,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
 .controller-resource-row,
 .control-detail-row {
   margin-top: 16px;
-}
-
-.control-strategy-alert {
-  margin-bottom: 12px;
 }
 
 .control-strategy-summary {
