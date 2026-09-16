@@ -2581,6 +2581,8 @@ export default {
     couldNotPickLaunch: '起動する exe を選択できませんでした',
     qqDirectMessageOver: 'OneBot HTTP API 経由で QQ のダイレクトメッセージを送信',
     qqDirectMessageOverImage: 'OneBot HTTP API 経由で QQ の画像ダイレクトメッセージを送信',
+    qqDirectMessageOverTextImage:
+      'OneBot HTTP API 経由で QQ のダイレクトメッセージを送信し、スクリーンショットがあれば添付',
     notifyGetRequest: 'GET リクエストで通知を送信',
     restartApp: 'アプリを再起動',
     couldNotReorder: '並び替えを保存できませんでした',
