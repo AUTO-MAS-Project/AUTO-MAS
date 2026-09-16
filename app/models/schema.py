@@ -3970,6 +3970,10 @@ class MaaFWAgentEnvPrepareData(BaseModel):
         default=False,
         description="是否命中指纹缓存，命中时本次未做实际准备",
     )
+    previouslyPrepared: bool = Field(
+        default=False,
+        description="本次准备前该项目已有过就绪环境，即这次是更新而非首次准备",
+    )
     preparedAt: Optional[str] = Field(
         default=None, description="缓存命中时，上一次实际完成准备的时间"
     )

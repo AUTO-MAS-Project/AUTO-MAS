@@ -1457,6 +1457,17 @@ export default {
     launchModeAttachOnlyDesc:
       'MAS 不会启动或关闭任何程序，由脚本或你自己负责启停游戏，MAS 只接管已运行的窗口。',
     mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
+    envPanelTitle: '运行环境',
+    envPanelPlaceholder: '读取 interface 后会在这里显示运行环境的准备过程',
+    envPreparingHint: '首次需要下载 MaaFramework，可能要几分钟',
+    envStatusPreparing: '正在准备运行环境',
+    envStatusPrepared: '运行环境准备完成',
+    envStatusUpdated: '运行环境更新完成',
+    envStatusCached: '无需更新运行环境',
+    envStatusFailed: '运行环境准备失败',
+    envFailedHint: '运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。',
+    envReadyAgents: '已就绪的 Agent',
+    envRetry: '重试',
     mfwUnityResolutionOff: '不修改',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',

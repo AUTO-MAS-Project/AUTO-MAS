@@ -1363,6 +1363,7 @@ def _maafw_agent_env_prepare_data(
     logs: list[str],
     *,
     cached: bool,
+    previously_prepared: bool = False,
 ) -> MaaFWAgentEnvPrepareData:
     """把 ``prepare_project_environment()`` 的结果摊平成响应体。
 
@@ -1399,6 +1400,7 @@ def _maafw_agent_env_prepare_data(
         venvPath=runtime.get("venvPath"),
         maafwVersion=runtime.get("maafwVersion"),
         cached=cached,
+        previouslyPrepared=previously_prepared,
         preparedAt=result.get("preparedAt"),
     )
 
@@ -1436,6 +1438,7 @@ async def prepare_maafw_agent_env(
         MaaFWRuntimePoolService,
     )
     from app.task.MaaFW.tools.embedded.env_cache import (
+        has_prepared_environment,
         load_prepared_environment,
         store_prepared_environment,
     )
@@ -1513,6 +1516,10 @@ async def prepare_maafw_agent_env(
         # 更新这个目录，算出来的指纹不会是半个更新中间态。
         fingerprint = await asyncio.to_thread(
             project_environment_fingerprint, root_path
+        )
+        # 界面要分「首次准备完成」和「运行环境更新完成」两句话，在写入新缓存前先看一眼
+        previously_prepared = await asyncio.to_thread(
+            has_prepared_environment, root_path
         )
         if not payload.force:
             cached_result = await asyncio.to_thread(
@@ -1603,7 +1610,13 @@ async def prepare_maafw_agent_env(
     )
     return MaaFWAgentEnvPrepareOut(
         message="MFW 运行环境已就绪",
-        data=_maafw_agent_env_prepare_data(root_path, result, logs, cached=False),
+        data=_maafw_agent_env_prepare_data(
+            root_path,
+            result,
+            logs,
+            cached=False,
+            previously_prepared=previously_prepared,
+        ),
     )
 
 

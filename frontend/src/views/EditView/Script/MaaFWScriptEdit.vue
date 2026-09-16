@@ -54,38 +54,19 @@
             :preview-project-title="previewProjectTitle"
             :interface-stats="interfaceStats"
             :update-applying="updateApplying"
+            :env-preparing="envPreparing"
+            :env-ready="envReady"
+            :env-failed="envFailed"
+            :env-message="envMessage"
+            :env-percent="envPercent"
+            :env-logs="envLogs"
+            :env-agents="envAgents"
+            :env-outcome="envOutcome"
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
+            @retry-env="retryAgentEnvPrepare"
           />
-
-          <a-alert
-            v-if="envPreparing || envReady || envMessage"
-            class="env-prepare-alert"
-            :type="envPreparing ? 'info' : envReady ? 'success' : 'error'"
-            show-icon
-            :message="envMessage"
-          >
-            <template v-if="envPreparing" #icon>
-              <LoadingOutlined spin />
-            </template>
-            <template v-if="envReady && envAgents.length" #description>
-              已就绪的 Agent：{{ envAgents.map(a => a.runtimeKind || '未知').join('、') }}
-            </template>
-            <template v-if="envFailed" #description>
-              <div>运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。</div>
-              <div v-if="envFailureLogs.length" class="env-log-box">
-                <div v-for="(line, index) in envFailureLogs" :key="index" class="env-log-line">
-                  {{ line }}
-                </div>
-              </div>
-            </template>
-            <template v-if="envFailed" #action>
-              <a-button size="small" :loading="envPreparing" @click="retryAgentEnvPrepare">
-                重试
-              </a-button>
-            </template>
-          </a-alert>
         </div>
 
         <div v-show="!isWizard || currentStep === 1">
@@ -179,7 +160,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { GetService } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import {
@@ -210,7 +191,7 @@ import type {
   MaaFWTaskInfo,
   ScriptType,
 } from '@/types/script'
-import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
+import BasicInfoSection, { type MaaFWEnvOutcome } from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
@@ -479,10 +460,9 @@ const envFailed = ref(false)
 const envMessage = ref('')
 const envPercent = ref<number | null>(null)
 const envLogs = ref<string[]>([])
-// 失败时只摊开末尾这些行：前面多是「创建隔离 venv」之类的流水，真正的报错
-// （比如 pip 的 stderr）总在最后。整份日志仍在 envLogs 里。
-const envFailureLogs = computed(() => envLogs.value.slice(-12))
 const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
+// 成功时是哪一种：首次准备 / 更新了已有环境 / 项目没变直接沿用，面板按它选状态词
+const envOutcome = ref<MaaFWEnvOutcome | null>(null)
 let envSubscriptionId: string | null = null
 
 // 准备过程可能几分钟，全程订阅后端推来的阶段与日志
@@ -547,12 +527,13 @@ const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
   envFailed.value = false
   envPercent.value = null
   envLogs.value = []
-  envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
+  envOutcome.value = null
+  envMessage.value = t('edit.envPreparingHint')
   try {
     const response = await prepareMaaFWAgentEnv(path, scriptId, force)
     if (!response || response.code !== 200 || !response.data) {
       envFailed.value = true
-      envMessage.value = response?.message || 'MFW 运行环境准备失败'
+      envMessage.value = response?.message || t('edit.envStatusFailed')
       // 失败响应里同样带着逐行日志，而且这才是最需要它的时候：原先这里直接
       // return，把唯一一份失败原因扔了，用户只剩一句「准备失败」。
       if (response?.data?.logs?.length) envLogs.value = response.data.logs
@@ -566,7 +547,13 @@ const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
     // 后端返回的完整日志兜底：WS 断连时至少事后能看到
     if (response.data.logs?.length) envLogs.value = response.data.logs
     const version = response.data.maafwVersion
-    envMessage.value = version ? `运行环境已就绪，MaaFramework ${version}` : '运行环境已就绪'
+    envMessage.value = version ? `MaaFramework ${version}` : ''
+    // 旧后端没有 previouslyPrepared 字段：读不到就按首次准备算
+    envOutcome.value = response.data.cached
+      ? 'cached'
+      : response.data.previouslyPrepared
+        ? 'updated'
+        : 'prepared'
   } catch (error) {
     envFailed.value = true
     envMessage.value = error instanceof Error ? error.message : String(error)
@@ -717,34 +704,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 上面是基础信息区的 40px 底距，下面紧接控制方式区的标题，这里要自己留出间距 */
-.env-prepare-alert {
-  margin-top: 4px;
-  margin-bottom: 32px;
-}
-
-.env-agent-line {
-  margin-top: 6px;
-}
-
-.env-log-box {
-  margin-top: 8px;
-  max-height: 180px;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.env-log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text-secondary);
-}
-
 .wizard-steps {
   margin-bottom: 28px;
 }

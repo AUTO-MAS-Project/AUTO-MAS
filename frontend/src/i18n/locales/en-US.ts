@@ -1531,6 +1531,19 @@ export default {
     launchModeAttachOnlyDesc:
       'MAS neither launches nor closes anything; the script or you start and stop the game, and MAS only takes over the running window.',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
+    envPanelTitle: 'Runtime environment',
+    envPanelPlaceholder:
+      'The environment preparation steps show up here after the interface is read',
+    envPreparingHint: 'The first run downloads MaaFramework and may take a few minutes',
+    envStatusPreparing: 'Preparing the runtime environment',
+    envStatusPrepared: 'Runtime environment ready',
+    envStatusUpdated: 'Runtime environment updated',
+    envStatusCached: 'Runtime environment is up to date',
+    envStatusFailed: 'Failed to prepare the runtime environment',
+    envFailedHint:
+      'Nothing below will run until the environment is ready. Check the network and project path, then retry.',
+    envReadyAgents: 'Ready agents',
+    envRetry: 'Retry',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',

@@ -1411,6 +1411,18 @@ export default {
     launchModeAttachOnlyDesc:
       'MAS はプログラムを起動も終了もしません。スクリプトか自分でゲームを起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます。',
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
+    envPanelTitle: '実行環境',
+    envPanelPlaceholder: 'interface を読み込むと、実行環境の準備過程がここに表示されます',
+    envPreparingHint: '初回は MaaFramework のダウンロードが必要で、数分かかることがあります',
+    envStatusPreparing: '実行環境を準備中',
+    envStatusPrepared: '実行環境の準備が完了しました',
+    envStatusUpdated: '実行環境の更新が完了しました',
+    envStatusCached: '実行環境の更新は不要です',
+    envStatusFailed: '実行環境の準備に失敗しました',
+    envFailedHint:
+      '実行環境が整っていないと、以降の設定をしても実行できません。ネットワークとプロジェクトのパスを確認して再試行してください。',
+    envReadyAgents: '準備済みの Agent',
+    envRetry: '再試行',
     mfwUnityResolutionOff: '変更しない',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
