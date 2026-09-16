@@ -74,6 +74,7 @@ class MumuManager(DeviceBase):
         return adb_path if adb_path.exists() else None
 
     async def _get_app_state(self, idx: str, package_name: str) -> str | None:
+        logger.debug(f"查询 MuMu 应用状态: {idx} - {package_name}")
         try:
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -109,7 +110,9 @@ class MumuManager(DeviceBase):
             logger.warning(f"MuMu 应用状态返回异常: {result.stdout.strip()}")
             return None
 
-        return data["state"].strip().lower()
+        state = data["state"].strip().lower()
+        logger.info(f"MuMu 应用状态: {idx} - {package_name} - {state}")
+        return state
 
     @staticmethod
     def _is_app_foreground(data: str, package_name: str) -> bool:
@@ -127,6 +130,7 @@ class MumuManager(DeviceBase):
         )
 
     async def _wait_app_foreground(self, idx: str, package_name: str) -> bool:
+        logger.info(f"开始检查 MuMu 应用前台状态: {idx} - {package_name}")
         for attempt in range(6):
             try:
                 result = await ProcessRunner.run_process(
@@ -148,6 +152,7 @@ class MumuManager(DeviceBase):
                 if result.returncode == 0 and self._is_app_foreground(
                     result.stdout, package_name
                 ):
+                    logger.info(f"MuMu 应用已进入前台: {idx} - {package_name}")
                     return True
                 if result.returncode != 0:
                     logger.debug(f"检查 MuMu 应用前台状态失败: {result.stdout.strip()}")
@@ -158,8 +163,12 @@ class MumuManager(DeviceBase):
         return False
 
     async def _ensure_app_foreground(self, idx: str, package_name: str) -> bool:
+        logger.info(f"开始检查 MuMu 应用运行状态: {idx} - {package_name}")
         state = await self._get_app_state(idx, package_name)
         if state != "running":
+            logger.info(
+                f"MuMu 应用未运行，执行补启动: {idx} - {package_name} - {state}"
+            )
             try:
                 result = await ProcessRunner.run_process(
                     self.emulator_path,
@@ -268,13 +277,16 @@ class MumuManager(DeviceBase):
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        logger.info(f"开始检查模拟器状态: {idx} - {package_name}")
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
+                logger.info(f"模拟器已在线，跳过应用启动检查: {idx} - {package_name}")
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
                 return (await self.getInfo(idx))[idx]
             elif status == DeviceStatus.OFFLINE:
+                logger.info(f"模拟器离线，开始执行启动流程: {idx} - {package_name}")
                 break
             await asyncio.sleep(0.1)
 
@@ -284,6 +296,7 @@ class MumuManager(DeviceBase):
         if_close_mumu_nx = await self.find_mumu_nx_window() is None
 
         # 启动实例前关闭 MuMu 应用保活
+        logger.info(f"关闭 MuMu 应用保活: {idx}")
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "setting",
@@ -300,6 +313,7 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"设置 app_keptlive 失败: {result.stdout}")
 
+        logger.info(f"执行 MuMu 启动命令: {idx} - {package_name}")
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "control",
@@ -316,6 +330,7 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
+        logger.info(f"MuMu 启动命令已完成，等待实例在线: {idx}")
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
@@ -324,6 +339,7 @@ class MumuManager(DeviceBase):
             if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
+                logger.info(f"模拟器已在线: {idx} - {package_name}")
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
                 if package_name:

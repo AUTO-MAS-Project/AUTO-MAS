@@ -891,6 +891,13 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     continue
 
+                logger.info(
+                    f"模拟器启动完成: 用户 {self.cur_user_uid} - 模式 "
+                    f"{self.mode} - 实例 "
+                    f"{self.script_config.get('Emulator', 'Index')} - "
+                    f"ADB {emulator_info.adb_address}"
+                )
+
                 if Config.get("Function", "IfSilence"):
                     try:
                         await self.emulator_manager.setVisible(
