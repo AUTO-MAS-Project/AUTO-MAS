@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
+import importlib
 import json
 import os
 import re
@@ -274,6 +275,23 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
                 stage_drops[item] = stage_drops.get(item, 0) + count
 
     return all_stage_drops
+
+
+RESTORE_POOL_MODULE_BOOK = {
+    MaaConfig: "app.task.MAA.tools.restore_service",
+    MaaEndConfig: "app.task.MaaEnd.tools.restore_service",
+    SrcConfig: "app.task.SRC.tools.restore_service",
+    M9AConfig: "app.task.M9A.tools.restore_service",
+    MaaFWConfig: "app.task.MaaFW.tools.restore_service",
+    GeneralConfig: "app.task.general.tools.restore_service",
+    OkwwConfig: "app.task.Okww.tools.restore_service",
+    OkNteConfig: "app.task.OkNte.tools.restore_service",
+    HSRConfig: "app.task.HSR.tools.restore_service",
+    BetterGIConfig: "app.task.BetterGI.tools.restore_service",
+    ZzzOdConfig: "app.task.ZzzOd.tools.restore_service",
+    BAAHConfig: "app.task.BAAH.tools.restore_service",
+}
+"""配置恢复分发表: 脚本配置类 → 专项恢复池模块路径, 调用时延迟导入, 入口统一为 RESTORE_POOLS"""
 
 
 class AppConfig(GlobalConfig):
@@ -2313,62 +2331,16 @@ class AppConfig(GlobalConfig):
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
         与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
-        与 schema，只在分发链加一个分支。
+        与 schema，只在 RESTORE_POOL_MODULE_BOOK 注册一条。
         """
 
         from app.utils.config_restore import RestoreContext, build_restore_service
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, OkNteConfig):
-            from app.task.OkNte.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, OkwwConfig):
-            from app.task.Okww.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaConfig):
-            from app.task.MAA.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaEndConfig):
-            from app.task.MaaEnd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, M9AConfig):
-            from app.task.M9A.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, GeneralConfig):
-            from app.task.general.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, BAAHConfig):
-            from app.task.BAAH.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, SrcConfig):
-            from app.task.SRC.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, BetterGIConfig):
-            from app.task.BetterGI.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaFWConfig):
-            from app.task.MaaFW.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, HSRConfig):
-            from app.task.HSR.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        else:
+        module_name = RESTORE_POOL_MODULE_BOOK.get(type(script_config))
+        if module_name is None:
             raise ValueError("该专项暂不支持配置恢复")
+        restore_pools = importlib.import_module(module_name).RESTORE_POOLS
         return build_restore_service(
             RestoreContext(
                 config=self,
@@ -2376,7 +2348,7 @@ class AppConfig(GlobalConfig):
                 script_id=script_id,
                 user_id=user_id,
             ),
-            RESTORE_POOLS,
+            restore_pools,
         )
 
     async def list_config_backups(
