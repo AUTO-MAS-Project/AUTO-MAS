@@ -418,7 +418,7 @@ const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined
   monthlyOnceTasks.value = parseTaskNameList(maafwConfig.Run.MonthlyOnceTasks)
 }
 
-const runPreview = async () => {
+const runPreview = async (options: { forceEnv?: boolean } = {}) => {
   const path = maafwConfig.Info.Path.trim()
   if (!path) {
     previewData.value = null
@@ -437,7 +437,7 @@ const runPreview = async () => {
     await prunePeriodTaskSelections()
     // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
     // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
-    void runAgentEnvPrepare(path)
+    void runAgentEnvPrepare(path, options.forceEnv === true)
   } catch (error) {
     previewData.value = null
     message.error(error instanceof Error ? error.message : String(error))
@@ -446,10 +446,11 @@ const runPreview = async () => {
   }
 }
 
+// 「准备运行环境」按钮：interface 再读一遍，运行环境不吃指纹缓存、真的重新准备一次。
+// 进度与结论都在右侧面板里，不再弹「已读取 xxx」的 toast。
 const handlePreviewInterface = async () => {
-  await runPreview()
-  if (!previewData.value) return
-  message.success(t('edit.readP0', { p0: previewProjectTitle.value }))
+  envPreparedPath.value = ''
+  await runPreview({ forceEnv: true })
 }
 
 // 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
@@ -472,7 +473,9 @@ const ensureEnvSubscription = () => {
     { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
     wsMessage => {
       const data = wsMessage.data
-      if (data.log) {
+      // 响应回来时会用后端带的整份日志覆盖一遍；WS 上的行走的是另一条路，可能比
+      // 响应还晚到，准备已经结束再追加就会把最后几行写成两遍
+      if (data.log && envPreparing.value) {
         envLogs.value = [...envLogs.value.slice(-199), data.log]
       }
       if (data.stage === 'log') return

@@ -1532,6 +1532,7 @@ export default {
       'MAS neither launches nor closes anything; the script or you start and stop the game, and MAS only takes over the running window.',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
+    prepareRuntimeEnv: 'Prepare runtime environment',
     envPanelPlaceholder:
       'The environment preparation steps show up here after the interface is read',
     envPreparingHint: 'The first run downloads MaaFramework and may take a few minutes',

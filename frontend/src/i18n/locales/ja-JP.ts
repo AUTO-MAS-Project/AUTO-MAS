@@ -1412,6 +1412,7 @@ export default {
       'MAS はプログラムを起動も終了もしません。スクリプトか自分でゲームを起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます。',
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
     envPanelTitle: '実行環境',
+    prepareRuntimeEnv: '実行環境を準備',
     envPanelPlaceholder: 'interface を読み込むと、実行環境の準備過程がここに表示されます',
     envPreparingHint: '初回は MaaFramework のダウンロードが必要で、数分かかることがあります',
     envStatusPreparing: '実行環境を準備中',

@@ -148,43 +148,29 @@
           <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
           <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
         </div>
-        <div v-if="updateProgress.phase === 'idle'" class="update-process-placeholder">
-          {{ t('edit.updateProcessPlaceholder') }}
-        </div>
-        <div
-          v-else
-          class="update-process-summary"
-          :class="`update-process-summary--${summaryTone}`"
-        >
-          <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-process-icon" />
-          <CheckCircleOutlined v-else-if="summaryTone === 'success'" class="update-process-icon" />
-          <CloseCircleOutlined v-else class="update-process-icon" />
-          <span class="update-process-phase">{{ phaseLabel }}</span>
-          <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
-        </div>
-        <div
-          v-if="updateProgress.phase === 'completed' && updateResultDetail"
-          class="update-result-detail"
-        >
-          {{ updateResultDetail }}
-        </div>
-        <a-progress
-          v-if="barPercent !== null"
-          :percent="barPercent"
-          size="small"
-          :status="summaryTone === 'failed' ? 'exception' : 'active'"
-          class="update-process-bar"
-        />
-        <!-- 日志框一直在：面板高度不随「有没有开始更新」跳动，空着时只显示占位一行 -->
+        <!-- 日志框一直在：面板高度不随「有没有开始更新」跳动；结论作为最后一行用强调色写出来 -->
         <div ref="logBoxRef" class="update-log-box">
           <div
-            v-if="updateProgress.phase !== 'idle' && !updateProgress.logs.length"
+            v-if="updateProgress.phase === 'idle'"
             class="update-log-line update-log-line--empty"
           >
-            {{ t('edit.updateProcessNoLogYet') }}
+            {{ t('edit.updateProcessPlaceholder') }}
           </div>
           <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
             {{ line }}
+          </div>
+          <div
+            v-if="updateProgress.phase !== 'idle'"
+            class="update-log-status"
+            :class="`update-log-status--${summaryTone}`"
+          >
+            <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-log-status-icon" />
+            <CheckCircleOutlined
+              v-else-if="summaryTone === 'success'"
+              class="update-log-status-icon"
+            />
+            <CloseCircleOutlined v-else class="update-log-status-icon" />
+            <span>{{ statusText }}</span>
           </div>
         </div>
       </div>
@@ -332,6 +318,18 @@ const summaryDetail = computed(() => {
   return state.message
 })
 
+// 整行一个颜色。进行中给「阶段 · 进度」，结束后直接用后端那句结论（已是最新 / 更新完成 /
+// 失败原因），再跟上版本与下载来源；不另加一个「已完成」之类的状态词
+const statusText = computed(() => {
+  const state = props.updateProgress
+  if (summaryTone.value === 'running') {
+    return [phaseLabel.value, summaryDetail.value].filter(Boolean).join('  ·  ')
+  }
+  const parts = [state.message || phaseLabel.value]
+  if (state.phase === 'completed' && updateResultDetail.value) parts.push(updateResultDetail.value)
+  return parts.filter(Boolean).join('  ·  ')
+})
+
 const packageKindLabel = computed(() => {
   const kind = props.updateProgress.packageKind
   if (kind === 'full') return t('edit.updatePackageFull')
@@ -339,12 +337,10 @@ const packageKindLabel = computed(() => {
   return ''
 })
 
-const barPercent = computed(() => progressBarPercent(props.updateProgress))
-
 // 新日志进来时贴到底部，用户手动往上翻时不打扰
 const logBoxRef = ref<HTMLElement | null>(null)
 watch(
-  () => props.updateProgress.logs.length,
+  () => [props.updateProgress.logs.length, props.updateProgress.phase, statusText.value],
   async () => {
     const box = logBoxRef.value
     if (!box) return
@@ -403,13 +399,6 @@ watch(
 
 .update-alert {
   margin-bottom: 16px;
-}
-
-.update-result-detail {
-  margin-top: 2px;
-  padding-left: 22px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
 }
 
 .form-hint {
@@ -510,66 +499,9 @@ watch(
   margin-inline-end: 0;
 }
 
-.update-process-placeholder {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
-}
-
-.update-process-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--ant-color-text);
-}
-
-.update-process-icon {
-  font-size: 14px;
-}
-
-.update-process-summary--running .update-process-icon {
-  color: var(--ant-color-primary);
-}
-
-.update-process-summary--success .update-process-icon {
-  color: var(--ant-color-success);
-}
-
-.update-process-summary--failed .update-process-icon {
-  color: var(--ant-color-error);
-}
-
-/* 状态词用强调色：成功绿、失败红、进行中主色，代替原来单独的一条结果 alert */
-.update-process-phase {
-  font-weight: 600;
-}
-
-.update-process-summary--running .update-process-phase {
-  color: var(--ant-color-primary);
-}
-
-.update-process-summary--success .update-process-phase {
-  color: var(--ant-color-success);
-}
-
-.update-process-summary--failed .update-process-phase {
-  color: var(--ant-color-error);
-}
-
-.update-process-detail {
-  color: var(--ant-color-text-secondary);
-  overflow-wrap: anywhere;
-}
-
-.update-process-bar {
-  margin: 6px 0 2px;
-}
-
 /* 定高、内部滚动：日志再长面板也不长个，左列小框才对得齐 */
 .update-log-box {
-  margin-top: 8px;
-  height: 160px;
+  height: 170px;
   overflow-y: auto;
   padding: 8px 10px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -587,5 +519,28 @@ watch(
 
 .update-log-line--empty {
   color: var(--ant-color-text-tertiary);
+}
+
+/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色，代替原来单独的一条结果 alert */
+.update-log-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.update-log-status--running {
+  color: var(--ant-color-primary);
+}
+
+.update-log-status--success {
+  color: var(--ant-color-success);
+}
+
+.update-log-status--failed {
+  color: var(--ant-color-error);
 }
 </style>

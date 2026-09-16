@@ -1458,6 +1458,7 @@ export default {
       'MAS 不会启动或关闭任何程序，由脚本或你自己负责启停游戏，MAS 只接管已运行的窗口。',
     mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
     envPanelTitle: '运行环境',
+    prepareRuntimeEnv: '准备运行环境',
     envPanelPlaceholder: '读取 interface 后会在这里显示运行环境的准备过程',
     envPreparingHint: '首次需要下载 MaaFramework，可能要几分钟',
     envStatusPreparing: '正在准备运行环境',
