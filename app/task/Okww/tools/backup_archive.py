@@ -48,6 +48,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    MODE_FILE_NAME,
     OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
@@ -268,10 +269,20 @@ def restore_mas_backup(
     archive_mas_backup(
         script_id, user_id, mas_dir, overlay=overlay, force=True, mode=mode
     )
-    restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
-    restored_overlay = read_overlay_sidecar(mas_dir)
-    if restored_overlay is not None:
-        (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+    # 备份只有侧车（目录缺失/为空时归档的纯字段备份）时跳过目录写回：
+    # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
+    managed = [
+        rel
+        for rel in dir_files(backup_dir)
+        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+    ]
+    if managed:
+        restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+        restored_overlay = read_overlay_sidecar(mas_dir)
+        if restored_overlay is not None:
+            (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+    else:
+        restored_overlay = read_overlay_sidecar(backup_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 

@@ -849,12 +849,14 @@ def _sra_profile_rows(payload: dict) -> list[dict]:
     start_game = payload.get("startGame")
     if isinstance(start_game, dict) and start_game.get("game.channel") is not None:
         channel = start_game.get("game.channel")
-        rows.append(
-            {
-                "key": "游戏渠道",
-                "value": _SRA_CHANNEL_LABELS.get(channel, str(channel)),
-            }
+        # channel 是 str/int（词表键）时查表；dict/list 等不可哈希值时
+        # 不能作为 .get 的键，转字符串展示，避免 TypeError 炸掉整份预览
+        channel_label = (
+            _SRA_CHANNEL_LABELS.get(channel, str(channel))
+            if isinstance(channel, (str, int))
+            else str(channel)
         )
+        rows.append({"key": "游戏渠道", "value": channel_label})
 
     trailblaze = payload.get("trailblazePower")
     if isinstance(trailblaze, dict):
@@ -862,7 +864,9 @@ def _sra_profile_rows(payload: dict) -> list[dict]:
             rows.append({"key": "清体力", "value": _format_bool(trailblaze["enabled"])})
         tasklist = trailblaze.get("tasklist")
         if isinstance(tasklist, list):
-            description = build_sra_tasklist_description(tasklist) if tasklist else "无"
+            # 任务项非 dict（结构变体）时过滤，避免 build_* 里 item.get 炸预览
+            tasks = [t for t in tasklist if isinstance(t, dict)]
+            description = build_sra_tasklist_description(tasks) if tasks else "无"
             rows.append(
                 {
                     "key": "清体力任务清单",
@@ -947,7 +951,9 @@ def _sra_reward_values(section: dict) -> list[bool] | None:
         [bool(item) for item in legacy] if isinstance(legacy, list) else None
     )
     if legacy_values is not None:
-        # 索引式按 SRA 语义补齐到定长：被改短的尾部按默认关闭处理
+        # 索引式按 SRA 语义补齐到定长：被改短的尾部按默认关闭处理；
+        # 超出词表长度的项截断（否则预览标签索引越界炸掉整份预览）
+        legacy_values = legacy_values[: len(SRA_REWARD_LABELS)]
         legacy_values += [False] * (len(_SRA_REWARD_KEY_ORDER) - len(legacy_values))
     values: list[bool] = []
     has_named = False

@@ -1,4 +1,4 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -1853,7 +1853,8 @@ class AppConfig(GlobalConfig):
             slot_dir = root / "config" / f"{slot:02d}"
             if slot_dir.is_dir():
                 # 覆盖前存底走统一入口（先物化再快照）：不物化的「导入前」
-                # 备份缺账号，恢复它会把本页账号清空
+                # 备份缺账号，恢复它会把本页账号清空。导入是覆盖性操作，
+                # 存底失败必须中止导入，否则覆盖前现场彻底丢失
                 archive_mas_config_backup(
                     script_id,
                     slot,
@@ -1861,6 +1862,7 @@ class AppConfig(GlobalConfig):
                     user_cfg,
                     force=True,
                     meta=collect_mas_user_info(user_cfg),
+                    fail_on_snapshot_error=True,
                 )
 
         native_root, instance = self._zzzod_native_instance(script_id, instance_idx)
@@ -2407,7 +2409,16 @@ class AppConfig(GlobalConfig):
     async def restore_config_backup(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> dict:
-        """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。"""
+        """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。
+
+        恢复是覆盖性写配置操作：脚本锁着（任务/配置会话运行中）时拒绝，
+        否则 mas 池「先换目录再回填 UserData」会在 update 处撞锁，留下
+        目录已换、字段未回填的半恢复现场。
+        """
+
+        uid = uuid.UUID(script_id)
+        if self.ScriptConfig[uid].is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法恢复配置")
 
         await self.restore_service(script_id, user_id).restore(target, ts)
         return {"target": target}

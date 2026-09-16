@@ -120,9 +120,9 @@ def archive_mas_backup(
         force=force,
     )
     if dest is None:
-        logger.info("用户 %s 的 MAS 配置无变化，跳过归档", user_id)
+        logger.info("用户 {} 的 MAS 配置无变化，跳过归档", user_id)
         return None
-    logger.info("用户 %s 的 MAS 配置已归档: %s", user_id, dest.name)
+    logger.info("用户 {} 的 MAS 配置已归档: {}", user_id, dest.name)
     return dest
 
 
@@ -224,7 +224,7 @@ def archive_native_backup(
     if dest is None:
         logger.info("BAAH 配置无变化，跳过归档")
         return None
-    logger.info("BAAH 配置已归档: %s", dest.name)
+    logger.info("BAAH 配置已归档: {}", dest.name)
     return dest
 
 
@@ -273,7 +273,7 @@ def restore_native_backup(
         target.write_bytes(path.read_bytes())
 
     archived_name = Path(user_files[0]).stem
-    logger.info("BAAH 配置已恢复备份 %s（%s.json → %s.json）", ts, archived_name, name)
+    logger.info("BAAH 配置已恢复备份 {}（{}.json → {}.json）", ts, archived_name, name)
     return archived_name
 
 

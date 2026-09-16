@@ -478,16 +478,20 @@ class AutoProxyTask(TaskExecuteBase):
             recover_src_user_config(overlay_path)
             # 下发前归档下发源到用户池（运行回写会覆盖它；带页面核心字段
             # 侧车，指纹去重，失败不阻断运行）。native 池由 manager.prepare
-            # 在任务级一次性归档
-            with suppress(Exception):
-                archive_mas_runtime_backup(
-                    self.script_info.script_id,
-                    str(self.cur_user_uid),
-                    overlay_path,
-                    overlay=read_overlay_values(self.cur_user_config),
-                    # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                    mode=self.config_mode,
-                )
+            # 在任务级一次性归档。直控无 MAS 配置目录：Temp 是安装 config/
+            # 快照、不属于 mas 池内容，跳过归档——归进 mas 池会在切到用户态
+            # 后恢复该备份时把安装快照写进自己的 ConfigFile（对齐
+            # restore_service「直控 mas 池为空」语义）
+            if not self.direct_control:
+                with suppress(Exception):
+                    archive_mas_runtime_backup(
+                        self.script_info.script_id,
+                        str(self.cur_user_uid),
+                        overlay_path,
+                        overlay=read_overlay_values(self.cur_user_config),
+                        # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                        mode=self.config_mode,
+                    )
 
         staging_path = stage_src_config_update(
             self.src_set_path,

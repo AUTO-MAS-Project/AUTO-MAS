@@ -22,7 +22,6 @@
 
 import asyncio
 import uuid
-from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -215,8 +214,10 @@ class M9AManager(TaskExecuteBase):
             # 任务级一次性归档 M9A 原生配置（项目级池，指纹去重，失败不阻断
             # 任务）：此刻 config/ 仍是任务动手前的完整现场（replace_dir 是
             # 复制不动源目录），必须在随后的实例注入前归档
-            with suppress(Exception):
+            try:
                 archive_native_backup(self.m9a_config_path)
+            except Exception:
+                logger.opt(exception=True).warning("M9A 运行前原生配置归档失败，已跳过（不阻断任务）")
 
         # 构建用户列表
         self.script_info.user_list = [

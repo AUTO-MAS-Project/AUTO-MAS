@@ -509,6 +509,35 @@ class SrcManager(TaskExecuteBase):
             Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         )
 
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+
+        直控会话 MAS 零写入（ScriptConfig 直控分支直接 return），安装
+        config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
+        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与
+        用户脚本态会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
+        MAS 目录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留
+        任何现场改动，结束后也还原任务前快照。
+        """
+
+        if self.task_info.mode != "ScriptConfig" or self.task_info.view_only:
+            return False
+        if not (
+            self.script_info.user_list
+            and self.script_info.user_list[0].status == "完成"
+        ):
+            return False
+        user_id = self.script_info.user_list[0].user_id
+        if user_id == "Default":
+            return False
+        try:
+            mode = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            ).strip()
+        except (KeyError, ValueError, TypeError):
+            return False
+        return mode == "直控"
+
     def _backup_src_config_to_temp(self) -> None:
         """完整复制配置后，再提交为可恢复的 Temp 快照。"""
 
@@ -832,9 +861,11 @@ class SrcManager(TaskExecuteBase):
                     raise RuntimeError(
                         f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
                     )
-                self._restore_src_config_from_temp(
-                    expected_installation_id=self.src_installation_id,
-                )
+                # 直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
+                if not self._keep_script_config_changes():
+                    self._restore_src_config_from_temp(
+                        expected_installation_id=self.src_installation_id,
+                    )
                 self._retire_src_config_snapshot()
             else:
                 logger.warning(f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}")

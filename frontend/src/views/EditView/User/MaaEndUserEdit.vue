@@ -809,6 +809,9 @@ const handleRestoreView = (
           }
           restoreOpen.value = false
           if (target === 'mas') {
+            // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
+            // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
+            await loadUserData()
             await startSession(userId, true)
           } else {
             await startSession(scriptId, true)

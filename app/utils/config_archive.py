@@ -173,10 +173,11 @@ def _archive(
 ) -> Path | None:
     """把文件集复制为 ``store_root`` 下新时间戳目录。
 
-    内容与最近一份备份完全一致时跳过（含 ``force=True``：恢复前存底在
-    「恢复目标与当前内容一致」时不再产生冗余条目——当前配置已完整存放在
-    该份备份中，误恢复可从它找回）；跳过返回 ``None``，否则返回归档目录。
-    指纹对比失败的边界下照常归档。
+    常规归档内容与最新一份一致时跳过；``force=True``（恢复/覆盖前存底）
+    内容与**任一**现存备份一致时跳过——存底是防护动作，当前现场若等于某
+    历史中间态（如刚看完最旧备份），重复条目会挤掉保留池最旧的、恰恰是
+    用户正在查看的那份。常规归档不比对全部：用户「改回旧状态再归档」是有
+    信息量的操作轨迹，不该被静默去重。指纹对比失败的边界下照常归档。
 
     ``protect``：保留清理时排除的时间戳集合（不在超时清理中删）。用于
     ``restore_dir`` 链路上 force 归档后立刻恢复——用户选中的那份若在
@@ -188,11 +189,24 @@ def _archive(
     times = list_times(store_root)
     if force:
         protect = frozenset(times) | protect
-    if times:
+        # 只与最新份比：存底时刻紧跟恢复/覆盖，当前现场若与任一历史条目
+        # 一致，多出来的存底条目没有信息量，却会在 keep 清理时挤掉最旧的
+        for ts in times:
+            try:
+                # 备份元数据（_mas_mode，归档后写入、不在 payload 里）不参与指纹
+                # 对比，计入会让去重恒失效；_mas_overlay.json 侧车是 payload 内的
+                # 用户数据，必须参与（只改侧车字段也要新建归档）
+                latest = {
+                    k: v
+                    for k, v in dir_files(store_root / ts).items()
+                    if k != MODE_FILE_NAME
+                }
+                if file_set_hash(latest) == file_set_hash(files):
+                    return None
+            except OSError as e:
+                logger.warning(f"备份指纹对比失败，照常归档: {e}")
+    elif times:
         try:
-            # 备份元数据（_mas_mode，归档后写入、不在 payload 里）不参与指纹
-            # 对比，计入会让去重恒失效；_mas_overlay.json 侧车是 payload 内的
-            # 用户数据，必须参与（只改侧车字段也要新建归档）
             latest = {
                 k: v
                 for k, v in dir_files(store_root / times[0]).items()

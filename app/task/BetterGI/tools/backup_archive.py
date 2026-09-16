@@ -387,8 +387,11 @@ def restore_native_backup(root_path: str | Path, ts: str) -> None:
 
     按归档内相对键写回（``config.json`` → ``{RootPath}/User/config.json``、
     ``OneDragon/{名}.json`` → ``{RootPath}/User/OneDragon/{名}.json``）。
-    replace 语义：OneDragon 子树整棵按备份替换，跨恢复残留的同前缀文件
-    一并清除（:func:`restore_files` 管理）。
+    replace 语义：OneDragon 走 ``dir_map`` 管理——只替换备份内出现的实配
+    文件（跨恢复残留的同前缀文件一并清除），**collect 排除的运行时槽位
+    「MAS独立配置.json」（或用户同名自建配置）不整棵删除**，否则该文件会
+    被整目录替换抹掉（:func:`restore_files` 默认映射对目录前缀整棵
+    force_rmtree，与 collect 的排除语义相矛盾）。
     """
 
     backup_dir = get_native_backup_dir(root_path, ts)
@@ -396,7 +399,11 @@ def restore_native_backup(root_path: str | Path, ts: str) -> None:
         raise ValueError(f"备份不存在: {ts}")
     root_path = Path(root_path)
     archive_native_backup(root_path, force=True)
-    restore_files(backup_dir, root_path / _BGI_GLOBAL_CONFIG_REL.parent)
+    restore_files(
+        backup_dir,
+        root_path / _BGI_GLOBAL_CONFIG_REL.parent,
+        dir_map={_BGI_ONE_DRAGON_REL_DIR.name: root_path / _BGI_ONE_DRAGON_REL_DIR},
+    )
     logger.info(f"BetterGI 原生配置已恢复备份 {ts}")
 
 

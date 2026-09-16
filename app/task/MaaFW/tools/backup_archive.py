@@ -409,10 +409,13 @@ def build_native_preview(script_id: str, project_path: str | Path, ts: str) -> d
                         "value": _summary_text(interface["version"]),
                     }
                 )
-            tasks = interface.get("tasks")
-            if isinstance(tasks, dict) and tasks:
+            tasks = interface.get("task")
+            if isinstance(tasks, list) and tasks:
+                names = [
+                    (t.get("name") if isinstance(t, dict) else t) for t in tasks
+                ]
                 rows.append(
-                    {"key": "任务", "value": "、".join(str(name) for name in tasks)}
+                    {"key": "任务", "value": "、".join(str(n) for n in names)}
                 )
     if not rows:
         rows.append({"key": "文件", "value": f"{len(files)} 个（无 interface.json）"})

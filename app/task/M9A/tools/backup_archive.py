@@ -229,9 +229,9 @@ def archive_mas_backup(
         force=force,
     )
     if dest is None:
-        logger.info("用户 %s 的 MAS 配置无变化，跳过归档", user_id)
+        logger.info("用户 {} 的 MAS 配置无变化，跳过归档", user_id)
         return None
-    logger.info("用户 %s 的 MAS 配置已归档: %s", user_id, dest.name)
+    logger.info("用户 {} 的 MAS 配置已归档: {}", user_id, dest.name)
     return dest
 
 
@@ -260,7 +260,7 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
         raise ValueError(f"备份不存在: {ts}")
     restored = read_overlay_sidecar(backup_dir)
     if restored is not None:
-        logger.info("用户 %s 的 MAS 配置已读取备份 %s", user_id, ts)
+        logger.info("用户 {} 的 MAS 配置已读取备份 {}", user_id, ts)
     return restored
 
 
@@ -294,7 +294,7 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     if dest is None:
         logger.info("M9A 原生配置无变化，跳过归档")
         return None
-    logger.info("M9A 原生配置已归档: %s", dest.name)
+    logger.info("M9A 原生配置已归档: {}", dest.name)
     return dest
 
 
@@ -320,7 +320,7 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_path, force=True)
     restore_dir(native_backup_root(config_path), ts, config_path)
-    logger.info("M9A 原生配置已恢复备份 %s", ts)
+    logger.info("M9A 原生配置已恢复备份 {}", ts)
 
 
 # ══════════════════ 备份预览摘要 ══════════════════

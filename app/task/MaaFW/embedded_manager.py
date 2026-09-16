@@ -694,11 +694,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         # 运行前归档 MaaFW 项目配置（config/ + interface.json）——物化会写这两处，
         # 归档必须在任何写入前（指纹去重，失败不阻断任务）
-        with suppress(Exception):
+        try:
             archive_native_backup(
                 self.script_info.script_id,
                 Path(self.script_config.get("Info", "Path")),
             )
+        except Exception:
+            logger.opt(exception=True).warning("MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）")
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
@@ -715,12 +717,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             user_id = self.runnable_user_uids[index]
             # 物化前归档本用户 MAS 字段侧车（下发前存底；指纹去重，
             # 失败只记日志不阻断任务——与 native 归档同一语义）
-            with suppress(Exception):
+            try:
                 archive_mas_runtime_backup(
                     self.script_info.script_id,
                     str(user_id),
                     overlay=read_overlay_values(self.user_config[user_id]),
                 )
+            except Exception:
+                logger.opt(exception=True).warning("MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）")
             self.inner_task = self._build_inner_task()
             self._inner_finalized = False
             try:

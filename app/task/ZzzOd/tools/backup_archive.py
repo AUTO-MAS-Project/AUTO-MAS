@@ -392,6 +392,7 @@ def archive_mas_config_backup(
     *,
     force: bool = False,
     meta: dict | None = None,
+    fail_on_snapshot_error: bool = False,
 ) -> Path | None:
     """归档 MAS 用户槽的「页面配置快照」：先物化账号+编排，再走原语快照。
 
@@ -402,13 +403,17 @@ def archive_mas_config_backup(
     「MAS 配置快照」语义（仅 :func:`restore_mas_backup` 内部恢复前存底使用）。
 
     失败语义分两段：物化（写槽）失败照常抛出——注入/会话依赖物化结果，
-    半成品槽不该继续；快照（指纹归档）失败只记日志返回 ``None``——归档是
-    现场保护，不是前置条件。
+    半成品槽不该继续；快照（指纹归档）失败默认只记日志返回 ``None``——
+    归档是现场保护，不是前置条件。**覆盖性操作（导入覆盖前）必须传
+    ``fail_on_snapshot_error=True``**：存底是覆盖的前提，失败照常覆盖会把
+    覆盖前现场彻底丢掉。
     """
 
     materialize_user_fields(slot_dir, user_config)
     try:
         return archive_mas_backup(script_id, slot_idx, slot_dir, force=force, meta=meta)
     except Exception:
+        if fail_on_snapshot_error:
+            raise
         logger.opt(exception=True).warning("ZZZ-OD 用户槽配置快照失败，已跳过（不阻断注入/会话）")
         return None

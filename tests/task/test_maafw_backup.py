@@ -1,4 +1,4 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -49,10 +49,10 @@ from app.task.MaaFW.tools.backup_archive import (
 
 _INTERFACE = {
     "version": "1.0",
-    "tasks": {
-        "每日清体力": {"name": "每日清体力"},
-        "刷圣遗物": {"name": "刷圣遗物"},
-    },
+    "task": [
+        {"name": "每日清体力"},
+        {"name": "刷圣遗物"},
+    ],
 }
 
 

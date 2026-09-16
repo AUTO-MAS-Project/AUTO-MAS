@@ -23,7 +23,6 @@
 import asyncio
 import shutil
 import uuid
-from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -709,11 +708,13 @@ class HSRManager(TaskExecuteBase):
             # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
             # 失败不阻断任务）
             m7a_root = resolve_script_path(self.script_config, "M7A")
-            with suppress(Exception):
+            try:
                 archive_native_backup(
                     Path(m7a_root) if m7a_root else None,
                     get_sra_app_data_dir(),
                 )
+            except Exception:
+                logger.opt(exception=True).warning("HSR 运行前原生配置归档失败，已跳过（不阻断任务）")
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()

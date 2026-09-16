@@ -147,8 +147,10 @@ export function useBettergiGuiSession() {
     }
   }
 
-  const dispose = () => {
-    void stopSession()
+  const dispose = async () => {
+    // 真正等待会话停止：调用方（onUnmounted）依赖「先停会话再归档」的
+    // 时序，同步 void stopSession() 会让归档与会话收尾并行撞车
+    await stopSession()
   }
 
   return {

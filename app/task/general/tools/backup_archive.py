@@ -130,9 +130,9 @@ def archive_mas_backup(
         return None
     dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
     if dest is None:
-        logger.info("用户 %s 的 MAS 配置无变化，跳过归档", user_id)
+        logger.info("用户 {} 的 MAS 配置无变化，跳过归档", user_id)
         return None
-    logger.info("用户 %s 的 MAS 配置已归档: %s", user_id, dest.name)
+    logger.info("用户 {} 的 MAS 配置已归档: {}", user_id, dest.name)
     return dest
 
 
@@ -158,7 +158,7 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
     # 恢复前存底不设目录条件：目标缺失/为空时无可存底内容由 archive 自判
     archive_mas_backup(script_id, user_id, mas_dir, force=True)
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
-    logger.info("用户 %s 的 MAS 配置已恢复备份 %s", user_id, ts)
+    logger.info("用户 {} 的 MAS 配置已恢复备份 {}", user_id, ts)
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, mas_dir: Path) -> None:
@@ -216,7 +216,7 @@ def archive_native_backup(
     if dest is None:
         logger.info("通用脚本原生配置无变化，跳过归档")
         return None
-    logger.info("通用脚本原生配置已归档: %s", dest.name)
+    logger.info("通用脚本原生配置已归档: {}", dest.name)
     return dest
 
 
@@ -262,4 +262,4 @@ def restore_native_backup(
         shutil.copy(backup_file, config_path)
     else:
         raise ValueError(f"未知的配置路径模式: {config_mode}")
-    logger.info("通用脚本原生配置已恢复备份 %s", ts)
+    logger.info("通用脚本原生配置已恢复备份 {}", ts)

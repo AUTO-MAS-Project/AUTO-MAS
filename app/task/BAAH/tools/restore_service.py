@@ -1,4 +1,4 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -144,7 +144,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     restored = restore_mas_backup(ctx.script_id, ctx.user_id, ts)
     if restored:
         await user.update(group_overlay(restored))
-        logger.info("用户 %s 的 MAS 字段已恢复备份 %s", ctx.user_id, ts)
+        logger.info("用户 {} 的 MAS 字段已恢复备份 {}", ctx.user_id, ts)
 
 
 async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:

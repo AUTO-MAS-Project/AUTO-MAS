@@ -476,7 +476,12 @@ const handleRestored = async (target: string) => {
   if (target === 'mas') {
     // 暂停 watch 自动保存，避免加载过程中把恢复值原样写回一遍
     isInitializing.value = true
-    await loadUserData()
+    try {
+      await loadUserData()
+    } finally {
+      // 加载失败也要复位：否则按钮永久转圈
+      isInitializing.value = false
+    }
   }
 }
 
