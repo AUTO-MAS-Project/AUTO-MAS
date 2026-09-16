@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section form-section-alt">
+  <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.runConfiguration') }}</h3>
     </div>
@@ -151,13 +151,6 @@ const emit = defineEmits<{
 <style scoped>
 .form-section {
   margin-bottom: 40px;
-}
-
-.form-section-alt {
-  margin: 0 -24px;
-  padding: 24px 24px 32px;
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
 }
 
 .section-header {

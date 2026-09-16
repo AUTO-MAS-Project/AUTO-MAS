@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section form-section-alt">
+  <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.controlModeGameResource') }}</h3>
     </div>
@@ -63,13 +63,13 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-alert
-      v-if="unsupportedControllerOptions.length"
-      class="control-strategy-alert"
-      type="info"
-      show-icon
-      :message="unsupportedControllerMessage"
-    />
+    <a-alert v-if="controlNoticeLines.length" class="control-strategy-alert" type="info" show-icon>
+      <template #message>
+        <div v-for="line in controlNoticeLines" :key="line" class="control-notice-line">
+          {{ line }}
+        </div>
+      </template>
+    </a-alert>
 
     <Transition name="control-fade" mode="out-in">
       <div v-if="isAdbController" key="adb">
@@ -190,13 +190,6 @@
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
-        <a-alert
-          class="control-strategy-alert"
-          type="info"
-          show-icon
-          :message="t('edit.win32ControlMethodCan')"
-        />
-
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
@@ -207,16 +200,16 @@
             style="width: 100%"
             @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
           >
-            <a-select-option value="AttachOnly">
-              <div class="launch-option">
-                <span class="launch-option-title">{{ t('edit.iLaunchGameMyself') }}</span>
-                <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
-              </div>
-            </a-select-option>
             <a-select-option value="DirectExe">
               <div class="launch-option">
                 <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
                 <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
+              </div>
+            </a-select-option>
+            <a-select-option value="AttachOnly">
+              <div class="launch-option">
+                <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
+                <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
               </div>
             </a-select-option>
           </a-select>
@@ -296,18 +289,25 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.onlyProcessesStartedBy')">
+                <a-tooltip :title="t('edit.mfwForceResolutionTip')">
                   <span class="form-label">
-                    {{ t('edit.closeLaunchedProcessAfterwards') }}
+                    {{ t('edit.run1920x1080WindowedMode') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
               </template>
               <a-switch
-                v-model:checked="maafwConfig.Game.CloseOnFinish"
+                v-model:checked="maafwConfig.Game.ForceResolution1920x1080"
                 :checked-children="t('edit.on2')"
                 :un-checked-children="t('edit.off')"
-                @change="emit('change', 'Game', 'CloseOnFinish', maafwConfig.Game.CloseOnFinish)"
+                @change="
+                  emit(
+                    'change',
+                    'Game',
+                    'ForceResolution1920x1080',
+                    maafwConfig.Game.ForceResolution1920x1080
+                  )
+                "
               />
             </a-form-item>
           </a-col>
@@ -366,13 +366,18 @@ const emit = defineEmits<{
 }>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
-const launchModeDescription = computed(() => {
-  switch (launchMode.value) {
-    case 'DirectExe':
-      return 'MAS 会启动你选的游戏 exe，运行结束后按下方设置决定是否关闭它。'
-    default:
-      return 'MAS 不会启动任何程序，只等你把游戏开起来后接管它。'
-  }
+const launchModeDescription = computed(() =>
+  launchMode.value === 'AttachOnly'
+    ? t('edit.launchModeAttachOnlyDesc')
+    : t('edit.launchModeDirectExeDesc')
+)
+
+// 「有 controller 不支持」与「Win32 启停分离」两条说明合成一个提示框，一行一条
+const controlNoticeLines = computed(() => {
+  const lines: string[] = []
+  if (props.unsupportedControllerOptions.length) lines.push(props.unsupportedControllerMessage)
+  if (props.isDesktopController) lines.push(t('edit.win32ControlMethodCan'))
+  return lines
 })
 </script>
 
@@ -381,11 +386,8 @@ const launchModeDescription = computed(() => {
   margin-bottom: 40px;
 }
 
-.form-section-alt {
-  margin: 0 -24px;
-  padding: 24px 24px 32px;
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
+.control-notice-line + .control-notice-line {
+  margin-top: 4px;
 }
 
 .section-header {

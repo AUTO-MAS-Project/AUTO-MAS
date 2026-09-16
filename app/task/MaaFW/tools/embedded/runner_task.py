@@ -58,6 +58,7 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .game_package import resolve_game_package
+from .game_resolution import UnityGameResolutionOverride
 from .project_path import release_project_path, try_reserve_project_path
 
 logger = get_logger("MaaFW 插件自动代理")
@@ -353,6 +354,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.opened_emulator = False
         self.opened_game = False
         self.game_process_manager = ProcessManager()
+        # 启动游戏前临时改写的 Unity 注册表分辨率，游戏关闭后恢复；None 表示没改
+        self.game_resolution_override: UnityGameResolutionOverride | None = None
         self.project_lock_key: str | None = None
         self.runner_process: asyncio.subprocess.Process | None = None
         self.pretask_process: asyncio.subprocess.Process | None = None
@@ -624,13 +627,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _mas_manages_game_launch(self) -> bool:
         """MAS 是否负责启动/关闭游戏。
 
-        只有两种模式：AttachOnly（脚本或用户自己启动，MAS 不碰）与
-        DirectExe（MAS 启动并按 CloseOnFinish 关闭）。此前这里根本没读过
-        LaunchMode，Win32 controller 无论哪种模式都强制索要 exe。
+        只有两种模式：DirectExe（默认；MAS 启动，结束后一律由 MAS 关闭）与
+        AttachOnly（脚本或用户自己启停，MAS 只接管窗口、不启动也不关闭）。
+        此前这里根本没读过 LaunchMode，Win32 controller 无论哪种模式都强制索要 exe。
+        旧配置里的 LaunchMode 一定有值（ConfigBase.load 会把默认值写回），这里的兜底
+        只是防御性的。
         """
 
-        mode = str(self.script_config.get("Game", "LaunchMode") or "AttachOnly").strip()
-        return mode == "DirectExe"
+        mode = str(self.script_config.get("Game", "LaunchMode") or "DirectExe").strip()
+        return mode != "AttachOnly"
 
     def _resolve_game_launch_path(self) -> Path | None:
         """DirectExe 模式下 MAS 要启动的客户端 exe。"""
@@ -1695,6 +1700,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"hWnd={selected.hWnd}, class={selected.className}, "
                     f"title={selected.windowName}"
                 )
+                self._note_resolution_override_skipped()
                 await self._activate_desktop_game_window(game_path)
                 return
 
@@ -1704,6 +1710,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             logger.info(message)
             self.script_info.log = message
+            self._note_resolution_override_skipped()
             await self._wait_for_desktop_game_ready(game_path)
             await self._activate_desktop_game_window(game_path)
             return
@@ -1714,22 +1721,75 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         logger.info(
             f"启动游戏: {game_path} - {self.script_config.get('Game', 'Arguments')}"
         )
-        await self.game_process_manager.open_process(
-            game_path,
-            *game_arguments,
-            cwd=game_path.parent,
-            breakaway=True,
-        )
-
+        # 注册表必须在进程起来之前改好：Unity 播放器只在启动时读一次这些值
+        await self._apply_game_resolution_override(game_path)
         try:
+            await self.game_process_manager.open_process(
+                game_path,
+                *game_arguments,
+                cwd=game_path.parent,
+                breakaway=True,
+            )
             await self._wait_for_desktop_game_ready(game_path)
         except Exception:
             with suppress(Exception):
                 await self.game_process_manager.kill()
+            await self._restore_game_resolution_override()
             raise
 
         self.opened_game = True
         await self._activate_desktop_game_window(game_path)
+
+    def _force_resolution_enabled(self) -> bool:
+        return bool(self.script_config.get("Game", "ForceResolution1920x1080"))
+
+    def _note_resolution_override_skipped(self) -> None:
+        """游戏已在运行时不能中途改分辨率，开了开关的用户要知道这轮没改。"""
+
+        if self._force_resolution_enabled():
+            self._append_log("检测到游戏已在运行，本轮不会中途修改分辨率")
+
+    async def _apply_game_resolution_override(self, game_path: Path) -> None:
+        """按 exe 反查 Unity 注册表并临时写入 1920×1080 窗口模式。
+
+        失败不阻断启动：这只是帮用户过脚本侧的分辨率闸门，改不成就按当前分辨率
+        启动，闸门该报什么由脚本自己报，比在这里把整轮打掉更贴题。
+        """
+
+        if not self._force_resolution_enabled():
+            return
+        override = UnityGameResolutionOverride.for_executable(game_path)
+        if override is None:
+            self._append_log(
+                f"未找到 {game_path.name} 的 Unity app.info，无法反查注册表，"
+                "跳过临时固定分辨率（只有 Unity 引擎的游戏支持）"
+            )
+            return
+        try:
+            await asyncio.to_thread(override.apply)
+        except Exception as exc:
+            logger.warning(f"MaaFW 临时固定游戏分辨率失败: {exc}")
+            self._append_log(f"临时固定游戏分辨率失败，按当前分辨率启动: {exc}")
+            return
+        self.game_resolution_override = override
+        self._append_log(
+            f"已临时把 HKCU\\{override.registry_path} 的分辨率设为 1920×1080 窗口模式，"
+            "游戏关闭后恢复原值"
+        )
+
+    async def _restore_game_resolution_override(self) -> None:
+        override = self.game_resolution_override
+        if override is None:
+            return
+        self.game_resolution_override = None
+        try:
+            restored = await asyncio.to_thread(override.restore)
+        except Exception as exc:
+            logger.warning(f"MaaFW 恢复游戏分辨率注册表失败: {exc}")
+            self._append_log(f"恢复游戏分辨率注册表失败: {exc}")
+            return
+        if restored:
+            self._append_log("已恢复启动前的游戏分辨率注册表")
 
     async def _wait_for_desktop_game_ready(
         self,
@@ -1853,9 +1913,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
 
     async def _close_game(self) -> None:
+        """关闭由 MAS 启动的游戏。
+
+        只看 opened_game：由 MAS 启动的一律关，其他方式启动（AttachOnly、或
+        DirectExe 下发现游戏已在运行而没重复启动）的一律不碰，没有开关。
+        """
+
         if not self.opened_game:
-            return
-        if not self.script_config.get("Game", "CloseOnFinish"):
+            await self._restore_game_resolution_override()
             return
 
         try:
@@ -1864,6 +1929,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             logger.warning(f"MaaFW 清理时关闭游戏失败: {exc}")
         finally:
             self.opened_game = False
+            await self._restore_game_resolution_override()
 
     async def _try_enter_project_path(self) -> bool:
         project_lock_key = await try_reserve_project_path(self.project_path)

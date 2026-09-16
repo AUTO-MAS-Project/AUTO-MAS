@@ -2846,13 +2846,21 @@ class MaaFWConfig(ConfigBase):
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
-            "AttachOnly",
-            # 只保留两种：我自己启动游戏（AttachOnly）/ 让 MAS 启动并按设置关闭
-            # （DirectExe）。LauncherExe 与 URL 已下线，旧配置由校验器纠正回默认值。
-            OptionsValidator(["AttachOnly", "DirectExe"]),
+            "DirectExe",
+            # 只保留两种：让 MAS 启动游戏（DirectExe，默认；由 MAS 启动的游戏结束后
+            # 一律由 MAS 关闭）/ 使用其他方式启停游戏（AttachOnly，MAS 只接管已运行
+            # 的窗口，不启动也不关闭）。LauncherExe 与 URL 已下线，旧配置由校验器
+            # 纠正回 options[0]——它们本来就是「MAS 启动」的变体，落到 DirectExe 最贴近。
+            OptionsValidator(["DirectExe", "AttachOnly"]),
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率固定为
+        ## 1920×1080 窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。
+        ## 只对 Unity 引擎的游戏有效；游戏已在运行时不改。
+        self.Game_ForceResolution1920x1080 = ConfigItem(
+            "Game", "ForceResolution1920x1080", False, BoolValidator()
+        )
         ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
         ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
         ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
@@ -2861,10 +2869,8 @@ class MaaFWConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        ## 任务结束后是否关闭由 MAS 启动的游戏
-        self.Game_CloseOnFinish = ConfigItem(
-            "Game", "CloseOnFinish", True, BoolValidator()
-        )
+        # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
+        # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
 
         ## Update ----------------------------------------------------------
         ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。

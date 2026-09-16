@@ -83,12 +83,12 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PlayCoverUuid: '',
   },
   Game: {
-    LaunchMode: 'AttachOnly',
+    LaunchMode: 'DirectExe',
     LaunchPath: '',
     PackageName: '',
     Arguments: '',
     WaitTime: 60,
-    CloseOnFinish: true,
+    ForceResolution1920x1080: false,
   },
   Update: {
     AutoUpdateMode: 'BeforeRun',

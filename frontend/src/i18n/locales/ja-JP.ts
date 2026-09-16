@@ -914,7 +914,7 @@ export default {
     maaScriptConfiguration: 'MAA スクリプト設定',
     maaPath: 'MAA のパス',
     maaPathSelected: 'MAA のパスを選択しました',
-    masOnlyTakesOver: 'MAS はすでに起動しているゲームだけを引き継ぎます',
+    masOnlyTakesOver: 'スクリプトか自分で起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
     actualGameExeMas: 'MAS が直接起動する実際のゲーム exe',
     tasksManagedByMas: 'MAS が管理するタスク',
@@ -1054,8 +1054,6 @@ export default {
     sendStatistics: '統計情報を送信',
     emailRunResult: '実行結果をメールで送信',
     cancel: 'キャンセル',
-    onlyProcessesStartedBy:
-      'このタスクが起動し、MAS が所有するプロセスのみを終了します。手動で開いたプロセスを誤って終了することはありません',
     optional: '任意',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
@@ -1154,7 +1152,6 @@ export default {
       '必須。空にするとこのルールは無効になります。Python の正規表現でログ 1 行全体に照合します',
     requiredEmptyValueDisables4:
       '必須。空にするとこのルールは無効になります。行を絞り込むための正規表現です',
-    iLaunchGameMyself: '自分でゲームを起動する',
     updateNow: '今すぐ更新',
     treatRunAsTimed2:
       '代行タスク実行中、SRC のログがこの時間だけ変化しなければタイムアウトとみなします',
@@ -1349,7 +1346,6 @@ export default {
     leave: '移動する',
     maximumLinesWindowBefore: '範囲の最大行数。これに達すると強制的に閉じます',
     pasteLogLinesTest: 'テストしたいログ行を貼り付けてください（1 行に 1 件）...',
-    closeLaunchedProcessAfterwards: '終了後に起動したプロセスを閉じる',
     endPattern: '終了用の正規表現',
     keepEditing: '編集を続ける',
     editHsrScript: 'HSR スクリプトを編集',
@@ -1393,6 +1389,13 @@ export default {
       '追跡したいプロセスの起動コマンドライン引数です。スクリプトを起動してからタスクマネージャーを開き、対象のプロセスを右クリックして「詳細の表示」を選び、「コマンドライン」列の値を入力してください。その列が無い場合は見出しを右クリックして「列の選択」からコマンドラインにチェックを入れてください。分からない場合は空のままで構いません',
     couldNotLoadPlan: 'プラン設定を読み込めませんでした。プランが存在するか確認してください',
     letMasLaunchGame: 'MAS にゲームを起動させる',
+    launchGameOtherWay: '別の方法でゲームを起動・終了する',
+    launchModeDirectExeDesc:
+      'MAS が選択したゲーム exe を起動し、実行終了後に閉じます。ゲームがすでに起動している場合は引き継ぐだけで、再起動も終了もしません。',
+    launchModeAttachOnlyDesc:
+      'MAS はプログラムを起動も終了もしません。スクリプトか自分でゲームを起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます。',
+    mfwForceResolutionTip:
+      'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に 1920×1080 のウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
     thisConfigurationFileHas: 'この設定ファイルに編集できる項目はありません',
@@ -1498,7 +1501,7 @@ export default {
     pickStageFarmThis: '周回するステージを選びます。この項目は Stage.Channel に書き込まれます。',
     pickEchoOfWarStage: '挑戦する歴戦余韻のステージを選びます。',
     pickProjectDirectory: 'プロジェクトフォルダを選択',
-    pickGameSOwn: 'ゲーム本体の exe を選択',
+    pickGameSOwn: 'ゲーム本体の exe を選択。終了後は MAS が閉じます',
     generalScriptConfiguration: '汎用スクリプト設定',
     generalConfiguration: '汎用設定',
     notifications: '通知',

@@ -966,7 +966,7 @@ export default {
     maaScriptConfiguration: 'MAA script configuration',
     maaPath: 'MAA path',
     maaPathSelected: 'MAA path selected',
-    masOnlyTakesOver: 'MAS only takes over a game that is already running',
+    masOnlyTakesOver: 'The script or you start and stop it; MAS only takes over the running window',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     actualGameExeMas: 'The actual game exe MAS launches',
     tasksManagedByMas: 'Tasks managed by MAS',
@@ -1108,8 +1108,6 @@ export default {
     sendStatistics: 'Send statistics',
     emailRunResult: 'Email the run result',
     cancel: 'Cancel',
-    onlyProcessesStartedBy:
-      'Only processes started by this task and owned by MAS are closed; processes you opened yourself are left alone',
     optional: 'Optional',
     couldNotStartSrc: 'Could not start the SRC configuration',
     checkGameUpdateBefore: 'Check for a game update before launching',
@@ -1254,7 +1252,6 @@ export default {
       'Required; an empty value disables the rule. Matched against the whole log line as a Python regex',
     requiredEmptyValueDisables4:
       'Required; an empty value disables the rule. Regex used to filter lines',
-    iLaunchGameMyself: 'I launch the game myself',
     updateNow: 'Update now',
     treatRunAsTimed2: 'Treat the run as timed out when the SRC log has not changed for this long',
     treatAnnihilationRunAs:
@@ -1471,7 +1468,6 @@ export default {
     leave: 'Leave',
     maximumLinesWindowBefore: 'Maximum lines in a window before it is force-closed',
     pasteLogLinesTest: 'Paste the log lines to test, one per line...',
-    closeLaunchedProcessAfterwards: 'Close the launched process afterwards',
     endPattern: 'End pattern',
     keepEditing: 'Keep editing',
     editHsrScript: 'Edit the HSR script',
@@ -1513,6 +1509,13 @@ export default {
       'Command line of the process to track. Open the script, launch Task Manager, right-click the script process, choose "Go to details", and copy the Command line column. If that column is missing, right-click the header, choose "Select columns", and tick Command line. Leave empty if you are not sure',
     couldNotLoadPlan: 'Could not load the plan configuration — check that the plan still exists',
     letMasLaunchGame: 'Let MAS launch the game',
+    launchGameOtherWay: 'Start and stop the game another way',
+    launchModeDirectExeDesc:
+      'MAS launches the game exe you picked and closes it when the run ends; if the game is already running, MAS only takes it over without relaunching or closing it.',
+    launchModeAttachOnlyDesc:
+      'MAS neither launches nor closes anything; the script or you start and stop the game, and MAS only takes over the running window.',
+    mfwForceResolutionTip:
+      'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily sets 1920×1080 windowed mode, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
       'This name is also written to M7A/SRA as the Trailblazer name for Currency War',
     thisSubtaskHasNo: 'This subtask has no editable fields',
@@ -1617,7 +1620,7 @@ export default {
     pickStageFarmThis: 'Pick the stage to farm; this field is written to Stage.Channel.',
     pickEchoOfWarStage: 'Pick the Echo of War stage to run.',
     pickProjectDirectory: 'Pick the project directory',
-    pickGameSOwn: "Pick the game's own exe",
+    pickGameSOwn: "Pick the game's own exe; MAS closes it afterwards",
     generalScriptConfiguration: 'General script configuration',
     generalConfiguration: 'General configuration',
     notifications: 'Notifications',

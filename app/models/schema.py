@@ -3524,11 +3524,16 @@ class MaaFWConfig_Device(BaseModel):
 
 
 class MaaFWConfig_Game(BaseModel):
-    LaunchMode: Optional[Literal["AttachOnly", "DirectExe"]] = Field(
-        default=None, description="游戏启动模式"
+    LaunchMode: Optional[Literal["DirectExe", "AttachOnly"]] = Field(
+        default=None,
+        description="游戏启动模式：DirectExe 让 MAS 启动并在结束后关闭 / AttachOnly 使用其他方式启停，MAS 只接管",
     )
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
+    )
+    ForceResolution1920x1080: Optional[bool] = Field(
+        default=None,
+        description="DirectExe 模式下启动游戏前临时把 Unity 注册表分辨率固定为 1920×1080 窗口，关闭后恢复",
     )
     PackageName: Optional[str] = Field(
         default=None,
@@ -3537,9 +3542,6 @@ class MaaFWConfig_Game(BaseModel):
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
-    )
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭由 MAS 启动的游戏"
     )
 
 

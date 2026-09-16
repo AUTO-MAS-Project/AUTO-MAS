@@ -950,7 +950,7 @@ export default {
     maaScriptConfiguration: 'MAA脚本配置',
     maaPath: 'MAA路径',
     maaPathSelected: 'MAA路径选择成功',
-    masOnlyTakesOver: 'MAS 只接管已经运行的游戏',
+    masOnlyTakesOver: '由脚本或你自己启停，MAS 只接管已运行的窗口',
     howLongMasWaits: 'MAS 启动游戏后等待进入可操作状态的最长时间',
     actualGameExeMas: 'MAS 直接启动的实际游戏 exe',
     tasksManagedByMas: 'MAS 管控任务',
@@ -1077,8 +1077,6 @@ export default {
     sendStatistics: '发送统计',
     emailRunResult: '发送运行结果到邮箱',
     cancel: '取消',
-    onlyProcessesStartedBy:
-      '只关闭由本次任务启动且归 MAS 所有的目标进程，不会误杀用户手动打开的进程',
     optional: '可选',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
@@ -1203,7 +1201,6 @@ export default {
       "必填，留空则该规则不生效；多个关键字以「 {'|'} 」分隔，任一命中即通过",
     requiredEmptyValueDisables3: '必填，留空则该规则不生效；按 Python 正则匹配整行日志',
     requiredEmptyValueDisables4: '必填，留空则该规则不生效；用于过滤行的正则表达式',
-    iLaunchGameMyself: '我自己启动游戏',
     updateNow: '手动更新',
     treatRunAsTimed2: '执行代理任务时，SRC日志无变化时间超过该阀值视为超时',
     treatAnnihilationRunAs: '执行剿灭代理任务时，MAA日志无变化时间超过该阀值视为超时',
@@ -1401,7 +1398,6 @@ export default {
     leave: '离开',
     maximumLinesWindowBefore: '窗口最大跨行数，达到后强制关闭',
     pasteLogLinesTest: '粘贴要测试的日志行，每行一条...',
-    closeLaunchedProcessAfterwards: '结束后关闭启动进程',
     endPattern: '结束正则',
     keepEditing: '继续编辑',
     editHsrScript: '编辑 HSR 脚本',
@@ -1441,6 +1437,13 @@ export default {
       '要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空',
     couldNotLoadPlan: '计划配置加载失败，请检查计划是否存在',
     letMasLaunchGame: '让 MAS 启动游戏',
+    launchGameOtherWay: '使用其他方式启停游戏',
+    launchModeDirectExeDesc:
+      'MAS 会启动你选的游戏 exe，运行结束后关闭它；发现游戏已在运行时只接管，不重复启动也不替你关闭。',
+    launchModeAttachOnlyDesc:
+      'MAS 不会启动或关闭任何程序，由脚本或你自己负责启停游戏，MAS 只接管已运行的窗口。',
+    mfwForceResolutionTip:
+      '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成 1920×1080 窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
     thisSubtaskHasNo: '该子任务暂无可编辑字段',
     thisConfigurationFileHas: '该配置文件暂无可编辑的字段',
@@ -1543,7 +1546,7 @@ export default {
     pickStageFarmThis: '选择要刷取的副本；本字段会写入 Stage.Channel。',
     pickEchoOfWarStage: '选择要挑战的历战余响关卡。',
     pickProjectDirectory: '选择项目目录',
-    pickGameSOwn: '选游戏本体的 exe',
+    pickGameSOwn: '选游戏本体的 exe，结束后由 MAS 关闭',
     generalScriptConfiguration: '通用脚本配置',
     generalConfiguration: '通用配置',
     notifications: '通知',
@@ -2059,8 +2062,7 @@ export default {
     zzzodLaunchArgsDetail: '参数明细',
     zzzodLaunchArgsDesc:
       '一条龙启动游戏时使用的参数（与一条龙「游戏设置」的启动参数同源）；总开关关闭时启动游戏不带任何参数',
-    zzzodLaunchArgsSwitchHint:
-      '启动参数总开关：关闭时一条龙启动游戏不带任何参数（含高级参数）',
+    zzzodLaunchArgsSwitchHint: '启动参数总开关：关闭时一条龙启动游戏不带任何参数（含高级参数）',
     zzzodScreenSize: '窗口尺寸',
     zzzodFullScreen: '全屏',
     zzzodFullScreenWindowed: '窗口化',

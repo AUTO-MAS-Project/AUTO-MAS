@@ -210,7 +210,10 @@ class MaaFWSchemaDTOTest(unittest.TestCase):
             },
             set(dumped),
         )
-        self.assertEqual(dumped["Game"]["LaunchMode"], "AttachOnly")
+        # 默认让 MAS 启动游戏；「使用其他方式启停」（AttachOnly）要用户显式选
+        self.assertEqual(dumped["Game"]["LaunchMode"], "DirectExe")
+        self.assertIs(dumped["Game"]["ForceResolution1920x1080"], False)
+        self.assertNotIn("CloseOnFinish", dumped["Game"])
         self.assertIn("Id", dumped["Emulator"])
 
     def test_user_update_in_preserves_task_snapshot(self) -> None:

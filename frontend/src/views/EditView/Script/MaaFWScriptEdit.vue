@@ -653,8 +653,8 @@ onMounted(async () => {
   max-height: 180px;
   overflow-y: auto;
   padding: 8px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 6px;
-  background: var(--ant-color-fill-quaternary);
   font-family: var(--ant-font-family-code, monospace);
   font-size: 12px;
   line-height: 1.6;

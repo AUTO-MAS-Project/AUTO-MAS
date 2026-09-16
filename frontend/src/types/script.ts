@@ -215,7 +215,7 @@ export interface M9AScriptConfig {
 export type HSRScriptConfig = HSRConfig
 
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
-export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
+export type MaaFWLaunchMode = 'DirectExe' | 'AttachOnly'
 
 /** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
 export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
@@ -246,13 +246,15 @@ export interface MaaFWScriptConfig {
     PlayCoverUuid: string
   }
   Game: {
+    /** DirectExe：MAS 启动并在结束后关闭（默认）；AttachOnly：其他方式启停，MAS 只接管。 */
     LaunchMode: MaaFWLaunchMode
     LaunchPath: string
     /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
     PackageName: string
     Arguments: string
     WaitTime: number
-    CloseOnFinish: boolean
+    /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时固定 1920×1080 窗口，关闭后恢复。 */
+    ForceResolution1920x1080: boolean
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */
