@@ -19,10 +19,7 @@ const logger = getLogger('ZZZ-OD问题包')
 // 与 app/task/ZzzOd/AutoProxy.py 的 _ZZZOD_REL_LOG 保持同步
 const ZZZOD_REL_LOG_FILE = '.log/log.txt'
 
-function addLatestZzzOdScriptLog(
-  state: CollectorState,
-  installations: Installation[]
-): void {
+function addLatestZzzOdScriptLog(state: CollectorState, installations: Installation[]): void {
   let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
 
   for (const installation of installations) {
@@ -46,10 +43,7 @@ function addLatestZzzOdScriptLog(
   }
 }
 
-function addZzzOdConfigs(
-  state: CollectorState,
-  installations: Installation[]
-): void {
+function addZzzOdConfigs(state: CollectorState, installations: Installation[]): void {
   for (const installation of installations) {
     // 一条龙注册表（含 instance_list、instance_run 等全局设置）
     const registryPath = path.join(installation.rootPath, 'config', 'one_dragon.yml')

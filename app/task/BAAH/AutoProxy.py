@@ -254,31 +254,28 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_monitor = None
 
         ## 配置托管总开关：关闭时照常启动 BAAH，但不改动它的任何配置文件
-        self.if_manage_config = bool(
-            self.script_config.get("Script", "IfManageConfig")
-        )
-        ## 配置来源三态（脚本/用户/直控）与独立的快速配置开关：
-        ## - 脚本/用户来源：按脚本级「配置托管」总开关决定是否注入托管项
-        ## - 直控+开启：注入托管项（面板值），任务结束按既有 managed_backup 恢复
-        ## - 直控+关闭：完全按 BAAH 自己的配置文件运行，零写入
-        self.config_mode, self.direct_control = resolve_config_source(
-            self.cur_user_config, CONFIG_SOURCE_USER
-        )
-        if self.direct_control and not bool(
-            self.cur_user_config.get("Info", "IfQuickConfig")
-        ):
-            self.if_manage_config = False
+        self.if_manage_config = bool(self.script_config.get("Script", "IfManageConfig"))
+        ## BAAH 没有用户快速配置面板，模拟器等托管项只受脚本级总开关控制。
         ## 推送任务节点详情开关：关闭时**不创建 log_box**（不读日志、不匹配），
         ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
         ## 与结果判定都不受它影响，照常进行
-        self.push_log_enabled = bool(
-            self.script_config.get("Script", "PushLogEnabled")
-        )
+        self.push_log_enabled = bool(self.script_config.get("Script", "PushLogEnabled"))
         self.log_collect = None
 
         ## 配置文件名在 check() 里已按活动排期定好，这里复用同一结果
         config_name = await self._resolve_effective_config_name()
         self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
+
+        ## 运行前归档该用户的 BAAH 配置（按用户分桶，指纹去重，失败不阻断
+        ## 任务）：此刻配置文件尚未被托管项改写，是「本轮动手前」的完整现场
+        from .tools.backup_archive import archive_native_backup
+
+        try:
+            archive_native_backup(
+                self.config_dir, config_name, str(self.cur_user_uid)
+            )
+        except Exception:
+            logger.opt(exception=True).warning("BAAH 运行前配置归档失败，已跳过（不阻断任务）")
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -591,7 +588,9 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             self.log_collect.close(baah_resolve)
         except Exception:
-            logger.opt(exception=True).warning("BAAH log_box 收尾推送失败（baah_resolve）")
+            logger.opt(exception=True).warning(
+                "BAAH log_box 收尾推送失败（baah_resolve）"
+            )
             self.cur_user_item.push_log.append(
                 (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
             )
@@ -613,7 +612,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "脚本进程超时"
         elif self.error_log.search(log) is not None:
             self.cur_user_log.status = "BAAH 运行出错"
-        elif self.process_manager is not None and await self.process_manager.is_running():
+        elif (
+            self.process_manager is not None and await self.process_manager.is_running()
+        ):
             self.cur_user_log.status = "BAAH 正常运行中"
         else:
             ## 进程已退出但未命中成功标记：不能确认任务完成
@@ -743,9 +744,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         try:
-            await push_notification(
-                "统计信息", title, statistics, self.cur_user_config
-            )
+            await push_notification("统计信息", title, statistics, self.cur_user_config)
         except Exception as e:
             logger.opt(exception=True).warning(f"推送统计信息时出现异常: {e}")
 

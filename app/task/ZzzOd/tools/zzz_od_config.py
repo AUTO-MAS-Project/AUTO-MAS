@@ -95,8 +95,9 @@ _RUN_RECORD_DIR = "app_run_record"
 _INVALID_YAML_CHARS = dict.fromkeys(range(0x20), None)
 
 # 进程内读-改-写串行锁：write_file 只保证单次写原子，读-改-写整体在此串行，
-# 避免切实例 / 写任务编排 / 写账号并发交错丢更新
-_YAML_LOCK = threading.Lock()
+# 避免切实例 / 写任务编排 / 写账号并发交错丢更新。使用可重入锁：直控保存等
+# 「外层持锁完成 读快照→算补丁」后仍需调用本模块的 write_* 原语落盘。
+_YAML_LOCK = threading.RLock()
 
 
 def _one_dragon_file(root: Path) -> Path:
@@ -226,9 +227,7 @@ def set_instance_active_in_od(root: Path, idx: int, value: bool) -> None:
     """
 
     def mutate(entries: list[dict]) -> None:
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         entry["active_in_od"] = bool(value)
@@ -244,9 +243,7 @@ def set_instance_force_login(root: Path, idx: int, value: bool) -> None:
     """
 
     def mutate(entries: list[dict]) -> None:
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         entry["force_login_before_run"] = bool(value)
@@ -262,9 +259,7 @@ def set_active_instance(root: Path, idx: int) -> None:
     """
 
     def mutate(entries: list[dict]) -> None:
-        target = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        target = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if target is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         for entry in entries:
@@ -281,9 +276,7 @@ def rename_instance(root: Path, idx: int, name: str) -> None:
         raise ValueError("实例名称不能为空")
 
     def mutate(entries: list[dict]) -> None:
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         entry["name"] = name
@@ -291,9 +284,7 @@ def rename_instance(root: Path, idx: int, name: str) -> None:
     _registry_rmw(root, mutate)
 
 
-def add_instance(
-    root: Path, name: str, used_idxs: set[int] | None = None
-) -> int:
+def add_instance(root: Path, name: str, used_idxs: set[int] | None = None) -> int:
     """新建实例：分配最小空闲槽并注册到 one_dragon.yml。
 
     - 槽分配避开原生注册表与 ``used_idxs``（跨脚本 MAS 已绑定槽）；
@@ -351,9 +342,7 @@ def remove_instance(
     def mutate(entries: list[dict]) -> None:
         if len(entries) <= 1:
             raise ValueError("至少保留一个实例")
-        entry = next(
-            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
-        )
+        entry = next((e for e in entries if int(e.get("idx", -1)) == int(idx)), None)
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         if idx in protected:
@@ -483,12 +472,98 @@ def user_field_patch(user_config) -> dict[str, Any]:
         if value:
             patch[yaml_key] = value
     # 布尔字段原样写入（YAML 布尔而非字符串）：MAS 字段是事实源，False 也下发
-    patch["use_custom_win_title"] = bool(
-        user_config.get("Game", "UseCustomWinTitle")
-    )
+    patch["use_custom_win_title"] = bool(user_config.get("Game", "UseCustomWinTitle"))
     title = str(user_config.get("Game", "CustomWinTitle") or "").strip()
     if title:
         patch["custom_win_title"] = title
+    return patch
+
+
+# zzz-od game.yml 启动参数的默认结构（与上游 BasicGameConfig 默认值一致；
+# 全屏/显示器上游落盘为字符串，照抄不转数字）。
+DEFAULT_GAME_LAUNCH_ARGS: dict[str, Any] = {
+    "launch_argument": False,
+    "screen_size": "1920x1080",
+    "full_screen": "0",
+    "popup_window": False,
+    "monitor": "1",
+    "launch_argument_advance": "",
+}
+
+# 启动参数直传字段（MAS 字段 → game.yml 键，顺序即回读/patch 组装顺序）；
+# Dx12 不是 game.yml 字段（上游无独立键），由 launch_args_patch 合并进
+# launch_argument_advance，见 :func:`split_dx12_argument` / :func:`merge_dx12_argument`
+LAUNCH_ARGS_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("launch_argument", "Game", "LaunchArgument"),
+    ("screen_size", "Game", "ScreenSize"),
+    ("full_screen", "Game", "FullScreen"),
+    ("popup_window", "Game", "PopupWindow"),
+    ("monitor", "Game", "Monitor"),
+    ("launch_argument_advance", "Game", "LaunchArgumentAdvance"),
+)
+
+# DX12 启动参数（上游 open_game 原样拼进命令行，无独立配置键）
+DX12_ARGUMENT = "-use-d3d12"
+
+
+def split_dx12_argument(advance: str) -> tuple[bool, str]:
+    """把高级参数拆成（是否含 DX12 参数, 其余参数）。
+
+    按空白词元精确匹配，不误伤包含该串的其他参数。
+    """
+
+    tokens = [token for token in str(advance or "").split() if token]
+    has_dx12 = DX12_ARGUMENT in tokens
+    rest = " ".join(token for token in tokens if token != DX12_ARGUMENT)
+    return has_dx12, rest
+
+
+def merge_dx12_argument(advance: str, dx12: bool) -> str:
+    """把 DX12 开关合并回高级参数（其余参数原样保留，词元去重）。"""
+
+    _, rest = split_dx12_argument(advance)
+    if dx12:
+        rest = f"{rest} {DX12_ARGUMENT}".strip()
+    return rest
+
+
+def read_game(config_dir: Path) -> dict:
+    """读取游戏配置（启动参数等）。"""
+
+    data = read_file(config_dir / "game.yml") or {}
+    return dict(data)
+
+
+def write_game(config_dir: Path, patch: dict) -> dict:
+    """按 patch 更新游戏配置（读-改-写，保留未知字段），返回更新后的完整配置。"""
+
+    path = config_dir / "game.yml"
+    with _YAML_LOCK:
+        data = read_file(path) or {}
+        data.update(patch)
+        write_file(path, data)
+        return data
+
+
+def launch_args_patch(user_config) -> dict[str, Any]:
+    """MAS 用户字段 → ``game.yml`` 启动参数 patch（整组下发）。
+
+    与 :func:`user_field_patch` 的「留空沿用槽值」不同：启动参数整组都是
+    本页字段的事实源，用户清空/关闭也要覆盖槽值（bool False 同样下发）。
+    Dx12 开关在注入面合并进 ``launch_argument_advance``（上游无独立字段）。
+    """
+
+    patch: dict[str, Any] = {}
+    for yaml_key, section, field in LAUNCH_ARGS_FIELDS:
+        value = user_config.get(section, field)
+        if isinstance(value, bool):
+            patch[yaml_key] = bool(value)
+        else:
+            patch[yaml_key] = str(value or "").strip()
+    patch["launch_argument_advance"] = merge_dx12_argument(
+        str(patch["launch_argument_advance"]),
+        bool(user_config.get("Game", "Dx12")),
+    )
     return patch
 
 
@@ -584,18 +659,22 @@ def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
         if str(item.get("name") or "").strip() == "" and i >= len(existing):
             continue
         # 配队方案字段前端发 autoBattle、磁盘/上游均用 auto_battle：两键兼容
-        auto_battle = (
-            str(item.get("auto_battle") or item.get("autoBattle") or "全配队通用")
+        auto_battle = str(
+            item.get("auto_battle") or item.get("autoBattle") or "全配队通用"
         )
         incoming_agents = item.get("agent_id_list")
         prev_agents = existing[i].get("agent_id_list") if i < len(existing) else None
         agents_src = (
             incoming_agents
             if isinstance(incoming_agents, list) and incoming_agents
-            else (prev_agents if isinstance(prev_agents, list) and prev_agents else None)
+            else (
+                prev_agents if isinstance(prev_agents, list) and prev_agents else None
+            )
         )
         agents = (
-            [str(a) for a in agents_src] if agents_src else ["unknown", "unknown", "unknown"]
+            [str(a) for a in agents_src]
+            if agents_src
+            else ["unknown", "unknown", "unknown"]
         )
         normalized.append(
             {

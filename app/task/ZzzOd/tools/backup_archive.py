@@ -38,9 +38,10 @@ import json
 import shutil
 from pathlib import Path
 
+import yaml
+
 from app.utils import get_logger
 from app.utils.config_archive import (
-    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -48,16 +49,18 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import read_file
 
 from .zzz_od_config import (
     _one_dragon_file,
     _view_sidecar_path,
     instance_dir,
+    launch_args_patch,
     normalize_app_group_entries,
     restore_instance_view,
     user_field_patch,
     write_app_group,
+    write_game,
     write_game_account,
 )
 
@@ -159,7 +162,7 @@ def native_registry_file(root: Path) -> Path:
     return _one_dragon_file(root)
 
 
-def _onedragon_files(root: Path) -> dict[str, Path]:
+def collect_onedragon_files(root: Path) -> dict[str, Path]:
     """当前一条龙原生配置的文件集：one_dragon.yml（原生注册表）+ 注册表内原生实例目录。
 
     注册表源走 :func:`native_registry_file`（视图在盘时读 sidecar 原件）；
@@ -194,12 +197,11 @@ def archive_onedragon_backup(root: Path, force: bool = False) -> Path | None:
     """归档一条龙原生配置（one_dragon.yml + 原生实例目录，排除 MAS 槽）。
 
     归档落到该项目级池（按物理安装根指纹分桶），与脚本实例解耦。内容与
-    最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前存底——
-    让「恢复前的配置」在列表里有明确的时间戳条目）；跳过返回 ``None``，
-    否则返回归档目录。
+    最近一份备份完全一致时跳过（``force=True`` 恢复前存底，同样不产生
+    冗余条目）；跳过返回 ``None``，否则返回归档目录。
     """
 
-    files = _onedragon_files(root)
+    files = collect_onedragon_files(root)
     if not files:
         raise ValueError(f"一条龙原生配置不存在: {root}")
 
@@ -264,6 +266,29 @@ def restore_onedragon_backup(root: Path, ts: str) -> None:
 # ══════════════════ MAS 用户配置（绑定槽） ══════════════════
 
 
+def mas_user_info_content(meta: dict) -> str:
+    """信息字段快照的 YAML 内容（与 ``write_file`` 落盘序列化一致，免临时文件）。"""
+
+    return yaml.safe_dump(meta, allow_unicode=True, sort_keys=False)
+
+
+def collect_mas_files(
+    slot_dir: str | Path, meta: dict | None = None
+) -> dict[str, "Path | str"]:
+    """收集 MAS 用户槽文件集 + 信息字段快照（内存 YAML，免临时落盘）。
+
+    槽目录不存在时无可归档内容，返回空 dict（信息快照不单独入档）。
+    """
+
+    slot_dir = Path(slot_dir)
+    files: dict[str, "Path | str"] = {}
+    if slot_dir.is_dir():
+        files.update(dir_files(slot_dir))
+    if meta and files:
+        files[MAS_USER_INFO_FILE] = mas_user_info_content(meta)
+    return files
+
+
 def archive_mas_backup(
     script_id: str,
     slot_idx: int,
@@ -273,38 +298,23 @@ def archive_mas_backup(
 ) -> Path | None:
     """归档 MAS 用户槽目录整份（覆盖式加时间戳）。
 
-    内容与最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前
-    存底）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
+    内容与最近一份备份完全一致时跳过（``force=True`` 恢复前存底，同样
+    不产生冗余条目）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
     信息字段快照（见 :data:`MAS_USER_INFO_FILE`），写入后 ``list/preview/
     restore`` 可在不触碰当前配置的情况下还原该时点的基本信息卡内容。
 
-    指纹一致性：``mas_user_info.yml`` 必须在 ``archive_dir`` 内部指纹对比
-    之前已存在于源目录内（否则新归档目录比旧目录多 1 个文件、hash 永远
-    不等 → MAS 池每轮都新建一份，第 11 次起最旧的被清）。本函数把 meta
-    临时写入源槽做指纹对比，归档后立刻清理临时文件——归档目录内仍保留
-    完整 ``mas_user_info.yml`` 副本。
+    指纹一致性：``mas_user_info.yml`` 以内存 YAML 随文件集一起入档
+    （:func:`archive_files` 支持内存内容），不落临时文件进源槽；归档目录
+    内保留完整副本，源槽目录永不污染。
     """
 
-    staged_meta_path: Path | None = None
-    if meta:
-        # 临时把 meta 写进源目录，dir_files 自动收录，让指纹对比看到这一文件
-        staged_meta_path = slot_dir / MAS_USER_INFO_FILE
-        write_file(staged_meta_path, meta)
-    try:
-        dest = archive_dir(slot_dir, mas_backup_root(script_id, slot_idx), force=force)
-    finally:
-        # 即便 archive_dir 抛错也清理临时文件，避免污染源 slot_dir
-        if staged_meta_path is not None:
-            try:
-                staged_meta_path.unlink()
-            except OSError as e:
-                logger.warning(f"清理临时 {MAS_USER_INFO_FILE} 失败: {e}")
+    files = collect_mas_files(slot_dir, meta)
+    if not files:
+        return None
+    dest = archive_files(files, mas_backup_root(script_id, slot_idx), force=force)
     if dest is None:
         logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
         return None
-    if meta:
-        # 归档目录内保留完整副本（list/preview/restore 消费该文件）
-        write_file(dest / MAS_USER_INFO_FILE, meta)
 
     logger.info(f"槽 {slot_idx:02d} MAS 配置已归档: {dest.name}")
     return dest
@@ -362,17 +372,19 @@ def materialize_user_applist(slot_dir: Path, applist_json: str | None) -> bool:
 
 
 def materialize_user_fields(slot_dir: Path, user_config) -> None:
-    """把 MAS 页面账号字段与任务编排物化进绑定槽（``game_account.yml`` + ``_group.yml``）。
+    """把 MAS 页面账号字段、启动参数与任务编排物化进绑定槽。
 
-    账号字段（区服/路径/语言/账号/密码/B服名/自定义窗口标题）与任务编排只
-    存在 MAS UserData，槽只有在会话/运行注入时才带上——直接快照槽会漏掉
-    它们，恢复这种备份会把 MAS 本页账号与编排清空（编排侧见
-    :func:`materialize_user_applist`，账号字段同款陷阱）。经统一归档入口
-    :func:`archive_mas_config_backup` 与恢复前存底调用；写盘与注入同款：
-    账号只写非空字段、编排整表含未启用项，不清运行记录。
+    账号字段（区服/路径/语言/账号/密码/B服名/自定义窗口标题）、启动参数
+    （``game.yml`` 六字段）与任务编排只存在 MAS UserData，槽只有在会话/
+    运行注入时才带上——直接快照槽会漏掉它们，恢复这种备份会把 MAS 本页
+    账号与编排清空（编排侧见 :func:`materialize_user_applist`，账号字段
+    同款陷阱）。经统一归档入口 :func:`archive_mas_config_backup` 与恢复前
+    存底调用；写盘与注入同款：账号只写非空字段、启动参数整组下发、编排
+    整表含未启用项，不清运行记录。
     """
 
     write_game_account(slot_dir, user_field_patch(user_config))
+    write_game(slot_dir, launch_args_patch(user_config))
     materialize_user_applist(slot_dir, user_config.get("OneDragon", "AppList"))
 
 
@@ -384,6 +396,7 @@ def archive_mas_config_backup(
     *,
     force: bool = False,
     meta: dict | None = None,
+    fail_on_snapshot_error: bool = False,
 ) -> Path | None:
     """归档 MAS 用户槽的「页面配置快照」：先物化账号+编排，再走原语快照。
 
@@ -392,7 +405,19 @@ def archive_mas_config_backup(
     导入覆盖前 / 恢复前存底）都必须经本函数**，否则备份缺账号，预览与恢复
     回填全会落空。裸快照原语 :func:`archive_mas_backup` 不再直接对外用于
     「MAS 配置快照」语义（仅 :func:`restore_mas_backup` 内部恢复前存底使用）。
+
+    失败语义分两段：物化（写槽）失败照常抛出——注入/会话依赖物化结果，
+    半成品槽不该继续；快照（指纹归档）失败默认只记日志返回 ``None``——
+    归档是现场保护，不是前置条件。**覆盖性操作（导入覆盖前）必须传
+    ``fail_on_snapshot_error=True``**：存底是覆盖的前提，失败照常覆盖会把
+    覆盖前现场彻底丢掉。
     """
 
     materialize_user_fields(slot_dir, user_config)
-    return archive_mas_backup(script_id, slot_idx, slot_dir, force=force, meta=meta)
+    try:
+        return archive_mas_backup(script_id, slot_idx, slot_dir, force=force, meta=meta)
+    except Exception:
+        if fail_on_snapshot_error:
+            raise
+        logger.opt(exception=True).warning("ZZZ-OD 用户槽配置快照失败，已跳过（不阻断注入/会话）")
+        return None

@@ -53,7 +53,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 「在一条龙内配置」在直控下走**脚本级原生会话**（`startSession(scriptId, false, instanceIdx)`）：完整原生实例列表，不隔离不注入；**传当前编辑实例下标时会话窗口临时把原生活跃切到它**（GUI 打开即所见实例，结束还原原活跃，纯 `one_dragon.yml` active 标志操作）；启动前 `restore_instance_view` 自愈崩溃残留的合成视图。用户模式仍走合成视图会话。会话关闭后直控页重拉所选实例配置。
 
-直控账号字段区：账号/密码（B服为 B服账号名）带红色 `*` 必填标记（区服联动），因账号切换需要完整登录信息（见下节）；字段顺序=后端 `_NATIVE_ACCOUNT_FIELDS` 元数据顺序（数据驱动栅格），**options 必须随元数据一起走**——曾把 `game_language` 的 options 写丢导致下拉退化为文本框显示原始值 `cn`。
+直控账号字段区：账号/密码（B服为 B服账号名）带红色 `*` 必填标记（区服联动），因账号切换需要完整登录信息（见下节）；字段顺序=后端 `_NATIVE_ACCOUNT_FIELDS` 元数据顺序（数据驱动栅格），**options 必须随元数据一起走**——曾把 `game_language` 的 options 写丢导致下拉退化为文本框显示原始值 `cn`。启动参数区为逐字段即时提交（只发变更字段，后端读改写全程持 `_YAML_LOCK`；dx12 与高级参数互为合并侧，单字段提交时后端回落磁盘现值，不能发全量——并发全量会携带其他字段旧值覆盖已落盘变更）。
 
 ## 一条龙侧账号切换链路（直控开关的真实作用点）
 
@@ -106,7 +106,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 用户配置界面只覆盖高频字段；配队等复杂配置由用户在原生界面维护。用户页顶部按钮**两种模式常显**，`useZzzodGuiSession` 派发 `SCRIPT_CONFIG`（taskId=userId）。会话与 MAS 字段**双向联动**，不是旁观式打开：
 
 - **打开前基线注入**：`inject_user_fields` 把本页字段写入绑定槽（不清运行记录）——GUI 所见即本页配置；先归档原生配置快照，再以合成视图呈现（`write_instance_view` 仅含本槽、`active` 指向本槽）；
-- **关闭时回读**：`_readback_user_fields` 把 GUI 落盘的任务编排（`_group.yml` 全量顺序含未启用项，整表进 AppList）与账号字段写回 MAS 字段——区服/路径/语言/B服名无条件回读，账号/密码仅槽值非空才回读（留空=沿用登录态，避免清空被读回）；前端遮罩关闭时重拉表单；
+- **关闭时回读**：`_readback_user_fields` 把 GUI 落盘的任务编排（`_group.yml` 全量顺序含未启用项，整表进 AppList）、账号字段与启动参数（`game.yml` 六字段，`-use-d3d12` 拆到 `Game.Dx12` 开关）写回 MAS 字段——区服/路径/语言/B服名/启动参数无条件回读，账号/密码仅槽值非空才回读（留空=沿用登录态，避免清空被读回）；前端遮罩关闭时重拉表单；
 - 配队等 MAS 不管的内容不注入不回读，持久留在槽里；
 - Default（脚本级）会话直接拉起 GUI，无注入/回读。
 
@@ -115,14 +115,16 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 config-restore.md）：
 
 - 池声明：`app/task/ZzzOd/tools/restore_service.py` 的 `RESTORE_POOLS`
-  （mas=用户槽 / onedragon=原生，`RESTORE_SCRIPT_NAME="一条龙"`）；备份内部
+  （mas=用户槽 / onedragon=原生）；备份内部
   业务（槽占用守卫、字段回填、预览构建）依赖门面 helper，留在
   `app.core.config`（`get_zzzod_backup_preview` / `restore_zzzod_backup` /
-  `ensure_zzzod_mas_backup` / `ensure_zzzod_direct_backup`），池函数经
-  `ctx.config` 薄委托。
-- core 门面：`restore_service()` isinstance 分发 + `list/ensure/restore/
-  preview_config_backup` 四个通用方法；HTTP 层只有通用端点 `/backup/*`
-  （list/ensure/restore/preview），preview 的 `data` 载荷 = ZzzOd 结构
+  `ensure_zzzod_direct_backup`），池函数经 `ctx.config` 薄委托；两池均为
+  声明式（`files` + `backup_root` 包装专项 backup_archive 函数，预览与恢复
+  仍走门面），`ensure_zzzod_direct_backup` 保留供实例增删改等运行线调用。
+- core 门面：`restore_service()` isinstance 分发 + `list_config_backups /
+  ensure_config_backup / restore_config_backup / get_config_backup_preview /
+  get_config_backup_file` 五个通用方法；HTTP 层只有通用端点 `/backup/*`
+  （list/ensure/restore/preview/file），preview 的 `data` 载荷 = ZzzOd 结构
   （info/account/tasks/instances）。
 - 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（`scriptName`
   传统一名「一条龙」、内置预览渲染直接吃解包后的载荷），`restoreApi` 调
@@ -136,7 +138,7 @@ ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 conf
   （先物化账号+编排进槽再快照**：账号/编排只存在 UserData，槽只有会话/运行
   才被注入，直接快照会漏掉，恢复这种备份会把它清空）；③ 运行
   前 `_prepare_injection` 两者都归档（原有）。
-  `ensure_zzzod_mas_backup` 对未绑定槽跳过（无可恢复内容）。
+  mas 池 `files` 对未绑定槽/槽目录缺失返回 None（报无变化，不抛错）。
   归档全部指纹去重：内容无变化不产生新条目，恢复列表只留真实变更点。
 - 文件级快照/回写原语见 [config-archive.md](config-archive.md)。
 

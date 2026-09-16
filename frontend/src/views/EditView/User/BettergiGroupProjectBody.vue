@@ -7,7 +7,13 @@
     <!-- 工具栏：添加脚本 / 删除脚本 / 清空（四类配置组 scriptgroup / keymouse / js / pathing 均可编辑） -->
     <div v-if="isScriptGroup && editable" class="bgi-project-toolbar">
       <a-space size="small">
-        <a-button size="small" type="primary" ghost :disabled="!editable" @click="emit('add-script')">
+        <a-button
+          size="small"
+          type="primary"
+          ghost
+          :disabled="!editable"
+          @click="emit('add-script')"
+        >
           <template #icon><PlusOutlined /></template>
           {{ t('edit.bettergiProjectAddScript') }}
         </a-button>
@@ -37,7 +43,11 @@
         </a-popconfirm>
       </a-space>
       <span class="bgi-project-toolbar-tip">
-        {{ isStandaloneSingle ? t('edit.bettergiProjectStandaloneTip') : t('edit.bettergiProjectToolbarTip') }}
+        {{
+          isStandaloneSingle
+            ? t('edit.bettergiProjectStandaloneTip')
+            : t('edit.bettergiProjectToolbarTip')
+        }}
       </span>
     </div>
 
@@ -80,15 +90,22 @@
                 @dblclick.stop="openProjectSettings(element, index)"
               >
                 <!-- 拖拽热区：可编辑配置组覆盖整行左侧 2/3；JS/路径单行（无可选）占满 -->
-                <div class="bgi-project-drag-area" :class="{ 'bgi-project-drag-area-full': !selectable }">
+                <div
+                  class="bgi-project-drag-area"
+                  :class="{ 'bgi-project-drag-area-full': !selectable }"
+                >
                   <HolderOutlined
                     v-if="isSortable"
                     class="bgi-project-drag-handle"
                     aria-hidden="true"
                   />
                   <span v-else class="bgi-project-drag-spacer" aria-hidden="true"></span>
-                  <span class="bgi-project-name">{{ element.name || element.folderName || element.key || '—' }}</span>
-                  <span v-if="element.folderName" class="bgi-project-folder">{{ element.folderName }}</span>
+                  <span class="bgi-project-name">{{
+                    element.name || element.folderName || element.key || '—'
+                  }}</span>
+                  <span v-if="element.folderName" class="bgi-project-folder">{{
+                    element.folderName
+                  }}</span>
                 </div>
                 <div v-if="selectable" class="bgi-project-row-state">
                   <button
@@ -148,7 +165,10 @@
                     {{ item.label || '' }}
                   </div>
                   <!-- checkbox -->
-                  <div v-else-if="controlTypeOf(item) === 'checkbox'" class="bgi-project-setting-row">
+                  <div
+                    v-else-if="controlTypeOf(item) === 'checkbox'"
+                    class="bgi-project-setting-row"
+                  >
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-switch
                       :checked="isTruthy(fieldValue(item.name))"
@@ -162,18 +182,23 @@
                       :value="String(fieldValue(item.name) ?? '')"
                       :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :get-popup-container="(triggerNode: HTMLElement) => triggerNode.parentElement!"
                       allow-clear
                       @change="(v: unknown) => setField(item.name, v == null ? '' : String(v))"
                     />
                   </div>
                   <!-- multi-checkbox -->
-                  <div v-else-if="controlTypeOf(item) === 'multi-checkbox'" class="bgi-project-setting-row">
+                  <div
+                    v-else-if="controlTypeOf(item) === 'multi-checkbox'"
+                    class="bgi-project-setting-row"
+                  >
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-select
                       mode="multiple"
                       :value="fieldListValue(item.name)"
                       :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :get-popup-container="(triggerNode: HTMLElement) => triggerNode.parentElement!"
                       @change="(v: unknown) => setField(item.name, Array.isArray(v) ? v : [])"
                     />
                   </div>
@@ -182,7 +207,9 @@
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-input
                       :value="String(fieldValue(item.name) ?? '')"
-                      @change="(e: Event) => setField(item.name, (e.target as HTMLInputElement).value)"
+                      @change="
+                        (e: Event) => setField(item.name, (e.target as HTMLInputElement).value)
+                      "
                     />
                   </div>
                 </template>
@@ -212,13 +239,16 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircleFilled, ClearOutlined, DeleteOutlined, HolderOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import {
+  CheckCircleFilled,
+  ClearOutlined,
+  DeleteOutlined,
+  HolderOutlined,
+  PlusOutlined,
+} from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { BetterGiService } from '@/api'
-import type {
-  BetterGIScriptGroupSaveIn,
-  BetterGIScriptGroupDetailOut,
-} from '@/api'
+import type { BetterGIScriptGroupSaveIn, BetterGIScriptGroupDetailOut } from '@/api'
 
 const { t } = useI18n()
 
@@ -278,11 +308,11 @@ const isStandaloneSingle = computed<boolean>(
 )
 // 可选择（Shift/Ctrl 多选）/可增删：四类可编辑配置组（scriptgroup / keymouse / js / pathing）均支持，
 // 但独立单脚本（无 per-user 副本）不可选中——避免误清空为「空组」
-const selectable = computed<boolean>(() => isScriptGroup.value && props.editable && !isStandaloneSingle.value)
-// 可拖拽排序：配置组 json 且至少两个项目
-const isSortable = computed<boolean>(
-  () => selectable.value && projects.value.length > 1
+const selectable = computed<boolean>(
+  () => isScriptGroup.value && props.editable && !isStandaloneSingle.value
 )
+// 可拖拽排序：配置组 json 且至少两个项目
+const isSortable = computed<boolean>(() => selectable.value && projects.value.length > 1)
 
 // 当前编辑的完整配置组 json（scriptgroup 时保存整份；js/pathing 无 json 载体）
 const groupJson = ref<Record<string, any>>({})
@@ -409,7 +439,7 @@ const reload = async () => {
       ]
     }
     return
-    }
+  }
   loading.value = true
   try {
     const resp: BetterGIScriptGroupDetailOut =
@@ -491,9 +521,7 @@ const persistProjects = async () => {
       },
     }
     const resp =
-      await BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(
-        body
-      )
+      await BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(body)
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.bettergiProjectSaveFailed'))
     }
@@ -542,9 +570,7 @@ const clearProjects = async () => {
 }
 
 const projRowKey = (proj: ProjectRow, index: number): string => {
-  const base = proj.folderName
-    ? proj.folderName
-    : String(proj.name || proj.key || '')
+  const base = proj.folderName ? proj.folderName : String(proj.name || proj.key || '')
   return `${props.kind}:${base}:${index}`
 }
 
@@ -578,8 +604,8 @@ const openProjectSettings = async (proj: ProjectRow, index: number) => {
         folder
       ),
     ])
-    settingsModal.items = uiResp.code === 200 ? (uiResp.data || []) : []
-    settingsModal.readme = readmeResp.code === 200 ? (readmeResp.data || '') : ''
+    settingsModal.items = uiResp.code === 200 ? uiResp.data || [] : []
+    settingsModal.readme = readmeResp.code === 200 ? readmeResp.data || '' : ''
     // 把 UI 定义里的 default 预置进本地值，避免保存时因缺项丢失默认设置
     for (const item of settingsModal.items) {
       const name = String(item?.name ?? '').trim()
@@ -638,31 +664,60 @@ const isTruthy = (v: unknown): boolean => {
   return Boolean(v)
 }
 
-// 控件类型归一：脚本 settings.json 的 type 写法并不统一（也可能缺失），
-// 仅按字面量判断会把「该是下拉/开关」的项退化成纯文本框。这里做两层兜底：
-// 1) 常见别名归一（switch/bool/combo/multi_select 等）；
-// 2) 仍未知时按结构推断——有 options 必为下拉，default 为布尔必为开关。
+// 控件类型归一：以 BetterGI 官方 settings.json 的 type 枚举为权威来源
+// （官方仅 input-text / select / checkbox，开发文档补充 multi-checkbox / separator，共 5 种），
+// 同时兼容社区常见别名（switch/bool/combo/multi_select/multi-select 等）。
+// BetterGI 自身渲染也是「按 type 分发、未知时按数据形态推断」，与这里一致：
+//   有 options 必为下拉/多选，default 为布尔必为开关，default 为数组必为多选。
+// 结构兜底的目的就是避免「该是下拉/开关/多选」的项退化成纯文本框。
+const CONTROL_TYPE_ALIASES: Record<string, string> = {
+  // 文本类
+  'input-text': 'input-text',
+  'text': 'input-text',
+  'input': 'input-text',
+  'textarea': 'input-text',
+  // 下拉类
+  'select': 'select',
+  'dropdown': 'select',
+  'combo': 'select',
+  'combobox': 'select',
+  'radio': 'select',
+  // 开关类
+  'checkbox': 'checkbox',
+  'switch': 'checkbox',
+  'bool': 'checkbox',
+  'boolean': 'checkbox',
+  'toggle': 'checkbox',
+  // 多选类
+  'multi-checkbox': 'multi-checkbox',
+  'multicheckbox': 'multi-checkbox',
+  'multi_select': 'multi-checkbox',
+  'multi-select': 'multi-checkbox',
+  'multiselect': 'multi-checkbox',
+  'multiSelect': 'multi-checkbox',
+  // 分隔类
+  'separator': 'separator',
+  'section': 'separator',
+  'divider': 'separator',
+}
+
 const controlTypeOf = (item: Record<string, any>): string => {
-  const raw = String(item?.type ?? '').trim().toLowerCase()
-  if (raw === 'separator') return 'separator'
-  if (raw === 'multi-checkbox' || raw === 'multicheckbox' || raw === 'multi_select') {
-    return 'multi-checkbox'
-  }
-  if (raw === 'checkbox' || raw === 'switch' || raw === 'bool' || raw === 'boolean') {
-    return 'checkbox'
-  }
-  if (raw === 'select' || raw === 'dropdown' || raw === 'combo' || raw === 'combobox') {
-    return 'select'
-  }
-  if (Array.isArray(item?.options) && item.options.length > 0) return 'select'
+  const raw = String(item?.type ?? '')
+    .trim()
+    .toLowerCase()
+  if (raw && CONTROL_TYPE_ALIASES[raw]) return CONTROL_TYPE_ALIASES[raw]
+  // 无 type 或 type 未知时，按 BetterGI 思路从数据形态推断：
+  const hasOptions = Array.isArray(item?.options) && item.options.length > 0
+  const isArrayDefault = Array.isArray(item?.default)
+  if (hasOptions && isArrayDefault) return 'multi-checkbox'
+  if (hasOptions) return 'select'
+  if (isArrayDefault) return 'multi-checkbox'
   if (typeof item?.default === 'boolean') return 'checkbox'
   return 'input-text'
 }
 
 // 候选项归一：兼容字符串数组与对象数组（{label,value}/{name,value} 等）
-const optionList = (
-  item: Record<string, any>
-): Array<{ label: string; value: string }> => {
+const optionList = (item: Record<string, any>): Array<{ label: string; value: string }> => {
   const raw = item?.options
   if (!Array.isArray(raw)) return []
   return raw

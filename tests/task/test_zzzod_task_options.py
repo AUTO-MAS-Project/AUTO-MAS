@@ -64,8 +64,10 @@ def _make_root(tmp_path: Path) -> Path:
                                 {
                                     "mission_type_name": "基础材料",
                                     "mission_list": [
-                                        {"mission_name": "调查专项",
-                                         "mission_name_display": "代理人经验"},
+                                        {
+                                            "mission_name": "调查专项",
+                                            "mission_name_display": "代理人经验",
+                                        },
                                     ],
                                 }
                             ],
@@ -105,33 +107,44 @@ def _make_root(tmp_path: Path) -> Path:
             {
                 "coffee_list": [
                     {"coffee_name": "汀曼特调"},
-                    {"coffee_name": "浓缩咖啡", "mission_type_name": "实战模拟室",
-                     "mission_name": "通用"},
+                    {
+                        "coffee_name": "浓缩咖啡",
+                        "mission_type_name": "实战模拟室",
+                        "mission_name": "通用",
+                    },
                 ],
                 "schedule": [
-                    {"days": [1, 2, 3, 4, 5, 6, 7],
-                     "coffee_list": ["浓缩咖啡", "汀曼特调"]},
+                    {
+                        "days": [1, 2, 3, 4, 5, 6, 7],
+                        "coffee_list": ["浓缩咖啡", "汀曼特调"],
+                    },
                 ],
             },
             allow_unicode=True,
         ),
         encoding="utf-8",
     )
-    for name, data in (("anby.yml", {"agent_name": "安比"}),
-                       ("ellen.yml", {"agent_name": "艾莲"})):
+    for name, data in (
+        ("anby.yml", {"agent_name": "安比"}),
+        ("ellen.yml", {"agent_name": "艾莲"}),
+    ):
         (tmp_path / "assets" / "game_data" / "agent" / name).write_text(
             yaml.safe_dump(data, allow_unicode=True), encoding="utf-8"
         )
     for name in ("全配队通用.merged.yml", "专属.yml.sample.yml", "临时.txt"):
         (tmp_path / "config" / "auto_battle" / name).write_text("", encoding="utf-8")
     for name in ("默认-成就模式.sample.yml", "自定义-1.yml"):
-        (tmp_path / "config" / "lost_void_challenge" / name).write_text("", encoding="utf-8")
-    (tmp_path / "config" / "hollow_zero_challenge" / "默认-专属空洞-艾莲.sample.yml").write_text(
-        "", encoding="utf-8"
-    )
+        (tmp_path / "config" / "lost_void_challenge" / name).write_text(
+            "", encoding="utf-8"
+        )
+    (
+        tmp_path / "config" / "hollow_zero_challenge" / "默认-专属空洞-艾莲.sample.yml"
+    ).write_text("", encoding="utf-8")
     (tmp_path / "config" / "world_patrol_route_list" / "中央制造区.yml").write_text(
-        yaml.safe_dump({"name": "中央制造区", "list_type": "whitelist", "route_items": []},
-                       allow_unicode=True),
+        yaml.safe_dump(
+            {"name": "中央制造区", "list_type": "whitelist", "route_items": []},
+            allow_unicode=True,
+        ),
         encoding="utf-8",
     )
     return tmp_path
@@ -142,7 +155,9 @@ def test_train_categories(tmp_path: Path) -> None:
     names = [c["name"] for c in cats]
     assert names == ["实战模拟室", "恶名狩猎"]
     # 恶名狩猎与上游 CompendiumService 一致展示「恶名狩猎 深度追猎」
-    assert next(c for c in cats if c["name"] == "恶名狩猎")["label"] == "恶名狩猎 深度追猎"
+    assert (
+        next(c for c in cats if c["name"] == "恶名狩猎")["label"] == "恶名狩猎 深度追猎"
+    )
     sim = next(c for c in cats if c["name"] == "实战模拟室")
     assert sim["mission_types"][0]["missions"][0] == {
         "name": "调查专项",
@@ -168,10 +183,12 @@ def test_dir_template_options(tmp_path: Path) -> None:
 def test_resolve_field_options_dynamic(tmp_path: Path) -> None:
     root = _make_root(tmp_path)
     fields = {m["field"]: m for m in get_task_app_fields("lost_void") or []}
-    assert [o["value"] for o in resolve_field_options(root, fields["mission_name"])] == [
-        "战线肃清"
-    ]
-    assert resolve_field_options(root, fields["extra_task"])[0]["value"] == "完成悬赏委托"
+    assert [
+        o["value"] for o in resolve_field_options(root, fields["mission_name"])
+    ] == ["战线肃清"]
+    assert (
+        resolve_field_options(root, fields["extra_task"])[0]["value"] == "完成悬赏委托"
+    )
 
 
 def test_get_task_app_jump() -> None:
@@ -189,7 +206,9 @@ def test_new_dynamic_sources(tmp_path: Path) -> None:
     # 枯萎之都选图：零号空洞排除迷失之地，取 mission_name
     assert hollow_zero_missions(root) == ["旧都列车-内部"]
     # 枯萎之都挑战配置：sample 计入
-    assert [o["value"] for o in hollow_zero_challenge_options(root)] == ["默认-专属空洞-艾莲"]
+    assert [o["value"] for o in hollow_zero_challenge_options(root)] == [
+        "默认-专属空洞-艾莲"
+    ]
     # 咖啡按星期取排程，展示名按类型 - 关卡回退
     assert [o["value"] for o in coffee_options(root, 1)] == ["浓缩咖啡", "汀曼特调"]
     assert coffee_options(root, 1)[0]["label"] == "实战模拟室 - 通用"
@@ -220,9 +239,18 @@ def test_all_configurable_apps_have_fields() -> None:
     """核心可配置任务都有元数据（防误删）。"""
 
     for app_id in (
-        "daily_signin", "charge_plan", "notorious_hunt", "lost_void",
-        "withered_domain", "coffee", "intel_board", "suibian_temple",
-        "world_patrol", "life_on_line", "drive_disc_dismantle", "random_play",
+        "daily_signin",
+        "charge_plan",
+        "notorious_hunt",
+        "lost_void",
+        "withered_domain",
+        "coffee",
+        "intel_board",
+        "suibian_temple",
+        "world_patrol",
+        "life_on_line",
+        "drive_disc_dismantle",
+        "random_play",
     ):
         assert get_task_app_fields(app_id), f"{app_id} 缺元数据"
 
@@ -237,11 +265,18 @@ def test_team_list_write_preserves_agents(tmp_path: Path) -> None:
         write_team_list(
             config_dir,
             [
-                {"name": "一队", "auto_battle": "专属配队-艾莲",
-                 "agent_id_list": ["anby", "anton", "ben"]},
+                {
+                    "name": "一队",
+                    "auto_battle": "专属配队-艾莲",
+                    "agent_id_list": ["anby", "anton", "ben"],
+                },
             ],
         )
-        assert read_team_list(config_dir)[0]["agent_id_list"] == ["anby", "anton", "ben"]
+        assert read_team_list(config_dir)[0]["agent_id_list"] == [
+            "anby",
+            "anton",
+            "ben",
+        ]
 
         # 再次保存：不带成员，原成员按行保留
         write_team_list(config_dir, [{"name": "一队改", "auto_battle": "全配队通用"}])
@@ -280,7 +315,12 @@ def test_merge_plan_list_preserves_run_times(tmp_path: Path) -> None:
         {"plan_id": "p1", "run_times": 2, "category_name": "实战模拟室", "junk": 1}
     ]
     incoming = [
-        {"plan_id": "p1", "category_name": "实战模拟室", "plan_times": "3", "run_times": 99},
+        {
+            "plan_id": "p1",
+            "category_name": "实战模拟室",
+            "plan_times": "3",
+            "run_times": 99,
+        },
         {"category_name": "合成电池", "plan_times": 2},
     ]
     merged = merge_plan_list(meta["columns"], meta["new_item"], existing, incoming)
@@ -295,7 +335,9 @@ def test_merge_plan_list_preserves_run_times(tmp_path: Path) -> None:
 
 def test_merge_plan_list_empty(tmp_path: Path) -> None:
     meta = next(
-        m for m in get_task_app_fields("notorious_hunt") or [] if m["type"] == "plan_list"
+        m
+        for m in get_task_app_fields("notorious_hunt") or []
+        if m["type"] == "plan_list"
     )
     assert merge_plan_list(meta["columns"], meta["new_item"], [], [None, "x"]) == []
 
@@ -323,9 +365,7 @@ def test_predefined_team_options_and_plan_columns(tmp_path: Path) -> None:
     assert team_col["type"] == "team" and team_col["source"] == "predefined_teams"
 
     # 配队方案与游戏内配队按上游 GUI 互斥（合成电池分类下都隐藏）
-    battle_col = next(
-        c for c in meta["columns"] if c["field"] == "auto_battle_config"
-    )
+    battle_col = next(c for c in meta["columns"] if c["field"] == "auto_battle_config")
     assert {"field": "predefined_team_idx", "value": -1} in battle_col["show_when"]
     assert team_col["show_when"] == {
         "field": "category_name",
@@ -352,7 +392,11 @@ def test_resolve_field_options_predefined_teams(tmp_path: Path) -> None:
 
     from app.task.ZzzOd.tools import resolve_field_options
 
-    meta = {"field": "predefined_team_idx", "type": "team", "source": "predefined_teams"}
+    meta = {
+        "field": "predefined_team_idx",
+        "type": "team",
+        "source": "predefined_teams",
+    }
     assert resolve_field_options(tmp_path, meta) == []
 
     import tempfile

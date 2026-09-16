@@ -68,6 +68,7 @@ from .resource_loader import (
 )
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -667,9 +668,9 @@ class AutoProxyTask(TaskExecuteBase):
             task_name = MAAEND_AUTO_COLLECT_TASK
             task_label = "自动采集"
         else:
-            sanity_enabled = bool(self.cur_user_config.get("Task", "IfSanity")) and not (
-                self._quick_task_daily_once_done("Sanity")
-            )
+            sanity_enabled = bool(
+                self.cur_user_config.get("Task", "IfSanity")
+            ) and not (self._quick_task_daily_once_done("Sanity"))
             if not (
                 sanity_enabled
                 or any(
@@ -686,10 +687,12 @@ class AutoProxyTask(TaskExecuteBase):
 
             # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
             # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
-            if self.cur_user_config.get("Task", "IfSanity") and not self._quick_task_daily_once_done(
-                "Sanity"
-            ):
-                sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
+            if self.cur_user_config.get(
+                "Task", "IfSanity"
+            ) and not self._quick_task_daily_once_done("Sanity"):
+                sanity_task_key, _ = (
+                    self.cur_user_config.get_effective_sanity_task_key()
+                )
                 target_sanity_task_name = (
                     "AutoEssence"
                     if sanity_task_key["SanityTaskType"] == "Essence"
@@ -912,6 +915,13 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.set_maaend(emulator_info)
 
+            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置"
+                )
+                break
+
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
@@ -1088,9 +1098,7 @@ class AutoProxyTask(TaskExecuteBase):
         path = str(script_config.get("Info", "Path")).strip()
         return Path(path) if path else None
 
-    def _drop_removed_medication_task(
-        self, tasks: list[dict[str, object]]
-    ) -> None:
+    def _drop_removed_medication_task(self, tasks: list[dict[str, object]]) -> None:
         """新版 MaaEnd 将应急理智加强剂并入理智任务，移除旧独立任务。"""
 
         if self._maaend_task_supported("AutoUseSpMedication") is not False:
@@ -1145,7 +1153,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         location = sanity_task_key.get("AutoEssenceSpecifiedLocation")
         location = location if isinstance(location, str) else ""
-        target_weapons = _load_json_list(sanity_task_key.get("AutoEssenceTargetWeapons"))
+        target_weapons = _load_json_list(
+            sanity_task_key.get("AutoEssenceTargetWeapons")
+        )
         menu = sanity_task_key.get("AutoEssenceMenu")
         if menu not in {"Random", "Location", "Target"}:
             menu = "Target" if target_weapons else "Location"
@@ -1212,8 +1222,7 @@ class AutoProxyTask(TaskExecuteBase):
                 selected_group_values = [
                     str(option.get("value"))
                     for option in options
-                    if isinstance(option, dict)
-                    and option.get("value") in selected
+                    if isinstance(option, dict) and option.get("value") in selected
                 ]
                 if not selected:
                     continue
@@ -1374,6 +1383,19 @@ class AutoProxyTask(TaskExecuteBase):
         if not maaend_config_file.exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
+            )
+
+        # 下发前归档 MAS 配置到用户池（下发源；带快速配置覆盖层字段侧车，
+        # 指纹去重，失败不阻断运行）。直控无 MAS 配置目录，不归档；native
+        # 池由 manager.prepare 在任务级一次性归档
+        if config_mode != "直控":
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                maaend_config_path,
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
             )
 
         swap_in_dir(maaend_config_path, self.maaend_set_path)
@@ -1622,8 +1644,14 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_name = get_task_book_name(task)
-            if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
-                task["enabled"] = self.task_dict[task_name][task["id"]]
+            if str(task.get("taskName")) in removed_task_names:
+                task["enabled"] = False
+                if task_name in self.task_dict:
+                    self.task_dict[task_name].pop(task["id"], None)
+                continue
+
+            if task_name_value != _MAAEND_CLOSE_GAME_TASK:
+                task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
@@ -1772,6 +1800,16 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 self._write_auto_essence_options(task, sanity_task_key)
 
+        # 只跟踪本轮实际启用的任务，避免禁用条目占用同名任务的结果位置。
+        enabled_ids = {
+            task["id"] for task in maaend_tasks if task.get("enabled", False)
+        }
+        self.task_dict = {
+            name: {task_id: True for task_id in tasks if task_id in enabled_ids}
+            for name, tasks in self.task_dict.items()
+            if any(task_id in enabled_ids for task_id in tasks)
+        }
+
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
@@ -1789,6 +1827,12 @@ class AutoProxyTask(TaskExecuteBase):
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+            self.retryable = False
+        elif any(
+            message in log
+            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+        ):
+            self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
             self.retryable = False
         elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"

@@ -173,14 +173,12 @@ class ZzzOdManager(TaskExecuteBase):
         inject_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode")
-            != "直控"
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode") != "直控"
         ]
         direct_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode")
-            == "直控"
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode") == "直控"
         ]
         account_switch = str(
             self.script_config.get("Game", "AccountSwitch") or "单实例切换"
@@ -408,5 +406,7 @@ class ZzzOdManager(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"ZZZ-OD 任务出现异常: {e}"),
+                data=WSTaskNoticeData(
+                    level="error", message=f"ZZZ-OD 任务出现异常: {e}"
+                ),
             )

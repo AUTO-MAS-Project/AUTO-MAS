@@ -18,10 +18,12 @@ from app.task.MAA.tools.cultivate.engine import (
     has_material_gap,
     judge_achievements,
     recommend_stages,
+    summarize_achievements,
     synthesize,
 )
 from app.task.MAA.tools.cultivate.providers import (
     parse_depot_payload,
+    parse_oper_box_names,
     parse_oper_box_payload,
     resolve_progression,
 )
@@ -66,7 +68,7 @@ def build_dataset() -> CultivateDataSet:
         },
         drops=(
             DropEntry("st_main", "30012", 0.5, 0, None),
-            DropEntry("st_alt", "30013", 0.3, 0, None),
+            DropEntry("st_alt", "30013", 0.2, 0, None),
             DropEntry("st_act", "30013", 2.0, 0, 1600000000000),  # 已过期活动窗
             DropEntry("st_chip", "3251", 0.7882, 0, None),
             DropEntry("st_ca", "3301", 0.25, 0, None),
@@ -122,18 +124,24 @@ def build_targets() -> list[OperatorTarget]:
 
 
 def build_snapshots() -> dict[str, ProgressionSnapshot]:
+    # 专精/模组维度需要携带观测的源（skland/manual）才参与需求计算；
+    # local/default 下该维度未观测、目标暂停展开（见专精模组降级用例）
     return {
         "char_1": ProgressionSnapshot(
-            source="local",
+            source="skland",
             timestamp=1000,
             data=Progression(elite=1, level=60, masteries={}, modules={}),
         ),
-        # char_2 故意缺席：干员未拥有，走 default 全量起算
+        "char_2": ProgressionSnapshot(
+            source="skland",
+            timestamp=1000,
+            data=Progression(elite=0, level=0, masteries={}, modules={}),
+        ),
     }
 
 
 def test_build_requirements_respects_interval_and_progression() -> None:
-    """区间需求：精一消耗在 current=1 时不重复计入；未拥有干员全量起算。"""
+    """区间需求：精一消耗在 current=1 时不重复计入；未观测干员从 0 全量起算。"""
 
     requirements = {
         requirement.item_id: requirement
@@ -149,6 +157,63 @@ def test_build_requirements_respects_interval_and_progression() -> None:
     assert requirements["mod_unlock_token"].amount == 2
 
 
+def test_build_requirements_pauses_unobserved_mastery_module() -> None:
+    """专精/模组维度未观测（local/default）时暂停展开，精英化照常。
+
+    森空岛拉取失败降级 local 后，OperBox 无专精/模组字段、空表是"没数据"
+    不是"没养成"：按 0 起算会把已达档位材料重刷一遍并虚增缺口抑制库存
+    保持（评审整改）。达成检测不受影响，目标保留，观测恢复后自动续刷。
+    """
+
+    data = build_dataset()
+    # local 源（OperBox 结构性无专精/模组字段）：只保留精英化需求
+    local_snapshots = {
+        "char_1": ProgressionSnapshot(
+            "local", 1000, Progression(elite=1, level=60, masteries={}, modules={})
+        )
+    }
+    local_targets = [
+        OperatorTarget(
+            "char_1",
+            (
+                Goal("elite", "", 2, "in_progress"),
+                Goal("mastery", "skill_1", 2, "not_started"),
+            ),
+        )
+    ]
+    local_requirements = {
+        requirement.item_id: requirement.amount
+        for requirement in build_requirements(
+            local_targets, local_snapshots, data.demands
+        )
+    }
+    assert local_requirements == {"30115": 1, "30013": 3}  # 精一→精二，无 3301/3302
+
+    # 快照缺席（default 兜底）：同样只保留精英化需求
+    # （char_2 的模组需求真实存在，旧行为会展开 30012/mod_unlock_token）
+    default_requirements = {
+        requirement.item_id: requirement.amount
+        for requirement in build_requirements(
+            [OperatorTarget("char_2", (Goal("module", "mod_1", 1),))], {}, data.demands
+        )
+    }
+    assert default_requirements == {}
+
+    # skland 观测恢复：专精重新展开（masteries 空表=真观测，从 0 全量起算）
+    skland_snapshots = {
+        "char_1": ProgressionSnapshot(
+            "skland", 1000, Progression(elite=1, level=60, masteries={}, modules={})
+        )
+    }
+    skland_requirements = {
+        requirement.item_id: requirement.amount
+        for requirement in build_requirements(
+            local_targets, skland_snapshots, data.demands
+        )
+    }
+    assert skland_requirements == {"30115": 1, "30013": 7, "3301": 4, "3302": 8}
+
+
 def test_aggregate_sums_sources() -> None:
     requirements = build_requirements(
         build_targets(), build_snapshots(), build_dataset().demands
@@ -161,7 +226,7 @@ def test_aggregate_sums_sources() -> None:
 
 
 def test_synthesize_expands_synthesizable_and_separates_unobtainable() -> None:
-    """价值等效成本：固源岩组合成(42.86) 低于直刷(50) → 折算为刷固源岩。"""
+    """单件口径成本：固源岩组合成(60 = 5×固源岩 12) 低于直刷(75 = 15/0.2) → 折算为刷固源岩。"""
 
     data = build_dataset()
     requirements = aggregate(
@@ -199,6 +264,34 @@ def test_synthesize_falls_back_to_craft_when_direct_closed_today() -> None:
     amounts = {requirement.item_id: requirement.amount for requirement in farm}
     # 直刷 RI/S 复刻系候选全关 → 折算为刷固源岩 10000×5 = 50000 后合成
     assert amounts == {"30012": 50000}
+    assert unobtainable == []
+
+
+def test_synthesize_direct_cost_ignores_byproduct_value() -> None:
+    """口径统一（单件）：直刷可行性不吃副产品红利（固源岩组案例回归）。
+
+    st_rich 副产品豪华：综合效率口径按价值抵扣后直刷"等效"仅
+    25 ÷ 1.1905 = 21 理智，会误判直刷。单件口径只看目标材料自身，
+    最优直刷候选是 S-4 的 15/0.2 = 75 理智/个 > 合成 5×12 = 60 →
+    折算为刷固源岩；旧口径下 21 < 60 会保直刷，断言必失败。
+    """
+
+    from dataclasses import replace
+
+    data = build_dataset()
+    drops = data.drops + (
+        DropEntry("st_rich", "30013", 1.0, 0, None),
+        DropEntry("st_rich", "mod_unlock_token", 1.0, 0, None),
+    )
+    stages = dict(data.stages)
+    stages["st_rich"] = StageMeta("st_rich", "RICH-9", 105, None, composite=1.1905)
+    data = replace(data, drops=drops, stages=stages)
+
+    farm, unobtainable = synthesize([Requirement("30013", 4, ())], data, TODAY)
+    amounts = {requirement.item_id: requirement.amount for requirement in farm}
+    # 单件口径：最优直刷 75（S-4）> 合成 60 → 折算为刷固源岩 20；
+    # st_rich 的 105 只是其中一名候选，若按综合效率口径 21 < 60 会保直刷
+    assert amounts == {"30012": 20}
     assert unobtainable == []
 
 
@@ -346,6 +439,49 @@ def test_judge_and_apply_achievements() -> None:
     assert new_targets["char_1"].goals[0].state == "in_progress"
 
 
+def test_summarize_achievements_only_reports_confident_removals() -> None:
+    """推送文案只收"达成且可自证"的目标；名字缺失回退 char_id。"""
+
+    targets = [
+        OperatorTarget("char_1", (Goal("elite", "", 2, "in_progress"),)),
+        OperatorTarget("char_3", (Goal("elite", "", 1, "in_progress"),)),
+        OperatorTarget("char_4", (Goal("mastery", "skill_1", 1, "in_progress"),)),
+    ]
+    snapshots = {
+        "char_3": ProgressionSnapshot(
+            "local", 1, Progression(elite=1, level=1, masteries={}, modules={})
+        ),
+        "char_4": ProgressionSnapshot(
+            "manual",
+            0,
+            Progression(elite=0, level=1, masteries={"skill_1": 1}, modules={}),
+        ),
+    }
+    achievements = judge_achievements(targets, snapshots)
+
+    assert summarize_achievements(targets, achievements, {"char_3": "名字三"}) == [
+        "名字三 已达到精1"
+    ]
+    # 名字映射缺失：回退 char_id，不抛错
+    assert summarize_achievements(targets, achievements) == ["char_3 已达到精1"]
+    # 无任何达成：空文案
+    assert summarize_achievements(targets, [], {"char_3": "名字三"}) == []
+
+
+def test_parse_oper_box_names_reads_display_names() -> None:
+    """名字映射只收有名字的干员；无 own_opers 的载荷返回空映射。"""
+
+    payload = {
+        "own_opers": [
+            {"id": "char_1", "name": "小满", "elite": 0},
+            {"id": "char_2", "elite": 2},  # 无名字字段：跳过
+            {"id": "char_3", "name": "", "elite": 1},  # 空名字：跳过
+        ]
+    }
+    assert parse_oper_box_names(payload) == {"char_1": "小满"}
+    assert parse_oper_box_names({}) == {}
+
+
 def test_parse_recipes_dual_shape() -> None:
     """双形态 schema：resolve=true 分解向逆向建边；resolve=false 合成向直读。"""
 
@@ -378,6 +514,89 @@ def test_parse_recipes_dual_shape() -> None:
     assert recipes["30013"].ingredients == {"30012": 5}
     assert recipes["30115"].ingredients == {"30014": 1, "30044": 1, "30054": 1}
     assert "bad" not in recipes
+
+
+def test_local_recipe_table_chips_and_voucher() -> None:
+    """本地配方表：8 职业芯片链 + 芯片助剂凭证兑换（一图流表未收录）；表内已有条目优先。"""
+
+    from app.task.MAA.tools.cultivate.yituliu import (
+        _CHIP_RECIPES,
+        _VOUCHER_RECIPES,
+        _with_local_recipes,
+    )
+
+    assert {
+        recipe.result_item_id: dict(recipe.ingredients) for recipe in _CHIP_RECIPES
+    } == {
+        "3213": {"3212": 2, "32001": 1},
+        "3223": {"3222": 2, "32001": 1},
+        "3233": {"3232": 2, "32001": 1},
+        "3243": {"3242": 2, "32001": 1},
+        "3253": {"3252": 2, "32001": 1},
+        "3263": {"3262": 2, "32001": 1},
+        "3273": {"3272": 2, "32001": 1},
+        "3283": {"3282": 2, "32001": 1},
+    }
+    assert {
+        recipe.result_item_id: dict(recipe.ingredients) for recipe in _VOUCHER_RECIPES
+    } == {"32001": {"4006": 90}}
+
+    # 一图流表已有同结果条目时以表为准（本地不重复补）
+    table = (Recipe("3243", {"9999": 1}), Recipe("32001", {"8888": 1}))
+    merged = {recipe.result_item_id: recipe for recipe in _with_local_recipes(table)}
+    assert merged["3243"].ingredients == {"9999": 1}
+    assert merged["32001"].ingredients == {"8888": 1}
+    assert len(merged) == 9  # 表 2 条 + 本地补另外 7 条芯片链
+
+
+def test_build_plan_folds_chips_into_chip_pack_and_certificates() -> None:
+    """芯片链折算：双芯片 → 芯片组（PR 关）+ 芯片助剂 → 采购凭证（AP-5，固定产出）。"""
+
+    from dataclasses import replace
+
+    from app.task.MAA.tools.cultivate.yituliu import (
+        _with_local_recipes,
+        build_material_class,
+    )
+
+    base = build_dataset()
+    drops = base.drops + (DropEntry("st_prb2", "3242", 0.7, 0, None),)
+    stages = {
+        **base.stages,
+        "st_prb2": StageMeta("st_prb2", "PR-B-2", 36, (0, 1, 4, 5)),
+        "st_ap": StageMeta("st_ap", "AP-5", 30, (0, 3, 5, 6)),
+    }
+    recipes = _with_local_recipes(base.recipes)
+    demands = {
+        **base.demands,
+        "char_9": (DemandEntry("elite", "", 2, {"3243": 4}),),
+    }
+    data = replace(
+        base,
+        demands=demands,
+        drops=drops,
+        stages=stages,
+        recipes=recipes,
+        fixed_source_stages={**base.fixed_source_stages, "4006": "st_ap"},
+        material_class=build_material_class(demands, drops, stages, recipes),
+    )
+
+    plan = build_plan(
+        targets=(OperatorTarget("char_9", (Goal("elite", "", 2),)),),
+        snapshots={},
+        data=data,
+        today=TODAY,
+    )
+
+    entries = {(entry.item_id, entry.stage_code) for entry in plan.entries}
+    # 4 双芯片 → 8 芯片组（PR-B-2，周一开放）+ 4 助剂 → 360 采购凭证（AP-5）
+    assert ("3242", "PR-B-2") in entries
+    assert ("4006", "AP-5") in entries
+    amounts = {entry.item_id: entry.amount for entry in plan.entries}
+    assert amounts["3242"] == 8
+    assert amounts["4006"] == 360
+    # 双芯片与助剂都已被折算，不再作为不可获取材料
+    assert not plan.unobtainable
 
 
 def test_parse_oper_box_and_depot_payload() -> None:
@@ -580,6 +799,38 @@ def test_service_accepts_injected_dataset_loader() -> None:
     ]
 
 
+def test_local_inventory_provider_timestamp_fallback() -> None:
+    """DepotData 缺 syncTime 时识别时间回退档案 mtime；有 syncTime 则优先（决策 31）。"""
+
+    import json
+    import tempfile
+    from datetime import datetime
+
+    from app.task.MAA.tools.cultivate.providers import LocalInventoryProvider
+    from app.task.MAA.tools.cultivate.types import ProviderContext
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = Path(tmp)
+        path = data_dir / "DepotData.json"
+        path.write_text(json.dumps({"data": {"30012": 7}}), encoding="utf-8")
+
+        result = LocalInventoryProvider().fetch(ProviderContext(maa_data_dir=data_dir))
+        assert result is not None
+        inventory, recognized_at = result
+        assert inventory == {"30012": 7}
+        assert recognized_at == int(path.stat().st_mtime)
+
+        sync_time = "2026-09-13T12:00:00+08:00"
+        path.write_text(
+            json.dumps({"data": {"30012": 7}, "syncTime": sync_time}),
+            encoding="utf-8",
+        )
+        result = LocalInventoryProvider().fetch(ProviderContext(maa_data_dir=data_dir))
+        assert result is not None
+        _, recognized_at = result
+        assert recognized_at == int(datetime.fromisoformat(sync_time).timestamp())
+
+
 def test_service_inventory_uses_injected_chain() -> None:
     """库存链可注入：替换后调用方拿到的就是替身数据。"""
 
@@ -594,8 +845,9 @@ def test_service_inventory_uses_injected_chain() -> None:
             return {"30012": 42}, 1780000000
 
     service = DepotCultivateService(inventory_chain=(StubInventoryProvider(),))
-    inventory = asyncio.run(service.inventory(maa_data_dir=Path(".")))
-    assert inventory == {"30012": 42}
+    result = asyncio.run(service.inventory(maa_data_dir=Path(".")))
+    # 库存连同识别时间（epoch 秒）一并透传，供查询端展示新鲜度（决策 31）
+    assert result == ({"30012": 42}, 1780000000)
 
 
 def test_composition_root_lives_in_service_not_providers() -> None:
@@ -653,20 +905,23 @@ def test_fixed_source_stage_yields_farm_entry() -> None:
     assert entries[0].expected_sanity == 0.0
 
 
-def test_fixed_source_stage_ignores_weekday_filter() -> None:
-    """固定产出关不做星期过滤：非开放日也要给关卡，开放时间由 MAA 判断。
+def test_fixed_source_stage_closed_today_emits_no_entry() -> None:
+    """固定产出关按开放日过滤：非开放日不产条目（与 MAA 执行口径一致）。
 
-    CA-5 开放日 (1,2,4,6) 不含周一，但 TODAY 是周一仍须产出条目——否则
-    用户在不开放的日子就选不了该材料。
+    CA-5 开放日 (1,2,4,6) 不含周一，TODAY 是周一故不产条目；MAA 对"认识
+    但今天不开"的关整条跳过、不做次日顺延，产条目只会让缺口判定成立而白白
+    抑制库存保持。用户提前保存计划不受影响——编辑器候选不过滤星期（见下一
+    用例）。
     """
 
     from dataclasses import replace
 
     data = replace(build_dataset(), fixed_source_stages={"4006": "st_ca"})
-    entries = recommend_stages([Requirement("4006", 100, ())], data, TODAY)
-    assert [(entry.item_id, entry.stage_code) for entry in entries] == [
-        ("4006", "CA-5")
-    ]
+    assert recommend_stages([Requirement("4006", 100, ())], data, TODAY) == []
+    # 开放日（周二）正常产出，期望值保持 0.0 中性
+    opened = recommend_stages([Requirement("4006", 100, ())], data, date(2026, 1, 6))
+    assert [(entry.item_id, entry.stage_code) for entry in opened] == [("4006", "CA-5")]
+    assert opened[0].expected_runs == 0.0 and opened[0].expected_sanity == 0.0
 
 
 def test_stage_candidates_expose_fixed_source_regardless_of_weekday() -> None:
@@ -713,7 +968,8 @@ def test_fixed_source_items_farmable_in_full_pipeline() -> None:
         fixed_source_stages={"4001": "st_main", "4006": "st_chip"},
     )
     targets = [OperatorTarget("char_1", (Goal("module", "mod_1", 1, "not_started"),))]
-    snapshots = {"char_1": ProgressionSnapshot("local", 1, Progression(0, 1, {}, {}))}
+    # module 维度需携带观测的源才展开需求（local 视为未观测），路由测试用 skland 载体
+    snapshots = {"char_1": ProgressionSnapshot("skland", 1, Progression(0, 1, {}, {}))}
     plan = build_plan(targets=targets, snapshots=snapshots, data=data, today=TODAY)
 
     entries = {(entry.item_id, entry.stage_code) for entry in plan.entries}
@@ -763,3 +1019,276 @@ def test_fixed_source_stage_blacklisted_counts_unobtainable() -> None:
     assert [
         (requirement.item_id, requirement.amount) for requirement in unobtainable
     ] == [("4006", 6)]
+
+
+def test_fixed_source_stage_closed_today_yields_no_entry_and_no_gap() -> None:
+    """固定产出资源关当天不开放：不产条目、不计缺口，需求仍在 demands。
+
+    回归：龙门币（CE-6 周二/四/六/日开放）在周一也会进计划并被判为缺口，
+    养成计划整条被 MAA 按"关卡未开放"跳过，库存保持却被白白抑制一天；
+    MAA 对"认识但今天不开"的关不做次日顺延，计划层须同口径。
+    """
+
+    from dataclasses import replace
+
+    data = replace(
+        build_dataset(),
+        demands={"char_1": (DemandEntry("module", "mod_1", 1, {"4001": 40000}),)},
+        material_class={"4001": "farmable"},
+        fixed_source_stages={"4001": "st_ca"},  # CA-5：周一不开
+    )
+    targets = [OperatorTarget("char_1", (Goal("module", "mod_1", 1, "not_started"),))]
+    # module 维度需携带观测的源才展开需求（local 视为未观测），路由测试用 skland 载体
+    snapshots = {"char_1": ProgressionSnapshot("skland", 1, Progression(0, 1, {}, {}))}
+
+    closed = build_plan(targets=targets, snapshots=snapshots, data=data, today=TODAY)
+    assert closed.entries == ()
+    assert has_material_gap(targets, snapshots, {}, data, TODAY) is False
+    # 材料本身可获取，只是今天不开：需求照常展示给用户
+    assert [requirement.item_id for requirement in closed.demands] == ["4001"]
+
+    open_day = date(2026, 1, 6)  # 周二：CA-5 开放
+    opened = build_plan(targets=targets, snapshots=snapshots, data=data, today=open_day)
+    assert [(entry.item_id, entry.stage_code) for entry in opened.entries] == [
+        ("4001", "CA-5")
+    ]
+    assert has_material_gap(targets, snapshots, {}, data, open_day) is True
+
+
+def test_stage_candidates_truncates_to_limit() -> None:
+    """候选按单件理智升序截断（默认 10）：首项（自动填关）不受影响，None 取全量。"""
+
+    from dataclasses import replace
+
+    data = build_dataset()
+    # 给 30012 追加 12 个不同关卡的候选：期望同为 0.5，apCost 递增 → 单件理智递增
+    drops = list(data.drops)
+    stages = dict(data.stages)
+    for index in range(12):
+        drops.append(DropEntry(f"st_x{index}", "30012", 0.5, 0, None))
+        stages[f"st_x{index}"] = StageMeta(
+            f"st_x{index}", f"X-{index}", 6 + index, None
+        )
+    data = replace(data, drops=tuple(drops), stages=stages)
+
+    trimmed = stage_candidates(data).get("30012", [])
+    assert len(trimmed) == 10
+    assert trimmed[0]["stage"] == "1-7"
+
+    full = stage_candidates(data, limit=None).get("30012", [])
+    assert len(full) == 13
+    assert [option["stage"] for option in trimmed] == [
+        option["stage"] for option in full[:10]
+    ]
+
+
+def test_normalize_dataset_excludes_maa_unnavigable_stages() -> None:
+    """别传常驻（stageType=ACT_PERM）不进数据集：MAA 判其为过期活动关。
+
+    回归：一图流把已转常驻的别传当常驻关给出（end 是远期占位时间），
+    MAA 的常驻关卡表不收录，库存保持/养成计划会整条跳过；当期活动关
+    （ACT）与主线保留，stageType 缺失时按 stageId 的 _perm 后缀兜底。
+    """
+
+    from app.task.MAA.tools.cultivate.yituliu import normalize_dataset
+
+    stage_raw = {
+        "data": [
+            {
+                "stageId": "act18d0_06_perm",
+                "stageCode": "WD-6",
+                "apCost": 15,
+                "stageType": "ACT_PERM",
+            },
+            {
+                "stageId": "act54side_08",
+                "stageCode": "SR-8",
+                "apCost": 21,
+                "stageType": "ACT",
+            },
+            {
+                "stageId": "main_01-07",
+                "stageCode": "1-7",
+                "apCost": 6,
+                "stageType": "MAIN",
+            },
+            {"stageId": "legacy_01_perm", "stageCode": "LM-1", "apCost": 15},
+        ]
+    }
+    matrix_raw = [
+        {
+            "stageId": stage_id,
+            "itemId": "30012",
+            "times": 100,
+            "quantity": 50,
+            "start": 1,
+            "end": None,
+        }
+        for stage_id in (
+            "act18d0_06_perm",
+            "act54side_08",
+            "main_01-07",
+            "legacy_01_perm",
+        )
+    ]
+
+    data = normalize_dataset(
+        demand_raw={"char_1": {"name": "X", "rarity": 6, "elite": [{}, {"30012": 1}]}},
+        matrix_raw=matrix_raw,
+        stage_raw=stage_raw,
+        recipe_raw=[],
+        data_version="test",
+    )
+
+    assert {drop.stage_id for drop in data.drops} == {"act54side_08", "main_01-07"}
+
+
+def test_dataset_from_json_drops_perm_stages_of_legacy_snapshot() -> None:
+    """修复前写入的快照仍带别传常驻关：加载时按 _perm 后缀剔除。"""
+
+    from app.task.MAA.tools.cultivate.yituliu import dataset_from_json, dataset_to_json
+
+    payload = dataset_to_json(build_dataset())
+    payload["drops"] = [
+        *payload["drops"],
+        {
+            "stage_id": "act18d0_06_perm",
+            "item_id": "30033",
+            "expected_per_run": 0.465,
+            "start_ms": 1,
+            "end_ms": None,
+        },
+    ]
+
+    data = dataset_from_json(payload)
+
+    assert all(drop.stage_id != "act18d0_06_perm" for drop in data.drops)
+
+
+# ==================== 森空岛练度源（T4.1，决策 37/38） ====================
+
+
+def test_parse_player_info_payload() -> None:
+    """player/info 解析：locked 占位不计模组、专精按 skillId、坏条目跳过。"""
+
+    from app.task.MAA.tools.cultivate.providers import parse_player_info_payload
+
+    payload = {
+        "chars": [
+            {
+                # 满 配：精2、两技能各专精、一个已解锁模组
+                # （真机实测 2026-09-15：干员标识字段是 charId，不是 id）
+                "charId": "char_002_amiya",
+                "name": None,  # T4.4 实测：name 恒为 null
+                "level": 80,
+                "evolvePhase": 2,
+                "skills": [
+                    {"id": "skchr_amiya_1", "level": 7, "specializeLevel": 0},
+                    {"id": "skchr_amiya_2", "level": 7, "specializeLevel": 3},
+                    "bad-entry",
+                ],
+                "equip": [
+                    {"id": "uniequip_002_amiya", "level": 2, "locked": False},
+                    # locked=true = 未解锁占位（level 恒 1），不得计入
+                    {"id": "uniequip_002_amiya_x", "level": 1, "locked": True},
+                    # locked 字段缺失 = 无法确认已解锁，保守不计级（宁缺勿滥）
+                    {"id": "uniequip_missing_locked", "level": 3},
+                    {"id": "uniequip_no_level", "locked": False},
+                ],
+            },
+            {"no_charId": True},
+        ]
+    }
+
+    progressions = parse_player_info_payload(payload)
+
+    assert set(progressions) == {"char_002_amiya"}
+    progression = progressions["char_002_amiya"]
+    assert progression.elite == 2
+    assert progression.level == 80
+    assert progression.masteries == {"skchr_amiya_2": 3}
+    assert progression.modules == {"uniequip_002_amiya": 2}
+
+
+def test_skland_provider_reads_injected_snapshot() -> None:
+    """skland 适配器读注入快照：命中出快照、缺干员/空快照短路返回 None。"""
+
+    from app.task.MAA.tools.cultivate.providers import SklandProgressionProvider
+    from app.task.MAA.tools.cultivate.types import Progression, ProviderContext
+
+    provider = SklandProgressionProvider()
+    assert provider.name == "skland"
+    assert provider.self_certifying is True
+
+    context = ProviderContext(
+        skland_progressions={
+            "char_002_amiya": Progression(
+                elite=2, level=80, masteries={"skchr_amiya_2": 3}, modules={}
+            )
+        },
+        skland_captured_at=1780000000,
+    )
+    snapshot = provider.fetch("char_002_amiya", context)
+    assert snapshot is not None
+    assert snapshot.source == "skland"
+    assert snapshot.timestamp == 1780000000
+    assert snapshot.data.elite == 2
+    # 目标干员不在快照中 → None，链短路落 local
+    assert provider.fetch("char_999_absent", context) is None
+    # 空快照（未拉取/不可用）→ None，行为与 PR2 完全一致
+    assert provider.fetch("char_002_amiya", ProviderContext()) is None
+
+
+def test_skland_heads_progression_chains() -> None:
+    """链首插入即双链自动生效：达成检测链 = skland + local（self_certifying）。"""
+
+    from app.task.MAA.tools.cultivate.service import (
+        get_certifying_chain,
+        get_progression_chain,
+    )
+
+    assert [provider.name for provider in get_progression_chain()] == [
+        "skland",
+        "local",
+        "manual",
+        "default",
+    ]
+    assert [provider.name for provider in get_certifying_chain()] == [
+        "skland",
+        "local",
+    ]
+
+
+def test_prepare_cultivate_uses_skland_snapshot() -> None:
+    """快照注入链首价值：仅森空岛可自证的达成在注入前被移除（决策 37/38）。"""
+
+    import asyncio
+
+    from app.task.MAA.tools.cultivate.service import DepotCultivateService
+    from app.task.MAA.tools.cultivate.types import Goal, OperatorTarget, Progression
+
+    data = build_dataset()
+
+    async def fake_loader(config_path, proxy):
+        return data
+
+    service = DepotCultivateService(dataset_loader=fake_loader)
+    targets = (
+        OperatorTarget("char_002_amiya", (Goal("elite", "", 2, "not_started"),)),
+    )
+    skland = (
+        {"char_002_amiya": Progression(elite=2, level=80, masteries={}, modules={})},
+        1780000000,
+    )
+    updated, plan, gap = asyncio.run(
+        service.prepare_cultivate(
+            targets=targets,
+            maa_data_dir=Path("."),
+            config_path=Path("."),
+            skland=skland,
+        )
+    )
+    # local 无档案、skland 自证已精2 → confident 移除，无计划无缺口
+    assert updated == []
+    assert plan is None
+    assert gap is False

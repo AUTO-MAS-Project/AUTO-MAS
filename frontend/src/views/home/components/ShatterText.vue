@@ -157,7 +157,8 @@ onUnmounted(stopTimers)
       }"
       :style="charStyle(shard)"
       aria-hidden="true"
-    >{{ shard.glyph }}</span>
+      >{{ shard.glyph }}</span
+    >
   </span>
 </template>
 

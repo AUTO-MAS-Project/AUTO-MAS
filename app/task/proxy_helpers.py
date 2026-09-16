@@ -81,9 +81,7 @@ async def push_dispatch_log(script_info: object, line: str) -> None:
     await asyncio.sleep(0)
 
 
-def append_push_log(
-    cur_user_item: object, log_type: str, text: str, ts: float
-) -> None:
+def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) -> None:
     """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
 
     cur_user_item.push_log.append((log_type, text, ts))
@@ -93,13 +91,8 @@ def append_push_log(
 # 来源决定「谁拥有本次运行的配置」：脚本=脚本级共享配置，用户=MAS 侧按用户
 # 独立配置，直控=直接用脚本安装目录里的原生配置。快速配置（Info.IfQuickConfig）
 # 是**独立于来源**的用户级开关：按用户保存、不随来源派生，任何来源下都可开关。
-# 开关的可观测效果仅在直控来源下体现：直控+开启=任务前把该用户的面板值写入
-# 原生配置，任务结束沿用各专项既有快照/指纹/崩溃恢复机制还原；直控+关闭=
-# 完全由外侧原生配置决定，MAS 零写入。脚本/用户来源下 MAS 配置整体落盘，
-# 开关无可观测差异是预期，不是缺陷。
-# 三态与开关分别由 read_config_source / resolve_config_source / user_uses_quick_config
-# 归一；快速配置接管统一走 quick_config_takeover——直控+开启才写，不存在
-# 「直控禁用快速配置」的旧早退分支，写失败即任务失败（异常向上传播）。
+# 开启时把该用户面板值覆盖到所选来源，关闭时保留来源配置；必要的启动、
+# 模拟器与恢复流程不属于快速配置。写入和恢复仍由各专项按自身架构负责。
 # （旧版「简洁/详细/自定义」由模型层 ConfigSourceValidator 加载时归一。）
 
 CONFIG_SOURCE_SCRIPT = "脚本"
@@ -110,8 +103,7 @@ CONFIG_SOURCE_DIRECT = "直控"
 def read_config_source(config: object, default: str = CONFIG_SOURCE_USER) -> str:
     """读取用户配置的 Info.Mode，未知值回落到脚本/用户（绝不回落成直控）。
 
-    直控意味着「MAS 零写入」，把一个空值或手改坏的值解释成直控会让 MAS 静默
-    放弃写入，因此这里对未知值采取保守回落。
+    直控跳过 MAS 来源导入，因此未知值不能静默解释成直控。
     """
 
     if config is None:
@@ -136,7 +128,7 @@ def resolve_config_source(
 
 
 def user_uses_direct_control(config: object) -> bool:
-    """该用户是否使用直控来源（MAS 不写原生配置）。"""
+    """该用户是否使用外侧原生配置作为来源。"""
 
     return read_config_source(config, CONFIG_SOURCE_SCRIPT) == CONFIG_SOURCE_DIRECT
 
@@ -145,9 +137,7 @@ def user_uses_quick_config(config: object, default: bool = True) -> bool:
     """读取用户级快速配置开关（Info.IfQuickConfig），与配置来源完全独立。
 
     按用户保存的独立布尔字段，不随来源派生；默认开启（与模型层
-    BoolValidator 默认一致）。这里只判定开关本身，来源判定交给调用方或
-    quick_config_takeover——脚本/用户来源下开关无可观测差异是预期
-    （MAS 配置整体落盘），不是缺陷。
+    BoolValidator 默认一致）。这里只判定开关本身，来源导入由各专项负责。
     """
 
     if config is None:
@@ -165,27 +155,13 @@ def quick_config_takeover(
     *,
     enabled_default: bool = True,
 ) -> bool:
-    """快速配置接管统一入口：任务前把面板值写进原生配置（仅直控+开启）。
-
-    三态与开关在同一处判定，各专项不再手写「直控 → 禁用快速配置」的旧早退
-    分支（旧规则「强托管专项直控=禁用快速配置」已废除，见 S4 两段式）：
-
-    - 脚本/用户来源：返回 False。来源落盘段已把 MAS 配置整体写入，开关无可
-      观测差异是预期，无需（也不应）二次接管。
-    - 直控 + 关闭：返回 False。完全由外侧原生配置决定，MAS 零写入。
-    - 直控 + 开启：调用 write()（任务前把该用户的面板值写入原生配置）并返回
-      True。任务结束的恢复沿用各专项既有快照/指纹/崩溃恢复机制，本入口不
-      另建恢复路径。
+    """开启时覆盖面板值，关闭时保留来源配置，与来源模式无关。
 
     write 抛出的异常一律向上传播：覆写失败即任务失败，由调用方按各自的
     handle_pre_*_error 转成任务失败提示，本入口不吞异常、不假装成功。
     """
 
-    if read_config_source(config, CONFIG_SOURCE_USER) != CONFIG_SOURCE_DIRECT:
-        return False
     if not user_uses_quick_config(config, enabled_default):
         return False
     write()
     return True
-
-

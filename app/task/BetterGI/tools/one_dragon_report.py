@@ -31,12 +31,18 @@
     一条龙和配置组任务结束          ← 整条收尾（成败由 AutoProxy._one_dragon_sequence_done 判定）
 
 整条是否完成不属于本模块职责；本模块只负责「按执行顺序列出每一步 + 经过与成败」。
+
+另有执行层路径（``MASOneDragon/main.js`` 经 ``--startGroups`` 运行）不打原生进度行，改打
+``MAS_STEP_*`` 标记，由本模块的 ``parse_execution_layer_report`` 还原成**同一结构**的步骤表，
+两条路径共用同一套通知渲染（2026-09-15：执行层运行的通知此前完全没有流程表格）。
 """
 
 import re
 
 # 一条龙进度行的正则：「一条龙任务执行: X/N」（可带空格/斜杠）
 _BGI_STEP_PROGRESS_RE = re.compile(r"一条龙任务执行:\s*(\d+)\s*/\s*(\d+)")
+# 执行层步标记的公共前缀（main.js 打出，见 res/templates/BetterGI/MASOneDragon/main.js）
+_MAS_STEP_PREFIX = "MAS_STEP_"
 # Serilog 头行时间戳：「[HH:mm:ss(.fff)] ...」
 _BGI_STEP_TIME_RE = re.compile(r"\[(\d{1,2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]")
 # 步内可恢复异常的信号（BGI TaskRunner 捕获后不 rethrow，一条龙继续跑下一条）。
@@ -149,4 +155,108 @@ def parse_one_dragon_report(log: str) -> list[dict] | None:
     # 移除解析过程使用的内部 issue 原始行，避免携带多余细节（已汇总为 issue_count/text）
     for s in steps:
         s.pop("issue", None)
+    return steps
+
+
+def parse_execution_layer_report(log: str) -> list[dict] | None:
+    """解析执行层（``main.js``）分步执行报告，字段与 ``parse_one_dragon_report`` 一致。
+
+    标记布局（见 ``res/templates/BetterGI/MASOneDragon/main.js``）::
+
+        MAS_STEP_BEGIN: <uid> <名称>               步开始
+        MAS_STEP_DONE: <uid> <名称>                步正常结束
+        MAS_STEP_FAIL: <uid> <名称> <原因>         运行期失败（该步跳过、继续后续步）
+        MAS_STEP_RESIN_END: <uid> <名称> <原因>    树脂耗尽的预期停止（算正常收尾）
+        MAS_STEP_MISSING_CONFIG: <uid> <名称> <原因> 必填项缺失，根本没进 BGI
+        MAS_PLAN_DONE / MAS_PLAN_DONE_WITH_FAILURES <n> / MAS_PLAN_RESIN_END /
+        MAS_PLAN_FAIL <原因>                       整条收尾（本函数不消费，成败由调用方判定）
+
+    只列出执行层**真正处理过**的步（出现过 BEGIN 的，以及必填项缺失被拦下的）：
+    ``MAS_STEP_SKIP``/``SKIP_WEEKDAY``/``DAILY``/``UNKNOWN`` 要么由随后启动的原生一条龙承接、
+    要么本次本就不跑，混进来会让「第几条/共几条」失真。
+
+    本会话未走执行层（没有任何上述步标记）时返回 None，调用方据此省略分步区块。
+    """
+    lines = log.splitlines()
+    steps: list[dict] = []
+    cur: dict | None = None
+    last_time = ""
+
+    def finalize(ok: bool) -> None:
+        assert cur is not None
+        cur["end"] = cur["end"] or last_time
+        cur["ok"] = bool(ok and cur["ok"])
+        steps.append(
+            {
+                **cur,
+                "issue_count": len(cur["issue"]),
+                "issue_text": cur["issue"][0].strip() if cur["issue"] else "",
+            }
+        )
+
+    def start(uid: str, name: str) -> None:
+        nonlocal cur
+        cur = {
+            "index": len(steps) + 1,
+            "total": 0,  # 收尾时统一回填（见末尾），此处占位
+            "task": name or uid,
+            "start": last_time,
+            "end": "",
+            "ok": True,
+            "issue": [],
+        }
+
+    for raw in lines:
+        m = _BGI_STEP_TIME_RE.match(raw)
+        if m:
+            last_time = m.group(1)
+            continue
+        line = raw.strip()
+        if not line.startswith(_MAS_STEP_PREFIX):
+            continue
+
+        marker, _, rest = line.partition(":")
+        parts = rest.strip().split(" ", 2)
+        uid = parts[0].strip() if parts else ""
+        name = parts[1].strip() if len(parts) > 1 else ""
+        detail = parts[2].strip() if len(parts) > 2 else ""
+
+        if marker == "MAS_STEP_BEGIN":
+            if cur is not None:  # 上一步没等到 DONE 就被新步顶掉 → 记为未完成
+                finalize(False)
+            start(uid, name)
+        elif marker == "MAS_STEP_DONE":
+            if cur is not None:
+                finalize(True)
+                cur = None
+        elif marker == "MAS_STEP_FAIL":
+            if cur is None:
+                start(uid, name)
+            cur["issue"].append(detail or "执行失败")
+            finalize(False)
+            cur = None
+        elif marker == "MAS_STEP_RESIN_END":
+            # 树脂耗尽是开了「树脂耗尽模式」后的预期停止条件，按正常收尾处理（与 main.js 一致）
+            if cur is None:
+                start(uid, name)
+            cur["issue"].append(detail or "树脂耗尽，任务结束")
+            finalize(True)
+            cur = None
+        elif marker == "MAS_STEP_MISSING_CONFIG":
+            # 必填项缺失：该步根本没进 BGI（标记打在 BEGIN 之前），单独列一行说明原因
+            start(uid, name)
+            cur["issue"].append(detail or "缺少必填配置")
+            finalize(False)
+            cur = None
+
+    if cur is not None:  # 整条结束仍停在某一步（如 MAS_PLAN_FAIL 中断）→ 该步未完成
+        finalize(False)
+
+    if not steps:
+        return None
+    total = len(steps)
+    for order, step in enumerate(steps, 1):
+        step["index"] = order
+        step["total"] = total
+        step.pop("issue", None)
     return steps

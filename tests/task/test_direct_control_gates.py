@@ -241,25 +241,30 @@ def _oknte_task(user_config: _Cfg, script_config: Any) -> OkNteAutoProxyTask:
     task.cur_user_item = MagicMock()
     task.cur_user_uid = uuid.UUID(UID_A)
     task.cur_user_config = user_config
-    task.script_config_path = script_config.get("Script", "ConfigPath")
+    task.script_config_path = Path(script_config.get("Script", "ConfigPath"))
     task.config_mode, task.direct_control = resolve_config_source(
         user_config, CONFIG_SOURCE_SCRIPT
     )
     return task
 
 
-def test_oknte_direct_skips_native_config_injection(tmp_path: Path) -> None:
+def test_oknte_direct_skips_native_config_injection(
+    tmp_path: Path, monkeypatch
+) -> None:
     """直控+关闭：set_oknte 不注入原生配置（零写入，直控名称的来源就是「不写」）。"""
 
+    monkeypatch.chdir(tmp_path)
     target = tmp_path / "native_config"
     target.mkdir()
     script_config = _OkNteScriptConfig(target)
     task = _oknte_task(_Cfg("直控", IfQuickConfig=False), script_config)
     task.script_exe_path = tmp_path / "ok-nte.exe"
 
-    with patch("app.task.OkNte.AutoProxy.System.kill_process"), patch(
-        "app.task.OkNte.AutoProxy.swap_in_dir"
-    ) as swap, patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive:
+    with (
+        patch("app.task.OkNte.AutoProxy.System.kill_process"),
+        patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap,
+        patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup") as archive,
+    ):
         asyncio.run(task.set_oknte())
 
     swap.assert_not_called()
@@ -273,7 +278,7 @@ def test_oknte_direct_skips_config_writeback(tmp_path: Path) -> None:
 
     target = tmp_path / "native_config"
     target.mkdir()
-    task = _oknte_task(_Cfg("直控"), _OkNteScriptConfig(target))
+    task = _oknte_task(_Cfg("直控", IfQuickConfig=False), _OkNteScriptConfig(target))
 
     with patch("app.task.OkNte.AutoProxy.shutil.copytree") as copytree:
         asyncio.run(task.update_config())
@@ -295,15 +300,20 @@ def test_oknte_user_source_still_injects(tmp_path: Path) -> None:
 
     target = tmp_path / "native_config"
     target.mkdir()
-    task = _oknte_task(_Cfg("用户"), _OkNteScriptConfig(target))
+    task = _oknte_task(_Cfg("用户", IfQuickConfig=False), _OkNteScriptConfig(target))
     task.script_exe_path = tmp_path / "ok-nte.exe"
 
-    with patch("app.task.OkNte.AutoProxy.System.kill_process"), patch(
-        "app.task.OkNte.AutoProxy.archive_mas_runtime_backup"
-    ), patch("app.task.OkNte.AutoProxy._oknte_daily_activity_enabled", return_value=True):
-        with patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap, patch(
-            "app.task.OkNte.AutoProxy.mark_native_config_injected"
-        ), patch("app.task.OkNte.AutoProxy.ensure_oknte_daily_routine_configs"):
+    with (
+        patch("app.task.OkNte.AutoProxy.System.kill_process"),
+        patch("app.task.OkNte.AutoProxy.archive_mas_runtime_backup"),
+        patch(
+            "app.task.OkNte.AutoProxy._oknte_daily_activity_enabled", return_value=True
+        ),
+    ):
+        with (
+            patch("app.task.OkNte.AutoProxy.swap_in_dir") as swap,
+            patch("app.task.OkNte.AutoProxy.mark_native_config_injected"),
+        ):
             task._ensure_oknte_mas_config_dir = MagicMock(return_value=tmp_path / "mas")
             asyncio.run(task.set_oknte())
 
@@ -336,11 +346,8 @@ def test_user_uses_quick_config_defaults_on_when_missing() -> None:
     assert user_uses_quick_config(object()) is True
 
 
-def test_quick_config_takeover_writes_only_direct_plus_enabled() -> None:
-    """接管统一入口：只有 直控+开启 才写面板值；直控+关闭与脚本/用户零写入。
-
-    不存在「直控=禁用快速配置」的旧早退分支——直控下是否写入完全由开关决定。
-    """
+def test_quick_config_takeover_writes_only_when_enabled() -> None:
+    """旧断言认为托管来源不受开关影响，与来源独立的新需求冲突。"""
 
     calls: list[str] = []
 
@@ -349,9 +356,11 @@ def test_quick_config_takeover_writes_only_direct_plus_enabled() -> None:
 
     assert quick_config_takeover(_qc_cfg("直控"), write) is True
     assert quick_config_takeover(_qc_cfg("直控", False), write) is False
-    assert quick_config_takeover(_qc_cfg("用户"), write) is False
-    assert quick_config_takeover(_qc_cfg("脚本"), write) is False
-    assert calls == ["write"]
+    assert quick_config_takeover(_qc_cfg("用户"), write) is True
+    assert quick_config_takeover(_qc_cfg("脚本"), write) is True
+    assert quick_config_takeover(_qc_cfg("用户", False), write) is False
+    assert quick_config_takeover(_qc_cfg("脚本", False), write) is False
+    assert calls == ["write"] * 3
 
 
 def test_quick_config_takeover_write_failure_is_task_failure() -> None:
@@ -365,8 +374,6 @@ def test_quick_config_takeover_write_failure_is_task_failure() -> None:
 
     with pytest.raises(Boom):
         quick_config_takeover(_qc_cfg("直控"), broken_write)
-
-
 
 
 # ── ZzzOd：脚本来源被 check() 接受并按用户路径校验 ───────────────────────

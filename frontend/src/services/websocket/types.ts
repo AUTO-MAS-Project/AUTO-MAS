@@ -64,6 +64,10 @@ export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 
+// 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
+export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
+export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
+
 // ==================== 关键消息数据类型 ====================
 
 /** 任务提示消息数据 (type=task.notice) */
@@ -199,6 +203,26 @@ export interface WSEmulatorOperationData {
   message: string
 }
 
+/** 一块显示器的工作区（去掉任务栏），物理像素、桌面坐标 */
+export interface WSDisplayMonitorRectData {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/**
+ * 真实显示器回来了但有任务在跑，问用户要不要拆虚拟屏 (id=Main, type=display.detach.prompt)
+ *
+ * 虚拟屏是主显示器，回来的真实屏只是第二块，任务栏和主窗口都留在看不见的那块上，
+ * 所以弹窗必须放到 monitor 指的那块屏上（右下角）。monitor 为空时由主进程自行挑一块非主显示器。
+ */
+export interface WSDisplayDetachPromptData {
+  /** 回来的真实显示设备名列表 */
+  returned: string[]
+  monitor?: WSDisplayMonitorRectData | null
+}
+
 type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
@@ -222,6 +246,8 @@ interface WSMessageDataMap {
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
+  [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
+  [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
 }
 
 type WSKnownMessageType = keyof WSMessageDataMap

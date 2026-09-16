@@ -52,10 +52,6 @@ export type MaaUserConfig_Info = {
      */
     InfrastName?: (string | null);
     /**
-     * 基建方案索引
-     */
-    InfrastIndex?: (string | null);
-    /**
      * 密码
      */
     Password?: (string | null);

@@ -578,7 +578,6 @@ export interface User {
     Id: string
     InfrastMode: string
     InfrastName: string
-    InfrastIndex: string
     MedicineNumb: number
     Mode: string
     Name: string

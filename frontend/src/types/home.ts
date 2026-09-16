@@ -11,6 +11,7 @@ export type HomeModuleKey =
   | 'wutheringwaves'
   | 'nte'
   | 'reverse1999'
+  | 'bluearchive'
   | 'arknights'
 
 export interface HomeLayoutConfig {
@@ -133,6 +134,33 @@ export interface SraActivityOverview {
 }
 
 export type Reverse1999ActivityOverview = SraActivityOverview
+export type BlueArchiveActivityOverview = SraActivityOverview
+
+/** 碧蓝档案的三个服务器；与数据源的 line_type 一一对应 */
+export type BlueArchiveServerKey = 'jp' | 'global' | 'cn'
+
+/**
+ * 单张碧蓝档案卡片要同时承载三个服的数据：数据源按服各拉一次，
+ * 卡片内用分段控件切换展示，任一服失败只影响它自己。
+ */
+export interface BlueArchiveServerOverview {
+  key: BlueArchiveServerKey
+  /** 已按当前界面语言本地化的服名（日服 / 国际服 / 国服），直接用作切换控件文案 */
+  label: string
+  overview: BlueArchiveActivityOverview
+}
+
+export const createEmptySraActivityOverview = (message = ''): SraActivityOverview => ({
+  Available: false,
+  Stale: false,
+  Message: message,
+  version: '',
+  versionName: '',
+  cover: '',
+  startTime: '',
+  endTime: '',
+  activities: [],
+})
 
 export interface HomeOverviewResponse {
   Stage: StageOverview

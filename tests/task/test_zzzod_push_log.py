@@ -25,9 +25,7 @@ class ZzzodResolveTest(unittest.TestCase):
 
     def test_multi_account_battery_follows_account(self) -> None:
         # 多账号段：节点行与剩余体力行都带账号前缀，各自归属；同账号取最后一次
-        resolve = make_zzzod_resolve(
-            {"体力刷本", "每日签到"}, {1: "寒风", 2: "凰北月"}
-        )
+        resolve = make_zzzod_resolve({"体力刷本", "每日签到"}, {1: "寒风", 2: "凰北月"})
         results = [
             (LogType.NORMAL, "SEG:1", T),
             (LogType.NORMAL, "OK:体力刷本|🔋32", T),

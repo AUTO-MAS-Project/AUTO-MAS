@@ -25,6 +25,7 @@ export default {
   comp: {
     changelog: {
       empty: 'このバージョンの更新履歴はまだありません',
+      loadFailed: '更新履歴の読み込みに失敗しました。更新のダウンロードは可能です',
     },
     editUser: 'ユーザーを編集',
     addUser2: 'ユーザーを追加',
@@ -272,6 +273,7 @@ export default {
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
+    notifyDropStatistics: 'ドロップ統計',
     notifyMail: 'メール通知',
     maaAnnihilation: '殲滅作戦',
     maaAnnihilationHint:
@@ -293,6 +295,64 @@ export default {
     maaEventPotion: 'イベントステージの理性回復薬',
     maaEventPotionHint:
       'イベントステージ優先タスクで使う理性回復薬の数です。通常の理性作戦には影響しません',
+    maaCultivate: 'オペレーター育成',
+    maaCultivateHint:
+      '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
+    maaCultivatePickOperators: 'オペレーターを選択',
+    maaCultivatePickOperatorsHint: '一図流の全テーブルから育成するオペレーターを選択します',
+    maaCultivateNoOperators: 'オペレーターカタログを利用できません',
+    maaCultivateElite0: '昇進 0',
+    maaCultivateElite1: '昇進 1',
+    maaCultivateElite2: '昇進 2',
+    maaCultivateRemove: '削除',
+    maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
+    maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
+    maaCultivateEmpty: '育成目標が未設定です',
+    maaCultivateRecognitionHint:
+      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドすると特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
+    maaDataSourceYituliu: 'データソース：一図流',
+    maaCultivatePreviewTitle: '必要素材の予定',
+    maaCultivatePreviewComputing: '計算中',
+    maaCultivatePreviewStageHeading: '周回計画',
+    maaCultivatePreviewDemandHeading: '素材需要',
+    maaCultivatePreviewUnobtainable:
+      '以下の素材は周回では入手できず、ゲーム内で別途入手する必要があります',
+    maaCultivatePreviewNone:
+      '周回対象はありません（素材が揃っているか、現在開放中のステージがありません）',
+    maaCultivateSanityUnit: '理性',
+    maaCultivatePreviewSanityTotal: '予想理性合計（固定産出ステージを除く）',
+    maaCultivateMissingProgression: 'オペレーター認識データ',
+    maaCultivateMissingInventory: '倉庫認識データ',
+    maaCultivateEstimatePrefix: '現在不足しているのは',
+    maaCultivateEstimateJoin: 'と',
+    maaCultivateEstimateSuffix:
+      '。以上は昇進 0 / 在庫 0 の保守見積もりです。MAAで認識を完了してから再度ご確認ください',
+    maaCultivateSklandTitle: '森空島をバインド',
+    maaCultivateSklandHint:
+      'バインド後、特化/モジュール目標の練度と達成判定は自動で行われます。サインイン設定でログイン済みの森空島アカウントを使用します',
+    maaCultivateSklandRole: 'ゲームロールを選択',
+    maaCultivateSklandBoundRole: 'バインド済みロール',
+    maaCultivateSklandUnboundHint: '森空島未バインドでは昇進目標のみ設定できます',
+    maaCultivateSklandLockedHint: '森空島をバインドすると特化/モジュール目標を設定できます',
+    maaCultivateSklandDegradedHint:
+      '森空島の練度が一時的に取得できません。特化/モジュール目標は一時停止中で、回復後に自動的に再開します',
+    maaCultivateGoalElite: '昇進',
+    maaCultivateGoalNone: '目標を設定しない',
+    maaCultivateCurrent: '現在',
+    maaCultivateCurrentUnknown: '現在 ？',
+    maaCultivateCurrentUnknownHint:
+      '練度データなし：昇進は昇進 0 として見積もり。森空島データのない特化/モジュールは一時停止',
+    maaCultivateGoalLevel1: 'レベル 1',
+    maaCultivateGoalLevel2: 'レベル 2',
+    maaCultivateGoalLevel3: 'レベル 3',
+    maaCultivateOverLimit: '到達可能な段階を超えており、自動周回されません',
+    maaCultivateOverLimitShort: '上限超え',
+    maaCultivateToggleGoals: '目標の展開/折りたたみ',
+    maaCultivateNoGoalTier: '昇進目標なし',
+    maaCultivateNoGoalDataMissing: '育成データなし',
+    maaCultivateStateInProgress: '周回中',
+    maaCultivateStateAchieved: '達成済み',
+    maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
@@ -345,6 +405,7 @@ export default {
     extractFieldsFromWindow: '開始／終了の正規表現で囲んだ範囲からフィールドを抽出します',
     targetStock: '目標在庫',
     stock: '在庫',
+    stockRecognizedAt: '認識日時: {time}',
     resource: 'リソース',
     preset: 'プリセット',
     claimRewards: '報酬を受け取る',
@@ -366,12 +427,9 @@ export default {
     p0PathSelected: '{p0}のパスを選択しました',
     switchedPlanModeP0: 'プランモードに切り替えました：{p0}',
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
-    startedP0MaaendConfiguration: '{p0} の MaaEnd 設定を開始しました',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
-    startedMaaSetupUser: 'ユーザー {p0} の MAA 設定を開始しました',
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
-    openedOkWwSettings: '{p0} の ok-ww 設定を開きました',
     readP0: '{p0} を読み込みました',
     addedP0Tasks: 'タスクを {p0} 件追加しました',
     configurationSessionUserP02:
@@ -999,7 +1057,6 @@ export default {
     onlyProcessesStartedBy:
       'このタスクが起動し、MAS が所有するプロセスのみを終了します。手動で開いたプロセスを誤って終了することはありません',
     optional: '任意',
-    couldNotStartMaa: 'MAA の設定を開始できませんでした',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
@@ -1281,9 +1338,11 @@ export default {
     useScriptS: 'スクリプトの設定を使い、ユーザー専用の設定とは切り離しません。',
     quickConfig: 'クイック設定',
     configSourceHint:
-      '同じスクリプトでもユーザーごとに設定の取得元を選べます。直接制御の設定はスクリプト自身が管理し、直接制御のユーザー間で共有されます。',
+      '「スクリプト設定」は複数ユーザーで同じスクリプト単位の取得元を共有し、「ユーザー個別の設定」はユーザーごとに別々の取得元を使い、「スクリプト直接制御」は BGI のネイティブ設定を使い、その取得元を選んだユーザー間で共有されます。',
     configSourceHintBase:
       'スクリプトはスクリプト共有の設定、ユーザーはこのユーザー専用の設定を使います。直接制御はスクリプト本来の設定をそのまま使い、MAS は書き込みません。クイック設定は独立したスイッチです。',
+    // 「スクリプト」設定元が無効になっているときのホバー理由（文言統一）
+    scriptModeDisabled: '非対応',
     ok: 'OK',
     deleteThisTask2: 'このタスクを削除しますか？',
     leaveWithoutSavingUnsaved: '移動しますか？保存していない変更は失われる場合があります。',
@@ -1568,14 +1627,17 @@ export default {
     bettergiDirectModeAlert:
       '「スクリプト直接制御」モード：下欄でこのユーザーが使う一条龍名（BetterGI に存在する設定名）を入力してください。スクリプトの設定は BetterGI 内で行います（「BetterGI を設定」をクリックして開けます）。',
     bettergiSwitchToMasConfig: 'ユーザー独立設定に切り替える',
-    bettergiMasConfigHowTo: '「ユーザー独立設定」の使い方',
+    bettergiMasConfigHowTo: '「タスク設定」の使い方',
     bettergiMasConfigHowTo1a:
       'このユーザーの一条龍は独立設定で動作し、タスクとカスタム設定グループはこのページ（MAS 側）で設定します（BetterGI の「一条龍」ページを開く必要はありません）。MAS は固定スロット',
     bettergiMasConfigSlotName: '「MAS独立配置」',
     bettergiMasConfigHowTo1b:
       'から一条龍を起動し、終了後にスロットを自動クリーンアップします。既存の BetterGI 設定（「默认配置」など）には一切触れません——同名の実設定は読み込まれず、ここでの編集の影響も受けません。',
     bettergiMasConfigHowTo2:
-      '下の共通戦闘パーティー / 共通戦闘ストラテジー：空欄のままにすると BetterGI の現在の設定が使われます（ストラテジーが空欄の場合は「パーティーに応じて自動選択」）。入力すると、一条龍内の戦闘を伴う 4 つのタスク（地脈の花、秘境、ボス討伐、幽境危戦）に適用され、BetterGI の既定のパーティーとストラテジーを置き換えます。',
+      '下の共通戦闘パーティー / 共通戦闘ストラテジーは、すべての戦闘タスク（地脈の花・秘境・ボス討伐・幽境危戦）のフォールバックです。パーティーを空欄にするとパーティーを切り替えず（タスク開始時のパーティーを維持）、ストラテジーを空欄にすると BetterGI がパーティーに応じて自動選択します。いずれかのタスクがチーム表の「戦闘シーン」に一致した場合は、その行のパーティーとストラテジーが優先されます。',
+    bettergiTeamHowToTitle: '「パーティー設定」の使い方',
+    bettergiTeamHowTo:
+      'パーティー設定をオンにすると、戦闘タスク（自動秘境 / 自動地脈の花 / 自動ボス討伐）はまずこの表を参照します。「戦闘シーン」に一致した行を優先採用し、複数一致した場合はランダムに 1 行選びます。一致しないタスクは上の共通戦闘パーティー / ストラテジーにフォールバックします。0 行目の「汎用」はすべてのシーンの受け皿で、削除できません。パーティー名とストラテジー名は BetterGI に存在するものと一致させてください（「戦略フォルダを開く」で確認できます）。',
     bettergiOneDragonName: '一条龍の設定名',
     bettergiOneDragonNameHint:
       'ユーザー独立設定がオンの間は「MAS独立配置」に固定され変更できません。オフ（直接制御モード）では使用する BetterGI 設定を選択します。既定は「默认配置」です',
@@ -1610,7 +1672,8 @@ export default {
     bettergiTeamActionColumn: '操作',
     bettergiTeamGeneralTag: '共通',
     bettergiTeamGeneralScene: '共通フォールバック',
-    bettergiTeamGeneralHint: '一致しなかったすべての戦闘タスクをフォールバックします。削除できません',
+    bettergiTeamGeneralHint:
+      '一致しなかったすべての戦闘タスクをフォールバックします。削除できません',
     bettergiTeamStrategyFollowGeneral: '共通ストラテジーに従う',
     bettergiTeamNoScene: '未指定（選出に参加しません）',
     bettergiTeamEditScenes: '戦闘シーン',
@@ -1694,7 +1757,8 @@ export default {
     bettergiDuplicateOk: '保存',
     bettergiDuplicateSameDone: '同じ設定グループをコピーしました',
     bettergiDuplicateSource: '元の設定グループ',
-    bettergiDuplicateTip: '選択した設定グループの内容を、個別に編集できる新しい設定グループとして保存します',
+    bettergiDuplicateTip:
+      '選択した設定グループの内容を、個別に編集できる新しい設定グループとして保存します',
     bettergiGroupFrozen: '凍結',
     bettergiGroupFrozenTip: 'この設定グループは凍結されており、編集・移動できません',
     bettergiGroupKindCustom: 'スクリプト',
@@ -1704,7 +1768,8 @@ export default {
     bettergiGroupKindStamina: 'スタミナ',
     bettergiGroupNamesUnknown: '不明なグループ',
     bettergiGroupPrefixDefault: 'デフォルト',
-    bettergiGroupSettingsKeyMouse: 'これは BetterGI の録画（キー・マウス）スクリプトです。BetterGI が一条龍で録画内容どおりに実行するため、MAS では設定を編集できません。',
+    bettergiGroupSettingsKeyMouse:
+      'これは BetterGI の録画（キー・マウス）スクリプトです。BetterGI が一条龍で録画内容どおりに実行するため、MAS では設定を編集できません。',
     bettergiGroupSettingsLoadFailed: '設定グループの読み込みに失敗しました',
     bettergiGroupSettingsNone: 'この設定グループには設定がありません',
     bettergiGroupSettingsSaveFailed: '設定グループの保存に失敗しました',
@@ -1781,7 +1846,8 @@ export default {
     bettergiProjectSaved: 'プロジェクトを保存しました',
     bettergiProjectSettingsSave: '設定を保存',
     bettergiProjectToolbarTip: 'カードをドラッグしてプロジェクトの順序を変更',
-    bettergiProjectStandaloneTip: '「スクリプトを追加」で他のスクリプトと設定グループにまとめられます',
+    bettergiProjectStandaloneTip:
+      '「スクリプトを追加」で他のスクリプトと設定グループにまとめられます',
     bettergiProjectUnselect: '選択解除',
     bettergiProjectZoom: 'ズーム',
   },
@@ -2298,6 +2364,7 @@ export default {
       wutheringwaves: '鳴潮のイベント情報',
       nte: 'Neverness to Everness のイベント情報',
       reverse1999: 'リバース：1999 のイベント情報',
+      bluearchive: 'ブルーアーカイブのイベント情報',
       arknights: 'アークナイツのイベント情報',
       activities: 'ゲームイベントのカルーセル',
     },
@@ -2309,6 +2376,7 @@ export default {
       wutheringwaves: '鳴潮',
       nte: 'Neverness to Everness',
       reverse1999: 'リバース：1999',
+      bluearchive: 'ブルーアーカイブ',
       arknights: 'アークナイツ',
     },
     carousel: {
@@ -2359,6 +2427,26 @@ export default {
       poweredByM9A: 'Powered by M9A',
       stale: 'キャッシュ',
       endedAt: '{time} 終了',
+    },
+    bluearchive: {
+      versionBadge: '{version}',
+      endsAt: '{time} 終了',
+      versionRemaining: 'イベントの残り時間',
+      nextVersionSoon: '次のイベントがまもなく始まります',
+      versionTime: 'イベント期間：',
+      serverLabel: 'サーバー',
+      serverDragHint: 'ドラッグでサーバーの順番を変更できます',
+      server: {
+        jp: '日本版',
+        global: 'グローバル版',
+        cn: '中国版',
+      },
+      versionName: '{server}のイベント',
+      unavailable: '{server}のイベント情報を一時的に取得できません',
+      noActivity: '開催中のイベントはありません',
+      stale: 'キャッシュ',
+      staleMessage: '前回取得したイベント情報を表示しています',
+      source: 'Kivo 古書館',
     },
     command: {
       aria: 'タスクのクイック起動',
@@ -2439,7 +2527,6 @@ export default {
     failure: {
       retryOtherMirror: '別のダウンロード元で再試行',
       rebuildEnvironment: '実行環境を再構築',
-      openLog: 'ログを開く',
       runDoctor: '実行環境を確認',
       internalErrorNotice:
         'これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください',
@@ -2557,6 +2644,8 @@ export default {
     emptyTitle: 'プランがありません',
     emptyDesc: 'プランはまだ作成されていません',
     selectLabel: 'プラン選択',
+    drag: 'ドラッグして並び替え',
+    rename: '名前の変更',
     count: '{count} 件のプラン | {count} 件のプラン',
     configTitle: 'プラン設定',
     namePlaceholder: 'プラン名を入力してください',
@@ -2704,6 +2793,7 @@ export default {
       add: 'タスクを追加',
       colIndex: '番号',
       colScript: 'スクリプトタスク',
+      colDays: '実行曜日',
       colActions: '操作',
       dragSort: 'ドラッグして並び替え',
       selectScript: 'スクリプトを選択してください',
@@ -2767,6 +2857,16 @@ export default {
       deleteFailed: 'キューを削除できませんでした: {error}',
       saveFailed: '保存に失敗しました',
       saveQueueFailed: 'キューを保存できませんでした: {error}',
+    },
+  },
+  logs: {
+    package: 'ログの書き出し',
+    toast: {
+      packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
+      packageExported: 'ログのアーカイブを書き出しました',
+      packageFailed: 'ログの書き出しに失敗しました',
+      packageError: 'ログの書き出しでエラーが発生しました: {error}',
+      openFolderFailed: 'アーカイブの保存先フォルダを開けませんでした',
     },
   },
   scheduler: {
@@ -3002,7 +3102,7 @@ export default {
         SRC: 'スターレイルの自動化と複数アカウント代行',
         MaaEnd: 'MFW 専用アダプター',
         M9A: 'リバース：1999 の自動化',
-        MaaFW: 'MaaFramework プロジェクトを実行します',
+        MaaFW: 'interface.json を持つ MaaFramework プロジェクトをそのまま実行',
         Okww: 'ok-script 専用のタスクランナー',
         OkNte: 'Neverness to Everness（OK-NTE）の自動化',
         HSR: '三月なのか / SRA の 2 種類に対応',
@@ -3236,6 +3336,15 @@ export default {
       serverChanKey: 'ServerChan キー',
       serverChanKeyTip: 'ServerChan の SendKey です。取得方法はドキュメントをご覧ください',
       serverChanPlaceholder: 'ServerChan の SendKey を入力してください',
+      cmccNewMsgSection: '中国移動 5G メッセージ通知（無料・中国移動の番号限定）',
+      cmccNewMsgDoc: '通知機能ガイドを開く',
+      cmccNewMsgEnable: '中国移動 5G メッセージ通知を有効にする',
+      cmccNewMsgTip:
+        '中国移動の 5G New Messaging（RCS）でタスク通知を無料受信できます。中国移動の番号限定です',
+      cmccNewMsgApiKey: 'Channel API キー',
+      cmccNewMsgApiKeyTip:
+        '中国移動 5G メッセージ Channel の管理者から提供される、ak_ または app_ で始まるキーです',
+      cmccNewMsgApiKeyPlaceholder: '中国移動 5G メッセージ Channel API キーを入力してください',
       koishiSection: 'Koishi',
       koishiEnable: 'Koishi 通知を有効にする',
       koishiTip: 'Koishi で通知を送信します',

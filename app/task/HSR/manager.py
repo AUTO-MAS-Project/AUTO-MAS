@@ -56,6 +56,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_native_backup
 from .tools.external_locks import (
     HSRExternalPathLockLease,
     acquire_external_path_locks,
@@ -703,6 +704,17 @@ class HSRManager(TaskExecuteBase):
             await self._rollback_pending_updates()
             self._backup_external_configs()
             self._append_log("HSR 外部脚本配置已备份")
+            # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
+            # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
+            # 失败不阻断任务）
+            m7a_root = resolve_script_path(self.script_config, "M7A")
+            try:
+                archive_native_backup(
+                    Path(m7a_root) if m7a_root else None,
+                    get_sra_app_data_dir(),
+                )
+            except Exception:
+                logger.opt(exception=True).warning("HSR 运行前原生配置归档失败，已跳过（不阻断任务）")
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()

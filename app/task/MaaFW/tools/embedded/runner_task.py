@@ -47,7 +47,6 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.notify import push_notification
-from app.task.proxy_helpers import user_uses_direct_control, user_uses_quick_config
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
@@ -644,23 +643,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return interface_model, base_run_plan, run_plan, game_path_error
 
     def _build_run_plan(self, interface_model: MaaFWInterface) -> MaaFWRunPlan:
-        # 直控+关闭: 忽略用户的任务快照/预设覆盖, 按项目 interface 默认逻辑跑
-        # （完全由外侧原生配置决定，零写入语义）。直控+开启则与脚本/用户来源
-        # 同路径应用用户面板值——MaaFW 的运行计划在内存里构造、不落盘原生
-        # 配置文件，快速配置的「写入点」就是 build_plan 的参数集（任务快照/
-        # 预设），构造失败抛 MaaFWRunPlanError 即任务失败。
-        if user_uses_direct_control(self.cur_user_config) and not user_uses_quick_config(
-            self.cur_user_config
-        ):
-            return MaaFWRunnerService().build_plan(
-                self.project_path,
-                interface_model,
-                controller_name=self._select_controller_name(interface_model),
-                resource_name=self._select_resource_name(
-                    interface_model,
-                    self._select_controller_name(interface_model),
-                ),
-            )
+        # 不看 Info.IfQuickConfig：MaaFW 没有可退回的原生配置，用户页上配的任务队列就是
+        # 唯一的任务来源。开关在界面上已经不提供，这里若还读它，被隐藏的旧值会让页面上
+        # 能改、运行时却不生效。
         task_snapshot = _load_json_dict(
             self.cur_user_config.get("Task", "TaskSnapshot")
         )

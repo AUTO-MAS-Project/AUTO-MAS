@@ -81,12 +81,8 @@ CredentialUpdate = Callable[[str], Awaitable[None]]
 _ACTIVITY_REQUEST_TIMEOUT = 12.0
 _MIYOUSHE_RECORD_SALT = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs"
 _MIYOUSHE_WIDGET_SALT = "9ttJY72HxbjwWRNHJvn0n2AYue47nYsK"
-_MIYOUSHE_DEVICE_FP_URL = (
-    "https://public-data-api.mihoyo.com/device-fp/api/getFp"
-)
-_MIYOUSHE_DEVICE_LOGIN_URL = (
-    "https://bbs-api.mihoyo.com/apihub/api/deviceLogin"
-)
+_MIYOUSHE_DEVICE_FP_URL = "https://public-data-api.mihoyo.com/device-fp/api/getFp"
+_MIYOUSHE_DEVICE_LOGIN_URL = "https://bbs-api.mihoyo.com/apihub/api/deviceLogin"
 _MIYOUSHE_DEVICE_SAVE_URL = "https://bbs-api.mihoyo.com/apihub/api/saveDevice"
 _MIYOUSHE_DEVICE_MODEL = "MI 8 SE"
 _MIYOUSHE_DEVICE_NAME = "Xiaomi MI 8 SE"
@@ -167,8 +163,7 @@ def _raise_business_error(
         return
     if platform == "米游社" and abs(code) in _MIYOUSHE_RISK_CODES:
         raise CommunityActivityTransportError(
-            f"米游社{game}查询受到验证限制（业务码 {code}），"
-            "上游未返回便笺数据",
+            f"米游社{game}查询受到验证限制（业务码 {code}），上游未返回便笺数据",
             status="limited",
         )
     limited = abs(code) in _MIYOUSHE_RISK_CODES or code in {
@@ -200,32 +195,19 @@ def _miyoushe_ds(
         raw = f"salt={SALT_DATA}&t={timestamp}&r={nonce}&b=&q="
     else:
         if widget:
-            nonce = "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=6)
-            )
+            nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
             raw = f"salt={_MIYOUSHE_WIDGET_SALT}&t={timestamp}&r={nonce}"
         elif game == "绝区零":
             # 绝区零参考实现的 CN 记录接口使用 xV8 盐和六位数字 nonce。
             nonce = str(random.randint(100000, 999999))
-            raw = (
-                f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
-                f"&b=&q={query}"
-            )
+            raw = f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}&b=&q={query}"
         elif query:
             # 记录接口的参数签名沿用参考实现的 4X 合同。
             nonce = str(random.randint(100000, 200000))
-            raw = (
-                f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
-                f"&b=&q={query}"
-            )
+            raw = f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}&b=&q={query}"
         else:
-            nonce = "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=6)
-            )
-            raw = (
-                f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}"
-                f"&b=&q={query}"
-            )
+            nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            raw = f"salt={_MIYOUSHE_RECORD_SALT}&t={timestamp}&r={nonce}&b=&q={query}"
     return f"{timestamp},{nonce},{hashlib.md5(raw.encode()).hexdigest()}"
 
 
@@ -237,9 +219,7 @@ def _device_ds(body: str, *, game: str = "") -> str:
         nonce = str(random.randint(100000, 999999))
         salt = _MIYOUSHE_RECORD_SALT
     else:
-        nonce = "".join(
-            random.choices(string.ascii_lowercase + string.digits, k=6)
-        )
+        nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
         salt = SALT_DATA
     raw = f"salt={salt}&t={timestamp}&r={nonce}&b={body}&q="
     return f"{timestamp},{nonce},{hashlib.md5(raw.encode()).hexdigest()}"
@@ -343,9 +323,7 @@ def _device_fp_body(
         "seed_id": (
             zzz_seed_id
             if is_zzz
-            else "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=16)
-            )
+            else "".join(random.choices(string.ascii_lowercase + string.digits, k=16))
         ),
         # ZZZ 参考实现的固定值只是 getFp 模板占位符；最终 noDs 请求会
         # 替换为当前账号设备 ID，设备登记和后续查询也使用同一设备值。
@@ -407,13 +385,9 @@ class CommunityActivityProvider:
     platform: str
     raw_credential: str = field(repr=False)
     proxy: str | httpx.Proxy | None = None
-    on_credential_update: CredentialUpdate | None = field(
-        default=None, repr=False
-    )
+    on_credential_update: CredentialUpdate | None = field(default=None, repr=False)
     miyoushe_request_interval: float = 1.2
-    _credential: dict[str, str] | None = field(
-        default=None, init=False, repr=False
-    )
+    _credential: dict[str, str] | None = field(default=None, init=False, repr=False)
     _device_id: str = field(default="", init=False, repr=False)
     _device_fp: str = field(default="", init=False, repr=False)
     _miyoushe_device_fps: dict[str, str] = field(
@@ -436,9 +410,7 @@ class CommunityActivityProvider:
     _miyoushe_rate_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
-    _last_miyoushe_request: float | None = field(
-        default=None, init=False, repr=False
-    )
+    _last_miyoushe_request: float | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.raw_credential = str(self.raw_credential or "").strip()
@@ -501,9 +473,7 @@ class CommunityActivityProvider:
             signature_profile="skland_widget",
         )
         try:
-            async with httpx.AsyncClient(
-                proxy=self.proxy, trust_env=False
-            ) as client:
+            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
                 credential, device_id = await self._prepare_skland(
                     None,
                     client,
@@ -560,9 +530,7 @@ class CommunityActivityProvider:
             signature_profile="miyoushe_params",
         )
         try:
-            async with httpx.AsyncClient(
-                proxy=self.proxy, trust_env=False
-            ) as client:
+            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
                 cookies, device_id, _ = await self._prepare_miyoushe(
                     request,
                     client,
@@ -570,11 +538,13 @@ class CommunityActivityProvider:
                 )
                 await self._wait_miyoushe_request()
                 headers = BASE_HEADERS.copy()
-                headers.update(self._miyoushe_request_headers(
-                    request,
-                    device_id=device_id,
-                    device_fp="",
-                ))
+                headers.update(
+                    self._miyoushe_request_headers(
+                        request,
+                        device_id=device_id,
+                        device_fp="",
+                    )
+                )
                 response = await client.get(
                     ROLES_URL,
                     headers=headers,
@@ -601,8 +571,7 @@ class CommunityActivityProvider:
         _raise_business_error(payload, platform="米游社", game="角色列表")
         discovery = normalize_miyoushe_roles(payload)
         self._miyoushe_zzz_roles = frozenset(
-            (role.role_uid, role.server)
-            for role in discovery.roles_for_game("绝区零")
+            (role.role_uid, role.server) for role in discovery.roles_for_game("绝区零")
         )
         capabilities = self._miyoushe_capabilities
         if capabilities is None or capabilities.activity_ready:
@@ -619,9 +588,7 @@ class CommunityActivityProvider:
         self, request: CommunityActivityRequest
     ) -> Mapping[str, object]:
         try:
-            async with httpx.AsyncClient(
-                proxy=self.proxy, trust_env=False
-            ) as client:
+            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
                 credential, device_id = await self._prepare_skland(
                     request.target,
                     client,
@@ -673,9 +640,7 @@ class CommunityActivityProvider:
 
         async with self._state_lock:
             if self._credential is None:
-                self._credential = validate_skland_credential(
-                    self.raw_credential
-                )
+                self._credential = validate_skland_credential(self.raw_credential)
             if not self._device_id:
                 cached_device_id = target.device_id if target else ""
                 self._device_id = cached_device_id or await get_cached_device_id(
@@ -768,9 +733,7 @@ class CommunityActivityProvider:
                     status="limited",
                 )
         try:
-            async with httpx.AsyncClient(
-                proxy=self.proxy, trust_env=False
-            ) as client:
+            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
                 cookies, device_id, device_fp = await self._prepare_miyoushe(
                     request,
                     client,
@@ -963,9 +926,7 @@ class CommunityActivityProvider:
             "app_version": app_version,
             "device_id": device_id,
             "device_name": (
-                _MIYOUSHE_ZZZ_DEVICE_NAME
-                if is_zzz
-                else _MIYOUSHE_DEVICE_NAME
+                _MIYOUSHE_ZZZ_DEVICE_NAME if is_zzz else _MIYOUSHE_DEVICE_NAME
             ),
             "os_version": "33" if is_zzz else "30",
             "platform": "Android",
@@ -980,16 +941,10 @@ class CommunityActivityProvider:
             "x-rpc-device_model": _MIYOUSHE_DEVICE_MODEL,
             "x-rpc-device_fp": device_fp,
             "Referer": (
-                "https://act.mihoyo.com/"
-                if is_zzz
-                else "https://app.mihoyo.com"
+                "https://act.mihoyo.com/" if is_zzz else "https://app.mihoyo.com"
             ),
             "Content-Type": "application/json; charset=UTF-8",
-            "User-Agent": (
-                _MIYOUSHE_ZZZ_USER_AGENT
-                if is_zzz
-                else "okhttp/4.9.3"
-            ),
+            "User-Agent": (_MIYOUSHE_ZZZ_USER_AGENT if is_zzz else "okhttp/4.9.3"),
         }
         if is_zzz:
             base_headers.update(
@@ -1008,9 +963,7 @@ class CommunityActivityProvider:
                 data = {
                     **base_data,
                     "registration_id": "".join(
-                        random.choices(
-                            string.ascii_lowercase + string.digits, k=19
-                        )
+                        random.choices(string.ascii_lowercase + string.digits, k=19)
                     ),
                 }
                 body = json.dumps(data, separators=(",", ":"))
@@ -1088,10 +1041,7 @@ class CommunityActivityProvider:
             headers["x-rpc-device_fp"] = device_fp
         else:
             headers.pop("x-rpc-device_fp", None)
-        if (
-            request.target.game == "星穹铁道"
-            and profile == "miyoushe_data"
-        ):
+        if request.target.game == "星穹铁道" and profile == "miyoushe_data":
             # 参考项目的星铁便笺走 iOS Widget 合同，不混入记录接口的
             # Android 设备头，避免上游返回通用 -10001。
             headers.update(

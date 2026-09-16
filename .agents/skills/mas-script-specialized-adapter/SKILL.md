@@ -58,7 +58,8 @@ description: >-
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md) ·
    [ZzzOd](references/examples-zzzod.md) ·
-   [BAAH](references/examples-baah.md)
+   [BAAH](references/examples-baah.md) ·
+   [BetterGI](references/examples-bettergi.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
@@ -76,7 +77,7 @@ description: >-
 - 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
 - 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。**接入前确认脚本日志滚动行为**：有 inode（本地 NTFS）时一律按 inode 找回，与运行日志监控 LogMonitor 同逻辑，宁缺勿错不猜名字；**仅文件系统不提供 inode（FAT32/exFAT/网络盘）时需要传 `rotated_name` strftime 模板**（日期式滚动的唯一兜底，通用组件不猜测任何日期格式）；`.bak` 式无需声明；删除重建/截断式滚动无法自动找回（见 logbox-api「日志轮转补偿」）。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogMode`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合统一复用通用工具 `app/tools/push_log.py` 的 `build_user_result_text`（按用户交错组装「用户结果行+节点」并入 result），专项不要自行拼接实现。具体注入端点现场反查参考实现。
 - 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
-- 配置备份恢复：专项需要把运行/会话前会被 MAS 触碰的配置做跨会话持久快照与一键恢复时，**文件级原语用 `app/utils/config_archive.py`**（用法见 [config-archive.md](references/config-archive.md)），专项只提供备份对象（目录/文件集）与恢复后语义钩子；**恢复功能用通用服务 `app/utils/config_restore.py` + 通用端点 `/backup/*` + 前端组件 `ConfigRestoreSection.vue`**（用法见 [config-restore.md](references/config-restore.md)），专项在 `tools/restore_service.py` 声明目标池表（普通函数显式收 `RestoreContext`）与专项统一名，core 分发链加一个分支即接入、不改 HTTP 层与 schema，会话遮罩用 `GuiSessionMask.vue`；不要给公共原语或通用组件加专项分支。**归档三时机**（`ConfigRestorePool.snapshot` + `service.ensure`）：① 编辑界面进入时归档 MAS 会触碰的原生配置（捕捉「MAS 操作前原始态」——配置在 MAS 之外就可能已被修改）；② 编辑界面退出时归档 MAS 侧配置终态（MAS 侧修改一定发生在 MAS 内，退出即备份）；③ 运行前归档（原生配置可能在 MAS 之外被改）。所有归档走指纹去重（内容无变化自动跳过），覆盖性操作（导入/恢复）前另做强制归档。
+- 配置备份恢复：**新专项一律主动接入**（存量专项改到配置读写时同步补齐）——配置的跨会话持久快照与一键恢复是 MAS 领域标配，不要等「配置被覆盖丢失」才补，仅确无任何配置文件落盘的专项可豁免。**文件级原语用 `app/utils/config_archive.py`**（用法见 [config-archive.md](references/config-archive.md)），专项只提供备份对象（目录/文件集）与恢复后语义钩子；**恢复功能用通用服务 `app/utils/config_restore.py` + 通用端点 `/backup/*` + 前端组件 `ConfigRestoreSection.vue`**（用法见 [config-restore.md](references/config-restore.md)），专项在 `tools/restore_service.py` 声明目标池表（普通函数显式收 `RestoreContext`），core 分发链加一个分支即接入、不改 HTTP 层与 schema，会话遮罩用 `GuiSessionMask.vue`；不要给公共原语或通用组件加专项分支。**归档三时机**（`ConfigRestorePool.snapshot` + `service.ensure`）：① 编辑界面进入时归档 MAS 会触碰的原生配置（捕捉「MAS 操作前原始态」——配置在 MAS 之外就可能已被修改）；② 编辑界面退出时归档 MAS 侧配置终态（MAS 侧修改一定发生在 MAS 内，退出即备份）；③ 运行前归档（原生配置可能在 MAS 之外被改）。所有归档走指纹去重（内容无变化自动跳过），覆盖性操作（导入/恢复）前另做强制归档。
 - 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
 - Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
 - 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
@@ -94,7 +95,7 @@ description: >-
 
 ## 配置来源与快速配置
 
-所有专项统一提供三态配置来源：脚本 / 用户 / 直控。三态只决定配置 owner；各专项的物理落盘、会话和运行方式仍按真实架构确认，不机械复制目录或配置模型。
+所有专项统一提供三态配置来源：脚本 / 用户 / 直控。三态只决定配置 owner；各专项的物理落盘、会话和运行方式仍按真实架构确认，不机械复制目录或配置模型。**MaaFW 不是专项**（通用引擎，任何 `interface.json` 项目都由它运行），三态对它没有所指，见 `app/task/MaaFW/AGENTS.md`。
 
 | 专项 | 模式 |
 | --- | --- |
@@ -102,7 +103,7 @@ description: >-
 | SRC | 脚本 / 用户 / 直控 三态 |
 | General | 脚本 / 用户 / 直控 三态 |
 | MaaEnd | 脚本 / 用户 / 直控 三态 |
-| MaaFW | 脚本 / 用户 / 直控 三态 |
+| MaaFW | 仅用户；`Info.IfQuickConfig` 开关有效，`Info.Mode` 三态无代码消费，不要按三态写逻辑 |
 | M9A | 脚本 / 用户 / 直控 三态 |
 | Okww | 脚本 / 用户 / 直控 三态 |
 | OkNte | 脚本 / 用户 / 直控 三态 |
@@ -153,6 +154,20 @@ description: >-
 - 切号统一走 SRA StartGame（M7A 模块也依赖该登录路径）。
 
 完整陷阱见 [examples-hsr.md](references/examples-hsr.md)。
+
+## MAA：配置恢复改造要求
+
+MAA 已接入通用配置恢复（mas/native 双池 + 页面字段侧车 + viewOnly 查看会话），后续对其备份、会话、预览的任何改动**必须符合**以下要求；机制细节见 [config-restore.md](references/config-restore.md)（§1.1.3 会话包络、§3.3 预览来源、§5 查看会话）：
+
+- **会话包络 = 运行包络 = 备份目标**：`ScriptConfigTask` 的下发源与回写目标必须与 AutoProxy 运行下发走同一套 owner 规则（脚本态=共享 `Default`、用户态=独立目录，见 `_mas_owner`）。禁止硬编码用户目录——那会让脚本态用户的会话改动运行时不读（改了白改）、备份采不到会话现场、恢复写不进会话读取的目录。
+- **归档目标要有初始化保证**：mas 快照时目录缺失从 MAA 本体 `config/` 播种（`_seed_mas_dir`）。不在 add_user 时播种——MAA 路径可晚于用户配置，播种失败不挡建用户。
+- **退出编辑页先停会话再归档**：`onUnmounted` 顺序 `stopSession` → `ensure(mas)`，禁止并行（会与 `final_task` 的 rmtree/copytree 回写撞车，归档到半程状态）。后端 stop 会等任务收尾完成才返回，顺序化即闭环。
+- **新建用户首次进入必须先等 userId 就绪再 ensure**：`onMounted` 先 `await loadScriptInfo()` 再 `ensure(native)`，否则新建用户静默跳过归档。
+- **侧车预览双分区**：「MAS 独有配置」在前（MAA GUI 无对应概念、查看详细配置看不到，**全量**：配置文件来源/关卡配置模式/剿灭开始星期/活动关优先+序号+理智药/绿票商店/库存保持计划），「MAA 配置」在后（与 MAA GUI 同口径）。
+- **关卡合成单行**：关卡+备选 1-3 合成一行「具体刷什么本」，全部槽位禁用 = 当前/上次（与配置界面折叠摘要同口径）；哨兵值以界面实际标签为准（`-`=禁用、`*`=当前/上次、空=不选择），**不臆造**——以下拉缓存数据的真实标签为准。
+- **危险字段只预览不回填**：配置文件来源（`Mode`）决定恢复目标目录，进侧车与预览、被 `group_overlay` 排除在回填外——回填旧值会静默翻转脚本态/用户态。
+- **native 预览与 mas 同口径**：从 `gui.new.json` TaskQueue 反读任务开关/战斗参数（标签对齐侧车词表：服务器而非客户端、空 `StagePlan`=当前/上次、吃理智药显示配置数量不按 UseMedicine 归零）；剩余理智是第二个 Fight 任务，**单独成行**不并入理智作战；旧 `gui.json` 只取稳定扁平键。
+- **查看会话（viewOnly）语义**：脚本级入口跳过下发（原生目录即备份）、用户级照常下发（目录副本即备份）、结束不回写 MAS 配置（安装 config/ 由 manager 任务前快照还原）。
 
 ## 验证
 

@@ -208,7 +208,10 @@ def _write_essence(proxy: AutoProxyTask, key: dict[str, object]) -> dict:
         "taskName": "AutoEssence",
         "enabled": True,
         "optionValues": {
-            "AutoEssenceChooseLocation": {"type": "checkbox", "caseNames": ["VFTheHub"]},
+            "AutoEssenceChooseLocation": {
+                "type": "checkbox",
+                "caseNames": ["VFTheHub"],
+            },
             "AutoEssenceSpecifiedLocation": "legacy",
             "AutoEssenceWeaponsBow": {"type": "checkbox", "caseNames": ["wpn_bow_1"]},
             "AutoEssenceWeaponTypeBow": {"type": "switch", "value": True},
@@ -318,7 +321,10 @@ def test_location_mode_uses_the_split_location_option() -> None:
         },
     )
 
-    assert option_values["AutoEssenceMenu"] == {"type": "select", "caseName": "Location"}
+    assert option_values["AutoEssenceMenu"] == {
+        "type": "select",
+        "caseName": "Location",
+    }
     assert option_values["AutoEssenceSelectLocation"] == {
         "type": "select",
         "caseName": "VFTheHub",

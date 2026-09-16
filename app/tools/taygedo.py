@@ -607,9 +607,7 @@ async def refresh_taygedo_credential(
                 request_device_id,
             )
         elif data is None:
-            raise ValueError(
-                f"塔吉多刷新 Token 被拒绝（HTTP {response.status_code}）"
-            )
+            raise ValueError(f"塔吉多刷新 Token 被拒绝（HTTP {response.status_code}）")
         else:
             raise _api_error("塔吉多刷新 Token", response, data)
 
@@ -780,7 +778,10 @@ async def _run_taygedo(
         )
         if action_roles is None:
             try:
-                action_roles, action_lookup_complete = await _get_taygedo_game_roles_with_status(
+                (
+                    action_roles,
+                    action_lookup_complete,
+                ) = await _get_taygedo_game_roles_with_status(
                     action_access_token,
                     action_uid,
                     action_device_id,
@@ -836,9 +837,7 @@ async def _run_taygedo(
 
         async def cancel_action_tasks() -> None:
             pending_tasks = [
-                task
-                for task in (community_task, game_task)
-                if not task.done()
+                task for task in (community_task, game_task) if not task.done()
             ]
             for task in pending_tasks:
                 task.cancel()
@@ -1084,10 +1083,7 @@ def _taygedo_actions_need_refresh(
 ) -> bool:
     """判断动作结果是否需要一次受控的 refreshToken 恢复。"""
 
-    entries = [
-        (status, reason)
-        for _name, status, reason, _reward in community_results
-    ]
+    entries = [(status, reason) for _name, status, reason, _reward in community_results]
     entries.extend(
         (str(result.get("status", "")), str(result.get("reason", "")))
         for result in game_results
@@ -1124,9 +1120,7 @@ async def _sign_taygedo_games(
         if lookup_complete:
             logger.info("塔吉多未绑定应用内游戏，跳过游戏日常任务")
             return []
-        logger.warning(
-            "塔吉多游戏角色接口未完成，应用内游戏日常任务跳过"
-        )
+        logger.warning("塔吉多游戏角色接口未完成，应用内游戏日常任务跳过")
         return [
             {
                 "account": f"{account}/应用内游戏",
@@ -1495,18 +1489,14 @@ def _reward_records(value: object) -> list[Mapping[str, object]]:
         for key in ("rewards", "rewardList", "list", "items"):
             entries = value.get(key)
             if isinstance(entries, list):
-                return [
-                    entry for entry in entries if isinstance(entry, Mapping)
-                ]
+                return [entry for entry in entries if isinstance(entry, Mapping)]
         return []
     if isinstance(value, list):
         return [entry for entry in value if isinstance(entry, Mapping)]
     return []
 
 
-def _format_taygedo_rewards(
-    payload: Mapping[str, object], day_index: int
-) -> str:
+def _format_taygedo_rewards(payload: Mapping[str, object], day_index: int) -> str:
     """按签到日格式化塔吉多应用内游戏奖励。"""
 
     rewards = _reward_records(payload)
@@ -1522,10 +1512,7 @@ def _format_taygedo_rewards(
             for key in ("day", "days", "signDay")
         )
     ]
-    selected = (
-        dated
-        or ([rewards[day - 1]] if day <= len(rewards) else rewards)
-    )
+    selected = dated or ([rewards[day - 1]] if day <= len(rewards) else rewards)
     parts: list[str] = []
     for reward in selected:
         name = next(
@@ -1546,11 +1533,7 @@ def _format_taygedo_rewards(
             ),
             None,
         )
-        count = (
-            None
-            if isinstance(raw_count, bool)
-            else _to_optional_int(raw_count)
-        )
+        count = None if isinstance(raw_count, bool) else _to_optional_int(raw_count)
         count_text = str(count if count is not None else 1)
         parts.append(name if count_text == "1" else f"{name}×{count_text}")
     return "、".join(parts)
@@ -1920,10 +1903,7 @@ async def _community_sign(
 
         return list(
             await asyncio.gather(
-                *(
-                    sign_community(community_id)
-                    for community_id in community_ids
-                )
+                *(sign_community(community_id) for community_id in community_ids)
             )
         )
 
@@ -1945,7 +1925,9 @@ def _api_error(
 ) -> ValueError:
     message = str(data.get("msg") or data.get("message") or "请求失败").strip()
     code = data.get("code", "unknown")
-    return ValueError(f"{endpoint}失败（HTTP {response.status_code}，code={code}）：{message}")
+    return ValueError(
+        f"{endpoint}失败（HTTP {response.status_code}，code={code}）：{message}"
+    )
 
 
 def _is_already_signed(message: str) -> bool:

@@ -19,12 +19,13 @@ export const fetchOneDragonSettings = async (
   configName: string,
   groupName = ''
 ): Promise<Record<string, unknown>> => {
-  const resp = await BetterGiService.getBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsGet(
-    scriptId,
-    userId,
-    configName,
-    groupName
-  )
+  const resp =
+    await BetterGiService.getBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsGet(
+      scriptId,
+      userId,
+      configName,
+      groupName
+    )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 一条龙设置请求失败')
   }
@@ -72,11 +73,12 @@ export const fetchGlobalDomainSettings = async (
   userId?: string,
   groupName = ''
 ): Promise<Record<string, unknown>> => {
-  const resp = await BetterGiService.getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
-    scriptId,
-    userId || undefined,
-    groupName
-  )
+  const resp =
+    await BetterGiService.getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
+      scriptId,
+      userId || undefined,
+      groupName
+    )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 秘境刷取配置请求失败')
   }
@@ -92,11 +94,12 @@ export const fetchGlobalStygianSettings = async (
   userId?: string,
   groupName = ''
 ): Promise<Record<string, unknown>> => {
-  const resp = await BetterGiService.getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
-    scriptId,
-    userId || undefined,
-    groupName
-  )
+  const resp =
+    await BetterGiService.getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
+      scriptId,
+      userId || undefined,
+      groupName
+    )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 幽境危战设置请求失败')
   }
@@ -141,9 +144,7 @@ export const fetchDomainCatalog = async (
 ): Promise<BetterGIDomainCatalogItem[]> => {
   try {
     const resp =
-      await BetterGiService.getBettergiDomainCatalogApiApiScriptsBettergiDomainCatalogGet(
-        scriptId
-      )
+      await BetterGiService.getBettergiDomainCatalogApiApiScriptsBettergiDomainCatalogGet(scriptId)
     if (resp.code !== 200) {
       logger.warn(resp.message || 'BetterGI 秘境目录请求失败')
       return []

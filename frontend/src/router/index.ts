@@ -353,6 +353,13 @@ const routes = [
     component: () => import('../views/Logs.vue'),
     meta: { title: '日志查看', skipGuard: true },
   },
+  {
+    // 主进程另开的小窗口：真实显示器回来了但有任务在跑，问用户要不要拆虚拟屏
+    path: '/vdd-prompt',
+    name: 'VirtualDisplayPrompt',
+    component: () => import('../views/VirtualDisplayPrompt.vue'),
+    meta: { title: '虚拟显示器', skipGuard: true },
+  },
 ]
 
 const router = createRouter({

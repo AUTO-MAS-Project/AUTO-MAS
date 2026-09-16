@@ -126,9 +126,7 @@ def _selected_accounts(
     from app.core import Config
 
     requested_ids = {
-        str(account_id).strip()
-        for account_id in (account_ids or ())
-        if account_id
+        str(account_id).strip() for account_id in (account_ids or ()) if account_id
     }
     selected: list[tuple[str, object]] = []
     matched_ids: set[str] = set()
@@ -247,7 +245,9 @@ async def collect_configured_community_activity(
                 )
             except Exception as error:
                 status, reason = _failure_state(error)
-                logger.warning(f"{account_name} {definition.platform}角色发现失败: {reason}")
+                logger.warning(
+                    f"{account_name} {definition.platform}角色发现失败: {reason}"
+                )
                 snapshots.extend(
                     _empty_game_snapshot(
                         account_uid=account_uid,

@@ -162,7 +162,7 @@ const ACTION_LABEL_KEYS: Readonly<Record<FailureActionKind, string>> = {
   retry: 'init.step.retry',
   'retry-other-mirror': 'init.failure.retryOtherMirror',
   'rebuild-environment': 'init.failure.rebuildEnvironment',
-  'open-log': 'init.failure.openLog',
+  'open-log': 'launch.viewLog',
   'run-doctor': 'init.failure.runDoctor',
 }
 
@@ -180,7 +180,10 @@ function pushUnique(kinds: FailureActionKind[], kind: FailureActionKind): void {
 /** 旧链路的老样子：一个「用选中的镜像源重试」加一整块镜像面板。 */
 function legacyPlan(): FailureActionPlan {
   return {
-    actions: [{ kind: 'retry-other-mirror', labelKey: 'init.step.retryWithMirror' }],
+    actions: [
+      { kind: 'retry-other-mirror', labelKey: 'init.step.retryWithMirror' },
+      toAction('open-log'),
+    ],
     showMirrorSelection: true,
     notice: null,
     legacy: true,
@@ -195,11 +198,13 @@ function legacyPlan(): FailureActionPlan {
  * - `retryable === false` 不出任何重试类按钮，哪怕 remediation 里写了；
  * - `INTERNAL_ERROR` 一律按不可重试处理，只给日志和一句「请携带日志反馈」；
  * - 认不出来的 remediation 按协议要求忽略，一条都认不出来时退回旧链路的现有行为。
+ * 日志是界面兜底：等待态始终有「查看日志」，失败态不能因为这个错误码没声明
+ * `open-log` 就把入口收走。
  */
 export function decideFailureActions(context: FailureContext): FailureActionPlan {
   const remediation = context.remediation ?? []
 
-  // 旧链路：既没有结果码也没有处置动作，什么都不改。
+  // 旧链路：既没有结果码也没有处置动作，退回原有的换源恢复方式。
   if (!context.code && remediation.length === 0) {
     return legacyPlan()
   }
@@ -248,8 +253,7 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
   }
 
   const allowed = retryAllowed ? kinds : kinds.filter(kind => !RETRY_KINDS.has(kind))
-  // 重试全被屏蔽后可能一个按钮都不剩，日志任何时候都能打开，也是反馈时唯一有用的东西。
-  if (allowed.length === 0) allowed.push('open-log')
+  pushUnique(allowed, 'open-log')
 
   return {
     actions: allowed.map(toAction),

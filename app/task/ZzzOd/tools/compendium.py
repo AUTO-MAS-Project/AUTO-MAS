@@ -108,11 +108,15 @@ def train_categories(root: Path) -> list[dict]:
                 mission_types.append(
                     {
                         "name": str(mt.get("mission_type_name") or ""),
-                        "display": _display(mt, "mission_type_name", "mission_type_name_display"),
+                        "display": _display(
+                            mt, "mission_type_name", "mission_type_name_display"
+                        ),
                         "missions": [
                             {
                                 "name": str(m.get("mission_name") or ""),
-                                "display": _display(m, "mission_name", "mission_name_display"),
+                                "display": _display(
+                                    m, "mission_name", "mission_name_display"
+                                ),
                             }
                             for m in (mt.get("mission_list") or [])
                             if isinstance(m, dict)
@@ -141,7 +145,10 @@ def lost_void_missions(root: Path) -> list[str]:
             if not isinstance(cat, dict) or cat.get("category_name") != "零号空洞":
                 continue
             for mt in cat.get("mission_type_list") or []:
-                if not isinstance(mt, dict) or mt.get("mission_type_name") != "迷失之地":
+                if (
+                    not isinstance(mt, dict)
+                    or mt.get("mission_type_name") != "迷失之地"
+                ):
                     continue
                 return [
                     _display(m, "mission_name", "mission_name_display")
@@ -163,7 +170,10 @@ def hollow_zero_missions(root: Path) -> list[str]:
             if not isinstance(cat, dict) or cat.get("category_name") != "零号空洞":
                 continue
             for mt in cat.get("mission_type_list") or []:
-                if not isinstance(mt, dict) or mt.get("mission_type_name") == "迷失之地":
+                if (
+                    not isinstance(mt, dict)
+                    or mt.get("mission_type_name") == "迷失之地"
+                ):
                     continue
                 names.extend(
                     str(m.get("mission_name") or "")
@@ -227,10 +237,7 @@ def coffee_options(root: Path, day: int) -> list[dict]:
                 options.append({"label": all_coffee[name], "value": name})
         return options
     # 当日无排程：回退为全部咖啡
-    return [
-        {"label": display, "value": name}
-        for name, display in all_coffee.items()
-    ]
+    return [{"label": display, "value": name} for name, display in all_coffee.items()]
 
 
 def world_patrol_route_lists(root: Path) -> list[dict]:
@@ -317,5 +324,7 @@ def lost_void_challenge_options(root: Path) -> list[dict]:
     """迷失之地挑战配置模板选项（config/lost_void_challenge，sample 计入）。"""
 
     return _template_options(
-        root / "config" / "lost_void_challenge", include_sample=True, include_merged=False
+        root / "config" / "lost_void_challenge",
+        include_sample=True,
+        include_merged=False,
     )

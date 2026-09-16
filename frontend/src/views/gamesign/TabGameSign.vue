@@ -339,8 +339,7 @@ const {
     if (savedAccount && editingAccount.value?.uid === accountId) {
       // 只回填本次扫码拿到的那一个凭据字段。整体替换成服务端副本会把弹窗里
       // 其他还没保存的输入（用户名、手动粘贴的其他平台 Token）静默冲掉。
-      const credentialField =
-        qrLoginProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
+      const credentialField = qrLoginProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
       editingAccount.value[credentialField] = savedAccount[credentialField]
     }
     if (onRefreshConfig) {

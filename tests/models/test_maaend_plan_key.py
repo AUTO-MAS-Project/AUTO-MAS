@@ -199,7 +199,10 @@ class EssenceMenuPlanKeyTest(unittest.TestCase):
 
     def test_legacy_essence_key_keeps_the_old_shape(self) -> None:
         # 历史键不写入新字段，避免旧计划表键形状漂移
-        legacy = {"SanityTaskType": "Essence", "AutoEssenceSpecifiedLocation": "VFTheHub"}
+        legacy = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": "VFTheHub",
+        }
         self.assertEqual(normalize_maaend_plan_key(dict(legacy)), legacy)
         self.assertEqual(validate_maaend_plan_key(dict(legacy)), legacy)
 

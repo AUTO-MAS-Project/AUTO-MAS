@@ -31,7 +31,7 @@ from app.core.emulator_manager import EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import BAAHConfig, BAAHUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
@@ -52,7 +52,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
 class BAAHManager(TaskExecuteBase):
     """BAAH 控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -62,6 +67,7 @@ class BAAHManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.emulator_manager: DeviceBase | None = None
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验 BAAH 脚本配置是否可用"""
@@ -100,11 +106,14 @@ class BAAHManager(TaskExecuteBase):
             and config.get("Info", "RemainedDay") != 0
             and self.task_info.is_target_user(str(uid))
         ]
-        logger.info(f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}")
+        logger.info(
+            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+        )
 
         # 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度,
         # BAAH 自身不再负责拉起模拟器
-        self.emulator_manager: DeviceBase = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager: DeviceBase = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
@@ -157,8 +166,12 @@ class BAAHManager(TaskExecuteBase):
             error_count = sum(
                 1 for u in self.script_info.user_list if u.status == "异常"
             )
-            over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
-            wait_count = sum(1 for u in self.script_info.user_list if u.status == "等待")
+            over_count = sum(
+                1 for u in self.script_info.user_list if u.status == "完成"
+            )
+            wait_count = sum(
+                1 for u in self.script_info.user_list if u.status == "等待"
+            )
 
             title = (
                 f"{datetime.now().strftime('%m-%d')} | "
@@ -210,4 +223,3 @@ class BAAHManager(TaskExecuteBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
         )
-

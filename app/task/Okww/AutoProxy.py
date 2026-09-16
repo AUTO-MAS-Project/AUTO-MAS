@@ -62,6 +62,7 @@ from .push_log import (
     okww_resolve,
 )
 from .tools import async_switch_account, push_notification
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -315,7 +316,11 @@ class AutoProxyTask(TaskExecuteBase):
             for rule in OKWW_PUSH_RULES:
                 self.log_collect.collect(*rule)
 
-        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
+        self.task_index = (
+            int(self.cur_user_config.get("Task", "TaskIndex"))
+            if self.cur_user_config.get("Info", "IfQuickConfig")
+            else OkwwUserConfig().get("Task", "TaskIndex")
+        )
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
@@ -376,18 +381,38 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
+            # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
+            # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（脚本态
+            # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
+            # 性归档，此处不重复
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                _okww_mas_config_dir(
+                    self.script_info.script_id,
+                    str(self.cur_user_uid),
+                    config_mode,
+                ),
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
+            )
             mas_config_dir = _okww_mas_config_dir(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
                 config_mode,
             )
             swap_in_dir(mas_config_dir, self.script_config_path)
-            mark_native_config_injected(
-                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
-                self.script_config_path,
-                script_id=self.script_info.script_id,
-            )
+        else:
+            source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if source.is_dir():
+                swap_in_dir(source, self.script_config_path)
         self._apply_mas_overrides()
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.script_config_path,
+            script_id=self.script_info.script_id,
+        )
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 
     async def _push_dispatch_log(self, line: str) -> None:

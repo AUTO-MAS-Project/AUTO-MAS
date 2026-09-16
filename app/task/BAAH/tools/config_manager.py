@@ -378,9 +378,7 @@ def latest_log_file(log_dir: Path, not_before: float) -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def resolve_log_time_range(
-    log_path: Path, time_format: str
-) -> tuple[int, int] | None:
+def resolve_log_time_range(log_path: Path, time_format: str) -> tuple[int, int] | None:
     """按日志首行的实际排版推算时间戳的字符切片区间。
 
     BAAH 的行格式是「{版本} - {分:秒} - {级别} : {消息}」，例如

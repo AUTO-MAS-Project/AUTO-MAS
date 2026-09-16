@@ -7,7 +7,7 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import quote
 
 import httpx
@@ -20,6 +20,7 @@ from .apply import (
     UpdateApplyError,
     apply_package_transaction,
     has_trusted_update_baseline,
+    update_baseline_matches_project,
 )
 from .contracts import normalise_sha256, project_fingerprint
 from .state import (
@@ -355,6 +356,24 @@ async def update_maafw_project_if_needed(
         # projectFingerprint，而从未经 MAS 更新过的项目根本没有那份 manifest，
         # 于是「首次更新」必然被拒——这就是自举死锁。探测是只读的，不建目录。
         prefer_full = not has_trusted_update_baseline(project_path)
+        if prefer_full:
+            send_update_log("本地无可信更新基线，改为请求全量包")
+
+        async def baseline_still_matches() -> bool:
+            # 有清单也不等于项目没变：M9A 的 agent 每次启动都热更新
+            # data/activity/*.json，指纹一变差量包同样会在 apply 阶段被拒。
+            # 全项目哈希要 ~2s，所以不在这里算，而是交给发现流程在「确认有
+            # 新版本、且要带 CDK 向 Mirror酱 要差量包」那一刻才算。
+            matches = await asyncio.to_thread(
+                update_baseline_matches_project, project_path
+            )
+            if not matches:
+                send_update_log(
+                    "项目内容与更新基线不一致（脚本自行热更新或手动改过文件），"
+                    "差量包无法套用，改为请求全量包"
+                )
+            return matches
+
         (
             discovery,
             version_check,
@@ -366,6 +385,7 @@ async def update_maafw_project_if_needed(
             proxy=proxy,
             send_log=send_update_log,
             prefer_full_package=prefer_full,
+            baseline_matches=None if prefer_full else baseline_still_matches,
         )
     except Exception as exc:
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
@@ -587,6 +607,7 @@ async def _discover_project_update_detailed(
     send_log: Callable[[str], None] | None = None,
     prefer_full_package: bool = False,
     version_only: bool = False,
+    baseline_matches: Callable[[], Awaitable[bool]] | None = None,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -597,6 +618,10 @@ async def _discover_project_update_detailed(
     ``discovery`` is ``None`` when nothing newer exists; ``mirror_version_check``
     is ``None`` only when MirrorChyan was never queried (no rid), so callers can
     still surface the CDK status for an up-to-date project.
+
+    ``baseline_matches`` 只在「确认有新版本、要带 CDK 向 Mirror酱 拿差量包」之前
+    被调用一次；返回 False 就改要全量包。它是懒的，因为算项目指纹要 ~2s，
+    而绝大多数运行前检查的结果是「已是最新」。
     """
 
     config = dict(source_config or {})
@@ -616,8 +641,7 @@ async def _discover_project_update_detailed(
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
     send_update_log(f"MirrorChyan RID: {rid}")
-    if interface_model.mirrorchyan_multiplatform:
-        send_update_log("MirrorChyan platform: win/x86_64")
+    send_update_log("MirrorChyan platform: win/x86_64")
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
@@ -695,6 +719,11 @@ async def _discover_project_update_detailed(
 
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
+        prefer_full = prefer_full_package
+        if not prefer_full and baseline_matches is not None:
+            # 差量包只有在项目与基线指纹完全一致时才装得上，到这一步才值得
+            # 花那 ~2s 去比。
+            prefer_full = not await baseline_matches()
         send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
         authorized = await _query_mirrorchyan_latest(
             interface_model,
@@ -702,7 +731,7 @@ async def _discover_project_update_detailed(
             mirror_cdk=mirror_cdk,
             channel=channel,
             proxy=proxy,
-            prefer_full=prefer_full_package,
+            prefer_full=prefer_full,
             send_log=send_update_log,
         )
         # CDK 状态以带 CDK 的这次为准：不带 CDK 那次只知道有没有新版本。
@@ -928,19 +957,21 @@ async def _query_mirrorchyan_latest(
     }
     if mirror_cdk:
         params["cdk"] = mirror_cdk
-    if prefer_full:
-        # 不带 current_version：MirrorChyan 的 current_version 是差量包的计算基准
-        # （文档标为「推荐」而非必填），不给它就没法算差量，返回的是全量包。
-        # 项目还没有可信基线时必须走这条路——差量包在 _validate_plan_base 里
-        # 对不上 projectFingerprint 会被拒，导致「首次更新永远装不上」。
-        send_update_log("本地无可信更新基线，改为请求全量包")
-    else:
+    if not prefer_full:
+        # prefer_full 时不带 current_version：MirrorChyan 的 current_version 是差量包
+        # 的计算基准（文档标为「推荐」而非必填），不给它就没法算差量，返回的是
+        # 全量包。项目没有可信基线、或基线指纹已对不上时必须走这条路——差量包在
+        # _validate_plan_base 里对不上 projectFingerprint 会被拒。为什么要全量由
+        # 调用方在决定 prefer_full 时记日志，这里不重复。
         params["current_version"] = current_version
-    if interface_model.mirrorchyan_multiplatform:
-        # 实测 os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；
-        # 这里沿用 GitHub 资产命名的那套写法。
-        params["os"] = "win"
-        params["arch"] = "x86_64"
+    # os / arch 一律带上，不看 interface.json 的 mirrorchyan_multiplatform：
+    # 该字段只是发布方给打包器的提示，MAA_Punish 这类分平台发布的项目根本没写它，
+    # 而 Mirror 酱对分平台 rid 不带 os/arch 直接回 8001「资源不存在」，运行前
+    # 更新检查就整条失败。实测单平台 rid（AUTO_MAS）多带这两个参数照常回 200，
+    # os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；这里沿用 GitHub
+    # 资产命名的那套写法。
+    params["os"] = "win"
+    params["arch"] = "x86_64"
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:

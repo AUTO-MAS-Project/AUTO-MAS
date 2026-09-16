@@ -14,6 +14,7 @@ export const HOME_ACTIVITY_ACCENTS: Record<string, string> = {
   wutheringwaves: '#7aa2ff',
   nte: '#c9a7ff',
   reverse1999: '#f2a0c0',
+  bluearchive: '#3ba9ee',
   arknights: '#9fb4cc',
 }
 

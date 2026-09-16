@@ -48,12 +48,14 @@ from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from app.utils.io import read_file, write_file
 
 from .tools import (
+    archive_mas_runtime_backup,
     kill_src_processes,
     login,
     poor_yaml_read,
     poor_yaml_write,
     promote_src_config_update,
     push_notification,
+    read_overlay_values,
     read_src_webui_port,
     recover_src_user_config,
     save_src_user_config,
@@ -110,6 +112,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.src_webui_port: int | None = None
         self.process_cleanup_success = True
         self.prepared = False
+        self._src_injected_config: dict | None = None
         # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
         # 快速配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
         self.config_mode, self.direct_control = resolve_config_source(
@@ -356,6 +359,7 @@ class AutoProxyTask(TaskExecuteBase):
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                     expected_installation_id=self.src_installation_id,
+                    runtime_baseline=self._src_injected_config,
                 )
                 logger.success("SRC 脚本配置文件已更新")
 
@@ -466,19 +470,28 @@ class AutoProxyTask(TaskExecuteBase):
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
+        elif self.direct_control:
+            native = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if native.is_dir():
+                overlay_path = native
         if overlay_path is not None:
             recover_src_user_config(overlay_path)
-
-        # ── 第二段：快速配置覆盖 ──────────────────────────────────────
-        # 由 IfQuickConfig 守卫，与来源无关：直控+关闭=完全用外侧原生配置，
-        # 直控+开启=任务前把面板值写进原生配置（任务结束走既有快照恢复）。
-        if self.direct_control and not self.cur_user_config.get(
-            "Info", "IfQuickConfig"
-        ):
-            logger.info(
-                "SRC 直控配置：直接使用脚本原生配置，跳过快速配置写入"
-            )
-            return
+            # 下发前归档下发源到用户池（运行回写会覆盖它；带页面核心字段
+            # 侧车，指纹去重，失败不阻断运行）。native 池由 manager.prepare
+            # 在任务级一次性归档。直控无 MAS 配置目录：Temp 是安装 config/
+            # 快照、不属于 mas 池内容，跳过归档——归进 mas 池会在切到用户态
+            # 后恢复该备份时把安装快照写进自己的 ConfigFile（对齐
+            # restore_service「直控 mas 池为空」语义）
+            if not self.direct_control:
+                with suppress(Exception):
+                    archive_mas_runtime_backup(
+                        self.script_info.script_id,
+                        str(self.cur_user_uid),
+                        overlay_path,
+                        overlay=read_overlay_values(self.cur_user_config),
+                        # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                        mode=self.config_mode,
+                    )
 
         staging_path = stage_src_config_update(
             self.src_set_path,
@@ -507,6 +520,32 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 任务间切换方式
         src_set["Alas"]["Optimization"]["WhenTaskQueueEmpty"] = "close_game"
+
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            self._apply_src_quick_config(src_set)
+
+        write_file(staging_path / "src.json", src_set)
+        poor_yaml_write(
+            deploy_set,
+            staging_path / "deploy.yaml",
+            (
+                staging_path / "deploy.template-cn.yaml"
+                if (staging_path / "deploy.template-cn.yaml").exists()
+                else None
+            ),
+        )
+        promote_src_config_update(
+            self.src_set_path,
+            staging_path,
+            expected_installation_id=self.src_installation_id,
+        )
+        self._src_injected_config = (
+            src_set if self.cur_user_config.get("Info", "IfQuickConfig") else None
+        )
+        logger.info("脚本运行参数配置完成: 自动代理")
+
+    def _apply_src_quick_config(self, src_set: dict) -> None:
+        """关卡面板覆盖，不包含来源导入和运行所需设置。"""
 
         # 养成规划
         src_set["Dungeon"]["PlannerTarget"]["Enable"] = False
@@ -572,23 +611,6 @@ class AutoProxyTask(TaskExecuteBase):
             src_set["Rogue"]["RogueWorld"]["World"] = self.cur_user_config.get(
                 "Stage", "SimulatedUniverseWorld"
             )
-
-        write_file(staging_path / "src.json", src_set)
-        poor_yaml_write(
-            deploy_set,
-            staging_path / "deploy.yaml",
-            (
-                staging_path / "deploy.template-cn.yaml"
-                if (staging_path / "deploy.template-cn.yaml").exists()
-                else None
-            ),
-        )
-        promote_src_config_update(
-            self.src_set_path,
-            staging_path,
-            expected_installation_id=self.src_installation_id,
-        )
-        logger.info("脚本运行参数配置完成: 自动代理")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""

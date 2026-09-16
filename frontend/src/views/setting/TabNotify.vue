@@ -357,6 +357,58 @@ const handleWebhookChange = async () => {
 
     <div class="form-section">
       <div class="section-header">
+        <h3>{{ t('setting.notify.cmccNewMsgSection') }}</h3>
+        <a
+          href="https://doc.auto-mas.top/docs/advanced-features/notification.html"
+          class="section-doc-link"
+          :title="t('setting.notify.cmccNewMsgDoc')"
+          @click="handleExternalLink"
+        >
+          {{ t('common.doc') }}
+        </a>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.notify.cmccNewMsgEnable') }}</span>
+              <a-tooltip :title="t('setting.notify.cmccNewMsgTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="settings.Notify?.IfCMCCNewMsg"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfCMCCNewMsg', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.notify.cmccNewMsgApiKey') }}</span>
+              <a-tooltip :title="t('setting.notify.cmccNewMsgApiKeyTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input-password
+              :value="settings.Notify?.CMCCNewMsgApiKey"
+              :disabled="!settings.Notify?.IfCMCCNewMsg"
+              :placeholder="t('setting.notify.cmccNewMsgApiKeyPlaceholder')"
+              size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'CMCCNewMsgApiKey', e.target.value)"
+            />
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
         <h3>{{ t('setting.notify.openclawWeixinSection') }}</h3>
         <a
           href="https://github.com/Tencent/openclaw-weixin"

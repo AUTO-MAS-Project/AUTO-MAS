@@ -211,10 +211,6 @@ export function useScriptApi() {
                           maaUserData.Info?.InfrastName !== undefined
                             ? maaUserData.Info.InfrastName
                             : '',
-                        InfrastIndex:
-                          maaUserData.Info?.InfrastIndex !== undefined
-                            ? maaUserData.Info.InfrastIndex
-                            : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
                         Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',
@@ -1159,9 +1155,7 @@ export function useScriptApi() {
                             ? zzzodUserData.Info.Status
                             : true,
                         Mode:
-                          zzzodUserData.Info?.Mode !== undefined
-                            ? zzzodUserData.Info.Mode
-                            : '用户',
+                          zzzodUserData.Info?.Mode !== undefined ? zzzodUserData.Info.Mode : '用户',
                         RemainedDay:
                           zzzodUserData.Info?.RemainedDay !== undefined
                             ? zzzodUserData.Info.RemainedDay
@@ -1183,13 +1177,8 @@ export function useScriptApi() {
                             ? zzzodUserData.Info.ScriptAfterTask
                             : '',
                         Notes:
-                          zzzodUserData.Info?.Notes !== undefined
-                            ? zzzodUserData.Info.Notes
-                            : '',
-                        Tag:
-                          zzzodUserData.Info?.Tag !== undefined
-                            ? zzzodUserData.Info.Tag
-                            : null,
+                          zzzodUserData.Info?.Notes !== undefined ? zzzodUserData.Info.Notes : '',
+                        Tag: zzzodUserData.Info?.Tag !== undefined ? zzzodUserData.Info.Tag : null,
                       },
                       Game: {
                         GameRegion:
@@ -1279,9 +1268,7 @@ export function useScriptApi() {
                             ? baahUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Status:
-                          baahUserData.Info?.Status !== undefined
-                            ? baahUserData.Info.Status
-                            : true,
+                          baahUserData.Info?.Status !== undefined ? baahUserData.Info.Status : true,
                         RemainedDay:
                           baahUserData.Info?.RemainedDay !== undefined
                             ? baahUserData.Info.RemainedDay
@@ -1304,8 +1291,7 @@ export function useScriptApi() {
                             : 'CN',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
-                        Tag:
-                          baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
+                        Tag: baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
                       },
                       Notify: {
                         Enabled:

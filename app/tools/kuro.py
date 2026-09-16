@@ -86,9 +86,7 @@ def _safe_json(response: httpx.Response) -> dict[str, object]:
             marker in response_preview
             for marker in ("captcha", "geetest", "安全验证", "风控", "challenge")
         ):
-            raise _KuroRiskError(
-                "库街区请求触发风控或安全验证，请稍后重试"
-            ) from exc
+            raise _KuroRiskError("库街区请求触发风控或安全验证，请稍后重试") from exc
         raise ValueError(
             f"库街区返回了非 JSON 响应（HTTP {response.status_code}），疑似风控或服务维护"
         ) from exc
@@ -172,23 +170,17 @@ def _raise_kuro_response_error(
         raise ValueError(
             f"{stage}失败（HTTP {response.status_code}，code={code}）：{message}"
         )
-    if _is_kuro_code(code, 200) or (
-        allow_already_signed and _is_kuro_code(code, 1511)
-    ):
+    if _is_kuro_code(code, 200) or (allow_already_signed and _is_kuro_code(code, 1511)):
         return
 
     if _is_kuro_code(code, 220):
         if any(marker in lowered_message for marker in _KURO_RISK_MARKERS):
-            raise _KuroRiskError(
-                "库街区请求触发风控或安全验证（code=220），请稍后重试"
-            )
+            raise _KuroRiskError("库街区请求触发风控或安全验证（code=220），请稍后重试")
         raise _KuroAuthError(
             "库街区 Token 已失效（code=220）；库街区 APP 端再次登录可能使旧 Token 失效，请重新获取 Token"
         )
     if _is_kuro_code(code, 1513):
-        raise _KuroAuthError(
-            "库街区用户信息异常（code=1513），请重新获取 Token"
-        )
+        raise _KuroAuthError("库街区用户信息异常（code=1513），请重新获取 Token")
     raise ValueError(
         f"{stage}失败（HTTP {response.status_code}，code={code}）：{message}"
     )
@@ -221,10 +213,7 @@ def _extract_kuro_role_records(value: object) -> list[dict[str, object]]:
     if not isinstance(value, dict):
         raise ValueError("库街区角色列表响应格式无效")
 
-    if any(
-        value.get(key) not in (None, "")
-        for key in ("roleId", "role_id", "roleID")
-    ):
+    if any(value.get(key) not in (None, "") for key in ("roleId", "role_id", "roleID")):
         return [value]
 
     for key in ("roles", "roleList", "role_list", "list", "data", "roleInfo", "role"):

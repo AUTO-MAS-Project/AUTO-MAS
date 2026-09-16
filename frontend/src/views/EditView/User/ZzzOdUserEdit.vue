@@ -148,10 +148,8 @@
                   :model-value="formData.Info.Mode"
                   :options="configModeOptions"
                   :disabled="pageLoading"
-                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   :alert-message="configModeAlert"
                   @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -288,10 +286,7 @@
                       >
                         {{ String(inst.idx).padStart(2, '0') }} - {{ inst.name }}
                       </span>
-                      <a-tooltip
-                        v-if="inst.active"
-                        :title="t('edit.zzzodInstanceActiveTagHint')"
-                      >
+                      <a-tooltip v-if="inst.active" :title="t('edit.zzzodInstanceActiveTagHint')">
                         <a-tag color="processing" class="instance-manage-tag">
                           {{ t('edit.zzzodInstanceActiveTag') }}
                         </a-tag>
@@ -389,11 +384,7 @@
               <a-spin :spinning="nativeLoading">
                 <template v-if="nativeInstanceIdx !== null">
                   <a-row :gutter="24">
-                    <a-col
-                      v-for="f in nativeAccountFields"
-                      :key="f.key"
-                      :span="12"
-                    >
+                    <a-col v-for="f in nativeAccountFields" :key="f.key" :span="12">
                       <a-form-item>
                         <template #label>
                           <span class="form-label">
@@ -424,11 +415,7 @@
                             class="path-input"
                             readonly
                           />
-                          <a-button
-                            size="large"
-                            class="path-button"
-                            @click="selectDirectGamePath"
-                          >
+                          <a-button size="large" class="path-button" @click="selectDirectGamePath">
                             <template #icon>
                               <FolderOpenOutlined />
                             </template>
@@ -469,10 +456,7 @@
                     </a-button>
                   </div>
                 </template>
-                <a-empty
-                  v-else
-                  :description="t('edit.zzzodDirectPickInstanceFirst')"
-                />
+                <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
               </a-spin>
             </template>
 
@@ -606,7 +590,9 @@
                       :placeholder="t('edit.zzzodEnterBilibiliAccount')"
                       size="large"
                       class="modern-input"
-                      @blur="saveField('Game.BilibiliAccountName', formData.Game.BilibiliAccountName)"
+                      @blur="
+                        saveField('Game.BilibiliAccountName', formData.Game.BilibiliAccountName)
+                      "
                     />
                   </a-form-item>
                 </a-col>
@@ -734,6 +720,256 @@
                 </a-form-item>
               </a-col>
             </a-row>
+          </div>
+        </a-form>
+      </a-card>
+
+      <!-- ══ 启动参数（一条龙游戏启动参数；总开关在标题行，关闭时下方参数置灰不可改）══ -->
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
+          <div class="form-section">
+            <div class="section-header">
+              <h3>
+                {{ t('edit.zzzodLaunchArgsTitle') }}
+                <a-tooltip :title="t('edit.zzzodLaunchArgsSwitchHint')">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </h3>
+              <div class="section-header-actions">
+                <a-switch
+                  v-if="formData.Info.Mode === '直控'"
+                  v-model:checked="nativeLaunchArgs.launch_argument"
+                  size="large"
+                  @change="(v: any) => saveNativeLaunchArgsField('launch_argument', v === true)"
+                />
+                <a-switch
+                  v-else
+                  v-model:checked="formData.Game.LaunchArgument"
+                  size="large"
+                  @change="(v: any) => saveField('Game.LaunchArgument', v === true)"
+                />
+              </div>
+            </div>
+            <p class="section-desc">
+              {{ t('edit.zzzodLaunchArgsDesc') }}
+            </p>
+            <a-collapse
+              v-model:activeKey="launchArgsOpen"
+              class="optional-section"
+              :bordered="false"
+            >
+              <a-collapse-panel key="launch-args" :header="t('edit.zzzodLaunchArgsDetail')">
+                <!-- 直控：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
+                <template v-if="formData.Info.Mode === '直控'">
+                  <a-spin :spinning="nativeLoading">
+                    <template v-if="nativeInstanceIdx !== null">
+                      <a-row :gutter="24">
+                        <a-col :span="12">
+                          <a-form-item>
+                            <template #label>
+                              <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
+                            </template>
+                            <a-select
+                              v-model:value="nativeLaunchArgs.screen_size"
+                              :options="screenSizeOptions"
+                              size="large"
+                              class="modern-select"
+                              :disabled="!nativeLaunchArgs.launch_argument"
+                              @change="saveNativeLaunchArgsField('screen_size', nativeLaunchArgs.screen_size)"
+                            />
+                          </a-form-item>
+                        </a-col>
+                        <a-col :span="12">
+                          <a-form-item>
+                            <template #label>
+                              <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
+                            </template>
+                            <a-select
+                              v-model:value="nativeLaunchArgs.full_screen"
+                              :options="fullScreenOptions"
+                              size="large"
+                              class="modern-select"
+                              :disabled="!nativeLaunchArgs.launch_argument"
+                              @change="saveNativeLaunchArgsField('full_screen', nativeLaunchArgs.full_screen)"
+                            />
+                          </a-form-item>
+                        </a-col>
+                      </a-row>
+                      <a-row :gutter="24">
+                        <a-col :span="12">
+                          <a-form-item>
+                            <template #label>
+                              <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
+                            </template>
+                            <a-switch
+                              v-model:checked="nativeLaunchArgs.popup_window"
+                              size="large"
+                              :disabled="!nativeLaunchArgs.launch_argument"
+                              @change="(v: any) => saveNativeLaunchArgsField('popup_window', v === true)"
+                            />
+                          </a-form-item>
+                        </a-col>
+                        <a-col :span="12">
+                          <a-form-item>
+                            <template #label>
+                              <span class="form-label">
+                                {{ t('edit.zzzodDx12') }}
+                                <a-tooltip :title="t('edit.zzzodDx12Hint')">
+                                  <QuestionCircleOutlined class="help-icon" />
+                                </a-tooltip>
+                              </span>
+                            </template>
+                            <a-switch
+                              v-model:checked="nativeLaunchArgs.dx12"
+                              size="large"
+                              :disabled="!nativeLaunchArgs.launch_argument"
+                              @change="(v: any) => saveNativeLaunchArgsField('dx12', v === true)"
+                            />
+                          </a-form-item>
+                        </a-col>
+                      </a-row>
+                      <a-row :gutter="24">
+                        <a-col :span="12">
+                          <a-form-item>
+                            <template #label>
+                              <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
+                            </template>
+                            <a-select
+                              v-model:value="nativeLaunchArgs.monitor"
+                              :options="monitorOptions"
+                              size="large"
+                              class="modern-select"
+                              :disabled="!nativeLaunchArgs.launch_argument"
+                              @change="saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)"
+                            />
+                          </a-form-item>
+                        </a-col>
+                      </a-row>
+                      <a-row :gutter="24">
+                        <a-col :span="24">
+                          <a-form-item>
+                            <template #label>
+                              <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
+                            </template>
+                            <a-input
+                              v-model:value="nativeLaunchArgs.launch_argument_advance"
+                              :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
+                              size="large"
+                              class="modern-input"
+                              :disabled="!nativeLaunchArgs.launch_argument"
+                              @blur="saveNativeLaunchArgsField('launch_argument_advance', nativeLaunchArgs.launch_argument_advance)"
+                            />
+                          </a-form-item>
+                        </a-col>
+                      </a-row>
+                    </template>
+                    <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
+                  </a-spin>
+                </template>
+                <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
+                <template v-else>
+                  <a-row :gutter="24">
+                    <a-col :span="12">
+                      <a-form-item>
+                        <template #label>
+                          <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
+                        </template>
+                        <a-select
+                          v-model:value="formData.Game.ScreenSize"
+                          :options="screenSizeOptions"
+                          size="large"
+                          class="modern-select"
+                          :disabled="!formData.Game.LaunchArgument"
+                          @change="saveField('Game.ScreenSize', formData.Game.ScreenSize)"
+                        />
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="12">
+                      <a-form-item>
+                        <template #label>
+                          <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
+                        </template>
+                        <a-select
+                          v-model:value="formData.Game.FullScreen"
+                          :options="fullScreenOptions"
+                          size="large"
+                          class="modern-select"
+                          :disabled="!formData.Game.LaunchArgument"
+                          @change="saveField('Game.FullScreen', formData.Game.FullScreen)"
+                        />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                  <a-row :gutter="24">
+                    <a-col :span="12">
+                      <a-form-item>
+                        <template #label>
+                          <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
+                        </template>
+                        <a-switch
+                          v-model:checked="formData.Game.PopupWindow"
+                          size="large"
+                          :disabled="!formData.Game.LaunchArgument"
+                          @change="(v: any) => saveField('Game.PopupWindow', v === true)"
+                        />
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="12">
+                      <a-form-item>
+                        <template #label>
+                          <span class="form-label">
+                            {{ t('edit.zzzodDx12') }}
+                            <a-tooltip :title="t('edit.zzzodDx12Hint')">
+                              <QuestionCircleOutlined class="help-icon" />
+                            </a-tooltip>
+                          </span>
+                        </template>
+                        <a-switch
+                          v-model:checked="formData.Game.Dx12"
+                          size="large"
+                          :disabled="!formData.Game.LaunchArgument"
+                          @change="(v: any) => saveField('Game.Dx12', v === true)"
+                        />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                  <a-row :gutter="24">
+                    <a-col :span="12">
+                      <a-form-item>
+                        <template #label>
+                          <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
+                        </template>
+                        <a-select
+                          v-model:value="formData.Game.Monitor"
+                          :options="monitorOptions"
+                          size="large"
+                          class="modern-select"
+                          :disabled="!formData.Game.LaunchArgument"
+                          @change="saveField('Game.Monitor', formData.Game.Monitor)"
+                        />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                  <a-row :gutter="24">
+                    <a-col :span="24">
+                      <a-form-item>
+                        <template #label>
+                          <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
+                        </template>
+                        <a-input
+                          v-model:value="formData.Game.LaunchArgumentAdvance"
+                          :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
+                          size="large"
+                          class="modern-input"
+                          :disabled="!formData.Game.LaunchArgument"
+                          @blur="saveField('Game.LaunchArgumentAdvance', formData.Game.LaunchArgumentAdvance)"
+                        />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                </template>
+              </a-collapse-panel>
+            </a-collapse>
           </div>
         </a-form>
       </a-card>
@@ -866,7 +1102,7 @@
                           size="small"
                           type="text"
                           class="task-config-gear"
-                          @click="jumpTipVisible[card.app_id] = false; handleZzzodConfig()"
+                          @click="jumpFromTaskCard(card.app_id)"
                         >
                           <template #icon><ExportOutlined /></template>
                         </a-button>
@@ -945,11 +1181,7 @@
               :new-item="planModalField.newItem ?? {}"
               :train-categories="planModal.trainCategories"
             />
-            <div
-              v-for="f in planModalOtherFields"
-              :key="f.field"
-              class="plan-modal-field"
-            >
+            <div v-for="f in planModalOtherFields" :key="f.field" class="plan-modal-field">
               <span class="plan-modal-field-title">{{ f.title }}</span>
               <a-switch
                 v-if="f.type === 'bool'"
@@ -1002,6 +1234,7 @@ import {
   type ZzzOdInstanceOut,
   type ZzzOdNativeAccountField,
   type ZzzOdNativeConfigOut,
+  type ZzzOdNativeLaunchArgs,
   type ZzzOdUserConfig,
 } from '@/api'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
@@ -1067,6 +1300,13 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
     Platform: 'PC',
     UseCustomWinTitle: false,
     CustomWinTitle: '',
+    LaunchArgument: false,
+    ScreenSize: '1920x1080',
+    FullScreen: '0',
+    PopupWindow: false,
+    Dx12: false,
+    Monitor: '1',
+    LaunchArgumentAdvance: '',
   },
   OneDragon: {
     AppList: '[]',
@@ -1095,12 +1335,16 @@ const pushLogModeOptions = [
 ]
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：一条龙运行时脚本态与用户态同分支（AutoProxy 均按该用户字段注入绑定槽），
+// 不存在可共享的脚本级配置树，选了也不生效——禁用并悬停说明原因
 const configModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
@@ -1108,6 +1352,8 @@ const configModeOptions: Array<{
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.zzzodModeUser'),
@@ -1153,6 +1399,26 @@ const gameLanguageLabels: Record<string, string> = Object.fromEntries(
   gameLanguageOptions.map(o => [o.value, o.label])
 )
 
+// ══ 一条龙启动参数（value 为 zzz-od game.yml 原生取值；全屏/显示器落盘为字符串）══
+const screenSizeOptions = [
+  { label: '1920x1080', value: '1920x1080' },
+  { label: '2560x1440', value: '2560x1440' },
+  { label: '3840x2160', value: '3840x2160' },
+]
+const fullScreenOptions = [
+  { label: t('edit.zzzodFullScreenWindowed'), value: '0' },
+  { label: t('edit.zzzodFullScreenFullscreen'), value: '1' },
+]
+const monitorOptions = [
+  { label: '1', value: '1' },
+  { label: '2', value: '2' },
+  { label: '3', value: '3' },
+  { label: '4', value: '4' },
+]
+
+// DX12 是独立开关字段（Game.Dx12 / nativeLaunchArgs.dx12）：与分辨率等参数同级，
+// 注入/写回时由后端把 -use-d3d12 合并进一条龙的高级参数，不在前端操作文本框
+
 // 用户名失焦：同脚本内禁止重名（绑定槽名与统计都依赖名字区分）
 // 上次查重并写回过的用户名；值没变时不再重复拉全部用户查重
 let lastCheckedUserName = ''
@@ -1164,8 +1430,7 @@ const handleNameBlur = async () => {
     const duplicate = Object.entries(resp?.data ?? {}).some(
       ([uid, user]) =>
         uid !== userId.value &&
-        String((user as { Info?: { Name?: string } })?.Info?.Name ?? '').trim() ===
-          name
+        String((user as { Info?: { Name?: string } })?.Info?.Name ?? '').trim() === name
     )
     if (duplicate) {
       message.error(t('edit.zzzodDuplicateUserName'))
@@ -1196,12 +1461,6 @@ const createUserImmediately = async (): Promise<boolean> => {
 
 // 保存串行化队列：以 promise 链取代布尔互斥，连续保存按序写回不丢
 let saveChain: Promise<boolean> = Promise.resolve(true)
-
-// 快速配置开关：与配置来源独立，真实保存
-const handleQuickConfigChange = async (value: boolean) => {
-  formData.Info.IfQuickConfig = value
-  await saveField('Info.IfQuickConfig', value)
-}
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
@@ -1248,8 +1507,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
       const hasOtherDirect = Object.entries(resp?.data ?? {}).some(
         ([uid, user]) =>
           uid !== userId.value &&
-          String((user as { Info?: { Mode?: string } })?.Info?.Mode ?? '') ===
-            '直控'
+          String((user as { Info?: { Mode?: string } })?.Info?.Mode ?? '') === '直控'
       )
       if (hasOtherDirect) {
         formData.Info.Mode = prev
@@ -1574,9 +1832,7 @@ const launchersUsable = computed(() => ({
 const loadLaunchers = async () => {
   launchersLoading.value = true
   try {
-    const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(
-      scriptId
-    )
+    const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(scriptId)
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodLauncherLoadFailed'))
     }
@@ -1605,6 +1861,29 @@ const nativeAccountFields = ref<ZzzOdNativeAccountField[]>([])
 const nativeAccountValues = reactive<Record<string, string>>({})
 const nativeTasks = ref<TaskCard[]>([])
 
+// 直控启动参数（game.yml 字段 + dx12 开关；改动即时整组提交，与其他区块解耦）
+const getDefaultLaunchArgs = (): ZzzOdNativeLaunchArgs => ({
+  launch_argument: false,
+  screen_size: '1920x1080',
+  full_screen: '0',
+  popup_window: false,
+  dx12: false,
+  monitor: '1',
+  launch_argument_advance: '',
+})
+const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
+
+// 启动参数折叠区：总开关开 → 自动展开，关 → 自动收起；手动展开/收起保持到
+// 开关下次变化（watch 只在来源值变化时触发，手动的 activeKey 不会被覆盖）
+const launchArgsOpen = ref<string[]>([])
+watch(
+  () => [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
+  ([mode, userOn, nativeOn]) => {
+    launchArgsOpen.value = (mode === '直控' ? nativeOn : userOn) ? ['launch-args'] : []
+  },
+  { immediate: true }
+)
+
 const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
   nativeAccountFields.value = data.account ?? []
   const values: Record<string, string> = {}
@@ -1613,6 +1892,7 @@ const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
   }
   Object.keys(nativeAccountValues).forEach(k => delete nativeAccountValues[k])
   Object.assign(nativeAccountValues, values)
+  Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), data.launchArgs ?? {})
   nativeInstanceRun.value = data.instanceRun || '全部实例'
   nativeTasks.value = toTaskCards(data.tasks ?? [])
 }
@@ -1672,7 +1952,7 @@ const handleNativeInstanceRunChange = async () => {
  *  - 任务开关/排序、运行实例：即时增量提交对应字段——不把未保存的账号
  *    草稿一并落盘或覆盖。
  */
-type NativeSaveSection = 'all' | 'tasks'
+type NativeSaveSection = 'all' | 'tasks' | 'launchArgs'
 /** 提交给后端的任务条目（后端只认 app_id/enabled） */
 const toNativeTaskIn = (list: TaskCard[]): { app_id: string; enabled: boolean }[] =>
   list.map(t => ({ app_id: t.app_id, enabled: !!t.enabled }))
@@ -1694,6 +1974,7 @@ const saveNativeConfig = async (
     account?: Record<string, string>
     tasks?: { app_id: string; enabled: boolean }[]
     instanceRun?: string
+    launchArgs?: ZzzOdNativeLaunchArgs
   },
   section: NativeSaveSection = 'all',
   silent = false
@@ -1711,6 +1992,8 @@ const saveNativeConfig = async (
     }
     if (section === 'tasks') {
       nativeTasks.value = toTaskCards(resp.tasks ?? [])
+    } else if (section === 'launchArgs') {
+      Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), resp.launchArgs ?? {})
     } else {
       applyNativeConfig(resp)
     }
@@ -1722,6 +2005,17 @@ const saveNativeConfig = async (
   } finally {
     nativeSaving.value = false
   }
+}
+
+/** 直控启动参数：单字段即时提交（只发变更字段，读-改-写由后端持锁完成）。
+ *
+ * 不发全量：并发点不同开关时，全量会携带其他字段的旧值，串行写盘后后者
+ * 覆盖前者已落盘的字段（丢更新）；单字段提交 + 后端「值未变跳过」语义
+ * 才能让并发保存各落各的字段。
+ */
+const saveNativeLaunchArgsField = (key: keyof ZzzOdNativeLaunchArgs, value: unknown) => {
+  ;(nativeLaunchArgs as Record<string, unknown>)[key] = value
+  return saveNativeConfig({ launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs }, 'launchArgs', true)
 }
 
 /** 「保存设置」：账号字段全量写回（连同当前任务编排与运行实例，保持表单一致） */
@@ -1838,8 +2132,7 @@ const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
   setTaskLoading(card.app_id, true)
   try {
     const fields = await loadTaskConfig(card)
-    const useModal =
-      fields.some(f => f.type === 'plan_list') || fields.length > 6
+    const useModal = fields.some(f => f.type === 'plan_list') || fields.length > 6
     if (useModal) {
       void openPlanModal(card, fields)
     } else {
@@ -1864,14 +2157,9 @@ interface PendingTaskConfigSave {
 }
 const taskConfigPending = new Map<string, PendingTaskConfigSave>()
 
-const taskConfigKey = (card: TaskCard, field: TaskConfigField) =>
-  `${card.app_id}::${field.field}`
+const taskConfigKey = (card: TaskCard, field: TaskConfigField) => `${card.app_id}::${field.field}`
 
-const scheduleTaskConfigSave = (
-  card: TaskCard,
-  field: TaskConfigField,
-  value: any
-) => {
+const scheduleTaskConfigSave = (card: TaskCard, field: TaskConfigField, value: any) => {
   const key = taskConfigKey(card, field)
   const existing = taskConfigPending.get(key)
   if (existing) clearTimeout(existing.timer)
@@ -1898,11 +2186,7 @@ const flushAllTaskConfigSaves = () => {
   taskConfigPending.clear()
 }
 
-const saveTaskConfigField = async (
-  card: TaskCard,
-  field: TaskConfigField,
-  value: any
-) => {
+const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value: any) => {
   // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
   // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
   if (value === null || value === undefined || Number.isNaN(value)) return
@@ -1938,12 +2222,8 @@ const planModal = reactive({
   trainCategories: [] as any[],
 })
 
-const planModalField = computed(
-  () => planModal.fields.find(f => f.type === 'plan_list') ?? null
-)
-const planModalOtherFields = computed(() =>
-  planModal.fields.filter(f => f.type !== 'plan_list')
-)
+const planModalField = computed(() => planModal.fields.find(f => f.type === 'plan_list') ?? null)
+const planModalOtherFields = computed(() => planModal.fields.filter(f => f.type !== 'plan_list'))
 
 const openPlanModal = async (card: TaskCard, fields?: TaskConfigField[]) => {
   planModal.appId = card.app_id
@@ -2023,6 +2303,8 @@ const previewFieldLabels: Record<string, string> = {
   account: t('edit.zzzodAccount'),
   password: t('edit.password'),
   bilibili_account_name: t('edit.zzzodBilibiliAccount'),
+  use_custom_win_title: t('edit.zzzodUseCustomWinTitle'),
+  custom_win_title: t('edit.zzzodCustomWinTitle'),
 }
 
 // 枚举值为后端/一条龙原生取值（驱动文案映射需保持原样），展示走词表
@@ -2067,11 +2349,7 @@ const formatPreviewValue = (key: string, raw: string): string => {
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
 const restoreApi = {
   list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(
-      scriptId,
-      userId.value,
-      target
-    ),
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId.value, target),
   preview: async (target: string, time: string) =>
     Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
       scriptId,
@@ -2086,6 +2364,14 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
 }
 
 const openRestoreModal = () => {
@@ -2106,50 +2392,55 @@ const handleRestored = (target: string) => {
   }
 }
 
-const handleRestoreView = (target: string, item: { time: string }) => {
-  const isMas = target === 'mas'
-  // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
-  // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
-  // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
-  // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
-  Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId: userId.value,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
-        // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+const handleRestoreView = (target: string, item: { time: string }) =>
+  new Promise<boolean>(resolve => {
+    const isMas = target === 'mas'
+    // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
+    // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
+    // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
+    // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId: userId.value,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
+          // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (isMas) {
+            // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
+            // （槽内容即恢复的备份，不注入基线、不回读字段）
+            await startSession(userId.value, true)
+          } else {
+            // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
+            // 与 MAS 侧完全无关
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-        restoreOpen.value = false
-        if (isMas) {
-          // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
-          // （槽内容即恢复的备份，不注入基线、不回读字段）
-          await startSession(userId.value, true)
-        } else {
-          // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
-          // 与 MAS 侧完全无关
-          await startSession(scriptId, true)
-        }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
-}
 
 // ══ 一条龙任务（OneDragon.AppList JSON 字段，打开页面即可开关）══
 // 卡片结构与操作封装见 useZzzOdTaskBoard（用户模式与直控模式共用）
@@ -2260,6 +2551,12 @@ const handleZzzodConfig = () => {
   }
   if (!userId.value) return
   void startSession(userId.value)
+}
+
+// 任务卡跳转：先关跳转提示再进入配置会话
+const jumpFromTaskCard = (appId: string) => {
+  jumpTipVisible.value[appId] = false
+  handleZzzodConfig()
 }
 
 const handleSaveZzzodConfig = () => {
@@ -2383,13 +2680,16 @@ onUnmounted(() => {
   flushAllTaskConfigSaves()
   // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
   // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
-  // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目
-  if (formData.Info.Mode === '直控') {
-    void ensureDirectBackup()
-  } else {
-    void ensureUserExitBackups()
-  }
-  void stopSession()
+  // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
+  // 先停会话再归档——并行会与回写撞车，归档到半程状态
+  void (async () => {
+    await stopSession()
+    if (formData.Info.Mode === '直控') {
+      await ensureDirectBackup()
+    } else {
+      await ensureUserExitBackups()
+    }
+  })()
 })
 </script>
 
@@ -2492,6 +2792,14 @@ onUnmounted(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
+}
+
+/* 启动参数折叠区：与可选区块同款边框卡片（总开关在所属卡片标题行） */
+.optional-section {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  scroll-margin-top: 32px;
 }
 
 /* 快速导入配置：母版下拉（左）+ 导入按钮（右）同排，外观对齐周围下拉框 */

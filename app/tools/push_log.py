@@ -24,7 +24,9 @@ PUSH_LOG_MODE_SCATTER = "逐条"
 PUSH_LOG_MODE_AGGREGATE = "汇总"
 
 # 节点状态行：可选「【账号】」前缀（多账号归属，见 ZZZ-OD） + 状态标记 + ": " + 节点名
-_PUSH_STATUS_RE = re.compile(r"^(?:【(?P<acc>[^】]+)】)?(✅ 成功|⏭ 跳过|❌ 失败): (.*)$")
+_PUSH_STATUS_RE = re.compile(
+    r"^(?:【(?P<acc>[^】]+)】)?(✅ 成功|⏭ 跳过|❌ 失败): (.*)$"
+)
 
 
 def _render_scatter(entries: list[tuple]) -> list[str]:

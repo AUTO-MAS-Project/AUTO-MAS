@@ -11,7 +11,7 @@
     <div class="update-container">
       <!-- 更新内容展示：按版本分区块，破坏性变更 / 本次亮点置顶 -->
       <div class="update-content">
-        <ChangelogView :data="updateData" />
+        <ChangelogView :data="updateData" :empty-text="t('comp.changelog.loadFailed')" />
       </div>
 
       <!-- 操作按钮 -->

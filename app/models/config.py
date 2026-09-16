@@ -51,6 +51,7 @@ from app.utils.constants import (
     STARRAIL_STAGE_BOOK,
     UTC4,
 )
+from app.utils.io import read_file
 
 from . import schema as schema_model
 from .ConfigBase import (
@@ -83,6 +84,163 @@ from .ConfigBase import (
 from .schema import TagItem
 
 logger = get_logger("配置模型")
+
+
+def infrast_plan_mode(plans: list[dict]) -> str:
+    """排班表的时段形态: period=全带时段, rotate=全不带, mixed=混合, empty=无班次。
+
+    前提: ``plans`` 元素为 dict(``infrast_format_problem`` 已先行校验)。
+    """
+
+    if not plans:
+        return "empty"
+    has_period = [bool(plan.get("period")) for plan in plans]
+    if all(has_period):
+        return "period"
+    if any(has_period):
+        return "mixed"
+    return "rotate"
+
+
+def _is_infrast_time(value: Any) -> bool:
+    """是否为 MAA 时间字段可解析的值(TimeOnly.Parse 接受 HH:MM[:SS[.fff]])。
+
+    不用 ``time.fromisoformat``: 它拒绝上游接受的 ``8:00``, 却接受上游拒绝的
+    ``2000`` / ``20-00``, 两边松紧正好相反。先 strip 对齐 .NET Parse 会跳过
+    首尾空白的行为, 避免把上游能解析的值误判为坏值。
+    """
+
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    for time_format in ("%H:%M", "%H:%M:%S", "%H:%M:%S.%f"):
+        try:
+            datetime.strptime(value, time_format)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
+def _is_infrast_period(period: Any) -> bool:
+    """period 是否为 MAA 可解析的时段表: 每段恰两个时间字符串(TimeOnly[])。
+
+    MAA 的 TimeOnlyArrayListConverter 只接受 ``[["HH:MM", "HH:MM"], ...]``,
+    段长不为 2 或时间无法解析都会抛异常, 连累整份排班在 MAA 侧反序列化失败
+    (自愈为 0 且班次表为空), 因此这里按上游契约严格校验。
+    """
+
+    if period is None:
+        return True
+    if not isinstance(period, list):
+        return False
+    return all(
+        isinstance(segment, list)
+        and len(segment) == 2
+        and all(_is_infrast_time(value) for value in segment)
+        for segment in period
+    )
+
+
+def infrast_plan_state(custom_infrast: str | None) -> str:
+    """排班表状态: period/rotate/mixed(时段不一致, 不可用)/empty(缺省或不可解析)。
+
+    与 ``infrast_format_problem`` 用同一把尺子: 时段形态不合法的表同样按
+    empty 处理, 否则运行期已判不可用, 下拉提示却还在宣称按时间段换班。
+    """
+
+    try:
+        data = json.loads(custom_infrast)
+    except (json.JSONDecodeError, TypeError):
+        return "empty"
+    plans = data.get("plans") if isinstance(data, dict) else None
+    if not isinstance(plans, list) or not all(isinstance(plan, dict) for plan in plans):
+        return "empty"
+    if not all(_is_infrast_period(plan.get("period")) for plan in plans):
+        return "empty"
+    return infrast_plan_mode(plans)
+
+
+def infrast_format_problem(infrast_data: Any) -> str | None:
+    """校验自定义基建排班表的格式不变量, 返回问题描述; None 表示格式可用。
+
+    不变量: plans 非空且元素为对象, 各班次要么全部带 period 要么全部不带,
+    且 period 是 MAA 可解析的时段表(每段恰两个时间字符串)。
+    混合格式在 MAA 侧会被静默按"有时段的班按时段命中, 其余永不命中"解释,
+    MAS 不猜测这种意图, 统一按无效处理。
+    """
+    if not isinstance(infrast_data, dict):
+        return "排班表不是有效的 JSON 对象"
+    plans = infrast_data.get("plans")
+    if not isinstance(plans, list) or not plans:
+        return "排班表没有任何班次"
+    if not all(isinstance(plan, dict) for plan in plans):
+        return "排班表的班次格式不正确"
+    if not all(_is_infrast_period(plan.get("period")) for plan in plans):
+        return "排班表的时间段格式不正确（每段应为起止两个 HH:MM 时间）"
+    if infrast_plan_mode(plans) == "mixed":
+        return "排班表时段配置不一致（部分班次有时间段、部分没有）"
+    return None
+
+
+def load_infrast_plans(custom_infrast: str | None) -> tuple[list[dict], str | None]:
+    """解析自定义基建排班 JSON, 返回 (plans, problem); problem 非 None 时 plans 为 []。"""
+    try:
+        data = json.loads(custom_infrast)
+    except (json.JSONDecodeError, TypeError):
+        return [], "排班表不是有效的 JSON"
+    problem = infrast_format_problem(data)
+    if problem is not None:
+        return [], problem
+    return data.get("plans", []), None
+
+
+def read_maa_config(path: Path) -> dict | None:
+    """读取 MAA gui.new.json 配置; 缺失或损坏返回 None(损坏另记警告)。"""
+
+    try:
+        data = read_file(path)
+    except (OSError, json.JSONDecodeError):
+        logger.opt(exception=True).warning(f"读取 MAA 配置失败: {path}")
+        return None
+    return data if isinstance(data, dict) and data else None
+
+
+def maa_scheme_name(config_dir: Path, data: dict) -> str:
+    """MAA 生效方案名, 与 AutoProxy.set_maa 的方案归一判定对称。
+
+    多方案配置下 set_maa 把 gui.json 的 Current 方案复制进 gui.new.json 的
+    Default 再注入, 故运行时读到的队列就是 Current 方案(该方案不在
+    gui.new.json 里时才是 Default)。读取与回写都要落在同一方案, 否则写进去的
+    班次会被方案归一覆盖。``data`` 为已读取的 gui.new.json 内容。
+    """
+
+    try:
+        gui = read_file(config_dir / "gui.json")
+    except (OSError, json.JSONDecodeError):
+        return "Default"
+    current = gui.get("Current") if isinstance(gui, dict) else None
+    configurations = data.get("Configurations")
+    if (
+        isinstance(current, str)
+        and current not in ("", "Default")
+        and isinstance(configurations, dict)
+        and isinstance(configurations.get(current), dict)
+    ):
+        return current
+    return "Default"
+
+
+def maa_task_queue(data: dict, scheme: str) -> Any:
+    """取 MAA 配置中指定方案的任务队列; 结构不符返回 None。"""
+
+    configurations = data.get("Configurations")
+    if not isinstance(configurations, dict):
+        return None
+    configuration = configurations.get(scheme)
+    if not isinstance(configuration, dict):
+        return None
+    return configuration.get("TaskQueue")
 
 
 def init_maaend_task_config(config) -> None:
@@ -709,7 +867,9 @@ class MaaUserConfig(ConfigBase):
         ## 配置来源（脚本/用户/直控）
         self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
             "Info",
@@ -777,10 +937,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_InfrastName = ConfigItem(
             "Info", "InfrastName", "-", VirtualConfigValidator(self.getInfrastName)
         )
-        ## 基建配置索引
-        self.Info_InfrastIndex = ConfigItem(
-            "Info", "InfrastIndex", "-", VirtualConfigValidator(self.getInfrastIndex)
-        )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -842,13 +998,11 @@ class MaaUserConfig(ConfigBase):
         )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
+        ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
+        self.Data_CultivateNotice = ConfigItem("Data", "CultivateNotice", "")
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
-        )
-        ## 基建配置索引数据
-        self.Data_InfrastIndex = ConfigItem(
-            "Data", "InfrastIndex", "0", legacy_group="Info"
         )
 
         ## Task ------------------------------------------------------------
@@ -905,6 +1059,30 @@ class MaaUserConfig(ConfigBase):
         self.Task_DepotMaintainPlans = ConfigItem(
             "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
         )
+        ## 是否干员养成
+        self.Task_IfCultivate = ConfigItem(
+            "Task", "IfCultivate", False, BoolValidator()
+        )
+        ## 干员养成目标
+        self.Task_CultivateTargets = ConfigItem(
+            "Task", "CultivateTargets", "[]", JSONValidator(list)
+        )
+        ## 活动期间是否跳过养成计划
+        self.Task_CultivateSkipDuringActivity = ConfigItem(
+            "Task", "CultivateSkipDuringActivity", False, BoolValidator()
+        )
+        ## 资源收集期是否跳过养成计划
+        self.Task_CultivateSkipDuringResourceCollection = ConfigItem(
+            "Task", "CultivateSkipDuringResourceCollection", False, BoolValidator()
+        )
+        ## 森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）
+        self.Task_CultivateSklandAccount = ConfigItem(
+            "Task", "CultivateSklandAccount", "", StringValidator()
+        )
+        ## 森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）
+        self.Task_CultivateSklandUid = ConfigItem(
+            "Task", "CultivateSklandUid", "", StringValidator()
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -951,28 +1129,6 @@ class MaaUserConfig(ConfigBase):
             return str(infrast_data["id"])
         else:
             return "未命名自定义基建"
-
-    def getInfrastIndex(self) -> str:
-
-        if self.get("Info", "InfrastMode") != "Custom":
-            return "-1"
-
-        infrast_data = json.loads(self.get("Data", "CustomInfrast"))
-
-        if len(infrast_data.get("plans", [])) == 0:
-            return "-1"
-
-        for i, plan in enumerate(infrast_data.get("plans", [])):
-            for t in plan.get("period", []):
-                if (
-                    datetime.strptime(t[0], "%H:%M").time()
-                    <= datetime.now().time()
-                    <= datetime.strptime(t[1], "%H:%M").time()
-                ):
-                    return str(i)
-
-        else:
-            return self.get("Data", "InfrastIndex") or "0"
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -1132,7 +1288,9 @@ class ConfigSourceValidator(OptionsValidator):
         legacy_map: 旧版来源名到新名的映射, 加载时自动归一。
     """
 
-    def __init__(self, modes: tuple[str, ...], legacy_map: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, modes: tuple[str, ...], legacy_map: dict[str, str] | None = None
+    ) -> None:
         super().__init__(list(modes))
         self.legacy_map = legacy_map or {}
 
@@ -1348,7 +1506,10 @@ class MaaEndUserConfig(ConfigBase):
                 }
             )
 
-            if sanity_task_type == "Essence" and task_key.get("AutoEssenceMenu") == "Target":
+            if (
+                sanity_task_type == "Essence"
+                and task_key.get("AutoEssenceMenu") == "Target"
+            ):
                 target_weapons = task_key.get("AutoEssenceTargetWeapons", [])
                 detail_key = "Target"
                 detail_label = (
@@ -1534,7 +1695,9 @@ class SrcUserConfig(ConfigBase):
         ## 配置来源（脚本/用户/直控）
         self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -1896,9 +2059,13 @@ class HSRUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -2089,10 +2256,9 @@ class HSRUserConfig(ConfigBase):
         is_dirty = await super().load(data)
 
         raw_control_mode = str(self.get("Control", "Mode") or "").strip().lower()
-        if (
-            raw_control_mode == "direct"
-            and str(self.get("Info", "Mode") or "").strip() in ("", "用户")
-        ):
+        if raw_control_mode == "direct" and str(
+            self.get("Info", "Mode") or ""
+        ).strip() in ("", "用户"):
             await self.set("Info", "Mode", "直控")
             is_dirty = True
 
@@ -2286,9 +2452,13 @@ class M9AUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2453,9 +2623,13 @@ class MaaFWUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 是否在任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2971,7 +3145,9 @@ class GeneralUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 兼容旧版用户独立脚本配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
@@ -3292,7 +3468,9 @@ class OkNteUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
@@ -3432,9 +3610,13 @@ class BetterGIUserConfig(ConfigBase):
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 兼容旧版用户独立一条龙配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
@@ -3480,7 +3662,9 @@ class BetterGIUserConfig(ConfigBase):
         ## 序号 0 的「通用队伍」不落本字段（直绑 PartyName / AutoBossStrategyName）。
         ## 运行期由 team_resolver 按 L1 精确匹配 + 随机选取，写入 Plan 步骤的
         ## masTeamOverride / masStrategyOverride（最高优先级，压过每周行与步骤级字段）。
-        self.OneDragon_Teams = ConfigItem("OneDragon", "Teams", "[]", JSONValidator(list))
+        self.OneDragon_Teams = ConfigItem(
+            "OneDragon", "Teams", "[]", JSONValidator(list)
+        )
         ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
         self.OneDragon_IfUseCustomGroups = ConfigItem(
             "OneDragon", "IfUseCustomGroups", False, BoolValidator()
@@ -3494,7 +3678,9 @@ class BetterGIUserConfig(ConfigBase):
         ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
         ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
         ## （按副本 TaskOrder 相对顺序，不重排）。
-        self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
+        self.OneDragon_Queue = ConfigItem(
+            "OneDragon", "Queue", "[]", JSONValidator(list)
+        )
         ## 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。
         ## 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段
         ## 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。
@@ -3552,6 +3738,11 @@ class BetterGIUserConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否统计掉落（BGI「奖励识别」）：默认开启；开启后运行前强制打开奖励识别，
+        ## 并把日志里的逐轮识别结果汇总进统计通知
+        self.Notify_IfSendDropStatistics = ConfigItem(
+            "Notify", "IfSendDropStatistics", True, BoolValidator()
+        )
         ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -3579,11 +3770,8 @@ class BetterGIUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append({"text": f"上次：{last_status}", "color": "green"})
 
-        # 用户独立配置：一条龙固定走「MAS独立配置」槽位（名称冻结），仅直控来源
-        # 显示脚本原生配置名。判据用配置来源 Mode 而非旧版 IfUseMasConfig——
-        # 后者是「用户独立配置」时代的遗留开关，直控+关闭时它仍为 True 会让标签
-        # 谎称 MAS 独立配置，与运行时「直控零写入」的实际行为矛盾。
-        if self.get("Info", "Mode") != "直控":
+        # 快速配置开启时运行 MAS 槽位，关闭时运行所选原生配置。
+        if self.get("Info", "IfQuickConfig"):
             config_name = "MAS独立配置"
         else:
             config_name = self.get("Task", "OneDragonConfigName") or "未设置"
@@ -3947,15 +4135,17 @@ class ZzzOdUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
         ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
         ## 此后配置会话与运行时注入都固定使用该槽
-        self.Info_SlotIdx = ConfigItem(
-            "Info", "SlotIdx", -1, RangeValidator(-1, 999)
-        )
+        self.Info_SlotIdx = ConfigItem("Info", "SlotIdx", -1, RangeValidator(-1, 999))
         ## 一条龙启动器选择（直控/用户两态通用）：
         ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
         ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
@@ -4015,6 +4205,37 @@ class ZzzOdUserConfig(ConfigBase):
         )
         ## 自定义窗口标题
         self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
+
+        ## 一条龙游戏启动参数（game.yml 六字段，照抄上游 BasicGameConfig
+        ## 默认值与取值；一条龙启动游戏时消费，总开关关闭则全部不生效）：
+        ## 启动参数总开关
+        self.Game_LaunchArgument = ConfigItem(
+            "Game", "LaunchArgument", False, BoolValidator()
+        )
+        ## 窗口尺寸（上游枚举原值）
+        self.Game_ScreenSize = ConfigItem(
+            "Game",
+            "ScreenSize",
+            "1920x1080",
+            OptionsValidator(["1920x1080", "2560x1440", "3840x2160"]),
+        )
+        ## 全屏模式（上游枚举原值为字符串：'0'=窗口化 '1'=全屏）
+        self.Game_FullScreen = ConfigItem(
+            "Game", "FullScreen", "0", OptionsValidator(["0", "1"])
+        )
+        ## 无边框窗口（一条龙拼参时转 -popupwindow）
+        self.Game_PopupWindow = ConfigItem("Game", "PopupWindow", False, BoolValidator())
+        ## DX12 启动（MAS 便捷开关：注入时把 -use-d3d12 合并进一条龙的
+        ## launch_argument_advance；上游无独立字段，勾选框是唯一权威）
+        self.Game_Dx12 = ConfigItem("Game", "Dx12", False, BoolValidator())
+        ## 显示器序号（上游枚举原值为字符串）
+        self.Game_Monitor = ConfigItem(
+            "Game", "Monitor", "1", OptionsValidator(["1", "2", "3", "4"])
+        )
+        ## 高级参数（原样透传给一条龙拼接，上游不解析，不做 shlex 校验）
+        self.Game_LaunchArgumentAdvance = ConfigItem(
+            "Game", "LaunchArgumentAdvance", "", StringValidator()
+        )
 
         ## OneDragon -------------------------------------------------------
         ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
@@ -4549,6 +4770,14 @@ class GlobalConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否启用中国移动新消息通知
+        self.Notify_IfCMCCNewMsg = ConfigItem(
+            "Notify", "IfCMCCNewMsg", False, BoolValidator()
+        )
+        ## 中国移动新消息 Channel API Key
+        self.Notify_CMCCNewMsgApiKey = ConfigItem(
+            "Notify", "CMCCNewMsgApiKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -4636,23 +4865,8 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig(
             [item["config_class"] for item in PLAN_BOOK.values()]
         )
-        ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig(
-            [
-                MaaConfig,
-                MaaEndConfig,
-                SrcConfig,
-                M9AConfig,
-                MaaFWConfig,
-                GeneralConfig,
-                OkwwConfig,
-                OkNteConfig,
-                HSRConfig,
-                BetterGIConfig,
-                ZzzOdConfig,
-                BAAHConfig,
-            ]
-        )
+        ## 脚本配置列表（顺序与 CLASS_BOOK 一致）
+        self.ScriptConfig = MultipleConfig(list(CLASS_BOOK.values()))
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
@@ -4767,9 +4981,13 @@ class BAAHUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem("Info", "Mode", "用户", UserDirectConfigModeValidator())
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
         ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
@@ -4890,8 +5108,8 @@ class BAAHConfig(ConfigBase):
 
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
+    "SRC": SrcConfig,
     "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
@@ -4902,7 +5120,7 @@ CLASS_BOOK = {
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
 }
-"""配置类映射表"""
+"""配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
 PLAN_BOOK = {
     "MaaPlanConfig": {

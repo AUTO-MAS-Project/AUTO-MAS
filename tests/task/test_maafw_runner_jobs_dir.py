@@ -9,7 +9,6 @@ AUTO-MAS-Runtime 监督器接管后把 `<app-root>/runtime/` 当自己的地盘�
 from pathlib import Path
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.task.MaaFW.tools.embedded.runner_task import _maafw_runner_jobs_dir
 
 

@@ -1,11 +1,6 @@
 <template>
   <div class="plan-editor">
-    <draggable
-      v-model="plans"
-      item-key="__key"
-      handle=".plan-drag-handle"
-      class="plan-list"
-    >
+    <draggable v-model="plans" item-key="__key" handle=".plan-drag-handle" class="plan-list">
       <template #item="{ element: plan, index }">
         <div class="plan-item">
           <span
@@ -16,11 +11,7 @@
             <span class="drag-dots" aria-hidden="true"></span>
           </span>
           <div class="plan-fields">
-            <div
-              v-for="col in visibleColumns(plan)"
-              :key="col.field"
-              class="plan-field"
-            >
+            <div v-for="col in visibleColumns(plan)" :key="col.field" class="plan-field">
               <span class="plan-field-label">{{ col.title }}</span>
               <a-select
                 v-if="isSelectColumn(col)"
@@ -168,10 +159,10 @@ const visibleColumns = (plan: PlanItem) =>
   props.columns.filter(col => {
     // 级联链上层无选项（如合成电池无类型、类型无关卡）时隐藏下层列
     if (col.type === 'cascade') {
-      if (col.field === 'mission_type_name' && !(categoryOf(plan)?.mission_types.length)) {
+      if (col.field === 'mission_type_name' && !categoryOf(plan)?.mission_types.length) {
         return false
       }
-      if (col.field === 'mission_name' && !(missionTypeOf(plan)?.missions.length)) {
+      if (col.field === 'mission_name' && !missionTypeOf(plan)?.missions.length) {
         return false
       }
     }
