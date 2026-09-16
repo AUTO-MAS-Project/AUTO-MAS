@@ -16,10 +16,13 @@
  * （runtimeInitializationService），这里只做编排，不重写一套。
  */
 
+import * as path from 'path'
+
 import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
 import { MirrorService } from './mirrorService'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
+import { syncRuntimeBinary } from './runtimeBinaryService'
 import {
   InitializationRunStage,
   InitializationStageStatus,
@@ -46,8 +49,15 @@ const logger = getLogger('Runtime更新')
  */
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
 
-/** 更新流程的进度段：首尾两段是更新独有的，中间七段与初始化界面完全一致。 */
-export type RuntimeUpdateStage = 'shutdown' | InitializationRunStage | 'restart'
+/**
+ * 更新流程的进度段：首尾三段是更新独有的，中间七段与初始化界面完全一致。
+ *
+ * `runtime` 段在源码换完之后、重新监督之前，负责把 `auto-mas-runtime.exe` 换成新本体钉扎
+ * 的那一版（见 `runtimeBinaryService`）。它单独占一段只是为了让界面在下载那十几兆时有话
+ * 可说；真正保证「Runtime 与本体一致」的是 `backendService` 启动前那次同步，两处调的是同
+ * 一个函数，先做过的那次会让后做的那次直接判定为已一致。
+ */
+export type RuntimeUpdateStage = 'shutdown' | InitializationRunStage | 'runtime' | 'restart'
 
 export interface RuntimeUpdateProgress {
   stage: RuntimeUpdateStage
@@ -163,6 +173,8 @@ interface UpdateSession {
   version: string
   runtimeService: RuntimeInitializationService
   backend: BackendUpdateController
+  /** 本次生命周期的 Runtime 定位信息，`runtime` 段要用它找 exe 与受管源码根。 */
+  launchConfig: RuntimeLaunchConfig
   cancelRequested: boolean
   /** 应用正在退出：取消后不再把旧后端拉回来，交给退出清场统一处理。 */
   abortedForShutdown: boolean
@@ -239,6 +251,8 @@ const defaultRuntimeServiceFactory = (
 
 const STOP_MESSAGE = '正在停止当前后端'
 const STOP_DONE_MESSAGE = '后端已停止'
+const RUNTIME_SYNC_MESSAGE = '正在核对 Runtime 版本'
+const RUNTIME_SYNC_CURRENT_MESSAGE = 'Runtime 已是本版本要求的版本'
 const RESTART_MESSAGE = '正在重新启动后端'
 const RESTART_DONE_MESSAGE = '后端已重新启动'
 const RUNTIME_UPDATE_UNSUPPORTED_CODE = 'RUNTIME_UPDATE_UNSUPPORTED'
@@ -292,6 +306,7 @@ export async function updateBackendViaRuntime(
     version,
     runtimeService,
     backend: deps.backend,
+    launchConfig,
     cancelRequested: false,
     abortedForShutdown: false,
     inFlight: null,
@@ -338,7 +353,10 @@ export async function updateBackendViaRuntime(
     return buildBootstrapFailure(bootstrapOutcome, current.cancelRequested)
   }
 
-  // ---------- 3. 重新监督 ----------
+  // ---------- 3. Runtime 随本体更新 ----------
+  await alignRuntimeBinary(current, onProgress)
+
+  // ---------- 4. 重新监督 ----------
   return restartBackend(current, onProgress)
 }
 
@@ -377,6 +395,7 @@ export async function retryBackendUpdate(
     return buildBootstrapFailure(outcome, current.cancelRequested)
   }
 
+  await alignRuntimeBinary(current, onProgress)
   return restartBackend(current, onProgress)
 }
 
@@ -467,6 +486,58 @@ export function requiresSupport(outcome: {
   if (outcome.retryable === false) return true
   if (outcome.code === 'INTERNAL_ERROR') return true
   return outcome.remediation?.includes('contact-support') ?? false
+}
+
+/**
+ * `runtime` 段：把 `auto-mas-runtime.exe` 换成新源码钉扎的那一版。
+ *
+ * 放在重启之前，是因为这时旧监督进程已经停了、新的还没起来，是唯一能安全替换 exe 的窗口。
+ *
+ * **只在源码真的换成新版本之后调用**，不放进 `restartBackend()`：取消流程也要靠它把旧后端
+ * 拉回来，而取消时源码一动没动，没有任何要对齐的东西——在那条路上开一个用户取消不掉的
+ * 下载最没道理。真有不一致，下次启动时 `backendService` 那次同步会补上。
+ *
+ * **永远以「完成」收段，即便没换成。** 拿不到新 Runtime 时旧的仍然能监督后端，本体也确实
+ * 已经更新到位了，把整次更新判失败反而更糟；不一致会留到下一次启动时由 `backendService`
+ * 再试一遍，网络恢复后自动补上。这里只把原因写进段消息并记一条警告。
+ */
+async function alignRuntimeBinary(
+  current: UpdateSession,
+  onProgress: (update: RuntimeUpdateProgress) => void
+): Promise<void> {
+  const config = current.launchConfig
+  // development 不碰开发者的检出，找不到 exe 时启动本来就会失败，两种都没有可换的对象。
+  if (config.mode !== 'managed' || !config.runtimePath) return
+
+  onProgress({ stage: 'runtime', status: 'started', progress: 0, message: RUNTIME_SYNC_MESSAGE })
+
+  let message = RUNTIME_SYNC_CURRENT_MESSAGE
+  try {
+    const outcome = await syncRuntimeBinary({
+      runtimePath: config.runtimePath,
+      appRoot: config.appRoot,
+      sourceRoot: path.join(config.appRoot, 'repo'),
+      onProgress: progress =>
+        onProgress({
+          stage: 'runtime',
+          status: 'running',
+          progress: progress.progress,
+          message: progress.message,
+        }),
+    })
+    if (outcome.status === 'upgraded') {
+      message = `Runtime 已更新到 ${outcome.pin?.version}`
+      logger.info(message)
+    } else if (outcome.status === 'failed') {
+      message = `未能获取 Runtime ${outcome.pin?.version}，继续使用现有版本`
+      logger.warn(`${message}：${outcome.error}`)
+    }
+  } catch (error) {
+    message = '核对 Runtime 版本时出错，继续使用现有版本'
+    logger.warn(`${message}：${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  onProgress({ stage: 'runtime', status: 'completed', progress: 100, message })
 }
 
 async function restartBackend(

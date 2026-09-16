@@ -27,6 +27,7 @@ import {
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
 } from './runtime'
+import { syncRuntimeBinary } from './runtimeBinaryService'
 import { resolveRuntimeTargetVersion } from './runtimeInitializationService'
 
 import { getLogger } from './logger'
@@ -385,6 +386,10 @@ export class BackendService {
         ])
         if (!prepared.success) return this.buildRuntimeStartFailure(prepared, [], [])
         this.runtimeUpdateReady = null
+        // 源码已经是目标版本了，Runtime 自己也得跟上：此刻旧监督进程已退出、新的还没起来，
+        // 是唯一能安全替换 exe 的窗口。替换的是同一个路径，下面 supervise 用的还是这个
+        // client，spawn 到的已经是新二进制。
+        await this.alignRuntimeBinaryWithRepo(runtimePath, config.appRoot)
       } catch (error) {
         return this.buildRuntimeStartFailure(error, [], [])
       }
@@ -1200,6 +1205,32 @@ export class BackendService {
     } finally {
       this.runtimeRuns.delete(operation)
       if (control) this.runtimeCommands.delete(control)
+    }
+  }
+
+  /**
+   * 让 Runtime 可执行文件与受管源码的钉扎一致。
+   *
+   * 失败只记警告不阻断启动：旧 Runtime 仍然能监督后端，而把用户卡在「更新完就打不开」
+   * 比多跑一版旧 Runtime 糟得多。真正需要新 Runtime 的功能会在自己那条路上报错。
+   */
+  private async alignRuntimeBinaryWithRepo(runtimePath: string, appRoot: string): Promise<void> {
+    // 正在关闭时不要再起一个十几兆的下载：它不受 cancelRuntimePreparations 管，只会被
+    // 进程退出打断，白占带宽还留下半截临时文件。
+    if (this.runtimeStopping) return
+
+    try {
+      const outcome = await syncRuntimeBinary({
+        runtimePath,
+        appRoot,
+        sourceRoot: path.join(appRoot, 'repo'),
+      })
+      if (outcome.status === 'failed') {
+        logger.warn(`Runtime 未能随本体更新到 ${outcome.pin?.version}，继续用现有版本启动`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`同步 Runtime 可执行文件时出错，继续用现有版本启动: ${errorMsg}`)
     }
   }
 

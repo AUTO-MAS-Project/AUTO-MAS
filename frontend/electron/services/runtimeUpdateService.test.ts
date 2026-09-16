@@ -1,3 +1,4 @@
+import * as path from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -15,8 +16,18 @@ import {
 } from './runtimeUpdateService'
 import { RuntimeInitializationService } from './runtimeInitializationService'
 import type { RuntimeEvent, RuntimeLaunchConfig, RuntimeRunOptions } from './runtime'
+import type { RuntimeBinarySyncResult } from './runtimeBinaryService'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
+// Runtime 二进制同步走真实文件系统，这里只关心它被怎么调用、结果怎么影响编排。
+const syncCalls: { runtimePath: string; sourceRoot: string }[] = []
+let syncOutcome: RuntimeBinarySyncResult = { status: 'unpinned' }
+vi.mock('./runtimeBinaryService', () => ({
+  syncRuntimeBinary: (options: { runtimePath: string; sourceRoot: string }) => {
+    syncCalls.push({ runtimePath: options.runtimePath, sourceRoot: options.sourceRoot })
+    return Promise.resolve(syncOutcome)
+  },
+}))
 vi.mock('./logger', () => ({
   getLogger: () => ({
     error: vi.fn(),
@@ -253,6 +264,8 @@ const collect = (update: RuntimeUpdateProgress): void => {
 beforeEach(() => {
   callLog = []
   progressUpdates.length = 0
+  syncCalls.length = 0
+  syncOutcome = { status: 'unpinned' }
   FakeRuntimeClient.scripts = [[helloEvent, okResult()]]
   FakeRuntimeClient.index = 0
   FakeRuntimeClient.gate = null
@@ -851,5 +864,96 @@ describe('模式分流', () => {
 
     expect(outcome.unsupported).toBe(true)
     expect(callLog).toEqual([])
+  })
+})
+
+// ==================== Runtime 随本体更新 ====================
+
+describe('Runtime 随本体更新', () => {
+  it('在源码换完之后、重新监督之前核对 Runtime，并按受管源码根去找钉扎', async () => {
+    syncOutcome = { status: 'upgraded', pin: { version: 'v0.1.5' } }
+
+    const outcome = await updateBackendViaRuntime(
+      TARGET,
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(outcome.success).toBe(true)
+    expect(syncCalls).toEqual([
+      { runtimePath: RUNTIME_PATH, sourceRoot: path.join(APP_ROOT, 'repo') },
+    ])
+
+    const stages = progressUpdates.map(update => update.stage)
+    expect(stages.indexOf('runtime')).toBeGreaterThan(stages.lastIndexOf('repository'))
+    expect(stages.indexOf('runtime')).toBeLessThan(stages.indexOf('restart'))
+    expect(progressUpdates).toContainEqual({
+      stage: 'runtime',
+      status: 'completed',
+      progress: 100,
+      message: 'Runtime 已更新到 v0.1.5',
+    })
+  })
+
+  it('拿不到新 Runtime 不影响本体更新成功，段照样收口', async () => {
+    syncOutcome = {
+      status: 'failed',
+      pin: { version: 'v0.1.5' },
+      error: '全部下载源均失败',
+      code: 'RUNTIME_BINARY_DOWNLOAD_FAILED',
+    }
+
+    const outcome = await updateBackendViaRuntime(
+      TARGET,
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(outcome.success).toBe(true)
+    expect(callLog).toEqual(['stopBackend', 'run:bootstrap --version v5.6.0', 'startBackend'])
+    expect(progressUpdates).toContainEqual({
+      stage: 'runtime',
+      status: 'completed',
+      progress: 100,
+      message: '未能获取 Runtime v0.1.5，继续使用现有版本',
+    })
+  })
+
+  it('取消更新时不核对 Runtime，也不开下载', async () => {
+    FakeRuntimeClient.scripts = [cancelledScript()]
+    syncOutcome = { status: 'upgraded', pin: { version: 'v0.1.5' } }
+
+    const outcome = await updateBackendViaRuntime(
+      TARGET,
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(outcome.cancelled).toBe(true)
+    expect(syncCalls).toHaveLength(0)
+    expect(progressUpdates.map(update => update.stage)).not.toContain('runtime')
+  })
+
+  it('单步重试成功后同样会核对 Runtime', async () => {
+    FakeRuntimeClient.scripts = [
+      [
+        helloEvent,
+        ...failResult({
+          stage: 'dependencies.sync',
+          code: 'DEPENDENCY_SYNC_FAILED',
+          message: '依赖同步失败',
+          remediation: ['retry'],
+        }),
+      ],
+      [helloEvent, okResult('dependencies.sync')],
+    ]
+
+    await updateBackendViaRuntime(TARGET, collect, createDeps(createBackend(), managedConfig()))
+    expect(syncCalls).toHaveLength(0)
+
+    const retried = await retryBackendUpdate('dependencies-sync', collect)
+
+    expect(retried.success).toBe(true)
+    expect(syncCalls).toHaveLength(1)
   })
 })

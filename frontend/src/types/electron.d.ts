@@ -65,6 +65,7 @@ export type RuntimeUpdateStage =
   | 'repository'
   | 'dependency'
   | 'backend'
+  | 'runtime'
   | 'restart'
 
 export interface RuntimeUpdateProgress {

@@ -87,6 +87,23 @@ export {
   toRuntimeVersion,
 } from './runtimeInitializationService'
 
+// Runtime 可执行文件随本体钉扎更新
+export {
+  RUNTIME_BINARY_DOWNLOAD_FAILED,
+  RUNTIME_BINARY_REPLACE_FAILED,
+  RUNTIME_PIN_RELATIVE_PATH,
+  RuntimeBinaryPin,
+  RuntimeBinarySource,
+  RuntimeBinarySyncOptions,
+  RuntimeBinarySyncProgress,
+  RuntimeBinarySyncResult,
+  RuntimeBinarySyncStatus,
+  buildRuntimeBinarySources,
+  hashFileSha256,
+  readRuntimeBinaryPin,
+  syncRuntimeBinary,
+} from './runtimeBinaryService'
+
 // Runtime 后端更新链路（停机 → bootstrap → 重新监督）
 export {
   BackendUpdateController,

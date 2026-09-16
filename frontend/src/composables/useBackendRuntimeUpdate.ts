@@ -30,7 +30,7 @@ const logger = window.electronAPI.getLogger('后端更新')
  * 进度条的段序。
  *
  * 中间六段就是初始化界面那六段（`mirror` / `pip` / `git` 在 Runtime 链路没有对应物，
- * 主进程进 bootstrap 时立刻置完成），首尾两段是更新独有的停机与重启。
+ * 主进程进 bootstrap 时立刻置完成），首尾三段是更新独有的停机、Runtime 随本体更新与重启。
  */
 const UPDATE_STAGE_ORDER: readonly RuntimeUpdateStage[] = [
   'shutdown',
@@ -40,6 +40,7 @@ const UPDATE_STAGE_ORDER: readonly RuntimeUpdateStage[] = [
   'git',
   'repository',
   'dependency',
+  'runtime',
   'restart',
 ]
 
