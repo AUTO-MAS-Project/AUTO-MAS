@@ -3226,6 +3226,21 @@ export class Service {
         });
     }
     /**
+     * 立即拆除虚拟显示器
+     * 用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+     *
+     * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+     * 的话下一轮会重新挂上——要彻底停用得关开关。
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/detach',
+        });
+    }
+    /**
      * 查询虚拟显示驱动状态
      * 只查驱动装没装、能不能调，不改变桌面拓扑。
      *

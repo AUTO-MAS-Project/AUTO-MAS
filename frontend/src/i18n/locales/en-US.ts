@@ -3483,11 +3483,11 @@ export default {
     display: {
       section: 'Virtual display',
       intro:
-        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS keeps watching the desktop: it attaches a virtual display whenever there is no real display output at all, and removes it as soon as a real monitor comes back, even while a run is in progress: a person sitting at the machine outranks any run. {driverLink}; MAS does not ship it.',
+        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS keeps watching the desktop: it attaches a virtual display whenever there is no real display output at all. When a real monitor comes back it is removed right away if nothing is running; while a run is in progress it stays — removing it moves windows onto the returning monitor and breaks PC game runs — and MAS instead asks you with a prompt in the bottom-right corner of the returning monitor, then removes it automatically once the run finishes. {driverLink}; MAS does not ship it.',
       introDriverLink: 'You must install the Parsec virtual display driver yourself',
       enable: 'Enable virtual display',
       enableTip:
-        'Monitored continuously while MAS runs: attached when no real display output is detected, removed once a real monitor comes back (waiting for the current run to finish if one is in progress). Nothing is added while a monitor works normally. If the program is force-killed, the leftover display is cleaned up on the next start.',
+        'Monitored continuously while MAS runs: attached when no real display output is detected, removed once a real monitor comes back (if a run is in progress it stays and MAS asks you on the returning monitor instead; it is removed once the run finishes). Nothing is added while a monitor works normally. If the program is force-killed, the leftover display is cleaned up on the next start.',
       mode: 'Refresh rate',
       modeTip:
         'The resolution is fixed at 1920x1080 — it is the only one Windows shows at 100%, so the game window never goes through DPI scaling. Higher resolutions get scaled up automatically, which brings the problem back. A virtual display only runs scripts, so a high refresh rate buys nothing.',
@@ -3497,6 +3497,23 @@ export default {
       checkTip:
         'Checks whether the driver is installed, whether it can be driven, and whether a display can actually be attached. The last step briefly changes your monitor layout.',
       checkAction: 'Run check',
+      detach: 'Remove now',
+      detachTip:
+        'Manually removes the virtual display MAS is holding right now, whether or not a run is in progress — during a PC game run this moves the game window and the run may fail. If there is still no real display output afterwards, the next check attaches it again; turn off the switch above to stop it entirely.',
+      detachAction: 'Remove virtual display',
+      detachDone: 'Virtual display removed',
+      detachNothing: 'No virtual display is attached right now',
+      detachFailed: 'Remove request failed',
+      holdingNow: 'Currently attached: {holding}',
+      holdingNone: 'No virtual display attached',
+      prompt: {
+        title: 'Real display is back',
+        body: 'Monitor {devices} has been reconnected, but a run is in progress, so MAS has kept the virtual display for now. Removing it moves windows onto the reconnected monitor and may resize them, which breaks PC game runs. If you keep it, it is removed automatically once this run finishes.',
+        keep: 'Keep it, remove after the run',
+        detach: 'Remove now',
+        detaching: 'Removing…',
+        detachFailed: 'Remove failed: {reason}',
+      },
       checkFailed: 'Check request failed',
       checkPassed: 'Check passed',
       checkIssue: 'Check did not pass',

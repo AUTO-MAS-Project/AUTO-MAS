@@ -22,11 +22,13 @@
 - **只拆自己挂的那块。** 判「真实显示器回来了」用的是 `real_display_devices()` 里除掉
   自己设备名之后还剩不剩东西，不是「有没有真实输出」——我们自己挂的那块本身就算真实
   输出，拿它当判据会永远认为显示器已经回来。
-- **真实显示器一回来就拆，任务在不在跑都一样。** 早先这一档在任务期间推迟到任务结束，
-  怕拆屏把正按坐标点的脚本打掉。实际撞上的是另一面：多用户串行队列一跑近两小时，用户
-  早上开屏几乎必然落在任务里，而虚拟屏是主显示器，回来的真实屏只是第二块——任务栏和
-  所有窗口都留在看不见的那块上，推迟又不写日志，用户只能重启。人坐到机器前比任何一轮
-  任务都重要，被打掉的那轮还有重试兜底。
+- **真实显示器回来时：没任务在跑就拆，有任务在跑不拆、改为问用户。** 拆屏会让 Windows
+  把窗口挪到回来的那块屏上、尺寸也可能跟着变，PC 端游戏正按坐标点的脚本会当场被打掉，
+  所以任务期间默认不拆（#802 曾改成一律立即拆，被这个原因撤回）。但也不能像更早那样
+  静默推迟：虚拟屏是主显示器，回来的真实屏只是第二块，任务栏和主窗口都留在看不见的那
+  块上，用户面前一片空白、什么提示都没有，只能重启。所以任务期间改为在**回来的那块屏**
+  右下角弹窗，说明拆了会打掉 PC 端游戏任务，让用户自己选：现在拆，或者留到任务结束自动
+  拆；设置页另给一个「立即拆除」按钮兜底。
 - **判据要连续成立才动手。** 拓扑变更本身带中间态（切模式、驱动重载、KVM 切换、睡眠
   恢复），单次采样为真就插拔会来回抖，而每次插拔都会移动用户已经打开的窗口。
 - **用轮询而不是 `WM_DISPLAYCHANGE`。** 收窗口消息要自己开 message-only 窗口和消息泵，
@@ -73,6 +75,7 @@ FAILURE_BACKOFF = 300.0
 IDLE = "idle"
 ATTACH = "attach"  # 没有真实输出，挂一块
 DETACH = "detach"  # 真实显示器回来了，拆掉自己那块
+PROMPT = "prompt"  # 真实显示器回来了但有任务在跑，不拆，问用户
 RELEASE = "release"  # 开关被关掉，拆掉自己那块
 LOST = "lost"  # 自己那块屏已经不在桌面上，就地认账
 
@@ -183,6 +186,50 @@ def _real_devices() -> set[str] | None:
         return None
 
 
+def _task_running() -> bool:
+    """有没有代理任务正在跑。
+
+    只用来决定「拆」还是「问」。查不出来时按「有」处理：多问一次只是桌面上多个弹窗，
+    抽掉正在跑的任务脚下那块则会直接打掉整轮。**import 也要放在 try 里**，否则这句
+    承诺在导入失败时不成立。
+
+    `ScriptConfig` 不算：那是 MAS 替用户打开脚本自己的配置界面，人就坐在机器前，窗口
+    可以开着不关。把它算进来，用户忘了关设置窗口就等于永远只问不拆。
+    """
+
+    try:
+        from app.core import TaskManager
+
+        return any(
+            info.mode != "ScriptConfig" for info in TaskManager.task_info.values()
+        )
+    except Exception as exc:
+        _warn_once(f"查询任务状态失败，按有任务在跑处理: {exc}")
+        return True
+
+
+def _monitor_work_rect(devices: set[str]):
+    """回来的那几块真实屏里任选一块，取它的工作区（物理像素）。读不到返回 None。
+
+    弹窗必须落在用户看得见的那块屏上，而前端只认桌面坐标、认不出设备名，所以由这里把
+    矩形交过去。
+    """
+
+    from app.models.schema import WSDisplayMonitorRectData
+    from app.utils.platform.display import list_monitors
+
+    try:
+        for monitor in list_monitors():
+            if monitor.device in devices:
+                left, top, right, bottom = monitor.work
+                return WSDisplayMonitorRectData(
+                    left=left, top=top, right=right, bottom=bottom
+                )
+    except Exception as exc:
+        _warn_once(f"读取显示器工作区失败，弹窗位置交给前端自行决定: {exc}")
+    return None
+
+
 def _desktop_has_room() -> bool:
     """插屏之后用：新挂的屏放不放得下目标窗口。"""
 
@@ -227,6 +274,7 @@ def decide(
     holding: str | None,
     has_real_output: bool,
     real_devices: set[str],
+    task_running: bool = False,
 ) -> tuple[str, str]:
     """由一次观测决定下一步动作，返回 (动作, 原因)。
 
@@ -247,6 +295,10 @@ def decide(
     if holding not in real_devices:
         return LOST, "自己挂的虚拟显示器已不在桌面上"
     if real_devices - {holding}:
+        if task_running:
+            # 拆屏会让 Windows 把窗口挪到回来的那块屏上、尺寸也可能跟着变，而脚本正按坐标
+            # 点——这一下足以打掉整轮 PC 端游戏任务。不拆，交给用户决定。
+            return PROMPT, "真实显示输出已恢复，但有任务正在运行"
         return DETACH, "真实显示输出已恢复"
     return IDLE, ""
 
@@ -266,6 +318,10 @@ class _DesktopGuard:
         self._pending_ticks = 0
         self._quiet_until = 0.0
         self._last_failure = ""
+        # 已经问过用户的那批「回来的真实屏」。同一批只问一次；换了一批（拔掉再插回来）
+        # 再问。主连接没就绪时发布器会把消息丢掉，所以还要记住到底送没送到。
+        self._prompted: frozenset[str] | None = None
+        self._prompt_delivered = False
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -348,6 +404,7 @@ class _DesktopGuard:
 
         has_real = True
         real: set[str] = set()
+        task_running = False
         # 开关关着时一次显示查询都不做：没挂就什么都不用判（最常见的一档），挂着就直接
         # 走 RELEASE——那是用户明示的意图，不能让一次枚举失败把它挡在后面。
         if enabled:
@@ -360,16 +417,21 @@ class _DesktopGuard:
                     self._pending, self._pending_ticks = (IDLE, ""), 0
                     return
                 real = devices
+                task_running = _task_running()
 
         action, reason = decide(
             enabled=enabled,
             holding=holding,
             has_real_output=has_real,
             real_devices=real,
+            task_running=task_running,
         )
 
         if action == IDLE:
             self._pending, self._pending_ticks = (IDLE, ""), 0
+            # 挂着、也没有别的真实输出：要么显示器又被拔掉了，要么刚才那次枚举是中间态。
+            # 问用户的前提已经不成立，把弹窗收回去。
+            await self._close_prompt()
             return
         if action == RELEASE:
             # 用户明示的意图，不等防抖。
@@ -392,6 +454,9 @@ class _DesktopGuard:
             logger.warning(f"{reason}，已就地释放（可能是驱动重载或睡眠恢复）")
             await self._teardown(reason)
             return
+        if action == PROMPT:
+            await self._prompt(real - {holding})
+            return
         if action == DETACH:
             # 记下是哪块屏回来的：拆屏会把用户开着的窗口全部挪过去，事后排查「窗口怎么跑到
             # 那边去了」全靠这一行；拆完再报一次桌面现状，拆前的描述里还带着自己那块。
@@ -400,6 +465,71 @@ class _DesktopGuard:
             logger.info(f"当前桌面: {await asyncio.to_thread(_describe)}")
             return
         await self._attach(reason)
+
+    async def _prompt(self, returned: set[str]) -> None:
+        """真实显示器回来了但有任务在跑：不拆，在回来的那块屏上问用户。
+
+        同一批屏只问一次。主连接没就绪时发布器会把消息丢掉，那就下一轮再发、直到送达
+        为止——这个弹窗是用户此刻唯一看得见的东西，漏掉等于回到静默推迟的老样子。
+        """
+
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSDisplayDetachPromptData
+
+        key = frozenset(returned)
+        if self._prompted == key and self._prompt_delivered:
+            return
+        if self._prompted != key:
+            self._prompted, self._prompt_delivered = key, False
+            logger.info(
+                f"真实显示输出已恢复（{', '.join(sorted(returned))}），但有任务正在运行，"
+                "不拆虚拟显示器，改为在回来的那块屏上询问用户"
+            )
+
+        rect = await asyncio.to_thread(_monitor_work_rect, returned)
+        self._prompt_delivered = await Publisher.send(
+            id=protocol.ID_MAIN,
+            type=protocol.DISPLAY_DETACH_PROMPT,
+            data=WSDisplayDetachPromptData(returned=sorted(returned), monitor=rect),
+        )
+        if not self._prompt_delivered:
+            logger.debug("询问弹窗未能送达前端，下一轮巡检重发")
+
+    async def _close_prompt(self) -> None:
+        """提示的前提不成立了（屏又没了、已经拆掉、开关关了），让前端把弹窗收掉。"""
+
+        if self._prompted is None:
+            return
+        delivered = self._prompt_delivered
+        self._prompted, self._prompt_delivered = None, False
+        if not delivered:
+            return
+        from app.core.ws import Publisher, protocol
+
+        await Publisher.send(
+            id=protocol.ID_MAIN, type=protocol.DISPLAY_DETACH_PROMPT_CLOSED
+        )
+
+    async def detach_now(self, reason: str) -> bool:
+        """用户明示要拆：弹窗上的「关闭虚拟显示器」和设置页的「立即拆除」都走这里。
+
+        任务在不在跑都照办——用户看过提示还是要拆，那就是他的决定。拆完之后巡检照常：
+        桌面上还有真实输出就什么都不做；一块都没有（在无头机上按了这个按钮）会在下一轮
+        把屏重新挂上，那是开关的语义，要彻底停用得关开关。
+
+        返回有没有真的拆掉一块屏。
+        """
+
+        if not IS_WINDOWS:
+            return False
+        async with self._lock:
+            if self._display is None:
+                await self._close_prompt()
+                return False
+            self._pending, self._pending_ticks = (IDLE, ""), 0
+            await self._teardown(reason)
+            logger.info(f"当前桌面: {await asyncio.to_thread(_describe)}")
+            return True
 
     async def _attach(self, reason: str) -> None:
         if self._attaching is not None and not self._attaching.done():
@@ -478,6 +608,8 @@ class _DesktopGuard:
         logger.info(f"已挂载虚拟显示器: {await asyncio.to_thread(_describe)}")
 
     async def _teardown(self, reason: str) -> None:
+        # 屏都要没了，问用户拆不拆的弹窗自然作废，先收掉。
+        await self._close_prompt()
         display, self._display = self._display, None
         if display is None:
             return
@@ -563,6 +695,7 @@ async def probe_virtual_display_driver():
     return VirtualDisplayCheckOut(
         message="驱动可用",
         driverVersion=result.version,
+        holding=DesktopGuard.describe_holding(),
         results=[
             item("installed", True, "驱动已安装"),
             item("openable", True, f"握手成功，驱动版本 0.{result.version}"),

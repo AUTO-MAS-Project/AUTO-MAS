@@ -591,6 +591,7 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
@@ -956,6 +957,7 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
     screen.removeListener('display-removed', handleDisplayConfigurationChanged)
@@ -1114,6 +1116,166 @@ function createLogWindow(file?: LogWindowFile) {
     logWindow = null
   })
 }
+
+// ==================== 虚拟显示器询问弹窗 ====================
+// 真实显示器回来了但有任务在跑，后端不拆虚拟屏、改为问用户。此时虚拟屏是主显示器，
+// 主窗口和任务栏都留在看不见的那块上，所以这个弹窗必须另开窗口、放到回来的那块屏
+// 右下角，而不是画在主窗口里。它只是一个壳：数据由主窗口渲染进程从后端消息转来，
+// 拆不拆由弹窗自己调后端接口。
+
+interface VirtualDisplayPromptPayload {
+  /** 回来的真实显示设备名 */
+  returned: string[]
+  /** 回来那块屏的工作区，物理像素；后端读不到时为空 */
+  monitor?: { left: number; top: number; right: number; bottom: number } | null
+}
+
+let virtualDisplayPromptPayload: VirtualDisplayPromptPayload | null = null
+
+const VDD_PROMPT_WIDTH = 460
+const VDD_PROMPT_HEIGHT = 240
+const VDD_PROMPT_MARGIN = 16
+
+function isVirtualDisplayPromptPayload(value: unknown): value is VirtualDisplayPromptPayload {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<VirtualDisplayPromptPayload>
+  if (!Array.isArray(candidate.returned)) return false
+  const monitor = candidate.monitor
+  if (monitor == null) return true
+  return (
+    typeof monitor === 'object' &&
+    ['left', 'top', 'right', 'bottom'].every(
+      key => typeof (monitor as Record<string, unknown>)[key] === 'number'
+    )
+  )
+}
+
+/**
+ * 弹窗该落在哪块屏。
+ * 后端给的矩形是物理像素，Electron 的屏幕坐标是 DIP，Windows 上要先换算再找屏；
+ * 没给矩形就挑一块非主显示器——虚拟屏是在无输出时挂上的，此刻一定是主显示器。
+ */
+function resolveVirtualDisplayPromptDisplay(payload: VirtualDisplayPromptPayload): Display {
+  const rect = payload.monitor
+  if (rect) {
+    const physicalCenter = {
+      x: Math.round((rect.left + rect.right) / 2),
+      y: Math.round((rect.top + rect.bottom) / 2),
+    }
+    const dipCenter =
+      process.platform === 'win32' && typeof screen.screenToDipPoint === 'function'
+        ? screen.screenToDipPoint(physicalCenter)
+        : physicalCenter
+    return screen.getDisplayNearestPoint(dipCenter)
+  }
+  const primary = screen.getPrimaryDisplay()
+  return screen.getAllDisplays().find(display => display.id !== primary.id) ?? primary
+}
+
+function virtualDisplayPromptBounds(display: Display): Rectangle {
+  const area = display.workArea
+  return {
+    x: area.x + area.width - VDD_PROMPT_WIDTH - VDD_PROMPT_MARGIN,
+    y: area.y + area.height - VDD_PROMPT_HEIGHT - VDD_PROMPT_MARGIN,
+    width: VDD_PROMPT_WIDTH,
+    height: VDD_PROMPT_HEIGHT,
+  }
+}
+
+function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
+  virtualDisplayPromptPayload = payload
+  const display = resolveVirtualDisplayPromptDisplay(payload)
+  const bounds = virtualDisplayPromptBounds(display)
+
+  if (virtualDisplayPromptWindow && !virtualDisplayPromptWindow.isDestroyed()) {
+    virtualDisplayPromptWindow.setBounds(bounds)
+    virtualDisplayPromptWindow.webContents.send('vdd-prompt:data', payload)
+    virtualDisplayPromptWindow.showInactive()
+    return
+  }
+
+  logger.info(
+    `创建虚拟显示器询问弹窗：回来的显示器 ${payload.returned.join(', ')}，落在显示器 ${display.id} 的 ${JSON.stringify(bounds)}`
+  )
+
+  const win = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    title: '虚拟显示器 - AUTO-MAS',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    autoHideMenuBar: true,
+  })
+  virtualDisplayPromptWindow = win
+  win.setMenuBarVisibility(false)
+
+  const hash = '/vdd-prompt'
+  const devServer = process.env.VITE_DEV_SERVER_URL
+  if (devServer) {
+    win.loadURL(`${devServer}#${hash}`)
+  } else {
+    win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'), { hash })
+  }
+
+  win.once('ready-to-show', () => {
+    if (win.isDestroyed()) return
+    // 创建时给的 bounds 可能被 DPI 折算挪动，显示前再摆一次
+    win.setBounds(bounds)
+    // 不抢焦点：正在跑的脚本可能靠键盘操作游戏，焦点一走就打断
+    win.showInactive()
+  })
+
+  win.on('closed', () => {
+    if (virtualDisplayPromptWindow === win) {
+      virtualDisplayPromptWindow = null
+      virtualDisplayPromptPayload = null
+    }
+    logger.info('虚拟显示器询问弹窗已关闭')
+  })
+}
+
+function closeVirtualDisplayPrompt(): void {
+  const win = virtualDisplayPromptWindow
+  virtualDisplayPromptWindow = null
+  virtualDisplayPromptPayload = null
+  if (win && !win.isDestroyed()) {
+    win.close()
+  }
+}
+
+ipcMain.handle('vdd-prompt:show', (_event, payload: unknown) => {
+  if (!isVirtualDisplayPromptPayload(payload)) {
+    logger.warn(`虚拟显示器询问弹窗收到无法识别的数据: ${JSON.stringify(payload)}`)
+    return { success: false, error: 'invalid payload' }
+  }
+  try {
+    showVirtualDisplayPrompt(payload)
+    return { success: true }
+  } catch (error) {
+    logger.error('打开虚拟显示器询问弹窗失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
+ipcMain.handle('vdd-prompt:close', () => {
+  closeVirtualDisplayPrompt()
+})
+
+// 弹窗页面挂载后自己来取：主进程在 did-finish-load 时推送会早于 Vue 组件注册监听
+ipcMain.handle('vdd-prompt:get', () => virtualDisplayPromptPayload)
 
 // 日志系统 IPC 处理器
 ipcMain.handle(

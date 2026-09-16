@@ -1049,6 +1049,10 @@ class VirtualDisplayCheckResultItem(BaseModel):
 class VirtualDisplayCheckOut(OutBase):
     driverVersion: Optional[int] = Field(default=None, description="驱动次版本号")
     monitors: str = Field(default="", description="检测时的显示器概况")
+    holding: Optional[str] = Field(
+        default=None,
+        description="守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此决定「立即拆除」按钮能不能按",
+    )
     results: list[VirtualDisplayCheckResultItem] = Field(default_factory=list)
 
 
@@ -4919,6 +4923,29 @@ class WSPowerSignData(BaseModel):
     """电源标志更新数据 (id=Main, type=power.sign.updated)"""
 
     signal: str = Field(..., description="电源操作信号")
+
+
+class WSDisplayMonitorRectData(BaseModel):
+    """一块显示器的工作区（去掉任务栏），物理像素、桌面坐标。"""
+
+    left: int = Field(..., description="左边界")
+    top: int = Field(..., description="上边界")
+    right: int = Field(..., description="右边界")
+    bottom: int = Field(..., description="下边界")
+
+
+class WSDisplayDetachPromptData(BaseModel):
+    """真实显示器回来了但有任务在跑, 问用户要不要拆虚拟屏 (id=Main, type=display.detach.prompt)
+
+    虚拟屏是主显示器, 回来的真实屏只是第二块, 任务栏和主窗口都留在看不见的那块上,
+    所以弹窗必须放到 `monitor` 指的那块屏上, 前端据此把它摆到该屏右下角。
+    """
+
+    returned: list[str] = Field(..., description="回来的真实显示设备名列表")
+    monitor: Optional[WSDisplayMonitorRectData] = Field(
+        default=None,
+        description="回来那块屏的工作区; 读不到时为空, 前端自行挑一块非主显示器",
+    )
 
 
 class WSGameSignResultData(BaseModel):
