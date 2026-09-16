@@ -157,6 +157,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "活动关优先",
         "库存保持",
         "剩余理智",
+        "养成计划",
     }
     annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
     fight_start_markers = (
@@ -164,6 +165,10 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "开始任务: 理智作战",
         "Start Task Chain: Fight",
     )
+    # 库存保持/养成计划在同一个任务项里按 plan 拼接多条独立 Fight 链，MAA 为
+    # 区分日志给每条链的完成行追加 " #N" 序号后缀（语言无关）；裸任务名只出现在
+    # 识别链的括号后缀里，剥掉序号后缀再与目标名比对，否则这些链会被整体漏掉。
+    multi_chain_suffix = re.compile(r"\s+#\d+$")
 
     def is_task_boundary(line: str) -> bool:
         return "完成任务:" in line or "Completed Task Chain:" in line
@@ -171,7 +176,8 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     def get_completed_task_name(line: str) -> str | None:
         match = re.search(r"完成任务:\s*([^\r\n]+)", line)
         if match is not None:
-            return match.group(1).strip() or None
+            name = multi_chain_suffix.sub("", match.group(1).strip())
+            return name or None
 
         match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
