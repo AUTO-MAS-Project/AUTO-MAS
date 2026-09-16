@@ -473,9 +473,11 @@ const ensureEnvSubscription = () => {
     { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
     wsMessage => {
       const data = wsMessage.data
-      // 响应回来时会用后端带的整份日志覆盖一遍；WS 上的行走的是另一条路，可能比
-      // 响应还晚到，准备已经结束再追加就会把最后几行写成两遍
-      if (data.log && envPreparing.value) {
+      // 响应处理完就不再理会 WS：它走的是另一条路，可能比响应还晚到——日志行会把
+      // 最后几行写成两遍，ready 事件那句「MFW 运行环境已就绪」会把响应里写好的
+      // 「MaaFramework x.y.z」盖掉
+      if (!envPreparing.value) return
+      if (data.log) {
         envLogs.value = [...envLogs.value.slice(-199), data.log]
       }
       if (data.stage === 'log') return

@@ -463,14 +463,11 @@ watch(
   overflow-wrap: anywhere;
 }
 
-/* 过程面板只用边框分隔，不铺底色：深色主题下成块的底色会把页面切得花 */
+/* 面板本身不画框、不铺底色：标题 + 日志框就够了 */
 .update-process {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
 }
 
 @media (max-width: 768px) {

@@ -378,14 +378,11 @@ watch(
   overflow-wrap: anywhere;
 }
 
-/* 运行环境面板只用边框分隔，不铺底色；样式与项目更新区的过程面板一致 */
+/* 面板本身不画框：标题 + 日志框就够了，外面再套一层边框显得重 */
 .env-panel {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
 }
 
 .env-panel-header {
