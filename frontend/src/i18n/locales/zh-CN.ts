@@ -1325,6 +1325,8 @@ export default {
     configSourceHintBase:
       '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
     nativeConfigSourceDescription: '使用脚本当前的原生配置。',
+    // 「脚本」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
+    scriptModeDisabled: '不支持',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
     leaveWithoutSavingUnsaved: '确定要离开吗？未保存的更改可能会丢失。',
