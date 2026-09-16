@@ -4834,23 +4834,8 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig(
             [item["config_class"] for item in PLAN_BOOK.values()]
         )
-        ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig(
-            [
-                MaaConfig,
-                MaaEndConfig,
-                SrcConfig,
-                M9AConfig,
-                MaaFWConfig,
-                GeneralConfig,
-                OkwwConfig,
-                OkNteConfig,
-                HSRConfig,
-                BetterGIConfig,
-                ZzzOdConfig,
-                BAAHConfig,
-            ]
-        )
+        ## 脚本配置列表（顺序与 CLASS_BOOK 一致）
+        self.ScriptConfig = MultipleConfig(list(CLASS_BOOK.values()))
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
@@ -5082,8 +5067,8 @@ class BAAHConfig(ConfigBase):
 
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
+    "SRC": SrcConfig,
     "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
@@ -5094,7 +5079,7 @@ CLASS_BOOK = {
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
 }
-"""配置类映射表"""
+"""配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
 PLAN_BOOK = {
     "MaaPlanConfig": {

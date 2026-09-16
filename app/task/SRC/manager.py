@@ -32,6 +32,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
@@ -88,6 +89,7 @@ class SrcManager(TaskExecuteBase):
         *,
         reserved_src_root_path: Path,
         reserve_src_root: Callable[[Path], bool],
+        device_provider: DeviceProvider | None = None,
     ):
         super().__init__()
 
@@ -98,6 +100,7 @@ class SrcManager(TaskExecuteBase):
         self.script_info = script_info
         self._reserved_src_root_path = reserved_src_root_path.resolve()
         self._reserve_src_root = reserve_src_root
+        self._device_provider = device_provider
         self.check_result = "-"
         self.process_cleanup_success = True
         self.prepared = False
@@ -190,7 +193,8 @@ class SrcManager(TaskExecuteBase):
         logger.success(f"{self.script_info.script_id}已锁定, SRC配置提取完成")
 
         # 初始化模拟器管理器和用户列表
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
         if self.task_info.mode == "ScriptConfig":

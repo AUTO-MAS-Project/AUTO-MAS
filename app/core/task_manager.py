@@ -24,9 +24,10 @@ import asyncio
 import os
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Literal
+from typing import Callable, Dict, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -91,6 +92,55 @@ System = LazyProxy("app.services", "System")
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+
+
+@dataclass(frozen=True)
+class _ManagerBuildContext:
+    """构造脚本调度器所需的额外输入（占用归属与 SRC 根路径）。"""
+
+    script_uid: uuid.UUID
+    reservation_owner: str
+    src_root_path: Path | None
+    reservations: "_ScriptTaskReservations"
+
+
+def _build_src_manager(
+    script_item: ScriptItem, ctx: _ManagerBuildContext
+) -> TaskExecuteBase:
+    """SRC 要把 src 根路径的占用回调交给调度器，占用记在构建上下文的预留表里。"""
+
+    if ctx.src_root_path is None:
+        raise RuntimeError("SRC 路径占用未初始化")
+    return task.SrcManager(
+        script_item,
+        reserved_src_root_path=ctx.src_root_path,
+        reserve_src_root=lambda root_path: ctx.reservations.try_acquire(
+            ctx.script_uid,
+            ctx.reservation_owner,
+            src_root_path=root_path,
+        ),
+    )
+
+
+# 脚本配置类 → 调度器工厂。各配置类互不为父子（都直接继承 ConfigBase），
+# 按 type 精确查表；新增脚本类型在这里注册一条即可。工厂体内经 task 包
+# 惰性取类，维持 app/task/__init__.py 为 worker 子进程设的导入隔离。
+_MANAGER_BOOK: dict[
+    type, Callable[[ScriptItem, _ManagerBuildContext], TaskExecuteBase]
+] = {
+    MaaConfig: lambda script_item, _ctx: task.MaaManager(script_item),
+    GeneralConfig: lambda script_item, _ctx: task.GeneralManager(script_item),
+    OkwwConfig: lambda script_item, _ctx: task.OkwwManager(script_item),
+    OkNteConfig: lambda script_item, _ctx: task.OkNteManager(script_item),
+    MaaEndConfig: lambda script_item, _ctx: task.MaaEndManager(script_item),
+    M9AConfig: lambda script_item, _ctx: task.M9AManager(script_item),
+    HSRConfig: lambda script_item, _ctx: task.HSRManager(script_item),
+    BetterGIConfig: lambda script_item, _ctx: task.BetterGIManager(script_item),
+    ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),
+    BAAHConfig: lambda script_item, _ctx: task.BAAHManager(script_item),
+    MaaFWConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
+    SrcConfig: _build_src_manager,
+}
 
 logger = get_logger("业务调度")
 
@@ -345,46 +395,22 @@ class Task(TaskExecuteBase):
     ):
         """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
 
-        顺序执行与循环运行共用这一份分派，新增脚本类型只需改这里。
+        顺序执行与循环运行共用这一份分派，新增脚本类型在 _MANAGER_BOOK
+        注册一条工厂即可；各配置类互不为父子，按 type 精确查表。
         """
 
-        if isinstance(script_config, MaaConfig):
-            return task.MaaManager(script_item)
-        if isinstance(script_config, SrcConfig):
-            if src_root_path is None:
-                raise RuntimeError("SRC 路径占用未初始化")
-            return task.SrcManager(
-                script_item,
-                reserved_src_root_path=src_root_path,
-                reserve_src_root=lambda root_path, script_uid=script_uid, owner=reservation_owner: (
-                    self.script_reservations.try_acquire(
-                        script_uid,
-                        owner,
-                        src_root_path=root_path,
-                    )
-                ),
-            )
-        if isinstance(script_config, GeneralConfig):
-            return task.GeneralManager(script_item)
-        if isinstance(script_config, OkwwConfig):
-            return task.OkwwManager(script_item)
-        if isinstance(script_config, OkNteConfig):
-            return task.OkNteManager(script_item)
-        if isinstance(script_config, MaaEndConfig):
-            return task.MaaEndManager(script_item)
-        if isinstance(script_config, M9AConfig):
-            return task.M9AManager(script_item)
-        if isinstance(script_config, HSRConfig):
-            return task.HSRManager(script_item)
-        if isinstance(script_config, BetterGIConfig):
-            return task.BetterGIManager(script_item)
-        if isinstance(script_config, ZzzOdConfig):
-            return task.ZzzOdManager(script_item)
-        if isinstance(script_config, BAAHConfig):
-            return task.BAAHManager(script_item)
-        if isinstance(script_config, MaaFWConfig):
-            return task.MaaFWEmbeddedManager(script_item)
-        return None
+        build = _MANAGER_BOOK.get(type(script_config))
+        if build is None:
+            return None
+        return build(
+            script_item,
+            _ManagerBuildContext(
+                script_uid=script_uid,
+                reservation_owner=reservation_owner,
+                src_root_path=src_root_path,
+                reservations=self.script_reservations,
+            ),
+        )
 
     async def _run_cycle_task(self) -> None:
         """循环运行：按各队列项自己的周期，持续调度整个队列。

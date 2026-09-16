@@ -43,7 +43,7 @@ from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.MaaFW.tools.backup_archive import (
@@ -250,7 +250,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
     wait_for_finalizer_on_cancel = True
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -265,6 +270,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
         self.runnable_user_uids: list[uuid.UUID] = []
         self.emulator_manager: DeviceBase | None = None
+        self._device_provider = device_provider
         # check() 建副本前锁住脚本配置，final_task 写回用户配置前再解开；只解一次。
         self._script_locked = False
         # 当前正在跑的那一位用户的 AutoProxy 任务；每个用户各建一个。
@@ -333,8 +339,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return "Pass"
 
-    @staticmethod
     async def _resolve_emulator_manager(
+        self,
         script_config: MaaFWConfig,
     ) -> DeviceBase | None:
         """按脚本级模拟器配置取实例；未配置时返回 None。
@@ -349,8 +355,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         from app.core import EmulatorManager
 
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
         try:
-            return await EmulatorManager.get_emulator_instance(emulator_id)
+            return await device_provider(emulator_id)
         except Exception as exc:  # noqa: BLE001 - 缺模拟器不该拦住 Win32 项目
             logger.warning(f"MFW 内置运行取模拟器实例失败，将按无模拟器继续：{exc}")
             return None
