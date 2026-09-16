@@ -219,10 +219,22 @@ def save_native_launch_args(root, slot_idx: int, values: dict[str, Any]) -> None
                 continue
             patch[key] = new_val
         if "launch_argument_advance" in values or "dx12" in values:
-            merged_advance = merge_dx12_argument(
-                str(values.get("launch_argument_advance") or ""),
-                bool(values.get("dx12")),
+            # 合并基准与 dx12 状态都取「本次提交值，缺省回落磁盘现值」——
+            # 单字段提交时（只点 dx12 / 只改高级参数）不能把另一侧未提交的
+            # 磁盘状态当默认值覆盖掉
+            advance_base = (
+                str(values["launch_argument_advance"] or "")
+                if "launch_argument_advance" in values
+                else str(existing.get("launch_argument_advance") or "")
             )
+            if "dx12" in values:
+                dx12_val = bool(values["dx12"])
+            else:
+                has_dx12_disk, _ = split_dx12_argument(
+                    str(existing.get("launch_argument_advance") or "")
+                )
+                dx12_val = has_dx12_disk
+            merged_advance = merge_dx12_argument(advance_base, dx12_val)
             old_advance = existing.get("launch_argument_advance")
             if old_advance is None:
                 if merged_advance != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]:

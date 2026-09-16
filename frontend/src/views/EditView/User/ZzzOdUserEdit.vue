@@ -2010,10 +2010,15 @@ const saveNativeConfig = async (
   }
 }
 
-/** 直控启动参数：单字段变更后整组即时提交（只回读本区块，不碰账号草稿） */
+/** 直控启动参数：单字段即时提交（只发变更字段，读-改-写由后端持锁完成）。
+ *
+ * 不发全量：并发点不同开关时，全量会携带其他字段的旧值，串行写盘后后者
+ * 覆盖前者已落盘的字段（丢更新）；单字段提交 + 后端「值未变跳过」语义
+ * 才能让并发保存各落各的字段。
+ */
 const saveNativeLaunchArgsField = (key: keyof ZzzOdNativeLaunchArgs, value: unknown) => {
   ;(nativeLaunchArgs as Record<string, unknown>)[key] = value
-  return saveNativeConfig({ launchArgs: { ...nativeLaunchArgs } }, 'launchArgs', true)
+  return saveNativeConfig({ launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs }, 'launchArgs', true)
 }
 
 /** 「保存设置」：账号字段全量写回（连同当前任务编排与运行实例，保持表单一致） */
