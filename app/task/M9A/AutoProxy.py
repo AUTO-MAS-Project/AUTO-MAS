@@ -634,13 +634,16 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_info._m9a_has_new_version = True
                     logger.info("在首个用户日志中检测到 M9A 新版本提示！")
 
-            version_match = re.search(r"当前资源版本：v([\d.]+)", log)
+            # 壳把含中文消息的半角「: 」规范化为全角「：」后才落盘
+            # （MFAAvalonia LoggerHelper.NormalizeMessage），旧正则能命中但
+            # 只捕获数字，预发布通道的 -beta.N/-alpha.N 后缀会被截断。
+            version_match = re.search(r"当前资源版本[:：]\s*v(\S+)", log)
             if version_match and not getattr(
                 self.script_info, "_m9a_current_version", None
             ):
                 self.script_info._m9a_current_version = version_match.group(1)
 
-            version_match = re.search(r"最新资源版本：v([\d.]+)", log)
+            version_match = re.search(r"最新资源版本[:：]\s*v(\S+)", log)
             if version_match:
                 self.script_info._m9a_latest_version = version_match.group(1)
 
