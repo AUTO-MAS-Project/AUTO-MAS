@@ -78,12 +78,14 @@
     <div v-if="previewData" class="interface-body">
       <a-descriptions bordered size="small" :column="2" class="interface-table">
         <template #title>
-          <div class="interface-table-title">{{ previewProjectTitle }}</div>
-          <div v-if="previewData.project.version" class="interface-table-subtitle">
-            {{ previewData.project.version }}
-            <template v-if="previewData.project?.description">
-              · {{ previewData.project.description }}
-            </template>
+          <div class="interface-table-head">
+            <span class="interface-table-title">{{ previewProjectTitle }}</span>
+            <span v-if="previewData.project.version" class="interface-table-subtitle">
+              {{ previewData.project.version }}
+              <template v-if="previewData.project?.description">
+                · {{ previewData.project.description }}
+              </template>
+            </span>
           </div>
         </template>
         <a-descriptions-item v-for="item in interfaceStats" :key="item.label" :label="item.label">
@@ -363,6 +365,15 @@ watch(
   width: 28%;
 }
 
+/* 表头一行：项目名在左，版本 · 简介跟在右边 */
+.interface-table-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  white-space: normal;
+}
+
 .interface-table-title {
   font-size: 16px;
   font-weight: 700;
@@ -371,7 +382,7 @@ watch(
 }
 
 .interface-table-subtitle {
-  margin-top: 2px;
+  min-width: 0;
   font-size: 13px;
   font-weight: 400;
   color: var(--ant-color-text-tertiary);
