@@ -24,6 +24,7 @@ import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -353,10 +354,10 @@ export class ActionService {
      *
      * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
      * 的话下一轮会重新挂上——要彻底停用得关开关。
-     * @returns OutBase Successful Response
+     * @returns VirtualDisplayDetachOut Successful Response
      * @throws ApiError
      */
-    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<OutBase> {
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<VirtualDisplayDetachOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/detach',

@@ -95,10 +95,10 @@ async function runVirtualDisplayDetach() {
       message.error(`${t('setting.display.detachFailed')}: ${res.message}`)
       return
     }
-    if (res.message === '当前没有挂载虚拟显示器') {
-      message.info(t('setting.display.detachNothing'))
-    } else {
+    if (res.detached) {
       message.success(t('setting.display.detachDone'))
+    } else {
+      message.info(t('setting.display.detachNothing'))
     }
     await refreshVirtualDisplayStatus()
   } catch {

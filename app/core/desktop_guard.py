@@ -322,6 +322,8 @@ class _DesktopGuard:
         # 再问。主连接没就绪时发布器会把消息丢掉，所以还要记住到底送没送到。
         self._prompted: frozenset[str] | None = None
         self._prompt_delivered = False
+        # 弹窗挂着期间连续几轮没再看到回来的屏。收回和弹出一样要判据连续成立。
+        self._prompt_idle_ticks = 0
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -429,9 +431,12 @@ class _DesktopGuard:
 
         if action == IDLE:
             self._pending, self._pending_ticks = (IDLE, ""), 0
-            # 挂着、也没有别的真实输出：要么显示器又被拔掉了，要么刚才那次枚举是中间态。
-            # 问用户的前提已经不成立，把弹窗收回去。
-            await self._close_prompt()
+            if self._prompted is not None:
+                # 挂着、也没有别的真实输出：要么显示器又被拔掉了，要么刚才那次枚举是中间
+                # 态。收回弹窗和弹出一样要连续成立才动手，否则一次抖动会让窗口闪没再闪回。
+                self._prompt_idle_ticks += 1
+                if self._prompt_idle_ticks >= CONFIRM_TICKS:
+                    await self._close_prompt()
             return
         if action == RELEASE:
             # 用户明示的意图，不等防抖。
@@ -477,6 +482,7 @@ class _DesktopGuard:
         from app.models.schema import WSDisplayDetachPromptData
 
         key = frozenset(returned)
+        self._prompt_idle_ticks = 0
         if self._prompted == key and self._prompt_delivered:
             return
         if self._prompted != key:
@@ -502,6 +508,7 @@ class _DesktopGuard:
             return
         delivered = self._prompt_delivered
         self._prompted, self._prompt_delivered = None, False
+        self._prompt_idle_ticks = 0
         if not delivered:
             return
         from app.core.ws import Publisher, protocol
@@ -523,6 +530,12 @@ class _DesktopGuard:
         if not IS_WINDOWS:
             return False
         async with self._lock:
+            attaching = self._attaching
+            if attaching is not None and not attaching.done():
+                # 上一次挂屏的线程可能还在插（调用方被取消不代表它停了，见 `_attach`）。
+                # 等它把 `_display` 赋好再拆，否则这里回「没挂」，屏随后却挂上了。
+                with suppress(Exception):
+                    await attaching
             if self._display is None:
                 await self._close_prompt()
                 return False

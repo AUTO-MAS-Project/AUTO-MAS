@@ -1051,9 +1051,15 @@ class VirtualDisplayCheckOut(OutBase):
     monitors: str = Field(default="", description="检测时的显示器概况")
     holding: Optional[str] = Field(
         default=None,
-        description="守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此决定「立即拆除」按钮能不能按",
+        description="守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此显示当前挂着哪块",
     )
     results: list[VirtualDisplayCheckResultItem] = Field(default_factory=list)
+
+
+class VirtualDisplayDetachOut(OutBase):
+    detached: bool = Field(
+        default=False, description="有没有真的拆掉一块屏；没挂着时为 False"
+    )
 
 
 class GlobalConfig_Voice(BaseModel):

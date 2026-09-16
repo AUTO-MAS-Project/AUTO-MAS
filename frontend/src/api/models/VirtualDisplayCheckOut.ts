@@ -25,7 +25,7 @@ export type VirtualDisplayCheckOut = {
      */
     monitors?: string;
     /**
-     * 守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此决定「立即拆除」按钮能不能按
+     * 守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此显示当前挂着哪块
      */
     holding?: (string | null);
     results?: Array<VirtualDisplayCheckResultItem>;
