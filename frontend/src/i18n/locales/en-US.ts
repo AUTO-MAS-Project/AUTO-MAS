@@ -3067,6 +3067,8 @@ export default {
     couldNotPickLaunch: 'Could not pick the launch exe',
     qqDirectMessageOver: 'QQ direct message over the OneBot HTTP API',
     qqDirectMessageOverImage: 'Send a QQ direct-message image over the OneBot HTTP API',
+    qqDirectMessageOverTextImage:
+      'QQ direct message over the OneBot HTTP API, with the screenshot attached when there is one',
     notifyGetRequest: 'Notify with a GET request',
     restartApp: 'Restart the app',
     couldNotReorder: 'Could not reorder',
