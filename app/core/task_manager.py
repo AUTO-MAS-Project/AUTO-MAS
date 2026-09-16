@@ -1223,8 +1223,8 @@ class _TaskManager:
                         if not task_item.is_closing:
                             task_item.cancel()
                             task_item.is_closing = True
-                            await task_item.accomplish.wait()
-                            logger.info(f"子任务已结束: {task_item.task_id}")
+                        await task_item.accomplish.wait()
+                        logger.info(f"子任务已结束: {task_item.task_id}")
                     cleanup_tasks = [
                         cleanup for cleanup in self._cleanup_tasks if not cleanup.done()
                     ]

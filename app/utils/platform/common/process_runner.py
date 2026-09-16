@@ -124,11 +124,12 @@ class ProcessRunner:
                 process.kill()
             await process.wait()
             logger.warning(
-                f"子进程执行超时，已结束进程: {command} - 超时时间: {timeout}秒"
+                f"子进程执行超时，已结束进程: {command} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒 - 超时时间: {timeout}秒"
             )
             raise
 
-        logger.debug(
+        logger.info(
             f"子进程已退出: {command} - 用时: {time.monotonic() - started_at:.3f}秒"
         )
 

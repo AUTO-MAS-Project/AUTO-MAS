@@ -1850,8 +1850,8 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maa_log_monitor.stop()
         logger.info("MAA 收尾: 停止 MAA 进程")
         await self.maa_process_manager.kill()
-        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
         await System.kill_process(self.maa_exe_path)
+        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
         logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
