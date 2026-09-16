@@ -22,9 +22,11 @@
 - **只拆自己挂的那块。** 判「真实显示器回来了」用的是 `real_display_devices()` 里除掉
   自己设备名之后还剩不剩东西，不是「有没有真实输出」——我们自己挂的那块本身就算真实
   输出，拿它当判据会永远认为显示器已经回来。
-- **任务期间不拆。** 显示器在任务跑到一半时接回来，窗口会被 Windows 挪到那块屏上、尺寸
-  也可能跟着变，而脚本正按坐标点。所以这一档只推迟到任务结束；插屏不受影响（任务中途
-  被拔掉显示器时照样补一块），关开关也不受影响（那是用户明示的意图）。
+- **真实显示器一回来就拆，任务在不在跑都一样。** 早先这一档在任务期间推迟到任务结束，
+  怕拆屏把正按坐标点的脚本打掉。实际撞上的是另一面：多用户串行队列一跑近两小时，用户
+  早上开屏几乎必然落在任务里，而虚拟屏是主显示器，回来的真实屏只是第二块——任务栏和
+  所有窗口都留在看不见的那块上，推迟又不写日志，用户只能重启。人坐到机器前比任何一轮
+  任务都重要，被打掉的那轮还有重试兜底。
 - **判据要连续成立才动手。** 拓扑变更本身带中间态（切模式、驱动重载、KVM 切换、睡眠
   恢复），单次采样为真就插拔会来回抖，而每次插拔都会移动用户已经打开的窗口。
 - **用轮询而不是 `WM_DISPLAYCHANGE`。** 收窗口消息要自己开 message-only 窗口和消息泵，
@@ -181,28 +183,6 @@ def _real_devices() -> set[str] | None:
         return None
 
 
-def _task_running() -> bool:
-    """有没有代理任务正在跑。
-
-    只用来推迟「拆」。查不出来时按「有」处理：多留一会儿虚拟屏只是桌面上多一块屏，
-    抽掉正在跑的任务脚下那块则会直接打掉整轮。**import 也要放在 try 里**，否则这句
-    承诺在导入失败时不成立。
-
-    `ScriptConfig` 不算：那是 MAS 替用户打开脚本自己的配置界面，人就坐在机器前，窗口
-    可以开着不关。把它算进来，用户忘了关设置窗口就等于永远不拆。
-    """
-
-    try:
-        from app.core import TaskManager
-
-        return any(
-            info.mode != "ScriptConfig" for info in TaskManager.task_info.values()
-        )
-    except Exception as exc:
-        _warn_once(f"查询任务状态失败，按有任务在跑处理: {exc}")
-        return True
-
-
 def _desktop_has_room() -> bool:
     """插屏之后用：新挂的屏放不放得下目标窗口。"""
 
@@ -247,7 +227,6 @@ def decide(
     holding: str | None,
     has_real_output: bool,
     real_devices: set[str],
-    task_running: bool = False,
 ) -> tuple[str, str]:
     """由一次观测决定下一步动作，返回 (动作, 原因)。
 
@@ -268,11 +247,6 @@ def decide(
     if holding not in real_devices:
         return LOST, "自己挂的虚拟显示器已不在桌面上"
     if real_devices - {holding}:
-        if task_running:
-            # 任务跑到一半把它脚下的屏抽掉，窗口会被 Windows 挪到刚接回来的显示器上、
-            # 尺寸也可能跟着变，而脚本正按坐标点——这一下足以打掉整轮。等任务结束再拆，
-            # 巡检本来就一直在跑，最后一个任务收尾之后自然会走到这里。
-            return IDLE, ""
         return DETACH, "真实显示输出已恢复"
     return IDLE, ""
 
@@ -374,7 +348,6 @@ class _DesktopGuard:
 
         has_real = True
         real: set[str] = set()
-        task_running = False
         # 开关关着时一次显示查询都不做：没挂就什么都不用判（最常见的一档），挂着就直接
         # 走 RELEASE——那是用户明示的意图，不能让一次枚举失败把它挡在后面。
         if enabled:
@@ -387,14 +360,12 @@ class _DesktopGuard:
                     self._pending, self._pending_ticks = (IDLE, ""), 0
                     return
                 real = devices
-                task_running = _task_running()
 
         action, reason = decide(
             enabled=enabled,
             holding=holding,
             has_real_output=has_real,
             real_devices=real,
-            task_running=task_running,
         )
 
         if action == IDLE:
@@ -422,7 +393,11 @@ class _DesktopGuard:
             await self._teardown(reason)
             return
         if action == DETACH:
-            await self._teardown(reason)
+            # 记下是哪块屏回来的：拆屏会把用户开着的窗口全部挪过去，事后排查「窗口怎么跑到
+            # 那边去了」全靠这一行；拆完再报一次桌面现状，拆前的描述里还带着自己那块。
+            returned = ", ".join(sorted(real - {holding}))
+            await self._teardown(f"{reason}: {returned}")
+            logger.info(f"当前桌面: {await asyncio.to_thread(_describe)}")
             return
         await self._attach(reason)
 
