@@ -121,7 +121,7 @@ class MaaFWConfigTest(unittest.TestCase):
 
                 self.assertIsInstance(script, MaaFWConfig)
                 self.assertEqual(script.get("Info", "Name"), "新 MFW 脚本")
-                self.assertEqual(script.get("Run", "RunTimeLimit"), 30)
+                self.assertEqual(script.get("Run", "RunTimeLimit"), 120)
 
                 await script.update(
                     {

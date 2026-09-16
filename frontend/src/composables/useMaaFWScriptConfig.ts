@@ -126,7 +126,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   Run: {
     ProxyTimesLimit: 0,
     RunTimesLimit: 1,
-    RunTimeLimit: 30,
+    RunTimeLimit: 120,
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',
     MonthlyOnceTasks: '[ ]',

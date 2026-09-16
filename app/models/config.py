@@ -2978,9 +2978,11 @@ class MaaFWConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
         )
-        ## 单次运行时间限制（分钟）
+        ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
+        ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
+        ## 几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
         ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
         self.Run_DailyOnceTasks = ConfigItem(

@@ -1179,7 +1179,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
                 lease_ttl_seconds=max(
                     600,
-                    int(self.script_config.get("Run", "RunTimeLimit") or 30) * 60 + 600,
+                    int(self.script_config.get("Run", "RunTimeLimit") or 120) * 60
+                    + 600,
                 ),
                 # worker 跑在 runtime pool 的隔离 venv 里，代码要靠 PYTHONPATH
                 # 找到本仓。这里必须是源码根而不是 Path.cwd()：受 Runtime 监督时
