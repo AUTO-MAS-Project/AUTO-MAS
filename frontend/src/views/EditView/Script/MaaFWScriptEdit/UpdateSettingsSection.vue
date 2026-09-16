@@ -142,18 +142,20 @@
       />
     </template>
 
-    <!-- 左边两个小框沿用原来的信息格，右边原 RID / 多平台的位置换成更新过程面板 -->
+    <!-- 左边「当前版本」「GitHub」上下两个小框，右边一个更新过程面板；日志框定高、内部滚动 -->
     <div v-if="previewData" class="update-info-grid">
-      <div class="update-info-item">
-        <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
-        <div class="update-info-value">
-          {{ previewData.project.version || t('edit.notDeclared') }}
+      <div class="update-info-column">
+        <div class="update-info-item">
+          <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
+          <div class="update-info-value">
+            {{ previewData.project.version || t('edit.notDeclared') }}
+          </div>
         </div>
-      </div>
-      <div class="update-info-item">
-        <div class="update-info-label">GitHub</div>
-        <div class="update-info-value">
-          {{ previewData.project.github || t('edit.notDeclared') }}
+        <div class="update-info-item">
+          <div class="update-info-label">GitHub</div>
+          <div class="update-info-value">
+            {{ previewData.project.github || t('edit.notDeclared') }}
+          </div>
         </div>
       </div>
       <div class="update-process">
@@ -164,33 +166,36 @@
         <div v-if="updateProgress.phase === 'idle'" class="update-process-placeholder">
           {{ t('edit.updateProcessPlaceholder') }}
         </div>
-        <template v-else>
-          <div class="update-process-summary" :class="`update-process-summary--${summaryTone}`">
-            <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-process-icon" />
-            <CheckCircleOutlined
-              v-else-if="summaryTone === 'success'"
-              class="update-process-icon"
-            />
-            <CloseCircleOutlined v-else class="update-process-icon" />
-            <span class="update-process-phase">{{ phaseLabel }}</span>
-            <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
+        <div
+          v-else
+          class="update-process-summary"
+          :class="`update-process-summary--${summaryTone}`"
+        >
+          <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-process-icon" />
+          <CheckCircleOutlined v-else-if="summaryTone === 'success'" class="update-process-icon" />
+          <CloseCircleOutlined v-else class="update-process-icon" />
+          <span class="update-process-phase">{{ phaseLabel }}</span>
+          <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
+        </div>
+        <a-progress
+          v-if="barPercent !== null"
+          :percent="barPercent"
+          size="small"
+          :status="summaryTone === 'failed' ? 'exception' : 'active'"
+          class="update-process-bar"
+        />
+        <!-- 日志框一直在：面板高度不随「有没有开始更新」跳动，空着时只显示占位一行 -->
+        <div ref="logBoxRef" class="update-log-box">
+          <div
+            v-if="updateProgress.phase !== 'idle' && !updateProgress.logs.length"
+            class="update-log-line update-log-line--empty"
+          >
+            {{ t('edit.updateProcessNoLogYet') }}
           </div>
-          <a-progress
-            v-if="barPercent !== null"
-            :percent="barPercent"
-            size="small"
-            :status="summaryTone === 'failed' ? 'exception' : 'active'"
-            class="update-process-bar"
-          />
-          <div ref="logBoxRef" class="update-log-box">
-            <div v-if="!updateProgress.logs.length" class="update-log-line update-log-line--empty">
-              {{ t('edit.updateProcessNoLogYet') }}
-            </div>
-            <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
-              {{ line }}
-            </div>
+          <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
+            {{ line }}
           </div>
-        </template>
+        </div>
       </div>
     </div>
   </div>
@@ -445,16 +450,24 @@ watch(
   margin-top: 4px;
 }
 
-/* 沿用原来四格的几何：左边两格是信息小框，右边两格的位置给过程面板 */
+/* 左窄右宽：左列上下两个信息小框撑满面板高度，右列是过程面板；拉窄窗口时按比例缩 */
 .update-info-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: minmax(180px, 1fr) 3fr;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
   margin-top: 8px;
 }
 
+.update-info-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .update-info-item {
+  flex: 1;
   min-width: 0;
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -476,7 +489,8 @@ watch(
 
 /* 过程面板只用边框分隔，不铺底色：深色主题下成块的底色会把页面切得花 */
 .update-process {
-  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -485,7 +499,11 @@ watch(
 
 @media (max-width: 768px) {
   .update-info-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .update-info-column {
+    flex-direction: row;
   }
 }
 
@@ -548,9 +566,10 @@ watch(
   margin: 6px 0 2px;
 }
 
+/* 定高、内部滚动：日志再长面板也不长个，左列小框才对得齐 */
 .update-log-box {
   margin-top: 8px;
-  max-height: 200px;
+  height: 160px;
   overflow-y: auto;
   padding: 8px 10px;
   border: 1px solid var(--ant-color-border-secondary);
