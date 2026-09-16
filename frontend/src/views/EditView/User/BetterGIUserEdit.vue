@@ -842,7 +842,7 @@
             v-model:open="addModal.open"
             :title="addModalTitle"
             :ok-text="addModalOkText"
-            :ok-button-props="{ disabled: !addModal.items.length && !addModal.draft.trim() }"
+            :ok-button-props="addModalOkButtonProps"
             :cancel-text="t('edit.cancel')"
             width="920px"
             :z-index="1200"
@@ -2151,13 +2151,17 @@ const toggleConfigGroup = (item: ConfigGroupIdentity) => {
 }
 
 // ---- 添加：把配置组加入一条龙（放到队列末尾）----
-const addToDragon = (item: ConfigGroupIdentity) => {
-  if (!groupsEditable.value) return
-  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return
+const addToDragon = (item: ConfigGroupIdentity): boolean => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
+  if (!groupsEditable.value) return false
+  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return false
   // 体力作战开启时刷取类官方内置组被冻结，禁止再次加入一条龙（防止把被接管的组写回后端 Groups）
   if (item.kind === 'builtin' && isGroupFrozen(item)) {
     message.warning(t('edit.bettergiGroupFrozenTip'))
-    return
+    return false
   }
   if (item.kind === 'builtin') {
     if (!formData.OneDragon.Groups.includes(item.key)) {
@@ -2181,6 +2185,7 @@ const addToDragon = (item: ConfigGroupIdentity) => {
   const alias = dragonList.value.find(i => i.kind === item.kind && i.key === item.key)?.displayName
   dragonList.value.push(makeDragonRow(alias ? { ...item, displayName: alias } : item))
   persistDragonQueue()
+  return true
 }
 
 // 队列中是否仍存在同类配置组（删除某实例后判断是否还保留后端启用）
@@ -2190,6 +2195,10 @@ const hasSameKindRow = (item: ConfigGroupIdentity, exceptUid?: number): boolean 
 // ---- 右键删除：从一条龙移除（按行实例 uid，一次只删一行）----
 const removeFromDragon = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value) return
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
   if (item.kind === 'builtin') {
     if (isGroupFrozen(item)) return // 冻结中不可删除
     dragonList.value = dragonList.value.filter(i => i.uid !== item.uid)
@@ -3500,10 +3509,13 @@ const addModalTitle = computed<string>(() =>
 const addModalOkText = computed<string>(() =>
   addModal.addToGroupMode ? t('edit.bettergiAddScriptToGroupOk') : t('edit.bettergiAddToDragonOk')
 )
+const addModalOkButtonProps = computed(() => ({
+  disabled: configLocked.value || (!addModal.items.length && !addModal.draft.trim()),
+}))
 
 // 配置组编辑器 ref：确认「添加脚本」后把选中的 JS/路径追加进当前配置组 json
 const groupProjectEditorRef = ref<{
-  addProjects: (rows: unknown[]) => Promise<void>
+  addProjects: (rows: unknown[]) => Promise<boolean>
   reload: () => Promise<void>
 } | null>(null)
 
@@ -4134,15 +4146,16 @@ const handleAddDraftKeydown = (e: KeyboardEvent) => {
 
 // 确认：加入一条龙 或（配置组模式）作为项目写入当前配置组 json
 const confirmAddToDragon = async () => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
   if (addModal.draft.trim() && !commitAddDraft()) return
   if (!addModal.items.length) {
     message.warning(t('edit.bettergiPickCandidateFirst'))
     return
   }
   const items = [...addModal.items]
-  addModal.items = []
-  addModal.draft = ''
-  clearChipSelection()
   // 配置组模式：把 JS/路径转成 project 行，交给右栏编辑器追加并保存
   if (addModal.addToGroupMode) {
     const editor = groupProjectEditorRef.value
@@ -4150,25 +4163,36 @@ const confirmAddToDragon = async () => {
       .map(toScriptGroupProjectRow)
       .filter((r): r is Record<string, unknown> => r !== null)
     if (!rows.length) {
+      addModal.items = []
+      addModal.draft = ''
+      clearChipSelection()
       addModal.addToGroupMode = false
       addModal.open = false
       message.warning(t('edit.bettergiAddScriptUnsupported'))
       return
     }
-    addModal.addToGroupMode = false
-    addModal.open = false
     try {
-      await editor?.addProjects(rows)
+      const added = (await editor?.addProjects(rows)) ?? false
+      if (!added) return
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
+      return
     }
+    addModal.items = []
+    addModal.draft = ''
+    clearChipSelection()
+    addModal.addToGroupMode = false
+    addModal.open = false
     return
   }
-  addModal.open = false
   for (const item of items) {
-    addToDragon({ kind: item.kind, key: item.key })
+    if (!addToDragon({ kind: item.kind, key: item.key })) return
   }
+  addModal.items = []
+  addModal.draft = ''
+  clearChipSelection()
+  addModal.open = false
 }
 
 // ---- 行尾双操作 ----

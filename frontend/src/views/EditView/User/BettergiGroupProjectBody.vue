@@ -145,7 +145,7 @@
       width="720px"
       :z-index="1100"
       class="bgi-project-settings-modal"
-      :ok-button-props="{ disabled: props.kind !== 'scriptgroup' }"
+      :ok-button-props="{ disabled: props.kind !== 'scriptgroup' || configLocked }"
       @ok="saveProjectSettings"
       @cancel="settingsModal.open = false"
     >
@@ -502,8 +502,12 @@ const reload = async () => {
 }
 
 // 拖拽排序结束 / 各保存路径统一写回 per-user 副本；写前规范化 index 并剔除 _uid
-const persistProjects = async () => {
-  if (!isScriptGroup.value || saving.value || configLocked.value) return
+const persistProjects = async (): Promise<boolean> => {
+  if (!isScriptGroup.value || saving.value) return false
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
   saving.value = true
   try {
     const rows = projects.value.map((item, idx) => {
@@ -529,9 +533,11 @@ const persistProjects = async () => {
     // 落盘后即存在 per-user 副本：JS/路径 由「独立单脚本」转为真正的配置组，解除清空/移除限制
     if (props.kind === 'js' || props.kind === 'pathing') hasPerUserReplica.value = true
     message.success(t('edit.bettergiProjectSaved'))
+    return true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
+    return false
   } finally {
     saving.value = false
   }
@@ -539,7 +545,8 @@ const persistProjects = async () => {
 
 // 父组件「添加配置组弹窗(冻结配置组标签)」确认后调用：把 JS/路径行追加到末尾并保存
 const addProjects = async (rows: ProjectRow[]) => {
-  if (!isScriptGroup.value || !rows.length) return
+  if (!isScriptGroup.value || !rows.length) return false
+  const previous = projects.value
   const next = projects.value.map(item => ({ ...item }))
   for (const row of rows) {
     const { _uid: _removed, ...rest } = row as ProjectRow & { _uid?: number }
@@ -547,8 +554,13 @@ const addProjects = async (rows: ProjectRow[]) => {
     next.push({ ...rest, _uid: ++projectSeq })
   }
   projects.value = next
-  await persistProjects()
+  const saved = await persistProjects()
+  if (!saved) {
+    projects.value = previous
+    return false
+  }
   clearSelection()
+  return true
 }
 
 // 删除选中行（多选 + 「删除脚本」确认后）
@@ -556,17 +568,29 @@ const removeSelectedProjects = async () => {
   if (!isScriptGroup.value) return
   const keep = projects.value.filter(r => !isRowSelected(r))
   if (keep.length === projects.value.length) return
+  const previous = projects.value
   projects.value = keep
+  const saved = await persistProjects()
+  if (!saved) {
+    projects.value = previous
+    return false
+  }
   clearSelection()
-  await persistProjects()
+  return true
 }
 
 // 清空全部脚本项目（破坏性，需二次确认）
 const clearProjects = async () => {
   if (!isScriptGroup.value || !projects.value.length) return
+  const previous = projects.value
   projects.value = []
+  const saved = await persistProjects()
+  if (!saved) {
+    projects.value = previous
+    return false
+  }
   clearSelection()
-  await persistProjects()
+  return true
 }
 
 const projRowKey = (proj: ProjectRow, index: number): string => {
@@ -720,13 +744,22 @@ const saveProjectSettings = async () => {
     settingsModal.open = false
     return
   }
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
+  const previous = projects.value
   settingsModal.saving = true
   try {
     const list = projects.value.map((p, i) => (i === idx ? { ...p } : p))
     const target = list[idx]
     target.jsScriptSettingsObject = { ...settingsModal.values }
     projects.value = list
-    await persistProjects()
+    const saved = await persistProjects()
+    if (!saved) {
+      projects.value = previous
+      return
+    }
     settingsModal.open = false
   } finally {
     settingsModal.saving = false

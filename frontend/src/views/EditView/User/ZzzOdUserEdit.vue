@@ -1885,13 +1885,20 @@ const flushAllTaskConfigSaves = () => {
   taskConfigPending.clear()
 }
 
-const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value: any) => {
-  if (configLocked.value) return
+const saveTaskConfigField = async (
+  card: TaskCard,
+  field: TaskConfigField,
+  value: any
+): Promise<boolean> => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
   // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
   // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
-  if (value === null || value === undefined || Number.isNaN(value)) return
-  if (typeof value === 'string' && value.trim() === '') return
-  if (Number(value) === Number(field.value)) return
+  if (value === null || value === undefined || Number.isNaN(value)) return false
+  if (typeof value === 'string' && value.trim() === '') return false
+  if (Number(value) === Number(field.value)) return false
   try {
     const resp = await Service.saveZzzodAppConfigApiApiScriptsZzzodAppConfigSavePost({
       scriptId,
@@ -1905,8 +1912,10 @@ const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value
     }
     field.value = value
     message.success(t('edit.zzzodTaskConfigSaved'))
+    return true
   } catch (e) {
     message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigSaveFailed'))
+    return false
   }
 }
 
@@ -2100,6 +2109,10 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     okText: t('edit.configRestoreConfirmOk'),
     cancelText: t('edit.cancel'),
     onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('edit.configLocked'))
+        return
+      }
       try {
         const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
           scriptId,

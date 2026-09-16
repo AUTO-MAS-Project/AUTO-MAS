@@ -754,6 +754,10 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     okText: t('edit.configRestoreConfirmOk'),
     cancelText: t('edit.cancel'),
     onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('edit.configLocked'))
+        return
+      }
       try {
         const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
           scriptId,

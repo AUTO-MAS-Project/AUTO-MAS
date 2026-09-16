@@ -1097,6 +1097,10 @@ const selectAndImportInfrastructureConfig = async () => {
     ])
 
     if (path && path.length > 0) {
+      if (configLocked.value) {
+        message.error(t('edit.configLocked'))
+        return
+      }
       infrastructureImporting.value = true
 
       // 直接导入配置
