@@ -1468,8 +1468,6 @@ export default {
     mfwUnityResolutionOff: '不修改',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
-    mfwDirectOnlyAdbWin32:
-      'AUTO-MAS MaaFW Direct 只联动 ADB / Win32，其他控制方式建议使用项目原 UI。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
     thisSubtaskHasNo: '该子任务暂无可编辑字段',
     thisConfigurationFileHas: '该配置文件暂无可编辑的字段',

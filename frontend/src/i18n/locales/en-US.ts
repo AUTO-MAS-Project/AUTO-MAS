@@ -1544,8 +1544,6 @@ export default {
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
-    mfwDirectOnlyAdbWin32:
-      'AUTO-MAS MaaFW Direct only drives ADB / Win32; use the project’s own UI for other control methods.',
     thisNameAlsoWritten:
       'This name is also written to M7A/SRA as the Trailblazer name for Currency War',
     thisSubtaskHasNo: 'This subtask has no editable fields',

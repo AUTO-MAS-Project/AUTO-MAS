@@ -65,7 +65,6 @@
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
-            @retry-env="retryAgentEnvPrepare"
           />
         </div>
 
@@ -86,8 +85,6 @@
             :is-adb-controller="isAdbController"
             :is-desktop-controller="isDesktopController"
             :resource-options="resourceOptions"
-            :unsupported-controller-options="unsupportedControllerOptions"
-            :unsupported-controller-message="unsupportedControllerMessage"
             :adb-control-strategy-message="adbControlStrategyMessage"
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
@@ -291,8 +288,6 @@ const {
   emulatorDeviceOptions,
   emulatorTypeById,
   controllerOptions,
-  unsupportedControllerOptions,
-  unsupportedControllerMessage,
   effectiveControllerName,
   effectiveControllerType,
   isAdbController,
@@ -446,8 +441,9 @@ const runPreview = async (options: { forceEnv?: boolean } = {}) => {
   }
 }
 
-// 「准备运行环境」按钮：interface 再读一遍，运行环境不吃指纹缓存、真的重新准备一次。
-// 进度与结论都在右侧面板里，不再弹「已读取 xxx」的 toast。
+// 「准备运行环境」按钮（失败时即「重试」）：interface 再读一遍，运行环境不吃指纹缓存、
+// 真的重新准备一次——用户点它就是因为环境实际不好使，而指纹只看项目文件动没动，看不出
+// venv 内部坏了。进度与结论都在右侧面板里，不再弹「已读取 xxx」的 toast。
 const handlePreviewInterface = async () => {
   envPreparedPath.value = ''
   await runPreview({ forceEnv: true })
@@ -566,13 +562,6 @@ const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
   } finally {
     envPreparing.value = false
   }
-}
-
-// 重试要清掉「这个路径已经备好过」的记忆，并让后端也别吃指纹缓存：用户点重试
-// 就是因为环境实际不好使，而指纹只看项目文件动没动，看不出 venv 内部坏了。
-const retryAgentEnvPrepare = async () => {
-  envPreparedPath.value = ''
-  await runAgentEnvPrepare(undefined, true)
 }
 
 const selectMaaFWPath = async () => {

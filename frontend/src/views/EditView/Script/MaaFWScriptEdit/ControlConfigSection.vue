@@ -63,13 +63,6 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-alert
-      v-if="unsupportedControllerOptions.length"
-      class="control-strategy-alert"
-      type="info"
-      show-icon
-      :message="unsupportedControllerMessage"
-    />
 
     <Transition name="control-fade" mode="out-in">
       <div v-if="isAdbController" key="adb">
@@ -197,19 +190,21 @@
               <template #label>
                 <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
               </template>
+              <!-- 收起时只显示标题（option-label-prop），说明只在展开的选项里出现 -->
               <a-select
                 v-model:value="maafwConfig.Game.LaunchMode"
                 size="large"
                 style="width: 100%"
+                option-label-prop="label"
                 @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
               >
-                <a-select-option value="DirectExe">
+                <a-select-option value="DirectExe" :label="t('edit.letMasLaunchGame')">
                   <div class="launch-option">
                     <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
                     <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
                   </div>
                 </a-select-option>
-                <a-select-option value="AttachOnly">
+                <a-select-option value="AttachOnly" :label="t('edit.launchGameOtherWay')">
                   <div class="launch-option">
                     <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
                     <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
@@ -347,8 +342,6 @@ const props = defineProps<{
   isAdbController: boolean
   isDesktopController: boolean
   resourceOptions: MaaFWResourceInfo[]
-  unsupportedControllerOptions: MaaFWControllerInfo[]
-  unsupportedControllerMessage: string
   adbControlStrategyMessage: string
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string

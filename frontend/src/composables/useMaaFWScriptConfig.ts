@@ -169,12 +169,6 @@ export function useMaaFWControlConfig(
   const directControllerOptions = computed(() =>
     controllerOptions.value.filter(controller => isDirectControllerType(controller.type))
   )
-  const unsupportedControllerOptions = computed(() =>
-    controllerOptions.value.filter(controller => !isDirectControllerType(controller.type))
-  )
-  // 不逐个点名不支持的 controller：列表一长就是一坨，用户只需要知道「其他的去原 UI」
-  const unsupportedControllerMessage = computed(() => t('edit.mfwDirectOnlyAdbWin32'))
-
   const getDefaultControllerName = () => {
     const wantsAdb = maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-'
     if (wantsAdb) {
@@ -472,8 +466,6 @@ export function useMaaFWControlConfig(
     emulatorTypeById,
     isMultiEmulatorConfig,
     controllerOptions,
-    unsupportedControllerOptions,
-    unsupportedControllerMessage,
     effectiveControllerName,
     effectiveControllerType,
     isAdbController,

@@ -1423,8 +1423,6 @@ export default {
     mfwUnityResolutionOff: '変更しない',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
-    mfwDirectOnlyAdbWin32:
-      'AUTO-MAS MaaFW Direct が連携できるのは ADB / Win32 のみです。その他の制御方式はプロジェクト元の UI をご利用ください。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
     thisConfigurationFileHas: 'この設定ファイルに編集できる項目はありません',

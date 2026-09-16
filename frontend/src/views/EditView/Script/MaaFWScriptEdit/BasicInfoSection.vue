@@ -54,20 +54,6 @@
               </template>
               {{ t('edit.pickLocalDirectory') }}
             </a-button>
-            <!-- interface 是选完目录自动读的、项目不更新就不会变，这个按钮真正的用处是
-                 手动重新准备运行环境（不沿用指纹缓存）；顺带把 interface 再读一遍 -->
-            <a-button
-              size="large"
-              class="path-button"
-              :loading="interfaceLoading || envPreparing"
-              :disabled="!maafwConfig.Info.Path || updateApplying"
-              @click="emit('preview-interface')"
-            >
-              <template #icon>
-                <ToolOutlined />
-              </template>
-              {{ t('edit.prepareRuntimeEnv') }}
-            </a-button>
           </a-input-group>
         </a-form-item>
       </a-col>
@@ -95,13 +81,18 @@
       <div class="env-panel">
         <div class="env-panel-header">
           <span class="env-panel-title">{{ t('edit.envPanelTitle') }}</span>
+          <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
+               重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
           <a-button
-            v-if="envTone === 'failed'"
             size="small"
-            :loading="envPreparing"
-            @click="emit('retry-env')"
+            :loading="interfaceLoading || envPreparing"
+            :disabled="!maafwConfig.Info.Path || updateApplying"
+            @click="emit('preview-interface')"
           >
-            {{ t('edit.envRetry') }}
+            <template #icon>
+              <ToolOutlined />
+            </template>
+            {{ envTone === 'failed' ? t('edit.envRetry') : t('edit.prepareRuntimeEnv') }}
           </a-button>
         </div>
         <div ref="envLogBoxRef" class="env-log-box">
@@ -200,7 +191,6 @@ const emit = defineEmits<{
   change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
   'select-path': []
   'preview-interface': []
-  'retry-env': []
 }>()
 
 const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
@@ -404,14 +394,18 @@ watch(
   margin-bottom: 8px;
 }
 
+/* 与左边概览表的表头同一字号字重，两边标题齐平 */
 .env-panel-title {
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
   color: var(--ant-color-text);
 }
 
-/* 定高、内部滚动：日志再长面板也不长个（flex:1 会让面板跟着内容长，grid 行高被它撑开） */
+/* 高度写死到和左边三行表格一样（表头齐平后剩下的就是三行的高度）；日志再长也只在框里滚。
+   不用 flex 撑：窄屏折成上下两块时没有参照，会缩成一条线 */
 .env-log-box {
-  height: 170px;
+  height: 90px;
   overflow-y: auto;
   padding: 8px 10px;
   border: 1px solid var(--ant-color-border-secondary);
