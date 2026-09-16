@@ -25,6 +25,9 @@ from .state import DEFAULT_OPERATION_ROOT, UpdateOperationStore, project_lock
 ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
 MANIFEST_NAME = "resource-manifest.json"
+# 受管文件在本地被改过、又要被这次更新覆盖或删除时，覆盖前的那份留在这里
+# （每次更新整目录重建，只保留最近一次）。
+LOCAL_MODIFIED_DIR_NAME = "local-modified"
 
 logger = logging.getLogger("automas.maafw.project_update.apply")
 PROJECT_STATE_DIR_NAME = "maafw_project_state"
@@ -89,6 +92,36 @@ def has_trusted_update_baseline(
     except Exception:  # noqa: BLE001
         # 探测失败一律按「没有基线」处理：要全量包最多是多下点数据，
         # 要差量包却没有基线则是必然失败。
+        return False
+
+
+def update_baseline_matches_project(
+    project_path: Path,
+    *,
+    operation_root: Path | None = None,
+) -> bool:
+    """更新基线记的指纹是否仍等于项目当前指纹。
+
+    有清单只说明「上一版是我铺的」，不代表项目此后没被改过：M9A 这类项目自带的
+    agent 每次启动都做资源热更新，会改写 ``data/activity/*.json``；用户也可能手动
+    改过某个 pipeline。差量包在 ``_validate_plan_base`` 里要求指纹**完全一致**，
+    对不上就整个拒装——所以只要不一致，调用方就该去要全量包。
+
+    要 rglob + sha256 整个项目（M9A 542MB 实测约 2s），调用方按需再算，不要在
+    事件循环里直接调。探测只读。
+    """
+
+    try:
+        state_dir = _resolve_project_state_dir(
+            Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
+        )
+        manifest = _load_manifest(state_dir / MANIFEST_NAME)
+        recorded = str(manifest.get("projectFingerprint") or "").strip().lower()
+        if not recorded:
+            return False
+        current = project_fingerprint(project_path)
+        return current is not None and current == recorded
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -231,7 +264,9 @@ def apply_package_transaction(
             else:
                 stale = set(plan.deleted)
             touched = sorted(set(plan.files) | stale)
-            _verify_owned_files(root, old_manifest)
+            locally_modified = _locally_modified_owned_files(
+                root, old_manifest, touched
+            )
             backup_size = _owned_backup_size(root, touched)
             payload_size = sum(
                 source.stat().st_size
@@ -282,12 +317,16 @@ def apply_package_transaction(
                 else:
                     backup_entries[relative] = False
             _write_json(work_dir / "backup-manifest.json", {"files": backup_entries})
+            _preserve_locally_modified(
+                root, state_dir, locally_modified, send_update_log
+            )
             store.update(
                 "staged",
                 stageDir=str(extract_dir),
                 backupDir=str(backup_dir),
                 touchedPaths=touched,
                 backupEntries=backup_entries,
+                localModifiedFiles=locally_modified,
             )
             _emit(progress, "staged", {"planId": effective_plan_id})
 
@@ -334,8 +373,8 @@ def apply_package_transaction(
                 "schemaVersion": 1,
                 "version": plan.target_version or target_version or "",
                 "projectFingerprint": after,
-                # 不登记字节码：它会被解释器重写，登记了只会让下一次
-                # _verify_owned_files 判定「受管文件被本地改写」而永久拒装。
+                # 不登记字节码：它会被解释器重写，登记了只会让下一次更新
+                # 把它们当成「本地改过的受管文件」白白留档。
                 # 旧 manifest 里已有的 .pyc 条目也借这次重写自然清出。
                 "files": {
                     relative: _sha256_file(_project_target(root, relative))
@@ -623,32 +662,83 @@ def _is_bytecode_artifact(relative: str) -> bool:
     """相对路径是否为 Python 字节码产物。
 
     这类文件由解释器在**导入时**自行写出/重写：全量包里自带的 .pyc 一旦解压到
-    新路径，首次 import 就会因源码 mtime 与嵌入路径变化被重写。若把它们纳入
-    受管文件校验，装过一次并跑过一次之后，_verify_owned_files 就会认定「受管文件
-    被本地改写」而**永久拒绝后续所有更新**——这正是全局 fail-closed 的代价。
+    新路径，首次 import 就会因源码 mtime 与嵌入路径变化被重写。它们不构成
+    「受管文件被本地改写」，既不登记进清单，也不进本地改动的留档。
     """
 
     normalized = relative.replace("\\", "/")
     return normalized.endswith(".pyc") or "__pycache__/" in f"{normalized}/"
 
 
-def _verify_owned_files(project_path: Path, manifest: Mapping[str, Any]) -> None:
+def _locally_modified_owned_files(
+    project_path: Path,
+    manifest: Mapping[str, Any],
+    touched: list[str],
+) -> list[str]:
+    """清单里登记过、现在内容却对不上哈希、且这次更新会覆盖或删除的受管文件。
+
+    只看 ``touched`` 里的：更新不碰的文件本地怎么改都留着，没什么可提醒的。
+    发现不一致**不拒装**。以前这里是 fail-closed（任一受管文件哈希不符就抛错），
+    结果 M9A 自带 agent 每次启动都热更新 ``data/activity/*.json``，一旦上游发新版，
+    MAS 每次运行都先下完 210MB 全量包再拒装，项目永远停在旧版，用户没有任何
+    界面能解开。现在改成：记警告、把本地那份留到 state 目录，然后照常覆盖。
+    """
+
     files = manifest.get("files")
     if not isinstance(files, Mapping):
-        return
+        return []
+    touched_set = set(touched)
+    modified: list[str] = []
     for raw_path, raw_hash in files.items():
         relative = safe_relative_path(str(raw_path))
-        if _is_bytecode_artifact(relative):
-            # 字节码由解释器重写，不构成「用户改动了受管文件」。
+        if relative not in touched_set or _is_bytecode_artifact(relative):
             continue
         target = _project_target(project_path, relative)
-        if not target.exists():
+        if not target.is_file():
             continue
         expected = str(raw_hash or "").strip().lower().removeprefix("sha256:")
-        if expected and target.is_file() and _sha256_file(target) != expected:
-            raise UpdateApplyError(
-                f"managed project file was modified locally: {relative}"
-            )
+        if expected and _sha256_file(target) != expected:
+            modified.append(relative)
+    return sorted(modified)
+
+
+def _preserve_locally_modified(
+    project_path: Path,
+    state_dir: Path,
+    relatives: list[str],
+    send_update_log: Callable[[str], None],
+) -> None:
+    """把即将被覆盖的本地改动原样留一份到 ``<state>/local-modified/``。
+
+    有东西要留时整目录重建，只保留最近一次有本地改动的那批：留档的目的是让用户
+    改过的东西有处可找，不是做版本库。留档失败不阻断更新——更新本身是主线，
+    且 backup/ 仍在。
+    """
+
+    if not relatives:
+        return
+    keep_dir = _owned_state_path(state_dir / LOCAL_MODIFIED_DIR_NAME, state_dir)
+    try:
+        _remove_owned_path(keep_dir, state_dir)
+    except Exception:  # noqa: BLE001
+        pass
+    preview = ", ".join(relatives[:10])
+    suffix = " ..." if len(relatives) > 10 else ""
+    send_update_log(
+        f"MaaFW 项目有 {len(relatives)} 个受管文件在本地被改过（脚本自行热更新或"
+        f"手动修改），本次更新将以更新包内容覆盖，覆盖前的副本留在 {keep_dir}: "
+        f"{preview}{suffix}"
+    )
+    kept = 0
+    for relative in relatives:
+        source = _project_target(project_path, relative)
+        try:
+            _copy_path(source, keep_dir / relative)
+            kept += 1
+        except OSError as exc:
+            send_update_log(f"本地改动留档失败，继续更新: {relative}: {exc}")
+    if kept != len(relatives):
+        send_update_log(f"本地改动留档完成 {kept}/{len(relatives)} 个")
 
 
 def _rollback_from_state(
