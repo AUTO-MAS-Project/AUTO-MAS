@@ -22,6 +22,7 @@
 
 import asyncio
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -50,6 +51,7 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .task_loader import M9ATaskLoader
 from .tools import push_notification, push_version_update
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("M9A 调度器")
 
@@ -209,6 +211,12 @@ class M9AManager(TaskExecuteBase):
                 original_exists=True,
                 baseline=dir_fingerprint(self.temp_path),
             )
+
+            # 任务级一次性归档 M9A 原生配置（项目级池，指纹去重，失败不阻断
+            # 任务）：此刻 config/ 仍是任务动手前的完整现场（replace_dir 是
+            # 复制不动源目录），必须在随后的实例注入前归档
+            with suppress(Exception):
+                archive_native_backup(self.m9a_config_path)
 
         # 构建用户列表
         self.script_info.user_list = [

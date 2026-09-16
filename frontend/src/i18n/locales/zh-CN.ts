@@ -401,12 +401,9 @@ export default {
     p0PathSelected: '{p0}路径选择成功',
     switchedPlanModeP0: '已切换到计划模式：{p0}',
     loadedP0P1Log: '已加载 {p0} 行日志（共 {p1} 行）',
-    startedP0MaaendConfiguration: '已启动 {p0} MaaEnd 配置',
     importedP0ConfigurationFile: '已导入{p0}配置文件',
-    startedMaaSetupUser: '已开始配置用户 {p0} 的MAA设置',
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
-    openedOkWwSettings: '已打开{p0}的 ok-ww 设置',
     readP0: '已读取 {p0}',
     addedP0Tasks: '成功添加 {p0} 个任务',
     configurationSessionUserP02: '用户 {p0} 的配置会话已超时（30分钟），正在自动保存配置...',
@@ -1055,7 +1052,6 @@ export default {
     onlyProcessesStartedBy:
       '只关闭由本次任务启动且归 MAS 所有的目标进程，不会误杀用户手动打开的进程',
     optional: '可选',
-    couldNotStartMaa: '启动MAA配置失败',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
@@ -1119,6 +1115,50 @@ export default {
       '当前 ok-ww 安装中没有可用的设置目录。首次下载后，请先返回脚本列表点击“配置 ok-ww”，在本体中保存一次设置，再重新添加用户。',
     maaendConfigurationWindowOpen:
       '当前正在为这个用户打开 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
+    // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaendConfigRestoreScriptDesc:
+      'MaaEnd 原生配置的备份，恢复会直接作用于 MaaEnd 本体；打开本编辑页、运行 MaaEnd 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
+    m9aConfigRestoreUserDesc:
+      'MAS 编辑页核心配置（任务队列、服务器资源等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    m9aConfigRestoreScriptDesc:
+      'M9A 本体配置的备份，恢复会直接作用于 M9A 本体；进入本编辑页或运行 M9A 前会自动去重创建，保留最近 10 份',
+    // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
+    generalConfigRestoreUserDesc:
+      '该用户脚本配置的备份，恢复会直接作用于 MAS 配置页；运行或打开配置界面前会自动去重创建，保留最近 10 份',
+    generalConfigRestoreScriptDesc:
+      '脚本配置路径的备份，恢复会直接作用于脚本本体；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    generalViewingTitle: '正在查看脚本配置',
+    generalViewingDesc: '正在以只读方式打开该份备份的脚本配置。',
+    generalViewingDesc2: '查看完成后，请点击"关闭查看"按钮结束查看会话，脚本配置将保持原状。',
+    generalViewClose: '关闭查看',
+    // BAAH 配置恢复（无遮罩会话；native 按用户绑定的配置文件名动态归档）
+    baahConfigRestoreUserDesc:
+      'MAS 编辑页配置（配置文件绑定等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    baahConfigRestoreScriptDesc:
+      '当前绑定配置文件的备份，恢复会直接覆盖 BAAH 里的同名配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // SRC 配置恢复（native 恢复前拒绝接管待恢复快照，防止被任务回滚覆盖）
+    srcConfigRestoreUserDesc:
+      'MAS 配置的备份（关卡配置等页面字段与用户配置目录），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    srcConfigRestoreScriptDesc:
+      'SRC 安装目录 config 文件夹的备份，恢复会直接覆盖 SRC 本体配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    srcViewingTitle: '正在查看 SRC 配置',
+    srcViewingDesc: 'SRC 界面显示的是所选备份的内容，仅供查看。',
+    srcViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    srcViewClose: '关闭查看',
+    srcViewOpened: '已打开 SRC 查看',
+    srcViewStartFailed: '打开 SRC 查看失败',
+    // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
+    maaendSessionOpened: '已打开 MaaEnd 设置',
+    maaendSessionStartFailed: '启动 MaaEnd 设置失败',
+    maaendSessionStopFailed: '停止 MaaEnd 设置失败',
+    maaendSessionSaveFailed: '保存 MaaEnd 配置失败',
+    maaendViewOpened: '已打开 MaaEnd 查看',
+    maaendSessionTimeoutWarn: 'MaaEnd 设置会话即将超时，30 秒后自动保存',
+    maaendViewingTitle: '正在查看 MaaEnd 配置',
+    maaendViewingDesc: 'MaaEnd 界面显示的是所选备份的内容，仅供查看。',
+    maaendViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaendViewClose: '关闭查看',
     scriptLevelMaaendConfiguration2:
       '当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
     okNteGuiConfiguration: '当前正在进行该用户的 OK-NTE GUI 配置，请在 OK-NTE 界面完成相关设置。',
@@ -1653,6 +1693,27 @@ export default {
     bettergiSessionTimeoutWarn: 'BetterGI 设置会话即将超时，30 秒后自动保存',
     bettergiSettingsSaved: 'BetterGI 设置已保存',
     bettergiSettingsSaveFailed: '保存 BetterGI 设置失败',
+    // BetterGI 配置恢复（mas=per-user 副本 + 页面字段；native=全局 config.json）
+    bettergiConfigRestoreUserDesc:
+      'MAS 配置的备份（用户配置副本与页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    bettergiConfigRestoreScriptDesc:
+      'BetterGI 全局主配置（config.json）的备份，恢复会直接覆盖 BetterGI 全局设置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    bettergiViewingTitle: '正在查看 BetterGI 配置',
+    bettergiViewingDesc: 'BetterGI 界面显示的是所选备份的内容，仅供查看。',
+    bettergiViewingDesc2: '查看期间将临时打开配置；查看完成后请点击「关闭查看」结束。',
+    bettergiViewClose: '关闭查看',
+    bettergiViewOpened: '已打开 BetterGI 查看',
+    bettergiViewStartFailed: '打开 BetterGI 查看失败',
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    maafwConfigRestoreUserDesc:
+      'MAS 配置的备份（任务快照与设备覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    maafwConfigRestoreScriptDesc:
+      'MaaFW 项目配置（config 文件夹与 interface.json）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
+    hsrConfigRestoreUserDesc:
+      'MAS 配置的备份（任务映射与托管覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    hsrConfigRestoreScriptDesc:
+      'HSR 原生配置的备份（M7A config.yaml 与 SRA settings/cache/configs），恢复会直接覆盖原生配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
     // BAAH 专项
     baahScriptConfiguration: 'BAAH 脚本配置',
     baahScriptNameHint: '用于区分不同的 BAAH 脚本实例',
@@ -1764,6 +1825,12 @@ export default {
     configRestorePreviewEmpty: '该备份无可展示的配置摘要',
     configRestorePreviewActive: '活跃',
     configRestoreListFailed: '加载备份列表失败',
+    configRestoreEnsureFailed: '配置自动备份失败，本次更改可能没有恢复点',
+    configRestoreBackupFiles: '备份文件',
+    configRestoreCopy: '复制',
+    configRestoreCopied: '已复制到剪贴板',
+    configRestoreFileFailed: '读取备份文件失败',
+    configRestoreFileUnsupported: '该备份类别不支持查看文件内容',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
     configRestoreDetailConfirm:
@@ -1775,6 +1842,18 @@ export default {
     configRestoreConfirmTitle: '覆盖当前配置',
     configRestoreConfirmDesc:
       '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    configRestoreModeScript: '脚本级',
+    configRestoreModeUser: '用户级',
+    configRestoreModeDirect: '直控',
+    // 当前配置来源（仅三态专项返回，与备份标签比对是否需要跨来源提示）
+    configRestoreCurrentSource: '当前配置来源：{mode}',
+    // 跨配置来源恢复（备份来源与当前来源不一致）：单弹窗内换标题并追加说明
+    configRestoreCrossSourceTitle: '跨配置来源恢复',
+    configRestoreCrossSourceDesc:
+      '该备份来自{backup}配置，当前为{current}。继续恢复会把配置来源切换为{backup}，再写入对应配置。',
+    configRestoreCrossSourceShared:
+      '脚本级配置由本脚本的全部用户共享，恢复会覆盖其他用户当前使用的配置。',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',
@@ -1789,6 +1868,32 @@ export default {
     oknteViewingDesc: 'ok-nte 界面显示的是所选备份的内容，仅供查看。',
     oknteViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     oknteViewClose: '关闭查看',
+    // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    okwwConfigRestoreScriptDesc:
+      'ok-ww 原生配置的备份，恢复会直接作用于 ok-ww 本体；打开本编辑页、运行 ok-ww 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // ok-ww 原生设置/查看会话（措辞对齐 ok-nte / 一条龙）
+    okwwSessionOpened: '已打开 ok-ww 设置',
+    okwwSessionStartFailed: '启动 ok-ww 设置失败',
+    okwwSessionStopFailed: '停止 ok-ww 设置失败',
+    okwwViewOpened: '已打开 ok-ww 查看',
+    okwwSessionTimeoutWarn: 'ok-ww 设置会话即将超时，30 秒后自动保存',
+    okwwViewingTitle: '正在查看 ok-ww 配置',
+    okwwViewingDesc: 'ok-ww 界面显示的是所选备份的内容，仅供查看。',
+    okwwViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    okwwViewClose: '关闭查看',
+    // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaConfigRestoreScriptDesc:
+      'MAA 原生配置的备份，恢复会直接作用于 MAA 本体；打开本编辑页、运行 MAA 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // MAA 原生设置/查看会话（措辞对齐 ok-ww / ok-nte / 一条龙）
+    maaSessionOpened: '已打开 MAA 设置',
+    maaSessionStartFailed: '启动 MAA 设置失败',
+    maaSessionStopFailed: '停止 MAA 设置失败',
+    maaViewOpened: '已打开 MAA 查看',
+    maaSessionTimeoutWarn: 'MAA 设置会话即将超时，30 秒后自动保存',
+    maaViewingTitle: '正在查看 MAA 配置',
+    maaViewingDesc: 'MAA 界面显示的是所选备份的内容，仅供查看。',
+    maaViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaViewClose: '关闭查看',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
@@ -1798,6 +1903,8 @@ export default {
     configRestorePreviewAccount: '账号',
     configRestorePreviewPassword: '密码',
     configRestorePreviewBilibili: 'B服账号名',
+    configRestorePreviewUseCustomWinTitle: '自定义窗口标题',
+    configRestorePreviewCustomWinTitle: '窗口标题',
     zzzodPreviewUnlimited: '不限',
     zzzodOpenNativeConfig: '在一条龙内配置',
     zzzodOpenNativeConfigHint:
@@ -1909,6 +2016,8 @@ export default {
     zzzodBilibiliAccount: 'B服账号名',
     zzzodEnterBilibiliAccount: '请输入B服登录账号名',
     zzzodBilibiliAccountHint: 'B服登录面板中已保存的账号名',
+    zzzodUseCustomWinTitle: '自定义窗口标题',
+    zzzodCustomWinTitle: '窗口标题',
     zzzodOneDragonConfig: '任务配置',
     zzzodOneDragonConfigHint:
       '保存在本用户配置中，运行时由 MAS 写入一条龙；打开开关的任务会按顺序执行',

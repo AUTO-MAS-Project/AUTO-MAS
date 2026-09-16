@@ -48,12 +48,14 @@ from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from app.utils.io import read_file, write_file
 
 from .tools import (
+    archive_mas_runtime_backup,
     kill_src_processes,
     login,
     poor_yaml_read,
     poor_yaml_write,
     promote_src_config_update,
     push_notification,
+    read_overlay_values,
     read_src_webui_port,
     recover_src_user_config,
     save_src_user_config,
@@ -474,6 +476,18 @@ class AutoProxyTask(TaskExecuteBase):
                 overlay_path = native
         if overlay_path is not None:
             recover_src_user_config(overlay_path)
+            # 下发前归档下发源到用户池（运行回写会覆盖它；带页面核心字段
+            # 侧车，指纹去重，失败不阻断运行）。native 池由 manager.prepare
+            # 在任务级一次性归档
+            with suppress(Exception):
+                archive_mas_runtime_backup(
+                    self.script_info.script_id,
+                    str(self.cur_user_uid),
+                    overlay_path,
+                    overlay=read_overlay_values(self.cur_user_config),
+                    # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                    mode=self.config_mode,
+                )
 
         staging_path = stage_src_config_update(
             self.src_set_path,

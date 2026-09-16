@@ -115,14 +115,16 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 config-restore.md）：
 
 - 池声明：`app/task/ZzzOd/tools/restore_service.py` 的 `RESTORE_POOLS`
-  （mas=用户槽 / onedragon=原生，`RESTORE_SCRIPT_NAME="一条龙"`）；备份内部
+  （mas=用户槽 / onedragon=原生）；备份内部
   业务（槽占用守卫、字段回填、预览构建）依赖门面 helper，留在
   `app.core.config`（`get_zzzod_backup_preview` / `restore_zzzod_backup` /
-  `ensure_zzzod_mas_backup` / `ensure_zzzod_direct_backup`），池函数经
-  `ctx.config` 薄委托。
-- core 门面：`restore_service()` isinstance 分发 + `list/ensure/restore/
-  preview_config_backup` 四个通用方法；HTTP 层只有通用端点 `/backup/*`
-  （list/ensure/restore/preview），preview 的 `data` 载荷 = ZzzOd 结构
+  `ensure_zzzod_direct_backup`），池函数经 `ctx.config` 薄委托；两池均为
+  声明式（`files` + `backup_root` 包装专项 backup_archive 函数，预览与恢复
+  仍走门面），`ensure_zzzod_direct_backup` 保留供实例增删改等运行线调用。
+- core 门面：`restore_service()` isinstance 分发 + `list_config_backups /
+  ensure_config_backup / restore_config_backup / get_config_backup_preview /
+  get_config_backup_file` 五个通用方法；HTTP 层只有通用端点 `/backup/*`
+  （list/ensure/restore/preview/file），preview 的 `data` 载荷 = ZzzOd 结构
   （info/account/tasks/instances）。
 - 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（`scriptName`
   传统一名「一条龙」、内置预览渲染直接吃解包后的载荷），`restoreApi` 调
@@ -136,7 +138,7 @@ ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 conf
   （先物化账号+编排进槽再快照**：账号/编排只存在 UserData，槽只有会话/运行
   才被注入，直接快照会漏掉，恢复这种备份会把它清空）；③ 运行
   前 `_prepare_injection` 两者都归档（原有）。
-  `ensure_zzzod_mas_backup` 对未绑定槽跳过（无可恢复内容）。
+  mas 池 `files` 对未绑定槽/槽目录缺失返回 None（报无变化，不抛错）。
   归档全部指纹去重：内容无变化不产生新条目，恢复列表只留真实变更点。
 - 文件级快照/回写原语见 [config-archive.md](config-archive.md)。
 

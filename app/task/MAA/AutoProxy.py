@@ -73,6 +73,7 @@ from .tools import (
     push_notification,
     update_maa,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.cultivate import (
     CultivatePlan,
     ProviderContext,
@@ -1185,6 +1186,22 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             await agree_bilibili(self.maa_tasks_path, False)
 
+        # 下发前归档 MAS 配置到用户池（下发源，运行回写 _sync_maa_config_updates
+        # 会覆盖它；带页面任务字段侧车，指纹去重，失败不阻断运行）。目标路径
+        # 按来源 owner（脚本态共享 Default 目录，直控无 MAS 配置目录不归档）。
+        # native 池由 manager prepare 在任务级一次性归档
+        archive_dir = self._config_archive_dir()
+        if archive_dir is not None:
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                archive_dir,
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=str(self.cur_user_config.get("Info", "Mode") or "").strip()
+                or None,
+            )
+
         # ── 第一段：来源落盘 ──────────────────────────────────────────
         # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
         # 直控的事实源是 MAA 安装目录里现有的原生配置。
@@ -1597,10 +1614,18 @@ class AutoProxyTask(TaskExecuteBase):
             )
             self._maa_config_baseline = None
 
-    def _config_archive_dir(self) -> Path:
-        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。"""
+    def _config_archive_dir(self) -> Path | None:
+        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。
 
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        直控用户没有 MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），
+        返回 ``None``：不下发前归档、运行产出也不回写——安装目录现场由
+        任务结束的原生配置快照恢复机制管理。
+        """
+
+        mode = str(self.cur_user_config.get("Info", "Mode") or "").strip()
+        if mode == "直控":
+            return None
+        if mode == "脚本":
             return Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         return (
             Path.cwd()
@@ -1620,7 +1645,7 @@ class AutoProxyTask(TaskExecuteBase):
         if baseline is None:
             return
         archive_dir = self._config_archive_dir()
-        if not archive_dir.is_dir():
+        if archive_dir is None or not archive_dir.is_dir():
             return
 
         for name in _MAA_CONFIG_FILES:

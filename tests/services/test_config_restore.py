@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 #
 #   This file is part of AUTO-MAS.
@@ -30,7 +30,6 @@ def make_service(**target_kwargs) -> ConfigRestoreService:
         return []
 
     return ConfigRestoreService(
-        script_name="测试",
         targets=[
             ConfigRestoreTarget(key="mas", list_backups=empty_list, **target_kwargs)
         ],

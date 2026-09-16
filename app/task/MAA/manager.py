@@ -21,6 +21,7 @@
 
 
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -48,6 +49,7 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("MAA 调度器")
 
@@ -174,6 +176,13 @@ class MaaManager(TaskExecuteBase):
         ):
             self.had_original_script_config = True
 
+        # 任务级一次性归档 MAA 原生配置（项目级池，指纹去重，失败不阻断
+        # 任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」的安装
+        # 现场——下发处按用户归档会把上一轮下发的 MAS 配置误当原生内容挤进
+        # 保留池，必须在任何下发前归档这一次
+        with suppress(Exception):
+            archive_native_backup(self.maa_set_path)
+
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
@@ -236,12 +245,16 @@ class MaaManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            task = METHOD_BOOK[self.task_info.mode](
-                self.script_info,
-                self.script_config,
-                self.user_config,
-                self.emulator_manager,
+            kwargs: dict = dict(
+                script_info=self.script_info,
+                script_config=self.script_config,
+                user_config=self.user_config,
+                emulator_manager=self.emulator_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+                kwargs["view_only"] = self.task_info.view_only
+            task = METHOD_BOOK[self.task_info.mode](**kwargs)
             await self.spawn(task)
 
     async def final_task(self):

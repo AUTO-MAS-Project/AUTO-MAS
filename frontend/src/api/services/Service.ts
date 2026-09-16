@@ -26,6 +26,7 @@ import type { CommunityActivityOut } from '../models/CommunityActivityOut';
 import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
 import type { ConfigBackupEnsureIn } from '../models/ConfigBackupEnsureIn';
 import type { ConfigBackupEnsureOut } from '../models/ConfigBackupEnsureOut';
+import type { ConfigBackupFileOut } from '../models/ConfigBackupFileOut';
 import type { ConfigBackupListOut } from '../models/ConfigBackupListOut';
 import type { ConfigBackupPreviewOut } from '../models/ConfigBackupPreviewOut';
 import type { ConfigBackupRestoreIn } from '../models/ConfigBackupRestoreIn';
@@ -2076,8 +2077,7 @@ export class Service {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 ok-nte configs 目录初始化默认配置。
+     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
@@ -2184,7 +2184,9 @@ export class Service {
     /**
      * 把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）
      * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
-     * 用户配置并按需回填前端表单。
+     * 用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+     * 由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
+     * 来源比对给出。
      * @param requestBody
      * @returns ConfigBackupRestoreOut Successful Response
      * @throws ApiError
@@ -2226,6 +2228,39 @@ export class Service {
                 'userId': userId,
                 'time': time,
                 'target': target,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）
+     * 路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。
+     * @param scriptId
+     * @param userId
+     * @param time
+     * @param target
+     * @param path
+     * @returns ConfigBackupFileOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigBackupFileApiApiScriptsBackupFileGet(
+        scriptId: string,
+        userId: string,
+        time: string,
+        target: string,
+        path: string,
+    ): CancelablePromise<ConfigBackupFileOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/file',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'time': time,
+                'target': target,
+                'path': path,
             },
             errors: {
                 422: `Validation Error`,

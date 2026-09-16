@@ -46,6 +46,11 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.MaaFW.tools.backup_archive import (
+    archive_mas_runtime_backup,
+    archive_native_backup,
+    read_overlay_values,
+)
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
@@ -687,6 +692,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"{len(self.script_info.user_list)}"
         )
 
+        # 运行前归档 MaaFW 项目配置（config/ + interface.json）——物化会写这两处，
+        # 归档必须在任何写入前（指纹去重，失败不阻断任务）
+        with suppress(Exception):
+            archive_native_backup(
+                self.script_info.script_id,
+                Path(self.script_config.get("Info", "Path")),
+            )
+
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
         # 还是得备。两步都在用户任务之外，不计入 ``Run.RunTimeLimit``。
@@ -699,6 +712,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 结算该用户的代理次数、剩余天数并释放项目锁），因此每个用户各建一个。
         for index in range(len(self.runnable_user_uids)):
             self.script_info.current_index = index
+            user_id = self.runnable_user_uids[index]
+            # 物化前归档本用户 MAS 字段侧车（下发前存底；指纹去重，
+            # 失败只记日志不阻断任务——与 native 归档同一语义）
+            with suppress(Exception):
+                archive_mas_runtime_backup(
+                    self.script_info.script_id,
+                    str(user_id),
+                    overlay=read_overlay_values(self.user_config[user_id]),
+                )
             self.inner_task = self._build_inner_task()
             self._inner_finalized = False
             try:
