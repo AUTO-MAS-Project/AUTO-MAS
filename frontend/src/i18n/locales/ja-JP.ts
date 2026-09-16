@@ -1327,6 +1327,24 @@ export default {
     cdkTip:
       'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
+    cdkPrefilledFromGlobal:
+      'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
+    notDeclared: '未宣言',
+    updateProcess: '更新の進行',
+    updateProcessPlaceholder:
+      '「更新を確認」を押すと、確認・ダウンロード・上書きの進行をここに表示します',
+    updateProcessNoLogYet: 'ログはまだありません',
+    updatePhaseChecking: '確認中',
+    updatePhaseDownloading: 'ダウンロード中',
+    updatePhasePreparing: '上書き準備中',
+    updatePhaseApplying: '上書き中',
+    updatePhaseValidating: '検証中',
+    updatePhaseCompleted: '完了',
+    updatePhaseRolledBack: 'ロールバック済み',
+    updatePhaseFailed: '失敗',
+    updateFilesApplied: '{files} ファイル',
+    updatePackageFull: 'フル更新',
+    updatePackageIncremental: '差分更新',
     directory: 'フォルダ',
     useExistingOkwwConfiguration:
       'Okww の既存設定をそのまま使い、細かい設定はスクリプトの GUI に任せます。',

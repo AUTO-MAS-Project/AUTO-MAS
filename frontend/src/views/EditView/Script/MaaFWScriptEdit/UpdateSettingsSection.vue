@@ -85,19 +85,19 @@
               t('edit.cdkGetLink')
             }}</a>
           </div>
+          <div v-if="cdkPrefilled" class="form-hint">{{ t('edit.cdkPrefilledFromGlobal') }}</div>
         </a-form-item>
       </a-col>
-    </a-row>
-    <a-row :gutter="24" class="update-action-row">
-      <a-col :span="24">
+      <a-col :span="12">
         <a-form-item :label="t('edit.updateNow')">
           <a-space wrap>
-            <a-button :loading="updateChecking" @click="emit('check-update')">{{
+            <a-button size="large" :loading="updateChecking" @click="emit('check-update')">{{
               t('edit.checkUpdates2')
             }}</a-button>
             <a-button
               v-if="updateResult && updateResult.installable"
               type="primary"
+              size="large"
               :loading="updateApplying"
               @click="emit('apply-update')"
             >
@@ -142,35 +142,66 @@
       />
     </template>
 
-    <div v-if="previewData" class="update-info-grid">
-      <div class="update-info-item">
-        <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
-        <div class="update-info-value">{{ previewData.project.version || '未声明' }}</div>
+    <div v-if="previewData" class="update-meta-line">
+      <span class="update-meta-item">
+        <span class="update-meta-label">{{ t('edit.currentVersion') }}</span>
+        <span class="update-meta-value">{{
+          previewData.project.version || t('edit.notDeclared')
+        }}</span>
+      </span>
+      <span class="update-meta-item">
+        <span class="update-meta-label">GitHub</span>
+        <span class="update-meta-value">{{
+          previewData.project.github || t('edit.notDeclared')
+        }}</span>
+      </span>
+    </div>
+
+    <div class="update-process">
+      <div class="update-process-header">
+        <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
+        <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
       </div>
-      <div class="update-info-item">
-        <div class="update-info-label">GitHub</div>
-        <div class="update-info-value">{{ previewData.project.github || '未声明' }}</div>
+      <div v-if="updateProgress.phase === 'idle'" class="update-process-placeholder">
+        {{ t('edit.updateProcessPlaceholder') }}
       </div>
-      <div class="update-info-item">
-        <div class="update-info-label">MirrorChyan RID</div>
-        <div class="update-info-value">
-          {{ previewData.project.mirrorchyanRid || '未声明' }}
+      <template v-else>
+        <div class="update-process-summary" :class="`update-process-summary--${summaryTone}`">
+          <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-process-icon" />
+          <CheckCircleOutlined v-else-if="summaryTone === 'success'" class="update-process-icon" />
+          <CloseCircleOutlined v-else class="update-process-icon" />
+          <span class="update-process-phase">{{ phaseLabel }}</span>
+          <span v-if="summaryDetail" class="update-process-detail">{{ summaryDetail }}</span>
         </div>
-      </div>
-      <div class="update-info-item">
-        <div class="update-info-label">{{ t('edit.multiPlatform') }}</div>
-        <div class="update-info-value">
-          {{ previewData.project.mirrorchyanMultiplatform ? '是' : '否' }}
+        <a-progress
+          v-if="barPercent !== null"
+          :percent="barPercent"
+          size="small"
+          :status="summaryTone === 'failed' ? 'exception' : 'active'"
+          class="update-process-bar"
+        />
+        <div ref="logBoxRef" class="update-log-box">
+          <div v-if="!updateProgress.logs.length" class="update-log-line update-log-line--empty">
+            {{ t('edit.updateProcessNoLogYet') }}
+          </div>
+          <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
+            {{ line }}
+          </div>
         </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  LoadingOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   resolveCdkExpiry,
@@ -179,6 +210,14 @@ import {
 } from '@/composables/useMaaFWProjectUpdate'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 import { handleExternalLink } from '@/utils/openExternal'
+import {
+  formatAppliedFiles,
+  formatDownloadSize,
+  formatDownloadSpeed,
+  progressBarPercent,
+  type MaaFWUpdateProgressPhase,
+  type MaaFWUpdateProgressState,
+} from './updateProgress'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
@@ -192,6 +231,9 @@ const props = defineProps<{
   updateApplying: boolean
   updateError: string
   updateResult: MaaFWUpdateResult | null
+  updateProgress: MaaFWUpdateProgressState
+  /** 本次进入页面时 CDK 是从 MAS 更新设置里自动填入的 */
+  cdkPrefilled: boolean
   updateSourceOptions: Array<{ label: string; value: string }>
   updateChannelOptions: Array<{ label: string; value: string }>
 }>()
@@ -254,6 +296,70 @@ const cdkExpiryMessage = computed(() => {
   if (!expiry) return ''
   return t('edit.cdkExpiresSoon', { date: expiry.dateText })
 })
+
+// ---- 更新过程面板 ----
+
+const PHASE_LABEL_KEYS: Record<Exclude<MaaFWUpdateProgressPhase, 'idle'>, string> = {
+  checking: 'edit.updatePhaseChecking',
+  downloading: 'edit.updatePhaseDownloading',
+  preparing: 'edit.updatePhasePreparing',
+  applying: 'edit.updatePhaseApplying',
+  validating: 'edit.updatePhaseValidating',
+  completed: 'edit.updatePhaseCompleted',
+  rolled_back: 'edit.updatePhaseRolledBack',
+  failed: 'edit.updatePhaseFailed',
+}
+
+const phaseLabel = computed(() => {
+  const phase = props.updateProgress.phase
+  if (phase === 'idle') return ''
+  const label = t(PHASE_LABEL_KEYS[phase])
+  const percent = progressBarPercent(props.updateProgress)
+  return percent === null ? label : `${label} ${percent}%`
+})
+
+const summaryTone = computed<'running' | 'success' | 'failed'>(() => {
+  const phase = props.updateProgress.phase
+  if (phase === 'completed') return 'success'
+  if (phase === 'failed' || phase === 'rolled_back') return 'failed'
+  return 'running'
+})
+
+// 下载阶段给「已下 / 总量 · 速度」，覆盖阶段给「n/m 个文件」，其余阶段给后端那句描述。
+const summaryDetail = computed(() => {
+  const state = props.updateProgress
+  if (state.phase === 'downloading') {
+    const parts = [formatDownloadSize(state), formatDownloadSpeed(state)].filter(Boolean)
+    return parts.join('  ·  ')
+  }
+  if (state.phase === 'applying') {
+    const files = formatAppliedFiles(state)
+    return files ? t('edit.updateFilesApplied', { files }) : state.message
+  }
+  return state.message
+})
+
+const packageKindLabel = computed(() => {
+  const kind = props.updateProgress.packageKind
+  if (kind === 'full') return t('edit.updatePackageFull')
+  if (kind === 'incremental') return t('edit.updatePackageIncremental')
+  return ''
+})
+
+const barPercent = computed(() => progressBarPercent(props.updateProgress))
+
+// 新日志进来时贴到底部，用户手动往上翻时不打扰
+const logBoxRef = ref<HTMLElement | null>(null)
+watch(
+  () => props.updateProgress.logs.length,
+  async () => {
+    const box = logBoxRef.value
+    if (!box) return
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    await nextTick()
+    if (nearBottom) box.scrollTop = box.scrollHeight
+  }
+)
 </script>
 
 <style scoped>
@@ -336,40 +442,115 @@ const cdkExpiryMessage = computed(() => {
   margin-top: 4px;
 }
 
-.update-action-row {
+.update-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
   margin-top: 4px;
+  font-size: 13px;
 }
 
-.update-info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.update-info-item {
+.update-meta-item {
+  display: inline-flex;
+  gap: 6px;
   min-width: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
 }
 
-.update-info-label {
+.update-meta-label {
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
 }
 
-.update-info-value {
-  margin-top: 4px;
+.update-meta-value {
   color: var(--ant-color-text);
-  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 768px) {
-  .update-info-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+/* 过程面板只用边框分隔，不铺底色：深色主题下成块的底色会把页面切得花 */
+.update-process {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+}
+
+.update-process-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.update-process-title {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.update-process-kind {
+  margin-inline-end: 0;
+}
+
+.update-process-placeholder {
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+}
+
+.update-process-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text);
+}
+
+.update-process-icon {
+  font-size: 14px;
+}
+
+.update-process-summary--running .update-process-icon {
+  color: var(--ant-color-primary);
+}
+
+.update-process-summary--success .update-process-icon {
+  color: var(--ant-color-success);
+}
+
+.update-process-summary--failed .update-process-icon {
+  color: var(--ant-color-error);
+}
+
+.update-process-phase {
+  font-weight: 600;
+}
+
+.update-process-detail {
+  color: var(--ant-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.update-process-bar {
+  margin: 6px 0 2px;
+}
+
+.update-log-box {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  font-family: var(--ant-font-family-code, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.update-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.update-log-line--empty {
+  color: var(--ant-color-text-tertiary);
 }
 </style>
