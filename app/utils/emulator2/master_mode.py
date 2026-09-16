@@ -27,6 +27,11 @@
 MuMu 处理宿主缓存及五个桌面组件，关闭时撤销占位并恢复组件；组件状态跨重启保留。
 ``MuMuManager sh`` 不要求开启 ``root_permission``；组件必须用 ``pm disable``，
 ``pm disable-user`` 会静默返回 default，不能代替。
+
+宿主层（雷电 ``data.ini``、MuMu 缓存占位）跟着安装走：MuMu 的小程序弹窗由常驻的
+``MuMuNxService.exe`` 在实例启动等事件时用 ``ProgramAds`` 里缓存好的图直接画，多开器手动
+起实例也会弹，所以门面在起这条配置里的任一台设备前对每条安装调一次 :func:`apply_host_mode`，
+而不是只在起对应实例时处理。
 """
 
 import os
@@ -236,21 +241,49 @@ def mumu_splash_placeholder_paths(appdata: Path | None = None) -> list[Path]:
     return [data / "startupImage", data / "ProgramAds"]
 
 
-def apply_splash_placeholders(paths: list[Path], enabled: bool) -> None:
-    """占位或撤销占位。
+def apply_splash_placeholders(paths: list[Path], enabled: bool) -> bool:
+    """占位或撤销占位，返回是否真的动了文件。
 
     开着：目录整个删掉、原地放一个同名空文件，MuMu 就写不进缓存图；实测它启动时不会把文件
     改回目录，也不报错。关着：只删我们放的那个空文件，目录让 MuMu 自己重建。
     任何一处失败只记警告，继续处理下一处。
     """
+    changed = False
     for path in paths:
         try:
             if enabled:
+                if path.is_file():
+                    continue
                 if path.is_dir():
                     shutil.rmtree(path)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
+                changed = True
             elif path.is_file():
                 path.unlink()
+                changed = True
         except OSError as e:
             logger.warning(f"处理「大雷主人模式」缓存占位失败 {path}: {e}")
+    return changed
+
+
+# ---- 安装级入口 ------------------------------------------------------------
+
+
+def apply_host_mode(
+    emulator_type: str, manager_exe: Path | None, enabled: bool
+) -> bool:
+    """按开关对齐**一条安装**的宿主层，返回是否有改动。
+
+    宿主层跟着安装走，不跟着实例走：MuMu 的小程序弹窗由常驻的多开器在它自己启动时弹，
+    雷电的加载页轮播由 ``dnplayer.exe`` 读安装目录的渠道配置，都和这次起的是哪台实例无关，
+    所以门面在起这条配置里的任一台设备前，对配置下的每条安装都调一次。
+    不认识的类型什么都不做。
+    """
+    if emulator_type == "mumu":
+        return apply_splash_placeholders(mumu_splash_placeholder_paths(), enabled)
+    if emulator_type == "ldplayer" and manager_exe is not None:
+        return apply_ldplayer_data_ini(
+            ldplayer_data_ini_path(manager_exe.parent), enabled
+        )
+    return False

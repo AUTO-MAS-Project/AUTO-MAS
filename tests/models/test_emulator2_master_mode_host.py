@@ -1,10 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from app.utils.emulator2 import master_mode
 from app.utils.emulator2.master_mode import (
     LDPLAYER_MARKER_KEY,
+    apply_host_mode,
     apply_ldplayer_data_ini,
+    apply_splash_placeholders,
     ldplayer_data_ini_path,
 )
 
@@ -156,3 +160,60 @@ class DataIniTest(unittest.TestCase):
         apply_ldplayer_data_ini(self.path, True)
         apply_ldplayer_data_ini(self.path, False)
         self.assertEqual(self.path.read_bytes(), raw)
+
+
+class SplashPlaceholderTest(unittest.TestCase):
+    """MuMu 宿主缓存占位：目录换成同名空文件，撤销时只删自己放的文件。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.target = Path(self._tmp.name) / "ProgramAds"
+
+    def test_enable_replaces_directory_and_is_idempotent(self) -> None:
+        self.target.mkdir()
+        (self.target / "programAds.json").write_text("{}")
+
+        self.assertTrue(apply_splash_placeholders([self.target], True))
+        self.assertTrue(self.target.is_file())
+        self.assertFalse(apply_splash_placeholders([self.target], True))
+
+    def test_disable_removes_only_our_file(self) -> None:
+        self.target.touch()
+        self.assertTrue(apply_splash_placeholders([self.target], False))
+        self.assertFalse(self.target.exists())
+
+        self.target.mkdir()
+        self.assertFalse(apply_splash_placeholders([self.target], False))
+        self.assertTrue(self.target.is_dir())
+
+
+class ApplyHostModeTest(unittest.TestCase):
+    """按安装类型分发到各自的宿主层处理。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def test_ldplayer_writes_data_ini_next_to_manager(self) -> None:
+        exe = self.root / "LDPlayer14" / "ldconsole.exe"
+        exe.parent.joinpath("data").mkdir(parents=True)
+
+        self.assertTrue(apply_host_mode("ldplayer", exe, True))
+        self.assertIn("launchadshow=0", (exe.parent / "data" / "data.ini").read_text())
+
+    def test_ldplayer_without_manager_does_nothing(self) -> None:
+        self.assertFalse(apply_host_mode("ldplayer", None, True))
+
+    def test_mumu_uses_placeholders(self) -> None:
+        ads = self.root / "data" / "ProgramAds"
+        ads.mkdir(parents=True)
+        with mock.patch.object(
+            master_mode, "mumu_splash_placeholder_paths", return_value=[ads]
+        ):
+            self.assertTrue(apply_host_mode("mumu", None, True))
+        self.assertTrue(ads.is_file())
+
+    def test_unknown_type_is_ignored(self) -> None:
+        self.assertFalse(apply_host_mode("bluestacks", None, True))
