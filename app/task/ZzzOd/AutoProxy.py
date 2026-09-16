@@ -88,6 +88,7 @@ from .tools import (
     find_active_instance,
     find_free_instance_idx,
     instance_dir,
+    launch_args_patch,
     list_app_catalog,
     list_instances,
     push_notification,
@@ -96,6 +97,7 @@ from .tools import (
     snapshot_run_records,
     user_field_patch,
     write_app_group,
+    write_game,
     write_game_account,
     write_instance_view,
 )
@@ -307,7 +309,7 @@ def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
 def inject_user_fields(
     root: Path, slot_idx: int, user_config: ZzzOdUserConfig, apps: list[dict]
 ) -> None:
-    """把 MAS 用户字段写入绑定槽（game_account patch + 任务编排整表）。
+    """把 MAS 用户字段写入绑定槽（game_account patch + game.yml 启动参数 + 任务编排整表）。
 
     不清运行记录、不备份——配置会话（以本页配置为基线打开 GUI）与运行时
     注入（配合 clear_run_records）共用。
@@ -315,6 +317,7 @@ def inject_user_fields(
 
     slot_dir = instance_dir(root, slot_idx)
     write_game_account(slot_dir, user_field_patch(user_config))
+    write_game(slot_dir, launch_args_patch(user_config))
     write_app_group(slot_dir, apps)
 
 
@@ -525,8 +528,9 @@ class AutoProxyTask(TaskExecuteBase):
     ) -> None:
         """把用户配置字段生成 zzz-od YAML 写入实例槽（MaaEnd 式字段下发）。
 
-        只覆盖 MAS 侧非空字段，槽内 game_account.yml 的其余字段（platform、
-        自定义窗口标题等）原样保留；随后清空运行记录让本次任务全部重跑。
+        账号字段只覆盖 MAS 侧非空字段，槽内 game_account.yml 的其余字段
+        （platform、自定义窗口标题等）原样保留；启动参数整组覆盖 game.yml；
+        随后清空运行记录让本次任务全部重跑。
         """
 
         inject_user_fields(self.script_root_path, slot_idx, user_config, apps)

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ZzzOdNativeLaunchArgs } from './ZzzOdNativeLaunchArgs';
 import type { ZzzOdNativeTaskIn } from './ZzzOdNativeTaskIn';
 /**
  * 直控模式：保存所选实例的原生配置（可选增量，缺省字段不写回）。
@@ -27,5 +28,9 @@ export type ZzzOdNativeConfigIn = {
      * 运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）
      */
     instanceRun?: (string | null);
+    /**
+     * 游戏启动参数（缺省不写回）
+     */
+    launchArgs?: (ZzzOdNativeLaunchArgs | null);
 };
 

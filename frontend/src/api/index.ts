@@ -41,6 +41,7 @@ export type { BetterGIScriptSettingsUiOut } from './models/BetterGIScriptSetting
 export type { BetterGIUserConfig } from './models/BetterGIUserConfig';
 export type { BetterGIUserConfig_Data } from './models/BetterGIUserConfig_Data';
 export type { BetterGIUserConfig_Info } from './models/BetterGIUserConfig_Info';
+export type { BetterGIUserConfig_Notify } from './models/BetterGIUserConfig_Notify';
 export type { BetterGIUserConfig_OneDragon } from './models/BetterGIUserConfig_OneDragon';
 export type { BetterGIUserConfig_Switch } from './models/BetterGIUserConfig_Switch';
 export type { BetterGIUserConfig_Task } from './models/BetterGIUserConfig_Task';
@@ -455,6 +456,7 @@ export type { ZzzOdMissionTypeOut } from './models/ZzzOdMissionTypeOut';
 export type { ZzzOdNativeAccountField } from './models/ZzzOdNativeAccountField';
 export type { ZzzOdNativeConfigIn } from './models/ZzzOdNativeConfigIn';
 export type { ZzzOdNativeConfigOut } from './models/ZzzOdNativeConfigOut';
+export { ZzzOdNativeLaunchArgs } from './models/ZzzOdNativeLaunchArgs';
 export type { ZzzOdNativeTaskIn } from './models/ZzzOdNativeTaskIn';
 export type { ZzzOdNativeTaskOut } from './models/ZzzOdNativeTaskOut';
 export type { ZzzOdTaskOptionsOut } from './models/ZzzOdTaskOptionsOut';

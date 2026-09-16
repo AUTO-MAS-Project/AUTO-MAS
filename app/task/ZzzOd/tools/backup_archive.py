@@ -55,10 +55,12 @@ from .zzz_od_config import (
     _one_dragon_file,
     _view_sidecar_path,
     instance_dir,
+    launch_args_patch,
     normalize_app_group_entries,
     restore_instance_view,
     user_field_patch,
     write_app_group,
+    write_game,
     write_game_account,
 )
 
@@ -370,17 +372,19 @@ def materialize_user_applist(slot_dir: Path, applist_json: str | None) -> bool:
 
 
 def materialize_user_fields(slot_dir: Path, user_config) -> None:
-    """把 MAS 页面账号字段与任务编排物化进绑定槽（``game_account.yml`` + ``_group.yml``）。
+    """把 MAS 页面账号字段、启动参数与任务编排物化进绑定槽。
 
-    账号字段（区服/路径/语言/账号/密码/B服名/自定义窗口标题）与任务编排只
-    存在 MAS UserData，槽只有在会话/运行注入时才带上——直接快照槽会漏掉
-    它们，恢复这种备份会把 MAS 本页账号与编排清空（编排侧见
-    :func:`materialize_user_applist`，账号字段同款陷阱）。经统一归档入口
-    :func:`archive_mas_config_backup` 与恢复前存底调用；写盘与注入同款：
-    账号只写非空字段、编排整表含未启用项，不清运行记录。
+    账号字段（区服/路径/语言/账号/密码/B服名/自定义窗口标题）、启动参数
+    （``game.yml`` 六字段）与任务编排只存在 MAS UserData，槽只有在会话/
+    运行注入时才带上——直接快照槽会漏掉它们，恢复这种备份会把 MAS 本页
+    账号与编排清空（编排侧见 :func:`materialize_user_applist`，账号字段
+    同款陷阱）。经统一归档入口 :func:`archive_mas_config_backup` 与恢复前
+    存底调用；写盘与注入同款：账号只写非空字段、启动参数整组下发、编排
+    整表含未启用项，不清运行记录。
     """
 
     write_game_account(slot_dir, user_field_patch(user_config))
+    write_game(slot_dir, launch_args_patch(user_config))
     materialize_user_applist(slot_dir, user_config.get("OneDragon", "AppList"))
 
 

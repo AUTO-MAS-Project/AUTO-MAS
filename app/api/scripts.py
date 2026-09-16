@@ -3135,6 +3135,7 @@ async def get_zzzod_native_config_api(
             account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
+            launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -3173,6 +3174,7 @@ async def save_zzzod_native_config_api(
             if script.tasks is not None
             else None,
             script.instanceRun,
+            script.launchArgs.model_dump() if script.launchArgs is not None else None,
         )
         data = await Config.get_zzzod_native_config(script.scriptId, script.instanceIdx)
         return ZzzOdNativeConfigOut(
@@ -3184,6 +3186,7 @@ async def save_zzzod_native_config_api(
             account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
+            launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
         )
     except Exception as e:
         logger.opt(exception=True).warning(

@@ -711,6 +711,28 @@ class ZzzOdNativeAccountField(BaseModel):
     )
 
 
+class ZzzOdNativeLaunchArgs(BaseModel):
+    """直控编辑的一条龙游戏启动参数（强绑定 zzz-od 原生 game.yml）。"""
+
+    launch_argument: bool = Field(
+        ..., description="启动参数总开关（关闭时一条龙启动游戏不带任何参数）"
+    )
+    screen_size: Literal["1920x1080", "2560x1440", "3840x2160"] = Field(
+        ..., description="窗口尺寸"
+    )
+    full_screen: Literal["0", "1"] = Field(
+        ..., description="全屏模式：0=窗口化 1=全屏"
+    )
+    popup_window: bool = Field(..., description="无边框窗口（-popupwindow）")
+    dx12: bool = Field(
+        ..., description="DX12 启动（写回时把 -use-d3d12 合并进高级参数）"
+    )
+    monitor: Literal["1", "2", "3", "4"] = Field(..., description="显示器序号")
+    launch_argument_advance: str = Field(
+        ..., description="高级参数（原样透传给一条龙拼接，上游不解析）"
+    )
+
+
 class ZzzOdNativeTaskOut(BaseModel):
     """直控任务编排条目（原生 app_list 与目录合并后的可选项）。"""
 
@@ -743,6 +765,9 @@ class ZzzOdNativeConfigOut(OutBase):
         ...,
         description="运行实例（one_dragon.yml instance_run 原值：仅运行当前/全部实例）",
     )
+    launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
+        default=None, description="游戏启动参数（game.yml，缺失字段合并上游默认值）"
+    )
 
 
 class ZzzOdNativeTaskIn(BaseModel):
@@ -767,6 +792,9 @@ class ZzzOdNativeConfigIn(BaseModel):
     instanceRun: Optional[str] = Field(
         default=None,
         description="运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+    launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
+        default=None, description="游戏启动参数（缺省不写回）"
     )
 
 
@@ -2031,6 +2059,30 @@ class ZzzOdUserConfig_Game(BaseModel):
         default=None, description="是否使用自定义窗口标题"
     )
     CustomWinTitle: Optional[str] = Field(default=None, description="自定义窗口标题")
+    LaunchArgument: Optional[bool] = Field(
+        default=None,
+        description="一条龙游戏启动参数总开关（关闭时一条龙启动游戏不带任何参数）",
+    )
+    ScreenSize: Optional[Literal["1920x1080", "2560x1440", "3840x2160"]] = Field(
+        default=None, description="窗口尺寸（一条龙启动参数）"
+    )
+    FullScreen: Optional[Literal["0", "1"]] = Field(
+        default=None, description="全屏模式：0=窗口化 1=全屏（一条龙启动参数）"
+    )
+    PopupWindow: Optional[bool] = Field(
+        default=None, description="无边框窗口（一条龙启动参数 -popupwindow）"
+    )
+    Dx12: Optional[bool] = Field(
+        default=None,
+        description="DX12 启动（注入时把 -use-d3d12 合并进一条龙高级参数，勾选框为唯一权威）",
+    )
+    Monitor: Optional[Literal["1", "2", "3", "4"]] = Field(
+        default=None, description="显示器序号（一条龙启动参数）"
+    )
+    LaunchArgumentAdvance: Optional[str] = Field(
+        default=None,
+        description="高级参数（原样透传给一条龙拼接，上游不解析）",
+    )
 
 
 class ZzzOdUserConfig_OneDragon(BaseModel):

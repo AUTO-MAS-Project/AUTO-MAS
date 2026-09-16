@@ -2165,6 +2165,23 @@ export default {
       'One-dragon series tasks on one screen: flip a switch to include a task in the run, and it stays in place when turned off; drag the card handle to adjust the run order.',
     zzzodLoadOneDragonFailed: 'Could not load the one-dragon task list',
     zzzodPushLogModeHint: 'How per-task results (success/failure/skipped) appear in the run report',
+    zzzodLaunchArgsTitle: 'Launch Arguments',
+    zzzodLaunchArgsDetail: 'Details',
+    zzzodLaunchArgsDesc:
+      'Arguments used when the one-dragon starts the game (same source as its in-app game settings); with the master switch off, the game starts without any arguments',
+    zzzodLaunchArgsSwitchHint:
+      'Launch arguments master switch: when off, the one-dragon starts the game without any arguments (including advanced ones)',
+    zzzodScreenSize: 'Window Size',
+    zzzodFullScreen: 'Fullscreen',
+    zzzodFullScreenWindowed: 'Windowed',
+    zzzodFullScreenFullscreen: 'Fullscreen',
+    zzzodPopupWindow: 'Borderless Window',
+    zzzodMonitor: 'Monitor',
+    zzzodAdvanceArgs: 'Advanced Arguments',
+    zzzodAdvanceArgsPlaceholder: 'Other custom arguments (use the DX12 switch above)',
+    zzzodDx12: 'DX12',
+    zzzodDx12Hint:
+      'Launch the game with DX12 (-use-d3d12); same level as other arguments, merged into the one-dragon advanced arguments automatically, requires the master switch to be on',
     bettergiAddScriptToGroup: 'Add script to group',
     bettergiAddScriptToGroupOk: 'Add',
     bettergiAddScriptUnsupported: 'This type cannot be added to a config group yet',

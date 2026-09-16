@@ -2194,11 +2194,12 @@ class AppConfig(GlobalConfig):
         return root, instance
 
     async def get_zzzod_native_config(self, script_id: str, instance_idx: int) -> dict:
-        """读取实例原生配置（账号字段 + 任务编排 + 运行实例），供直控页面表单渲染。
+        """读取实例原生配置（账号字段 + 启动参数 + 任务编排 + 运行实例），供直控页面表单渲染。
 
-        account 条目含默认值合并与可选项；tasks 为原生 app_list 与应用目录
-        合并后的任务卡片数据（enabled 保持原生状态）；instanceRun 为
-        one_dragon.yml 的 instance_run 原值（仅运行当前/全部实例）。
+        account 条目含默认值合并与可选项；launchArgs 为 game.yml 启动参数
+        （缺失合并上游默认值，-use-d3d12 拆出为 dx12 开关）；tasks 为原生
+        app_list 与应用目录合并后的任务卡片数据（enabled 保持原生状态）；
+        instanceRun 为 one_dragon.yml 的 instance_run 原值（仅运行当前/全部实例）。
         """
 
         root, instance = self._zzzod_native_instance(script_id, instance_idx)
@@ -2210,6 +2211,7 @@ class AppConfig(GlobalConfig):
             list_app_catalog,
             read_native_account_fields,
             read_native_instance_run,
+            read_native_launch_args,
             read_native_tasks,
         )
 
@@ -2227,6 +2229,7 @@ class AppConfig(GlobalConfig):
             "account": read_native_account_fields(root, slot),
             "tasks": read_native_tasks(root, slot, catalog),
             "instanceRun": read_native_instance_run(root),
+            "launchArgs": read_native_launch_args(root, slot),
         }
 
     async def save_zzzod_native_config(
@@ -2236,12 +2239,14 @@ class AppConfig(GlobalConfig):
         account: dict | None = None,
         tasks: list[dict] | None = None,
         instance_run: str | None = None,
+        launch_args: dict | None = None,
     ) -> dict:
         """把直控页面改动直接写回所选实例原生配置（可选增量，缺省字段不写回）。
 
         账号字段白名单过滤 + 只写非默认值；任务编排保留完整顺序（含未启用项）；
-        instance_run 白名单校验。由调用方按需传参：任务开关/运行实例等
-        即时写入只传对应字段，避免把未确认的账号草稿一并落盘。
+        instance_run 白名单校验；launchArgs 整组提交（六字段 + dx12 开关合并进
+        高级参数，值未变跳过）。由调用方按需传参：任务开关/运行实例等即时
+        写入只传对应字段，避免把未确认的账号草稿一并落盘。
         """
 
         root, instance = self._zzzod_native_instance(script_id, instance_idx)
@@ -2251,6 +2256,7 @@ class AppConfig(GlobalConfig):
             read_native_instance_run,
             save_native_account_fields,
             save_native_instance_run,
+            save_native_launch_args,
             save_native_tasks,
         )
 
@@ -2258,6 +2264,8 @@ class AppConfig(GlobalConfig):
             save_native_account_fields(root, slot, account)
         if tasks is not None:
             save_native_tasks(root, slot, tasks)
+        if launch_args is not None:
+            save_native_launch_args(root, slot, launch_args)
         if instance_run is not None:
             # 等于原生文件当前值时跳过写：避免直控页保存账号/任务时把
             # 用户没改过的运行实例值写死（review 提的：从没动过下拉的多

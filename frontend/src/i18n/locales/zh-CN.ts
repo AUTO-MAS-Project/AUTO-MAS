@@ -2054,6 +2054,23 @@ export default {
       '一条龙系列任务一屏可见，打开开关即加入并按顺序执行，关闭后原位保留；拖动卡片手柄调整执行顺序。',
     zzzodLoadOneDragonFailed: '加载一条龙任务失败',
     zzzodPushLogModeHint: '任务报告中各任务的执行结果展示方式（成功/失败/跳过）',
+    zzzodLaunchArgsTitle: '启动参数',
+    zzzodLaunchArgsDetail: '参数明细',
+    zzzodLaunchArgsDesc:
+      '一条龙启动游戏时使用的参数（与一条龙「游戏设置」的启动参数同源）；总开关关闭时启动游戏不带任何参数',
+    zzzodLaunchArgsSwitchHint:
+      '启动参数总开关：关闭时一条龙启动游戏不带任何参数（含高级参数）',
+    zzzodScreenSize: '窗口尺寸',
+    zzzodFullScreen: '全屏',
+    zzzodFullScreenWindowed: '窗口化',
+    zzzodFullScreenFullscreen: '全屏',
+    zzzodPopupWindow: '无边框窗口',
+    zzzodMonitor: '显示器序号',
+    zzzodAdvanceArgs: '高级参数',
+    zzzodAdvanceArgsPlaceholder: '其他自定义参数（DX12 请用上方开关）',
+    zzzodDx12: 'DX12',
+    zzzodDx12Hint:
+      '以 DX12 模式启动游戏（-use-d3d12）；与分辨率等参数同级，注入时自动合并进一条龙高级参数，需启动参数总开关开启才生效',
     bettergiAddScriptToGroup: '添加脚本到分组',
     bettergiAddScriptToGroupOk: '添加',
     bettergiAddScriptUnsupported: '该类型暂不支持加入配置组',
