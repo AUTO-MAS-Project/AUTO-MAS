@@ -720,8 +720,9 @@ def _preserve_locally_modified(
     keep_dir = _owned_state_path(state_dir / LOCAL_MODIFIED_DIR_NAME, state_dir)
     try:
         _remove_owned_path(keep_dir, state_dir)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Windows 上旧留档里有文件被占用时删不干净，新批次会和上次残留混在一起。
+        send_update_log(f"上次的本地改动留档未能清理，目录里可能混有旧文件: {exc}")
     preview = ", ".join(relatives[:10])
     suffix = " ..." if len(relatives) > 10 else ""
     send_update_log(
