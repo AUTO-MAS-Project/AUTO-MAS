@@ -1,5 +1,7 @@
 """MaaFW 任务报告推送。"""
 
+import base64
+from collections.abc import Sequence
 from typing import Any
 
 from app.core import Config
@@ -9,6 +11,7 @@ from app.core.notify import (
     dispatch,
     statistic_targets,
 )
+from app.services.notification import MailInlineImage
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
@@ -21,6 +24,7 @@ async def push_notification(
     message: dict,
     task_info: object | None = None,
     user_config: Any | None = None,
+    images: Sequence[MailInlineImage] = (),
 ) -> DispatchResult:
     """通过统一通知编排推送 MaaFW 任务报告。
 
@@ -34,6 +38,8 @@ async def push_notification(
               task_details
         task_info: 任务信息，代理结果模式用于签到汇总的渠道级重试。
         user_config: 用户配置，统计信息模式用于发送用户独立通知。
+        images: 统计信息模式随信附上的失败截图；邮件按 cid 内嵌全部，
+            Webhook 只有一个 ``{image_base64}`` 槽位，放最后一张。
     """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
@@ -43,12 +49,15 @@ async def push_notification(
             title=title, message=message, task_info=task_info
         )
     if mode == "统计信息":
-        return await _push_statistics(title, message, user_config)
+        return await _push_statistics(title, message, user_config, images)
     return DispatchResult()
 
 
 async def _push_statistics(
-    title: str, message: dict, user_config: Any | None
+    title: str,
+    message: dict,
+    user_config: Any | None,
+    images: Sequence[MailInlineImage] = (),
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。
 
@@ -76,6 +85,10 @@ async def _push_statistics(
             title=title,
             text=message_text,
             html=template.render(message),
+            mail_images=tuple(images),
+            webhook_image_base64=(
+                base64.b64encode(images[-1].data).decode("ascii") if images else None
+            ),
         ),
         statistic_targets(user_config),
     )
