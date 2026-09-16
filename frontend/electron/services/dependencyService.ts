@@ -40,6 +40,17 @@ export interface DependencyProgress {
 
 export type DependencyProgressCallback = (progress: DependencyProgress) => void
 
+/**
+ * 下载阶段的进度估计。
+ *
+ * pip 在下载阶段逐行报 `Collecting xxx`，但此刻还不知道总共要装多少个包，只能按已经见到
+ * 的包数给一个渐近推进的值：越接近 70% 越慢，不会到顶之后再长时间不动；70% 之上留给
+ * 「开始安装」那一刻跳到 80%。原来这段完全不推进，非大陆用户实测 7 分 27 秒里进度条一直
+ * 停在 40%，体感是彻底冻结（issue #499）。
+ */
+export const estimateDownloadProgress = (seenPackages: number): number =>
+  Math.round(40 + 30 * (1 - Math.exp(-seenPackages / 25)))
+
 // ==================== 依赖安装服务类 ====================
 
 export class DependencyService {
@@ -412,6 +423,10 @@ export class DependencyService {
         const collectingMatches = output.match(/Collecting\s+\S+/g)
         if (collectingMatches) {
           totalPackages += collectingMatches.length
+          // 下载阶段也要推进，否则最耗时的这一段进度条是死的
+          if (onProgress) {
+            onProgress(estimateDownloadProgress(totalPackages))
+          }
         }
 
         // 匹配 "Installing collected packages:" 或 "Successfully installed" 来统计已安装包数
