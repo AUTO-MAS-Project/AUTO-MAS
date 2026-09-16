@@ -28,7 +28,7 @@ import {
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { resolveRequestUserId, toRunnableUserOptions } from './schedulerUserOptions'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -648,8 +648,10 @@ export function useSchedulerLogic() {
       if (tab.resumeFromScriptId) {
         requestBody.resumeFromScriptId = tab.resumeFromScriptId
       }
-      if (tab.selectedUserId) {
-        requestBody.userId = tab.selectedUserId
+      // 只有自动代理接受 userId；模式切到脚本设置/更新后残留的选择不能带上，后端必拒
+      const userId = resolveRequestUserId(tab.selectedMode, tab.selectedUserId)
+      if (userId) {
+        requestBody.userId = userId
       }
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
