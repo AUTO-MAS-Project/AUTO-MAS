@@ -928,8 +928,11 @@ class AppConfig(GlobalConfig):
                     await queue.QueueItem.remove(key)
 
         await self.ScriptConfig.remove(uid)
+        # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
+        # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
+        # 再点这个脚本还会报「配置项不存在」。
         if (Path.cwd() / f"data/{uid}").exists():
-            shutil.rmtree(Path.cwd() / f"data/{uid}")
+            force_rmtree(Path.cwd() / f"data/{uid}")
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -2536,8 +2539,9 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
 
         await script_config.UserData.remove(user_uid)
+        # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
-            shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
+            force_rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
