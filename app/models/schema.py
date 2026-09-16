@@ -631,13 +631,17 @@ class ZzzOdNativeLaunchArgs(BaseModel):
     launch_argument: bool = Field(
         ..., description="启动参数总开关（关闭时一条龙启动游戏不带任何参数）"
     )
-    screen_size: str = Field(..., description="窗口尺寸（1920x1080/2560x1440/3840x2160）")
-    full_screen: str = Field(..., description="全屏模式：0=窗口化 1=全屏")
+    screen_size: Literal["1920x1080", "2560x1440", "3840x2160"] = Field(
+        ..., description="窗口尺寸"
+    )
+    full_screen: Literal["0", "1"] = Field(
+        ..., description="全屏模式：0=窗口化 1=全屏"
+    )
     popup_window: bool = Field(..., description="无边框窗口（-popupwindow）")
     dx12: bool = Field(
         ..., description="DX12 启动（写回时把 -use-d3d12 合并进高级参数）"
     )
-    monitor: str = Field(..., description="显示器序号（1-4）")
+    monitor: Literal["1", "2", "3", "4"] = Field(..., description="显示器序号")
     launch_argument_advance: str = Field(
         ..., description="高级参数（原样透传给一条龙拼接，上游不解析）"
     )

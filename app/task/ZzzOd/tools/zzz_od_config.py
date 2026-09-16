@@ -95,8 +95,9 @@ _RUN_RECORD_DIR = "app_run_record"
 _INVALID_YAML_CHARS = dict.fromkeys(range(0x20), None)
 
 # 进程内读-改-写串行锁：write_file 只保证单次写原子，读-改-写整体在此串行，
-# 避免切实例 / 写任务编排 / 写账号并发交错丢更新
-_YAML_LOCK = threading.Lock()
+# 避免切实例 / 写任务编排 / 写账号并发交错丢更新。使用可重入锁：直控保存等
+# 「外层持锁完成 读快照→算补丁」后仍需调用本模块的 write_* 原语落盘。
+_YAML_LOCK = threading.RLock()
 
 
 def _one_dragon_file(root: Path) -> Path:

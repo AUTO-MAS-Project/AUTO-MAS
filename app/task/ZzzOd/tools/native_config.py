@@ -40,6 +40,7 @@ from .zzz_od_config import (
     DEFAULT_GAME_LAUNCH_ARGS,
     ZZZOD_GAME_LANGUAGE_LABELS,
     ZZZOD_GAME_REGION_LABELS,
+    _YAML_LOCK,
     instance_dir,
     merge_dx12_argument,
     read_app_group,
@@ -125,32 +126,35 @@ def save_native_account_fields(root, slot_idx: int, values: dict[str, str]) -> N
     - 字段原文件有值 + 提交值不同 → 落盘（含清空回默认：删字段）
     """
 
-    from app.utils.io import read_file
+    # 读快照→算补丁→写盘全程持锁：前端逐字段保存是并发请求，
+    # 快照在锁外读取会让后完成的整组提交覆盖先落盘的字段变更
+    with _YAML_LOCK:
+        from app.utils.io import read_file
 
-    allowed = {meta["key"] for meta in _NATIVE_ACCOUNT_FIELDS}
-    unknown = {str(k) for k in values} - allowed
-    if unknown:
-        raise ValueError(f"不支持的账号配置字段: {', '.join(sorted(unknown))}")
+        allowed = {meta["key"] for meta in _NATIVE_ACCOUNT_FIELDS}
+        unknown = {str(k) for k in values} - allowed
+        if unknown:
+            raise ValueError(f"不支持的账号配置字段: {', '.join(sorted(unknown))}")
 
-    slot_path = instance_dir(root, int(slot_idx)) / "game_account.yml"
-    existing = read_file(slot_path) or {}
-    patch: dict[str, str] = {}
-    for raw_k, raw_v in values.items():
-        key = str(raw_k)
-        new_val = str(raw_v)
-        default = _native_default(key)
-        old_val = existing.get(key)
-        if old_val is None:
-            # 原文件缺失：值=默认则保持文件干净不写
-            if new_val != default:
-                patch[key] = new_val
-            continue
-        # 原文件有值：值未变就跳过
-        if str(old_val) == new_val:
-            continue
-        patch[key] = new_val
-    if patch:
-        write_game_account(slot_path.parent, patch)
+        slot_path = instance_dir(root, int(slot_idx)) / "game_account.yml"
+        existing = read_file(slot_path) or {}
+        patch: dict[str, str] = {}
+        for raw_k, raw_v in values.items():
+            key = str(raw_k)
+            new_val = str(raw_v)
+            default = _native_default(key)
+            old_val = existing.get(key)
+            if old_val is None:
+                # 原文件缺失：值=默认则保持文件干净不写
+                if new_val != default:
+                    patch[key] = new_val
+                continue
+            # 原文件有值：值未变就跳过
+            if str(old_val) == new_val:
+                continue
+            patch[key] = new_val
+        if patch:
+            write_game_account(slot_path.parent, patch)
 
 
 def read_native_launch_args(root, slot_idx: int) -> dict[str, Any]:
@@ -186,44 +190,47 @@ def save_native_launch_args(root, slot_idx: int, values: dict[str, Any]) -> None
     if unknown:
         raise ValueError(f"不支持的启动参数字段: {', '.join(sorted(unknown))}")
 
-    slot_dir = instance_dir(root, int(slot_idx))
-    existing = read_game(slot_dir)
-    patch: dict[str, Any] = {}
-    for key, new_val in values.items():
-        # dx12 与 launch_argument_advance 由下方合并块统一处理（写盘前合并）
-        if key in ("dx12", "launch_argument_advance"):
-            continue
-        if key not in DEFAULT_GAME_LAUNCH_ARGS:
-            continue
-        expected_type = type(DEFAULT_GAME_LAUNCH_ARGS[key])
-        if expected_type is bool:
-            new_val = bool(new_val)
-        else:
-            new_val = str(new_val or "").strip()
-        old_val = existing.get(key)
-        # 原文件缺失 + 新值=默认 → 保持文件干净不写
-        if old_val is None and new_val == DEFAULT_GAME_LAUNCH_ARGS[key]:
-            continue
-        # 值未变跳过；其余（含改回默认）落盘
-        if old_val is not None and expected_type is bool:
-            if bool(old_val) == new_val:
+    # 读快照→算补丁→写盘全程持锁：前端逐字段保存是并发请求，
+    # 快照在锁外读取会让后完成的整组提交覆盖先落盘的字段变更
+    with _YAML_LOCK:
+        slot_dir = instance_dir(root, int(slot_idx))
+        existing = read_game(slot_dir)
+        patch: dict[str, Any] = {}
+        for key, new_val in values.items():
+            # dx12 与 launch_argument_advance 由下方合并块统一处理（写盘前合并）
+            if key in ("dx12", "launch_argument_advance"):
                 continue
-        elif old_val is not None and str(old_val) == new_val:
-            continue
-        patch[key] = new_val
-    if "launch_argument_advance" in values or "dx12" in values:
-        merged_advance = merge_dx12_argument(
-            str(values.get("launch_argument_advance") or ""),
-            bool(values.get("dx12")),
-        )
-        old_advance = existing.get("launch_argument_advance")
-        if old_advance is None:
-            if merged_advance != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]:
+            if key not in DEFAULT_GAME_LAUNCH_ARGS:
+                continue
+            expected_type = type(DEFAULT_GAME_LAUNCH_ARGS[key])
+            if expected_type is bool:
+                new_val = bool(new_val)
+            else:
+                new_val = str(new_val or "").strip()
+            old_val = existing.get(key)
+            # 原文件缺失 + 新值=默认 → 保持文件干净不写
+            if old_val is None and new_val == DEFAULT_GAME_LAUNCH_ARGS[key]:
+                continue
+            # 值未变跳过；其余（含改回默认）落盘
+            if old_val is not None and expected_type is bool:
+                if bool(old_val) == new_val:
+                    continue
+            elif old_val is not None and str(old_val) == new_val:
+                continue
+            patch[key] = new_val
+        if "launch_argument_advance" in values or "dx12" in values:
+            merged_advance = merge_dx12_argument(
+                str(values.get("launch_argument_advance") or ""),
+                bool(values.get("dx12")),
+            )
+            old_advance = existing.get("launch_argument_advance")
+            if old_advance is None:
+                if merged_advance != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]:
+                    patch["launch_argument_advance"] = merged_advance
+            elif str(old_advance) != merged_advance:
                 patch["launch_argument_advance"] = merged_advance
-        elif str(old_advance) != merged_advance:
-            patch["launch_argument_advance"] = merged_advance
-    if patch:
-        write_game(slot_dir, patch)
+        if patch:
+            write_game(slot_dir, patch)
 
 
 def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:

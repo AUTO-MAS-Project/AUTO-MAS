@@ -448,7 +448,7 @@ export type { ZzzOdMissionTypeOut } from './models/ZzzOdMissionTypeOut';
 export type { ZzzOdNativeAccountField } from './models/ZzzOdNativeAccountField';
 export type { ZzzOdNativeConfigIn } from './models/ZzzOdNativeConfigIn';
 export type { ZzzOdNativeConfigOut } from './models/ZzzOdNativeConfigOut';
-export type { ZzzOdNativeLaunchArgs } from './models/ZzzOdNativeLaunchArgs';
+export { ZzzOdNativeLaunchArgs } from './models/ZzzOdNativeLaunchArgs';
 export type { ZzzOdNativeTaskIn } from './models/ZzzOdNativeTaskIn';
 export type { ZzzOdNativeTaskOut } from './models/ZzzOdNativeTaskOut';
 export type { ZzzOdTaskOptionsOut } from './models/ZzzOdTaskOptionsOut';
