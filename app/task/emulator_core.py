@@ -27,6 +27,7 @@ MAA / M9A / BAAH / MaaEnd / MaaFW / SRC 在任务收尾与各条失败分支上�
 """
 
 import asyncio
+import time
 from typing import Any
 
 from app.utils import get_logger
@@ -65,11 +66,23 @@ async def close_emulator(
     if index is None:
         index = owner.script_config.get(config_key, "Index")
 
+    started_at = time.monotonic()
+    logger.info(
+        f"开始关闭模拟器: {type(emulator_manager).__name__} - 实例 {index} - "
+        f"超时: {timeout}秒"
+    )
     try:
         await asyncio.wait_for(emulator_manager.close(index), timeout=timeout)
-        logger.success("模拟器已关闭")
+        logger.success(
+            f"模拟器已关闭: {type(emulator_manager).__name__} - 实例 {index} - "
+            f"用时: {time.monotonic() - started_at:.3f}秒"
+        )
         return True
     except Exception as e:
         if log_failure:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            logger.opt(exception=True).warning(
+                f"关闭模拟器失败: {type(emulator_manager).__name__} - "
+                f"实例 {index} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒 - {e}"
+            )
         return False

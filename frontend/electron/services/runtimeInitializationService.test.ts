@@ -58,6 +58,7 @@ function fixtureEvents(name: string): RuntimeEvent[] {
 
 const APP_ROOT = 'D:\\AUTO-MAS'
 const RUNTIME_PATH = 'D:\\AUTO-MAS\\runtime\\auto-mas-runtime.exe'
+const updateStatePath = join(APP_ROOT, 'runtime-state', 'update.json')
 
 interface FakeCall {
   command: string[]
@@ -309,8 +310,8 @@ describe('失败 details 摘要', () => {
 
 describe('用户可处理的仓库错误', () => {
   it.each([
-    ['GIT_REPO_CLEANUP_FAILED', 'repo.previous-', 'runtime-state\\update.json', false],
-    ['UPDATE_STATE_AMBIGUOUS', 'repo', 'runtime-state\\update.json', true],
+    ['GIT_REPO_CLEANUP_FAILED', 'repo.previous-', updateStatePath, false],
+    ['UPDATE_STATE_AMBIGUOUS', 'repo', updateStatePath, true],
   ])('%s 给出明确的删除说明', (code, expectedPath, statePath, includesStatePath) => {
     const message = formatRuntimeFailureMessage(code, APP_ROOT, '原始错误')
 
