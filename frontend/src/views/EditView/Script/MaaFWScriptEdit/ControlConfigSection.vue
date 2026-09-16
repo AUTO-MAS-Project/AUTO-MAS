@@ -190,34 +190,35 @@
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
-          </template>
-          <a-select
-            v-model:value="maafwConfig.Game.LaunchMode"
-            size="large"
-            style="width: 100%"
-            @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
-          >
-            <a-select-option value="DirectExe">
-              <div class="launch-option">
-                <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
-                <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
-              </div>
-            </a-select-option>
-            <a-select-option value="AttachOnly">
-              <div class="launch-option">
-                <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
-                <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
-              </div>
-            </a-select-option>
-          </a-select>
-          <div class="field-help">{{ launchModeDescription }}</div>
-        </a-form-item>
-
-        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
+        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 -->
+        <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
+              </template>
+              <a-select
+                v-model:value="maafwConfig.Game.LaunchMode"
+                size="large"
+                style="width: 100%"
+                @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
+              >
+                <a-select-option value="DirectExe">
+                  <div class="launch-option">
+                    <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
+                    <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
+                  </div>
+                </a-select-option>
+                <a-select-option value="AttachOnly">
+                  <div class="launch-option">
+                    <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
+                    <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
+                  </div>
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col v-if="launchMode === 'DirectExe'" :span="12">
             <a-form-item>
               <template #label>
                 <a-tooltip :title="t('edit.actualGameExeMas')">
@@ -242,6 +243,30 @@
                   {{ t('edit.pickExe') }}
                 </a-button>
               </a-input-group>
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
+                  <span class="form-label">
+                    {{ t('edit.mfwUnityResolution') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-select
+                v-model:value="maafwConfig.Game.UnityResolution"
+                size="large"
+                style="width: 100%"
+                :options="unityResolutionOptions"
+                @change="
+                  (value: string | number) => emit('change', 'Game', 'UnityResolution', value)
+                "
+              />
             </a-form-item>
           </a-col>
           <a-col :span="6">
@@ -280,30 +305,6 @@
                 size="large"
                 style="width: 100%"
                 @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
-                  <span class="form-label">
-                    {{ t('edit.mfwUnityResolution') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="maafwConfig.Game.UnityResolution"
-                size="large"
-                style="width: 100%"
-                :options="unityResolutionOptions"
-                @change="
-                  (value: string | number) => emit('change', 'Game', 'UnityResolution', value)
-                "
               />
             </a-form-item>
           </a-col>
@@ -363,11 +364,6 @@ const emit = defineEmits<{
 }>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
-const launchModeDescription = computed(() =>
-  launchMode.value === 'AttachOnly'
-    ? t('edit.launchModeAttachOnlyDesc')
-    : t('edit.launchModeDirectExeDesc')
-)
 
 // 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
 const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(
@@ -439,13 +435,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
 .launch-option-hint {
   font-size: 12px;
   opacity: 0.65;
-}
-
-.field-help {
-  margin-top: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
 }
 
 .path-input-group {

@@ -1526,10 +1526,6 @@ export default {
     couldNotLoadPlan: 'Could not load the plan configuration — check that the plan still exists',
     letMasLaunchGame: 'Let MAS launch the game',
     launchGameOtherWay: 'Start and stop the game another way',
-    launchModeDirectExeDesc:
-      'MAS launches the game exe you picked and closes it when the run ends; if the game is already running, MAS only takes it over without relaunching or closing it.',
-    launchModeAttachOnlyDesc:
-      'MAS neither launches nor closes anything; the script or you start and stop the game, and MAS only takes over the running window.',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
     prepareRuntimeEnv: 'Prepare runtime environment',

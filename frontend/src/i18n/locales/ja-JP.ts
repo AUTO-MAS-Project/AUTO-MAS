@@ -1406,10 +1406,6 @@ export default {
     couldNotLoadPlan: 'プラン設定を読み込めませんでした。プランが存在するか確認してください',
     letMasLaunchGame: 'MAS にゲームを起動させる',
     launchGameOtherWay: '別の方法でゲームを起動・終了する',
-    launchModeDirectExeDesc:
-      'MAS が選択したゲーム exe を起動し、実行終了後に閉じます。ゲームがすでに起動している場合は引き継ぐだけで、再起動も終了もしません。',
-    launchModeAttachOnlyDesc:
-      'MAS はプログラムを起動も終了もしません。スクリプトか自分でゲームを起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます。',
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
     envPanelTitle: '実行環境',
     prepareRuntimeEnv: '実行環境を準備',

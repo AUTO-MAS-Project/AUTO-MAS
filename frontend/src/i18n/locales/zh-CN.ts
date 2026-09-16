@@ -1452,10 +1452,6 @@ export default {
     couldNotLoadPlan: '计划配置加载失败，请检查计划是否存在',
     letMasLaunchGame: '让 MAS 启动游戏',
     launchGameOtherWay: '使用其他方式启停游戏',
-    launchModeDirectExeDesc:
-      'MAS 会启动你选的游戏 exe，运行结束后关闭它；发现游戏已在运行时只接管，不重复启动也不替你关闭。',
-    launchModeAttachOnlyDesc:
-      'MAS 不会启动或关闭任何程序，由脚本或你自己负责启停游戏，MAS 只接管已运行的窗口。',
     mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
     envPanelTitle: '运行环境',
     prepareRuntimeEnv: '准备运行环境',
