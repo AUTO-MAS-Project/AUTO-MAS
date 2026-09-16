@@ -612,7 +612,12 @@ const loadConfigs = async () => {
 }
 
 const persistChanges = async (silent: boolean): Promise<boolean> => {
-  if (!hasChanges.value || configLocked.value) return true
+  if (configLocked.value) {
+    if (!hasChanges.value) return true
+    message.error(t('edit.configLocked'))
+    return false
+  }
+  if (!hasChanges.value) return true
   saving.value = true
   emit('savingChange', true)
   try {

@@ -1428,11 +1428,7 @@ const handleQuickConfigChange = async (value: boolean) => {
       clearTimeout(dragonGroupAutoSaveTimer)
       dragonGroupAutoSaveTimer = null
     }
-    while (
-      dragonSettingsDirty.value ||
-      globalDomainSettingsDirty.value ||
-      globalStygianSettingsDirty.value
-    ) {
+    while (hasDragonGroupSettingsDirty.value) {
       if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
     }
   }
@@ -3087,6 +3083,12 @@ const globalDomainSettingsDirty = ref(false)
 // 全局 config.json 幽境危战段设置（刷取战场/队伍/策略/次数与树脂；autoStygianOnslaughtConfig 段）
 const globalStygianSettings = ref<Record<string, unknown>>({})
 const globalStygianSettingsDirty = ref(false)
+const hasDragonGroupSettingsDirty = computed(
+  () =>
+    dragonSettingsDirty.value ||
+    globalDomainSettingsDirty.value ||
+    globalStygianSettingsDirty.value
+)
 // 当前选中内置组是否有设置 schema（含每周秘境周表等非 fields 形态的分组）
 const hasGroupSettingFields = computed<boolean>(() =>
   currentGroupSettingSections.value.some(
@@ -3203,7 +3205,13 @@ const saveDragonGroupSettings = (
 ): Promise<boolean> => {
   const sel = selOverride ?? selectedGroupIdentity.value
   const run = dragonGroupSaveChain.then(async () => {
-    if (configLocked.value) return true
+    if (configLocked.value) {
+      if (hasDragonGroupSettingsDirty.value) {
+        message.error(t('edit.configLocked'))
+        return false
+      }
+      return true
+    }
     if (!sel || sel.kind !== 'builtin' || !userId.value) return false
     const tasks: Promise<unknown>[] = []
     if (dragonSettingsDirty.value) {
@@ -3269,7 +3277,7 @@ watch(
     if (dragonGroupAutoSaveTimer) {
       clearTimeout(dragonGroupAutoSaveTimer)
       dragonGroupAutoSaveTimer = null
-      await saveDragonGroupSettings(true, dragonGroupSaveSel)
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
     }
     await loadDragonGroupSettings()
   }
@@ -4350,7 +4358,7 @@ const handleSaveBettergiConfig = async () => {
   if (dragonGroupAutoSaveTimer) {
     clearTimeout(dragonGroupAutoSaveTimer)
     dragonGroupAutoSaveTimer = null
-    await saveDragonGroupSettings(true, dragonGroupSaveSel)
+    if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
   }
   await saveSession()
 }

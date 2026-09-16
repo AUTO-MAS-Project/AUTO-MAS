@@ -13,6 +13,11 @@ describe('ConfigRestoreSection runtime lock', () => {
     expect(source).toContain('if (props.disabled || !previewItem.value) return')
   })
 
+  it('rechecks the lock after the restore confirmation is opened', () => {
+    expect(source).toContain('const doRestore = async (item: BackupItem) => {')
+    expect(source).toContain('if (props.disabled) {\n    throw new Error')
+  })
+
   it('passes the runtime lock from every restore-capable edit page', () => {
     const pages = ['OkNteUserEdit.vue', 'ZzzOdUserEdit.vue']
     for (const filename of pages) {

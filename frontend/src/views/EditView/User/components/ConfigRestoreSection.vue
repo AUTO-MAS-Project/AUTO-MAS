@@ -378,6 +378,9 @@ const handlePreviewDetail = () => {
 
 // ══ 一键恢复 ══
 const doRestore = async (item: BackupItem) => {
+  if (props.disabled) {
+    throw new Error(t('edit.configLocked'))
+  }
   const resp = await props.api.restore(restoreTarget.value, item.time)
   if (resp.code !== 200) {
     throw new Error(resp.message || t('edit.configRestoreFailed'))

@@ -1687,7 +1687,10 @@ const saveNativeConfig = async (
   section: NativeSaveSection = 'all',
   silent = false
 ): Promise<boolean> => {
-  if (configLocked.value) return true
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
   if (nativeInstanceIdx.value === null) return false
   nativeSaving.value = true
   try {
