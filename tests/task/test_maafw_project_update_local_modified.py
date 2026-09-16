@@ -32,6 +32,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     MaaFWMirrorChyanVersionCheck,
+    _discover_project_update_detailed,
     update_maafw_project_if_needed,
 )
 
@@ -309,3 +310,26 @@ async def test_github_source_never_computes_fingerprint(
 
     assert updater_harness["fingerprint"].calls == 0
     assert all(c["prefer_full"] is False for c in updater_harness["mirror"].calls)
+
+
+@pytest.mark.asyncio
+async def test_version_only_check_never_computes_fingerprint(
+    updater_harness: dict[str, Any],
+) -> None:
+    """编辑页「检查更新」只问有没有新版本，不取下载地址，也不该算指纹。"""
+
+    updater_harness["install"]("v1.1.0", matches=False)
+
+    async def never() -> bool:
+        raise AssertionError("version_only 不该走到指纹比对")
+
+    discovery, _check, _reason = await _discover_project_update_detailed(
+        _interface_model(),
+        current_version="v1.0.0",
+        source_config={"package_source": "mirrorchyan", "mirror_cdk": "cdk-secret"},
+        version_only=True,
+        baseline_matches=never,
+    )
+
+    assert discovery is not None and discovery.version == "v1.1.0"
+    assert [c["cdk"] for c in updater_harness["mirror"].calls] == [False]
