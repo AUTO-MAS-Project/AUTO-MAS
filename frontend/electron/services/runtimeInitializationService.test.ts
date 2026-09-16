@@ -12,6 +12,7 @@ import {
   RuntimeInitializationService,
   describeRuntimeFailureDetails,
   emitDevelopmentSkipProgress,
+  formatRuntimeFailureMessage,
   mapDoctorChecksToCriticalFiles,
   mapMirrorSelection,
   mapRuntimeStage,
@@ -303,6 +304,19 @@ describe('失败 details 摘要', () => {
     const text = describeRuntimeFailureDetails({ blob: 'x'.repeat(5000) })
     expect(text.length).toBeLessThan(1100)
     expect(text).toContain('已截断')
+  })
+})
+
+describe('用户可处理的仓库错误', () => {
+  it.each([
+    ['GIT_REPO_CLEANUP_FAILED', 'repo.previous-', 'runtime-state\\update.json', false],
+    ['UPDATE_STATE_AMBIGUOUS', 'repo', 'runtime-state\\update.json', true],
+  ])('%s 给出明确的删除说明', (code, expectedPath, statePath, includesStatePath) => {
+    const message = formatRuntimeFailureMessage(code, APP_ROOT, '原始错误')
+
+    expect(message).toContain('完全退出 AUTO-MAS')
+    expect(message).toContain(expectedPath)
+    expect(message.includes(statePath)).toBe(includesStatePath)
   })
 })
 
