@@ -1,3 +1,4 @@
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { UserGetOut } from '@/api/models/UserGetOut'
 
 /**
@@ -18,3 +19,23 @@ export const toRunnableUserOptions = (
   })
   return options
 }
+
+/**
+ * 用户下拉是否可用：只有自动代理接受「只跑某一个用户」。
+ *
+ * 后端任务入口对 userId 的守卫是「指定单个用户仅支持脚本的自动代理任务」，脚本设置、
+ * 更新与循环运行带上它一律被拒。下拉不跟着模式消失，用户就会挑到一个注定启动失败的
+ * 用户，最后只看到一句「启动任务失败」。
+ */
+export const isUserSelectAvailable = (
+  mode: TaskCreateIn['mode'] | null | undefined
+): boolean => mode === TaskCreateIn.mode.AUTO_PROXY
+
+/**
+ * 请求里实际要带的 userId：与后端守卫同口径，非自动代理即使还留着上次的选择也不能带。
+ */
+export const resolveRequestUserId = (
+  mode: TaskCreateIn['mode'] | null | undefined,
+  selectedUserId: string | null | undefined
+): string | undefined =>
+  isUserSelectAvailable(mode) && selectedUserId ? selectedUserId : undefined

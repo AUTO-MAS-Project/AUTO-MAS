@@ -124,6 +124,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+import { isUserSelectAvailable } from './schedulerUserOptions'
 
 const { t } = useI18n()
 
@@ -206,8 +207,11 @@ const showResumeScriptSelect = computed(() => {
   return Boolean(taskOption?.label.startsWith('队列 - '))
 })
 
-// 用户下拉只在脚本任务且有可运行用户时出现；不选即按脚本自身筛选跑全部用户
-const showUserSelect = computed(() => (props.userOptions?.length ?? 0) > 0)
+// 用户下拉只在「自动代理 + 有可运行用户」时出现；不选即按脚本自身筛选跑全部用户。
+// 其余模式（脚本设置/更新/循环运行）带上 userId 会被后端拒绝，所以模式切走时下拉跟着消失。
+const showUserSelect = computed(
+  () => isUserSelectAvailable(localSelectedMode.value) && (props.userOptions?.length ?? 0) > 0
+)
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')

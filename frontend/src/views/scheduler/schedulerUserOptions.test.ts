@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import {
+  isUserSelectAvailable,
+  resolveRequestUserId,
+  toRunnableUserOptions,
+} from './schedulerUserOptions'
 
 const user = (uid: string, info: Record<string, unknown>) => ({ uid, info })
 
@@ -53,5 +58,36 @@ describe('toRunnableUserOptions', () => {
     const payload = build([user('a', { Name: '甲', Status: true, RemainedDay: -1 })])
     payload.index.push({ uid: 'ghost' } as (typeof payload.index)[number])
     expect(toRunnableUserOptions(payload)).toEqual([{ value: 'a', label: '甲' }])
+  })
+})
+
+describe('isUserSelectAvailable', () => {
+  it('只有自动代理允许指定用户', () => {
+    expect(isUserSelectAvailable(TaskCreateIn.mode.AUTO_PROXY)).toBe(true)
+    expect(isUserSelectAvailable(TaskCreateIn.mode.SCRIPT_CONFIG)).toBe(false)
+    expect(isUserSelectAvailable(TaskCreateIn.mode.UPDATE)).toBe(false)
+    expect(isUserSelectAvailable(TaskCreateIn.mode.CYCLE_RUN)).toBe(false)
+  })
+
+  it('模式还没定下来时不给选', () => {
+    expect(isUserSelectAvailable(null)).toBe(false)
+    expect(isUserSelectAvailable(undefined)).toBe(false)
+  })
+})
+
+describe('resolveRequestUserId', () => {
+  it('自动代理带上选中的用户', () => {
+    expect(resolveRequestUserId(TaskCreateIn.mode.AUTO_PROXY, 'user-1')).toBe('user-1')
+  })
+
+  it('切到别的模式后残留的选择不进请求体', () => {
+    expect(resolveRequestUserId(TaskCreateIn.mode.SCRIPT_CONFIG, 'user-1')).toBeUndefined()
+    expect(resolveRequestUserId(TaskCreateIn.mode.UPDATE, 'user-1')).toBeUndefined()
+    expect(resolveRequestUserId(TaskCreateIn.mode.CYCLE_RUN, 'user-1')).toBeUndefined()
+  })
+
+  it('没选用户就不带 userId', () => {
+    expect(resolveRequestUserId(TaskCreateIn.mode.AUTO_PROXY, null)).toBeUndefined()
+    expect(resolveRequestUserId(TaskCreateIn.mode.AUTO_PROXY, '')).toBeUndefined()
   })
 })
