@@ -67,6 +67,7 @@ from app.utils.config_archive import (
     list_times,
     read_overlay_sidecar,
     restore_dir,
+    write_backup_mode,
 )
 from app.utils.constants import STARRAIL_STAGE_BOOK
 
@@ -195,15 +196,19 @@ def archive_mas_backup(
     mas_dir: Path,
     overlay: dict | None = None,
     force: bool = False,
+    mode: str | None = None,
 ) -> Path | None:
     """归档 MAS 配置整份 + 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
 
     ``user_id`` 是池归属（恒按用户分桶）；``mas_dir`` 是归档/恢复目标
     路径，由调用方按三态 owner 解析（脚本态共享 Default 目录、用户态
     独立目录）——池与目标解耦。侧车参与指纹：只改页面配置、未动
-    ConfigFile 时同样新建归档（内存 JSON 写入，免临时文件）。目录不存在
-    或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前存底
-    （内容与最新份一致时同样跳过）。
+    ConfigFile 时同样新建归档（内存 JSON 写入，免临时文件）。
+    ``mode`` 为归档时点的配置来源（当前 ``Info.Mode``）：tri_state 池靠
+    备份标注做跨来源恢复的来源切换，运行前/恢复前 force 归档同样必须
+    带上，否则该备份会被当成旧版无标注条目、恢复时不切来源。
+    目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
+    存底（内容与最新份一致时同样跳过）。
     """
 
     files = dict(collect_mas_files(mas_dir))
@@ -215,6 +220,8 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
+    if mode:
+        write_backup_mode(dest, mode)
     logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
@@ -237,6 +244,7 @@ def restore_mas_backup(
     ts: str,
     mas_dir: Path,
     overlay: dict | None = None,
+    mode: str | None = None,
 ) -> dict | None:
     """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
@@ -252,8 +260,12 @@ def restore_mas_backup(
         raise ValueError(f"备份不存在: {ts}")
     mas_dir = Path(mas_dir)
     # 恢复前存底不设目录条件：目标目录缺失/为空时页面字段（overlay）仍需
-    # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判
-    archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
+    # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判。
+    # mode 标注恢复时点的配置来源（跨来源恢复时 set_mode 已切回备份来源，
+    # 与存底目录 owner 一致），保证该存底自身可跨来源找回
+    archive_mas_backup(
+        script_id, user_id, mas_dir, overlay=overlay, force=True, mode=mode
+    )
     restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_overlay = read_overlay_sidecar(mas_dir)
     if restored_overlay is not None:
@@ -267,6 +279,7 @@ def archive_mas_runtime_backup(
     user_id: str,
     mas_dir: Path,
     overlay: dict | None = None,
+    mode: str | None = None,
 ) -> None:
     """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
 
@@ -279,7 +292,9 @@ def archive_mas_runtime_backup(
     """
 
     try:
-        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay)
+        archive_mas_backup(
+            script_id, user_id, mas_dir, overlay=overlay, mode=mode
+        )
     except Exception:
         logger.opt(exception=True).warning("SRC 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
 

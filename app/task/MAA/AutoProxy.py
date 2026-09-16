@@ -1197,6 +1197,9 @@ class AutoProxyTask(TaskExecuteBase):
                 str(self.cur_user_uid),
                 archive_dir,
                 overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=str(self.cur_user_config.get("Info", "Mode") or "").strip()
+                or None,
             )
 
         # ── 第一段：来源落盘 ──────────────────────────────────────────

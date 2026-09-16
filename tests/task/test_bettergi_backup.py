@@ -219,6 +219,25 @@ def test_mas_backup_restore_loop_with_user_isolation(
     assert len(list_mas_backups(script_id, user_id)) == 2  # 用户池不被 other 影响
 
 
+def test_restore_overlay_only_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """纯侧车备份（首用户只有页面字段、尚无副本文件）可恢复，不因受管键为空报错。"""
+
+    monkeypatch.chdir(tmp_path)
+    script_id, user_id = "s-0006", "u-0001"
+    overlay = {"Groups": ["自动秘境"], "PartyName": "默认队伍", "Mode": "用户"}
+
+    # 副本目录不存在 → 归档内容只有 _mas_overlay.json
+    assert not mas_user_dir(script_id, user_id).exists()
+    dest = archive_mas_backup(script_id, user_id, overlay=overlay)
+    assert dest is not None
+    assert not (dest / "OneDragon").exists()  # 无副本文件
+
+    restored = restore_mas_backup(script_id, user_id, dest.name, overlay=overlay)
+    assert restored == overlay  # 侧车回填成功，未抛「备份内容为空」
+
+
 def test_native_backup_restore_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

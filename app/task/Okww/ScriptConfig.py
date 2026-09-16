@@ -114,6 +114,10 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.cur_user_item.user_id,
                 self.mas_config_dir,
                 overlay=self.mas_overlay,
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode="用户"
+                if self.mas_owner == self.cur_user_item.user_id
+                else "脚本",
             )
 
         # 查看会话的脚本级入口：原生目录即所选备份，跳过下发

@@ -44,9 +44,10 @@ Data.*（运行统计与完成态，恢复配置不恢复统计）、Notify.Cust
 直控）。恢复即字段回填。
 
 ``native`` 池 = M7A ``config.yaml`` + SRA ``settings.json``/``cache.json``/
-``configs/``，按 **SRA appdata 根的指纹分桶**（SRA appdata 是多脚本共享
-目录，必须 config_root_key 分桶跨脚本共享、不随脚本删除——M7A config.yaml
-随 SRA 池一并归档，HSR 脚本通常成对配两引擎）。
+``configs/``，按 **SRA appdata 根 + M7A 安装根的组合指纹分桶**（SRA appdata
+是多脚本共享目录、M7A config.yaml 随池一并归档，两根任一不同即独立池——
+只按 SRA 分桶会把不同 M7A 安装的 config.yaml 混进同一历史，跨实例恢复会
+写错安装；M7A 未配置时仅按 SRA 分桶）。
 
 时间戳快照、指纹去重、保留清理与文件/目录恢复由公共模块
 ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
@@ -290,15 +291,23 @@ _SRA_CONFIGS_DIR = "SRA/configs"
 """归档内 SRA 配置的相对键"""
 
 
-def native_backup_root(sra_app_data: str | Path) -> Path:
+def native_backup_root(
+    sra_app_data: str | Path, m7a_root: str | Path | None = None
+) -> Path:
     """HSR 原生配置的项目级归档根：``data/HSRBackups/native/{key}``。
 
-    ``key`` 是 **SRA appdata 根**的指纹（:func:`config_root_key`）——SRA
-    appdata 是多脚本共享目录，按物理根分桶、跨脚本共享、不随脚本删除；
-    M7A config.yaml 随 SRA 池一并归档（HSR 脚本通常成对配两引擎）。
+    ``key`` 由 **SRA appdata 根**指纹与 **M7A 安装根**指纹组合
+    （:func:`config_root_key`）——SRA appdata 是多脚本共享目录，M7A
+    config.yaml 又随 SRA 池一并归档，只按 SRA 分桶会把不同 M7A 安装的
+    config.yaml 混进同一历史，跨实例恢复会把 A 安装的配置写进 B 安装。
+    两根任一不同的实例各有独立池；``m7a_root`` 为 ``None``（未配置 M7A）
+    时仅按 SRA 分桶（该池内只有 SRA 内容）。
     """
 
-    return Path.cwd() / "data" / "HSRBackups" / "native" / config_root_key(sra_app_data)
+    key = config_root_key(sra_app_data)
+    if m7a_root:
+        key = f"{key}-{config_root_key(m7a_root)}"
+    return Path.cwd() / "data" / "HSRBackups" / "native" / key
 
 
 def collect_native_files(m7a_root: Path | None, sra_app_data: Path) -> dict[str, Path]:
@@ -335,7 +344,9 @@ def archive_native_backup(
     files = collect_native_files(m7a_root, sra_app_data)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(sra_app_data), force=force)
+    dest = archive_files(
+        files, native_backup_root(sra_app_data, m7a_root), force=force
+    )
     if dest is None:
         logger.info("HSR 原生配置无变化，跳过归档")
         return None
@@ -343,16 +354,20 @@ def archive_native_backup(
     return dest
 
 
-def list_native_backups(sra_app_data: str | Path) -> list[str]:
+def list_native_backups(
+    sra_app_data: str | Path, m7a_root: str | Path | None = None
+) -> list[str]:
     """HSR 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(sra_app_data))
+    return list_times(native_backup_root(sra_app_data, m7a_root))
 
 
-def get_native_backup_dir(sra_app_data: str | Path, ts: str) -> Path | None:
+def get_native_backup_dir(
+    sra_app_data: str | Path, ts: str, m7a_root: str | Path | None = None
+) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(sra_app_data), ts)
+    return get_backup_dir(native_backup_root(sra_app_data, m7a_root), ts)
 
 
 def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) -> None:
@@ -364,7 +379,7 @@ def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) ->
     本身绝不删除）。
     """
 
-    backup_dir = get_native_backup_dir(sra_app_data, ts)
+    backup_dir = get_native_backup_dir(sra_app_data, ts, m7a_root)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     archive_native_backup(m7a_root, sra_app_data, force=True)
@@ -588,7 +603,9 @@ def build_overlay_preview(overlay: dict) -> dict:
     return {"sections": sections}
 
 
-def build_native_preview(sra_app_data: str | Path, ts: str) -> dict:
+def build_native_preview(
+    sra_app_data: str | Path, ts: str, m7a_root: str | Path | None = None
+) -> dict:
     """native 池预览：两引擎常用配置反读 + 文件清单。
 
     反读范围只限 **MAS 侧有对应概念的常用字段**（托管表单/patch 白名单覆盖的
@@ -604,7 +621,7 @@ def build_native_preview(sra_app_data: str | Path, ts: str) -> dict:
       **不反读内容**，只在文件清单节展示。
     """
 
-    backup_dir = get_native_backup_dir(sra_app_data, ts)
+    backup_dir = get_native_backup_dir(sra_app_data, ts, m7a_root)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     files = dir_files(backup_dir)

@@ -695,7 +695,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 运行前归档 MaaFW 项目配置（config/ + interface.json）——物化会写这两处，
         # 归档必须在任何写入前（指纹去重，失败不阻断任务）
         with suppress(Exception):
-            archive_native_backup(Path(self.script_config.get("Info", "Path")))
+            archive_native_backup(
+                self.script_info.script_id,
+                Path(self.script_config.get("Info", "Path")),
+            )
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备

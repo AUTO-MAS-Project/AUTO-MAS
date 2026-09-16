@@ -2571,7 +2571,7 @@ async def save_bettergi_script_group_api(
         projects = (req.data or {}).get("projects")
         if not isinstance(projects, list):
             raise ValueError("projects 必须为数组（按执行顺序的项目列表）")
-        one_dragon.write_user_script_group(
+        out = one_dragon.write_user_script_group(
             root, req.scriptId, req.userId, req.name, req.data
         )
         if out is None:

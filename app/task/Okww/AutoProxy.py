@@ -394,6 +394,8 @@ class AutoProxyTask(TaskExecuteBase):
                     config_mode,
                 ),
                 overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
             )
             mas_config_dir = _okww_mas_config_dir(
                 self.script_info.script_id,

@@ -99,6 +99,35 @@ def test_mas_backup_dedup_and_restore_loop(
     assert archive_mas_backup(script_id, user_id, tmp_path / "elsewhere") is None
 
 
+def test_mas_backup_mode_annotation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """tri_state 池：运行前/恢复前归档带 mode 标注，跨来源恢复不退化为旧版无标注。"""
+
+    from app.utils.config_archive import read_backup_mode
+
+    monkeypatch.chdir(tmp_path)
+    script_id, user_id = "s-0009", "u-0001"
+    mas_dir = tmp_path / "data" / script_id / user_id / "ConfigFile"
+    mas_dir.mkdir(parents=True)
+    (mas_dir / "gui.json").write_text("{}", encoding="utf-8")
+
+    # 运行前归档带 mode → 备份有 _mas_mode 标注
+    dest = archive_mas_backup(script_id, user_id, mas_dir, mode="用户")
+    assert dest is not None
+    assert read_backup_mode(dest) == "用户"
+
+    # 恢复前 force 存底透传 mode（set_mode 已切回备份来源后存底）
+    force_dir = restore_mas_backup(
+        script_id, user_id, dest.name, mas_dir, overlay=None, mode="脚本"
+    )
+    assert force_dir is None  # 存底与最新份内容一致 → 指纹跳过，不产生新条目
+
+    # 未传 mode → 无标注（与旧版无标注备份一致，恢复时不切来源）
+    (mas_dir / "gui.new.json").write_text("{}", encoding="utf-8")
+    plain = archive_mas_backup(script_id, user_id, mas_dir)
+    assert plain is not None
+    assert read_backup_mode(plain) is None
+
+
 def test_mas_pool_isolates_script_mode_users(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

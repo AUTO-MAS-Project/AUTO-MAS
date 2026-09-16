@@ -78,7 +78,8 @@
 >   Stage/TaskOpt/Notify/Control/Managed/Direct 元数据，平铺键 ``组.键``；
 >   不含加密凭据与快照内容、Data 统计、子表，无 per-user 目录），native = M7A
 >   `config.yaml` + SRA `settings.json`/`cache.json`/`configs/`（按 SRA appdata
->   根分桶，跨脚本共享、M7A 随 SRA 池一并归档）；无原生 GUI 遮罩会话
+>   根 + M7A 安装根**组合指纹**分桶，两根任一不同即独立池；跨脚本共享、M7A
+>   随 SRA 池一并归档）；无原生 GUI 遮罩会话
 > - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
 >   方法，内部 helper 留在门面
 
@@ -126,8 +127,12 @@
 - `current_mode` 缺省读统一字段 `UserData.Info.Mode`，专项结构特殊时才覆写；
   `set_mode`（把 `Info.Mode` 写回备份时点）**只有 `tri_state` 需要**，缺省时
   跨来源恢复直接报错拒绝，避免「目录写过去了状态没切回」的半恢复。
-- 备份元数据 `_mas_mode` 由基座归档时写入（**不参与指纹**，见存档文档），
+- 备份元数据 `_mas_mode` 在归档时写入（**不参与指纹**，见存档文档），
   列表项 `mode` 即读它；旧备份无标注 `mode=None`（不显示标签、不触发跨来源）。
+  `tri_state` 池的**所有**归档入口都必须带标注：基座 `ensure`（编辑页进出）
+  自动写；运行前/会话前与恢复前 force 归档走专项 helper（`archive_mas_backup`
+  等），调用方必须把当前来源（`Info.Mode` 或 owner 推导）经 `mode` 参数传入，
+  漏标会让该备份被当旧版无标注条目、恢复时不切来源。
 - **不要**给 `kind="script"` 池声明 `mas_mode`（仅 `kind="user"` 有意义，基座
   会忽略）；也不要自行读 `_mas_mode` 做校验——标签与跨来源判定统一走基座。
 - 前端共用件 `frontend/src/utils/configRestoreMode.ts`（`isCrossSourceRestore` /

@@ -185,6 +185,8 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
+        # force 存底标注恢复时点来源（跨来源时 set_mode 已切回备份来源）
+        mode=str(user.get("Info", "Mode") or "").strip() or None,
     )
     if restored_overlay:
         # 侧车字段按段分组回填（Info 账号 / Task 覆盖层，对齐 MAA 分组回填）：

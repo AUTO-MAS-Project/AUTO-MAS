@@ -1394,6 +1394,8 @@ class AutoProxyTask(TaskExecuteBase):
                 str(self.cur_user_uid),
                 maaend_config_path,
                 overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
             )
 
         swap_in_dir(maaend_config_path, self.maaend_set_path)

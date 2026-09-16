@@ -224,6 +224,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.cur_user_item.user_id,
                 config_path,
                 overlay=overlay,
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode="用户" if owner == self.cur_user_item.user_id else "脚本",
             )
 
         staging_path = stage_src_config_update(

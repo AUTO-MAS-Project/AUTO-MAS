@@ -485,6 +485,8 @@ class AutoProxyTask(TaskExecuteBase):
                     str(self.cur_user_uid),
                     overlay_path,
                     overlay=read_overlay_values(self.cur_user_config),
+                    # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                    mode=self.config_mode,
                 )
 
         staging_path = stage_src_config_update(

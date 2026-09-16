@@ -261,6 +261,9 @@ def restore_mas_backup(
     备份之外的残留一并清理，恢复结果与备份完全一致；per-user 根目录其余
     内容（切号脚本残留等）原样保留。侧车与模式标注不写回副本，侧车读回
     供调用方回填 UserData 后即分离删除。
+    归档只含侧车（用户只有页面字段、尚未产生任何副本文件的首用户态）时
+    无副本可写回，跳过文件恢复只回填侧车——此时强行调用会因受管键为空
+    抛「备份内容为空」。
 
     返回该备份的侧车（供调用方回填 UserData；旧版备份无侧车返回
     ``None``），侧车文件随即从副本目录中分离删除，不留在 per-user 里。
@@ -271,16 +274,13 @@ def restore_mas_backup(
         raise ValueError(f"备份不存在: {ts}")
     archive_mas_backup(script_id, user_id, overlay=overlay, force=True)
     # 把归档内副本文件（按 OneDragon/… 相对键）写回 per-user 根目录
-    user_root = mas_user_dir(script_id, user_id)
-    restore_files(
-        backup_dir,
-        user_root,
-        rel_keys=(
-            rel
-            for rel in dir_files(backup_dir)
-            if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
-        ),
-    )
+    managed = [
+        rel
+        for rel in dir_files(backup_dir)
+        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+    ]
+    if managed:
+        restore_files(backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed)
     restored_overlay = read_overlay_sidecar(backup_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay

@@ -278,11 +278,28 @@ def test_native_backup_restore_loop(
         json.loads((sra / "configs" / "Default.json").read_text("utf-8"))
         == _SRA_PROFILE
     )
-    assert len(list_native_backups(sra)) == 2  # 恢复前存底 +1
+    assert len(list_native_backups(sra, m7a)) == 2  # 恢复前存底 +1
 
     # 全缺失时跳过归档
     assert archive_native_backup(None, sra) is not None  # SRA 仍在
     assert archive_native_backup(None, tmp_path / "nope") is None
+
+
+def test_native_pool_splits_by_m7a_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同 SRA 根 + 不同 M7A 根的实例各有独立池（config.yaml 不混历史）。"""
+
+    monkeypatch.chdir(tmp_path)
+    m7a_a = _make_m7a_root(tmp_path / "a")
+    m7a_b = _make_m7a_root(tmp_path / "b")
+    sra = _make_sra_appdata(tmp_path)
+
+    first = archive_native_backup(m7a_a, sra)
+    assert first is not None
+    # A 实例的历史对 B 实例不可见（B 恢复不会把 A 的 config.yaml 写进 B 安装）
+    assert list_native_backups(sra, m7a_b) == []
+    assert len(list_native_backups(sra, m7a_a)) == 1
 
 
 def test_native_preview_field_rows(
@@ -296,7 +313,7 @@ def test_native_preview_field_rows(
     first = archive_native_backup(m7a, sra)
     assert first is not None
 
-    payload = build_native_preview(sra, first.name)
+    payload = build_native_preview(sra, first.name, m7a)
     sections = {s["name"]: s for s in payload["sections"]}
     assert set(sections) == {"m7a", "sra:Default"}
     # 标准 files 字段由 service.preview 统一注入（见 service 级测试），
@@ -523,4 +540,4 @@ def test_restore_service_callbacks_roundtrip(
         "SRA/settings.json",
     }
     asyncio.run(service.restore("native", created_native["time"]))
-    assert list_native_backups(sra)
+    assert list_native_backups(sra, m7a)

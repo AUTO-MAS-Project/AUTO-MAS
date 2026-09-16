@@ -229,6 +229,8 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
+        # force 存底标注恢复时点来源（跨来源时 set_mode 已切回备份来源）
+        mode=str(user.get("Info", "Mode") or "").strip() or None,
     )
     if restored_overlay:
         # 覆盖层字段回填（对齐 ok-ww 模式）：文件回滚的同时把页面快速

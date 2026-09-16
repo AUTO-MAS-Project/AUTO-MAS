@@ -29,7 +29,8 @@ mas 池 = **纯字段侧车**（HSR 无 per-user 目录，用户配置即字段�
 配置全量（Info/TaskSwitch/Stage/TaskOpt/Notify/Control/Managed/Direct
 元数据，平铺键 ``组.键``；Info.Mode 仅预览；不收录加密凭据与快照内容、
 Data 运行统计、子表）。恢复 = 回填 UserData。native 池 = M7A config.yaml +
-SRA settings.json/cache.json/configs/（按 SRA appdata 根分桶）。
+SRA settings.json/cache.json/configs/（按 SRA appdata 根 + M7A 安装根
+组合指纹分桶）。
 """
 
 import json
@@ -127,11 +128,11 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
 
 
 async def _native_root(ctx: RestoreContext) -> Path:
-    return native_backup_root(_sra_app_data(ctx))
+    return native_backup_root(_sra_app_data(ctx), _m7a_root(ctx))
 
 
 async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
-    return build_native_preview(_sra_app_data(ctx), ts)
+    return build_native_preview(_sra_app_data(ctx), ts, _m7a_root(ctx))
 
 
 async def _restore_native(ctx: RestoreContext, ts: str) -> None:

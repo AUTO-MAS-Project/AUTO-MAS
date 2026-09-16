@@ -225,6 +225,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 target_user_id,
                 self.config_file_path,
                 overlay=overlay,
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=self.config_mode,
             )
 
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"

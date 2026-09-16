@@ -139,7 +139,8 @@ class ScriptConfigTask(TaskExecuteBase):
         # 核心字段侧车，指纹去重，失败不阻断会话）。native 池由
         # manager.prepare 在任务级一次性归档
         target_user_id = self.cur_user_item.user_id
-        mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
+        owner = self._mas_owner()
+        mas_dir = mas_config_dir(self.script_info.script_id, owner)
         overlay = (
             read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
             if target_user_id != "Default"
@@ -150,6 +151,8 @@ class ScriptConfigTask(TaskExecuteBase):
             target_user_id,
             mas_dir,
             overlay=overlay,
+            # 备份标注来源：tri_state 池跨来源恢复靠它切回
+            mode="用户" if owner == target_user_id else "脚本",
         )
 
         if mas_dir.is_dir() and any(mas_dir.iterdir()):

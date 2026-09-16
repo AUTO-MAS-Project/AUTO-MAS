@@ -784,11 +784,12 @@ const handleRestoreView = (target: string, item: { time: string }) =>
 const ensureOkNteBackup = async (target: 'mas' | 'native') => {
   if (!userId) return
   try {
-    await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
       scriptId,
       userId,
       target,
     })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.warning(t('edit.configRestoreEnsureFailed'))
