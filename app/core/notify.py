@@ -808,8 +808,11 @@ async def _publish_task_notification_failure(
         logger.warning(f"发送通知失败提示到前端时出现异常: {exc}")
 
 
-async def send_test_notification() -> DispatchResult:
-    """向全部已启用的全局渠道发送测试通知。"""
+async def send_test_notification(*, notifier: Notifier | None = None) -> DispatchResult:
+    """向全部已启用的全局渠道发送测试通知。
+
+    ``notifier`` 缺省用全局 Notify 单例，注入面供测试与渠道扩展替换。
+    """
 
     text = (
         "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容，说明 AUTO-MAS "
@@ -826,4 +829,5 @@ async def send_test_notification() -> DispatchResult:
             system_timeout=3,
         ),
         [global_target(include_system=True, empty_policy="warn")],
+        notifier=notifier,
     )

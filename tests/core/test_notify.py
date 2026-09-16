@@ -2,10 +2,12 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 from app.core.notify import (
+    DispatchResult,
     NotifyPayload,
     NotifyTarget,
     dispatch,
     dispatch_task_report,
+    send_test_notification,
 )
 
 
@@ -273,3 +275,30 @@ def test_dispatch_task_report_publishes_failure_notice() -> None:
     notice = publish.await_args.kwargs["data"]
     assert notice.level == "warning"
     assert "全局邮件" in notice.message
+
+
+def test_send_test_notification_passes_through_injected_notifier() -> None:
+    notify = _Notify()
+    seen: dict[str, object] = {}
+
+    async def _capture(payload, targets, **kwargs):
+        seen["kwargs"] = kwargs
+        return DispatchResult()
+
+    with patch("app.core.notify.dispatch", _capture):
+        _run(send_test_notification(notifier=notify))
+
+    assert seen["kwargs"]["notifier"] is notify
+
+
+def test_send_test_notification_defaults_to_global_notifier() -> None:
+    seen: dict[str, object] = {}
+
+    async def _capture(payload, targets, **kwargs):
+        seen["kwargs"] = kwargs
+        return DispatchResult()
+
+    with patch("app.core.notify.dispatch", _capture):
+        _run(send_test_notification())
+
+    assert seen["kwargs"]["notifier"] is None
