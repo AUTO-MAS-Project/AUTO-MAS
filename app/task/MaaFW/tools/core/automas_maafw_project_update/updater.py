@@ -7,7 +7,7 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import quote
 
 import httpx
@@ -358,18 +358,22 @@ async def update_maafw_project_if_needed(
         prefer_full = not has_trusted_update_baseline(project_path)
         if prefer_full:
             send_update_log("本地无可信更新基线，改为请求全量包")
-        elif str(merged_source_config.get("mirror_cdk") or "").strip():
+
+        async def baseline_still_matches() -> bool:
             # 有清单也不等于项目没变：M9A 的 agent 每次启动都热更新
             # data/activity/*.json，指纹一变差量包同样会在 apply 阶段被拒。
-            # 只有配了 CDK 才可能拿到差量包，所以只在这时花那 ~2s 全项目哈希。
-            if not await asyncio.to_thread(
+            # 全项目哈希要 ~2s，所以不在这里算，而是交给发现流程在「确认有
+            # 新版本、且要带 CDK 向 Mirror酱 要差量包」那一刻才算。
+            matches = await asyncio.to_thread(
                 update_baseline_matches_project, project_path
-            ):
-                prefer_full = True
+            )
+            if not matches:
                 send_update_log(
                     "项目内容与更新基线不一致（脚本自行热更新或手动改过文件），"
                     "差量包无法套用，改为请求全量包"
                 )
+            return matches
+
         (
             discovery,
             version_check,
@@ -381,6 +385,7 @@ async def update_maafw_project_if_needed(
             proxy=proxy,
             send_log=send_update_log,
             prefer_full_package=prefer_full,
+            baseline_matches=None if prefer_full else baseline_still_matches,
         )
     except Exception as exc:
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
@@ -602,6 +607,7 @@ async def _discover_project_update_detailed(
     send_log: Callable[[str], None] | None = None,
     prefer_full_package: bool = False,
     version_only: bool = False,
+    baseline_matches: Callable[[], Awaitable[bool]] | None = None,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -612,6 +618,10 @@ async def _discover_project_update_detailed(
     ``discovery`` is ``None`` when nothing newer exists; ``mirror_version_check``
     is ``None`` only when MirrorChyan was never queried (no rid), so callers can
     still surface the CDK status for an up-to-date project.
+
+    ``baseline_matches`` 只在「确认有新版本、要带 CDK 向 Mirror酱 拿差量包」之前
+    被调用一次；返回 False 就改要全量包。它是懒的，因为算项目指纹要 ~2s，
+    而绝大多数运行前检查的结果是「已是最新」。
     """
 
     config = dict(source_config or {})
@@ -709,6 +719,11 @@ async def _discover_project_update_detailed(
 
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
+        prefer_full = prefer_full_package
+        if not prefer_full and baseline_matches is not None:
+            # 差量包只有在项目与基线指纹完全一致时才装得上，到这一步才值得
+            # 花那 ~2s 去比。
+            prefer_full = not await baseline_matches()
         send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
         authorized = await _query_mirrorchyan_latest(
             interface_model,
@@ -716,7 +731,7 @@ async def _discover_project_update_detailed(
             mirror_cdk=mirror_cdk,
             channel=channel,
             proxy=proxy,
-            prefer_full=prefer_full_package,
+            prefer_full=prefer_full,
             send_log=send_update_log,
         )
         # CDK 状态以带 CDK 的这次为准：不带 CDK 那次只知道有没有新版本。

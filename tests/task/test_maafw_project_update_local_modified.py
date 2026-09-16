@@ -6,8 +6,9 @@
 没有任何界面能解开。现在的口径：
 
 - 全量包：记警告、把本地那份留到 ``<state>/local-modified/``，然后照常覆盖；
-- 差量包：它要求项目指纹与基线**完全一致**，对不上就整个拒装，所以在向 Mirror酱
-  要包之前先比一次指纹，不一致就改要全量包（只在配了 CDK、真可能拿到差量包时算）。
+- 差量包：它要求项目指纹与基线**完全一致**，对不上就整个拒装，所以在带 CDK 向
+  Mirror酱 要包之前先比一次指纹，不一致就改要全量包。指纹要 ~2s，只在「确认有新
+  版本、且真要从 Mirror酱 下载」那一刻才算，「已是最新」的绝大多数运行不付这笔账。
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
     update_baseline_matches_project,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+    MaaFWMirrorChyanVersionCheck,
     update_maafw_project_if_needed,
 )
 
@@ -159,69 +161,151 @@ def test_update_baseline_matches_project_tracks_local_changes(tmp_path: Path) ->
 
 
 # ---------------------------------------------------------------------------
-# updater：指纹对不上就别去要差量包
+# updater：指纹对不上就别去要差量包，而且只在真要差量包时才算指纹
 # ---------------------------------------------------------------------------
 
 
+class _MirrorStub:
+    """替身 ``_query_mirrorchyan_latest``：记录每次查询的 prefer_full 与是否带 CDK。"""
+
+    def __init__(self, latest: str) -> None:
+        self.latest = latest
+        self.calls: list[dict[str, Any]] = []
+
+    async def __call__(
+        self, *_args: Any, **kwargs: Any
+    ) -> MaaFWMirrorChyanVersionCheck:
+        self.calls.append(
+            {
+                "cdk": bool(kwargs.get("mirror_cdk")),
+                "prefer_full": kwargs["prefer_full"],
+            }
+        )
+        return MaaFWMirrorChyanVersionCheck(
+            version_name=self.latest,
+            download_url="https://example.invalid/pkg.zip"
+            if kwargs.get("mirror_cdk")
+            else None,
+            cdk_status="valid" if kwargs.get("mirror_cdk") else "absent",
+        )
+
+
+class _FingerprintSpy:
+    def __init__(self, matches: bool) -> None:
+        self.matches = matches
+        self.calls = 0
+
+    def __call__(self, _project_path: Path) -> bool:
+        self.calls += 1
+        return self.matches
+
+
 @pytest.fixture
-def capture_discovery(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    seen: dict[str, Any] = {}
-
-    async def fake_discover(*_args: Any, **kwargs: Any) -> tuple[Any, Any, Any]:
-        seen["prefer_full"] = kwargs.get("prefer_full_package")
-        return None, None, "已是最新版本"
-
-    monkeypatch.setattr(updater, "_discover_project_update_detailed", fake_discover)
+def updater_harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    harness: dict[str, Any] = {}
     monkeypatch.setattr(updater, "has_trusted_update_baseline", lambda _p: True)
     monkeypatch.setattr(
         updater, "detect_maafw_project_shell_hint", lambda _p: "MFAAvalonia"
     )
-    return seen
+
+    async def fake_apply(_project_path: Path, cand: Any, **_kwargs: Any) -> dict:
+        harness["applied"] = cand
+        return {"operationId": "op", "planId": cand.plan_id}
+
+    monkeypatch.setattr(updater, "apply_maafw_project_update", fake_apply)
+
+    def install(latest: str, matches: bool) -> None:
+        harness["mirror"] = _MirrorStub(latest)
+        harness["fingerprint"] = _FingerprintSpy(matches)
+        monkeypatch.setattr(updater, "_query_mirrorchyan_latest", harness["mirror"])
+        monkeypatch.setattr(
+            updater, "update_baseline_matches_project", harness["fingerprint"]
+        )
+
+    harness["install"] = install
+    return harness
+
+
+def _interface_model() -> Any:
+    return SimpleNamespace(
+        version="v1.0.0", mirrorchyan_rid="M9A", github="MAA1999/M9A"
+    )
 
 
 @pytest.mark.asyncio
 async def test_fingerprint_mismatch_with_cdk_requests_full_package(
-    tmp_path: Path, capture_discovery: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, updater_harness: dict[str, Any]
 ) -> None:
-    monkeypatch.setattr(updater, "update_baseline_matches_project", lambda _p: False)
+    updater_harness["install"]("v1.1.0", matches=False)
     logs: list[str] = []
 
     await update_maafw_project_if_needed(
         tmp_path,
-        SimpleNamespace(version="v1.0.0"),
-        mirror_cdk="cdk-secret",
+        _interface_model(),
+        source_config={"package_source": "mirrorchyan", "mirror_cdk": "cdk-secret"},
         send_log=logs.append,
     )
 
-    assert capture_discovery["prefer_full"] is True
+    calls = updater_harness["mirror"].calls
+    assert [c["cdk"] for c in calls] == [False, True], (
+        "先不带 CDK 查版本，再带 CDK 拿地址"
+    )
+    assert calls[1]["prefer_full"] is True, "带 CDK 那次必须要全量包"
+    assert updater_harness["fingerprint"].calls == 1
     assert any("与更新基线不一致" in line for line in logs)
     assert not any("cdk-secret" in line for line in logs)
 
 
 @pytest.mark.asyncio
 async def test_fingerprint_match_with_cdk_keeps_delta(
-    tmp_path: Path, capture_discovery: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, updater_harness: dict[str, Any]
 ) -> None:
-    monkeypatch.setattr(updater, "update_baseline_matches_project", lambda _p: True)
+    updater_harness["install"]("v1.1.0", matches=True)
 
     await update_maafw_project_if_needed(
-        tmp_path, SimpleNamespace(version="v1.0.0"), mirror_cdk="cdk-secret"
+        tmp_path,
+        _interface_model(),
+        source_config={"package_source": "mirrorchyan", "mirror_cdk": "cdk-secret"},
     )
 
-    assert capture_discovery["prefer_full"] is False
+    assert updater_harness["mirror"].calls[1]["prefer_full"] is False
+    assert updater_harness["fingerprint"].calls == 1
 
 
 @pytest.mark.asyncio
-async def test_without_cdk_fingerprint_is_not_computed(
-    tmp_path: Path, capture_discovery: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+async def test_up_to_date_project_never_computes_fingerprint(
+    tmp_path: Path, updater_harness: dict[str, Any]
 ) -> None:
-    """没 CDK 拿不到差量包，全项目哈希那 ~2s 就别花。"""
+    """绝大多数运行前检查的结果是「已是最新」，那 ~2s 一次都不该花。"""
 
-    def boom(_project_path: Path) -> bool:
-        raise AssertionError("不该算指纹")
+    updater_harness["install"]("v1.0.0", matches=False)
 
-    monkeypatch.setattr(updater, "update_baseline_matches_project", boom)
+    result = await update_maafw_project_if_needed(
+        tmp_path,
+        _interface_model(),
+        source_config={"package_source": "mirrorchyan", "mirror_cdk": "cdk-secret"},
+    )
 
-    await update_maafw_project_if_needed(tmp_path, SimpleNamespace(version="v1.0.0"))
+    assert result.updated is False
+    assert updater_harness["fingerprint"].calls == 0
 
-    assert capture_discovery["prefer_full"] is False
+
+@pytest.mark.asyncio
+async def test_github_source_never_computes_fingerprint(
+    tmp_path: Path, updater_harness: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GitHub Release 只有全量包，差量包的前提不成立，不算指纹。"""
+
+    updater_harness["install"]("v1.1.0", matches=False)
+
+    async def no_release(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(updater, "_check_github_release_update", no_release)
+
+    await update_maafw_project_if_needed(
+        tmp_path, _interface_model(), source_config={"package_source": "github_release"}
+    )
+
+    assert updater_harness["fingerprint"].calls == 0
+    assert all(c["prefer_full"] is False for c in updater_harness["mirror"].calls)
