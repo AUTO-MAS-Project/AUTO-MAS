@@ -90,8 +90,11 @@
       </div>
 
       <div class="version-remaining">
-        <div class="remaining-label">{{ t('home.bluearchive.versionRemaining') }}</div>
+        <div class="remaining-label">
+          {{ isEnded ? t('home.countdown.ended') : t('home.bluearchive.versionRemaining') }}
+        </div>
         <a-statistic-countdown
+          v-if="!isEnded"
           :value="getCountdownValue(overview.endTime)"
           :format="t('home.countdown.dh')"
           :value-style="remainingCountdownStyle"
@@ -224,6 +227,9 @@ const plainRemainingCountdownStyle = computed<CSSProperties>(() => {
   }
   return { color: 'var(--ant-color-text)', fontWeight: 600, fontSize: '18px' }
 })
+
+// 活动间隙会退回展示最近结束的那一场，这时不能再报「剩余时间」
+const isEnded = computed(() => getPlainTimeStatus(overview.value.endTime) === 'ended')
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
 
