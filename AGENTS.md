@@ -34,7 +34,7 @@
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志。
 - PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。
 - 用户可见的功能或问题修复必须随 PR 新增一个更新日志碎片：在 `changelog.d/` 下新建 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>`（键见 `changelog.d/README.md` 的项目表，本体写 `core`），正文一句面向用户的话、**不超过 50 字**，**一条 PR 只放一个碎片，并必须用一句最简洁的语言概括该 PR 的意义**，将全部改动合并为一句话。可用 `python scripts/changelog.py add <分类> <项目键> "<一句话>"` 生成。不要改 `CHANGELOG.md`、`res/version.json` 和任何版本号，它们只由发版 PR 更新；正文里不要写项目名前缀、PR 号和 ` by @用户` 署名，发版时按碎片的合并提交自动补成 `(项目) 做了什么 (#PR) by @作者`。
-- 碎片分类写在文件名后缀：`feat` 新增、`change` 变更、`deprecate` 弃用、`remove` 移除、`fix` 修复、`security` 安全、`dev` 开发流程（只影响贡献者）。`CHANGELOG.md` 由发版脚本按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 从碎片编译，不要手改。
+- 碎片分类写在文件名后缀：`feat` 新增、`change` 变更、`remove` 移除（含弃用）、`fix` 修复、`security` 安全、`dev` 开发流程（只影响贡献者，不进公告）。「本次亮点」没有后缀，由维护者给碎片加一行 `highlight: true` 标出。`CHANGELOG.md` 由发版脚本按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 从碎片编译，不要手改。
 - 破坏性的、或需要用户动手确认的改动用 `breaking` 后缀，编译时进置顶的 `破坏性变更`；`本次亮点` 由维护者在发版 PR 里挑选，贡献者不用动。
 - 纯文档、CI、测试或用户不可见的重构不需要碎片，给 PR 打 `skip-changelog` 标签。
 - 写 changelog 时**面向用户**：只描述用户可观察到的改动或修复，用用户能听懂的话；删掉所有内部实现细节（返回值/类型名如 `DispatchResult`、消费方/调用方、Schema 与字段名、接口路径、日志丢失、HTTP 状态码如“返回 500”）。

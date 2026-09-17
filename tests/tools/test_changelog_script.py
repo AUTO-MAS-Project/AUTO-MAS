@@ -194,13 +194,14 @@ def test_invalid_release_heading_is_rejected(heading: str) -> None:
 
 
 def test_known_categories_are_ordered_and_unknown_ones_kept() -> None:
-    """置顶两类排在最前，Keep a Changelog 六类按规范顺序，表外分类排在最后。"""
+    """置顶两类排在最前，Keep a Changelog 五类按规范顺序，表外分类排在最后。"""
 
     ordered = changelog.order_categories(
         {
             "开发流程": ["己"],
             "修复": ["丁"],
             "自定义分类": ["庚"],
+            "移除": ["辛"],
             "新增": ["丙"],
             "本次亮点": ["乙"],
             "破坏性变更": ["甲"],
@@ -212,11 +213,15 @@ def test_known_categories_are_ordered_and_unknown_ones_kept() -> None:
         "破坏性变更",
         "本次亮点",
         "新增",
+        "移除",
         "修复",
         "安全",
         "开发流程",
         "自定义分类",
     ]
+    # 弃用并进了移除：没有这个后缀，也不在固定顺序里
+    assert "deprecate" not in changelog.FRAGMENT_TYPES
+    assert "弃用" not in changelog.CATEGORY_ORDER
 
 
 @pytest.mark.parametrize(
@@ -305,6 +310,27 @@ def test_fragment_text_limit_is_inclusive(tmp_path) -> None:
     fragment = _fragment(tmp_path, "1.fix.md", "project: maa\n" + "甲" * 50 + "\n")
 
     assert len(fragment.text) == 50
+
+
+def test_fragment_highlight_flag_routes_to_the_highlight_category(tmp_path) -> None:
+    """维护者加一行 highlight: true，这条编译进「本次亮点」而不是文件名后缀的分类。"""
+
+    plain = _fragment(tmp_path, "1.feat.md", "project: maa\n甲\n")
+    assert plain.highlight is False and plain.target_category == "新增"
+
+    flagged = _fragment(tmp_path, "2.feat.md", "project: maa\nhighlight: True\n乙\n")
+    assert flagged.highlight is True
+    assert flagged.category == "新增" and flagged.target_category == "本次亮点"
+
+    off = _fragment(tmp_path, "3.fix.md", "highlight: no\nproject: maa\n丙\n")
+    assert off.highlight is False and off.target_category == "修复"
+
+    with pytest.raises(changelog.ChangelogError, match="highlight 只能写一次"):
+        _fragment(
+            tmp_path, "4.fix.md", "highlight: true\nhighlight: true\nproject: maa\n丁\n"
+        )
+    with pytest.raises(changelog.ChangelogError, match="文件名"):
+        _fragment(tmp_path, "5.deprecate.md", "project: maa\n戊\n")
 
 
 def test_list_fragments_skips_readme_and_rejects_strangers(tmp_path) -> None:
@@ -407,7 +433,6 @@ def test_entry_structure_round_trips_and_normalizes() -> None:
         ["a", "b"],
     )
     assert parsed.render() == "(MAA) 修复剿灭空跑 (#761, #762) by @a by @b"
-    assert parsed.render(with_prs=False) == "(MAA) 修复剿灭空跑 by @a by @b"
 
     # 表外的括号开头照原文当正文；没有署名与 PR 号也能解析
     plain = changelog.split_entry("(数据未删除) 请手动迁移")
@@ -418,7 +443,6 @@ def test_entry_structure_round_trips_and_normalizes() -> None:
         [],
     )
     assert changelog.normalize_entry("甲 by [@a](https://github.com/a)") == "甲 by @a"
-    assert changelog.client_entry("(MAA) 甲 (#1) by @a") == "(MAA) 甲 by @a"
 
 
 def test_entries_are_ordered_by_project_table_with_core_last() -> None:
@@ -486,6 +510,8 @@ def test_compile_orders_each_category_by_project_table(tmp_path) -> None:
         _fragment(tmp_path, "b.fix.md", "project: mfw\n乙\n"),
         _fragment(tmp_path, "c.fix.md", "project: maa\n丙\n"),
         _fragment(tmp_path, "d.fix.md", "project: maa\n丁\n"),
+        # 标了 highlight 的进「本次亮点」，不再出现在原分类里
+        _fragment(tmp_path, "e.fix.md", "project: hsr\nhighlight: true\n戊\n"),
     ]
 
     new_sections, _ = changelog.compile_release(
@@ -496,11 +522,12 @@ def test_compile_orders_each_category_by_project_table(tmp_path) -> None:
         "2026-09-13",
         {"a.fix.md": None, "b.fix.md": "b", "c.fix.md": None, "d.fix.md": None},
         tagged=["v5.5.0-beta.5"],
-        prs={"a.fix.md": None, "b.fix.md": None, "c.fix.md": 3},
+        prs={"a.fix.md": None, "b.fix.md": None, "c.fix.md": 3, "e.fix.md": 5},
     )
 
     assert new_sections["v5.5.0-beta.6"] == {
-        "修复": ["(MAA) 丙 (#3)", "(MAA) 丁", "(MFW) 乙 by @b", "甲"]
+        "本次亮点": ["(HSR) 戊 (#5)"],
+        "修复": ["(MAA) 丙 (#3)", "(MAA) 丁", "(MFW) 乙 by @b", "甲"],
     }
 
 
@@ -637,9 +664,9 @@ def test_release_note_has_contract_first_line_contributors_and_compare_link() ->
     )
 
 
-def test_release_note_first_line_strips_pr_numbers_but_keeps_project_and_author() -> (
-    None
-):
+def test_release_note_first_line_keeps_project_pr_numbers_and_author() -> None:
+    """首行 JSON 的条目与 CHANGELOG.md 同形：项目、PR 号、署名都在。"""
+
     sections, _ = _sections(
         "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- (MAA) 甲 (#1, #2) by @a\n"
     )
@@ -647,7 +674,9 @@ def test_release_note_first_line_strips_pr_numbers_but_keeps_project_and_author(
     note = changelog.render_release_note(sections, "v5.5.0-beta.7")
     first, rest = note.split("\n", 1)
 
-    assert json.loads(first[4:-3]) == {"v5.5.0-beta.7": {"修复": ["(MAA) 甲 by @a"]}}
+    assert json.loads(first[4:-3]) == {
+        "v5.5.0-beta.7": {"修复": ["(MAA) 甲 (#1, #2) by @a"]}
+    }
     assert "- (MAA) 甲 (#1, #2) by @a" in rest
 
 
@@ -904,6 +933,24 @@ def test_pr_check_rejects_two_fragments_and_touching_others(repo) -> None:
     problems = _check(repo, "dev")
     assert any("只放一个碎片" in p for p in problems)
     assert any("不要修改或删除已有的碎片" in p for p in problems)
+
+
+def test_pr_check_lets_maintainers_toggle_highlight_on_others_fragments(repo) -> None:
+    """只加减 highlight: 不算改别人的碎片；改正文、项目或署名覆盖仍然拦。"""
+
+    _write(repo, "changelog.d/other.feat.md", "project: maa\n别人的\n")
+    _commit(repo, "feat: other")
+    _branch(repo, "chore/highlight")
+    _write(repo, "changelog.d/other.feat.md", "highlight: true\nproject: maa\n别人的\n")
+    _write(repo, "README.md", "文档\n")
+    _commit(repo, "chore: 标亮点")
+
+    assert _check(repo, "dev") == []
+
+    _write(repo, "changelog.d/other.feat.md", "highlight: true\nproject: hsr\n别人的\n")
+    _commit(repo, "chore: 顺手改项目")
+
+    assert any("只允许加减 `highlight:`" in p for p in _check(repo, "dev"))
 
 
 def test_pr_check_blocks_changelog_and_version_edits_in_normal_prs(repo) -> None:

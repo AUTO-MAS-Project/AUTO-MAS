@@ -38,9 +38,8 @@
 - `uv.lock`            —— 其中 auto-mas 包自身的版本，同样是 PEP 440 写法
 
 Release 正文首行是一条 HTML 注释包着的 JSON，已发布客户端靠它显示更新提示。Mirror 酱对
-整份 release_note 只存前 20000 字符，超出直接截断，所以首行 JSON 有预算：条目里不带
-PR 号，超预算时从最老的版本段开始丢，本版段永远保留；本版段自己就超预算的话直接报错，
-让发版 PR 先精简条目。
+整份 release_note 只存前 20000 字符，超出直接截断，所以首行 JSON 有预算：超预算时从
+最老的版本段开始丢，本版段永远保留；本版段自己就超预算的话直接报错，让发版 PR 先精简条目。
 
 用法::
 
@@ -87,27 +86,26 @@ FRAGMENT_DIR = REPO_ROOT / "changelog.d"
 
 UNRELEASED = "未发布"
 
-# 分类的固定顺序。中间六类是 Keep a Changelog 的标准分类（用中文标题，因为条目本身是
-# 中文、而且这些标题会直接显示在应用内的更新提示里）；首尾三类是本项目的扩展。
-# 这不是白名单——表外的新分类照常保留，只是排在这些之后。
+# 分类的固定顺序。中间五类来自 Keep a Changelog（用中文标题，因为条目本身是中文、
+# 而且这些标题会直接显示在应用内的更新提示里；「弃用」并进了「移除」）；首尾三类是本项目
+# 的扩展。这不是白名单——表外的新分类照常保留，只是排在这些之后。
 CATEGORY_ORDER = [
     "破坏性变更",  # 本项目扩展：需要用户动手确认的改动，置顶最醒目
-    "本次亮点",  # 本项目扩展：这一版最值得看的三五条
+    "本次亮点",  # 本项目扩展：这一版最值得看的几条，由碎片上的 highlight 标记决定
     "新增",  # Added
     "变更",  # Changed
-    "弃用",  # Deprecated
-    "移除",  # Removed
+    "移除",  # Removed，含 Deprecated
     "修复",  # Fixed
     "安全",  # Security
     "开发流程",  # 本项目扩展：只影响贡献者、不影响用户的改动
 ]
+HIGHLIGHT_CATEGORY = "本次亮点"
 # 只在给人看的 Release 正文与发版 PR 里给分类标题加的表情，分类名本身不变
 CATEGORY_EMOJI = {
     "破坏性变更": "⚠️",
     "本次亮点": "🌟",
     "新增": "✨",
     "变更": "🔧",
-    "弃用": "⏳",
     "移除": "🗑️",
     "修复": "🐛",
     "安全": "🔒",
@@ -119,7 +117,6 @@ FRAGMENT_TYPES = {
     "breaking": "破坏性变更",
     "feat": "新增",
     "change": "变更",
-    "deprecate": "弃用",
     "remove": "移除",
     "fix": "修复",
     "security": "安全",
@@ -136,6 +133,11 @@ LOGIN = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
 LOGIN_PATTERN = re.compile(rf"^{LOGIN}$")
 FRAGMENT_AUTHOR = re.compile(rf"^author:\s*@?(?P<login>{LOGIN})\s*$")
 FRAGMENT_PROJECT = re.compile(r"^project:\s*(?P<project>[A-Za-z0-9-]+)\s*$")
+# 维护者给碎片加的可选标记：编译时这条进「本次亮点」而不是文件名后缀那个分类
+FRAGMENT_HIGHLIGHT = re.compile(
+    r"^highlight:\s*(?P<value>true|yes|on|1|false|no|off|0)\s*$", re.IGNORECASE
+)
+HIGHLIGHT_TRUE = {"true", "yes", "on", "1"}
 
 # 碎片正文的字数上限：公告里一条只说「做了什么」，细节留在 PR 里。首行 JSON 的体积
 # 直接由它决定，放宽前先算一遍一个版本段会涨到多少。
@@ -242,17 +244,17 @@ CHANGELOG_PREAMBLE = """# 更新日志
   - 条目写成一行 `(项目) 做了什么 (#PR 号) by @作者`：项目、PR 号与署名都在发版时由脚本
     按碎片与其提交自动补，不要手写；本体的条目没有 `(项目)` 前缀，同一分类内排在最后。
 
-  分类含义（中间六类来自 Keep a Changelog）：
+  分类含义（中间五类来自 Keep a Changelog）：
 
   - 破坏性变更：需要用户动手确认或会改变既有行为的改动，在更新提示里最醒目地展示。
-  - 本次亮点：这一版最值得一看的三五条，由维护者在发版 PR 里挑选。
+  - 本次亮点：这一版最值得一看的几条。维护者给碎片加一行 `highlight: true`，编译时这条
+    就进这里而不是原分类。
   - 新增：新添加的功能。
   - 变更：对现有功能的变更，含优化与调整。
-  - 弃用：已经不建议使用、即将移除的功能。
-  - 移除：已经移除的功能。
+  - 移除：已经移除或不再建议使用、即将移除的功能。
   - 修复：对 bug 的修复。
   - 安全：对安全性的改进。
-  - 开发流程：只影响贡献者、用户看不见的改动。
+  - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 """
 
@@ -444,7 +446,7 @@ def render_version_json(current_version: str, sections: Sections) -> str:
     """生成 res/version.json。
 
     只写版本与分类条目，不写日期——这份 JSON 的结构是已发布客户端解析更新提示的契约；
-    条目按客户端口径写（不带 PR 号），与 Release 正文首行 JSON 一致。
+    分类按客户端口径写（去掉只给贡献者看的分类），与 Release 正文首行 JSON 一致。
     """
 
     payload = {
@@ -638,9 +640,17 @@ def show_file(ref: str, path: str, root: Path = REPO_ROOT) -> Optional[str]:
 
 
 class Fragment:
-    """一个碎片：文件、标识、分类、正文，以及可选的署名覆盖。"""
+    """一个碎片：文件、标识、分类、项目、正文，以及可选的署名覆盖与亮点标记。"""
 
-    __slots__ = ("path", "identifier", "category", "text", "author", "project")
+    __slots__ = (
+        "path",
+        "identifier",
+        "category",
+        "text",
+        "author",
+        "project",
+        "highlight",
+    )
 
     def __init__(
         self,
@@ -650,6 +660,7 @@ class Fragment:
         text: str,
         author: Optional[str] = None,
         project: str = "core",
+        highlight: bool = False,
     ) -> None:
         self.path = path
         self.identifier = identifier
@@ -657,12 +668,19 @@ class Fragment:
         self.text = text
         self.author = author
         self.project = project
+        self.highlight = highlight
 
     @property
     def project_name(self) -> Optional[str]:
         """公告里显示的项目名；core 不显示。"""
 
         return PROJECTS.get(self.project)
+
+    @property
+    def target_category(self) -> str:
+        """编译进哪个分类：标了 highlight 的进「本次亮点」，否则按文件名后缀。"""
+
+        return HIGHLIGHT_CATEGORY if self.highlight else self.category
 
 
 def check_fragment_text(text: str, where: str) -> None:
@@ -690,7 +708,8 @@ def check_fragment_text(text: str, where: str) -> None:
 def parse_fragment(path: Path, content: str) -> Fragment:
     """碎片 = 文件名决定分类 + 首行 `project: 键` + 正文一行。
 
-    可选的 `author: 登录名` 覆盖自动署名。两个头部行顺序不限，都要在正文之前。
+    可选头部：`author: 登录名` 覆盖自动署名，`highlight: true` 让这条进「本次亮点」
+    （维护者合并前后加）。头部行顺序不限，都要在正文之前。
     """
 
     matched = FRAGMENT_NAME.match(path.name)
@@ -701,6 +720,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
         )
     author: Optional[str] = None
     project: Optional[str] = None
+    highlight: Optional[bool] = None
     body: List[str] = []
     for line in content.splitlines():
         stripped = line.strip()
@@ -717,6 +737,12 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             if project is not None:
                 raise ChangelogError(f"{path.name}：project 只能写一次")
             project = project_match.group("project").lower()
+            continue
+        highlight_match = FRAGMENT_HIGHLIGHT.match(stripped)
+        if highlight_match and not body:
+            if highlight is not None:
+                raise ChangelogError(f"{path.name}：highlight 只能写一次")
+            highlight = highlight_match.group("value").lower() in HIGHLIGHT_TRUE
             continue
         body.append(stripped)
     if project is None:
@@ -745,6 +771,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
         text=text,
         author=author,
         project=project,
+        highlight=bool(highlight),
     )
 
 
@@ -832,9 +859,9 @@ class Entry:
 
         return PROJECT_RANK.get(self.project or "", len(PROJECT_RANK))
 
-    def render(self, with_prs: bool = True) -> str:
+    def render(self) -> str:
         head = f"({self.project}) {self.text}" if self.project else self.text
-        if with_prs and self.prs:
+        if self.prs:
             head += " (" + ", ".join(f"#{n}" for n in self.prs) + ")"
         return join_signatures(head, self.logins)
 
@@ -862,17 +889,8 @@ def normalize_entry(entry: str) -> str:
     return split_entry(entry).render()
 
 
-def client_entry(entry: str) -> str:
-    """给客户端更新提示看的条目：不带 PR 号。
-
-    弹窗里点不了 PR 号，而首行 JSON 的每个字符都要占 Mirror 酱的配额。
-    """
-
-    return split_entry(entry).render(with_prs=False)
-
-
 def public_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目原样（带 PR 号）。"""
+    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目原样。"""
 
     return {
         category: list(items)
@@ -882,12 +900,9 @@ def public_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
 
 
 def client_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    """给客户端更新提示的分类：在 public_categories 之上再去掉条目里的 PR 号。"""
+    """给客户端更新提示的分类：与 public_categories 相同，条目带 PR 号与署名。"""
 
-    return {
-        category: [client_entry(item) for item in items]
-        for category, items in public_categories(categories).items()
-    }
+    return public_categories(categories)
 
 
 def order_entries(items: Sequence[str]) -> List[str]:
@@ -1124,6 +1139,25 @@ def check_version_floor(current_version: str, root: Path = REPO_ROOT) -> Optiona
     return latest
 
 
+def only_highlight_changed(base: str, path: str, root: Path = REPO_ROOT) -> bool:
+    """PR 对已有碎片的改动是否只是加减 `highlight:`：项目、正文、署名覆盖都没动。"""
+
+    before_text = show_file(base, path, root)
+    after_path = root / path
+    if before_text is None or not after_path.exists():
+        return False
+    try:
+        before = parse_fragment(after_path, before_text)
+        after = parse_fragment(after_path, read_text(after_path))
+    except ChangelogError:
+        return False
+    return (before.project, before.text, before.author) == (
+        after.project,
+        after.text,
+        after.author,
+    )
+
+
 def check_pull_request(
     base: str,
     kind: str,
@@ -1193,15 +1227,18 @@ def check_pull_request(
         and FRAGMENT_NAME.match(path.rsplit("/", 1)[-1])
     ]
     touched_others = [
-        path
+        (status, path)
         for status, path in changes
         if status != "A"
         and path.startswith("changelog.d/")
         and path.rsplit("/", 1)[-1] not in FRAGMENT_IGNORED
+        # 只改 highlight 标记不算改别人的碎片：这是维护者挑亮点的正常操作
+        and not only_highlight_changed(base, path, root)
     ]
     if touched_others and not maintenance:
         problems.append(
-            "不要修改或删除已有的碎片，它们属于别的 PR：" + "、".join(touched_others)
+            "不要修改或删除已有的碎片，它们属于别的 PR（只允许加减 `highlight:` 标记）："
+            + "、".join(path for _, path in touched_others)
         )
 
     if not maintenance:
@@ -1461,7 +1498,7 @@ def compile_release(
             [pr] if pr else [],
             [login] if login else [],
         )
-        fresh.setdefault(fragment.category, []).append(entry.render())
+        fresh.setdefault(fragment.target_category, []).append(entry.render())
     merge_entries(pending, fresh)
 
     if not pending:
@@ -1512,7 +1549,8 @@ def render_pr_body(
             "合并前必须精简或合并条目，否则所有客户端的更新检查都会失败（检查会红）"
         )
     lines.append(
-        "- [ ] 在 `CHANGELOG.md` 新版本段里补「本次亮点」（三五条即可，可不补）"
+        "- [ ] 「本次亮点」够不够：合并前给碎片加 `highlight: true` 就会自动进这一类，"
+        "现在也可以直接在 `CHANGELOG.md` 新版本段里把条目挪过去"
     )
     if kind == "stable":
         lines.append("- [ ] 删掉周期内引入又修掉的问题，稳定通道用户没装过 beta")
@@ -1917,6 +1955,8 @@ def command_add(arguments: argparse.Namespace) -> int:
         )
     path = FRAGMENT_DIR / f"{identifier}.{arguments.type}.md"
     content = f"project: {project}\n" + text + "\n"
+    if arguments.highlight:
+        content = "highlight: true\n" + content
     if arguments.author:
         content = f"author: {arguments.author.lstrip('@')}\n" + content
     write_text(path, content)
@@ -1950,6 +1990,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add.add_argument("--id", help="文件名前缀，默认取 PR 号或当前分支名")
     add.add_argument("--author", help="替别人提交时指定署名登录名")
+    add.add_argument(
+        "--highlight",
+        action="store_true",
+        help="维护者用：标成本次亮点，编译时进「本次亮点」而不是原分类",
+    )
 
     check = subparsers.add_parser("check", help="校验格式、碎片与版本号（CI 用）")
     check.add_argument(
