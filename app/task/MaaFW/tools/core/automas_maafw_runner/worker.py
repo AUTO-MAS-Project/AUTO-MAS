@@ -141,7 +141,13 @@ def main() -> int:
         _start_owner_watchdog(job_path, payload)
         plan = MaaFWRunPlan.model_validate(payload["plan"])
         device_config = MaaFWDeviceConfig.model_validate(payload["deviceConfig"])
-        runner = MaaFWRunner(plan, send_log=_emit_log)
+        screenshot_dir = payload.get("failureScreenshotDir")
+        runner = MaaFWRunner(
+            plan,
+            send_log=_emit_log,
+            failure_screenshot_dir=Path(screenshot_dir) if screenshot_dir else None,
+            failure_screenshot_prefix=str(payload.get("failureScreenshotPrefix") or ""),
+        )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})
         return 0 if result.success else 2
@@ -152,6 +158,9 @@ def main() -> int:
             controllerName="",
             resourceName="",
             errorMessage=str(exc),
+            failureScreenshots=(
+                runner.failure_screenshots if runner is not None else []
+            ),
         )
         with suppress(Exception):
             _emit({"type": "result", "data": result.model_dump(mode="json")})

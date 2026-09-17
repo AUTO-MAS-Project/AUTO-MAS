@@ -43,9 +43,15 @@ HSR_EOW_REMAINING_COUNT_RE = re.compile(
     r"本周[「\"]?历战余响[」\"；:：]?\s*剩余次数[:：]\s*(\d+)\s*/\s*3"
 )
 HSR_EOW_M7A_START_RE = re.compile(r"开始刷历战余响.*?每轮包含\s*(\d+)\s*次")
-# 「将执行 N 次」只在 SRA 体力自动分配路径打印，手动副本任务没有这行。
+# 「将执行 N 次」只在 SRA 体力自动分配路径打印，手动副本任务没有这行；
+# SRA v2.21.0 起历战余响自动检测也改走手动副本固定 3 连战，这行不再出现。
 HSR_EOW_SRA_PLAN_RE = re.compile(r"任务\s+历战余响.*?将执行\s*(\d+)\s*次")
 HSR_EOW_SRA_DONE_MARKER = "任务完成：历战余响"
+# battle() 每个任务以「执行任务：」开场；没有计划行时靠它圈定历战余响战斗块。
+HSR_EOW_SRA_START_MARKER = "执行任务：历战余响"
+# wait_battle_end 60 分钟没等到战斗结束会先打这行 ERROR 再返回 -1；
+# battle_start 对 -1 与正常结束同路处理，仍会走到「任务完成」。
+HSR_EOW_SRA_BATTLE_TIMEOUT_MARKER = "等待战斗结束超时"
 # SRA 打不过或点不中关卡时也会打印「任务完成」，只有战斗失败会单独留痕；
 # 排除同样含该子串的「退出战斗失败」，那只是收尾点击没成功。
 HSR_EOW_SRA_BATTLE_FAILED_RE = re.compile(r"(?<!退出)战斗失败")
@@ -297,15 +303,12 @@ def result_text(result: object) -> str:
 def detect_echo_of_war_completion(
     result: object,
     script: str,
-    dedicated_run: bool = False,
 ) -> tuple[bool, str]:
     """根据 M7A/SRA 输出判断本周历战余响是否已完成。
 
     Args:
         result: 外部脚本执行结果。
         script: 本次执行的引擎。
-        dedicated_run: 本次外部脚本只按 3 连战跑了历战余响一项。SRA 手动副本
-            任务不打印体力分配计划，这时以任务完成日志作为完成依据。
     """
 
     text = result_text(result)
@@ -346,9 +349,8 @@ def detect_echo_of_war_completion(
     if any(marker in text for marker in HSR_EOW_COMPLETE_MARKERS):
         return True, "外部脚本日志显示历战余响体力计划已完成"
 
-    if any(marker in text for marker in HSR_EOW_INCOMPLETE_MARKERS):
-        return False, "外部脚本日志显示历战余响未完成或体力不足"
-
+    # SRA 的完成判定先于通用未完成标记：历战余响战斗块没有失败痕迹即完成，
+    # 块外其他体力任务的「体力不足」不能反过来否定它（它们共享同一管体力）。
     sra_attempts = _parse_max_int(HSR_EOW_SRA_PLAN_RE, text)
     if str(script).upper() == "SRA" and HSR_EOW_SRA_DONE_MARKER in text:
         if (
@@ -356,8 +358,13 @@ def detect_echo_of_war_completion(
             and sra_attempts >= HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT
         ):
             return True, f"SRA 日志显示历战余响已执行 {sra_attempts} 次"
-        if dedicated_run and not HSR_EOW_SRA_BATTLE_FAILED_RE.search(text):
-            return True, "SRA 单独执行历战余响完成，本周次数已一次挑战用尽"
+        # 没有计划行才走战斗块兜底（v2.21.0+ 混跑与单独执行）；计划行还在的
+        # 旧版保持按计划数判定，低体力只分配到部分次数的周不被误记完成。
+        if sra_attempts is None and _sra_last_eow_battle_clean(text):
+            return True, "SRA 日志显示历战余响战斗结束且无战斗失败，视为本周完成"
+
+    if any(marker in text for marker in HSR_EOW_INCOMPLETE_MARKERS):
+        return False, "外部脚本日志显示历战余响未完成或体力不足"
 
     return False, "未从外部脚本日志确认历战余响已完成"
 
@@ -370,6 +377,27 @@ def _parse_max_int(pattern: re.Pattern[str], text: str) -> int | None:
         except (TypeError, ValueError):
             continue
     return max(values) if values else None
+
+
+def _sra_last_eow_battle_clean(text: str) -> bool:
+    """判断最后一段历战余响战斗块内没有失败痕迹。
+
+    SRA v2.21.0 起历战余响不再打印「将执行 N 次」计划行，改以
+    「执行任务：历战余响」到最近一次「任务完成：历战余响」圈定战斗块；
+    battle() 在战斗失败或等待战斗结束超时（-1）时同样会打印「任务完成」，
+    所以块内出现「战斗失败」（不含「退出战斗失败」）或「等待战斗结束超时」
+    都算没打完，块外的失败属于其他体力任务，不影响本判定。
+    """
+
+    done_pos = text.rfind(HSR_EOW_SRA_DONE_MARKER)
+    if done_pos < 0:
+        return False
+    start_pos = text.rfind(HSR_EOW_SRA_START_MARKER, 0, done_pos)
+    # 找不到开场行时从头算起：块只会偏大，方向是漏判而非误判。
+    segment = text[start_pos:done_pos] if start_pos >= 0 else text[:done_pos]
+    if HSR_EOW_SRA_BATTLE_TIMEOUT_MARKER in segment:
+        return False
+    return not HSR_EOW_SRA_BATTLE_FAILED_RE.search(segment)
 
 
 def detect_weekly_completion(
