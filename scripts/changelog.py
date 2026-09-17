@@ -38,7 +38,8 @@
 - `pyproject.toml`     —— PEP 440 写法，如 5.5.0b3
 - `uv.lock`            —— 其中 auto-mas 包自身的版本，同样是 PEP 440 写法
 
-Release 正文首行是一条 HTML 注释包着的 JSON，已发布客户端靠它显示更新提示。Mirror 酱对
+Release 正文首行是一条 HTML 注释包着的 JSON，已发布客户端靠它显示更新提示：公测版带本周期
+全部 beta 段，正式版只带本次汇总，补丁版带同一 X.Y 线，上一个周期的内容一律不带。Mirror 酱对
 整份 release_note 只存前 20000 字符，超出直接截断，所以首行 JSON 有预算：超预算时从
 最老的版本段开始丢，本版段永远保留；本版段自己就超预算的话直接报错，让发版 PR 先精简条目。
 
@@ -1960,11 +1961,13 @@ def command_release(arguments: argparse.Namespace) -> int:
 def select_note_versions(sections: Sections, version: str) -> List[str]:
     """Release 正文首行 JSON 里要带哪些版本段。
 
-    老客户端按「比本机新」过滤这份 JSON 并逐段显示，所以：
-    - 公测版带本周期全部 beta 段，加上一个正式周期的整条线（X.Y.0 汇总与其补丁），
-      切通道、跳版都能看全；
-    - 正式版带本次汇总，加上一个正式周期的整条线，不带 beta 段（否则重复显示）；
-    - 补丁版带本次，加同一 X.Y 下更早的补丁段与 X.Y.0 汇总段。
+    老客户端按「比本机新」过滤这份 JSON 并逐段显示，所以带的段要盖住「用户可能从哪一版
+    升上来」，但正式版一发，上一个周期的内容就不再进任何首行：
+    - 公测版带本周期（同一 X.Y.0）全部 beta 段：稳定通道用户切来时看全本周期；
+    - 正式版只带本次汇总：本周期的 beta 段已并进来，上一个正式版每个用户都装过；
+    - 补丁版带同一 X.Y 线上的正式版段（X.Y.0 汇总与更早的补丁）：从上一个正式版直接升到
+      补丁版的用户要看到 X.Y.0 的汇总。
+    跳过整个正式版的用户在更新提示里只看到最新一段，更早的看 GitHub Release。
     """
 
     key = version_key(version)
@@ -1972,38 +1975,25 @@ def select_note_versions(sections: Sections, version: str) -> List[str]:
         raise ChangelogError(f"版本号 {version} 不合形态")
     ordered = [v for v in sections if version_key(v) is not None]
     older = [v for v in ordered if version_key(v) <= key]  # type: ignore[operator]
-    finals = [v for v in older if not is_prerelease(v)]
 
-    def whole_line(anchor: Optional[str]) -> List[str]:
-        """anchor 所在 X.Y 线上的全部正式版段：X.Y.0 汇总加它之后的补丁。"""
-
-        if anchor is None:
-            return []
-        line = version_key(anchor)[:2]  # type: ignore[index]
-        return [v for v in finals if version_key(v)[:2] == line]  # type: ignore[index]
-
-    selected: List[str] = []
     if is_prerelease(version):
-        selected.extend(
+        selected = [
             v
             for v in older
             if is_prerelease(v) and version_key(v)[:3] == key[:3]  # type: ignore[index]
-        )
-        # 上一个正式周期整条线都带上：只带最后一个补丁段会丢掉 X.Y.0 汇总与更早的补丁
-        selected.extend(whole_line(next(iter(finals), None)))
+        ]
     elif key[2] == 0:
-        selected.append(version)
-        selected.extend(whole_line(next((v for v in finals if v != version), None)))
+        selected = [version]
     else:
-        selected.extend(v for v in finals if version_key(v)[:2] == key[:2])  # type: ignore[index]
-        if not selected or selected[0] != version:
-            selected.insert(0, version)
-    # 去重并保持文件顺序（新在前）
-    seen: List[str] = []
-    for v in ordered:
-        if v in selected and v not in seen:
-            seen.append(v)
-    return seen
+        selected = [
+            v
+            for v in older
+            if not is_prerelease(v) and version_key(v)[:2] == key[:2]  # type: ignore[index]
+        ]
+    if version not in selected:
+        selected.insert(0, version)
+    # 保持文件顺序（新在前）
+    return [v for v in ordered if v in selected]
 
 
 class NotePlan:

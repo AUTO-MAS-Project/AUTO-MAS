@@ -890,12 +890,13 @@ FULL_HISTORY = (
 @pytest.mark.parametrize(
     ("version", "expected"),
     [
-        # 公测：本周期全部 beta 段 + 上一个正式周期整条线（补丁与 X.Y.0 汇总都在）
-        ("v5.6.0-beta.2", ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1", "v5.5.0"]),
-        # 转正：本次 + 上一个正式周期整条线，不带 beta 段
-        ("v5.6.0", ["v5.6.0", "v5.5.1", "v5.5.0"]),
-        ("v5.5.0", ["v5.5.0", "v5.4.0"]),
-        # 补丁：本次 + 同一 X.Y 下的正式版
+        # 公测：本周期全部 beta 段；正式版一发，上一个周期的段就不再带
+        ("v5.6.0-beta.1", ["v5.6.0-beta.1"]),
+        ("v5.6.0-beta.2", ["v5.6.0-beta.2", "v5.6.0-beta.1"]),
+        # 转正：只带本次汇总，beta 段与上一个正式版都不带
+        ("v5.6.0", ["v5.6.0"]),
+        ("v5.5.0", ["v5.5.0"]),
+        # 补丁：本次 + 同一 X.Y 线上更早的正式版段（从 5.4.0 直接升上来要看到 5.5.0 汇总）
         ("v5.5.1", ["v5.5.1", "v5.5.0"]),
     ],
 )
@@ -913,7 +914,7 @@ def test_release_note_has_contract_first_line_contributors_and_compare_link() ->
 
     assert first.startswith("<!--") and first.endswith("-->")
     payload = json.loads(first[4:-3])
-    assert list(payload) == ["v5.5.0", "v5.4.0"]
+    assert list(payload) == ["v5.5.0"]
     # 首行 JSON 里署名不带链接（旧写法在解析时已归一）
     assert payload["v5.5.0"] == {"新增": ["丙 by @a"]}
     assert "## v5.5.0" in rest
@@ -949,27 +950,28 @@ def test_release_note_first_line_keeps_project_pr_numbers_and_author() -> None:
 def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
     """超预算时从最老的版本段开始丢，本版段永远保留。"""
 
-    sections, _ = _sections(FULL_HISTORY)
-    full = changelog.plan_note_json(sections, "v5.6.0-beta.2")
-    assert full.kept == ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1", "v5.5.0"]
+    sections, _ = _sections(
+        "## [v5.6.0-beta.3] - 2026-10-03\n\n### 修复\n\n- 庚\n\n"
+        "## [v5.6.0-beta.2] - 2026-10-02\n\n### 修复\n\n- 己\n\n"
+        "## [v5.6.0-beta.1] - 2026-10-01\n\n### 新增\n\n- 戊\n\n"
+        "## [v5.5.0] - 2026-09-15\n\n### 新增\n\n- 丙\n"
+    )
+    full = changelog.plan_note_json(sections, "v5.6.0-beta.3")
+    assert full.kept == ["v5.6.0-beta.3", "v5.6.0-beta.2", "v5.6.0-beta.1"]
     assert full.dropped == [] and not full.over_budget
 
-    tight = changelog.plan_note_json(sections, "v5.6.0-beta.2", budget=full.size - 1)
-    assert tight.kept == ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1"]
-    assert tight.dropped == ["v5.5.0"]
-    assert json.loads(tight.line[4:-3]).keys() == {
-        "v5.6.0-beta.2",
-        "v5.6.0-beta.1",
-        "v5.5.1",
-    }
+    tight = changelog.plan_note_json(sections, "v5.6.0-beta.3", budget=full.size - 1)
+    assert tight.kept == ["v5.6.0-beta.3", "v5.6.0-beta.2"]
+    assert tight.dropped == ["v5.6.0-beta.1"]
+    assert json.loads(tight.line[4:-3]).keys() == {"v5.6.0-beta.3", "v5.6.0-beta.2"}
 
-    only_current = changelog.plan_note_json(sections, "v5.6.0-beta.2", budget=60)
-    assert only_current.kept == ["v5.6.0-beta.2"]
+    only_current = changelog.plan_note_json(sections, "v5.6.0-beta.3", budget=60)
+    assert only_current.kept == ["v5.6.0-beta.3"]
     assert not only_current.over_budget
 
-    note = changelog.render_release_note(sections, "v5.6.0-beta.2", budget=60)
+    note = changelog.render_release_note(sections, "v5.6.0-beta.3", budget=60)
     assert json.loads(note.split("\n", 1)[0][4:-3]) == {
-        "v5.6.0-beta.2": {"修复": ["己"]}
+        "v5.6.0-beta.3": {"修复": ["庚"]}
     }
 
 
