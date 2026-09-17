@@ -90,12 +90,10 @@
       </div>
 
       <div class="version-remaining">
-        <div class="remaining-label">
-          {{ isEnded ? t('home.countdown.ended') : t('home.bluearchive.versionRemaining') }}
-        </div>
+        <div class="remaining-label">{{ remainingLabel }}</div>
         <a-statistic-countdown
-          v-if="!isEnded"
-          :value="getCountdownValue(overview.endTime)"
+          v-if="countdownTarget"
+          :value="countdownTarget"
           :format="t('home.countdown.dh')"
           :value-style="remainingCountdownStyle"
         />
@@ -228,8 +226,29 @@ const plainRemainingCountdownStyle = computed<CSSProperties>(() => {
   return { color: 'var(--ant-color-text)', fontWeight: 600, fontSize: '18px' }
 })
 
-// 活动间隙会退回展示最近结束的那一场，这时不能再报「剩余时间」
-const isEnded = computed(() => getPlainTimeStatus(overview.value.endTime) === 'ended')
+// 卡片当前展示的是哪一种活动：进行中、还没开始、刚结束，或没有能展示的活动
+const currentPhase = computed<'running' | 'upcoming' | 'ended' | 'none'>(() => {
+  const { startTime, endTime } = overview.value
+  if (!endTime) return 'none'
+  const now = Date.now()
+  if (now >= getCountdownValue(endTime)) return 'ended'
+  if (now < getCountdownValue(startTime)) return 'upcoming'
+  return 'running'
+})
+
+const remainingLabel = computed(() => {
+  if (currentPhase.value === 'ended') return t('home.countdown.ended')
+  if (currentPhase.value === 'upcoming') return t('home.bluearchive.startsIn')
+  return t('home.bluearchive.versionRemaining')
+})
+
+// 展示还没开始的活动时，倒计时要数到它的开始时间；已结束或没有活动就干脆不显示倒计时
+const countdownTarget = computed(() => {
+  if (currentPhase.value === 'ended' || currentPhase.value === 'none') return 0
+  const value =
+    currentPhase.value === 'upcoming' ? overview.value.startTime : overview.value.endTime
+  return getCountdownValue(value)
+})
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
 

@@ -2754,6 +2754,7 @@ export default {
       versionBadge: '{version} 月',
       endsAt: '{time} 结束',
       versionRemaining: '活动剩余时间',
+      startsIn: '距开始',
       nextVersionSoon: '后续活动即将开始',
       versionTime: '活动时间：',
       serverLabel: '服务器',

@@ -2387,6 +2387,7 @@ export default {
       versionBadge: '{version}',
       endsAt: '{time} 終了',
       versionRemaining: 'イベントの残り時間',
+      startsIn: '開始まで',
       nextVersionSoon: '次のイベントがまもなく始まります',
       versionTime: 'イベント期間：',
       serverLabel: 'サーバー',

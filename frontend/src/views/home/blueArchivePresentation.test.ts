@@ -50,6 +50,18 @@ describe('blueArchivePresentation', () => {
     }
     expect(blueArchivePresentation(withInstantNotice, 35).versionName).toBe('下期活动')
   })
+  it('只剩零时长条目时返回空列表，组件据此走空状态', () => {
+    const onlyNotices = {
+      ...overview,
+      activities: [activity('常驻化公告', 36, 36, 'instant.png')],
+    }
+    expect(blueArchivePresentation(onlyNotices, 35)).toMatchObject({
+      activities: [],
+      versionName: '',
+      startTime: '',
+      endTime: '',
+    })
+  })
   it('空列表不显示旧缓存的占位标题和封面', () => {
     expect(
       blueArchivePresentation({ ...overview, activities: [], cover: 'old.png' }, 20)

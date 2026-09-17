@@ -22,6 +22,9 @@ export const blueArchivePresentation = (
   const current = running[0] ?? upcoming[0] ?? ended[0]
   return {
     ...overview,
+    // 一并回传过滤后的列表：组件按 activities.length 判断有没有活动可展示，
+    // 留着零时长条目会让它在没有真活动时误判为非空、渲染出空白的卡片
+    activities,
     versionName: current?.name ?? '',
     cover: current?.cover ?? '',
     startTime: current?.startTime ?? '',
