@@ -70,6 +70,15 @@
                       class="preset-desc"
                     />
                   </div>
+                  <!-- 「应用预设」就放在标题右边，不再单占一行 -->
+                  <a-button
+                    type="primary"
+                    class="preset-apply-button"
+                    :disabled="template.taskNames.length === 0"
+                    @click="emit('applyPresetTemplate', template.preset.name)"
+                  >
+                    {{ t('edit.applyPreset2') }}
+                  </a-button>
                 </div>
 
                 <div class="preset-tasks-preview">
@@ -79,20 +88,6 @@
                       {{ getDisplayName(taskByName.get(taskName)!) }}
                     </span>
                   </div>
-                </div>
-
-                <div class="preset-actions">
-                  <a-button
-                    type="primary"
-                    block
-                    :disabled="template.taskNames.length === 0"
-                    @click="emit('applyPresetTemplate', template.preset.name)"
-                  >
-                    <template #icon>
-                      <ThunderboltOutlined />
-                    </template>
-                    一键切换预设（{{ template.taskNames.length }} 个任务）
-                  </a-button>
                 </div>
               </div>
             </div>
@@ -261,6 +256,14 @@
                   class="preset-desc"
                 />
               </div>
+              <a-button
+                type="primary"
+                class="preset-apply-button"
+                :disabled="template.taskNames.length === 0"
+                @click="emit('applyPresetTemplate', template.preset.name)"
+              >
+                {{ t('edit.applyPreset2') }}
+              </a-button>
             </div>
             <div class="preset-tasks-preview">
               <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
@@ -269,15 +272,6 @@
                   {{ getDisplayName(taskByName.get(taskName)!) }}
                 </span>
               </div>
-            </div>
-            <div class="preset-actions">
-              <a-button
-                type="primary"
-                :disabled="template.taskNames.length === 0"
-                @click="emit('applyPresetTemplate', template.preset.name)"
-              >
-                {{ t('edit.applyPreset2') }}
-              </a-button>
             </div>
           </div>
         </div>
@@ -592,6 +586,13 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   display: flex;
   align-items: flex-start;
   gap: 12px;
+}
+
+/* 与图标同高（36px）、靠右，不随描述换行下坠 */
+.preset-apply-button {
+  flex: 0 0 auto;
+  height: 36px;
+  align-self: flex-start;
 }
 
 .preset-icon-wrap {
