@@ -27,32 +27,40 @@ MAA 自带的开始唤醒任务会原地轮询等待游戏内的资源热更新�
    本模块在 MAA 启动前比对版本，官服可直接下载安装包并通过 adb 安装。
 2. 资源热更新耗时可能远超日常超时限制，本模块通过记录服务端 resVersion 让调用方
    在有热更新待下载的那一次运行放宽超时，避免把正常更新误判成卡死。
+
+adb 读取/安装、版本比较与安装包下载等游戏无关原语见 ``app/utils/game_apk.py``。
 """
 
 from __future__ import annotations
 
-import re
-import shutil
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
-import aiofiles
 import httpx
 
-from app.utils import ProcessRunner, get_logger
+from app.utils import get_logger
 from app.utils.constants import (
     ARKNIGHTS_OFFICIAL_APK_URL,
     ARKNIGHTS_VERSION_API_SERVER,
+)
+from app.utils.game_apk import (
+    GameUpdateResult,
+    download_apk,
+    get_installed_client_version,
+    install_apk,
+    is_client_outdated,
 )
 
 logger = get_logger("MAA 游戏更新")
 
 _VERSION_API = "https://ak-conf.hypergryph.com/config/prod/{server}/Android/version"
-_VERSION_NAME_RE = re.compile(r"versionName=([\w.\-]+)")
-_APK_MIN_BYTES = 64 * 1024 * 1024
-"""安装包体积下限，低于此值判定为下载到错误内容（如跳转页 HTML）"""
+
+__all__ = [
+    "GameUpdateResult",
+    "ensure_game_updated",
+    "fetch_game_version",
+]
 
 
 @dataclass
@@ -63,39 +71,6 @@ class GameVersion:
     """客户端版本号，形如 ``2.7.61``"""
     resource: str
     """资源版本号，形如 ``26-08-17-11-25-42_dbc172``"""
-
-
-@dataclass
-class GameUpdateResult:
-    """游戏更新检查与接管的结果"""
-
-    status: Literal["Skipped", "UpToDate", "Updated", "NeedManualUpdate"]
-    """``Skipped`` 未执行检查；``UpToDate`` 无需更新；``Updated`` 已由 MAS 完成更新；
-    ``NeedManualUpdate`` 需要用户手动更新，本次不应继续代理"""
-    message: str
-    """面向用户的说明文本"""
-    resource_version: str = ""
-    """服务端当前资源版本；为空表示未取到"""
-
-
-async def _run_adb(
-    adb_path: Path | None,
-    adb_address: str,
-    *args: str,
-    timeout: float = 60,
-) -> tuple[int, str]:
-    """执行一条 adb 命令，返回 (返回码, 合并后的输出)。"""
-
-    program: Path | str = adb_path if adb_path is not None else "adb"
-    result = await ProcessRunner.run_process(
-        program,
-        "-s",
-        adb_address,
-        *args,
-        timeout=timeout,
-        if_merge_std=True,
-    )
-    return result.returncode, result.stdout.strip()
 
 
 async def fetch_game_version(server: str) -> GameVersion | None:
@@ -134,164 +109,6 @@ async def fetch_game_version(server: str) -> GameVersion | None:
         f"服务器 {server} 当前版本: 客户端 {client_version}, 资源 {resource_version}"
     )
     return GameVersion(client=client_version, resource=resource_version)
-
-
-async def get_installed_client_version(
-    adb_path: Path | None, adb_address: str, package_name: str
-) -> str | None:
-    """读取模拟器内已安装的客户端版本号。
-
-    Returns:
-        str | None: 版本号；游戏未安装或读取失败时返回 ``None``。
-    """
-
-    if ":" in adb_address:
-        # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备
-        await _run_adb(adb_path, adb_address, "connect", adb_address, timeout=20)
-
-    returncode, output = await _run_adb(
-        adb_path,
-        adb_address,
-        "shell",
-        "dumpsys",
-        "package",
-        package_name,
-        timeout=30,
-    )
-    if returncode != 0:
-        logger.warning(f"读取已安装版本失败: returncode={returncode}, output={output}")
-        return None
-
-    match = _VERSION_NAME_RE.search(output)
-    if match is None:
-        logger.info(f"未在模拟器中找到已安装的 {package_name}")
-        return None
-
-    version = match.group(1)
-    logger.info(f"模拟器内 {package_name} 已安装版本: {version}")
-    return version
-
-
-def _parse_version(version: str) -> tuple[int, ...]:
-    """把形如 ``2.7.61`` 的版本号解析为可比较的整数元组，无法解析的段落按 0 处理。"""
-
-    parts: list[int] = []
-    for segment in version.split("."):
-        digits = re.match(r"\d+", segment.strip())
-        parts.append(int(digits.group()) if digits else 0)
-    return tuple(parts)
-
-
-def is_client_outdated(installed: str, remote: str) -> bool:
-    """判断已安装客户端是否落后于服务端版本。"""
-
-    installed_parts = _parse_version(installed)
-    remote_parts = _parse_version(remote)
-    if not any(installed_parts) or not any(remote_parts):
-        # 任一侧完全解析不出数字时不敢下判断，按未落后处理，交给 MAA 原有流程
-        logger.warning(f"版本号无法比较: 已安装 {installed}, 服务端 {remote}")
-        return False
-    length = max(len(installed_parts), len(remote_parts))
-    installed_parts += (0,) * (length - len(installed_parts))
-    remote_parts += (0,) * (length - len(remote_parts))
-    return installed_parts < remote_parts
-
-
-async def download_official_apk(
-    target_path: Path,
-    progress: Callable[[str], Awaitable[None]] | None = None,
-) -> Path:
-    """下载官服安装包。
-
-    Args:
-        target_path: 安装包落盘路径。
-        progress: 进度回调，用于向前端播报下载进度。
-
-    Returns:
-        Path: 下载完成的安装包路径。
-
-    Raises:
-        RuntimeError: 下载失败，或下载内容体积明显小于安装包（通常是拿到了跳转页）。
-    """
-
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = target_path.with_name(f"{target_path.name}.downloading")
-    temp_path.unlink(missing_ok=True)
-
-    try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            async with client.stream(
-                "GET", ARKNIGHTS_OFFICIAL_APK_URL, timeout=60.0
-            ) as response:
-                response.raise_for_status()
-                total = int(response.headers.get("content-length", 0) or 0)
-
-                if total and shutil.disk_usage(target_path.parent).free < total * 1.2:
-                    raise RuntimeError(
-                        f"磁盘剩余空间不足以下载安装包（需要约 {total / 1024**3:.1f} GB）"
-                    )
-
-                downloaded = 0
-                next_report = 0
-                async with aiofiles.open(temp_path, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
-                        if not chunk:
-                            continue
-                        await f.write(chunk)
-                        downloaded += len(chunk)
-
-                        if progress is not None and downloaded >= next_report:
-                            next_report = downloaded + 50 * 1024 * 1024
-                            if total:
-                                await progress(
-                                    f"正在下载游戏安装包 "
-                                    f"{downloaded / 1024**3:.2f}/{total / 1024**3:.2f} GB"
-                                )
-                            else:
-                                await progress(
-                                    f"正在下载游戏安装包 {downloaded / 1024**3:.2f} GB"
-                                )
-
-        if temp_path.stat().st_size < _APK_MIN_BYTES:
-            raise RuntimeError(
-                f"下载内容体积异常（{temp_path.stat().st_size} 字节），可能未取到真实安装包"
-            )
-
-        target_path.unlink(missing_ok=True)
-        temp_path.replace(target_path)
-        logger.success(f"游戏安装包下载完成: {target_path}")
-        return target_path
-
-    except BaseException:
-        temp_path.unlink(missing_ok=True)
-        raise
-
-
-async def install_apk(
-    adb_path: Path | None,
-    adb_address: str,
-    apk_path: Path,
-    timeout: float,
-) -> None:
-    """通过 adb 安装安装包，保留应用数据。
-
-    Raises:
-        RuntimeError: 安装未成功。
-    """
-
-    logger.info(f"开始安装游戏安装包: {apk_path}")
-    returncode, output = await _run_adb(
-        adb_path,
-        adb_address,
-        "install",
-        "-r",
-        str(apk_path),
-        timeout=timeout,
-    )
-    if returncode != 0 or "Success" not in output:
-        raise RuntimeError(f"安装失败: returncode={returncode}, output={output}")
-
-    logger.success("游戏安装包安装成功")
 
 
 async def ensure_game_updated(
@@ -365,7 +182,7 @@ async def ensure_game_updated(
     try:
         if progress is not None:
             await progress(f"{outdated_text}\n正在下载游戏安装包")
-        await download_official_apk(apk_path, progress)
+        await download_apk(ARKNIGHTS_OFFICIAL_APK_URL, apk_path, progress)
 
         if progress is not None:
             await progress(f"{outdated_text}\n正在安装游戏安装包")

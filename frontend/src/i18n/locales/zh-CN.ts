@@ -1076,6 +1076,8 @@ export default {
     optional: '可选',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
+    checkGameUpdateBeforeLogin:
+      '开启后，登录游戏前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时游戏会停在强制更新界面，导致登录一直卡住',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
     waitAfterLaunchSeconds: '启动后等待时间（秒）',
     launchMode: '启动方式',
@@ -1129,7 +1131,7 @@ export default {
     whenThisScriptRuns:
       '开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源',
     whenClientDetectedAs:
-      '开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅官服可用，安装包约 2 GB，请确保磁盘空间充足',
+      '开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅国服官服可用，安装包约 2 GB，请确保磁盘空间充足',
     updateAutomaticallyBeforeEvery: '开启运行前自动更新？',
     forceGameClose: '强制关闭游戏',
     currentOkWwInstall:
@@ -1430,7 +1432,7 @@ export default {
     configurationUploadedItWill: '脚本配置上传成功，等待审核通过后即可向所有用户展示~',
     scriptConfigurationFileType: '脚本配置文件类型',
     automaticSaveFailedSave: '自动保存配置失败，请手动保存',
-    installGamePackageAutomatically: '自动安装游戏安装包（仅官服）',
+    installGamePackageAutomatically: '自动安装游戏安装包（仅国服官服）',
     whetherGameClosesAfter: '自动登录任务结束后是否关闭游戏',
     urlCustomProtocol: '自定义协议的URL',
     ifFailureLogAppears: '若任务异常日志先于任务成功日志出现，则视为任务失败',

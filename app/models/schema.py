@@ -2833,6 +2833,15 @@ class SrcConfig_Run(BaseModel):
     TaskTransitionMethod: Optional[Literal["ExitGame", "ExitEmulator"]] = Field(
         default=None, description="任务切换方式"
     )
+    IfCheckGameUpdate: Optional[bool] = Field(
+        default=None, description="登录游戏前检查游戏更新"
+    )
+    IfAutoInstallGameApk: Optional[bool] = Field(
+        default=None, description="自动下载并安装游戏安装包（仅国服官服）"
+    )
+    GameUpdateTimeLimit: Optional[int] = Field(
+        default=None, description="游戏更新超时限制"
+    )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(

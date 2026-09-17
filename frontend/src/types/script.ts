@@ -131,6 +131,9 @@ export interface SRCScriptConfig {
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number
+    IfCheckGameUpdate: boolean
+    IfAutoInstallGameApk: boolean
+    GameUpdateTimeLimit: number
   }
   Emulator: {
     Id: string
