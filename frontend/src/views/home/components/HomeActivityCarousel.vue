@@ -53,10 +53,10 @@
               </div>
 
               <div v-if="item.endTime" class="banner-remaining">
-                <div class="remaining-label">{{ t('home.carousel.remaining') }}</div>
+                <div class="remaining-label">{{ countdownLabel(item) }}</div>
                 <a-statistic-countdown
-                  :value="countdownValue(item.endTime)"
-                  :format="countdownFormat(item.endTime)"
+                  :value="countdownValue(countdownTarget(item))"
+                  :format="countdownFormat(item)"
                   :value-style="remainingStyle"
                 />
               </div>
@@ -217,8 +217,22 @@ const countdownValue = (time: string) => {
   return Number.isNaN(timestamp) ? Date.now() : timestamp
 }
 
-const countdownFormat = (time: string) => {
-  return countdownValue(time) - Date.now() <= 0 ? t('home.countdown.ended') : t('home.countdown.dh')
+/** 活动间隙可能轮到还没开始的那一场，此时倒计时要数到开始时间 */
+const isUpcoming = (item: ActivityBannerItem) =>
+  Boolean(item.startTime) &&
+  countdownValue(item.startTime) > Date.now() &&
+  countdownValue(item.endTime) > Date.now()
+
+const countdownTarget = (item: ActivityBannerItem) =>
+  isUpcoming(item) ? item.startTime : item.endTime
+
+const countdownLabel = (item: ActivityBannerItem) =>
+  isUpcoming(item) ? t('home.carousel.startsIn') : t('home.carousel.remaining')
+
+const countdownFormat = (item: ActivityBannerItem) => {
+  return countdownValue(countdownTarget(item)) - Date.now() <= 0
+    ? t('home.countdown.ended')
+    : t('home.countdown.dh')
 }
 
 const goTo = (index: number) => {

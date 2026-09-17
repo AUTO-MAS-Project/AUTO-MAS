@@ -2703,6 +2703,7 @@ export default {
     },
     carousel: {
       remaining: '剩余时间',
+      startsIn: '距开始',
       prev: '上一个游戏',
       next: '下一个游戏',
       loading: '正在获取活动信息…',
@@ -2753,6 +2754,7 @@ export default {
     bluearchive: {
       versionBadge: '{version} 月',
       endsAt: '{time} 结束',
+      startsAt: '{time} 开始',
       versionRemaining: '活动剩余时间',
       startsIn: '距开始',
       nextVersionSoon: '后续活动即将开始',

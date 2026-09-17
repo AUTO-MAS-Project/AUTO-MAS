@@ -22,10 +22,12 @@ export const getActivityAccent = (key: HomeModuleKey): string => {
   return HOME_ACTIVITY_ACCENTS[key] ?? '#7aa2ff'
 }
 
-/** 从各游戏数据源里抽出 banner 需要的四项，屏蔽字段命名差异 */
+/** 从各游戏数据源里抽出 banner 需要的几项，屏蔽字段命名差异 */
 export interface ActivityBannerSource {
   cover: string
   subtitle: string
+  /** 开始时间：轮播据此区分「还没开始」与「进行中」，取不到时为空串 */
+  startTime: string
   endTime: string
   available: boolean
   stale: boolean
@@ -53,6 +55,7 @@ export const sraActivityBanner = (overview: SraActivityOverview): ActivityBanner
     // 版本封面优先；部分游戏没有版本封面，退回第一张有图的活动
     cover: overview.cover || overview.activities.find(item => item.cover)?.cover || '',
     subtitle: useVersion ? overview.versionName : (activity?.name ?? ''),
+    startTime: useVersion ? overview.startTime : (activity?.startTime ?? ''),
     endTime: useVersion ? overview.endTime : (activity?.endTime ?? ''),
     available: overview.Available,
     stale: overview.Stale,
@@ -68,6 +71,7 @@ export const endfieldActivityBanner = (
   return {
     cover: record?.ImageUrl || '',
     subtitle: record?.Name || overview.Version || '',
+    startTime: record?.StartTime || '',
     endTime: record?.EndTime || '',
     available: overview.Available,
     stale: overview.Stale,
@@ -80,6 +84,7 @@ export const arknightsActivityBanner = (activityData: ActivityItem[]): ActivityB
     // 明日方舟的数据源里没有活动图，靠主题色底纹兜底
     cover: '',
     subtitle: activity?.Tip ?? '',
+    startTime: activity?.UtcStartTime ?? '',
     endTime: activity?.UtcExpireTime ?? '',
     available: activityData.length > 0,
     stale: false,

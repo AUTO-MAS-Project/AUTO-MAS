@@ -75,7 +75,7 @@
 
         <div class="version-time">
           <ClockCircleOutlined class="version-time-icon" />
-          <span>{{ t('home.bluearchive.endsAt', { time: formatTime(overview.endTime) }) }}</span>
+          <span>{{ timeLabel }}</span>
         </div>
 
         <div v-if="activeActivities.length" class="activity-tags">
@@ -97,7 +97,9 @@
           :format="t('home.countdown.dh')"
           :value-style="remainingCountdownStyle"
         />
-        <div class="remaining-sub">{{ t('home.bluearchive.nextVersionSoon') }}</div>
+        <div v-if="currentPhase !== 'upcoming'" class="remaining-sub">
+          {{ t('home.bluearchive.nextVersionSoon') }}
+        </div>
       </div>
     </div>
 
@@ -116,12 +118,10 @@
 
       <div class="version-info-right">
         <a-statistic-countdown
-          :title="t('home.bluearchive.versionRemaining')"
-          :value="getCountdownValue(overview.endTime)"
+          :title="remainingLabel"
+          :value="countdownTarget"
           :format="
-            getPlainTimeStatus(overview.endTime) === 'ended'
-              ? t('home.countdown.ended')
-              : t('home.countdown.dh')
+            currentPhase === 'ended' ? t('home.countdown.ended') : t('home.countdown.dh')
           "
           :value-style="plainRemainingCountdownStyle"
         />
@@ -241,6 +241,13 @@ const remainingLabel = computed(() => {
   if (currentPhase.value === 'upcoming') return t('home.bluearchive.startsIn')
   return t('home.bluearchive.versionRemaining')
 })
+
+// 展示还没开始的那一场时说「几点结束」是错的，改说「几点开始」
+const timeLabel = computed(() =>
+  currentPhase.value === 'upcoming'
+    ? t('home.bluearchive.startsAt', { time: formatTime(overview.value.startTime) })
+    : t('home.bluearchive.endsAt', { time: formatTime(overview.value.endTime) })
+)
 
 // 展示还没开始的活动时，倒计时要数到它的开始时间；已结束或没有活动就干脆不显示倒计时
 const countdownTarget = computed(() => {

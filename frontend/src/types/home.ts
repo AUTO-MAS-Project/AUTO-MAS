@@ -179,6 +179,8 @@ export interface ActivityBannerItem {
   cover: string
   /** 版本名或当期活动名 */
   subtitle: string
+  /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */
+  startTime: string
   /** 倒计时终点，取不到时为空串 */
   endTime: string
   loading: boolean

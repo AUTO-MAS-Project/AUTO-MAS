@@ -2821,6 +2821,7 @@ export default {
     },
     carousel: {
       remaining: 'Time left',
+      startsIn: 'Starts in',
       prev: 'Previous game',
       next: 'Next game',
       loading: 'Loading events…',
@@ -2871,6 +2872,7 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: 'Ends {time}',
+      startsAt: 'Starts {time}',
       versionRemaining: 'Event time remaining',
       startsIn: 'Starts in',
       nextVersionSoon: 'More events are coming soon',
