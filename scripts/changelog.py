@@ -70,7 +70,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPO_URL = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
@@ -134,7 +134,12 @@ FRAGMENT_NAME = re.compile(
 FRAGMENT_IGNORED = {"README.md", ".gitkeep"}
 LOGIN = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
 LOGIN_PATTERN = re.compile(rf"^{LOGIN}$")
-FRAGMENT_AUTHOR = re.compile(rf"^author:\s*@?(?P<login>{LOGIN})\s*$")
+# `author: 甲` 或多人 `author: 甲, 乙`（逗号、顿号、空格分隔都行）：覆盖自动署名。
+# 多人 PR 只有这一条路，脚本不读 Co-authored-by（那会把 AI 助手签进去）
+FRAGMENT_AUTHOR = re.compile(
+    rf"^author:\s*(?P<logins>@?{LOGIN}(?:\s*[,，、]\s*@?{LOGIN}|\s+@?{LOGIN})*)\s*$"
+)
+AUTHOR_SPLIT = re.compile(r"[,，、\s]+")
 FRAGMENT_PROJECT = re.compile(r"^project:\s*(?P<project>[A-Za-z0-9-]+)\s*$")
 # 维护者给碎片加的可选标记：编译时这条进「本次亮点」而不是文件名后缀那个分类
 FRAGMENT_HIGHLIGHT = re.compile(
@@ -675,14 +680,14 @@ def show_file(ref: str, path: str, root: Path = REPO_ROOT) -> Optional[str]:
 
 
 class Fragment:
-    """一个碎片：文件、标识、分类、项目、正文，以及可选的署名覆盖与亮点标记。"""
+    """一个碎片：文件、标识、分类、项目、正文，以及可选的署名覆盖（可多人）与两个标记。"""
 
     __slots__ = (
         "path",
         "identifier",
         "category",
         "text",
-        "author",
+        "authors",
         "project",
         "highlight",
         "beta_only",
@@ -694,7 +699,7 @@ class Fragment:
         identifier: str,
         category: str,
         text: str,
-        author: Optional[str] = None,
+        authors: Sequence[str] = (),
         project: Optional[str] = None,
         highlight: bool = False,
         beta_only: bool = False,
@@ -703,7 +708,8 @@ class Fragment:
         self.identifier = identifier
         self.category = category
         self.text = text
-        self.author = author
+        # `author:` 行指定的署名（可多人）；空表示按提交自动解析
+        self.authors = list(dict.fromkeys(authors))
         self.project = project
         self.highlight = highlight
         self.beta_only = beta_only
@@ -761,7 +767,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             f"{path.name}：碎片文件名必须形如 `<PR 号或分支名>.<分类>.md`，"
             f"分类取 {'、'.join(FRAGMENT_TYPES)} 之一"
         )
-    author: Optional[str] = None
+    authors: Optional[List[str]] = None
     project: Optional[str] = None
     highlight: Optional[bool] = None
     beta_only: Optional[bool] = None
@@ -772,9 +778,13 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             continue
         author_match = FRAGMENT_AUTHOR.match(stripped)
         if author_match and not body:
-            if author is not None:
-                raise ChangelogError(f"{path.name}：author 只能写一次")
-            author = author_match.group("login")
+            if authors is not None:
+                raise ChangelogError(f"{path.name}：author 只能写一次，多人用逗号隔开")
+            authors = [
+                login.lstrip("@")
+                for login in AUTHOR_SPLIT.split(author_match.group("logins"))
+                if login
+            ]
             continue
         project_match = FRAGMENT_PROJECT.match(stripped)
         if project_match and not body:
@@ -821,7 +831,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
         identifier=matched.group("identifier"),
         category=category,
         text=text,
-        author=author,
+        authors=authors or (),
         project=project,
         highlight=bool(highlight),
         beta_only=bool(beta_only),
@@ -1019,12 +1029,13 @@ def fragment_origin(
     token: Optional[str] = None,
     root: Path = REPO_ROOT,
     resolve_online: bool = True,
-) -> Tuple[Optional[str], Optional[int]]:
-    """碎片的 (署名, PR 号)，都取自最近一次把它加进仓库的那个提交。
+) -> Tuple[List[str], Optional[int]]:
+    """碎片的 (署名列表, PR 号)，都取自最近一次把它加进仓库的那个提交。
 
-    署名：squash 合并时就是 PR 作者，rebase 合并保留原作者，直推就是推的人。不读
-    Co-authored-by，否则 AI 助手会被签进更新日志。noreply 邮箱直接拆出登录名，
-    其余经 commits API 解析；解析不到时，git 作者名长得像登录名才拿来用，否则不署名。
+    署名：碎片写了 `author:` 就用它（多人 PR 靠这一行列全）；否则 squash 合并时就是
+    PR 作者，rebase 合并保留原作者，直推就是推的人。不读 Co-authored-by，否则 AI 助手
+    会被签进更新日志。noreply 邮箱直接拆出登录名，其余经 commits API 解析；解析不到时，
+    git 作者名长得像登录名才拿来用，否则不署名。
 
     PR 号：squash 提交标题末尾的 `(#123)`；没有的话文件名前缀是纯数字就当 PR 号。
     cherry-pick 到 release 分支的碎片按那条分支上的 PR 记，正好是该分支的更新日志。
@@ -1032,7 +1043,7 @@ def fragment_origin(
 
     pr_from_name = int(fragment.identifier) if fragment.identifier.isdigit() else None
     if not git_available(root):
-        return fragment.author, pr_from_name
+        return list(fragment.authors), pr_from_name
     relative = fragment.path.resolve().relative_to(root.resolve()).as_posix()
     output = git(
         "log",
@@ -1043,27 +1054,27 @@ def fragment_origin(
         root=root,
     ).strip()
     if not output:
-        return fragment.author, pr_from_name
+        return list(fragment.authors), pr_from_name
     # git log 最新在前，取第一行：碎片发版后会被删除，同名文件可能被后来的 PR 再次
     # 新增，要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人
     sha, name, email, subject = output.splitlines()[0].split("\x00", 3)
     subject_pr = SUBJECT_PR.search(subject)
     pr = int(subject_pr.group(1)) if subject_pr else pr_from_name
 
-    if fragment.author:
-        return fragment.author, pr
+    if fragment.authors:
+        return list(fragment.authors), pr
     noreply = NOREPLY_EMAIL.match(email.strip())
     if noreply:
-        return noreply.group("login"), pr
+        return [noreply.group("login")], pr
     if resolve_online:
         login = resolve_login_via_api(repo, sha, token)
         if login:
-            return login, pr
+            return [login], pr
     # 退回 git 作者名，但只有长得像登录名的才用：squash 提交里的作者名往往是显示名
     # （中文昵称、带空格的全名），签进去会变成不存在的 @昵称，不如不署名，让发版 PR 的
     # 「解析不到作者」提示把它点出来
     name = name.strip()
-    return (name if LOGIN_PATTERN.match(name) else None), pr
+    return ([name] if LOGIN_PATTERN.match(name) else []), pr
 
 
 def fragment_author(
@@ -1073,7 +1084,8 @@ def fragment_author(
     root: Path = REPO_ROOT,
     resolve_online: bool = True,
 ) -> Optional[str]:
-    return fragment_origin(fragment, repo, token, root, resolve_online)[0]
+    logins = fragment_origin(fragment, repo, token, root, resolve_online)[0]
+    return logins[0] if logins else None
 
 
 # ---------------------------------------------------------------------------
@@ -1237,10 +1249,10 @@ def only_flags_changed(base: str, path: str, root: Path = REPO_ROOT) -> bool:
         after = parse_fragment(after_path, read_text(after_path))
     except ChangelogError:
         return False
-    return (before.project, before.text, before.author) == (
+    return (before.project, before.text, before.authors) == (
         after.project,
         after.text,
-        after.author,
+        after.authors,
     )
 
 
@@ -1523,20 +1535,21 @@ def unconfirmed_commits(
 
 def fragment_entries(
     fragments: Sequence[Fragment],
-    authors: Dict[str, Optional[str]],
+    authors: Dict[str, Union[None, str, Sequence[str]]],
     prs: Optional[Dict[str, Optional[int]]] = None,
 ) -> Dict[str, List[str]]:
     """把碎片渲染成 {分类: [条目]}：署名、PR 号、仅公测标记都在这一步拼上。"""
 
     fresh: Dict[str, List[str]] = {}
     for fragment in fragments:
-        login = authors.get(fragment.path.name)
+        signed = authors.get(fragment.path.name)
+        logins = [signed] if isinstance(signed, str) else list(signed or [])
         pr = (prs or {}).get(fragment.path.name)
         entry = Entry(
             fragment.text,
             fragment.project_name,
             [pr] if pr else [],
-            [login] if login else [],
+            logins,
             fragment.beta_only,
         )
         fresh.setdefault(fragment.target_category, []).append(entry.render())
@@ -1547,7 +1560,7 @@ def absorb_fragments(
     sections: Sections,
     dates: Dates,
     fragments: Sequence[Fragment],
-    authors: Dict[str, Optional[str]],
+    authors: Dict[str, Union[None, str, Sequence[str]]],
     prs: Optional[Dict[str, Optional[int]]] = None,
 ) -> Tuple[Sections, Dates]:
     """合并即入账：把碎片编译进顶部的未发布段，没有就在最上面新建一个 `## [未发布]`。
@@ -1580,7 +1593,7 @@ def compile_release(
     fragments: Sequence[Fragment],
     target: str,
     date: str,
-    authors: Dict[str, Optional[str]],
+    authors: Dict[str, Union[None, str, Sequence[str]]],
     tagged: Iterable[str],
     prs: Optional[Dict[str, Optional[int]]] = None,
     dropped: Optional[List[Tuple[str, str]]] = None,
@@ -1777,8 +1790,8 @@ def render_run_summary(
 
 def resolve_origins(
     fragments: Sequence[Fragment], repo: str, offline: bool
-) -> Tuple[Dict[str, Optional[str]], Dict[str, Optional[int]]]:
-    """每个碎片的 (署名, PR 号)；解析不到作者的在 stderr 点名。"""
+) -> Tuple[Dict[str, List[str]], Dict[str, Optional[int]]]:
+    """每个碎片的 (署名列表, PR 号)；解析不到作者的在 stderr 点名。"""
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     origins = {
@@ -1787,9 +1800,9 @@ def resolve_origins(
         )
         for fragment in fragments
     }
-    authors = {name: login for name, (login, _) in origins.items()}
+    authors = {name: logins for name, (logins, _) in origins.items()}
     prs = {name: pr for name, (_, pr) in origins.items()}
-    unresolved = [name for name, login in authors.items() if not login]
+    unresolved = [name for name, logins in authors.items() if not logins]
     if unresolved:
         print(
             "以下碎片解析不到作者，将不带署名：" + "、".join(unresolved),
@@ -1820,7 +1833,7 @@ def command_absorb(arguments: argparse.Namespace) -> int:
         {
             "fragment": fragment.path.name,
             "pr": prs.get(fragment.path.name),
-            "author": authors.get(fragment.path.name),
+            "authors": authors.get(fragment.path.name) or [],
             "category": fragment.target_category,
         }
         for fragment in fragments
@@ -1838,7 +1851,7 @@ def command_absorb(arguments: argparse.Namespace) -> int:
     print(f"已入账 {len(absorbed)} 个碎片到未发布段")
     for item in absorbed:
         pr = f" #{item['pr']}" if item["pr"] else ""
-        author = f" @{item['author']}" if item["author"] else ""
+        author = "".join(f" @{login}" for login in item["authors"])
         print(f"  - {item['fragment']}{pr}{author}")
     for name in changed:
         print(f"  - 已更新 {name}")
@@ -2194,7 +2207,12 @@ def command_add(arguments: argparse.Namespace) -> int:
     if arguments.beta_only:
         content = "beta-only: true\n" + content
     if arguments.author:
-        content = f"author: {arguments.author.lstrip('@')}\n" + content
+        listed = ", ".join(
+            login.lstrip("@")
+            for login in AUTHOR_SPLIT.split(arguments.author.strip())
+            if login
+        )
+        content = f"author: {listed}\n" + content
     write_text(path, content)
     fragment = parse_fragment(path, content)
     print(
@@ -2225,7 +2243,9 @@ def build_parser() -> argparse.ArgumentParser:
         "text", nargs="+", help=f"一句面向用户的话，不超过 {FRAGMENT_TEXT_LIMIT} 字"
     )
     add.add_argument("--id", help="文件名前缀，默认取 PR 号或当前分支名")
-    add.add_argument("--author", help="替别人提交时指定署名登录名")
+    add.add_argument(
+        "--author", help="替别人提交或多人合作时指定署名登录名，多人用逗号隔开"
+    )
     add.add_argument(
         "--highlight",
         action="store_true",

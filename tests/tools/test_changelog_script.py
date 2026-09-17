@@ -385,7 +385,7 @@ def test_fragment_name_decides_category_and_body_is_one_line(tmp_path) -> None:
     assert fragment.identifier == "683"
     assert fragment.category == "新增"
     assert fragment.text == "MuMu 新增开关"
-    assert fragment.author is None
+    assert fragment.authors == []
     assert fragment.project == "emulator"
     assert fragment.project_name == "模拟器"
 
@@ -397,12 +397,38 @@ def test_fragment_accepts_author_override_and_leading_dash(tmp_path) -> None:
         "author: @HarcoChen\nproject: Scheduler\n\n- 修复了一个问题\n",
     )
 
-    assert fragment.author == "HarcoChen"
+    assert fragment.authors == ["HarcoChen"]
     assert fragment.text == "修复了一个问题"
     assert fragment.category == "修复"
     # 键不分大小写
     assert fragment.project == "scheduler"
     assert fragment.project_name == "调度"
+
+
+def test_fragment_author_line_lists_every_collaborator(tmp_path) -> None:
+    """多人 PR 只能靠 author 行列全：逗号、顿号、空格都能分隔，编译出每人一个 by。"""
+
+    fragment = _fragment(
+        tmp_path, "team.feat.md", "author: @alice, bob、carol dave\nproject: maa\n甲\n"
+    )
+    assert fragment.authors == ["alice", "bob", "carol", "dave"]
+
+    sections, dates = _sections("## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 乙\n")
+    new_sections, _ = changelog.compile_release(
+        sections,
+        dates,
+        [fragment],
+        "v1.1.0",
+        "2026-02-01",
+        {"team.feat.md": changelog.fragment_origin(fragment, root=tmp_path)[0]},
+        [],
+    )
+    assert new_sections["v1.1.0"]["新增"] == [
+        "【MAA】甲 by @alice by @bob by @carol by @dave"
+    ]
+
+    with pytest.raises(changelog.ChangelogError, match="author 只能写一次"):
+        _fragment(tmp_path, "x.fix.md", "author: a\nauthor: b\nproject: maa\n甲\n")
 
 
 def test_only_dev_fragments_may_omit_the_project_key(tmp_path) -> None:
@@ -1390,10 +1416,13 @@ def test_fragment_pr_number_comes_from_the_squash_subject_or_the_file_name(
     }
 
     origin = changelog.fragment_origin
-    assert origin(fragments["fix-x"], root=repo, resolve_online=False) == ("alice", 12)
-    assert origin(fragments["34"], root=repo, resolve_online=False) == ("alice", 34)
-    assert origin(fragments["56"], root=repo, resolve_online=False) == ("bob", 78)
-    assert origin(fragments["none"], root=repo, resolve_online=False) == ("dev", None)
+    assert origin(fragments["fix-x"], root=repo, resolve_online=False) == (
+        ["alice"],
+        12,
+    )
+    assert origin(fragments["34"], root=repo, resolve_online=False) == (["alice"], 34)
+    assert origin(fragments["56"], root=repo, resolve_online=False) == (["bob"], 78)
+    assert origin(fragments["none"], root=repo, resolve_online=False) == (["dev"], None)
 
 
 def test_unconfirmed_commits_lists_user_visible_pushes_without_fragments(repo) -> None:
