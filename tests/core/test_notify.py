@@ -356,6 +356,37 @@ def test_dispatch_empty_recipient_skip_policy_not_attempted() -> None:
     assert result.succeeded == ()
 
 
+def test_dispatch_empty_recipient_send_policy_still_sends() -> None:
+    """空收件地址 + send 策略：照常发送，成败交给传输层判定。"""
+
+    notify = _Notify()
+    target = NotifyTarget(name="测试", mail_to="", empty_policy="send")
+
+    with patch("app.core.notify.Notify", notify):
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
+
+    assert result.attempted == 1
+    assert list(result.succeeded) == ["测试邮件"]
+    assert notify.calls == ["邮件"]
+
+
+def test_channel_registry_entries_are_complete() -> None:
+    """注册表完整性：每条渠道必有发送闭包，有收件门控必有告警文案。"""
+
+    from app.core.notify import (
+        _CHANNELS_AFTER_WEBHOOKS,
+        _CHANNELS_BEFORE_WEBHOOKS,
+    )
+
+    specs = _CHANNELS_BEFORE_WEBHOOKS + _CHANNELS_AFTER_WEBHOOKS
+
+    assert len(specs) == 7
+    for spec in specs:
+        assert spec.send is not None
+        if spec.recipient is not None:
+            assert spec.hint is not None
+
+
 def test_dispatch_sends_all_channels_in_order() -> None:
     """全开目标的发送顺序与结果命名：与渠道清单同序，逐渠道隔离成败。"""
 
