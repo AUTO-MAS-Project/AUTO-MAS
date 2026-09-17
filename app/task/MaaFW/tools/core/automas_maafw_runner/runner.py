@@ -130,6 +130,9 @@ FAILURE_SCREENSHOT_NAME_LIMIT = 40
 _FAILURE_SCREENSHOT_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.-]+")
 # 失败消息里最多回溯几个节点。再往前是正常走过的路径，列出来只会淹没重点。
 FAILURE_NODE_NAME_LIMIT = 3
+# 等「最早可下发任务」时刻最多等这么久。时刻是宿主按墙钟算的，两边钟对不上时
+# 这条上限保证不会把整轮吊死。
+TASK_START_GATE_MAX_SECONDS = 600.0
 
 
 def decode_bytes(data: bytes) -> str:
@@ -426,6 +429,7 @@ class MaaFWRunner:
         send_log: Callable[[str], None] | None = None,
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
+        task_start_not_before: float | None = None,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -449,6 +453,7 @@ class MaaFWRunner:
         self._failure_screenshot_dir: Path | None = failure_screenshot_dir
         self._failure_screenshot_prefix: str = failure_screenshot_prefix
         self._failure_screenshots: list[MaaFWFailureScreenshot] = []
+        self._task_start_not_before: float | None = task_start_not_before
 
     @property
     def failure_screenshots(self) -> list[MaaFWFailureScreenshot]:
@@ -523,6 +528,7 @@ class MaaFWRunner:
         self._failure_screenshots = []
         try:
             self._ensure_initialized(device_config)
+            self._wait_task_start_gate()
             completed_tasks = self._run_tasks()
             if self._failed_task_errors:
                 first_failed_task, _ = self._failed_task_errors[0]
@@ -1326,6 +1332,28 @@ class MaaFWRunner:
             # 老版本 MaaFW 没有 MaaTaskerStopping，退回只靠事件标志。
             return False
         return False
+
+    def _wait_task_start_gate(self) -> None:
+        """宿主刚拉起桌面游戏时，等到它给的时刻再投递第一个任务。
+
+        窗口出现时 Unity 游戏还在黑屏加载，登录界面要二三十秒后才渲染；MaaEnd 的
+        SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。资源、
+        controller、agent 的初始化已经在前面做完，这里只补足剩余的等待；游戏早就
+        在跑（重试轮次、AttachOnly、宿主没给时刻）时剩余 ≤ 0，直接过。用 stop
+        事件的 wait 而不是 sleep，取消能立即打断。
+        """
+
+        not_before = self._task_start_not_before
+        if not_before is None:
+            return
+        remaining = min(not_before - time.time(), TASK_START_GATE_MAX_SECONDS)
+        if remaining <= 0:
+            return
+        self.send_log(
+            f"游戏刚由 MAS 启动，再等 {remaining:.0f}s 让画面加载完成后下发任务"
+        )
+        if self._stop_requested.wait(timeout=remaining):
+            raise RuntimeError("MaaFW 任务已停止")
 
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []

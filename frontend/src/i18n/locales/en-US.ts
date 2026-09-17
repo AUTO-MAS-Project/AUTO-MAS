@@ -1545,6 +1545,9 @@ export default {
     envReadyAgents: 'Ready agents',
     envRetry: 'Retry',
     mfwUnityResolutionOff: 'Leave unchanged',
+    mfwStartupSettleSeconds: 'Settle after launch (s)',
+    mfwStartupSettleTip:
+      'Only when MAS launches the game: after the window appears, wait at least this many seconds before the first task is posted; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied when the game is already running; 0 disables.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
