@@ -63,6 +63,9 @@ export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
 export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
+// 系统原生通知（id=Main）：由渲染进程转交 Electron 主进程弹出
+export const WS_SYSTEM_NOTICE = 'system.notice'
+
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 
@@ -75,6 +78,12 @@ export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
 /** 任务提示消息数据 (type=task.notice) */
 export interface WSTaskNoticeData {
   level: 'info' | 'warning' | 'error'
+  message: string
+}
+
+/** 系统原生通知数据 (id=Main, type=system.notice) */
+export interface WSSystemNoticeData {
+  title: string
   message: string
 }
 
@@ -269,6 +278,7 @@ interface WSMessageDataMap {
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
+  [WS_SYSTEM_NOTICE]: WSSystemNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData

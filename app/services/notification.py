@@ -37,16 +37,18 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
-from plyer import notification
 
 from app.models.config import Webhook
-from app.utils import LazyProxy, get_logger, resource_path
+from app.models.schema import WSSystemNoticeData
+from app.utils import LazyProxy, get_logger
 from app.utils.constants import UTC4
 
 logger = get_logger("通知服务")
 
-# 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
+# 延迟加载 Config 与 WS 发布器，避免 app.services 初始化期间触发 app.core 循环导入
 Config = LazyProxy("app.core", "Config")
+Publisher = LazyProxy("app.core.ws", "Publisher")
+protocol = LazyProxy("app.core.ws", "protocol")
 
 SMTP_TIMEOUT_SECONDS = 15
 DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
@@ -66,39 +68,6 @@ class MailInlineImage:
     cid: str
     data: bytes
     subtype: str = "png"
-
-
-# Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
-# UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
-# 数组，超长会抛 ValueError，且各留一位给结尾空字符，因此推送前先截断。
-PLYER_TITLE_LIMIT = 63
-PLYER_MESSAGE_LIMIT = 255
-
-
-def clip_notify_text(text: str, limit: int) -> str:
-    """
-    按 Windows 通知字段上限截断文本，超出部分以省略号收尾
-
-    ``ctypes.c_wchar`` 数组按 UTF-16 代码单元计数，而 ``len()`` 数的是码位：
-    emoji 等非 BMP 字符占 1 个码位却要 2 个代码单元，按码位截断仍会溢出，因此
-    这里按编码后的代码单元数裁剪。截断点落在代理对中间时，``errors="ignore"``
-    会丢弃残缺的那一半。
-
-    Args:
-        text: 待截断的文本
-        limit: 目标字段可用的 UTF-16 代码单元数（已扣除结尾空字符）
-
-    Returns:
-        str: 编码后不超过 ``limit`` 个 UTF-16 代码单元的文本
-    """
-
-    encoded = text.encode("utf-16-le")
-    if len(encoded) // 2 <= limit:
-        return text
-
-    clipped = encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore")
-
-    return f"{clipped}…"
 
 
 def webhook_body_failure(text: str, url: str = "") -> str | None:
@@ -176,6 +145,9 @@ class Notification:
         """
         推送系统通知
 
+        改由前端转交 Electron 主进程以系统原生通知弹出（Windows 为 Toast，
+        可进通知中心），不再走会占用托盘图标的托盘气泡。
+
         Parameters
         ----------
         title: str
@@ -183,9 +155,9 @@ class Notification:
         message: str
             通知内容
         ticker: str
-            通知横幅
+            兼容保留，已无效果（旧托盘气泡的横幅文本）
         t: int
-            通知持续时间
+            兼容保留，已无效果（横幅时长由系统通知设置决定）
         """
 
         if not Config.get("Notify", "IfPushPlyer"):
@@ -193,19 +165,11 @@ class Notification:
 
         logger.info(f"推送系统通知: {title}")
 
-        if notification.notify is not None:
-            await asyncio.to_thread(
-                notification.notify,
-                title=clip_notify_text(title, PLYER_TITLE_LIMIT),
-                message=clip_notify_text(message, PLYER_MESSAGE_LIMIT),
-                app_name="AUTO-MAS",
-                app_icon=resource_path("icons", "AUTO-MAS.ico").as_posix(),
-                timeout=t,
-                ticker=ticker,
-                toast=True,
-            )
-        else:
-            raise RuntimeError("plyer.notification 未正确导入，无法推送系统通知")
+        await Publisher.send(
+            id=protocol.ID_MAIN,
+            type=protocol.SYSTEM_NOTICE,
+            data=WSSystemNoticeData(title=title, message=message),
+        )
 
     async def send_mail(
         self,

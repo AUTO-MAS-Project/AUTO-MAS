@@ -16,6 +16,10 @@ import {
 } from '@/views/scheduler/useSchedulerLogic'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
 import {
+  bootstrapSystemNotification,
+  disposeSystemNotification,
+} from '@/services/systemNotification'
+import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
@@ -44,6 +48,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('system-notices', {
       bootstrap: bootstrapSystemNotices,
       dispose: disposeSystemNotices,
+    })
+    registerResidentResource('system-notification', {
+      bootstrap: bootstrapSystemNotification,
+      dispose: disposeSystemNotification,
     })
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,

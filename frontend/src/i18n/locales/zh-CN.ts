@@ -3622,7 +3622,7 @@ export default {
       recruitTip: '公招出现『高级资深干员』词条时推送喜报',
       systemSection: '系统通知',
       systemEnable: '启用系统通知',
-      systemTip: '使用plyer推送系统级通知，不会在通知中心停留',
+      systemTip: '使用系统原生通知推送，可在通知中心回看',
       mailSection: '邮件通知',
       mailDoc: '查看电子邮箱配置文档',
       mailEnable: '启用邮件通知',

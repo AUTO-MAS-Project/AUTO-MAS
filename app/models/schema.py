@@ -4939,6 +4939,16 @@ class WSTaskNoticeData(BaseModel):
     message: str = Field(..., description="提示内容")
 
 
+class WSSystemNoticeData(BaseModel):
+    """系统原生通知数据 (type=system.notice, id=Main)
+
+    前端收到后转交 Electron 主进程，以系统通知弹出 (Windows 为 Toast, 可进通知中心)。
+    """
+
+    title: str = Field(..., description="通知标题")
+    message: str = Field(..., description="通知内容")
+
+
 class WSEmulatorOperationData(BaseModel):
     """模拟器操作结束通知 (type=emulator.operation.finished, id=EmulatorManager)
 
