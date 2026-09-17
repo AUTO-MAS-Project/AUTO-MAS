@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.m9aScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="cyan" class="type-tag"> M9A </a-tag>
@@ -312,10 +312,11 @@
         </div>
       </div>
     </div>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import DocLink from '@/components/DocLink.vue'

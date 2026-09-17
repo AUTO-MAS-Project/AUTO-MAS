@@ -8,7 +8,7 @@
       config-label="配置 ok-ww"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
-      :config-disabled="pageLoading || !userId"
+      :config-disabled="pageLoading || !userId || configLocked"
       @config="handleOkwwConfig"
       @cancel="handleCancel"
     />
@@ -45,7 +45,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -352,11 +352,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-ww 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="OKWW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -386,6 +387,8 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -430,6 +433,7 @@ const {
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
@@ -577,6 +581,8 @@ const handleCancel = async () => {
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     const errorMessage = userApiError.value || '创建用户失败'
@@ -662,6 +668,7 @@ const handleTaskIndexChange = async (value: 1 | 7) => {
 }
 
 const handleOkwwConfig = async () => {
+  if (configLocked.value) return
   if (!userId.value) return
   await startSession(userId.value)
 }
@@ -791,8 +798,10 @@ const handleRestoreView = (
   target: string,
   item: { time: string; mode?: string | null },
   currentMode?: string | null
-) =>
-  new Promise<boolean>(resolve => {
+) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
@@ -814,6 +823,12 @@ const handleRestoreView = (
       okText: t('edit.configRestoreConfirmOk'),
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -844,6 +859,7 @@ const handleRestoreView = (
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 下发处）配合——进入归档原生配置当前状态（MAS

@@ -266,6 +266,7 @@ export default {
     highlightColorsPreview: '高亮颜色与预览设置区域',
   },
   edit: {
+    configLocked: '任务运行中，配置已锁定；任务结束后可编辑',
     close: '关闭',
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
