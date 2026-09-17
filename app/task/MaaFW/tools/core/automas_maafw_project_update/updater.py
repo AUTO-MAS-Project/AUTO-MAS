@@ -435,6 +435,13 @@ async def update_maafw_project_if_needed(
         version=discovery.version,
         metadata_source=discovery.source,
         package_source=discovery.package_source,
+        # 全量 / 差量在这一步就定了（apply 的 plan_validated 只是再确认一遍），
+        # 前端要在下载阶段就能标出包类型。
+        package_type=(
+            discovery.candidate.package_type
+            if discovery.candidate is not None
+            else None
+        ),
     )
 
     if not discovery.installable:
@@ -645,10 +652,6 @@ async def _discover_project_update_detailed(
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
-    else:
-        send_update_log(
-            "MirrorChyan CDK 未配置：仍可通过 Mirror酱 查版本，但拿不到下载地址"
-        )
 
     # **查版本一律不带 CDK。** Mirror 酱在有更新且 CDK 有效时会签发一个一次性
     # 下载地址，而它能计数的就是这一下签发——带着 CDK 查一次版本就可能扣掉一次

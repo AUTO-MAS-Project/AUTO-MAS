@@ -1315,6 +1315,8 @@ class AutoProxyTask(TaskExecuteBase):
             "CloseGamePCApplyGameSetting",
             "CloseGamePCGameSettingResolution",
         )
+        if resolution == "Fullscreen":
+            required_options += ("CloseGamePCGameSettingDisplayType",)
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
@@ -1343,10 +1345,20 @@ class AutoProxyTask(TaskExecuteBase):
         if resolution == "Custom":
             width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
             height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
+        elif resolution == "Fullscreen":
+            width, height = "1920", "1080"
         else:
             width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
+        if resolution == "Fullscreen":
+            values["CloseGamePCGameSettingDisplayType"] = {
+                "type": "select",
+                "caseName": "Fullscreen",
+            }
+        else:
+            # 固定或自定义分辨率沿用 MaaEnd 默认的窗口模式，避免残留旧的全屏选项。
+            values.pop("CloseGamePCGameSettingDisplayType", None)
         values["CloseGamePCGameSettingResolution"] = {
             "type": "input",
             "values": {
@@ -1481,7 +1493,10 @@ class AutoProxyTask(TaskExecuteBase):
                 task_name=_MAAEND_GAME_SETTING_PRETASK,
                 task_id="automas-gamesetting",
                 controller_type=controller_type,
-                enabled=self.mode == self.first_run_mode,
+                enabled=(
+                    self.mode == self.first_run_mode
+                    and bool(self.script_config.get("Game", "SetResolution"))
+                ),
                 first=True,
             )
             _place_managed_task(

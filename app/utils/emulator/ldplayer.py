@@ -204,7 +204,7 @@ class LDManager(DeviceBase):
         # 参考命令 dnconsole.exe launch --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
+            raise RuntimeError(f"命令执行失败: {result.stdout}")
 
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
@@ -252,7 +252,7 @@ class LDManager(DeviceBase):
         # 参考命令 dnconsole.exe quit --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
+            raise RuntimeError(f"命令执行失败: {result.stdout}")
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
@@ -357,7 +357,7 @@ class LDManager(DeviceBase):
         )
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
+            raise RuntimeError(f"命令执行失败: {result.stdout}")
         emulators: dict[str, LDPlayerDevice] = {}
         data = result.stdout.strip()
 

@@ -16,19 +16,6 @@ class ProcessResult:
     stderr: str
     returncode: int
 
-    def failure_detail(self) -> str:
-        """命令失败时的可读文案：returncode / stdout / stderr 一个都不能少。
-
-        模拟器命令崩溃时这三者常常一起为空（雷电的 dnconsole.exe 返回 3221225480
-        就是这种形态），只回 stdout 的话界面上只剩「命令执行失败: 」加一个空串，
-        用户分不清是路径配置错、实例不存在，还是模拟器自身挂了。
-        """
-
-        return (
-            f"returncode={self.returncode}, "
-            f"stdout={self.stdout!r}, stderr={self.stderr!r}"
-        )
-
 
 # 在导入时求值一次: locale.getpreferredencoding() 每次调用都会做一轮
 # 进程级 setlocale 往返, 而本函数位于日志逐行解码与 ADB 轮询热路径
