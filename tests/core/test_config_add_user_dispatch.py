@@ -39,7 +39,8 @@ class _UserData:
     async def add(self, cls):
         self.added_cls = cls
         self.added_uid = uuid.uuid4()
-        return self.added_uid, _UserConfigStub(mode="脚本")
+        # 用非默认来源值，区分「读到配置值」与「空值兜底」两条路径
+        return self.added_uid, _UserConfigStub(mode="用户")
 
     async def remove(self, uid) -> None:
         self.removed.append(uid)
@@ -97,5 +98,5 @@ def test_add_user_okww_initializes_directory_or_rolls_back() -> None:
     assert user_data.added_cls is OkwwUserConfig
     ensure.assert_awaited_once()
     assert ensure.await_args.kwargs["user_id"] == str(user_data.added_uid)
-    assert ensure.await_args.kwargs["mode"] == "脚本"
+    assert ensure.await_args.kwargs["mode"] == "用户"
     assert user_data.removed == [user_data.added_uid]
