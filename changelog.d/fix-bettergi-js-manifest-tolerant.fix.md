@@ -1,1 +1,3 @@
-BetterGI专项 修复某个第三方 JS 脚本异常时一条龙的 JS 脚本列表整体加载失败的问题
+project: bgi
+beta-only: true
+单个 JS 脚本的 manifest.json 损坏，一条龙脚本列表不再整体加载失败
