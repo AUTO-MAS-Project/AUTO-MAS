@@ -30,7 +30,6 @@ def make_service(**target_kwargs) -> ConfigRestoreService:
         return []
 
     return ConfigRestoreService(
-        script_name="测试",
         targets=[
             ConfigRestoreTarget(key="mas", list_backups=empty_list, **target_kwargs)
         ],

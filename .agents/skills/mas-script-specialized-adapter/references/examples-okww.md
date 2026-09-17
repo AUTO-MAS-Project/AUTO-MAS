@@ -80,6 +80,21 @@ OCR 走共享工具 `app/tools/ocr.py`（用法见 [ocr-tools.md](./ocr-tools.md
 - 手动路径选择失败时恢复旧值并显示可操作原因。
 - 所有 RootPath 派生路径集中在任务模块，前端只留选择时必需的哨兵常量。
 
+## 配置恢复（mas 池带覆盖层侧车）
+
+ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与其他专项不同：
+
+- **mas 池 = ConfigFile 副本 + 覆盖层字段侧车**：页面任务配置卡片的字段存在
+  MAS 用户配置（`UserData.Task`）、运行时才覆盖进 DailyTask.json，不在
+  ConfigFile 中。备份/恢复两端都带侧车，预览展示侧车（与页面认知同源），
+  恢复时文件回滚 + 侧车回填 UserData + 前端重拉表单（对齐 ZzzOd 字段回填）。
+- **池恒按用户分桶**（`OkwwBackups/mas/{user_id}`），三态 owner 只决定归档/
+  恢复目标路径（脚本=Default 共享目录、用户=独立目录、直控=无）——脚本态多
+  用户若共享一个 Default 池，各自的侧车会混池、跨用户污染。通用教训见
+  [config-restore.md §1.1](config-restore.md#111-池分桶必须按用户恢复目标才按三态-ownerokww-教训)。
+- **原生池恒为 working/configs 整目录**（ok-ww 无 Folder/File 双模式），项目级
+  按物理路径指纹分桶。
+
 ## 审查清单
 
 - [ ] Manager 同时支持 `AutoProxy` 与 `ScriptConfig`；脚本级与用户级入口传对目标 ID

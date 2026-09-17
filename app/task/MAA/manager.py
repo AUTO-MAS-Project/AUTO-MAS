@@ -21,6 +21,7 @@
 
 
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
@@ -48,6 +50,7 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("MAA 调度器")
 
@@ -60,7 +63,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 class MaaManager(TaskExecuteBase):
     """MAA控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -70,6 +78,7 @@ class MaaManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.prepared = False
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验MAA配置是否可用"""
@@ -160,7 +169,8 @@ class MaaManager(TaskExecuteBase):
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
         # 初始化模拟器管理器
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
@@ -173,6 +183,13 @@ class MaaManager(TaskExecuteBase):
             script_id=self.script_info.script_id,
         ):
             self.had_original_script_config = True
+
+        # 任务级一次性归档 MAA 原生配置（项目级池，指纹去重，失败不阻断
+        # 任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」的安装
+        # 现场——下发处按用户归档会把上一轮下发的 MAS 配置误当原生内容挤进
+        # 保留池，必须在任何下发前归档这一次
+        with suppress(Exception):
+            archive_native_backup(self.maa_set_path)
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -214,6 +231,35 @@ class MaaManager(TaskExecuteBase):
                 "检测到 MAA 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
             )
 
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功时保留 MAA 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+
+        直控会话 MAS 零写入（ScriptConfig ``set_maa`` 直控分支直接 return），
+        安装 config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
+        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与用户
+        脚本态会话不豁免——它们的 GUI 改动已由 ``set_maa`` 收尾回写 MAS 目
+        录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留任何现
+        场改动，结束后也还原任务前快照。
+        """
+
+        if self.task_info.mode != "ScriptConfig" or self.task_info.view_only:
+            return False
+        if not (
+            self.script_info.user_list
+            and self.script_info.user_list[0].status == "完成"
+        ):
+            return False
+        user_id = self.script_info.user_list[0].user_id
+        if user_id == "Default":
+            return False
+        try:
+            mode = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            ).strip()
+        except (KeyError, ValueError, TypeError):
+            return False
+        return mode == "直控"
+
     async def main_task(self):
 
         self.check_result = await self.check()
@@ -236,12 +282,16 @@ class MaaManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            task = METHOD_BOOK[self.task_info.mode](
-                self.script_info,
-                self.script_config,
-                self.user_config,
-                self.emulator_manager,
+            kwargs: dict = dict(
+                script_info=self.script_info,
+                script_config=self.script_config,
+                user_config=self.user_config,
+                emulator_manager=self.emulator_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+                kwargs["view_only"] = self.task_info.view_only
+            task = METHOD_BOOK[self.task_info.mode](**kwargs)
             await self.spawn(task)
 
     async def final_task(self):
@@ -309,8 +359,9 @@ class MaaManager(TaskExecuteBase):
                     ),
                 )
 
-        # 还原配置
-        if (self.temp_path).exists():
+        # 还原配置：直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
+        # 其余按任务前快照还原
+        if (self.temp_path).exists() and not self._keep_script_config_changes():
             swap_in_dir(self.temp_path, self.maa_set_path)
         clear_native_config_snapshot(self.temp_path)
 

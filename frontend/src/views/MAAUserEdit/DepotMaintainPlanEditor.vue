@@ -111,6 +111,11 @@
           <DeleteOutlined />
         </a-button>
       </template>
+      <template #headerCell="{ column }">
+        <a-tooltip v-if="column.key === 'stock'" :title="stockColumnTitle">
+          <span>{{ t('edit.stock') }}</span>
+        </a-tooltip>
+      </template>
     </a-table>
     <a-typography-link
       class="data-source-note"
@@ -158,8 +163,10 @@ const props = defineProps<{
   stageCandidates: Record<string, SelectOption[]>
   /** 正在加载候选的物品 ID 列表 */
   stageCandidatesLoading: string[]
-  /** 仓库库存映射（itemId → 数量，安装级） */
+  /** 仓库库存映射（itemId → 数量，当前用户识别档案） */
   inventory: Record<string, number>
+  /** 库存档案的最近识别时间（本地格式；空串=未识别） */
+  depotInventoryTime: string
   /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
   loadStageCandidates: (itemId: string) => Promise<void>
 }>()
@@ -173,6 +180,12 @@ const columns: TableColumnsType = [
   { title: t('edit.stock'), key: 'stock', width: 90 },
   { title: '', key: 'action', width: 56, align: 'center' },
 ]
+
+const stockColumnTitle = computed(() =>
+  props.depotInventoryTime
+    ? t('edit.stockRecognizedAt', { time: props.depotInventoryTime })
+    : t('edit.stock')
+)
 
 const plans = ref<DepotMaintainPlan[]>([])
 const selectedRowKeys = ref<number[]>([])

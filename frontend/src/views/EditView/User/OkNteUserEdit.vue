@@ -287,10 +287,6 @@
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
         <h3>{{ t('edit.okNteConfiguration') }}</h3>
         <a-space>
-          <a-button size="small" @click="openRestoreModal">
-            <template #icon><HistoryOutlined /></template>
-            {{ t('edit.configRestoreTitle') }}
-          </a-button>
           <span>{{ t('edit.enableQuickConfiguration') }}</span>
           <a-switch
             :checked="formData.Info.IfQuickConfig"
@@ -298,6 +294,10 @@
             :aria-label="t('edit.enableQuickConfiguration')"
             @change="handleQuickConfigChange"
           />
+          <a-button size="small" @click="openRestoreModal">
+            <template #icon><HistoryOutlined /></template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
         </a-space>
       </a-flex>
       <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
@@ -712,6 +712,8 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 const openRestoreModal = async () => {
@@ -726,7 +728,7 @@ interface OkNtePreviewFileView {
   summary: Array<{ key: string; value: string }>
 }
 const previewFiles = (raw: unknown): OkNtePreviewFileView[] =>
-  (raw as { files?: OkNtePreviewFileView[] } | null)?.files ?? []
+  (raw as { fileCards?: OkNtePreviewFileView[] } | null)?.fileCards ?? []
 
 // 一键恢复成功：MAS 目录回到该时点，重拉动态表单——否则旧表单值在下次
 // 保存时全量写回、静默撤销刚做的恢复（ok-nte 原生恢复不影响本页表单）
@@ -743,43 +745,50 @@ const handleRestored = (target: string) => {
 // 即备份）；原生备份：恢复到 ok-nte 本体后启动脚本级查看会话（跳过下发，
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
 const handleRestoreView = (target: string, item: { time: string }) => {
-  if (configLocked.value) return
-  Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      if (configLocked.value) {
-        message.error(t('edit.configLocked'))
-        return
-      }
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-        // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+  if (configLocked.value) return Promise.resolve(false)
+  return new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
         }
-        restoreOpen.value = false
-        if (target === 'mas') {
-          await startSession(userId, true)
-        } else {
-          await startSession(scriptId, true)
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await startSession(userId, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
 }
 
@@ -789,13 +798,15 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 const ensureOkNteBackup = async (target: 'mas' | 'native') => {
   if (!userId) return
   try {
-    await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
       scriptId,
       userId,
       target,
     })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 
@@ -816,9 +827,12 @@ watch(showOknteViewMask, (now, before) => {
 })
 
 onUnmounted(() => {
-  // 退出编辑页：归档 MAS 配置终态（编辑会话包络），并结束未关闭的会话
-  void ensureOkNteBackup('mas')
-  void stopSession()
+  // 退出编辑页：先停会话再归档 MAS 配置终态——并行会与 final_task 的回写
+  // 撞车，归档到半程状态；会话未开时 stopSession 自身早退，不影响归档时机
+  void (async () => {
+    await stopSession()
+    await ensureOkNteBackup('mas')
+  })()
 })
 </script>
 

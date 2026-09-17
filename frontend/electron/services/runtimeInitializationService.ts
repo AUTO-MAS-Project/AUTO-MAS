@@ -10,6 +10,8 @@
  * environmentService / repositoryService / dependencyService。
  */
 
+import { join } from 'node:path'
+
 import { app } from 'electron'
 
 import { getLogger } from './logger'
@@ -526,6 +528,35 @@ export function describeRuntimeFailureDetails(details: Record<string, unknown>):
   return ` details=${text}`
 }
 
+/** 把需要用户手工处理的仓库错误改成可直接照做的说明。 */
+export function formatRuntimeFailureMessage(
+  code: string,
+  appRoot: string,
+  fallback: string
+): string {
+  const updateDirectories = join(appRoot, 'repo.update-*')
+  const previousDirectories = join(appRoot, 'repo.previous-*')
+
+  if (code === 'GIT_REPO_CLEANUP_FAILED') {
+    return (
+      '仓库旧文件删除失败。请完全退出 AUTO-MAS，删除程序目录中所有名称以 ' +
+      `repo.update- 和 repo.previous- 开头的文件夹（${updateDirectories}、${previousDirectories}），` +
+      '然后重新打开 AUTO-MAS。'
+    )
+  }
+
+  if (code === 'UPDATE_STATE_AMBIGUOUS') {
+    return (
+      '后端仓库状态异常。请完全退出 AUTO-MAS，删除 ' +
+      `${join(appRoot, 'repo')}、程序目录中所有名称以 repo.update- 和 repo.previous- 开头的文件夹` +
+      `（${updateDirectories}、${previousDirectories}），再删除 ${join(appRoot, 'runtime-state', 'update.json')}。` +
+      '重新打开 AUTO-MAS 后会自动下载后端仓库。'
+    )
+  }
+
+  return fallback
+}
+
 /** 可注入的客户端工厂，便于单元测试替换掉真实子进程。 */
 type RuntimeClientFactory = (options: CreateRuntimeClientOptions) => RuntimeClient
 
@@ -841,7 +872,11 @@ export class RuntimeInitializationService {
     const remediation = [...outcome.result.remediation]
     this.lastRemediation.set(failedStage, remediation)
 
-    const message = outcome.result.message || `Runtime 命令失败（${outcome.code}）`
+    const message = formatRuntimeFailureMessage(
+      outcome.code,
+      this.options.launchConfig.appRoot,
+      outcome.result.message || `Runtime 命令失败（${outcome.code}）`
+    )
     logger.error(
       `Runtime 命令失败: ${outcome.code} ${message}${describeRuntimeFailureDetails(outcome.result.details)}`
     )

@@ -67,6 +67,11 @@ SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
 SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
 SRA_CACHE_NO_NOTIFY_KEY = "NoNotifyForShortcut"
+# SRA 2.22.0 起领取奖励从数组 rewards[0..6] 改成具名开关 rewards.<name>（与
+# replenish.enabled 一样是平铺在 receiveRewards 下的点号键）；旧 profile 仍是数组。
+# SRA 读取时具名键优先、数组只作旧版兼容，写临时配置时按原生 profile 的形态镜像。
+SRA_REWARD_REDEEM_CODE_KEY = "rewards.redeemCode"
+SRA_REWARD_REDEEM_CODE_LEGACY_KEY = "rewards.6"
 
 
 def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
@@ -184,6 +189,15 @@ def resolve_sra_managed_options(
     return effective
 
 
+def _reward_list_index(key: str) -> int | None:
+    """``rewards.<下标>`` 返回数组下标；具名开关 ``rewards.<name>`` 与其它键返回 None。"""
+
+    prefix, _sep, suffix = key.partition(".")
+    if prefix != "rewards" or not suffix.isdigit():
+        return None
+    return int(suffix)
+
+
 def _apply_managed_options(
     config: dict[str, Any],
     module_key: str,
@@ -199,16 +213,16 @@ def _apply_managed_options(
     if not isinstance(section, dict):
         raise ValueError(f"SRA 临时配置缺少 {section_name} 对象")
     for key, value in effective.items():
-        if key.startswith("rewards."):
-            index = int(key.split(".", 1)[1])
-            rewards = section.setdefault("rewards", [])
-            if not isinstance(rewards, list):
-                raise ValueError("SRA receiveRewards.rewards 必须是数组")
-            while len(rewards) <= index:
-                rewards.append(False)
-            rewards[index] = value
-        else:
+        index = _reward_list_index(key)
+        if index is None:
             section[key] = value
+            continue
+        rewards = section.setdefault("rewards", [])
+        if not isinstance(rewards, list):
+            raise ValueError("SRA receiveRewards.rewards 必须是数组")
+        while len(rewards) <= index:
+            rewards.append(False)
+        rewards[index] = value
 
 
 def write_sra_temp_config(
@@ -431,13 +445,21 @@ def build_sra_module_config(
                 eow_enabled=daily_eow_enabled,
             )
     elif module.key == "ReceiveRewards":
-        config["receiveRewards"]["enabled"] = True
-        rewards = config["receiveRewards"].setdefault("rewards", [])
+        section = config["receiveRewards"]
+        section["enabled"] = True
+        rewards = section.setdefault("rewards", [])
         while len(rewards) <= 6:
             rewards.append(False)
         rewards[6] = bool(rewards[6]) and bool(redeem_codes_enabled)
-        if not rewards[6]:
-            config["receiveRewards"]["redeemCodes"] = ""
+        redeem_enabled = rewards[6]
+        if SRA_REWARD_REDEEM_CODE_KEY in section:
+            # 具名开关存在时 SRA 以它为准，闸门要同时落在这里
+            section[SRA_REWARD_REDEEM_CODE_KEY] = bool(
+                section[SRA_REWARD_REDEEM_CODE_KEY]
+            ) and bool(redeem_codes_enabled)
+            redeem_enabled = section[SRA_REWARD_REDEEM_CODE_KEY]
+        if not redeem_enabled:
+            section["redeemCodes"] = ""
     elif module.key == "DivergentUniverse":
         config["cosmicStrife"]["enabled"] = True
         config["cosmicStrife"]["divergentUniverse.enabled"] = True

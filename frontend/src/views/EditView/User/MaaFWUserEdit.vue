@@ -41,9 +41,10 @@
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
             @preset-menu-click="handlePresetMenuClick"
-            @mode-change="handleConfigModeChange"
           />
 
+          <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
+               任务队列始终显示。两个字段仍留在配置模型里，只是不再提供入口。 -->
           <a-flex
             class="section-header"
             justify="space-between"
@@ -53,21 +54,28 @@
           >
             <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
             <a-space>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing || isSaving"
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
+              <a-button
+                :loading="interfaceLoading"
+                :disabled="!scriptPath"
+                @click="reloadInterface()"
+              >
+                <template #icon>
+                  <FileSearchOutlined />
+                </template>
+                {{ t('edit.readInterface') }}
+              </a-button>
+              <a-button size="small" @click="restoreOpen = true">
+                <template #icon>
+                  <HistoryOutlined />
+                </template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
             </a-space>
           </a-flex>
           <TaskQueueSection
-            v-if="formData.Info.IfQuickConfig"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
-            :script-path="scriptPath"
             :preview-data="previewData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :available-tasks="availableTasks"
@@ -81,7 +89,6 @@
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
             @reorder-tasks="applyQueuedTaskIds"
-            @reload-interface="reloadInterface"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
             @append-preset-template="appendPresetTemplate"
@@ -108,6 +115,42 @@
         </a-form>
       </a-card>
     </ConfigLockPanel>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、MaaFW 项目配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :disabled="configLocked"
+      :script-name="MAAFW_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.maafwConfigRestoreUserDesc')"
+      :script-desc="t('edit.maafwConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+    >
+      <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewSections(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="s in previewSections(raw)" :key="s.name">
+            <h4 class="maafw-preview-title">{{ s.label }}</h4>
+            <a-descriptions
+              v-if="s.rows && s.rows.length"
+              :column="1"
+              size="small"
+              bordered
+              class="maafw-preview-box"
+            >
+              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
   </div>
 </template>
 
@@ -121,6 +164,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  onUnmounted,
   reactive,
   ref,
   shallowRef,
@@ -129,8 +173,11 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
+import { FileSearchOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { Service } from '@/api'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
@@ -787,21 +834,6 @@ const handleFieldSave = async (key: string, value: unknown) => {
     })
 }
 
-const handleQuickConfigChange = async (value: boolean) => {
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
-}
-
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
-const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
-}
-
 const savePresetAndSnapshot = async () => {
   if (isInitializing.value || !userId) return
 
@@ -987,6 +1019,72 @@ const handleBeforeUnload = (event: BeforeUnloadEvent) => {
   event.returnValue = ''
 }
 
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：MaaFW 统一叫「maafw」
+const MAAFW_DISPLAY_NAME = 'maafw'
+const restoreOpen = ref(false)
+
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+interface MaaFWPreviewRow {
+  key: string
+  value: string
+}
+interface MaaFWPreviewSection {
+  name: string
+  label: string
+  rows?: MaaFWPreviewRow[]
+}
+const previewSections = (raw: unknown): MaaFWPreviewSection[] =>
+  (raw as { sections?: MaaFWPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填字段（Task/Device 段），需重拉表单；native 恢复
+// 写 MaaFW 项目配置，MAS 表单不受影响
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    // 恢复回填的是后端 UserData，重拉表单同步页面（含任务快照）
+    await loadUserData()
+    await reloadInterface(false)
+  }
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：进入归档 MaaFW 项目配置当前状态
+// （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
+const ensureMaaFWBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   if (!scriptId) {
@@ -995,12 +1093,22 @@ onMounted(() => {
     return
   }
 
-  loadScriptInfo()
+  // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
+  // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
+  void (async () => {
+    await loadScriptInfo()
+    void ensureMaaFWBackup('native')
+  })()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   if (saveStatusTimer) clearTimeout(saveStatusTimer)
+})
+
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 用户字段侧车终态（编辑会话包络；MaaFW 无遮罩会话）
+  void ensureMaaFWBackup('mas')
 })
 </script>
 
@@ -1035,6 +1143,18 @@ onBeforeUnmount(() => {
   width: 22px;
   height: 22px;
   object-fit: contain;
+}
+
+/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
+.maafw-preview-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--ant-color-text);
+}
+
+.maafw-preview-box {
+  margin-bottom: 8px;
 }
 
 @media (max-width: 768px) {

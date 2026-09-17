@@ -611,10 +611,9 @@ def test_onedragon_backup_fingerprint_dedup(
         "us"
     ) != -1
 
-    # force=True：即使内容一致也强制归档（恢复前存底语义）
-    restored_marker = archive_onedragon_backup(root, force=True)
-    assert restored_marker is not None
-    assert len(list_times(od_root)) == 3
+    # force=True（恢复前存底）：内容与最新份一致时同样跳过，不产生冗余条目
+    assert archive_onedragon_backup(root, force=True) is None
+    assert len(list_times(od_root)) == 2
 
 
 def test_archive_force_protects_existing_backups(tmp_path: Path) -> None:

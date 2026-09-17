@@ -25,6 +25,7 @@ import calendar
 import json
 import re
 import shutil
+import time
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -73,6 +74,7 @@ from .tools import (
     push_notification,
     update_maa,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.cultivate import (
     CultivatePlan,
     ProviderContext,
@@ -891,6 +893,13 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     continue
 
+                logger.info(
+                    f"模拟器启动完成: 用户 {self.cur_user_uid} - 模式 "
+                    f"{self.mode} - 实例 "
+                    f"{self.script_config.get('Emulator', 'Index')} - "
+                    f"ADB {emulator_info.adb_address}"
+                )
+
                 if Config.get("Function", "IfSilence"):
                     try:
                         await self.emulator_manager.setVisible(
@@ -910,7 +919,15 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
+                logger.info(
+                    f"MAA 进程已创建: {self.maa_exe_path} - "
+                    f"PID: {self.maa_process_manager.main_pid}"
+                )
                 await asyncio.sleep(1)  # 等待 MAA 处理日志文件
+                logger.info(
+                    "MAA 进程等待日志文件后状态: "
+                    f"running={await self.maa_process_manager.is_running()}"
+                )
                 await self.maa_log_monitor.start_monitor_file(
                     self._resolve_log_file_path, self.log_start_time
                 )
@@ -1045,7 +1062,16 @@ class AutoProxyTask(TaskExecuteBase):
             )
             if not targets:
                 return
-            context = ProviderContext(maa_data_dir=self._cultivate_archive_dir())
+            # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
+            # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
+            skland = await Config.get_maa_cultivate_skland_progression(
+                str(self.script_info.script_id), str(self.cur_user_uid)
+            )
+            context = ProviderContext(
+                maa_data_dir=self._cultivate_archive_dir(),
+                skland_progressions=skland[0] if skland else {},
+                skland_captured_at=skland[1] if skland else 0,
+            )
             snapshots = {
                 target.operator_id: resolve_progression(
                     target.operator_id, get_certifying_chain(), context
@@ -1106,6 +1132,11 @@ class AutoProxyTask(TaskExecuteBase):
             return None, False, False
 
         try:
+            # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
+            # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
+            skland = await Config.get_maa_cultivate_skland_progression(
+                str(self.script_info.script_id), str(self.cur_user_uid), force=True
+            )
             (
                 updated_targets,
                 plan,
@@ -1117,6 +1148,7 @@ class AutoProxyTask(TaskExecuteBase):
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
+                skland=skland,
             )
         except Exception as e:
             logger.opt(exception=True).warning(
@@ -1184,6 +1216,22 @@ class AutoProxyTask(TaskExecuteBase):
             await agree_bilibili(self.maa_tasks_path, True)
         else:
             await agree_bilibili(self.maa_tasks_path, False)
+
+        # 下发前归档 MAS 配置到用户池（下发源，运行回写 _sync_maa_config_updates
+        # 会覆盖它；带页面任务字段侧车，指纹去重，失败不阻断运行）。目标路径
+        # 按来源 owner（脚本态共享 Default 目录，直控无 MAS 配置目录不归档）。
+        # native 池由 manager prepare 在任务级一次性归档
+        archive_dir = self._config_archive_dir()
+        if archive_dir is not None:
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                archive_dir,
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=str(self.cur_user_config.get("Info", "Mode") or "").strip()
+                or None,
+            )
 
         # ── 第一段：来源落盘 ──────────────────────────────────────────
         # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
@@ -1597,10 +1645,18 @@ class AutoProxyTask(TaskExecuteBase):
             )
             self._maa_config_baseline = None
 
-    def _config_archive_dir(self) -> Path:
-        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。"""
+    def _config_archive_dir(self) -> Path | None:
+        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。
 
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        直控用户没有 MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），
+        返回 ``None``：不下发前归档、运行产出也不回写——安装目录现场由
+        任务结束的原生配置快照恢复机制管理。
+        """
+
+        mode = str(self.cur_user_config.get("Info", "Mode") or "").strip()
+        if mode == "直控":
+            return None
+        if mode == "脚本":
             return Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         return (
             Path.cwd()
@@ -1620,7 +1676,7 @@ class AutoProxyTask(TaskExecuteBase):
         if baseline is None:
             return
         archive_dir = self._config_archive_dir()
-        if not archive_dir.is_dir():
+        if archive_dir is None or not archive_dir.is_dir():
             return
 
         for name in _MAA_CONFIG_FILES:
@@ -1824,13 +1880,19 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
+            logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
 
+        started_at = time.monotonic()
+
+        logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
+        logger.info("MAA 收尾: 停止 MAA 进程")
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+        logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
@@ -1940,6 +2002,8 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
+
+        logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

@@ -90,6 +90,49 @@ class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
 
 
+class MaaDepotInventoryOut(OutBase):
+    data: List[ComboBoxItem] = Field(
+        ..., description="库存选项（label=数量字符串，value=物品ID）"
+    )
+    recognizedAt: Optional[str] = Field(
+        None, description="最近识别时间（本地 ISO 格式）；无法确定识别时间时为 None"
+    )
+
+
+class MaaCultivateGoalOptionItem(BaseModel):
+    value: str = Field(..., description="目标 ID（专精=skillId，模组=uniEquipId）")
+    label: str = Field(..., description="目标名称（模组带分支码）")
+    maxLevel: int = Field(default=0, description="可达档位上限（按非空消耗档数）")
+
+
+class MaaCultivateOperatorOptionItem(BaseModel):
+    value: str = Field(..., description="干员 ID")
+    label: str = Field(..., description="干员名")
+    rarity: int = Field(default=0, description="稀有度")
+    profession: str = Field(default="", description="职业")
+    maxElite: int = Field(
+        default=0, description="精英化可达档位上限（1/2/3★ 与上游缺数据者恒 0）"
+    )
+    dataMissing: bool = Field(
+        default=False,
+        description="有精英化体系但需求数据缺失（区别于 1/2/3★ 结构上不设精英化）",
+    )
+    skills: List[MaaCultivateGoalOptionItem] = Field(
+        default_factory=list,
+        description="专精目标选项（value=skillId，label=技能名）",
+    )
+    modules: List[MaaCultivateGoalOptionItem] = Field(
+        default_factory=list,
+        description="模组目标选项（value=uniEquipId，label=模组名（分支））",
+    )
+
+
+class MaaCultivateOperatorsOut(OutBase):
+    data: List[MaaCultivateOperatorOptionItem] = Field(
+        default_factory=list, description="干员目录（含目标编辑用名称目录）"
+    )
+
+
 class CultivatePreviewIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
     userId: str = Field(..., description="用户ID")
@@ -111,6 +154,23 @@ class CultivatePreviewItem(BaseModel):
     )
 
 
+class CultivateOperatorProgression(BaseModel):
+    """单个目标干员的当前练度（编辑器"当前等级 → 目标等级"展示用）。"""
+
+    operatorId: str = Field(..., description="干员 ID")
+    source: str = Field(
+        ..., description="练度来源（skland/local/manual）；default 表示无实测数据"
+    )
+    elite: int = Field(..., description="当前精英化阶段 0-2")
+    level: int = Field(..., description="当前干员等级")
+    masteries: Dict[str, int] = Field(
+        default_factory=dict, description="当前专精等级（skillId → 0-3）"
+    )
+    modules: Dict[str, int] = Field(
+        default_factory=dict, description="当前模组等级（uniEquipId → 0-3）"
+    )
+
+
 class CultivatePreviewOut(OutBase):
     stages: List[CultivatePreviewItem] = Field(
         ..., description="刷取计划（按推荐关执行的材料条目）"
@@ -125,7 +185,13 @@ class CultivatePreviewOut(OutBase):
         default=None,
         description="可估算刷取条目的期望理智合计（不含固定产出关）；无可估算条目时为空",
     )
-    hasProgression: bool = Field(..., description="是否存在干员识别档案")
+    hasProgression: bool = Field(
+        ..., description="练度数据是否可用（本地识别档案或森空岛快照）"
+    )
+    progressions: List[CultivateOperatorProgression] = Field(
+        default_factory=list,
+        description="目标干员当前练度；source=default 表示无实测数据（按 0 估算）",
+    )
     hasInventory: bool = Field(..., description="是否存在仓库识别档案")
 
 
@@ -566,10 +632,18 @@ class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
     time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="备份时点的配置来源三态（脚本/用户/直控）；无标注（旧版备份或未声明三态）为 null",
+    )
 
 
 class ConfigBackupListOut(OutBase):
     data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+    mode: Optional[str] = Field(
+        default=None,
+        description="当前配置来源三态（脚本/用户/直控）；非三态专项为 null",
+    )
 
 
 class ConfigBackupRestoreIn(BaseModel):
@@ -614,6 +688,18 @@ class ConfigBackupPreviewOut(OutBase):
     )
 
 
+class ConfigBackupFileOut(OutBase):
+    """备份内文本文件内容（只读；路径限归档内相对路径，防穿越）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
+    size: int = Field(..., description="文件字节数")
+    content: str = Field(
+        ..., description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）"
+    )
+
+
 class ZzzOdNativeAccountField(BaseModel):
     """直控编辑的账号字段（强绑定 zzz-od 原生 game_account.yml）。"""
 
@@ -622,6 +708,28 @@ class ZzzOdNativeAccountField(BaseModel):
     value: Optional[str] = Field(default=None, description="当前值（读自实例原生配置）")
     options: List[ComboBoxItem] = Field(
         default_factory=list, description="可选项列表（空=自由输入）"
+    )
+
+
+class ZzzOdNativeLaunchArgs(BaseModel):
+    """直控编辑的一条龙游戏启动参数（强绑定 zzz-od 原生 game.yml）。"""
+
+    launch_argument: bool = Field(
+        ..., description="启动参数总开关（关闭时一条龙启动游戏不带任何参数）"
+    )
+    screen_size: Literal["1920x1080", "2560x1440", "3840x2160"] = Field(
+        ..., description="窗口尺寸"
+    )
+    full_screen: Literal["0", "1"] = Field(
+        ..., description="全屏模式：0=窗口化 1=全屏"
+    )
+    popup_window: bool = Field(..., description="无边框窗口（-popupwindow）")
+    dx12: bool = Field(
+        ..., description="DX12 启动（写回时把 -use-d3d12 合并进高级参数）"
+    )
+    monitor: Literal["1", "2", "3", "4"] = Field(..., description="显示器序号")
+    launch_argument_advance: str = Field(
+        ..., description="高级参数（原样透传给一条龙拼接，上游不解析）"
     )
 
 
@@ -657,6 +765,9 @@ class ZzzOdNativeConfigOut(OutBase):
         ...,
         description="运行实例（one_dragon.yml instance_run 原值：仅运行当前/全部实例）",
     )
+    launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
+        default=None, description="游戏启动参数（game.yml，缺失字段合并上游默认值）"
+    )
 
 
 class ZzzOdNativeTaskIn(BaseModel):
@@ -681,6 +792,9 @@ class ZzzOdNativeConfigIn(BaseModel):
     instanceRun: Optional[str] = Field(
         default=None,
         description="运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+    launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
+        default=None, description="游戏启动参数（缺省不写回）"
     )
 
 
@@ -1049,7 +1163,17 @@ class VirtualDisplayCheckResultItem(BaseModel):
 class VirtualDisplayCheckOut(OutBase):
     driverVersion: Optional[int] = Field(default=None, description="驱动次版本号")
     monitors: str = Field(default="", description="检测时的显示器概况")
+    holding: Optional[str] = Field(
+        default=None,
+        description="守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此显示当前挂着哪块",
+    )
     results: list[VirtualDisplayCheckResultItem] = Field(default_factory=list)
+
+
+class VirtualDisplayDetachOut(OutBase):
+    detached: bool = Field(
+        default=False, description="有没有真的拆掉一块屏；没挂着时为 False"
+    )
 
 
 class GlobalConfig_Voice(BaseModel):
@@ -1482,6 +1606,12 @@ class MaaUserConfig_Task(BaseModel):
     CultivateSkipDuringResourceCollection: Optional[bool] = Field(
         default=None, description="资源收集期跳过养成计划"
     )
+    CultivateSklandAccount: Optional[str] = Field(
+        default=None, description="森空岛绑定的签到账号组 UUID（空=未绑定）"
+    )
+    CultivateSklandUid: Optional[str] = Field(
+        default=None, description="森空岛绑定角色的游戏 uid（非森空岛 userId）"
+    )
 
 
 class MaaUserConfig_Notify(BaseModel):
@@ -1833,6 +1963,14 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
     )
 
 
+class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
+    """BetterGI 单独通知（在通用字段上增加掉落统计开关）"""
+
+    IfSendDropStatistics: Optional[bool] = Field(
+        default=None, description="是否统计掉落（BGI「奖励识别」汇总，默认开启）"
+    )
+
+
 class BetterGIUserConfig(BaseModel):
     Info: Optional[BetterGIUserConfig_Info] = Field(
         default=None, description="用户信息"
@@ -1849,7 +1987,7 @@ class BetterGIUserConfig(BaseModel):
     Data: Optional[BetterGIUserConfig_Data] = Field(
         default=None, description="用户数据"
     )
-    Notify: Optional[GeneralUserConfig_Notify] = Field(
+    Notify: Optional[BetterGIUserConfig_Notify] = Field(
         default=None, description="单独通知"
     )
 
@@ -1921,6 +2059,30 @@ class ZzzOdUserConfig_Game(BaseModel):
         default=None, description="是否使用自定义窗口标题"
     )
     CustomWinTitle: Optional[str] = Field(default=None, description="自定义窗口标题")
+    LaunchArgument: Optional[bool] = Field(
+        default=None,
+        description="一条龙游戏启动参数总开关（关闭时一条龙启动游戏不带任何参数）",
+    )
+    ScreenSize: Optional[Literal["1920x1080", "2560x1440", "3840x2160"]] = Field(
+        default=None, description="窗口尺寸（一条龙启动参数）"
+    )
+    FullScreen: Optional[Literal["0", "1"]] = Field(
+        default=None, description="全屏模式：0=窗口化 1=全屏（一条龙启动参数）"
+    )
+    PopupWindow: Optional[bool] = Field(
+        default=None, description="无边框窗口（一条龙启动参数 -popupwindow）"
+    )
+    Dx12: Optional[bool] = Field(
+        default=None,
+        description="DX12 启动（注入时把 -use-d3d12 合并进一条龙高级参数，勾选框为唯一权威）",
+    )
+    Monitor: Optional[Literal["1", "2", "3", "4"]] = Field(
+        default=None, description="显示器序号（一条龙启动参数）"
+    )
+    LaunchArgumentAdvance: Optional[str] = Field(
+        default=None,
+        description="高级参数（原样透传给一条龙拼接，上游不解析）",
+    )
 
 
 class ZzzOdUserConfig_OneDragon(BaseModel):
@@ -2451,10 +2613,20 @@ class MaaEndConfig_Game(BaseModel):
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
+    SetResolution: Optional[bool] = Field(
+        default=None, description="是否在启动游戏时设置分辨率"
+    )
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
     RestoreResolution: Optional[
-        Literal["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]
-    ] = Field(default=None, description="关闭游戏时恢复的分辨率，Off 表示不修改")
+        Literal[
+            "Off",
+            "1920x1080",
+            "2560x1440",
+            "3840x2160",
+            "Fullscreen",
+            "Custom",
+        ]
+    ] = Field(default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改")
     RestoreResolutionWidth: Optional[int] = Field(
         default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
     )
@@ -3362,11 +3534,16 @@ class MaaFWConfig_Device(BaseModel):
 
 
 class MaaFWConfig_Game(BaseModel):
-    LaunchMode: Optional[Literal["AttachOnly", "DirectExe"]] = Field(
-        default=None, description="游戏启动模式"
+    LaunchMode: Optional[Literal["DirectExe", "AttachOnly"]] = Field(
+        default=None,
+        description="游戏启动模式：DirectExe 让 MAS 启动并在结束后关闭 / AttachOnly 使用其他方式启停，MAS 只接管",
     )
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
+    )
+    UnityResolution: Optional[Literal["Off", "1920x1080", "1280x720"]] = Field(
+        default=None,
+        description="DirectExe 模式下启动 Unity 游戏前临时把注册表分辨率改成所选窗口尺寸，关闭后恢复；Off 不修改",
     )
     PackageName: Optional[str] = Field(
         default=None,
@@ -3375,9 +3552,6 @@ class MaaFWConfig_Game(BaseModel):
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
-    )
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭由 MAS 启动的游戏"
     )
 
 
@@ -3805,6 +3979,10 @@ class MaaFWAgentEnvPrepareData(BaseModel):
     cached: bool = Field(
         default=False,
         description="是否命中指纹缓存，命中时本次未做实际准备",
+    )
+    previouslyPrepared: bool = Field(
+        default=False,
+        description="本次准备前该项目已有过就绪环境，即这次是更新而非首次准备",
     )
     preparedAt: Optional[str] = Field(
         default=None, description="缓存命中时，上一次实际完成准备的时间"
@@ -4913,6 +5091,29 @@ class WSPowerSignData(BaseModel):
     signal: str = Field(..., description="电源操作信号")
 
 
+class WSDisplayMonitorRectData(BaseModel):
+    """一块显示器的工作区（去掉任务栏），物理像素、桌面坐标。"""
+
+    left: int = Field(..., description="左边界")
+    top: int = Field(..., description="上边界")
+    right: int = Field(..., description="右边界")
+    bottom: int = Field(..., description="下边界")
+
+
+class WSDisplayDetachPromptData(BaseModel):
+    """真实显示器回来了但有任务在跑, 问用户要不要拆虚拟屏 (id=Main, type=display.detach.prompt)
+
+    虚拟屏是主显示器, 回来的真实屏只是第二块, 任务栏和主窗口都留在看不见的那块上,
+    所以弹窗必须放到 `monitor` 指的那块屏上, 前端据此把它摆到该屏右下角。
+    """
+
+    returned: list[str] = Field(..., description="回来的真实显示设备名列表")
+    monitor: Optional[WSDisplayMonitorRectData] = Field(
+        default=None,
+        description="回来那块屏的工作区; 读不到时为空, 前端自行挑一块非主显示器",
+    )
+
+
 class WSGameSignResultData(BaseModel):
     """游戏签到结果广播数据 (id=GameSign, type=gamesign.result.updated)
 
@@ -4944,6 +5145,42 @@ class WSMaaFWEnvPrepareProgressData(BaseModel):
         default=None, description="总体进度百分比，未知时为 null"
     )
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+
+
+class WSMaaFWProjectUpdateProgressData(BaseModel):
+    """MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress)
+
+    检查与应用两条路径共用；``stage="log"`` 只带一行新增日志，其余阶段带
+    当前进度。速度由后端按已下载字节的时间差计算并节流，前端不必再算。
+    """
+
+    stage: str = Field(
+        ...,
+        description=(
+            "阶段：checking / downloading / downloaded / plan_validated / staged / "
+            "applying / post_validating / committed / rolled_back / completed / "
+            "failed / log"
+        ),
+    )
+    status: str = Field(..., description="running / success / failed")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+    percent: Optional[float] = Field(
+        default=None, description="当前阶段进度百分比（下载 / 覆盖），未知时为 null"
+    )
+    downloadedBytes: Optional[int] = Field(default=None, description="已下载字节数")
+    totalBytes: Optional[int] = Field(
+        default=None, description="更新包总字节数，服务端未给出时为 null"
+    )
+    speedBytesPerSec: Optional[float] = Field(
+        default=None, description="下载速度 (B/s)，首个采样点为 null"
+    )
+    packageKind: Optional[str] = Field(
+        default=None,
+        description="更新包类型：full 全量 / incremental 增量，未知时为 null",
+    )
+    appliedFiles: Optional[int] = Field(default=None, description="已覆盖文件数")
+    totalFiles: Optional[int] = Field(default=None, description="本次要覆盖的文件总数")
 
 
 class WSUpdateCompletedData(BaseModel):

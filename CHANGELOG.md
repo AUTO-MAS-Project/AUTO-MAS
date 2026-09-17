@@ -29,7 +29,7 @@
   - 开发流程：只影响贡献者、用户看不见的改动。
 -->
 
-## [v5.5.0-beta.6] - 未发布
+## [v5.5.0-beta.6] - 2026-09-16
 
 ### 破坏性变更
 
@@ -38,6 +38,34 @@
 ### 新增
 
 - OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)
+- BetterGI专项 一条龙配置区文案统一为「配置组」并新增「录制」标签页，队列里的配置组可自定义显示名称与备注，录制（键鼠脚本）可作为独立队列项加入；同时修复添加配置组弹窗误带已有项目、清空脚本产生空组等问题 by [@TCddddd](https://github.com/TCddddd)
+- 首页 八张游戏活动卡合并为 banner 轮播，横幅兼作游戏切换器、下方只展示当前游戏的活动卡，可在「自定义首页」里单独开关每个游戏或整个轮播 by [@qiyinxi](https://github.com/qiyinxi)
+- 所有专项脚本现在统一支持脚本、用户、直控三种配置来源，并可独立启用快速配置。 by [@1w1w11w1](https://github.com/1w1w11w1)
+- BAAH专项 首页新增碧蓝档案活动卡片：可切换日服 / 国际服 / 国服查看进行中的活动与剩余时间，服务器顺序支持拖动调整 by [@beichen24a1](https://github.com/beichen24a1)
+- 支持通过免费的中国移动 5G 短信接收任务通知（仅限中国移动手机号）。 by [@ClozyA](https://github.com/ClozyA)
+- ok-ww、MAA、MaaEnd、M9A、通用脚本、BAAH、SRC、BetterGI、MaaFW、HSR、OK-NTE、一条龙专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复，备份内文件可点开查看原始内容，进入编辑页或运行前自动备份原生与 MAS 配置，各留最近 10 份，恢复不再产生重复的备份条目 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 首页 每日一句旁新增「换一句」按钮，点一下文字碎开再重新拼成新的一句 by [@beichen24a1](https://github.com/beichen24a1)
+- MAA 用户配置新增干员养成目标：指定干员与精英化目标后，自动代理按材料缺口自动刷取，识别到目标达成后自动移除并随统计报告通知 by [@jinghero](https://github.com/jinghero)
+- MAA 养成计划支持绑定森空岛：可为干员设置精英化/专精/模组目标，按当天可刷取的材料缺口自动刷取、达成后自动移除；库存保持的库存列改为展示当前用户自己的识别档案并显示识别时间 by [@jinghero](https://github.com/jinghero)
+- 计划管理页的计划表支持拖拽调整顺序，并可在计划表标签上直接重命名 by [@beichen24a1](https://github.com/beichen24a1)
+- 调度队列的每个脚本任务可单独限定运行周几，不在当天运行的任务会被跳过 by [@qiyinxi](https://github.com/qiyinxi)
+- BetterGI专项 新增「队伍配置」：可为自动秘境、自动地脉花、自动首领讨伐分别指定使用的队伍与战斗策略，战斗任务会按当前场景自动选用对应队伍 by [@TCddddd](https://github.com/TCddddd)
+- 绝区零一条龙用户设置新增折叠的启动参数配置（含 DX12 独立开关），与一条龙原生游戏设置同源读写 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 初始化失败时始终保留查看日志入口，日志页支持打包日志。 by [@Craun718](https://github.com/Craun718)
+
+### 变更
+
+- 模拟器 2.0 的「大雷主人模式」补齐宿主层：雷电启动加载页的轮播与开机全屏页不再出现，MuMu 多开器的桌面弹窗在只用雷电时也会一并处理，关闭时按原样还回 by [@qiyinxi](https://github.com/qiyinxi)
+- 建脚本时「MFW」从专项适配挪到通用脚本一栏，与通用脚本并列一行，说明改为「运行任何带 interface.json 的 MaaFramework 项目」 by [@qiyinxi](https://github.com/qiyinxi)
+- 「脚本」配置来源在绝区零一条龙、BetterGI、通用脚本、星穹铁道与 BAAH 的用户页置灰并悬停说明原因，避免选择实际不生效的配置来源 by [@AthenaHibou](https://github.com/AthenaHibou)
+- MFW 脚本的用户页去掉「配置来源」三态选择和「快速配置」开关：MFW 没有可退回的原生配置，两者对它没有意义，任务队列始终显示 by [@qiyinxi](https://github.com/qiyinxi)
+- 首页 优化活动区游戏切换与终末地、明日方舟的图文布局，自动轮播默认关闭，修正碧蓝档案活动名称与封面对应关系，服务器改用胶囊条切换并记住上次选择，移除拖动排序与重复横幅，加载时仍可切换服务器 by [@HarcoChen](https://github.com/HarcoChen)
+- MaaEnd 改用内置切号与游戏启动设置，统一快速配置入口，支持结束关闭游戏时恢复预设或自定义分辨率，并修复退出后阶段卡住的问题。 by [@HarcoChen](https://github.com/HarcoChen)
+- 重新整理 MaaEnd 用户页面，分离基本信息与配置来源、为每日执行限制增加分隔，简化任务分类并收起低频设置。 by [@HarcoChen](https://github.com/HarcoChen)
+
+### 移除
+
+- 移除通用脚本的「快速配置」开关，直控模式下直接使用脚本自身配置运行。 by [@1w1w11w1](https://github.com/1w1w11w1)
 
 ### 修复
 
@@ -46,6 +74,46 @@
 - 修复脚本配置目录被脚本进程占用或含只读文件时，任务收尾复原配置失败、配置目录停留在半删状态的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
 - 开发流程：收敛各专项重复的日志推送与启动参数拆分实现，避免同类逻辑在多处各存一份 by [@1w1w11w1](https://github.com/1w1w11w1)
 - 开发流程：恢复 tzdata 依赖——Windows 上没有系统时区数据库，移除后会导致时区查询失败 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复首页活动卡片在数据源不可用时无法显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复开发环境前端无法启动的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MaaFW 专项 修复雷电模拟器上打不进中文文本的问题（如 M9A 的中文兑换码：输入框始终为空、节点反复重试直到运行超时）：雷电上的文本输入改走雷电自己的 ldconsole 命令，触控改用 minitouch by [@qiyinxi](https://github.com/qiyinxi)
+- 模拟器 2.0 设备表进页面与脚本页实例下拉的加载提速数倍，点击启动 / 关闭立即显示「启动中 / 关闭中」且启动中可直接关闭，表格随窗口高度滚动不再被裁掉，「隐藏窗口」按钮真正隐藏窗口并新增「显示窗口」，实例下拉显示「#设备号 名称」不再先显示设备号再跳成名称 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 BetterGI 自动秘境未刷够配置的轮次就提前结束、以及开启「刷取至树脂耗尽」仍被当作限定次数执行的问题 by [@TCddddd](https://github.com/TCddddd)
+- 修复 BAAH 任务一启动就报错、完全无法运行的问题 by [@beichen24a1](https://github.com/beichen24a1)
+- 合并 BetterGI 相关 9 个 PR：通知统一走 AUTO-MAS 通知编排、掉落统计强制打开首领讨伐奖励识别、执行层单次启动并按左栏队列顺序执行且留下运行记录、修复未选择首领时自动首领讨伐被静默跳过、地脉花策略生效、直控来源与原生配置写入分离（含 Plan 到原生键反向映射单测）、修复战斗组开关关闭后仍运行、修复自定义分组脚本配置下拉框无法展开、修复旧 BetterGI 进程杀不掉导致任务静默卡死并提示手动关闭或以管理员身份运行 MAS、修复 BGI 自提权重启换 PID 被误判为「在完成任务前退出」导致重试全废、修复进程刚被结束就被判定为「杀不掉」（按进程名轮询复核）、修复执行层对「不使用冒险之证」的多余取反导致地脉花失败、执行层有步骤失败时状态改为「部分失败」并在通知里给出分步执行表、补回合并 9 个 PR 时丢失的掉落统计接线（此前开了开关也没有掉落表）、「添加配置组」候选不再混入脚本/录制副本与 MAS 自建组、路径类引用的读/存不再因名字含分隔符报「配置组名非法」 by [@TCddddd](https://github.com/TCddddd)
+- 修复复制脚本或任务运行结束后，对该脚本用户配置的修改只在当前会话生效、重启后回退的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复未接入快速配置的脚本专项设置页仍显示「是否启用快速配置」开关的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- MAA专项 修复剿灭周完成与绿票商店月完成状态在界面跨周/跨月开启后不刷新、需重启软件才恢复的问题 by [@jinghero](https://github.com/jinghero)
+- HSR专项 修复在 MAS 中修改 M7A 配置后 config.yaml 里 4:00 这类时间被改成整数、导致 M7A 无法启动的问题 by [@ColinHouse](https://github.com/ColinHouse)
+- MAA 专项 修复每周剿灭因理智不足空跑时反复重启重试的问题：现在理智不足会跳过本次剿灭，留待下次调度继续。 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复库存保持任务刷到的材料未计入掉落统计的问题 by [@jinghero](https://github.com/jinghero)
+- MFW脚本 修复项目自带的资源热更新（如 M9A 的活动数据）会让运行前项目更新永远失败、每次都白下全量包的问题；本地改过的受管文件改为覆盖前留档，不再阻断更新 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 修复内置运行结束后代理次数、剩余天数与周期任务记录不保存、用户卡片始终显示「未代理」的问题；运行期间脚本与用户配置改为锁定不可编辑（与其他专项一致），上次运行失败时卡片标签标红 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复任务异常中断后脚本原有配置丢失、再次打开变成旧配置或空白的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- HSR专项 修复配置检查未通过或提前停止时，任务结果被错误地显示成「恢复星铁分辨率注册表失败」的问题 by [@Taimer0721](https://github.com/Taimer0721)
+- MaaEnd专项 修复脚本设置在 MaaEnd 配置目录缺失时额外报一条「配置换入的源目录不存在」的问题 by [@Taimer0721](https://github.com/Taimer0721)
+- 星铁专项：SRA 更新到 2.22.0 后，「日常与奖励」不再让整个用户的任务在启动前报错中止；兑换码开关按新版配置生效 by [@Taimer0721](https://github.com/Taimer0721)
+- 虚拟显示器 修复任务运行期间打开显示器后虚拟屏迟迟不拆、所有窗口都留在看不见的那块屏上的问题，现在真实显示器一回来就拆除并在日志里记下是哪块显示器回来的 by [@qiyinxi](https://github.com/qiyinxi)
+- 虚拟显示器 任务运行期间真实显示器接回来时不再立即拆除虚拟屏（拆屏会把窗口挪走、打掉正在跑的 PC 端游戏任务），改为在接回的显示器右下角弹窗询问是否拆除，未选择则等本轮任务结束后自动拆除；设置页新增「立即拆除」按钮 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复新建 MAA 或 SRC 脚本后从调度中心执行必报 object has no attribute 'user_config' 错误、任务无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复 MAA 自定义基建排班无法手动选择班次、以及排班表换班始终执行同一班的问题；现在带时间段的排班表按时间段自动换班，不带时间段的按顺序轮换 by [@jinghero](https://github.com/jinghero)
+- 修复点击 MaaEnd 用户设置页右侧目录时白屏的问题。 by [@HarcoChen](https://github.com/HarcoChen)
+- 修复 MaaEnd 指定理智关卡可能不生效的问题，并按安装版本动态显示和执行自动采集路线。 by [@HarcoChen](https://github.com/HarcoChen)
+- MaaEnd 用户页仅在普通模拟器模式显示游戏资源选择，桌面与云终末地模式隐藏该选项。 by [@HarcoChen](https://github.com/HarcoChen)
+- 修复 MaaEnd 在游戏退出后再次启动时可能误报失败并浪费一次重试的问题。 by [@HarcoChen](https://github.com/HarcoChen)
+- 修复 MaaEnd 重试时带入失效任务及无可执行任务时等待超时的问题。 by [@HarcoChen](https://github.com/HarcoChen)
+- MaaEnd 用户页扩大表单可用宽度，并重新排列用户名、剩余天数和启用状态等基本信息。 by [@HarcoChen](https://github.com/HarcoChen)
+- MFW专项 修复 interface.json 里 agent 写作 python（如 MAA_Punish）的项目一启动就报「Agent 进程已退出」的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 修复分平台发布的项目（如 MAA_Punish）运行前检查更新时报「对应架构和系统下的资源不存在」的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复快速配置开关无法可靠保存、关闭后仍影响任务的问题，并移除不支持快速配置的无效入口。 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 初始化遇到仓库异常时会直接说明需要删除的文件和重新下载方法。 by [@ClozyA](https://github.com/ClozyA)
+- 绝区零一条龙 修复代理任务已完成（含仅个别节点失败、次日自动重试）仍被历史记录标记为失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+
+### 开发流程
+
+- 开发环境未通过 yarn dev 启动时直接报错退出，不再静默加载陈旧的构建产物 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 补上 MaaFW 引擎的 AGENTS.md，并修正专项适配 skill 里把 MaaFW 当专项、声称三态的两处说明 by [@qiyinxi](https://github.com/qiyinxi)
+- 更新日志改为每个 PR 在 changelog.d/ 放一个碎片，由「准备发版」工作流统一编译进 CHANGELOG.md 并推进版本号；普通 PR 不再改 CHANGELOG.md 与版本号，合并后补署名的机器人随之移除 by [@qiyinxi](https://github.com/qiyinxi)
 
 ## [v5.5.0-beta.5] - 2026-09-12
 
@@ -270,7 +338,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 
-[v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...dev
+[v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...v5.5.0-beta.6
 [v5.5.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.4...v5.5.0-beta.5
 [v5.5.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.3...v5.5.0-beta.4
 [v5.5.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.2...v5.5.0-beta.3

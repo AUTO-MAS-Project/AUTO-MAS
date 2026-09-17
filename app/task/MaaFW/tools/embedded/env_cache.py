@@ -198,6 +198,16 @@ def store_prepared_environment(
             pass
 
 
+def has_prepared_environment(project_path: str | Path) -> bool:
+    """这个项目此前有没有准备过（不看指纹是否还匹配）。
+
+    只用来给界面分「首次准备完成」与「运行环境更新完成」两句话，所以缓存文件
+    在就算有过，坏了、过期了都不深究——那些交给 ``load_prepared_environment``。
+    """
+
+    return _cache_path(project_path).is_file()
+
+
 def discard_prepared_environment(project_path: str | Path) -> None:
     """丢掉缓存，让下次调用走完整准备。"""
 
@@ -210,6 +220,7 @@ def discard_prepared_environment(project_path: str | Path) -> None:
 __all__ = [
     "CACHE_FORMAT_VERSION",
     "discard_prepared_environment",
+    "has_prepared_environment",
     "load_prepared_environment",
     "store_prepared_environment",
 ]

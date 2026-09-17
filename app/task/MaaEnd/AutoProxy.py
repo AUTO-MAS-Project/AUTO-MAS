@@ -68,6 +68,7 @@ from .resource_loader import (
 )
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -914,6 +915,13 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.set_maaend(emulator_info)
 
+            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置"
+                )
+                break
+
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
@@ -1307,6 +1315,8 @@ class AutoProxyTask(TaskExecuteBase):
             "CloseGamePCApplyGameSetting",
             "CloseGamePCGameSettingResolution",
         )
+        if resolution == "Fullscreen":
+            required_options += ("CloseGamePCGameSettingDisplayType",)
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
@@ -1335,10 +1345,20 @@ class AutoProxyTask(TaskExecuteBase):
         if resolution == "Custom":
             width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
             height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
+        elif resolution == "Fullscreen":
+            width, height = "1920", "1080"
         else:
             width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
+        if resolution == "Fullscreen":
+            values["CloseGamePCGameSettingDisplayType"] = {
+                "type": "select",
+                "caseName": "Fullscreen",
+            }
+        else:
+            # 固定或自定义分辨率沿用 MaaEnd 默认的窗口模式，避免残留旧的全屏选项。
+            values.pop("CloseGamePCGameSettingDisplayType", None)
         values["CloseGamePCGameSettingResolution"] = {
             "type": "input",
             "values": {
@@ -1375,6 +1395,19 @@ class AutoProxyTask(TaskExecuteBase):
         if not maaend_config_file.exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
+            )
+
+        # 下发前归档 MAS 配置到用户池（下发源；带快速配置覆盖层字段侧车，
+        # 指纹去重，失败不阻断运行）。直控无 MAS 配置目录，不归档；native
+        # 池由 manager.prepare 在任务级一次性归档
+        if config_mode != "直控":
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                maaend_config_path,
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
             )
 
         swap_in_dir(maaend_config_path, self.maaend_set_path)
@@ -1460,7 +1493,10 @@ class AutoProxyTask(TaskExecuteBase):
                 task_name=_MAAEND_GAME_SETTING_PRETASK,
                 task_id="automas-gamesetting",
                 controller_type=controller_type,
-                enabled=self.mode == self.first_run_mode,
+                enabled=(
+                    self.mode == self.first_run_mode
+                    and bool(self.script_config.get("Game", "SetResolution"))
+                ),
                 first=True,
             )
             _place_managed_task(
@@ -1623,8 +1659,14 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_name = get_task_book_name(task)
-            if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
-                task["enabled"] = self.task_dict[task_name][task["id"]]
+            if str(task.get("taskName")) in removed_task_names:
+                task["enabled"] = False
+                if task_name in self.task_dict:
+                    self.task_dict[task_name].pop(task["id"], None)
+                continue
+
+            if task_name_value != _MAAEND_CLOSE_GAME_TASK:
+                task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
@@ -1773,6 +1815,16 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 self._write_auto_essence_options(task, sanity_task_key)
 
+        # 只跟踪本轮实际启用的任务，避免禁用条目占用同名任务的结果位置。
+        enabled_ids = {
+            task["id"] for task in maaend_tasks if task.get("enabled", False)
+        }
+        self.task_dict = {
+            name: {task_id: True for task_id in tasks if task_id in enabled_ids}
+            for name, tasks in self.task_dict.items()
+            if any(task_id in enabled_ids for task_id in tasks)
+        }
+
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
@@ -1790,6 +1842,12 @@ class AutoProxyTask(TaskExecuteBase):
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+            self.retryable = False
+        elif any(
+            message in log
+            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+        ):
+            self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
             self.retryable = False
         elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"

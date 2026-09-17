@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { CultivateOperatorProgression } from './CultivateOperatorProgression';
 import type { CultivatePreviewItem } from './CultivatePreviewItem';
 export type CultivatePreviewOut = {
     /**
@@ -33,9 +34,13 @@ export type CultivatePreviewOut = {
      */
     totalExpectedSanity?: (number | null);
     /**
-     * 是否存在干员识别档案
+     * 练度数据是否可用（本地识别档案或森空岛快照）
      */
     hasProgression: boolean;
+    /**
+     * 目标干员当前练度；source=default 表示无实测数据（按 0 估算）
+     */
+    progressions?: Array<CultivateOperatorProgression>;
     /**
      * 是否存在仓库识别档案
      */

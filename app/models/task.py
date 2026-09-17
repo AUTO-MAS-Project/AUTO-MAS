@@ -30,6 +30,9 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from app.runtime_tasks import RuntimeTasks
+from app.utils.logger import get_logger
+
+logger = get_logger("任务执行")
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -345,6 +348,8 @@ class TaskExecuteBase(ABC):
         finally:
             self._task_group = None
             try:
+                started_at = time.monotonic()
+                logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
                 if self.wait_for_finalizer_on_cancel:
                     await self._run_final_task()
                 else:
@@ -353,6 +358,10 @@ class TaskExecuteBase(ABC):
                     except Exception as e:
                         await self.on_crash(e)
             finally:
+                logger.info(
+                    f"任务收尾完成: {type(self).__name__} - 用时: "
+                    f"{time.monotonic() - started_at:.3f}秒"
+                )
                 self.accomplish.set()
 
     async def _run_final_task(self) -> None:

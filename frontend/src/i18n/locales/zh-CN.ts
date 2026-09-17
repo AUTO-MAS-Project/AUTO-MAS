@@ -25,6 +25,7 @@ export default {
   comp: {
     changelog: {
       empty: '本版本暂无更新日志',
+      loadFailed: '更新日志加载失败，可直接下载更新',
     },
     editUser: '编辑用户',
     addUser2: '添加用户',
@@ -270,6 +271,7 @@ export default {
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
     notifyRecruit: '公开招募高资喜报',
+    notifyDropStatistics: '掉落统计',
     notifyMail: '邮件通知',
     maaAnnihilation: '剿灭作战',
     maaAnnihilationHint:
@@ -290,10 +292,11 @@ export default {
     maaEventPotion: '活动关理智药',
     maaEventPotionHint: '活动关优先任务使用的理智药数量，不影响普通理智作战',
     maaCultivate: '干员养成',
-    maaCultivateHint: '为选定干员刷取精英化材料，达成后自动移除计划',
+    maaCultivateHint: '为选定干员刷取养成材料，达成后自动移除计划',
     maaCultivatePickOperators: '选择干员',
     maaCultivatePickOperatorsHint: '从一图流全量表选择要培养的干员',
     maaCultivateNoOperators: '干员目录不可用',
+    maaCultivateElite0: '精 0',
     maaCultivateElite1: '精 1',
     maaCultivateElite2: '精 2',
     maaCultivateRemove: '移除',
@@ -301,7 +304,7 @@ export default {
     maaCultivateSkipResource: '资源收集期跳过养成计划',
     maaCultivateEmpty: '尚未添加养成目标',
     maaCultivateRecognitionHint:
-      '练度与库存以 MAA 运行时识别为准；已精 2 的干员（按最近一次识别）不出现在列表，专精/模组目标随后续版本开放；材料有缺口时该任务接管本轮刷取，库存保持暂停，补齐后自动恢复',
+      '练度与库存以 MAA 运行时识别为准；绑定森空岛后可设专精/模组目标，未绑定时已有目标只读；无可设目标的干员自动从选择器隐藏；材料有缺口时该任务接管本轮刷取，库存保持暂停，补齐后自动恢复',
     maaDataSourceYituliu: '数据来源：一图流',
     maaCultivatePreviewTitle: '预计需要材料',
     maaCultivatePreviewComputing: '计算中',
@@ -316,6 +319,31 @@ export default {
     maaCultivateEstimatePrefix: '当前缺少',
     maaCultivateEstimateJoin: '与',
     maaCultivateEstimateSuffix: '，以上为按精0/空库存的保守估算；请在 MAA 中完成识别后重新查看',
+    maaCultivateSklandTitle: '绑定森空岛',
+    maaCultivateSklandHint:
+      '绑定后专精/模组目标的练度与达成检测自动完成；使用签到设置中已登录的森空岛账号',
+    maaCultivateSklandRole: '选择游戏角色',
+    maaCultivateSklandBoundRole: '已绑定角色',
+    maaCultivateSklandUnboundHint: '未绑定森空岛时仅支持精英化目标',
+    maaCultivateSklandLockedHint: '绑定森空岛后可设置专精/模组目标',
+    maaCultivateSklandDegradedHint: '森空岛练度暂不可用，专精/模组目标已暂停刷取，恢复后自动继续',
+    maaCultivateGoalElite: '精英化',
+    maaCultivateGoalNone: '不设目标',
+    maaCultivateCurrent: '当前',
+    maaCultivateCurrentUnknown: '当前 ？',
+    maaCultivateCurrentUnknownHint:
+      '无练度数据：精英化按精 0 估算；专精/模组无森空岛观测时暂停刷取',
+    maaCultivateGoalLevel1: '一级',
+    maaCultivateGoalLevel2: '二级',
+    maaCultivateGoalLevel3: '三级',
+    maaCultivateOverLimit: '超出可达档位，不会被自动刷取',
+    maaCultivateOverLimitShort: '超上限',
+    maaCultivateToggleGoals: '展开/收起目标',
+    maaCultivateNoGoalTier: '无精英化目标',
+    maaCultivateNoGoalDataMissing: '缺少养成数据',
+    maaCultivateStateInProgress: '刷取中',
+    maaCultivateStateAchieved: '已达成',
+    maaCultivateStatePending: '待确认',
     maaDepot: '库存保持',
     maaCombat: '理智作战',
     maaInfrast: '基建换班',
@@ -380,6 +408,7 @@ export default {
     extractFieldsFromWindow: '由起始/结束正则划定窗口后提取字段',
     targetStock: '目标库存',
     stock: '库存',
+    stockRecognizedAt: '识别于 {time}',
     resource: '资源',
     preset: '预设',
     claimRewards: '领取奖励',
@@ -401,12 +430,9 @@ export default {
     p0PathSelected: '{p0}路径选择成功',
     switchedPlanModeP0: '已切换到计划模式：{p0}',
     loadedP0P1Log: '已加载 {p0} 行日志（共 {p1} 行）',
-    startedP0MaaendConfiguration: '已启动 {p0} MaaEnd 配置',
     importedP0ConfigurationFile: '已导入{p0}配置文件',
-    startedMaaSetupUser: '已开始配置用户 {p0} 的MAA设置',
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
-    openedOkWwSettings: '已打开{p0}的 ok-ww 设置',
     readP0: '已读取 {p0}',
     addedP0Tasks: '成功添加 {p0} 个任务',
     configurationSessionUserP02: '用户 {p0} 的配置会话已超时（30分钟），正在自动保存配置...',
@@ -464,12 +490,16 @@ export default {
     maaEndDailyOnceTasksHint: '任务当天正常完成一次后，后续运行会自动跳过；留空则每次运行都执行',
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
+    maaEndSetResolution: '启动时设置分辨率',
+    maaEndSetResolutionHint:
+      '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
     maaEndRestoreResolutionHint:
       '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
     maaEndResolutionWidth: '宽度',
     maaEndResolutionHeight: '高度',
     maaEndResolutionUnchanged: '不修改',
+    maaEndResolutionFullscreen: '全屏',
     maaEndResolutionCustom: '自定义',
     maaEndAutoCollectOptionsUnavailable: '未能读取采集路线，请检查 MaaEnd 路径与资源后重新打开此页',
     maaEndAutoCollectEnabled: '自动采集',
@@ -685,8 +715,6 @@ export default {
     pcClient: 'PC客户端',
     tomlFiles: 'TOML 文件',
     urlProtocolEG: 'URL协议(如Starward)',
-    win32ControlMethodCan:
-      'Win32 控制方式支持启动与检测分离：启动目标只负责拉起程序，检测目标负责定位实际游戏窗口。',
     yamlFiles: 'YAML 文件',
     resetManagedOverrides: '重置为源配置',
     resetManagedOverridesHint: '清除你在 MAS 里改过的所有覆盖值，重新读取 SRA / 三月七助手当前配置',
@@ -894,6 +922,7 @@ export default {
     user: '用户',
     directControl: '直控',
     waitTime: '等待时间',
+    waitTimeSeconds: '等待时间（秒）',
     statistics: '统计信息',
     script: '脚本',
     automatic: '自动选择',
@@ -925,13 +954,11 @@ export default {
     maaScriptConfiguration: 'MAA脚本配置',
     maaPath: 'MAA路径',
     maaPathSelected: 'MAA路径选择成功',
-    masOnlyTakesOver: 'MAS 只接管已经运行的游戏',
+    masOnlyTakesOver: '由脚本或你自己启停，MAS 只接管已运行的窗口',
     howLongMasWaits: 'MAS 启动游戏后等待进入可操作状态的最长时间',
-    actualGameExeMas: 'MAS 直接启动的实际游戏 exe',
     tasksManagedByMas: 'MAS 管控任务',
     masManagedConfigurationOff: 'MAS 管控配置已停用',
     masManagesGame: 'MAS 管理游戏',
-    mfwAdbControllerUses: 'MFW ADB controller 运行时使用该模拟器配置',
     mfwGamePackageName: '游戏包名',
     mfwGamePackageNamePassed:
       '启动模拟器时顺带把游戏拉起来。留空则从项目的 pipeline 中自动识别；识别不出或识别到多个时不启动游戏，可在此手动填写',
@@ -979,9 +1006,7 @@ export default {
     giveThisConfigurationName: '为当前配置设置一个易于识别的名称',
     giveYourScriptConfiguration: '为您的脚本配置起一个易于识别的名称',
     saveSeparateConfigurationThis: '为该用户保存独立配置，运行前加载，结束时按任务策略保存。',
-    giveProjectNameYou: '为项目设置一个易于识别的名称',
     mainProgramPath: '主程序路径',
-    commandLineArgumentsPassed: '仅 exe 启动模式会传递给启动目标的命令行参数',
     writtenCurrentUserS:
       '仅在 MAS 启动本地游戏前临时写入当前用户注册表并切为窗口模式；任务完成、失败或手动停止并关闭游戏后恢复原值',
     appliesMarch7thDivergentUniverse: '仅对三月七差分宇宙生效，映射到 weekly_divergent_stable_mode',
@@ -993,9 +1018,6 @@ export default {
     cutFromStartLine: '从行首截取到关键字处；勾选「包含」则连同关键字一起去除，不勾选则保留关键字',
     launchGameBeforeTask: '任务前启动游戏',
     closeGameAfterTask: '任务后关闭游戏',
-    onceTaskCompletesNormally: '任务在今日正常完成一次后，今日后续运行会自动跳过',
-    onceTaskCompletesNormally2: '任务在本周正常完成一次后，本周后续运行会自动跳过',
-    onceTaskCompletesNormally3: '任务在本月正常完成一次后，本月后续运行会自动跳过',
     failureLog: '任务失败日志',
     taskNumbersMatchOk: '任务序号与 OK-NTE 任务列表一致',
     taskNumbersMatchOk2: '任务序号与 ok-ww 任务列表一致',
@@ -1052,17 +1074,13 @@ export default {
     sendStatistics: '发送统计',
     emailRunResult: '发送运行结果到邮箱',
     cancel: '取消',
-    onlyProcessesStartedBy:
-      '只关闭由本次任务启动且归 MAS 所有的目标进程，不会误杀用户手动打开的进程',
     optional: '可选',
-    couldNotStartMaa: '启动MAA配置失败',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
     waitAfterLaunchSeconds: '启动后等待时间（秒）',
     launchMode: '启动方式',
     howLongWaitAfter2: '启动游戏后等待的时间',
-    howLongWaitReal: '启动目标后等待实际游戏进程/窗口出现的时间，单位秒',
     extraArgumentsUsedWhen: '启动脚本任务时需要添加的附加命令，详细语法参见官网文档',
     couldNotStartGeneral: '启动通用配置失败',
     enableLowPerformanceCompatibility: '启用低性能兼容模式',
@@ -1119,6 +1137,50 @@ export default {
       '当前 ok-ww 安装中没有可用的设置目录。首次下载后，请先返回脚本列表点击“配置 ok-ww”，在本体中保存一次设置，再重新添加用户。',
     maaendConfigurationWindowOpen:
       '当前正在为这个用户打开 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
+    // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaendConfigRestoreScriptDesc:
+      'MaaEnd 原生配置的备份，恢复会直接作用于 MaaEnd 本体；打开本编辑页、运行 MaaEnd 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
+    m9aConfigRestoreUserDesc:
+      'MAS 编辑页核心配置（任务队列、服务器资源等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    m9aConfigRestoreScriptDesc:
+      'M9A 本体配置的备份，恢复会直接作用于 M9A 本体；进入本编辑页或运行 M9A 前会自动去重创建，保留最近 10 份',
+    // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
+    generalConfigRestoreUserDesc:
+      '该用户脚本配置的备份，恢复会直接作用于 MAS 配置页；运行或打开配置界面前会自动去重创建，保留最近 10 份',
+    generalConfigRestoreScriptDesc:
+      '脚本配置路径的备份，恢复会直接作用于脚本本体；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    generalViewingTitle: '正在查看脚本配置',
+    generalViewingDesc: '正在以只读方式打开该份备份的脚本配置。',
+    generalViewingDesc2: '查看完成后，请点击"关闭查看"按钮结束查看会话，脚本配置将保持原状。',
+    generalViewClose: '关闭查看',
+    // BAAH 配置恢复（无遮罩会话；native 按用户绑定的配置文件名动态归档）
+    baahConfigRestoreUserDesc:
+      'MAS 编辑页配置（配置文件绑定等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
+    baahConfigRestoreScriptDesc:
+      '当前绑定配置文件的备份，恢复会直接覆盖 BAAH 里的同名配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // SRC 配置恢复（native 恢复前拒绝接管待恢复快照，防止被任务回滚覆盖）
+    srcConfigRestoreUserDesc:
+      'MAS 配置的备份（关卡配置等页面字段与用户配置目录），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    srcConfigRestoreScriptDesc:
+      'SRC 安装目录 config 文件夹的备份，恢复会直接覆盖 SRC 本体配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    srcViewingTitle: '正在查看 SRC 配置',
+    srcViewingDesc: 'SRC 界面显示的是所选备份的内容，仅供查看。',
+    srcViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    srcViewClose: '关闭查看',
+    srcViewOpened: '已打开 SRC 查看',
+    srcViewStartFailed: '打开 SRC 查看失败',
+    // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
+    maaendSessionOpened: '已打开 MaaEnd 设置',
+    maaendSessionStartFailed: '启动 MaaEnd 设置失败',
+    maaendSessionStopFailed: '停止 MaaEnd 设置失败',
+    maaendSessionSaveFailed: '保存 MaaEnd 配置失败',
+    maaendViewOpened: '已打开 MaaEnd 查看',
+    maaendSessionTimeoutWarn: 'MaaEnd 设置会话即将超时，30 秒后自动保存',
+    maaendViewingTitle: '正在查看 MaaEnd 配置',
+    maaendViewingDesc: 'MaaEnd 界面显示的是所选备份的内容，仅供查看。',
+    maaendViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaendViewClose: '关闭查看',
     scriptLevelMaaendConfiguration2:
       '当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。',
     okNteGuiConfiguration: '当前正在进行该用户的 OK-NTE GUI 配置，请在 OK-NTE 界面完成相关设置。',
@@ -1135,7 +1197,6 @@ export default {
       "必填，留空则该规则不生效；多个关键字以「 {'|'} 」分隔，任一命中即通过",
     requiredEmptyValueDisables3: '必填，留空则该规则不生效；按 Python 正则匹配整行日志',
     requiredEmptyValueDisables4: '必填，留空则该规则不生效；用于过滤行的正则表达式',
-    iLaunchGameMyself: '我自己启动游戏',
     updateNow: '手动更新',
     treatRunAsTimed2: '执行代理任务时，SRC日志无变化时间超过该阀值视为超时',
     treatAnnihilationRunAs: '执行剿灭代理任务时，MAA日志无变化时间超过该阀值视为超时',
@@ -1304,13 +1365,30 @@ export default {
     updateSourceTip:
       'Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：无需配置，直接从项目的 GitHub Release 下载',
     updateChannel: '更新通道',
-    cdkTip: '只用于本脚本的项目更新，与全局设置中的 CDK 无关；选择 Mirror 酱作为更新源时必须填写',
+    cdkTip:
+      '默认填入 MAS 更新设置里的 CDK，可单独改成本脚本专用的；选择 Mirror 酱作为更新源时必须填写',
     cdkPlaceholder: '请输入 Mirror 酱 CDK',
     cdkHint: '选择 Mirror 酱作为更新源时必须填写；可在 Mirror 酱官网获取',
     cdkGetLink: '获取 Mirror 酱 CDK',
     cdkMissingForMirror: '已选择 Mirror 酱作为更新源，但未填写 CDK，无法从 Mirror 酱下载更新',
     updateResultVersion: '最新版本',
     updateResultSource: '下载来源',
+    cdkPrefilledFromGlobal: '已自动填入 MAS 更新设置中的 CDK，可直接使用或改成本脚本专用的',
+    notDeclared: '未声明',
+    updateProcess: '更新过程',
+    updateProcessPlaceholder: '点击「检查更新」后在此显示检查、下载与覆盖的过程',
+    updateProcessNoLogYet: '暂无日志',
+    updatePhaseChecking: '检查中',
+    updatePhaseDownloading: '下载中',
+    updatePhasePreparing: '准备覆盖',
+    updatePhaseApplying: '覆盖中',
+    updatePhaseValidating: '校验中',
+    updatePhaseCompleted: '已完成',
+    updatePhaseRolledBack: '已回滚',
+    updatePhaseFailed: '失败',
+    updateFilesApplied: '{files} 个文件',
+    updatePackageFull: '全量更新',
+    updatePackageIncremental: '增量更新',
     sourceMirrorChyan: 'Mirror 酱',
     sourceGithub: 'GitHub',
     cdkStatusIssue: 'Mirror 酱 CDK 不可用（{status}），无法从 Mirror 酱下载更新，请检查后重试',
@@ -1321,17 +1399,18 @@ export default {
     useScriptS: '使用脚本配置，不与用户独立配置隔离。',
     quickConfig: '快速配置',
     configSourceHint:
-      '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。',
+      '「脚本配置」为不同用户选择同一脚本来源；「用户独立配置」为不同用户选择不同配置来源；「直控配置」为 BGI 原生配置，并由直控用户共享。',
     configSourceHintBase:
       '脚本使用脚本级共享配置，用户使用当前用户独立配置，直控使用脚本原有配置。',
     nativeConfigSourceDescription: '使用脚本当前的原生配置。',
+    // 「脚本」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
+    scriptModeDisabled: '不支持',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
     leaveWithoutSavingUnsaved: '确定要离开吗？未保存的更改可能会丢失。',
     leave: '离开',
     maximumLinesWindowBefore: '窗口最大跨行数，达到后强制关闭',
     pasteLogLinesTest: '粘贴要测试的日志行，每行一条...',
-    closeLaunchedProcessAfterwards: '结束后关闭启动进程',
     endPattern: '结束正则',
     keepEditing: '继续编辑',
     editHsrScript: '编辑 HSR 脚本',
@@ -1371,6 +1450,26 @@ export default {
       '要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空',
     couldNotLoadPlan: '计划配置加载失败，请检查计划是否存在',
     letMasLaunchGame: '让 MAS 启动游戏',
+    launchGameOtherWay: '使用其他方式启停游戏',
+    mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
+    envPanelTitle: '运行环境',
+    adbStrategyPerDevice: '运行时判定',
+    adbStrategyEmulatorExtras: 'EmulatorExtras',
+    adbStrategyDefault: '默认',
+    prepareRuntimeEnv: '准备运行环境',
+    envPanelPlaceholder: '读取 interface 后会在这里显示运行环境的准备过程',
+    envPreparingHint: '首次需要下载 MaaFramework，可能要几分钟',
+    envStatusPreparing: '正在准备运行环境',
+    envStatusPrepared: '运行环境准备完成',
+    envStatusUpdated: '运行环境更新完成',
+    envStatusCached: '无需更新运行环境',
+    envStatusFailed: '运行环境准备失败',
+    envFailedHint: '运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。',
+    envReadyAgents: '已就绪的 Agent',
+    envRetry: '重试',
+    mfwUnityResolutionOff: '不修改',
+    mfwUnityResolutionTip:
+      '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
     thisSubtaskHasNo: '该子任务暂无可编辑字段',
     thisConfigurationFileHas: '该配置文件暂无可编辑的字段',
@@ -1451,7 +1550,6 @@ export default {
     trackChildProcesses: '追踪子进程',
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
-    pickMfwControllerThat: '选择 MFW Controller，决定使用 ADB、Win32 等控制方式',
     pickMfwResourceLeave: '选择 MFW Resource，留空时自动选择匹配当前控制方式的第一个 Resource',
     pickMfwProject: '选择 MFW 项目',
     pickDirectoryHoldingMaaend2: '选择 MaaEnd.exe 所在目录',
@@ -1465,7 +1563,6 @@ export default {
     pickProjectDirectoryContaining: '选择包含 interface.json 的项目目录，读取控制器、资源和任务。',
     pickImportPath: '选择导入路径',
     pickLocalDirectory: '选择本地目录',
-    pickEmulatorInstancePassed: '选择模拟器的具体实例，运行时会传递给 MFW ADB controller',
     pickHowGameControlled: '选择游戏控制方式',
     pickUserWhoseServer: '选择用户（按该用户的服务器检查更新）',
     chooseWhetherMasSwitches:
@@ -1473,7 +1570,7 @@ export default {
     pickStageFarmThis: '选择要刷取的副本；本字段会写入 Stage.Channel。',
     pickEchoOfWarStage: '选择要挑战的历战余响关卡。',
     pickProjectDirectory: '选择项目目录',
-    pickGameSOwn: '选游戏本体的 exe',
+    pickGameSOwn: '选游戏本体的 exe，结束后由 MAS 关闭',
     generalScriptConfiguration: '通用脚本配置',
     generalConfiguration: '通用配置',
     notifications: '通知',
@@ -1549,14 +1646,17 @@ export default {
     bettergiDirectModeAlert:
       '「脚本直控配置」：请在下方填写该用户使用的一条龙名称（BetterGI 中已有的配置名），脚本内容请在 BetterGI 中配置（可点「配置 BetterGI」打开）。',
     bettergiSwitchToMasConfig: '切换到用户独立配置',
-    bettergiMasConfigHowTo: '如何使用「用户独立配置」',
+    bettergiMasConfigHowTo: '如何使用「任务配置」',
     bettergiMasConfigHowTo1a:
       '该用户的一条龙已走独立配置，任务与自定义配置组均在本页以 MAS 前端为准配置（无需打开 BGI「一条龙」页面编辑）。MAS 运行时以固定槽位',
     bettergiMasConfigSlotName: '「MAS独立配置」',
     bettergiMasConfigHowTo1b:
       '启动一条龙，结束后自动清理槽位；你原有的 BGI 实配（如「默认配置」）全程零接触——同名实配不会被读取、也不受这里编辑影响。',
     bettergiMasConfigHowTo2:
-      '下方面板的通用战斗队伍 / 通用战斗策略：留空则使用 BetterGI 现有设置（策略留空=「根据队伍自动选择」）；填写后将应用到一条龙里需要战斗的四个任务（自动地脉花、自动秘境、自动首领讨伐、自动幽境危战），替换 BetterGI 对应任务的默认队伍与策略。',
+      '下方面板的通用战斗队伍 / 通用战斗策略是所有战斗任务的兜底：自动地脉花、自动秘境、自动首领讨伐、自动幽境危战都会用到它。队伍留空表示不切换队伍（沿用进任务时的当前队伍），策略留空表示由 BetterGI 根据队伍自动选择；若某个任务在「队伍配置」里命中了战斗场景，则优先使用该行填写的队伍与策略。',
+    bettergiTeamHowToTitle: '如何使用「队伍配置」',
+    bettergiTeamHowTo:
+      '开启「队伍配置」后，战斗任务（自动秘境 / 自动地脉花 / 自动首领讨伐）会先查这张表：命中「战斗场景」的行优先采用，多行同时命中时随机取一行；未命中的任务回落到上方「通用战斗队伍 / 通用战斗策略」。第 0 行「通用」兜底所有场景，不可删除。队伍名与策略名需与 BetterGI 中已有的一致（可点「打开策略目录」查看策略文件）。',
     bettergiOneDragonName: '一条龙名称',
     bettergiOneDragonNameHint:
       '用户独立配置时固定为「MAS独立配置」，不可更改；关闭「用户独立配置」后此处用于选择 BetterGI 实配（直控模式），默认为「默认配置」',
@@ -1650,6 +1750,27 @@ export default {
     bettergiSessionTimeoutWarn: 'BetterGI 设置会话即将超时，30 秒后自动保存',
     bettergiSettingsSaved: 'BetterGI 设置已保存',
     bettergiSettingsSaveFailed: '保存 BetterGI 设置失败',
+    // BetterGI 配置恢复（mas=per-user 副本 + 页面字段；native=全局 config.json）
+    bettergiConfigRestoreUserDesc:
+      'MAS 配置的备份（用户配置副本与页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    bettergiConfigRestoreScriptDesc:
+      'BetterGI 全局主配置（config.json）的备份，恢复会直接覆盖 BetterGI 全局设置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    bettergiViewingTitle: '正在查看 BetterGI 配置',
+    bettergiViewingDesc: 'BetterGI 界面显示的是所选备份的内容，仅供查看。',
+    bettergiViewingDesc2: '查看期间将临时打开配置；查看完成后请点击「关闭查看」结束。',
+    bettergiViewClose: '关闭查看',
+    bettergiViewOpened: '已打开 BetterGI 查看',
+    bettergiViewStartFailed: '打开 BetterGI 查看失败',
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    maafwConfigRestoreUserDesc:
+      'MAS 配置的备份（任务快照与设备覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    maafwConfigRestoreScriptDesc:
+      'MaaFW 项目配置（config 文件夹与 interface.json）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+    // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
+    hsrConfigRestoreUserDesc:
+      'MAS 配置的备份（任务映射与托管覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
+    hsrConfigRestoreScriptDesc:
+      'HSR 原生配置的备份（M7A config.yaml 与 SRA settings/cache/configs），恢复会直接覆盖原生配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
     // BAAH 专项
     baahScriptConfiguration: 'BAAH 脚本配置',
     baahScriptNameHint: '用于区分不同的 BAAH 脚本实例',
@@ -1761,6 +1882,12 @@ export default {
     configRestorePreviewEmpty: '该备份无可展示的配置摘要',
     configRestorePreviewActive: '活跃',
     configRestoreListFailed: '加载备份列表失败',
+    configRestoreEnsureFailed: '配置自动备份失败，本次更改可能没有恢复点',
+    configRestoreBackupFiles: '备份文件',
+    configRestoreCopy: '复制',
+    configRestoreCopied: '已复制到剪贴板',
+    configRestoreFileFailed: '读取备份文件失败',
+    configRestoreFileUnsupported: '该备份类别不支持查看文件内容',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
     configRestoreDetailConfirm:
@@ -1772,6 +1899,18 @@ export default {
     configRestoreConfirmTitle: '覆盖当前配置',
     configRestoreConfirmDesc:
       '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    configRestoreModeScript: '脚本级',
+    configRestoreModeUser: '用户级',
+    configRestoreModeDirect: '直控',
+    // 当前配置来源（仅三态专项返回，与备份标签比对是否需要跨来源提示）
+    configRestoreCurrentSource: '当前配置来源：{mode}',
+    // 跨配置来源恢复（备份来源与当前来源不一致）：单弹窗内换标题并追加说明
+    configRestoreCrossSourceTitle: '跨配置来源恢复',
+    configRestoreCrossSourceDesc:
+      '该备份来自{backup}配置，当前为{current}。继续恢复会把配置来源切换为{backup}，再写入对应配置。',
+    configRestoreCrossSourceShared:
+      '脚本级配置由本脚本的全部用户共享，恢复会覆盖其他用户当前使用的配置。',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',
@@ -1786,6 +1925,32 @@ export default {
     oknteViewingDesc: 'ok-nte 界面显示的是所选备份的内容，仅供查看。',
     oknteViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     oknteViewClose: '关闭查看',
+    // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    okwwConfigRestoreScriptDesc:
+      'ok-ww 原生配置的备份，恢复会直接作用于 ok-ww 本体；打开本编辑页、运行 ok-ww 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // ok-ww 原生设置/查看会话（措辞对齐 ok-nte / 一条龙）
+    okwwSessionOpened: '已打开 ok-ww 设置',
+    okwwSessionStartFailed: '启动 ok-ww 设置失败',
+    okwwSessionStopFailed: '停止 ok-ww 设置失败',
+    okwwViewOpened: '已打开 ok-ww 查看',
+    okwwSessionTimeoutWarn: 'ok-ww 设置会话即将超时，30 秒后自动保存',
+    okwwViewingTitle: '正在查看 ok-ww 配置',
+    okwwViewingDesc: 'ok-ww 界面显示的是所选备份的内容，仅供查看。',
+    okwwViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    okwwViewClose: '关闭查看',
+    // MAA 原生配置备份的描述覆写（归档时机与通用措辞不同）
+    maaConfigRestoreScriptDesc:
+      'MAA 原生配置的备份，恢复会直接作用于 MAA 本体；打开本编辑页、运行 MAA 或打开配置界面前会自动去重创建，保留最近 10 份',
+    // MAA 原生设置/查看会话（措辞对齐 ok-ww / ok-nte / 一条龙）
+    maaSessionOpened: '已打开 MAA 设置',
+    maaSessionStartFailed: '启动 MAA 设置失败',
+    maaSessionStopFailed: '停止 MAA 设置失败',
+    maaViewOpened: '已打开 MAA 查看',
+    maaSessionTimeoutWarn: 'MAA 设置会话即将超时，30 秒后自动保存',
+    maaViewingTitle: '正在查看 MAA 配置',
+    maaViewingDesc: 'MAA 界面显示的是所选备份的内容，仅供查看。',
+    maaViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
+    maaViewClose: '关闭查看',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
@@ -1795,6 +1960,8 @@ export default {
     configRestorePreviewAccount: '账号',
     configRestorePreviewPassword: '密码',
     configRestorePreviewBilibili: 'B服账号名',
+    configRestorePreviewUseCustomWinTitle: '自定义窗口标题',
+    configRestorePreviewCustomWinTitle: '窗口标题',
     zzzodPreviewUnlimited: '不限',
     zzzodOpenNativeConfig: '在一条龙内配置',
     zzzodOpenNativeConfigHint:
@@ -1906,6 +2073,8 @@ export default {
     zzzodBilibiliAccount: 'B服账号名',
     zzzodEnterBilibiliAccount: '请输入B服登录账号名',
     zzzodBilibiliAccountHint: 'B服登录面板中已保存的账号名',
+    zzzodUseCustomWinTitle: '自定义窗口标题',
+    zzzodCustomWinTitle: '窗口标题',
     zzzodOneDragonConfig: '任务配置',
     zzzodOneDragonConfigHint:
       '保存在本用户配置中，运行时由 MAS 写入一条龙；打开开关的任务会按顺序执行',
@@ -1913,6 +2082,22 @@ export default {
       '一条龙系列任务一屏可见，打开开关即加入并按顺序执行，关闭后原位保留；拖动卡片手柄调整执行顺序。',
     zzzodLoadOneDragonFailed: '加载一条龙任务失败',
     zzzodPushLogModeHint: '任务报告中各任务的执行结果展示方式（成功/失败/跳过）',
+    zzzodLaunchArgsTitle: '启动参数',
+    zzzodLaunchArgsDetail: '参数明细',
+    zzzodLaunchArgsDesc:
+      '一条龙启动游戏时使用的参数（与一条龙「游戏设置」的启动参数同源）；总开关关闭时启动游戏不带任何参数',
+    zzzodLaunchArgsSwitchHint: '启动参数总开关：关闭时一条龙启动游戏不带任何参数（含高级参数）',
+    zzzodScreenSize: '窗口尺寸',
+    zzzodFullScreen: '全屏',
+    zzzodFullScreenWindowed: '窗口化',
+    zzzodFullScreenFullscreen: '全屏',
+    zzzodPopupWindow: '无边框窗口',
+    zzzodMonitor: '显示器序号',
+    zzzodAdvanceArgs: '高级参数',
+    zzzodAdvanceArgsPlaceholder: '其他自定义参数（DX12 请用上方开关）',
+    zzzodDx12: 'DX12',
+    zzzodDx12Hint:
+      '以 DX12 模式启动游戏（-use-d3d12）；与分辨率等参数同级，注入时自动合并进一条龙高级参数，需启动参数总开关开启才生效',
     bettergiAddScriptToGroup: '添加脚本到分组',
     bettergiAddScriptToGroupOk: '添加',
     bettergiAddScriptUnsupported: '该类型暂不支持加入配置组',
@@ -2785,6 +2970,7 @@ export default {
     couldNotPickLaunch: '选择启动 exe 失败',
     qqDirectMessageOver: '通过 OneBot HTTP API 发送 QQ 私聊消息',
     qqDirectMessageOverImage: '通过 OneBot HTTP API 发送 QQ 私聊图片',
+    qqDirectMessageOverTextImage: '通过 OneBot HTTP API 发送 QQ 私聊消息，有截图时一并附上',
     notifyGetRequest: '通过GET请求发送通知',
     restartApp: '重启应用',
     couldNotReorder: '重新排序失败',
@@ -3237,7 +3423,7 @@ export default {
         SRC: '星穹铁道自动化与多账号代理',
         MaaEnd: 'MFW 专项适配脚本',
         M9A: '重返未来：1999 自动化脚本',
-        MaaFW: '托管 MaaFramework 项目',
+        MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',
         OkNte: '异环 OK-NTE 自动化脚本',
         HSR: '三月七 / SRA 双脚本适配',
@@ -3382,11 +3568,11 @@ export default {
     display: {
       section: '虚拟显示器',
       intro:
-        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 会一直盯着桌面：没有任何真实显示输出时自动挂一块虚拟显示器，真实显示器一回来就自动拆掉；任务正在跑时会等这轮任务结束再拆，不会把脚本脚下的屏抽掉。{driverLink}，MAS 不附带驱动。',
+        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 会一直盯着桌面：没有任何真实显示输出时自动挂一块虚拟显示器；真实显示器一回来，没有任务在跑就立即拆掉，有任务在跑则不拆——拆屏会把窗口挪到接回的显示器上，PC 端游戏任务会因此出错——改为在接回的显示器右下角弹窗询问，本轮任务结束后再自动拆除。{driverLink}，MAS 不附带驱动。',
       introDriverLink: '需先自行安装 Parsec 虚拟显示驱动',
       enable: '启用虚拟显示器',
       enableTip:
-        'MAS 运行期间持续监测：检测不到任何真实显示输出时自动挂上，真实显示器恢复后自动拆掉（任务正在跑时等这轮任务结束）；显示器正常工作时不会多挂一块。程序若被强制结束，下次启动时会清理掉遗留的那块。',
+        'MAS 运行期间持续监测：检测不到任何真实显示输出时自动挂上，真实显示器恢复后自动拆掉（任务正在跑时不拆，改为在接回的显示器上弹窗询问，任务结束后自动拆）；显示器正常工作时不会多挂一块。程序若被强制结束，下次启动时会清理掉遗留的那块。',
       mode: '刷新率',
       modeTip:
         '分辨率固定为 1920x1080——只有这一档 Windows 会按 100% 显示，游戏窗口不必经过 DPI 缩放；更高的分辨率会被自动放大，反而把问题带回来。虚拟屏只用来跑脚本，高刷没有意义。',
@@ -3396,6 +3582,23 @@ export default {
       checkTip:
         '依次检查驱动装没装、能不能调用、以及能否真的挂出一块屏。最后一步会短暂改变桌面显示器布局。',
       checkAction: '开始检测',
+      detach: '立即拆除',
+      detachTip:
+        '手动拆掉 MAS 此刻挂着的虚拟显示器，任务在不在跑都照拆——正在跑 PC 端游戏任务时拆屏会把游戏窗口挪走，这一轮任务可能因此出错。拆掉之后如果桌面上仍然没有任何真实显示输出，下一轮巡检会重新挂上；要彻底停用请关闭上面的开关。',
+      detachAction: '拆除虚拟显示器',
+      detachDone: '已拆除虚拟显示器',
+      detachNothing: '当前没有挂载虚拟显示器',
+      detachFailed: '拆除请求失败',
+      holdingNow: '当前挂载：{holding}',
+      holdingNone: '当前未挂载虚拟显示器',
+      prompt: {
+        title: '真实显示器已恢复',
+        body: '检测到显示器 {devices} 已接回，但当前有任务正在运行，MAS 暂未拆除虚拟显示器。现在拆除会把窗口挪到接回的显示器上、尺寸也可能改变，PC 端游戏任务会因此出错；选择保留的话，本轮任务结束后会自动拆除。',
+        keep: '保留，任务结束后自动拆除',
+        detach: '现在拆除',
+        detaching: '正在拆除…',
+        detachFailed: '拆除失败：{reason}',
+      },
       checkFailed: '检测请求失败',
       checkPassed: '检测通过',
       checkIssue: '检测未通过',

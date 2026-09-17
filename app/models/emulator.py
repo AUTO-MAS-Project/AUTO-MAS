@@ -20,6 +20,7 @@
 
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -202,3 +203,8 @@ class DeviceBase(ABC):
             )
         except Exception:  # noqa: BLE001 - 解析不出就当没有专用能力, 不该让调用方炸
             return None
+
+
+DeviceProvider = Callable[[str], Awaitable[DeviceBase]]
+"""按模拟器 ID 取设备实例。缺省实现是 ``app.core`` 的 EmulatorManager 单例；
+脚本域经构造参数注入可替换的实现, 测试与扩展用得上。"""

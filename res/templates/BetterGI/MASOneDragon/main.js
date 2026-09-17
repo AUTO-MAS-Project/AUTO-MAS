@@ -6,7 +6,7 @@
 //
 // ⚠️ 待实机复核（技术路径文档 #4/#5/#7）：
 //   - settings 注入方式（全局 `settings` 还是脚本参数）、脚本入口约定；
-//   - 地脉花 useAdventurerHandbook 语义反转（AutoPlan 记录需取反）；
+//   - ~~地脉花 useAdventurerHandbook 语义反转~~（2026-09-15 实机确认同名同义，已改直通）；
 //   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算（已落地，见 dispatchCombat 自动秘境分支）；
 //   - 字段名以目标版本 bettergi.d.ts 复核（本文件依据 bettergi-scripts-list 0.64 附近 d.ts）。
 
@@ -19,6 +19,25 @@ function baseStepName(name) {
   if (COMBAT_STEPS.includes(name) || DAILY_STEPS.includes(name)) return name;
   const idx = name.indexOf("-");
   return idx > 0 ? name.slice(0, idx) : name;
+}
+
+// 战斗步骤的必填设置项：缺失时不进 BGI，直接跳过该步并打 MAS_STEP_MISSING_CONFIG。
+// 两层目的：
+//   1) 不让「配置缺失」被降级成 BGI 内部的静默跳过（原生分支只 LogError 后 return），
+//      也避免落到 AutoBossParam 无参构造的 SetDefault 兜底上 —— 那会读 BGI 全局
+//      autoBossConfig.bossName，使右栏显示「未选择首领」时静默讨伐一个 BGI 旧配置里的首领；
+//   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_execution_layer）。
+// 键为归一化基名（baseStepName），值为 [settings 键, 用户可读缺失原因] 数组。
+const REQUIRED_STEP_FIELDS = {
+  自动首领讨伐: [["bossName", "未选择首领"]],
+};
+
+// 返回该步骤缺失的必填项（空数组表示齐全或该步无需校验）。
+function missingRequiredFields(step) {
+  const items = REQUIRED_STEP_FIELDS[baseStepName(step.name)];
+  if (!items) return [];
+  const s = step.settings || {};
+  return items.filter((item) => !s[item[0]]);
 }
 
 // 日志：优先 BGI 注入的 log（写入 BGI 日志文件，供 MAS 监控解析 MAS_STEP_* 标记），
@@ -149,7 +168,10 @@ async function dispatchCombat(step) {
         roundNum = 999;
       }
       const p = new AutoDomainParam(roundNum);
-      if (partyName) p.partyName = partyName;
+      // 队伍无条件赋值：空 = 不切换队伍（BGI AutoDomainTask.SwitchParty 对空串直接 return）。
+      // 不能用 `if (partyName)` 守卫跳过赋值——那会留下 Param 构造时 SetDefault() 从全局
+      // AutoDomainConfig.PartyName 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
+      p.partyName = partyName || "";
       if (domainName) p.domainName = domainName;
       if (reward != null) p.sundaySelectedValue = String(reward);
       if (s.autoArtifactSalvage != null) p.autoArtifactSalvage = !!s.autoArtifactSalvage;
@@ -209,21 +231,36 @@ async function dispatchCombat(step) {
       if (s.isResinExhaustionMode != null) p.isResinExhaustionMode = !!s.isResinExhaustionMode;
       if (s.openModeCountMin != null) p.openModeCountMin = !!s.openModeCountMin;
       // 前端「不使用冒险之证寻路」勾选=true 表示不通过冒险之证，与 BGI Param 的
-      // useAdventurerHandbook 语义相反，此处取反后透传（原 TODO(#4) 已据 UI 语义落地）。
-      if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !s.useAdventurerHandbook;
+      // useAdventurerHandbook **同名同义**（BGI 原生配置里 true 也是「不使用」），直接透传。
+      // ⚠️ 2026-09-15 实机修正：此处原先按「语义相反」取反，于是用户不勾选（= 要用冒险之证）
+      // 时反而给 BGI 传了 true，BGI 报「当前已勾选不使用冒险之证寻路」并导致地脉花失败；
+      // 同一份 Plan 走原生一条龙（one_dragon_plan 直通不取反）时却正常，两条路径行为不一致。
+      if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !!s.useAdventurerHandbook;
       // 「跳过准备流程」(LeyLineOneDragonMode) 因 BGI 未向 JS 暴露注入点，在 MAS 接管路径
       // 下无效，已从右栏移除；此处不再消费该键（如将来 BGI 提供注入点可在此补回）。
       // 地脉花无原生超时，不兜底（前端默认 0=不限制）；仅当显式 >0 时透传。
       if (s.timeout != null && s.timeout > 0) p.timeout = s.timeout;
       if (s.useFragileResin != null) p.useFragileResin = !!s.useFragileResin;
       if (s.useTransientResin != null) p.useTransientResin = !!s.useTransientResin;
-      // 好感队仅在战斗队伍填写后才透传（冻结态视为空）
-      if (team) p.team = team;
-      if (team && s.friendshipTeam) p.friendshipTeam = s.friendshipTeam;
-      // 地脉花 Param 在部分 BGI 版本无 setCombatStrategyPath（d.ts 未声明），做存在性守卫防 TypeError
+      // 队伍无条件赋值：空 = 不切换队伍（BGI AutoLeyLineOutcropTask 仅在 Team 非空时切队）。
+      // 不能用 `if (team)` 守卫跳过——那会留下 Param 构造时 SetDefault() 从全局
+      // AutoLeyLineOutcropConfig.Team 读来的旧值。
+      // 好感队必须随战斗队伍一起清空：BGI 校验「配置好感队时必须配置战斗队伍」，
+      // 且战斗队伍为空时保留好感队会沿用全局 FriendshipTeam（右栏清空却仍切好感队）。
+      p.team = team || "";
+      p.friendshipTeam = team ? s.friendshipTeam || "" : "";
+      // 地脉花策略：留空则完全不设置（BGI 回退全局，等价于「跟随顶部通用战斗策略」，
+      // 由 MAS 物化的全局叶子保证确定值，见 apply_global_battle_strategy）。
+      // 非空则必须真正落到 Param 上，否则右栏单独给地脉花选的策略不生效。
       if (strategy) {
+        // 部分 BGI 版本的 AutoLeyLineOutcropParam 无 setCombatStrategyPath（d.ts 未声明），
+        // 该情况改直接写 Param 上的 FightConfig.StrategyName：地脉花的战斗配置取
+        // _taskParam.FightConfig，其 StrategyName 非空时 BuildLeyLineAutoFightConfig
+        // 就不再回退全局 AutoFightConfig（源码已核实）。
         if (typeof p.setCombatStrategyPath === "function") {
           p.combatStrategyPath = p.setCombatStrategyPath(strategy);
+        } else if (p.fightConfig) {
+          setProp(p.fightConfig, "strategyName", strategy);
         } else {
           masLog("MAS_LEYLINE_STRATEGY_UNSUPPORTED: " + strategy);
         }
@@ -251,9 +288,13 @@ async function dispatchCombat(step) {
       if (s.condensedResinUseCount != null) setProp(p, "condensedResinUseCount", s.condensedResinUseCount);
       if (s.transientResinUseCount != null) setProp(p, "transientResinUseCount", s.transientResinUseCount);
       if (s.fragileResinUseCount != null) setProp(p, "fragileResinUseCount", s.fragileResinUseCount);
-      // 右栏幽境面板的战斗队伍/策略优先（fightTeamName/strategyName 来自 globalStygian），
-      // 留空时 Param 不设置，BGI 回退全局 config.json 段（顶部通用队伍/策略兜底）。
-      if (s.fightTeamName) setProp(p, "fightTeamName", s.fightTeamName);
+      // 右栏幽境面板的战斗队伍/策略优先（fightTeamName/strategyName 来自 globalStygian）。
+      // 策略留空时 Param 不设置，由 BGI 回退全局 config.json 段——「空 = 跟随顶部通用策略」
+      // 由 MAS 物化的全局叶子保证（见 one_dragon.apply_global_battle_strategy）。
+      // 队伍则无条件赋值：空 = 不切换队伍（BGI AutoStygianOnslaughtTask.SwitchTeam 对空串直接 return）。
+      // 跳过赋值会留下 Param 构造时 SetDefault() 从全局 autoStygianOnslaughtConfig.fightTeamName
+      // 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
+      setProp(p, "fightTeamName", s.fightTeamName || "");
       const stygianStrategy = s.strategyName || s.combatStrategyPath;
       // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
       // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
@@ -282,11 +323,14 @@ async function dispatchCombat(step) {
       // 正确通道：new AutoBossParam()（无参=SetDefault 读本体配置）+ 逐字段覆盖
       // + dispatcher.runAutoBossTask(param)。属性赋值统一走 setProp，兼容未暴露属性。
       const p = new AutoBossParam();
-      // bossName 必填（Validate 第一道校验）；Param 无参构造已读本体配置作兜底
-      if (s.bossName) setProp(p, "bossName", s.bossName);
+      // bossName 必填：缺失已由 REQUIRED_STEP_FIELDS 前置拦截（MAS_STEP_MISSING_CONFIG），
+      // 走不到这里。这里「无条件赋值」是刻意的——不要退回 `if (s.bossName)` 而依赖 Param
+      // 无参构造的 SetDefault 兜底：那会读 BGI 全局 autoBossConfig.bossName，使右栏显示
+      // 「未选择首领」时静默讨伐一个 BGI 旧配置里的首领。
+      setProp(p, "bossName", s.bossName);
       // 队伍配置表「战斗场景」选队结果优先级最高（压过步骤级 teamName）
       const bossTeam = s.masTeamOverride || s.teamName;
-      if (bossTeam) setProp(p, "teamName", bossTeam);
+      setProp(p, "teamName", bossTeam || "");
       if (s.specifyRunCount != null) setProp(p, "specifyRunCount", !!s.specifyRunCount);
       if (s.runCount != null) setProp(p, "runCount", s.runCount);
       if (s.useTransientResin != null) setProp(p, "useTransientResin", !!s.useTransientResin);
@@ -359,6 +403,20 @@ async function main() {
     }
     if (!shouldRunToday(step)) {
       masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
+      continue;
+    }
+    // 必填项缺失：跳过该步并打标记（MAS 侧据此判负并提示用户），不进 BGI。
+    // 放在 shouldRunToday 之后：今天本就不执行的步骤不必报缺失。
+    const missing = missingRequiredFields(step);
+    if (missing.length > 0) {
+      masLog(
+        "MAS_STEP_MISSING_CONFIG: " +
+          step.uid +
+          " " +
+          step.name +
+          " " +
+          missing.map((item) => item[1]).join("/")
+      );
       continue;
     }
     masLog("MAS_STEP_BEGIN: " + step.uid + " " + step.name);

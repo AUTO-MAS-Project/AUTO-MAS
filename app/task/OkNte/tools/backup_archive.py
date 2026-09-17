@@ -158,6 +158,24 @@ def collect_config_files(config_path: Path, mode: str) -> dict[str, Path] | None
 # ══════════════════ MAS 用户配置 ══════════════════
 
 
+def collect_mas_files(mas_dir: str | Path) -> dict[str, Path]:
+    """收集 MAS 用户配置：ConfigFile 整目录 + 快速配置面板目录（相对键 → 路径）。
+
+    快速配置面板与 ConfigFile 同级分离存放（``<user>/QuickConfig``），是 MAS
+    用户配置的一半，恢复时要一并写回，故按 ``QuickConfig/<name>`` 前缀并入
+    同一份归档。两者都为空时返回空 dict（无可归档内容）。
+    """
+
+    mas_dir = Path(mas_dir)
+    files = dir_files(mas_dir) if mas_dir.is_dir() else {}
+    quick_dir = mas_dir.with_name("QuickConfig")
+    if quick_dir.is_dir():
+        files.update(
+            {f"QuickConfig/{name}": path for name, path in dir_files(quick_dir).items()}
+        )
+    return files
+
+
 def archive_mas_backup(
     script_id: str,
     user_id: str,
@@ -166,17 +184,12 @@ def archive_mas_backup(
 ) -> Path | None:
     """归档 MAS 用户 ConfigFile 整份（指纹去重，无变化跳过）。
 
-    目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 强制
-    归档（恢复前存底——让「恢复前的配置」在列表里有明确的时间戳条目）。
+    目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
+    存底（不清理历史条目；内容与最新份一致时同样跳过——当前配置已存放在
+    该份备份中，误恢复可从它找回）。
     """
 
-    mas_dir = Path(mas_dir)
-    quick_dir = mas_dir.with_name("QuickConfig")
-    files = dir_files(mas_dir) if mas_dir.is_dir() else {}
-    if quick_dir.is_dir():
-        files.update(
-            {f"QuickConfig/{name}": path for name, path in dir_files(quick_dir).items()}
-        )
+    files = collect_mas_files(mas_dir)
     if not files:
         return None
     dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)

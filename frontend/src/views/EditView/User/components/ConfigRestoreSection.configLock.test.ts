@@ -14,17 +14,50 @@ describe('ConfigRestoreSection runtime lock', () => {
   })
 
   it('rechecks the lock after the restore confirmation is opened', () => {
-    expect(source).toContain('const doRestore = async (item: BackupItem) => {')
+    expect(source).toContain('const runRestore = async (item: BackupItem) => {')
     expect(source).toContain('if (props.disabled) {\n    throw new Error')
   })
 
   it('passes the runtime lock from every restore-capable edit page', () => {
-    const pages = ['OkNteUserEdit.vue', 'ZzzOdUserEdit.vue']
+    const pages = [
+      'BAAHUserEdit.vue',
+      'BetterGIUserEdit.vue',
+      'GeneralUserEdit.vue',
+      'HSRUserEdit.vue',
+      'M9AUserEdit.vue',
+      'MAAUserEdit.vue',
+      'MaaEndUserEdit.vue',
+      'MaaFWUserEdit.vue',
+      'OkNteUserEdit.vue',
+      'OkwwUserEdit.vue',
+      'SRCUserEdit.vue',
+      'ZzzOdUserEdit.vue',
+    ]
     for (const filename of pages) {
       const pageUrl = `../${filename}`
       const pageSource = readFileSync(new URL(pageUrl, import.meta.url), 'utf8')
       expect(pageSource).toContain(':disabled="configLocked"')
+    }
+  })
+
+  it('guards detail restore entry points and confirmations while locked', () => {
+    const pages = [
+      'BetterGIUserEdit.vue',
+      'GeneralUserEdit.vue',
+      'MAAUserEdit.vue',
+      'MaaEndUserEdit.vue',
+      'OkNteUserEdit.vue',
+      'OkwwUserEdit.vue',
+      'SRCUserEdit.vue',
+      'ZzzOdUserEdit.vue',
+    ]
+    for (const filename of pages) {
+      const pageUrl = `../${filename}`
+      const pageSource = readFileSync(new URL(pageUrl, import.meta.url), 'utf8')
       expect(pageSource).toContain('if (configLocked.value) return')
+      expect(pageSource).toContain(
+        "if (configLocked.value) {\n          message.error(t('edit.configLocked'))"
+      )
     }
   })
 })

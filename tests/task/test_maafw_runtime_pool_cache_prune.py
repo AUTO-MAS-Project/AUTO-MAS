@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
-
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import cache as cache_module
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.cache import prune_uv_cache
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (

@@ -33,6 +33,12 @@
         <div class="form-section">
           <div class="section-header">
             <h3>{{ t('edit.basicInfo') }}</h3>
+            <div class="section-header-actions">
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </div>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
@@ -218,22 +224,73 @@
       </a-form>
     </a-card>
   </ConfigLockPanel>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、BAAH 原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :disabled="configLocked"
+      :script-name="BAAH_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.baahConfigRestoreUserDesc')"
+      :script-desc="t('edit.baahConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+    >
+      <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewSections(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="s in previewSections(raw)" :key="s.name">
+            <h4 class="baah-preview-title">{{ s.label }}</h4>
+            <a-descriptions
+              v-if="s.rows && s.rows.length"
+              :column="1"
+              size="small"
+              bordered
+              class="baah-preview-box"
+            >
+              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+            <div
+              v-for="g in s.groups ?? []"
+              :key="`${s.name}-${g.name}`"
+              class="baah-preview-group"
+            >
+              <div class="baah-preview-group-name">{{ g.name }}</div>
+              <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
+                <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </div>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
+  </div>
 </template>
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
+import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 
 const { t } = useI18n()
 
@@ -326,12 +383,16 @@ watch(
 )
 
 // 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：BAAH 运行始终按用户独立配置注入（任务模块不消费 Info.Mode），
+// 选了也不生效——禁用并悬停说明原因
 const baahConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
@@ -339,6 +400,8 @@ const baahConfigModeOptions: Array<{
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.user'),
@@ -496,14 +559,102 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-onMounted(() => {
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：BAAH 统一叫「baah」
+const BAAH_DISPLAY_NAME = 'baah'
+const restoreOpen = ref(false)
+
+// 目标池顺序 = segmented 展示顺序：MAS 用户字段（在前）、BAAH 原生配置（在后）
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+// 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+const openRestoreModal = () => {
+  restoreOpen.value = true
+}
+
+// 预览响应原文（unknown）收敛为分区视图：泛用组件的 raw 插槽不带专项类型
+interface BAAHPreviewRow {
+  key: string
+  value: string
+}
+interface BAAHPreviewSection {
+  name: string
+  label: string
+  rows?: BAAHPreviewRow[]
+  groups?: Array<{ name: string; rows: BAAHPreviewRow[] }>
+}
+const previewSections = (raw: unknown): BAAHPreviewSection[] =>
+  (raw as { sections?: BAAHPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填字段（当前仅 ConfigName），native 恢复写
+// BAAH 配置文件——ConfigName 未变无需刷新表单
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    isInitializing.value = true
+    try {
+      await loadUserData()
+    } finally {
+      // 加载失败也要复位：否则按钮永久转圈
+      isInitializing.value = false
+    }
+  }
+}
+
+// 编辑界面归档（进入/退出时机，指纹去重）：进入归档 BAAH 原生配置当前状态
+// （用户可能刚在 BAAH jsoneditor 里改过），退出归档 MAS 编辑页字段终态；
+// 运行前归档挂在 AutoProxy.prepare（托管写入前）
+const ensureBAAHBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
+onMounted(async () => {
   if (!scriptId) {
     message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
 
-  loadScriptInfo()
+  // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
+  // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
+  await loadScriptInfo()
+  await nextTick()
+  void ensureBAAHBackup('native')
+})
+
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 编辑页字段终态（BAAH 无遮罩会话，无需停会话）
+  void ensureBAAHBackup('mas')
 })
 </script>
 
@@ -559,6 +710,42 @@ onMounted(() => {
   margin-bottom: 6px;
   padding-bottom: 8px;
   border-bottom: 2px solid var(--ant-color-border-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ══ 配置恢复预览（分区标题 + 表格 + 详情分组）══ */
+.baah-preview-title {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.baah-preview-title:first-of-type {
+  margin-top: 0;
+}
+
+.baah-preview-group {
+  margin-top: 12px;
+}
+
+.baah-preview-group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.baah-preview-box {
+  width: 100%;
 }
 
 .section-header h3 {

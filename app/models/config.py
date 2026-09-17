@@ -1075,6 +1075,14 @@ class MaaUserConfig(ConfigBase):
         self.Task_CultivateSkipDuringResourceCollection = ConfigItem(
             "Task", "CultivateSkipDuringResourceCollection", False, BoolValidator()
         )
+        ## 森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）
+        self.Task_CultivateSklandAccount = ConfigItem(
+            "Task", "CultivateSklandAccount", "", StringValidator()
+        )
+        ## 森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）
+        self.Task_CultivateSklandUid = ConfigItem(
+            "Task", "CultivateSklandUid", "", StringValidator()
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -1611,17 +1619,30 @@ class MaaEndConfig(ConfigBase):
         )
         ## 模拟器索引
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
+        ## 是否在启动游戏时执行 MaaEnd 分辨率设置预任务
+        self.Game_SetResolution = ConfigItem(
+            "Game", "SetResolution", False, BoolValidator()
+        )
         ## 结束后是否关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
-        ## 关闭游戏时恢复分辨率；关闭时完全沿用原生设置
+        ## 关闭游戏时恢复分辨率或显示模式；关闭时完全沿用原生设置
         self.Game_RestoreResolution = ConfigItem(
             "Game",
             "RestoreResolution",
             "Off",
-            OptionsValidator(["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]),
+            OptionsValidator(
+                [
+                    "Off",
+                    "1920x1080",
+                    "2560x1440",
+                    "3840x2160",
+                    "Fullscreen",
+                    "Custom",
+                ]
+            ),
         )
         ## 自定义恢复分辨率宽度
         self.Game_RestoreResolutionWidth = ConfigItem(
@@ -2838,13 +2859,24 @@ class MaaFWConfig(ConfigBase):
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
-            "AttachOnly",
-            # 只保留两种：我自己启动游戏（AttachOnly）/ 让 MAS 启动并按设置关闭
-            # （DirectExe）。LauncherExe 与 URL 已下线，旧配置由校验器纠正回默认值。
-            OptionsValidator(["AttachOnly", "DirectExe"]),
+            "DirectExe",
+            # 只保留两种：让 MAS 启动游戏（DirectExe，默认；由 MAS 启动的游戏结束后
+            # 一律由 MAS 关闭）/ 使用其他方式启停游戏（AttachOnly，MAS 只接管已运行
+            # 的窗口，不启动也不关闭）。LauncherExe 与 URL 已下线，旧配置由校验器
+            # 纠正回 options[0]——它们本来就是「MAS 启动」的变体，落到 DirectExe 最贴近。
+            OptionsValidator(["DirectExe", "AttachOnly"]),
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选
+        ## 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。
+        ## 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。
+        self.Game_UnityResolution = ConfigItem(
+            "Game",
+            "UnityResolution",
+            "Off",
+            OptionsValidator(["Off", "1920x1080", "1280x720"]),
+        )
         ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
         ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
         ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
@@ -2853,10 +2885,8 @@ class MaaFWConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        ## 任务结束后是否关闭由 MAS 启动的游戏
-        self.Game_CloseOnFinish = ConfigItem(
-            "Game", "CloseOnFinish", True, BoolValidator()
-        )
+        # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
+        # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
 
         ## Update ----------------------------------------------------------
         ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。
@@ -2970,9 +3000,11 @@ class MaaFWConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
         )
-        ## 单次运行时间限制（分钟）
+        ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
+        ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
+        ## 几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
         ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
         self.Run_DailyOnceTasks = ConfigItem(
@@ -3730,6 +3762,11 @@ class BetterGIUserConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否统计掉落（BGI「奖励识别」）：默认开启；开启后运行前强制打开奖励识别，
+        ## 并把日志里的逐轮识别结果汇总进统计通知
+        self.Notify_IfSendDropStatistics = ConfigItem(
+            "Notify", "IfSendDropStatistics", True, BoolValidator()
+        )
         ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -4192,6 +4229,37 @@ class ZzzOdUserConfig(ConfigBase):
         )
         ## 自定义窗口标题
         self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
+
+        ## 一条龙游戏启动参数（game.yml 六字段，照抄上游 BasicGameConfig
+        ## 默认值与取值；一条龙启动游戏时消费，总开关关闭则全部不生效）：
+        ## 启动参数总开关
+        self.Game_LaunchArgument = ConfigItem(
+            "Game", "LaunchArgument", False, BoolValidator()
+        )
+        ## 窗口尺寸（上游枚举原值）
+        self.Game_ScreenSize = ConfigItem(
+            "Game",
+            "ScreenSize",
+            "1920x1080",
+            OptionsValidator(["1920x1080", "2560x1440", "3840x2160"]),
+        )
+        ## 全屏模式（上游枚举原值为字符串：'0'=窗口化 '1'=全屏）
+        self.Game_FullScreen = ConfigItem(
+            "Game", "FullScreen", "0", OptionsValidator(["0", "1"])
+        )
+        ## 无边框窗口（一条龙拼参时转 -popupwindow）
+        self.Game_PopupWindow = ConfigItem("Game", "PopupWindow", False, BoolValidator())
+        ## DX12 启动（MAS 便捷开关：注入时把 -use-d3d12 合并进一条龙的
+        ## launch_argument_advance；上游无独立字段，勾选框是唯一权威）
+        self.Game_Dx12 = ConfigItem("Game", "Dx12", False, BoolValidator())
+        ## 显示器序号（上游枚举原值为字符串）
+        self.Game_Monitor = ConfigItem(
+            "Game", "Monitor", "1", OptionsValidator(["1", "2", "3", "4"])
+        )
+        ## 高级参数（原样透传给一条龙拼接，上游不解析，不做 shlex 校验）
+        self.Game_LaunchArgumentAdvance = ConfigItem(
+            "Game", "LaunchArgumentAdvance", "", StringValidator()
+        )
 
         ## OneDragon -------------------------------------------------------
         ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
@@ -4821,23 +4889,8 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig(
             [item["config_class"] for item in PLAN_BOOK.values()]
         )
-        ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig(
-            [
-                MaaConfig,
-                MaaEndConfig,
-                SrcConfig,
-                M9AConfig,
-                MaaFWConfig,
-                GeneralConfig,
-                OkwwConfig,
-                OkNteConfig,
-                HSRConfig,
-                BetterGIConfig,
-                ZzzOdConfig,
-                BAAHConfig,
-            ]
-        )
+        ## 脚本配置列表（顺序与 CLASS_BOOK 一致）
+        self.ScriptConfig = MultipleConfig(list(CLASS_BOOK.values()))
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
@@ -5069,8 +5122,8 @@ class BAAHConfig(ConfigBase):
 
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
+    "SRC": SrcConfig,
     "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
@@ -5081,7 +5134,7 @@ CLASS_BOOK = {
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
 }
-"""配置类映射表"""
+"""配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
 PLAN_BOOK = {
     "MaaPlanConfig": {

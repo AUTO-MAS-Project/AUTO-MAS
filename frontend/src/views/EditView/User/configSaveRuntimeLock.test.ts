@@ -27,7 +27,7 @@ describe('user config runtime save lock', () => {
     for (const filename of ['OkNteUserEdit.vue', 'ZzzOdUserEdit.vue']) {
       const source = readSource(`./${filename}`)
       expect(source).toContain(
-        "onOk: async () => {\n      if (configLocked.value) {\n        message.error(t('edit.configLocked'))"
+        "onOk: async () => {\n        if (configLocked.value) {\n          message.error(t('edit.configLocked'))"
       )
     }
 

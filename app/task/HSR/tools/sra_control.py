@@ -307,7 +307,6 @@ class HSRSRAControl:
                 True,
                 result,
                 "SRA",
-                dedicated_run=True,
             )
 
         return HSRRunItem(

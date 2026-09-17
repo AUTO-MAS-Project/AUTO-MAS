@@ -29,6 +29,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import M9AConfig, M9AUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
@@ -50,6 +51,7 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .task_loader import M9ATaskLoader
 from .tools import push_notification, push_version_update
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("M9A 调度器")
 
@@ -59,7 +61,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {"AutoProxy": AutoProxyTask}
 class M9AManager(TaskExecuteBase):
     """M9A 调度器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -72,6 +79,7 @@ class M9AManager(TaskExecuteBase):
         self.auto_update_fix_enabled = False
         self._virtual_user_old_version = None
         self._virtual_user_new_version = None
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验 M9A 配置是否可用"""
@@ -192,7 +200,8 @@ class M9AManager(TaskExecuteBase):
         )
 
         # 初始化模拟器管理器
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
@@ -209,6 +218,14 @@ class M9AManager(TaskExecuteBase):
                 original_exists=True,
                 baseline=dir_fingerprint(self.temp_path),
             )
+
+            # 任务级一次性归档 M9A 原生配置（项目级池，指纹去重，失败不阻断
+            # 任务）：此刻 config/ 仍是任务动手前的完整现场（replace_dir 是
+            # 复制不动源目录），必须在随后的实例注入前归档
+            try:
+                archive_native_backup(self.m9a_config_path)
+            except Exception:
+                logger.opt(exception=True).warning("M9A 运行前原生配置归档失败，已跳过（不阻断任务）")
 
         # 构建用户列表
         self.script_info.user_list = [
