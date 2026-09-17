@@ -154,11 +154,15 @@ class AutoProxyTask(TaskExecuteBase):
             and not (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists()
+            ).is_dir()
         ):
-            self.cur_user_item.status = "异常"
-            return (
-                "未找到用户的通用脚本配置文件，请先在用户配置页完成 「通用配置」 步骤"
+            # MAS 侧还没为该用户存过配置（新建用户后直接跑自动代理）：不判异常、
+            # 不阻断任务，只提示。下发环节会跳过、让脚本用它自己已有的配置，与
+            # ScriptConfig.set_general 同口径 —— 这里一旦 return，跳过逻辑就永远
+            # 走不到，用户看到的仍是「未找到配置文件」的死结。
+            logger.warning(
+                "MAS 中尚未保存该用户的通用脚本配置，本次将使用脚本自身已有配置；"
+                "如需由 MAS 下发配置，请先在用户配置页完成 「通用配置」 步骤"
             )
         return "Pass"
 
@@ -571,37 +575,44 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
-        # 源是用户填的脚本配置位置，可能不存在（路径填错、脚本还没生成过配置）。
-        # 跳过并说明即可，不能先清掉 MAS 侧副本再抛 FileNotFoundError。
-        if not self.script_config_path.exists():
-            logger.warning(
-                f"跳过配置回写: 脚本配置路径不存在 {self.script_config_path}"
-            )
-            return
+        config_path_mode = self.script_config.get("Script", "ConfigPathMode")
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+        )
 
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        # 源是用户填的脚本配置位置，可能不存在或类型与模式不符（路径填错、脚本
+        # 还没生成过配置）。按模式校验类型、不匹配就跳过：既要挡住 rmtree /
+        # copytree / copy 抛异常，也必须先判后动 —— 清空 MAS 侧副本在判断之后，
+        # 否则会先把唯一一份副本删掉再发现源不可用。
+        if config_path_mode == "Folder":
+            if not self.script_config_path.is_dir():
+                logger.warning(
+                    f"跳过配置回写: {self.script_config_path} 不是目录, "
+                    "无法按 「目录」 模式复制"
+                )
+                return
             shutil.rmtree(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                mas_config_dir,
                 ignore_errors=True,
             )
             shutil.copytree(
                 self.script_config_path,
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                mas_config_dir,
                 dirs_exist_ok=True,
             )
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif config_path_mode == "File":
+            if not self.script_config_path.is_file():
+                logger.warning(
+                    f"跳过配置回写: {self.script_config_path} 不是文件, "
+                    "无法按 「文件」 模式复制"
+                )
+                return
             # Folder 分支靠 copytree 自建目标目录，File 分支的 copy 不会，补上
-            (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).mkdir(parents=True, exist_ok=True)
+            mas_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(
                 self.script_config_path,
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name,
+                mas_config_dir / self.script_config_path.name,
             )
         logger.success("通用脚本配置文件已更新")
 
@@ -652,19 +663,31 @@ class AutoProxyTask(TaskExecuteBase):
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
         )
 
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+        )
+        config_path_mode = self.script_config.get("Script", "ConfigPathMode")
+
         # 导入配置文件。MAS 侧还没为这个用户存过配置时（新建用户后直接跑自动代理）
         # 跳过下发、让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径，
-        # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists():
+        # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。源与目标都按
+        # ConfigPathMode 校验类型：源不存在或类型不符即跳过，不阻断任务。
+        if config_path_mode == "Folder":
+            if not mas_config_dir.is_dir():
                 logger.warning("MAS 中尚无该用户的配置, 跳过配置下发")
                 return
+            if (
+                self.script_config_path.exists()
+                and not self.script_config_path.is_dir()
+            ):
+                logger.warning(
+                    f"跳过配置下发: {self.script_config_path} 不是目录, "
+                    "无法按 「目录」 模式换入"
+                )
+                return
             swap_in_dir(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                mas_config_dir,
                 self.script_config_path,
             )
             mark_native_config_injected(
@@ -672,18 +695,19 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            if not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name
-            ).exists():
+        elif config_path_mode == "File":
+            mas_config_file = mas_config_dir / self.script_config_path.name
+            if not mas_config_file.is_file():
                 logger.warning("MAS 中尚无该用户的配置文件, 跳过配置下发")
                 return
+            if self.script_config_path.is_dir():
+                logger.warning(
+                    f"跳过配置下发: {self.script_config_path} 是目录, "
+                    "无法按 「文件」 模式复制"
+                )
+                return
             shutil.copy(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name,
+                mas_config_file,
                 self.script_config_path,
             )
 
