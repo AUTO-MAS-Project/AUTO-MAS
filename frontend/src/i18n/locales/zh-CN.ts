@@ -266,6 +266,7 @@ export default {
     highlightColorsPreview: '高亮颜色与预览设置区域',
   },
   edit: {
+    configLocked: '任务运行中，配置已锁定；任务结束后可编辑',
     close: '关闭',
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
@@ -1466,6 +1467,9 @@ export default {
     envReadyAgents: '已就绪的 Agent',
     envRetry: '重试',
     mfwUnityResolutionOff: '不修改',
+    mfwStartupSettleSeconds: '启动后再等（秒）',
+    mfwStartupSettleTip:
+      '只在由 MAS 启动游戏时生效：窗口出现后至少再等这么多秒才下发第一个任务，MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等，0 关闭。',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',

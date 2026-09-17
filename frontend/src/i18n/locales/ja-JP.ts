@@ -270,6 +270,7 @@ export default {
     highlightColorsPreview: 'ハイライト色とプレビュー',
   },
   edit: {
+    configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
@@ -1424,6 +1425,9 @@ export default {
     envReadyAgents: '準備済みの Agent',
     envRetry: '再試行',
     mfwUnityResolutionOff: '変更しない',
+    mfwStartupSettleSeconds: '起動後の待機（秒）',
+    mfwStartupSettleTip:
+      'MAS がゲームを起動した場合のみ：ウィンドウ表示後、最初のタスクを投入するまで少なくともこの秒数待ちます。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は待ちません。0 で無効。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',

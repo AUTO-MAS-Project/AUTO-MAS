@@ -8,7 +8,7 @@
       config-label="配置 OK-NTE"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"
-      :config-disabled="pageLoading || !activeUserId"
+      :config-disabled="pageLoading || !activeUserId || configLocked"
       @config="handleOkNteConfig"
       @cancel="handleCancel"
     />
@@ -50,7 +50,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -323,11 +323,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-nte 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="OKNTE_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -357,6 +358,8 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -400,6 +403,7 @@ const {
 const scriptId = route.params.scriptId as string
 let userId = (route.params.userId as string) || ''
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const activeUserId = ref(userId)
 const scriptName = ref('OK-NTE脚本')
 
@@ -542,6 +546,8 @@ const refreshOkNteConfigEditor = () => {
 }
 
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId)
   if (!resp?.userId) {
     throw new Error(resp?.message || '创建用户失败')
@@ -618,6 +624,7 @@ const handleTaskIndexChange = async (value: number) => {
 }
 
 const handleOkNteConfig = async () => {
+  if (configLocked.value) return
   if (!userId) {
     message.error(t('edit.createUserBeforeConfiguring'))
     return
@@ -645,7 +652,7 @@ const loadUser = async () => {
   pageLoading.value = true
   try {
     if (!userId) {
-      await createUserImmediately()
+      if (!(await createUserImmediately())) return
     }
     const resp = await getUsers(scriptId, userId)
     const userIndex = resp?.index?.find(i => i.uid === userId)
@@ -737,8 +744,9 @@ const handleRestored = (target: string) => {
 // mas 备份：恢复到 MAS 目录后启动查看会话（下发为查看的必经复制，GUI 所见
 // 即备份）；原生备份：恢复到 ok-nte 本体后启动脚本级查看会话（跳过下发，
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) =>
-  new Promise<boolean>(resolve => {
+const handleRestoreView = (target: string, item: { time: string }) => {
+  if (configLocked.value) return Promise.resolve(false)
+  return new Promise<boolean>(resolve => {
     Modal.confirm({
       title: t('edit.configRestoreDetailView'),
       content: h(
@@ -750,6 +758,11 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       okType: 'danger',
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -777,6 +790,7 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 的 set_oknte）配合——进入归档原生配置当前状态
