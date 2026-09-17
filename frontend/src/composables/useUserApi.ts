@@ -154,6 +154,13 @@ export function useUserApi() {
 
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 
@@ -190,6 +197,13 @@ export function useUserApi() {
 
   // 重新排序用户
   const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     // loading.value = true
     error.value = null
 

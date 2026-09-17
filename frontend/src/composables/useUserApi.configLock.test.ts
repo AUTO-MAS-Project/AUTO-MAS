@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   states: vi.fn(),
   addUser: vi.fn(),
   updateUser: vi.fn(),
+  deleteUser: vi.fn(),
+  reorderUser: vi.fn(),
   warning: vi.fn(),
 }))
 
@@ -11,6 +13,8 @@ vi.mock('@/api', () => ({
   Service: {
     addUserApiScriptsUserAddPost: mocks.addUser,
     updateUserApiScriptsUserUpdatePost: mocks.updateUser,
+    deleteUserApiScriptsUserDeletePost: mocks.deleteUser,
+    reorderUserApiScriptsUserOrderPost: mocks.reorderUser,
   },
 }))
 
@@ -85,5 +89,30 @@ describe('useUserApi runtime config lock', () => {
     expect(error.value).toBe('edit.configLocked')
     expect(mocks.warning).toHaveBeenCalledWith('edit.configLocked')
     expect(mocks.updateUser).not.toHaveBeenCalled()
+  })
+
+  it('rejects user deletion without sending a request while the script is running', async () => {
+    const { useUserApi } = await import('./useUserApi')
+    const { error, loading, deleteUser } = useUserApi()
+
+    const result = await deleteUser('script-1', 'user-1')
+
+    expect(result).toBe(false)
+    expect(loading.value).toBe(false)
+    expect(error.value).toBe('edit.configLocked')
+    expect(mocks.warning).toHaveBeenCalledWith('edit.configLocked')
+    expect(mocks.deleteUser).not.toHaveBeenCalled()
+  })
+
+  it('rejects user reordering without sending a request while the script is running', async () => {
+    const { useUserApi } = await import('./useUserApi')
+    const { error, reorderUser } = useUserApi()
+
+    const result = await reorderUser('script-1', ['user-1', 'user-2'])
+
+    expect(result).toBe(false)
+    expect(error.value).toBe('edit.configLocked')
+    expect(mocks.warning).toHaveBeenCalledWith('edit.configLocked')
+    expect(mocks.reorderUser).not.toHaveBeenCalled()
   })
 })
