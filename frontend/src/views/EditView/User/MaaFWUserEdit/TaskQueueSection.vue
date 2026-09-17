@@ -514,21 +514,26 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   border-radius: 8px;
 }
 
+/* 左右两栏等高、高度固定：队列再长也不把页面撑长，各自在框里滚 */
 .task-editor-layout {
-  min-height: 420px;
+  height: 640px;
 }
 
 .task-list-column,
 .task-option-column {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
+/* 两栏标题行同高：左边有 32px 的级联选择器，右边只有文字，不定高的话两个框的顶边差 7px */
 .column-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 32px;
   margin-bottom: 16px;
   color: var(--ant-color-text);
   font-size: 16px;
@@ -541,9 +546,11 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 
 .task-list {
   flex: 1;
+  min-height: 0;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--ant-color-bg-container);
 }
 
@@ -751,7 +758,9 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 }
 
 .task-option-panel {
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
@@ -795,9 +804,10 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 
 .task-option-empty {
   display: flex;
+  flex: 1;
+  min-height: 0;
   align-items: center;
   justify-content: center;
-  min-height: 320px;
   border: 1px dashed var(--ant-color-border);
   border-radius: 8px;
 }
@@ -817,8 +827,15 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
     gap: 12px;
   }
 
+  /* 折成上下两块后整行不再定高，改成每一栏各自定高 */
   .task-editor-layout {
+    height: auto;
     row-gap: 16px;
+  }
+
+  .task-list-column,
+  .task-option-column {
+    height: 420px;
   }
 
   .add-task-cascader {
