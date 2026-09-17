@@ -179,8 +179,22 @@ USER_VISIBLE_PREFIXES = ("app/", "frontend/src/", "frontend/electron/", "main.py
 # 普通 PR 完全不许碰的文件：它们只由发版 PR 更新
 PROTECTED_FILES = ("CHANGELOG.md", "res/version.json")
 
-# 提交标题带这些前缀的直推提交，发版时不当作「漏了碎片」点名
-NON_USER_FACING_PREFIXES = ("chore", "docs", "doc", "ci", "test", "style", "build")
+# 提交标题带这些前缀的直推提交，发版时不当作「漏了碎片」点名。refactor 也在内：按约定
+# 用户不可见的重构不需要碎片，真改了行为的重构应该写成 fix / change
+NON_USER_FACING_PREFIXES = (
+    "chore",
+    "docs",
+    "doc",
+    "ci",
+    "test",
+    "style",
+    "build",
+    "refactor",
+)
+
+# 这些分类只给贡献者看：留在 CHANGELOG.md 与发版 PR 里，不进 Release 正文、首行 JSON
+# 和 res/version.json（用户在更新提示与「当前版本更新日志」里看到的都是后三者）
+CONTRIBUTOR_ONLY_CATEGORIES = ("开发流程",)
 
 VERSION_PATTERN = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$")
 PRE_RELEASE_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
@@ -857,10 +871,22 @@ def client_entry(entry: str) -> str:
     return split_entry(entry).render(with_prs=False)
 
 
+def public_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目原样（带 PR 号）。"""
+
+    return {
+        category: list(items)
+        for category, items in order_categories(categories).items()
+        if category not in CONTRIBUTOR_ONLY_CATEGORIES
+    }
+
+
 def client_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """给客户端更新提示的分类：在 public_categories 之上再去掉条目里的 PR 号。"""
+
     return {
         category: [client_entry(item) for item in items]
-        for category, items in order_categories(categories).items()
+        for category, items in public_categories(categories).items()
     }
 
 
@@ -1464,7 +1490,14 @@ def render_pr_body(
     categories: Dict[str, List[str]],
     unconfirmed: Sequence[Tuple[str, str]],
     plan: Optional[NotePlan] = None,
+    run_url: Optional[str] = None,
 ) -> str:
+    """发版 PR 正文。
+
+    没带碎片的提交清单不写在这里——那是给运行工作流的维护者核对用的，放在工作流的
+    运行摘要里（`render_run_summary`），正文只留一条带数量与链接的待办。
+    """
+
     lines = [f"## Release {version}", ""]
     lines.append(
         "由「准备发版」工作流生成。这是唯一允许修改 `CHANGELOG.md` 与版本号的 PR，"
@@ -1475,7 +1508,7 @@ def render_pr_body(
     lines.append("")
     if plan is not None and plan.over_budget:
         lines.append(
-            f"- [ ] **首行 JSON {len(plan.line)} 字符，超过预算 {plan.budget}**，"
+            f"- [ ] **首行 JSON {plan.size} 字符，超过预算 {plan.budget}**，"
             "合并前必须精简或合并条目，否则所有客户端的更新检查都会失败（检查会红）"
         )
     lines.append(
@@ -1487,7 +1520,11 @@ def render_pr_body(
             "- [ ] 同一件事写了简写和详写两遍的，保留详写；同专项多条可合成一句"
         )
     if unconfirmed:
-        lines.append("- [ ] 下面「待确认」的提交若用户可见，直接在新版本段里补一条")
+        where = f"[运行摘要]({run_url})" if run_url else "「准备发版」的运行摘要"
+        lines.append(
+            f"- [ ] 有 {len(unconfirmed)} 个提交改了用户可见代码但没带碎片"
+            f"（清单见{where}），若用户可见就在新版本段里补一条"
+        )
     lines.append("- [ ] 改完运行 `python scripts/changelog.py sync` 并提交")
     lines.append("")
     if plan is not None:
@@ -1503,11 +1540,32 @@ def render_pr_body(
         lines.append(f"自 `{previous}` 以来的改动：")
         lines.append("")
     lines.extend(render_section(categories, decorate=True))
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def render_run_summary(
+    version: str,
+    previous: Optional[str],
+    fragment_count: int,
+    plan: NotePlan,
+    unconfirmed: Sequence[Tuple[str, str]],
+) -> str:
+    """写进 GITHUB_STEP_SUMMARY 的运行摘要：体积，以及没带碎片的提交清单。"""
+
+    lines = [f"## 准备发版 {version}", ""]
+    lines.append(f"- 基于 {previous or '无 tag'}，编译 {fragment_count} 个碎片")
+    lines.append(f"- {describe_note_plan(plan)}")
+    lines.append("")
     if unconfirmed:
-        lines.append("### 待确认：改了用户可见代码但没有碎片的提交")
+        lines.append("### 改了用户可见代码但没带碎片的提交")
+        lines.append("")
+        lines.append("若用户可见，请在发版 PR 的新版本段里补一条：")
         lines.append("")
         for sha, subject in unconfirmed:
             lines.append(f"- `{sha}` {subject}")
+        lines.append("")
+    else:
+        lines.append("上个 tag 以来改了用户可见代码的提交都带了碎片。")
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
@@ -1567,10 +1625,21 @@ def command_release(arguments: argparse.Namespace) -> int:
     changed = sync_generated()
 
     body = render_pr_body(
-        target, latest, arguments.kind, new_sections[target], unconfirmed, plan
+        target,
+        latest,
+        arguments.kind,
+        new_sections[target],
+        unconfirmed,
+        plan,
+        arguments.run_url,
     )
     if arguments.body_file:
         write_text(Path(arguments.body_file), body)
+    if arguments.step_summary:
+        with open(arguments.step_summary, "a", encoding="utf-8") as summary_file:
+            summary_file.write(
+                render_run_summary(target, latest, len(fragments), plan, unconfirmed)
+            )
     if arguments.summary_file:
         summary = {
             "version": target,
@@ -1671,8 +1740,18 @@ class NotePlan:
         self.budget = budget
 
     @property
+    def size(self) -> int:
+        return note_length(self.line)
+
+    @property
     def over_budget(self) -> bool:
-        return len(self.line) > self.budget
+        return self.size > self.budget
+
+
+def note_length(text: str) -> int:
+    """按 UTF-16 码元数计长度：比码点数只多不少，Mirror 酱不管按哪种算都不会比这更长。"""
+
+    return len(text.encode("utf-16-le")) // 2
 
 
 def plan_note_json(
@@ -1690,7 +1769,12 @@ def plan_note_json(
 
     if version not in sections:
         raise ChangelogError(f"CHANGELOG.md 里没有版本 {version}")
-    selected = select_note_versions(sections, version)
+    # 只有贡献者可见分类的老段去掉后是空的，不占首行；本版段就算空也留着
+    selected = [
+        v
+        for v in select_note_versions(sections, version)
+        if v == version or client_categories(sections[v])
+    ]
     kept = list(selected)
     while True:
         payload = {v: client_categories(sections[v]) for v in kept}
@@ -1699,7 +1783,7 @@ def plan_note_json(
             + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             + "-->"
         )
-        if len(line) <= budget or len(kept) == 1:
+        if note_length(line) <= budget or len(kept) == 1:
             break
         kept.pop()  # 列表新在前，丢掉的是最老的那段
     plan = NotePlan(line, kept, [v for v in selected if v not in kept], budget)
@@ -1714,7 +1798,7 @@ def over_budget_message(sections: Sections, version: str, plan: NotePlan) -> str
         for length, category, text in longest_entries(sections[version], 3)
     )
     return (
-        f"{version} 段单独就有 {len(plan.line)} 字符，超过首行 JSON 预算 {plan.budget}"
+        f"{version} 段单独就有 {plan.size} 字符，超过首行 JSON 预算 {plan.budget}"
         f"（Mirror 酱只保留前 20000 字符）。请在发版 PR 里精简或合并条目，"
         f"最长的几条：{longest}"
     )
@@ -1726,8 +1810,8 @@ def longest_entries(
     """按客户端口径最长的几条 (字数, 分类, 条目)，给发版 PR 与报错点名用。"""
 
     rows = [
-        (len(client_entry(item)), category, client_entry(item))
-        for category, items in categories.items()
+        (len(item), category, item)
+        for category, items in client_categories(categories).items()
         for item in items
     ]
     rows.sort(key=lambda row: (-row[0], row[1]))
@@ -1743,7 +1827,8 @@ def render_release_note(
     lines = [plan.line]
     lines.append(f"## {version}")
     lines.append("")
-    lines.extend(render_section(sections[version], decorate=True))
+    # 可见正文只放给用户看的分类；贡献者名单仍按整段算，开发流程的贡献也算贡献
+    lines.extend(render_section(public_categories(sections[version]), decorate=True))
 
     contributors: List[str] = []
     for items in sections[version].values():
@@ -1779,9 +1864,7 @@ def render_release_note(
 
 
 def describe_note_plan(plan: NotePlan) -> str:
-    text = (
-        f"首行 JSON {len(plan.line)} / {plan.budget} 字符，带 {len(plan.kept)} 个版本段"
-    )
+    text = f"首行 JSON {plan.size} / {plan.budget} 字符，带 {len(plan.kept)} 个版本段"
     if plan.dropped:
         text += f"；为了预算丢掉了 {'、'.join(plan.dropped)}"
     if plan.over_budget:
@@ -1904,6 +1987,12 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--summary-file", help="把结果摘要写成 JSON")
     release.add_argument("--body-file", help="把发版 PR 正文写成 Markdown")
     release.add_argument("--github-output", help="把 version 等写进 GITHUB_OUTPUT")
+    release.add_argument(
+        "--step-summary", help="把体积与没带碎片的提交清单追加进 GITHUB_STEP_SUMMARY"
+    )
+    release.add_argument(
+        "--run-url", help="本次工作流运行的地址，发版 PR 正文里链接到它的摘要"
+    )
 
     note = subparsers.add_parser("release-note", help="渲染 Release 正文")
     note.add_argument("--version", help="默认当前版本")

@@ -74,11 +74,6 @@
                 "修复快速配置开关无法可靠保存、关闭后仍影响任务的问题，并移除不支持快速配置的无效入口。 by @1w1w11w1",
                 "初始化遇到仓库异常时会直接说明需要删除的文件和重新下载方法。 by @ClozyA",
                 "绝区零一条龙 修复代理任务已完成（含仅个别节点失败、次日自动重试）仍被历史记录标记为失败的问题 by @AthenaHibou"
-            ],
-            "开发流程": [
-                "开发环境未通过 yarn dev 启动时直接报错退出，不再静默加载陈旧的构建产物 by @1w1w11w1",
-                "补上 MaaFW 引擎的 AGENTS.md，并修正专项适配 skill 里把 MaaFW 当专项、声称三态的两处说明 by @qiyinxi",
-                "更新日志改为每个 PR 在 changelog.d/ 放一个碎片，由「准备发版」工作流统一编译进 CHANGELOG.md 并推进版本号；普通 PR 不再改 CHANGELOG.md 与版本号，合并后补署名的机器人随之移除 by @qiyinxi"
             ]
         },
         "v5.5.0-beta.5": {
@@ -157,9 +152,6 @@
                 "调度台 修复任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by @1w1w11w1 by @HarcoChen",
                 "MAA专项 修复在配置检查通过后、任务正式开始前停止任务时被报成「MAA任务出现异常」的问题 by @1w1w11w1 by @HarcoChen",
                 "修复日志文件在运行过程中被重建或删除时，日志监控会静默失效、该趟任务再也不会被正常判定（卡到超时或误报异常）的问题 by @1w1w11w1 by @HarcoChen"
-            ],
-            "开发流程": [
-                "首页卫星图标改从全局图标表取，新增专项时不再漏掉主页卫星"
             ]
         },
         "v5.5.0-beta.3": {
@@ -215,9 +207,6 @@
                 "日志与签到 修复日志跨零点后运行历史丢失、社区签到重复推送与首页日期格式异常黑屏等问题 by @AthenaHibou by @Lance0174 by @1w1w11w1 by @TCddddd by @HarcoChen",
                 "MaaEnd专项 修复更新后已完成任务被误判失败并重试的问题 by @HarcoChen by @TCddddd",
                 "通用脚本 修复直控配置模式下文件占用时配置目录被部分删除且不还原的问题；修复明日方舟 PC 工具连接失败后每秒重试 by @qiyinxi by @HarcoChen"
-            ],
-            "开发流程": [
-                "新增 GitHub Issue 模板；清理未达规范的测试文件并重新生成前端接口代码；禁止 AI 助手协助 force push by @qiyinxi by @1w1w11w1 by @Craun718"
             ]
         },
         "v5.5.0-beta.2": {
@@ -241,9 +230,6 @@
                 "MAA专项 修复任务生成覆盖用户原生高级配置、HSR 托管开关报错、剿灭队列与库存保持并修复移除生息演算的问题 by @1w1w11w1 by @qiyinxi by @HarcoChen",
                 "修复 M9A 任务跨午夜后日志监控读取前一天文件、队列「每日首次」跨日前十秒冷启动漏跑或重跑、日志文件被替换后监控读不到新内容、系统时钟跳变导致任务误判超时与历史偏移的问题 by @qiyinxi by @HarcoChen",
                 "MaaFW专项 修复 Win32 窗口定位超时类型不符失败、MXU 项目识别不出家族导致更新包选不出、内置运行未加载项目自带 MaaFramework、Python 绑定版本不符、运行期间界面日志停更与停止无响应、旧环境永久占用磁盘、中止后 Agent 残留、单任务失败不即时提示、游戏启动失败后空转到超时、用户级通知配置无效、调试日志轮转只保存后半段的问题 by @qiyinxi by @HarcoChen"
-            ],
-            "开发流程": [
-                "开发环境改用独立端口与 userData，可与正式版同时运行；前端检查与格式化迁移至 oxlint/oxfmt；添加 pyproject 和 ruff 配置 by @qiyinxi by @Craun718 by @HarcoChen"
             ]
         },
         "v5.5.0-beta.1": {
@@ -265,9 +251,6 @@
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by @1w1w11w1 by @qiyinxi by @HarcoChen",
                 "修复开机自启动后台任务异常未记录、通知服务延迟加载导致错误的问题 by @1w1w11w1 by @AthenaHibou by @qiyinxi by @HarcoChen",
                 "日志采集 修复多用户节点详情被合并推送的问题；统一推送配置区样式，修复新增/删除规则时过早弹出缺字段提示的问题 by @AthenaHibou by @qiyinxi by @HarcoChen"
-            ],
-            "开发流程": [
-                "修复前端类型与 lint 检查问题 by @1w1w11w1"
             ]
         },
         "v5.4.0": {

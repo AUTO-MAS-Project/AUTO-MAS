@@ -659,9 +659,7 @@ def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
     assert full.kept == ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1", "v5.5.0"]
     assert full.dropped == [] and not full.over_budget
 
-    tight = changelog.plan_note_json(
-        sections, "v5.6.0-beta.2", budget=len(full.line) - 1
-    )
+    tight = changelog.plan_note_json(sections, "v5.6.0-beta.2", budget=full.size - 1)
     assert tight.kept == ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1"]
     assert tight.dropped == ["v5.5.0"]
     assert json.loads(tight.line[4:-3]).keys() == {
@@ -703,6 +701,79 @@ def test_release_note_refuses_when_the_current_section_alone_is_over_budget() ->
     assert "### 体积" in body and "最长的几条" in body
 
 
+def test_release_note_hides_contributor_only_categories_from_users() -> None:
+    """开发流程只留在 CHANGELOG.md 与发版 PR 里，不进首行 JSON、可见正文和 version.json。"""
+
+    sections, _ = _sections(
+        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 甲 by @a\n\n"
+        "### 开发流程\n\n- 乙 by @b\n\n"
+        "## [v5.5.0-beta.6] - 2026-09-16\n\n### 开发流程\n\n- 丙\n"
+    )
+
+    note = changelog.render_release_note(sections, "v5.5.0-beta.7")
+    first, rest = note.split("\n", 1)
+    # beta.6 只剩开发流程，整段不进首行
+    assert json.loads(first[4:-3]) == {"v5.5.0-beta.7": {"修复": ["甲 by @a"]}}
+    assert "开发流程" not in rest and "乙" not in rest
+    # 开发流程的贡献者仍在名单里
+    assert "[@a](https://github.com/a) [@b](https://github.com/b)" in rest
+
+    payload = json.loads(changelog.render_version_json("v5.5.0-beta.7", sections))
+    assert payload["version_info"] == {
+        "v5.5.0-beta.7": {"修复": ["甲 by @a"]},
+        "v5.5.0-beta.6": {},
+    }
+    # 发版 PR 正文是给维护者看的，开发流程照常列出
+    body = changelog.render_pr_body(
+        "v5.5.0-beta.7", "v5.5.0-beta.6", "beta", sections["v5.5.0-beta.7"], []
+    )
+    assert "### 🛠️ 开发流程\n\n- 乙 by @b" in body
+
+
+def test_pr_body_keeps_only_a_count_of_unconfirmed_commits() -> None:
+    """没带碎片的提交清单进运行摘要，PR 正文只留数量与链接。"""
+
+    sections, _ = _sections("## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 甲\n")
+    plan = changelog.plan_note_json(sections, "v5.5.0-beta.7")
+    unconfirmed = [("abc123456", "fix: 直推"), ("def123456", "feat: 也直推")]
+
+    body = changelog.render_pr_body(
+        "v5.5.0-beta.7",
+        "v5.5.0-beta.6",
+        "beta",
+        sections["v5.5.0-beta.7"],
+        unconfirmed,
+        plan,
+        "https://example.invalid/runs/1",
+    )
+    assert (
+        "有 2 个提交改了用户可见代码但没带碎片"
+        "（清单见[运行摘要](https://example.invalid/runs/1)）" in body
+    )
+    assert "abc123456" not in body and "待确认" not in body
+    # 没有运行地址时也不把清单塞进正文
+    assert "abc123456" not in changelog.render_pr_body(
+        "v5.5.0-beta.7", None, "beta", sections["v5.5.0-beta.7"], unconfirmed, plan
+    )
+
+    summary = changelog.render_run_summary(
+        "v5.5.0-beta.7", "v5.5.0-beta.6", 3, plan, unconfirmed
+    )
+    assert "编译 3 个碎片" in summary
+    assert "- `abc123456` fix: 直推\n- `def123456` feat: 也直推" in summary
+    assert "都带了碎片" in changelog.render_run_summary(
+        "v5.5.0-beta.7", None, 0, plan, []
+    )
+
+
+def test_note_length_counts_utf16_units() -> None:
+    """预算按 UTF-16 码元算：表情占两个、中文占一个，不会比 Mirror 酱算得少。"""
+
+    assert changelog.note_length("甲") == 1
+    assert changelog.note_length("🐛") == 2
+    assert changelog.note_length("a甲🐛") == 4
+
+
 def test_repository_release_note_fits_the_budget() -> None:
     """仓库当前 CHANGELOG.md 渲染出的首行必须在预算内：这是 Mirror 酱截断的红线。"""
 
@@ -711,7 +782,7 @@ def test_repository_release_note_fits_the_budget() -> None:
     )
     plan = changelog.plan_note_json(sections, current_version)
 
-    assert len(plan.line) <= changelog.RELEASE_NOTE_JSON_BUDGET
+    assert plan.size <= changelog.RELEASE_NOTE_JSON_BUDGET
     assert plan.kept[0] == current_version
 
 
@@ -1004,6 +1075,9 @@ def test_unconfirmed_commits_lists_user_visible_pushes_without_fragments(repo) -
     _commit(repo, "fix: 只改文档")
     _write(repo, "app/x.py", "x = 4\n")
     _commit(repo, "chore: 重构")
+    _write(repo, "app/x.py", "x = 5\n")
+    # 按约定 refactor 是用户不可见的，改了行为的重构应该写成 fix / change
+    _commit(repo, "refactor(core): 收敛重复实现")
 
     subjects = [s for _, s in changelog.unconfirmed_commits("v1.0.0-beta.1", root=repo)]
 
