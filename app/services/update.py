@@ -604,7 +604,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "已有更新任务在进行中, 请勿重复操作"},
+                data=WSUpdateFailedData(message="已有更新任务在进行中, 请勿重复操作"),
             )
             return None
 
@@ -622,7 +622,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "未检测到更新包, 请先下载更新"},
+                data=WSUpdateFailedData(message="未检测到更新包, 请先下载更新"),
             )
             self.is_locked = False
             return None
@@ -639,7 +639,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": f"解压失败, {type(e).__name__}: {e}"},
+                data=WSUpdateFailedData(message=f"解压失败, {type(e).__name__}: {e}"),
             )
             self.is_locked = False
             return None
