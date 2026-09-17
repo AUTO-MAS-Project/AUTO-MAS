@@ -405,6 +405,21 @@ def test_fragment_accepts_author_override_and_leading_dash(tmp_path) -> None:
     assert fragment.project_name == "调度"
 
 
+def test_fragment_malformed_header_line_is_named_instead_of_missing_project(
+    tmp_path,
+) -> None:
+    """`author: a,` 这种写坏的头部行要直接点名，不能当正文再报缺 project。"""
+
+    for bad in (
+        "author: a,",
+        "author: a,, b",
+        "project: 主页",
+        "beta-only: yes please",
+    ):
+        with pytest.raises(changelog.ChangelogError, match="头部行 .* 格式不对"):
+            _fragment(tmp_path, "1.fix.md", f"{bad}\nproject: maa\n甲\n")
+
+
 def test_fragment_author_line_lists_every_collaborator(tmp_path) -> None:
     """多人 PR 只能靠 author 行列全：逗号、顿号、空格都能分隔，编译出每人一个 by。"""
 

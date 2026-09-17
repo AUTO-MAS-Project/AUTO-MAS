@@ -142,6 +142,10 @@ FRAGMENT_AUTHOR = re.compile(
     rf"^author:\s*(?P<logins>@?{LOGIN}(?:\s*[,，、]\s*@?{LOGIN}|\s+@?{LOGIN})*)\s*$"
 )
 AUTHOR_SPLIT = re.compile(r"[,，、\s]+")
+# 头部键名对了、值没写对的行（四个头部正则都没匹配上时用它报错）
+MALFORMED_HEADER = re.compile(
+    r"^(?:project|author|highlight|beta-only)\s*[:：]", re.IGNORECASE
+)
 FRAGMENT_PROJECT = re.compile(r"^project:\s*(?P<project>[A-Za-z0-9-]+)\s*$")
 # 维护者给碎片加的可选标记：编译时这条进「本次亮点」而不是文件名后缀那个分类
 FRAGMENT_HIGHLIGHT = re.compile(
@@ -809,6 +813,13 @@ def parse_fragment(path: Path, content: str) -> Fragment:
                 raise ChangelogError(f"{path.name}：beta-only 只能写一次")
             beta_only = beta_only_match.group("value").lower() in HIGHLIGHT_TRUE
             continue
+        # 长得像头部行却没匹配上（如 `author: a,`）：直接指出写错，不要当正文再报缺 project
+        header = MALFORMED_HEADER.match(stripped)
+        if header and not body:
+            raise ChangelogError(
+                f"{path.name}：头部行 `{stripped}` 格式不对，写法是 "
+                "`project: 键` / `author: 甲, 乙` / `highlight: true` / `beta-only: true`"
+            )
         body.append(stripped)
     category = FRAGMENT_TYPES[matched.group("type")]
     if project is None and category != DEV_CATEGORY:
