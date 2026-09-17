@@ -139,6 +139,14 @@ FRAGMENT_HIGHLIGHT = re.compile(
     r"^highlight:\s*(?P<value>true|yes|on|1|false|no|off|0)\s*$", re.IGNORECASE
 )
 HIGHLIGHT_TRUE = {"true", "yes", "on", "1"}
+# 只进公测公告的标记：修的是本 X.Y.0 周期更早 beta 才引入的功能（或周期内新增又移除），
+# 正式版用户从没见过，转正汇总时丢掉；碎片头部 `beta-only: true`，CHANGELOG.md 里存成
+# 正文后面的 ` [仅公测]`
+FRAGMENT_BETA_ONLY = re.compile(
+    r"^beta-only:\s*(?P<value>true|yes|on|1|false|no|off|0)\s*$", re.IGNORECASE
+)
+BETA_ONLY_MARK = "[仅公测]"
+BETA_ONLY_TAIL = re.compile(r" \[仅公测\]$")
 
 # 碎片正文的字数上限：公告里一条只说「做了什么」，细节留在 PR 里。首行 JSON 的体积
 # 直接由它决定，放宽前先算一遍一个版本段会涨到多少。
@@ -652,6 +660,7 @@ class Fragment:
         "author",
         "project",
         "highlight",
+        "beta_only",
     )
 
     def __init__(
@@ -663,6 +672,7 @@ class Fragment:
         author: Optional[str] = None,
         project: Optional[str] = None,
         highlight: bool = False,
+        beta_only: bool = False,
     ) -> None:
         self.path = path
         self.identifier = identifier
@@ -671,6 +681,7 @@ class Fragment:
         self.author = author
         self.project = project
         self.highlight = highlight
+        self.beta_only = beta_only
 
     @property
     def project_name(self) -> Optional[str]:
@@ -710,8 +721,9 @@ def check_fragment_text(text: str, where: str) -> None:
 def parse_fragment(path: Path, content: str) -> Fragment:
     """碎片 = 文件名决定分类 + 首行 `project: 键` + 正文一行。
 
-    可选头部：`author: 登录名` 覆盖自动署名，`highlight: true` 让这条进「本次亮点」
-    （维护者合并前后加）。头部行顺序不限，都要在正文之前。
+    可选头部：`author: 登录名` 覆盖自动署名；`highlight: true` 让这条进「本次亮点」
+    （维护者加）；`beta-only: true` 表示只进公测公告、转正汇总时丢掉。头部行顺序不限，
+    都要在正文之前。
     """
 
     matched = FRAGMENT_NAME.match(path.name)
@@ -723,6 +735,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
     author: Optional[str] = None
     project: Optional[str] = None
     highlight: Optional[bool] = None
+    beta_only: Optional[bool] = None
     body: List[str] = []
     for line in content.splitlines():
         stripped = line.strip()
@@ -745,6 +758,12 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             if highlight is not None:
                 raise ChangelogError(f"{path.name}：highlight 只能写一次")
             highlight = highlight_match.group("value").lower() in HIGHLIGHT_TRUE
+            continue
+        beta_only_match = FRAGMENT_BETA_ONLY.match(stripped)
+        if beta_only_match and not body:
+            if beta_only is not None:
+                raise ChangelogError(f"{path.name}：beta-only 只能写一次")
+            beta_only = beta_only_match.group("value").lower() in HIGHLIGHT_TRUE
             continue
         body.append(stripped)
     category = FRAGMENT_TYPES[matched.group("type")]
@@ -775,6 +794,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
         author=author,
         project=project,
         highlight=bool(highlight),
+        beta_only=bool(beta_only),
     )
 
 
@@ -840,9 +860,9 @@ def join_signatures(text: str, logins: Sequence[str]) -> str:
 
 
 class Entry:
-    """一条更新日志的结构：`(项目) 做了什么 (#PR, #PR) by @a by @b`，每一截都可缺省。"""
+    """一条更新日志的结构：`(项目) 做了什么 [仅公测] (#PR, #PR) by @a by @b`，每一截都可缺省。"""
 
-    __slots__ = ("project", "text", "prs", "logins")
+    __slots__ = ("project", "text", "prs", "logins", "beta_only")
 
     def __init__(
         self,
@@ -850,11 +870,13 @@ class Entry:
         project: Optional[str] = None,
         prs: Sequence[int] = (),
         logins: Sequence[str] = (),
+        beta_only: bool = False,
     ) -> None:
         self.project = project
         self.text = text
         self.prs = list(dict.fromkeys(prs))
         self.logins = list(dict.fromkeys(logins))
+        self.beta_only = beta_only
 
     @property
     def rank(self) -> int:
@@ -862,15 +884,23 @@ class Entry:
 
         return PROJECT_RANK.get(self.project or "", len(PROJECT_RANK))
 
-    def render(self) -> str:
+    def render(self, public: bool = False) -> str:
+        """public 时不带 `[仅公测]`：公测用户看到的是普通条目，标记只给维护者看。"""
+
         head = f"({self.project}) {self.text}" if self.project else self.text
+        if self.beta_only and not public:
+            head += f" {BETA_ONLY_MARK}"
         if self.prs:
             head += " (" + ", ".join(f"#{n}" for n in self.prs) + ")"
         return join_signatures(head, self.logins)
 
 
 def split_entry(entry: str) -> Entry:
-    """把条目字符串拆成 Entry。项目前缀只认项目表里的名字，PR 号只认署名前面那一组。"""
+    """把条目字符串拆成 Entry。
+
+    从尾往头剥：署名 → PR 号 → `[仅公测]` → 项目前缀。项目前缀只认项目表里的名字，
+    PR 号只认署名前面那一组。
+    """
 
     head, logins = split_signatures(entry)
     prs: List[int] = []
@@ -878,12 +908,17 @@ def split_entry(entry: str) -> Entry:
     if matched:
         prs = [int(n) for n in PR_NUMBER.findall(matched.group(0))]
         head = head[: matched.start()].rstrip()
+    beta_only = False
+    marked = BETA_ONLY_TAIL.search(head)
+    if marked:
+        beta_only = True
+        head = head[: marked.start()].rstrip()
     project: Optional[str] = None
     prefix = PROJECT_PREFIX.match(head)
     if prefix and prefix.group("name") in PROJECT_RANK:
         project = prefix.group("name")
         head = head[prefix.end() :]
-    return Entry(head, project, prs, logins)
+    return Entry(head, project, prs, logins, beta_only)
 
 
 def normalize_entry(entry: str) -> str:
@@ -893,10 +928,10 @@ def normalize_entry(entry: str) -> str:
 
 
 def public_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目原样。"""
+    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目去掉 `[仅公测]` 标记。"""
 
     return {
-        category: list(items)
+        category: [split_entry(item).render(public=True) for item in items]
         for category, items in order_categories(categories).items()
         if category not in CONTRIBUTOR_ONLY_CATEGORIES
     }
@@ -1142,8 +1177,8 @@ def check_version_floor(current_version: str, root: Path = REPO_ROOT) -> Optiona
     return latest
 
 
-def only_highlight_changed(base: str, path: str, root: Path = REPO_ROOT) -> bool:
-    """PR 对已有碎片的改动是否只是加减 `highlight:`：项目、正文、署名覆盖都没动。"""
+def only_flags_changed(base: str, path: str, root: Path = REPO_ROOT) -> bool:
+    """PR 对已有碎片的改动是否只是加减 `highlight:` / `beta-only:`：项目、正文、署名覆盖都没动。"""
 
     before_text = show_file(base, path, root)
     after_path = root / path
@@ -1235,12 +1270,12 @@ def check_pull_request(
         if status != "A"
         and path.startswith("changelog.d/")
         and path.rsplit("/", 1)[-1] not in FRAGMENT_IGNORED
-        # 只改 highlight 标记不算改别人的碎片：这是维护者挑亮点的正常操作
-        and not only_highlight_changed(base, path, root)
+        # 只改 highlight / beta-only 标记不算改别人的碎片：这是维护者挑亮点、标仅公测的正常操作
+        and not only_flags_changed(base, path, root)
     ]
     if touched_others and not maintenance:
         problems.append(
-            "不要修改或删除已有的碎片，它们属于别的 PR（只允许加减 `highlight:` 标记）："
+            "不要修改或删除已有的碎片，它们属于别的 PR（只允许加减 `highlight:` / `beta-only:` 标记）："
             + "、".join(path for _, path in touched_others)
         )
 
@@ -1384,6 +1419,7 @@ def merge_entries(target: Dict[str, List[str]], source: Dict[str, List[str]]) ->
                     existing.project,
                     [*existing.prs, *entry.prs],
                     [*existing.logins, *entry.logins],
+                    existing.beta_only or entry.beta_only,
                 ).render()
             else:
                 index[key] = len(bucket)
@@ -1438,13 +1474,16 @@ def compile_release(
     authors: Dict[str, Optional[str]],
     tagged: Iterable[str],
     prs: Optional[Dict[str, Optional[int]]] = None,
+    dropped: Optional[List[Tuple[str, str]]] = None,
 ) -> Tuple[Sections, Dates]:
     """把碎片编译进新的版本段，返回新的 (sections, dates)。
 
     - 顶部若有 `未发布` 段，其条目并入新段（过渡期兼容手工预留的版本段）。
     - 目标版本已经有段但还没打 tag 时（发版 PR 合并后又来了改动），在原段上追加。
     - 转正时把同号的全部 beta 段合并进来，并从文件里移除。
-    - 新段里每个分类的条目按项目表顺序排，本体的排最后。
+    - 正式版与补丁版：先合并再丢掉带 `[仅公测]` 的条目（正式版用户没见过那些功能的
+      坏版本），丢掉的 (分类, 条目) 追加进 dropped 供发版 PR 与运行摘要点名。
+    - 新段里每个分类的条目按项目表顺序排。
     """
 
     sections = {
@@ -1500,9 +1539,22 @@ def compile_release(
             fragment.project_name,
             [pr] if pr else [],
             [login] if login else [],
+            fragment.beta_only,
         )
         fresh.setdefault(fragment.target_category, []).append(entry.render())
     merge_entries(pending, fresh)
+
+    if not is_prerelease(target):
+        # 先合并再丢：同项目同正文的重复已经并成一条、标记取并集，这时再丢才不会漏
+        kept: Dict[str, List[str]] = {}
+        for category, items in pending.items():
+            for item in items:
+                if split_entry(item).beta_only:
+                    if dropped is not None:
+                        dropped.append((category, item))
+                else:
+                    kept.setdefault(category, []).append(item)
+        pending = kept
 
     if not pending:
         raise ChangelogError(
@@ -1531,6 +1583,7 @@ def render_pr_body(
     unconfirmed: Sequence[Tuple[str, str]],
     plan: Optional[NotePlan] = None,
     run_url: Optional[str] = None,
+    dropped: Sequence[Tuple[str, str]] = (),
 ) -> str:
     """发版 PR 正文。
 
@@ -1556,7 +1609,10 @@ def render_pr_body(
         "现在也可以直接在 `CHANGELOG.md` 新版本段里把条目挪过去"
     )
     if kind == "stable":
-        lines.append("- [ ] 删掉周期内引入又修掉的问题，稳定通道用户没装过 beta")
+        lines.append(
+            f"- [ ] 脚本已按 `[仅公测]` 丢掉 {len(dropped)} 条周期内引入又修掉的问题"
+            "（清单见运行摘要与下面「体积」节），剩下的再看一眼有没有漏标的"
+        )
         lines.append(
             "- [ ] 同一件事写了简写和详写两遍的，保留详写；同专项多条可合成一句"
         )
@@ -1576,6 +1632,10 @@ def render_pr_body(
         lines.append(f"- 本版 {count} 条，最长的几条：")
         for length, category, text in longest_entries(categories):
             lines.append(f"  - {length} 字（{category}）{text}")
+        if dropped:
+            lines.append(f"- 按 `[仅公测]` 丢掉 {len(dropped)} 条：")
+            for category, item in dropped:
+                lines.append(f"  - （{category}）{item}")
         lines.append("")
     if previous:
         lines.append(f"自 `{previous}` 以来的改动：")
@@ -1590,13 +1650,20 @@ def render_run_summary(
     fragment_count: int,
     plan: NotePlan,
     unconfirmed: Sequence[Tuple[str, str]],
+    dropped: Sequence[Tuple[str, str]] = (),
 ) -> str:
-    """写进 GITHUB_STEP_SUMMARY 的运行摘要：体积，以及没带碎片的提交清单。"""
+    """写进 GITHUB_STEP_SUMMARY 的运行摘要：体积、丢掉的仅公测条目、没带碎片的提交清单。"""
 
     lines = [f"## 准备发版 {version}", ""]
     lines.append(f"- 基于 {previous or '无 tag'}，编译 {fragment_count} 个碎片")
     lines.append(f"- {describe_note_plan(plan)}")
     lines.append("")
+    if dropped:
+        lines.append(f"### 按 `[仅公测]` 丢掉的 {len(dropped)} 条")
+        lines.append("")
+        for category, item in dropped:
+            lines.append(f"- （{category}）{item}")
+        lines.append("")
     if unconfirmed:
         lines.append("### 改了用户可见代码但没带碎片的提交")
         lines.append("")
@@ -1645,8 +1712,9 @@ def command_release(arguments: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    dropped: List[Tuple[str, str]] = []
     new_sections, new_dates = compile_release(
-        sections, dates, fragments, target, date, authors, every, prs
+        sections, dates, fragments, target, date, authors, every, prs, dropped
     )
     unconfirmed = unconfirmed_commits(latest)
     # 不在这里拦：超预算要写进发版 PR 正文让维护者精简，由发版 PR 的检查把关
@@ -1656,6 +1724,8 @@ def command_release(arguments: argparse.Namespace) -> int:
         print(f"将发布 {target}（{arguments.kind}），基于 {latest or '无 tag'}")
         print("\n".join(render_section(new_sections[target])))
         print(describe_note_plan(plan))
+        for category, item in dropped:
+            print(f"按 [仅公测] 丢掉: （{category}）{item}")
         for sha, subject in unconfirmed:
             print(f"待确认: {sha} {subject}")
         return 0
@@ -1673,13 +1743,16 @@ def command_release(arguments: argparse.Namespace) -> int:
         unconfirmed,
         plan,
         arguments.run_url,
+        dropped,
     )
     if arguments.body_file:
         write_text(Path(arguments.body_file), body)
     if arguments.step_summary:
         with open(arguments.step_summary, "a", encoding="utf-8") as summary_file:
             summary_file.write(
-                render_run_summary(target, latest, len(fragments), plan, unconfirmed)
+                render_run_summary(
+                    target, latest, len(fragments), plan, unconfirmed, dropped
+                )
             )
     if arguments.summary_file:
         summary = {
@@ -1690,6 +1763,9 @@ def command_release(arguments: argparse.Namespace) -> int:
             "fragments": len(fragments),
             "unconfirmed": [
                 {"sha": sha, "subject": subject} for sha, subject in unconfirmed
+            ],
+            "dropped_beta_only": [
+                {"category": category, "entry": item} for category, item in dropped
             ],
             "changed_files": changed,
         }
@@ -1964,6 +2040,8 @@ def command_add(arguments: argparse.Namespace) -> int:
     content = (f"project: {project}\n" if project else "") + text + "\n"
     if arguments.highlight:
         content = "highlight: true\n" + content
+    if arguments.beta_only:
+        content = "beta-only: true\n" + content
     if arguments.author:
         content = f"author: {arguments.author.lstrip('@')}\n" + content
     write_text(path, content)
@@ -2001,6 +2079,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--highlight",
         action="store_true",
         help="维护者用：标成本次亮点，编译时进「本次亮点」而不是原分类",
+    )
+    add.add_argument(
+        "--beta-only",
+        action="store_true",
+        help="只进公测公告：修的是本周期更早 beta 才引入的功能，转正汇总时丢掉",
     )
 
     check = subparsers.add_parser("check", help="校验格式、碎片与版本号（CI 用）")

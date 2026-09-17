@@ -350,6 +350,47 @@ def test_fragment_highlight_flag_routes_to_the_highlight_category(tmp_path) -> N
         _fragment(tmp_path, "5.deprecate.md", "project: maa\n戊\n")
 
 
+def test_fragment_beta_only_flag_and_entry_marker_round_trip(tmp_path) -> None:
+    """beta-only: true 编译成正文后的 [仅公测]；解析顺序是署名 → PR 号 → 标记 → 项目前缀。"""
+
+    fragment = _fragment(tmp_path, "1.fix.md", "project: maa\nbeta-only: yes\n甲\n")
+    assert fragment.beta_only is True
+    assert _fragment(tmp_path, "2.fix.md", "project: maa\n甲\n").beta_only is False
+    with pytest.raises(changelog.ChangelogError, match="beta-only 只能写一次"):
+        _fragment(
+            tmp_path, "3.fix.md", "beta-only: true\nbeta-only: no\nproject: maa\n甲\n"
+        )
+
+    entry = "(MAA) 甲 [仅公测] (#1, #2) by @a by @b"
+    parsed = changelog.split_entry(entry)
+    assert (
+        parsed.project,
+        parsed.text,
+        parsed.beta_only,
+        parsed.prs,
+        parsed.logins,
+    ) == (
+        "MAA",
+        "甲",
+        True,
+        [1, 2],
+        ["a", "b"],
+    )
+    assert parsed.render() == entry
+    # 公开渲染（首行 JSON、Release 正文、version.json）不带标记
+    assert parsed.render(public=True) == "(MAA) 甲 (#1, #2) by @a by @b"
+    assert changelog.public_categories({"修复": [entry]}) == {
+        "修复": ["(MAA) 甲 (#1, #2) by @a by @b"]
+    }
+    # 正文里出现同样的字不算标记，只认署名与 PR 号之前的末尾那一个
+    plain = changelog.split_entry("[仅公测] 甲 by @a")
+    assert plain.beta_only is False and plain.text == "[仅公测] 甲"
+
+    target = {"修复": ["(MAA) 甲 (#1) by @a"]}
+    changelog.merge_entries(target, {"修复": ["(MAA) 甲 [仅公测] (#2) by @b"]})
+    assert target == {"修复": ["(MAA) 甲 [仅公测] (#1, #2) by @a by @b"]}
+
+
 def test_list_fragments_skips_readme_and_rejects_strangers(tmp_path) -> None:
     (tmp_path / "README.md").write_text("说明", encoding="utf-8")
     (tmp_path / "1.fix.md").write_text("project: scheduler\n甲\n", encoding="utf-8")
@@ -580,6 +621,54 @@ def test_compile_stable_rolls_up_the_whole_beta_cycle(tmp_path) -> None:
         "修复": ["(调度) 戊", "己", "甲 by @a", "乙"],
     }
     assert new_dates == {"v5.5.0": "2026-09-13", "v5.4.0": "2026-08-26"}
+
+
+def test_stable_rollup_merges_first_then_drops_beta_only_entries(tmp_path) -> None:
+    """转正先合并再丢：同项目同正文的两条只要有一份带 [仅公测] 就整条丢；公测版原样保留。"""
+
+    sections, dates = _sections(
+        "## [v5.5.0-beta.3] - 2026-09-03\n\n### 修复\n\n"
+        "- (MAA) 甲 [仅公测] (#2) by @a\n- (MAA) 乙 (#3) by @b\n\n"
+        "## [v5.5.0-beta.2] - 2026-09-02\n\n### 修复\n\n- (MAA) 甲 (#1) by @c\n\n"
+        "## [v5.4.0] - 2026-08-26\n\n### 新增\n\n- 丁\n"
+    )
+    fragment = _fragment(tmp_path, "9.fix.md", "project: hsr\nbeta-only: true\n戊\n")
+    dropped: list = []
+
+    new_sections, _ = changelog.compile_release(
+        sections,
+        dates,
+        [fragment],
+        "v5.5.0",
+        "2026-09-13",
+        {"9.fix.md": "d"},
+        tagged=[],
+        prs={"9.fix.md": 9},
+        dropped=dropped,
+    )
+
+    assert new_sections["v5.5.0"] == {"修复": ["(MAA) 乙 (#3) by @b"]}
+    # 甲的两份先并成一条（PR 号、署名取并集，标记传播）再整条丢掉；碎片自带的标记也丢
+    assert dropped == [
+        ("修复", "(MAA) 甲 [仅公测] (#1, #2) by @c by @a"),
+        ("修复", "(HSR) 戊 [仅公测] (#9) by @d"),
+    ]
+
+    # 公测版照常保留，标记跟着进 CHANGELOG.md
+    beta_sections, _ = changelog.compile_release(
+        sections,
+        dates,
+        [fragment],
+        "v5.5.0-beta.4",
+        "2026-09-04",
+        {"9.fix.md": "d"},
+        tagged=["v5.5.0-beta.3"],
+        prs={"9.fix.md": 9},
+    )
+    assert beta_sections["v5.5.0-beta.4"] == {"修复": ["(HSR) 戊 [仅公测] (#9) by @d"]}
+    assert "[仅公测]" in changelog.render_changelog(
+        beta_sections, {**dates, "v5.5.0-beta.4": "2026-09-04"}
+    )
 
 
 def test_compile_reopens_an_untagged_section_but_not_a_tagged_one(tmp_path) -> None:
@@ -954,8 +1043,8 @@ def test_pr_check_rejects_two_fragments_and_touching_others(repo) -> None:
     assert any("不要修改或删除已有的碎片" in p for p in problems)
 
 
-def test_pr_check_lets_maintainers_toggle_highlight_on_others_fragments(repo) -> None:
-    """只加减 highlight: 不算改别人的碎片；改正文、项目或署名覆盖仍然拦。"""
+def test_pr_check_lets_maintainers_toggle_flags_on_others_fragments(repo) -> None:
+    """只加减 highlight: / beta-only: 不算改别人的碎片；改正文、项目或署名覆盖仍然拦。"""
 
     _write(repo, "changelog.d/other.feat.md", "project: maa\n别人的\n")
     _commit(repo, "feat: other")
@@ -963,6 +1052,15 @@ def test_pr_check_lets_maintainers_toggle_highlight_on_others_fragments(repo) ->
     _write(repo, "changelog.d/other.feat.md", "highlight: true\nproject: maa\n别人的\n")
     _write(repo, "README.md", "文档\n")
     _commit(repo, "chore: 标亮点")
+
+    assert _check(repo, "dev") == []
+
+    _write(
+        repo,
+        "changelog.d/other.feat.md",
+        "beta-only: true\nproject: maa\n别人的\n",
+    )
+    _commit(repo, "chore: 改标仅公测")
 
     assert _check(repo, "dev") == []
 
