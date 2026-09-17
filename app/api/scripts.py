@@ -52,6 +52,10 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _public_package_source,
     detect_maafw_project_shell_hint,
 )
+from app.task.MaaFW.tools.embedded.game_package import (
+    resolve_game_package,
+    resource_paths_for,
+)
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
 )
@@ -1095,6 +1099,47 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/maafw/game-package",
+    tags=["MaaFW"],
+    summary="按所选 resource 推断 MFW 项目的安卓游戏包名",
+    response_model=MaaFWGamePackageOut,
+    status_code=200,
+)
+async def resolve_maafw_game_package(
+    payload: MaaFWGamePackageIn = Body(...),
+) -> MaaFWGamePackageOut:
+    """脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+
+    只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+    运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+    """
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        paths = await asyncio.to_thread(
+            resource_paths_for, root_path, interface, payload.resource
+        )
+        resolution = await asyncio.to_thread(resolve_game_package, paths)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWGamePackageOut(code=400, status="error", message=str(exc))
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"resolve_maafw_game_package失败: {type(exc).__name__}: {exc}"
+        )
+        return MaaFWGamePackageOut(
+            code=500, status="error", message=f"推断游戏包名失败: {exc}"
+        )
+    return MaaFWGamePackageOut(
+        data=MaaFWGamePackageData(
+            reason=resolution.reason,
+            package=resolution.package,
+            candidates=list(resolution.candidates),
+        )
+    )
 
 
 @router.post(
