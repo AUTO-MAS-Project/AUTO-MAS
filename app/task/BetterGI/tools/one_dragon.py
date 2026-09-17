@@ -41,7 +41,7 @@ from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
 from app.task.BetterGI.tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES
-from app.utils import resource_path
+from app.utils import get_logger, resource_path
 from app.utils.io import read_file, write_file
 
 # 8 个内置一条龙配置组：单一来源为 app/models/config.py 的 _BGI_BUILTIN_ONE_DRAGON_GROUPS，
@@ -58,6 +58,8 @@ _ONE_DRAGON_REL_DIR = Path("User") / "OneDragon"
 
 # 内置种子模板（随 MAS 版本同步）
 _RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
+logger = get_logger("BetterGI 一条龙配置")
+
 _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 
 # 空配置名的显式兜底配置名
@@ -163,7 +165,18 @@ def list_js_scripts(root: Path) -> list[tuple[str, str]]:
                 continue
             folder = p.name.strip()
             display = folder
-            data = read_file(manifest)
+            # manifest 是玩家从社区订阅或手工放置的第三方文件，格式未必严格（尾逗号、
+            # 注释都常见），也可能是无效字节（编码不对/被截断）。解析失败只影响这一个
+            # 脚本的显示名，退回目录名继续 —— 不能让一个坏 manifest 把其余脚本连同整个
+            # 候选列表一起拖成 500。UnicodeDecodeError 是 ValueError 的子类，必须单独
+            # 列出：按字节解码失败与 JSON 语法错误是两条不同的路径。
+            try:
+                data = read_file(manifest)
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError) as error:
+                logger.warning(
+                    f"JS 脚本 manifest 无法解析, 显示名退回目录名: {manifest}: {error}"
+                )
+                data = None
             if isinstance(data, dict) and isinstance(data.get("name"), str):
                 display = data["name"].strip() or folder
             if folder and not any(f == folder for f, _ in items):
