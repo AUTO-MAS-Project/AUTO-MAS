@@ -100,6 +100,7 @@ CATEGORY_ORDER = [
     "开发流程",  # 本项目扩展：只影响贡献者、不影响用户的改动
 ]
 HIGHLIGHT_CATEGORY = "本次亮点"
+DEV_CATEGORY = "开发流程"
 # 只在给人看的 Release 正文与发版 PR 里给分类标题加的表情，分类名本身不变
 CATEGORY_EMOJI = {
     "破坏性变更": "⚠️",
@@ -144,9 +145,10 @@ HIGHLIGHT_TRUE = {"true", "yes", "on", "1"}
 FRAGMENT_TEXT_LIMIT = 50
 
 # 项目键 -> 公告里显示的名字，顺序即同一分类内条目的顺序。碎片首行 `project: <键>` 只能
-# 从这里选，公告里条目写成 `(名字) 做了什么`；本体其他部分用 core，不加前缀，排在最后。
+# 从这里选（只有不进公告的「开发流程」碎片可以不写），公告里条目写成 `(名字) 做了什么`。
+# 没有兜底键：每条改动都要归到一个专项或本体的一块，归不进的就近归（见 changelog.d/README.md）。
 # 加新专项时在这里加一行即可，旧条目不受影响。
-PROJECTS: Dict[str, Optional[str]] = {
+PROJECTS: Dict[str, str] = {
     "maa": "MAA",
     "maaend": "MaaEnd",
     "m9a": "M9A",
@@ -159,16 +161,16 @@ PROJECTS: Dict[str, Optional[str]] = {
     "src": "SRC",
     "mfw": "MFW",
     "general": "通用脚本",
-    "home": "首页",
+    "home": "主页",
     "scheduler": "调度",
     "emulator": "模拟器",
-    "display": "虚拟显示器",
     "notify": "通知",
+    "tools": "工具",
+    "settings": "设置",
     "update": "更新",
-    "backup": "配置备份",
-    "core": None,
+    "runtime": "Runtime",
 }
-PROJECT_RANK = {name: rank for rank, name in enumerate(PROJECTS.values()) if name}
+PROJECT_RANK = {name: rank for rank, name in enumerate(PROJECTS.values())}
 # 条目开头的 `(项目) `；只有名字在项目表里的才算项目前缀，其余照原文当正文
 PROJECT_PREFIX = re.compile(r"^\((?P<name>[^()]+)\) (?=\S)")
 
@@ -196,7 +198,7 @@ NON_USER_FACING_PREFIXES = (
 
 # 这些分类只给贡献者看：留在 CHANGELOG.md 与发版 PR 里，不进 Release 正文、首行 JSON
 # 和 res/version.json（用户在更新提示与「当前版本更新日志」里看到的都是后三者）
-CONTRIBUTOR_ONLY_CATEGORIES = ("开发流程",)
+CONTRIBUTOR_ONLY_CATEGORIES = (DEV_CATEGORY,)
 
 VERSION_PATTERN = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$")
 PRE_RELEASE_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
@@ -659,7 +661,7 @@ class Fragment:
         category: str,
         text: str,
         author: Optional[str] = None,
-        project: str = "core",
+        project: Optional[str] = None,
         highlight: bool = False,
     ) -> None:
         self.path = path
@@ -672,9 +674,9 @@ class Fragment:
 
     @property
     def project_name(self) -> Optional[str]:
-        """公告里显示的项目名；core 不显示。"""
+        """公告里显示的项目名；只有「开发流程」碎片可以没有。"""
 
-        return PROJECTS.get(self.project)
+        return PROJECTS.get(self.project) if self.project else None
 
     @property
     def target_category(self) -> str:
@@ -745,12 +747,13 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             highlight = highlight_match.group("value").lower() in HIGHLIGHT_TRUE
             continue
         body.append(stripped)
-    if project is None:
+    category = FRAGMENT_TYPES[matched.group("type")]
+    if project is None and category != DEV_CATEGORY:
         raise ChangelogError(
-            f"{path.name}：缺少首行 `project: <键>`，键取 {'、'.join(PROJECTS)} 之一"
-            "（本体其他部分写 core）"
+            f"{path.name}：缺少首行 `project: <键>`，键取 {'、'.join(PROJECTS)} 之一；"
+            "归不进的就近归，见 changelog.d/README.md"
         )
-    if project not in PROJECTS:
+    if project is not None and project not in PROJECTS:
         raise ChangelogError(
             f"{path.name}：project 键 {project!r} 不在项目表里，可选：{'、'.join(PROJECTS)}"
         )
@@ -767,7 +770,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
     return Fragment(
         path=path,
         identifier=matched.group("identifier"),
-        category=FRAGMENT_TYPES[matched.group("type")],
+        category=category,
         text=text,
         author=author,
         project=project,
@@ -1937,8 +1940,12 @@ def command_add(arguments: argparse.Namespace) -> int:
     if "\n" in text:
         raise ChangelogError("碎片只能写一行")
     check_fragment_text(text, "碎片")
-    project = arguments.project.lower()
-    if project not in PROJECTS:
+    project: Optional[str] = arguments.project.lower()
+    if project == "-":
+        if FRAGMENT_TYPES[arguments.type] != DEV_CATEGORY:
+            raise ChangelogError("只有 dev 碎片可以不写项目键，其余请从项目表里选一个")
+        project = None
+    elif project not in PROJECTS:
         raise ChangelogError(
             f"project 键 {project!r} 不在项目表里，可选：{'、'.join(PROJECTS)}"
         )
@@ -1954,7 +1961,7 @@ def command_add(arguments: argparse.Namespace) -> int:
             f"已经有碎片 {existing[0].path.name}，一条 PR 只放一个碎片，请直接编辑它"
         )
     path = FRAGMENT_DIR / f"{identifier}.{arguments.type}.md"
-    content = f"project: {project}\n" + text + "\n"
+    content = (f"project: {project}\n" if project else "") + text + "\n"
     if arguments.highlight:
         content = "highlight: true\n" + content
     if arguments.author:
@@ -1983,7 +1990,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument(
         "project",
         metavar="project",
-        help="项目键：" + "、".join(PROJECTS) + "（本体其他部分用 core）",
+        help="项目键：" + "、".join(PROJECTS) + "；dev 碎片可写 - 表示无",
     )
     add.add_argument(
         "text", nargs="+", help=f"一句面向用户的话，不超过 {FRAGMENT_TEXT_LIMIT} 字"

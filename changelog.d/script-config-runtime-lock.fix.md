@@ -1,2 +1,2 @@
-project: core
+project: scheduler
 修复任务运行中仍可修改或恢复相关脚本配置的问题，运行期间会自动锁定

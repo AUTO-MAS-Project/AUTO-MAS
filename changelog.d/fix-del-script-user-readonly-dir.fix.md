@@ -1,2 +1,2 @@
-project: core
+project: scheduler
 修复删除脚本或用户时因数据目录里有只读文件而失败、目录残留的问题
