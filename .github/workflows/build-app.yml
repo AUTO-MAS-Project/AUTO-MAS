@@ -27,6 +27,7 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write
 
 jobs:
 
@@ -39,6 +40,9 @@ jobs:
       version_tag: ${{ steps.generate_version_info.outputs.version_tag }}
       is_prerelease: ${{ steps.generate_version_info.outputs.is_prerelease }}
       version_changelog: ${{ steps.generate_version_info.outputs.version_changelog }}
+      note_cut_count: ${{ steps.generate_version_info.outputs.note_cut_count }}
+      note_issue_title: ${{ steps.generate_version_info.outputs.note_issue_title }}
+      note_issue_body: ${{ steps.generate_version_info.outputs.note_issue_body }}
 
     steps:
       - name: 签出代码
@@ -169,7 +173,8 @@ jobs:
 
       # 守门：仓库版本号必须已经比最新 tag 新、changelog.d/ 必须已清空，否则说明发版 PR 还没合并，
       # 或者合并之后又进了带碎片的改动。Release 正文由脚本渲染：首行 JSON 是老客户端的解析契约，
-      # 可见正文只写本版增量。
+      # 可见正文只写本版增量。首行超预算不会让构建失败：脚本从本版段末尾熔断丢条目保证 JSON
+      # 完整，丢了什么写进 note_issue_*，发布后由 release 任务开 issue 告知维护者。
       - name: 生成版本信息
         id: generate_version_info
         run: |
@@ -178,7 +183,8 @@ jobs:
           $versionTag = (python scripts/changelog.py current).Trim()
           if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
           $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
-          python scripts/changelog.py release-note --version $versionTag --output $notePath
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          python scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
           if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
           $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
           $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
@@ -409,6 +415,24 @@ jobs:
             [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
           files: artifacts/*
           prerelease: ${{ needs.build.outputs.is_prerelease }}
+
+      - name: 更新公告被熔断时开 issue 告知
+        # 首行 JSON 超预算时脚本已经丢掉末尾条目保证发版，这里把丢了什么告诉维护者；
+        # 同一版重跑构建不重复开，按标题找到已开的就追加评论
+        if: needs.build.outputs.note_cut_count != '' && needs.build.outputs.note_cut_count != '0'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: ${{ needs.build.outputs.note_issue_title }}
+          ISSUE_BODY: ${{ needs.build.outputs.note_issue_body }}
+        run: |
+          existing=$(gh issue list --state open --limit 100 --json number,title \
+            | jq -r --arg title "$ISSUE_TITLE" '[.[] | select(.title == $title)][0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$ISSUE_BODY"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
+          fi
 
       - name: 标记 Sentry 生产部署
         env:
