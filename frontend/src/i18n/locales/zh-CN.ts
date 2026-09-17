@@ -959,8 +959,8 @@ export default {
     masManagesGame: 'MAS 管理游戏',
     mfwGamePackageName: '游戏包名',
     mfwGamePackageNamePassed:
-      '启动模拟器时顺带把游戏拉起来。留空则从项目的 pipeline 中自动识别；识别不出或识别到多个时不启动游戏，可在此手动填写',
-    mfwGamePackageNamePlaceholder: '留空则自动识别，如 com.hypergryph.arknights',
+      '启动模拟器时顺带把游戏拉起来。读取 interface 或切换资源时会从项目的 pipeline 里识别并自动填入；识别不出或识别到多个时留空、运行时不启动游戏，可在此手动填写',
+    mfwGamePackageNamePlaceholder: '未能自动识别，可手动填写，如 com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd 脚本配置',
     maaendPath: 'MaaEnd 路径',
     maaendAdapterStillUnder: 'MaaEnd专项还在积极测试中，如有问题请加入',

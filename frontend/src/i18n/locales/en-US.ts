@@ -983,8 +983,8 @@ export default {
     masManagesGame: 'MAS manages the game',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
-      'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
-    mfwGamePackageNamePlaceholder: 'Empty to auto-detect, e.g. com.hypergryph.arknights',
+      'Launch the game together with the emulator. Detected from the project pipeline and filled in when the interface is read or the resource changes; when detection finds nothing or several candidates it stays empty, the game is not launched, and you can fill it in here',
+    mfwGamePackageNamePlaceholder: 'Not detected; fill in manually, e.g. com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:

@@ -931,8 +931,9 @@ export default {
     masManagesGame: 'MAS がゲームを管理',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
-      'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
-    mfwGamePackageNamePlaceholder: '空欄で自動判別、例: com.hypergryph.arknights',
+      'エミュレータ起動と同時にゲームを起動します。interface の読み込み時やリソース切替時にプロジェクトの pipeline から判別して自動入力します。判別できない場合や候補が複数ある場合は空欄のままで起動せず、ここに手動で入力できます',
+    mfwGamePackageNamePlaceholder:
+      '自動判別できませんでした。手動で入力、例: com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',

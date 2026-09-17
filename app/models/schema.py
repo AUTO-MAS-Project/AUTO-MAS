@@ -3701,6 +3701,25 @@ class MaaFWInterfacePreviewIn(BaseModel):
     path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
 
 
+class MaaFWGamePackageIn(BaseModel):
+    path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+    resource: str = Field(..., description="要按哪个 resource 的 pipeline 推断包名")
+
+
+class MaaFWGamePackageData(BaseModel):
+    reason: Literal["resolved", "not-found", "ambiguous"] = Field(
+        ..., description="推断结果：唯一 / 没找到 / 多个互相矛盾"
+    )
+    package: str = Field(default="", description="推出来的包名，仅 resolved 时非空")
+    candidates: List[str] = Field(
+        default_factory=list, description="ambiguous 时列出全部候选，供界面提示"
+    )
+
+
+class MaaFWGamePackageOut(OutBase):
+    data: Optional[MaaFWGamePackageData] = Field(default=None, description="包名推断结果")
+
+
 class MaaFWAdbEmulatorExtraCapabilityInfo(BaseModel):
     screencap: bool = Field(default=False, description="ADB EmulatorExtras 截图能力")
     input: bool = Field(default=False, description="ADB EmulatorExtras 输入能力")

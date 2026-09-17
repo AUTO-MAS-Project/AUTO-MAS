@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import parse_json_text
+from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWInterface
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 包名识别")
@@ -128,6 +129,37 @@ def _iter_pipeline_files(resource_path: Path) -> Iterator[Path]:
             yield file
 
 
+def resource_paths_for(
+    root_path: Path, interface: MaaFWInterface, resource_name: str
+) -> list[Path]:
+    """``interface.resource[name].path`` 解析成项目内的目录列表，保持声明顺序。
+
+    给脚本编辑页用：那里还没有运行计划，只知道用户选了哪个 resource。
+    找不到该 resource 返回空列表；越界（跳出项目目录）与不存在的条目直接跳过——
+    这里只是推包名，不是在校验项目。
+    """
+
+    root = Path(root_path).resolve()
+    resource = next(
+        (item for item in interface.resource if item.name == resource_name), None
+    )
+    if resource is None:
+        return []
+    paths: list[Path] = []
+    for raw in resource.path or []:
+        candidate = Path(str(raw).replace("{PROJECT_DIR}", str(root)))
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            continue
+        if resolved.is_dir():
+            paths.append(resolved)
+    return paths
+
+
 def resolve_game_package(
     resource_paths: Sequence[Path],
     task_overrides: Sequence[Mapping[str, Any]] = (),
@@ -170,4 +202,5 @@ __all__ = [
     "collect_start_app_nodes",
     "normalize_package",
     "resolve_game_package",
+    "resource_paths_for",
 ]

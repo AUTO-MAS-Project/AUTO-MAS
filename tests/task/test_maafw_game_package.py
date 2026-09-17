@@ -3,10 +3,12 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWInterface
 from app.task.MaaFW.tools.embedded.game_package import (
     collect_start_app_nodes,
     normalize_package,
     resolve_game_package,
+    resource_paths_for,
 )
 
 #: M9A 官服 `resource/base/pipeline/startup.json` 里的真实节点形状。
@@ -203,6 +205,87 @@ class ResolveTest(unittest.TestCase):
             self.assertEqual(
                 resolve_game_package([base]).package, "com.shenlan.m.reverse1999"
             )
+
+
+class ResourcePathsForTest(unittest.TestCase):
+    """脚本编辑页按所选 resource 推包名时，先把 interface.resource[].path 解析成目录。"""
+
+    def _interface(self) -> MaaFWInterface:
+        # 照抄 M9A interface.json 里 resource 的写法：相对路径以 ./ 开头、按叠加顺序排列
+        return MaaFWInterface.model_validate(
+            {
+                "interface_version": 2,
+                "name": "M9A",
+                "resource": [
+                    {"name": "官服", "path": ["./resource/base"]},
+                    {
+                        "name": "B 服",
+                        "path": ["./resource/base", "./resource/bilibili"],
+                    },
+                    {
+                        "name": "越界",
+                        "path": ["{PROJECT_DIR}/resource/base", "../outside"],
+                    },
+                    {"name": "缺目录", "path": ["./resource/missing"]},
+                ],
+            }
+        )
+
+    def test_keeps_declared_order_and_expands_project_dir(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "resource" / "base").mkdir(parents=True)
+            (root / "resource" / "bilibili").mkdir()
+            interface = self._interface()
+
+            self.assertEqual(
+                resource_paths_for(root, interface, "B 服"),
+                [
+                    (root / "resource" / "base").resolve(),
+                    (root / "resource" / "bilibili").resolve(),
+                ],
+            )
+            # {PROJECT_DIR} 展开；跳出项目目录的条目丢掉，不抛错
+            self.assertEqual(
+                resource_paths_for(root, interface, "越界"),
+                [(root / "resource" / "base").resolve()],
+            )
+            self.assertEqual(resource_paths_for(root, interface, "缺目录"), [])
+            self.assertEqual(
+                resource_paths_for(root, interface, "不存在的 resource"), []
+            )
+
+    def test_resolves_package_per_resource_like_the_edit_page_does(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "resource" / "base"
+            (base / "pipeline").mkdir(parents=True)
+            (base / "pipeline" / "startup.json").write_text(
+                json.dumps(M9A_BASE_NODE, ensure_ascii=False), encoding="utf-8"
+            )
+            bili = root / "resource" / "bilibili"
+            (bili / "pipeline").mkdir(parents=True)
+            (bili / "pipeline" / "startup.json").write_text(
+                json.dumps(
+                    {
+                        "Start1999": {
+                            "action": {
+                                "type": "StartApp",
+                                "param": {
+                                    "package": "com.shenlan.m.reverse1999.bilibili"
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            interface = self._interface()
+
+            official = resolve_game_package(resource_paths_for(root, interface, "官服"))
+            bilibili = resolve_game_package(resource_paths_for(root, interface, "B 服"))
+            self.assertEqual(official.package, "com.shenlan.m.reverse1999")
+            self.assertEqual(bilibili.package, "com.shenlan.m.reverse1999.bilibili")
 
 
 if __name__ == "__main__":
