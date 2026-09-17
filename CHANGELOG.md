@@ -57,7 +57,6 @@
 - MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次
 - MFW专项 修复首次更新「自己解压好、再指给 MAS」的项目时不清理资源目录里的旧版残留文件，新版挪走或删掉的文件留在原地导致资源加载失败、项目彻底跑不起来的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 修复初始化或更新进行中关闭窗口时，主进程偶发报「Object has been destroyed」崩溃退出的问题
 
 ### 开发流程
 
