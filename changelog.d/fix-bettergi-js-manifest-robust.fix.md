@@ -1,1 +1,3 @@
-修复一个格式不规范的 JS 脚本让 BetterGI 脚本候选列表整体加载失败的问题
+project: bgi
+beta-only: true
+一个格式错误的脚本不再让 JS 脚本候选列表整体失败
