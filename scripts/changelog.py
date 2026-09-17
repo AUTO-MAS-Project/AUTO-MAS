@@ -41,7 +41,8 @@
 Release 正文首行是一条 HTML 注释包着的 JSON，已发布客户端靠它显示更新提示：公测版带本周期
 全部 beta 段，正式版只带本次汇总，补丁版带同一 X.Y 线，上一个周期的内容一律不带。Mirror 酱对
 整份 release_note 只存前 20000 字符，超出直接截断，所以首行 JSON 有预算：超预算时从
-最老的版本段开始丢，本版段永远保留；本版段自己就超预算的话直接报错，让发版 PR 先精简条目。
+最老的版本段开始丢，本版段永远保留；本版段自己就超预算的话从它末尾熔断丢条目（首行仍是完整
+JSON，末尾补一条「还有 N 条未显示」），发版照常，构建工作流再开 issue 告知维护者。
 
 用法::
 
@@ -200,6 +201,8 @@ PROJECT_PREFIX = re.compile(
 # Release 正文首行 JSON 的字符预算。Mirror 酱只保留 release_note 的前 20000 字符，首行
 # 必须完整留下，剩下的给可见正文与换行；beta.6 首行 29335 字符就是这么被截坏的。
 RELEASE_NOTE_JSON_BUDGET = 18000
+# 本版段自己就超预算时从末尾熔断，首行 JSON 里补的说明（客户端按普通条目显示）
+CUT_MARK = "（更新日志过长，还有 {count} 条未显示，完整内容见 GitHub Release）"
 
 # 改了这些路径的 PR 被视为用户可见，必须带碎片（除非打了 skip-changelog 标签）
 USER_VISIBLE_PREFIXES = ("app/", "frontend/src/", "frontend/electron/", "main.py")
@@ -1314,7 +1317,7 @@ def check_pull_request(
             problems.append(
                 f"发版 PR 的版本号 {current_version} 没有比最新 tag {latest} 新"
             )
-        # 首行 JSON 超预算的公告一发出去就会截坏所有客户端的更新检查，必须在这里拦住
+        # 超预算不拦：构建时会从本版段末尾熔断并开 issue，发版 PR 正文已预告会丢哪些
         try:
             plan_note_json(sections, current_version)
         except ChangelogError as error:
@@ -1430,7 +1433,10 @@ def command_check(arguments: argparse.Namespace) -> int:
 
 
 def command_guard() -> int:
-    """构建发布前的守门：版本号必须已经比最新 tag 新，碎片必须已经清空，首行 JSON 不超预算。"""
+    """构建发布前的守门：版本号必须已经比最新 tag 新，碎片必须已经清空。
+
+    首行 JSON 超预算不拦：release-note 会从本版段末尾熔断保证发版，工作流再开 issue。
+    """
 
     current_version, sections, dates = parse_changelog(read_text(CHANGELOG_PATH))
     latest = latest_version(reachable_tags("HEAD")) if git_available() else None
@@ -1452,9 +1458,12 @@ def command_guard() -> int:
             "说明发版 PR 之后又合并了改动；请重新运行「准备发版」"
         )
     try:
-        plan_note_json(sections, current_version)
+        plan = plan_note_json(sections, current_version)
     except ChangelogError as error:
         problems.append(str(error))
+    else:
+        if plan.cut:
+            print(f"注意：{describe_note_plan(plan)}", file=sys.stderr)
     if problems:
         print("发布守门未通过：", file=sys.stderr)
         for problem in problems:
@@ -1710,10 +1719,11 @@ def render_pr_body(
     lines.append("")
     lines.append("合并前请在本 PR 里完成：")
     lines.append("")
-    if plan is not None and plan.over_budget:
+    if plan is not None and plan.cut:
         lines.append(
-            f"- [ ] **首行 JSON {plan.size} 字符，超过预算 {plan.budget}**，"
-            "合并前必须精简或合并条目，否则所有客户端的更新检查都会失败（检查会红）"
+            f"- [ ] **首行 JSON 不截会有 {plan.uncut_size} 字符，超过预算 {plan.budget}**："
+            f"构建时会从本版段末尾自动丢掉 {len(plan.cut)} 条保证发版，并开 issue 告知"
+            "（清单见「体积」节）；要全部保留就在合并前精简或合并条目"
         )
     lines.append(
         "- [ ] 「本次亮点」够不够：合并前给碎片加 `highlight: true` 就会自动进这一类，"
@@ -1747,6 +1757,10 @@ def render_pr_body(
             lines.append(f"- 按 `（仅公测）` 丢掉 {len(dropped)} 条：")
             for category, item in dropped:
                 lines.append(f"  - （{category}）{item}")
+        if plan.cut:
+            lines.append(f"- 首行超预算，构建时会从末尾熔断丢掉 {len(plan.cut)} 条：")
+            for category, item in plan.cut:
+                lines.append(f"  - （{category}）{item}")
         lines.append("")
     if previous:
         lines.append(f"自 `{previous}` 以来的改动：")
@@ -1769,6 +1783,12 @@ def render_run_summary(
     lines.append(f"- 基于 {previous or '无 tag'}，编译 {fragment_count} 个碎片")
     lines.append(f"- {describe_note_plan(plan)}")
     lines.append("")
+    if plan.cut:
+        lines.append(f"### 首行超预算，构建时会从末尾熔断丢掉的 {len(plan.cut)} 条")
+        lines.append("")
+        for category, item in plan.cut:
+            lines.append(f"- （{category}）{item}")
+        lines.append("")
     if dropped:
         lines.append(f"### 按 `（仅公测）` 丢掉的 {len(dropped)} 条")
         lines.append("")
@@ -1997,17 +2017,28 @@ def select_note_versions(sections: Sections, version: str) -> List[str]:
 
 
 class NotePlan:
-    """首行 JSON 的裁剪结果：最终那一行、留下的版本段、为了预算丢掉的版本段。"""
+    """首行 JSON 的裁剪结果：最终那一行、留下的版本段、为了预算丢掉的版本段，以及从本版段
+    末尾熔断丢掉的条目。"""
 
-    __slots__ = ("line", "kept", "dropped", "budget")
+    __slots__ = ("line", "kept", "dropped", "budget", "cut", "uncut_size")
 
     def __init__(
-        self, line: str, kept: List[str], dropped: List[str], budget: int
+        self,
+        line: str,
+        kept: List[str],
+        dropped: List[str],
+        budget: int,
+        cut: Sequence[Tuple[str, str]] = (),
+        uncut_size: Optional[int] = None,
     ) -> None:
         self.line = line
         self.kept = kept
         self.dropped = dropped
         self.budget = budget
+        # 本版段末尾被熔断丢掉的 (分类, 条目)，按公告顺序
+        self.cut = list(cut)
+        # 熔断前（只剩本版段时）首行的长度，给 issue 与发版 PR 说明用
+        self.uncut_size = self.size if uncut_size is None else uncut_size
 
     @property
     def size(self) -> int:
@@ -2024,17 +2055,42 @@ def note_length(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
+def encode_note_line(payload: Dict[str, Dict[str, List[str]]]) -> str:
+    return (
+        "<!--" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "-->"
+    )
+
+
+def cut_categories(
+    original: Dict[str, List[str]], remaining: Sequence[Tuple[str, str]], count: int
+) -> Dict[str, List[str]]:
+    """熔断后的本版段：按原分类顺序放回没丢的条目，最后一个非空分类末尾补一条说明。"""
+
+    categories: Dict[str, List[str]] = {category: [] for category in original}
+    for category, item in remaining:
+        categories[category].append(item)
+    kept = {category: items for category, items in categories.items() if items}
+    if kept:
+        last = next(reversed(kept))
+    else:
+        last = next(iter(original))
+        kept[last] = []
+    kept[last].append(CUT_MARK.format(count=count))
+    return kept
+
+
 def plan_note_json(
     sections: Sections,
     version: str,
     budget: int = RELEASE_NOTE_JSON_BUDGET,
     strict: bool = True,
 ) -> NotePlan:
-    """算出 Release 正文首行 JSON，超预算时从最老的版本段开始丢。
+    """算出 Release 正文首行 JSON：超预算先从最老的版本段丢，只剩本版段还超就从它末尾熔断。
 
-    本版段永远保留：它单独就超预算说明条目写得太长，strict 时直接报错，不能把截断的
-    JSON 发出去让所有客户端的更新检查一起失败；「准备发版」用非 strict 拿到结果写进
-    发版 PR 正文，由发版 PR 的检查把关。
+    发版不能因为公告太长而失败，截断的 JSON 又会让所有客户端的更新检查一起失败，所以
+    熔断只丢条目、每丢一条重新序列化，首行永远是完整 JSON，末尾补一条「还有 N 条未显示」。
+    丢掉的条目记在 plan.cut：发版 PR 正文预告、构建工作流据此开 issue 告知维护者。
+    strict 只管连那条说明都放不下的荒谬预算，正常预算下不会报错。
     """
 
     if version not in sections:
@@ -2046,31 +2102,45 @@ def plan_note_json(
         if v == version or client_categories(sections[v])
     ]
     kept = list(selected)
-    while True:
-        payload = {v: client_categories(sections[v]) for v in kept}
-        line = (
-            "<!--"
-            + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            + "-->"
+    current = client_categories(sections[version])
+
+    def render(current_categories: Dict[str, List[str]]) -> str:
+        return encode_note_line(
+            {
+                v: (
+                    current_categories
+                    if v == version
+                    else client_categories(sections[v])
+                )
+                for v in kept
+            }
         )
-        if note_length(line) <= budget or len(kept) == 1:
-            break
+
+    line = render(current)
+    while note_length(line) > budget and len(kept) > 1:
         kept.pop()  # 列表新在前，丢掉的是最老的那段
-    plan = NotePlan(line, kept, [v for v in selected if v not in kept], budget)
+        line = render(current)
+    uncut_size = note_length(line)
+    # 只剩本版段还超预算：从末尾一条条熔断，直到放得下
+    remaining = [
+        (category, item) for category, items in current.items() for item in items
+    ]
+    cut: List[Tuple[str, str]] = []
+    while note_length(line) > budget and remaining:
+        cut.insert(0, remaining.pop())
+        line = render(cut_categories(current, remaining, len(cut)))
+    plan = NotePlan(
+        line, kept, [v for v in selected if v not in kept], budget, cut, uncut_size
+    )
     if strict and plan.over_budget:
         raise ChangelogError(over_budget_message(sections, version, plan))
     return plan
 
 
 def over_budget_message(sections: Sections, version: str, plan: NotePlan) -> str:
-    longest = "；".join(
-        f"{category}「{text[:24]}…」{length} 字"
-        for length, category, text in longest_entries(sections[version], 3)
-    )
     return (
-        f"{version} 段单独就有 {plan.size} 字符，超过首行 JSON 预算 {plan.budget}"
-        f"（Mirror 酱只保留前 20000 字符）。请在发版 PR 里精简或合并条目，"
-        f"最长的几条：{longest}"
+        f"{version} 段的首行 JSON 有 {plan.size} 字符，预算 {plan.budget} 连熔断说明都放不下"
+        f"（Mirror 酱只保留前 20000 字符）；预算不该这么小"
     )
 
 
@@ -2137,16 +2207,69 @@ def describe_note_plan(plan: NotePlan) -> str:
     text = f"首行 JSON {plan.size} / {plan.budget} 字符，带 {len(plan.kept)} 个版本段"
     if plan.dropped:
         text += f"；为了预算丢掉了 {'、'.join(plan.dropped)}"
+    if plan.cut:
+        text += f"；本版段不截有 {plan.uncut_size} 字符，**从末尾熔断丢掉 {len(plan.cut)} 条**"
     if plan.over_budget:
         text += "；**超预算**"
     return text
+
+
+def render_cut_issue(
+    version: str, sections: Sections, plan: NotePlan, run_url: Optional[str]
+) -> Tuple[str, str]:
+    """首行被熔断时开给维护者的 issue：标题固定，工作流按标题去重。"""
+
+    title = f"{version} 更新公告首行超预算，自动丢掉了末尾 {len(plan.cut)} 条"
+    lines = [
+        f"「构建并发布应用程序」渲染 {version} 的 Release 正文时，首行 JSON 单独就有 "
+        f"{plan.uncut_size} 字符，超过预算 {plan.budget}（Mirror 酱只保留 release_note 前 "
+        "20000 字符，截断的 JSON 会让所有客户端的更新检查失败）。为了保证发版，脚本从本版段"
+        f"末尾丢掉了下面 {len(plan.cut)} 条：客户端的更新提示里看不到它们，GitHub Release 的"
+        "可见正文与 `CHANGELOG.md` 不受影响。",
+        "",
+        "### 被丢掉的条目",
+        "",
+    ]
+    lines.extend(f"- （{category}）{item}" for category, item in plan.cut)
+    longest = "；".join(
+        f"（{category}）「{text[:24]}…」{length} 字"
+        for length, category, text in longest_entries(sections[version], 3)
+    )
+    lines.extend(
+        [
+            "",
+            "### 怎么处理",
+            "",
+            f"1. 在 `CHANGELOG.md` 的 `## [{version}]` 段精简或合并条目（最长的几条：{longest}），"
+            "运行 `python scripts/changelog.py sync`，以 `changelog-maintenance` PR 或维护者直推"
+            "进 dev；发行版分支照着改一份。",
+            f"2. 在改好的分支上运行 `python scripts/changelog.py release-note --version {version}`，"
+            "把输出整份粘贴进 GitHub Release 的正文并保存，`release: edited` 会自动重新上传 Mirror 酱。",
+            "3. 接受现状就直接关闭本 issue。",
+        ]
+    )
+    if run_url:
+        lines.extend(["", f"本 issue 由工作流自动创建：{run_url}"])
+    return title, "\n".join(lines) + "\n"
 
 
 def command_release_note(arguments: argparse.Namespace) -> int:
     current_version, sections, _ = parse_changelog(read_text(CHANGELOG_PATH))
     version = arguments.version or current_version
     note = render_release_note(sections, version)
-    summary = describe_note_plan(plan_note_json(sections, version))
+    plan = plan_note_json(sections, version)
+    summary = describe_note_plan(plan)
+    if plan.cut:
+        print(f"注意：{summary}，工作流会开 issue 告知", file=sys.stderr)
+    if arguments.github_output:
+        title, body = render_cut_issue(version, sections, plan, arguments.run_url)
+        with open(arguments.github_output, "a", encoding="utf-8") as output:
+            output.write(f"note_cut_count={len(plan.cut)}\n")
+            output.write(f"note_issue_title={title if plan.cut else ''}\n")
+            output.write("note_issue_body<<EOF_NOTE_ISSUE\n")
+            if plan.cut:
+                output.write(body)
+            output.write("EOF_NOTE_ISSUE\n")
     if arguments.output:
         write_text(Path(arguments.output), note)
         print(f"已写出 {version} 的 Release 正文到 {arguments.output}（{summary}）")
@@ -2303,6 +2426,11 @@ def build_parser() -> argparse.ArgumentParser:
     note = subparsers.add_parser("release-note", help="渲染 Release 正文")
     note.add_argument("--version", help="默认当前版本")
     note.add_argument("--output", help="写到文件而不是标准输出")
+    note.add_argument(
+        "--github-output",
+        help="把熔断结果（note_cut_count / note_issue_*）写进 GITHUB_OUTPUT",
+    )
+    note.add_argument("--run-url", help="写进 issue 的工作流运行链接")
 
     subparsers.add_parser("guard", help="构建发布前守门")
     subparsers.add_parser("sync", help="从 CHANGELOG.md 同步各处生成物")

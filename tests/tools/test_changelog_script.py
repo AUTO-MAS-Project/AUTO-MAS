@@ -975,27 +975,59 @@ def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
     }
 
 
-def test_release_note_refuses_when_the_current_section_alone_is_over_budget() -> None:
+def test_release_note_cuts_the_tail_when_the_current_section_alone_is_over_budget() -> (
+    None
+):
+    """本版段自己就超预算：从末尾熔断丢条目，首行永远是完整 JSON，末尾补一条说明，发版不失败。"""
+
     sections, _ = _sections(
-        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 【MAA】"
-        + "甲" * 40
-        + "\n- 乙\n"
+        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 新增\n\n- 【MAA】甲\n\n### 修复\n\n- 【MAA】"
+        + "乙" * 40
+        + "\n- 丙\n"
     )
+    full = changelog.plan_note_json(sections, "v5.5.0-beta.7")
+    assert full.cut == [] and not full.over_budget
 
-    with pytest.raises(
-        changelog.ChangelogError, match="单独就有 .* 字符，超过首行 JSON 预算 30"
-    ):
+    plan = changelog.plan_note_json(sections, "v5.5.0-beta.7", budget=full.size - 1)
+    assert plan.kept == ["v5.5.0-beta.7"] and not plan.over_budget
+    assert plan.uncut_size == full.size and plan.size <= full.size - 1
+    # 丢掉「丙」还放不下说明那一条，于是继续丢；说明挪到前一个非空分类末尾
+    assert plan.cut == [("修复", "【MAA】" + "乙" * 40), ("修复", "丙")]
+    assert json.loads(plan.line[4:-3]) == {
+        "v5.5.0-beta.7": {"新增": ["【MAA】甲", changelog.CUT_MARK.format(count=2)]}
+    }
+    # 可见正文与贡献者不受熔断影响
+    note = changelog.render_release_note(
+        sections, "v5.5.0-beta.7", budget=full.size - 1
+    )
+    assert "- 丙" in note.split("\n", 1)[1]
+
+    body = changelog.render_pr_body(
+        "v5.5.0-beta.7", "v5.5.0-beta.6", "beta", sections["v5.5.0-beta.7"], [], plan
+    )
+    assert f"不截会有 {full.size} 字符" in body
+    assert "熔断丢掉 2 条" in body and "  - （修复）丙" in body
+    summary = changelog.render_run_summary(
+        "v5.5.0-beta.7", "v5.5.0-beta.6", 3, plan, []
+    )
+    assert "熔断丢掉的 2 条" in summary and "- （修复）丙" in summary
+    title, issue = changelog.render_cut_issue(
+        "v5.5.0-beta.7", sections, plan, "https://example.test/run"
+    )
+    assert title == "v5.5.0-beta.7 更新公告首行超预算，自动丢掉了末尾 2 条"
+    assert f"单独就有 {full.size} 字符" in issue
+    assert "- （修复）丙" in issue and "https://example.test/run" in issue
+
+    # 连说明都放不下的荒谬预算才报错
+    with pytest.raises(changelog.ChangelogError, match="连熔断说明都放不下"):
         changelog.render_release_note(sections, "v5.5.0-beta.7", budget=30)
-
     lenient = changelog.plan_note_json(
         sections, "v5.5.0-beta.7", budget=30, strict=False
     )
-    assert lenient.over_budget and lenient.kept == ["v5.5.0-beta.7"]
-    body = changelog.render_pr_body(
-        "v5.5.0-beta.7", "v5.5.0-beta.6", "beta", sections["v5.5.0-beta.7"], [], lenient
-    )
-    assert "超过预算 30" in body
-    assert "### 体积" in body and "最长的几条" in body
+    assert lenient.over_budget and len(lenient.cut) == 3
+    assert json.loads(lenient.line[4:-3]) == {
+        "v5.5.0-beta.7": {"新增": [changelog.CUT_MARK.format(count=3)]}
+    }
 
 
 def test_release_note_hides_contributor_only_categories_from_users() -> None:
