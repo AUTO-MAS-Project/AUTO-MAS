@@ -728,6 +728,10 @@ def check_fragment_text(text: str, where: str) -> None:
         raise ChangelogError(
             f"{where}：项目写在首行 `project: <键>` 里，正文开头不要再写 `(项目)`"
         )
+    if PR_REFS_TAIL.search(text) or BETA_ONLY_TAIL.search(text):
+        raise ChangelogError(
+            f"{where}：PR 号与 `[仅公测]` 标记由脚本按合并提交与头部行自动补，正文里不要写"
+        )
     if len(text) > FRAGMENT_TEXT_LIMIT:
         raise ChangelogError(
             f"{where}：碎片正文 {len(text)} 字，超过 {FRAGMENT_TEXT_LIMIT} 字上限。"

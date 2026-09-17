@@ -440,6 +440,8 @@ def test_only_dev_fragments_may_omit_the_project_key(tmp_path) -> None:
         ("683.feat.md", "project: maa\nproject: hsr\n甲\n", "project 只能写一次"),
         ("683.feat.md", "project: arknights\n甲\n", "不在项目表里"),
         ("683.feat.md", "project: maa\n(MAA) 甲\n", "正文开头不要再写"),
+        ("683.feat.md", "project: maa\n甲 (#12)\n", "正文里不要写"),
+        ("683.feat.md", "project: maa\n甲 [仅公测]\n", "正文里不要写"),
         ("683.feat.md", "project: maa\n" + "甲" * 51 + "\n", "超过 50 字上限"),
     ],
 )
