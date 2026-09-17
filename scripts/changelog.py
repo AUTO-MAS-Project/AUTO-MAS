@@ -1793,11 +1793,13 @@ def command_release_note(arguments: argparse.Namespace) -> int:
     current_version, sections, _ = parse_changelog(read_text(CHANGELOG_PATH))
     version = arguments.version or current_version
     note = render_release_note(sections, version)
-    print(describe_note_plan(plan_note_json(sections, version)), file=sys.stderr)
+    summary = describe_note_plan(plan_note_json(sections, version))
     if arguments.output:
         write_text(Path(arguments.output), note)
-        print(f"已写出 {version} 的 Release 正文到 {arguments.output}")
+        print(f"已写出 {version} 的 Release 正文到 {arguments.output}（{summary}）")
     else:
+        # 正文占着标准输出，体积说明走标准错误
+        print(summary, file=sys.stderr)
         sys.stdout.write(note)
     return 0
 
