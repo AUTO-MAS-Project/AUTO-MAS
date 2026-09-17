@@ -24,7 +24,7 @@
 
 - `main`：禁止协助 push / force push；禁止以 `main` 为 base 创建 PR。仅维护者将 `dev` 合入 `main` 用于发布。
 - `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片，且不改 `CHANGELOG.md` 与版本号。
-- `tests/`：测试照旧在本地编写并运行，把验证命令与结论写进 PR 正文；**默认不提交 `tests/` 下的任何新增或修改，提交前用 `git status` 自查**。确需提交公共测试时，在 PR 正文单独说明理由，由维护者评估。
+- `tests/`：测试照旧在本地编写并运行，把验证命令与结论写进 PR 正文；**功能实现与 bug 修复的测试属于一次性验证产物**，实现改完、问题复现过后就没有长期价值，留在仓库只会持续抬高每次跑测试的时间成本，不提交；只有跨功能通用的公共与纯逻辑测试才进仓库。**提交前用 `git status` 自查，默认不提交 `tests/` 下的任何新增或修改**；确有例外时在 PR 正文单独说明理由，由维护者评估。
 - `release/{version}`：由发布流程维护，不接受直推。修复先进 `dev`，再以 cherry-pick PR 进 release 分支；PR 不得带入 `dev` 独有的提交，CI 会检查。cherry-pick PR 只带碎片，不改版本号、不编译更新日志；要出补丁版时，在最新 tag 对应的 release 分支上运行「准备发版」（每次发版都会新建 `release/<tag>` 分支，在更老的分支上准备会因版本号重号被拒）。本流程上线前建出的 release 分支仍按旧规则运行，要在其上沿用新规则，需把新工作流、`scripts/changelog.py` 与 `sync` 后的 `CHANGELOG.md` 一并 cherry-pick 进去。
 - 发版 PR：标题 `Release vX.Y.Z`，由「准备发版」工作流从 `dev` 或 `release/*` 创建，是唯一允许修改 `CHANGELOG.md`、`res/version.json` 与版本号的 PR；合并后由维护者手动运行「构建并发布应用程序」。外部贡献者不要开这类 PR。
 - 版本号只有 `vX.Y.Z` 与 `vX.Y.Z-beta.N` 两种形态：预发布号里的 `X.Y.Z` 就是将来的正式号，转正与最后一个 beta 同号；正式版热修出 `Z+1` 补丁版，从 release 分支发；N 只增不减。版本号由发版 PR 写入，其他 PR 不要改。
