@@ -76,4 +76,5 @@ python scripts/changelog.py add fix maa "修复理智不足时剿灭被误记为
 
 Release 正文首行是给客户端更新提示用的 JSON，Mirror 酱只保留前 20000 字符。脚本给首行
 18000 字符的预算：条目里不带 PR 号，超预算时从最老的版本段开始丢；本版段自己就超预算的话，
-发版 PR 的检查会红，合并前要在 PR 里精简或合并条目。
+发版 PR 的检查会红，合并前要在 PR 里直接改 `CHANGELOG.md` 新版本段精简或合并条目，
+改完运行 `python scripts/changelog.py sync` 一起提交，检查才会绿。

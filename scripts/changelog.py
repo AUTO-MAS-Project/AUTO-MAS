@@ -1208,7 +1208,7 @@ def check_pull_request(
     if needs_fragment and not added:
         problems.append(
             "这个 PR 改了用户可见的代码，但没有新增更新日志碎片。"
-            '请运行 `python scripts/changelog.py add <分类> "<一句话>"`；'
+            '请运行 `python scripts/changelog.py add <分类> <项目键> "<一句话>"`；'
             "确实没有用户可见改动的话，给 PR 打 skip-changelog 标签"
         )
     if len(added) > 1:
