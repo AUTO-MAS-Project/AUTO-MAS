@@ -984,8 +984,8 @@ export default {
     masManagesGame: 'MAS manages the game',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
-      'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
-    mfwGamePackageNamePlaceholder: 'Empty to auto-detect, e.g. com.hypergryph.arknights',
+      'Launch the game together with the emulator. Detected from the project pipeline and filled in when the interface is read or the resource changes; when detection finds nothing or several candidates it stays empty, the game is not launched, and you can fill it in here',
+    mfwGamePackageNamePlaceholder: 'e.g. com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:
@@ -1017,7 +1017,6 @@ export default {
     okWwSettingsSaved: 'ok-ww settings saved',
     okWwPath: 'ok-ww path',
     originalUiRecommended: '- the original UI is recommended',
-    applyPreset: 'Apply a preset',
     march7thPath: 'March7th path',
     uploadFailedCheckYour: 'Upload failed — check your connection and try again',
     uploadThisScriptConfiguration: 'Upload this script configuration to the cloud',
@@ -1528,6 +1527,7 @@ export default {
     launchGameOtherWay: 'Start and stop the game another way',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
+    taskDescriptionLabel: 'Notes',
     adbStrategyPerDevice: 'Decided at run time',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: 'Default',
@@ -1624,7 +1624,6 @@ export default {
     processName: 'Process name',
     processNameEG:
       'Process name, e.g. StarRail.exe. This is required, otherwise the process state may not be tracked correctly. Launch the game and open Task Manager, then check the program details to find it.',
-    appendTask: 'Append a task',
     trackChildProcesses: 'Track child processes',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
