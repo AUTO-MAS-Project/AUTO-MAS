@@ -85,6 +85,11 @@ class MaaFWDeviceConfig(BaseModel):
     adbReadyTimeout: int | None = None
 
 
+class MaaFWFailureScreenshot(BaseModel):
+    task: str
+    path: str
+
+
 class MaaFWRunResult(BaseModel):
     success: bool
     projectName: str
@@ -93,6 +98,8 @@ class MaaFWRunResult(BaseModel):
     completedTasks: list[str] = Field(default_factory=list)
     failedTask: str | None = None
     errorMessage: str | None = None
+    # 任务失败当刻的画面，按失败先后排列；宿主把它们塞进通知。
+    failureScreenshots: list[MaaFWFailureScreenshot] = Field(default_factory=list)
 
 
 class MaaFWRunnerJobPayload(BaseModel):
@@ -102,3 +109,7 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 进程继续占用设备。createTime 与 pid 配对使用，防 pid 复用误判。
     ownerPid: int | None = None
     ownerCreateTime: float | None = None
+    # 任务失败截图落盘目录与文件名前缀，宿主指向本次运行的 history 目录，
+    # 让截图和 .log / .maafw.log 挨在一起。None 表示不截。
+    failureScreenshotDir: str | None = None
+    failureScreenshotPrefix: str = ""

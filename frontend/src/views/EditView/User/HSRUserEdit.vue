@@ -10,7 +10,7 @@
       @cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-alert
           v-if="capabilitySnapshot?.unavailable_reason && !visibleCapabilityWarnings.length"
@@ -329,11 +329,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="HSR_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -369,6 +370,8 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -512,6 +515,7 @@ const formData = reactive<HSRUserConfigData>({
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptConfig = ref<HSRScriptConfig | null>(null)
@@ -827,7 +831,7 @@ const handleDirectEngineToggle = async (engine: HSREngine, enabled: boolean) => 
 }
 
 const handleDirectConfigImport = async (engine: HSREngine) => {
-  if (!userId || importingDirectEngine.value) return
+  if (!userId || importingDirectEngine.value || configLocked.value) return
   importingDirectEngine.value = engine
   try {
     const result = await hsrPluginApi.importDirectConfig(scriptId, userId, engine)
@@ -849,7 +853,7 @@ const handleDirectConfigImport = async (engine: HSREngine) => {
 
 // 与 handleDirectConfigImport 对称：清掉快照后直控回到直接使用脚本当前配置
 const handleDirectConfigClear = async (engine: HSREngine) => {
-  if (!userId || clearingDirectEngine.value || importingDirectEngine.value) return
+  if (!userId || clearingDirectEngine.value || importingDirectEngine.value || configLocked.value) return
   clearingDirectEngine.value = engine
   try {
     await hsrPluginApi.clearDirectConfig(scriptId, userId, engine)
@@ -1158,6 +1162,8 @@ onUnmounted(() => {
 })
 
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {

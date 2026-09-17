@@ -23,6 +23,7 @@
         ghost
         size="large"
         :loading="maaConfigLoading"
+        :disabled="configLocked"
         @click="$emit('handleMAAConfig')"
       >
         <template #icon>
@@ -66,6 +67,7 @@ defineProps<{
   maaConfigLoading: boolean
   showMaaConfigMask: boolean
   loading: boolean
+  configLocked: boolean
 }>()
 
 defineEmits<{

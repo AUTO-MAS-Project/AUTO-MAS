@@ -634,7 +634,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         archive_mas_runtime_backup(
             self.script_info.script_id,
-            self.cur_user_uid,
+            str(self.cur_user_uid),
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
         )

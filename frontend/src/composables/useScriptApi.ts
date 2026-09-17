@@ -16,6 +16,8 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -1512,6 +1514,13 @@ export function useScriptApi() {
     scriptId: string,
     data: Record<string, unknown>
   ): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 

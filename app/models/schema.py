@@ -2633,10 +2633,20 @@ class MaaEndConfig_Game(BaseModel):
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
+    SetResolution: Optional[bool] = Field(
+        default=None, description="是否在启动游戏时设置分辨率"
+    )
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
     RestoreResolution: Optional[
-        Literal["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]
-    ] = Field(default=None, description="关闭游戏时恢复的分辨率，Off 表示不修改")
+        Literal[
+            "Off",
+            "1920x1080",
+            "2560x1440",
+            "3840x2160",
+            "Fullscreen",
+            "Custom",
+        ]
+    ] = Field(default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改")
     RestoreResolutionWidth: Optional[int] = Field(
         default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
     )
@@ -3544,11 +3554,16 @@ class MaaFWConfig_Device(BaseModel):
 
 
 class MaaFWConfig_Game(BaseModel):
-    LaunchMode: Optional[Literal["AttachOnly", "DirectExe"]] = Field(
-        default=None, description="游戏启动模式"
+    LaunchMode: Optional[Literal["DirectExe", "AttachOnly"]] = Field(
+        default=None,
+        description="游戏启动模式：DirectExe 让 MAS 启动并在结束后关闭 / AttachOnly 使用其他方式启停，MAS 只接管",
     )
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
+    )
+    UnityResolution: Optional[Literal["Off", "1920x1080", "1280x720"]] = Field(
+        default=None,
+        description="DirectExe 模式下启动 Unity 游戏前临时把注册表分辨率改成所选窗口尺寸，关闭后恢复；Off 不修改",
     )
     PackageName: Optional[str] = Field(
         default=None,
@@ -3557,9 +3572,6 @@ class MaaFWConfig_Game(BaseModel):
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
-    )
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭由 MAS 启动的游戏"
     )
 
 
@@ -3987,6 +3999,10 @@ class MaaFWAgentEnvPrepareData(BaseModel):
     cached: bool = Field(
         default=False,
         description="是否命中指纹缓存，命中时本次未做实际准备",
+    )
+    previouslyPrepared: bool = Field(
+        default=False,
+        description="本次准备前该项目已有过就绪环境，即这次是更新而非首次准备",
     )
     preparedAt: Optional[str] = Field(
         default=None, description="缓存命中时，上一次实际完成准备的时间"
@@ -5149,6 +5165,42 @@ class WSMaaFWEnvPrepareProgressData(BaseModel):
         default=None, description="总体进度百分比，未知时为 null"
     )
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+
+
+class WSMaaFWProjectUpdateProgressData(BaseModel):
+    """MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress)
+
+    检查与应用两条路径共用；``stage="log"`` 只带一行新增日志，其余阶段带
+    当前进度。速度由后端按已下载字节的时间差计算并节流，前端不必再算。
+    """
+
+    stage: str = Field(
+        ...,
+        description=(
+            "阶段：checking / downloading / downloaded / plan_validated / staged / "
+            "applying / post_validating / committed / rolled_back / completed / "
+            "failed / log"
+        ),
+    )
+    status: str = Field(..., description="running / success / failed")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+    percent: Optional[float] = Field(
+        default=None, description="当前阶段进度百分比（下载 / 覆盖），未知时为 null"
+    )
+    downloadedBytes: Optional[int] = Field(default=None, description="已下载字节数")
+    totalBytes: Optional[int] = Field(
+        default=None, description="更新包总字节数，服务端未给出时为 null"
+    )
+    speedBytesPerSec: Optional[float] = Field(
+        default=None, description="下载速度 (B/s)，首个采样点为 null"
+    )
+    packageKind: Optional[str] = Field(
+        default=None,
+        description="更新包类型：full 全量 / incremental 增量，未知时为 null",
+    )
+    appliedFiles: Optional[int] = Field(default=None, description="已覆盖文件数")
+    totalFiles: Optional[int] = Field(default=None, description="本次要覆盖的文件总数")
 
 
 class WSUpdateCompletedData(BaseModel):

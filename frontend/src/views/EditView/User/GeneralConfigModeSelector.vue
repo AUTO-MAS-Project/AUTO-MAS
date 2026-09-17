@@ -117,7 +117,12 @@ const props = withDefaults(
     quickConfig?: boolean | undefined
     quickConfigDisabled?: boolean
   }>(),
-  { quickConfig: undefined, quickConfigDisabled: undefined }
+  {
+    options: undefined,
+    alertMessage: undefined,
+    quickConfig: undefined,
+    quickConfigDisabled: undefined,
+  }
 )
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，

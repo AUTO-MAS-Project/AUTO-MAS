@@ -27,14 +27,18 @@
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
 from app.core.config import Config
 from app.models.config import Webhook
-from app.services.notification import DEFAULT_WEBHOOK_TEMPLATE, Notify
+from app.services.notification import (
+    DEFAULT_WEBHOOK_TEMPLATE,
+    MailInlineImage,
+    Notify,
+)
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
@@ -55,6 +59,8 @@ class NotifyPayload:
     signature_sep: str = "\n\n"
     append_signature: bool = True
     email_mode: MailMode = "网页"
+    # 网页邮件的内嵌图片，html 里用 cid 引用；其他渠道各自决定要不要带图。
+    mail_images: tuple[MailInlineImage, ...] = ()
     serverchan_text: str | None = None
     webhook_text: str | None = None
     markdown_text: str | None = None
@@ -424,6 +430,8 @@ class Notifier(Protocol):
         title: str,
         content: str,
         to_address: str,
+        *,
+        images: Sequence[MailInlineImage] = (),
     ) -> bool | None: ...
 
     async def ServerChanPush(
@@ -536,6 +544,7 @@ async def dispatch(
                         title=payload.title,
                         content=payload.email_content,
                         to_address=t.mail_to,
+                        images=payload.mail_images,
                     ),
                 )
 
