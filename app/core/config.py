@@ -43,6 +43,8 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    Protocol,
+    runtime_checkable,
 )
 
 import httpx
@@ -4857,6 +4859,42 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
         logger.success(f"清理完成: {deleted_count} 个日期目录")
+
+
+@runtime_checkable
+class AppConfigServices(Protocol):
+    """api 层消费的配置域服务面（消费面契约）。
+
+    ``AppConfig`` 结构化隐式满足本协议，无需显式继承；api/scripts.py 按域
+    拆分时以本协议为构造注入面。当前只声明已具行为测试的服务集群，随拆分
+    批次扩展；拆分落地前不新增其他消费方开缝。
+    """
+
+    def restore_service(
+        self, script_id: str, user_id: str
+    ) -> "ConfigRestoreService": ...
+
+    async def list_config_backups(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict: ...
+
+    async def ensure_config_backup(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict: ...
+
+    async def restore_config_backup(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict: ...
+
+    async def get_config_backup_preview(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict: ...
+
+    async def get_config_backup_file(
+        self, script_id: str, user_id: str, ts: str, target: str, path: str
+    ) -> dict: ...
+
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, Any]: ...
 
 
 Config = AppConfig()
