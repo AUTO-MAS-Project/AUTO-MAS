@@ -36,7 +36,9 @@
   ``ClientVersion`` option，根本不在 resource 目录里。
 
 所以这里按同一套顺序叠加：先按 ``resource[].path`` 的顺序扫 pipeline，再把运行计划里
-已选任务的 ``pipelineOverride`` 盖上去，最后看还剩几个互不相同的包名。
+已选任务的 ``pipelineOverride`` 盖上去，最后看还剩几个互不相同的包名。还剩多个时再按
+「后面的层更具体」取最后一层的（渠道服资源层常常是新增一个启动节点而不是覆盖同名节点，
+Maa_bbb 就是这样），最后一层自己就有多个才算真的推不出。
 
 **这是约定，不是契约。** ``StartApp`` 是 MaaFramework 的标准动作，但没有任何规格要求
 项目必须用它启动游戏——interface 是 MXU / MFAAvalonia 这些客户端写的，我们只是读者。
@@ -97,9 +99,14 @@ def normalize_package(raw: str) -> str:
 def collect_start_app_nodes(pipeline: Any) -> dict[str, str]:
     """从一份 pipeline（或一份 ``pipeline_override``）里取出 ``{节点名: 包名参数}``。
 
-    只认 ``{"action": {"type": "StartApp", "param": {"package": ...}}}`` 这种嵌套写法：
-    实测两个真实项目的 10 处 ``StartApp`` 全是这个形状，没有一处用旧的扁平写法。
-    真遇到别的写法就当推不出来，由用户手填的包名兜底。
+    两种写法都认：
+
+    - 嵌套写法 ``{"action": {"type": "StartApp", "param": {"package": ...}}}``
+      （M9A、MaaEnd、法奥斯之矛）；
+    - 扁平写法 ``{"action": "StartApp", "package": ...}``（MaaYYs、Maa_bbb、MaaKes
+      的任务 override）。MaaFramework 两种都接受，项目里两种都在用。
+
+    ``StopApp`` 也带 ``package``，不能算进来。别的写法当推不出来，由用户手填兜底。
     """
     if not isinstance(pipeline, Mapping):
         return {}
@@ -109,11 +116,16 @@ def collect_start_app_nodes(pipeline: Any) -> dict[str, str]:
         if not isinstance(node, Mapping):
             continue
         action = node.get("action")
-        if not isinstance(action, Mapping) or action.get("type") != _START_APP_ACTION:
+        if isinstance(action, Mapping):
+            if action.get("type") != _START_APP_ACTION:
+                continue
+            package = action.get("param", {})
+            if isinstance(package, Mapping):
+                package = package.get("package")
+        elif action == _START_APP_ACTION:
+            package = node.get("package")
+        else:
             continue
-        package = action.get("param", {})
-        if isinstance(package, Mapping):
-            package = package.get("package")
         if isinstance(package, str) and package.strip():
             found[str(node_name)] = package
     return found
@@ -172,29 +184,50 @@ def resolve_game_package(
     这个函数只读文件、不抛异常：读不动或解析不了的文件跳过并记 debug，因为项目里
     混进一个坏 JSON 不该让整次代理失败。
     """
-    nodes: dict[str, str] = {}
-
-    for resource_path in resource_paths:
+    # 节点名 → (包名, 来自第几层)。层序 = resource 声明顺序
+    nodes: dict[str, tuple[str, int]] = {}
+    for layer, resource_path in enumerate(resource_paths):
         for file in _iter_pipeline_files(resource_path):
             try:
                 data = parse_json_text(file.read_text(encoding="utf-8"))
             except Exception as e:  # noqa: BLE001 - 见 docstring：坏文件跳过，不中断
                 logger.debug(f"跳过读不出的 pipeline 文件 {file}: {e}")
                 continue
-            nodes.update(collect_start_app_nodes(data))
+            for node_name, raw in collect_start_app_nodes(data).items():
+                nodes[node_name] = (raw, layer)
 
-    # override 最后盖：它来自用户在界面上选的 option，比 resource 里的默认值更具体
+    # override 最后盖：它来自用户在界面上选的 option，比 resource 里的默认值更具体。
+    # 但 override 只按节点名覆盖，盖到别的节点上时两个 StartApp 会并存，那就真的
+    # 无从知道任务入口走哪一个——这种情况不套下面「后面的层更具体」的规则。
+    override_touched = False
+    override_layer = len(resource_paths)
     for override in task_overrides:
-        nodes.update(collect_start_app_nodes(override))
+        for node_name, raw in collect_start_app_nodes(override).items():
+            nodes[node_name] = (raw, override_layer)
+            override_touched = True
 
-    packages = {normalize_package(raw) for raw in nodes.values()}
-    packages.discard("")
+    by_package: dict[str, int] = {}
+    for raw, node_layer in nodes.values():
+        package = normalize_package(raw)
+        if package:
+            by_package[package] = max(by_package.get(package, -1), node_layer)
 
-    if len(packages) == 1:
-        return PackageResolution(reason="resolved", package=next(iter(packages)))
-    if not packages:
+    if len(by_package) == 1:
+        return PackageResolution(reason="resolved", package=next(iter(by_package)))
+    if not by_package:
         return PackageResolution(reason="not-found")
-    return PackageResolution(reason="ambiguous", candidates=tuple(sorted(packages)))
+
+    # 只在 resource 层之间多个包名时再看一层：渠道服资源层往往**新增**一个自己的启动节点
+    # 而不是覆盖 base 的（Maa_bbb 的 resource_bilibili 就是这么写的），按「后面的层更具体」
+    # 取最后一层里的包名；最后一层自己就有多个才算真的 ambiguous。
+    if not override_touched:
+        top_layer = max(by_package.values())
+        top_packages = [
+            pkg for pkg, node_layer in by_package.items() if node_layer == top_layer
+        ]
+        if len(top_packages) == 1:
+            return PackageResolution(reason="resolved", package=top_packages[0])
+    return PackageResolution(reason="ambiguous", candidates=tuple(sorted(by_package)))
 
 
 __all__ = [

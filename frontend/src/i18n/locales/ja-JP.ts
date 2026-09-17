@@ -932,8 +932,7 @@ export default {
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
       'エミュレータ起動と同時にゲームを起動します。interface の読み込み時やリソース切替時にプロジェクトの pipeline から判別して自動入力します。判別できない場合や候補が複数ある場合は空欄のままで起動せず、ここに手動で入力できます',
-    mfwGamePackageNamePlaceholder:
-      '自動判別できませんでした。手動で入力、例: com.hypergryph.arknights',
+    mfwGamePackageNamePlaceholder: '例: com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',

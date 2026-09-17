@@ -38,6 +38,24 @@ M9A_EN_NODE = {
     }
 }
 
+#: MaaYYs `resource_pack/base/pipeline/启动游戏.json` 的真实形状：**扁平写法**，
+#: 包名带 Activity；同一文件里还有个扁平的 StopApp，不能算进来。
+MAAYYS_FLAT_NODES = {
+    "关闭阴阳师": {
+        "action": "StopApp",
+        "package": "com.netease.onmyoji.wyzymnqsd_cps",
+        "post_delay": 2000,
+        "recognition": "DirectHit",
+    },
+    "启动游戏": {
+        "action": "StartApp",
+        "package": "com.netease.onmyoji.wyzymnqsd_cps/com.netease.onmyoji.tag2",
+        "rate_limit": 3000,
+        "recognition": "DirectHit",
+        "timeout": 60000,
+    },
+}
+
 #: MaaEnd `tasks/AndroidOpenGame.json` 里 option case 的真实 pipeline_override 形状。
 #: 同一份 override 里还有 StopApp，不能把它也当成启动包名。
 MAAEND_OVERRIDE = {
@@ -179,6 +197,16 @@ class ResolveTest(unittest.TestCase):
 
         self.assertEqual(outcome.reason, "not-found")
         self.assertEqual(outcome.package, "")
+
+    def test_flat_start_app_form_is_recognised_and_stop_app_ignored(self) -> None:
+        """MaaYYs / Maa_bbb 用的是扁平写法，此前一律推成 not-found。"""
+        self.assertEqual(
+            collect_start_app_nodes(MAAYYS_FLAT_NODES),
+            {"启动游戏": "com.netease.onmyoji.wyzymnqsd_cps/com.netease.onmyoji.tag2"},
+        )
+        outcome = resolve_game_package([], [MAAYYS_FLAT_NODES])
+        self.assertEqual(outcome.reason, "resolved")
+        self.assertEqual(outcome.package, "com.netease.onmyoji.wyzymnqsd_cps")
 
     def test_conflicting_packages_refuse_to_guess(self) -> None:
         """挑错了会去启动另一个游戏，比不启动更糟。"""
