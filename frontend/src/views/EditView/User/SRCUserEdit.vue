@@ -46,6 +46,7 @@
       :show-src-config-mask="showSrcConfigMask"
       :loading="loading"
       :config-locked="configLocked"
+      :user-id="userId"
       @handle-s-r-c-config="startConfigSession(false)"
       @handle-cancel="handleCancel"
     />
