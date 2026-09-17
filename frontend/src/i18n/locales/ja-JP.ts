@@ -932,8 +932,8 @@ export default {
     masManagesGame: 'MAS がゲームを管理',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
-      'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
-    mfwGamePackageNamePlaceholder: '空欄で自動判別、例: com.hypergryph.arknights',
+      'エミュレータ起動と同時にゲームを起動します。interface の読み込み時やリソース切替時にプロジェクトの pipeline から判別して自動入力します。判別できない場合や候補が複数ある場合は空欄のままで起動せず、ここに手動で入力できます',
+    mfwGamePackageNamePlaceholder: '例: com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',
@@ -964,7 +964,6 @@ export default {
     okWwSettingsSaved: 'ok-ww の設定を保存しました',
     okWwPath: 'ok-ww のパス',
     originalUiRecommended: '・元の UI の利用をおすすめします',
-    applyPreset: 'プリセットを適用',
     march7thPath: '三月なのかのパス',
     uploadFailedCheckYour:
       'アップロードに失敗しました。接続を確認して、しばらくしてからお試しください',
@@ -1409,6 +1408,7 @@ export default {
     launchGameOtherWay: '別の方法でゲームを起動・終了する',
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
     envPanelTitle: '実行環境',
+    taskDescriptionLabel: '説明',
     adbStrategyPerDevice: '実行時に判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '既定',
@@ -1505,7 +1505,6 @@ export default {
     processName: 'プロセス名',
     processNameEG:
       'プロセス名（例: StarRail.exe）。未入力だとプロセスの状態を正しく監視できない場合があるため必須です。ゲームを起動してからタスクマネージャーでプログラムの詳細を確認すると分かります。',
-    appendTask: 'タスクを追加',
     trackChildProcesses: '子プロセスも追跡する',
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',

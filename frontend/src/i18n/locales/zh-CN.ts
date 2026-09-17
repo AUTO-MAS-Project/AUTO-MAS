@@ -491,8 +491,7 @@ export default {
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
     maaEndSetResolution: '启动时设置分辨率',
-    maaEndSetResolutionHint:
-      '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
+    maaEndSetResolutionHint: '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
     maaEndRestoreResolutionHint:
       '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
@@ -961,8 +960,8 @@ export default {
     masManagesGame: 'MAS 管理游戏',
     mfwGamePackageName: '游戏包名',
     mfwGamePackageNamePassed:
-      '启动模拟器时顺带把游戏拉起来。留空则从项目的 pipeline 中自动识别；识别不出或识别到多个时不启动游戏，可在此手动填写',
-    mfwGamePackageNamePlaceholder: '留空则自动识别，如 com.hypergryph.arknights',
+      '启动模拟器时顺带把游戏拉起来。读取 interface 或切换资源时会从项目的 pipeline 里识别并自动填入；识别不出或识别到多个时留空、运行时不启动游戏，可在此手动填写',
+    mfwGamePackageNamePlaceholder: '如 com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd 脚本配置',
     maaendPath: 'MaaEnd 路径',
     maaendAdapterStillUnder: 'MaaEnd专项还在积极测试中，如有问题请加入',
@@ -991,7 +990,6 @@ export default {
     okWwSettingsSaved: 'ok-ww 设置已保存',
     okWwPath: 'ok-ww 路径',
     originalUiRecommended: '· 建议使用原 UI',
-    applyPreset: '一键切换预设',
     march7thPath: '三月七路径',
     uploadFailedCheckYour: '上传失败，请检查网络连接或稍后重试',
     uploadThisScriptConfiguration: '上传脚本配置到云端',
@@ -1453,6 +1451,7 @@ export default {
     launchGameOtherWay: '使用其他方式启停游戏',
     mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
     envPanelTitle: '运行环境',
+    taskDescriptionLabel: '说明',
     adbStrategyPerDevice: '运行时判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '默认',
@@ -1549,7 +1548,6 @@ export default {
     processName: '进程名称',
     processNameEG:
       '进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。',
-    appendTask: '追加任务',
     trackChildProcesses: '追踪子进程',
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
