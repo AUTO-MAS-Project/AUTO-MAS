@@ -161,10 +161,10 @@ FRAGMENT_TEXT_LIMIT = 50
 # 加新专项时在这里加一行即可，旧条目不受影响。
 PROJECTS: Dict[str, str] = {
     "maa": "MAA",
-    "maaend": "MaaEnd",
+    "end": "end",
     "m9a": "M9A",
     "hsr": "HSR",
-    "bettergi": "BetterGI",
+    "bgi": "bgi",
     "zzz": "绝区零一条龙",
     "okww": "ok-ww",
     "oknte": "ok-nte",
@@ -182,6 +182,9 @@ PROJECTS: Dict[str, str] = {
     "runtime": "Runtime",
 }
 PROJECT_RANK = {name: rank for rank, name in enumerate(PROJECTS.values())}
+# 改过名的项目：旧键与旧显示名只解析不再书写，sync 会归一成新名字
+PROJECT_KEY_ALIASES = {"maaend": "end", "bettergi": "bgi"}
+PROJECT_NAME_ALIASES = {"MaaEnd": "end", "BetterGI": "bgi"}
 # 条目开头的 `【项目】`；只有名字在项目表里的才算项目前缀，其余照原文当正文。
 # 旧写法 `(项目) ` 只解析不再书写，sync 会归一成中括号
 PROJECT_PREFIX = re.compile(
@@ -778,6 +781,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             if project is not None:
                 raise ChangelogError(f"{path.name}：project 只能写一次")
             project = project_match.group("project").lower()
+            project = PROJECT_KEY_ALIASES.get(project, project)
             continue
         highlight_match = FRAGMENT_HIGHLIGHT.match(stripped)
         if highlight_match and not body:
@@ -943,6 +947,7 @@ def split_entry(entry: str) -> Entry:
     prefix = PROJECT_PREFIX.match(head)
     if prefix:
         name = prefix.group("name") or prefix.group("legacy")
+        name = PROJECT_NAME_ALIASES.get(name, name)
         if name in PROJECT_RANK:
             project = name
             head = head[prefix.end() :]
@@ -2162,6 +2167,7 @@ def command_add(arguments: argparse.Namespace) -> int:
         raise ChangelogError("碎片只能写一行")
     check_fragment_text(text, "碎片")
     project: Optional[str] = arguments.project.lower()
+    project = PROJECT_KEY_ALIASES.get(project, project)
     if project == "-":
         if FRAGMENT_TYPES[arguments.type] != DEV_CATEGORY:
             raise ChangelogError("只有 dev 碎片可以不写项目键，其余请从项目表里选一个")
