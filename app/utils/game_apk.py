@@ -27,13 +27,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urljoin
 
 import aiofiles
 import httpx
@@ -62,7 +62,7 @@ class GameUpdateResult:
     未提供时为空字符串"""
 
 
-async def run_adb(
+async def _run_adb(
     adb_path: Path | None,
     adb_address: str,
     *args: str,
@@ -93,9 +93,9 @@ async def get_installed_client_version(
 
     if ":" in adb_address:
         # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备
-        await run_adb(adb_path, adb_address, "connect", adb_address, timeout=20)
+        await _run_adb(adb_path, adb_address, "connect", adb_address, timeout=20)
 
-    returncode, output = await run_adb(
+    returncode, output = await _run_adb(
         adb_path,
         adb_address,
         "shell",
@@ -118,7 +118,7 @@ async def get_installed_client_version(
     return version
 
 
-def parse_version(version: str) -> tuple[int, ...]:
+def _parse_version(version: str) -> tuple[int, ...]:
     """把形如 ``2.7.61`` 的版本号解析为可比较的整数元组，无法解析的段落按 0 处理。"""
 
     parts: list[int] = []
@@ -131,8 +131,8 @@ def parse_version(version: str) -> tuple[int, ...]:
 def is_client_outdated(installed: str, remote: str) -> bool:
     """判断已安装客户端是否落后于服务端版本。"""
 
-    installed_parts = parse_version(installed)
-    remote_parts = parse_version(remote)
+    installed_parts = _parse_version(installed)
+    remote_parts = _parse_version(remote)
     if not any(installed_parts) or not any(remote_parts):
         # 任一侧完全解析不出数字时不敢下判断，按未落后处理，交给上游原有流程
         logger.warning(f"版本号无法比较: 已安装 {installed}, 服务端 {remote}")
@@ -143,54 +143,12 @@ def is_client_outdated(installed: str, remote: str) -> bool:
     return installed_parts < remote_parts
 
 
-_VERSION_IN_NAME_RE = re.compile(r"(\d+(?:\.\d+)+)")
-"""从下载地址的文件名中匹配版本号，形如 ``StarRail_4.5.0.apk``；
-文件名以版本号开头时同样可匹配"""
-
-
-async def resolve_download_link(url: str) -> tuple[str, str] | None:
-    """跟随重定向取真实下载地址，并从文件名解析出客户端版本号。
-
-    各游戏的下载入口多为 302 跳转，最终地址的文件名里通常就带着客户端版本号。
-    由此取到的版本与将下载的安装包必然同源同版本，不会出现"版本接口与安装包
-    版本不一致"的情况（例如 PC 启动器包与安卓 APK 本就不同步）。
-
-    Args:
-        url: 下载入口（302 跳转至 CDN 真实地址）。
-
-    Returns:
-        tuple[str, str] | None: ``(最终地址, 版本号)``；未发生跳转、请求失败或
-        解析不出版本号时返回 ``None``。
-    """
-
-    try:
-        async with httpx.AsyncClient(follow_redirects=False) as client:
-            response = await client.get(url, timeout=15.0)
-            location = response.headers.get("location")
-    except Exception as e:
-        logger.warning(f"解析下载地址失败: {e}")
-        return None
-
-    if not location:
-        logger.warning(f"下载入口未返回重定向地址: {url}")
-        return None
-
-    # 入口可能给出相对地址，按入口本身补全
-    final_url = urljoin(str(response.request.url), location)
-
-    match = _VERSION_IN_NAME_RE.search(final_url.rsplit("/", 1)[-1])
-    if match is None:
-        logger.warning(f"未能从下载地址解析出版本号: {final_url}")
-        return None
-
-    logger.info(f"解析到下载地址 {final_url}，客户端版本 {match.group(1)}")
-    return final_url, match.group(1)
-
-
 async def download_apk(
     url: str,
     target_path: Path,
     progress: Callable[[str], Awaitable[None]] | None = None,
+    *,
+    timeout: float = 3600.0,
 ) -> Path:
     """下载安装包。
 
@@ -198,12 +156,15 @@ async def download_apk(
         url: 安装包下载入口（允许重定向到真实下载地址）。
         target_path: 安装包落盘路径。
         progress: 进度回调，用于向前端播报下载进度。
+        timeout: 下载总时长上限（秒）。安装包体积不小，不能信任用户的网络；
+            ``httpx`` 自身的单次读写超时仅在网络停滞时兜底，不限制总时长。
 
     Returns:
         Path: 下载完成的安装包路径。
 
     Raises:
-        RuntimeError: 下载失败，或下载内容体积明显小于安装包（通常是拿到了跳转页）。
+        RuntimeError: 下载失败、下载超时，或下载内容体积明显小于安装包
+            （通常是拿到了跳转页）。
     """
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -211,49 +172,61 @@ async def download_apk(
     temp_path.unlink(missing_ok=True)
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            async with client.stream(
-                "GET", url, timeout=60.0
-            ) as response:
-                response.raise_for_status()
-                total = int(response.headers.get("content-length", 0) or 0)
+        async with asyncio.timeout(timeout):
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                async with client.stream(
+                    "GET", url, timeout=60.0
+                ) as response:
+                    response.raise_for_status()
+                    total = int(response.headers.get("content-length", 0) or 0)
 
-                if total and shutil.disk_usage(target_path.parent).free < total * 1.2:
-                    raise RuntimeError(
-                        f"磁盘剩余空间不足以下载安装包（需要约 {total / 1024**3:.1f} GB）"
-                    )
+                    if (
+                        total
+                        and shutil.disk_usage(target_path.parent).free < total * 1.2
+                    ):
+                        raise RuntimeError(
+                            f"磁盘剩余空间不足以下载安装包（需要约 {total / 1024**3:.1f} GB）"
+                        )
 
-                downloaded = 0
-                next_report = 0
-                async with aiofiles.open(temp_path, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
-                        if not chunk:
-                            continue
-                        await f.write(chunk)
-                        downloaded += len(chunk)
+                    downloaded = 0
+                    next_report = 0
+                    async with aiofiles.open(temp_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
+                            if not chunk:
+                                continue
+                            await f.write(chunk)
+                            downloaded += len(chunk)
 
-                        if progress is not None and downloaded >= next_report:
-                            next_report = downloaded + 50 * 1024 * 1024
-                            if total:
-                                await progress(
-                                    f"正在下载游戏安装包 "
-                                    f"{downloaded / 1024**3:.2f}/{total / 1024**3:.2f} GB"
-                                )
-                            else:
-                                await progress(
-                                    f"正在下载游戏安装包 {downloaded / 1024**3:.2f} GB"
-                                )
+                            if progress is not None and downloaded >= next_report:
+                                next_report = downloaded + 50 * 1024 * 1024
+                                if total:
+                                    await progress(
+                                        f"正在下载游戏安装包 "
+                                        f"{downloaded / 1024**3:.2f}/"
+                                        f"{total / 1024**3:.2f} GB"
+                                    )
+                                else:
+                                    await progress(
+                                        f"正在下载游戏安装包 {downloaded / 1024**3:.2f} GB"
+                                    )
 
-        if temp_path.stat().st_size < APK_MIN_BYTES:
-            raise RuntimeError(
-                f"下载内容体积异常（{temp_path.stat().st_size} 字节），可能未取到真实安装包"
-            )
+            if temp_path.stat().st_size < APK_MIN_BYTES:
+                raise RuntimeError(
+                    f"下载内容体积异常（{temp_path.stat().st_size} 字节），可能未取到真实安装包"
+                )
 
-        target_path.unlink(missing_ok=True)
-        temp_path.replace(target_path)
-        logger.success(f"游戏安装包下载完成: {target_path}")
-        return target_path
+            target_path.unlink(missing_ok=True)
+            temp_path.replace(target_path)
+            logger.success(f"游戏安装包下载完成: {target_path}")
+            return target_path
 
+    except TimeoutError:
+        # asyncio.timeout 在总时长耗尽时抛出内置 TimeoutError；
+        # httpx 自身的单次操作超时是 httpx.TimeoutException，不会被这里误捕
+        temp_path.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"下载安装包超时（超过 {timeout / 60:.0f} 分钟），请检查网络后重试"
+        ) from None
     except BaseException:
         temp_path.unlink(missing_ok=True)
         raise
@@ -272,7 +245,7 @@ async def install_apk(
     """
 
     logger.info(f"开始安装游戏安装包: {apk_path}")
-    returncode, output = await run_adb(
+    returncode, output = await _run_adb(
         adb_path,
         adb_address,
         "install",

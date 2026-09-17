@@ -23,9 +23,9 @@
 SRC 拉起游戏前由 MAS 负责登录，客户端 APK 版本落后时游戏会弹出强制更新门，
 登录流程会一直卡住。本模块在启动模拟器后、登录前比对版本。
 
-版本与安装包**同源**：向服务器对应的下载入口发一次不跟随重定向的请求，
-从 302 的 ``Location`` 里同时取到真实下载地址与版本号。这样不会出现
-"版本接口与安装包版本不一致"的问题——PC 启动器包与安卓 APK 本就不同步。
+版本与安装包**同源**：逐跳跟随服务器对应下载入口的重定向，从最终地址
+同时取到真实下载地址与版本号。这样不会出现"版本接口与安装包版本不一致"
+的问题
 
 只有配置了更新入口的服务器才做检查（当前为国服官服，入口跳转至安卓 APK，
 可直接下载并通过 adb 安装），其余服务器跳过检查、交回原有登录流程判定。
@@ -33,9 +33,13 @@ SRC 拉起游戏前由 MAS 负责登录，客户端 APK 版本落后时游戏会
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urljoin
+
+import httpx
 
 from app.utils import get_logger
 from app.utils.constants import STARRAIL_UPDATE_LINK_SERVER
@@ -45,12 +49,18 @@ from app.utils.game_apk import (
     get_installed_client_version,
     install_apk,
     is_client_outdated,
-    resolve_download_link,
 )
 
 logger = get_logger("SRC 游戏更新")
 
 _APK_SUFFIX = ".apk"
+
+_VERSION_IN_NAME_RE = re.compile(r"(\d+(?:\.\d+)+)")
+"""从下载地址的文件名中匹配版本号，形如 ``StarRail_4.5.0.apk``；
+文件名以版本号开头时同样可匹配"""
+
+_MAX_REDIRECT_HOPS = 5
+"""下载入口重定向最大跟随跳数，防御入口被配置成多跳 302 链"""
 
 __all__ = ["UpdateSource", "ensure_game_updated", "fetch_update_source"]
 
@@ -65,6 +75,56 @@ class UpdateSource:
     """302 跳转后的真实下载地址"""
     can_auto_install: bool
     """该地址是否为可直接安装的安卓安装包"""
+
+
+async def _resolve_download_link(url: str) -> tuple[str, str] | None:
+    """跟随重定向取真实下载地址，并从文件名解析出客户端版本号。
+
+    崩坏·星穹铁道的下载入口为 302 跳转，最终地址的文件名里就带着客户端
+    版本号。由此取到的版本与将下载的安装包必然同源同版本。
+
+    跳转链逐跳手动跟随（实测国服官服入口为单跳，上限内兼容多跳）；每一跳
+    只读响应头、不读响应体。
+
+    Args:
+        url: 下载入口（302 跳转至 CDN 真实地址）。
+
+    Returns:
+        tuple[str, str] | None: ``(最终地址, 版本号)``；跳数超限、请求失败或
+        解析不出版本号时返回 ``None``。
+    """
+
+    final_url = ""
+    try:
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            current_url = url
+            for _ in range(_MAX_REDIRECT_HOPS):
+                async with client.stream("GET", current_url, timeout=15.0) as response:
+                    if not response.is_redirect:
+                        final_url = str(response.url)
+                        break
+                    location = response.headers.get("location")
+                if not location:
+                    logger.warning(f"重定向响应缺少 Location 头: {current_url}")
+                    return None
+                # 跳转地址可能是相对路径，按当前地址补全
+                current_url = urljoin(str(response.url), location)
+            else:
+                logger.warning(
+                    f"下载入口重定向跳数超过上限 {_MAX_REDIRECT_HOPS}: {url}"
+                )
+                return None
+    except Exception as e:
+        logger.warning(f"解析下载地址失败: {e}")
+        return None
+
+    match = _VERSION_IN_NAME_RE.search(final_url.rsplit("/", 1)[-1])
+    if match is None:
+        logger.warning(f"未能从下载地址解析出版本号: {final_url}")
+        return None
+
+    logger.info(f"解析到下载地址 {final_url}，客户端版本 {match.group(1)}")
+    return final_url, match.group(1)
 
 
 async def fetch_update_source(server: str) -> UpdateSource | None:
@@ -82,7 +142,7 @@ async def fetch_update_source(server: str) -> UpdateSource | None:
         logger.info(f"服务器 {server} 无公开的更新入口，跳过客户端版本检查")
         return None
 
-    resolved = await resolve_download_link(link_url)
+    resolved = await _resolve_download_link(link_url)
     if resolved is None:
         logger.warning(f"服务器 {server} 的更新入口未能解析出下载地址与版本号")
         return None
@@ -165,7 +225,9 @@ async def ensure_game_updated(
     try:
         if progress is not None:
             await progress(f"{outdated_text}\n正在下载游戏安装包")
-        await download_apk(source.download_url, apk_path, progress)
+        await download_apk(
+            source.download_url, apk_path, progress, timeout=time_limit * 60
+        )
 
         if progress is not None:
             await progress(f"{outdated_text}\n正在安装游戏安装包")

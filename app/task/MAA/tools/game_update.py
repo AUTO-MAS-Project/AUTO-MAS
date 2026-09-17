@@ -182,7 +182,9 @@ async def ensure_game_updated(
     try:
         if progress is not None:
             await progress(f"{outdated_text}\n正在下载游戏安装包")
-        await download_apk(ARKNIGHTS_OFFICIAL_APK_URL, apk_path, progress)
+        await download_apk(
+            ARKNIGHTS_OFFICIAL_APK_URL, apk_path, progress, timeout=time_limit * 60
+        )
 
         if progress is not None:
             await progress(f"{outdated_text}\n正在安装游戏安装包")
