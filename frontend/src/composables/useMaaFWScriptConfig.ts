@@ -88,7 +88,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PackageName: '',
     Arguments: '',
     WaitTime: 60,
-    StartupSettleTime: 30,
+    StartupSettleTime: 300,
     UnityResolution: 'Off',
   },
   Update: {
@@ -126,7 +126,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Run: {
     ProxyTimesLimit: 0,
-    RunTimesLimit: 1,
+    RunTimesLimit: 3,
     RunTimeLimit: 120,
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',

@@ -2891,7 +2891,7 @@ class MaaFWConfig(ConfigBase):
         ## 从窗口检测时刻起算，MaaFW 初始化（加载资源、连 controller、起 agent）与之
         ## 重叠而不是干等；AttachOnly 与「游戏已在运行」的分支不等；0 关闭。
         self.Game_StartupSettleTime = ConfigItem(
-            "Game", "StartupSettleTime", 30, RangeValidator(0, 600)
+            "Game", "StartupSettleTime", 300, RangeValidator(0, 600)
         )
         # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
         # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
@@ -3004,9 +3004,11 @@ class MaaFWConfig(ConfigBase):
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
-        ## 运行次数限制
+        ## 运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑；
+        ## 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败，
+        ## 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
         ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
