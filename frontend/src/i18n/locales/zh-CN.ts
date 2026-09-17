@@ -491,7 +491,8 @@ export default {
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
     maaEndSetResolution: '启动时设置分辨率',
-    maaEndSetResolutionHint: '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
+    maaEndSetResolutionHint:
+      '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
     maaEndRestoreResolutionHint:
       '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
