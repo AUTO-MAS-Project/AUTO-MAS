@@ -24,8 +24,10 @@
 """更新日志与版本号的唯一入口。
 
 日常开发不再改 `CHANGELOG.md`：每个 PR 在 `changelog.d/` 下放一个碎片文件，
-文件名 `<PR 号或分支名>.<分类>.md`，内容是一句面向用户的话。发版时由 `release`
-把全部碎片编译进 `CHANGELOG.md` 顶部的新版本段、推进版本号、删除碎片，并开出发版 PR。
+文件名 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>` 说明改的是哪个专项或本体
+的哪一块，正文一句不超过 50 字、面向用户的话。发版时由 `release` 把全部碎片编译成
+`(项目) 做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的新版本段，同一分类内按
+项目表的顺序排列；再推进版本号、删除碎片，并开出发版 PR。
 `CHANGELOG.md` 顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号，其余五处版本号与
 `res/version.json` 全部由本脚本从它生成，不要手改：
 
@@ -35,9 +37,14 @@
 - `pyproject.toml`     —— PEP 440 写法，如 5.5.0b3
 - `uv.lock`            —— 其中 auto-mas 包自身的版本，同样是 PEP 440 写法
 
+Release 正文首行是一条 HTML 注释包着的 JSON，已发布客户端靠它显示更新提示。Mirror 酱对
+整份 release_note 只存前 20000 字符，超出直接截断，所以首行 JSON 有预算：条目里不带
+PR 号，超预算时从最老的版本段开始丢，本版段永远保留；本版段自己就超预算的话直接报错，
+让发版 PR 先精简条目。
+
 用法::
 
-    python scripts/changelog.py add fix "修复了什么"      # 新建一个碎片（贡献者用）
+    python scripts/changelog.py add fix maa "修复了什么"  # 新建一个碎片（贡献者用）
     python scripts/changelog.py check                     # 校验格式、碎片、版本号（CI 用）
     python scripts/changelog.py release --kind beta       # 编译碎片、推进版本号（发版工作流用）
     python scripts/changelog.py release-note              # 渲染 Release 正文（构建工作流用）
@@ -94,6 +101,18 @@ CATEGORY_ORDER = [
     "安全",  # Security
     "开发流程",  # 本项目扩展：只影响贡献者、不影响用户的改动
 ]
+# 只在给人看的 Release 正文与发版 PR 里给分类标题加的表情，分类名本身不变
+CATEGORY_EMOJI = {
+    "破坏性变更": "⚠️",
+    "本次亮点": "🌟",
+    "新增": "✨",
+    "变更": "🔧",
+    "弃用": "⏳",
+    "移除": "🗑️",
+    "修复": "🐛",
+    "安全": "🔒",
+    "开发流程": "🛠️",
+}
 
 # 碎片文件名后缀 -> 分类。贡献者只需要选后缀，不用记中文分类名。
 FRAGMENT_TYPES = {
@@ -116,6 +135,44 @@ FRAGMENT_IGNORED = {"README.md", ".gitkeep"}
 LOGIN = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
 LOGIN_PATTERN = re.compile(rf"^{LOGIN}$")
 FRAGMENT_AUTHOR = re.compile(rf"^author:\s*@?(?P<login>{LOGIN})\s*$")
+FRAGMENT_PROJECT = re.compile(r"^project:\s*(?P<project>[A-Za-z0-9-]+)\s*$")
+
+# 碎片正文的字数上限：公告里一条只说「做了什么」，细节留在 PR 里。首行 JSON 的体积
+# 直接由它决定，放宽前先算一遍一个版本段会涨到多少。
+FRAGMENT_TEXT_LIMIT = 50
+
+# 项目键 -> 公告里显示的名字，顺序即同一分类内条目的顺序。碎片首行 `project: <键>` 只能
+# 从这里选，公告里条目写成 `(名字) 做了什么`；本体其他部分用 core，不加前缀，排在最后。
+# 加新专项时在这里加一行即可，旧条目不受影响。
+PROJECTS: Dict[str, Optional[str]] = {
+    "maa": "MAA",
+    "maaend": "MaaEnd",
+    "m9a": "M9A",
+    "hsr": "HSR",
+    "bettergi": "BetterGI",
+    "zzz": "绝区零一条龙",
+    "okww": "ok-ww",
+    "oknte": "ok-nte",
+    "baah": "BAAH",
+    "src": "SRC",
+    "mfw": "MFW",
+    "general": "通用脚本",
+    "home": "首页",
+    "scheduler": "调度",
+    "emulator": "模拟器",
+    "display": "虚拟显示器",
+    "notify": "通知",
+    "update": "更新",
+    "backup": "配置备份",
+    "core": None,
+}
+PROJECT_RANK = {name: rank for rank, name in enumerate(PROJECTS.values()) if name}
+# 条目开头的 `(项目) `；只有名字在项目表里的才算项目前缀，其余照原文当正文
+PROJECT_PREFIX = re.compile(r"^\((?P<name>[^()]+)\) (?=\S)")
+
+# Release 正文首行 JSON 的字符预算。Mirror 酱只保留 release_note 的前 20000 字符，首行
+# 必须完整留下，剩下的给可见正文与换行；beta.6 首行 29335 字符就是这么被截坏的。
+RELEASE_NOTE_JSON_BUDGET = 18000
 
 # 改了这些路径的 PR 被视为用户可见，必须带碎片（除非打了 skip-changelog 标签）
 USER_VISIBLE_PREFIXES = ("app/", "frontend/src/", "frontend/electron/", "main.py")
@@ -135,14 +192,19 @@ RELEASE_HEADING = re.compile(
 )
 # 底部的版本对比链接，由 render_changelog 重新生成，解析时跳过
 LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S+$")
-# 一个署名；碎片正文里出现它就是手写了署名
-SIGNATURE = re.compile(r" by \[@(?P<login>[^\]]+)\]\((?P<url>[^)]*)\)")
+# 一个署名：现在写成 ` by @login`，GitHub 的 Release 页会自动把 @login 链到主页；
+# 旧条目里是 ` by [@login](https://github.com/login)`，两种都要认。碎片正文里出现它就是手写了署名
+SIGNATURE = re.compile(rf" by (?:\[@(?P<linked>[^\]]+)\]\([^)]*\)|@(?P<login>{LOGIN}))")
 # 条目末尾的整串署名：第一个必带 ` by `，后面的可以只用空格连着——旧机器人给多人条目
-# 补署名时写的就是 ` by [@a](..) [@b](..)`，已发布段里有几十条，两种写法都要认
-SIGNATURE_TAIL = re.compile(
-    r" by \[@[^\]]+\]\([^)]*\)(?:(?: by)? \[@[^\]]+\]\([^)]*\))*$"
-)
-SIGNATURE_LOGIN = re.compile(r"\[@(?P<login>[^\]]+)\]\([^)]*\)")
+# 补署名时写的就是 ` by [@a](..) [@b](..)`，已发布段里有几十条
+SIGNATURE_ONE = rf"(?:\[@[^\]]+\]\([^)]*\)|@{LOGIN})"
+SIGNATURE_TAIL = re.compile(rf" by {SIGNATURE_ONE}(?:(?: by)? {SIGNATURE_ONE})*$")
+SIGNATURE_LOGIN = re.compile(rf"\[@(?P<linked>[^\]]+)\]\([^)]*\)|@(?P<login>{LOGIN})")
+# 署名前面可选的 PR 号：` (#857)` 或合并多条后的 ` (#857, #858)`
+PR_REFS_TAIL = re.compile(r" \(#\d+(?:, #\d+)*\)$")
+PR_NUMBER = re.compile(r"#(\d+)")
+# squash 合并的提交标题末尾带 `(#PR 号)`，碎片的 PR 号就从新增它的那个提交上取
+SUBJECT_PR = re.compile(r"\(#(\d+)\)\s*$")
 
 # 发版日期按北京时间取，维护者与用户都在这个时区；不用 zoneinfo 是因为 Windows 上
 # 没有 tzdata 包时它会直接抛错。
@@ -160,11 +222,11 @@ CHANGELOG_PREAMBLE = """# 更新日志
   也不要手改 res/version.json 等生成物。
 
   - 要登记一条更新日志，在 changelog.d/ 下新建一个碎片文件，见 changelog.d/README.md，
-    或运行 `python scripts/changelog.py add <分类> "<一句话>"`。一条 PR 只放一个碎片。
+    或运行 `python scripts/changelog.py add <分类> <项目键> "<一句话>"`。一条 PR 只放一个碎片。
   - 文件顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号。发版 PR 由「准备发版」工作流
     创建，是唯一会改动本文件与各处版本号的地方。
-  - 条目写成一行，从用户视角描述这次改动带来了什么；署名在发版时按碎片的提交作者自动补，
-    不要手写。
+  - 条目写成一行 `(项目) 做了什么 (#PR 号) by @作者`：项目、PR 号与署名都在发版时由脚本
+    按碎片与其提交自动补，不要手写；本体的条目没有 `(项目)` 前缀，同一分类内排在最后。
 
   分类含义（中间六类来自 Keep a Changelog）：
 
@@ -286,6 +348,8 @@ def parse_changelog(text: str) -> Tuple[str, Sections, Dates]:
             entry = stripped[2:].strip()
             if not entry:
                 raise ChangelogError(f"第 {number} 行：条目内容为空")
+            # 解析时就归一署名写法，sync 会把旧的带链接署名一次性改写成 ` by @x`
+            entry = normalize_entry(entry)
             items = sections[current_version][current_category]
             if entry in items:
                 raise ChangelogError(
@@ -333,12 +397,19 @@ def render_links(sections: Sections, dates: Dates) -> List[str]:
     return lines
 
 
-def render_section(categories: Dict[str, List[str]]) -> List[str]:
-    """渲染一个版本段的正文（不含版本标题），发版 PR 正文与 Release 正文复用。"""
+def render_section(
+    categories: Dict[str, List[str]], decorate: bool = False
+) -> List[str]:
+    """渲染一个版本段的正文（不含版本标题），发版 PR 正文与 Release 正文复用。
+
+    decorate 时分类标题带表情符号，只用于给人看的 Release 正文与发版 PR；CHANGELOG.md
+    与首行 JSON 的分类名是客户端契约（`破坏性变更` / `本次亮点` 靠名字识别），不能带。
+    """
 
     lines: List[str] = []
     for category, items in order_categories(categories).items():
-        lines.append(f"### {category}")
+        emoji = CATEGORY_EMOJI.get(category) if decorate else None
+        lines.append(f"### {emoji} {category}" if emoji else f"### {category}")
         lines.append("")
         lines.extend(f"- {item}" for item in items)
         lines.append("")
@@ -358,14 +429,14 @@ def render_changelog(sections: Sections, dates: Dates) -> str:
 def render_version_json(current_version: str, sections: Sections) -> str:
     """生成 res/version.json。
 
-    只写版本与分类条目，不写日期——这份 JSON 的结构是已发布客户端解析更新提示的契约，
-    发布 CI 会把它整个塞进 Release 正文首行的 HTML 注释里。
+    只写版本与分类条目，不写日期——这份 JSON 的结构是已发布客户端解析更新提示的契约；
+    条目按客户端口径写（不带 PR 号），与 Release 正文首行 JSON 一致。
     """
 
     payload = {
         "version": current_version,
         "version_info": {
-            version: order_categories(categories)
+            version: client_categories(categories)
             for version, categories in sections.items()
         },
     }
@@ -555,7 +626,7 @@ def show_file(ref: str, path: str, root: Path = REPO_ROOT) -> Optional[str]:
 class Fragment:
     """一个碎片：文件、标识、分类、正文，以及可选的署名覆盖。"""
 
-    __slots__ = ("path", "identifier", "category", "text", "author")
+    __slots__ = ("path", "identifier", "category", "text", "author", "project")
 
     def __init__(
         self,
@@ -564,16 +635,49 @@ class Fragment:
         category: str,
         text: str,
         author: Optional[str] = None,
+        project: str = "core",
     ) -> None:
         self.path = path
         self.identifier = identifier
         self.category = category
         self.text = text
         self.author = author
+        self.project = project
+
+    @property
+    def project_name(self) -> Optional[str]:
+        """公告里显示的项目名；core 不显示。"""
+
+        return PROJECTS.get(self.project)
+
+
+def check_fragment_text(text: str, where: str) -> None:
+    """碎片正文的写法限制，add 与解析共用。"""
+
+    if not text:
+        raise ChangelogError(f"{where}：碎片正文为空")
+    if SIGNATURE.search(text):
+        raise ChangelogError(
+            f"{where}：不要手写 ` by @用户` 署名，发版时会按提交作者自动补"
+        )
+    if text.startswith("#"):
+        raise ChangelogError(f"{where}：碎片正文不能是标题，只写一句话")
+    if PROJECT_PREFIX.match(text):
+        raise ChangelogError(
+            f"{where}：项目写在首行 `project: <键>` 里，正文开头不要再写 `(项目)`"
+        )
+    if len(text) > FRAGMENT_TEXT_LIMIT:
+        raise ChangelogError(
+            f"{where}：碎片正文 {len(text)} 字，超过 {FRAGMENT_TEXT_LIMIT} 字上限。"
+            "公告里一条只写做了什么，细节留在 PR 里"
+        )
 
 
 def parse_fragment(path: Path, content: str) -> Fragment:
-    """碎片 = 文件名决定分类 + 正文一行。可选的首行 `author: 登录名` 覆盖自动署名。"""
+    """碎片 = 文件名决定分类 + 首行 `project: 键` + 正文一行。
+
+    可选的 `author: 登录名` 覆盖自动署名。两个头部行顺序不限，都要在正文之前。
+    """
 
     matched = FRAGMENT_NAME.match(path.name)
     if matched is None:
@@ -582,6 +686,7 @@ def parse_fragment(path: Path, content: str) -> Fragment:
             f"分类取 {'、'.join(FRAGMENT_TYPES)} 之一"
         )
     author: Optional[str] = None
+    project: Optional[str] = None
     body: List[str] = []
     for line in content.splitlines():
         stripped = line.strip()
@@ -593,7 +698,22 @@ def parse_fragment(path: Path, content: str) -> Fragment:
                 raise ChangelogError(f"{path.name}：author 只能写一次")
             author = author_match.group("login")
             continue
+        project_match = FRAGMENT_PROJECT.match(stripped)
+        if project_match and not body:
+            if project is not None:
+                raise ChangelogError(f"{path.name}：project 只能写一次")
+            project = project_match.group("project").lower()
+            continue
         body.append(stripped)
+    if project is None:
+        raise ChangelogError(
+            f"{path.name}：缺少首行 `project: <键>`，键取 {'、'.join(PROJECTS)} 之一"
+            "（本体其他部分写 core）"
+        )
+    if project not in PROJECTS:
+        raise ChangelogError(
+            f"{path.name}：project 键 {project!r} 不在项目表里，可选：{'、'.join(PROJECTS)}"
+        )
     if not body:
         raise ChangelogError(f"{path.name}：碎片正文为空")
     if len(body) > 1:
@@ -603,20 +723,14 @@ def parse_fragment(path: Path, content: str) -> Fragment:
     text = body[0]
     if text.startswith("- "):
         text = text[2:].strip()
-    if not text:
-        raise ChangelogError(f"{path.name}：碎片正文为空")
-    if SIGNATURE.search(text):
-        raise ChangelogError(
-            f"{path.name}：不要手写 ` by [@用户]` 署名，发版时会按提交作者自动补"
-        )
-    if text.startswith("#"):
-        raise ChangelogError(f"{path.name}：碎片正文不能是标题，只写一句话")
+    check_fragment_text(text, path.name)
     return Fragment(
         path=path,
         identifier=matched.group("identifier"),
         category=FRAGMENT_TYPES[matched.group("type")],
         text=text,
         author=author,
+        project=project,
     )
 
 
@@ -651,22 +765,25 @@ def default_identifier(root: Path = REPO_ROOT) -> str:
 
 
 def signature(login: str) -> str:
-    return f" by [@{login}](https://github.com/{login})"
+    return f" by @{login}"
 
 
 def split_signatures(entry: str) -> Tuple[str, List[str]]:
-    """把条目拆成 (正文, [署名登录名])。
+    """把条目拆成 (署名之前的部分, [署名登录名])。
 
     只认条目末尾那一串署名，正文中间提到某人的链接不算；末尾那串里第一个带 ` by `，
     后面的可以只用空格连着（旧机器人的多人写法），否则转正合并时跨 beta 段按正文去重
-    对不上、贡献者名单也会漏人。
+    对不上、贡献者名单也会漏人。` by [@x](url)` 与 ` by @x` 两种写法都认。
     """
 
     stripped = entry.rstrip()
     matched = SIGNATURE_TAIL.search(stripped)
     if matched is None:
         return stripped, []
-    logins = [m.group("login") for m in SIGNATURE_LOGIN.finditer(matched.group(0))]
+    logins = [
+        m.group("linked") or m.group("login")
+        for m in SIGNATURE_LOGIN.finditer(matched.group(0))
+    ]
     return stripped[: matched.start()].rstrip(), logins
 
 
@@ -676,6 +793,86 @@ def join_signatures(text: str, logins: Sequence[str]) -> str:
         if login not in seen:
             seen.append(login)
     return text + "".join(signature(login) for login in seen)
+
+
+class Entry:
+    """一条更新日志的结构：`(项目) 做了什么 (#PR, #PR) by @a by @b`，每一截都可缺省。"""
+
+    __slots__ = ("project", "text", "prs", "logins")
+
+    def __init__(
+        self,
+        text: str,
+        project: Optional[str] = None,
+        prs: Sequence[int] = (),
+        logins: Sequence[str] = (),
+    ) -> None:
+        self.project = project
+        self.text = text
+        self.prs = list(dict.fromkeys(prs))
+        self.logins = list(dict.fromkeys(logins))
+
+    @property
+    def rank(self) -> int:
+        """同一分类内的排序键：项目表顺序在前，本体与表外项目在最后。"""
+
+        return PROJECT_RANK.get(self.project or "", len(PROJECT_RANK))
+
+    def render(self, with_prs: bool = True) -> str:
+        head = f"({self.project}) {self.text}" if self.project else self.text
+        if with_prs and self.prs:
+            head += " (" + ", ".join(f"#{n}" for n in self.prs) + ")"
+        return join_signatures(head, self.logins)
+
+
+def split_entry(entry: str) -> Entry:
+    """把条目字符串拆成 Entry。项目前缀只认项目表里的名字，PR 号只认署名前面那一组。"""
+
+    head, logins = split_signatures(entry)
+    prs: List[int] = []
+    matched = PR_REFS_TAIL.search(head)
+    if matched:
+        prs = [int(n) for n in PR_NUMBER.findall(matched.group(0))]
+        head = head[: matched.start()].rstrip()
+    project: Optional[str] = None
+    prefix = PROJECT_PREFIX.match(head)
+    if prefix and prefix.group("name") in PROJECT_RANK:
+        project = prefix.group("name")
+        head = head[prefix.end() :]
+    return Entry(head, project, prs, logins)
+
+
+def normalize_entry(entry: str) -> str:
+    """把条目归一成当前写法：旧的带链接署名改成 ` by @x`，多人署名每个都带 by。"""
+
+    return split_entry(entry).render()
+
+
+def client_entry(entry: str) -> str:
+    """给客户端更新提示看的条目：不带 PR 号。
+
+    弹窗里点不了 PR 号，而首行 JSON 的每个字符都要占 Mirror 酱的配额。
+    """
+
+    return split_entry(entry).render(with_prs=False)
+
+
+def client_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    return {
+        category: [client_entry(item) for item in items]
+        for category, items in order_categories(categories).items()
+    }
+
+
+def order_entries(items: Sequence[str]) -> List[str]:
+    """同一分类内按项目表顺序稳定排序，同项目保持原顺序。"""
+
+    return [
+        item
+        for _, item in sorted(
+            enumerate(items), key=lambda pair: (split_entry(pair[1]).rank, pair[0])
+        )
+    ]
 
 
 NOREPLY_EMAIL = re.compile(
@@ -704,6 +901,59 @@ def resolve_login_via_api(repo: str, sha: str, token: Optional[str]) -> Optional
     return str(login) if login else None
 
 
+def fragment_origin(
+    fragment: Fragment,
+    repo: str = GITHUB_REPO,
+    token: Optional[str] = None,
+    root: Path = REPO_ROOT,
+    resolve_online: bool = True,
+) -> Tuple[Optional[str], Optional[int]]:
+    """碎片的 (署名, PR 号)，都取自最近一次把它加进仓库的那个提交。
+
+    署名：squash 合并时就是 PR 作者，rebase 合并保留原作者，直推就是推的人。不读
+    Co-authored-by，否则 AI 助手会被签进更新日志。noreply 邮箱直接拆出登录名，
+    其余经 commits API 解析；解析不到时，git 作者名长得像登录名才拿来用，否则不署名。
+
+    PR 号：squash 提交标题末尾的 `(#123)`；没有的话文件名前缀是纯数字就当 PR 号。
+    cherry-pick 到 release 分支的碎片按那条分支上的 PR 记，正好是该分支的更新日志。
+    """
+
+    pr_from_name = int(fragment.identifier) if fragment.identifier.isdigit() else None
+    if not git_available(root):
+        return fragment.author, pr_from_name
+    relative = fragment.path.resolve().relative_to(root.resolve()).as_posix()
+    output = git(
+        "log",
+        "--diff-filter=A",
+        "--format=%H%x00%an%x00%ae%x00%s",
+        "--",
+        relative,
+        root=root,
+    ).strip()
+    if not output:
+        return fragment.author, pr_from_name
+    # git log 最新在前，取第一行：碎片发版后会被删除，同名文件可能被后来的 PR 再次
+    # 新增，要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人
+    sha, name, email, subject = output.splitlines()[0].split("\x00", 3)
+    subject_pr = SUBJECT_PR.search(subject)
+    pr = int(subject_pr.group(1)) if subject_pr else pr_from_name
+
+    if fragment.author:
+        return fragment.author, pr
+    noreply = NOREPLY_EMAIL.match(email.strip())
+    if noreply:
+        return noreply.group("login"), pr
+    if resolve_online:
+        login = resolve_login_via_api(repo, sha, token)
+        if login:
+            return login, pr
+    # 退回 git 作者名，但只有长得像登录名的才用：squash 提交里的作者名往往是显示名
+    # （中文昵称、带空格的全名），签进去会变成不存在的 @昵称，不如不署名，让发版 PR 的
+    # 「解析不到作者」提示把它点出来
+    name = name.strip()
+    return (name if LOGIN_PATTERN.match(name) else None), pr
+
+
 def fragment_author(
     fragment: Fragment,
     repo: str = GITHUB_REPO,
@@ -711,43 +961,7 @@ def fragment_author(
     root: Path = REPO_ROOT,
     resolve_online: bool = True,
 ) -> Optional[str]:
-    """碎片的署名 = 最近一次把它加进仓库的那个提交的作者。
-
-    squash 合并时就是 PR 作者，rebase 合并保留原作者，直推就是推的人。不读
-    Co-authored-by，否则 AI 助手会被签进更新日志。noreply 邮箱直接拆出登录名，
-    其余经 commits API 解析；解析不到时，git 作者名长得像登录名才拿来用，否则不署名。
-    """
-
-    if fragment.author:
-        return fragment.author
-    if not git_available(root):
-        return None
-    relative = fragment.path.resolve().relative_to(root.resolve()).as_posix()
-    output = git(
-        "log",
-        "--diff-filter=A",
-        "--format=%H%x00%an%x00%ae",
-        "--",
-        relative,
-        root=root,
-    ).strip()
-    if not output:
-        return None
-    # git log 最新在前，取第一行：碎片发版后会被删除，同名文件可能被后来的 PR 再次
-    # 新增，要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人
-    sha, name, email = output.splitlines()[0].split("\x00")
-    noreply = NOREPLY_EMAIL.match(email.strip())
-    if noreply:
-        return noreply.group("login")
-    if resolve_online:
-        login = resolve_login_via_api(repo, sha, token)
-        if login:
-            return login
-    # 退回 git 作者名，但只有长得像登录名的才用：squash 提交里的作者名往往是显示名
-    # （中文昵称、带空格的全名），签进去会渲染成 https://github.com/<昵称> 这种坏链接，
-    # 不如不署名，让发版 PR 的「解析不到作者」提示把它点出来
-    name = name.strip()
-    return name if LOGIN_PATTERN.match(name) else None
+    return fragment_origin(fragment, repo, token, root, resolve_online)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -922,7 +1136,7 @@ def check_pull_request(
             problems.append(
                 "发版 PR 合并时 changelog.d/ 必须已经清空，请重新运行「准备发版」"
             )
-        current_version, _, _ = parse_changelog(read_text(root / "CHANGELOG.md"))
+        current_version, sections, _ = parse_changelog(read_text(root / "CHANGELOG.md"))
         base_text = show_file(base, "CHANGELOG.md", root)
         if base_text:
             # 过渡期目标分支顶部可能已经手工预留了同号的「未发布」段，所以只要求不倒退
@@ -936,6 +1150,11 @@ def check_pull_request(
             problems.append(
                 f"发版 PR 的版本号 {current_version} 没有比最新 tag {latest} 新"
             )
+        # 首行 JSON 超预算的公告一发出去就会截坏所有客户端的更新检查，必须在这里拦住
+        try:
+            plan_note_json(sections, current_version)
+        except ChangelogError as error:
+            problems.append(str(error))
         return problems
 
     # normal
@@ -1017,7 +1236,7 @@ def command_check(arguments: argparse.Namespace) -> int:
         return 1
 
     fragments = list_fragments()
-    current_version, _, _ = parse_changelog(read_text(CHANGELOG_PATH))
+    current_version, sections, _ = parse_changelog(read_text(CHANGELOG_PATH))
     floor = check_version_floor(current_version)
 
     problems: List[str] = []
@@ -1039,13 +1258,14 @@ def command_check(arguments: argparse.Namespace) -> int:
     if floor:
         print(f"最新已发布 tag: {floor}")
     print(f"待发布碎片: {len(fragments)} 个")
+    print(describe_note_plan(plan_note_json(sections, current_version, strict=False)))
     return 0
 
 
 def command_guard() -> int:
-    """构建发布前的守门：版本号必须已经比最新 tag 新，碎片必须已经清空。"""
+    """构建发布前的守门：版本号必须已经比最新 tag 新，碎片必须已经清空，首行 JSON 不超预算。"""
 
-    current_version, _, _ = parse_changelog(read_text(CHANGELOG_PATH))
+    current_version, sections, _ = parse_changelog(read_text(CHANGELOG_PATH))
     latest = latest_version(reachable_tags("HEAD")) if git_available() else None
     problems: List[str] = []
     if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
@@ -1061,6 +1281,10 @@ def command_guard() -> int:
             f"changelog.d/ 里还有 {len(fragments)} 个未编译的碎片，"
             "说明发版 PR 之后又合并了改动；请重新运行「准备发版」"
         )
+    try:
+        plan_note_json(sections, current_version)
+    except ChangelogError as error:
+        problems.append(str(error))
     if problems:
         print("发布守门未通过：", file=sys.stderr)
         for problem in problems:
@@ -1076,22 +1300,29 @@ def command_guard() -> int:
 
 
 def merge_entries(target: Dict[str, List[str]], source: Dict[str, List[str]]) -> None:
-    """把 source 的条目并进 target：同文本去重、署名取并集、分类照旧。"""
+    """把 source 的条目并进 target：同项目同文本去重、PR 号与署名取并集、分类照旧。"""
 
     for category, items in source.items():
         bucket = target.setdefault(category, [])
-        index = {split_signatures(item)[0]: i for i, item in enumerate(bucket)}
+        index = {
+            (parsed.project, parsed.text): i
+            for i, parsed in ((i, split_entry(item)) for i, item in enumerate(bucket))
+        }
         for item in items:
-            text, logins = split_signatures(item)
-            if text in index:
-                existing_text, existing_logins = split_signatures(bucket[index[text]])
-                bucket[index[text]] = join_signatures(
-                    existing_text, [*existing_logins, *logins]
-                )
+            entry = split_entry(item)
+            key = (entry.project, entry.text)
+            if key in index:
+                existing = split_entry(bucket[index[key]])
+                bucket[index[key]] = Entry(
+                    existing.text,
+                    existing.project,
+                    [*existing.prs, *entry.prs],
+                    [*existing.logins, *entry.logins],
+                ).render()
             else:
-                index[text] = len(bucket)
-                # 重新拼一次署名：旧机器人写的 ` by [@a](..) [@b](..)` 借此归一成每个都带 by
-                bucket.append(join_signatures(text, logins))
+                index[key] = len(bucket)
+                # 重新拼一次：旧机器人写的 ` by [@a](..) [@b](..)` 借此归一成每个都带 by
+                bucket.append(entry.render())
 
 
 def unconfirmed_commits(
@@ -1140,12 +1371,14 @@ def compile_release(
     date: str,
     authors: Dict[str, Optional[str]],
     tagged: Iterable[str],
+    prs: Optional[Dict[str, Optional[int]]] = None,
 ) -> Tuple[Sections, Dates]:
     """把碎片编译进新的版本段，返回新的 (sections, dates)。
 
     - 顶部若有 `未发布` 段，其条目并入新段（过渡期兼容手工预留的版本段）。
     - 目标版本已经有段但还没打 tag 时（发版 PR 合并后又来了改动），在原段上追加。
     - 转正时把同号的全部 beta 段合并进来，并从文件里移除。
+    - 新段里每个分类的条目按项目表顺序排，本体的排最后。
     """
 
     sections = {
@@ -1195,8 +1428,14 @@ def compile_release(
     fresh: Dict[str, List[str]] = {}
     for fragment in fragments:
         login = authors.get(fragment.path.name)
-        entry = join_signatures(fragment.text, [login]) if login else fragment.text
-        fresh.setdefault(fragment.category, []).append(entry)
+        pr = (prs or {}).get(fragment.path.name)
+        entry = Entry(
+            fragment.text,
+            fragment.project_name,
+            [pr] if pr else [],
+            [login] if login else [],
+        )
+        fresh.setdefault(fragment.category, []).append(entry.render())
     merge_entries(pending, fresh)
 
     if not pending:
@@ -1210,6 +1449,7 @@ def compile_release(
                 f"CHANGELOG.md 里已经有不小于 {target} 的版本 {older}，版本号不能倒退"
             )
 
+    pending = {category: order_entries(items) for category, items in pending.items()}
     new_sections: Sections = {target: order_categories(pending)}
     new_sections.update(sections)
     new_dates: Dates = {target: date}
@@ -1223,6 +1463,7 @@ def render_pr_body(
     kind: str,
     categories: Dict[str, List[str]],
     unconfirmed: Sequence[Tuple[str, str]],
+    plan: Optional[NotePlan] = None,
 ) -> str:
     lines = [f"## Release {version}", ""]
     lines.append(
@@ -1232,6 +1473,11 @@ def render_pr_body(
     lines.append("")
     lines.append("合并前请在本 PR 里完成：")
     lines.append("")
+    if plan is not None and plan.over_budget:
+        lines.append(
+            f"- [ ] **首行 JSON {len(plan.line)} 字符，超过预算 {plan.budget}**，"
+            "合并前必须精简或合并条目，否则所有客户端的更新检查都会失败（检查会红）"
+        )
     lines.append(
         "- [ ] 在 `CHANGELOG.md` 新版本段里补「本次亮点」（三五条即可，可不补）"
     )
@@ -1244,10 +1490,19 @@ def render_pr_body(
         lines.append("- [ ] 下面「待确认」的提交若用户可见，直接在新版本段里补一条")
     lines.append("- [ ] 改完运行 `python scripts/changelog.py sync` 并提交")
     lines.append("")
+    if plan is not None:
+        lines.append("### 体积")
+        lines.append("")
+        lines.append(f"- {describe_note_plan(plan)}")
+        count = sum(len(items) for items in categories.values())
+        lines.append(f"- 本版 {count} 条，最长的几条：")
+        for length, category, text in longest_entries(categories):
+            lines.append(f"  - {length} 字（{category}）{text}")
+        lines.append("")
     if previous:
         lines.append(f"自 `{previous}` 以来的改动：")
         lines.append("")
-    lines.extend(render_section(categories))
+    lines.extend(render_section(categories, decorate=True))
     if unconfirmed:
         lines.append("### 待确认：改了用户可见代码但没有碎片的提交")
         lines.append("")
@@ -1273,8 +1528,8 @@ def command_release(arguments: argparse.Namespace) -> int:
 
     date = arguments.date or datetime.now(RELEASE_TIMEZONE).strftime("%Y-%m-%d")
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    authors = {
-        fragment.path.name: fragment_author(
+    origins = {
+        fragment.path.name: fragment_origin(
             fragment,
             repo=arguments.repo,
             token=token,
@@ -1282,6 +1537,8 @@ def command_release(arguments: argparse.Namespace) -> int:
         )
         for fragment in fragments
     }
+    authors = {name: login for name, (login, _) in origins.items()}
+    prs = {name: pr for name, (_, pr) in origins.items()}
     unresolved = [name for name, login in authors.items() if not login]
     if unresolved:
         print(
@@ -1290,13 +1547,16 @@ def command_release(arguments: argparse.Namespace) -> int:
         )
 
     new_sections, new_dates = compile_release(
-        sections, dates, fragments, target, date, authors, every
+        sections, dates, fragments, target, date, authors, every, prs
     )
     unconfirmed = unconfirmed_commits(latest)
+    # 不在这里拦：超预算要写进发版 PR 正文让维护者精简，由发版 PR 的检查把关
+    plan = plan_note_json(new_sections, target, strict=False)
 
     if arguments.dry_run:
         print(f"将发布 {target}（{arguments.kind}），基于 {latest or '无 tag'}")
         print("\n".join(render_section(new_sections[target])))
+        print(describe_note_plan(plan))
         for sha, subject in unconfirmed:
             print(f"待确认: {sha} {subject}")
         return 0
@@ -1307,7 +1567,7 @@ def command_release(arguments: argparse.Namespace) -> int:
     changed = sync_generated()
 
     body = render_pr_body(
-        target, latest, arguments.kind, new_sections[target], unconfirmed
+        target, latest, arguments.kind, new_sections[target], unconfirmed, plan
     )
     if arguments.body_file:
         write_text(Path(arguments.body_file), body)
@@ -1397,19 +1657,93 @@ def select_note_versions(sections: Sections, version: str) -> List[str]:
     return seen
 
 
-def render_release_note(sections: Sections, version: str) -> str:
-    """Release 正文：首行 JSON（老客户端契约）+ 本版可见正文 + 贡献者 + 对比链接。"""
+class NotePlan:
+    """首行 JSON 的裁剪结果：最终那一行、留下的版本段、为了预算丢掉的版本段。"""
+
+    __slots__ = ("line", "kept", "dropped", "budget")
+
+    def __init__(
+        self, line: str, kept: List[str], dropped: List[str], budget: int
+    ) -> None:
+        self.line = line
+        self.kept = kept
+        self.dropped = dropped
+        self.budget = budget
+
+    @property
+    def over_budget(self) -> bool:
+        return len(self.line) > self.budget
+
+
+def plan_note_json(
+    sections: Sections,
+    version: str,
+    budget: int = RELEASE_NOTE_JSON_BUDGET,
+    strict: bool = True,
+) -> NotePlan:
+    """算出 Release 正文首行 JSON，超预算时从最老的版本段开始丢。
+
+    本版段永远保留：它单独就超预算说明条目写得太长，strict 时直接报错，不能把截断的
+    JSON 发出去让所有客户端的更新检查一起失败；「准备发版」用非 strict 拿到结果写进
+    发版 PR 正文，由发版 PR 的检查把关。
+    """
 
     if version not in sections:
         raise ChangelogError(f"CHANGELOG.md 里没有版本 {version}")
     selected = select_note_versions(sections, version)
-    payload = {v: order_categories(sections[v]) for v in selected}
-    lines = [
-        "<!--" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "-->"
+    kept = list(selected)
+    while True:
+        payload = {v: client_categories(sections[v]) for v in kept}
+        line = (
+            "<!--"
+            + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            + "-->"
+        )
+        if len(line) <= budget or len(kept) == 1:
+            break
+        kept.pop()  # 列表新在前，丢掉的是最老的那段
+    plan = NotePlan(line, kept, [v for v in selected if v not in kept], budget)
+    if strict and plan.over_budget:
+        raise ChangelogError(over_budget_message(sections, version, plan))
+    return plan
+
+
+def over_budget_message(sections: Sections, version: str, plan: NotePlan) -> str:
+    longest = "；".join(
+        f"{category}「{text[:24]}…」{length} 字"
+        for length, category, text in longest_entries(sections[version], 3)
+    )
+    return (
+        f"{version} 段单独就有 {len(plan.line)} 字符，超过首行 JSON 预算 {plan.budget}"
+        f"（Mirror 酱只保留前 20000 字符）。请在发版 PR 里精简或合并条目，"
+        f"最长的几条：{longest}"
+    )
+
+
+def longest_entries(
+    categories: Dict[str, List[str]], count: int = 5
+) -> List[Tuple[int, str, str]]:
+    """按客户端口径最长的几条 (字数, 分类, 条目)，给发版 PR 与报错点名用。"""
+
+    rows = [
+        (len(client_entry(item)), category, client_entry(item))
+        for category, items in categories.items()
+        for item in items
     ]
+    rows.sort(key=lambda row: (-row[0], row[1]))
+    return rows[:count]
+
+
+def render_release_note(
+    sections: Sections, version: str, budget: int = RELEASE_NOTE_JSON_BUDGET
+) -> str:
+    """Release 正文：首行 JSON（老客户端契约）+ 本版可见正文 + 贡献者 + 对比链接。"""
+
+    plan = plan_note_json(sections, version, budget)
+    lines = [plan.line]
     lines.append(f"## {version}")
     lines.append("")
-    lines.extend(render_section(sections[version]))
+    lines.extend(render_section(sections[version], decorate=True))
 
     contributors: List[str] = []
     for items in sections[version].values():
@@ -1444,10 +1778,22 @@ def render_release_note(sections: Sections, version: str) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+def describe_note_plan(plan: NotePlan) -> str:
+    text = (
+        f"首行 JSON {len(plan.line)} / {plan.budget} 字符，带 {len(plan.kept)} 个版本段"
+    )
+    if plan.dropped:
+        text += f"；为了预算丢掉了 {'、'.join(plan.dropped)}"
+    if plan.over_budget:
+        text += "；**超预算**"
+    return text
+
+
 def command_release_note(arguments: argparse.Namespace) -> int:
     current_version, sections, _ = parse_changelog(read_text(CHANGELOG_PATH))
     version = arguments.version or current_version
     note = render_release_note(sections, version)
+    print(describe_note_plan(plan_note_json(sections, version)), file=sys.stderr)
     if arguments.output:
         write_text(Path(arguments.output), note)
         print(f"已写出 {version} 的 Release 正文到 {arguments.output}")
@@ -1465,12 +1811,14 @@ def command_add(arguments: argparse.Namespace) -> int:
     text = " ".join(arguments.text).strip()
     if text.startswith("- "):
         text = text[2:].strip()
-    if not text:
-        raise ChangelogError("碎片内容为空")
     if "\n" in text:
         raise ChangelogError("碎片只能写一行")
-    if SIGNATURE.search(text):
-        raise ChangelogError("不要手写 ` by [@用户]` 署名，发版时会按提交作者自动补")
+    check_fragment_text(text, "碎片")
+    project = arguments.project.lower()
+    if project not in PROJECTS:
+        raise ChangelogError(
+            f"project 键 {project!r} 不在项目表里，可选：{'、'.join(PROJECTS)}"
+        )
 
     identifier = arguments.id or default_identifier()
     if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", identifier):
@@ -1483,13 +1831,14 @@ def command_add(arguments: argparse.Namespace) -> int:
             f"已经有碎片 {existing[0].path.name}，一条 PR 只放一个碎片，请直接编辑它"
         )
     path = FRAGMENT_DIR / f"{identifier}.{arguments.type}.md"
-    content = text + "\n"
+    content = f"project: {project}\n" + text + "\n"
     if arguments.author:
         content = f"author: {arguments.author.lstrip('@')}\n" + content
     write_text(path, content)
-    parse_fragment(path, content)
+    fragment = parse_fragment(path, content)
     print(
-        f"已创建 {path.relative_to(REPO_ROOT).as_posix()}（分类：{FRAGMENT_TYPES[arguments.type]}）"
+        f"已创建 {path.relative_to(REPO_ROOT).as_posix()}"
+        f"（分类：{fragment.category}，项目：{fragment.project_name or '本体'}）"
     )
     return 0
 
@@ -1506,7 +1855,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     add = subparsers.add_parser("add", help="新建一个更新日志碎片")
     add.add_argument("type", choices=sorted(FRAGMENT_TYPES), help="分类后缀")
-    add.add_argument("text", nargs="+", help="一句面向用户的话")
+    add.add_argument(
+        "project",
+        metavar="project",
+        help="项目键：" + "、".join(PROJECTS) + "（本体其他部分用 core）",
+    )
+    add.add_argument(
+        "text", nargs="+", help=f"一句面向用户的话，不超过 {FRAGMENT_TEXT_LIMIT} 字"
+    )
     add.add_argument("--id", help="文件名前缀，默认取 PR 号或当前分支名")
     add.add_argument("--author", help="替别人提交时指定署名登录名")
 

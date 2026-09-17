@@ -250,33 +250,50 @@ def _fragment(tmp_path: Path, name: str, content: str):
 
 
 def test_fragment_name_decides_category_and_body_is_one_line(tmp_path) -> None:
-    fragment = _fragment(tmp_path, "683.feat.md", "模拟器管理 MuMu 新增开关\n")
+    fragment = _fragment(tmp_path, "683.feat.md", "project: emulator\nMuMu 新增开关\n")
 
     assert fragment.identifier == "683"
     assert fragment.category == "新增"
-    assert fragment.text == "模拟器管理 MuMu 新增开关"
+    assert fragment.text == "MuMu 新增开关"
     assert fragment.author is None
+    assert fragment.project == "emulator"
+    assert fragment.project_name == "模拟器"
 
 
 def test_fragment_accepts_author_override_and_leading_dash(tmp_path) -> None:
     fragment = _fragment(
-        tmp_path, "mumu-kill.fix.md", "author: @HarcoChen\n\n- 修复了一个问题\n"
+        tmp_path,
+        "mumu-kill.fix.md",
+        "author: @HarcoChen\nproject: Core\n\n- 修复了一个问题\n",
     )
 
     assert fragment.author == "HarcoChen"
     assert fragment.text == "修复了一个问题"
     assert fragment.category == "修复"
+    # 键不分大小写；core 是本体，公告里不加前缀
+    assert fragment.project == "core"
+    assert fragment.project_name is None
 
 
 @pytest.mark.parametrize(
     ("name", "content", "message"),
     [
-        ("683.md", "甲\n", "文件名"),  # 没有分类后缀
-        ("683.feature.md", "甲\n", "文件名"),  # 未知分类
-        ("683.feat.md", "\n", "为空"),
-        ("683.feat.md", "甲\n乙\n", "只能有一行"),
-        ("683.feat.md", "甲 by [@a](https://github.com/a)\n", "署名"),
-        ("683.feat.md", "author: a\nauthor: b\n甲\n", "author 只能写一次"),
+        ("683.md", "project: core\n甲\n", "文件名"),  # 没有分类后缀
+        ("683.feature.md", "project: core\n甲\n", "文件名"),  # 未知分类
+        ("683.feat.md", "project: core\n\n", "为空"),
+        ("683.feat.md", "project: core\n甲\n乙\n", "只能有一行"),
+        ("683.feat.md", "project: core\n甲 by [@a](https://github.com/a)\n", "署名"),
+        ("683.feat.md", "project: core\n甲 by @a\n", "署名"),
+        (
+            "683.feat.md",
+            "author: a\nauthor: b\nproject: core\n甲\n",
+            "author 只能写一次",
+        ),
+        ("683.feat.md", "甲\n", "缺少首行 `project:"),
+        ("683.feat.md", "project: maa\nproject: hsr\n甲\n", "project 只能写一次"),
+        ("683.feat.md", "project: arknights\n甲\n", "不在项目表里"),
+        ("683.feat.md", "project: maa\n(MAA) 甲\n", "正文开头不要再写"),
+        ("683.feat.md", "project: maa\n" + "甲" * 51 + "\n", "超过 50 字上限"),
     ],
 )
 def test_invalid_fragment_is_rejected(tmp_path, name, content, message) -> None:
@@ -284,9 +301,15 @@ def test_invalid_fragment_is_rejected(tmp_path, name, content, message) -> None:
         _fragment(tmp_path, name, content)
 
 
+def test_fragment_text_limit_is_inclusive(tmp_path) -> None:
+    fragment = _fragment(tmp_path, "1.fix.md", "project: maa\n" + "甲" * 50 + "\n")
+
+    assert len(fragment.text) == 50
+
+
 def test_list_fragments_skips_readme_and_rejects_strangers(tmp_path) -> None:
     (tmp_path / "README.md").write_text("说明", encoding="utf-8")
-    (tmp_path / "1.fix.md").write_text("甲\n", encoding="utf-8")
+    (tmp_path / "1.fix.md").write_text("project: core\n甲\n", encoding="utf-8")
 
     assert [f.identifier for f in changelog.list_fragments(tmp_path)] == ["1"]
 
@@ -343,15 +366,22 @@ def test_latest_version_orders_like_semver_and_skips_odd_tags() -> None:
 
 
 def test_signatures_split_join_and_merge() -> None:
-    entry = "甲 by [@a](https://github.com/a) by [@b](https://github.com/b)"
+    entry = "甲 by @a by @b"
 
     assert changelog.split_signatures(entry) == ("甲", ["a", "b"])
     assert changelog.join_signatures("甲", ["a", "a", "b"]) == entry
-    # 旧机器人给多人条目补的署名只有第一个带 by，后面用空格连着；正文中间的链接不算署名
+    # 旧写法带链接；旧机器人给多人条目补的署名只有第一个带 by，后面用空格连着
+    linked = "甲 by [@a](https://github.com/a) by [@b](https://github.com/b)"
+    assert changelog.split_signatures(linked) == ("甲", ["a", "b"])
     legacy = "甲 by [@a](https://github.com/a) [@b](https://github.com/b)"
     assert changelog.split_signatures(legacy) == ("甲", ["a", "b"])
+    # 正文中间提到某人不算署名
     mention = "甲 by [@a](https://github.com/a) 报告的问题"
     assert changelog.split_signatures(mention) == (mention, [])
+    assert changelog.split_signatures("甲 by @a 报告的问题") == (
+        "甲 by @a 报告的问题",
+        [],
+    )
 
     target = {"修复": [entry]}
     changelog.merge_entries(
@@ -359,13 +389,59 @@ def test_signatures_split_join_and_merge() -> None:
     )
 
     assert target == {
-        "修复": [
-            "甲 by [@a](https://github.com/a) by [@b](https://github.com/b)"
-            " by [@c](https://github.com/c)",
-            "乙",
-        ],
+        "修复": ["甲 by @a by @b by @c", "乙"],
         "新增": ["丙"],
     }
+
+
+def test_entry_structure_round_trips_and_normalizes() -> None:
+    """条目 = (项目) 正文 (#PR) 署名；解析后按当前写法重新拼出来。"""
+
+    parsed = changelog.split_entry(
+        "(MAA) 修复剿灭空跑 (#761, #762) by [@a](https://github.com/a) [@b](https://github.com/b)"
+    )
+    assert (parsed.project, parsed.text, parsed.prs, parsed.logins) == (
+        "MAA",
+        "修复剿灭空跑",
+        [761, 762],
+        ["a", "b"],
+    )
+    assert parsed.render() == "(MAA) 修复剿灭空跑 (#761, #762) by @a by @b"
+    assert parsed.render(with_prs=False) == "(MAA) 修复剿灭空跑 by @a by @b"
+
+    # 表外的括号开头照原文当正文；没有署名与 PR 号也能解析
+    plain = changelog.split_entry("(数据未删除) 请手动迁移")
+    assert (plain.project, plain.text, plain.prs, plain.logins) == (
+        None,
+        "(数据未删除) 请手动迁移",
+        [],
+        [],
+    )
+    assert changelog.normalize_entry("甲 by [@a](https://github.com/a)") == "甲 by @a"
+    assert changelog.client_entry("(MAA) 甲 (#1) by @a") == "(MAA) 甲 by @a"
+
+
+def test_entries_are_ordered_by_project_table_with_core_last() -> None:
+    items = ["甲", "(MFW) 乙", "(MAA) 丙", "(首页) 丁", "(MAA) 戊", "(Xx) 己"]
+
+    assert changelog.order_entries(items) == [
+        "(MAA) 丙",
+        "(MAA) 戊",
+        "(MFW) 乙",
+        "(首页) 丁",
+        "甲",
+        "(Xx) 己",
+    ]
+
+
+def test_merge_entries_unions_pr_numbers_of_the_same_project_and_text() -> None:
+    target = {"修复": ["(MAA) 甲 (#1) by @a"]}
+    changelog.merge_entries(
+        target, {"修复": ["(MAA) 甲 (#2) by @b", "甲 (#3)", "(MFW) 甲"]}
+    )
+
+    # 同项目同正文才算同一条；本体的「甲」与 MFW 的「甲」各自独立
+    assert target == {"修复": ["(MAA) 甲 (#1, #2) by @a by @b", "甲 (#3)", "(MFW) 甲"]}
 
 
 def _sections(text: str):
@@ -380,7 +456,7 @@ def test_compile_beta_absorbs_the_pending_unreleased_section(tmp_path) -> None:
         f"## [v5.5.0-beta.6] - {changelog.UNRELEASED}\n\n### 修复\n\n- 甲\n\n"
         "## [v5.5.0-beta.5] - 2026-09-12\n\n### 新增\n\n- 乙\n"
     )
-    fragment = _fragment(tmp_path, "700.feat.md", "丙\n")
+    fragment = _fragment(tmp_path, "700.feat.md", "project: maa\n丙\n")
 
     new_sections, new_dates = changelog.compile_release(
         sections,
@@ -390,13 +466,41 @@ def test_compile_beta_absorbs_the_pending_unreleased_section(tmp_path) -> None:
         "2026-09-13",
         {"700.feat.md": "qiyinxi"},
         tagged=["v5.5.0-beta.5"],
+        prs={"700.feat.md": 700},
     )
 
     assert list(new_sections) == ["v5.5.0-beta.6", "v5.5.0-beta.5"]
     assert new_dates["v5.5.0-beta.6"] == "2026-09-13"
     assert new_sections["v5.5.0-beta.6"] == {
-        "新增": ["丙 by [@qiyinxi](https://github.com/qiyinxi)"],
+        "新增": ["(MAA) 丙 (#700) by @qiyinxi"],
         "修复": ["甲"],
+    }
+
+
+def test_compile_orders_each_category_by_project_table(tmp_path) -> None:
+    """同一分类内按项目表顺序排，本体的排最后；没解析到作者与 PR 号就都不带。"""
+
+    sections, dates = _sections("## [v5.5.0-beta.5] - 2026-09-12\n\n### 新增\n\n- 乙\n")
+    fragments = [
+        _fragment(tmp_path, "a.fix.md", "project: core\n甲\n"),
+        _fragment(tmp_path, "b.fix.md", "project: mfw\n乙\n"),
+        _fragment(tmp_path, "c.fix.md", "project: maa\n丙\n"),
+        _fragment(tmp_path, "d.fix.md", "project: maa\n丁\n"),
+    ]
+
+    new_sections, _ = changelog.compile_release(
+        sections,
+        dates,
+        fragments,
+        "v5.5.0-beta.6",
+        "2026-09-13",
+        {"a.fix.md": None, "b.fix.md": "b", "c.fix.md": None, "d.fix.md": None},
+        tagged=["v5.5.0-beta.5"],
+        prs={"a.fix.md": None, "b.fix.md": None, "c.fix.md": 3},
+    )
+
+    assert new_sections["v5.5.0-beta.6"] == {
+        "修复": ["(MAA) 丙 (#3)", "(MAA) 丁", "(MFW) 乙 by @b", "甲"]
     }
 
 
@@ -410,7 +514,7 @@ def test_compile_stable_rolls_up_the_whole_beta_cycle(tmp_path) -> None:
         "- 己\n- 甲\n\n"
         "## [v5.4.0] - 2026-08-26\n\n### 新增\n\n- 丁\n"
     )
-    fragment = _fragment(tmp_path, "9.fix.md", "戊\n")
+    fragment = _fragment(tmp_path, "9.fix.md", "project: core\n戊\n")
 
     new_sections, new_dates = changelog.compile_release(
         sections,
@@ -424,10 +528,10 @@ def test_compile_stable_rolls_up_the_whole_beta_cycle(tmp_path) -> None:
 
     assert list(new_sections) == ["v5.5.0", "v5.4.0"]
     # 从旧到新并入：beta.1 独有的己排最前，倒过来并入的话乙会跑到己前面；
-    # 甲在两个 beta 里都有，只留一条且署名保留
+    # 甲在两个 beta 里都有，只留一条且署名保留（旧写法的链接署名归一成 by @a）
     assert new_sections["v5.5.0"] == {
         "新增": ["丙"],
-        "修复": ["己", "甲 by [@a](https://github.com/a)", "乙", "戊"],
+        "修复": ["己", "甲 by @a", "乙", "戊"],
     }
     assert new_dates == {"v5.5.0": "2026-09-13", "v5.4.0": "2026-08-26"}
 
@@ -439,7 +543,7 @@ def test_compile_reopens_an_untagged_section_but_not_a_tagged_one(tmp_path) -> N
         "## [v5.5.0-beta.7] - 2026-09-13\n\n### 修复\n\n- 甲\n\n"
         "## [v5.5.0-beta.6] - 2026-09-12\n\n### 修复\n\n- 乙\n"
     )
-    fragment = _fragment(tmp_path, "10.fix.md", "丙\n")
+    fragment = _fragment(tmp_path, "10.fix.md", "project: core\n丙\n")
 
     new_sections, _ = changelog.compile_release(
         sections,
@@ -472,7 +576,7 @@ def test_compile_refuses_to_go_backwards_or_publish_nothing(tmp_path) -> None:
             sections, dates, [], "v5.5.0-beta.7", "2026-09-13", {}, []
         )
 
-    fragment = _fragment(tmp_path, "1.fix.md", "甲\n")
+    fragment = _fragment(tmp_path, "1.fix.md", "project: core\n甲\n")
     with pytest.raises(changelog.ChangelogError, match="不能倒退"):
         changelog.compile_release(
             sections, dates, [fragment], "v5.5.0-beta.5", "2026-09-13", {}, []
@@ -517,8 +621,11 @@ def test_release_note_has_contract_first_line_contributors_and_compare_link() ->
     assert first.startswith("<!--") and first.endswith("-->")
     payload = json.loads(first[4:-3])
     assert list(payload) == ["v5.5.0", "v5.4.0"]
-    assert payload["v5.5.0"] == {"新增": ["丙 by [@a](https://github.com/a)"]}
+    # 首行 JSON 里署名不带链接（旧写法在解析时已归一）
+    assert payload["v5.5.0"] == {"新增": ["丙 by @a"]}
     assert "## v5.5.0" in rest
+    # 可见正文的分类标题带表情，分类名本身不变
+    assert "### ✨ 新增\n\n- 丙 by @a" in rest
     assert "### 贡献者\n\n[@a](https://github.com/a)" in rest
     # 正式版对比上一个正式版；补丁与公测对比紧邻的上一段
     assert "compare/v5.4.0...v5.5.0" in rest
@@ -528,6 +635,84 @@ def test_release_note_has_contract_first_line_contributors_and_compare_link() ->
     assert "compare/v5.6.0-beta.1...v5.6.0-beta.2" in changelog.render_release_note(
         sections, "v5.6.0-beta.2"
     )
+
+
+def test_release_note_first_line_strips_pr_numbers_but_keeps_project_and_author() -> (
+    None
+):
+    sections, _ = _sections(
+        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- (MAA) 甲 (#1, #2) by @a\n"
+    )
+
+    note = changelog.render_release_note(sections, "v5.5.0-beta.7")
+    first, rest = note.split("\n", 1)
+
+    assert json.loads(first[4:-3]) == {"v5.5.0-beta.7": {"修复": ["(MAA) 甲 by @a"]}}
+    assert "- (MAA) 甲 (#1, #2) by @a" in rest
+
+
+def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
+    """超预算时从最老的版本段开始丢，本版段永远保留。"""
+
+    sections, _ = _sections(FULL_HISTORY)
+    full = changelog.plan_note_json(sections, "v5.6.0-beta.2")
+    assert full.kept == ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1", "v5.5.0"]
+    assert full.dropped == [] and not full.over_budget
+
+    tight = changelog.plan_note_json(
+        sections, "v5.6.0-beta.2", budget=len(full.line) - 1
+    )
+    assert tight.kept == ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1"]
+    assert tight.dropped == ["v5.5.0"]
+    assert json.loads(tight.line[4:-3]).keys() == {
+        "v5.6.0-beta.2",
+        "v5.6.0-beta.1",
+        "v5.5.1",
+    }
+
+    only_current = changelog.plan_note_json(sections, "v5.6.0-beta.2", budget=60)
+    assert only_current.kept == ["v5.6.0-beta.2"]
+    assert not only_current.over_budget
+
+    note = changelog.render_release_note(sections, "v5.6.0-beta.2", budget=60)
+    assert json.loads(note.split("\n", 1)[0][4:-3]) == {
+        "v5.6.0-beta.2": {"修复": ["己"]}
+    }
+
+
+def test_release_note_refuses_when_the_current_section_alone_is_over_budget() -> None:
+    sections, _ = _sections(
+        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- (MAA) "
+        + "甲" * 40
+        + "\n- 乙\n"
+    )
+
+    with pytest.raises(
+        changelog.ChangelogError, match="单独就有 .* 字符，超过首行 JSON 预算 30"
+    ):
+        changelog.render_release_note(sections, "v5.5.0-beta.7", budget=30)
+
+    lenient = changelog.plan_note_json(
+        sections, "v5.5.0-beta.7", budget=30, strict=False
+    )
+    assert lenient.over_budget and lenient.kept == ["v5.5.0-beta.7"]
+    body = changelog.render_pr_body(
+        "v5.5.0-beta.7", "v5.5.0-beta.6", "beta", sections["v5.5.0-beta.7"], [], lenient
+    )
+    assert "超过预算 30" in body
+    assert "### 体积" in body and "最长的几条" in body
+
+
+def test_repository_release_note_fits_the_budget() -> None:
+    """仓库当前 CHANGELOG.md 渲染出的首行必须在预算内：这是 Mirror 酱截断的红线。"""
+
+    current_version, sections, _ = changelog.parse_changelog(
+        changelog.read_text(changelog.CHANGELOG_PATH)
+    )
+    plan = changelog.plan_note_json(sections, current_version)
+
+    assert len(plan.line) <= changelog.RELEASE_NOTE_JSON_BUDGET
+    assert plan.kept[0] == current_version
 
 
 # ---------------------------------------------------------------------------
@@ -613,7 +798,7 @@ def _check(root: Path, base: str, kind: str = "normal", **flags):
 def test_pr_check_accepts_one_fragment_for_a_user_visible_change(repo) -> None:
     _branch(repo, "feat/x")
     _write(repo, "app/x.py", "x = 2\n")
-    _write(repo, "changelog.d/feat-x.feat.md", "新功能\n")
+    _write(repo, "changelog.d/feat-x.feat.md", "project: core\n新功能\n")
     _commit(repo, "feat: x")
 
     assert _check(repo, "dev") == []
@@ -637,11 +822,11 @@ def test_pr_check_ignores_non_user_visible_changes(repo) -> None:
 
 
 def test_pr_check_rejects_two_fragments_and_touching_others(repo) -> None:
-    _write(repo, "changelog.d/other.fix.md", "别人的\n")
+    _write(repo, "changelog.d/other.fix.md", "project: core\n别人的\n")
     _commit(repo, "fix: other")
     _branch(repo, "feat/x")
-    _write(repo, "changelog.d/a.feat.md", "甲\n")
-    _write(repo, "changelog.d/b.fix.md", "乙\n")
+    _write(repo, "changelog.d/a.feat.md", "project: core\n甲\n")
+    _write(repo, "changelog.d/b.fix.md", "project: core\n乙\n")
     (repo / "changelog.d/other.fix.md").unlink()
     _commit(repo, "feat: x")
 
@@ -673,14 +858,14 @@ def test_pr_check_blocks_changelog_and_version_edits_in_normal_prs(repo) -> None
 def test_pr_check_allows_code_edits_next_to_an_unchanged_version(repo) -> None:
     _branch(repo, "feat/x")
     _write(repo, "app/core/config.py", '    VERSION = "v1.0.0-beta.1"\n    OTHER = 1\n')
-    _write(repo, "changelog.d/x.change.md", "调整\n")
+    _write(repo, "changelog.d/x.change.md", "project: core\n调整\n")
     _commit(repo, "feat: x")
 
     assert _check(repo, "dev") == []
 
 
 def test_pr_check_release_kind_needs_empty_fragments_and_a_bump(repo) -> None:
-    _write(repo, "changelog.d/x.fix.md", "乙\n")
+    _write(repo, "changelog.d/x.fix.md", "project: core\n乙\n")
     _commit(repo, "fix: x")
     _branch(repo, "chore/release")
     _write(
@@ -703,12 +888,12 @@ def test_pr_check_flags_dev_only_commits_leaking_into_release(repo) -> None:
 
     _git(repo, "branch", "release/v1.0.0-beta.1")
     _write(repo, "app/x.py", "x = 2\n")
-    _write(repo, "changelog.d/1.fix.md", "dev 上的改动\n")
+    _write(repo, "changelog.d/1.fix.md", "project: core\ndev 上的改动\n")
     _commit(repo, "feat: only on dev")
     # 错误做法：直接从 dev 开分支修 release
     _branch(repo, "fix/wrong")
     _write(repo, "app/y.py", "y = 1\n")
-    _write(repo, "changelog.d/2.fix.md", "热修\n")
+    _write(repo, "changelog.d/2.fix.md", "project: core\n热修\n")
     _commit(repo, "fix: hot")
 
     problems = _check(repo, "release/v1.0.0-beta.1", dev_ref="dev")
@@ -742,19 +927,19 @@ def test_version_floor_catches_a_clobbered_bump(repo) -> None:
 def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
     """noreply 邮箱直接拆出登录名；author 行覆盖一切；不读 Co-authored-by。"""
 
-    _write(repo, "changelog.d/1.fix.md", "甲\n")
+    _write(repo, "changelog.d/1.fix.md", "project: core\n甲\n")
     _commit(
         repo,
         "fix: a\n\nCo-authored-by: Robot <robot@example.com>",
         author="Alice <123+alice@users.noreply.github.com>",
     )
-    _write(repo, "changelog.d/2.fix.md", "author: bob\n乙\n")
+    _write(repo, "changelog.d/2.fix.md", "author: bob\nproject: core\n乙\n")
     _commit(repo, "fix: b", author="Carol <carol@example.com>")
-    _write(repo, "changelog.d/3.fix.md", "丙\n")
+    _write(repo, "changelog.d/3.fix.md", "project: core\n丙\n")
     _commit(repo, "fix: c", author="Carol <carol@example.com>")
-    _write(repo, "changelog.d/4.fix.md", "丁\n")
+    _write(repo, "changelog.d/4.fix.md", "project: core\n丁\n")
     _commit(repo, "fix: d", author="Carol Chen <carol@example.com>")
-    _write(repo, "changelog.d/5.fix.md", "戊\n")
+    _write(repo, "changelog.d/5.fix.md", "project: core\n戊\n")
     _commit(repo, "fix: e", author="寒风 <hanfeng@example.com>")
     fragments = {
         f.identifier: f for f in changelog.list_fragments(repo / "changelog.d")
@@ -773,22 +958,47 @@ def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
 def test_fragment_author_follows_the_latest_addition_after_reuse(repo) -> None:
     """碎片发版后被删，同名文件被别人再次新增，署名要归后来的人。"""
 
-    _write(repo, "changelog.d/fix-x.fix.md", "甲\n")
+    _write(repo, "changelog.d/fix-x.fix.md", "project: core\n甲\n")
     _commit(repo, "fix: a", author="Alice <1+alice@users.noreply.github.com>")
     (repo / "changelog.d/fix-x.fix.md").unlink()
     _commit(repo, "chore(release): v1.0.0-beta.2")
-    _write(repo, "changelog.d/fix-x.fix.md", "乙\n")
+    _write(repo, "changelog.d/fix-x.fix.md", "project: core\n乙\n")
     _commit(repo, "fix: b", author="Bob <2+bob@users.noreply.github.com>")
     fragment = changelog.list_fragments(repo / "changelog.d")[0]
 
     assert changelog.fragment_author(fragment, root=repo, resolve_online=False) == "bob"
 
 
+def test_fragment_pr_number_comes_from_the_squash_subject_or_the_file_name(
+    repo,
+) -> None:
+    """PR 号取新增碎片的提交标题末尾的 (#N)；没有就看文件名前缀是不是纯数字。"""
+
+    _write(repo, "changelog.d/fix-x.fix.md", "project: core\n甲\n")
+    _commit(repo, "fix: a (#12)", author="Alice <1+alice@users.noreply.github.com>")
+    _write(repo, "changelog.d/34.fix.md", "project: core\n乙\n")
+    _commit(repo, "fix: b", author="Alice <1+alice@users.noreply.github.com>")
+    # cherry-pick 到 release 分支：正文里提到原 PR，标题末尾是这条分支上的 PR
+    _write(repo, "changelog.d/56.fix.md", "author: bob\nproject: core\n丙\n")
+    _commit(repo, "fix: c（beta.6 cherry-pick #56） (#78)")
+    _write(repo, "changelog.d/none.fix.md", "project: core\n丁\n")
+    _commit(repo, "fix: d")
+    fragments = {
+        f.identifier: f for f in changelog.list_fragments(repo / "changelog.d")
+    }
+
+    origin = changelog.fragment_origin
+    assert origin(fragments["fix-x"], root=repo, resolve_online=False) == ("alice", 12)
+    assert origin(fragments["34"], root=repo, resolve_online=False) == ("alice", 34)
+    assert origin(fragments["56"], root=repo, resolve_online=False) == ("bob", 78)
+    assert origin(fragments["none"], root=repo, resolve_online=False) == ("dev", None)
+
+
 def test_unconfirmed_commits_lists_user_visible_pushes_without_fragments(repo) -> None:
     _write(repo, "app/x.py", "x = 2\n")
     _commit(repo, "fix: 直推没带碎片")
     _write(repo, "app/x.py", "x = 3\n")
-    _write(repo, "changelog.d/9.fix.md", "带了\n")
+    _write(repo, "changelog.d/9.fix.md", "project: core\n带了\n")
     _commit(repo, "fix: 带了碎片")
     _write(repo, "README.md", "文档\n")
     _commit(repo, "fix: 只改文档")
