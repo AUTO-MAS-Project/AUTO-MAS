@@ -508,6 +508,17 @@ export default {
       'After a task completes normally once today, later runs skip it automatically; leave empty to run it every time',
     maaEndDailyOnceTasksPlaceholder: 'Choose tasks to run once per day',
     maaEndAutoCollectConfig: 'Auto-collect configuration',
+    maaEndSetResolution: 'Set resolution on launch',
+    maaEndSetResolutionHint:
+      'Off by default. When enabled, MaaEnd runs its resolution-setting pretask before the first game launch.',
+    maaEndRestoreResolution: 'Restore resolution when closing the game',
+    maaEndRestoreResolutionHint:
+      'MaaEnd restores it at the end of the last stage for the next launch; it only applies when the game is closed after the run.',
+    maaEndResolutionWidth: 'Width',
+    maaEndResolutionHeight: 'Height',
+    maaEndResolutionUnchanged: 'Do not change',
+    maaEndResolutionFullscreen: 'Fullscreen',
+    maaEndResolutionCustom: 'Custom',
     maaEndAutoCollectEnabled: 'Auto-collect',
     maaEndAutoCollectEnabledHint:
       'Runs auto-collect as an independent stage; the settings below are ignored when disabled.',

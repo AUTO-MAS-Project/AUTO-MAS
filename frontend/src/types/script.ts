@@ -179,8 +179,15 @@ export interface MaaEndScriptConfig {
     WaitTime: number
     EmulatorId: string
     EmulatorIndex: string
+    SetResolution: boolean
     CloseOnFinish: boolean
-    RestoreResolution: 'Off' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
+    RestoreResolution:
+      | 'Off'
+      | '1920x1080'
+      | '2560x1440'
+      | '3840x2160'
+      | 'Fullscreen'
+      | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
   }

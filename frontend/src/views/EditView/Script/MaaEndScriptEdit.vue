@@ -167,6 +167,23 @@
             </a-col>
           </a-row>
 
+          <a-row v-if="isWinController" :gutter="24">
+            <a-col :span="12">
+              <a-form-item
+                :label="t('edit.maaEndSetResolution')"
+                :extra="t('edit.maaEndSetResolutionHint')"
+              >
+                <a-select
+                  v-model:value="maaEndConfig.Game.SetResolution"
+                  size="large"
+                  :options="booleanOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'SetResolution', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
             <a-col :span="12">
               <a-form-item
@@ -522,6 +539,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     WaitTime: 60,
     EmulatorId: '',
     EmulatorIndex: '',
+    SetResolution: false,
     CloseOnFinish: true,
     RestoreResolution: 'Off',
     RestoreResolutionWidth: 1920,
@@ -534,6 +552,7 @@ const restoreResolutionOptions = computed(() => [
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
+  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
   { value: 'Custom', label: t('edit.maaEndResolutionCustom') },
 ])
 
@@ -599,6 +618,9 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
+  if (config.Game?.SetResolution == null) {
+    maaEndConfig.Game.SetResolution = false
+  }
 }
 
 const refreshScript = async () => {
