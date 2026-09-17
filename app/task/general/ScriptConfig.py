@@ -202,15 +202,6 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
-        # 源是用户自己填的脚本配置位置，可能压根不存在（路径填错、脚本还没生成过
-        # 配置）。先判再动：不能先把 MAS 侧副本清掉再抛 FileNotFoundError，那会让
-        # 用户以为配置丢了。
-        if not self.script_config_path.exists():
-            logger.warning(
-                f"跳过配置回写: 脚本配置路径不存在 {self.script_config_path}"
-            )
-            return
-
         shutil.rmtree(
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",

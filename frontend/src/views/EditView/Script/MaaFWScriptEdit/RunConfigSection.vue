@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section form-section-alt">
+  <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.runConfiguration') }}</h3>
     </div>
@@ -50,12 +50,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneToday') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneToday') }}</span>
           </template>
           <a-select
             :value="dailyOnceTasks"
@@ -74,12 +69,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally2')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneThis') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneThis') }}</span>
           </template>
           <a-select
             :value="weeklyOnceTasks"
@@ -98,12 +88,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally3')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneThis2') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneThis2') }}</span>
           </template>
           <a-select
             :value="monthlyOnceTasks"
@@ -125,7 +110,6 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaFWScriptConfig } from '@/types/script'
 
 const { t } = useI18n()
@@ -151,13 +135,6 @@ const emit = defineEmits<{
 <style scoped>
 .form-section {
   margin-bottom: 40px;
-}
-
-.form-section-alt {
-  margin: 0 -24px;
-  padding: 24px 24px 32px;
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
 }
 
 .section-header {
