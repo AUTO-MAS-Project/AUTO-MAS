@@ -805,6 +805,14 @@ class QueueConfig(ConfigBase):
         return await super().load(data)
 
 
+def _tag_last_status(status: object) -> str:
+    """「上次」标签文案。存储值的默认是「未知」，但从没跑过的用户显示「未知」很怪，
+    页面上写成「未运行」；其余状态（成功 / 失败 / 运行中）原样。"""
+
+    text = str(status or "").strip()
+    return "未运行" if text in ("", "未知") else text
+
+
 def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
     """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
     if (
@@ -1482,7 +1490,7 @@ class MaaEndUserConfig(ConfigBase):
         # 上次代理标签
         tags.append(
             {
-                "text": f"上次：{self.get('Data', 'LastProxyStatus')}",
+                "text": f"上次：{_tag_last_status(self.get('Data', 'LastProxyStatus'))}",
                 "color": (
                     "red" if self.get("Data", "LastProxyStatus") == "失败" else "green"
                 ),
@@ -2744,7 +2752,7 @@ class MaaFWUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append(
             {
-                "text": f"上次：{last_status}",
+                "text": f"上次：{_tag_last_status(last_status)}",
                 "color": "red" if last_status == "失败" else "green",
             }
         )
@@ -3433,7 +3441,9 @@ class OkwwUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
@@ -3565,7 +3575,9 @@ class OkNteUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
@@ -3792,7 +3804,9 @@ class BetterGIUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         # 快速配置开启时运行 MAS 槽位，关闭时运行所选原生配置。
         if self.get("Info", "IfQuickConfig"):
@@ -4325,7 +4339,7 @@ class ZzzOdUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append(
             {
-                "text": f"上次：{last_status}",
+                "text": f"上次：{_tag_last_status(last_status)}",
                 "color": "red" if last_status == "失败" else "green",
             }
         )

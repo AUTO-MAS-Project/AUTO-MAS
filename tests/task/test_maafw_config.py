@@ -82,7 +82,8 @@ class MaaFWConfigTest(unittest.TestCase):
         tag_colors = {
             tag["text"]: tag["color"] for tag in json.loads(user.get("Info", "Tag"))
         }
-        self.assertEqual(tag_colors["上次：未知"], "green")
+        # 从没跑过的用户显示「未运行」而不是存储值「未知」
+        self.assertEqual(tag_colors["上次：未运行"], "green")
 
         asyncio.run(user.set("Data", "LastProxyStatus", "失败"))
         tag_colors = {
