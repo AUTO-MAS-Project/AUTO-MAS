@@ -51,6 +51,70 @@ export type DependencyProgressCallback = (progress: DependencyProgress) => void
 export const estimateDownloadProgress = (seenPackages: number): number =>
   Math.round(40 + 30 * (1 - Math.exp(-seenPackages / 25)))
 
+/**
+ * pip 输出流的增量进度解析器。
+ *
+ * Node 的管道不保证按行送达：一条 `Collecting xxx` 常被拆进相邻两个 chunk，按单个 chunk
+ * 匹配时两半都匹配不上，包数就此漏计、下载阶段的进度停住。这里跨 chunk 累计，只把凑齐的
+ * 一整行（遇到换行）交给解析，未处理完的尾部留在缓冲里；末尾没有换行的残行由 flush() 收尾。
+ */
+export const createPipProgressParser = (onProgress?: (progress: number) => void) => {
+  let pending = ''
+  let totalPackages = 0
+
+  const consumeLine = (line: string): void => {
+    // 匹配 "Collecting xxx" 来统计总包数
+    const collectingMatches = line.match(/Collecting\s+\S+/g)
+    if (collectingMatches) {
+      totalPackages += collectingMatches.length
+      // 下载阶段也要推进，否则最耗时的这一段进度条是死的
+      if (onProgress) {
+        onProgress(estimateDownloadProgress(totalPackages))
+      }
+    }
+
+    // 匹配 "Installing collected packages:" 来统计已安装包数
+    if (line.match(/Installing collected packages:/)) {
+      // 开始安装阶段：假设收集完成后进度到 80%
+      const installingProgress =
+        40 + (Math.floor(totalPackages * 0.8) / Math.max(totalPackages, 1)) * 50
+      if (onProgress) {
+        onProgress(Math.min(installingProgress, 90))
+      }
+    }
+
+    if (line.match(/Successfully installed/)) {
+      // 安装完成，进度到 95%
+      if (onProgress) {
+        onProgress(95)
+      }
+    }
+  }
+
+  return {
+    /** 送入一个 stdout chunk，按行逐步解析 */
+    push(chunk: string): void {
+      const lines = (pending + chunk).split(/\r?\n/)
+      pending = lines.pop() ?? ''
+      for (const line of lines) {
+        consumeLine(line)
+      }
+    },
+    /** 收尾：处理最后一行没有换行符时留在缓冲里的残留 */
+    flush(): void {
+      const rest = pending
+      pending = ''
+      if (rest.trim()) {
+        consumeLine(rest)
+      }
+    },
+    /** 已经见到的包数（供测试断言跨 chunk 累计结果） */
+    packages(): number {
+      return totalPackages
+    },
+  }
+}
+
 // ==================== 依赖安装服务类 ====================
 
 export class DependencyService {
@@ -410,43 +474,17 @@ export class DependencyService {
 
       let stdoutData = ''
       let stderrData = ''
-      let totalPackages = 0
-      let installedPackages = 0
+      // 进度统计跨 chunk 累计：pip 的一行可能被拆到相邻两个 chunk 里
+      const progressParser = createPipProgressParser(onProgress)
 
       proc.stdout?.on('data', data => {
-        const output = data.toString().trim()
+        const chunk = data.toString()
+        const output = chunk.trim()
         stdoutData += output
         logger.info(`pip install: ${output}`)
 
-        // 解析pip输出，统计安装进度
-        // 匹配 "Collecting xxx" 来统计总包数
-        const collectingMatches = output.match(/Collecting\s+\S+/g)
-        if (collectingMatches) {
-          totalPackages += collectingMatches.length
-          // 下载阶段也要推进，否则最耗时的这一段进度条是死的
-          if (onProgress) {
-            onProgress(estimateDownloadProgress(totalPackages))
-          }
-        }
-
-        // 匹配 "Installing collected packages:" 或 "Successfully installed" 来统计已安装包数
-        const installingMatch = output.match(/Installing collected packages:/)
-        if (installingMatch) {
-          // 开始安装阶段
-          installedPackages = Math.floor(totalPackages * 0.8) // 假设收集完成后进度到80%
-          if (onProgress) {
-            const progress = 40 + (installedPackages / Math.max(totalPackages, 1)) * 50 // 40% - 90%
-            onProgress(Math.min(progress, 90))
-          }
-        }
-
-        const successMatch = output.match(/Successfully installed/)
-        if (successMatch) {
-          installedPackages = totalPackages
-          if (onProgress) {
-            onProgress(95) // 安装完成，进度到95%
-          }
-        }
+        // 解析pip输出，统计安装进度（整行才解析，半行留在缓冲里等下一个 chunk）
+        progressParser.push(chunk)
       })
 
       proc.stderr?.on('data', data => {
@@ -456,6 +494,8 @@ export class DependencyService {
       })
 
       proc.on('close', code => {
+        // 收尾：最后一行可能没有换行符，仍在缓冲里
+        progressParser.flush()
         logger.info(`pip install 退出码: ${code}`)
 
         // 检查是否有实际错误
