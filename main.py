@@ -335,30 +335,10 @@ def main():
             try:
                 import importlib
 
-                async def _optional_step(label: str, step) -> None:
-                    """跑一个可选步骤：失败只记一条日志，不打断后面的步骤。
-
-                    这些步骤（MCP 挂载、历史清理、适配器导入、通知管理器、Koishi）任何
-                    一个失败，都不该连带跳过主定时器 —— 定时器没起来的话界面一切正常、
-                    手动运行队列也正常，但定时任务整夜不触发，用户看不到任何异常
-                    （issue #738）。
-                    """
-
-                    try:
-                        await step
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as error:
-                        logger.exception(f"{label}失败, 已跳过: {error}")
-
-                async def _mount_mcp() -> None:
-                    # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
-                    # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
-                    # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
-                    if os.getenv("AUTO_MAS_ENABLE_MCP", "1") != "1":
-                        logger.info("MCP 服务未启用，跳过路由挂载")
-                        return
-
+                # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
+                # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
+                # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
+                if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
                     fastapi_mcp = await asyncio.to_thread(
                         importlib.import_module, "fastapi_mcp"
                     )
@@ -375,22 +355,16 @@ def main():
                     )
                     mcp.mount_http()
                     logger.info("MCP 服务已挂载")
+                else:
+                    logger.info("MCP 服务未启用，跳过路由挂载")
 
-                await _optional_step("MCP 服务挂载", _mount_mcp())
+                await Config.get_stage()
+                await Config.clean_old_history()
+                await Config.clean_maafw_agent_venvs()
+                await Config.clean_debug_diagnostics()
+                await Config.clean_maafw_native_debug_logs()
 
-                async def _cleanup() -> None:
-                    await Config.get_stage()
-                    await Config.clean_old_history()
-                    await Config.clean_maafw_agent_venvs()
-                    await Config.clean_debug_diagnostics()
-                    await Config.clean_maafw_native_debug_logs()
-
-                await _optional_step("后台清理", _cleanup())
-
-                async def _init_arknight() -> None:
-                    if not IS_WINDOWS:
-                        return
-
+                if IS_WINDOWS:
                     for adapter in ("app.MaaFW.ArknightWin32",):
                         await asyncio.to_thread(importlib.import_module, adapter)
 
@@ -398,39 +372,28 @@ def main():
 
                     await ArknightWin32Toolkit.init()
 
-                await _optional_step("ArknightWin32 适配器初始化", _init_arknight())
-
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
-                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫自身的失败也
-                # 只跳过自己，不拦定时器。
+                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。
                 from app.core.desktop_guard import DesktopGuard
 
-                await _optional_step("显示输出守卫启动", DesktopGuard.start())
+                await DesktopGuard.start()
                 await MainTimer.start()
 
-                async def _start_openclaw() -> None:
-                    # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
-                    from app.services.openclaw_qq import openclaw_qq_manager
-                    from app.services.openclaw_weixin import openclaw_weixin_manager
+                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                from app.services.openclaw_qq import openclaw_qq_manager
+                from app.services.openclaw_weixin import openclaw_weixin_manager
 
-                    await openclaw_weixin_manager.start()
-                    await openclaw_qq_manager.start()
+                await openclaw_weixin_manager.start()
+                await openclaw_qq_manager.start()
 
-                await _optional_step("Claw 通知管理器启动", _start_openclaw())
-
-                async def _init_koishi() -> None:
-                    # 初始化 Koishi 系统客户端（如果已启用）
-                    if not Config.get("Notify", "IfKoishiSupport"):
-                        return
-
+                # 初始化 Koishi 系统客户端（如果已启用）
+                if Config.get("Notify", "IfKoishiSupport"):
                     from app.api.ws_command import execute_ws_command
                     from app.utils.websocket import ws_client_manager
 
                     # 出站客户端不再反射导入 API，命令执行器需显式注入
                     ws_client_manager.set_command_executor(execute_ws_command)
                     await ws_client_manager.init_system_client_koishi()
-
-                await _optional_step("Koishi 系统客户端初始化", _init_koishi())
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
