@@ -1048,6 +1048,30 @@ def test_repository_release_note_fits_the_budget() -> None:
     assert plan.kept[0] == current_version
 
 
+def test_repository_stable_rollup_leaves_room_for_more_betas() -> None:
+    """把当前周期全部 beta 段并成正式版段后首行要留够余量，后面几个 beta 再加也不会顶到预算。
+
+    beta.1–6 段按新格式归纳过（≤ 50 字、按项目前缀、仅公测标记），这里钉住归纳的成果。
+    """
+
+    current_version, sections, dates = changelog.parse_changelog(
+        changelog.read_text(changelog.CHANGELOG_PATH)
+    )
+    key = changelog.version_key(current_version)
+    assert key is not None
+    if not changelog.is_prerelease(current_version):
+        pytest.skip("当前版本不是公测版，没有待转正的周期")
+    stable = f"v{key[0]}.{key[1]}.{key[2]}"
+
+    rolled, _ = changelog.compile_release(
+        sections, dates, [], stable, "2026-01-01", {}, [], None, []
+    )
+    plan = changelog.plan_note_json(rolled, stable)
+
+    assert plan.size <= 15000, f"转正首行 {plan.size} 字符，归纳过的段又变胖了"
+    assert plan.kept[0] == stable
+
+
 # ---------------------------------------------------------------------------
 # 需要真实 git 仓库的部分：PR 级检查、署名来源、待确认提交
 # ---------------------------------------------------------------------------
