@@ -1619,17 +1619,30 @@ class MaaEndConfig(ConfigBase):
         )
         ## 模拟器索引
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
+        ## 是否在启动游戏时执行 MaaEnd 分辨率设置预任务
+        self.Game_SetResolution = ConfigItem(
+            "Game", "SetResolution", False, BoolValidator()
+        )
         ## 结束后是否关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
-        ## 关闭游戏时恢复分辨率；关闭时完全沿用原生设置
+        ## 关闭游戏时恢复分辨率或显示模式；关闭时完全沿用原生设置
         self.Game_RestoreResolution = ConfigItem(
             "Game",
             "RestoreResolution",
             "Off",
-            OptionsValidator(["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]),
+            OptionsValidator(
+                [
+                    "Off",
+                    "1920x1080",
+                    "2560x1440",
+                    "3840x2160",
+                    "Fullscreen",
+                    "Custom",
+                ]
+            ),
         )
         ## 自定义恢复分辨率宽度
         self.Game_RestoreResolutionWidth = ConfigItem(

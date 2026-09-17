@@ -489,12 +489,16 @@ export default {
     maaEndDailyOnceTasksHint: '任务当天正常完成一次后，后续运行会自动跳过；留空则每次运行都执行',
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
+    maaEndSetResolution: '启动时设置分辨率',
+    maaEndSetResolutionHint:
+      '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
     maaEndRestoreResolutionHint:
       '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
     maaEndResolutionWidth: '宽度',
     maaEndResolutionHeight: '高度',
     maaEndResolutionUnchanged: '不修改',
+    maaEndResolutionFullscreen: '全屏',
     maaEndResolutionCustom: '自定义',
     maaEndAutoCollectOptionsUnavailable: '未能读取采集路线，请检查 MaaEnd 路径与资源后重新打开此页',
     maaEndAutoCollectEnabled: '自动采集',

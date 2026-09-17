@@ -491,6 +491,17 @@ export default {
     maaEndDailyOnceTasksHint:
       'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
     maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
+    maaEndSetResolution: '起動時に解像度を設定',
+    maaEndSetResolutionHint:
+      '既定ではオフです。オンにすると、最初のゲーム起動前に MaaEnd の解像度設定プレタスクを実行します。',
+    maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
+    maaEndRestoreResolutionHint:
+      '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+    maaEndResolutionWidth: '幅',
+    maaEndResolutionHeight: '高さ',
+    maaEndResolutionUnchanged: '変更しない',
+    maaEndResolutionFullscreen: 'フルスクリーン',
+    maaEndResolutionCustom: 'カスタム',
     markAsDone2: '完了としてマーク',
     takeOverTaskConfiguration: 'タスク設定を引き継ぐ',
     usedWhenThereNo: 'イベントがないときやショップを買い切ったときに使う、通常の周回です',

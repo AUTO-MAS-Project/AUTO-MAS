@@ -2613,10 +2613,20 @@ class MaaEndConfig_Game(BaseModel):
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
+    SetResolution: Optional[bool] = Field(
+        default=None, description="是否在启动游戏时设置分辨率"
+    )
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
     RestoreResolution: Optional[
-        Literal["Off", "1920x1080", "2560x1440", "3840x2160", "Custom"]
-    ] = Field(default=None, description="关闭游戏时恢复的分辨率，Off 表示不修改")
+        Literal[
+            "Off",
+            "1920x1080",
+            "2560x1440",
+            "3840x2160",
+            "Fullscreen",
+            "Custom",
+        ]
+    ] = Field(default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改")
     RestoreResolutionWidth: Optional[int] = Field(
         default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
     )
