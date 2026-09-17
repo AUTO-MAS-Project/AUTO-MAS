@@ -402,10 +402,14 @@ def main():
 
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫自身的失败也
-                # 只跳过自己，不拦定时器。
-                from app.core.desktop_guard import DesktopGuard
+                # 只跳过自己，不拦定时器 —— import 必须放进被 _optional_step 包住的协程体：
+                # 写在 await 外面的话，模块导入本身出错同样会冒泡出去，把主定时器一起带走。
+                async def _start_desktop_guard() -> None:
+                    from app.core.desktop_guard import DesktopGuard
 
-                await _optional_step("显示输出守卫启动", DesktopGuard.start())
+                    await DesktopGuard.start()
+
+                await _optional_step("显示输出守卫启动", _start_desktop_guard())
                 await MainTimer.start()
 
                 async def _start_openclaw() -> None:
