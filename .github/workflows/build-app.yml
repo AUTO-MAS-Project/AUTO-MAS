@@ -28,11 +28,12 @@ permissions:
   contents: write
   actions: write
 
-# 同一分支上的构建串行执行：并行的两次 dispatch 会各自提交一份签名请求，其中一份等不到
-# 审批就超时（2026-09-12 两次 13:44 的 dispatch 就是这样），配额却已经扣掉。
-# cancel-in-progress 保持 false，正在签名的构建不能被后来的取消。
+# 所有分支的构建全局串行、先到先跑：并行的两次 dispatch 会各自提交一份签名请求，其中一份
+# 等不到审批就超时（2026-09-12 13:44 的两次 dev dispatch 就是这样），而请求已经留在 SignPath
+# 的待审批队列里。queue: max 让后来的构建排队等待，而不是取消前一个等待中的；进行中的构建不取消。
 concurrency:
-  group: build-app-${{ github.ref }}
+  group: build-app
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -190,50 +191,8 @@ jobs:
         if: steps.cache-environment.outputs.cache-hit != 'true'
         run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
 
-      - name: 构建应用程序
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
-        run: |
-          cd frontend
-          corepack enable
-          corepack prepare yarn@4.9.1 --activate
-          yarn install
-          yarn build
-          Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
-        shell: pwsh
-
-      - name: 放入 Runtime 可执行文件
-        run: |
-          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
-          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
-          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
-          # 两者会一起带上它。
-          $target = 'frontend\dist\win-unpacked\resources'
-          New-Item -ItemType Directory -Force -Path $target | Out-Null
-          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
-        shell: pwsh
-
-      - name: 上传未签名主程序
-        id: upload-unsigned-main-program
-        uses: actions/upload-artifact@v7.0.1
-        with: 
-            name: AUTO-MAS
-            path: AUTO-MAS.exe
-
-      - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@v2.3
-        with:
-            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA'
-            signing-policy-slug: 'release-signing'
-            artifact-configuration-slug: "AUTO-MAS"
-            github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
-            wait-for-completion: true
-            output-artifact-directory: 'frontend\dist\win-unpacked'
-
+      # Inno Setup 的安装（choco，网络依赖）同样放在签名之前；.iss 里引用的产物路径要到打包时才存在，
+      # 这里只是生成脚本，iscc 仍在后面的打包步骤运行。
       - name: 准备 Inno Setup
         run: |
           choco install innosetup -y
@@ -298,6 +257,50 @@ jobs:
           end;
           "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
         shell: pwsh
+
+      - name: 构建应用程序
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          cd frontend
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+          yarn install
+          yarn build
+          Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
+        shell: pwsh
+
+      - name: 放入 Runtime 可执行文件
+        run: |
+          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
+          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
+          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
+          # 两者会一起带上它。
+          $target = 'frontend\dist\win-unpacked\resources'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
+        shell: pwsh
+
+      - name: 上传未签名主程序
+        id: upload-unsigned-main-program
+        uses: actions/upload-artifact@v7.0.1
+        with: 
+            name: AUTO-MAS
+            path: AUTO-MAS.exe
+
+      - name: 签名主程序
+        uses: signpath/github-action-submit-signing-request@v2.3
+        with:
+            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
+            project-slug: 'AUTO_MAA'
+            signing-policy-slug: 'release-signing'
+            artifact-configuration-slug: "AUTO-MAS"
+            github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
+            wait-for-completion: true
+            output-artifact-directory: 'frontend\dist\win-unpacked'
 
       - name: 构建精简安装包
         run: |
