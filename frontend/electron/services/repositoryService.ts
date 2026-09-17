@@ -687,6 +687,9 @@ export class RepositoryService {
    * 后端下次启动直接 ModuleNotFoundError 且没有提示。
    *
    * 换入失败时把旧目标改名回去，宁可停在旧版本，也不让目标处于缺失或半新半旧的状态。
+   *
+   * 残留处理是自愈的：<目标>.old 只在目标确实还在时才当旧副本清掉；目标缺失而它还在
+   * 时，说明上次正好中断在两次改名之间，它是唯一一份可用副本，先改名回目标再继续。
    */
   private replaceItem(srcPath: string, dstPath: string): void {
     const staged = `${dstPath}.new`
@@ -695,9 +698,17 @@ export class RepositoryService {
     // 部署根目录可能还不存在（首次部署到空目录），copyFileSync 不会自建父目录
     fs.mkdirSync(path.dirname(dstPath), { recursive: true })
 
-    // 上次中断可能留下的残留
+    // 上次中断可能留下的暂存副本：半成品没有保留价值，直接清掉
     fs.rmSync(staged, { recursive: true, force: true })
-    fs.rmSync(backup, { recursive: true, force: true })
+
+    // 自愈：目标还在时 .old 只是上一轮的旧副本；目标缺失而 .old 还在时，它才是唯一
+    // 可用副本 —— 先改名回目标，绝不能像原来那样无条件删掉，否则目标就此永久消失
+    if (fs.existsSync(dstPath)) {
+      fs.rmSync(backup, { recursive: true, force: true })
+    } else if (fs.existsSync(backup)) {
+      fs.renameSync(backup, dstPath)
+      logger.warn(`发现中断残留，已用 ${backup} 恢复 ${dstPath}`)
+    }
 
     try {
       // 1. 完整复制到暂存位置，这一步失败不会碰到现有目标

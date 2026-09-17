@@ -101,4 +101,38 @@ describe('RepositoryService.replaceItem', () => {
     expect(fs.readFileSync(path.join(appRoot, 'app', 'keep.py'), 'utf8')).toBe('keep')
     expect(fs.existsSync(path.join(appRoot, 'app.new'))).toBe(false)
   })
+
+  it('目标缺失而只剩 .old 时自愈，换入的是新版本', () => {
+    const root = makeRoot()
+    const repoPath = path.join(root, 'repo')
+    const appRoot = path.join(root, 'app-root')
+    fs.mkdirSync(path.join(repoPath, 'app'), { recursive: true })
+    fs.writeFileSync(path.join(repoPath, 'app', 'fresh.py'), 'fresh')
+    // 上次中断的现场：目标已改名成 .old，暂存还没改名成目标
+    fs.mkdirSync(path.join(appRoot, 'app.old'), { recursive: true })
+    fs.writeFileSync(path.join(appRoot, 'app.old', 'only.py'), 'only-copy')
+
+    callReplaceItem(makeService(appRoot), path.join(repoPath, 'app'), path.join(appRoot, 'app'))
+
+    expect(fs.existsSync(path.join(appRoot, 'app'))).toBe(true)
+    expect(fs.readFileSync(path.join(appRoot, 'app', 'fresh.py'), 'utf8')).toBe('fresh')
+    expect(fs.existsSync(path.join(appRoot, 'app', 'only.py'))).toBe(false)
+    expect(fs.existsSync(path.join(appRoot, 'app.old'))).toBe(false)
+  })
+
+  it('目标缺失而只剩 .old 时，复制失败也不能把唯一的副本丢掉', () => {
+    const root = makeRoot()
+    const appRoot = path.join(root, 'app-root')
+    // 仓库侧已经不可用（源条目不存在），现场仍是「目标缺失 + 只剩 .old」
+    fs.mkdirSync(path.join(appRoot, 'app.old'), { recursive: true })
+    fs.writeFileSync(path.join(appRoot, 'app.old', 'only.py'), 'only-copy')
+
+    expect(() =>
+      callReplaceItem(makeService(appRoot), path.join(root, 'repo', 'app'), path.join(appRoot, 'app'))
+    ).toThrow()
+
+    // 原来会先无条件删掉 .old，再在复制时抛错，目标从此永久消失
+    expect(fs.readFileSync(path.join(appRoot, 'app', 'only.py'), 'utf8')).toBe('only-copy')
+    expect(fs.existsSync(path.join(appRoot, 'app.old'))).toBe(false)
+  })
 })
