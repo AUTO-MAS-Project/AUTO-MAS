@@ -23,9 +23,9 @@
 ## 分支与 PR
 
 - `main`：禁止协助 push / force push；禁止以 `main` 为 base 创建 PR。仅维护者将 `dev` 合入 `main` 用于发布。
-- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片，且不改 `CHANGELOG.md` 与版本号。
+- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；带碎片的提交一进 `dev`，「入账更新日志碎片」工作流就会把它编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片。
 - `tests/`：测试照旧在本地编写并运行，把验证命令与结论写进 PR 正文；**功能实现与 bug 修复的测试属于一次性验证产物**，实现改完、问题复现过后就没有长期价值，留在仓库只会持续抬高每次跑测试的时间成本，不提交；只有跨功能通用的公共与纯逻辑测试才进仓库。**提交前用 `git status` 自查，默认不提交 `tests/` 下的任何新增或修改**；确有例外时在 PR 正文单独说明理由，由维护者评估。
-- `release/{version}`：由发布流程维护，不接受直推。修复先进 `dev`，再以 cherry-pick PR 进 release 分支；PR 不得带入 `dev` 独有的提交，CI 会检查。cherry-pick PR 只带碎片，不改版本号、不编译更新日志；要出补丁版时，在最新 tag 对应的 release 分支上运行「准备发版」（每次发版都会新建 `release/<tag>` 分支，在更老的分支上准备会因版本号重号被拒）。本流程上线前建出的 release 分支仍按旧规则运行，要在其上沿用新规则，需把新工作流、`scripts/changelog.py` 与 `sync` 后的 `CHANGELOG.md` 一并 cherry-pick 进去。
+- `release/{version}`：由发布流程维护，不接受直推。修复先进 `dev`，再以 cherry-pick PR 进 release 分支；PR 不得带入 `dev` 独有的提交，CI 会检查。cherry-pick PR 只带碎片（格式同下，合并后同样自动入账），不改版本号、不编译更新日志；要出补丁版时，在最新 tag 对应的 release 分支上运行「准备发版」（每次发版都会新建 `release/<tag>` 分支，在更老的分支上准备会因版本号重号被拒）。本流程上线前建出的 release 分支仍按旧规则运行，要在其上沿用新规则，需把新工作流、`scripts/changelog.py` 与 `sync` 后的 `CHANGELOG.md` 一并 cherry-pick 进去。
 - 发版 PR：标题 `Release vX.Y.Z`，由「准备发版」工作流从 `dev` 或 `release/*` 创建，是唯一允许修改 `CHANGELOG.md`、`res/version.json` 与版本号的 PR；合并后由维护者手动运行「构建并发布应用程序」。外部贡献者不要开这类 PR。
 - 版本号只有 `vX.Y.Z` 与 `vX.Y.Z-beta.N` 两种形态：预发布号里的 `X.Y.Z` 就是将来的正式号，转正与最后一个 beta 同号；正式版热修出 `Z+1` 补丁版，从 release 分支发；N 只增不减。版本号由发版 PR 写入，其他 PR 不要改。
 
@@ -33,10 +33,12 @@
 
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志。
 - PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。
-- 用户可见的功能或问题修复必须随 PR 新增一个更新日志碎片：在 `changelog.d/` 下新建 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>`（键见 `changelog.d/README.md` 的项目表，本体写 `core`），正文一句面向用户的话、**不超过 50 字**，**一条 PR 只放一个碎片，并必须用一句最简洁的语言概括该 PR 的意义**，将全部改动合并为一句话。可用 `python scripts/changelog.py add <分类> <项目键> "<一句话>"` 生成。不要改 `CHANGELOG.md`、`res/version.json` 和任何版本号，它们只由发版 PR 更新；正文里不要写项目名前缀、PR 号和 ` by @用户` 署名，发版时按碎片的合并提交自动补成 `(项目) 做了什么 (#PR) by @作者`。
-- 碎片分类写在文件名后缀：`feat` 新增、`change` 变更、`remove` 移除（含弃用）、`fix` 修复、`security` 安全、`dev` 开发流程（只影响贡献者，不进公告）。「本次亮点」没有后缀，由维护者给碎片加一行 `highlight: true` 标出。`CHANGELOG.md` 由发版脚本按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 从碎片编译，不要手改。
-- 破坏性的、或需要用户动手确认的改动用 `breaking` 后缀，编译时进置顶的 `破坏性变更`；`本次亮点` 由维护者在发版 PR 里挑选，贡献者不用动。
+- 用户可见的功能或问题修复必须随 PR 新增一个更新日志碎片：在 `changelog.d/` 下新建 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>`（**必填**，键见 `changelog.d/README.md` 的项目表：12 个专项加 主页 / 调度 / 模拟器 / 通知 / 工具 / 设置 / 更新 / Runtime，没有兜底键，归不进的按 README 的就近表归；只有 `dev` 碎片可以不写），正文一句面向用户的话、**不超过 50 字**，**一条 PR 只放一个碎片，并必须用一句最简洁的语言概括该 PR 的意义**，将全部改动合并为一句话。可用 `python scripts/changelog.py add <分类> <项目键> "<一句话>"` 生成（`dev` 碎片项目键写 `-`）。不要改 `CHANGELOG.md`、`res/version.json` 和任何版本号，它们只由入账工作流与发版 PR 更新；正文里不要写项目名前缀、PR 号和 ` by @用户` 署名，入账时按碎片的合并提交自动补成 `(项目) 做了什么 (#PR) by @作者`。
+- 碎片分类写在文件名后缀：`breaking` 破坏性变更（置顶）、`feat` 新增、`change` 变更、`remove` 移除（含弃用）、`fix` 修复、`security` 安全、`dev` 开发流程（只影响贡献者，不进公告）。「本次亮点」没有后缀，由维护者给碎片加一行 `highlight: true` 标出，这条就进「本次亮点」而不是原分类。`CHANGELOG.md` 由脚本按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 编译，不要手改。
+- 可选头部行：`author: 登录名` 替别人提交时覆盖署名；`highlight: true` 标亮点；`beta-only: true` 表示只进公测公告、转正汇总时自动丢掉。只加减 `highlight:` / `beta-only:` 不算改别人的碎片，其余改动别人的碎片会被检查拒绝。
+- **一个功能在公告里只出现一次**：修的是同一个 beta 内还没发版的新增（那条还在 `CHANGELOG.md` 顶部「未发布」段里，或它的碎片还在 `changelog.d/`），不写碎片，PR 打 `skip-changelog`，要改描述就在 PR 里写明由维护者改「未发布」段；修的是本 X.Y.0 周期更早 beta 才引入的功能（看 `CHANGELOG.md` 顶部还没并进正式版段的 `## [vX.Y.0-beta.N]` 段里有没有它），碎片加 `beta-only: true`；上一个正式版就有的功能，正常写。合并前期间发了 beta、原本判为「同一 beta 内」的修复要改成补 `beta-only` 碎片。
 - 纯文档、CI、测试或用户不可见的重构不需要碎片，给 PR 打 `skip-changelog` 标签。
+- 公告首行 JSON 有 18000 字符预算（Mirror 酱只保留 release_note 前 20000 字符）：条目按项目表顺序排，超预算从最老的版本段丢，本版段自己就超预算时发版 PR 的检查会红。
 - 写 changelog 时**面向用户**：只描述用户可观察到的改动或修复，用用户能听懂的话；删掉所有内部实现细节（返回值/类型名如 `DispatchResult`、消费方/调用方、Schema 与字段名、接口路径、日志丢失、HTTP 状态码如“返回 500”）。
 - **写症状，不写根因**：注明“修复了什么现象”（如“开启签到通知时执行签到必报 TypeError”），不要写“为什么、怎么改的”（如“返回值未同步消费方”）；触发条件只保留到用户能对上的最小信息，不要罗列内部每个分支和受影响路径。
 - 不要编造测试结果、审核结论或用户没有提供的事实。
