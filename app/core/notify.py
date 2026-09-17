@@ -338,35 +338,74 @@ def _webhook_name(uid: str, webhook: Any) -> str:
         return uid
 
 
+@dataclass(frozen=True)
+class _ChannelSpec:
+    """单个通知渠道的投递规格；渠道枚举与发送共用此表，新增渠道只补一条。"""
+
+    predicate: Callable[[NotifyTarget], bool]
+    name: Callable[[NotifyTarget], str]
+
+
+# 两张表的拼接位置即 Webhook 渠道的分发位置；渠道顺序就是投递顺序，用户可见。
+_CHANNELS_BEFORE_WEBHOOKS: tuple[_ChannelSpec, ...] = (
+    _ChannelSpec(
+        lambda t: t.system,
+        lambda t: f"{t.name}系统",
+    ),
+    _ChannelSpec(
+        lambda t: t.mail_to is not None,
+        lambda t: f"{t.name}邮件",
+    ),
+    _ChannelSpec(
+        lambda t: t.serverchan_key is not None,
+        lambda t: f"{t.name} ServerChan",
+    ),
+    _ChannelSpec(
+        lambda t: t.cmcc_newmsg_api_key is not None,
+        lambda t: f"{t.name} 中国移动5G短信",
+    ),
+)
+_CHANNELS_AFTER_WEBHOOKS: tuple[_ChannelSpec, ...] = (
+    _ChannelSpec(
+        lambda t: t.koishi,
+        lambda t: f"{t.name} Koishi",
+    ),
+    _ChannelSpec(
+        lambda t: t.openclaw_weixin,
+        lambda t: f"{t.name} 微信（iLink）",
+    ),
+    _ChannelSpec(
+        lambda t: t.openclaw_qq,
+        lambda t: f"{t.name} QQ（官方机器人）",
+    ),
+)
+
+
+def _webhook_channels(target: NotifyTarget) -> tuple[tuple[str, str], ...]:
+    """返回 Webhook 的 (投递 ID, 显示名) 对；ID 用 uid，同名或改名不影响补发记录。"""
+
+    return tuple(
+        (
+            f"{target.name} Webhook {uid}",
+            f"{target.name} Webhook {_webhook_name(uid, webhook)}",
+        )
+        for uid, webhook in target.webhooks
+    )
+
+
 def _target_channels(target: NotifyTarget) -> dict[str, str]:
     """枚举目标的投递 ID 和显示名称，避免同名 Webhook 共用补发记录。"""
 
-    channels = {}
-    if target.system:
-        channel = f"{target.name}系统"
-        channels[channel] = channel
-    if target.mail_to is not None:
-        channel = f"{target.name}邮件"
-        channels[channel] = channel
-    if target.serverchan_key is not None:
-        channel = f"{target.name} ServerChan"
-        channels[channel] = channel
-    if target.cmcc_newmsg_api_key is not None:
-        channel = f"{target.name} 中国移动5G短信"
-        channels[channel] = channel
-    for uid, webhook in target.webhooks:
-        channels[f"{target.name} Webhook {uid}"] = (
-            f"{target.name} Webhook {_webhook_name(uid, webhook)}"
-        )
-    if target.koishi:
-        channel = f"{target.name} Koishi"
-        channels[channel] = channel
-    if target.openclaw_weixin:
-        channel = f"{target.name} 微信（iLink）"
-        channels[channel] = channel
-    if target.openclaw_qq:
-        channel = f"{target.name} QQ（官方机器人）"
-        channels[channel] = channel
+    channels: dict[str, str] = {}
+    for spec in _CHANNELS_BEFORE_WEBHOOKS:
+        if spec.predicate(target):
+            channel = spec.name(target)
+            channels[channel] = channel
+    channels.update(_webhook_channels(target))
+    for spec in _CHANNELS_AFTER_WEBHOOKS:
+        if spec.predicate(target):
+            channel = spec.name(target)
+            channels[channel] = channel
     return channels
 
 
