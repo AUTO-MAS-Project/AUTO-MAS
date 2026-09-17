@@ -16,10 +16,12 @@
       class="task-empty"
     />
     <a-row v-else :gutter="24" class="task-editor-layout">
-      <a-col :xs="24" :lg="12" class="task-list-column">
+      <!-- 队列行只剩标题，左窄右宽：9 / 15 -->
+      <a-col :xs="24" :lg="9" class="task-list-column">
         <div class="column-header">
-          <span>{{ t('edit.taskQueue') }}</span>
-          <a-space>
+          <span class="column-title">{{ t('edit.taskQueue') }}</span>
+          <!-- 不用 a-space：列窄下来时级联选择器要能收缩，标题行不能折成两行，否则两栏顶边对不齐 -->
+          <div class="column-actions">
             <a-button
               v-if="presetTemplates.length > 0 && orderedTasks.length > 0"
               type="link"
@@ -42,7 +44,7 @@
                 <PlusOutlined />
               </template>
             </a-cascader>
-          </a-space>
+          </div>
         </div>
         <div class="task-list">
           <div
@@ -136,18 +138,6 @@
                       #{{ queuedTask.copyIndex }}
                     </span>
                   </span>
-                  <div class="task-meta">
-                    <a-tag v-if="queuedTask.task.entry" color="blue">
-                      {{ queuedTask.task.entry }}
-                    </a-tag>
-                    <a-tag
-                      v-for="group in queuedTask.task.group || []"
-                      :key="group"
-                      color="default"
-                    >
-                      {{ group }}
-                    </a-tag>
-                  </div>
                 </div>
                 <a-space @click.stop>
                   <a-button
@@ -178,7 +168,7 @@
           </draggable>
         </div>
       </a-col>
-      <a-col :xs="24" :lg="12" class="task-option-column">
+      <a-col :xs="24" :lg="15" class="task-option-column">
         <div class="column-header">
           <span>{{ t('edit.taskConfiguration') }}</span>
         </div>
@@ -199,9 +189,8 @@
                   #{{ selectedQueuedTask?.copyIndex }}
                 </span>
               </div>
-              <div class="selected-task-meta">
-                {{ selectedTask.entry || selectedTask.name }}
-              </div>
+              <!-- 入口 | 分组：原来是队列行里的两个标签，挪到这里当副标题 -->
+              <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
             </div>
           </div>
           <MaaFWTaskOptionEditor
@@ -214,12 +203,15 @@
             :disabled="interfaceDependentDisabled"
             @update="payload => emit('taskOptionUpdate', selectedTaskId, payload)"
           />
-          <MaaFWDescriptionView
-            v-if="selectedTask.description"
-            :content="selectedTask.description"
-            :base-path="previewData.path"
-            class="selected-task-description"
-          />
+          <div v-if="selectedTask.description" class="selected-task-description">
+            <div class="selected-task-description-label">
+              {{ t('edit.taskDescriptionLabel') }}
+            </div>
+            <MaaFWDescriptionView
+              :content="selectedTask.description"
+              :base-path="previewData.path"
+            />
+          </div>
           <a-popconfirm
             :title="t('edit.deleteThisTask2')"
             :ok-text="t('edit.ok')"
@@ -279,21 +271,13 @@
               </div>
             </div>
             <div class="preset-actions">
-              <a-space>
-                <a-button
-                  :disabled="template.taskNames.length === 0"
-                  @click="emit('appendPresetTemplate', template.preset.name)"
-                >
-                  {{ t('edit.appendTask') }}
-                </a-button>
-                <a-button
-                  type="primary"
-                  :disabled="template.taskNames.length === 0"
-                  @click="emit('applyPresetTemplate', template.preset.name)"
-                >
-                  {{ t('edit.applyPreset2') }}
-                </a-button>
-              </a-space>
+              <a-button
+                type="primary"
+                :disabled="template.taskNames.length === 0"
+                @click="emit('applyPresetTemplate', template.preset.name)"
+              >
+                {{ t('edit.applyPreset2') }}
+              </a-button>
             </div>
           </div>
         </div>
@@ -373,7 +357,6 @@ const emit = defineEmits<{
   'update:showPresetModal': [value: boolean]
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]
-  appendPresetTemplate: [presetName: string]
   reorderTasks: [taskIds: string[]]
   selectTask: [taskId: string]
   moveTask: [taskId: string, direction: -1 | 1]
@@ -406,6 +389,13 @@ const showPresetModalModel = computed({
 })
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name
+
+// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签
+const selectedTaskMeta = computed(() => {
+  const task = props.selectedTask
+  if (!task) return ''
+  return [task.entry || task.name, ...(task.group || [])].filter(Boolean).join(' | ')
+})
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
   return buildMaaFWAssetUrl(props.previewData?.path, rawPath)
@@ -540,8 +530,22 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   font-weight: 600;
 }
 
+.column-title {
+  white-space: nowrap;
+}
+
+.column-actions {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .add-task-cascader {
-  width: 220px;
+  flex: 0 1 220px;
+  min-width: 140px;
 }
 
 .task-list {
@@ -666,7 +670,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 16px;
+  /* 标签行去掉后行变矮，内距放宽到 14px，别挤成一排细条 */
+  padding: 14px 16px;
   border: none;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
@@ -749,14 +754,6 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   color: var(--ant-color-text-tertiary);
 }
 
-.task-meta {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .task-option-panel {
   flex: 1;
   min-height: 0;
@@ -802,6 +799,13 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
+.selected-task-description-label {
+  margin-bottom: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .task-option-empty {
   display: flex;
   flex: 1;
@@ -839,7 +843,7 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   }
 
   .add-task-cascader {
-    width: 100%;
+    flex: 1 1 auto;
   }
 
   .task-editor-layout :deep(.ant-col) {

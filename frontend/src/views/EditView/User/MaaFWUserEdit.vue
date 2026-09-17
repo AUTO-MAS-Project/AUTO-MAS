@@ -35,12 +35,9 @@
         >
           <BasicInfoSection
             :form-data="formData"
-            :preset-options="presetOptions"
-            :selected-preset-label="selectedPresetLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
-            @preset-menu-click="handlePresetMenuClick"
           />
 
           <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
@@ -53,24 +50,12 @@
             gap="small"
           >
             <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
-            <a-space>
-              <a-button
-                :loading="interfaceLoading"
-                :disabled="!scriptPath"
-                @click="reloadInterface()"
-              >
-                <template #icon>
-                  <FileSearchOutlined />
-                </template>
-                {{ t('edit.readInterface') }}
-              </a-button>
-              <a-button size="small" @click="restoreOpen = true">
-                <template #icon>
-                  <HistoryOutlined />
-                </template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
-            </a-space>
+            <a-button size="small" @click="restoreOpen = true">
+              <template #icon>
+                <HistoryOutlined />
+              </template>
+              {{ t('edit.configRestoreTitle') }}
+            </a-button>
           </a-flex>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
@@ -91,7 +76,6 @@
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
-            @append-preset-template="appendPresetTemplate"
             @select-task="selectTask"
             @move-task="moveTask"
             @task-drag-end="handleTaskDragEnd"
@@ -170,7 +154,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
-import { FileSearchOutlined, HistoryOutlined } from '@ant-design/icons-vue'
+import { HistoryOutlined } from '@ant-design/icons-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
@@ -607,14 +591,6 @@ const getDisplayName = (item: MaaFWDisplayItem) => {
   return item.label || item.name
 }
 
-const selectedPresetLabel = computed(() => {
-  const presetName = formData.Task.SelectedPreset
-  if (!presetName) return '切换预设'
-
-  const preset = presetOptions.value.find(item => item.name === presetName)
-  return preset ? getDisplayName(preset) : '切换预设'
-})
-
 const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
 }
@@ -691,32 +667,6 @@ const applyPresetTemplate = async (presetName: string) => {
   )
   selectedTaskId.value = nextTaskIds[0] || ''
   formData.Task.SelectedPreset = presetName
-  showPresetModal.value = false
-  await savePresetAndSnapshot()
-}
-
-const appendPresetTemplate = async (presetName: string) => {
-  const template = presetTemplates.value.find(item => item.preset.name === presetName)
-  if (!template) return
-
-  const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  // 追加预设只补齐队列里还没有的任务；要再来一份同样的任务，用「添加任务」手动加。
-  const existingTaskNames = new Set(
-    taskSnapshot.value.taskOrder.map(taskId => resolveTaskName(taskId))
-  )
-  const appendedNames = template.taskNames.filter(taskName => !existingTaskNames.has(taskName))
-  const nextTaskIds = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...appendedNames])
-  const nextTaskIdSet = new Set(nextTaskIds)
-  taskSnapshot.value.taskOrder = nextTaskIds
-  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
-  taskSnapshot.value.taskOptions = Object.fromEntries(
-    [
-      ...Object.entries(taskSnapshot.value.taskOptions),
-      ...Object.entries(presetSnapshot.taskOptions),
-    ].filter(([taskId]) => nextTaskIdSet.has(taskId))
-  )
-  selectedTaskId.value = appendedNames[0] || nextTaskIds[0] || ''
-  formData.Task.SelectedPreset = ''
   showPresetModal.value = false
   await savePresetAndSnapshot()
 }
@@ -961,10 +911,6 @@ const reloadInterface = async (showMessage = true) => {
     await nextTick()
     if (showMessage) message.success(t('edit.interfaceLoaded'))
   }
-}
-
-const handlePresetMenuClick = async ({ key }: { key: string | number }) => {
-  await applyPresetTemplate(String(key))
 }
 
 const moveTask = async (taskId: string, direction: -1 | 1) => {
