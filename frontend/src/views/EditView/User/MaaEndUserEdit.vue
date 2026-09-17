@@ -39,7 +39,7 @@
       @handle-cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <div class="page-layout">
         <a-form
           ref="formRef"
@@ -185,11 +185,12 @@
           />
         </aside>
       </div>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MaaEnd 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="MAAEND_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -219,6 +220,8 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -292,6 +295,7 @@ const maaEndOptionsLoaded = ref(false)
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
 const controllerProtocol = ref<string | null>(null)
@@ -672,6 +676,7 @@ const loadUserData = async () => {
 }
 
 const handleMaaEndConfig = async () => {
+  if (configLocked.value) return
   if (!userId) return
   await startSession(userId)
 }
@@ -685,6 +690,7 @@ const handleCloseMaaEndView = () => {
 }
 
 const handleImportMaaEndConfig = async () => {
+  if (configLocked.value) return
   try {
     maaEndImportLoading.value = true
     if (formData.Info.Mode === '直控') {
@@ -772,8 +778,10 @@ const handleRestoreView = (
   target: string,
   item: { time: string; mode?: string | null },
   currentMode?: string | null
-) =>
-  new Promise<boolean>(resolve => {
+) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
@@ -795,6 +803,12 @@ const handleRestoreView = (
       okText: t('edit.configRestoreConfirmOk'),
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -825,6 +839,7 @@ const handleRestoreView = (
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // 配合——进入归档原生配置当前状态（MAS 触碰前原始态），退出归档 MAS 配置
@@ -848,6 +863,11 @@ onMounted(async () => {
   await loadScriptInfo()
   await loadMaaEndOptions()
   await loadSanityModeOptions()
+
+  if (!isEdit.value && configLocked.value) {
+    isInitializing.value = false
+    return
+  }
 
   if (isEdit.value) {
     await loadUserData()

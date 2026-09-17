@@ -270,6 +270,7 @@ export default {
     highlightColorsPreview: 'ハイライト色とプレビュー',
   },
   edit: {
+    configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
@@ -491,6 +492,17 @@ export default {
     maaEndDailyOnceTasksHint:
       'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
     maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
+    maaEndSetResolution: '起動時に解像度を設定',
+    maaEndSetResolutionHint:
+      '既定ではオフです。オンにすると、最初のゲーム起動前に MaaEnd の解像度設定プレタスクを実行します。',
+    maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
+    maaEndRestoreResolutionHint:
+      '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+    maaEndResolutionWidth: '幅',
+    maaEndResolutionHeight: '高さ',
+    maaEndResolutionUnchanged: '変更しない',
+    maaEndResolutionFullscreen: 'フルスクリーン',
+    maaEndResolutionCustom: 'カスタム',
     markAsDone2: '完了としてマーク',
     takeOverTaskConfiguration: 'タスク設定を引き継ぐ',
     usedWhenThereNo: 'イベントがないときやショップを買い切ったときに使う、通常の周回です',
@@ -665,8 +677,6 @@ export default {
     pcClient: 'PC クライアント',
     tomlFiles: 'TOML ファイル',
     urlProtocolEG: 'URL プロトコル（Starward など）',
-    win32ControlMethodCan:
-      'Win32 の制御方式では起動と検出を分けられます。起動対象はプログラムを立ち上げるだけで、検出対象が実際のゲームウィンドウを特定します。',
     yamlFiles: 'YAML ファイル',
     resetManagedOverrides: '元の設定にリセット',
     resetManagedOverridesHint:
@@ -881,6 +891,7 @@ export default {
     user: 'ユーザー',
     directControl: '直接制御',
     waitTime: '待機時間',
+    waitTimeSeconds: '待機時間（秒）',
     statistics: '統計情報',
     script: 'スクリプト',
     automatic: '自動選択',
@@ -914,13 +925,11 @@ export default {
     maaScriptConfiguration: 'MAA スクリプト設定',
     maaPath: 'MAA のパス',
     maaPathSelected: 'MAA のパスを選択しました',
-    masOnlyTakesOver: 'MAS はすでに起動しているゲームだけを引き継ぎます',
+    masOnlyTakesOver: 'スクリプトか自分で起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
-    actualGameExeMas: 'MAS が直接起動する実際のゲーム exe',
     tasksManagedByMas: 'MAS が管理するタスク',
     masManagedConfigurationOff: 'MAS 管理の設定は無効になっています',
     masManagesGame: 'MAS がゲームを管理',
-    mfwAdbControllerUses: 'MFW の ADB controller はこのエミュレータ設定を使います',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
       'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
@@ -972,9 +981,7 @@ export default {
     giveYourScriptConfiguration: '見分けやすいスクリプト設定名を付けてください',
     saveSeparateConfigurationThis:
       'このユーザー専用の設定を保存します。実行前に読み込み、終了時にタスクのポリシーに従って保存します。',
-    giveProjectNameYou: '見分けやすいプロジェクト名を付けてください',
     mainProgramPath: 'メインプログラムのパス',
-    commandLineArgumentsPassed: 'exe 起動モードのときだけ起動対象に渡されるコマンドライン引数',
     writtenCurrentUserS:
       'MAS がローカルのゲームを起動する間だけ、現在のユーザーのレジストリに書き込んでウィンドウモードに切り替えます。タスクの完了・失敗・手動停止でゲームを閉じたあと、元の値に戻します',
     appliesMarch7thDivergentUniverse:
@@ -989,12 +996,6 @@ export default {
       '行頭からキーワードまでを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
     launchGameBeforeTask: 'タスク前にゲームを起動',
     closeGameAfterTask: 'タスク後にゲームを終了',
-    onceTaskCompletesNormally:
-      'そのタスクが今日 1 回正常に完了すると、今日それ以降の実行は自動的にスキップされます',
-    onceTaskCompletesNormally2:
-      'そのタスクが今週 1 回正常に完了すると、今週それ以降の実行は自動的にスキップされます',
-    onceTaskCompletesNormally3:
-      'そのタスクが今月 1 回正常に完了すると、今月それ以降の実行は自動的にスキップされます',
     failureLog: 'タスク失敗ログ',
     taskNumbersMatchOk: 'タスク番号は OK-NTE のタスク一覧と一致します',
     taskNumbersMatchOk2: 'タスク番号は ok-ww のタスク一覧と一致します',
@@ -1054,8 +1055,6 @@ export default {
     sendStatistics: '統計情報を送信',
     emailRunResult: '実行結果をメールで送信',
     cancel: 'キャンセル',
-    onlyProcessesStartedBy:
-      'このタスクが起動し、MAS が所有するプロセスのみを終了します。手動で開いたプロセスを誤って終了することはありません',
     optional: '任意',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
@@ -1063,8 +1062,6 @@ export default {
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
     howLongWaitAfter2: 'ゲーム起動後に待つ時間',
-    howLongWaitReal:
-      '起動対象を実行してから、実際のゲームプロセス／ウィンドウが現れるまで待つ時間（秒）',
     extraArgumentsUsedWhen:
       'スクリプトのタスクを開始するときに付ける追加コマンド。詳しい書式は公式ドキュメントをご覧ください',
     couldNotStartGeneral: '汎用設定を開始できませんでした',
@@ -1154,7 +1151,6 @@ export default {
       '必須。空にするとこのルールは無効になります。Python の正規表現でログ 1 行全体に照合します',
     requiredEmptyValueDisables4:
       '必須。空にするとこのルールは無効になります。行を絞り込むための正規表現です',
-    iLaunchGameMyself: '自分でゲームを起動する',
     updateNow: '今すぐ更新',
     treatRunAsTimed2:
       '代行タスク実行中、SRC のログがこの時間だけ変化しなければタイムアウトとみなします',
@@ -1328,8 +1324,26 @@ export default {
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
-      'このスクリプトのプロジェクト更新にのみ使い、全体設定の CDK とは無関係です。更新の取得元に MirrorChyan を選んだ場合は必須です',
+      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
+    cdkPrefilledFromGlobal:
+      'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
+    notDeclared: '未宣言',
+    updateProcess: '更新の進行',
+    updateProcessPlaceholder:
+      '「更新を確認」を押すと、確認・ダウンロード・上書きの進行をここに表示します',
+    updateProcessNoLogYet: 'ログはまだありません',
+    updatePhaseChecking: '確認中',
+    updatePhaseDownloading: 'ダウンロード中',
+    updatePhasePreparing: '上書き準備中',
+    updatePhaseApplying: '上書き中',
+    updatePhaseValidating: '検証中',
+    updatePhaseCompleted: '完了',
+    updatePhaseRolledBack: 'ロールバック済み',
+    updatePhaseFailed: '失敗',
+    updateFilesApplied: '{files} ファイル',
+    updatePackageFull: 'フル更新',
+    updatePackageIncremental: '差分更新',
     directory: 'フォルダ',
     useExistingOkwwConfiguration:
       'Okww の既存設定をそのまま使い、細かい設定はスクリプトの GUI に任せます。',
@@ -1349,7 +1363,6 @@ export default {
     leave: '移動する',
     maximumLinesWindowBefore: '範囲の最大行数。これに達すると強制的に閉じます',
     pasteLogLinesTest: 'テストしたいログ行を貼り付けてください（1 行に 1 件）...',
-    closeLaunchedProcessAfterwards: '終了後に起動したプロセスを閉じる',
     endPattern: '終了用の正規表現',
     keepEditing: '編集を続ける',
     editHsrScript: 'HSR スクリプトを編集',
@@ -1393,6 +1406,27 @@ export default {
       '追跡したいプロセスの起動コマンドライン引数です。スクリプトを起動してからタスクマネージャーを開き、対象のプロセスを右クリックして「詳細の表示」を選び、「コマンドライン」列の値を入力してください。その列が無い場合は見出しを右クリックして「列の選択」からコマンドラインにチェックを入れてください。分からない場合は空のままで構いません',
     couldNotLoadPlan: 'プラン設定を読み込めませんでした。プランが存在するか確認してください',
     letMasLaunchGame: 'MAS にゲームを起動させる',
+    launchGameOtherWay: '別の方法でゲームを起動・終了する',
+    mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
+    envPanelTitle: '実行環境',
+    adbStrategyPerDevice: '実行時に判定',
+    adbStrategyEmulatorExtras: 'EmulatorExtras',
+    adbStrategyDefault: '既定',
+    prepareRuntimeEnv: '実行環境を準備',
+    envPanelPlaceholder: 'interface を読み込むと、実行環境の準備過程がここに表示されます',
+    envPreparingHint: '初回は MaaFramework のダウンロードが必要で、数分かかることがあります',
+    envStatusPreparing: '実行環境を準備中',
+    envStatusPrepared: '実行環境の準備が完了しました',
+    envStatusUpdated: '実行環境の更新が完了しました',
+    envStatusCached: '実行環境の更新は不要です',
+    envStatusFailed: '実行環境の準備に失敗しました',
+    envFailedHint:
+      '実行環境が整っていないと、以降の設定をしても実行できません。ネットワークとプロジェクトのパスを確認して再試行してください。',
+    envReadyAgents: '準備済みの Agent',
+    envRetry: '再試行',
+    mfwUnityResolutionOff: '変更しない',
+    mfwUnityResolutionTip:
+      'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
     thisConfigurationFileHas: 'この設定ファイルに編集できる項目はありません',
@@ -1472,8 +1506,6 @@ export default {
     trackChildProcesses: '子プロセスも追跡する',
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
-    pickMfwControllerThat:
-      'ADB や Win32 など、どの制御方式を使うかを決める MFW コントローラーを選びます',
     pickMfwResourceLeave:
       'MFW のリソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
     pickMfwProject: 'MFW プロジェクトを選択',
@@ -1489,8 +1521,6 @@ export default {
       'interface.json を含むプロジェクトフォルダを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
     pickLocalDirectory: 'ローカルフォルダを選択',
-    pickEmulatorInstancePassed:
-      '実行時に MFW の ADB controller へ渡すエミュレータのインスタンスを選びます',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:
@@ -1498,7 +1528,7 @@ export default {
     pickStageFarmThis: '周回するステージを選びます。この項目は Stage.Channel に書き込まれます。',
     pickEchoOfWarStage: '挑戦する歴戦余韻のステージを選びます。',
     pickProjectDirectory: 'プロジェクトフォルダを選択',
-    pickGameSOwn: 'ゲーム本体の exe を選択',
+    pickGameSOwn: 'ゲーム本体の exe を選択。終了後は MAS が閉じます',
     generalScriptConfiguration: '汎用スクリプト設定',
     generalConfiguration: '汎用設定',
     notifications: '通知',

@@ -37,7 +37,7 @@
     </template>
   </ScriptEditHeader>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.maaendScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag class="type-tag">MaaEnd</a-tag>
@@ -167,8 +167,22 @@
             </a-col>
           </a-row>
 
-          <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
-            <a-col :span="12">
+          <a-row v-if="isWinController" :gutter="24">
+            <a-col :span="maaEndConfig.Game.CloseOnFinish ? 12 : 24">
+              <a-form-item
+                :label="t('edit.maaEndSetResolution')"
+                :extra="t('edit.maaEndSetResolutionHint')"
+              >
+                <a-select
+                  v-model:value="maaEndConfig.Game.SetResolution"
+                  size="large"
+                  :options="booleanOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'SetResolution', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="12">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
                 :extra="t('edit.maaEndRestoreResolutionHint')"
@@ -181,35 +195,37 @@
                   @change="handleChange('Game', 'RestoreResolution', $event)"
                 />
               </a-form-item>
+              <a-row v-if="maaEndConfig.Game.RestoreResolution === 'Custom'" :gutter="24">
+                <a-col :span="12">
+                  <a-form-item :label="t('edit.maaEndResolutionWidth')">
+                    <a-input-number
+                      v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
+                      :min="1"
+                      :max="16384"
+                      :precision="0"
+                      size="large"
+                      style="width: 100%"
+                      :disabled="isSaving"
+                      @blur="handleResolutionBlur('RestoreResolutionWidth')"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item :label="t('edit.maaEndResolutionHeight')">
+                    <a-input-number
+                      v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
+                      :min="1"
+                      :max="16384"
+                      :precision="0"
+                      size="large"
+                      style="width: 100%"
+                      :disabled="isSaving"
+                      @blur="handleResolutionBlur('RestoreResolutionHeight')"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
             </a-col>
-            <template v-if="maaEndConfig.Game.RestoreResolution === 'Custom'">
-              <a-col :span="6">
-                <a-form-item :label="t('edit.maaEndResolutionWidth')">
-                  <a-input-number
-                    v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
-                    :min="1"
-                    :max="16384"
-                    :precision="0"
-                    size="large"
-                    :disabled="isSaving"
-                    @blur="handleResolutionBlur('RestoreResolutionWidth')"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item :label="t('edit.maaEndResolutionHeight')">
-                  <a-input-number
-                    v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
-                    :min="1"
-                    :max="16384"
-                    :precision="0"
-                    size="large"
-                    :disabled="isSaving"
-                    @blur="handleResolutionBlur('RestoreResolutionHeight')"
-                  />
-                </a-form-item>
-              </a-col>
-            </template>
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
@@ -440,10 +456,11 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -522,6 +539,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     WaitTime: 60,
     EmulatorId: '',
     EmulatorIndex: '',
+    SetResolution: false,
     CloseOnFinish: true,
     RestoreResolution: 'Off',
     RestoreResolutionWidth: 1920,
@@ -534,6 +552,7 @@ const restoreResolutionOptions = computed(() => [
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
+  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
   { value: 'Custom', label: t('edit.maaEndResolutionCustom') },
 ])
 
@@ -599,6 +618,9 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
+  if (config.Game?.SetResolution == null) {
+    maaEndConfig.Game.SetResolution = false
+  }
 }
 
 const refreshScript = async () => {

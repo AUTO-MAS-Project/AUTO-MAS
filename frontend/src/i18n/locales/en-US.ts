@@ -267,6 +267,7 @@ export default {
     highlightColorsPreview: 'Highlight colors and preview',
   },
   edit: {
+    configLocked: 'A task is running, so this configuration is locked until it finishes',
     close: 'Close',
     notifyServerChan: 'ServerChan',
     notifyStatistics: 'Statistics',
@@ -508,6 +509,17 @@ export default {
       'After a task completes normally once today, later runs skip it automatically; leave empty to run it every time',
     maaEndDailyOnceTasksPlaceholder: 'Choose tasks to run once per day',
     maaEndAutoCollectConfig: 'Auto-collect configuration',
+    maaEndSetResolution: 'Set resolution on launch',
+    maaEndSetResolutionHint:
+      'Off by default. When enabled, MaaEnd runs its resolution-setting pretask before the first game launch.',
+    maaEndRestoreResolution: 'Restore resolution when closing the game',
+    maaEndRestoreResolutionHint:
+      'MaaEnd restores it at the end of the last stage for the next launch; it only applies when the game is closed after the run.',
+    maaEndResolutionWidth: 'Width',
+    maaEndResolutionHeight: 'Height',
+    maaEndResolutionUnchanged: 'Do not change',
+    maaEndResolutionFullscreen: 'Fullscreen',
+    maaEndResolutionCustom: 'Custom',
     maaEndAutoCollectEnabled: 'Auto-collect',
     maaEndAutoCollectEnabledHint:
       'Runs auto-collect as an independent stage; the settings below are ignored when disabled.',
@@ -718,8 +730,6 @@ export default {
     pcClient: 'PC client',
     tomlFiles: 'TOML files',
     urlProtocolEG: 'URL protocol (e.g. Starward)',
-    win32ControlMethodCan:
-      'The Win32 control method can split launching from detection: the launch target only starts the program, and the detect target finds the real game window.',
     yamlFiles: 'YAML files',
     resetManagedOverrides: 'Reset to the source configuration',
     resetManagedOverridesHint:
@@ -934,6 +944,7 @@ export default {
     user: 'User',
     directControl: 'Direct control',
     waitTime: 'Wait time',
+    waitTimeSeconds: 'Wait time (s)',
     statistics: 'Statistics',
     script: 'Script',
     automatic: 'Automatic',
@@ -966,13 +977,11 @@ export default {
     maaScriptConfiguration: 'MAA script configuration',
     maaPath: 'MAA path',
     maaPathSelected: 'MAA path selected',
-    masOnlyTakesOver: 'MAS only takes over a game that is already running',
+    masOnlyTakesOver: 'The script or you start and stop it; MAS only takes over the running window',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
-    actualGameExeMas: 'The actual game exe MAS launches',
     tasksManagedByMas: 'Tasks managed by MAS',
     masManagedConfigurationOff: 'MAS-managed configuration is off',
     masManagesGame: 'MAS manages the game',
-    mfwAdbControllerUses: 'The MFW ADB controller uses this emulator configuration',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
@@ -1024,10 +1033,7 @@ export default {
     giveYourScriptConfiguration: 'Give your script configuration a name you will recognize',
     saveSeparateConfigurationThis:
       'Save a separate configuration for this user, loaded before a run and saved afterwards per the task policy.',
-    giveProjectNameYou: 'Give the project a name you will recognize',
     mainProgramPath: 'Main program path',
-    commandLineArgumentsPassed:
-      'Command line arguments passed to the launch target; exe launch mode only',
     writtenCurrentUserS:
       "Written to the current user's registry only while MAS launches the local game, switching it to windowed mode; the original value is restored when the task finishes, fails, or is stopped and the game closes",
     appliesMarch7thDivergentUniverse:
@@ -1042,12 +1048,6 @@ export default {
       'Cut from the start of the line to the keyword; tick "include" to remove the keyword too, otherwise keep it',
     launchGameBeforeTask: 'Launch the game before the task',
     closeGameAfterTask: 'Close the game after the task',
-    onceTaskCompletesNormally:
-      'Once the task completes normally today, later runs today are skipped',
-    onceTaskCompletesNormally2:
-      'Once the task completes normally this week, later runs this week are skipped',
-    onceTaskCompletesNormally3:
-      'Once the task completes normally this month, later runs this month are skipped',
     failureLog: 'Failure log',
     taskNumbersMatchOk: 'Task numbers match the OK-NTE task list',
     taskNumbersMatchOk2: 'Task numbers match the ok-ww task list',
@@ -1108,8 +1108,6 @@ export default {
     sendStatistics: 'Send statistics',
     emailRunResult: 'Email the run result',
     cancel: 'Cancel',
-    onlyProcessesStartedBy:
-      'Only processes started by this task and owned by MAS are closed; processes you opened yourself are left alone',
     optional: 'Optional',
     couldNotStartSrc: 'Could not start the SRC configuration',
     checkGameUpdateBefore: 'Check for a game update before launching',
@@ -1117,8 +1115,6 @@ export default {
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
     howLongWaitAfter2: 'How long to wait after the game launches',
-    howLongWaitReal:
-      'How long to wait for the real game process/window after the target launches, in seconds',
     extraArgumentsUsedWhen:
       'Extra arguments used when starting the script task; see the online docs for the syntax',
     couldNotStartGeneral: 'Could not start the general configuration',
@@ -1254,7 +1250,6 @@ export default {
       'Required; an empty value disables the rule. Matched against the whole log line as a Python regex',
     requiredEmptyValueDisables4:
       'Required; an empty value disables the rule. Regex used to filter lines',
-    iLaunchGameMyself: 'I launch the game myself',
     updateNow: 'Update now',
     treatRunAsTimed2: 'Treat the run as timed out when the SRC log has not changed for this long',
     treatAnnihilationRunAs:
@@ -1438,7 +1433,7 @@ export default {
       'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
     updateChannel: 'Update channel',
     cdkTip:
-      "Used only for this script's project updates and unrelated to the CDK in global settings; required when MirrorChyan is the update source",
+      'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source',
     cdkPlaceholder: 'Enter the MirrorChyan CDK',
     cdkHint: 'Required when MirrorChyan is the update source; get one on the MirrorChyan site',
     cdkGetLink: 'Get a MirrorChyan CDK',
@@ -1446,6 +1441,24 @@ export default {
       'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
     updateResultVersion: 'Latest version',
     updateResultSource: 'Download source',
+    cdkPrefilledFromGlobal:
+      'Filled in from the CDK in MAS update settings; keep it or replace it with one for this script',
+    notDeclared: 'Not declared',
+    updateProcess: 'Update progress',
+    updateProcessPlaceholder:
+      'Click "Check for updates" to see the check, download and apply steps here',
+    updateProcessNoLogYet: 'No log yet',
+    updatePhaseChecking: 'Checking',
+    updatePhaseDownloading: 'Downloading',
+    updatePhasePreparing: 'Preparing',
+    updatePhaseApplying: 'Applying',
+    updatePhaseValidating: 'Verifying',
+    updatePhaseCompleted: 'Completed',
+    updatePhaseRolledBack: 'Rolled back',
+    updatePhaseFailed: 'Failed',
+    updateFilesApplied: '{files} files',
+    updatePackageFull: 'Full update',
+    updatePackageIncremental: 'Incremental update',
     sourceMirrorChyan: 'MirrorChyan',
     sourceGithub: 'GitHub',
     cdkStatusIssue:
@@ -1471,7 +1484,6 @@ export default {
     leave: 'Leave',
     maximumLinesWindowBefore: 'Maximum lines in a window before it is force-closed',
     pasteLogLinesTest: 'Paste the log lines to test, one per line...',
-    closeLaunchedProcessAfterwards: 'Close the launched process afterwards',
     endPattern: 'End pattern',
     keepEditing: 'Keep editing',
     editHsrScript: 'Edit the HSR script',
@@ -1513,6 +1525,28 @@ export default {
       'Command line of the process to track. Open the script, launch Task Manager, right-click the script process, choose "Go to details", and copy the Command line column. If that column is missing, right-click the header, choose "Select columns", and tick Command line. Leave empty if you are not sure',
     couldNotLoadPlan: 'Could not load the plan configuration — check that the plan still exists',
     letMasLaunchGame: 'Let MAS launch the game',
+    launchGameOtherWay: 'Start and stop the game another way',
+    mfwUnityResolution: 'Try to set the resolution of Unity games',
+    envPanelTitle: 'Runtime environment',
+    adbStrategyPerDevice: 'Decided at run time',
+    adbStrategyEmulatorExtras: 'EmulatorExtras',
+    adbStrategyDefault: 'Default',
+    prepareRuntimeEnv: 'Prepare runtime environment',
+    envPanelPlaceholder:
+      'The environment preparation steps show up here after the interface is read',
+    envPreparingHint: 'The first run downloads MaaFramework and may take a few minutes',
+    envStatusPreparing: 'Preparing the runtime environment',
+    envStatusPrepared: 'Runtime environment ready',
+    envStatusUpdated: 'Runtime environment updated',
+    envStatusCached: 'Runtime environment is up to date',
+    envStatusFailed: 'Failed to prepare the runtime environment',
+    envFailedHint:
+      'Nothing below will run until the environment is ready. Check the network and project path, then retry.',
+    envReadyAgents: 'Ready agents',
+    envRetry: 'Retry',
+    mfwUnityResolutionOff: 'Leave unchanged',
+    mfwUnityResolutionTip:
+      'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
       'This name is also written to M7A/SRA as the Trailblazer name for Currency War',
     thisSubtaskHasNo: 'This subtask has no editable fields',
@@ -1591,8 +1625,6 @@ export default {
     trackChildProcesses: 'Track child processes',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
-    pickMfwControllerThat:
-      'Pick the MFW controller that decides whether ADB, Win32, or another control method is used',
     pickMfwResourceLeave:
       'Pick the MFW resource; leave empty to auto-pick the first resource matching the control method',
     pickMfwProject: 'Pick the MFW project',
@@ -1608,8 +1640,6 @@ export default {
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
-    pickEmulatorInstancePassed:
-      'Pick the emulator instance passed to the MFW ADB controller at run time',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
@@ -1617,7 +1647,7 @@ export default {
     pickStageFarmThis: 'Pick the stage to farm; this field is written to Stage.Channel.',
     pickEchoOfWarStage: 'Pick the Echo of War stage to run.',
     pickProjectDirectory: 'Pick the project directory',
-    pickGameSOwn: "Pick the game's own exe",
+    pickGameSOwn: "Pick the game's own exe; MAS closes it afterwards",
     generalScriptConfiguration: 'General script configuration',
     generalConfiguration: 'General configuration',
     notifications: 'Notifications',

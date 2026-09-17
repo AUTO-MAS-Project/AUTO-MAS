@@ -189,7 +189,7 @@ reason        失败原因
 
 按 `tests/AGENTS.md`，开发时在 `tests/tools/` 下编写签到测试用于本地验证（`test_game_sign.py`、`test_game_sign_notification.py`、`test_miyoushe_qr.py`、`test_miyoushe_retry.py`、`test_contracts.py` 等）。
 
-提交或提 PR 时，功能/bug 边界测试不提交，仅提交重要公共测试或纯逻辑测试（如 `test_skland_response.py`）。
+提交或提 PR 时，测试文件的取舍见根目录 `AGENTS.md`「分支与 PR」。
 
 前端改动只运行实际受影响的 `*.test.ts`。有缺口就在结果里说明，不编造验证结果。
 

@@ -64,26 +64,62 @@ class _DownloadJob:
     download_url: Optional[str]
 
 
+def _describe_version_section_error(section: object) -> Optional[str]:
+    """返回版本段不合法的原因，合法时返回 None。
+
+    版本段必须是「分类名 -> 字符串列表」的映射。更新日志会原样交给
+    `/update/check` 的响应模型，形状不对的版本段会让响应校验抛异常，
+    用户连「检测到更新」都看不到，因此形状不对的版本段进不了响应。
+    """
+
+    if not isinstance(section, dict):
+        return "版本段不是字典"
+
+    for category, notes in section.items():
+        if not isinstance(notes, list):
+            return f"分类 {category!r} 的内容不是列表"
+        if not all(isinstance(note, str) for note in notes):
+            return f"分类 {category!r} 的列表里混有非字符串内容"
+
+    return None
+
+
 def select_newer_version_info(
-    version_info: Dict[str, Dict[str, List[str]]], current_version: str
+    version_info: Dict[str, Any], current_version: str
 ) -> Dict[str, Dict[str, List[str]]]:
     """挑出比当前版本新的版本段，按版本号降序排列，保留每段的分类归属。
 
     版本号用 packaging 比较而不是字符串比较，否则 beta.10 会排到 beta.2 前面。
+    认不出是版本号的键、或内部形状不是「分类名 -> 字符串列表」的版本段直接跳过：
+    更新日志来自 Mirror 酱，内容坏掉时只该丢日志，不该让整条更新检查失败。
     """
 
     current = version.parse(current_version)
-    newer = [
-        (version.parse(ver), ver, info)
-        for ver, info in version_info.items()
-        if version.parse(ver) > current
-    ]
+    newer = []
+    for raw_version, info in version_info.items():
+        try:
+            parsed = version.parse(raw_version)
+        except version.InvalidVersion:
+            logger.warning(f"更新日志里的版本号无法识别, 已跳过: {raw_version!r}")
+            continue
+        section_error = _describe_version_section_error(info)
+        if section_error is not None:
+            logger.warning(
+                f"更新日志的版本段结构异常, 已跳过 {raw_version!r}: {section_error}"
+            )
+            continue
+        if parsed > current:
+            newer.append((parsed, raw_version, info))
+
     newer.sort(key=lambda item: item[0], reverse=True)
     return {ver: info for _, ver, info in newer}
 
 
-def parse_release_note(release_note: object) -> Dict[str, Dict[str, List[str]]]:
+def parse_release_note(release_note: object) -> Dict[str, Any]:
     """解析 Mirror 酱返回的更新日志。
+
+    只保证解析出 JSON 对象，不保证版本段的内部形状，形状校验留给
+    `select_newer_version_info`，避免同一处坏数据被记两次警告。
 
     日志正文是 release_note 首行里一条被 HTML 注释包裹的 JSON。Mirror 酱对
     release_note 有长度上限，日志过长时它返回的首行是截断过的、不完整的 JSON，

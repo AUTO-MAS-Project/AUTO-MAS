@@ -28,6 +28,8 @@ MANIFEST_NAME = "resource-manifest.json"
 # 受管文件在本地被改过、又要被这次更新覆盖或删除时，覆盖前的那份留在这里
 # （每次更新整目录重建，只保留最近一次）。
 LOCAL_MODIFIED_DIR_NAME = "local-modified"
+# 逐文件覆盖进度最密每这么多个文件报一次（大项目数千文件，不能每个都报）。
+APPLY_PROGRESS_MAX_STEP_FILES = 50
 
 logger = logging.getLogger("automas.maafw.project_update.apply")
 PROJECT_STATE_DIR_NAME = "maafw_project_state"
@@ -331,11 +333,23 @@ def apply_package_transaction(
             _emit(progress, "staged", {"planId": effective_plan_id})
 
             store.update("applying")
-            _emit(progress, "applying", {"planId": effective_plan_id})
+            total_files = len(plan.files)
+            _emit(
+                progress,
+                "applying",
+                {
+                    "planId": effective_plan_id,
+                    "appliedFiles": 0,
+                    "totalFiles": total_files,
+                },
+            )
             for relative in sorted(
                 stale, key=lambda item: len(Path(item).parts), reverse=True
             ):
                 _remove_path(_project_target(root, relative))
+            applied_files = 0
+            report_step = _apply_progress_step(total_files)
+            next_report_at = report_step
             for relative, source in plan.files.items():
                 target = _project_target(root, relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -345,6 +359,20 @@ def apply_package_transaction(
                     os.replace(source, target)
                 except OSError:
                     shutil.copy2(source, target)
+                applied_files += 1
+                # 覆盖进度只是旁观：按步长节流，最后一个文件必报，
+                # 让前端的「n/m」能走到满格。
+                if applied_files >= next_report_at or applied_files == total_files:
+                    next_report_at = applied_files + report_step
+                    _emit(
+                        progress,
+                        "applying",
+                        {
+                            "planId": effective_plan_id,
+                            "appliedFiles": applied_files,
+                            "totalFiles": total_files,
+                        },
+                    )
 
             store.update("post_validating")
             _emit(progress, "post_validating", {"planId": effective_plan_id})
@@ -1059,6 +1087,12 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _apply_progress_step(total_files: int) -> int:
+    """逐文件覆盖进度的上报步长：约每 2% 一次，最密不超过每 50 个文件一次。"""
+
+    return max(1, min(APPLY_PROGRESS_MAX_STEP_FILES, total_files // 50))
 
 
 def _emit(

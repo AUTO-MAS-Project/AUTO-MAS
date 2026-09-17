@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
       :title="t('edit.bettergiScriptConfiguration')"
       :loading="pageLoading"
@@ -221,10 +221,11 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
