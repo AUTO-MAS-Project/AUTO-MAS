@@ -131,6 +131,131 @@ def test_unreleased_is_only_allowed_at_the_top() -> None:
         )
 
 
+UNRELEASED_TOP = (
+    f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- (MAA) 甲 (#1) by @a\n\n"
+    "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 乙\n"
+)
+
+
+def test_unreleased_section_parses_renders_and_is_not_the_current_version() -> None:
+    """`## [未发布]` 是合并即入账的暂存段：当前版本号仍是它下面第一个带版本号的段。"""
+
+    current_version, sections, dates = changelog.parse_changelog(UNRELEASED_TOP)
+
+    assert current_version == "v1.0.0"
+    assert list(sections) == [changelog.UNRELEASED, "v1.0.0"]
+    assert dates[changelog.UNRELEASED] == changelog.UNRELEASED
+    rendered = changelog.render_changelog(sections, dates)
+    assert f"## [{changelog.UNRELEASED}]\n" in rendered
+    # 底部对比链接：未发布段对到开发分支
+    assert (
+        f"[{changelog.UNRELEASED}]: {changelog.REPO_URL}/compare/v1.0.0...{changelog.DEVELOPMENT_BRANCH}"
+        in rendered
+    )
+    assert changelog.parse_changelog(rendered)[1] == sections
+
+    # 只有未发布段、没有带版本号的段，版本号无处可取
+    with pytest.raises(changelog.ChangelogError, match="没有任何"):
+        changelog.parse_changelog(f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 甲\n")
+    # 新写法与旧写法不能并存，也不能出现在非顶部
+    with pytest.raises(changelog.ChangelogError, match="二者不能并存"):
+        changelog.parse_changelog(
+            f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 甲\n\n"
+            f"## [v1.1.0] - {changelog.UNRELEASED}\n\n### 修复\n\n- 乙\n"
+        )
+    with pytest.raises(changelog.ChangelogError, match="只有文件顶部"):
+        changelog.parse_changelog(
+            "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 乙\n\n"
+            f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 甲\n"
+        )
+
+
+def test_unreleased_section_goes_to_version_json_but_never_to_the_release_note() -> (
+    None
+):
+    """version.json 带未发布段给 dev 构建看；首行 JSON 绝不能带——老客户端会拿它去 version.parse。"""
+
+    current_version, sections, _ = changelog.parse_changelog(UNRELEASED_TOP)
+
+    payload = json.loads(changelog.render_version_json(current_version, sections))
+    assert payload["version"] == "v1.0.0"
+    assert list(payload["version_info"]) == [changelog.UNRELEASED, "v1.0.0"]
+
+    assert changelog.select_note_versions(sections, "v1.0.0") == ["v1.0.0"]
+    note = changelog.render_release_note(sections, "v1.0.0")
+    assert changelog.UNRELEASED not in note.split("\n", 1)[0]
+    assert (
+        changelog.pending_unreleased(
+            sections,
+            {changelog.UNRELEASED: changelog.UNRELEASED, "v1.0.0": "2026-01-01"},
+        )
+        == 1
+    )
+
+
+def test_absorb_appends_to_the_top_unreleased_section_or_creates_one(tmp_path) -> None:
+    """合并即入账：顶部是未发布段（任一写法）就追加，是已标日期的段就新建 `## [未发布]`。"""
+
+    fragment = _fragment(tmp_path, "7.feat.md", "project: mfw\n丙\n")
+    authors = {"7.feat.md": "b"}
+    prs = {"7.feat.md": 7}
+
+    # 新写法：追加，同分类内按项目表排序
+    _, sections, dates = changelog.parse_changelog(UNRELEASED_TOP)
+    absorbed, absorbed_dates = changelog.absorb_fragments(
+        sections, dates, [fragment], authors, prs
+    )
+    assert list(absorbed) == [changelog.UNRELEASED, "v1.0.0"]
+    assert absorbed[changelog.UNRELEASED] == {
+        "新增": ["(MFW) 丙 (#7) by @b"],
+        "修复": ["(MAA) 甲 (#1) by @a"],
+    }
+    assert absorbed_dates[changelog.UNRELEASED] == changelog.UNRELEASED
+
+    # 旧写法的预留段照样追加，不另起一段
+    _, sections, dates = changelog.parse_changelog(
+        f"## [v1.1.0] - {changelog.UNRELEASED}\n\n### 修复\n\n- 乙\n\n"
+        "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 甲\n"
+    )
+    absorbed, _ = changelog.absorb_fragments(sections, dates, [fragment], authors, prs)
+    assert list(absorbed) == ["v1.1.0", "v1.0.0"]
+    assert absorbed["v1.1.0"]["新增"] == ["(MFW) 丙 (#7) by @b"]
+
+    # 顶部已标日期（哪怕还没打 tag）：另起未发布段，由 guard 拦
+    _, sections, dates = changelog.parse_changelog(MINIMAL)
+    absorbed, absorbed_dates = changelog.absorb_fragments(
+        sections, dates, [fragment], authors, prs
+    )
+    assert list(absorbed) == [changelog.UNRELEASED, "v1.0.0"]
+    assert absorbed_dates == {
+        changelog.UNRELEASED: changelog.UNRELEASED,
+        "v1.0.0": "2026-01-01",
+    }
+    assert changelog.pending_unreleased(absorbed, absorbed_dates) == 1
+    # 空的未发布段不算待发布
+    assert (
+        changelog.pending_unreleased(
+            {changelog.UNRELEASED: {}, "v1.0.0": {"修复": ["甲"]}}, absorbed_dates
+        )
+        == 0
+    )
+
+
+def test_compile_release_folds_the_unreleased_section_into_the_new_version(
+    tmp_path,
+) -> None:
+    _, sections, dates = changelog.parse_changelog(UNRELEASED_TOP)
+    fragment = _fragment(tmp_path, "8.fix.md", "project: maa\n丁\n")
+
+    new_sections, new_dates = changelog.compile_release(
+        sections, dates, [fragment], "v1.1.0", "2026-02-01", {"8.fix.md": None}, []
+    )
+
+    assert list(new_sections) == ["v1.1.0", "v1.0.0"]
+    assert new_sections["v1.1.0"] == {"修复": ["(MAA) 甲 (#1) by @a", "(MAA) 丁"]}
+    assert changelog.UNRELEASED not in new_dates
+
+
 def test_duplicate_entry_is_rejected() -> None:
     """同一分类下重复登记同一条会直接报错，避免更新日志里出现两条一样的。"""
 
@@ -1116,6 +1241,17 @@ def test_pr_check_release_kind_needs_empty_fragments_and_a_bump(repo) -> None:
     (repo / "changelog.d/x.fix.md").unlink()
     _commit(repo, "chore(release): clean")
     assert _check(repo, "dev", "release") == []
+
+    # 发版 PR 之后又入账：顶部多了带条目的未发布段，检查要红，让维护者重跑准备发版
+    _write(
+        repo,
+        "CHANGELOG.md",
+        f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- (MAA) 丙 (#9) by @c\n\n"
+        "## [v1.0.0-beta.2] - 2026-01-02\n\n### 修复\n\n- 乙\n\n"
+        "## [v1.0.0-beta.1] - 2026-01-01\n\n### 修复\n\n- 甲\n",
+    )
+    _commit(repo, "chore(changelog): 入账 #9")
+    assert any("还有未发布段" in p for p in _check(repo, "dev", "release"))
 
 
 def test_pr_check_flags_dev_only_commits_leaking_into_release(repo) -> None:

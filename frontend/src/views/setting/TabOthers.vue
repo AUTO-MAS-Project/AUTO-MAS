@@ -37,7 +37,12 @@ const {
 
 // 当前版本的更新日志在编译期从 res/version.json 注入（res/ 不进 Electron 产物）
 const changelogVisible = ref(false)
-const currentChangelog: ChangelogData = { [version]: import.meta.env.VITE_APP_CHANGELOG ?? {} }
+const unreleasedChangelog = import.meta.env.VITE_APP_CHANGELOG_UNRELEASED ?? {}
+const currentChangelog: ChangelogData = {
+  [version]: import.meta.env.VITE_APP_CHANGELOG ?? {},
+  // 开发构建里把还没进版本的「未发布」段也列出来，发布构建没有这一段
+  ...(Object.keys(unreleasedChangelog).length > 0 ? { 未发布: unreleasedChangelog } : {}),
+}
 
 const buildCopyText = () =>
   [

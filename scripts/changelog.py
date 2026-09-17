@@ -45,6 +45,7 @@ Release 正文首行是一条 HTML 注释包着的 JSON，已发布客户端靠�
 
     python scripts/changelog.py add fix maa "修复了什么"  # 新建一个碎片（贡献者用）
     python scripts/changelog.py check                     # 校验格式、碎片、版本号（CI 用）
+    python scripts/changelog.py absorb                    # 合并后入账到未发布段（入账工作流用）
     python scripts/changelog.py release --kind beta       # 编译碎片、推进版本号（发版工作流用）
     python scripts/changelog.py release-note              # 渲染 Release 正文（构建工作流用）
     python scripts/changelog.py guard                     # 构建前守门：版本号已推进且碎片已清空
@@ -216,6 +217,9 @@ PHASE_RANK = {"alpha": 0, "beta": 1, "rc": 2, None: 3}
 RELEASE_HEADING = re.compile(
     rf"^## \[(?P<version>[^\]]+)\] - (?P<date>{UNRELEASED}|\d{{4}}-\d{{2}}-\d{{2}})$"
 )
+# 顶部的未发布段（Keep a Changelog 的 `[Unreleased]`）：合并即入账的条目先放这里，
+# 「准备发版」再把它改成带版本号与日期的段。解析成 sections["未发布"]，日期记为「未发布」
+UNRELEASED_HEADING = re.compile(rf"^## \[{UNRELEASED}\]$")
 # 底部的版本对比链接，由 render_changelog 重新生成，解析时跳过
 LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S+$")
 # 一个署名：现在写成 ` by @login`，GitHub 的 Release 页会自动把 @login 链到主页；
@@ -312,24 +316,28 @@ def parse_changelog(text: str) -> Tuple[str, Sections, Dates]:
 
         if is_release_heading:
             seen_release = True
-            matched = RELEASE_HEADING.match(stripped)
-            if matched is None:
-                raise ChangelogError(
-                    f"第 {number} 行：版本标题必须形如 "
-                    f"`## [v5.5.0-beta.3] - 2026-08-31` 或 `## [v5.5.0-beta.3] - {UNRELEASED}`，"
-                    f"实际是 {stripped!r}"
-                )
-            version = matched.group("version")
-            date = matched.group("date")
-            if not VERSION_PATTERN.match(version):
-                raise ChangelogError(
-                    f"第 {number} 行：版本号必须形如 `v5.5.0-beta.3`，实际是 {version!r}"
-                )
+            if UNRELEASED_HEADING.match(stripped):
+                version, date = UNRELEASED, UNRELEASED
+            else:
+                matched = RELEASE_HEADING.match(stripped)
+                if matched is None:
+                    raise ChangelogError(
+                        f"第 {number} 行：版本标题必须形如 "
+                        f"`## [v5.5.0-beta.3] - 2026-08-31`，未发布段写 `## [{UNRELEASED}]`，"
+                        f"实际是 {stripped!r}"
+                    )
+                version = matched.group("version")
+                date = matched.group("date")
+                if not VERSION_PATTERN.match(version):
+                    raise ChangelogError(
+                        f"第 {number} 行：版本号必须形如 `v5.5.0-beta.3`，实际是 {version!r}"
+                    )
             if version in sections:
                 raise ChangelogError(f"第 {number} 行：版本 {version} 重复出现")
             if date == UNRELEASED and sections:
                 raise ChangelogError(
-                    f"第 {number} 行：只有文件顶部的第一个版本可以标 {UNRELEASED}"
+                    f"第 {number} 行：只有文件顶部的第一段可以是未发布段"
+                    f"（`## [{UNRELEASED}]` 或旧写法 `## [vX.Y.Z] - {UNRELEASED}`，二者不能并存）"
                 )
             sections[version] = {}
             dates[version] = date
@@ -389,10 +397,11 @@ def parse_changelog(text: str) -> Tuple[str, Sections, Dates]:
             "条目必须写成单独一行、以 `- ` 开头。"
         )
 
-    if not sections:
+    current = next((v for v in sections if v != UNRELEASED), None)
+    if current is None:
         raise ChangelogError("CHANGELOG.md 里没有任何 `## [vX.Y.Z] - 日期` 版本段")
 
-    return next(iter(sections)), sections, dates
+    return current, sections, dates
 
 
 def order_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -414,6 +423,8 @@ def render_links(sections: Sections, dates: Dates) -> List[str]:
     for index, version in enumerate(versions):
         previous = versions[index + 1] if index + 1 < len(versions) else None
         if previous is None:
+            if version == UNRELEASED:
+                continue
             target = f"{REPO_URL}/releases/tag/{version}"
         elif dates[version] == UNRELEASED:
             target = f"{REPO_URL}/compare/{previous}...{DEVELOPMENT_BRANCH}"
@@ -445,7 +456,10 @@ def render_section(
 def render_changelog(sections: Sections, dates: Dates) -> str:
     lines = [CHANGELOG_PREAMBLE.rstrip("\n"), ""]
     for version, categories in sections.items():
-        lines.append(f"## [{version}] - {dates[version]}")
+        if version == UNRELEASED:
+            lines.append(f"## [{UNRELEASED}]")
+        else:
+            lines.append(f"## [{version}] - {dates[version]}")
         lines.append("")
         lines.extend(render_section(categories))
     lines.extend(render_links(sections, dates))
@@ -457,6 +471,8 @@ def render_version_json(current_version: str, sections: Sections) -> str:
 
     只写版本与分类条目，不写日期——这份 JSON 的结构是已发布客户端解析更新提示的契约；
     分类按客户端口径写（去掉只给贡献者看的分类），与 Release 正文首行 JSON 一致。
+    顶部的未发布段也带上（键就是「未发布」）：合并即入账后 dev 构建能看到未发的改动；
+    已发布客户端从不读这个文件，Release 正文首行 JSON 另由 select_note_versions 过滤。
     """
 
     payload = {
@@ -1152,6 +1168,21 @@ def check_generated() -> List[str]:
     return stale
 
 
+def pending_unreleased(sections: Sections, dates: Dates) -> int:
+    """顶部未发布段（任一写法）里的条目数；0 表示没有未发布段或它是空的。"""
+
+    first = next(iter(sections))
+    if dates[first] != UNRELEASED:
+        return 0
+    return sum(len(items) for items in sections[first].values())
+
+
+UNRELEASED_PENDING_MESSAGE = (
+    "CHANGELOG.md 顶部还有未发布段，里面 {count} 条已入账但没进任何版本；"
+    "发版 PR 之后又合并了改动，请重新运行「准备发版」把它们并进去"
+)
+
+
 def check_version_floor(current_version: str, root: Path = REPO_ROOT) -> Optional[str]:
     """仓库里的版本号不能小于当前分支可达的最新 tag；返回作为基准的 tag。
 
@@ -1234,7 +1265,12 @@ def check_pull_request(
             problems.append(
                 "发版 PR 合并时 changelog.d/ 必须已经清空，请重新运行「准备发版」"
             )
-        current_version, sections, _ = parse_changelog(read_text(root / "CHANGELOG.md"))
+        current_version, sections, dates = parse_changelog(
+            read_text(root / "CHANGELOG.md")
+        )
+        pending_count = pending_unreleased(sections, dates)
+        if pending_count:
+            problems.append(UNRELEASED_PENDING_MESSAGE.format(count=pending_count))
         base_text = show_file(base, "CHANGELOG.md", root)
         if base_text:
             # 过渡期目标分支顶部可能已经手工预留了同号的「未发布」段，所以只要求不倒退
@@ -1366,9 +1402,12 @@ def command_check(arguments: argparse.Namespace) -> int:
 def command_guard() -> int:
     """构建发布前的守门：版本号必须已经比最新 tag 新，碎片必须已经清空，首行 JSON 不超预算。"""
 
-    current_version, sections, _ = parse_changelog(read_text(CHANGELOG_PATH))
+    current_version, sections, dates = parse_changelog(read_text(CHANGELOG_PATH))
     latest = latest_version(reachable_tags("HEAD")) if git_available() else None
     problems: List[str] = []
+    pending_count = pending_unreleased(sections, dates)
+    if pending_count:
+        problems.append(UNRELEASED_PENDING_MESSAGE.format(count=pending_count))
     if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
         problems.append(
             f"仓库版本号 {current_version} 没有比最新 tag {latest} 新，"
@@ -1465,6 +1504,59 @@ def unconfirmed_commits(
     return result
 
 
+def fragment_entries(
+    fragments: Sequence[Fragment],
+    authors: Dict[str, Optional[str]],
+    prs: Optional[Dict[str, Optional[int]]] = None,
+) -> Dict[str, List[str]]:
+    """把碎片渲染成 {分类: [条目]}：署名、PR 号、仅公测标记都在这一步拼上。"""
+
+    fresh: Dict[str, List[str]] = {}
+    for fragment in fragments:
+        login = authors.get(fragment.path.name)
+        pr = (prs or {}).get(fragment.path.name)
+        entry = Entry(
+            fragment.text,
+            fragment.project_name,
+            [pr] if pr else [],
+            [login] if login else [],
+            fragment.beta_only,
+        )
+        fresh.setdefault(fragment.target_category, []).append(entry.render())
+    return fresh
+
+
+def absorb_fragments(
+    sections: Sections,
+    dates: Dates,
+    fragments: Sequence[Fragment],
+    authors: Dict[str, Optional[str]],
+    prs: Optional[Dict[str, Optional[int]]] = None,
+) -> Tuple[Sections, Dates]:
+    """合并即入账：把碎片编译进顶部的未发布段，没有就在最上面新建一个 `## [未发布]`。
+
+    顶部已经是未发布段（任一写法）就追加；顶部是已标日期的段——哪怕还没打 tag——也另起
+    未发布段，由 `guard` 拦住「发版 PR 之后又入账」的情况，让维护者重跑「准备发版」。
+    """
+
+    sections = {
+        v: {c: list(items) for c, items in cats.items()} for v, cats in sections.items()
+    }
+    dates = dict(dates)
+    first = next(iter(sections))
+    if dates[first] == UNRELEASED:
+        key = first
+    else:
+        key = UNRELEASED
+        sections = {UNRELEASED: {}, **sections}
+        dates = {UNRELEASED: UNRELEASED, **dates}
+    merge_entries(sections[key], fragment_entries(fragments, authors, prs))
+    sections[key] = order_categories(
+        {category: order_entries(items) for category, items in sections[key].items()}
+    )
+    return sections, dates
+
+
 def compile_release(
     sections: Sections,
     dates: Dates,
@@ -1495,7 +1587,7 @@ def compile_release(
     pending: Dict[str, List[str]] = {}
     first = next(iter(sections))
     if dates[first] == UNRELEASED:
-        if first != target:
+        if first not in (target, UNRELEASED):
             print(
                 f"提示：顶部手工预留的 {first} 未发布段已并入 {target}，"
                 "版本号以 tag 推算的结果为准",
@@ -1530,19 +1622,7 @@ def compile_release(
         merge_entries(rolled, pending)
         pending = rolled
 
-    fresh: Dict[str, List[str]] = {}
-    for fragment in fragments:
-        login = authors.get(fragment.path.name)
-        pr = (prs or {}).get(fragment.path.name)
-        entry = Entry(
-            fragment.text,
-            fragment.project_name,
-            [pr] if pr else [],
-            [login] if login else [],
-            fragment.beta_only,
-        )
-        fresh.setdefault(fragment.target_category, []).append(entry.render())
-    merge_entries(pending, fresh)
+    merge_entries(pending, fragment_entries(fragments, authors, prs))
 
     if not is_prerelease(target):
         # 先合并再丢：同项目同正文的重复已经并成一条、标记取并集，这时再丢才不会漏
@@ -1678,6 +1758,76 @@ def render_run_summary(
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+def resolve_origins(
+    fragments: Sequence[Fragment], repo: str, offline: bool
+) -> Tuple[Dict[str, Optional[str]], Dict[str, Optional[int]]]:
+    """每个碎片的 (署名, PR 号)；解析不到作者的在 stderr 点名。"""
+
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    origins = {
+        fragment.path.name: fragment_origin(
+            fragment, repo=repo, token=token, resolve_online=not offline
+        )
+        for fragment in fragments
+    }
+    authors = {name: login for name, (login, _) in origins.items()}
+    prs = {name: pr for name, (_, pr) in origins.items()}
+    unresolved = [name for name, login in authors.items() if not login]
+    if unresolved:
+        print(
+            "以下碎片解析不到作者，将不带署名：" + "、".join(unresolved),
+            file=sys.stderr,
+        )
+    return authors, prs
+
+
+def command_absorb(arguments: argparse.Namespace) -> int:
+    """合并后由工作流调用：碎片 → 顶部未发布段，删碎片，同步生成物。没碎片就什么都不做。"""
+
+    fragments = list_fragments()
+    if not fragments:
+        print("changelog.d/ 里没有待入账的碎片")
+        return 0
+    if not git_available():
+        raise ChangelogError("absorb 需要在 git 仓库里运行")
+    _, sections, dates = parse_changelog(read_text(CHANGELOG_PATH))
+    authors, prs = resolve_origins(fragments, arguments.repo, arguments.offline)
+    new_sections, new_dates = absorb_fragments(sections, dates, fragments, authors, prs)
+
+    write_text(CHANGELOG_PATH, render_changelog(new_sections, new_dates))
+    for fragment in fragments:
+        fragment.path.unlink()
+    changed = sync_generated()
+
+    absorbed = [
+        {
+            "fragment": fragment.path.name,
+            "pr": prs.get(fragment.path.name),
+            "author": authors.get(fragment.path.name),
+            "category": fragment.target_category,
+        }
+        for fragment in fragments
+    ]
+    if arguments.summary_file:
+        write_text(
+            Path(arguments.summary_file),
+            json.dumps({"absorbed": absorbed}, ensure_ascii=False, indent=2) + "\n",
+        )
+    if arguments.github_output:
+        refs = " ".join(f"#{item['pr']}" for item in absorbed if item["pr"])
+        with open(arguments.github_output, "a", encoding="utf-8") as output:
+            output.write(f"absorbed={len(absorbed)}\n")
+            output.write(f"prs={refs}\n")
+    print(f"已入账 {len(absorbed)} 个碎片到未发布段")
+    for item in absorbed:
+        pr = f" #{item['pr']}" if item["pr"] else ""
+        author = f" @{item['author']}" if item["author"] else ""
+        print(f"  - {item['fragment']}{pr}{author}")
+    for name in changed:
+        print(f"  - 已更新 {name}")
+    return 0
+
+
 def command_release(arguments: argparse.Namespace) -> int:
     text = read_text(CHANGELOG_PATH)
     current_version, sections, dates = parse_changelog(text)
@@ -1693,24 +1843,7 @@ def command_release(arguments: argparse.Namespace) -> int:
         raise ChangelogError(f"tag {target} 已经存在，请换一个版本号")
 
     date = arguments.date or datetime.now(RELEASE_TIMEZONE).strftime("%Y-%m-%d")
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    origins = {
-        fragment.path.name: fragment_origin(
-            fragment,
-            repo=arguments.repo,
-            token=token,
-            resolve_online=not arguments.offline,
-        )
-        for fragment in fragments
-    }
-    authors = {name: login for name, (login, _) in origins.items()}
-    prs = {name: pr for name, (_, pr) in origins.items()}
-    unresolved = [name for name, login in authors.items() if not login]
-    if unresolved:
-        print(
-            "以下碎片解析不到作者，将不带署名：" + "、".join(unresolved),
-            file=sys.stderr,
-        )
+    authors, prs = resolve_origins(fragments, arguments.repo, arguments.offline)
 
     dropped: List[Tuple[str, str]] = []
     new_sections, new_dates = compile_release(
@@ -2129,6 +2262,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-url", help="本次工作流运行的地址，发版 PR 正文里链接到它的摘要"
     )
 
+    absorb = subparsers.add_parser(
+        "absorb", help="合并后入账：把碎片编译进顶部未发布段并删除（工作流用）"
+    )
+    absorb.add_argument("--repo", default=GITHUB_REPO, help="解析署名用的 owner/repo")
+    absorb.add_argument(
+        "--offline", action="store_true", help="不访问 GitHub API 解析署名"
+    )
+    absorb.add_argument("--summary-file", help="把入账清单写成 JSON")
+    absorb.add_argument("--github-output", help="把 absorbed / prs 写进 GITHUB_OUTPUT")
+
     note = subparsers.add_parser("release-note", help="渲染 Release 正文")
     note.add_argument("--version", help="默认当前版本")
     note.add_argument("--output", help="写到文件而不是标准输出")
@@ -2145,6 +2288,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "add": command_add,
         "check": command_check,
         "release": command_release,
+        "absorb": command_absorb,
         "release-note": command_release_note,
         "guard": lambda _: command_guard(),
         "sync": lambda _: command_sync(),
