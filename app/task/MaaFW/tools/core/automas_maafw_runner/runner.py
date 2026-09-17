@@ -1334,7 +1334,7 @@ class MaaFWRunner:
         return False
 
     def _wait_task_start_gate(self) -> None:
-        """宿主刚拉起桌面游戏时，等到它给的时刻再投递第一个任务。
+        """桌面游戏刚启动时，等到宿主给的时刻再投递第一个任务。
 
         窗口出现时 Unity 游戏还在黑屏加载，登录界面要二三十秒后才渲染；MaaEnd 的
         SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。资源、
@@ -1349,9 +1349,7 @@ class MaaFWRunner:
         remaining = min(not_before - time.time(), TASK_START_GATE_MAX_SECONDS)
         if remaining <= 0:
             return
-        self.send_log(
-            f"游戏刚由 MAS 启动，再等 {remaining:.0f}s 让画面加载完成后下发任务"
-        )
+        self.send_log(f"游戏刚启动，再等 {remaining:.0f}s 让画面加载完成后下发任务")
         if self._stop_requested.wait(timeout=remaining):
             raise RuntimeError("MaaFW 任务已停止")
 

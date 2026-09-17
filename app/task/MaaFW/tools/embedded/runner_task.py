@@ -126,7 +126,8 @@ _RELAY_YIELD_EVERY_LINES = 50
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 
 # 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
-# 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
+# 还要重启一遍模拟器/游戏——RunTimesLimit 设得高（MaaFW 默认 1，其他专项默认 3）时
+# 会白等好几分钟才告诉用户同一件事。
 # 判据取消息标记而不是异常类型：这些错误跨了 runtime_pool 与 runner 两个包，
 # 而 runner_task 有意不在模块层导入 runtime_pool（那会让所有请求都付出导入成本）。
 _UNRETRYABLE_ENVIRONMENT_MARKERS = (
