@@ -1440,6 +1440,9 @@ export default {
       '要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空',
     couldNotLoadPlan: '计划配置加载失败，请检查计划是否存在',
     letMasLaunchGame: '让 MAS 启动游戏',
+    mfwStartupSettleSeconds: '启动后再等（秒）',
+    mfwStartupSettleTip:
+      '只在由 MAS 启动游戏时生效：窗口出现后至少再等这么多秒才下发第一个任务，MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等，0 关闭。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
     thisSubtaskHasNo: '该子任务暂无可编辑字段',
     thisConfigurationFileHas: '该配置文件暂无可编辑的字段',

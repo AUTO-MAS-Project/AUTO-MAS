@@ -1512,6 +1512,9 @@ export default {
       'Command line of the process to track. Open the script, launch Task Manager, right-click the script process, choose "Go to details", and copy the Command line column. If that column is missing, right-click the header, choose "Select columns", and tick Command line. Leave empty if you are not sure',
     couldNotLoadPlan: 'Could not load the plan configuration — check that the plan still exists',
     letMasLaunchGame: 'Let MAS launch the game',
+    mfwStartupSettleSeconds: 'Settle after launch (s)',
+    mfwStartupSettleTip:
+      'Only when MAS launches the game: after the window appears, wait at least this many seconds before the first task is posted; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied when the game is already running; 0 disables.',
     thisNameAlsoWritten:
       'This name is also written to M7A/SRA as the Trailblazer name for Currency War',
     thisSubtaskHasNo: 'This subtask has no editable fields',

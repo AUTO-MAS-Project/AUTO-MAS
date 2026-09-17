@@ -3538,6 +3538,10 @@ class MaaFWConfig_Game(BaseModel):
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
     )
+    StartupSettleTime: Optional[int] = Field(
+        default=None,
+        description="由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务（秒），0 关闭",
+    )
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭由 MAS 启动的游戏"
     )

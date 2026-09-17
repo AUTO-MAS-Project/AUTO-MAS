@@ -113,3 +113,7 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 让截图和 .log / .maafw.log 挨在一起。None 表示不截。
     failureScreenshotDir: str | None = None
     failureScreenshotPrefix: str = ""
+    # 第一个任务最早可下发的墙钟时刻（time.time() 秒）。宿主刚拉起桌面游戏时窗口
+    # 虽已出现、画面还没渲染出来，worker 把资源加载、连 controller、起 agent 都
+    # 做完后再等到这个点，而不是在宿主里干等。None 表示不等。
+    taskStartNotBefore: float | None = None
