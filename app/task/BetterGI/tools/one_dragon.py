@@ -166,11 +166,13 @@ def list_js_scripts(root: Path) -> list[tuple[str, str]]:
             folder = p.name.strip()
             display = folder
             # manifest 是玩家从社区订阅或手工放置的第三方文件，格式未必严格（尾逗号、
-            # 注释都常见）。解析失败只影响这一个脚本的显示名，退回目录名继续 —— 不能让
-            # 一个坏 manifest 把其余脚本连同整个候选列表一起拖成 500。
+            # 注释都常见），也可能是无效字节（编码不对/被截断）。解析失败只影响这一个
+            # 脚本的显示名，退回目录名继续 —— 不能让一个坏 manifest 把其余脚本连同整个
+            # 候选列表一起拖成 500。UnicodeDecodeError 是 ValueError 的子类，必须单独
+            # 列出：按字节解码失败与 JSON 语法错误是两条不同的路径。
             try:
                 data = read_file(manifest)
-            except (json.JSONDecodeError, OSError) as error:
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError) as error:
                 logger.warning(
                     f"JS 脚本 manifest 无法解析, 显示名退回目录名: {manifest}: {error}"
                 )
