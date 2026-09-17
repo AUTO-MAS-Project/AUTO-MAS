@@ -132,7 +132,7 @@ def test_unreleased_is_only_allowed_at_the_top() -> None:
 
 
 UNRELEASED_TOP = (
-    f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- (MAA) 甲 (#1) by @a\n\n"
+    f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 【MAA】甲 (#1) by @a\n\n"
     "## [v1.0.0] - 2026-01-01\n\n### 修复\n\n- 乙\n"
 )
 
@@ -207,8 +207,8 @@ def test_absorb_appends_to_the_top_unreleased_section_or_creates_one(tmp_path) -
     )
     assert list(absorbed) == [changelog.UNRELEASED, "v1.0.0"]
     assert absorbed[changelog.UNRELEASED] == {
-        "新增": ["(MFW) 丙 (#7) by @b"],
-        "修复": ["(MAA) 甲 (#1) by @a"],
+        "新增": ["【MFW】丙 (#7) by @b"],
+        "修复": ["【MAA】甲 (#1) by @a"],
     }
     assert absorbed_dates[changelog.UNRELEASED] == changelog.UNRELEASED
 
@@ -219,7 +219,7 @@ def test_absorb_appends_to_the_top_unreleased_section_or_creates_one(tmp_path) -
     )
     absorbed, _ = changelog.absorb_fragments(sections, dates, [fragment], authors, prs)
     assert list(absorbed) == ["v1.1.0", "v1.0.0"]
-    assert absorbed["v1.1.0"]["新增"] == ["(MFW) 丙 (#7) by @b"]
+    assert absorbed["v1.1.0"]["新增"] == ["【MFW】丙 (#7) by @b"]
 
     # 顶部已标日期（哪怕还没打 tag）：另起未发布段，由 guard 拦
     _, sections, dates = changelog.parse_changelog(MINIMAL)
@@ -252,7 +252,7 @@ def test_compile_release_folds_the_unreleased_section_into_the_new_version(
     )
 
     assert list(new_sections) == ["v1.1.0", "v1.0.0"]
-    assert new_sections["v1.1.0"] == {"修复": ["(MAA) 甲 (#1) by @a", "(MAA) 丁"]}
+    assert new_sections["v1.1.0"] == {"修复": ["【MAA】甲 (#1) by @a", "【MAA】丁"]}
     assert changelog.UNRELEASED not in new_dates
 
 
@@ -439,9 +439,10 @@ def test_only_dev_fragments_may_omit_the_project_key(tmp_path) -> None:
         ("683.feat.md", "甲\n", "缺少首行 `project:"),
         ("683.feat.md", "project: maa\nproject: hsr\n甲\n", "project 只能写一次"),
         ("683.feat.md", "project: arknights\n甲\n", "不在项目表里"),
+        ("683.feat.md", "project: maa\n【MAA】甲\n", "正文开头不要再写"),
         ("683.feat.md", "project: maa\n(MAA) 甲\n", "正文开头不要再写"),
         ("683.feat.md", "project: maa\n甲 (#12)\n", "正文里不要写"),
-        ("683.feat.md", "project: maa\n甲 [仅公测]\n", "正文里不要写"),
+        ("683.feat.md", "project: maa\n甲（仅公测）\n", "正文里不要写"),
         ("683.feat.md", "project: maa\n" + "甲" * 51 + "\n", "超过 50 字上限"),
     ],
 )
@@ -478,7 +479,7 @@ def test_fragment_highlight_flag_routes_to_the_highlight_category(tmp_path) -> N
 
 
 def test_fragment_beta_only_flag_and_entry_marker_round_trip(tmp_path) -> None:
-    """beta-only: true 编译成正文后的 [仅公测]；解析顺序是署名 → PR 号 → 标记 → 项目前缀。"""
+    """beta-only: true 编译成正文后的 （仅公测）；解析顺序是署名 → PR 号 → 标记 → 项目前缀。"""
 
     fragment = _fragment(tmp_path, "1.fix.md", "project: maa\nbeta-only: yes\n甲\n")
     assert fragment.beta_only is True
@@ -488,7 +489,7 @@ def test_fragment_beta_only_flag_and_entry_marker_round_trip(tmp_path) -> None:
             tmp_path, "3.fix.md", "beta-only: true\nbeta-only: no\nproject: maa\n甲\n"
         )
 
-    entry = "(MAA) 甲 [仅公测] (#1, #2) by @a by @b"
+    entry = "【MAA】甲（仅公测） (#1, #2) by @a by @b"
     parsed = changelog.split_entry(entry)
     assert (
         parsed.project,
@@ -505,17 +506,17 @@ def test_fragment_beta_only_flag_and_entry_marker_round_trip(tmp_path) -> None:
     )
     assert parsed.render() == entry
     # 公开渲染（首行 JSON、Release 正文、version.json）不带标记
-    assert parsed.render(public=True) == "(MAA) 甲 (#1, #2) by @a by @b"
+    assert parsed.render(public=True) == "【MAA】甲 (#1, #2) by @a by @b"
     assert changelog.public_categories({"修复": [entry]}) == {
-        "修复": ["(MAA) 甲 (#1, #2) by @a by @b"]
+        "修复": ["【MAA】甲 (#1, #2) by @a by @b"]
     }
     # 正文里出现同样的字不算标记，只认署名与 PR 号之前的末尾那一个
-    plain = changelog.split_entry("[仅公测] 甲 by @a")
-    assert plain.beta_only is False and plain.text == "[仅公测] 甲"
+    plain = changelog.split_entry("（仅公测） 甲 by @a")
+    assert plain.beta_only is False and plain.text == "（仅公测） 甲"
 
-    target = {"修复": ["(MAA) 甲 (#1) by @a"]}
-    changelog.merge_entries(target, {"修复": ["(MAA) 甲 [仅公测] (#2) by @b"]})
-    assert target == {"修复": ["(MAA) 甲 [仅公测] (#1, #2) by @a by @b"]}
+    target = {"修复": ["【MAA】甲 (#1) by @a"]}
+    changelog.merge_entries(target, {"修复": ["【MAA】甲（仅公测） (#2) by @b"]})
+    assert target == {"修复": ["【MAA】甲（仅公测） (#1, #2) by @a by @b"]}
 
 
 def test_list_fragments_skips_readme_and_rejects_strangers(tmp_path) -> None:
@@ -609,7 +610,7 @@ def test_entry_structure_round_trips_and_normalizes() -> None:
     """条目 = (项目) 正文 (#PR) 署名；解析后按当前写法重新拼出来。"""
 
     parsed = changelog.split_entry(
-        "(MAA) 修复剿灭空跑 (#761, #762) by [@a](https://github.com/a) [@b](https://github.com/b)"
+        "【MAA】修复剿灭空跑 (#761, #762) by [@a](https://github.com/a) [@b](https://github.com/b)"
     )
     assert (parsed.project, parsed.text, parsed.prs, parsed.logins) == (
         "MAA",
@@ -617,7 +618,7 @@ def test_entry_structure_round_trips_and_normalizes() -> None:
         [761, 762],
         ["a", "b"],
     )
-    assert parsed.render() == "(MAA) 修复剿灭空跑 (#761, #762) by @a by @b"
+    assert parsed.render() == "【MAA】修复剿灭空跑 (#761, #762) by @a by @b"
 
     # 表外的括号开头照原文当正文；没有署名与 PR 号也能解析
     plain = changelog.split_entry("(数据未删除) 请手动迁移")
@@ -633,26 +634,28 @@ def test_entry_structure_round_trips_and_normalizes() -> None:
 def test_entries_are_ordered_by_project_table_with_unknown_prefixes_last() -> None:
     """表外前缀（手写错的、旧条目）和没有前缀的都当正文，稳定排在最后。"""
 
-    items = ["甲", "(MFW) 乙", "(MAA) 丙", "(主页) 丁", "(MAA) 戊", "(Xx) 己"]
+    items = ["甲", "【MFW】乙", "【MAA】丙", "【主页】丁", "【MAA】戊", "【Xx】己"]
 
     assert changelog.order_entries(items) == [
-        "(MAA) 丙",
-        "(MAA) 戊",
-        "(MFW) 乙",
-        "(主页) 丁",
+        "【MAA】丙",
+        "【MAA】戊",
+        "【MFW】乙",
+        "【主页】丁",
         "甲",
-        "(Xx) 己",
+        "【Xx】己",
     ]
 
 
 def test_merge_entries_unions_pr_numbers_of_the_same_project_and_text() -> None:
-    target = {"修复": ["(MAA) 甲 (#1) by @a"]}
+    target = {"修复": ["【MAA】甲 (#1) by @a"]}
     changelog.merge_entries(
-        target, {"修复": ["(MAA) 甲 (#2) by @b", "甲 (#3)", "(MFW) 甲"]}
+        target, {"修复": ["【MAA】甲 (#2) by @b", "甲 (#3)", "【MFW】甲"]}
     )
 
     # 同项目同正文才算同一条；没前缀的「甲」与 MFW 的「甲」各自独立
-    assert target == {"修复": ["(MAA) 甲 (#1, #2) by @a by @b", "甲 (#3)", "(MFW) 甲"]}
+    assert target == {
+        "修复": ["【MAA】甲 (#1, #2) by @a by @b", "甲 (#3)", "【MFW】甲"]
+    }
 
 
 def _sections(text: str):
@@ -683,7 +686,7 @@ def test_compile_beta_absorbs_the_pending_unreleased_section(tmp_path) -> None:
     assert list(new_sections) == ["v5.5.0-beta.6", "v5.5.0-beta.5"]
     assert new_dates["v5.5.0-beta.6"] == "2026-09-13"
     assert new_sections["v5.5.0-beta.6"] == {
-        "新增": ["(MAA) 丙 (#700) by @qiyinxi"],
+        "新增": ["【MAA】丙 (#700) by @qiyinxi"],
         "修复": ["甲"],
     }
 
@@ -713,8 +716,8 @@ def test_compile_orders_each_category_by_project_table(tmp_path) -> None:
     )
 
     assert new_sections["v5.5.0-beta.6"] == {
-        "本次亮点": ["(HSR) 戊 (#5)"],
-        "修复": ["(MAA) 丙 (#3)", "(MAA) 丁", "(MFW) 乙 by @b", "(调度) 甲"],
+        "本次亮点": ["【HSR】戊 (#5)"],
+        "修复": ["【MAA】丙 (#3)", "【MAA】丁", "【MFW】乙 by @b", "【调度】甲"],
     }
 
 
@@ -745,18 +748,18 @@ def test_compile_stable_rolls_up_the_whole_beta_cycle(tmp_path) -> None:
     # 甲在两个 beta 里都有，只留一条且署名保留（旧写法的链接署名归一成 by @a）
     assert new_sections["v5.5.0"] == {
         "新增": ["丙"],
-        "修复": ["(调度) 戊", "己", "甲 by @a", "乙"],
+        "修复": ["【调度】戊", "己", "甲 by @a", "乙"],
     }
     assert new_dates == {"v5.5.0": "2026-09-13", "v5.4.0": "2026-08-26"}
 
 
 def test_stable_rollup_merges_first_then_drops_beta_only_entries(tmp_path) -> None:
-    """转正先合并再丢：同项目同正文的两条只要有一份带 [仅公测] 就整条丢；公测版原样保留。"""
+    """转正先合并再丢：同项目同正文的两条只要有一份带 （仅公测） 就整条丢；公测版原样保留。"""
 
     sections, dates = _sections(
         "## [v5.5.0-beta.3] - 2026-09-03\n\n### 修复\n\n"
-        "- (MAA) 甲 [仅公测] (#2) by @a\n- (MAA) 乙 (#3) by @b\n\n"
-        "## [v5.5.0-beta.2] - 2026-09-02\n\n### 修复\n\n- (MAA) 甲 (#1) by @c\n\n"
+        "- 【MAA】甲（仅公测） (#2) by @a\n- 【MAA】乙 (#3) by @b\n\n"
+        "## [v5.5.0-beta.2] - 2026-09-02\n\n### 修复\n\n- 【MAA】甲 (#1) by @c\n\n"
         "## [v5.4.0] - 2026-08-26\n\n### 新增\n\n- 丁\n"
     )
     fragment = _fragment(tmp_path, "9.fix.md", "project: hsr\nbeta-only: true\n戊\n")
@@ -774,11 +777,11 @@ def test_stable_rollup_merges_first_then_drops_beta_only_entries(tmp_path) -> No
         dropped=dropped,
     )
 
-    assert new_sections["v5.5.0"] == {"修复": ["(MAA) 乙 (#3) by @b"]}
+    assert new_sections["v5.5.0"] == {"修复": ["【MAA】乙 (#3) by @b"]}
     # 甲的两份先并成一条（PR 号、署名取并集，标记传播）再整条丢掉；碎片自带的标记也丢
     assert dropped == [
-        ("修复", "(MAA) 甲 [仅公测] (#1, #2) by @c by @a"),
-        ("修复", "(HSR) 戊 [仅公测] (#9) by @d"),
+        ("修复", "【MAA】甲（仅公测） (#1, #2) by @c by @a"),
+        ("修复", "【HSR】戊（仅公测） (#9) by @d"),
     ]
 
     # 公测版照常保留，标记跟着进 CHANGELOG.md
@@ -792,8 +795,10 @@ def test_stable_rollup_merges_first_then_drops_beta_only_entries(tmp_path) -> No
         tagged=["v5.5.0-beta.3"],
         prs={"9.fix.md": 9},
     )
-    assert beta_sections["v5.5.0-beta.4"] == {"修复": ["(HSR) 戊 [仅公测] (#9) by @d"]}
-    assert "[仅公测]" in changelog.render_changelog(
+    assert beta_sections["v5.5.0-beta.4"] == {
+        "修复": ["【HSR】戊（仅公测） (#9) by @d"]
+    }
+    assert "（仅公测）" in changelog.render_changelog(
         beta_sections, {**dates, "v5.5.0-beta.4": "2026-09-04"}
     )
 
@@ -816,7 +821,7 @@ def test_compile_reopens_an_untagged_section_but_not_a_tagged_one(tmp_path) -> N
         {},
         tagged=["v5.5.0-beta.6"],
     )
-    assert new_sections["v5.5.0-beta.7"] == {"修复": ["(调度) 丙", "甲"]}
+    assert new_sections["v5.5.0-beta.7"] == {"修复": ["【调度】丙", "甲"]}
 
     with pytest.raises(changelog.ChangelogError, match="已经发布过"):
         changelog.compile_release(
@@ -903,16 +908,16 @@ def test_release_note_first_line_keeps_project_pr_numbers_and_author() -> None:
     """首行 JSON 的条目与 CHANGELOG.md 同形：项目、PR 号、署名都在。"""
 
     sections, _ = _sections(
-        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- (MAA) 甲 (#1, #2) by @a\n"
+        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 【MAA】甲 (#1, #2) by @a\n"
     )
 
     note = changelog.render_release_note(sections, "v5.5.0-beta.7")
     first, rest = note.split("\n", 1)
 
     assert json.loads(first[4:-3]) == {
-        "v5.5.0-beta.7": {"修复": ["(MAA) 甲 (#1, #2) by @a"]}
+        "v5.5.0-beta.7": {"修复": ["【MAA】甲 (#1, #2) by @a"]}
     }
-    assert "- (MAA) 甲 (#1, #2) by @a" in rest
+    assert "- 【MAA】甲 (#1, #2) by @a" in rest
 
 
 def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
@@ -944,7 +949,7 @@ def test_release_note_drops_oldest_sections_to_fit_the_budget() -> None:
 
 def test_release_note_refuses_when_the_current_section_alone_is_over_budget() -> None:
     sections, _ = _sections(
-        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- (MAA) "
+        "## [v5.5.0-beta.7] - 2026-09-20\n\n### 修复\n\n- 【MAA】"
         + "甲" * 40
         + "\n- 乙\n"
     )
@@ -1272,7 +1277,7 @@ def test_pr_check_release_kind_needs_empty_fragments_and_a_bump(repo) -> None:
     _write(
         repo,
         "CHANGELOG.md",
-        f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- (MAA) 丙 (#9) by @c\n\n"
+        f"## [{changelog.UNRELEASED}]\n\n### 修复\n\n- 【MAA】丙 (#9) by @c\n\n"
         "## [v1.0.0-beta.2] - 2026-01-02\n\n### 修复\n\n- 乙\n\n"
         "## [v1.0.0-beta.1] - 2026-01-01\n\n### 修复\n\n- 甲\n",
     )

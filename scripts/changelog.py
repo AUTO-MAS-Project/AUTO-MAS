@@ -26,8 +26,9 @@
 日常开发不再改 `CHANGELOG.md`：每个 PR 在 `changelog.d/` 下放一个碎片文件，
 文件名 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>` 说明改的是哪个专项或本体
 的哪一块，正文一句不超过 50 字、面向用户的话。发版时由 `release` 把全部碎片编译成
-`(项目) 做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的新版本段，同一分类内按
-项目表的顺序排列；再推进版本号、删除碎片，并开出发版 PR。
+`【项目】做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的未发布段（合并即入账，
+工作流调用 `absorb`），同一分类内按项目表的顺序排列；发版时由 `release` 把未发布段改成新的
+版本段、推进版本号，并开出发版 PR。
 `CHANGELOG.md` 顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号，其余五处版本号与
 `res/version.json` 全部由本脚本从它生成，不要手改：
 
@@ -142,19 +143,20 @@ FRAGMENT_HIGHLIGHT = re.compile(
 HIGHLIGHT_TRUE = {"true", "yes", "on", "1"}
 # 只进公测公告的标记：修的是本 X.Y.0 周期更早 beta 才引入的功能（或周期内新增又移除），
 # 正式版用户从没见过，转正汇总时丢掉；碎片头部 `beta-only: true`，CHANGELOG.md 里存成
-# 正文后面的 ` [仅公测]`
+# 正文后面的 `（仅公测）`
 FRAGMENT_BETA_ONLY = re.compile(
     r"^beta-only:\s*(?P<value>true|yes|on|1|false|no|off|0)\s*$", re.IGNORECASE
 )
-BETA_ONLY_MARK = "[仅公测]"
-BETA_ONLY_TAIL = re.compile(r" \[仅公测\]$")
+BETA_ONLY_MARK = "（仅公测）"
+# 旧的半角写法 ` [仅公测]` 只解析不再书写，sync 会归一成全角
+BETA_ONLY_TAIL = re.compile(r"\s*(?:（仅公测）|\[仅公测\])$")
 
 # 碎片正文的字数上限：公告里一条只说「做了什么」，细节留在 PR 里。首行 JSON 的体积
 # 直接由它决定，放宽前先算一遍一个版本段会涨到多少。
 FRAGMENT_TEXT_LIMIT = 50
 
 # 项目键 -> 公告里显示的名字，顺序即同一分类内条目的顺序。碎片首行 `project: <键>` 只能
-# 从这里选（只有不进公告的「开发流程」碎片可以不写），公告里条目写成 `(名字) 做了什么`。
+# 从这里选（只有不进公告的「开发流程」碎片可以不写），公告里条目写成 `【名字】做了什么`。
 # 没有兜底键：每条改动都要归到一个专项或本体的一块，归不进的就近归（见 changelog.d/README.md）。
 # 加新专项时在这里加一行即可，旧条目不受影响。
 PROJECTS: Dict[str, str] = {
@@ -180,8 +182,11 @@ PROJECTS: Dict[str, str] = {
     "runtime": "Runtime",
 }
 PROJECT_RANK = {name: rank for rank, name in enumerate(PROJECTS.values())}
-# 条目开头的 `(项目) `；只有名字在项目表里的才算项目前缀，其余照原文当正文
-PROJECT_PREFIX = re.compile(r"^\((?P<name>[^()]+)\) (?=\S)")
+# 条目开头的 `【项目】`；只有名字在项目表里的才算项目前缀，其余照原文当正文。
+# 旧写法 `(项目) ` 只解析不再书写，sync 会归一成中括号
+PROJECT_PREFIX = re.compile(
+    r"^(?:【(?P<name>[^【】]+)】\s*|\((?P<legacy>[^()]+)\) )(?=\S)"
+)
 
 # Release 正文首行 JSON 的字符预算。Mirror 酱只保留 release_note 的前 20000 字符，首行
 # 必须完整留下，剩下的给可见正文与换行；beta.6 首行 29335 字符就是这么被截坏的。
@@ -256,8 +261,8 @@ CHANGELOG_PREAMBLE = """# 更新日志
   - 带碎片的提交进了 dev 或 release 分支，「入账更新日志碎片」工作流就把它编译进顶部的
     `## [未发布]` 段并删掉碎片；「准备发版」再把未发布段改成 `## [vX.Y.Z] - 日期`。
     文件顶部第一个带版本号的标题就是仓库当前的版本号，发版 PR 是唯一改动版本号的地方。
-  - 条目写成一行 `(项目) 做了什么 [仅公测] (#PR 号) by @作者`：项目、PR 号与署名都由脚本
-    按碎片与其提交自动补，不要手写；`[仅公测]` 表示这条只进公测公告，转正汇总时自动丢掉。
+  - 条目写成一行 `【项目】做了什么（仅公测） (#PR 号) by @作者`：项目、PR 号与署名都由脚本
+    按碎片与其提交自动补，不要手写；`（仅公测）` 表示这条只进公测公告，转正汇总时自动丢掉。
 
   分类含义（中间五类来自 Keep a Changelog）：
 
@@ -726,11 +731,11 @@ def check_fragment_text(text: str, where: str) -> None:
         raise ChangelogError(f"{where}：碎片正文不能是标题，只写一句话")
     if PROJECT_PREFIX.match(text):
         raise ChangelogError(
-            f"{where}：项目写在首行 `project: <键>` 里，正文开头不要再写 `(项目)`"
+            f"{where}：项目写在首行 `project: <键>` 里，正文开头不要再写 `【项目】`"
         )
-    if PR_REFS_TAIL.search(text) or BETA_ONLY_TAIL.search(text):
+    if PR_REFS_TAIL.search(text) or "仅公测" in text:
         raise ChangelogError(
-            f"{where}：PR 号与 `[仅公测]` 标记由脚本按合并提交与头部行自动补，正文里不要写"
+            f"{where}：PR 号与 `（仅公测）` 标记由脚本按合并提交与头部行自动补，正文里不要写"
         )
     if len(text) > FRAGMENT_TEXT_LIMIT:
         raise ChangelogError(
@@ -881,7 +886,7 @@ def join_signatures(text: str, logins: Sequence[str]) -> str:
 
 
 class Entry:
-    """一条更新日志的结构：`(项目) 做了什么 [仅公测] (#PR, #PR) by @a by @b`，每一截都可缺省。"""
+    """一条更新日志的结构：`【项目】做了什么（仅公测） (#PR, #PR) by @a by @b`，每一截都可缺省。"""
 
     __slots__ = ("project", "text", "prs", "logins", "beta_only")
 
@@ -906,11 +911,11 @@ class Entry:
         return PROJECT_RANK.get(self.project or "", len(PROJECT_RANK))
 
     def render(self, public: bool = False) -> str:
-        """public 时不带 `[仅公测]`：公测用户看到的是普通条目，标记只给维护者看。"""
+        """public 时不带 `（仅公测）`：公测用户看到的是普通条目，标记只给维护者看。"""
 
-        head = f"({self.project}) {self.text}" if self.project else self.text
+        head = f"【{self.project}】{self.text}" if self.project else self.text
         if self.beta_only and not public:
-            head += f" {BETA_ONLY_MARK}"
+            head += BETA_ONLY_MARK
         if self.prs:
             head += " (" + ", ".join(f"#{n}" for n in self.prs) + ")"
         return join_signatures(head, self.logins)
@@ -919,7 +924,7 @@ class Entry:
 def split_entry(entry: str) -> Entry:
     """把条目字符串拆成 Entry。
 
-    从尾往头剥：署名 → PR 号 → `[仅公测]` → 项目前缀。项目前缀只认项目表里的名字，
+    从尾往头剥：署名 → PR 号 → `（仅公测）` → 项目前缀。项目前缀只认项目表里的名字，
     PR 号只认署名前面那一组。
     """
 
@@ -936,9 +941,11 @@ def split_entry(entry: str) -> Entry:
         head = head[: marked.start()].rstrip()
     project: Optional[str] = None
     prefix = PROJECT_PREFIX.match(head)
-    if prefix and prefix.group("name") in PROJECT_RANK:
-        project = prefix.group("name")
-        head = head[prefix.end() :]
+    if prefix:
+        name = prefix.group("name") or prefix.group("legacy")
+        if name in PROJECT_RANK:
+            project = name
+            head = head[prefix.end() :]
     return Entry(head, project, prs, logins, beta_only)
 
 
@@ -949,7 +956,7 @@ def normalize_entry(entry: str) -> str:
 
 
 def public_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目去掉 `[仅公测]` 标记。"""
+    """给用户看的分类：按固定顺序排、去掉只给贡献者看的分类，条目去掉 `（仅公测）` 标记。"""
 
     return {
         category: [split_entry(item).render(public=True) for item in items]
@@ -1578,7 +1585,7 @@ def compile_release(
     - 顶部若有 `未发布` 段，其条目并入新段（过渡期兼容手工预留的版本段）。
     - 目标版本已经有段但还没打 tag 时（发版 PR 合并后又来了改动），在原段上追加。
     - 转正时把同号的全部 beta 段合并进来，并从文件里移除。
-    - 正式版与补丁版：先合并再丢掉带 `[仅公测]` 的条目（正式版用户没见过那些功能的
+    - 正式版与补丁版：先合并再丢掉带 `（仅公测）` 的条目（正式版用户没见过那些功能的
       坏版本），丢掉的 (分类, 条目) 追加进 dropped 供发版 PR 与运行摘要点名。
     - 新段里每个分类的条目按项目表顺序排。
     """
@@ -1695,7 +1702,7 @@ def render_pr_body(
     )
     if kind == "stable":
         lines.append(
-            f"- [ ] 脚本已按 `[仅公测]` 丢掉 {len(dropped)} 条周期内引入又修掉的问题"
+            f"- [ ] 脚本已按 `（仅公测）` 丢掉 {len(dropped)} 条周期内引入又修掉的问题"
             "（清单见运行摘要与下面「体积」节），剩下的再看一眼有没有漏标的"
         )
         lines.append(
@@ -1718,7 +1725,7 @@ def render_pr_body(
         for length, category, text in longest_entries(categories):
             lines.append(f"  - {length} 字（{category}）{text}")
         if dropped:
-            lines.append(f"- 按 `[仅公测]` 丢掉 {len(dropped)} 条：")
+            lines.append(f"- 按 `（仅公测）` 丢掉 {len(dropped)} 条：")
             for category, item in dropped:
                 lines.append(f"  - （{category}）{item}")
         lines.append("")
@@ -1744,7 +1751,7 @@ def render_run_summary(
     lines.append(f"- {describe_note_plan(plan)}")
     lines.append("")
     if dropped:
-        lines.append(f"### 按 `[仅公测]` 丢掉的 {len(dropped)} 条")
+        lines.append(f"### 按 `（仅公测）` 丢掉的 {len(dropped)} 条")
         lines.append("")
         for category, item in dropped:
             lines.append(f"- （{category}）{item}")
@@ -1863,7 +1870,7 @@ def command_release(arguments: argparse.Namespace) -> int:
         print("\n".join(render_section(new_sections[target])))
         print(describe_note_plan(plan))
         for category, item in dropped:
-            print(f"按 [仅公测] 丢掉: （{category}）{item}")
+            print(f"按（仅公测）丢掉: （{category}）{item}")
         for sha, subject in unconfirmed:
             print(f"待确认: {sha} {subject}")
         return 0
