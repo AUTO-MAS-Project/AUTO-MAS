@@ -26,6 +26,7 @@ import re
 import subprocess
 import time
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -145,6 +146,44 @@ def parse_release_note(release_note: object) -> Dict[str, Any]:
         return {}
 
     return parsed
+
+
+def _autosite_download_url(remote_version: str) -> str:
+    """自建下载站直链；也是 Mirror 酱缺链接时的回落地址。"""
+
+    return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+
+
+def _mirror_chyan_download_url(
+    cached_url: Optional[str], override_url: Optional[str], remote_version: str
+) -> str:
+    """Mirror 酱的一次性下载地址；缺失时回落自建下载站。"""
+
+    mirror_url = override_url if override_url is not None else cached_url
+    if mirror_url is None:
+        logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
+        return _autosite_download_url(remote_version)
+    return mirror_url
+
+
+# 下载源 → URL 构造器，签名统一为 (handler, 远程版本, 冻结的 Mirror 酱地址)；
+# 新增下载源只补一条表项。
+_DOWNLOAD_URL_BUILDERS: dict[
+    str, Callable[["_UpdateHandler", str, Optional[str]], str]
+] = {
+    "GitHub": lambda _, version, __: (
+        f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/"
+        f"{version}/AUTO-MAS-Lite-Setup-{version}-x64.zip"
+    ),
+    "MirrorChyan": lambda handler, version, override_url: _mirror_chyan_download_url(
+        handler.mirror_chyan_download_url, override_url, version
+    ),
+    "AutoSite": lambda _, version, __: _autosite_download_url(version),
+    "CNB": lambda _, version, __: (
+        f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/"
+        f"{version}/AUTO-MAS-Lite-Setup-{version}-x64.zip"
+    ),
+}
 
 
 class _UpdateHandler:
@@ -353,27 +392,10 @@ class _UpdateHandler:
         if remote_version is None:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
 
-        if source == "GitHub":
-            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
-
-        if source == "MirrorChyan":
-            mirror_url = (
-                mirror_chyan_download_url
-                if mirror_chyan_download_url is not None
-                else self.mirror_chyan_download_url
-            )
-            if mirror_url is None:
-                logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
-            return mirror_url
-
-        if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
-
-        if source == "CNB":
-            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
-
-        raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
+        builder = _DOWNLOAD_URL_BUILDERS.get(source)
+        if builder is None:
+            raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
+        return builder(self, remote_version, mirror_chyan_download_url)
 
     async def _refresh_mirror_download_url(self) -> None:
         """重新获取 Mirror 酱的一次性下载地址。
