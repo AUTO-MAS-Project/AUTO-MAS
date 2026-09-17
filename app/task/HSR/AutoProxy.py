@@ -546,7 +546,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         eow_enabled: bool,
         result: object,
         script: Literal["M7A", "SRA"],
-        dedicated_run: bool = False,
     ) -> None:
         """外部脚本确认历战余响完成后，登记完成态。"""
 
@@ -556,7 +555,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         completed, reason = detect_echo_of_war_completion(
             result,
             script,
-            dedicated_run=dedicated_run,
         )
         if not completed:
             self._record_module_result(

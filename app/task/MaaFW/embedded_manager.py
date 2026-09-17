@@ -63,6 +63,11 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
 )
 from app.task.MaaFW.tools.notify import push_notification
+from app.task.MaaFW.tools.notify.report import (
+    NOTIFY_SCREENSHOT_LIMIT,
+    load_screenshot_images,
+    screenshot_entries,
+)
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from app.utils.paths import SOURCE_ROOT
@@ -277,6 +282,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self.inner_task: "MaaFWPluginAutoProxyTask | None" = None
         self._inner_finalized = True
         self._report_finalized = False
+        # 各用户跑完攒下的失败截图（带用户名的标签, 路径），最后随「代理结果」发出。
+        self._failure_screenshots: list[tuple[str, Path]] = []
         # 项目更新的日志行（已带时间戳）；运行前更新的会并入第一位用户的日志。
         self.project_update_logs: list[str] = []
         self._auto_update_mode: AutoUpdateMode = "Off"
@@ -754,6 +761,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             await self.inner_task.final_task()
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MFW 内置运行收尾异常：{exc}")
+        with suppress(Exception):
+            self._failure_screenshots.extend(self.inner_task.report_screenshots())
 
     async def _commit_user_data(self) -> None:
         """解锁脚本配置，并把用户配置副本整表写回、落盘；只做一次。
@@ -823,11 +832,17 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "result": self.script_info.result,
         }
         try:
+            images = await asyncio.to_thread(
+                load_screenshot_images,
+                self._failure_screenshots[-NOTIFY_SCREENSHOT_LIMIT:],
+            )
+            result["screenshots"] = screenshot_entries(images)
             await push_notification(
                 mode="代理结果",
                 title=title,
                 message=result,
                 task_info=self.task_info,
+                images=[image for _, image in images],
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 代理结果时出现异常: {exc}")
