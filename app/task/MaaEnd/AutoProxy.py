@@ -29,6 +29,7 @@ from typing import Any
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
+from app.log_box import log_box
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
@@ -37,6 +38,7 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import append_push_log
 from app.utils import (
     LogMonitor,
     ProcessManager,
@@ -58,6 +60,7 @@ from app.utils.io import (
     write_file,
 )
 
+from .push_log import MAAEND_PUSH_RULES, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
     get_loaded_maaend_options,
@@ -296,6 +299,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.account_switch_task_name = ""
         self.color_match_failed_message: str | None = None
         self.retryable = True
+        # 用户级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
+        self.push_log_enabled = False
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
@@ -512,6 +517,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
+
+        # ── 推送详情开关（在专项侧，不在 log_box）：关闭时不创建采集会话 ──
+        # 该用户 push_log 保持为空，报告聚合自然只有结果行
+        self.cur_user_item.push_log_mode = self.cur_user_config.get(
+            "Notify", "PushLogMode"
+        )
+        self.push_log_enabled = (
+            self.cur_user_config.get("Notify", "PushLogMode") != "关闭"
+        )
 
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
@@ -1934,6 +1948,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.kill_managed_process(kill_game=not keep_game)
 
         user_logs_list = []
+        stage_log_paths = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
@@ -1956,6 +1971,28 @@ class AutoProxyTask(TaskExecuteBase):
                 phase_label=MAAEND_RUN_MOOD_BOOK.get(log_item.phase, ""),
             )
             user_logs_list.append(log_path.with_suffix(".json"))
+            stage_log_paths.append(log_path.with_suffix(".log"))
+
+        # ── log_box：节点采集推送（源 = 本次各阶段历史日志全文）──
+        # MaaEnd 的任务级进度行只在 stdout，不落上游文件；历史日志即 stdout
+        # 全文落盘产物，直接作为采集源（start_from_end=False 全文采集）。
+        # 开关关闭时不创建采集会话；on_crash 后 final_task 仍会收尾落盘并
+        # 采集，部分日志中的开始标记聚为失败节点；仅 check 未通过的提前返回
+        # 场景无节点。
+        if self.push_log_enabled and stage_log_paths:
+            try:
+                log_collect = log_box.get_collect(
+                    paths=stage_log_paths,
+                    sink=lambda log_type, text, ts: append_push_log(
+                        self.cur_user_item, log_type, text, ts
+                    ),
+                    start_from_end=False,
+                )
+                for rule in MAAEND_PUSH_RULES:
+                    log_collect.collect(*rule)
+                log_collect.close(maaend_resolve)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"MaaEnd 节点采集推送失败: {e}")
 
         statistics = await Config.merge_statistic_info(user_logs_list)
         statistics["user_info"] = self.cur_user_item.name
