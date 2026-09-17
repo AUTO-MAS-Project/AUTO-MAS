@@ -252,6 +252,8 @@ export interface MaaFWScriptConfig {
     PackageName: string
     Arguments: string
     WaitTime: number
+    /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
+    StartupSettleTime: number
     CloseOnFinish: boolean
   }
   Update: {

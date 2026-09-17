@@ -34,7 +34,7 @@ class MaaFWConfigTest(unittest.TestCase):
                 "Info": 5,
                 "Emulator": 2,
                 "Device": 11,
-                "Game": 6,
+                "Game": 7,
                 "Update": 8,
                 "Managed": 9,
                 "ManagedRuntime": 5,
@@ -45,8 +45,9 @@ class MaaFWConfigTest(unittest.TestCase):
         )
         # 第一层删除后少了 Run.Engine 与 Game.{Path,LaunchURL,ProcessPath,ProcessName}；
         # 自动更新接线新增 Update.AutoUpdateMode，带包启动新增 Game.PackageName，
-        # 故 Update 组 8 项、Game 组 6 项、总计 62
-        self.assertEqual(_item_count(script), 62)
+        # 桌面游戏启动后等画面新增 Game.StartupSettleTime，故 Update 组 8 项、
+        # Game 组 7 项、总计 63
+        self.assertEqual(_item_count(script), 63)
         self.assertNotIn("Engine", script._config_item_index["Run"])
         self.assertIn("DailyOnceTasks", script._config_item_index["Run"])
         self.assertIn("WeeklyOnceTasks", script._config_item_index["Run"])

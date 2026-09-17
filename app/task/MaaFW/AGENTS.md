@@ -39,6 +39,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   基解释器。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
+- `Game.StartupSettleTime`：游戏是**本轮刚起来的**（MAS 拉起，或接管时窗口是等出来的）才生效，
+  从窗口出现起算，宿主把「最早可下发时刻」写进 job（`taskStartNotBefore`），worker 在资源 /
+  controller / agent 初始化完成后补足剩余等待。游戏早就在跑、重试轮次、AttachOnly 都不等。
+  背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的 SceneManager 见画面十几秒不变
+  就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发 7~9s）后每次冷启动都撞上。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
 

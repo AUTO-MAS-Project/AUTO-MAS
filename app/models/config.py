@@ -2861,6 +2861,14 @@ class MaaFWConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 由 MAS 启动的游戏，窗口出现后至少再等这么多秒才下发第一个任务（秒）。
+        ## Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来；
+        ## MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。
+        ## 从窗口检测时刻起算，MaaFW 初始化（加载资源、连 controller、起 agent）与之
+        ## 重叠而不是干等；AttachOnly 与「游戏已在运行」的分支不等；0 关闭。
+        self.Game_StartupSettleTime = ConfigItem(
+            "Game", "StartupSettleTime", 300, RangeValidator(0, 600)
+        )
         ## 任务结束后是否关闭由 MAS 启动的游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
@@ -2974,9 +2982,11 @@ class MaaFWConfig(ConfigBase):
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
-        ## 运行次数限制
+        ## 运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑；
+        ## 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败，
+        ## 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         ## 单次运行时间限制（分钟）
         self.Run_RunTimeLimit = ConfigItem(

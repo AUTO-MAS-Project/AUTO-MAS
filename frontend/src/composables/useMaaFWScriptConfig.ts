@@ -88,6 +88,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PackageName: '',
     Arguments: '',
     WaitTime: 60,
+    StartupSettleTime: 300,
     CloseOnFinish: true,
   },
   Update: {
@@ -125,7 +126,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Run: {
     ProxyTimesLimit: 0,
-    RunTimesLimit: 1,
+    RunTimesLimit: 3,
     RunTimeLimit: 30,
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',
