@@ -168,7 +168,7 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="12">
+            <a-col :span="maaEndConfig.Game.CloseOnFinish ? 12 : 24">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
                 :extra="t('edit.maaEndSetResolutionHint')"
@@ -182,10 +182,7 @@
                 />
               </a-form-item>
             </a-col>
-          </a-row>
-
-          <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
-            <a-col :span="12">
+            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="12">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
                 :extra="t('edit.maaEndRestoreResolutionHint')"
@@ -198,35 +195,37 @@
                   @change="handleChange('Game', 'RestoreResolution', $event)"
                 />
               </a-form-item>
+              <a-row v-if="maaEndConfig.Game.RestoreResolution === 'Custom'" :gutter="24">
+                <a-col :span="12">
+                  <a-form-item :label="t('edit.maaEndResolutionWidth')">
+                    <a-input-number
+                      v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
+                      :min="1"
+                      :max="16384"
+                      :precision="0"
+                      size="large"
+                      style="width: 100%"
+                      :disabled="isSaving"
+                      @blur="handleResolutionBlur('RestoreResolutionWidth')"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item :label="t('edit.maaEndResolutionHeight')">
+                    <a-input-number
+                      v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
+                      :min="1"
+                      :max="16384"
+                      :precision="0"
+                      size="large"
+                      style="width: 100%"
+                      :disabled="isSaving"
+                      @blur="handleResolutionBlur('RestoreResolutionHeight')"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
             </a-col>
-            <template v-if="maaEndConfig.Game.RestoreResolution === 'Custom'">
-              <a-col :span="6">
-                <a-form-item :label="t('edit.maaEndResolutionWidth')">
-                  <a-input-number
-                    v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
-                    :min="1"
-                    :max="16384"
-                    :precision="0"
-                    size="large"
-                    :disabled="isSaving"
-                    @blur="handleResolutionBlur('RestoreResolutionWidth')"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item :label="t('edit.maaEndResolutionHeight')">
-                  <a-input-number
-                    v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
-                    :min="1"
-                    :max="16384"
-                    :precision="0"
-                    size="large"
-                    :disabled="isSaving"
-                    @blur="handleResolutionBlur('RestoreResolutionHeight')"
-                  />
-                </a-form-item>
-              </a-col>
-            </template>
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
