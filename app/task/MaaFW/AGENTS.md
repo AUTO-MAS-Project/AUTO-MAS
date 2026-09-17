@@ -8,8 +8,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
-  `update_credentials`、`project_path`、`env_cache`、`game_package`）。要读 `Config`、发通知、
-  碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
+  `update_credentials`、`project_path`、`env_cache`、`game_package`、`game_resolution`、
+  `update_progress`）。
+  要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/automas_maafw_*`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`——它只在宿主进程里跑；不要再加新的。
@@ -39,6 +40,13 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   基解释器。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
+- Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
+  `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
+  DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
+  1280x720）走
+  `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
+  只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
+  `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
 
