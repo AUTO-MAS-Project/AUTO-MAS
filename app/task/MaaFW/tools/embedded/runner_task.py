@@ -47,6 +47,11 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
 from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.notify import push_notification
+from app.task.MaaFW.tools.notify.report import (
+    NOTIFY_SCREENSHOT_LIMIT,
+    load_screenshot_images,
+    screenshot_entries,
+)
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
@@ -528,6 +533,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             self.run_plan, result.completedTasks
                         ),
                         message,
+                        screenshots=[
+                            (
+                                _format_completed_task_labels(
+                                    self.run_plan, [shot.task]
+                                )[0],
+                                Path(shot.path),
+                            )
+                            for shot in result.failureScreenshots
+                        ],
                     )
                     await self._refresh_run_plan_after_period_update()
                     if self.run_plan is not None and not self.run_plan.tasks:
@@ -1191,6 +1205,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 send_log=self._append_log,
             )
             raise
+        started_at = self.cur_user_log_started_at or datetime.now()
+        local_started_at = started_at.replace(
+            tzinfo=datetime.now().astimezone().tzinfo
+        ).astimezone(UTC4)
+        history_dir = (
+            Path.cwd()
+            / "history"
+            / local_started_at.strftime("%Y-%m-%d")
+            / self.cur_user_item.name
+        )
+        history_stamp = local_started_at.strftime("%H-%M-%S")
         job_path: Path | None = None
         worker_id: str | None = None
         try:
@@ -1200,7 +1225,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 runner_plan.piEnv["PI_CLIENT_MAAFW_VERSION"] = (
                     f"v{runner_environment.maafw_version.lstrip('v')}"
                 )
-            payload = service.create_job_payload(runner_plan, device_config)
+            payload = service.create_job_payload(
+                runner_plan,
+                device_config,
+                # 失败截图和本次运行的 .log / .maafw.log 放一起。
+                failure_screenshot_dir=history_dir,
+                failure_screenshot_prefix=history_stamp,
+            )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
                 service.write_job_file, payload, work_dir
@@ -1231,19 +1262,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         framework_log_writer: _FrameworkLogWriter | None = None
 
         try:
-            started_at = self.cur_user_log_started_at or datetime.now()
-            local_started_at = started_at.replace(
-                tzinfo=datetime.now().astimezone().tzinfo
-            ).astimezone(UTC4)
-            framework_log_dir = (
-                Path.cwd()
-                / "history"
-                / local_started_at.strftime("%Y-%m-%d")
-                / self.cur_user_item.name
-            )
-            framework_log_path = framework_log_dir / (
-                f"{local_started_at.strftime('%H-%M-%S')}.maafw.log"
-            )
+            framework_log_path = history_dir / f"{history_stamp}.maafw.log"
             writer = _FrameworkLogWriter(framework_log_path)
             await asyncio.to_thread(writer.start)
             framework_log_writer = writer
@@ -1883,9 +1902,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return statistic_paths
 
     def _record_attempt(
-        self, attempt: int, completed_labels: list[str], failure: str | None
+        self,
+        attempt: int,
+        completed_labels: list[str],
+        failure: str | None,
+        *,
+        screenshots: list[tuple[str, Path]] | None = None,
     ) -> None:
-        """记下本次尝试的结果，供统计通知的「任务详情」用。"""
+        """记下本次尝试的结果，供统计通知的「任务详情」与失败截图用。"""
 
         self._attempt_reports.append(
             {
@@ -1893,8 +1917,32 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 "time": datetime.now().strftime("%H:%M:%S"),
                 "completed": list(completed_labels),
                 "failure": failure,
+                "screenshots": list(screenshots or []),
             }
         )
+
+    def _collect_failure_screenshots(self) -> list[tuple[str, Path]]:
+        """本用户要随通知发出去的失败截图（标签, 路径），按时间顺序。
+
+        最终成功的运行不带图：任务详情那边成功时也只留合并后的完成清单，
+        早先尝试的失败画面对已经跑通的一轮没有意义。张数上限由消费方裁。
+        """
+
+        if self.run_complete:
+            return []
+        shots: list[tuple[str, Path]] = []
+        for report in self._attempt_reports:
+            for label, path in report.get("screenshots", ()):
+                shots.append((f"第 {report['attempt']} 次尝试 · {label}", path))
+        return shots
+
+    def report_screenshots(self) -> list[tuple[str, Path]]:
+        """给脚本级「代理结果」报告用的失败截图，标签带上用户名以区分多用户。"""
+
+        return [
+            (f"{self.cur_user_item.name} · {label}", path)
+            for label, path in self._collect_failure_screenshots()
+        ]
 
     def _build_task_details(self) -> str:
         """汇总各次尝试的任务详情。
@@ -1959,6 +2007,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             statistics["task_details"] = self._build_task_details()
+            images = await asyncio.to_thread(
+                load_screenshot_images,
+                self._collect_failure_screenshots()[-NOTIFY_SCREENSHOT_LIMIT:],
+            )
+            statistics["screenshots"] = screenshot_entries(images)
             statistics["user_result"] = (
                 "代理任务全部完成"
                 if self.run_complete
@@ -1977,6 +2030,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 ),
                 message=statistics,
                 user_config=self.cur_user_config,
+                images=[image for _, image in images],
             )
         except Exception as exc:
             logger.opt(exception=True).warning(f"推送 MaaFW 统计信息时出现异常: {exc}")

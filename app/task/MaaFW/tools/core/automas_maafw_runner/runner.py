@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
+import ctypes
 import hashlib
 import json
 import os
@@ -30,6 +31,7 @@ from typing import Any, BinaryIO, Callable, TextIO
 
 import maa as maa_package
 from maa.agent_client import AgentClient
+from maa.buffer import ImageBuffer
 from maa.controller import (
     AdbController,
     Controller,
@@ -40,6 +42,7 @@ from maa.controller import (
     MaaWin32ScreencapMethodEnum,
     Win32Controller,
 )
+from maa.define import MaaImageBufferHandle, MaaSize
 from maa.event_sink import NotificationType
 from maa.job import Job, JobWithResult
 from maa.library import Library
@@ -47,7 +50,6 @@ from maa.resource import Resource, ResourceEventSink
 from maa.tasker import Tasker, TaskerEventSink
 from maa.toolkit import Toolkit
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Field
 
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
@@ -58,11 +60,18 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment impor
     strip_host_python_environment,
 )
 
+# MaaFWRunResult 只在 models 里定义一份：宿主用它 model_validate worker 回传的
+# 结果，两边字段一旦分叉，多出来的字段会被 pydantic 静默丢掉（adbReadyTimeout
+# 就这么丢过一次，见下方注释）。
 try:
-    from .models import MaaFWDeviceConfig
+    from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan
 except ImportError:
-    from models import MaaFWDeviceConfig  # type: ignore[no-redef]
+    from models import (  # type: ignore[no-redef]
+        MaaFWDeviceConfig,
+        MaaFWFailureScreenshot,
+        MaaFWRunResult,
+    )
     from run_plan import MaaFWRunPlan, MaaFWTaskRunPlan  # type: ignore[no-redef]
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
@@ -116,6 +125,9 @@ MAAFW_FAILURE_EVENT_MESSAGES = {
     "Tasker.Task.Failed",
 }
 MAAFW_FAILURE_SUMMARY_LIMIT = 8
+# 任务失败截图的文件名里任务名最多保留多少字符。
+FAILURE_SCREENSHOT_NAME_LIMIT = 40
+_FAILURE_SCREENSHOT_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.-]+")
 # 失败消息里最多回溯几个节点。再往前是正常走过的路径，列出来只会淹没重点。
 FAILURE_NODE_NAME_LIMIT = 3
 
@@ -406,22 +418,14 @@ def _ensure_maafw_global_init(
 # 的字段，另一类 controller 的字段消费点本来就写成 `... or XxxEnum.Default`。
 
 
-class MaaFWRunResult(BaseModel):
-    success: bool
-    projectName: str
-    controllerName: str
-    resourceName: str
-    completedTasks: list[str] = Field(default_factory=list)
-    failedTask: str | None = None
-    errorMessage: str | None = None
-
-
 class MaaFWRunner:
     def __init__(
         self,
         plan: MaaFWRunPlan,
         *,
         send_log: Callable[[str], None] | None = None,
+        failure_screenshot_dir: Path | None = None,
+        failure_screenshot_prefix: str = "",
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -442,6 +446,13 @@ class MaaFWRunner:
         self._task_failure_summaries: list[str] = []
         self._failed_controller_actions: set[str] = set()
         self._failed_task_errors: list[tuple[str, str]] = []
+        self._failure_screenshot_dir: Path | None = failure_screenshot_dir
+        self._failure_screenshot_prefix: str = failure_screenshot_prefix
+        self._failure_screenshots: list[MaaFWFailureScreenshot] = []
+
+    @property
+    def failure_screenshots(self) -> list[MaaFWFailureScreenshot]:
+        return list(self._failure_screenshots)
 
     def _ensure_initialized(self, device_config: MaaFWDeviceConfig) -> None:
         if self._initialized:
@@ -509,6 +520,7 @@ class MaaFWRunner:
     def run(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         self._stop_requested.clear()
         self._external_stop_seen.clear()
+        self._failure_screenshots = []
         try:
             self._ensure_initialized(device_config)
             completed_tasks = self._run_tasks()
@@ -535,6 +547,7 @@ class MaaFWRunner:
                     completedTasks=completed_tasks,
                     failedTask=first_failed_task,
                     errorMessage=error_message,
+                    failureScreenshots=self.failure_screenshots,
                 )
             return MaaFWRunResult(
                 success=True,
@@ -558,6 +571,7 @@ class MaaFWRunner:
                 completedTasks=self._completed_task_names(),
                 failedTask=failed_task,
                 errorMessage=str(exc),
+                failureScreenshots=self.failure_screenshots,
             )
 
     def cleanup(self) -> None:
@@ -1340,6 +1354,7 @@ class MaaFWRunner:
                     raise RuntimeError("MaaFW 任务已停止") from exc
                 message = str(exc)
                 self._failed_task_errors.append((task.name, message))
+                self._capture_failure_screenshot(task.name)
                 fatal = sorted(
                     self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS
                 )
@@ -1374,6 +1389,7 @@ class MaaFWRunner:
             if self._external_stop_active(tasker):
                 message = "任务被脚本侧强制停止（MaaTaskerPostStop）"
                 self._failed_task_errors.append((task.name, message))
+                self._capture_failure_screenshot(task.name)
                 self.send_log(
                     f"任务未完成，本轮剩余任务已跳过: {display_name}: {message}"
                 )
@@ -1382,6 +1398,39 @@ class MaaFWRunner:
             self.send_log(f"任务完成: {display_name}")
             time.sleep(0.1)
         return completed_tasks
+
+    def _capture_failure_screenshot(self, task_name: str) -> None:
+        """把任务失败当刻的画面存成 PNG，随运行结果回传宿主。
+
+        画面就是用户排查时最想看的那一眼——卡在哪个弹窗、哪个界面。
+        取消（stop_requested）不算失败，不截；controller 已经没了也截不到。
+        截图失败只记一行日志，绝不能反过来影响任务结果。
+        """
+
+        directory = self._failure_screenshot_dir
+        controller = self.controller
+        if directory is None or controller is None or self._stop_requested.is_set():
+            return
+        try:
+            data = _encode_current_screen_png(controller)
+            directory.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%H%M%S")
+            name = _FAILURE_SCREENSHOT_NAME_RE.sub("_", task_name).strip("._")
+            name = name[:FAILURE_SCREENSHOT_NAME_LIMIT] or "task"
+            prefix = (
+                f"{self._failure_screenshot_prefix}."
+                if self._failure_screenshot_prefix
+                else ""
+            )
+            path = directory / f"{prefix}failed-{stamp}-{name}.png"
+            path.write_bytes(data)
+        except Exception as exc:
+            self.send_log(f"任务失败截图未能保存: {exc}")
+            return
+        self._failure_screenshots.append(
+            MaaFWFailureScreenshot(task=task_name, path=str(path))
+        )
+        self.send_log(f"任务失败截图已保存: {path}")
 
     def _completed_task_names(self) -> list[str]:
         completed_tasks = getattr(self, "_completed_tasks", [])
@@ -1477,6 +1526,36 @@ class MaaFWRunner:
                 continue
             kept.append(summary)
         return "框架失败事件: " + "；".join(kept) if kept else ""
+
+
+def _encode_current_screen_png(controller: Any) -> bytes:
+    """截一张当前画面并让 MaaFramework 自己编码成 PNG。
+
+    运行池 venv 里只有 maa + numpy，没有 cv2 / PIL，Python 侧编不了图；
+    而 ``MaaImageBufferGetEncoded`` 是 C API 一直导出的函数（返回 PNG 字节），
+    只是 Python 绑定从没声明过它，这里自己补上 ctypes 签名。
+    """
+
+    job = controller.post_screencap()
+    job.wait()
+    if job.failed:
+        raise RuntimeError("controller 截图失败")
+    framework = Library.framework()
+    get_encoded = framework.MaaImageBufferGetEncoded
+    get_encoded.restype = ctypes.c_void_p
+    get_encoded.argtypes = [MaaImageBufferHandle]
+    get_encoded_size = framework.MaaImageBufferGetEncodedSize
+    get_encoded_size.restype = MaaSize
+    get_encoded_size.argtypes = [MaaImageBufferHandle]
+
+    buffer = ImageBuffer()
+    if not framework.MaaControllerCachedImage(controller._handle, buffer._handle):
+        raise RuntimeError("读取截图缓存失败")
+    size = int(get_encoded_size(buffer._handle))
+    address = get_encoded(buffer._handle)
+    if not size or not address:
+        raise RuntimeError("截图缓存为空")
+    return ctypes.string_at(address, size)
 
 
 class _MaaFWResourceLogSink(ResourceEventSink):
