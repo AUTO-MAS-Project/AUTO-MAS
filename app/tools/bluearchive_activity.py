@@ -122,9 +122,11 @@ def collect_activities(
 
         picked[name] = ActivityInfo(name, float(start), float(end))
 
+    # 同时有好几场进行中时取最早结束的那场：与首页卡片（blueArchivePresentation）同口径，
+    # 否则同一时刻两处会指向不同的活动
     running = sorted(
         (item for item in picked.values() if item.start_time <= now_seconds < item.end_time),
-        key=lambda item: item.start_time,
+        key=lambda item: item.end_time,
     )
     upcoming = sorted(
         (item for item in picked.values() if item.start_time > now_seconds),

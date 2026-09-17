@@ -114,15 +114,16 @@ class TestCollectActivities:
         assert running is None
         assert upcoming is not None and upcoming.name == "下一个"
 
-    def test_running_prefers_earliest_start(self) -> None:
+    def test_running_prefers_earliest_end(self) -> None:
+        """同时有几场进行中时取最早结束的那场，与首页卡片的取值口径一致"""
         timeline = [
-            titled_activity(NOW - 50, NOW + 100, title="晚开始"),
-            titled_activity(NOW - 200, NOW + 100, title="早开始"),
+            titled_activity(NOW - 50, NOW + 300, title="晚结束"),
+            titled_activity(NOW - 200, NOW + 100, title="早结束"),
         ]
 
         running, _ = collect_activities(timeline, NOW)
 
-        assert running is not None and running.name == "早开始"
+        assert running is not None and running.name == "早结束"
 
     def test_upcoming_prefers_earliest_start(self) -> None:
         timeline = [
