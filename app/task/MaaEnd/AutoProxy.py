@@ -1356,6 +1356,9 @@ class AutoProxyTask(TaskExecuteBase):
                 "type": "select",
                 "caseName": "Fullscreen",
             }
+        else:
+            # 固定或自定义分辨率沿用 MaaEnd 默认的窗口模式，避免残留旧的全屏选项。
+            values.pop("CloseGamePCGameSettingDisplayType", None)
         values["CloseGamePCGameSettingResolution"] = {
             "type": "input",
             "values": {
