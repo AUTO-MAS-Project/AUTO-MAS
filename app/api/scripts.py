@@ -23,9 +23,9 @@
 
 import asyncio
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -66,22 +66,31 @@ router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
 
 
-def _hsr_script_config(script_id: str):
-    """Resolve an HSR script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeHSRConfig):
-        raise TypeError("脚本配置类型错误, 不是 HSR 类型")
-    return script_config
+_TypedConfigT = TypeVar("_TypedConfigT")
 
 
-def _bettergi_script_config(script_id: str):
-    """Resolve a BetterGI script and reject cross-type IDs before domain access."""
+def _typed_script_config_guard(
+    expected: type[_TypedConfigT], error: type[Exception], label: str
+) -> Callable[[str], _TypedConfigT]:
+    """生成「按脚本类型解析并拒绝跨类型 ID」的域守卫。
 
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeBetterGIConfig):
-        raise TypeError("脚本配置类型错误, 不是 BetterGI 类型")
-    return script_config
+    各域错误类型与消息文案逐字保留现状（HSR/BetterGI/MFW 抛 TypeError，
+    OK-NTE 抛 ValueError），不得顺手统一。
+    """
+
+    def guard(script_id: str) -> _TypedConfigT:
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, expected):
+            raise error(f"脚本配置类型错误, 不是 {label} 类型")
+        return script_config
+
+    return guard
+
+
+_hsr_script_config = _typed_script_config_guard(RuntimeHSRConfig, TypeError, "HSR")
+_bettergi_script_config = _typed_script_config_guard(
+    RuntimeBetterGIConfig, TypeError, "BetterGI"
+)
 
 
 def _bettergi_user_id(script_config: RuntimeBetterGIConfig, user_id: str):
@@ -191,12 +200,14 @@ def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
     return user_config
 
 
+_oknte_typed_config = _typed_script_config_guard(
+    RuntimeOkNteConfig, ValueError, "OK-NTE"
+)
+
+
 def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
     script_uid = uuid.UUID(script_id)
-    script_config = Config.ScriptConfig[script_uid]
-    if not isinstance(script_config, RuntimeOkNteConfig):
-        raise ValueError("脚本配置类型错误, 不是 OK-NTE 类型")
-    return script_uid, script_config
+    return script_uid, _oknte_typed_config(script_id)
 
 
 def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
@@ -218,13 +229,7 @@ def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
-def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
-    """Resolve a MaaFW script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeMaaFWConfig):
-        raise TypeError("脚本配置类型错误, 不是 MFW 类型")
-    return script_config
+_maafw_script_config = _typed_script_config_guard(RuntimeMaaFWConfig, TypeError, "MFW")
 
 
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
