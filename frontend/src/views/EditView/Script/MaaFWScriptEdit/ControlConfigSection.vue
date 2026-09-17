@@ -168,7 +168,7 @@
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
-        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 -->
+        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 启动后再等 -->
         <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
@@ -223,7 +223,7 @@
         </a-row>
 
         <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item>
               <template #label>
                 <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
@@ -270,6 +270,28 @@
                 size="large"
                 style="width: 100%"
                 @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="6">
+            <a-form-item>
+              <template #label>
+                <a-tooltip :title="t('edit.mfwStartupSettleTip')">
+                  <span class="form-label">
+                    {{ t('edit.mfwStartupSettleSeconds') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-input-number
+                v-model:value="maafwConfig.Game.StartupSettleTime"
+                :min="0"
+                :max="600"
+                size="large"
+                style="width: 100%"
+                @blur="
+                  emit('change', 'Game', 'StartupSettleTime', maafwConfig.Game.StartupSettleTime)
+                "
               />
             </a-form-item>
           </a-col>

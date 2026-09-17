@@ -142,11 +142,13 @@ def main() -> int:
         plan = MaaFWRunPlan.model_validate(payload["plan"])
         device_config = MaaFWDeviceConfig.model_validate(payload["deviceConfig"])
         screenshot_dir = payload.get("failureScreenshotDir")
+        not_before = payload.get("taskStartNotBefore")
         runner = MaaFWRunner(
             plan,
             send_log=_emit_log,
             failure_screenshot_dir=Path(screenshot_dir) if screenshot_dir else None,
             failure_screenshot_prefix=str(payload.get("failureScreenshotPrefix") or ""),
+            task_start_not_before=float(not_before) if not_before is not None else None,
         )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})

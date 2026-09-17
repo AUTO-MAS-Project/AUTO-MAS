@@ -27,5 +27,9 @@ export type MaaFWConfig_Game = {
      * 游戏启动后等待窗口就绪的时间（秒）
      */
     WaitTime?: (number | null);
+    /**
+     * 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务（秒），0 关闭
+     */
+    StartupSettleTime?: (number | null);
 };
 
