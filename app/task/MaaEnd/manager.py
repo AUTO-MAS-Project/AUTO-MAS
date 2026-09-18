@@ -32,6 +32,7 @@ from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
+from app.tools.push_log import build_user_result_text
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from app.utils.io import (
@@ -321,6 +322,9 @@ class MaaEndManager(TaskExecuteBase):
             )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+            # 按用户交错组装「用户结果行 + 该用户节点详情」：
+            # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
+            has_uncompleted = error_count + wait_count > 0
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -328,7 +332,9 @@ class MaaEndManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": over_count,
                 "uncompleted_count": error_count + wait_count,
-                "result": self.script_info.result,
+                "result": build_user_result_text(
+                    self.script_info.user_list, has_uncompleted
+                ),
             }
 
             try:
