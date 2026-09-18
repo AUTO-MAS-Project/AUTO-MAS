@@ -45,6 +45,9 @@ const user = (overrides: Partial<ActivityUserRow>): ActivityUserRow => ({
   ifQuickConfig: true,
   ifActivityFirst: true,
   intent: '',
+  skipActive: false,
+  skipDays: 0,
+  skipDetail: '',
   ...overrides,
 })
 
@@ -134,6 +137,9 @@ describe('resolveUserInjectStatus', () => {
     expect(
       resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'preview'),
     ).toEqual({ willInject: false, reason: 'gap' })
+    expect(
+      resolveUserInjectStatus(user({ intent: 'last:1', skipActive: true }), srStages, 'ongoing'),
+    ).toEqual({ willInject: false, reason: 'skipped' })
     expect(
       resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'ongoing'),
     ).toEqual({ willInject: true, reason: 'ok' })

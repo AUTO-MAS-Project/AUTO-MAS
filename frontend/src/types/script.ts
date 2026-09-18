@@ -588,6 +588,8 @@ export interface User {
     LastLucidscapeMonth?: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
+    /** 活动关跳过簿 JSON（{活动名: {date, days, detail}}，连错自动跳过整期） */
+    ActivitySkipBook?: string
   }
   Info: {
     Annihilation: string

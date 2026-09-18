@@ -1040,6 +1040,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_GreenTicketStoreMonth = ConfigItem(
             "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
         )
+        ## 活动关跳过簿（{活动名: {date, days, detail}}，连错自动跳过整期）
+        self.Data_ActivitySkipBook = ConfigItem(
+            "Data", "ActivitySkipBook", "{ }", JSONValidator()
+        )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）

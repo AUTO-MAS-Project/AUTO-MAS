@@ -42,6 +42,12 @@ export interface ActivityUserRow {
   ifQuickConfig: boolean
   ifActivityFirst: boolean
   intent: string
+  /** 跳过簿命中当前活动（首错当日或连错≥2 天），后端本轮不会注入 */
+  skipActive: boolean
+  /** 跳过簿连错天数（0=未命中） */
+  skipDays: number
+  /** 跳过簿出错明细 */
+  skipDetail: string
 }
 
 /** 槽位行（倒N → 搓玉 → 自定义材料） */
@@ -125,6 +131,7 @@ export type UserInjectReason =
   | 'user-disabled'
   | 'switch-off'
   | 'no-quick-config'
+  | 'skipped'
   | 'no-intent'
   | 'no-match'
   | 'gap'
@@ -143,6 +150,7 @@ export function resolveUserInjectStatus(
   if (!user.status) return { willInject: false, reason: 'user-disabled' }
   if (!user.ifActivityFirst) return { willInject: false, reason: 'switch-off' }
   if (!user.ifQuickConfig) return { willInject: false, reason: 'no-quick-config' }
+  if (user.skipActive) return { willInject: false, reason: 'skipped' }
   if (!user.intent) return { willInject: false, reason: 'no-intent' }
   if (period !== 'ongoing') return { willInject: false, reason: 'gap' }
   if (!resolveIntentStage(user.intent, stages)) {

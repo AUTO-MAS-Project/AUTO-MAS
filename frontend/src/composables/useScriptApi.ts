@@ -332,6 +332,10 @@ export function useScriptApi() {
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
                             : 0,
+                        ActivitySkipBook:
+                          maaUserData.Data?.ActivitySkipBook !== undefined
+                            ? maaUserData.Data.ActivitySkipBook
+                            : '{ }',
                       },
                     }
                   } else if (userIndex.type === 'SrcUserConfig' && userData) {

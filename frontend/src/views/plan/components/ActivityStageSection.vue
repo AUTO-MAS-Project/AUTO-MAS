@@ -82,7 +82,7 @@
                     class="chip"
                     :class="{
                       off: item.status.reason === 'switch-off',
-                      dim: ['no-quick-config', 'user-disabled', 'gap'].includes(
+                      dim: ['no-quick-config', 'user-disabled', 'gap', 'skipped'].includes(
                         item.status.reason,
                       ),
                     }"
@@ -354,7 +354,13 @@ const rowStageExists = (row: StageSlotRow) =>
 
 /** 行内需要黄字提示的用户：预览行的 gap 是「待开启」不算警告 */
 const rowBlockingItems = (row: StageSlotRow): UserSlotItem[] => {
-  const warnReasons = ['no-match', 'switch-off', 'no-quick-config', 'user-disabled']
+  const warnReasons = [
+    'no-match',
+    'switch-off',
+    'no-quick-config',
+    'user-disabled',
+    'skipped',
+  ]
   return rowUserStatuses(row).filter(
     item =>
       warnReasons.includes(item.status.reason) ||
@@ -372,6 +378,13 @@ const blockingText = (item: UserSlotItem): string => {
       return t('plan.activity.statusUserNoMatch', { name: item.user.userName })
     case 'user-disabled':
       return t('plan.activity.statusUserDisabled', { name: item.user.userName })
+    case 'skipped':
+      return (item.user.skipDays ?? 0) >= 2
+        ? t('plan.activity.statusUserSkipped', {
+            name: item.user.userName,
+            n: item.user.skipDays,
+          })
+        : t('plan.activity.statusUserSkippedToday', { name: item.user.userName })
     case 'gap':
       return t('plan.activity.statusUserGap', { name: item.user.userName })
     default:
@@ -473,6 +486,39 @@ const slotMaterialValue = computed<string | undefined>(() => {
 
 // ==================== 数据加载与写回 ====================
 
+/** 跳过簿命中判定：按用户自己服务器的进行中活动名对条目（后端同规则） */
+const resolveSkipState = (
+  user: { Info: { Server: string }; Data?: { ActivitySkipBook?: string } },
+  activityMap: Record<string, ActivityItem[]>,
+): { skipActive: boolean; skipDays: number; skipDetail: string } => {
+  let book: Record<string, { date?: string; days?: number; detail?: string }> = {}
+  try {
+    const parsed = JSON.parse(user.Data?.ActivitySkipBook || '{ }')
+    if (parsed && typeof parsed === 'object') book = parsed
+  } catch {
+    book = {}
+  }
+  const today = new Date(Date.now() + 4 * 3600_000).toISOString().slice(0, 10)
+  const serverStages = activityMap[stageServerOf(user.Info.Server)] ?? []
+  let skipActive = false
+  let skipDays = 0
+  let skipDetail = ''
+  for (const [name, entry] of Object.entries(book)) {
+    if (!entry || typeof entry !== 'object') continue
+    // 与后端闸门同锚：条目活动必须仍在该服进行中才视为命中
+    //（连错条目在活动结束、下轮运行时由后端修剪）
+    const ongoingHere =
+      Boolean(name) && serverStages.some(stage => stage.Activity?.StageName === name)
+    const active = Boolean(ongoingHere) && ((entry.days ?? 0) >= 2 || entry.date === today)
+    if (active && (entry.days ?? 0) >= skipDays) {
+      skipActive = true
+      skipDays = entry.days ?? 0
+      skipDetail = [entry.detail, entry.date].filter(Boolean).join(' · ')
+    }
+  }
+  return { skipActive, skipDays, skipDetail }
+}
+
 const loadData = async () => {
   loading.value = true
   error.value = ''
@@ -520,6 +566,7 @@ const loadData = async () => {
           ifQuickConfig: user.Info.IfQuickConfig ?? true,
           ifActivityFirst: user.Task?.IfActivityFirst ?? false,
           intent: user.Task?.ActivityStageIntent ?? '',
+          ...resolveSkipState(user, activityMap),
         })
       }
     }

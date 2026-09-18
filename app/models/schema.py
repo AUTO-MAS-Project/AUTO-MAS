@@ -1564,6 +1564,10 @@ class MaaUserConfig_Data(BaseModel):
     GreenTicketStoreMonth: Optional[str] = Field(
         default=None, description="上次完成绿票商店购买的月份"
     )
+    ActivitySkipBook: Optional[str] = Field(
+        default=None,
+        description="活动关跳过簿 JSON（{活动名: {date, days, detail}}，连错自动跳过整期）",
+    )
     LastResVersion: Optional[str] = Field(
         default=None, description="上次成功代理时服务端的游戏资源版本"
     )
