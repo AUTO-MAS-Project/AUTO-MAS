@@ -523,6 +523,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
                 else:
                     logger.info("检测到已配置的鸣潮客户端进程正在运行，跳过重复启动")
+                    await self._note_launch_arguments_skipped()
                     return
 
             await self.game_manager.open_process(
@@ -539,6 +540,15 @@ class AutoProxyTask(TaskExecuteBase):
             name=_WUWA_CLIENT_PROCESS,
             exe=str(self.game_process_path),
         )
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def main_task(self):
         await self.prepare()

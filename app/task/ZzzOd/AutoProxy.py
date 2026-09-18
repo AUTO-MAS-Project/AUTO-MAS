@@ -1508,6 +1508,7 @@ class AutoProxyTask(TaskExecuteBase):
         if is_process_running(_ZZZ_GAME_PROCESS):
             logger.info("检测到游戏本体进程已在运行，跳过由 MAS 重复启动游戏")
             await self._push_dispatch_log("检测到游戏已在运行，跳过启动")
+            await self._note_launch_arguments_skipped()
             return
         if self.game_exe_path is None:
             raise RuntimeError(
@@ -1523,6 +1524,15 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
             await asyncio.sleep(wait_time)
         await self._push_dispatch_log("游戏启动完成")
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def _kill_game_process(self) -> None:
         """按进程名结束游戏本体（对齐 ok-nte 的 MAS 侧关闭）。"""

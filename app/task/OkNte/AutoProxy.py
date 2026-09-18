@@ -656,6 +656,7 @@ class AutoProxyTask(TaskExecuteBase):
             if is_process_running(_NTE_CLIENT_PROCESS):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                await self._note_launch_arguments_skipped()
                 return
 
             await self._push_dispatch_log("未检测到运行中的客户端，正在拉起启动器...")
@@ -698,6 +699,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"检测到异环客户端进程已在运行，跳过启动: {game_process_name}"
                 )
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                await self._note_launch_arguments_skipped()
                 return
             await self.game_manager.open_protocol(
                 game_url,
@@ -706,6 +708,15 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(2)
             await self._push_dispatch_log("游戏启动指令已发送")
             return
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def handle_pre_oknte_error(
         self, error_message: str, e: Exception | None = None
