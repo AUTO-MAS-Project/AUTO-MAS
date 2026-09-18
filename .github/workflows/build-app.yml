@@ -29,6 +29,14 @@ permissions:
   actions: write
   issues: write
 
+# 所有分支的构建全局串行、先到先跑：并行的两次 dispatch 会各自提交一份签名请求，其中一份
+# 等不到审批就超时（2026-09-12 13:44 的两次 dev dispatch 就是这样），而请求已经留在 SignPath
+# 的待审批队列里。queue: max 让后来的构建排队等待，而不是取消前一个等待中的；进行中的构建不取消。
+concurrency:
+  group: build-app
+  queue: max
+  cancel-in-progress: false
+
 jobs:
 
   build:
@@ -49,6 +57,70 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+
+      # 守门、版本渲染和凭据检查都放在构建与签名之前：SignPath 的年度配额按送签的产物体积
+      # 计算，签完再因为守门或凭据失败等于白扣一份配额。
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      # 守门：仓库版本号必须已经比最新 tag 新、changelog.d/ 必须已清空，否则说明发版 PR 还没合并，
+      # 或者合并之后又进了带碎片的改动。Release 正文由脚本渲染：首行 JSON 是老客户端的解析契约，
+      # 可见正文只写本版增量。首行超预算不会让构建失败：脚本从本版段末尾熔断丢条目保证 JSON
+      # 完整，丢了什么写进 note_issue_*，发布后由 release 任务开 issue 告知维护者。
+      - name: 生成版本信息
+        id: generate_version_info
+        run: |
+          python scripts/changelog.py guard
+          if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
+          $versionTag = (python scripts/changelog.py current).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
+          $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          python scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
+          if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
+          $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
+          $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
+          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$versionTag" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "is_prerelease=$isPrerelease" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_changelog<<$delimiter`n$changelog`n$delimiter" -Encoding utf8
+          Write-Host "版本 $versionTag，预发布：$isPrerelease"
+        shell: pwsh
+
+      - name: 发布前置检查
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
+            throw '缺少 GitHub Actions secret: SENTRY_AUTH_TOKEN'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_ORG)) {
+            throw '缺少 GitHub Actions variable: SENTRY_ORG'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_PROJECT)) {
+            throw '缺少 GitHub Actions variable: SENTRY_PROJECT'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNPATH_API_TOKEN)) {
+            throw '缺少 GitHub Actions secret: SIGNPATH_API_TOKEN'
+          }
+          # 发布阶段会新建 release/<版本号> 分支并推送；远端已有同名分支时推送会被拒绝
+          # （2026-09-12 的 v5.5.0-beta.4 构建就是签完名才在这一步失败的）。tag 的存在性
+          # 已由 changelog.py guard 检查。
+          git ls-remote --exit-code --heads origin "release/$env:VERSION_TAG"
+          if ($LASTEXITCODE -eq 0) {
+            throw "远端已存在分支 release/$env:VERSION_TAG，发布阶段无法推送；请先处理该分支再构建"
+          }
+          if ($LASTEXITCODE -ne 2) {
+            throw "查询远端分支失败（git ls-remote 退出码 $LASTEXITCODE）"
+          }
+          Write-Host "前置检查通过：将发布 $env:VERSION_TAG"
+        shell: pwsh
 
       - name: 读取 Runtime 版本
         run: |
@@ -113,88 +185,20 @@ jobs:
           }
         shell: pwsh
 
-      - name: 构建应用程序
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
-        run: |
-          cd frontend
-          corepack enable
-          corepack prepare yarn@4.9.1 --activate
-          yarn install
-          if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
-            throw '缺少 GitHub Actions secret: SENTRY_AUTH_TOKEN'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:SENTRY_ORG)) {
-            throw '缺少 GitHub Actions variable: SENTRY_ORG'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:SENTRY_PROJECT)) {
-            throw '缺少 GitHub Actions variable: SENTRY_PROJECT'
-          }
-          yarn build
-          Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
-        shell: pwsh
-
-      - name: 放入 Runtime 可执行文件
-        run: |
-          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
-          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
-          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
-          # 两者会一起带上它。
-          $target = 'frontend\dist\win-unpacked\resources'
-          New-Item -ItemType Directory -Force -Path $target | Out-Null
-          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
-        shell: pwsh
-
-      - name: 上传未签名主程序
-        id: upload-unsigned-main-program
-        uses: actions/upload-artifact@v7.0.1
-        with: 
-            name: AUTO-MAS
-            path: AUTO-MAS.exe
-
-      - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@v2.3
+      # 完整环境的下载也放在签名之前：这一步只依赖网络，失败了不该连带浪费主程序的签名。
+      - name: 缓存完整环境
+        id: cache-environment
+        uses: actions/cache@v6.1.0
         with:
-            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA'
-            signing-policy-slug: 'release-signing'
-            artifact-configuration-slug: "AUTO-MAS"
-            github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
-            wait-for-completion: true
-            output-artifact-directory: 'frontend\dist\win-unpacked'
+          path: environment.zip
+          key: environment-zip
 
-      - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
-        with:
-          python-version: '3.12'
+      - name: 下载完整环境
+        if: steps.cache-environment.outputs.cache-hit != 'true'
+        run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
 
-      # 守门：仓库版本号必须已经比最新 tag 新、changelog.d/ 必须已清空，否则说明发版 PR 还没合并，
-      # 或者合并之后又进了带碎片的改动。Release 正文由脚本渲染：首行 JSON 是老客户端的解析契约，
-      # 可见正文只写本版增量。首行超预算不会让构建失败：脚本从本版段末尾熔断丢条目保证 JSON
-      # 完整，丢了什么写进 note_issue_*，发布后由 release 任务开 issue 告知维护者。
-      - name: 生成版本信息
-        id: generate_version_info
-        run: |
-          python scripts/changelog.py guard
-          if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
-          $versionTag = (python scripts/changelog.py current).Trim()
-          if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
-          $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
-          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          python scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
-          if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
-          $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
-          $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
-          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
-          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$versionTag" -Encoding utf8
-          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "is_prerelease=$isPrerelease" -Encoding utf8
-          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_changelog<<$delimiter`n$changelog`n$delimiter" -Encoding utf8
-          Write-Host "版本 $versionTag，预发布：$isPrerelease"
-        shell: pwsh
-
+      # Inno Setup 的安装（choco，网络依赖）同样放在签名之前；.iss 里引用的产物路径要到打包时才存在，
+      # 这里只是生成脚本，iscc 仍在后面的打包步骤运行。
       - name: 准备 Inno Setup
         run: |
           choco install innosetup -y
@@ -260,6 +264,50 @@ jobs:
           "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
         shell: pwsh
 
+      - name: 构建应用程序
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          cd frontend
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+          yarn install
+          yarn build
+          Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
+        shell: pwsh
+
+      - name: 放入 Runtime 可执行文件
+        run: |
+          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
+          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
+          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
+          # 两者会一起带上它。
+          $target = 'frontend\dist\win-unpacked\resources'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
+        shell: pwsh
+
+      - name: 上传未签名主程序
+        id: upload-unsigned-main-program
+        uses: actions/upload-artifact@v7.0.1
+        with: 
+            name: AUTO-MAS
+            path: AUTO-MAS.exe
+
+      - name: 签名主程序
+        uses: signpath/github-action-submit-signing-request@v2.3
+        with:
+            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
+            project-slug: 'AUTO_MAA'
+            signing-policy-slug: 'release-signing'
+            artifact-configuration-slug: "AUTO-MAS"
+            github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
+            wait-for-completion: true
+            output-artifact-directory: 'frontend\dist\win-unpacked'
+
       - name: 构建精简安装包
         run: |
           iscc AUTO-MAS.iss
@@ -267,17 +315,6 @@ jobs:
           Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
         shell: pwsh
 
-      - name: 缓存完整环境
-        id: cache-environment
-        uses: actions/cache@v6.1.0
-        with:
-          path: environment.zip
-          key: environment-zip
-
-      - name: 下载完整环境
-        if: steps.cache-environment.outputs.cache-hit != 'true'
-        run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
-    
       - name: 部署完整环境
         run: Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
         shell: pwsh
@@ -289,7 +326,12 @@ jobs:
           Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
         shell: pwsh
 
+      # 只有正式版的安装程序送签。预发布版以前走 test-signing 策略，签出来的是 SignPath 的自签名
+      # 测试证书（CN=Test certificate for 'AUTO_MAA [OSS]'），Windows 不信任它，SmartScreen 与 UAC
+      # 的表现和未签名完全一样，却要吃掉与 release-signing 相同的配额（两个安装程序约 274 MiB）。
+      # 主程序 AUTO-MAS.exe 不受影响，预发布版照旧用正式证书签名。
       - name: 上传未签名安装程序
+        if: steps.generate_version_info.outputs.is_prerelease != 'true'
         id: upload-unsigned-setup-program
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -299,23 +341,31 @@ jobs:
             AUTO-MAS-Full-Setup.exe
 
       - name: 签名安装程序
+        if: steps.generate_version_info.outputs.is_prerelease != 'true'
         uses: signpath/github-action-submit-signing-request@v2.3
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
             project-slug: 'AUTO_MAA'
-            signing-policy-slug: ${{ steps.generate_version_info.outputs.is_prerelease == 'true' && 'test-signing' || 'release-signing' }}
+            signing-policy-slug: 'release-signing'
             artifact-configuration-slug: "AUTO-MAS-Setup"
             github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
             wait-for-completion: true
-            output-artifact-directory: 'Signed'
+            output-artifact-directory: 'Setup'
+
+      - name: 收集预发布版安装程序
+        if: steps.generate_version_info.outputs.is_prerelease == 'true'
+        run: |
+          New-Item -ItemType Directory -Force -Path Setup | Out-Null
+          Move-Item -Path AUTO-MAS-Lite-Setup.exe, AUTO-MAS-Full-Setup.exe -Destination Setup
+        shell: pwsh
 
       - name: 创建安装程序压缩包
         run: |
-          Move-Item -Path .\Signed\AUTO-MAS-Lite-Setup.exe -Destination AUTO-MAS-Setup.exe
+          Move-Item -Path .\Setup\AUTO-MAS-Lite-Setup.exe -Destination AUTO-MAS-Setup.exe
           Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
           Remove-Item AUTO-MAS-Setup.exe
-          Move-Item -Path .\Signed\AUTO-MAS-Full-Setup.exe -Destination AUTO-MAS-Setup.exe
+          Move-Item -Path .\Setup\AUTO-MAS-Full-Setup.exe -Destination AUTO-MAS-Setup.exe
           Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
           Remove-Item AUTO-MAS-Setup.exe
         shell: pwsh
