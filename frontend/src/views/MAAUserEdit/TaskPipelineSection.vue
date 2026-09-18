@@ -145,6 +145,28 @@
                 option-filter-prop="label"
                 @change="handleActivityStageChange"
               />
+              <a-select
+                v-if="isMatIntent"
+                :value="matMaterialId"
+                :options="activityMaterialOptions"
+                class="mat-material-select"
+                :placeholder="t('edit.maaPickMaterial')"
+                :disabled="loading || activityMaterialOptions.length === 0"
+                show-search
+                option-filter-prop="label"
+                @change="handleActivityMaterialChange"
+              />
+              <div
+                v-if="activityStageState"
+                class="stage-state-line"
+                :class="`tone-${activityStageState.tone}`"
+              >
+                <span class="state-dot"></span>
+                {{ t(activityStageState.messageKey, activityStageState.params) }}
+                <a-tag v-if="activityPeriod === 'preview'" color="processing" class="state-tag">
+                  {{ t('edit.maaStageNotStarted') }}
+                </a-tag>
+              </div>
             </a-form-item>
           </a-col>
           <a-col :xs="24" :md="8">
@@ -351,6 +373,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import { message } from 'ant-design-vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
@@ -360,6 +383,7 @@ import type {
   CultivateOperatorCatalogEntry as OperatorCatalogEntry,
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
+import { MATERIAL_PSEUDO_VALUE } from '@/utils/activityStage'
 import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
@@ -387,6 +411,16 @@ const props = defineProps<{
   activityStageLoading: boolean
   activityStageError: string
   displayActivityStageIntent?: string
+  /** 自定义材料白名单（各服两期线谱并集，value=原始掉落 ID） */
+  activityMaterialOptions: SelectOption[]
+  /** 选关下方状态行（统一状态机输出） */
+  activityStageState: {
+    tone: 'ok' | 'warn' | 'info' | 'muted'
+    messageKey: string
+    params: Record<string, string | number>
+  } | null
+  /** 当前活动关数据的期间态 */
+  activityPeriod?: 'ongoing' | 'preview' | 'gap'
   depotItemOptions: SelectOption[]
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
@@ -469,8 +503,33 @@ const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
 
 const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
 
-const handleActivityStageChange = (value: string) =>
+const isMatIntent = computed(() =>
+  String(formData.value.Task.ActivityStageIntent ?? '').startsWith('mat:'),
+)
+
+const matMaterialId = computed(() => {
+  const intent = String(formData.value.Task.ActivityStageIntent ?? '')
+  return intent.startsWith('mat:') ? intent.slice(4) : undefined
+})
+
+const handleActivityStageChange = (value: string) => {
+  if (value === MATERIAL_PSEUDO_VALUE) {
+    // 进入材料模式：默认选白名单第一项，避免落下无后缀的非法意图；
+    // 白名单为空时保留原意图不清空（间隙期提示等待下期即可）
+    const first = props.activityMaterialOptions[0]
+    if (!first) {
+      message.warning(t('edit.maaNoMaterialOptions'))
+      return
+    }
+    emitSave('Task.ActivityStageIntent', `mat:${first.value}`)
+    return
+  }
   emitSave('Task.ActivityStageIntent', value)
+}
+
+const handleActivityMaterialChange = (materialId: string) => {
+  emitSave('Task.ActivityStageIntent', `mat:${materialId}`)
+}
 
 const activitySummary = computed(() =>
   summarizeActivity({
@@ -606,6 +665,68 @@ const greenTicketStoreSummary = computed(() => {
 
 .task-alert {
   margin: 12px 0;
+}
+
+.mat-material-select {
+  margin-top: 8px;
+}
+
+.stage-state-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.stage-state-line .state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stage-state-line.tone-ok {
+  background: var(--ant-color-success-bg);
+  color: var(--ant-color-text-secondary);
+}
+
+.stage-state-line.tone-ok .state-dot {
+  background: var(--ant-color-success);
+}
+
+.stage-state-line.tone-warn {
+  background: var(--ant-color-warning-bg);
+  color: var(--ant-color-warning);
+  border: 1px solid var(--ant-color-warning-border);
+}
+
+.stage-state-line.tone-warn .state-dot {
+  background: var(--ant-color-warning);
+}
+
+.stage-state-line.tone-info {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-text-secondary);
+}
+
+.stage-state-line.tone-info .state-dot {
+  background: var(--ant-color-primary);
+}
+
+.stage-state-line.tone-muted {
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text-tertiary);
+}
+
+.stage-state-line.tone-muted .state-dot {
+  background: var(--ant-color-text-quaternary);
+}
+
+.stage-state-line .state-tag {
+  margin-inline-end: 0;
 }
 
 .pipeline-phase {

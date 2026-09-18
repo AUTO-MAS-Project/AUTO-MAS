@@ -1,9 +1,28 @@
 // 活动关批量指派表的纯逻辑：槽位行推导、用户注入状态判定。
-// 排序与判玉规则必须与后端 _resolve_activity_stage / getStage 保持同锚。
+// 共享原语（判玉/排序/材料白名单）在 @/utils/activityStage，本模块只保留
+// 计划表页特有的槽位行与用户行模型。
 
 import type { ActivityItem } from '@/types/home'
+import {
+  collectMaterialOptions,
+  formatActivityTime,
+  isJadeStage,
+  readActivityMeta,
+  resolveIntentStage,
+  slotKeyOfIntent,
+  stageNumber,
+} from '@/utils/activityStage'
 
 export type { ActivityItem } from '@/types/home'
+export {
+  collectMaterialOptions,
+  formatActivityTime,
+  isJadeStage,
+  readActivityMeta,
+  resolveIntentStage,
+  slotKeyOfIntent,
+  stageNumber,
+}
 
 /** 派生表的用户行（来自 MAA 脚本用户配置扫描） */
 export interface ActivityUserRow {
@@ -34,25 +53,6 @@ export interface StageSlotRow {
   stageMat: string | null
   /** 间隙期预解析（下期关卡，仅预览不注入） */
   notStarted: boolean
-}
-
-/** 槽位键：意图 → 表行归并键 */
-export function slotKeyOfIntent(intent: string): string {
-  if (intent === 'jade') return 'jade'
-  if (intent.startsWith('last:')) return intent
-  if (intent.startsWith('mat:')) return 'mat'
-  return ''
-}
-
-/** 提取关卡码尾部编号（SR-8 → 8），与后端 _stage_number_key 一致 */
-export function stageNumber(value: string): number {
-  const match = /(\d+)$/.exec(value)
-  return match ? parseInt(match[1], 10) : -1
-}
-
-/** 判玉：原始掉落文本含「玉」（与后端一致，归一化 Drop 不可靠） */
-export function isJadeStage(stage: Pick<ActivityItem, 'RawDrop' | 'Drop'>): boolean {
-  return (stage.RawDrop ?? '').includes('玉')
 }
 
 /**
@@ -149,72 +149,4 @@ export function resolveUserInjectStatus(
     return { willInject: false, reason: 'no-match' }
   }
   return { willInject: true, reason: 'ok' }
-}
-
-/** 意图 → 关卡码（与后端 _resolve_activity_stage 同语义，供状态列展示） */
-export function resolveIntentStage(
-  intent: string,
-  stages: ActivityItem[],
-): string | null {
-  if (!intent) return null
-  if (intent === 'jade') {
-    return stages.find(stage => isJadeStage(stage))?.Value ?? null
-  }
-  if (intent.startsWith('last:')) {
-    const index = parseInt(intent.slice(5), 10)
-    if (!Number.isFinite(index) || index < 1) return null
-    const ranked = stages
-      .filter(stage => !isJadeStage(stage))
-      .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
-    return ranked[index - 1]?.Value ?? null
-  }
-  if (intent.startsWith('mat:')) {
-    const materialId = intent.slice(4)
-    return stages.find(stage => (stage.RawDrop ?? '') === materialId)?.Value ?? null
-  }
-  return null
-}
-
-/** 材料白名单：当前数据里作为活动掉落出现过的材料（本期 + 下期预览，各服并集） */
-export function collectMaterialOptions(
-  stageByServer: Record<string, ActivityItem[]>,
-): Array<{ label: string; value: string }> {
-  const seen = new Map<string, string>()
-  for (const stages of Object.values(stageByServer)) {
-    for (const stage of stages) {
-      const raw = stage.RawDrop ?? ''
-      if (raw && /^\d+$/.test(raw) && !seen.has(raw)) {
-        seen.set(raw, stage.DropName || raw)
-      }
-    }
-  }
-  return [...seen.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1], 'zh-Hans-CN'))
-    .map(([value, label]) => ({ label: `${label}（${value}）`, value }))
-}
-
-/** 活动元信息（名称/起止文本）取自该组关卡第一条的 Activity 描述 */
-export interface ActivityMeta {
-  name: string
-  startText: string
-  expireText: string
-}
-
-export function readActivityMeta(stages: ActivityItem[]): ActivityMeta | null {
-  const activity = stages[0]?.Activity
-  if (!activity?.StageName) return null
-  return {
-    name: activity.StageName,
-    startText: formatActivityTime(activity.UtcStartTime, activity.TimeZone),
-    expireText: formatActivityTime(activity.UtcExpireTime, activity.TimeZone),
-  }
-}
-
-/** 按活动时区格式化 UTC 时间为 MM-DD HH:mm */
-export function formatActivityTime(utcText: string, timeZone: number): string {
-  const parsed = new Date(`${utcText.replace(/\//g, '-')}Z`)
-  if (Number.isNaN(parsed.getTime())) return utcText
-  const shifted = new Date(parsed.getTime() + (timeZone ?? 8) * 3600_000)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`
 }

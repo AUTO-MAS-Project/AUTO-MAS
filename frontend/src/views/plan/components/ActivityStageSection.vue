@@ -442,14 +442,17 @@ const chipTitle = (item: UserSlotItem): string => blockingText(item)
 // ==================== 自定义材料槽 ====================
 
 const materialOptions = computed(() =>
-  collectMaterialOptions({
-    ...Object.fromEntries(
-      Object.entries(activityByServer.value).map(([server, stages]) => [server, stages]),
+  collectMaterialOptions(
+    Object.fromEntries(
+      Object.keys(activityByServer.value).map(server => [
+        server,
+        [
+          ...(activityByServer.value[server] ?? []),
+          ...(previewByServer.value[server] ?? []),
+        ],
+      ]),
     ),
-    ...Object.fromEntries(
-      Object.entries(previewByServer.value).map(([server, stages]) => [server, stages]),
-    ),
-  }),
+  ),
 )
 
 const matSlotUsers = computed(() => usersInSlot('mat'))
