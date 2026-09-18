@@ -289,7 +289,7 @@ class _UpdateHandler:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
 
         if source == "GitHub":
-            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         if source == "MirrorChyan":
             mirror_url = (
@@ -299,14 +299,14 @@ class _UpdateHandler:
             )
             if mirror_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
             return mirror_url
 
         if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         if source == "CNB":
-            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
