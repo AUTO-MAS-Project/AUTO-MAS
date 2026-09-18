@@ -1706,6 +1706,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"title={selected.windowName}"
                 )
                 self._note_resolution_override_skipped()
+                self._note_launch_arguments_skipped()
                 await self._activate_desktop_game_window(game_path)
                 return
 
