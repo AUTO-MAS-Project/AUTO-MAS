@@ -935,6 +935,11 @@ export default {
     readInterface: '读取 interface',
     debug: '调试',
     accountSwitchingMethod: '账号切换方法',
+    accountSwitchMethodMas: 'MAS 自建切号',
+    accountSwitchMethodMaaend: 'MAAEND 内置切号',
+    maaendMasAccountSwitchWarningTitle: 'MAS 自建切号风险提示',
+    maaendMasAccountSwitchWarning:
+      'MAS 自建切号会导致滑索数据混杂，建议禁用「导入/更新滑索坐标」功能后再使用。',
     giveUpAfterThis: '超过该次数仍失败则终止',
     pickGameResourceThis: '选择当前用户使用的游戏资源',
     clickSaveConfigurationWhen: '配置完成后，点击“保存配置”结束本次会话。',
