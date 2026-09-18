@@ -132,7 +132,9 @@ class _UpdateHandler:
             return True
         finally:
             self.is_switching_source = False
-            if self.is_locked and (self.download_task is None or self.download_task.done()):
+            if self.is_locked and (
+                self.download_task is None or self.download_task.done()
+            ):
                 self.is_locked = False
 
     def _cleanup_download(self) -> None:
@@ -154,19 +156,19 @@ class _UpdateHandler:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
 
         if source == "GitHub":
-            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Setup-{self.remote_version}-x64.zip"
 
         if source == "MirrorChyan":
             if self.mirror_chyan_download_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{self.remote_version}-x64.zip"
             return self.mirror_chyan_download_url
 
         if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{self.remote_version}-x64.zip"
 
         if source == "CNB":
-            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{self.remote_version}/AUTO-MAS-Setup-{self.remote_version}-x64.zip"
 
         raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
