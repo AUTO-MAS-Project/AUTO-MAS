@@ -53,6 +53,12 @@
           @finish-edit-plan-name="finishEditPlanName"
           @mode-change="onModeChange"
         >
+          <!-- MAA 计划表：活动关批量指派表（派生视图，位于计划表本体上方） -->
+          <ActivityStageSection
+            v-if="currentPlanDescriptor.createType === 'MaaPlan'"
+            :plan-id="activePlanId"
+            :plan-names="planNameById"
+          />
           <!-- 动态渲染不同类型的表格 -->
           <component
             :is="currentPlanDescriptor.tableComponent"
@@ -91,6 +97,7 @@ import {
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
+import ActivityStageSection from './components/ActivityStageSection.vue'
 
 const { t } = useI18n()
 
@@ -112,6 +119,10 @@ interface PlanListItem {
 const planList = ref<PlanListItem[]>([])
 const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
+
+const planNameById = computed(() =>
+  Object.fromEntries(planList.value.map(plan => [plan.id, plan.name])),
+)
 
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')

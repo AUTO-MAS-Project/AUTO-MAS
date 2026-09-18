@@ -612,6 +612,8 @@ export interface User {
     Stage_3: string
     Stage_Remain: string
     Status: boolean
+    /** 快速配置：独立于配置来源的用户级开关 */
+    IfQuickConfig?: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
   Notify: {
