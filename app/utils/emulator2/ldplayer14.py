@@ -41,7 +41,7 @@ from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 from app.utils.platform import IS_WINDOWS
 
-from .adb import parse_adb_devices, resolve_serial
+from .adb import candidate_serial, parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
 from .bosskey import BossKey, read_boss_key
 from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
@@ -508,6 +508,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             return False
 
         foreign = False
+        marker = ""
         for package in _FOREIGN_MARKER_PACKAGES:
             try:
                 result = await ProcessRunner.run_process(
@@ -527,6 +528,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             output = str(getattr(result, "stdout", "") or "")
             if is_package_present(output):
                 foreign = True
+                marker = package
                 break
             if not is_package_missing(output):
                 # 「device not found」「offline」这类：设备根本没连上，判不了归属，
@@ -539,9 +541,10 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             # 只在缓存未命中时说一次：getInfo 会被状态接口反复轮询，
             # 每轮都记一条会把日志刷满
             logger.warning(
-                f"ADB 序列号 {serial} 实际连到的是别家模拟器，不能当作雷电实例使用。"
-                f"MuMu 会占用回环 5555 端口，正好是雷电 0 号的端口；"
-                f"请避免与 MuMu 同时运行，或改用 1 号及以后的实例"
+                f"ADB 序列号 {serial} 实际连到的是别家模拟器（装着 {marker}），"
+                f"不能当作雷电实例使用。MuMu 开着时就会这样：它的 127.0.0.1:16384 会出现在"
+                f" adb 设备列表里，还会占用回环 5555 端口（雷电 0 号的端口）；"
+                f"跑雷电任务时请避免同时开着 MuMu，0 号实例改用 1 号及以后的"
             )
         return foreign
 
@@ -573,20 +576,38 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
 
         resolved: dict[str, DeviceInfo] = {}
         for native_index, info in result.items():
+            candidate = candidate_serial(native_index)
+
+            # 只核对、只认领在线实例：关着的和正在启动的 adb 里本来就没有它，
+            # 核对只会得到「device not found」（而且启动期间查出的结论会被缓存，等它
+            # 真上线时反而把地址清空）；认领则只会把别家设备挂到一台没开的实例名下——
+            # 2026-09-17 状态轮询就这样给关着的五台实例各刷了两千多条「认领为 16384」。
+            if info.status != DeviceStatus.ONLINE:
+                resolved[native_index] = DeviceInfo(
+                    title=info.title, status=info.status, adb_address=candidate
+                )
+                continue
+
             others = [i for i in all_indexes if str(i) != str(native_index)]
             outcome = resolve_serial(native_index, serials, others)
             address = outcome.serial
 
-            # 只核对在线实例：关着的和正在启动的 adb 连不上，查了只会得到
-            # 「device not found」；而且启动期间查出的结论会被缓存，等它真上线时
-            # 反而把地址清空。
-            if info.status == DeviceStatus.ONLINE and await self._is_foreign_serial(
-                address
-            ):
-                # 宁可交白卷也不交错的：把别家的设备当成本实例发出去，后面每一条
-                # adb 操作（连接、装包、启动应用）都会打到另一台模拟器上，
-                # 而日志还显示「核对通过」。原因由 _is_foreign_serial 记一次。
-                address = ""
+            if await self._is_foreign_serial(address):
+                if outcome.source == "recovered":
+                    # 认领错了：别家设备恰好是唯一没人认领的那台，本实例的 adbd 只是
+                    # 还没起来。回落公式值，让后面的等待启动去等它上线；置空会让
+                    # MAA 直接拿到空地址报连接失败（2026-09-18 15:00 Mirror 那次）。
+                    logger.info(
+                        f"雷电实例 {native_index} 认领到的 {address} 是别家模拟器，"
+                        f"改回约定的 {candidate}"
+                    )
+                    address = candidate
+                else:
+                    # 公式值本身连到了别家：这台实例的端口被占了。宁可交白卷也不交错的：
+                    # 把别家的设备当成本实例发出去，后面每一条 adb 操作（连接、装包、
+                    # 启动应用）都会打到另一台模拟器上，而日志还显示「核对通过」。
+                    # 原因由 _is_foreign_serial 记一次。
+                    address = ""
             elif outcome.source == "recovered":
                 logger.warning(
                     f"雷电实例 {native_index} 的 ADB 序列号与约定不符，"
