@@ -132,7 +132,7 @@
                 />
               </template>
               <a-select
-                :value="displayActivityStageIndex"
+                :value="displayActivityStageIntent"
                 :options="activityStageOptions"
                 :loading="activityStageLoading"
                 :disabled="loading || activityStageLoading || activityStageOptions.length === 0"
@@ -383,10 +383,10 @@ const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
   loading: boolean
   stageOptions: any[]
-  activityStageOptions: Array<{ label: string; value: number }>
+  activityStageOptions: Array<{ label: string; value: string }>
   activityStageLoading: boolean
   activityStageError: string
-  displayActivityStageIndex?: number
+  displayActivityStageIntent?: string
   depotItemOptions: SelectOption[]
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
@@ -469,7 +469,8 @@ const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
 
 const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
 
-const handleActivityStageChange = (value: number) => emitSave('Task.ActivityStageIndex', value)
+const handleActivityStageChange = (value: string) =>
+  emitSave('Task.ActivityStageIntent', value)
 
 const activitySummary = computed(() =>
   summarizeActivity({
@@ -477,7 +478,7 @@ const activitySummary = computed(() =>
     loading: props.activityStageLoading,
     optionCount: props.activityStageOptions.length,
     stageLabel: props.activityStageOptions.find(
-      option => option.value === props.displayActivityStageIndex
+      option => option.value === props.displayActivityStageIntent
     )?.label,
     medicine: formData.value.Task.ActivityMedicineNumb ?? 0,
   })

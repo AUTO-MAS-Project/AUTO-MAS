@@ -52,9 +52,9 @@ export type MaaUserConfig_Task = {
      */
     IfActivityFirst?: (boolean | null);
     /**
-     * 优先刷取的活动关卡序号
+     * 活动关选关意图（jade=搓玉 / last:N=倒数第N关 / mat:ID=指定材料，空=未指派）
      */
-    ActivityStageIndex?: (number | null);
+    ActivityStageIntent?: (string | null);
     /**
      * 活动关优先任务吃理智药数量
      */

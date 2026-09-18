@@ -1587,8 +1587,9 @@ class MaaUserConfig_Task(BaseModel):
     IfActivityFirst: Optional[bool] = Field(
         default=None, description="活动期间优先刷活动关"
     )
-    ActivityStageIndex: Optional[int] = Field(
-        default=None, description="优先刷取的活动关卡序号"
+    ActivityStageIntent: Optional[str] = Field(
+        default=None,
+        description="活动关选关意图（jade=搓玉 / last:N=倒数第N关 / mat:ID=指定材料，空=未指派）",
     )
     ActivityMedicineNumb: Optional[int] = Field(
         default=None, description="活动关优先任务吃理智药数量"

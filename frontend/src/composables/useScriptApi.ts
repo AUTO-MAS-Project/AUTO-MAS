@@ -276,10 +276,10 @@ export function useScriptApi() {
                           maaUserData.Task?.IfActivityFirst !== undefined
                             ? maaUserData.Task.IfActivityFirst
                             : false,
-                        ActivityStageIndex:
-                          maaUserData.Task?.ActivityStageIndex !== undefined
-                            ? maaUserData.Task.ActivityStageIndex
-                            : 1,
+                        ActivityStageIntent:
+                          maaUserData.Task?.ActivityStageIntent !== undefined
+                            ? maaUserData.Task.ActivityStageIntent
+                            : '',
                         ActivityMedicineNumb:
                           maaUserData.Task?.ActivityMedicineNumb !== undefined
                             ? maaUserData.Task.ActivityMedicineNumb

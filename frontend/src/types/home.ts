@@ -39,6 +39,8 @@ interface ActivityInfo {
 export interface ActivityItem {
   Display: string
   Value: string
+  /** 原始掉落文本（搓玉检测与材料匹配用；归一化 Drop 与真固源岩线同 ID） */
+  RawDrop?: string
   Drop: string
   DropName: string
   Activity: ActivityInfo

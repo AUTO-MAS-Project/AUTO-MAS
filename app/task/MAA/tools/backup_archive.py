@@ -44,6 +44,7 @@
 import json
 from pathlib import Path
 
+from app.models.config import ActivityStageIntentValidator
 from app.utils import get_logger
 from app.utils.config_archive import (
     MODE_FILE_NAME,
@@ -145,7 +146,7 @@ _OVERLAY_TASK_KEYS = (
     "IfDepotMaintain",
     "IfGreenTicketStore",
     "IfActivityFirst",
-    "ActivityStageIndex",
+    "ActivityStageIntent",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
@@ -194,7 +195,7 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "StageMode",
     "AnnihilationStartWeekday",
     "IfActivityFirst",
-    "ActivityStageIndex",
+    "ActivityStageIntent",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
@@ -221,7 +222,7 @@ _OVERLAY_FIELD_LABELS = {
     "IfDepotMaintain": "库存保持",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
-    "ActivityStageIndex": "活动关卡序号",
+    "ActivityStageIntent": "活动关选关意图",
     "ActivityMedicineNumb": "活动理智药",
     "IfCultivate": "干员养成",
     "CultivateTargets": "养成目标",
@@ -267,6 +268,18 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 """枚举字段取值中文词表（对齐编辑页选项；未知取值显示原文）"""
 
 
+def _intent_display(value: str) -> str:
+    """活动关意图转人话（jade / last:N / mat:ID，空串=未指派）。"""
+
+    if value == "jade":
+        return "搓玉"
+    if value.startswith("last:"):
+        return f"倒数第{value[5:]}关"
+    if value.startswith("mat:"):
+        return f"材料{value[4:]}"
+    return value or "未指派"
+
+
 def read_overlay_values(config) -> dict:
     """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
 
@@ -293,6 +306,14 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     for key, value in overlay.items():
         if key in _OVERLAY_PREVIEW_ONLY_KEYS:
             continue
+        # 旧版侧车的活动关卡序号按同锚转为意图键，恢复旧备份不丢活动关指派
+        if key == "ActivityStageIndex":
+            if "ActivityStageIntent" in overlay:
+                continue
+            value = ActivityStageIntentValidator().correct(value)
+            if not value:
+                continue
+            key = "ActivityStageIntent"
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
     return grouped
 
@@ -770,6 +791,9 @@ def _overlay_value(key: str, value) -> str:
         text = enum.get(str(value), str(value))
     elif key == "StageMode":
         text = "固定" if str(value) == "Fixed" else "计划表"
+    elif key == "ActivityStageIntent":
+        # 意图键转人话（搓玉 / 倒数第N关 / 材料ID），与编辑页词表同口径
+        text = _intent_display(str(value))
     elif key == "SeriesNumb":
         text = {"0": "AUTO", "-1": "不切换"}.get(str(value), str(value))
     elif key.startswith("Stage"):
@@ -837,7 +861,23 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
     def _rows(order: tuple[str, ...]) -> list[dict]:
         rows: list[dict] = []
         for key in order:
-            if key not in overlay or key not in _OVERLAY_FIELD_LABELS:
+            if key not in _OVERLAY_FIELD_LABELS:
+                continue
+            if key == "ActivityStageIntent" and key not in overlay:
+                # 旧版侧车只有序号键：预览按恢复时同一规则翻译，避免
+                # 「恢复会生效的值预览里看不到」
+                translated = ActivityStageIntentValidator().correct(
+                    overlay.get("ActivityStageIndex")
+                )
+                if translated:
+                    rows.append(
+                        {
+                            "key": _OVERLAY_FIELD_LABELS[key],
+                            "value": _intent_display(translated),
+                        }
+                    )
+                continue
+            if key not in overlay:
                 continue
             if key == "InfrastName" and overlay.get("InfrastMode") != "Custom":
                 continue  # 非自定义模式下基建配置名无意义（虚拟字段回退文案）

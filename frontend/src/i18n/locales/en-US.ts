@@ -289,7 +289,7 @@ export default {
       'A separate task in the daily run that goes before the normal sanity combat.',
     maaEventStage: 'Event stage',
     maaEventStageHint:
-      'Saved by position in the list. After an event update the stage at the same position is picked; if that position is gone, it falls back to the first one.',
+      'Saves the farming intent (jade / Nth-highest stage / specific material). Each new event is resolved by the same intent; when nothing matches, the stage is skipped with a notice.',
     maaPickEventStage: 'Pick an event stage',
     maaNoEventStage: 'No event stages to farm right now',
     maaEventPotion: 'Event stage potions',

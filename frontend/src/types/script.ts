@@ -643,7 +643,7 @@ export interface User {
     IfStartUp: boolean
     Queue?: unknown
     IfActivityFirst?: boolean
-    ActivityStageIndex?: number
+    ActivityStageIntent?: string
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     IfGreenTicketStore?: boolean

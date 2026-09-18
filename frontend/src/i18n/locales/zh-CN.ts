@@ -286,7 +286,7 @@ export default {
     maaEventFirst: '活动关优先',
     maaEventFirstHint: '这是日常流程中的独立合成任务，会在普通理智作战之前执行',
     maaEventStage: '活动关卡',
-    maaEventStageHint: '按列表序号保存；活动更新后自动选择相同序号的新关卡，序号失效时回退到第一项',
+    maaEventStageHint: '保存选关意图（搓玉 / 倒数第N关 / 指定材料），下期活动按同一意图自动解析，本期无匹配关时跳过并提示',
     maaPickEventStage: '请选择活动关卡',
     maaNoEventStage: '当前无可刷活动关',
     maaEventPotion: '活动关理智药',

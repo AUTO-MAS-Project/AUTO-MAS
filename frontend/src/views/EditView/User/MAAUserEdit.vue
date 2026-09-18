@@ -93,7 +93,7 @@
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
-            :display-activity-stage-index="displayActivityStageIndex"
+            :display-activity-stage-intent="displayActivityStageIntent"
             :depot-item-options="depotItemOptions"
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
@@ -343,7 +343,7 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
-const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
+const activityStageOptions = ref<Array<{ label: string; value: string }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
@@ -621,7 +621,7 @@ const getDefaultMAAUserData = () => ({
     IfCultivate: false,
     IfGreenTicketStore: false,
     IfActivityFirst: false,
-    ActivityStageIndex: 1,
+    ActivityStageIntent: '',
     ActivityMedicineNumb: 0,
     DepotMaintainPlans: '[]',
     CultivateTargets: '[]',
@@ -657,11 +657,13 @@ const formData = reactive({
   ...getDefaultMAAUserData(),
 })
 
-const displayActivityStageIndex = computed(() => {
-  const configuredIndex = formData.Task.ActivityStageIndex
-  return activityStageOptions.value.some(option => option.value === configuredIndex)
-    ? configuredIndex
-    : activityStageOptions.value[0]?.value
+const displayActivityStageIntent = computed(() => {
+  const configuredIntent = formData.Task.ActivityStageIntent
+  // 未配置或本期选项对不上（如 API 直写的材料意图）时显示占位符，不假装已选
+  if (!configuredIntent) return undefined
+  return activityStageOptions.value.some(option => option.value === configuredIntent)
+    ? configuredIntent
+    : undefined
 })
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
@@ -954,10 +956,22 @@ const applyServerStageOptions = () => {
     isCustom: false,
   }))
   appendConfiguredCustomStages()
-  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
-    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
-    value: index + 1,
-  }))
+  // 意图值与后端解析同锚：非玉关按关卡号降序编为 last:N，含玉关固定 jade
+  const stageNumber = (value: string) => {
+    const match = /(\d+)$/.exec(value)
+    return match ? parseInt(match[1], 10) : -1
+  }
+  const lastRankByStage = new Map<string, number>()
+  stageOverview.Activity.filter(stage => !(stage.RawDrop ?? '').includes('玉'))
+    .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
+    .forEach((stage, index) => lastRankByStage.set(stage.Value, index + 1))
+  activityStageOptions.value = stageOverview.Activity.map(stage => {
+    const label = `${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`
+    const rank = lastRankByStage.get(stage.Value)
+    return rank
+      ? { label: `倒${rank}. ${label}`, value: `last:${rank}` }
+      : { label: `搓玉 · ${label}`, value: 'jade' }
+  })
 }
 
 const loadActivityStageOptions = async () => {
