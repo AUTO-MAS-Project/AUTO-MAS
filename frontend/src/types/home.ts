@@ -61,6 +61,8 @@ interface StageOption {
 
 interface StageOverview {
   Activity: ActivityItem[]
+  /** 未开始的下期活动关卡（仅预览，不参与注入） */
+  Preview: ActivityItem[]
   Resource: ResourceItem[]
   Options: StageOption[]
 }

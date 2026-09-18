@@ -5006,53 +5006,64 @@ class GlobalConfig(ConfigBase):
                 stage_data_by_server = {"Official": raw_stage_data}
 
             all_stage_data = {}
+
+            def _stage_drop_entry(stage: dict, activity: dict) -> dict:
+                if stage["Drop"] in MATERIALS_MAP:
+                    drop_id = stage["Drop"]
+                elif "玉" in stage["Drop"]:
+                    drop_id = "30012"
+                else:
+                    drop_id = "NotFound"
+                return {
+                    "Display": stage["Display"],
+                    "Value": stage["Value"],
+                    # 原始掉落文本：搓玉检测与材料精确匹配必须用它，
+                    # 归一化 30012 与真固源岩线同 ID
+                    "RawDrop": stage["Drop"],
+                    "Drop": drop_id,
+                    "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
+                    "Activity": activity,
+                }
+
             for server, server_stage_data in stage_data_by_server.items():
                 activity_stage_drop_info = []
                 activity_stage_combox = []
+                activity_stage_preview = []
 
                 for side_story in server_stage_data.values():
                     activity = side_story["Activity"]
                     activity_timezone = timezone(
                         timedelta(hours=activity.get("TimeZone", 8))
                     )
-                    if (
-                        datetime.strptime(
-                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                        < datetime.now(tz=activity_timezone)
-                        < datetime.strptime(
-                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                    ):
+                    activity_start = datetime.strptime(
+                        activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    ).replace(tzinfo=activity_timezone)
+                    activity_expire = datetime.strptime(
+                        activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    ).replace(tzinfo=activity_timezone)
+                    now = datetime.now(tz=activity_timezone)
+                    if activity_start < now < activity_expire:
                         for stage in side_story["Stages"]:
                             activity_stage_combox.append(
                                 {"label": stage["Display"], "value": stage["Value"]}
                             )
-
                             if "SSReopen" not in stage["Display"]:
-                                if stage["Drop"] in MATERIALS_MAP:
-                                    drop_id = stage["Drop"]
-                                elif "玉" in stage["Drop"]:
-                                    drop_id = "30012"
-                                else:
-                                    drop_id = "NotFound"
-
                                 activity_stage_drop_info.append(
-                                    {
-                                        "Display": stage["Display"],
-                                        "Value": stage["Value"],
-                                        # 原始掉落文本：搓玉检测与材料精确匹配
-                                        # 必须用它，归一化 30012 与真固源岩线同 ID
-                                        "RawDrop": stage["Drop"],
-                                        "Drop": drop_id,
-                                        "DropName": MATERIALS_MAP.get(
-                                            stage["Drop"], stage["Drop"]
-                                        ),
-                                        "Activity": activity,
-                                    }
+                                    _stage_drop_entry(stage, activity)
                                 )
+                    elif activity_expire > now and now < activity_start:
+                        # 未开始的活动进预览（下期提前布阵），仅显示不注入；
+                        # SSReopen 一键复刻伪关与剧情关不进槽位
+                        activity_stage_preview.extend(
+                            _stage_drop_entry(stage, activity)
+                            for stage in side_story["Stages"]
+                            if "SSReopen" not in stage["Display"]
+                        )
 
-                stage_data = {"Info": activity_stage_drop_info}
+                stage_data = {
+                    "Info": activity_stage_drop_info,
+                    "Preview": activity_stage_preview,
+                }
 
                 for day in range(0, 8):
                     res_stage = []

@@ -63,6 +63,13 @@ def _statistic_text(message: dict) -> str:
         else ""
     )
 
+    # 本轮开了活动关优先时附解析摘要（解析到哪关/哪些没匹配）
+    activity_text = (
+        f"活动关: {message['activity_stage']}\n"
+        if message.get("activity_stage")
+        else ""
+    )
+
     return (
         f"开始时间: {message['start_time']}\n"
         f"结束时间: {message['end_time']}\n"
@@ -70,6 +77,7 @@ def _statistic_text(message: dict) -> str:
         f"回复时间: {message.get('sanity_full_at', '未知')}\n"
         f"MAA执行结果: {message['maa_result']}\n"
         f"{cultivate_text}"
+        f"{activity_text}"
         f"{recruit_text}\n"
         f"{drop_text}"
     )

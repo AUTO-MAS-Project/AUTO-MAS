@@ -713,6 +713,8 @@ class AutoProxyTask(TaskExecuteBase):
     _cultivate_collected_depot: bool = False
     _cultivate_collected_oper_box: bool = False
     _depot_maintain_suppressed: bool = False
+    # 本轮活动关解析摘要（注入时即时 WS 提示；final_task 再随统计报告带出）
+    _activity_stage_summary: str = ""
 
     def __init__(
         self,
@@ -789,6 +791,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
+        # 本轮活动关解析摘要（注入时写入，final_task 随统计报告带出）
+        self._activity_stage_summary = ""
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -1364,9 +1368,37 @@ class AutoProxyTask(TaskExecuteBase):
                 stage_info.get("Activity", []),
                 self.cur_user_config.get("Task", "ActivityStageIntent"),
             )
-            logger.info(
-                f"用户 {self.cur_user_item.name} 活动关解析: {activity_summary}"
-            )
+            # 失配一律整期不注入（废除旧版越界静默回退第一关），结果与通知可见
+            if activity_stage is None:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 活动关未注入: {activity_summary}"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 活动关未注入："
+                            f"{activity_summary}"
+                        ),
+                    ),
+                )
+            else:
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 活动关解析: {activity_summary}"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="info",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 活动关：{activity_summary}"
+                        ),
+                    ),
+                )
+            self._activity_stage_summary = activity_summary
 
         # 养成计划注入，仅 Routine 模式（方案决策 27）：剿灭/绿票轮不注入。
         # 必须在下方 MAA_TASKS 装配循环之前执行：接管抑制靠提前置
@@ -1981,6 +2013,10 @@ class AutoProxyTask(TaskExecuteBase):
             statistics["cultivate_achievement"] = "、".join(
                 self._cultivate_achievement_summary
             )
+
+        # 活动关解析摘要随统计报告带出（本轮未开活动关优先时为空不占位）
+        if self._activity_stage_summary:
+            statistics["activity_stage"] = self._activity_stage_summary
 
         # 判断是否成功
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
