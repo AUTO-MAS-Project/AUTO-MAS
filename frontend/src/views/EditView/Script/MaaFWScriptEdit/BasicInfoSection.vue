@@ -22,9 +22,9 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwProjectDirectory')">
+            <a-tooltip :title="t('edit.maafwEmbeddedSourceHint')">
               <span class="form-label">
-                {{ t('edit.localProjectDirectory') }}
+                {{ t('edit.maafwEmbeddedSourceDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -41,7 +41,7 @@
             <a-button
               size="large"
               class="path-button"
-              :disabled="interfaceLoading || updateApplying"
+              :disabled="interfaceLoading || updateApplying || embeddedBusy"
               @click="emit('select-path')"
             >
               <template #icon>
@@ -53,6 +53,79 @@
         </a-form-item>
       </a-col>
     </a-row>
+
+    <!-- MFW 脚本一律在副本上跑：AUTO-MAS 按 interface 白名单投影一份瘦副本，运行、
+         更新都在副本上；副本目录由脚本 ID 推出，不展示为可编辑项；来源目录（Info.Path）
+         只是导入的来源，导入完成后可以删。选了目录才有副本，这块也才有东西可看。 -->
+    <div v-if="maafwConfig.Info.Path" class="embedded-panel">
+      <div class="embedded-head">
+        <a-tooltip :title="t('edit.maafwEmbeddedHint')">
+          <span class="form-label">
+            {{ t('edit.maafwEmbeddedTitle') }}
+            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+          </span>
+        </a-tooltip>
+        <a-tooltip :title="t('edit.maafwEmbeddedReimportHint')">
+          <a-button
+            size="small"
+            :loading="embeddedBusy"
+            :disabled="!embeddedStatus.sourceExists || interfaceLoading || updateApplying"
+            @click="emit('reimport-embedded')"
+          >
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+            {{ t('edit.maafwEmbeddedReimport') }}
+          </a-button>
+        </a-tooltip>
+      </div>
+      <div class="embedded-meta">
+        <a-tag v-if="embeddedStatus.copyHealthy" color="success" class="embedded-tag">
+          {{ t('edit.maafwEmbeddedCopyHealthy') }}
+        </a-tag>
+        <a-tag v-else color="warning" class="embedded-tag">
+          {{
+            embeddedStatus.sourceExists
+              ? t('edit.maafwEmbeddedCopyMissing')
+              : t('edit.maafwEmbeddedCopyAndSourceMissing')
+          }}
+        </a-tag>
+        <span v-if="embeddedStatus.report" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedSaved', {
+              percent: (100 - (embeddedStatus.report.savedPercent ?? 0)).toFixed(1),
+              source: formatEmbeddedBytes(embeddedStatus.report.sourceSizeBytes),
+              copy: formatEmbeddedBytes(embeddedStatus.report.payloadSizeBytes),
+            })
+          }}
+        </span>
+        <span v-if="embeddedShellFamilies" class="embedded-meta-item">
+          {{ t('edit.maafwEmbeddedShell', { shell: embeddedShellFamilies }) }}
+        </span>
+        <span v-if="embeddedStatus.report?.bundledMaaFWVersion" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedRuntime', { version: embeddedStatus.report.bundledMaaFWVersion })
+          }}
+        </span>
+        <span v-if="embeddedStatus.report?.bundledPythonVersion" class="embedded-meta-item">
+          {{
+            t('edit.maafwEmbeddedPython', { version: embeddedStatus.report.bundledPythonVersion })
+          }}
+        </span>
+        <span v-if="embeddedStatus.sourceVersion" class="embedded-meta-item">
+          {{ t('edit.maafwEmbeddedSourceVersion', { version: embeddedStatus.sourceVersion }) }}
+        </span>
+        <span v-if="embeddedImportedAt" class="embedded-meta-item">
+          {{ t('edit.maafwEmbeddedImportedAt', { time: embeddedImportedAt }) }}
+        </span>
+        <span
+          v-if="!embeddedStatus.sourceExists && embeddedStatus.copyHealthy"
+          class="embedded-meta-item embedded-meta-note"
+        >
+          {{ t('edit.maafwEmbeddedSourceMissing') }}
+        </span>
+      </div>
+    </div>
 
     <!-- 左边 interface 概览表（表头是项目名与简介），右边运行环境准备面板：
          结论直接作为日志的最后一行用强调色写出来，不另起状态行 -->
@@ -81,7 +154,7 @@
           <a-button
             size="small"
             :loading="interfaceLoading || envPreparing"
-            :disabled="!maafwConfig.Info.Path || updateApplying"
+            :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
             @click="emit('preview-interface')"
           >
             <template #icon>
@@ -134,7 +207,7 @@
       <a-button
         type="primary"
         size="large"
-        :disabled="interfaceLoading || updateApplying"
+        :disabled="interfaceLoading || updateApplying || embeddedBusy"
         @click="emit('select-path')"
       >
         <template #icon>
@@ -156,9 +229,11 @@ import {
   InboxOutlined,
   LoadingOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
   ToolOutlined,
 } from '@ant-design/icons-vue'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
+import { formatEmbeddedBytes, type MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
 
 /** 一次准备的结果：首次准备 / 更新了已有环境 / 项目没变直接沿用。 */
 export type MaaFWEnvOutcome = 'prepared' | 'updated' | 'cached'
@@ -184,13 +259,30 @@ const props = defineProps<{
   envLogs: string[]
   envAgents: Array<{ runtimeKind?: string | null; executable: string }>
   envOutcome: MaaFWEnvOutcome | null
+  /** 内嵌副本状态：由父组件从后端拉取；导入几十到几百 MB 时 busy 为 true。 */
+  embeddedStatus: MaaFWEmbeddedStatus
+  embeddedBusy: boolean
 }>()
 
 const emit = defineEmits<{
   change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
   'select-path': []
   'preview-interface': []
+  'reimport-embedded': []
 }>()
+
+const embeddedShellFamilies = computed(() =>
+  (props.embeddedStatus.report?.shellFamilies ?? []).join(' / ')
+)
+
+// 后端给的是带时区的 ISO 文本；界面上只要到分钟。
+const embeddedImportedAt = computed(() => {
+  const raw = props.embeddedStatus.importedAt
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+})
 
 const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
   if (props.envPreparing) return 'running'
@@ -246,6 +338,45 @@ watch(
 <style scoped>
 .form-section {
   margin-bottom: 40px;
+}
+
+.embedded-panel {
+  margin: -8px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.embedded-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.embedded-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.embedded-tag {
+  margin: 0;
+}
+
+.embedded-meta-item {
+  white-space: nowrap;
+}
+
+.embedded-meta-note {
+  color: var(--ant-color-text-tertiary);
+  white-space: normal;
 }
 
 .section-header {

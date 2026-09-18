@@ -1360,7 +1360,6 @@ export default {
     maximumLines: 'Maximum lines',
     youHaveUnsavedChanges: 'You have unsaved changes',
     server: 'Server',
-    localProjectDirectory: 'Local project directory',
     readExtractionPatternReference: 'Read the extraction-pattern reference',
     rootPathSelected: 'Root path selected',
     rootPathSelectedOther:
@@ -1642,11 +1641,31 @@ export default {
     pickFolderHoldingM9a2: 'Pick the folder holding M9A',
     pickFolderHoldingMaa2: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc2: 'Pick the folder holding SRC.exe',
-    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
     pickProjectDirectoryContaining:
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
+    maafwEmbeddedTitle: 'Embedded copy',
+    maafwEmbeddedHint:
+      'AUTO-MAS copies only the resources declared in the interface, the Agent and the runtime bundled with the project into its own directory; runs and updates happen on that copy. The source directory is never touched and can be deleted once the import is done; it is only needed for a re-import.',
+    maafwEmbeddedSourceDirectory: 'Source directory',
+    maafwEmbeddedSourceHint:
+      'The copy is imported from this directory; picking another directory re-imports the copy from it, the original is left alone.',
+    maafwEmbeddedCopyHealthy: 'Copy intact',
+    maafwEmbeddedCopyMissing: 'Copy missing; it is rebuilt from the source before the next run',
+    maafwEmbeddedCopyAndSourceMissing:
+      'The copy is missing and the source directory no longer exists: pick an extracted MFW project directory again',
+    maafwEmbeddedSaved: 'The copy is {percent}% of the source ({source} → {copy})',
+    maafwEmbeddedShell: 'Shell: {shell}',
+    maafwEmbeddedRuntime: 'MaaFramework {version} (bundled by the project, copied as is)',
+    maafwEmbeddedPython: 'Agent Python {version} (bundled by the project, copied as is)',
+    maafwEmbeddedSourceVersion: 'Imported from source {version}',
+    maafwEmbeddedImportedAt: 'Imported {time}',
+    maafwEmbeddedSourceMissing:
+      'Source directory no longer exists: the copy keeps running and updating, it just cannot be re-imported',
+    maafwEmbeddedReimport: 'Re-import',
+    maafwEmbeddedReimportHint:
+      'Import the copy again from the current source directory; use it after updating the source by hand.',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:

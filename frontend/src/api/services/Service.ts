@@ -67,6 +67,9 @@ import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWEmbeddedIn } from '../models/MaaFWEmbeddedIn';
+import type { MaaFWEmbeddedReimportIn } from '../models/MaaFWEmbeddedReimportIn';
+import type { MaaFWEmbeddedStatusOut } from '../models/MaaFWEmbeddedStatusOut';
 import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
 import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
@@ -905,6 +908,47 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查看 MFW 脚本的内嵌副本状态
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按来源目录导入（或重新导入）副本
+     * 脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+     *
+     * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
+        requestBody: MaaFWEmbeddedReimportIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/reimport',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -116,6 +116,9 @@ from app.utils.platform import IS_WINDOWS
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 
+#: 本进程启动时刻；启动清理只碰比它更早的半成品。
+_PROCESS_STARTED_AT = time.time()
+
 logger = get_logger("配置管理")
 
 GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
@@ -843,6 +846,19 @@ class AppConfig(GlobalConfig):
                 await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
             )
 
+            # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
+            if isinstance(new_config, MaaFWConfig):
+                from app.task.MaaFW.tools.embedded.embedded_project import (
+                    clone_embedded_copy,
+                )
+
+                try:
+                    await asyncio.to_thread(
+                        clone_embedded_copy, str(script_id), str(new_uid)
+                    )
+                except Exception as exc:  # noqa: BLE001 - 副本复制失败下次运行会从来源重建
+                    logger.warning(f"复制脚本时复制内嵌副本失败，将按需重建: {exc}")
+
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
                 shutil.copytree(
@@ -935,6 +951,11 @@ class AppConfig(GlobalConfig):
         script_data_dir = Path.cwd() / f"data/{uid}"
         if script_data_dir.exists():
             await asyncio.to_thread(force_rmtree, script_data_dir)
+        # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
+        # 快照），所以这里单独删。
+        embedded_copy = Path.cwd() / "data" / "maafw_projects" / str(uid)
+        if embedded_copy.exists():
+            await asyncio.to_thread(force_rmtree, embedded_copy)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -4761,30 +4782,32 @@ class AppConfig(GlobalConfig):
         from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
             collect_orphan_agent_venvs,
         )
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            resolve_maafw_project_root,
+        )
 
         root = Path.cwd() / "config" / "maafw_agent_venvs"
         if not root.is_dir():
             return
 
+        # 按有效根算存活集合：内嵌脚本的 venv 是按副本路径哈希的，拿来源目录去算
+        # 会把副本的 venv 当孤儿删掉。
         live_paths = [
             path
-            for config in self.ScriptConfig.values()
+            for uid, config in self.ScriptConfig.items()
             if isinstance(config, MaaFWConfig)
-            and (path := str(config.get("Info", "Path") or "").strip())
+            and (path := str(resolve_maafw_project_root(str(uid), config)).strip())
         ]
 
-        # 目录名是 Path.resolve() 之后的路径哈希，而 resolve() 只在路径**当下
-        # 存在**时才展开映射盘 / junction / 符号链接；不存在时原样返回。建 venv
-        # 时项目必然在，算的是展开后的真实路径；开机自启动早于网络盘挂载时，
-        # 这里却只能算出字面路径——名字对不上，存活 venv 就会被当成孤儿删掉。
-        # 分不清的时候不删：只要有一个存活项目此刻不可达，整轮弃权。
-        unreachable = [path for path in live_paths if not Path(path).exists()]
-        if unreachable:
-            logger.info(
-                "MFW 隔离 venv 清理已跳过：以下项目路径当前不可达，"
-                f"无法可靠判定归属: {unreachable[:3]}"
+        # 有效根都是本机 data/ 下的副本：不存在只说明这个脚本还没导入过（新建未选目录、
+        # 升级后没打开过），它名下不可能有 venv，从存活集合里去掉即可；不能像路径模式
+        # 那样「一个不可达就整轮弃权」，否则任何一个空脚本都会永久关掉回收。
+        missing = [path for path in live_paths if not Path(path).exists()]
+        if missing:
+            logger.debug(
+                f"MFW 隔离 venv 清理：{len(missing)} 个脚本还没有副本，不计入存活"
             )
-            return
+            live_paths = [path for path in live_paths if Path(path).exists()]
 
         try:
             orphans = collect_orphan_agent_venvs(root, live_paths)
@@ -4802,6 +4825,121 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    async def clean_maafw_embedded_copies(self) -> None:
+        """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
+
+        导入在 ``.staging/`` 里投影完再换入，进程中途退出会留下半成品；删脚本时
+        副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
+        内容，启动期没有任务在跑，直接清。目录名必须是 uuid 形状才会被当作副本。
+        """
+
+        from app.models.config import MaaFWConfig
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            STAGING_DIR_NAME,
+            embedded_project_dir,
+            embedded_projects_root,
+            remove_tree,
+        )
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+
+        root = embedded_projects_root()
+        if not root.is_dir():
+            return
+        staging = root / STAGING_DIR_NAME
+        if staging.is_dir():
+            for leftover in staging.iterdir():
+                # 后台初始化时 API 已在服务，preview / reimport 可能正往 .staging 里写：
+                # 本进程起来之后才出现的、或该脚本的副本路径正被预约的，都不是半成品。
+                try:
+                    if leftover.stat().st_mtime >= _PROCESS_STARTED_AT:
+                        continue
+                except OSError:
+                    continue
+                reservation = await try_reserve_project_path(
+                    embedded_project_dir(leftover.name[:36])
+                )
+                if reservation is None:
+                    continue
+                await release_project_path(reservation)
+                try:
+                    remove_tree(leftover)
+                except OSError as exc:
+                    logger.warning(
+                        f"MFW 内嵌 staging 半成品清理失败: {leftover} - {exc}"
+                    )
+                    continue
+                logger.info(f"已清理 MFW 内嵌导入半成品: {leftover}")
+        # 存活的副本：脚本还在。删脚本时删副本可能因文件被占用而失败（与别的副本
+        # 共用的库正被映射着），那份留下的副本也在这里收掉。
+        # 但脚本表本身没加载起来（ScriptConfig.json 损坏时 _load_json_file 留下
+        # .corrupt 副本后按空表继续）就不能扫：那会把所有副本当孤儿删光，来源目录
+        # 已被用户清掉的项目从此没得修。
+        if not self._script_config_loaded_intact():
+            logger.warning(
+                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 内嵌副本孤儿清理"
+            )
+            return
+        live = {
+            str(uid)
+            for uid, config in self.ScriptConfig.items()
+            if isinstance(config, MaaFWConfig)
+        }
+        for child in root.iterdir():
+            if child.name == STAGING_DIR_NAME or not child.is_dir():
+                continue
+            try:
+                uuid.UUID(child.name)
+            except ValueError:
+                continue
+            if child.name in live:
+                continue
+            try:
+                remove_tree(child)
+            except OSError as exc:
+                logger.warning(f"MFW 内嵌副本孤儿清理失败: {child} - {exc}")
+                continue
+            logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
+
+    def _script_config_loaded_intact(self) -> bool:
+        """脚本表是空的时候，看配置文件本身是不是真的空：解析失败或文件里明明有
+        脚本却一个都没加载出来，都算没加载起来。"""
+
+        if len(self.ScriptConfig) > 0:
+            return True
+        path = self.ScriptConfig.file
+        if path is None or not path.is_file():
+            return True
+        try:
+            text = path.read_text(encoding="utf-8")
+            data = json.loads(text) if text.strip() else {}
+        except (OSError, ValueError):
+            return False
+        return not (isinstance(data, dict) and data)
+
+    async def clean_maafw_runtime_blobs(self) -> None:
+        """回收没有任何内嵌副本引用的共用运行时文件（只剩库里这一个硬链接的）。
+
+        放在副本清理之后：副本删掉，它引用的 blob 才会变成孤儿。
+        """
+
+        from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
+            RuntimeBlobStore,
+        )
+
+        try:
+            report = RuntimeBlobStore.default().collect_garbage()
+        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
+            logger.warning(f"MFW 共用运行时库回收失败: {exc}")
+            return
+        if report.removed_blobs or report.removed_temps:
+            logger.info(
+                f"已回收 MFW 共用运行时库: {report.removed_blobs} 个文件、"
+                f"{report.removed_bytes / 2**20:.1f} MB，半成品 {report.removed_temps} 个"
+            )
 
     async def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
@@ -4849,13 +4987,19 @@ class AppConfig(GlobalConfig):
             return
 
         from app.models.config import MaaFWConfig
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            resolve_maafw_project_root,
+        )
 
         cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
         deleted_count = 0
-        for script_config in self.ScriptConfig.values():
+        for uid, script_config in self.ScriptConfig.items():
             if not isinstance(script_config, MaaFWConfig):
                 continue
-            project_path = str(script_config.get("Info", "Path") or "").strip()
+            # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
+            project_path = str(
+                resolve_maafw_project_root(str(uid), script_config)
+            ).strip()
             if not project_path:
                 continue
             debug_folder = Path(project_path) / "debug"

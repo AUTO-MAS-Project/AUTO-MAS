@@ -9,7 +9,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`project_path`、`env_cache`、`game_package`、`game_resolution`、
-  `update_progress`）。
+  `update_progress`、`embedded_project`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/automas_maafw_*`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -21,23 +21,64 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 项目目录与运行
 
-- 项目根有两类来源，改语义时要分开数：
-  - **按脚本配置读 `Info.Path`** 的六处：`embedded_manager.check` / `_run_project_update` /
-    `_ensure_project_environment`、`runner_task`、`api/scripts.py` 里的 `/maafw/update`
-    （按 scriptId 取脚本配置）与更新源外壳提示。
-  - **由请求显式传 `path`** 的两个端点：`/maafw/preview`、`/maafw/agent-env/prepare`，前端
-    把编辑页当前的路径传过来，不经过脚本配置。
-  要改项目根语义，先把第一类收敛到一个助手，再决定第二类是继续收 `path` 还是改按 scriptId 解析。
-- 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU）。MaaFramework 原生运行时
-  由运行池提供，运行时以覆盖层铺进 `<项目>/maafw/` 并留 `.auto_mas_maafw_native_runtime.json`
-  标记；带标记的 `maafw/` 是运行期产物，指纹与更新都把它当产物处理。
+- **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
+  ——**永远是** `data/maafw_projects/<脚本 uuid>/` 的副本，没有"路径模式"。`Info.Path` 只是
+  导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
+  `api/scripts.py` 的 `/maafw/update` 都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
+  `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
+  新增任何"读项目目录"的代码不要再各自读 `Info.Path`。副本可能还没建（升级前的老脚本、
+  刚选目录、来源换了目录），各入口先经 `ensure_embedded_copy`：副本不在或 `Info.Path` 与导入
+  报告里的 `sourcePath` 不是同一目录就导入一次；来源不在而副本健康时什么都不做。
+- **内嵌副本**：按 interface 白名单投影（`project_update/projection.py`），**白名单之外的顶层条目
+  剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
+  `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
+  exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。外壳是冻结的 Python 程序时（根上直接躺着没人
+  声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
+  `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
+  这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
+  副本路径由脚本 ID 推出、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
+  「选择本地目录」就是 `/maafw/embedded/reimport`：第一次是导入，之后是换来源或按当前来源重导；
+  没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、来源版本与导入时间。
+  导入在 `data/maafw_projects/.staging/` 里投影完再原子换入，失败不动旧副本；副本缺失且来源
+  还在时 check / preview / update 入口自修复。删脚本连带删副本。
+- 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），副本去掉的只有外壳、
+  .NET 托管库、界面用的运行时、缓存与日志。**项目自带的运行时原样带走**：MaaFramework 原生库
+  目录（`maafw/`，MFAAvalonia 布局下是 `runtimes/win-x64/native`）与 agent 自带的解释器目录
+  （`python/`）。理由是真机上两个项目两种死法：M9A 的 agent 写死 Python >=3.13,<3.14，用宿主
+  3.12 建的隔离 venv 起来即退（宿主只看到「Agent 进程已退出」）；MaaYYs 的 Go agent.exe 启动
+  时从 `<项目>/maafw` 加载 MaaFramework，找不到直接 fatal。自带的 DLL 可能是自定义构建、
+  site-packages 里可能有 requirements.txt 没写的包，「按版本从运行池重建等价环境」验证不完。
+  原样就是原样：分类表在这三个目录里不起作用，只剔 `__pycache__`——CPython 发行版本来就有
+  `pip/_internal/operations/build` 这种叫 `build` / `debug` 的目录，投影掉了副本上 pip 直接
+  ModuleNotFoundError（Maa_bbb 真机踩到）。
+  带走之后 runner（`project_maafw_runtime_path` 优先项目自带）与 agent 用的就是发行包里那份，
+  与路径模式完全一致；运行池只在项目本来就没自带时兜底——也与路径模式一致。代价是省下的
+  比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
+  `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
+  项目里铺运行时。
+- **副本之间按内容共用运行时文件**（`project_update/blob_store.py`）：上面那些运行时目录里
+  ≥ 64 KB 的文件按 sha256 存进 `data/maafw_blobs/<ab>/<sha256>`，副本里是指向它的 NTFS 硬链接，
+  同样的字节只存一份；导入（`materialize_projection`）与更新落地（`apply.py`）都经它。三条铁律：
+  **永远不往已有文件里写**（硬链接没有写时复制，更新器的 `_copy_path` / 回滚都是先删再写，
+  内容没变的文件连碰都不碰）；小文件不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，
+  M9A 的 bootstrap 就往 `python/*.lock` 里追加写）；链接失败就退回复制。回收在启动期
+  `clean_maafw_runtime_blobs`（`st_nlink == 1` 即孤儿）。已知边界：A 在跑（DLL 被映射）时
+  B 恰好要换同一份旧库会被挡住，事务照常回滚。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
   定位）；其余 → `external`。目录里没有 Python **不是错误**。裸 `python` 不能原样交给 PATH：
   worker 跑在运行池 venv 里，Windows 上 `CreateProcess` 先按父进程（基解释器）所在目录找，
   且用的是父进程的 PATH，传给子进程的 `env["PATH"]` 不参与查找，结果永远是没装 `maa` 的
-  基解释器。
+  基解释器。隔离 venv 只装 `requirements.txt` 写的（`maafw` 钉成自带原生库的版本）；**压根
+  没有 `requirements.txt` 时按同一版本补一条 `maafw`**——MFW-PyQt6「嵌入式 Agent」模式
+  （FOS / MAA_Punish，`CFA_setting.json` 里 `embedded=true`）把 maa 冻进外壳自己的程序里，发行
+  包不写依赖，不补的话 agent 一句 `import maa` 就退出。写了清单但没声明 maafw 的照旧不追加。
+  **项目自带 Python**（`project_python`）里的 binding 也必须与自带原生库同版本：项目自己的部署
+  脚本会 `pip install --upgrade maafw` 升到 PyPI 最新（Maa_bbb v1.12.8 实测 5.13.1/协议 8 对原生库
+  5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌副本**把它钉回
+  原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
+  否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
@@ -76,6 +117,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `debug` / `logs` / `temp` / `__pycache__` 与 `config/maa_option.json` 不计入指纹。
 - 全量与差量包的落地条目都只从 `apply.py: build_package_plan` 枚举（`files` / `hashes` /
   `deleted` 三张表）。要改"哪些文件落盘"只动这一处，孤儿清理、基线、回滚会自然跟随。
+  内嵌脚本传 `projection=True`，三张表在 `_project_package_entries` 里按同一份白名单过滤，
+  投影标记也在那里随包换入。
 - 无可信基线时请求整包；整包落地也会清理包内资源目录下的孤儿文件，但保留用户内容目录与
   运行时目录（口径见 `tests/task/test_maafw_project_update_orphans.py`）。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。

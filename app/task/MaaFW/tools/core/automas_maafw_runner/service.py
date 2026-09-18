@@ -72,6 +72,11 @@ def project_environment_fingerprint(project_path: str | Path) -> str | None:
         digest.update(b"\0")
         digest.update(len(content).to_bytes(8, "big"))
         digest.update(content)
+    # 项目自带解释器里的 maafw binding 版本也是输入：agent 的部署脚本会在运行期改写它，
+    # 不算进来的话准备结果会被缓存沿用，钉回 binding 的那一步永远不再跑。
+    for site in sorted(root.glob("python/Lib/site-packages/maafw-*.dist-info")):
+        digest.update(b"project-python-binding\0")
+        digest.update(site.name.encode("utf-8"))
     return digest.hexdigest() if found_interface else None
 
 

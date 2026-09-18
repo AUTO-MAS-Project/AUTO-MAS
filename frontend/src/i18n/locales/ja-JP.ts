@@ -1260,7 +1260,6 @@ export default {
     maximumLines: '最大行数',
     youHaveUnsavedChanges: '保存していない変更があります',
     server: 'サーバー',
-    localProjectDirectory: 'ローカルのプロジェクトフォルダ',
     readExtractionPatternReference: 'ログ抽出式のリファレンスを見る',
     rootPathSelected: 'ルートパスを選択しました',
     rootPathSelectedOther:
@@ -1522,11 +1521,31 @@ export default {
     pickFolderHoldingM9a2: 'M9A があるフォルダを選択',
     pickFolderHoldingMaa2: 'MAA.exe があるフォルダを選択',
     pickFolderHoldingSrc2: 'SRC.exe があるフォルダを選択',
-    pickMfwProjectDirectory: 'interface.json を含む MFW プロジェクトのフォルダを選択',
     pickProjectDirectoryContaining:
       'interface.json を含むプロジェクトフォルダを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
     pickLocalDirectory: 'ローカルフォルダを選択',
+    maafwEmbeddedTitle: '内蔵コピー',
+    maafwEmbeddedHint:
+      'AUTO-MAS は interface に宣言されたリソース、Agent、プロジェクト同梱のランタイムだけを自分のフォルダへコピーし、実行も更新もそのコピー上で行います。元フォルダには一切触れず、取り込み後は削除しても構いません（再取り込みにだけ必要です）。',
+    maafwEmbeddedSourceDirectory: '元フォルダ',
+    maafwEmbeddedSourceHint:
+      'コピーはこのフォルダから取り込みます。別のフォルダを選ぶとそこから取り込み直し、元フォルダは変更しません。',
+    maafwEmbeddedCopyHealthy: 'コピーは正常',
+    maafwEmbeddedCopyMissing: 'コピーがありません。次回実行前に元フォルダから作り直します',
+    maafwEmbeddedCopyAndSourceMissing:
+      'コピーがなく、元のフォルダも存在しません。展開済みの MFW プロジェクトフォルダを選び直してください',
+    maafwEmbeddedSaved: 'コピーは元の {percent}%（{source} → {copy}）',
+    maafwEmbeddedShell: 'シェル：{shell}',
+    maafwEmbeddedRuntime: 'MaaFramework {version}（プロジェクト同梱、そのままコピー）',
+    maafwEmbeddedPython: 'Agent の Python {version}（プロジェクト同梱、そのままコピー）',
+    maafwEmbeddedSourceVersion: '取り込み元 {version}',
+    maafwEmbeddedImportedAt: '取り込み日時 {time}',
+    maafwEmbeddedSourceMissing:
+      '元フォルダはもうありません。コピーはそのまま実行・更新できますが、再取り込みはできません',
+    maafwEmbeddedReimport: '取り込み直す',
+    maafwEmbeddedReimportHint:
+      '現在の元フォルダからコピーを取り込み直します。元フォルダを手動で更新したときに使います。',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:

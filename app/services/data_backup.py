@@ -27,8 +27,13 @@ import zipfile
 from contextlib import closing
 from pathlib import Path
 
-# 不进备份包: MaaFW 运行环境池 (可重建, 生产可达 GB 级) 与原生日志 (单个可达百 MB)
-_EXCLUDED_DIRS = {"config/maafw_runtime_pool"}
+# 不进备份包: MaaFW 运行环境池、内嵌副本与共用库 (都可由来源 / 更新重建, 生产可达 GB 级;
+# 副本里的共用库是硬链接, 按路径逐个读会把同一份字节打进去两遍) 与原生日志 (单个可达百 MB)
+_EXCLUDED_DIRS = {
+    "config/maafw_runtime_pool",
+    "data/maafw_projects",
+    "data/maafw_blobs",
+}
 _EXCLUDED_SUFFIX = ".maafw.log"
 
 _DATABASE_FILES = {

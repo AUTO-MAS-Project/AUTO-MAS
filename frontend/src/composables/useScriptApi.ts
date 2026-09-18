@@ -1420,9 +1420,13 @@ export function useScriptApi() {
   }
 
   // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
-  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+  const previewMaaFWInterface = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWInterfacePreviewOut | null> => {
     try {
-      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+      // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
