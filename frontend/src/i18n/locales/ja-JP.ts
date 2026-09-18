@@ -3005,9 +3005,12 @@ export default {
       unlockTip: '設定が終わったら「設定を保存」を押してこのページのロックを解除してください。',
       maaEndUserTitle: 'MaaEnd のユーザー設定中です',
       maaEndScriptTitle: 'MaaEnd のスクリプト設定中です',
+      maaEndDirectTitle: 'MaaEnd のスクリプト直接制御の設定中です',
       maaEndUserDesc: 'ユーザー {name} を設定しています。MaaEnd の画面で設定を完了してください。',
       maaEndScriptDesc:
         'スクリプト単位の MaaEnd 設定を行っています。MaaEnd の画面で設定を完了してください。',
+      maaEndDirectDesc:
+        'MaaEnd 本体の既存設定（ユーザーには依存せず、すべてのスクリプト直接制御ユーザーで共有）を設定しています。MaaEnd の画面で設定を完了してください。',
       maaEndUnlockTip:
         '設定が終わったら「設定を保存」を押してこのページのロックを解除してください。',
       okwwTitle: 'ok-ww の設定中です',

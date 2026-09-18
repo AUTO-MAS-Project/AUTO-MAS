@@ -4,8 +4,8 @@
     <GuiSessionMask
       :open="showMaaEndConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.maaendConfigurationProgress')"
-      :description="`${t('edit.maaendConfigurationWindowOpen')}\n${t('edit.clickSaveConfigurationWhen')}`"
+      :title="maaEndConfigMaskTitle"
+      :description="`${maaEndConfigMaskDesc}\n${t('edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
@@ -433,6 +433,22 @@ const reportFieldSaveFailure = () => {
 const formData = reactive({
   userName: '',
   ...getDefaultMaaEndUserData(),
+})
+
+// 遮罩文案按配置来源三态区分：脚本=脚本级共享配置、用户=当前用户独立配置、
+// 直控=改 MaaEnd 原有配置（与用户无关，不能再说“为这个用户”）。
+const maaEndConfigMaskTitle = computed(() => {
+  if (formData.Info.Mode === '用户') return t('scripts.mask.maaEndUserTitle')
+  if (formData.Info.Mode === '直控') return t('scripts.mask.maaEndDirectTitle')
+  return t('scripts.mask.maaEndScriptTitle')
+})
+
+const maaEndConfigMaskDesc = computed(() => {
+  if (formData.Info.Mode === '用户') {
+    return t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+  }
+  if (formData.Info.Mode === '直控') return t('scripts.mask.maaEndDirectDesc')
+  return t('scripts.mask.maaEndScriptDesc')
 })
 
 const rules = computed<Record<string, Rule[]>>(() => ({
