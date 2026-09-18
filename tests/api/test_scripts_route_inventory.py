@@ -58,6 +58,7 @@ _EXPECTED_ROUTES = (
     "POST /api/scripts/maa/depot/stage/candidates",
     "POST /api/scripts/maaend/options",
     "POST /api/scripts/maafw/agent-env/prepare",
+    "POST /api/scripts/maafw/game-package",
     "POST /api/scripts/maafw/preview",
     "POST /api/scripts/maafw/update",
     "POST /api/scripts/oknte/configs/batch-update",
