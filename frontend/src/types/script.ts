@@ -8,7 +8,6 @@ import type {
   OkNteConfig,
   SrcConfig,
   MaaEndConfig,
-  M9AConfig,
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
@@ -190,30 +189,9 @@ export interface MaaEndScriptConfig {
   }
 }
 
-// M9A脚本配置
-export interface M9AScriptConfig {
-  Info: {
-    Name: string
-    Path: string
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
-  Run: {
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-    IfAutoUpdateAfterQueue: boolean
-    IfPsychubeDailyOnce: boolean
-    IfSleepDreamMonthlyOnce: boolean
-  }
-  SubConfigsInfo: {
-    UserData: {
-      instances: unknown[]
-    }
-  }
-}
+// M9A 是 MaaFW 引擎的特调类型：配置模型与 MaaFW 同形（后端 M9AConfig 是 MaaFWConfig 的同形子类），
+// 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
+export type M9AScriptConfig = MaaFWScriptConfig
 
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
@@ -547,7 +525,6 @@ export interface Script {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
@@ -561,9 +538,6 @@ export interface User {
   name: string
   Data: {
     LastProxyDate: string
-    LastPsychubeDate?: string
-    LastLimboMonth?: string
-    LastLucidscapeMonth?: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
   }
@@ -670,7 +644,6 @@ export interface ScriptDetail {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
@@ -678,19 +651,4 @@ export interface ScriptDetail {
     | BAAHConfig
   users?: User[]
   createTime?: string
-}
-
-// M9A 任务选项类型
-export interface M9ATaskOption {
-  name: string
-  index: number
-  sub_options?: M9ATaskOption[]
-  input_values?: Record<string, string | number>
-  selected_cases?: string[]
-}
-
-// M9A 任务队列项类型
-export interface M9ATaskQueueItem {
-  name: string
-  options: M9ATaskOption[]
 }

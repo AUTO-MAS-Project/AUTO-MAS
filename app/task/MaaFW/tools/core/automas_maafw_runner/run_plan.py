@@ -298,6 +298,31 @@ def _select_resource(
     raise MaaFWRunPlanError(f"没有适用于 controller {controller.name} 的 resource")
 
 
+def select_snapshot_tasks(
+    interface_model: MaaFWInterface,
+    *,
+    selected_preset: str | None,
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+) -> tuple[list[str], dict[str, Any]]:
+    """把用户快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项」。
+
+    与 ``build_maafw_run_plan`` 走快照时的第一步完全相同；特调钩子在这一步之后、
+    建计划之前装饰列表，再以 ``task_ids`` / ``task_options`` 建计划。
+    """
+
+    snapshot = _resolve_snapshot(
+        interface_model,
+        selected_preset=selected_preset,
+        task_snapshot=task_snapshot,
+    )
+    selected_ids = [
+        task_id
+        for task_id in snapshot.taskOrder
+        if snapshot.taskChecked.get(task_id, False)
+    ]
+    return selected_ids, dict(snapshot.taskOptions)
+
+
 def _select_tasks(
     interface_model: MaaFWInterface,
     *,

@@ -22,9 +22,9 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip :title="t('edit.maafwEmbeddedSourceHint')">
+            <a-tooltip :title="sourceHint || t('edit.maafwEmbeddedSourceHint')">
               <span class="form-label">
-                {{ t('edit.maafwEmbeddedSourceDirectory') }}
+                {{ sourceDirectoryLabel || t('edit.maafwEmbeddedSourceDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -32,7 +32,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.path"
-              :placeholder="t('edit.pickActualMfwProject')"
+              :placeholder="sourcePlaceholder || t('edit.pickActualMfwProject')"
               size="large"
               class="path-input"
               readonly
@@ -262,6 +262,10 @@ const props = defineProps<{
   /** 内嵌副本状态：由父组件从后端拉取；导入几十到几百 MB 时 busy 为 true。 */
   embeddedStatus: MaaFWEmbeddedStatus
   embeddedBusy: boolean
+  /** flavor 文案（M9A 等特调类型传入）；缺省用通用 MaaFW 的「来源目录」那套 */
+  sourceDirectoryLabel?: string
+  sourceHint?: string
+  sourcePlaceholder?: string
 }>()
 
 const emit = defineEmits<{

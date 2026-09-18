@@ -14,8 +14,8 @@
         <template #title>
           <div class="card-title">
             <img
-              :src="projectIconUrl || SCRIPT_LOGOS.MaaFW"
-              alt="MaaFW"
+              :src="projectIconUrl || flavor.logo"
+              :alt="flavor.typeTagLabel"
               width="22"
               height="22"
               class="title-logo"
@@ -37,6 +37,7 @@
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
+            :account-placeholder="t(flavor.accountPlaceholderKey)"
             @save="handleFieldSave"
           />
 
@@ -57,6 +58,14 @@
               {{ t('edit.configRestoreTitle') }}
             </a-button>
           </a-flex>
+          <!-- 特调类型（M9A）自动加首尾任务与切号，提醒用户不用手动加；不隐藏这三个任务，手动加了也只是被去重 -->
+          <a-alert
+            v-if="flavor.queueHintKey"
+            class="flavor-queue-hint"
+            type="info"
+            show-icon
+            :message="t(flavor.queueHintKey)"
+          />
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -166,7 +175,7 @@ import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
@@ -180,6 +189,7 @@ import type {
   MaaFWTaskOptionValue,
   MaaFWTaskSnapshot,
   MaaFWUserConfig,
+  ScriptType,
 } from '@/types/script'
 
 const { t } = useI18n()
@@ -264,6 +274,9 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptPath = ref('')
+// flavor 文案以脚本当前类型为准（MaaFW / M9A），不看路由 meta
+const scriptType = ref<ScriptType>('MaaFW')
+const flavor = useMaaFWFlavor(scriptType)
 const scriptConfig = ref<MaaFWScriptConfig | null>(null)
 const preferAdbController = ref(false)
 const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
@@ -276,7 +289,7 @@ const handleProjectIconError = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement | null
   if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
   image.dataset.maafwIconFallbackApplied = 'true'
-  image.src = SCRIPT_LOGOS.MaaFW
+  image.src = flavor.value.logo
 }
 const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
@@ -337,8 +350,7 @@ const rules = computed<Record<string, Rule[]>>(() => ({
   ],
 }))
 
-const accountRecordTooltip =
-  '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置'
+const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
 
 const controllerOptions = computed(() =>
   (previewData.value?.controllers || []).filter(controller =>
@@ -813,12 +825,14 @@ const loadScriptInfo = async () => {
       handleCancel()
       return
     }
-    if (script.type !== 'MaaFW') {
+    // M9A 是 MaaFW 的特调类型，配置同形，同一个页面
+    if (script.type !== 'MaaFW' && script.type !== 'M9A') {
       message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
     }
 
+    scriptType.value = script.type
     scriptName.value = script.name
     const loadedScriptConfig = script.config as MaaFWScriptConfig
     scriptConfig.value = loadedScriptConfig
@@ -852,7 +866,10 @@ const createUserImmediately = async () => {
       userId = result.userId
       isEdit.value = true
       router.replace({
-        name: 'MaaFWUserEdit',
+        // 加用户路由与编辑路由成对（M9AUserAdd ↔ M9AUserEdit），跳回同一条线，别把 M9A 落到 MFW 的 URL 上。
+        name: String(route.name ?? '').endsWith('UserAdd')
+          ? String(route.name).replace(/UserAdd$/, 'UserEdit')
+          : 'MaaFWUserEdit',
         params: { ...route.params, userId: result.userId },
       })
       await loadUserData()
@@ -876,7 +893,10 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      if (userIndex?.type === 'MaaFWUserConfig' && userData) {
+      // M9AUserConfig 是 MaaFWUserConfig 的同形子类，同一个页面
+      const isMaaFWUser =
+        userIndex?.type === 'MaaFWUserConfig' || userIndex?.type === 'M9AUserConfig'
+      if (isMaaFWUser && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
         await syncControllerResourceSelection()
@@ -1059,6 +1079,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.flavor-queue-hint {
+  margin-bottom: 16px;
+}
+
 .user-edit-container {
   padding: 32px;
   min-height: 100vh;

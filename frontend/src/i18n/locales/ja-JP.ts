@@ -430,7 +430,6 @@ export default {
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
     readP0: '{p0} を読み込みました',
-    addedP0Tasks: 'タスクを {p0} 件追加しました',
     configurationSessionUserP02:
       'ユーザー {p0} の設定セッションが 30 分でタイムアウトしました。設定を自動保存しています...',
     configurationUserP0Was: 'ユーザー {p0} の設定を保存しました',
@@ -474,7 +473,6 @@ export default {
     annihilationDailyRunStart: '殲滅と日課で MAA を 2 回起動します。グループ内は実行順に並びます',
     annihilationDailyTasksEach: '殲滅作戦と日課タスクは、それぞれ別に MAA を起動します',
     annihilationStage: '殲滅ステージ',
-    couldNotLoadAvailable: '利用できるタスクを読み込めませんでした',
     rewardGroupsProtocolSpace: 'プロトコル空間の報酬タスクは、ここで報酬グループを選べます',
     rewardGroup: '報酬グループ',
     annihilationMaaStartsOnce:
@@ -503,7 +501,6 @@ export default {
     maaEndResolutionCustom: 'カスタム',
     markAsDone2: '完了としてマーク',
     takeOverTaskConfiguration: 'タスク設定を引き継ぐ',
-    usedWhenThereNo: 'イベントがないときやショップを買い切ったときに使う、通常の周回です',
     whetherReservedTrailblazePower: '備蓄開拓力を使うかどうか',
     whetherFuelUsed: '燃料を使うかどうか',
     ascensionMaterialIce: '昇格素材：氷（三月七 / 黑塔 / 杰帕德 / 佩拉）',
@@ -567,9 +564,6 @@ export default {
       'アカウント切り替えに使います。中国本土サーバーでは電話番号を入力します。どちらの方式でもアカウント末尾 4 桁で照合します。切り替えない場合は空のままにしてください',
     userSPasswordWhen:
       'ユーザーのパスワードです。入力すると、アカウントとパスワードによるログインを代替手段として使います。空の場合はログイン済みアカウント一覧からの選択のみを行います',
-    leaveEmptySkipAccount: '空のままにするとアカウントを切り替えません',
-    thisCurrentlyWorksCn:
-      '現在この機能は中国本土サーバーのみ、かつ拡大縮小なしの 1280×720 解像度のみに対応しています',
     accountEmailPhoneNumber: 'サイトのアカウント / メールアドレス / 電話番号。',
     accountEmailPhoneNumber2:
       "サイトのアカウント / メールアドレス / 電話番号を「{'|'}」で区切って入力します。アカウントとパスワードでログインする際は B",
@@ -611,12 +605,10 @@ export default {
     pickCustomBaseLayout: 'カスタム基地のシフトを選択してください',
     pickRelicStage: '遺物ステージを選択してください',
     pickOrnamentStage: 'オーナメントステージを選択してください',
-    accountInfo: 'アカウント情報',
     enterCustomStageE: 'カスタムステージを入力（例: 11-8）',
     pickStage: 'ステージを選択',
     pickImport: '選んでインポート',
     pickSanityTaskType: '実行する理性タスクの種類を選びます',
-    pickGameServerThis2: 'このユーザーがプレイするゲームサーバーを選びます',
     pickItem: 'アイテムを選択',
     pickStageTypeFarm: '周回するステージの種類を選びます',
     pickMaterialStageFarm: '周回する素材ステージを選びます',
@@ -626,7 +618,6 @@ export default {
     pickSimulatedUniverseWorld2: '挑戦する模擬宇宙の世界を選びます',
     relic: '遺物',
     relicStage: '遺物ステージ',
-    someTasksHadNo: '対応するスクリプトが見つからないタスクは自動的にスキップしました',
     configurationSource: '設定ファイルの取得元',
     resetState: '状態をリセット',
     ornament: 'オーナメント',
@@ -643,7 +634,6 @@ export default {
     pickMaaendPath: 'MaaEnd のパスを選択してください',
     pickOkNtePath: 'OK-NTE のパスを選択してください',
     pickOkWwPath: 'ok-ww のパスを選択してください',
-    pickM9aPath: 'M9A のパスを選択してください',
     pickMaaPath: 'MAA のパスを選択してください',
     pickSrcPath: 'SRC のパスを選択してください',
     pickMainProgramPath: 'メインプログラムのパスを選択してください',
@@ -919,10 +909,6 @@ export default {
     echoDomainNumberF2: 'F2 リスト内の凝素領域の番号',
     sonanceCasketNumberF2: 'F2 リスト内の無音区の番号',
     hsrScriptConfiguration: 'HSR スクリプト設定',
-    m9aConfigurationGuide: 'M9A 公式の設定ガイド',
-    m9aScriptConfiguration: 'M9A スクリプト設定',
-    m9aPath: 'M9A のパス',
-    m9aPathSelected: 'M9A のパスを選択しました',
     maaAdapterSupportsEmulators:
       'MAA 専用アダプターはエミュレータのみ対応です。PC 版には汎用スクリプトをお使いください。',
     maaScriptConfiguration: 'MAA スクリプト設定',
@@ -1116,14 +1102,8 @@ export default {
       'オンにすると、代行でゲームを起動する前に MAS が公式のバージョンを確認して更新します。オフの場合はそのままゲームを起動します',
     overridesCurrentScriptConfiguration:
       'オンにすると、下のクイック設定パネルにある主要なタスク項目で現在のスクリプト設定を上書きします。オフにすると、スクリプト設定側のタスク設定をそのまま使います',
-    onceThisUserS:
-      'オンにすると、同じユーザーで当日の「日々の心相」が成功していた場合、その日それ以降の実行ではこのタスクをスキップします',
-    onceAutoDeepSleep:
-      'オンにすると、同じユーザーで自動深眠または自動覚醒が今月成功していた場合、今月それ以降の実行では該当タスクをそれぞれスキップします',
     beforeStartingMaaCompare:
       'オンにすると、MAA を起動する前にサーバー側とエミュレータ内のゲームクライアントのバージョンを照合します。クライアントが古いと MAA は強制更新画面を越えられず、タイムアウトまで止まったままになります',
-    whenThisScriptRuns:
-      'オンにすると、このスクリプトがキューで実行される際、すべてのユーザーのタスク完了後に M9A のリソースバージョンを自動更新します。あらかじめ M9A を開いて更新元を設定しておいてください',
     whenClientDetectedAs:
       'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土公式サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
     updateAutomaticallyBeforeEvery: '実行前に毎回自動更新しますか？',
@@ -1161,8 +1141,6 @@ export default {
     treatAnnihilationRunAs:
       '殲滅代行タスク実行中、MAA のログがこの時間だけ変化しなければタイムアウトとみなします',
     engine: '実行エンジン',
-    treatDailyRunAs:
-      '日課代行タスク実行中、M9A のログがこの時間だけ変化しなければタイムアウトとみなします',
     treatDailyRunAs2:
       '日課代行タスク実行中、MAA のログがこの時間だけ変化しなければタイムアウトとみなします',
     update: '更新を実行',
@@ -1234,7 +1212,6 @@ export default {
     pushCollectionOffRules: '送信の収集は無効です。ルールは実行されません。',
     description: '説明',
     tipFAcceptsBoth: 'ヒント：%f は 3 桁のミリ秒（例 123）と 6 桁のマイクロ秒（例',
-    reminderIfYouRun: 'お困りの際はこちらもご覧ください：',
     searchSettings: '設定項目を検索…',
     recipient: '宛先アドレス',
     wholeFileSyncLimit: 'ファイル全体同期の上限（GB）',
@@ -1280,12 +1257,10 @@ export default {
     skipOnceDoneThis: '今週完了したらスキップ',
     extraTasksThatRun: '日課のあとに実行する追加タスク',
     skipOnceDoneToday: '今日完了したらスキップ',
-    dailyInsightRunsOnce: '日々の心相は 1 日 1 回のみ実行します',
     skipOnceDoneThis2: '今月完了したらスキップ',
     exampleStarrailExe: '例: StarRail.exe',
     nothingConfigure: '設定できるタスクがありません',
     spendSanityFarm: '理性を消費して周回',
-    deepSleepRunsOnce: '深眠・浅夢は月 1 回のみ実行します',
     addTask: 'タスクを追加',
     added: '追加しました',
     clearSraPath: 'SRA のパスをクリア',
@@ -1473,7 +1448,6 @@ export default {
     pickSraFolderContains: 'SRA のフォルダを選択してください（SRA-cli.exe を含む）',
     pickDirectoryHoldingOk: 'ok-nte.exe があるフォルダを選択してください',
     pickDirectoryHoldingOk2: 'ok-ww.exe があるフォルダを選択してください',
-    pickFolderHoldingM9a: 'M9A があるフォルダを選択してください',
     pickFolderHoldingMaa: 'MAA.exe があるフォルダを選択してください',
     pickFolderHoldingSrc: 'SRC.exe があるフォルダを選択してください',
     pickMarch7thFolderContains:
@@ -1518,7 +1492,6 @@ export default {
     pickExe: 'exe を選択',
     pickDirectoryHoldingOk3: 'ok-nte.exe があるフォルダを選択',
     pickDirectoryHoldingOk4: 'ok-ww.exe があるフォルダを選択',
-    pickFolderHoldingM9a2: 'M9A があるフォルダを選択',
     pickFolderHoldingMaa2: 'MAA.exe があるフォルダを選択',
     pickFolderHoldingSrc2: 'SRC.exe があるフォルダを選択',
     pickProjectDirectoryContaining:
@@ -1531,6 +1504,19 @@ export default {
     maafwEmbeddedSourceDirectory: '元フォルダ',
     maafwEmbeddedSourceHint:
       'コピーはこのフォルダから取り込みます。別のフォルダを選ぶとそこから取り込み直し、元フォルダは変更しません。',
+    maafwAccountRecordTooltip:
+      'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
+    m9aFlavorScriptTitle: 'M9A スクリプトを編集',
+    m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
+    m9aFlavorSourceHint:
+      'interface.json を含む M9A ディレクトリを選択します。コピーはこのディレクトリから取り込まれ、別のディレクトリを選ぶとそこから取り込み直します。元のディレクトリは変更しません。',
+    m9aFlavorSourcePlaceholder: 'interface.json を含む M9A ディレクトリを選択',
+    m9aFlavorAccountPlaceholder:
+      '入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）',
+    m9aFlavorAccountTooltip:
+      'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
+    m9aFlavorQueueHint:
+      'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
     maafwEmbeddedCopyHealthy: 'コピーは正常',
     maafwEmbeddedCopyMissing: 'コピーがありません。次回実行前に元フォルダから作り直します',
     maafwEmbeddedCopyAndSourceMissing:
@@ -1569,7 +1555,6 @@ export default {
     configurationFilePath: '設定ファイルのパス',
     mxuLogsNamedBy:
       'mxu の「日付＋連番」形式のログ向け：末尾に ****** を付けると mxu のログ接頭辞マッチが有効になります（例: %Y-%m-%d******）',
-    updateAutomaticallyAfterQueue: 'キュー終了後に自動更新',
     useNightmareNestDaily: '必要に応じてナイトメアネストで日課の音骸を消化する',
     projectUpdate: 'プロジェクトの更新',
     ornamentExtraction: 'オーナメント抽出',
@@ -1577,7 +1562,6 @@ export default {
     wutheringWavesUpdateTask: '鳴潮の更新タスクが終了しました',
     wutheringWavesUpdateTimed: '鳴潮の更新がタイムアウトしたため、自動的に停止しました',
     k60SecondsRecommendedDefault: '既定の待機時間は 60 秒への変更をおすすめします。',
-    whichSpellsOutEvery: 'には設定手順がすべて明記されています。',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI スクリプト設定',
     bettergiInstanceNameHint: '複数の BetterGI スクリプトインスタンスを区別するための名前です',

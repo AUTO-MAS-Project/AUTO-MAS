@@ -61,6 +61,10 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     resolve_maafw_project_root,
     shell_hint_from_report,
 )
+from app.task.MaaFW.tools.embedded.flavor import (
+    decide_project_config_class,
+    user_config_type_transform,
+)
 from app.task.MaaFW.tools.embedded.game_package import (
     resolve_game_package,
     resource_paths_for,
@@ -1220,7 +1224,60 @@ async def _embed_from_source(
             }
         },
     )
+    await _apply_project_flavor(script_id)
     return None, ""
+
+
+async def _apply_project_flavor(script_id: str) -> None:
+    """导入完成后按项目决定脚本类型：特调项目 → 特调类型，否则通用 MaaFW；uid 不变。
+
+    类型由项目决定、双向自动：M9A 目录导进通用 MaaFW 脚本会变成 M9A，M9A 脚本换成别的项目
+    会变回 MaaFW。数据一个字段不动（两类同形），只换 ``instances[].type``。
+    """
+
+    try:
+        script_uid = uuid.UUID(str(script_id))
+        script_config = Config.ScriptConfig[script_uid]
+    except (KeyError, ValueError):
+        return
+    try:
+        interface = await asyncio.to_thread(
+            lambda: load_interface_model_cached(
+                embedded_project_dir(script_id), force_reload=True
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - 识别失败就保持原类型
+        logger.warning(f"导入后识别项目类型失败，保持原类型：{exc}")
+        return
+    target = decide_project_config_class(interface)
+    if type(script_config) is target:
+        return
+    try:
+        await Config.ScriptConfig.retype(
+            script_uid, target, user_config_type_transform(target)
+        )
+    except Exception as exc:  # noqa: BLE001 - 换类型失败不该让导入失败
+        logger.warning(f"按项目切换脚本类型失败，保持原类型：{exc}")
+        return
+    logger.info(f"脚本 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
+    script_name = str(script_config.get("Info", "Name") or str(script_id)[:8])
+    if issubclass(target, RuntimeMaaFWConfig) and target is not RuntimeMaaFWConfig:
+        await Config.push_system_notice(
+            level="warning",
+            title=f"脚本「{script_name}」已按项目识别为 {target.__name__.removesuffix('Config')}",
+            lines=[
+                "运行时会自动补上启动 / 关闭游戏；官服用户的「账号」会用于自动切换账号，"
+                "如果那一栏原来只是备注，请改掉或清空",
+            ],
+        )
+    else:
+        await Config.push_system_notice(
+            level="info",
+            title=f"脚本「{script_name}」已变回通用 MFW 脚本",
+            lines=[
+                "不再自动补启动 / 关闭 / 切换账号；用户与运行设置保留，任务队列请按新项目重排"
+            ],
+        )
 
 
 @router.post(
@@ -1873,61 +1930,6 @@ async def prepare_maafw_agent_env(
             previously_prepared=previously_prepared,
         ),
     )
-
-
-@router.post(
-    "/m9a/tasks/available",
-    tags=["M9A"],
-    summary="获取 M9A 可用任务列表（排除 standalone 任务）",
-    status_code=200,
-)
-async def get_m9a_available_tasks(script_id: str):
-    """
-    获取 M9A 可用任务列表（排除 standalone 任务）
-
-    前端调用此接口获取可选择的任务列表，
-    用于展示在用户编辑界面的任务选择区域。
-
-    Args:
-        script_id: M9A 脚本 ID
-
-    Returns:
-        dict: 包含任务列表的响应
-    """
-    from pathlib import Path
-
-    from app.task.M9A.task_loader import M9ATaskLoader
-
-    try:
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-        m9a_path = Path(script_config.get("Info", "Path"))
-        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
-
-        # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
-        available_tasks = loader.get_available_tasks()
-        result_tasks = []
-
-        for task in available_tasks:
-            full_def = loader.get_full_definition(task["name"])
-            if full_def:
-                result_tasks.append(full_def)
-
-        return {
-            "code": 200,
-            "status": "success",
-            "message": f"共 {len(result_tasks)} 个可用任务",
-            "data": result_tasks,
-        }
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_m9a_available_tasks失败: {type(e).__name__}: {e}"
-        )
-        return {
-            "code": 500,
-            "status": "error",
-            "message": f"{type(e).__name__}: {str(e)}",
-            "data": [],
-        }
 
 
 @router.get(

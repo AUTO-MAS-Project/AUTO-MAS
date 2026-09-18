@@ -98,6 +98,7 @@ from app.models.config import (
     read_maa_config,
 )
 from app.models.schema import PlanComboxConsumer
+from app.task.M9A.migration import migrate_legacy_m9a_scripts
 from app.utils import get_logger, is_supervised, resource_path
 from app.utils.community import next_community_account_name
 from app.utils.constants import (
@@ -408,7 +409,16 @@ class AppConfig(GlobalConfig):
         await self.connect(self.config_path / "Config.json")
         await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
+        # 旧版 M9A 专项的配置形状 → MaaFW 形状，必须在 connect 之前改原始 JSON：
+        # ConfigBase.load 只认类里声明的条目，旧键在按新类加载那一刻就丢并写回盘。
+        m9a_migration = await asyncio.to_thread(
+            migrate_legacy_m9a_scripts,
+            self.config_path / "ScriptConfig.json",
+            global_mirror_cdk=str(self.get("Update", "MirrorChyanCDK") or ""),
+        )
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        if m9a_migration.changed:
+            await self._settle_m9a_migration(m9a_migration)
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
@@ -1145,10 +1155,11 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(OkNteUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
-        elif isinstance(script_config, M9AConfig):
-            uid, config = await script_config.UserData.add(M9AUserConfig)
         elif isinstance(script_config, MaaFWConfig):
-            uid, config = await script_config.UserData.add(MaaFWUserConfig)
+            # 含特调子类（M9A）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
+            uid, config = await script_config.UserData.add(
+                script_config.USER_CONFIG_CLASS
+            )
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         elif isinstance(script_config, BetterGIConfig):
@@ -2381,10 +2392,6 @@ class AppConfig(GlobalConfig):
             )
         elif isinstance(script_config, MaaEndConfig):
             from app.task.MaaEnd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, M9AConfig):
-            from app.task.M9A.tools.restore_service import (
                 RESTORE_POOLS,
             )
         elif isinstance(script_config, GeneralConfig):
@@ -4825,6 +4832,108 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    async def _settle_m9a_migration(self, report: Any) -> None:
+        """旧 M9A 配置迁完之后的两件收尾：原先有归档的脚本用 MaaFW 池归档一次；结果攒成系统通知。
+
+        旧 M9A 池（``data/<sid>/M9ABackups/``）不再被列出也不支持恢复，目录原地保留。此时
+        副本还没建，native 池按来源目录归档；引擎首次运行前还会按有效根再归档一次，指纹去重。
+        """
+
+        from app.task.MaaFW.tools.backup_archive import (
+            archive_mas_runtime_backup,
+            archive_native_backup,
+            read_overlay_values,
+        )
+
+        archived: list[str] = []
+        for uid_text in report.migrated_uids:
+            legacy_pool = Path.cwd() / "data" / uid_text / "M9ABackups"
+            if not legacy_pool.is_dir():
+                continue
+            try:
+                script_config = self.ScriptConfig[uuid.UUID(uid_text)]
+            except (KeyError, ValueError):
+                continue
+            source = str(script_config.get("Info", "Path") or "").strip()
+            try:
+                if source and Path(source).is_dir():
+                    await asyncio.to_thread(
+                        archive_native_backup, uid_text, Path(source)
+                    )
+                for user_uid, user_config in script_config.UserData.items():
+                    await asyncio.to_thread(
+                        archive_mas_runtime_backup,
+                        uid_text,
+                        str(user_uid),
+                        read_overlay_values(user_config),
+                    )
+                archived.append(str(script_config.get("Info", "Name") or uid_text[:8]))
+            except Exception as exc:  # noqa: BLE001 - 归档失败不该挡住启动
+                logger.warning(f"M9A 迁移后归档失败（{uid_text[:8]}）：{exc}")
+        lines = list(report.summary_lines())
+        if report.failure:
+            lines.insert(
+                0,
+                "旧 M9A 配置迁移失败，旧脚本的任务队列与周期记录可能已被重置；"
+                f"迁移前的原文件已备份为 {report.backup_path.name if report.backup_path else '（备份也失败）'}，"
+                f"原因：{report.failure}",
+            )
+        if archived:
+            lines.append("原先有归档的脚本已按新格式归档一次：" + "、".join(archived))
+        if report.backup_path is not None:
+            lines.append(f"迁移前的配置已备份为 {report.backup_path.name}")
+        self.startup_notices.append(
+            {
+                "level": "warning"
+                if (
+                    report.failure
+                    or report.disabled_users
+                    or report.dropped_tasks
+                    or report.degraded_scripts
+                )
+                else "info",
+                "title": "M9A 脚本已并入 MFW 引擎"
+                if report.migrated_scripts or report.failure
+                else "已按项目识别出 M9A 脚本",
+                "lines": lines,
+            }
+        )
+
+    async def push_system_notice(
+        self, *, level: str, title: str, lines: list[str]
+    ) -> None:
+        """发一条系统通知；主连接还没建立就先攒着，连上时随启动通知一起发。"""
+
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSSystemNoticeData
+
+        notice = {"level": level, "title": title, "lines": list(lines)}
+        try:
+            sent = await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.SYSTEM_NOTICE,
+                data=WSSystemNoticeData(**notice),
+            )
+        except Exception as exc:  # noqa: BLE001 - 通知发不出去不该影响业务
+            logger.warning(f"系统通知发送失败，改为下次连接时发送：{exc}")
+            sent = False
+        if not sent:
+            self.startup_notices.append(notice)
+
+    async def flush_startup_notices(self) -> None:
+        """主 WebSocket 连上后把启动期攒下的系统通知发出去，只发一次。"""
+
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSSystemNoticeData
+
+        notices, self.startup_notices = self.startup_notices, []
+        for notice in notices:
+            await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.SYSTEM_NOTICE,
+                data=WSSystemNoticeData(**notice),
+            )
 
     async def clean_maafw_embedded_copies(self) -> None:
         """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。

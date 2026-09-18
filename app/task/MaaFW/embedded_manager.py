@@ -299,8 +299,20 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._users_completed = False
 
     async def check(self) -> str:
-        """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。"""
+        """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。
 
+        没通过的原因除了随任务状态发给前端，也记一行后端日志：否则日志里只有
+        「任务开始」紧接「任务结束」，事后没法排查。
+        """
+
+        result = await self._check()
+        if result != "Pass":
+            logger.info(
+                f"MFW 内置运行前检查未通过（{self.script_info.name}）：{result}"
+            )
+        return result
+
+    async def _check(self) -> str:
         if self.task_info.mode != "AutoProxy":
             return "MFW 内置运行当前仅支持自动代理模式"
 
@@ -366,7 +378,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 整表写回时就会被覆盖。后面的校验没通过也要靠 final_task 解锁。
         await script_config.lock()
         self._script_locked = True
-        user_config: MultipleConfig[MaaFWUserConfig] = MultipleConfig([MaaFWUserConfig])
+        # 用户类跟着脚本类走：特调类型（M9A）的用户 type 是它自己的同形子类，
+        # 写死 MaaFWUserConfig 会把用户全部丢掉、报「没有可运行的用户」。
+        user_config: MultipleConfig[MaaFWUserConfig] = MultipleConfig(
+            [type(script_config).USER_CONFIG_CLASS]
+        )
         await user_config.load(await script_config.UserData.toDict())
         self.user_config = user_config
 
@@ -775,7 +791,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 ),
             )
         except Exception:
-            logger.opt(exception=True).warning("MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）")
+            logger.opt(exception=True).warning(
+                "MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）"
+            )
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
@@ -799,7 +817,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     overlay=read_overlay_values(self.user_config[user_id]),
                 )
             except Exception:
-                logger.opt(exception=True).warning("MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）")
+                logger.opt(exception=True).warning(
+                    "MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）"
+                )
             self.inner_task = self._build_inner_task()
             self._inner_finalized = False
             try:

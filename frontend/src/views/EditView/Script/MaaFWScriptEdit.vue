@@ -7,15 +7,15 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/maafw.png" alt="MFW" class="breadcrumb-logo" />
-            {{ projectDisplayName }} {{ isWizard ? '项目引导' : '项目配置' }}
+            <img :src="flavor.logo" :alt="flavor.typeTagLabel" class="breadcrumb-logo" />
+            {{ pageTitle }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
     <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scripts" />
+      <DocLink :url="flavor.docUrl" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -26,13 +26,9 @@
   </div>
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="`${projectDisplayName} ${isWizard ? '项目引导' : '项目配置'}`"
-      :loading="pageLoading"
-      class="config-card"
-    >
+    <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="geekblue" class="type-tag"> MFW</a-tag>
+        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ flavor.typeTagLabel }}</a-tag>
       </template>
 
       <a-steps
@@ -56,6 +52,9 @@
             :update-applying="updateApplying"
             :embedded-status="embeddedStatus"
             :embedded-busy="embeddedBusy"
+            :source-directory-label="t(flavor.sourceDirectoryKey)"
+            :source-hint="t(flavor.sourceHintKey)"
+            :source-placeholder="t(flavor.sourcePlaceholderKey)"
             :env-preparing="envPreparing"
             :env-ready="envReady"
             :env-failed="envFailed"
@@ -154,7 +153,6 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -190,6 +188,7 @@ import {
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
+import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -222,6 +221,22 @@ const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
 
 const scriptId = route.params.id as string
+
+// flavor 文案以脚本当前类型为准，不看路由 meta：/edit/maafw 与 /edit/m9a 都进这个组件，
+// 而导入完成后后端会按项目内容原地换类型（M9A 项目 → M9A，其它 → MaaFW，uid 不变）。
+const scriptType = ref<ScriptType>('MaaFW')
+const flavor = useMaaFWFlavor(scriptType)
+const refreshScriptType = async () => {
+  try {
+    const detail = await getScript(scriptId)
+    if (detail?.type) {
+      scriptType.value = detail.type
+      formData.type = detail.type
+    }
+  } catch (error) {
+    logger.warn(`刷新脚本类型失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 // 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 脚本后进这里，
 // 之后再编辑走 /scripts/:id/edit/maafw 的完整单页形态。
@@ -333,6 +348,13 @@ const projectDisplayName = computed(() => {
   ]
   return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
 })
+
+// 通用 MaaFW 用「<项目名> 项目配置 / 项目引导」；特调类型（M9A）用它自己那句标题
+const pageTitle = computed(() =>
+  flavor.value.scriptTitleKey
+    ? t(flavor.value.scriptTitleKey)
+    : `${projectDisplayName.value} ${isWizard.value ? '项目引导' : '项目配置'}`
+)
 
 const interfaceStats = computed(() => [
   { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
@@ -627,6 +649,9 @@ const runEmbeddedAction = async (
     const { status, message: text } = await action()
     embeddedStatus.value = status
     if (text) message.success(text)
+    // 导入完成后后端按项目内容决定脚本类型（M9A 项目 → M9A，其它 → MaaFW），
+    // 重新拉一次类型让 flavor 文案跟上
+    await refreshScriptType()
     return true
   } catch (error) {
     message.error(error instanceof Error ? error.message : String(error))
@@ -762,6 +787,8 @@ onMounted(async () => {
       return
     }
     applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
+    scriptType.value = scriptDetail.type
+    formData.type = scriptDetail.type
     scriptLoaded = true
     if (!maafwConfig.Info.Name) {
       maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'

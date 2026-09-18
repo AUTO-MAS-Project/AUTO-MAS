@@ -3329,108 +3329,6 @@ class HSRDirectConfigImportOut(OutBase):
     )
 
 
-class M9AUserConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="用户名称")
-    Status: Optional[bool] = Field(default=None, description="是否启用")
-    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
-    )
-    IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
-    )
-    IfScriptBeforeTask: Optional[bool] = Field(
-        default=None, description="是否在任务前执行脚本"
-    )
-    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
-    IfScriptAfterTask: Optional[bool] = Field(
-        default=None, description="是否在任务后执行脚本"
-    )
-    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
-    Notes: Optional[str] = Field(default=None, description="备注")
-    Tag: Optional[str] = Field(default=None, description="用户标签信息")
-    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
-    Account: Optional[str] = Field(
-        default=None, description="账号信息（用于切换账号，仅官服生效）"
-    )
-
-
-class M9AUserConfig_Task(BaseModel):
-    AvailableTasks: Optional[Union[str, List]] = Field(
-        default=None, description="可用任务列表 JSON 数组字符串或数组"
-    )
-    Queue: Optional[Union[str, List]] = Field(
-        default=None, description="运行任务队列 JSON 数组字符串或数组"
-    )
-
-
-class M9AUserConfig_Data(BaseModel):
-    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
-    LastPsychubeDate: Optional[str] = Field(
-        default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD"
-    )
-    LastLimboMonth: Optional[str] = Field(
-        default=None, description="上次完成自动深眠月份，格式 YYYY-MM"
-    )
-    LastLucidscapeMonth: Optional[str] = Field(
-        default=None, description="上次完成自动醒梦月份，格式 YYYY-MM"
-    )
-    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-
-
-class M9AUserConfig_Notify(BaseModel):
-    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
-    IfSendStatistic: Optional[bool] = Field(
-        default=None, description="是否发送统计信息"
-    )
-    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
-    ToAddress: Optional[str] = Field(default=None, description="收件地址")
-    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
-    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-
-
-class M9AUserConfig(BaseModel):
-    Info: Optional[M9AUserConfig_Info] = Field(default=None, description="基础信息")
-    Task: Optional[M9AUserConfig_Task] = Field(default=None, description="任务配置")
-    Data: Optional[M9AUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[M9AUserConfig_Notify] = Field(default=None, description="单独通知")
-
-
-class M9AConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="M9A 脚本名称")
-    Path: Optional[str] = Field(default=None, description="M9A 路径")
-
-
-class M9AConfig_Emulator(BaseModel):
-    Id: Optional[str] = Field(default=None, description="模拟器 ID")
-    Index: Optional[str] = Field(default=None, description="模拟器索引")
-
-
-class M9AConfig_Run(BaseModel):
-    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
-    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
-    RunTimeLimit: Optional[int] = Field(
-        default=None, description="运行时间限制（分钟）"
-    )
-    IfAutoUpdateAfterQueue: Optional[bool] = Field(
-        default=None, description="是否在队列结束后自动更新M9A"
-    )
-    IfPsychubeDailyOnce: Optional[bool] = Field(
-        default=None, description="每日心相每日只执行一次"
-    )
-    IfSleepDreamMonthlyOnce: Optional[bool] = Field(
-        default=None, description="深眠浅梦每月只执行一次"
-    )
-
-
-class M9AConfig(BaseModel):
-    Info: Optional[M9AConfig_Info] = Field(default=None, description="脚本基础信息")
-    Emulator: Optional[M9AConfig_Emulator] = Field(
-        default=None, description="模拟器配置"
-    )
-    Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
-
-
 class MaaFWUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
@@ -3663,6 +3561,14 @@ class MaaFWConfig(BaseModel):
     Selection: Optional[MaaFWConfig_Selection] = Field(
         default=None, description="controller、resource 与 task 选择"
     )
+
+
+class M9AUserConfig(MaaFWUserConfig):
+    """M9A 用户配置：与 MaaFW 用户配置同形（M9A 是 MaaFW 的特调类型）。"""
+
+
+class M9AConfig(MaaFWConfig):
+    """M9A 脚本配置：与 MaaFW 脚本配置同形（M9A 是 MaaFW 的特调类型）。"""
 
 
 class MaaFWInterfacePreviewIn(BaseModel):
@@ -4990,6 +4896,14 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+
+
+class WSSystemNoticeData(BaseModel):
+    """系统通知数据 (type=system.notice, id=Main)：启动期攒下、主连接建立后发出。"""
+
+    level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    title: str = Field(..., description="标题")
+    lines: List[str] = Field(default_factory=list, description="正文，每项一行")
 
 
 class WSEmulatorOperationData(BaseModel):

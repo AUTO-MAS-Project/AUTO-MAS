@@ -2472,179 +2472,6 @@ class HSRConfig(ConfigBase):
         super().__init__()
 
 
-class M9AUserConfig(ConfigBase):
-    """M9A用户配置"""
-
-    related_config: dict[str, MultipleConfig] = {}
-
-    def __init__(self) -> None:
-
-        ## Info ------------------------------------------------------------
-        ## 用户名称
-        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
-        ## 是否启用
-        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-        ## 剩余天数
-        self.Info_RemainedDay = ConfigItem(
-            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
-        )
-        ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "用户", UserDirectConfigModeValidator()
-        )
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem(
-            "Info", "IfQuickConfig", True, BoolValidator()
-        )
-        ## 任务前执行脚本
-        self.Info_IfScriptBeforeTask = ConfigItem(
-            "Info", "IfScriptBeforeTask", False, BoolValidator()
-        )
-        self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", "", FileValidator()
-        )
-        ## 任务后执行脚本
-        self.Info_IfScriptAfterTask = ConfigItem(
-            "Info", "IfScriptAfterTask", False, BoolValidator()
-        )
-        self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", "", FileValidator()
-        )
-        ## 备注
-        self.Info_Notes = ConfigItem("Info", "Notes", "无")
-        ## 用户标签信息
-        self.Info_Tag = ConfigItem(
-            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
-        )
-        ## 服务器资源
-        self.Info_Resource = ConfigItem("Info", "Resource", "官服")
-        ## 账号信息（用于切换账号）
-        self.Info_Account = ConfigItem("Info", "Account", "")
-
-        ## Task -------------------------------------------------------------
-        ## 可用任务列表（从 M9A 配置文件读取）
-        self.Task_AvailableTasks = ConfigItem(
-            "Task", "AvailableTasks", "[]", JSONValidator(list)
-        )
-        ## 运行任务队列 (用户在可用任务列表中选择)
-        self.Task_Queue = ConfigItem("Task", "Queue", "[]", JSONValidator(list))
-
-        ## Data ------------------------------------------------------------
-        ## 上次代理日期
-        self.Data_LastProxyDate = ConfigItem(
-            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## 上次完成每日心相日期
-        self.Data_LastPsychubeDate = ConfigItem(
-            "Data", "LastPsychubeDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## 上次完成自动深眠月份
-        self.Data_LastLimboMonth = ConfigItem(
-            "Data", "LastLimboMonth", "2000-01", DateTimeValidator("%Y-%m")
-        )
-        ## 上次完成自动醒梦月份
-        self.Data_LastLucidscapeMonth = ConfigItem(
-            "Data", "LastLucidscapeMonth", "2000-01", DateTimeValidator("%Y-%m")
-        )
-        ## 代理次数
-        self.Data_ProxyTimes = ConfigItem(
-            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
-        )
-
-        ## Notify ----------------------------------------------------------
-        ## 是否启用通知
-        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
-        ## 是否发送统计信息
-        self.Notify_IfSendStatistic = ConfigItem(
-            "Notify", "IfSendStatistic", False, BoolValidator()
-        )
-        ## 是否发送邮件
-        self.Notify_IfSendMail = ConfigItem(
-            "Notify", "IfSendMail", False, BoolValidator()
-        )
-        ## 收件地址
-        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-        ## 是否启用 Server 酱
-        self.Notify_IfServerChan = ConfigItem(
-            "Notify", "IfServerChan", False, BoolValidator()
-        )
-        ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        ## 自定义 Webhook 列表
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
-
-        super().__init__()
-
-    def getTags(self) -> str:
-        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
-        tags = []
-
-        # 日常代理标签（使用东4区时间）
-        tags.append(_tag_proxy(self))
-
-        # 剩余天数标签
-        tags.append(_tag_remained_days(self))
-        # 备注标签
-        tags.append(_tag_notes(self))
-
-        return json.dumps(tags, ensure_ascii=False)
-
-
-class M9AConfig(ConfigBase):
-    """M9A配置"""
-
-    related_config: dict[str, MultipleConfig] = {}
-
-    def __init__(self) -> None:
-
-        ## Info ------------------------------------------------------------
-        ## M9A 脚本名称
-        self.Info_Name = ConfigItem("Info", "Name", "新 M9A 脚本")
-        ## M9A 路径
-        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
-
-        ## Emulator --------------------------------------------------------
-        ## 模拟器 ID
-        self.Emulator_Id = ConfigItem(
-            "Emulator",
-            "Id",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
-        )
-        ## 模拟器索引
-        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
-
-        ## Run -------------------------------------------------------------
-        ## 代理次数限制
-        self.Run_ProxyTimesLimit = ConfigItem(
-            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
-        )
-        ## 运行次数限制
-        self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
-        )
-        ## 运行时间限制（分钟）
-        self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
-        )
-        ## 是否在队列结束后自动更新
-        self.Run_IfAutoUpdateAfterQueue = ConfigItem(
-            "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
-        )
-        ## 每日心相每日只执行一次
-        self.Run_IfPsychubeDailyOnce = ConfigItem(
-            "Run", "IfPsychubeDailyOnce", False, BoolValidator()
-        )
-        ## 深眠浅梦每月只执行一次
-        self.Run_IfSleepDreamMonthlyOnce = ConfigItem(
-            "Run", "IfSleepDreamMonthlyOnce", False, BoolValidator()
-        )
-
-        self.UserData = MultipleConfig([M9AUserConfig])
-
-        super().__init__()
-
-
 class MaaFWUserConfig(ConfigBase):
     """MaaFW 用户配置"""
 
@@ -2807,15 +2634,28 @@ def _migrate_maafw_auto_update_mode(data: dict) -> dict:
 
 
 class MaaFWConfig(ConfigBase):
-    """MaaFW 项目配置"""
+    """MaaFW 项目配置。
+
+    特调类型（M9A）是它的子类：字段集完全一致，只改下面三个类属性。``ConfigBase.__init__``
+    在各子类 ``__init__`` 末尾才登记条目，子类不能在 ``super().__init__()`` 之后覆盖
+    ``ConfigItem``，所以默认值与用户类都由类属性驱动。
+    """
 
     related_config: dict[str, MultipleConfig] = {}
+
+    ## 新建脚本时的默认名
+    DEFAULT_SCRIPT_NAME = "新 MFW 脚本"
+    ## 用户配置类（子类换成自己的同形子类，ScriptConfig.json 里 type 才对得上）
+    USER_CONFIG_CLASS: type[ConfigBase] = MaaFWUserConfig
+    ## 特调钩子：``"模块路径:属性名"``，运行期由 MaaFW 引擎按需导入（避免 models 反向依赖 task）；
+    ## 通用 MaaFW 为 None。钩子只装饰任务选择，引擎里不出现任何专项名字。
+    FLAVOR: str | None = None
 
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
         ## MaaFW 脚本名称
-        self.Info_Name = ConfigItem("Info", "Name", "新 MFW 脚本")
+        self.Info_Name = ConfigItem("Info", "Name", self.DEFAULT_SCRIPT_NAME)
         ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
         self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
         ## MaaFW 项目根目录，应包含 interface.json
@@ -3026,13 +2866,35 @@ class MaaFWConfig(ConfigBase):
             "Selection", "Tasks", "[ ]", JSONValidator(list)
         )
 
-        self.UserData = MultipleConfig([MaaFWUserConfig])
+        self.UserData = MultipleConfig([self.USER_CONFIG_CLASS])
 
         super().__init__()
 
     async def load(self, data: dict) -> bool:
         """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
         return await super().load(_migrate_maafw_auto_update_mode(data))
+
+
+class M9AUserConfig(MaaFWUserConfig):
+    """M9A 用户配置：与 MaaFW 用户配置同形。
+
+    ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
+    「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
+    """
+
+
+class M9AConfig(MaaFWConfig):
+    """M9A 脚本配置：MaaFW 的特调类型。
+
+    字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
+    （键 / 图标 / 创建卡）、默认脚本名，以及运行前的队列装饰（启动 / 关闭游戏首尾、
+    ``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
+    ``app/task/M9A/migration.py`` 一次性迁到这个形状。
+    """
+
+    DEFAULT_SCRIPT_NAME = "新 M9A 脚本"
+    USER_CONFIG_CLASS = M9AUserConfig
+    FLAVOR = "app.task.M9A.flavor:FLAVOR"
 
 
 class MaaPlanConfig(ConfigBase):
@@ -4890,13 +4752,14 @@ class GlobalConfig(ConfigBase):
         self.ScriptConfig = MultipleConfig(list(CLASS_BOOK.values()))
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
+        ## 启动期攒下、主连接建立后一次性发出的系统通知
+        self.startup_notices: list[dict[str, Any]] = []
         ## 工具箱配置
         self.ToolsConfig = ToolsConfig()
 
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
