@@ -2,10 +2,12 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 from app.core.notify import (
+    DispatchResult,
     NotifyPayload,
     NotifyTarget,
     dispatch,
     dispatch_task_report,
+    send_test_notification,
 )
 
 
@@ -273,3 +275,184 @@ def test_dispatch_task_report_publishes_failure_notice() -> None:
     notice = publish.await_args.kwargs["data"]
     assert notice.level == "warning"
     assert "全局邮件" in notice.message
+
+
+def test_send_test_notification_passes_through_injected_notifier() -> None:
+    notify = _Notify()
+    seen: dict[str, object] = {}
+
+    async def _capture(payload, targets, **kwargs):
+        seen["kwargs"] = kwargs
+        return DispatchResult()
+
+    with patch("app.core.notify.dispatch", _capture):
+        _run(send_test_notification(notifier=notify))
+
+    assert seen["kwargs"]["notifier"] is notify
+
+
+def test_target_channels_enumerates_all_channels_in_order() -> None:
+    """全开目标的渠道清单：成员、顺序、Webhook 稳定 ID 与显示名分离。"""
+
+    from app.core.notify import _target_channels
+
+    target = NotifyTarget(
+        name="全局",
+        system=True,
+        mail_to="user@example.com",
+        serverchan_key="send-key",
+        cmcc_newmsg_api_key="cmcc-key",
+        webhooks=(
+            ("hook-1", _Webhook(name="值班群")),
+            ("hook-2", _Webhook()),
+        ),
+        koishi=True,
+        openclaw_weixin=True,
+        openclaw_qq=True,
+    )
+
+    channels = _target_channels(target)
+
+    assert list(channels) == [
+        "全局系统",
+        "全局邮件",
+        "全局 ServerChan",
+        "全局 中国移动5G短信",
+        "全局 Webhook hook-1",
+        "全局 Webhook hook-2",
+        "全局 Koishi",
+        "全局 微信（iLink）",
+        "全局 QQ（官方机器人）",
+    ]
+    # 键是稳定投递 ID（uid），值是含配置名的显示名；同名 Webhook 键不同
+    assert channels["全局 Webhook hook-1"] == "全局 Webhook 值班群"
+    assert channels["全局 Webhook hook-2"] == "全局 Webhook 值班群"
+
+
+def test_dispatch_empty_recipient_warn_policy_counts_failure() -> None:
+    """空收件地址 + warn 策略：不发送但计入失败（收件配置为空是一种故障）。"""
+
+    notify = _Notify()
+    target = NotifyTarget(name="测试", mail_to="", empty_policy="warn")
+
+    with patch("app.core.notify.Notify", notify):
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
+
+    assert list(result.failed) == ["测试邮件"]
+    assert result.attempted == 1
+    assert notify.calls == []
+
+
+def test_dispatch_empty_recipient_skip_policy_not_attempted() -> None:
+    """空收件密钥 + skip 策略：跳过且不计数（渠道视为未配置）。"""
+
+    target = NotifyTarget(name="测试", serverchan_key="", empty_policy="skip")
+
+    with patch("app.core.notify.Notify", _Notify()):
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
+
+    assert result.attempted == 0
+    assert result.failed == ()
+    assert result.succeeded == ()
+
+
+def test_dispatch_empty_recipient_send_policy_still_sends() -> None:
+    """空收件地址 + send 策略：照常发送，成败交给传输层判定。"""
+
+    notify = _Notify()
+    target = NotifyTarget(name="测试", mail_to="", empty_policy="send")
+
+    with patch("app.core.notify.Notify", notify):
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
+
+    assert result.attempted == 1
+    assert list(result.succeeded) == ["测试邮件"]
+    assert notify.calls == ["邮件"]
+
+
+def test_channel_registry_entries_are_complete() -> None:
+    """注册表完整性：每条渠道必有发送闭包，有收件门控必有告警文案。"""
+
+    from app.core.notify import (
+        _CHANNELS_AFTER_WEBHOOKS,
+        _CHANNELS_BEFORE_WEBHOOKS,
+    )
+
+    specs = _CHANNELS_BEFORE_WEBHOOKS + _CHANNELS_AFTER_WEBHOOKS
+
+    assert len(specs) == 7
+    for spec in specs:
+        assert spec.send is not None
+        if spec.recipient is not None:
+            assert spec.hint is not None
+
+
+def test_dispatch_sends_all_channels_in_order() -> None:
+    """全开目标的发送顺序与结果命名：与渠道清单同序，逐渠道隔离成败。"""
+
+    class _FullNotify(_Notify):
+        async def send_cmcc_newmsg(self, **kwargs) -> None:
+            self.calls.append("中国移动5G短信")
+
+        async def send_openclaw_weixin(self, **kwargs) -> None:
+            self.calls.append("微信（iLink）")
+
+        async def send_openclaw_qq(self, **kwargs) -> None:
+            self.calls.append("QQ（官方机器人）")
+
+    notify = _FullNotify()
+    target = NotifyTarget(
+        name="全局",
+        system=True,
+        mail_to="user@example.com",
+        serverchan_key="send-key",
+        cmcc_newmsg_api_key="cmcc-key",
+        webhooks=(("hook-1", _Webhook()),),
+        koishi=True,
+        openclaw_weixin=True,
+        openclaw_qq=True,
+    )
+
+    with patch("app.core.notify.Notify", notify):
+        result = _run(
+            dispatch(
+                NotifyPayload(title="标题", text="正文", html="<p>正文</p>"),
+                [target],
+            )
+        )
+
+    assert notify.calls == [
+        "系统",
+        "邮件",
+        "ServerChan",
+        "中国移动5G短信",
+        "Webhook",
+        "Koishi",
+        "微信（iLink）",
+        "QQ（官方机器人）",
+    ]
+    # _Notify.send_koishi 首次返回 False，验证失败不影响其他渠道计数
+    assert result.attempted == 8
+    assert list(result.failed) == ["全局 Koishi"]
+    assert list(result.succeeded_ids) == [
+        "全局系统",
+        "全局邮件",
+        "全局 ServerChan",
+        "全局 中国移动5G短信",
+        "全局 Webhook hook-1",
+        "全局 微信（iLink）",
+        "全局 QQ（官方机器人）",
+    ]
+
+
+def test_send_test_notification_defaults_to_global_notifier() -> None:
+    seen: dict[str, object] = {}
+
+    async def _capture(payload, targets, **kwargs):
+        seen["kwargs"] = kwargs
+        return DispatchResult()
+
+    with patch("app.core.notify.dispatch", _capture):
+        _run(send_test_notification())
+
+    assert seen["kwargs"]["notifier"] is None

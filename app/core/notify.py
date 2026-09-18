@@ -341,32 +341,17 @@ def _webhook_name(uid: str, webhook: Any) -> str:
 def _target_channels(target: NotifyTarget) -> dict[str, str]:
     """枚举目标的投递 ID 和显示名称，避免同名 Webhook 共用补发记录。"""
 
-    channels = {}
-    if target.system:
-        channel = f"{target.name}系统"
-        channels[channel] = channel
-    if target.mail_to is not None:
-        channel = f"{target.name}邮件"
-        channels[channel] = channel
-    if target.serverchan_key is not None:
-        channel = f"{target.name} ServerChan"
-        channels[channel] = channel
-    if target.cmcc_newmsg_api_key is not None:
-        channel = f"{target.name} 中国移动5G短信"
-        channels[channel] = channel
-    for uid, webhook in target.webhooks:
-        channels[f"{target.name} Webhook {uid}"] = (
-            f"{target.name} Webhook {_webhook_name(uid, webhook)}"
-        )
-    if target.koishi:
-        channel = f"{target.name} Koishi"
-        channels[channel] = channel
-    if target.openclaw_weixin:
-        channel = f"{target.name} 微信（iLink）"
-        channels[channel] = channel
-    if target.openclaw_qq:
-        channel = f"{target.name} QQ（官方机器人）"
-        channels[channel] = channel
+    channels: dict[str, str] = {}
+    for spec in _CHANNELS_BEFORE_WEBHOOKS:
+        if spec.predicate(target):
+            channel = spec.name(target)
+            channels[channel] = channel
+    for delivery_id, display, _ in _webhook_channels(target):
+        channels[delivery_id] = display
+    for spec in _CHANNELS_AFTER_WEBHOOKS:
+        if spec.predicate(target):
+            channel = spec.name(target)
+            channels[channel] = channel
     return channels
 
 
@@ -426,7 +411,7 @@ class Notifier(Protocol):
 
     async def send_mail(
         self,
-        mode: Literal["文本", "网页"],
+        mode: MailMode,
         title: str,
         content: str,
         to_address: str,
@@ -458,6 +443,131 @@ class Notifier(Protocol):
     async def send_openclaw_weixin(self, title: str, content: str) -> bool | None: ...
 
     async def send_openclaw_qq(self, title: str, content: str) -> bool | None: ...
+
+
+@dataclass(frozen=True)
+class _ChannelSpec:
+    """单个通知渠道的投递规格；渠道枚举与发送共用此表，新增渠道只补一条。
+
+    ``predicate`` 保留各渠道现行的启用判定（真值判断与 ``is not None`` 语义
+    不同，不得互相改写）。``recipient`` 为 ``None`` 表示直接发送；非 ``None``
+    时发送前按空值策略决定是否投递，且必须同时给出 ``hint``（空值告警文案）。
+    ``send`` 以 ``(sender, payload, target)`` 构造发送闭包，各渠道实参逐字
+    保留。
+    """
+
+    predicate: Callable[[NotifyTarget], bool]
+    name: Callable[[NotifyTarget], str]
+    recipient: Callable[[NotifyTarget], str | None] | None = None
+    hint: Callable[[NotifyTarget], str] | None = None
+    send: (
+        Callable[[Notifier, NotifyPayload, NotifyTarget], Callable[[], Awaitable[Any]]]
+        | None
+    ) = None
+
+
+# 两张表的拼接位置即 Webhook 渠道的分发位置；渠道顺序就是投递顺序，用户可见。
+_CHANNELS_BEFORE_WEBHOOKS: tuple[_ChannelSpec, ...] = (
+    _ChannelSpec(
+        lambda t: t.system,
+        lambda t: f"{t.name}系统",
+        send=lambda s, p, t: (
+            lambda: s.push_plyer(
+                title=p.system_title or p.title,
+                message=p.system_message or p.system_content,
+                ticker=p.system_ticker or p.title,
+                t=p.system_timeout,
+            )
+        ),
+    ),
+    _ChannelSpec(
+        lambda t: t.mail_to is not None,
+        lambda t: f"{t.name}邮件",
+        recipient=lambda t: t.mail_to,
+        hint=lambda t: f"{t.name}邮箱地址",
+        send=lambda s, p, t: (
+            lambda: s.send_mail(
+                mode=p.email_mode,
+                title=p.title,
+                content=p.email_content,
+                to_address=t.mail_to,
+                images=p.mail_images,
+            )
+        ),
+    ),
+    _ChannelSpec(
+        lambda t: t.serverchan_key is not None,
+        lambda t: f"{t.name} ServerChan",
+        recipient=lambda t: t.serverchan_key,
+        hint=lambda t: f"{t.name}ServerChan 密钥",
+        send=lambda s, p, t: (
+            lambda: s.ServerChanPush(
+                title=p.title,
+                content=p.serverchan_content,
+                send_key=t.serverchan_key,
+            )
+        ),
+    ),
+    _ChannelSpec(
+        lambda t: t.cmcc_newmsg_api_key is not None,
+        lambda t: f"{t.name} 中国移动5G短信",
+        recipient=lambda t: t.cmcc_newmsg_api_key,
+        hint=lambda t: f"{t.name}中国移动5G短信 API Key",
+        send=lambda s, p, t: (
+            lambda: s.send_cmcc_newmsg(
+                title=p.title,
+                content=p.cmcc_newmsg_content,
+                api_key=t.cmcc_newmsg_api_key,
+            )
+        ),
+    ),
+)
+_CHANNELS_AFTER_WEBHOOKS: tuple[_ChannelSpec, ...] = (
+    _ChannelSpec(
+        lambda t: t.koishi,
+        lambda t: f"{t.name} Koishi",
+        send=lambda s, p, t: (
+            lambda: (
+                s.send_koishi(p.koishi_content, msgtype=p.koishi_msgtype)
+                if p.koishi_msgtype != "text"
+                else s.send_koishi(p.koishi_content)
+            )
+        ),
+    ),
+    _ChannelSpec(
+        lambda t: t.openclaw_weixin,
+        lambda t: f"{t.name} 微信（iLink）",
+        send=lambda s, p, t: (
+            lambda: s.send_openclaw_weixin(
+                title=p.title,
+                content=p.openclaw_weixin_content,
+            )
+        ),
+    ),
+    _ChannelSpec(
+        lambda t: t.openclaw_qq,
+        lambda t: f"{t.name} QQ（官方机器人）",
+        send=lambda s, p, t: (
+            lambda: s.send_openclaw_qq(
+                title=p.title,
+                content=p.openclaw_qq_content,
+            )
+        ),
+    ),
+)
+
+
+def _webhook_channels(target: NotifyTarget) -> tuple[tuple[str, str, Any], ...]:
+    """返回 Webhook 的 (投递 ID, 显示名, 配置) 三元组；ID 用 uid，同名或改名不影响补发记录。"""
+
+    return tuple(
+        (
+            f"{target.name} Webhook {uid}",
+            f"{target.name} Webhook {_webhook_name(uid, webhook)}",
+            webhook,
+        )
+        for uid, webhook in target.webhooks
+    )
 
 
 async def dispatch(
@@ -514,122 +624,41 @@ async def dispatch(
         attempted += 1
         failed.append(channel)
 
+    async def _attempt_spec(spec: _ChannelSpec, target: NotifyTarget) -> None:
+        if not spec.predicate(target):
+            return
+        channel = spec.name(target)
+        if spec.recipient is not None:
+            should_send, missing = _recipient_action(
+                spec.recipient(target),
+                target.empty_policy,
+                channel=channel,
+                hint=spec.hint(target),
+            )
+            if missing:
+                miss(channel)
+            if not should_send:
+                return
+        await attempt(channel, spec.send(sender, payload, target))
+
     for target in targets:
-        if target.system:
+        for spec in _CHANNELS_BEFORE_WEBHOOKS:
+            await _attempt_spec(spec, target)
+
+        for delivery_id, display, webhook in _webhook_channels(target):
             await attempt(
-                f"{target.name}系统",
-                lambda: sender.push_plyer(
-                    title=payload.system_title or payload.title,
-                    message=payload.system_message or payload.system_content,
-                    ticker=payload.system_ticker or payload.title,
-                    t=payload.system_timeout,
-                ),
-            )
-
-        if target.mail_to is not None:
-            channel = f"{target.name}邮件"
-            should_send, missing = _recipient_action(
-                target.mail_to,
-                target.empty_policy,
-                channel=channel,
-                hint=f"{target.name}邮箱地址",
-            )
-            if missing:
-                miss(channel)
-            if should_send:
-                await attempt(
-                    channel,
-                    lambda t=target: sender.send_mail(
-                        mode=payload.email_mode,
-                        title=payload.title,
-                        content=payload.email_content,
-                        to_address=t.mail_to,
-                        images=payload.mail_images,
-                    ),
-                )
-
-        if target.serverchan_key is not None:
-            channel = f"{target.name} ServerChan"
-            should_send, missing = _recipient_action(
-                target.serverchan_key,
-                target.empty_policy,
-                channel=channel,
-                hint=f"{target.name}ServerChan 密钥",
-            )
-            if missing:
-                miss(channel)
-            if should_send:
-                await attempt(
-                    channel,
-                    lambda t=target: sender.ServerChanPush(
-                        title=payload.title,
-                        content=payload.serverchan_content,
-                        send_key=t.serverchan_key,
-                    ),
-                )
-
-        if target.cmcc_newmsg_api_key is not None:
-            channel = f"{target.name} 中国移动5G短信"
-            should_send, missing = _recipient_action(
-                target.cmcc_newmsg_api_key,
-                target.empty_policy,
-                channel=channel,
-                hint=f"{target.name}中国移动5G短信 API Key",
-            )
-            if missing:
-                miss(channel)
-            if should_send:
-                await attempt(
-                    channel,
-                    lambda t=target: sender.send_cmcc_newmsg(
-                        title=payload.title,
-                        content=payload.cmcc_newmsg_content,
-                        api_key=t.cmcc_newmsg_api_key,
-                    ),
-                )
-
-        for uid, webhook in target.webhooks:
-            await attempt(
-                f"{target.name} Webhook {_webhook_name(uid, webhook)}",
+                display,
                 lambda w=webhook: sender.WebhookPush(
                     title=payload.title,
                     content=payload.webhook_content_for(w),
                     image_base64=payload.webhook_image_base64 or "",
                     webhook=w,
                 ),
-                channel_id=f"{target.name} Webhook {uid}",
+                channel_id=delivery_id,
             )
 
-        if target.koishi:
-            await attempt(
-                f"{target.name} Koishi",
-                lambda: (
-                    sender.send_koishi(
-                        payload.koishi_content,
-                        msgtype=payload.koishi_msgtype,
-                    )
-                    if payload.koishi_msgtype != "text"
-                    else sender.send_koishi(payload.koishi_content)
-                ),
-            )
-
-        if target.openclaw_weixin:
-            await attempt(
-                f"{target.name} 微信（iLink）",
-                lambda: sender.send_openclaw_weixin(
-                    title=payload.title,
-                    content=payload.openclaw_weixin_content,
-                ),
-            )
-
-        if target.openclaw_qq:
-            await attempt(
-                f"{target.name} QQ（官方机器人）",
-                lambda: sender.send_openclaw_qq(
-                    title=payload.title,
-                    content=payload.openclaw_qq_content,
-                ),
-            )
+        for spec in _CHANNELS_AFTER_WEBHOOKS:
+            await _attempt_spec(spec, target)
 
     return DispatchResult(
         attempted=attempted,
@@ -808,8 +837,11 @@ async def _publish_task_notification_failure(
         logger.warning(f"发送通知失败提示到前端时出现异常: {exc}")
 
 
-async def send_test_notification() -> DispatchResult:
-    """向全部已启用的全局渠道发送测试通知。"""
+async def send_test_notification(*, notifier: Notifier | None = None) -> DispatchResult:
+    """向全部已启用的全局渠道发送测试通知。
+
+    ``notifier`` 缺省用全局 Notify 单例，注入面供测试与渠道扩展替换。
+    """
 
     text = (
         "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容，说明 AUTO-MAS "
@@ -826,4 +858,5 @@ async def send_test_notification() -> DispatchResult:
             system_timeout=3,
         ),
         [global_target(include_system=True, empty_policy="warn")],
+        notifier=notifier,
     )

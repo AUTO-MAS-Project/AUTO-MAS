@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
+import importlib
 import json
 import os
 import re
@@ -42,6 +43,8 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    Protocol,
+    runtime_checkable,
 )
 
 import httpx
@@ -57,6 +60,7 @@ from jinja2 import Environment, FileSystemLoader
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
+    USER_CONFIG_BOOK,
     BAAHConfig,
     BAAHUserConfig,
     BetterGIConfig,
@@ -273,6 +277,23 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
                 stage_drops[item] = stage_drops.get(item, 0) + count
 
     return all_stage_drops
+
+
+RESTORE_POOL_MODULE_BOOK = {
+    MaaConfig: "app.task.MAA.tools.restore_service",
+    MaaEndConfig: "app.task.MaaEnd.tools.restore_service",
+    SrcConfig: "app.task.SRC.tools.restore_service",
+    M9AConfig: "app.task.M9A.tools.restore_service",
+    MaaFWConfig: "app.task.MaaFW.tools.restore_service",
+    GeneralConfig: "app.task.general.tools.restore_service",
+    OkwwConfig: "app.task.Okww.tools.restore_service",
+    OkNteConfig: "app.task.OkNte.tools.restore_service",
+    HSRConfig: "app.task.HSR.tools.restore_service",
+    BetterGIConfig: "app.task.BetterGI.tools.restore_service",
+    ZzzOdConfig: "app.task.ZzzOd.tools.restore_service",
+    BAAHConfig: "app.task.BAAH.tools.restore_service",
+}
+"""配置恢复分发表: 脚本配置类 → 专项恢复池模块路径, 调用时延迟导入, 入口统一为 RESTORE_POOLS"""
 
 
 class AppConfig(GlobalConfig):
@@ -1102,14 +1123,13 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
         # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid, config = await script_config.UserData.add(MaaUserConfig)
-        elif isinstance(script_config, SrcConfig):
-            uid, config = await script_config.UserData.add(SrcUserConfig)
-        elif isinstance(script_config, GeneralConfig):
-            uid, config = await script_config.UserData.add(GeneralUserConfig)
-        elif isinstance(script_config, OkwwConfig):
-            uid, config = await script_config.UserData.add(OkwwUserConfig)
+        user_config_cls = USER_CONFIG_BOOK.get(type(script_config))
+        if user_config_cls is None:
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+        uid, config = await script_config.UserData.add(user_config_cls)
+
+        # OK-WW 用户还须从脚本当前配置初始化 MAS 用户目录。
+        if isinstance(script_config, OkwwConfig):
             try:
                 await self.ensure_okww_user_config(
                     script_id=script_id,
@@ -1120,24 +1140,6 @@ class AppConfig(GlobalConfig):
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
                 await script_config.UserData.remove(uid)
                 raise
-        elif isinstance(script_config, OkNteConfig):
-            uid, config = await script_config.UserData.add(OkNteUserConfig)
-        elif isinstance(script_config, MaaEndConfig):
-            uid, config = await script_config.UserData.add(MaaEndUserConfig)
-        elif isinstance(script_config, M9AConfig):
-            uid, config = await script_config.UserData.add(M9AUserConfig)
-        elif isinstance(script_config, MaaFWConfig):
-            uid, config = await script_config.UserData.add(MaaFWUserConfig)
-        elif isinstance(script_config, HSRConfig):
-            uid, config = await script_config.UserData.add(HSRUserConfig)
-        elif isinstance(script_config, BetterGIConfig):
-            uid, config = await script_config.UserData.add(BetterGIUserConfig)
-        elif isinstance(script_config, ZzzOdConfig):
-            uid, config = await script_config.UserData.add(ZzzOdUserConfig)
-        elif isinstance(script_config, BAAHConfig):
-            uid, config = await script_config.UserData.add(BAAHUserConfig)
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         return uid, config
 
@@ -2336,62 +2338,16 @@ class AppConfig(GlobalConfig):
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
         与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
-        与 schema，只在分发链加一个分支。
+        与 schema，只在 RESTORE_POOL_MODULE_BOOK 注册一条。
         """
 
         from app.utils.config_restore import RestoreContext, build_restore_service
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, OkNteConfig):
-            from app.task.OkNte.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, OkwwConfig):
-            from app.task.Okww.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaConfig):
-            from app.task.MAA.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaEndConfig):
-            from app.task.MaaEnd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, M9AConfig):
-            from app.task.M9A.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, GeneralConfig):
-            from app.task.general.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, BAAHConfig):
-            from app.task.BAAH.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, SrcConfig):
-            from app.task.SRC.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, BetterGIConfig):
-            from app.task.BetterGI.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaFWConfig):
-            from app.task.MaaFW.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, HSRConfig):
-            from app.task.HSR.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        else:
+        module_name = RESTORE_POOL_MODULE_BOOK.get(type(script_config))
+        if module_name is None:
             raise ValueError("该专项暂不支持配置恢复")
+        restore_pools = importlib.import_module(module_name).RESTORE_POOLS
         return build_restore_service(
             RestoreContext(
                 config=self,
@@ -2399,7 +2355,7 @@ class AppConfig(GlobalConfig):
                 script_id=script_id,
                 user_id=user_id,
             ),
-            RESTORE_POOLS,
+            restore_pools,
         )
 
     async def list_config_backups(
@@ -4903,6 +4859,42 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
         logger.success(f"清理完成: {deleted_count} 个日期目录")
+
+
+@runtime_checkable
+class AppConfigServices(Protocol):
+    """api 层消费的配置域服务面（消费面契约）。
+
+    ``AppConfig`` 结构化隐式满足本协议，无需显式继承；api/scripts.py 按域
+    拆分时以本协议为构造注入面。当前只声明已具行为测试的服务集群，随拆分
+    批次扩展；拆分落地前不新增其他消费方开缝。
+    """
+
+    def restore_service(
+        self, script_id: str, user_id: str
+    ) -> "ConfigRestoreService": ...
+
+    async def list_config_backups(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict: ...
+
+    async def ensure_config_backup(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict: ...
+
+    async def restore_config_backup(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict: ...
+
+    async def get_config_backup_preview(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict: ...
+
+    async def get_config_backup_file(
+        self, script_id: str, user_id: str, ts: str, target: str, path: str
+    ) -> dict: ...
+
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, Any]: ...
 
 
 Config = AppConfig()
