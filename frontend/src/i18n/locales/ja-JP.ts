@@ -1057,6 +1057,8 @@ export default {
     optional: '任意',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
+    checkGameUpdateBeforeLogin:
+      '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
@@ -1120,7 +1122,7 @@ export default {
     whenThisScriptRuns:
       'オンにすると、このスクリプトがキューで実行される際、すべてのユーザーのタスク完了後に M9A のリソースバージョンを自動更新します。あらかじめ M9A を開いて更新元を設定しておいてください',
     whenClientDetectedAs:
-      'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
+      'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土公式サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
     updateAutomaticallyBeforeEvery: '実行前に毎回自動更新しますか？',
     forceGameClose: 'ゲームを強制終了',
     currentOkWwInstall:
@@ -1385,7 +1387,7 @@ export default {
     scriptConfigurationFileType: 'スクリプトの設定ファイルの種類',
     automaticSaveFailedSave: '自動保存に失敗しました。手動で保存してください',
     installGamePackageAutomatically:
-      'ゲームインストーラーを自動インストール（中国本土サーバーのみ）',
+      'ゲームインストーラーを自動インストール（中国本土公式サーバーのみ）',
     whetherGameClosesAfter: '自動ログインのタスク終了後にゲームを閉じるかどうか',
     urlCustomProtocol: 'カスタムプロトコルの URL',
     ifFailureLogAppears:

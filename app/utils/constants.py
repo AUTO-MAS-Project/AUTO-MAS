@@ -711,6 +711,23 @@ STARRAIL_PACKAGE_NAME = {
 }
 """崩坏·星穹铁道包名映射表"""
 
+STARRAIL_CN_UPDATE_LINK_URL = (
+    "https://act-api-takumi.mihoyo.com/event/download_porter/link"
+    "/hkrpg_cn/official/android_default"
+)
+"""崩坏·星穹铁道国服官服安卓更新入口，302 跳转至 CDN 上的真实安装包地址"""
+
+STARRAIL_UPDATE_LINK_SERVER = {
+    "CN-Official": STARRAIL_CN_UPDATE_LINK_URL,
+}
+"""崩坏·星穹铁道各服务器的更新入口映射表
+
+入口的跳转地址同时提供版本号与安装包，因此版本号与将安装的包必然一致。
+目前只有国服官服放出了安卓安装包直链，其余服务器还没有公开可用的安卓入口。
+
+不在此表中的服务器会跳过客户端版本检查。
+"""
+
 STARRAIL_STAGE_BOOK = {
     "-": "禁用",
     "Calyx_Golden_Memories_Planarcadia": "材料：角色经验（回忆之蕾 二相乐园）",

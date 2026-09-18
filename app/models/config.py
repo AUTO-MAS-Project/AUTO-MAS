@@ -2045,6 +2045,18 @@ class SrcConfig(ConfigBase):
             "ExitGame",
             OptionsValidator(["ExitGame", "ExitEmulator"]),
         )
+        ## 是否在登录游戏前检查游戏更新
+        self.Run_IfCheckGameUpdate = ConfigItem(
+            "Run", "IfCheckGameUpdate", False, BoolValidator()
+        )
+        ## 版本落后时是否由 MAS 自动下载并安装安装包
+        self.Run_IfAutoInstallGameApk = ConfigItem(
+            "Run", "IfAutoInstallGameApk", False, BoolValidator()
+        )
+        ## 游戏更新时间限制（分钟）
+        self.Run_GameUpdateTimeLimit = ConfigItem(
+            "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
+        )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
