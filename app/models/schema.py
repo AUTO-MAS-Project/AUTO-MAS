@@ -84,6 +84,9 @@ class TagItem(BaseModel):
 class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
     value: Optional[str] = Field(..., description="实际值")
+    activity: Optional[bool] = Field(
+        default=None, description="是否为进行中的活动关（仅关卡下拉选项携带）"
+    )
 
 
 class ComboBoxOut(OutBase):

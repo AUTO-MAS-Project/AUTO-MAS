@@ -5048,8 +5048,13 @@ class GlobalConfig(ConfigBase):
                     now = datetime.now(tz=activity_timezone)
                     if activity_start < now < activity_expire:
                         for stage in side_story["Stages"]:
+                            # activity 标记供计划表关卡下拉识别活动关（交换置顶）
                             activity_stage_combox.append(
-                                {"label": stage["Display"], "value": stage["Value"]}
+                                {
+                                    "label": stage["Display"],
+                                    "value": stage["Value"],
+                                    "activity": True,
+                                }
                             )
                             if "SSReopen" not in stage["Display"]:
                                 activity_stage_drop_info.append(

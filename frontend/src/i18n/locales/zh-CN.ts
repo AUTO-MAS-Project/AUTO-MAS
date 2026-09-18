@@ -3049,6 +3049,8 @@ export default {
       stagePlaceholder: '输入关卡号',
       noSwitch: '不切换',
       usedSuffix: '{label} (已选择)',
+      activityTag: '活动',
+      endedSuffix: '{label}（已结束）',
     },
     toast: {
       created: '已创建新的{type}："{name}"',

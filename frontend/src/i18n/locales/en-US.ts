@@ -3165,6 +3165,8 @@ export default {
       stagePlaceholder: 'Enter a stage code',
       noSwitch: 'Keep as is',
       usedSuffix: '{label} (already used)',
+    activityTag: 'Event',
+    endedSuffix: '{label} (ended)',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

@@ -11,5 +11,9 @@ export type ComboBoxItem = {
      * 实际值
      */
     value: (string | null);
+    /**
+     * 是否为进行中的活动关（仅关卡下拉选项携带）
+     */
+    activity?: (boolean | null);
 };
 
