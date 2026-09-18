@@ -374,6 +374,26 @@
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.accountSwitchingMethod') }}
+                    <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  :options="accountSwitchMethodOptions"
+                  @change="handleAccountSwitchMethodChange"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
                 <template #label>
@@ -465,7 +485,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
@@ -575,6 +595,11 @@ const taskTransitionMethodOptions = [
   { label: t('edit.restartEndfield'), value: 'ExitGame' },
 ]
 
+const accountSwitchMethodOptions = [
+  { label: t('edit.accountSwitchMethodMas'), value: 'MAS' },
+  { label: t('edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
+]
+
 const emulatorLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 
@@ -608,6 +633,26 @@ const handleChange = async (category: string, key: string, value: unknown) => {
   }, `${category}.${key}`)
 }
 
+const masAccountSwitchWarningShown = ref(false)
+
+const showMasAccountSwitchWarning = () => {
+  if (masAccountSwitchWarningShown.value) return
+
+  masAccountSwitchWarningShown.value = true
+  Modal.warning({
+    title: t('edit.maaendMasAccountSwitchWarningTitle'),
+    content: t('edit.maaendMasAccountSwitchWarning'),
+    okText: t('edit.gotIt'),
+  })
+}
+
+const handleAccountSwitchMethodChange = async (
+  value: MaaEndScriptConfig['Run']['AccountSwitchMethod']
+) => {
+  if (value === 'MAS') showMasAccountSwitchWarning()
+  await handleChange('Run', 'AccountSwitchMethod', value)
+}
+
 const handleResolutionBlur = async (key: 'RestoreResolutionWidth' | 'RestoreResolutionHeight') => {
   const value = maaEndConfig.Game[key] ?? (key === 'RestoreResolutionWidth' ? 1920 : 1080)
   maaEndConfig.Game[key] = value
@@ -618,9 +663,13 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
+  if (config.Run?.AccountSwitchMethod == null) {
+    maaEndConfig.Run.AccountSwitchMethod = 'MAAEND'
+  }
   if (config.Game?.SetResolution == null) {
     maaEndConfig.Game.SetResolution = false
   }
+  if (maaEndConfig.Run.AccountSwitchMethod === 'MAS') showMasAccountSwitchWarning()
 }
 
 const refreshScript = async () => {

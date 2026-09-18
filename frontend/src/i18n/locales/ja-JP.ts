@@ -905,6 +905,11 @@ export default {
     readInterface: 'インターフェースを読み込む',
     debug: 'デバッグ',
     accountSwitchingMethod: 'アカウントの切り替え方法',
+    accountSwitchMethodMas: 'MAS の自動切り替え',
+    accountSwitchMethodMaaend: 'MAAEND 内蔵切り替え',
+    maaendMasAccountSwitchWarningTitle: 'MAS のアカウント切り替えに関する注意',
+    maaendMasAccountSwitchWarning:
+      'MAS の自動切り替えでは滑索データが混在する可能性があります。使用前に「滑索座標のインポート／更新」機能を無効にしてください。',
     giveUpAfterThis: 'この回数を超えて失敗した場合は中止します',
     pickGameResourceThis: 'このユーザーが使うゲームリソースを選びます',
     clickSaveConfigurationWhen:

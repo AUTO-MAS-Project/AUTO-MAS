@@ -958,6 +958,11 @@ export default {
     readInterface: 'Read the interface',
     debug: 'Debug',
     accountSwitchingMethod: 'Account switching method',
+    accountSwitchMethodMas: 'MAS account switching',
+    accountSwitchMethodMaaend: 'MAAEND built-in switching',
+    maaendMasAccountSwitchWarningTitle: 'MAS account switching risk',
+    maaendMasAccountSwitchWarning:
+      'MAS account switching can mix up Zipline data. Disable the "Import/update Zipline coordinates" feature before using it.',
     giveUpAfterThis: 'Give up after this many failures',
     pickGameResourceThis: 'Pick the game resource this user runs',
     clickSaveConfigurationWhen: 'Click "Save configuration" when you are done to end this session.',

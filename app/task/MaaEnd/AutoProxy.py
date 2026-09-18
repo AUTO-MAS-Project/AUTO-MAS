@@ -312,6 +312,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
 
+    def _account_switch_method(self) -> str:
+        """读取账号切换方式；缺失或非法值沿用 MaaEnd 默认入口。"""
+
+        method = str(self.script_config.get("Run", "AccountSwitchMethod") or "")
+        return method if method in {"MAS", "MAAEND"} else "MAAEND"
+
     async def check(self) -> str:
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
@@ -325,7 +331,15 @@ class AutoProxyTask(TaskExecuteBase):
             return "今日代理次数已达上限, 跳过该用户"
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        if account_id:
+        account_switch_method = self._account_switch_method()
+        if (
+            account_switch_method == "MAS"
+            and account_id
+            and self.emulator_manager is not None
+        ):
+            self.cur_user_item.status = "异常"
+            return "MAS 自建账号切换暂不支持模拟器，请改用 MAAEND 内置账号切换"
+        if account_switch_method == "MAAEND" and account_id:
             if len(account_id) < 4 or not account_id[-4:].isdigit():
                 self.cur_user_item.status = "异常"
                 return "MAAEND 内置账号切换需要账号末四位为数字，请检查账号ID"
@@ -342,7 +356,11 @@ class AutoProxyTask(TaskExecuteBase):
                 _MAAEND_CLOSE_GAME_TASK
             ):
                 return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
-            if account_id and not loader.has_task(_MAAEND_ACCOUNT_SWITCH_TASK):
+            if (
+                account_switch_method == "MAAEND"
+                and account_id
+                and not loader.has_task(_MAAEND_ACCOUNT_SWITCH_TASK)
+            ):
                 return "当前 MaaEnd 版本不支持内置账号切换，请更新 MaaEnd 后重试"
 
         config_mode = maaend_config_mode(self.cur_user_config.get("Info", "Mode"))
@@ -872,17 +890,41 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
             self.script_info.log = "正在启动游戏..."
-            # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
+            account_switch_method = self._account_switch_method()
+            use_mas_account_switch = account_switch_method == "MAS"
+            # MAAEND 入口由 MXU 的 GameSetting pretask 启动游戏；MAS 兼容入口
+            # 必须先让游戏进入可交互状态，再交给旧的游戏内登录流程。
             try:
                 if self.emulator_manager is None:
-                    if self.mode == self.first_run_mode and is_process_running(
-                        "Endfield.exe"
-                    ):
-                        logger.info(
-                            "关闭已运行的终末地，准备执行 MaaEnd 游戏设置预任务"
-                        )
-                        await self.kill_game_process()
-                    logger.info("终末地将由 MaaEnd 前置程序启动")
+                    if use_mas_account_switch:
+                        if is_process_running("Endfield.exe"):
+                            logger.info(
+                                "检测到终末地客户端已运行，准备由 MAS 执行账号切换"
+                            )
+                        else:
+                            await self.game_process_manager.kill()
+                            logger.info(
+                                f"启动终末地: {self.script_config.get('Game', 'Path')}"
+                            )
+                            await self.game_process_manager.open_process(
+                                self.script_config.get("Game", "Path"),
+                                *str(self.script_config.get("Game", "Arguments")).split(
+                                    " "
+                                ),
+                            )
+                            await asyncio.sleep(
+                                self.script_config.get("Game", "WaitTime")
+                            )
+                    else:
+                        # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
+                        if self.mode == self.first_run_mode and is_process_running(
+                            "Endfield.exe"
+                        ):
+                            logger.info(
+                                "关闭已运行的终末地，准备执行 MaaEnd 游戏设置预任务"
+                            )
+                            await self.kill_game_process()
+                        logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
                     logger.info(
@@ -902,7 +944,18 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-            if account_id:
+            if use_mas_account_switch and account_id:
+                try:
+                    from .tools.login import login
+
+                    self.script_info.log = "正在由 MAS 自建流程切换账号..."
+                    await login(account_id, emulator_info)
+                except Exception as error:
+                    await self.handle_pre_maaend_error("MAS 自建账号切换失败", error)
+                    continue
+                logger.info(f"用户 {self.cur_user_item.user_id} MAS 自建账号切换成功")
+                self.script_info.log = "MAS 自建账号切换完成"
+            elif account_id:
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                 )
@@ -911,7 +964,11 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
-                self.script_info.log = "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
+                self.script_info.log = (
+                    "将由 MAS 启动游戏，未配置账号，跳过账号切换"
+                    if use_mas_account_switch
+                    else "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
+                )
 
             await self.set_maaend(emulator_info)
 
@@ -1471,7 +1528,9 @@ class AutoProxyTask(TaskExecuteBase):
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
         replace_account_switch_task(
             tasks=maaend_tasks,
-            account_id=account_id,
+            account_id=(
+                account_id if self._account_switch_method() == "MAAEND" else ""
+            ),
             controller_type=str(self.script_config.get("Game", "ControllerType")),
             task_id=f"mas{self.cur_user_uid.hex[:4]}",
         )
