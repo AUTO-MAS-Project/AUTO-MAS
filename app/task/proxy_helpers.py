@@ -53,10 +53,23 @@ __all__ = [
 
 
 def split_args(raw: object) -> list[str]:
-    """按 shell 规则拆分启动参数（保留 Windows 风格引号，空串返回空列表）。"""
+    """按 shell 规则拆分启动参数（引号只用于分组，反斜杠原样保留，空串返回空列表）。
+
+    ``shlex.split(posix=False)`` 会把引号留在词元里（``"a b"`` 拆成 ``'"a b"'``），
+    交给 CreateProcess 后游戏收到的是一个带引号的参数，多半当无效参数丢掉；而配置
+    校验用的 ``ArgumentValidator`` 走的是 posix 模式，界面上看着一切正常，于是这类
+    参数只在运行时静默失效。这里改成 posix 解析但关掉转义处理——Windows 路径里的
+    反斜杠不能被当转义符吃掉。
+    """
 
     value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
+    if not value:
+        return []
+
+    lexer = shlex.shlex(value, posix=True)
+    lexer.whitespace_split = True
+    lexer.escape = ""
+    return list(lexer)
 
 
 def find_pids_by_name(process_name: str) -> list[int]:
