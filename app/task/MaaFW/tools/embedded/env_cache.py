@@ -57,8 +57,11 @@ from .project_path import normalize_project_path
 
 logger = get_logger("MFW 运行环境缓存")
 
-# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。
-CACHE_FORMAT_VERSION = 2
+# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。MAS 自己的准备规则变了也在
+# 这里递增——指纹只看项目文件，规则变了项目没动，旧缓存会一直命中。
+# 3：没有 requirements.txt 的 Python agent 开始在隔离 venv 里装 maafw（FOS 类项目），
+#    此前按旧规则备好的 venv 里没有 binding，必须重备一次。
+CACHE_FORMAT_VERSION = 3
 
 
 def _host_python_identity() -> dict[str, str]:
