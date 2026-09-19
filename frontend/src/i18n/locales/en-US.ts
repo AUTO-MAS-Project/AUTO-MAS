@@ -3524,7 +3524,7 @@ export default {
     },
     create: {
       title: 'New script',
-      step: { type: 'Script type', config: 'Configuration source' },
+      step: { type: 'Script type', config: 'Configuration source', mfwSource: 'Project source' },
       typeHeading: 'Pick a script type',
       typeHeadingDesc: 'Search by name, game, or automation framework.',
       typeSearch: 'Search script types',
@@ -3556,6 +3556,19 @@ export default {
       back: 'Back',
       createAndConfigure: 'Create and configure',
       createFromTemplate: 'Create from template',
+      mfwSourceHeading: 'Where does the project come from',
+      mfwSourceHeadingDesc:
+        'Opening a second script for the same MFW project? Reuse that script’s project instead of picking the directory again.',
+      mfwNewProject: 'New project: pick a local directory',
+      mfwNewProjectDesc:
+        'Go to the guide and pick a project directory with interface.json; it is imported as a copy',
+      mfwReuse: 'Reuse a project from another script',
+      mfwReuseDesc:
+        'Clone that script’s copy directly: runtime and model files are shared and take no extra space, and it works even after the source directory was deleted; users and run settings are not carried over',
+      mfwReuseLoading: 'Loading reusable scripts...',
+      mfwReuseEmpty: 'No other MFW script to reuse yet',
+      mfwReuseBusy: 'running',
+      createAndReuse: 'Create and reuse project',
       next: 'Next',
       typeDesc: {
         General: 'For any automation script that writes a log file',
@@ -3580,6 +3593,9 @@ export default {
       selectTemplate: 'Pick a template first',
       templateCreateFailed: 'Could not create the script from the template: {error}',
       copied: 'Copied script "{name}"',
+      reuseFailed:
+        'Could not reuse the project: {reason}. The script was created; pick a project directory in the guide',
+      mfwSourcesFailed: 'Could not load reusable scripts: {error}',
       scriptNotFound: 'Could not find that script',
       alreadyConfiguring: 'This script is already being configured — save that configuration first',
       targetConfiguring: 'This target is already being configured — save that configuration first',

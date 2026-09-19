@@ -152,6 +152,25 @@ KNOWN_RUNTIME_FILE_NAMES = {
     "pythonw.exe",
 }
 KNOWN_RUNTIME_STEMS = {"maaframework", "maatoolkit", "maaadbcontrolunit", "maahttp"}
+# 运行时目录之外也按内容与其它副本共用的文件类型：模型与二进制。这些文件只会被更新器
+# 整文件替换，没有项目会在运行期原地改写它们；JSON / 图片 / 脚本一律不共用——
+# 项目 agent 热更新的就是这类文件，而硬链接没有写时复制。
+SHARED_CONTENT_SUFFIXES = frozenset(
+    {
+        ".onnx",
+        ".bin",
+        ".pb",
+        ".pt",
+        ".pth",
+        ".safetensors",
+        ".pyd",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".ttf",
+        ".otf",
+    }
+)
 KNOWN_UI_SHELL_STEMS = {"mfaavalonia", "mxu", "mfw", "maapicli"}
 SHELL_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".sh"}
 DEPENDENCY_DIR_NAMES = {"agent", "agents", "lock", "locks", "plugins", "requirements"}
@@ -265,13 +284,19 @@ class ProjectionRules:
             ) from exc
         return promoted if promoted.parts else ROOT
 
-    def is_shared_runtime_file(self, relative: Path) -> bool:
-        """这个文件属于原样带走的运行时目录，可以按内容与其它副本共用。"""
+    def is_shared_file(self, relative: Path) -> bool:
+        """这个文件可以按内容与其它副本共用（硬链接）。
 
-        return any(
+        原样带走的运行时目录里的一切，以及白名单内其它位置的模型 / 二进制文件
+        （``SHARED_CONTENT_SUFFIXES``）。大小门槛由 blob store 自己把。
+        """
+
+        if any(
             mode.verbatim_runtime and _is_relative_to(relative, target)
             for target, mode in self.targets.items()
-        )
+        ):
+            return True
+        return relative.suffix.lower() in SHARED_CONTENT_SUFFIXES
 
     def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
         """这个源相对路径要不要进副本。"""
@@ -1483,7 +1508,7 @@ def materialize_projection(
 ) -> dict[str, int]:
     """把 plan 里要留的文件复制到 ``target_dir``（assets 布局在这里被提升）。
 
-    给了 ``blob_store`` 时，运行时目录里的大文件按内容与其它副本共用（硬链接）。
+    给了 ``blob_store`` 时，运行时目录与模型类大文件按内容与其它副本共用（硬链接）。
     返回共用统计：``sharedFiles`` / ``sharedBytes``。
     """
 
@@ -1512,7 +1537,7 @@ def materialize_projection(
         source = rules.source_root / relative_file
         destination = target / rules.output_path(relative_file)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if blob_store is not None and rules.is_shared_runtime_file(relative_file):
+        if blob_store is not None and rules.is_shared_file(relative_file):
             placed = blob_store.place(source, destination)
             if placed.action == "linked":
                 shared_files += 1

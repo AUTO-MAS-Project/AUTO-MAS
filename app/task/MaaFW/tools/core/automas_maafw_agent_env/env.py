@@ -16,6 +16,7 @@ from packaging.version import InvalidVersion, Version
 
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
 from ..automas_maafw_runtime_pool.host_environment import (
+    set_project_pycache_prefix,
     strip_host_python_environment,
 )
 from ..automas_maafw_runtime_pool.installer import (
@@ -620,6 +621,7 @@ def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
     # 剔除名单与运行池 / worker 共用；隔离 venv 里的 pip 只认项目根这一条 PYTHONPATH。
     env = strip_host_python_environment()
     env["PYTHONPATH"] = str(project_path)
+    set_project_pycache_prefix(env, project_path)
     return env
 
 

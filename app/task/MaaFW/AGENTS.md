@@ -56,14 +56,26 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
   `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
   项目里铺运行时。
-- **副本之间按内容共用运行时文件**（`project_update/blob_store.py`）：上面那些运行时目录里
-  ≥ 64 KB 的文件按 sha256 存进 `data/maafw_blobs/<ab>/<sha256>`，副本里是指向它的 NTFS 硬链接，
-  同样的字节只存一份；导入（`materialize_projection`）与更新落地（`apply.py`）都经它。三条铁律：
+- **副本之间按内容共用文件**（`project_update/blob_store.py`）：上面那些运行时目录里的一切，
+  加上白名单内其它位置的模型 / 二进制文件（`projection.SHARED_CONTENT_SUFFIXES`：onnx / bin /
+  pth / pyd / dll / so / 字体……；JSON、图片、脚本一律不算，项目 agent 热更新的就是它们），
+  ≥ 64 KB 的按 sha256 存进 `data/maafw_blobs/<ab>/<sha256>`，副本里是指向它的 NTFS 硬链接，
+  同样的字节只存一份；导入（`materialize_projection`）与更新落地（`apply.py`）都走
+  `ProjectionRules.is_shared_file` 这一个谓词。同一项目的第二份副本因此只多小文件、项目热更新
+  数据与日志（M9A 实测独占 116 MB → 41.5 MB）。三条铁律：
   **永远不往已有文件里写**（硬链接没有写时复制，更新器的 `_copy_path` / 回滚都是先删再写，
   内容没变的文件连碰都不碰）；小文件不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，
   M9A 的 bootstrap 就往 `python/*.lock` 里追加写）；链接失败就退回复制。回收在启动期
   `clean_maafw_runtime_blobs`（`st_nlink == 1` 即孤儿）。已知边界：A 在跑（DLL 被映射）时
   B 恰好要换同一份旧库会被挡住，事务照常回滚。
+- **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
+  （`embedded_project.clone_embedded_copy`）：从源脚本的副本克隆，已共用的文件再挂硬链接、还没入库的
+  模型经共用库放过去、`debug/` 与字节码不带，staging 建好再原子换入；源与目标各持项目预约，源运行中
+  拒绝；`Info.Path` 与 `Embedded.*` 沿用源，类型随项目。「复制脚本」（`Config.add_script`）复用同一个
+  函数。来源目录已删、副本又没了（复制脚本时源正忙没复制到副本、副本被手删）时，
+  `ensure_embedded_copy` 在其它同来源、副本健康的 MFW 脚本里克隆一份再报错——来源可删这句承诺
+  靠它兜底。更新包下载缓存 `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期
+  `Config.clean_maafw_update_cache` 删 7 天没碰过的（`transport.prune_update_cache`）。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
@@ -114,7 +126,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 项目指纹在本地算（`project_update/contracts.py: project_fingerprint`），只用来防"计划与落地
   之间树被改动"，发布方不参与；差量包的基线校验用的是 MAS 自己上次落地记下的清单
   （`apply.py: _validate_plan_base`）。`.mas-update` / `.mas-update-cache` 是更新器的保留目录，
-  `debug` / `logs` / `temp` / `__pycache__` 与 `config/maa_option.json` 不计入指纹。
+  `debug` / `logs` / `temp` / `__pycache__` / `.pycache` 与 `config/maa_option.json` 不计入指纹
+  （agent 子进程与环境准备设了 `PYTHONPYCACHEPREFIX=<项目根>/.pycache`，pyc 全落那棵镜像树，
+  它里面没有 `__pycache__` 这一层，漏掉它差量更新就永远退化成全量包）。镜像树里项目根出现两遍，
+  安装路径长到会撞 MAX_PATH（`host_environment.project_pycache_prefix` 的预算）且没开长路径支持时
+  不设前缀，pyc 退回源码旁——解释器写 pyc 失败是静默的，不设比每次启动全量重编译强。
 - 全量与差量包的落地条目都只从 `apply.py: build_package_plan` 枚举（`files` / `hashes` /
   `deleted` 三张表）。要改"哪些文件落盘"只动这一处，孤儿清理、基线、回滚会自然跟随。
   内嵌脚本传 `projection=True`，三张表在 `_project_package_entries` 里按同一份白名单过滤，

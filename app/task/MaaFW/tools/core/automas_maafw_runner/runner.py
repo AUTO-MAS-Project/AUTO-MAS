@@ -58,6 +58,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     project_maafw_runtime_path,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    set_project_pycache_prefix,
     strip_host_python_environment,
 )
 
@@ -1361,6 +1362,9 @@ class MaaFWRunner:
         python_path_items.append(str(project_path))
         env["PYTHONPATH"] = os.pathsep.join(python_path_items)
         env["PYTHONIOENCODING"] = "utf-8"
+        # pyc 集中到 <项目根>/.pycache：内嵌副本不再被运行期的字节码缓存弄脏，
+        # 也不会把 2000 个小文件散进项目自带的 python/Lib。
+        set_project_pycache_prefix(env, project_path)
 
         # PATH 前置：agent Python 目录、Scripts 目录、项目根目录、项目必要 dll 目录。
         # 再把 maa 包的 bin 放在项目路径之后、宿主 PATH 之前：项目自带的原生库

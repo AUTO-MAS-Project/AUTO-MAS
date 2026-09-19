@@ -3801,6 +3801,39 @@ class MaaFWEmbeddedReimportIn(BaseModel):
     )
 
 
+class MaaFWEmbeddedCloneIn(BaseModel):
+    scriptId: str = Field(
+        ..., min_length=1, description="要建副本的 MFW 脚本 ID（新脚本）"
+    )
+    sourceScriptId: str = Field(
+        ...,
+        min_length=1,
+        description="从这个 MFW 脚本的副本克隆（同一项目再建一个脚本）",
+    )
+
+
+class MaaFWEmbeddedSourcesIn(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="要排除的脚本 ID（给已有脚本列候选时传；新建脚本对话框里还没有脚本，不传）",
+    )
+
+
+class MaaFWEmbeddedSourceItem(BaseModel):
+    scriptId: str = Field(..., description="可作为克隆来源的 MFW 脚本 ID")
+    name: str = Field(default="", description="脚本名")
+    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A）")
+    projectName: str = Field(default="", description="副本 interface 里的项目名")
+    version: str = Field(default="", description="副本 interface 里的版本")
+    busy: bool = Field(default=False, description="源脚本正在运行，此刻不能克隆")
+
+
+class MaaFWEmbeddedSourcesOut(OutBase):
+    data: List[MaaFWEmbeddedSourceItem] = Field(
+        default_factory=list, description="有健康副本的其它 MFW 脚本"
+    )
+
+
 class MaaFWEmbeddedProjection(BaseModel):
     sourceSizeBytes: int = Field(default=0, description="来源目录字节数")
     payloadSizeBytes: int = Field(default=0, description="副本字节数")

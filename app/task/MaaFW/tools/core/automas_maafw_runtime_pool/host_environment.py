@@ -57,6 +57,60 @@ ISOLATED_HOST_KEYS: frozenset[str] = frozenset(
 )
 
 
+#: 项目子进程（agent 与给它准备环境的 pip）写 Python 字节码缓存的目录名，放在项目根下。
+#: 不设的话 pyc 会散进项目自带的 ``python/Lib`` 与 ``agent/``（M9A 一轮 2000 多个、15 MB），
+#: 副本从此和导入时对不上；``PYTHONDONTWRITEBYTECODE`` 不是替代——那会让每次启动多 1–2 s 编译。
+PROJECT_PYCACHE_DIR_NAME = ".pycache"
+
+
+#: 前缀树里一个 pyc 的路径 = 前缀 + 去掉盘符的源码绝对路径，项目根会出现两遍；给源码相对
+#: 路径（site-packages 里实测最深 72 字符）留的余量。超过 Windows 的 MAX_PATH 时解释器写 pyc
+#: 静默失败、每次启动全量重编译，所以宁可不设前缀退回源码旁的 __pycache__。
+_PYCACHE_RELATIVE_BUDGET = 90
+_WINDOWS_MAX_PATH = 259
+
+
+def _windows_long_paths_enabled() -> bool:
+    if os.name != "nt":
+        return True
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem"
+        ) as key:
+            return int(winreg.QueryValueEx(key, "LongPathsEnabled")[0]) == 1
+    except OSError:
+        return False
+
+
+def project_pycache_prefix(project_path: str | os.PathLike[str]) -> str | None:
+    """``<项目根>/.pycache``；项目根太长、又没开长路径支持时返回 None（不设前缀）。"""
+
+    root = os.fspath(project_path)
+    if (
+        2 * len(root) + _PYCACHE_RELATIVE_BUDGET > _WINDOWS_MAX_PATH
+        and not _windows_long_paths_enabled()
+    ):
+        return None
+    return os.path.join(root, PROJECT_PYCACHE_DIR_NAME)
+
+
+def set_project_pycache_prefix(
+    env: dict[str, str], project_path: str | os.PathLike[str]
+) -> None:
+    """让 ``env`` 里的 Python 把 pyc 集中写到 ``<项目根>/.pycache``。冻结外壳会无视它，无害。
+
+    安装路径长到前缀树会撞 MAX_PATH 时不设（pyc 退回源码旁的 ``__pycache__``，行为与从前一致）。
+    """
+
+    prefix = project_pycache_prefix(project_path)
+    if prefix is None:
+        env.pop("PYTHONPYCACHEPREFIX", None)
+        return
+    env["PYTHONPYCACHEPREFIX"] = prefix
+
+
 def is_isolated_host_key(name: str) -> bool:
     """按 Windows 的大小写不敏感语义判断一个宿主变量是否不得下传。"""
 

@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -44,6 +45,66 @@ class DownloadOutcome:
     last_modified: str | None = None
     range_supported: bool | None = None
     cache_hit: bool = False
+
+
+@dataclass
+class CachePruneReport:
+    removed_artifacts: int = 0
+    removed_bytes: int = 0
+    skipped_busy: int = 0
+
+
+# 下载好的更新包留在缓存里给同一项目的其它副本命中（按 源 + 版本 + 文件名 定位），
+# 但一个版本只在发版后的几天里有人要；之后就是纯占地。
+CACHE_RETENTION_SECONDS = 7 * 86400
+
+
+def prune_update_cache(
+    cache_root: Path | None = None, *, max_age_seconds: float = CACHE_RETENTION_SECONDS
+) -> CachePruneReport:
+    """删掉 ``max_age_seconds`` 内没人碰过的更新包（完整的与断点半成品都算）。
+
+    「碰过」看 ``artifact.json`` 的 mtime：下载中每个进度点、缓存命中时都会重写它。
+    正被下载 / 落地的条目持有 ``artifact.lock``，拿不到锁就跳过；锁文件本身从不删。
+    """
+
+    report = CachePruneReport()
+    root = (cache_root or DEFAULT_CACHE_ROOT).resolve(strict=False)
+    if not root.is_dir():
+        return report
+    cutoff = time.time() - max(0.0, max_age_seconds)
+    for directory in sorted(root.iterdir()):
+        if not directory.is_dir() or not re.fullmatch(r"[0-9a-f]{24}", directory.name):
+            continue
+        marker = directory / "artifact.json"
+        try:
+            reference = marker if marker.is_file() else directory
+            if reference.stat().st_mtime >= cutoff:
+                continue
+        except OSError:
+            continue
+        try:
+            lock = artifact_lock(root, directory.name, timeout=0)
+        except ValueError:
+            continue
+        removed_any = False
+        try:
+            with lock:
+                for entry in list(directory.iterdir()):
+                    if entry.name == "artifact.lock" or not entry.is_file():
+                        continue
+                    size = entry.stat().st_size
+                    entry.unlink()
+                    report.removed_bytes += size
+                    removed_any = True
+        except TimeoutError:
+            report.skipped_busy += 1
+            continue
+        except OSError:
+            continue
+        if removed_any:
+            report.removed_artifacts += 1
+    return report
 
 
 class _RestartFromZero(RuntimeError):
@@ -648,6 +709,9 @@ def _optional_int(value: Any) -> int | None:
 
 
 __all__ = [
+    "CACHE_RETENTION_SECONDS",
+    "CachePruneReport",
     "DownloadOutcome",
     "download_resumable",
+    "prune_update_cache",
 ]

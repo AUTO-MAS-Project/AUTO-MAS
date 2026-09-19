@@ -3385,7 +3385,7 @@ export default {
     },
     create: {
       title: '新建脚本',
-      step: { type: '脚本类型', config: '配置来源' },
+      step: { type: '脚本类型', config: '配置来源', mfwSource: '项目来源' },
       typeHeading: '选择脚本类型',
       typeHeadingDesc: '按名称、游戏或脚本框架快速查找。',
       typeSearch: '搜索脚本类型',
@@ -3417,6 +3417,18 @@ export default {
       back: '返回',
       createAndConfigure: '创建并配置',
       createFromTemplate: '使用模板创建',
+      mfwSourceHeading: '项目从哪来',
+      mfwSourceHeadingDesc:
+        '同一个 MFW 项目要开第二个脚本时不用再选目录，直接复用已有脚本的项目即可。',
+      mfwNewProject: '新项目：选择本地目录',
+      mfwNewProjectDesc: '进入引导页选一个带 interface.json 的项目目录，导入成一份副本',
+      mfwReuse: '复用已有脚本的项目',
+      mfwReuseDesc:
+        '从那个脚本的副本直接克隆：运行时与模型文件共用、不另占空间，来源目录删了也能建；用户与运行设置不带',
+      mfwReuseLoading: '正在读取可复用的脚本...',
+      mfwReuseEmpty: '还没有别的 MFW 脚本可以复用',
+      mfwReuseBusy: '运行中',
+      createAndReuse: '创建并复用项目',
       next: '下一步',
       typeDesc: {
         General: '适用于具备日志文件的自动化脚本',
@@ -3441,6 +3453,8 @@ export default {
       selectTemplate: '请先选择一个模板',
       templateCreateFailed: '使用模板创建脚本失败: {error}',
       copied: '已复制脚本「{name}」',
+      reuseFailed: '复用项目失败：{reason}。脚本已创建，请在引导页选择项目目录',
+      mfwSourcesFailed: '读取可复用的脚本失败：{error}',
       scriptNotFound: '找不到对应的脚本',
       alreadyConfiguring: '该脚本已在配置中，请先保存配置',
       targetConfiguring: '该配置目标已在配置中，请先保存当前配置',

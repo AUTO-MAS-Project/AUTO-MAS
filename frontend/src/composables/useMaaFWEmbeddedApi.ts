@@ -1,11 +1,15 @@
 import { MaaFwService } from '@/api'
-import type { MaaFWEmbeddedStatusData, MaaFWEmbeddedStatusOut } from '@/api'
+import type {
+  MaaFWEmbeddedSourceItem,
+  MaaFWEmbeddedStatusData,
+  MaaFWEmbeddedStatusOut,
+} from '@/api'
 
 /**
  * MFW 内嵌副本客户端。MFW 脚本一律在副本上跑：选目录就是导入（`reimportEmbedded`），
  * 之后换目录、手动更新过来源都走同一条。
  *
- * 两条路由都返回 `MaaFWEmbeddedStatusOut`：业务失败走 `code !== 200` + `message`
+ * 状态 / 导入 / 克隆三条路由都返回 `MaaFWEmbeddedStatusOut`：业务失败走 `code !== 200` + `message`
  * （HTTP 仍是 200），所以直接用生成的 `MaaFwService` 即可，不需要像项目更新那样
  * 从 AxiosError 里捞文案。成功时返回最新状态，失败时抛带后端文案的 Error。
  */
@@ -58,7 +62,28 @@ export function useMaaFWEmbeddedApi() {
       '导入失败'
     )
 
-  return { getEmbeddedStatus, reimportEmbedded }
+  /** 有健康副本的 MFW / M9A 脚本：新建脚本时「复用已有脚本的项目」的候选；传了 scriptId 就排除它自己。 */
+  const listEmbeddedSources = async (scriptId?: string): Promise<MaaFWEmbeddedSourceItem[]> => {
+    const response = await MaaFwService.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost(
+      scriptId ? { scriptId } : {}
+    )
+    if (response.code !== 200) {
+      throw new Error(response.message || '读取可复用的脚本失败')
+    }
+    return response.data ?? []
+  }
+
+  /** 从另一个脚本的副本克隆：同一项目再建一个脚本，不用重新选目录投影。 */
+  const cloneEmbedded = async (scriptId: string, sourceScriptId: string) =>
+    unwrap(
+      await MaaFwService.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost({
+        scriptId,
+        sourceScriptId,
+      }),
+      '复用项目失败'
+    )
+
+  return { getEmbeddedStatus, reimportEmbedded, listEmbeddedSources, cloneEmbedded }
 }
 
 /** 把字节数变成给人看的 MB / GB；报告里的数值都是整数字节。 */

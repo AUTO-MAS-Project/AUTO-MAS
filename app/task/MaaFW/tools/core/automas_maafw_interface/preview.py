@@ -330,6 +330,24 @@ def resolve_description(root_path: Path, description: str | None) -> str | None:
         return description
 
 
+def interface_display_name(root_path: str | Path, interface: MaaFWInterface) -> str:
+    """给人看的项目名（不带版本）：label → name，``$project.label`` 这类 i18n 键按项目
+    语言文件翻译过再给。``title`` 是模型按「label 版本」拼出来的，版本另给。"""
+
+    mapping = _load_i18n_mapping(Path(root_path).resolve(), interface)
+    for raw in (interface.label, interface.name):
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        translated = _resolve_i18n_value(raw, mapping)
+        text = translated if isinstance(translated, str) else raw
+        # 「$project.label」这类 i18n 键翻不出来（没有 zh_cn 语言文件、缺键）就当没有标签，退回 name。
+        if text.startswith("$") and text == raw:
+            continue
+        if text.strip():
+            return text.strip()
+    return ""
+
+
 def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, Any]:
     if not interface.languages:
         return {}

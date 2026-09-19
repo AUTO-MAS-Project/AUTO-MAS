@@ -3,7 +3,14 @@ import type { ScriptType } from '@/types/script'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 export type ConfigMode = 'template' | 'custom'
+/** MFW 家族新建时项目从哪来：进引导页选目录导入，还是直接复用已有脚本的副本 */
+export type MfwSourceMode = 'new' | 'reuse'
 export type CreateStepKey = 'type' | 'config'
+
+/** 由 MaaFW 引擎运行的类型（M9A 是它的特调类型，类型最终由项目决定） */
+export type MfwFamilyType = 'MaaFW' | 'M9A'
+export const isMfwFamily = (type: ScriptType): type is MfwFamilyType =>
+  type === 'MaaFW' || type === 'M9A'
 type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
 interface ScriptTypeOption {
@@ -25,10 +32,14 @@ interface CreateRequestState {
   type: ScriptType
   configMode: ConfigMode
   template: WebConfigTemplate | null
+  mfwSourceMode?: MfwSourceMode
+  mfwSourceScriptId?: string | null
 }
 
 export type ScriptCreateRequest =
   | { kind: 'new'; type: Exclude<ScriptType, 'General'> }
+  /** 同一个 MFW 项目再建一个脚本：建好后从 sourceScriptId 的副本克隆，不再选目录 */
+  | { kind: 'mfw-reuse'; type: MfwFamilyType; sourceScriptId: string }
   | { kind: 'general-custom' }
   | { kind: 'general-template'; template: WebConfigTemplate }
 
@@ -136,6 +147,8 @@ export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): Cr
   const steps: CreateStep[] = [{ key: 'type', titleKey: 'scripts.create.step.type' }]
   if (type === 'General') {
     steps.push({ key: 'config', titleKey: 'scripts.create.step.config' })
+  } else if (isMfwFamily(type)) {
+    steps.push({ key: 'config', titleKey: 'scripts.create.step.mfwSource' })
   }
   return steps
 }
@@ -186,6 +199,11 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
 export const getScriptEditSegment = (type: ScriptType) => EDIT_SEGMENT_BY_TYPE[type]
 
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
+  if (isMfwFamily(state.type) && state.mfwSourceMode === 'reuse') {
+    return state.mfwSourceScriptId
+      ? { kind: 'mfw-reuse', type: state.type, sourceScriptId: state.mfwSourceScriptId }
+      : null
+  }
   if (state.type !== 'General') {
     return { kind: 'new', type: state.type }
   }

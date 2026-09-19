@@ -43,6 +43,7 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
     build_interface_preview_data,
+    interface_display_name,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update import (
     MaaFWProjectUpdateError,
@@ -54,10 +55,14 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    clone_embedded_copy,
+    copy_is_healthy,
     embedded_project_dir,
     embedded_status,
     ensure_embedded_copy,
     import_embedded_project,
+    inherit_embedded_record,
+    read_interface_version,
     resolve_maafw_project_root,
     shell_hint_from_report,
 )
@@ -335,6 +340,16 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     return config
 
 
+def _maafw_sibling_configs() -> list[tuple[str, Any]]:
+    """来源目录已删、副本又没了时可以克隆的候选：所有 MFW 家族脚本（含自己，服务层会跳过）。"""
+
+    return [
+        (str(uid), config)
+        for uid, config in Config.ScriptConfig.items()
+        if isinstance(config, RuntimeMaaFWConfig)
+    ]
+
+
 async def _maafw_effective_root(
     script_id: str | None, fallback_path: str
 ) -> tuple[Path | None, str]:
@@ -358,7 +373,10 @@ async def _maafw_effective_root(
             return None, "该 MFW 脚本正在运行或更新，稍后再试"
         try:
             rebuilt = await asyncio.to_thread(
-                ensure_embedded_copy, script_id, script_config
+                ensure_embedded_copy,
+                script_id,
+                script_config,
+                siblings=_maafw_sibling_configs(),
             )
         except EmbeddedProjectError as exc:
             return None, str(exc)
@@ -1339,6 +1357,162 @@ async def reimport_maafw_embedded(
         if report
         else "已导入"
     )
+    return out
+
+
+def _embedded_source_project(script_id: str) -> tuple[str, str]:
+    """副本 interface 里的项目显示名与版本；读不出就空串，不影响列表。"""
+
+    copy_dir = embedded_project_dir(script_id)
+    try:
+        interface = load_interface_model_cached(copy_dir)
+        return interface_display_name(copy_dir, interface), str(interface.version or "")
+    except Exception:  # noqa: BLE001 - 坏 interface 只影响这一项的显示名，不能拖垮整张表
+        pass
+    try:
+        return "", read_interface_version(copy_dir)
+    except Exception:  # noqa: BLE001 - 非 UTF-8 / 被占用的文件同上
+        return "", ""
+
+
+@router.post(
+    "/maafw/embedded/sources",
+    tags=["MaaFW"],
+    summary="列出可作为克隆来源的其它 MFW 脚本",
+    response_model=MaaFWEmbeddedSourcesOut,
+    status_code=200,
+)
+async def list_maafw_embedded_sources(
+    payload: MaaFWEmbeddedSourcesIn = Body(default_factory=MaaFWEmbeddedSourcesIn),
+) -> MaaFWEmbeddedSourcesOut:
+    """新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+
+    新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
+    """
+
+    excluded = str(payload.scriptId or "").strip()
+
+    def _collect() -> list[MaaFWEmbeddedSourceItem]:
+        items: list[MaaFWEmbeddedSourceItem] = []
+        for uid, config in Config.ScriptConfig.items():
+            script_id = str(uid)
+            if script_id == excluded or not isinstance(config, RuntimeMaaFWConfig):
+                continue
+            if not copy_is_healthy(embedded_project_dir(script_id)):
+                continue
+            project_name, version = _embedded_source_project(script_id)
+            items.append(
+                MaaFWEmbeddedSourceItem(
+                    scriptId=script_id,
+                    name=str(config.get("Info", "Name") or ""),
+                    type=type(config).__name__.removesuffix("Config"),
+                    projectName=project_name,
+                    version=version,
+                    busy=bool(getattr(config, "is_locked", False)),
+                )
+            )
+        return items
+
+    return MaaFWEmbeddedSourcesOut(data=await asyncio.to_thread(_collect))
+
+
+_EMBEDDED_SOURCE_BUSY = "源脚本正在运行，运行结束后再复用它的项目"
+_EMBEDDED_SOURCE_COPY_BUSY = "源脚本的项目正在更新或准备环境，请稍后再复用"
+
+
+@router.post(
+    "/maafw/embedded/clone",
+    tags=["MaaFW"],
+    summary="从另一个 MFW 脚本的副本克隆，同一项目再建一个脚本",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def clone_maafw_embedded(
+    payload: MaaFWEmbeddedCloneIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    """同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
+    重新投影，来源目录已经删了也能建。
+
+    副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+    ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
+    用户、任务队列与运行设置不带——那是「复制脚本」的事。
+    """
+
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+        source_config = _maafw_script_config(payload.sourceScriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    if payload.scriptId == payload.sourceScriptId:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message="不能从脚本自己克隆"
+        )
+    if busy := _embedded_busy_reason(script_config):
+        return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
+    if getattr(source_config, "is_locked", False):
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=_EMBEDDED_SOURCE_BUSY
+        )
+
+    target_dir = embedded_project_dir(payload.scriptId)
+    source_dir = embedded_project_dir(payload.sourceScriptId)
+    # 两边的副本路径都要预约：源在更新落地 / 准备环境时克隆会带走半截树，
+    # 目标正被别的入口导入时更不能同时写。
+    target_reservation = await try_reserve_project_path(target_dir)
+    if target_reservation is None:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=_EMBEDDED_COPY_BUSY
+        )
+    try:
+        source_reservation = await try_reserve_project_path(source_dir)
+        if source_reservation is None:
+            return MaaFWEmbeddedStatusOut(
+                code=400, status="error", message=_EMBEDDED_SOURCE_COPY_BUSY
+            )
+        try:
+            # 目标已有副本（老脚本换项目）由服务层在克隆成功后原子换掉，失败时原样放回。
+            cloned = await asyncio.to_thread(
+                clone_embedded_copy, payload.sourceScriptId, payload.scriptId
+            )
+        except EmbeddedProjectError as exc:
+            return MaaFWEmbeddedStatusOut(
+                code=400, status="error", message=f"克隆失败: {exc}"
+            )
+        except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
+            return MaaFWEmbeddedStatusOut(
+                code=400,
+                status="error",
+                message=f"克隆失败: {type(exc).__name__}: {exc}",
+            )
+        finally:
+            await release_project_path(source_reservation)
+    finally:
+        await release_project_path(target_reservation)
+    if not cloned:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message="源脚本没有可用的副本，先在它那边导入项目"
+        )
+
+    inherited = inherit_embedded_record(source_config, payload.scriptId)
+    await Config.update_script(
+        payload.scriptId,
+        {
+            "Info": {"Path": str(source_config.get("Info", "Path") or "")},
+            "Embedded": {
+                "Report": json.dumps(inherited["report"], ensure_ascii=False),
+                "SourceVersion": inherited["sourceVersion"],
+                "ImportedAt": inherited["importedAt"],
+            },
+        },
+    )
+    await _apply_project_flavor(payload.scriptId)
+    out = await _embedded_status_out(
+        payload.scriptId, _maafw_script_config(payload.scriptId)
+    )
+    source_name = str(source_config.get("Info", "Name") or payload.sourceScriptId[:8])
+    out.message = f"已复用「{source_name}」的项目，运行时与模型文件共用，不另占空间"
     return out
 
 

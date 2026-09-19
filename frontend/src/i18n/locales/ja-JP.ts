@@ -3057,6 +3057,7 @@ export default {
       step: {
         type: 'スクリプト種別',
         config: '設定の元',
+        mfwSource: 'プロジェクトの取得元',
       },
       typeHeading: 'スクリプト種別を選択',
       typeHeadingDesc: '名前・ゲーム・自動化フレームワークから検索できます。',
@@ -3091,6 +3092,19 @@ export default {
       back: '戻る',
       createAndConfigure: '作成して設定へ',
       createFromTemplate: 'テンプレートから作成',
+      mfwSourceHeading: 'プロジェクトの取得元',
+      mfwSourceHeadingDesc:
+        '同じ MFW プロジェクトで 2 つ目のスクリプトを作るなら、フォルダを選び直さず既存スクリプトのプロジェクトを再利用できます。',
+      mfwNewProject: '新規プロジェクト：ローカルフォルダを選択',
+      mfwNewProjectDesc:
+        'ガイドで interface.json を含むプロジェクトフォルダを選ぶと、コピーとして取り込まれます',
+      mfwReuse: '既存スクリプトのプロジェクトを再利用',
+      mfwReuseDesc:
+        'そのスクリプトのコピーから直接複製します。ランタイムとモデルは共有され追加容量を取らず、元フォルダを削除済みでも作れます。ユーザーと実行設定は引き継ぎません',
+      mfwReuseLoading: '再利用できるスクリプトを読み込み中...',
+      mfwReuseEmpty: '再利用できる MFW スクリプトはまだありません',
+      mfwReuseBusy: '実行中',
+      createAndReuse: '作成してプロジェクトを再利用',
       next: '次へ',
       typeDesc: {
         General: 'ログファイルを出力するあらゆる自動化スクリプト向け',
@@ -3114,6 +3128,9 @@ export default {
       selectTemplate: '先にテンプレートを選んでください',
       templateCreateFailed: 'テンプレートからスクリプトを作成できませんでした: {error}',
       copied: 'スクリプト「{name}」を複製しました',
+      reuseFailed:
+        'プロジェクトを再利用できませんでした：{reason}。スクリプトは作成済みです。ガイドでプロジェクトフォルダを選んでください',
+      mfwSourcesFailed: '再利用できるスクリプトを読み込めませんでした：{error}',
       scriptNotFound: '該当するスクリプトが見つかりません',
       alreadyConfiguring: 'このスクリプトは設定中です。先にその設定を保存してください',
       targetConfiguring: 'この対象は設定中です。先にその設定を保存してください',

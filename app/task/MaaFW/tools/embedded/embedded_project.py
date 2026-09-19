@@ -39,7 +39,7 @@ import os
 import shutil
 import stat
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,10 +51,18 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
     RuntimeBlobStore,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
+    SHARED_CONTENT_SUFFIXES,
     ProjectionError,
     build_projection_plan,
     materialize_projection,
     read_json_object,
+)
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    PROJECT_PYCACHE_DIR_NAME,
+)
+from app.task.MaaFW.tools.embedded.project_path import (
+    release_project_path_sync,
+    try_reserve_project_path_sync,
 )
 from app.utils import get_logger
 
@@ -62,6 +70,9 @@ EMBEDDED_PROJECTS_DIR = Path("data") / "maafw_projects"
 logger = get_logger("MFW 内嵌")
 
 STAGING_DIR_NAME = ".staging"
+# 副本里 Python 字节码缓存的落点（``PYTHONPYCACHEPREFIX``，见 host_environment）：agent 与
+# 环境准备写出的 pyc 全在这一个目录下，副本其余部分不再被运行期弄脏；随副本一起删。
+PYCACHE_DIR_NAME = PROJECT_PYCACHE_DIR_NAME
 
 
 class EmbeddedProjectError(RuntimeError):
@@ -227,36 +238,92 @@ def import_embedded_project(
     }
 
 
+# 克隆副本时不带的运行期产物：MaaFW 原生日志目录、Python 字节码缓存、导入半成品。
+# 这些都是副本跑起来之后自己长出来的，新脚本从零开始更干净，也不会把源脚本的日志带走。
+CLONE_SKIP_ROOT_NAMES = frozenset({"debug", STAGING_DIR_NAME})
+CLONE_SKIP_DIR_NAMES = frozenset({"__pycache__", PYCACHE_DIR_NAME})
+
+
 def clone_embedded_copy(
     source_script_id: str, target_script_id: str, base: Path | None = None
 ) -> bool:
-    """复制脚本时把内嵌副本也复制一份；没有健康副本就什么都不做，返回是否复制了。
+    """从另一个脚本的副本克隆一份给 ``target_script_id``；源没有健康副本就什么都不做，返回是否克隆了。
 
     共用库里的文件（``st_nlink > 1``，只会被更新器整文件替换、从不原地写）直接再挂一个
-    硬链接，其余文件真复制——和导入时的共用规则一致，复制出来的脚本不会多占运行时那份空间。
+    硬链接；源副本里还没入库的模型 / 二进制大文件（在扩大共用面之前导入的老副本）
+    经共用库放到新副本，下次源副本重导或更新时也会收敛到同一份；其余文件真复制——
+    和导入时的共用规则一致，克隆出来的脚本不会多占运行时与模型那份空间。
+    先在 staging 里建好再原子换入：半成品不会被当成健康副本，目标原有的副本（老脚本
+    换项目）只在克隆成功后才被换掉，失败时原样放回。
     """
 
     source_dir = embedded_project_dir(source_script_id, base)
     target_dir = embedded_project_dir(target_script_id, base)
-    if not copy_is_healthy(source_dir) or target_dir.exists():
+    if not copy_is_healthy(source_dir):
         return False
-    for current_root, dir_names, file_names in os.walk(source_dir):
-        relative = Path(current_root).relative_to(source_dir)
-        (target_dir / relative).mkdir(parents=True, exist_ok=True)
-        for name in file_names:
-            src = Path(current_root) / name
-            dst = target_dir / relative / name
-            try:
-                if src.stat().st_nlink > 1:
-                    try:
-                        os.link(src, dst)
+    staging_root = embedded_projects_root(base) / STAGING_DIR_NAME
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging_dir = staging_root / f"{target_dir.name}-{uuid.uuid4().hex[:8]}"
+    old_dir = staging_root / f"{target_dir.name}-old-{uuid.uuid4().hex[:8]}"
+    blob_store = RuntimeBlobStore.default(base)
+
+    def _walk_error(exc: OSError) -> None:
+        # 读不了的子目录不能静默跳过：那会产出一份缺子树却「健康」的副本。
+        raise EmbeddedProjectError(f"复制副本失败: {exc.filename}: {exc}") from exc
+
+    try:
+        for current_root, dir_names, file_names in os.walk(
+            source_dir, onerror=_walk_error
+        ):
+            relative = Path(current_root).relative_to(source_dir)
+            dir_names[:] = sorted(
+                name
+                for name in dir_names
+                if name not in CLONE_SKIP_DIR_NAMES
+                and not (relative == Path() and name in CLONE_SKIP_ROOT_NAMES)
+            )
+            (staging_dir / relative).mkdir(parents=True, exist_ok=True)
+            for name in file_names:
+                src = Path(current_root) / name
+                dst = staging_dir / relative / name
+                try:
+                    info = src.stat()
+                    if info.st_nlink > 1:
+                        try:
+                            os.link(src, dst)
+                            continue
+                        except OSError:
+                            pass
+                    if (
+                        blob_store.eligible(info.st_size)
+                        and src.suffix.lower() in SHARED_CONTENT_SUFFIXES
+                    ):
+                        blob_store.place(src, dst)
                         continue
-                    except OSError:
-                        pass
-                shutil.copy2(src, dst)
-            except OSError as exc:
-                remove_tree(target_dir)
-                raise EmbeddedProjectError(f"复制副本失败: {src.name}: {exc}") from exc
+                    shutil.copy2(src, dst)
+                except OSError as exc:
+                    raise EmbeddedProjectError(
+                        f"复制副本失败: {src.name}: {exc}"
+                    ) from exc
+        if not copy_is_healthy(staging_dir):
+            raise EmbeddedProjectError("克隆结果里没有 interface.json，拒绝换入")
+        if target_dir.exists():
+            target_dir.rename(old_dir)
+        staging_dir.rename(target_dir)
+    except Exception:
+        if old_dir.exists() and not target_dir.exists():
+            old_dir.rename(target_dir)
+        try:
+            remove_tree(staging_dir)
+        except OSError as exc:
+            logger.warning(f"[MFW 内嵌] 克隆半成品清理失败，留待启动时清理: {exc}")
+        raise
+    try:
+        remove_tree(old_dir)
+    except OSError as exc:
+        logger.warning(f"[MFW 内嵌] 旧副本清理失败，留待启动时清理: {exc}")
+    # 目标的树整棵换了，更新器上一次记下的清单已经对不上（与重新导入同理）。
+    discard_copy_update_baseline(target_script_id, base)
     return True
 
 
@@ -314,17 +381,87 @@ def _same_directory(left: str, right: str) -> bool:
         return False
 
 
+def inherit_embedded_record(
+    source_config: Any, target_script_id: str, base: Path | None = None
+) -> dict[str, Any]:
+    """从源脚本克隆副本之后，目标该写进 ``Embedded.*`` 的记录：报告沿用源的（``copyPath``
+    改成自己的），来源版本沿用源记的（没有就读副本 interface），导入时间取现在。"""
+
+    target_dir = embedded_project_dir(target_script_id, base)
+    raw = source_config.get("Embedded", "Report")
+    report: Any = {}
+    if isinstance(raw, str):
+        try:
+            report = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            report = {}
+    elif isinstance(raw, dict):
+        report = dict(raw)
+    if not isinstance(report, dict):
+        report = {}
+    report["copyPath"] = str(target_dir)
+    return {
+        "report": report,
+        "sourceVersion": str(source_config.get("Embedded", "SourceVersion") or "")
+        or read_interface_version(target_dir),
+        "importedAt": _now_text(),
+        "copyPath": str(target_dir),
+    }
+
+
+def _clone_from_sibling(
+    script_id: str,
+    source: str,
+    siblings: Iterable[tuple[str, Any]],
+    *,
+    base: Path | None,
+    send_log: Callable[[str], None] | None,
+) -> dict[str, Any] | None:
+    """来源目录已删、副本又没了：找一个同来源、副本健康的脚本克隆过来。找不到返回 None。"""
+
+    for other_id, other_config in siblings:
+        other_id = str(other_id)
+        if other_id == script_id:
+            continue
+        other_source = imported_source_path(other_config) or str(
+            other_config.get("Info", "Path") or ""
+        )
+        if not other_source or not _same_directory(source, other_source):
+            continue
+        other_dir = embedded_project_dir(other_id, base)
+        if not copy_is_healthy(other_dir):
+            continue
+        # 源副本正在更新 / 准备环境时不能克隆半截树；换下一个同来源的脚本。
+        key = try_reserve_project_path_sync(other_dir)
+        if key is None:
+            continue
+        try:
+            if not clone_embedded_copy(other_id, script_id, base):
+                continue
+        finally:
+            release_project_path_sync(key)
+        other_name = str(other_config.get("Info", "Name") or other_id[:8])
+        message = f"[MFW 内嵌] 来源目录已不存在，已从脚本「{other_name}」的副本克隆"
+        logger.info(message)
+        if send_log is not None:
+            send_log(message)
+        return inherit_embedded_record(other_config, script_id, base)
+    return None
+
+
 def ensure_embedded_copy(
     script_id: str,
     script_config: Any,
     *,
     base: Path | None = None,
     send_log: Callable[[str], None] | None = None,
+    siblings: Iterable[tuple[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """副本不在（老脚本、被删）或来源换了目录时导入一次；返回新报告，否则 None。
 
     调用方拿到非 None 要把报告写回配置。来源目录不在：副本还健康就什么都不做——
-    导入完成后来源本来就可以删；副本也没了才抛错让用户重新选目录。
+    导入完成后来源本来就可以删；副本也没了就在 ``siblings``（其它 MFW 脚本）里找同来源、
+    副本健康的克隆一份，实在没有才抛错让用户重新选目录。
     """
 
     copy_dir = embedded_project_dir(script_id, base)
@@ -340,6 +477,11 @@ def ensure_embedded_copy(
         if healthy:
             # 来源目录换成了一个不存在的路径：副本还是上一个来源的，照常用它。
             return None
+        rebuilt = _clone_from_sibling(
+            script_id, source, siblings or (), base=base, send_log=send_log
+        )
+        if rebuilt is not None:
+            return rebuilt
         raise EmbeddedProjectError(
             "副本不在了，来源目录也已不存在；请重新选择一个解压好的 MFW 项目目录"
         )
@@ -384,7 +526,9 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 
 __all__ = [
     "EMBEDDED_PROJECTS_DIR",
+    "PYCACHE_DIR_NAME",
     "EmbeddedProjectError",
+    "clone_embedded_copy",
     "copy_is_healthy",
     "discard_copy_update_baseline",
     "embedded_project_dir",
@@ -393,6 +537,7 @@ __all__ = [
     "ensure_embedded_copy",
     "import_embedded_project",
     "imported_source_path",
+    "inherit_embedded_record",
     "read_interface_version",
     "remove_tree",
     "resolve_maafw_project_root",

@@ -348,6 +348,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     script_id,
                     script_config,
                     send_log=self._threadsafe_update_log(),
+                    # 来源目录已删、副本又没了：可以从同来源的其它脚本克隆
+                    siblings=[
+                        (str(uid), config)
+                        for uid, config in Config.ScriptConfig.items()
+                        if isinstance(config, MaaFWConfig)
+                    ],
                 )
             except EmbeddedProjectError as exc:
                 return str(exc)

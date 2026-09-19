@@ -177,8 +177,8 @@ class PackagePlan:
     base_version: str | None = None
     base_fingerprint: str | None = None
     target_version: str | None = None
-    # 内嵌副本里按内容与其它副本共用的运行时文件（``files`` 的子集）。
-    shared_runtime: frozenset[str] = frozenset()
+    # 内嵌副本里按内容与其它副本共用的文件（``files`` 的子集）：运行时目录与模型类大文件。
+    shared: frozenset[str] = frozenset()
 
 
 def apply_package_transaction(
@@ -375,9 +375,7 @@ def apply_package_transaction(
             ):
                 _remove_path(_project_target(root, relative))
             blob_store = (
-                RuntimeBlobStore(_blob_store_root(store.root))
-                if plan.shared_runtime
-                else None
+                RuntimeBlobStore(_blob_store_root(store.root)) if plan.shared else None
             )
             applied_files = 0
             report_step = _apply_progress_step(total_files)
@@ -385,8 +383,8 @@ def apply_package_transaction(
             for relative, source in plan.files.items():
                 target = _project_target(root, relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                if blob_store is not None and relative in plan.shared_runtime:
-                    # 运行时文件按内容与其它副本共用；内容没变的连碰都不碰。
+                if blob_store is not None and relative in plan.shared:
+                    # 按内容与其它副本共用的文件；内容没变的连碰都不碰。
                     blob_store.place(source, target)
                 else:
                     # 暂存区已经是解压好的完整副本，回滚只看 backup/，所以同盘
@@ -587,11 +585,11 @@ def build_package_plan(
         safe_relative_path(relative)
     if package_type == "full" and not _has_interface_file(package_root):
         raise UpdateApplyError("full update package must contain interface.json")
-    shared_runtime: frozenset[str] = frozenset()
+    shared: frozenset[str] = frozenset()
     if projection:
         # 内嵌副本：只按 interface 白名单落盘。这是唯一的枚举口，三张表一起过滤，
         # 下游的清单、孤儿清理、回滚看到的就都是瘦树。
-        files, hashes, deleted, shared_runtime = _project_package_entries(
+        files, hashes, deleted, shared = _project_package_entries(
             payload_root, project_path, files, hashes, deleted, send_log
         )
     return PackagePlan(
@@ -603,7 +601,7 @@ def build_package_plan(
         base_version=base_version,
         base_fingerprint=base_fingerprint,
         target_version=declared_target or target_version,
-        shared_runtime=shared_runtime,
+        shared=shared,
     )
 
 
@@ -646,9 +644,7 @@ def _project_package_entries(
         },
         tuple(relative for relative in deleted if relative in kept_deleted),
         frozenset(
-            relative
-            for relative in kept_files
-            if rules.is_shared_runtime_file(Path(relative))
+            relative for relative in kept_files if rules.is_shared_file(Path(relative))
         ),
     )
 

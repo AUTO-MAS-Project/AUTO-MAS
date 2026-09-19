@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const service = vi.hoisted(() => ({
   getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost: vi.fn(),
   reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost: vi.fn(),
+  listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost: vi.fn(),
+  cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost: vi.fn(),
 }))
 
 vi.mock('@/api', () => ({ MaaFwService: service }))
@@ -60,6 +62,70 @@ describe('useMaaFWEmbeddedApi', () => {
       scriptId: 'sid',
       sourcePath: 'D:\\nope',
     })
+  })
+
+  it('克隆走同一套 unwrap：成功回状态与文案，失败抛后端文案', async () => {
+    service.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost.mockResolvedValueOnce({
+      code: 200,
+      status: 'success',
+      message: '已复用「床1」的项目',
+      data: { copyHealthy: true, sourcePath: 'D:/m9a' },
+    })
+    const { cloneEmbedded } = useMaaFWEmbeddedApi()
+    const ok = await cloneEmbedded('new', 'old')
+    expect(service.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost).toHaveBeenCalledWith({
+      scriptId: 'new',
+      sourceScriptId: 'old',
+    })
+    expect(ok.status.sourcePath).toBe('D:/m9a')
+    expect(ok.message).toContain('已复用')
+
+    service.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost.mockResolvedValueOnce({
+      code: 400,
+      status: 'error',
+      message: '源脚本正在运行，运行结束后再复用它的项目',
+      data: null,
+    })
+    await expect(cloneEmbedded('new', 'old')).rejects.toThrow('源脚本正在运行')
+  })
+
+  it('候选列表：code 对就给 data，没 data 给空数组，code 不对抛文案', async () => {
+    const { listEmbeddedSources } = useMaaFWEmbeddedApi()
+    service.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost.mockResolvedValueOnce({
+      code: 200,
+      status: 'success',
+      message: '',
+      data: [{ scriptId: 'a', name: '床1', type: 'M9A', projectName: 'M9A', version: 'v4.9.0' }],
+    })
+    expect(await listEmbeddedSources('new')).toHaveLength(1)
+    expect(
+      service.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost
+    ).toHaveBeenLastCalledWith({ scriptId: 'new' })
+    service.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost.mockResolvedValueOnce({
+      code: 200,
+      status: 'success',
+      message: '',
+      data: [],
+    })
+    // 新建对话框里还没有脚本：不传就不排除任何人
+    expect(await listEmbeddedSources()).toEqual([])
+    expect(
+      service.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost
+    ).toHaveBeenLastCalledWith({})
+    service.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost.mockResolvedValueOnce({
+      code: 200,
+      status: 'success',
+      message: '',
+      data: undefined,
+    })
+    expect(await listEmbeddedSources('new')).toEqual([])
+    service.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost.mockResolvedValueOnce({
+      code: 400,
+      status: 'error',
+      message: 'MFW 脚本无效',
+      data: [],
+    })
+    await expect(listEmbeddedSources('new')).rejects.toThrow('MFW 脚本无效')
   })
 
   it('没有 data 也能给出完整的空状态', async () => {

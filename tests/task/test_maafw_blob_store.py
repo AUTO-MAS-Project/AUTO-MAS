@@ -165,6 +165,9 @@ def _project(root: Path, *, dll: bytes = BIG, version: str = "v1.0.0") -> Path:
     _write(root / "python/.marker", SMALL)
     _write(root / "maafw/MaaFramework.dll", b"m" * (LINK_MIN_BYTES + 9))
     _write(root / "resource/base/image.png", b"p" * (LINK_MIN_BYTES + 3))
+    _write(root / "resource/base/model/ocr/rec.onnx", b"o" * (LINK_MIN_BYTES + 7))
+    _write(root / "resource/base/model/tiny.onnx", SMALL)
+    _write(root / "agent/lib/native.dll", b"d" * (LINK_MIN_BYTES + 2))
     return root
 
 
@@ -180,14 +183,21 @@ class TestProjectionUsesTheStore:
             "python/python313.dll",
             "python/Lib/site-packages/numpy/big.pyd",
             "maafw/MaaFramework.dll",
+            # 运行时目录之外的模型 / 二进制也按内容共用（M9A 三个 onnx 就是 41 MB）。
+            "resource/base/model/ocr/rec.onnx",
+            "agent/lib/native.dll",
         ):
             assert _same_inode(copy_a / relative, copy_b / relative), relative
-        # 资源不共用（agent 会热更新它们），小文件也不共用。
+        # 图片 / JSON 这类 agent 会热更新的资源不共用，小文件也不共用。
         assert not _same_inode(
             copy_a / "resource/base/image.png", copy_b / "resource/base/image.png"
         )
+        assert not _same_inode(
+            copy_a / "resource/base/model/tiny.onnx",
+            copy_b / "resource/base/model/tiny.onnx",
+        )
         assert not _same_inode(copy_a / "python/.marker", copy_b / "python/.marker")
-        assert a["report"]["sharedFiles"] == 3
+        assert a["report"]["sharedFiles"] == 5
         assert b["report"]["sharedBytes"] == a["report"]["sharedBytes"] > 0
         assert (tmp_path / "data" / "maafw_blobs").is_dir()
 
@@ -209,6 +219,9 @@ class TestUpdateLandingUsesTheStore:
             archive.writestr("python/python.exe", "exe")
             archive.writestr("python/python313.dll", dll)
             archive.writestr("maafw/MaaFramework.dll", "m" * (LINK_MIN_BYTES + 9))
+            archive.writestr(
+                "resource/base/model/ocr/rec.onnx", "o" * (LINK_MIN_BYTES + 7)
+            )
         return package
 
     def test_landing_shares_unchanged_runtime_and_replaces_changed_files_safely(
@@ -240,6 +253,11 @@ class TestUpdateLandingUsesTheStore:
         # 新库进了共用库，第二个项目更新到同版本时会共用它。
         store = RuntimeBlobStore(tmp_path / "data" / "maafw_blobs")
         assert store.blob_path(sha256_file(copy_a / "python/python313.dll")).is_file()
+        # 包里没变的模型落地后仍与 B 共用同一个 inode。
+        assert _same_inode(
+            copy_a / "resource/base/model/ocr/rec.onnx",
+            copy_b / "resource/base/model/ocr/rec.onnx",
+        )
 
     def test_rollback_restores_without_writing_through_shared_links(
         self, tmp_path: Path

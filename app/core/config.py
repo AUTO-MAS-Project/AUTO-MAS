@@ -858,16 +858,7 @@ class AppConfig(GlobalConfig):
 
             # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
             if isinstance(new_config, MaaFWConfig):
-                from app.task.MaaFW.tools.embedded.embedded_project import (
-                    clone_embedded_copy,
-                )
-
-                try:
-                    await asyncio.to_thread(
-                        clone_embedded_copy, str(script_id), str(new_uid)
-                    )
-                except Exception as exc:  # noqa: BLE001 - 副本复制失败下次运行会从来源重建
-                    logger.warning(f"复制脚本时复制内嵌副本失败，将按需重建: {exc}")
+                await self._clone_embedded_copy_for_script(str(script_id), str(new_uid))
 
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
@@ -886,6 +877,44 @@ class AppConfig(GlobalConfig):
                         )
 
             return new_uid, new_config
+
+    async def _clone_embedded_copy_for_script(
+        self, source_script_id: str, target_script_id: str
+    ) -> None:
+        """复制脚本时连副本一起克隆。源正被更新落地 / 准备环境时不克隆半截树，留给
+        下次运行按来源重建；克隆失败同理，不让复制脚本本身失败。"""
+
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            clone_embedded_copy,
+            embedded_project_dir,
+        )
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+
+        source_key = await try_reserve_project_path(
+            embedded_project_dir(source_script_id)
+        )
+        if source_key is None:
+            logger.warning("复制脚本时源脚本的副本正被占用，跳过副本复制，将按需重建")
+            return
+        try:
+            target_key = await try_reserve_project_path(
+                embedded_project_dir(target_script_id)
+            )
+            if target_key is None:
+                return
+            try:
+                await asyncio.to_thread(
+                    clone_embedded_copy, source_script_id, target_script_id
+                )
+            except Exception as exc:  # noqa: BLE001 - 副本复制失败下次运行会从来源重建
+                logger.warning(f"复制脚本时复制内嵌副本失败，将按需重建: {exc}")
+            finally:
+                await release_project_path(target_key)
+        finally:
+            await release_project_path(source_key)
 
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取脚本配置"""
@@ -5048,6 +5077,29 @@ class AppConfig(GlobalConfig):
             logger.info(
                 f"已回收 MFW 共用运行时库: {report.removed_blobs} 个文件、"
                 f"{report.removed_bytes / 2**20:.1f} MB，半成品 {report.removed_temps} 个"
+            )
+
+    async def clean_maafw_update_cache(self) -> None:
+        """回收 7 天没人碰过的 MFW 项目更新包缓存。
+
+        下载好的包留在 ``data/maafw_update_cache`` 里给同一项目的其它副本命中，
+        一份 200 MB 的全量包只下一次；但此前从不回收，每个下过的版本都永久留着。
+        正在下载 / 落地的条目持有文件锁，会被跳过。
+        """
+
+        from app.task.MaaFW.tools.core.automas_maafw_project_update.transport import (
+            prune_update_cache,
+        )
+
+        try:
+            report = await asyncio.to_thread(prune_update_cache)
+        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
+            logger.warning(f"MFW 更新包缓存回收失败: {exc}")
+            return
+        if report.removed_artifacts:
+            logger.info(
+                f"已回收 MFW 更新包缓存: {report.removed_artifacts} 个、"
+                f"{report.removed_bytes / 2**20:.1f} MB"
             )
 
     async def clean_debug_diagnostics(self) -> None:

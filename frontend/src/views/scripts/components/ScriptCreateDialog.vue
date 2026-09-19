@@ -83,6 +83,76 @@
           </a-empty>
         </template>
 
+        <!-- MFW 家族第二步：项目从哪来。同一个项目再开一个脚本时不用再选目录，
+             直接从已有脚本的副本克隆（运行时与模型共用、不另占空间，来源目录删了也能建） -->
+        <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
+          <StepHeading
+            :title="t('scripts.create.mfwSourceHeading')"
+            :description="t('scripts.create.mfwSourceHeadingDesc')"
+          />
+          <a-radio-group v-model:value="selectedMfwSource" class="choice-list">
+            <label :class="['choice-row', { selected: selectedMfwSource === 'new' }]">
+              <a-radio value="new" />
+              <span class="choice-icon"><FolderOpenOutlined /></span>
+              <span class="choice-copy">
+                <span class="choice-title">{{ t('scripts.create.mfwNewProject') }}</span>
+                <span class="choice-description">{{ t('scripts.create.mfwNewProjectDesc') }}</span>
+              </span>
+            </label>
+            <label :class="['choice-row', { selected: selectedMfwSource === 'reuse' }]">
+              <a-radio value="reuse" />
+              <span class="choice-icon"><CopyOutlined /></span>
+              <span class="choice-copy">
+                <span class="choice-title">{{ t('scripts.create.mfwReuse') }}</span>
+                <span class="choice-description">{{ t('scripts.create.mfwReuseDesc') }}</span>
+              </span>
+            </label>
+          </a-radio-group>
+          <template v-if="selectedMfwSource === 'reuse'">
+            <a-alert
+              v-if="mfwSourcesError"
+              type="error"
+              show-icon
+              :message="mfwSourcesError"
+              class="template-alert"
+            >
+              <template #action>
+                <a-button size="small" @click="emit('request-mfw-sources')">{{
+                  t('scripts.create.retry')
+                }}</a-button>
+              </template>
+            </a-alert>
+            <div v-if="mfwSourcesLoading" class="template-loading-state">
+              <a-spin size="large" :tip="t('scripts.create.mfwReuseLoading')" />
+            </div>
+            <a-radio-group
+              v-else-if="mfwSources.length"
+              v-model:value="selectedMfwSourceId"
+              class="entity-list mfw-source-list"
+            >
+              <label
+                v-for="item in mfwSources"
+                :key="item.scriptId"
+                :class="[
+                  'entity-row',
+                  { selected: selectedMfwSourceId === item.scriptId, disabled: item.busy },
+                ]"
+              >
+                <span class="choice-copy">
+                  <span class="choice-title">{{ item.name || item.scriptId.slice(0, 8) }}</span>
+                  <span class="choice-description">{{ mfwSourceMeta(item) }}</span>
+                </span>
+                <a-radio :value="item.scriptId" :disabled="item.busy" />
+              </label>
+            </a-radio-group>
+            <a-empty v-else-if="!mfwSourcesError" :description="t('scripts.create.mfwReuseEmpty')">
+              <a-button @click="selectedMfwSource = 'new'">{{
+                t('scripts.create.mfwNewProject')
+              }}</a-button>
+            </a-empty>
+          </template>
+        </template>
+
         <template v-else-if="currentStep === 'config'">
           <template v-if="configView === 'choice'">
             <StepHeading
@@ -244,7 +314,9 @@ import { computed, defineComponent, h, ref, watch } from 'vue'
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
+  CopyOutlined,
   DatabaseOutlined,
+  FolderOpenOutlined,
   SearchOutlined,
   SettingOutlined,
   UserOutlined,
@@ -252,15 +324,18 @@ import {
 import MarkdownIt from 'markdown-it'
 import type { ScriptType } from '@/types/script'
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
+import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { openExternalUrl } from '@/utils/openExternal'
 import {
   buildCreateRequest,
   buildCreateSteps,
   filterScriptTypeOptions,
+  isMfwFamily,
   SCRIPT_TYPE_OPTIONS,
   splitScriptTypeOptions,
   type ConfigMode,
   type CreateStepKey,
+  type MfwSourceMode,
   type ScriptCreateRequest,
 } from './scriptCreateFlow'
 
@@ -280,11 +355,17 @@ const props = defineProps<{
   submitting: boolean
   templateLoading: boolean
   templateError: string | null
+  /** 有健康副本的 MFW / M9A 脚本：MFW 家族第二步「复用已有脚本的项目」的候选 */
+  mfwSources: MaaFWEmbeddedSourceItem[]
+  mfwSourcesLoading: boolean
+  /** 候选列表没读出来时的原因；有值就显示错误条 + 重试，而不是把它当成「没有可复用的脚本」 */
+  mfwSourcesError: string | null
 }>()
 
 const emit = defineEmits<{
   'update:open': [open: boolean]
   'request-templates': []
+  'request-mfw-sources': []
   submit: [request: ScriptCreateRequest]
 }>()
 
@@ -294,6 +375,8 @@ const selectedType = ref<ScriptType>('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
 const selectedTemplateUrl = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
+const selectedMfwSource = ref<MfwSourceMode>('new')
+const selectedMfwSourceId = ref<string | null>(null)
 const typeKeyword = ref('')
 const templateKeyword = ref('')
 
@@ -333,16 +416,47 @@ const filteredTemplates = computed(() => {
 const selectedTemplate = computed(() =>
   props.templates.find(template => template.downloadUrl === selectedTemplateUrl.value)
 )
+const isMfwStep = computed(() => currentStep.value === 'config' && isMfwFamily(selectedType.value))
+// 选中的源以当前列表为准：返回再进来时列表会重新拉，源可能已在运行（busy）或已被删，
+// 残留的 id 不能直接拿去提交——那会先建出脚本再被后端拒绝，留下一个没项目的空脚本。
+const selectedMfwSourceItem = computed(
+  () =>
+    props.mfwSources.find(item => item.scriptId === selectedMfwSourceId.value && !item.busy) ?? null
+)
+watch(
+  () => props.mfwSources,
+  list => {
+    if (
+      selectedMfwSourceId.value &&
+      !list.some(item => item.scriptId === selectedMfwSourceId.value && !item.busy)
+    ) {
+      selectedMfwSourceId.value = null
+    }
+  }
+)
 const nextDisabled = computed(() => {
   if (props.submitting) return true
+  if (isMfwStep.value) {
+    return (
+      selectedMfwSource.value === 'reuse' &&
+      (props.mfwSourcesLoading || !selectedMfwSourceItem.value)
+    )
+  }
   if (currentStep.value === 'config' && configView.value === 'templates') {
     return !selectedTemplateUrl.value
   }
   return false
 })
 const primaryButtonText = computed(() => {
-  if (currentStep.value === 'type' && selectedType.value !== 'General') {
-    return t('scripts.create.createAndConfigure')
+  if (currentStep.value === 'type') {
+    return steps.value.length > 1
+      ? t('scripts.create.next')
+      : t('scripts.create.createAndConfigure')
+  }
+  if (isMfwStep.value) {
+    return selectedMfwSource.value === 'reuse'
+      ? t('scripts.create.createAndReuse')
+      : t('scripts.create.createAndConfigure')
   }
   if (currentStep.value === 'config' && selectedConfigMode.value === 'custom') {
     return t('scripts.create.createAndConfigure')
@@ -366,8 +480,16 @@ const resetDialog = () => {
   selectedConfigMode.value = 'template'
   selectedTemplateUrl.value = null
   configView.value = 'choice'
+  selectedMfwSource.value = 'new'
+  selectedMfwSourceId.value = null
   typeKeyword.value = ''
   templateKeyword.value = ''
+}
+
+// 「项目名 版本」，读不出就退回脚本类型；源脚本在跑时标一句，那一项本身已禁用
+const mfwSourceMeta = (item: MaaFWEmbeddedSourceItem) => {
+  const project = [item.projectName, item.version].filter(Boolean).join(' ') || item.type
+  return item.busy ? `${project} · ${t('scripts.create.mfwReuseBusy')}` : project
 }
 
 const getTypeOption = (type: ScriptType) =>
@@ -385,11 +507,16 @@ const handleBack = () => {
 
 const handleNext = () => {
   if (currentStep.value === 'type') {
-    if (selectedType.value === 'General') {
+    if (steps.value.length > 1) {
       currentStep.value = 'config'
+      if (isMfwFamily(selectedType.value)) emit('request-mfw-sources')
     } else {
       submitCurrentSelection()
     }
+    return
+  }
+  if (isMfwStep.value) {
+    submitCurrentSelection()
     return
   }
   if (currentStep.value === 'config') {
@@ -408,6 +535,8 @@ const submitCurrentSelection = () => {
     type: selectedType.value,
     configMode: selectedConfigMode.value,
     template: selectedTemplate.value ?? null,
+    mfwSourceMode: selectedMfwSource.value,
+    mfwSourceScriptId: selectedMfwSourceItem.value?.scriptId ?? null,
   })
   if (request) emit('submit', request)
 }
@@ -518,9 +647,14 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
   background: var(--ant-color-primary-bg);
 }
 
-.choice-row.disabled {
+.choice-row.disabled,
+.entity-row.disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.mfw-source-list {
+  margin-top: 12px;
 }
 
 .choice-icon {
