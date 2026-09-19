@@ -18,8 +18,11 @@ from app.utils.constants import MIRROR_ERROR_INFO
 from ..automas_maafw_interface.models import MaaFWInterface
 from .apply import (
     UpdateApplyError,
+    UpdatePostValidateRejected,
+    UpdateProjectLockBusy,
     apply_package_transaction,
     has_trusted_update_baseline,
+    recover_interrupted_update,
     update_baseline_matches_project,
 )
 from .contracts import normalise_sha256, project_fingerprint
@@ -210,7 +213,12 @@ class MaaFWMirrorChyanVersionCheck:
 
 
 class MaaFWProjectUpdateError(RuntimeError):
-    """Raised when a MaaFW project package cannot be checked or applied."""
+    """Raised when a MaaFW project package cannot be checked or applied.
+
+    ``post_validate_rejected``：更新事务被 ``post_validate`` 回调（运行环境
+    预检）拒绝，文件已回滚到旧版本，原因在 ``str(exc)`` 里。
+    ``project_lock_busy``：限时内没拿到项目锁（另一次更新 / 预检在跑）。
+    """
 
     def __init__(
         self,
@@ -218,10 +226,14 @@ class MaaFWProjectUpdateError(RuntimeError):
         *,
         provider_error_code: int | None = None,
         unsafe_to_continue: bool = False,
+        post_validate_rejected: bool = False,
+        project_lock_busy: bool = False,
     ) -> None:
         super().__init__(message)
         self.provider_error_code = provider_error_code
         self.unsafe_to_continue = unsafe_to_continue
+        self.post_validate_rejected = post_validate_rejected
+        self.project_lock_busy = project_lock_busy
 
 
 def _normalise_package_source(raw_value: Any) -> str:
@@ -302,8 +314,20 @@ async def update_maafw_project_if_needed(
     source_config: dict[str, Any] | None = None,
     progress: ProgressCallback | None = None,
     post_validate: Callable[[Path], Any] | None = None,
+    precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
     project_lock_already_held: bool = False,
+    project_lock_timeout: float | None = None,
 ) -> MaaFWProjectUpdateResult:
+    """检查并按需应用项目更新。
+
+    ``post_validate``：新文件落地后、清单写入前在 apply 工作线程里被调，返回
+    False 或抛异常都让事务回滚（运行环境预检挂在这里）。
+    ``precheck_gate``：确认有新版本之后、去要下载地址之前被 await 一次，收目标
+    版本号，返回非空字符串就按「有更新但不可安装」跳过（原因即该串）——给
+    运行前自动更新读上次预检备忘用；手动更新不传，也就忽略备忘。
+    ``project_lock_timeout``：拿项目锁的限时；None 为不限时（自动路径）。
+    """
+
     send_update_log = send_log or (lambda _: None)
     current_version = interface_model.version or ""
     update_channel = channel or "stable"
@@ -329,6 +353,33 @@ async def update_maafw_project_if_needed(
     send_update_log("start checking MaaFW project update")
     send_update_log(f"current version: {current_version}")
     send_update_log(f"update channel: {update_channel}")
+
+    # 上次事务若在中间态被杀（预检把 post_validating 拉长到分钟级，进程随时
+    # 可能没了），目录里是新文件、清单却没写：版本比对会判「已是最新」，从此
+    # 既不更新也不回滚。进入发现之前先把它退回去。没有中间态记录时是空操作。
+    try:
+        await asyncio.to_thread(
+            recover_interrupted_update,
+            project_path,
+            send_log=send_update_log,
+            project_lock_already_held=project_lock_already_held,
+            project_lock_timeout=project_lock_timeout,
+        )
+    except UpdateApplyError as exc:
+        message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
+        send_update_log(message)
+        _report_progress(
+            progress,
+            "failed",
+            status="recovery_failed",
+            message=message,
+            final=True,
+        )
+        raise MaaFWProjectUpdateError(
+            str(exc),
+            unsafe_to_continue=exc.unsafe_to_continue,
+            project_lock_busy=isinstance(exc, UpdateProjectLockBusy),
+        ) from exc
 
     merged_source_config = dict(source_config or {})
     configured_cdk = str(
@@ -386,6 +437,7 @@ async def update_maafw_project_if_needed(
             send_log=send_update_log,
             prefer_full_package=prefer_full,
             baseline_matches=None if prefer_full else baseline_still_matches,
+            precheck_gate=precheck_gate,
         )
     except Exception as exc:
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
@@ -492,6 +544,7 @@ async def update_maafw_project_if_needed(
             progress=progress,
             post_validate=post_validate,
             project_lock_already_held=project_lock_already_held,
+            project_lock_timeout=project_lock_timeout,
         )
     except Exception as exc:
         detail = _sanitize_log_message(str(exc))
@@ -608,6 +661,7 @@ async def _discover_project_update_detailed(
     prefer_full_package: bool = False,
     version_only: bool = False,
     baseline_matches: Callable[[], Awaitable[bool]] | None = None,
+    precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -622,6 +676,11 @@ async def _discover_project_update_detailed(
     ``baseline_matches`` 只在「确认有新版本、要带 CDK 向 Mirror酱 拿差量包」之前
     被调用一次；返回 False 就改要全量包。它是懒的，因为算项目指纹要 ~2s，
     而绝大多数运行前检查的结果是「已是最新」。
+
+    ``precheck_gate`` 在确认有新版本之后、分流下载源之前被 await 一次（收目标
+    版本号）；返回非空字符串就以它为由按「有更新但不可安装」返回。放在这个
+    位置是因为再往后 Mirror 酱那次带 CDK 的查询会扣额度、GitHub 会打 Release
+    API——上次预检已经证明装不上的版本，不该再花这些。
     """
 
     config = dict(source_config or {})
@@ -670,11 +729,6 @@ async def _discover_project_update_detailed(
         reason = f"已是最新版本: {current or latest}"
         return None, version_check, reason
 
-    # 下载源由用户在脚本配置里显式选定，**不做自动分流**。选 Mirror 酱就必须
-    # 自己填 CDK；CDK 缺失或不可用时明确报出原因，不悄悄换成 GitHub——用户得
-    # 知道自己在从哪下载，出问题才查得动。
-    requested = _requested_package_source(config)
-
     def unavailable(reason: str):
         send_update_log(reason)
         discovery = MaaFWProjectUpdateDiscovery(
@@ -687,6 +741,16 @@ async def _discover_project_update_detailed(
             version_check,
             None,
         )
+
+    if precheck_gate is not None:
+        gate_reason = str(await precheck_gate(latest) or "").strip()
+        if gate_reason:
+            return unavailable(gate_reason)
+
+    # 下载源由用户在脚本配置里显式选定，**不做自动分流**。选 Mirror 酱就必须
+    # 自己填 CDK；CDK 缺失或不可用时明确报出原因，不悄悄换成 GitHub——用户得
+    # 知道自己在从哪下载，出问题才查得动。
+    requested = _requested_package_source(config)
 
     if requested == "mirrorchyan":
         if not mirror_cdk:
@@ -850,6 +914,7 @@ async def apply_maafw_project_update(
     post_validate: Callable[[Path], Any] | None = None,
     script_id: str | None = None,
     project_lock_already_held: bool = False,
+    project_lock_timeout: float | None = None,
 ) -> dict[str, Any]:
     send_update_log = send_log or (lambda _: None)
     download_url = str(candidate.download_url or "").strip()
@@ -913,6 +978,7 @@ async def apply_maafw_project_update(
             target_version=candidate.to_version or candidate.version,
             post_validate=post_validate,
             project_lock_already_held=project_lock_already_held,
+            project_lock_timeout=project_lock_timeout,
             send_log=send_update_log,
             progress=lambda stage, payload: _report_progress(
                 progress,
@@ -924,9 +990,13 @@ async def apply_maafw_project_update(
         result["resumedFrom"] = downloaded.resumed_from
         return result
     except UpdateApplyError as exc:
+        # 预检拒绝与锁忙都要在宿主侧认得出来：前者只发一次 warning、后者回
+        # 409；其它 apply 失败仍是 error。原因文本原样带在 message 里。
         raise MaaFWProjectUpdateError(
             str(exc),
             unsafe_to_continue=exc.unsafe_to_continue,
+            post_validate_rejected=isinstance(exc, UpdatePostValidateRejected),
+            project_lock_busy=isinstance(exc, UpdateProjectLockBusy),
         ) from exc
     except MaaFWProjectUpdateError:
         raise
