@@ -325,16 +325,6 @@
         </template>
       </PipelineRow>
 
-      <!-- 只有一个开关，不必套一层详情面板 -->
-      <PipelineRow
-        :name="t('edit.maaRoguelike')"
-        :summary="formData.Task.IfRoguelike ? t('edit.maaRoguelikeHint') : ''"
-        :checked="formData.Task.IfRoguelike"
-        :disabled="loading"
-        :has-detail="false"
-        @change="emitSave('Task.IfRoguelike', $event)"
-      />
-
       <!-- 更换主题：主题名称在 MAA 中配置，MAS 仅提供调度开关并透传；排在任务队列最后 -->
       <PipelineRow
         :name="t('edit.maaSwitchTheme')"

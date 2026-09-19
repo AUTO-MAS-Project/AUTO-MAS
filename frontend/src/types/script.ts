@@ -632,7 +632,6 @@ export interface User {
     BilibiliAccountName?: string | null
   }
   Task: {
-    IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean
     IfMall: boolean

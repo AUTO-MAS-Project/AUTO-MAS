@@ -32,10 +32,6 @@ export type MaaUserConfig_Task = {
      */
     IfSwitchTheme?: (boolean | null);
     /**
-     * 自动肉鸽
-     */
-    IfRoguelike?: (boolean | null);
-    /**
      * 生息演算
      */
     IfReclamation?: (boolean | null);

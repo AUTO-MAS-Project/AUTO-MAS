@@ -1580,7 +1580,6 @@ class MaaUserConfig_Task(BaseModel):
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
-    IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
     IfGreenTicketStore: Optional[bool] = Field(default=None, description="绿票商店")

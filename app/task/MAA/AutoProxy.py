@@ -256,34 +256,61 @@ def _merge_task_queue(
 ) -> bool:
     """按 (TaskType, Name) 把运行期任务队列相对基线的变更合并进存档队列。
 
-    基线队列含 MAS 托管注入的合成任务且顺序与存档不同, 不能按索引回写;
-    找不到对应任务项或队列新增元素时跳过, 删除不透传。
+    两侧都按身份对齐而不是按位置: 队列顺序由 MAS 安排, 用户在 MAA 里插一条、
+    删一条都会让下标整体错位, 按下标回写会把 A 的改动写进存档的 B。MAS 没安排
+    过的条目(用户自己加的自定义任务等)在存档里找不到对应项, 一律跳过: 队列
+    顺序由 MAS 决定, 用户塞进来的东西不回写; 删除同样不透传。
     """
 
     if not isinstance(archive_queue, list) or not isinstance(baseline_queue, list):
         return False
+
+    def identity(item: object) -> tuple | None:
+        if not isinstance(item, dict):
+            return None
+        return (item.get("TaskType"), item.get("Name"))
+
     index_by_id: dict[tuple, int] = {}
     for index, item in enumerate(archive_queue):
-        if isinstance(item, dict):
-            index_by_id[(item.get("TaskType"), item.get("Name"))] = index
+        key = identity(item)
+        if key is not None:
+            index_by_id[key] = index
+    baseline_by_id: dict[tuple, dict] = {}
+    for item in baseline_queue:
+        key = identity(item)
+        if key is not None:
+            baseline_by_id[key] = item
 
     changed = False
-    for pos, task in enumerate(current_queue):
-        if pos >= len(baseline_queue):
+    for task in current_queue:
+        key = identity(task)
+        if key is None:
             continue
-        base_task = baseline_queue[pos]
-        if not isinstance(task, dict) or not isinstance(base_task, dict):
-            continue
-        target_index = index_by_id.get(
-            (base_task.get("TaskType"), base_task.get("Name"))
-        )
-        if target_index is None:
+        base_task = baseline_by_id.get(key)
+        target_index = index_by_id.get(key)
+        if base_task is None or target_index is None:
             continue
         target = archive_queue[target_index]
-        for key, value in task.items():
-            if base_task.get(key) != value and target.get(key) != value:
-                target[key] = deepcopy(value)
+        for key_, value in task.items():
+            if base_task.get(key_) != value and target.get(key_) != value:
+                target[key_] = deepcopy(value)
                 changed = True
+
+    # 运行期从队列里消失的条目: 用户在 MAA 里删掉了这条任务。MAS 的队列顺序由
+    # 自己安排, 删除不改变「下次照样生成」, 但要让重建回到默认: 把存档里的这条
+    # 一并移除, 托管任务下次按空壳重建、未知任务不再复活。
+    current_keys = {identity(task) for task in current_queue}
+    dropped = [key for key in baseline_by_id if key not in current_keys]
+    if dropped:
+        drop_set = set(dropped)
+        archive_queue[:] = [
+            item for item in archive_queue if identity(item) not in drop_set
+        ]
+        for _, name in dropped:
+            logger.info(
+                f"用户已从 MAA 队列删除「{name}」，存档设置一并重置，下次按默认重建"
+            )
+        changed = True
     return changed
 
 
@@ -360,10 +387,17 @@ def _merge_maa_config_file(
     return changed
 
 
-def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
-    """继承 MAA 原生配置，并以基础任务覆盖 MAS 托管字段。"""
+def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
+    """以 MAA 原生配置为底，只用 MAS 托管补丁覆盖它声明接管的键。
 
-    return {**deepcopy(source_task), **deepcopy(managed_task)}
+    补丁是 merge patch 语义：**补丁里出现的键才算 MAS 接管，没出现的键一律
+    透传用户在上游界面里的选择**（临期药、源石、博朗台、周计划、指定材料/
+    次数、隐藏项等）。因此补丁表（MAA_ANNIHILATION_FIGHT_BASE /
+    MAA_REMAIN_FIGHT_BASE）只允许列 MAS 运行必需且自己会消费的字段；往表里
+    补一个 MAS 不消费的默认值，等于把用户的选择静默抹掉。
+    """
+
+    return {**deepcopy(source_task), **deepcopy(managed_patch)}
 
 
 def _find_task_source(
@@ -405,10 +439,12 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
             name,
             task_type,
             allow_type_fallback=allow_type_fallback,
-        ) or {
-            "$type": f"{task_type}Task",
-            "IsEnable": True,
-        }
+        )
+        if task is None:
+            # 用户在上游删掉了这条托管任务：只补一个空壳，字段全交给 MAA
+            # 自己的默认值；下次会话照此重新生成，用户不必再删一次
+            logger.info(f"用户队列中缺少「{name}」，本次按 MAA 默认设置重新生成")
+            task = {"$type": f"{task_type}Task", "IsEnable": True}
         task.update({"Name": name, "TaskType": task_type})
         return task
 
@@ -454,10 +490,10 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
     ]
 
     known_names = {task["Name"] for task in queue}
+    # 上游其余任务(自动肉鸽、生息演算、用户自定义任务等)对 MAS 是未知任务:
+    # 只透传原样条目, 不合成、不改写、不判定。队列顺序也由 MAA 自己维护。
     queue.extend(
-        deepcopy(task)
-        for task in source_tasks
-        if task.get("TaskType") != "Reclamation" and task.get("Name") not in known_names
+        deepcopy(task) for task in source_tasks if task.get("Name") not in known_names
     )
     return queue
 
@@ -644,6 +680,8 @@ def _build_activity_priority_fight(
             "IsStageManually": True,
             "UseOptionalStage": False,
             "UseWeeklySchedule": False,
+            # 活动关优先不继承理智作战的「指定材料 / 指定次数」门禁：它是同一套
+            # 打法换个关卡，带上这些门禁会在刷够材料或跑满次数后提前收工
             "EnableTargetDrop": False,
             "DropId": "",
             "DropCount": 0,
@@ -1557,6 +1595,16 @@ class AutoProxyTask(TaskExecuteBase):
         # 绿票商店走 MAA 的自定义任务，本模式下队列里只有它和开始唤醒
         if self.mode == "GreenTicketStore":
             task_queue.append(dict(MAA_GREEN_TICKET_STORE_TASK))
+
+        # 来源队列里的未知任务(自动肉鸽、生息演算、用户自定义任务等)原样带回来:
+        # MAS 不合成也不接管它们, 只保证用户在上游开的任务不会被快速配置抹掉。
+        # MAA 只认一种自定义任务类型, 按 TaskType 取即可。
+        scheduled = {task.get("TaskType") for task in task_queue}
+        task_queue.extend(
+            deepcopy(task)
+            for task in source_queue
+            if isinstance(task, dict) and task.get("TaskType") not in scheduled
+        )
 
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo

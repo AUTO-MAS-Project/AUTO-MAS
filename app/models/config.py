@@ -1030,10 +1030,6 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
         )
-        ## 是否自动肉鸽
-        self.Task_IfRoguelike = ConfigItem(
-            "Task", "IfRoguelike", False, BoolValidator()
-        )
         ## 是否生息演算
         self.Task_IfReclamation = ConfigItem(
             "Task", "IfReclamation", False, BoolValidator()
