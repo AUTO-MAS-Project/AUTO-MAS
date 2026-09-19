@@ -1593,11 +1593,17 @@ def write_native_one_dragon(
             if auto_boss_strategy_name:
                 _wd["default"]["strategy"] = auto_boss_strategy_name
     # 四项战斗组的 per-任务设置（见 one_dragon_plan.RIGHTBAR_TO_PLAN 的存储归属注释）：
-    # 首领讨伐/地脉花落本文件；秘境/幽境落全局 config.json 各自段——两个写入函数的
-    # 白名单会自行只收属于自己的键，此处按组名分派即可。
+    # 一条龙顶层键（含每周表平铺键，如 MondayDomainName / DomainRunMonday）落本文件；
+    # 全局段叶子（秘境刷取配置 / 幽境刷取策略）落 config.json 各自段。
+    # 秘境同样要落本文件：DomainName / PartyName / WeeklyDomainEnabled 与周表键都是一条龙
+    # 顶层键，只送去全局写入器会被它的白名单挡掉（那里只管「秘境刷取配置」那几个叶子），
+    # 表现为直控 + 快速配置下「面板改了秘境/周表却不生效」（2026-09-19 检查）。
     if native_step_settings:
-        for _group in ("自动首领讨伐", "自动地脉花"):
-            config.update(native_step_settings.get(_group) or {})
+        for _group in ("自动秘境", "自动首领讨伐", "自动地脉花"):
+            for _key, _value in (native_step_settings.get(_group) or {}).items():
+                if _key in _GLOBAL_DOMAIN_LEAF_SEGMENT:
+                    continue  # 全局段叶子交给下面的写入器，避免在一条龙文件里留脏键
+                config[_key] = _value
         _domain = native_step_settings.get("自动秘境") or {}
         if _domain:
             write_global_domain_settings(root, _domain)
