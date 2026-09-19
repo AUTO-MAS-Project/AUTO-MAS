@@ -1959,7 +1959,11 @@ class AutoProxyTask(TaskExecuteBase):
                                 self.task_name_map.get(task_name, task_name)
                             )
                             task_index[task_name]["index"] += 1
-                        elif f"任务失败: {task_name}" in log_line:
+                        elif (
+                            task_name in task_index
+                            and f"任务失败: {task_name}" in log_line
+                        ):
+                            # 关闭游戏、MXU 内部任务不在本轮任务表里，失败也不能让整段解析炸掉
                             task_index[task_name]["index"] += 1
 
                     await self._mark_daily_once_tasks_completed(completed_task_names)
