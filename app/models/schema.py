@@ -3540,7 +3540,7 @@ class MaaFWConfig_Game(BaseModel):
     )
     StartupSettleTime: Optional[int] = Field(
         default=None,
-        description="由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务（秒），0 关闭",
+        description="由 MAS 启动游戏时，窗口出现后最多再等多少秒才下发第一个任务（秒），画面稳定即提前，0 关闭",
     )
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭由 MAS 启动的游戏"
