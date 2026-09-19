@@ -24,12 +24,8 @@ export type MaaFWConfig_Game = {
      */
     Arguments?: (string | null);
     /**
-     * 游戏启动后等待窗口就绪的时间（秒）
+     * 游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前
      */
     WaitTime?: (number | null);
-    /**
-     * 由 MAS 启动游戏时，窗口出现后最多再等多少秒才下发第一个任务（秒），画面稳定即提前，0 关闭
-     */
-    StartupSettleTime?: (number | null);
 };
 
