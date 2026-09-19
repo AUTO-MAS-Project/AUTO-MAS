@@ -45,7 +45,7 @@ function missingRequiredFields(step) {
     if (!s[key]) missing.push(reason);
   }
   if (base === "自动秘境" && !domainNameOf(step)) missing.push("未选择秘境");
-  if (base === "自动地脉花" && leyLineRunsToday(step) && !leyLineTypeOf(step)) {
+  if (base === "自动地脉花" && weeklyLeyLineRunsToday(step) && !leyLineTypeOf(step)) {
     missing.push("未选择地脉花类型");
   }
   return missing;
@@ -110,6 +110,12 @@ function shouldRunToday(step) {
     }
     return true;
   }
+  // 地脉花与秘境同口径：每周地脉花按「当天行勾了执行才跑」，一行都没勾＝本周不跑。
+  // 这里不能落到下面「全部未勾选视为不限制」的通用回退，否则 gate 说今天要跑、dispatchCombat
+  // 却打 SKIP_WEEKDAY 跳过，而必填校验夹在两者中间（2026-09-19 PR #890 review 指出的错位）。
+  if (baseStepName(step.name) === "自动地脉花") {
+    return weeklyLeyLineRunsToday(step);
+  }
   const flags = weekdayRunFlags(step);
   if (!flags.some(Boolean)) return true;
   return flags[new Date().getDay()];
@@ -126,9 +132,9 @@ function domainNameOf(step) {
 }
 
 // 地脉花今天是否会真的跑：与 dispatchCombat 的 SKIP_WEEKDAY 判定同口径——每日模式直接跑；
-// 每周模式只有当天行勾了「执行」才跑。必填校验要它，否则「每周模式一天都没勾」
-// （shouldRunToday 对「全部未勾选」按不限制处理）会被误报成配置缺失。
-function leyLineRunsToday(step) {
+// 每周模式只有当天行勾了「执行」才跑（一行都没勾＝本周不跑）。gate（shouldRunToday）与必填
+// 校验都走它，保证「今天跑不跑」只有一处结论。
+function weeklyLeyLineRunsToday(step) {
   const s = step.settings || {};
   if (s.leyLineDailyEnabled !== false) return true;
   const wd = s.weeklyLeyLine || {};
