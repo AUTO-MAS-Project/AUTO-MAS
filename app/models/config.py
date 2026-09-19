@@ -22,6 +22,7 @@
 import asyncio
 import calendar
 import json
+import re
 import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -858,6 +859,39 @@ def _tag_notes(config: ConfigBase) -> dict:
     }
 
 
+_ACTIVITY_STAGE_INTENT_PATTERN = re.compile(r"jade|last:[1-9][0-9]{0,3}")
+
+
+class ActivityStageIntentValidator(ValidatorBase):
+    """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关，空串表示未指派。
+
+    兼容旧版关卡序号：整型或纯数字串按同锚（自最高编号关倒数）转为 last:N。
+    """
+
+    def validate(self, value: Any) -> bool:
+        if value == "":
+            return True
+        return isinstance(value, str) and bool(
+            _ACTIVITY_STAGE_INTENT_PATTERN.fullmatch(value)
+        )
+
+    def correct(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return ""
+        if isinstance(value, int) and 1 <= value <= 9999:
+            return f"last:{value}"
+        if isinstance(value, float) and value.is_integer() and 1 <= value <= 9999:
+            return f"last:{int(value)}"
+        if isinstance(value, str):
+            text = value.strip()
+            # isdecimal 而非 isdigit：上标数字等 isdigit 为真但 int() 不收
+            if text.isdecimal() and 1 <= int(text) <= 9999:
+                return f"last:{int(text)}"
+            if self.validate(text):
+                return text
+        return ""
+
+
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
 
@@ -1004,6 +1038,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_GreenTicketStoreMonth = ConfigItem(
             "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
         )
+        ## 活动关跳过簿（{活动名: {date, days, detail}}，连错自动跳过整期）
+        self.Data_ActivitySkipBook = ConfigItem(
+            "Data", "ActivitySkipBook", "{ }", JSONValidator()
+        )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
@@ -1046,9 +1084,13 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfActivityFirst = ConfigItem(
             "Task", "IfActivityFirst", False, BoolValidator()
         )
-        ## 优先刷取的活动关卡序号
-        self.Task_ActivityStageIndex = ConfigItem(
-            "Task", "ActivityStageIndex", 1, RangeValidator(1, 9999)
+        ## 优先刷取的活动关卡意图（jade / last:N；旧序号经 legacy 同锚迁移）
+        self.Task_ActivityStageIntent = ConfigItem(
+            "Task",
+            "ActivityStageIntent",
+            "",
+            ActivityStageIntentValidator(),
+            legacy_name="ActivityStageIndex",
         )
         ## 活动关优先任务吃理智药数量
         self.Task_ActivityMedicineNumb = ConfigItem(
@@ -4959,50 +5001,69 @@ class GlobalConfig(ConfigBase):
                 stage_data_by_server = {"Official": raw_stage_data}
 
             all_stage_data = {}
+
+            def _stage_drop_entry(stage: dict, activity: dict) -> dict:
+                if stage["Drop"] in MATERIALS_MAP:
+                    drop_id = stage["Drop"]
+                elif "玉" in stage["Drop"]:
+                    drop_id = "30012"
+                else:
+                    drop_id = "NotFound"
+                return {
+                    "Display": stage["Display"],
+                    "Value": stage["Value"],
+                    # 原始掉落文本：搓玉检测必须用它，
+                    # 归一化 30012 与真固源岩线同 ID
+                    "RawDrop": stage["Drop"],
+                    "Drop": drop_id,
+                    "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
+                    "Activity": activity,
+                }
+
             for server, server_stage_data in stage_data_by_server.items():
                 activity_stage_drop_info = []
                 activity_stage_combox = []
+                activity_stage_preview = []
 
                 for side_story in server_stage_data.values():
                     activity = side_story["Activity"]
                     activity_timezone = timezone(
                         timedelta(hours=activity.get("TimeZone", 8))
                     )
-                    if (
-                        datetime.strptime(
-                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                        < datetime.now(tz=activity_timezone)
-                        < datetime.strptime(
-                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                    ):
+                    activity_start = datetime.strptime(
+                        activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    ).replace(tzinfo=activity_timezone)
+                    activity_expire = datetime.strptime(
+                        activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    ).replace(tzinfo=activity_timezone)
+                    now = datetime.now(tz=activity_timezone)
+                    if activity_start < now < activity_expire:
                         for stage in side_story["Stages"]:
+                            # activity 标记供计划表关卡下拉识别活动关（交换置顶）
                             activity_stage_combox.append(
-                                {"label": stage["Display"], "value": stage["Value"]}
+                                {
+                                    "label": stage["Display"],
+                                    "value": stage["Value"],
+                                    "activity": True,
+                                }
                             )
-
                             if "SSReopen" not in stage["Display"]:
-                                if stage["Drop"] in MATERIALS_MAP:
-                                    drop_id = stage["Drop"]
-                                elif "玉" in stage["Drop"]:
-                                    drop_id = "30012"
-                                else:
-                                    drop_id = "NotFound"
-
                                 activity_stage_drop_info.append(
-                                    {
-                                        "Display": stage["Display"],
-                                        "Value": stage["Value"],
-                                        "Drop": drop_id,
-                                        "DropName": MATERIALS_MAP.get(
-                                            stage["Drop"], stage["Drop"]
-                                        ),
-                                        "Activity": activity,
-                                    }
+                                    _stage_drop_entry(stage, activity)
                                 )
+                    elif activity_expire > now and now < activity_start:
+                        # 未开始的活动进预览（下期提前布阵），仅显示不注入；
+                        # SSReopen 一键复刻伪关与剧情关不进槽位
+                        activity_stage_preview.extend(
+                            _stage_drop_entry(stage, activity)
+                            for stage in side_story["Stages"]
+                            if "SSReopen" not in stage["Display"]
+                        )
 
-                stage_data = {"Info": activity_stage_drop_info}
+                stage_data = {
+                    "Info": activity_stage_drop_info,
+                    "Preview": activity_stage_preview,
+                }
 
                 for day in range(0, 8):
                     res_stage = []

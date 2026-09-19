@@ -105,6 +105,7 @@
     @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
+    @reset-activity-skip="handleResetActivitySkip"
     @scripts-reordered="handleScriptsReordered"
   />
 
@@ -734,6 +735,28 @@ const handleSaveOkwwConfig = async (script: Script) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
     message.error(t('scripts.toast.okwwSaveFailed', { error: errorMsg }))
+  }
+}
+
+const handleResetActivitySkip = async (user: User) => {
+  try {
+    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+    if (!script) {
+      message.error(t('scripts.toast.scriptNotFound'))
+      return
+    }
+    // 清跳过簿即恢复注入：走既有用户配置单字段 PATCH，无新 API
+    const result = await updateUser(script.id, user.id, {
+      Data: { ActivitySkipBook: '{ }' },
+    })
+    if (result) {
+      user.Data.ActivitySkipBook = '{ }'
+      message.success(t('scripts.toast.activitySkipReset'))
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`重置活动关跳过簿失败: ${errorMsg}`)
+    message.error(t('scripts.toast.activitySkipResetFailed', { error: errorMsg }))
   }
 }
 

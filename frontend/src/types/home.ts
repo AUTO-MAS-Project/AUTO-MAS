@@ -39,6 +39,8 @@ interface ActivityInfo {
 export interface ActivityItem {
   Display: string
   Value: string
+  /** 原始掉落文本（搓玉检测与材料匹配用；归一化 Drop 与真固源岩线同 ID） */
+  RawDrop?: string
   Drop: string
   DropName: string
   Activity: ActivityInfo
@@ -59,6 +61,8 @@ interface StageOption {
 
 interface StageOverview {
   Activity: ActivityItem[]
+  /** 未开始的下期活动关卡（仅预览，不参与注入） */
+  Preview: ActivityItem[]
   Resource: ResourceItem[]
   Options: StageOption[]
 }
