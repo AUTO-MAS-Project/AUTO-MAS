@@ -59,6 +59,8 @@ export interface StageSlotRow {
   stageMat: string | null
   /** 间隙期预解析（下期关卡，仅预览不注入） */
   notStarted: boolean
+  /** 无任何关卡数据时的默认骨架行（待下期录入后由真实数据替换） */
+  skeleton: boolean
 }
 
 /**
@@ -89,7 +91,10 @@ export function buildSlotRows(
       .map(key => parseInt(key.slice(5), 10) || 0),
   )
 
-  const rowCount = Math.max(ranked.length, maxAssignedLast)
+  // 无任何关卡数据（间隙期且下期未录入）时给默认骨架 倒1~倒3 + 搓玉，
+  // 指派照常可落，待录入后由真实数据替换；数据齐全时行数以真实关卡为准
+  const skeleton = stages.length === 0
+  const rowCount = Math.max(ranked.length, maxAssignedLast, skeleton ? 3 : 0)
   for (let index = 1; index <= rowCount; index += 1) {
     const stage = ranked[index - 1]
     rows.push({
@@ -97,17 +102,20 @@ export function buildSlotRows(
       label: `倒${index}`,
       stageCode: stage?.Value ?? null,
       stageMat: stage?.DropName ?? null,
-      notStarted,
+      notStarted: notStarted || skeleton,
+      // 骨架态与真实数据行互斥：stages 为空时 ranked 必为空
+      skeleton,
     })
   }
 
-  if (jade || assignedKeys.has('jade')) {
+  if (jade || assignedKeys.has('jade') || skeleton) {
     rows.push({
       key: 'jade',
       label: '搓玉',
       stageCode: jade?.Value ?? null,
       stageMat: jade?.DropName ?? null,
-      notStarted,
+      notStarted: notStarted || skeleton,
+      skeleton,
     })
   }
 
@@ -116,7 +124,8 @@ export function buildSlotRows(
     label: '自定义材料',
     stageCode: null,
     stageMat: null,
-    notStarted,
+    notStarted: notStarted || skeleton,
+    skeleton,
   })
   return rows
 }

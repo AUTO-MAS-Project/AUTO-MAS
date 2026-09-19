@@ -73,7 +73,10 @@ describe('buildSlotRows', () => {
   it('keeps assigned out-of-range last:N rows as missing', () => {
     const rows = buildSlotRows(srStages, ['last:5'], false)
     expect(rows.map(row => row.key)).toContain('last:5')
-    expect(rows.find(row => row.key === 'last:5')?.stageCode).toBeNull()
+    const missing = rows.find(row => row.key === 'last:5')
+    expect(missing?.stageCode).toBeNull()
+    // 真实数据行不是骨架行（否则活动期会误标「待下期活动录入」）
+    expect(missing?.skeleton).toBe(false)
   })
 
   it('adds a jade row when nobody is assigned but the event has a jade stage', () => {
@@ -84,6 +87,26 @@ describe('buildSlotRows', () => {
   it('omits the jade row when the event has no jade stage and nobody is assigned', () => {
     const rows = buildSlotRows([stage('PA-8', '30063', '晶体元件')], [], false)
     expect(rows.map(row => row.key)).toEqual(['last:1', 'mat'])
+  })
+
+  it('falls back to the default skeleton when no stage data exists', () => {
+    const rows = buildSlotRows([], [], false)
+    expect(rows.map(row => row.key)).toEqual(['last:1', 'last:2', 'last:3', 'jade', 'mat'])
+    expect(rows.every(row => row.skeleton && row.notStarted && row.stageCode === null)).toBe(true)
+  })
+
+  it('pads the skeleton beyond 倒3 for assigned out-of-range intents', () => {
+    const rows = buildSlotRows([], ['last:5'], false)
+    expect(rows.map(row => row.key)).toEqual([
+      'last:1',
+      'last:2',
+      'last:3',
+      'last:4',
+      'last:5',
+      'jade',
+      'mat',
+    ])
+    expect(rows.find(row => row.key === 'last:4')?.skeleton).toBe(true)
   })
 
   it('marks preview rows as not started', () => {

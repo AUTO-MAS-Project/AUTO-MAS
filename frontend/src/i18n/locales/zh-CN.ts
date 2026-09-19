@@ -3076,6 +3076,7 @@ export default {
       matSub: '精确指定材料线',
       pickMaterial: '选择材料',
       noStage: '本期无此关',
+      pendingEntry: '待下期活动录入',
       addUser: '添加用户',
       remove: '移出指派',
       candidateUnassigned: '未指派',

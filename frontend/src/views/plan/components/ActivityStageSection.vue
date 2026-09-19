@@ -61,18 +61,21 @@
                   <span class="stage-mat">{{ row.stageMat }}</span>
                   <span v-if="row.notStarted" class="tag-future">{{ t('plan.activity.notStarted') }}</span>
                 </template>
-                <a-select
-                  v-else-if="row.key === 'mat'"
-                  :value="slotMaterialValue"
-                  :options="materialOptions"
-                  size="small"
-                  :placeholder="t('plan.activity.pickMaterial')"
-                  class="mat-select"
-                  :allow-clear="false"
-                  :disabled="saving"
-                  @change="onSlotMaterialChange"
-                />
-                <span v-else class="stage-none">{{ t('plan.activity.noStage') }}</span>
+                <span v-else-if="row.key === 'mat'" class="stage-none">
+                  <a-select
+                    :value="slotMaterialValue"
+                    :options="materialOptions"
+                    size="small"
+                    :placeholder="t('plan.activity.pickMaterial')"
+                    class="mat-select"
+                    :allow-clear="false"
+                    :disabled="saving || materialOptions.length === 0"
+                    @change="onSlotMaterialChange"
+                  />
+                </span>
+                <span v-else class="stage-none">
+                  {{ row.skeleton ? t('plan.activity.pendingEntry') : t('plan.activity.noStage') }}
+                </span>
               </td>
               <td>
                 <div class="chips">
@@ -352,7 +355,7 @@ const rowUserStatuses = (row: StageSlotRow): UserSlotItem[] => usersInSlot(row.k
 const rowStageExists = (row: StageSlotRow) =>
   row.key === 'mat' || row.stageCode !== null
 
-/** 行内需要黄字提示的用户：预览行的 gap 是「待开启」不算警告 */
+/** 行内需要黄字提示的用户：预览行与骨架行的 gap 是「待开启」不算警告 */
 const rowBlockingItems = (row: StageSlotRow): UserSlotItem[] => {
   const warnReasons = [
     'no-match',
@@ -396,6 +399,8 @@ const rowStatusClass = (row: StageSlotRow) => {
   const items = rowUserStatuses(row)
   if (!items.length) return row.notStarted ? 'muted' : 'idle'
   if (rowBlockingItems(row).length) return 'warn'
+  // 骨架行上其他服有进行中活动的用户仍会真实注入，标 ok 而非置灰
+  if (items.some(item => item.status.willInject)) return 'ok'
   if (row.notStarted) return 'muted'
   return 'ok'
 }
