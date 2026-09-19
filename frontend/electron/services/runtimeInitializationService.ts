@@ -654,10 +654,11 @@ export class RuntimeInitializationService {
   }
 
   /**
-   * 向在途命令下发 stdin `cancel`；没有命令在跑时返回 false。
+   * 请求取消：向在途 Runtime 命令下发 stdin `cancel`，或让在途的第 0 步停下；两者都没有时
+   * 返回 false。
    *
    * 只是「请求」取消：Runtime 在提交点之后的迟到取消不会把已激活的现场伪装成取消，
-   * 最终结局仍以它给出的 `result` 为准。
+   * 最终结局仍以它给出的 `result` 为准；第 0 步在换源、换文件之间与下载中轮询这个请求。
    */
   cancel(): boolean {
     this.cancelRequested = true

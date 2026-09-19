@@ -202,7 +202,7 @@ export function resetRuntimeUpdateSession(): void {
 interface RuntimeUpdateAbortResult {
   /** 清场时是否有更新会话。 */
   hadSession: boolean
-  /** 是否有在途 Runtime 命令并已向它下发 cancel。 */
+  /** 是否有在途 Runtime 命令（或第 0 步）并已通知它取消。 */
   forwarded: boolean
   /** 在途命令是否在时限内落地；没有在途命令时为真。 */
   settled: boolean
@@ -237,7 +237,7 @@ export async function abortRuntimeUpdateForShutdown(
   }
 
   if (session === current) session = null
-  logger.info(`更新会话已因应用退出清场${forwarded ? '，并已下发 stdin cancel' : ''}`)
+  logger.info(`更新会话已因应用退出清场${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { hadSession: true, forwarded, settled }
 }
 
@@ -443,7 +443,7 @@ export function cancelBackendUpdate(): { accepted: boolean; forwarded: boolean }
 
   current.cancelRequested = true
   const forwarded = current.runtimeService.cancel()
-  logger.info(`已受理更新取消请求${forwarded ? '，并已下发 stdin cancel' : ''}`)
+  logger.info(`已受理更新取消请求${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { accepted: true, forwarded }
 }
 
