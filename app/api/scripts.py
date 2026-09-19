@@ -235,6 +235,9 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 _maafw_env_logger = get_logger("MFW 运行环境")
+# 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
+# 跟着等几分钟。自动路径不限时。
+_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
 
 
 def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
@@ -1351,6 +1354,42 @@ async def update_maafw_project(
             ),
         )
 
+    # 手动更新后跑不起来和自动更新是同一种坏：提交前同样真建一次运行环境，
+    # 建不出来就回滚（预检失败也写备忘，但手动路径不读备忘——它就是强制重试）。
+    # 这几个模块会拉起 runtime_pool 与 agent_env，只在真要用时导入。
+    import threading
+
+    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+    from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+        clear_runtime_precheck,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.embedded.precheck import (
+        build_precheck_validator,
+        precheck_agent_root,
+    )
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+
+    route = await asyncio.to_thread(
+        lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
+    )
+    precheck_failure: dict[str, Any] = {}
+    # 不把 report_progress 交给环境准备：它的收尾事件 completed / failed 会被
+    # 进度跟踪器当成更新终态，而事务此时还在 post_validating。
+    post_validate = build_precheck_validator(
+        prepare=MaaFWEmbeddedManager._prepare_project_environment_sync,
+        cancel_event=threading.Event(),
+        send_log=send_update_log,
+        agent_env_root=precheck_agent_root(route.root),
+        failure=precheck_failure,
+        previous_version=current_version,
+        project_name=getattr(interface, "name", None),
+    )
+
     try:
         # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
         # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
@@ -1367,8 +1406,17 @@ async def update_maafw_project(
             proxy=proxy,
             send_log=send_update_log,
             progress=report_progress,
+            post_validate=post_validate,
+            # 同步 HTTP 请求不该跟着另一次自动更新 / 预检等几分钟。
+            project_lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
         )
     except MaaFWProjectUpdateError as exc:
+        if exc.project_lock_busy:
+            return MaaFWProjectUpdateOut(
+                code=409,
+                status="error",
+                message="MFW 项目正在自动更新/预检中，请稍后再试",
+            )
         return MaaFWProjectUpdateOut(
             code=400, status="error", message=f"MFW 项目更新失败: {exc}"
         )
@@ -1379,6 +1427,13 @@ async def update_maafw_project(
         return MaaFWProjectUpdateOut(
             code=500, status="error", message=f"MFW 项目更新失败: {exc}"
         )
+
+    if bool(getattr(result, "updated", False)):
+        # 提交成功即预检建出了环境，上次运行前更新留下的备忘（若有）作废。
+        try:
+            await asyncio.to_thread(clear_runtime_precheck, root_path)
+        except Exception as exc:  # noqa: BLE001
+            _maafw_update_logger.warning(f"清理运行环境预检备忘失败: {exc}")
 
     extra = _maafw_update_extra_fields(result)
     message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
