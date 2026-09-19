@@ -2909,11 +2909,12 @@ class MaaFWConfig(ConfigBase):
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        ## 由 MAS 启动的游戏，窗口出现后至少再等这么多秒才下发第一个任务（秒）。
+        ## 由 MAS 启动的游戏，窗口出现后最多再等这么多秒才下发第一个任务（秒）。
         ## Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来；
         ## MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。
-        ## 从窗口检测时刻起算，MaaFW 初始化（加载资源、连 controller、起 agent）与之
-        ## 重叠而不是干等；AttachOnly 与「游戏已在运行」的分支不等；0 关闭。
+        ## 等待期间 worker 每秒截一帧，画面有内容且连续几秒不变就提前下发，等不到
+        ## 才等满。从窗口检测时刻起算，MaaFW 初始化（加载资源、连 controller、起
+        ## agent）与之重叠而不是干等；AttachOnly 与「游戏已在运行」的分支不等；0 关闭。
         self.Game_StartupSettleTime = ConfigItem(
             "Game", "StartupSettleTime", 300, RangeValidator(0, 600)
         )

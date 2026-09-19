@@ -1472,9 +1472,9 @@ export default {
     envReadyAgents: '已就绪的 Agent',
     envRetry: '重试',
     mfwUnityResolutionOff: '不修改',
-    mfwStartupSettleSeconds: '启动后再等（秒）',
+    mfwStartupSettleSeconds: '启动后最多等（秒）',
     mfwStartupSettleTip:
-      '只在由 MAS 启动游戏时生效：窗口出现后至少再等这么多秒才下发第一个任务，MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等，0 关闭。',
+      '只在由 MAS 启动游戏时生效：窗口出现后最多再等这么多秒才下发第一个任务，期间每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等，0 关闭。',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
