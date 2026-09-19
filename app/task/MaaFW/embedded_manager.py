@@ -294,9 +294,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._auto_update_mode: AutoUpdateMode = "Off"
         # 只有 main_task 正常跑完全部用户才置位；取消/崩溃路径不跑运行后更新。
         self._users_completed = False
-        # 本轮 ``_run_project_update`` 是否真提交了更新；紧随其后的运行环境确认
-        # 用它决定「沿用」那句话怎么说。
-        self._last_update_committed = False
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。"""
@@ -590,7 +587,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}"
         )
 
-        self._last_update_committed = False
         # 用户点停止时 ``CancelledError`` 从 await 上抛出，但事务跑在工作线程
         # 里不会自己停：预检期间的 uv 安装靠令牌终止，随后事务回滚。与
         # ``_ensure_project_environment`` 同一套 shield + 有限宽限，只是宽限要
@@ -623,9 +619,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             raise
         except Exception as exc:  # noqa: BLE001 - 更新失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
-            if precheck_failure:
+            if precheck_failure and getattr(exc, "post_validate_rejected", False):
                 # 预检没过、文件已回滚：项目还是原样、照常能跑。这是「不升级」
-                # 而不是事故，只发一次 warning（D2）；其它失败仍是 error。
+                # 而不是事故，只发一次 warning（D2）；其它失败仍是 error——
+                # 包括预检失败后回滚本身也失败（``unsafe_to_continue``，此时
+                # ``post_validate_rejected`` 为 False），那是新旧混杂的树，不能
+                # 用「继续旧版本」的文案把它盖过去。
                 text = self._describe_precheck_failure(phase_zh, precheck_failure)
                 logger.warning(f"{text}：{reason}")
                 self._append_update_log(text)
@@ -641,7 +640,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
 
         if bool(_result_field(result, "updated")):
-            self._last_update_committed = True
             # 提交成功就意味着预检建出了环境，上次失败的备忘（若有）作废。
             try:
                 from app.task.MaaFW.tools.core.automas_maafw_project_update import (
@@ -806,14 +804,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         finally:
             await release_project_path(reservation_key)
 
-        # 没变化时只留一行日志，别为「什么都没做」弹通知。
-        if prepared:
-            self._append_update_log(f"{phase_zh}运行环境已重新准备完成")
-        elif self._last_update_committed:
-            # 本轮刚提交了更新：预检已经真建过一次环境，这里命中的是它。
-            self._append_update_log("运行环境已在更新前预检时备好，沿用")
-        else:
-            self._append_update_log("项目文件没有变化，运行环境沿用上次的准备结果")
+        # 没变化时只留一行日志，别为「什么都没做」弹通知。刚提交过更新时这里
+        # 必然是「重新准备」：预检不写环境缓存（D6），提交后指纹必 miss，再走
+        # 一遍 prepare 只是池命中 + 解释器 ABI 探针，几秒。
+        self._append_update_log(
+            f"{phase_zh}运行环境已重新准备完成"
+            if prepared
+            else "项目文件没有变化，运行环境沿用上次的准备结果"
+        )
 
     async def main_task(self) -> None:
         self.check_result = await self.check()
