@@ -1961,10 +1961,17 @@ class AutoProxyTask(TaskExecuteBase):
             "days": days,
             "detail": self._activity_stage_summary,
         }
-        await self.cur_user_config.set(
-            "Data", "ActivitySkipBook", json.dumps(book, ensure_ascii=False)
-        )
-        # 写簿成功后才落闩：写失败时下个回调还能重试
+        try:
+            await self.cur_user_config.set(
+                "Data", "ActivitySkipBook", json.dumps(book, ensure_ascii=False)
+            )
+        except Exception as e:
+            # 写簿失败不打断日志分析：保持未落闩，下个回调重试
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 活动关跳过簿写入失败: {e}"
+            )
+            return
+        # 写簿成功后才落闩并提示，保证一条出错只提示一次
         self._activity_stage_failed = True
         skip_hint = (
             "已跳过至活动结束" if days >= 2 else "今日不再注入活动关"
