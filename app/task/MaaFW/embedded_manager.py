@@ -707,6 +707,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
             MaaFWRuntimePoolService,
         )
+        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+            subprocess_proxy_scope,
+        )
         from app.task.MaaFW.tools.embedded.env_cache import (
             load_prepared_environment,
             store_prepared_environment,
@@ -721,18 +724,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         interface = MaaFWEmbeddedManager._load_interface_model(project_path)
         route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
-        result = MaaFWRunnerService().prepare_project_environment(
-            project_path,
-            interface,
-            runtime_pool_root=route.root,
-            runtime_pool_id=route.pool_id,
-            agent_env_root=agent_env_root,
-            # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-            # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-            import_paths=[SOURCE_ROOT],
-            send_log=send_log,
-            cancel_event=cancel_event,
-        )
+        # 代理作用域按线程登记，必须在这个同步函数体内进入：池的 uv / pip 子进程
+        # 与 agent venv 的安装都从 strip_host_python_environment 拿到用户在 MAS
+        # 里填的代理（§2.4）。预检回调与运行前确认都经过这里。
+        with subprocess_proxy_scope(Config.proxy_url):
+            result = MaaFWRunnerService().prepare_project_environment(
+                project_path,
+                interface,
+                runtime_pool_root=route.root,
+                runtime_pool_id=route.pool_id,
+                agent_env_root=agent_env_root,
+                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+                import_paths=[SOURCE_ROOT],
+                send_log=send_log,
+                cancel_event=cancel_event,
+            )
         if store_cache:
             store_prepared_environment(
                 project_path,
@@ -847,7 +854,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 Path(self.script_config.get("Info", "Path")),
             )
         except Exception:
-            logger.opt(exception=True).warning("MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）")
+            logger.opt(exception=True).warning(
+                "MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）"
+            )
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
@@ -871,7 +880,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     overlay=read_overlay_values(self.user_config[user_id]),
                 )
             except Exception:
-                logger.opt(exception=True).warning("MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）")
+                logger.opt(exception=True).warning(
+                    "MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）"
+                )
             self.inner_task = self._build_inner_task()
             self._inner_finalized = False
             try:
