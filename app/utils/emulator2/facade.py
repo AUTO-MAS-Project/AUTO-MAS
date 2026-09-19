@@ -46,6 +46,7 @@ from .applaunch import AppLaunchResult
 from .guard import drift, load_baselines
 from .ldplayer14 import LDPlayer14Manager
 from .ldplayer14 import build_manager as build_ldplayer_manager
+from .master_mode import apply_host_mode, is_master_mode_enabled
 from .mumu6 import MuMu6Manager
 from .mumu6 import build_manager as build_mumu_manager
 from .settings import InstanceSettings
@@ -233,6 +234,8 @@ class Emulator2Manager(DeviceBase):
         """
         manager, native_index = await self._dispatch(idx)
 
+        self._apply_host_mode()
+
         # 守卫先于稳定模式：两者管的字段不重叠，但都要在实例真正起来之前写完
         await self.enforce_baseline(idx, "启动前")
 
@@ -248,6 +251,27 @@ class Emulator2Manager(DeviceBase):
                 logger.warning(f"设备 #{idx} 应用稳定模式失败，继续启动: {e}")
 
         return await manager.open(native_index, package_name)
+
+    def _apply_host_mode(self) -> None:
+        """起任一台设备前，按「大雷主人模式」对齐这条配置下**所有安装**的宿主层。
+
+        宿主层跟着安装走，不跟着实例走：MuMu 的小程序弹窗由常驻的多开器在它自己启动时弹，
+        雷电的加载页轮播由 ``dnplayer.exe`` 读安装目录的渠道配置，都和这次起的是哪台无关。
+        只在有实例要起时做，是因为这时用户明确在用这条配置；处理失败只记警告，不拦启动。
+        安卓端那层（雷电 ``cleanmode``、MuMu 桌面组件）仍由各后端在自己的启动钩子里做。
+        """
+        enabled = is_master_mode_enabled()
+        for path in self.paths:
+            label = path.alias or path.install_path
+            try:
+                changed = apply_host_mode(path.type, self._manager_exe(path), enabled)
+            except Exception as e:  # noqa: BLE001 - 见 docstring
+                logger.warning(f"{label} 的「大雷主人模式」宿主层处理失败: {e}")
+                continue
+            if changed:
+                logger.info(
+                    f"{label} 的「大雷主人模式」宿主层已{'应用' if enabled else '还原'}"
+                )
 
     async def launch_app(self, idx: str, package_name: str) -> AppLaunchResult:
         """在**已经在线**的设备上把应用拉起来，不重开模拟器。
@@ -385,13 +409,40 @@ class Emulator2Manager(DeviceBase):
         manager, native_index = await self._dispatch(slot)
         return await manager.read_stable_mode(native_index)
 
+    async def read_overview(
+        self, slot: str
+    ) -> tuple[InstanceSettings, bool, list[str]]:
+        """四项设置 + 稳定模式，一次读完。设备表每行都要，分开读等于把同一份配置读两遍。"""
+        manager, native_index = await self._dispatch(slot)
+        return await manager.read_instance_overview(native_index)
+
     async def apply_stable_mode(self, slot: str) -> list[str]:
         """把这台设备切进稳定模式，返回实际改动的字段名。"""
         manager, native_index = await self._dispatch(slot)
         return await manager.apply_stable_mode(native_index)
 
     async def list_devices(self) -> dict[str, str]:
-        return {slot: info.title for slot, info in (await self.getInfo(None)).items()}
+        """设备号 → 显示名。给脚本编辑页的实例下拉用。
+
+        只要名字，所以走各家的轻量列表（一条 ``list2`` / ``info``），不走 ``getInfo``——
+        那条还要核对 adb 序列号、逐台查归属，下拉框等不起。显示名带上设备号：
+        脚本绑的是设备号，实例名（雷电默认就叫 0、1、2）单独看不出对应哪台。
+        """
+        merged: dict[str, str] = {}
+        for path in self.paths:
+            try:
+                manager = await self.manager_for(path)
+                titles = await manager.list_devices()
+            except Exception as e:  # noqa: BLE001 - 一条安装枚举失败不影响其余
+                logger.warning(f"枚举 {path.alias or path.install_path} 失败: {e}")
+                continue
+            for record in self.slots.records:
+                if record.path_id != path.path_id or record.state != "active":
+                    continue
+                title = titles.get(record.native_index)
+                if title is not None:
+                    merged[record.slot] = f"#{record.slot} {title}"
+        return merged
 
     # ---- 枚举与槽位同步 ---------------------------------------------------
 
@@ -403,9 +454,9 @@ class Emulator2Manager(DeviceBase):
         """
         try:
             manager = await self.manager_for(path)
-            # 必须用 getInfo：两家都返回 {原生索引: DeviceInfo}，
-            # 而 get_device_info 是雷电专属的，MuMu 那边返回的是一段字符串。
-            devices = await manager.getInfo(None)
+            # 两家的 list_devices 都返回 {原生索引: 名称}，一条命令就够；
+            # get_device_info 是雷电专属的，MuMu 那边返回的是一段字符串，不能用。
+            devices = await manager.list_devices()
         except Exception as e:  # noqa: BLE001
             logger.warning(f"枚举 {path.alias or path.install_path} 失败: {e}")
             return None

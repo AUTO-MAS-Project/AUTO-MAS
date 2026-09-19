@@ -2,7 +2,7 @@ import type { OutBase } from '@/api/models/OutBase'
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { request } from '@/api/core/request'
 
-export type UpdateDownloadSnapshotStatus =
+type UpdateDownloadSnapshotStatus =
   | 'idle'
   | 'downloading'
   | 'switchingSource'

@@ -151,7 +151,7 @@ _SRA_LABELS = {
     "currencyWars.strategyIndex": "策略序号",
     "currencyWars.username": "开拓者名称",
 }
-_SRA_REWARD_LABELS = (
+SRA_REWARD_LABELS = (
     "签证（支援）奖励",
     "委托奖励",
     "邮件奖励",
@@ -160,6 +160,8 @@ _SRA_REWARD_LABELS = (
     "巡星之礼",
     "兑换码奖励",
 )
+"""SRA receiveRewards 奖励开关的顺序词表（索引式 ``rewards.<i>`` 与命名键
+``rewards.<name>`` 共用同一顺序，顺序以 SRA TasksConfig 为准）"""
 _SRA_REROLL_ONLY = "仅「博弈类别」为「刷开局」时生效。"
 # 说明只写能从 SRA 源码（tasks/CosmicStrifeTask.py、tasks/currency_wars/RerollStart.py、
 # tasks/TrailblazePowerTask.py）里确认的格式；拿不准的一律指回 SRA 内的同名设置。
@@ -320,10 +322,10 @@ def list_sra_managed_modules(
                 value,
                 effective.get(key, value),
                 label=(
-                    _SRA_REWARD_LABELS[int(key.removeprefix("rewards."))]
+                    SRA_REWARD_LABELS[int(key.removeprefix("rewards."))]
                     if key.startswith("rewards.")
                     and key.removeprefix("rewards.").isdigit()
-                    and int(key.removeprefix("rewards.")) < len(_SRA_REWARD_LABELS)
+                    and int(key.removeprefix("rewards.")) < len(SRA_REWARD_LABELS)
                     else _SRA_LABELS.get(key, key)
                 ),
                 description=(

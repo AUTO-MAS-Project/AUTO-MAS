@@ -41,9 +41,7 @@ from .community_contract import CommunitySignResult
 logger = get_logger("云原神签到")
 
 _BASE_URL = "https://api-cloudgame.mihoyo.com/hk4e_cg_cn"
-_WEB_LOGIN_URL = (
-    "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/granter/login/webLogin"
-)
+_WEB_LOGIN_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/granter/login/webLogin"
 _WALLET_URL = f"{_BASE_URL}/wallet/wallet/get"
 _NOTIFICATIONS_URL = (
     f"{_BASE_URL}/gamer/api/listNotifications"
@@ -155,8 +153,7 @@ def build_cloud_genshin_combo_token(combo_token: str, open_id: str) -> str:
     if not uid or any(ord(character) < 32 for character in uid):
         raise ValueError("云原神 Web 登录返回的 open_id 无效")
     message = (
-        f"app_id={_APP_ID}&channel_id={_CHANNEL_ID}"
-        f"&combo_token={token}&open_id={uid}"
+        f"app_id={_APP_ID}&channel_id={_CHANNEL_ID}&combo_token={token}&open_id={uid}"
     )
     signature = hmac.new(
         _APP_SIGN_KEY,
@@ -278,9 +275,7 @@ async def _prepare_cloud_genshin_credential(
     )
     if payload.get("retcode") not in (0, "0"):
         if str(payload.get("retcode")).strip() in _AUTH_EXPIRED_RETCODES:
-            raise CloudGenshinAuthenticationError(
-                "米游社凭据已失效，无法登录云原神"
-            )
+            raise CloudGenshinAuthenticationError("米游社凭据已失效，无法登录云原神")
         # 云原神是米游社凭据的自动附加能力。除明确认证失效外，上游的
         # 业务拒绝通常表示账号未开通或不可用，不应拖累普通游戏签到。
         raise CloudGenshinUnavailableError("当前米游社账号无法使用云原神，已跳过")
@@ -400,12 +395,14 @@ async def cloud_genshin_sign_in(
             proxy=resolved_proxy,
             trust_env=False,
         ) as client:
-            credential, from_miyoushe_cookie, _device_id = (
-                await _prepare_cloud_genshin_credential(
-                    client,
-                    token,
-                    proxy=resolved_proxy,
-                )
+            (
+                credential,
+                from_miyoushe_cookie,
+                _device_id,
+            ) = await _prepare_cloud_genshin_credential(
+                client,
+                token,
+                proxy=resolved_proxy,
             )
             headers = _headers(credential)
             try:

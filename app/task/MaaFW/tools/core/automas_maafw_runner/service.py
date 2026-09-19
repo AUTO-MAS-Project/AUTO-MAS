@@ -143,6 +143,11 @@ class MaaFWRunnerService:
         self,
         plan: MaaFWRunPlan | dict[str, Any],
         device_config: MaaFWDeviceConfig | dict[str, Any],
+        *,
+        failure_screenshot_dir: str | Path | None = None,
+        failure_screenshot_prefix: str = "",
+        task_start_not_before: float | None = None,
+        run_deadline_at: float | None = None,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -160,6 +165,14 @@ class MaaFWRunnerService:
             ),
             ownerPid=owner_pid,
             ownerCreateTime=owner_create_time,
+            failureScreenshotDir=(
+                str(failure_screenshot_dir)
+                if failure_screenshot_dir is not None
+                else None
+            ),
+            failureScreenshotPrefix=failure_screenshot_prefix,
+            taskStartNotBefore=task_start_not_before,
+            runDeadlineAt=run_deadline_at,
         )
 
     def prepare_environment(

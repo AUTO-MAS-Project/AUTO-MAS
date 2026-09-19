@@ -52,6 +52,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.log_detect import (
     detect_echo_of_war_completion,
@@ -75,7 +76,11 @@ from .tools.run_model import (
     external_result_failure_summary,
 )
 from .tools.sra_control import HSRSRAControl
-from .tools.sra_runtime import cleanup_sra_temp_config
+from .tools.sra_runtime import (
+    SRA_REWARD_REDEEM_CODE_KEY,
+    SRA_REWARD_REDEEM_CODE_LEGACY_KEY,
+    cleanup_sra_temp_config,
+)
 from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
@@ -541,7 +546,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         eow_enabled: bool,
         result: object,
         script: Literal["M7A", "SRA"],
-        dedicated_run: bool = False,
     ) -> None:
         """外部脚本确认历战余响完成后，登记完成态。"""
 
@@ -551,7 +555,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         completed, reason = detect_echo_of_war_completion(
             result,
             script,
-            dedicated_run=dedicated_run,
         )
         if not completed:
             self._record_module_result(
@@ -752,8 +755,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="ReceiveRewards",
             user_cfg=user_cfg,
         )
-        field_key = "rewards.6" if engine == "SRA" else "reward_redemption_code_enable"
-        selected = bool(values.get(field_key, True))
+        if engine == "SRA":
+            # SRA 2.22.0 起兑换码开关是具名键，旧 profile 仍是数组下标 6
+            selected = bool(
+                values.get(
+                    SRA_REWARD_REDEEM_CODE_KEY,
+                    values.get(SRA_REWARD_REDEEM_CODE_LEGACY_KEY, True),
+                )
+            )
+        else:
+            selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
@@ -1578,6 +1589,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             self.runtime.m7a_runner = m7a_runner
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
+
+        # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
+        # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
+        # prepare 在任务级一次性归档）
+        archive_mas_runtime_backup(
+            script_id, uid, read_overlay_values(user_cfg)
+        )
 
         full_queue = self._build_user_queue(
             user_item=user_item,

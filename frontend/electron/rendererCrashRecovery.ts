@@ -21,9 +21,9 @@ export interface RendererCrashInput {
   previousCrashes: readonly number[]
 }
 
-export type RendererRecoveryAction = 'ignore' | 'reload' | 'give-up'
+type RendererRecoveryAction = 'ignore' | 'reload' | 'give-up'
 
-export interface RendererCrashDecision {
+interface RendererCrashDecision {
   action: RendererRecoveryAction
   /** 决策说明，直接写进日志与上报。 */
   detail: string

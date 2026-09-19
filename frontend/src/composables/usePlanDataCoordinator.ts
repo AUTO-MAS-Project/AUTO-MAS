@@ -28,12 +28,8 @@ export const TIME_KEYS = [
 ] as const
 export type TimeKey = (typeof TIME_KEYS)[number]
 
-// 关卡槽位常量
-export const STAGE_SLOTS = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3'] as const
-export type StageSlot = (typeof STAGE_SLOTS)[number]
-
 // 统一的数据结构
-export interface PlanDataState {
+interface PlanDataState {
   // 基础信息
   info: {
     name: string
@@ -66,13 +62,6 @@ export interface PlanDataState {
   }
 }
 
-// 关卡可用性信息
-export interface StageAvailability {
-  value: string
-  text: string
-  days: number[]
-}
-
 // 标准关卡选项缓存（按时间维度）
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
 let stageOptionsPreloadPromise: Promise<void> | null = null
@@ -80,7 +69,7 @@ let stageOptionsPreloadPromise: Promise<void> | null = null
 let stageOptionsGeneration = 0
 
 // 加载标准关卡选项
-export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
+async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
   // 如果已缓存，直接返回
   if (stageOptionsCache.value[timeKey]) {
     return stageOptionsCache.value[timeKey]

@@ -7,8 +7,8 @@ import { getLogger } from './logger'
 
 const logger = getLogger('问题包')
 
-export const MAX_ENTRY_BYTES = 25 * 1024 * 1024
-export const MAX_ARCHIVE_BYTES = 95 * 1024 * 1024
+const MAX_ENTRY_BYTES = 25 * 1024 * 1024
+const MAX_ARCHIVE_BYTES = 95 * 1024 * 1024
 const TEXT_EXTENSIONS = new Set([
   '.cfg',
   '.csv',
@@ -30,7 +30,7 @@ const SENSITIVE_BEARER_PATTERN =
 const SENSITIVE_ASSIGNMENT_PATTERN =
   /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
 
-export interface ReportEntry {
+interface ReportEntry {
   path: string
   sourceSize: number
   storedSize: number
@@ -44,7 +44,7 @@ export interface CollectorState {
   archiveBytes: number
 }
 
-export interface HistoryLogCandidate {
+interface HistoryLogCandidate {
   sourcePath: string
   archivePath: string
   mtimeMs: number
@@ -54,11 +54,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function isTextFile(filePath: string): boolean {
+function isTextFile(filePath: string): boolean {
   return TEXT_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
 
-export function sanitizeText(text: string): string {
+function sanitizeText(text: string): string {
   let sanitized = text.replace(SENSITIVE_BEARER_PATTERN, '$1***')
   sanitized = sanitized.replace(SENSITIVE_ASSIGNMENT_PATTERN, '$1***')
   const homePath = os.homedir()
@@ -68,7 +68,7 @@ export function sanitizeText(text: string): string {
   return sanitized
 }
 
-export function sanitizeJsonValue(value: unknown): unknown {
+function sanitizeJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(item => sanitizeJsonValue(item))
   }
@@ -89,7 +89,7 @@ export function sanitizeJsonValue(value: unknown): unknown {
   )
 }
 
-export function readJson(filePath: string): unknown {
+function readJson(filePath: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, ''))
   } catch {
@@ -109,7 +109,7 @@ export function resolveDataRoots(appRoot: string): string[] {
   return roots
 }
 
-export interface InstallationOptions {
+interface InstallationOptions {
   /** ScriptConfig.json 实例记录中的类型值，如 'OkwwConfig' / 'MaaEndConfig' */
   configType: string
   /** 安装目录字段名，如 'RootPath' / 'Path' */
@@ -175,7 +175,7 @@ export function discoverInstallations(
   return installations
 }
 
-export function addEntry(
+function addEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
@@ -194,7 +194,7 @@ export function addEntry(
   })
 }
 
-export function addSkippedEntry(
+function addSkippedEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
@@ -209,7 +209,7 @@ export function addSkippedEntry(
   })
 }
 
-export function readDiagnosticContent(filePath: string): Buffer {
+function readDiagnosticContent(filePath: string): Buffer {
   const rawText = fs.readFileSync(filePath, 'utf-8')
   if (path.extname(filePath).toLowerCase() === '.json') {
     const json = readJson(filePath)

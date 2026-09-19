@@ -63,7 +63,10 @@ from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     find_pids_by_name,
     push_dispatch_log,
+    read_config_source,
     split_args,
+    user_uses_direct_control,
+    user_uses_quick_config,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
@@ -85,6 +88,7 @@ from .tools import (
     find_active_instance,
     find_free_instance_idx,
     instance_dir,
+    launch_args_patch,
     list_app_catalog,
     list_instances,
     push_notification,
@@ -93,6 +97,7 @@ from .tools import (
     snapshot_run_records,
     user_field_patch,
     write_app_group,
+    write_game,
     write_game_account,
     write_instance_view,
 )
@@ -161,9 +166,7 @@ _SUMMARY_APP_IDS = frozenset({"notify"})
 def _match_fatal(log: str) -> str | None:
     """扫描内置致命关键词，命中返回状态文案，否则 None（三处判定共用）。"""
 
-    return next(
-        (msg for needle, msg in _ZZZOD_BUILTIN_FATAL if needle in log), None
-    )
+    return next((msg for needle, msg in _ZZZOD_BUILTIN_FATAL if needle in log), None)
 
 
 def _failed_apps(diffs: list) -> list[str]:
@@ -200,9 +203,7 @@ def find_launchers(root: Path) -> dict[str, Path]:
     }
 
 
-def resolve_launcher(
-    root: Path, mode: str, last_good: str = ""
-) -> tuple[Path, str]:
+def resolve_launcher(root: Path, mode: str, last_good: str = "") -> tuple[Path, str]:
     """按用户选择返回 (启动器 exe, 标签)。
 
     - 自动：优先「上次成功」的启动器（``last_good``），否则按默认顺序（集成优先）；
@@ -226,9 +227,7 @@ def resolve_launcher(
                 name,
             )
             if mode in ("原始", "集成"):
-                logger.warning(
-                    f"所选{mode}启动器未安装，已回退使用{label}启动器"
-                )
+                logger.warning(f"所选{mode}启动器未安装，已回退使用{label}启动器")
             return path, label
     raise ValueError(f"{root} 下未找到 OneDragon 启动器, 请确认绝区零一条龙安装目录")
 
@@ -310,7 +309,7 @@ def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
 def inject_user_fields(
     root: Path, slot_idx: int, user_config: ZzzOdUserConfig, apps: list[dict]
 ) -> None:
-    """把 MAS 用户字段写入绑定槽（game_account patch + 任务编排整表）。
+    """把 MAS 用户字段写入绑定槽（game_account patch + game.yml 启动参数 + 任务编排整表）。
 
     不清运行记录、不备份——配置会话（以本页配置为基线打开 GUI）与运行时
     注入（配合 clear_run_records）共用。
@@ -318,6 +317,7 @@ def inject_user_fields(
 
     slot_dir = instance_dir(root, slot_idx)
     write_game_account(slot_dir, user_field_patch(user_config))
+    write_game(slot_dir, launch_args_patch(user_config))
     write_app_group(slot_dir, apps)
 
 
@@ -367,13 +367,11 @@ class AutoProxyTask(TaskExecuteBase):
         # script_info.user_list（同一批 UserItem 对象，状态互通）
         self._task_users = users if users is not None else self.script_info.user_list
 
-        self.cur_user_item: UserItem = self._task_users[
-            self.script_info.current_index
-        ]
+        self.cur_user_item: UserItem = self._task_users[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: ZzzOdUserConfig = self.user_config[self.cur_user_uid]
-        # 两态配置来源（用户=本配置字段 / 直控=zzz-od 原生配置）
-        self.mode = str(self.cur_user_config.get("Info", "Mode") or "用户")
+        # 配置来源三态（脚本/用户=本配置字段注入运行 / 直控=zzz-od 原生配置）
+        self.mode = read_config_source(self.cur_user_config)
         # 账号切换方式（脚本级下拉，仅用户态生效）：
         # 多实例切换=多用户注入多实例槽一轮跑；单实例切换=逐用户独立会话
         self.account_switch = str(
@@ -411,6 +409,8 @@ class AutoProxyTask(TaskExecuteBase):
         self._multi_uids: set[str] = set()
         self._multi_judged: set[int] = set()
         self._multi_ran = False
+        # 本轮判定为完成但部分任务执行失败的节点展示名（写入 script_info.log/通知）
+        self._partial_failed_apps: list[str] = []
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
@@ -439,9 +439,7 @@ class AutoProxyTask(TaskExecuteBase):
             return False
         return any(
             str(
-                self.user_config[uuid.UUID(item.user_id)].get(
-                    "Notify", "PushLogMode"
-                )
+                self.user_config[uuid.UUID(item.user_id)].get("Notify", "PushLogMode")
                 or "汇总"
             )
             != "关闭"
@@ -484,7 +482,7 @@ class AutoProxyTask(TaskExecuteBase):
             cfg = self.user_config[uid]
             if not cfg.get("Info", "Status"):
                 continue
-            if str(cfg.get("Info", "Mode") or "用户") == "直控":
+            if user_uses_direct_control(cfg):
                 logger.warning(
                     f"用户 {user_item.name} 为直控配置, 不参与注入运行（原生裸跑由调度单独分派）"
                 )
@@ -509,9 +507,10 @@ class AutoProxyTask(TaskExecuteBase):
             # 多账号一轮需要槽间切换，账密不全的用户必然拖死整轮，先行剔除
             guarded: list[tuple[UserItem, ZzzOdUserConfig, list[dict]]] = []
             for user_item, cfg, apps in candidates:
-                if str(cfg.get("Game", "Account") or "").strip() and str(
-                    cfg.get("Game", "Password") or ""
-                ).strip():
+                if (
+                    str(cfg.get("Game", "Account") or "").strip()
+                    and str(cfg.get("Game", "Password") or "").strip()
+                ):
                     guarded.append((user_item, cfg, apps))
                     continue
                 user_item.status = "异常"
@@ -529,8 +528,9 @@ class AutoProxyTask(TaskExecuteBase):
     ) -> None:
         """把用户配置字段生成 zzz-od YAML 写入实例槽（MaaEnd 式字段下发）。
 
-        只覆盖 MAS 侧非空字段，槽内 game_account.yml 的其余字段（platform、
-        自定义窗口标题等）原样保留；随后清空运行记录让本次任务全部重跑。
+        账号字段只覆盖 MAS 侧非空字段，槽内 game_account.yml 的其余字段
+        （platform、自定义窗口标题等）原样保留；启动参数整组覆盖 game.yml；
+        随后清空运行记录让本次任务全部重跑。
         """
 
         inject_user_fields(self.script_root_path, slot_idx, user_config, apps)
@@ -588,13 +588,45 @@ class AutoProxyTask(TaskExecuteBase):
             self._multi_uids.add(user_item.user_id)
             # 多实例切换共用一个 log_box：各用户的节点详情推送模式与归属
             # （sink 按「【用户名】」前缀路由，idx→用户名供后置处理器归属）
-            user_item.push_log_mode = str(
-                cfg.get("Notify", "PushLogMode") or "汇总"
-            )
+            user_item.push_log_mode = str(cfg.get("Notify", "PushLogMode") or "汇总")
             self._idx_names[slot] = str(cfg.get("Info", "Name") or "")
-        self._push_user_book = {
-            user_item.name: user_item for user_item, _, _ in users
-        }
+        self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
+
+    async def _prepare_direct_quick_config(self) -> None:
+        """直控+快速配置：任务前把该用户面板字段写入绑定实例槽，任务后恢复。
+
+        复用用户态注入原语（ensure_user_slot 解析/分配绑定槽 → 槽目录备份 →
+        由用户配置字段生成 YAML 写入槽），与 ``_prepare_injection`` 共用
+        ``_injected_slots``/``_slot_users`` 现场与 ``_restore_injection`` 恢复路径
+        （无合成视图：直控裸跑走原生注册表，恢复只还原槽目录）。
+
+        绑定槽缺失时按 zzz-od 固定槽形状建空槽（注入原语自动创建
+        game_account.yml / one_dragon/_group.yml），不建平行模型。
+        写失败（含槽备份失败）异常向上传播即任务失败（S5），不吞异常。
+        """
+
+        used_idxs = collect_used_slot_idxs(exclude_uids={self.cur_user_uid})
+        slot = await ensure_user_slot(
+            self.script_root_path, self.cur_user_config, used_idxs
+        )
+        backup_base = (
+            Path.cwd() / "data" / self.script_info.script_id / "Temp" / "InstanceBackup"
+        )
+        backup_dir = backup_base / f"{slot:02d}"
+        if instance_dir(self.script_root_path, slot).is_dir():
+            backup_instance(self.script_root_path, slot, backup_dir)
+            self._injected_slots.append((slot, backup_dir))
+        else:
+            # 槽目录不存在：以固定槽形状建空槽（注入原语创建配置文件）
+            self._injected_slots.append((slot, None))
+        self._inject_user_config(slot, self.cur_user_config, self._enabled_app_list())
+        self._slot_users[slot] = (self.cur_user_item, self.cur_user_config)
+        self._slot_records_before[slot] = snapshot_run_records(
+            self.script_root_path, slot
+        )
+        logger.info(
+            f"ZZZ-OD 直控快速配置：已把用户 {self.cur_user_item.name} 面板字段写入绑定槽 {slot:02d}"
+        )
 
     def _write_view(self) -> None:
         """（重）写合成注册表视图：仅本脚本注入槽，活跃=首槽。
@@ -623,9 +655,7 @@ class AutoProxyTask(TaskExecuteBase):
                 for slot, _ in slots
             ],
             active_idx=slots[0][0],
-            instance_run=(
-                INSTANCE_RUN_ALL if len(slots) > 1 else INSTANCE_RUN_CURRENT
-            ),
+            instance_run=(INSTANCE_RUN_ALL if len(slots) > 1 else INSTANCE_RUN_CURRENT),
             force_login=force_login,
         )
 
@@ -655,10 +685,12 @@ class AutoProxyTask(TaskExecuteBase):
         except ValueError as e:
             return str(e)
 
-        if self.mode not in ("用户", "直控"):
+        # 配置来源三态：脚本/用户=按该用户的 MAS 配置注入运行（脚本=脚本级共享
+        # 配置载体，仍落到该用户绑定槽）；直控=原生裸跑零注入。
+        if self.mode not in ("脚本", "用户", "直控"):
             return f"不支持的配置来源: {self.mode}"
 
-        if self.mode == "用户":
+        if self.mode in ("脚本", "用户"):
             # 同脚本用户名唯一（绑定槽名与统计都依赖名字区分）
             names = [
                 str(cfg.get("Info", "Name") or "").strip()
@@ -773,6 +805,11 @@ class AutoProxyTask(TaskExecuteBase):
                     for item in list_instances(self.script_root_path)
                     if isinstance(item, dict)
                 }
+                # 直控+快速配置开启：任务前把该用户面板字段（Game/OneDragon）
+                # 复用用户态注入原语写入绑定实例槽（任务结束由既有注入快照
+                # 恢复）；关闭=纯原生裸跑零写入。写失败异常向上传播即任务失败。
+                if user_uses_quick_config(self.cur_user_config):
+                    await self._prepare_direct_quick_config()
                 launcher_args = ["--onedragon"]
             else:
                 if self._is_multi_account():
@@ -929,7 +966,8 @@ class AutoProxyTask(TaskExecuteBase):
                     self._judge_final(records_before, records_after, log)
 
                 if self.run_book:
-                    # 终态成功（判定器设置）：含「Success!」与「今日任务均已完成」
+                    # 终态成功（判定器设置）：统一为框架成功契约「Success!」
+                    # （直控跳过场景的可读说明已由判定器写入 script_info.log）
                     if (
                         self._launcher_label is not None
                         and self._launcher_mode == "自动"
@@ -938,7 +976,9 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.cur_user_config.set(
                             "Data", "LauncherLastGood", self._launcher_label
                         )
-                    self.script_info.log = "检测到 ZZZ-OD 已完成任务"
+                    self.script_info.log = (
+                        self.script_info.log or "检测到 ZZZ-OD 已完成任务"
+                    )
                     if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                         await execute_script_task(
                             Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
@@ -962,9 +1002,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
-                await self.kill_managed_process(
-                    kill_game=self._mas_should_close_game()
-                )
+                await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
                     await Notify.push_plyer(
                         "ZZZ-OD 自动代理出现异常！",
@@ -1020,21 +1058,29 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs)
-            # 节点失败只记录不重跑（次日 zzz-od 按运行记录自行重试）
+            # 节点失败只记录不重跑（次日 zzz-od 按运行记录自行重试），本轮仍判
+            # 完成；结果向框架成功契约 Success! 归一，失败节点进 script_info.log
+            # 供任务详情与通知展示（历史层保持只认 Success! 的干净契约）
             if failed_apps:
-                failed_names = "、".join(
+                self._partial_failed_apps = [
                     self._app_display_name(app_id) for app_id in failed_apps
-                )
-                log_status = f"ZZZ-OD 部分任务执行失败: {failed_names}"
+                ]
+                log_status = "Success!"
                 user_status = "完成"
+                self.script_info.log = "部分任务执行失败: " + "、".join(
+                    self._partial_failed_apps
+                )
             elif any(new == RUN_STATUS_SUCCESS for _, _, new in diffs):
                 log_status = "Success!"
                 user_status = "完成"
+                self.script_info.log = "检测到 ZZZ-OD 已完成任务"
             elif self._launch_evidence(log, False) or _ZZZOD_ONE_DRAGON_SUCCESS in log:
                 # 记录无变化但有一条龙运行证据（应用层日志/成功标志）：
-                # 直控态=今日任务均已完成（zzz-od 启动后按记录跳过全部任务）
-                log_status = "今日任务均已完成"
+                # 直控态=今日任务均已完成（zzz-od 启动后按记录跳过全部任务）。
+                # 结果向框架成功契约 Success! 归一，可读说明放到 script_info.log
+                log_status = "Success!"
                 user_status = "完成"
+                self.script_info.log = "今日任务均已完成"
             else:
                 # 记录无变化且无任何启动证据：启动器未能真正拉起一条龙
                 # （缺依赖早退等），判失败走重试/启动器切换，不得报成功
@@ -1042,8 +1088,9 @@ class AutoProxyTask(TaskExecuteBase):
                 user_status = "异常"
 
         self.cur_user_log.status = log_status
-        # 以 run_book 向 main_task 通信终态：「今日任务均已完成」也视为成功
-        # （否则会空跑满重试次数并以失败落库）；展示文本保留给 result 行
+        # 以 run_book 向 main_task 通信终态：判定为完成的路径统一归一为
+        # Success!（部分节点失败/直控跳过也视为成功，否则会空跑满重试次数
+        # 并以失败落库）；具体说明已写入 script_info.log 供详情展示
         self.run_book = user_status == "完成"
         if user_status is not None:
             self.cur_user_item.status = user_status
@@ -1088,13 +1135,9 @@ class AutoProxyTask(TaskExecuteBase):
             return False
 
         self._launcher_label = other
-        self.launcher_exe_path = (
-            self.script_root_path / _ZZZOD_LAUNCHER_BOOK[other]
-        )
+        self.launcher_exe_path = self.script_root_path / _ZZZOD_LAUNCHER_BOOK[other]
         self._launcher_switched = True
-        logger.warning(
-            f"检测到 {other}启动器未能启动，已切换为另一启动器重试"
-        )
+        logger.warning(f"检测到 {other}启动器未能启动，已切换为另一启动器重试")
         return True
 
     async def _judge_multi(self, log: str) -> None:
@@ -1168,6 +1211,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
         elif all_ok:
             self.cur_user_log.status = "Success!"
+            self.script_info.log = "检测到 ZZZ-OD 已完成任务"
         else:
             failed_users = "、".join(
                 user_item.name
@@ -1340,9 +1384,16 @@ class AutoProxyTask(TaskExecuteBase):
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                statistics["user_result"] = (
-                    "代理任务全部完成" if self.run_book else self.cur_user_item.result
-                )
+                if not self.run_book:
+                    user_result = self.cur_user_item.result
+                elif self._partial_failed_apps:
+                    # 判定完成但部分节点失败：结果保持成功，明细告知用户
+                    user_result = "部分任务未完成，将于次日重试: " + "、".join(
+                        self._partial_failed_apps
+                    )
+                else:
+                    user_result = "代理任务全部完成"
+                statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
                 await push_notification(
                     "统计信息",
@@ -1385,7 +1436,9 @@ class AutoProxyTask(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"ZZZ-OD 自动代理任务出现异常: {e}"),
+                data=WSTaskNoticeData(
+                    level="error", message=f"ZZZ-OD 自动代理任务出现异常: {e}"
+                ),
             )
         with suppress(Exception):
             await self.kill_managed_process(kill_game=self._mas_should_close_game())
@@ -1451,12 +1504,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         if not isinstance(self.game_process_manager, ProcessManager):
             return
-        await self._push_dispatch_log(
-            f"正在检查游戏进程 ({_ZZZ_GAME_PROCESS})..."
-        )
+        await self._push_dispatch_log(f"正在检查游戏进程 ({_ZZZ_GAME_PROCESS})...")
         if is_process_running(_ZZZ_GAME_PROCESS):
             logger.info("检测到游戏本体进程已在运行，跳过由 MAS 重复启动游戏")
             await self._push_dispatch_log("检测到游戏已在运行，跳过启动")
+            await self._note_launch_arguments_skipped()
             return
         if self.game_exe_path is None:
             raise RuntimeError(
@@ -1472,6 +1524,15 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
             await asyncio.sleep(wait_time)
         await self._push_dispatch_log("游戏启动完成")
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def _kill_game_process(self) -> None:
         """按进程名结束游戏本体（对齐 ok-nte 的 MAS 侧关闭）。"""

@@ -1,9 +1,11 @@
 # 配置存档（Archive）：收录什么、何时存、存到哪
 
-> 适用：专项把「运行或配置会话前会被 MAS 触碰的配置文件」做**跨会话持久快照**
-> 时。本文件讲「存」这一半——**收录逻辑、归档时机、目录布局、去重保留、预览
-> 内容的来源**；「读」的那一半（恢复语义、前端弹窗一致性、可自定义点、调用
-> 方法）见 [config-restore.md](config-restore.md)。
+> 适用：**新专项一律主动接入**，存量专项改到配置读写时同步补齐——把「运行
+> 或配置会话前会被 MAS 触碰的配置文件」做**跨会话持久快照**是 MAS 领域的
+> 标配能力，不是可选项，仅确无任何配置文件落盘的专项可豁免。本文件讲「存」
+> 这一半——**收录逻辑、归档时机、目录布局、去重保留、预览内容的来源**；
+> 「读」的那一半（恢复语义、前端弹窗一致性、可自定义点、调用方法）见
+> [config-restore.md](config-restore.md)。
 >
 > 原语在 `app/utils/config_archive.py`，只做文件级快照/回写，不认识任何脚本结构；
 > 「什么算配置、何时存、恢复后干嘛」由专项负责。
@@ -34,14 +36,17 @@
 
 - 全部**指纹去重**：与最近一份一致则跳过（读档列表里不重复出现）。
 - 归档**必须 `suppress` + 日志**，绝不阻断业务（归档失败不中止运行/会话）。
-- 恢复前必须 `force=True` 归档当前——保证「恢复前的配置」有独立时间戳条目，
-  误恢复可找回。
+- 恢复前必须 `force=True` 归档当前——保证「恢复前的配置」可找回。
 
 ### 1.2 去重 / 保留 / 强度
 
 - 去重：原语对文件集算指纹（相对键 + 大小 + 字节），与最近一份相同即跳过。
 - 保留：每个 store_root 独立保留池，超出清理最旧，默认 `KEEP_COUNT = 10`。
-- `force=True`：内容一致也强制归档（恢复前存底）。
+- `force=True`：恢复/覆盖前存底——**不做超时清理**（protect 全部现存条目，
+  防止刚归档把用户选中的份清掉导致恢复报「备份不存在」），但**同样参与
+  指纹对比**：内容与最近一份一致时跳过、不产生冗余条目（「恢复目标与当前
+  一致」场景下当前配置已存放在该份备份中，误恢复可从它找回；force 绕过
+  指纹曾让每次恢复都新增一份与最新份完全相同的重复条目，SRC 实测发现）。
 - 目录名即时间戳 `%Y%m%d-%H%M%S`，同秒冲突自动加 `-N` 后缀。
 
 ### 1.3 目录布局（专项独立，互不干扰）
@@ -57,16 +62,22 @@ data/{script_id}/OkNteBackups/
     └── 20260910-215808/…             ← 单份时间戳归档
 ```
 
-- **项目级（自包含式适配器默认，OkNte/ZzzOd 原生池）**：native 挂到项目级根
-  （`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
+- **项目级（特定软件适配器默认）**：native 挂到
+  项目级根（`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
   `config_root_key(路径)` = 规范化绝对路径的短哈希：同一份物理配置无论被哪
   个脚本引用都归同一个池，跨脚本共享、不随脚本删除（同一路径必然同格式，
-  不会混池）。
-- **脚本级（通用适配器兜底，如 General）**：native 仍挂在自己脚本目录下
-  `data/{script_id}/{Script}Backups/native`——配置路径可随意更改、无法判定
-  软件身份，项目级会键漂移混池。
-- **判定标准**：能否明确「路径对应的软件」——能（专项安装目录/配置路径）才
-  允许项目级；不能（通用脚本任意路径）保持脚本级或明确警示风险。
+  不会混池）。现有采用者：MAA / MaaEnd / M9A / OkNte / Okww / SRC / BAAH /
+  HSR / ZzzOd / BetterGI（BAAH 额外按用户 `ConfigName` 三级分桶：
+  `native/{fingerprint}/{user_id}`，因其原生配置目标按用户动态解析；ZzzOd
+  的 onedragon 池挂项目级根；BetterGI 走 `data/BetterGIBackups/native/{key}`）。
+- **脚本级（通用性专项强制，General/MaaFW 原生池）**：native 挂在自己脚本
+  目录下 `data/{script_id}/{Script}Backups/native/{key}`——通用性专项（接入
+  任意第三方项目/脚本，不是特定软件适配）的「项目」本质属于绑定它的单个
+  脚本实例，跨脚本共享备份没有意义；`key` 二级分桶防脚本内换绑路径混淆。
+  详见 config-restore.md §1.1.1b。
+- **判定标准**：专项类型优先——**通用性专项（General/MaaFW 及后续同类）
+  一律脚本级**；特定软件适配器（多实例可能指向同一安装，如 OkNte/ZzzOd/
+  BetterGI）才允许项目级共享。
 
 布局函数（`project_backup_root` / `mas_backup_root` / `native_backup_root(config_path)`
 / `mas_config_dir`）必须落在专项模块内，命名与路径规则对齐 OkNte 范本。
@@ -139,21 +150,25 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
         collect_config_files(config_path, mode) or {},
         native_backup_root(config_path), keep=KEEP_COUNT, force=True,
     )
-    # 2) 回写：Folder 用 restore_dir 整目录替换；File 模式抄回原文件名
+    # 2) 回写：Folder 用 restore_dir 整目录替换；File 把备份内对应文件抄回
+    #    配置路径（只取与 config_path.name 匹配项或首个文件，不是全目录撒回）
     backup = get_backup_dir(native_backup_root(config_path), ts)
     if backup is None:
         raise ValueError(f"备份不存在: {ts}")
     if mode == "Folder":
         restore_dir(native_backup_root(config_path), ts, config_path)
     else:  # File
-        for rel, src in dir_files(backup).items():
-            src.replace(config_path.parent / rel)   # 写回同目录同名文件
+        files = dir_files(backup)
+        src = files.get(config_path.name) or next(iter(files.values()))
+        shutil.copyfile(src, config_path)
     # 3) 恢复后语义（如有）放这里：字段回填 / 重建视图 / 清残留（原语不管）
 
 def archive_mas_runtime_backup(script_id, user_id) -> None:
     """运行/会话下发前归档 mas 下发源；失败只记日志，绝不抛出。"""
-    with suppress(Exception):
+    try:
         archive_mas_backup(script_id, user_id, mas_config_dir(script_id, user_id))
+    except Exception:
+        logger.opt(exception=True).warning("ok-nte 运行前 MAS 配置归档失败，已跳过")
 ```
 
 挂点分两处：`manager.prepare`（任务级、任何下发之前）调 `archive_native_backup(...)`
@@ -183,6 +198,12 @@ def archive_mas_runtime_backup(script_id, user_id) -> None:
 | `dir_files(source)` | 目录 → 相对文件集 |
 | `file_set_hash(files)` | 文件集指纹（rel 键 + 大小 + 字节） |
 | `config_root_key(config_path)` | 物理配置根的稳定身份指纹（规范化绝对路径短哈希），项目级原生池分桶用 |
+| `OVERLAY_SIDECAR_NAME` | 字段侧车统一文件名 `_mas_overlay.json`（跨专项单一常量，勿另立） |
+| `read_overlay_sidecar(backup_dir, *, file_name=…)` | 读归档内字段侧车；不存在/损坏返回 None |
+| `mask_account(value)` | 账号脱敏（11 位手机号保前 3 后 4，其余原样） |
+| `restore_files(backup_dir, target_root, rel_keys=None, *, dir_map=None)` | 按相对键写回（**replace 语义**）：先删「备份内出现的受管键/子树」再写，备份外的用户数据保留；`dir_map` 用于 rel 键前缀映射到外部共享根（此时只删备份内出现的相对路径，绝不整根删） |
+| `write_backup_mode(backup_dir, mode)` / `read_backup_mode(backup_dir)` | 写 / 读备份时点的三态来源标注 `_mas_mode`（`MODE_FILE_NAME`）；**不参与指纹**（`_archive` 写入阶段排除），`restore_dir` 回写时也不落目标目录——备份列表标签与跨来源校验的元数据，由基座（config_restore）统一消费，专项不要自行读写 |
+| `read_backup_text(backup_dir, rel_path, *, max_bytes=1MiB)` | 只读读取归档内一个文本文件（防穿越 + 大小上限；utf-8 兼容 BOM）；「备份文件」预览的底层实现 |
 
 ### 5.2 专项必须提供 / 可自定义的接口（放专项模块）
 

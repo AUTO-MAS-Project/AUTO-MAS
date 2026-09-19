@@ -32,7 +32,7 @@ from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
+from .tools import archive_native_backup, push_notification
 
 logger = get_logger("BetterGI 调度器")
 
@@ -149,6 +149,14 @@ class BetterGIManager(TaskExecuteBase):
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
 
+        self.script_info.user_config = self.user_config
+        # 任务级归档 BetterGI 全局主配置（config.json）——运行会临时补写
+        # 队伍/策略叶子、结束还原，崩溃残留会污染全局配置；持久归档提供
+        # 跨会话找回（指纹去重，失败不阻断任务）。mas 池由 AutoProxy
+        # 物化前按用户归档
+        with suppress(Exception):
+            archive_native_backup(Path(self.script_config.get("Info", "RootPath")))
+
         if self.task_info.mode == "ScriptConfig":
             self.script_info.current_index = 0
             await self.spawn(
@@ -156,6 +164,7 @@ class BetterGIManager(TaskExecuteBase):
                     self.script_info,
                     self.script_config,
                     self.user_config,
+                    view_only=self.task_info.view_only,
                 )
             )
             return
@@ -217,8 +226,12 @@ class BetterGIManager(TaskExecuteBase):
                 error_count = sum(
                     1 for user in self.script_info.user_list if user.status == "异常"
                 )
+                # 「部分失败」（执行层有步骤失败但已跳过继续、不判负）必须计入已完成：
+                # 它既不算异常也不算等待，否则 completed/uncompleted 两侧都漏掉它，数字对不上
                 over_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "完成"
+                    1
+                    for user in self.script_info.user_list
+                    if user.status in ("完成", "部分失败")
                 )
                 wait_count = sum(
                     1 for user in self.script_info.user_list if user.status == "等待"
@@ -285,5 +298,7 @@ class BetterGIManager(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"BetterGI任务出现异常: {e}"),
+                data=WSTaskNoticeData(
+                    level="error", message=f"BetterGI任务出现异常: {e}"
+                ),
             )

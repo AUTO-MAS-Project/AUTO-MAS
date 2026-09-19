@@ -7,7 +7,7 @@
  * @param {number} timezoneOffset 时区偏移量（小时），例如：4表示UTC+4，8表示UTC+8
  * @returns {Date} 返回指定时区的当前时间Date对象
  */
-export function getCurrentTimeInTimezone(timezoneOffset: number): Date {
+function getCurrentTimeInTimezone(timezoneOffset: number): Date {
   const now = new Date()
   // 加上时区偏移量
   const timezoneTime = now.getTime() + timezoneOffset * 60 * 60 * 1000

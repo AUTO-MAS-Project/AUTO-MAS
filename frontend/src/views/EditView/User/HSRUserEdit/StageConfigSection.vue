@@ -2,6 +2,14 @@
   <div class="form-section form-section-flat">
     <div class="section-header">
       <h3>{{ t('edit.sanityConfiguration') }}</h3>
+      <div class="section-header-actions">
+        <a-button size="small" @click="emit('openRestore')">
+          <template #icon>
+            <HistoryOutlined />
+          </template>
+          {{ t('edit.configRestoreTitle') }}
+        </a-button>
+      </div>
     </div>
 
     <a-alert
@@ -221,7 +229,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
   HSRDynamicStageCategory,
   HSRDynamicStageOption,
@@ -259,6 +267,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: unknown]
+  openRestore: []
 }>()
 
 const emitSave = (key: string, value: unknown) => {
@@ -641,7 +650,16 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
 <style scoped>
 /* 与 HSRUserEdit.vue 主页面 section-header 保持一致：加粗标题 + 分割线 + before 装饰 */
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-header h3 {

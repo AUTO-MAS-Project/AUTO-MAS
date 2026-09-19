@@ -37,7 +37,7 @@
     </template>
   </ScriptEditHeader>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.maaendScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag class="type-tag">MaaEnd</a-tag>
@@ -164,6 +164,67 @@
                   @change="handleChange('Game', 'CloseOnFinish', $event)"
                 />
               </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row v-if="isWinController" :gutter="24">
+            <a-col :span="maaEndConfig.Game.CloseOnFinish ? 12 : 24">
+              <a-form-item
+                :label="t('edit.maaEndSetResolution')"
+                :extra="t('edit.maaEndSetResolutionHint')"
+              >
+                <a-select
+                  v-model:value="maaEndConfig.Game.SetResolution"
+                  size="large"
+                  :options="booleanOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'SetResolution', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="12">
+              <a-form-item
+                :label="t('edit.maaEndRestoreResolution')"
+                :extra="t('edit.maaEndRestoreResolutionHint')"
+              >
+                <a-select
+                  v-model:value="maaEndConfig.Game.RestoreResolution"
+                  size="large"
+                  :options="restoreResolutionOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'RestoreResolution', $event)"
+                />
+              </a-form-item>
+              <a-row v-if="maaEndConfig.Game.RestoreResolution === 'Custom'" :gutter="24">
+                <a-col :span="12">
+                  <a-form-item :label="t('edit.maaEndResolutionWidth')">
+                    <a-input-number
+                      v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
+                      :min="1"
+                      :max="16384"
+                      :precision="0"
+                      size="large"
+                      style="width: 100%"
+                      :disabled="isSaving"
+                      @blur="handleResolutionBlur('RestoreResolutionWidth')"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item :label="t('edit.maaEndResolutionHeight')">
+                    <a-input-number
+                      v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
+                      :min="1"
+                      :max="16384"
+                      :precision="0"
+                      size="large"
+                      style="width: 100%"
+                      :disabled="isSaving"
+                      @blur="handleResolutionBlur('RestoreResolutionHeight')"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
             </a-col>
           </a-row>
 
@@ -313,11 +374,11 @@
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.accountSwitching') }}
+                    {{ t('edit.accountSwitchingMethod') }}
                     <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
@@ -327,10 +388,12 @@
                   v-model:value="maaEndConfig.Run.AccountSwitchMethod"
                   size="large"
                   :options="accountSwitchMethodOptions"
-                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
+                  @change="handleAccountSwitchMethodChange"
                 />
               </a-form-item>
             </a-col>
+          </a-row>
+          <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
                 <template #label>
@@ -413,15 +476,16 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
@@ -485,7 +549,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
-    AccountSwitchMethod: 'MAS',
+    AccountSwitchMethod: 'MAAEND',
     TaskTransitionMethod: 'NoAction',
   },
   Game: {
@@ -495,9 +559,22 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     WaitTime: 60,
     EmulatorId: '',
     EmulatorIndex: '',
-    CloseOnFinish: false,
+    SetResolution: false,
+    CloseOnFinish: true,
+    RestoreResolution: 'Off',
+    RestoreResolutionWidth: 1920,
+    RestoreResolutionHeight: 1080,
   },
 })
+
+const restoreResolutionOptions = computed(() => [
+  { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
+  { value: '1920x1080', label: '1920 × 1080' },
+  { value: '2560x1440', label: '2560 × 1440' },
+  { value: '3840x2160', label: '3840 × 2160' },
+  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
+  { value: 'Custom', label: t('edit.maaEndResolutionCustom') },
+])
 
 const rules = {
   name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
@@ -513,14 +590,14 @@ const booleanOptions = [
   { label: t('edit.no'), value: false },
 ]
 
-const accountSwitchMethodOptions = [
-  { label: 'MAS 自建账号切换', value: 'MAS' },
-  { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
-]
-
 const taskTransitionMethodOptions = [
   { label: t('edit.restartMaaendOnly'), value: 'NoAction' },
   { label: t('edit.restartEndfield'), value: 'ExitGame' },
+]
+
+const accountSwitchMethodOptions = [
+  { label: t('edit.accountSwitchMethodMas'), value: 'MAS' },
+  { label: t('edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
 ]
 
 const emulatorLoading = ref(false)
@@ -556,10 +633,43 @@ const handleChange = async (category: string, key: string, value: unknown) => {
   }, `${category}.${key}`)
 }
 
+const masAccountSwitchWarningShown = ref(false)
+
+const showMasAccountSwitchWarning = () => {
+  if (masAccountSwitchWarningShown.value) return
+
+  masAccountSwitchWarningShown.value = true
+  Modal.warning({
+    title: t('edit.maaendMasAccountSwitchWarningTitle'),
+    content: t('edit.maaendMasAccountSwitchWarning'),
+    okText: t('edit.gotIt'),
+  })
+}
+
+const handleAccountSwitchMethodChange = async (
+  value: MaaEndScriptConfig['Run']['AccountSwitchMethod']
+) => {
+  if (value === 'MAS') showMasAccountSwitchWarning()
+  await handleChange('Run', 'AccountSwitchMethod', value)
+}
+
+const handleResolutionBlur = async (key: 'RestoreResolutionWidth' | 'RestoreResolutionHeight') => {
+  const value = maaEndConfig.Game[key] ?? (key === 'RestoreResolutionWidth' ? 1920 : 1080)
+  maaEndConfig.Game[key] = value
+  await handleChange('Game', key, value)
+}
+
 const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
+  if (config.Run?.AccountSwitchMethod == null) {
+    maaEndConfig.Run.AccountSwitchMethod = 'MAAEND'
+  }
+  if (config.Game?.SetResolution == null) {
+    maaEndConfig.Game.SetResolution = false
+  }
+  if (maaEndConfig.Run.AccountSwitchMethod === 'MAS') showMasAccountSwitchWarning()
 }
 
 const refreshScript = async () => {

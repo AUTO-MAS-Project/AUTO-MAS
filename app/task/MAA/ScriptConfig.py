@@ -22,6 +22,7 @@
 import asyncio
 import json
 import shutil
+import uuid
 from pathlib import Path
 
 from app.core import Config
@@ -36,12 +37,25 @@ from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
 from .AutoProxy import _build_maa_preset_task_queue
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    mas_config_dir,
+    read_overlay_values,
+)
 
 logger = get_logger("MAA 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """脚本设置模式"""
+    """脚本设置模式
+
+    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（脚本态共享
+    Default、用户态独立目录），见 :meth:`_mas_owner`。view_only=True 时为
+    查看会话：只读预览（如「查看历史备份」）——用户级会话下发的 owner 目录
+    即刚恢复的备份（所见即备份），脚本级会话跳过下发（原生目录即备份）；
+    结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
+    注入，看完还原）。
+    """
 
     def __init__(
         self,
@@ -49,6 +63,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
         emulator_manager: DeviceBase,
+        view_only: bool = False,
     ):
         super().__init__()
 
@@ -60,6 +75,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
+        self.view_only = view_only
 
     async def prepare(self):
 
@@ -80,6 +97,25 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maa_process_manager.open_process(self.maa_exe_path)
         await self.wait_event.wait()
 
+    def _mas_owner(self) -> str | None:
+        """本会话的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+
+        与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
+        回写此前硬编码用户目录，脚本态用户的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。直控用户没有
+        MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），返回 ``None``。
+        """
+
+        user_id = self.cur_user_item.user_id
+        if user_id == "Default":
+            return "Default"
+        mode = str(
+            self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+        ).strip()
+        if mode == "直控":
+            return None
+        return user_id if mode == "用户" else "Default"
+
     async def set_maa(self):
         """配置MAA运行参数"""
 
@@ -88,18 +124,39 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
-        if (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-        ).exists():
-            shutil.copytree(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-                ),
-                self.maa_set_path,
-                dirs_exist_ok=True,
-            )
+        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        if self.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
+            return
+
+        # 直控会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
+        # 内的编辑由本体落盘并保留
+        if self._mas_owner() is None:
+            logger.info("MAA 直控会话: 直接使用安装目录原生配置, MAS 零写入")
+            return
+
+        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带页面
+        # 核心字段侧车，指纹去重，失败不阻断会话）。native 池由
+        # manager.prepare 在任务级一次性归档
+        target_user_id = self.cur_user_item.user_id
+        owner = self._mas_owner()
+        mas_dir = mas_config_dir(self.script_info.script_id, owner)
+        overlay = (
+            read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
+            if target_user_id != "Default"
+            else None
+        )
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            target_user_id,
+            mas_dir,
+            overlay=overlay,
+            # 备份标注来源：tri_state 池跨来源恢复靠它切回
+            mode="用户" if owner == target_user_id else "脚本",
+        )
+
+        if mas_dir.is_dir() and any(mas_dir.iterdir()):
+            shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
 
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
@@ -192,21 +249,23 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
-        shutil.rmtree(
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
-            ignore_errors=True,
-        )
-        (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
-        ).mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            self.maa_set_path,
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
-            dirs_exist_ok=True,
-        )
+        # 查看会话：只读预览，不把安装 config/ 回写用户目录（安装现场由
+        # manager 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("MAA 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
+
+        # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
+        if self._mas_owner() is None:
+            logger.success("MAA 直控配置已由脚本原生 GUI 保存")
+            self.cur_user_item.status = "完成"
+            return
+
+        mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
+        shutil.rmtree(mas_dir, ignore_errors=True)
+        mas_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(self.maa_set_path, mas_dir, dirs_exist_ok=True)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

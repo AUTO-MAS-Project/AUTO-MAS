@@ -179,6 +179,12 @@ export interface RuntimeLaunchModeState {
   source: RuntimeLaunchModeSource
 }
 
+/** 真实显示器回来了但有任务在跑时，后端发来的询问数据（与 WSDisplayDetachPromptData 一致） */
+export interface VirtualDisplayPromptPayload {
+  returned: string[]
+  monitor?: { left: number; top: number; right: number; bottom: number } | null
+}
+
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
@@ -293,6 +299,17 @@ export interface ElectronAPI {
   /** 日志窗已经开着时，主进程用它通知日志页换到请求的那一份。 */
   onLogSelectFile?: (callback: (file: 'app' | 'frontend') => void) => void
   removeLogSelectFileListener?: () => void
+
+  // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程另开窗口放到真实屏右下角
+  showVirtualDisplayPrompt?: (
+    payload: VirtualDisplayPromptPayload
+  ) => Promise<{ success: boolean; error?: string }>
+  closeVirtualDisplayPrompt?: () => Promise<void>
+  /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
+  getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>
+  onVirtualDisplayPromptData?: (
+    callback: (payload: VirtualDisplayPromptPayload) => void
+  ) => () => void
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {

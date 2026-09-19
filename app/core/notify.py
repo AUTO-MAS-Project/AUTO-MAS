@@ -27,14 +27,18 @@
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
 from app.core.config import Config
 from app.models.config import Webhook
-from app.services.notification import DEFAULT_WEBHOOK_TEMPLATE, Notify
+from app.services.notification import (
+    DEFAULT_WEBHOOK_TEMPLATE,
+    MailInlineImage,
+    Notify,
+)
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
@@ -55,6 +59,8 @@ class NotifyPayload:
     signature_sep: str = "\n\n"
     append_signature: bool = True
     email_mode: MailMode = "网页"
+    # 网页邮件的内嵌图片，html 里用 cid 引用；其他渠道各自决定要不要带图。
+    mail_images: tuple[MailInlineImage, ...] = ()
     serverchan_text: str | None = None
     webhook_text: str | None = None
     markdown_text: str | None = None
@@ -169,6 +175,14 @@ class NotifyPayload:
         return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
 
     @property
+    def cmcc_newmsg_content(self) -> str:
+        """返回中国移动新消息正文。"""
+
+        text = self.signed_text
+        heading = self.standalone_title or self.title
+        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
+
+    @property
     def system_content(self) -> str:
         """返回系统通知正文。"""
 
@@ -183,6 +197,7 @@ class NotifyTarget:
     system: bool = False
     mail_to: str | None = None
     serverchan_key: str | None = None
+    cmcc_newmsg_api_key: str | None = None
     webhooks: Iterable[tuple[str, Any]] = ()
     koishi: bool = False
     openclaw_weixin: bool = False
@@ -234,6 +249,11 @@ def global_target(
         serverchan_key=(
             Config.get("Notify", "ServerChanKey")
             if Config.get("Notify", "IfServerChan")
+            else None
+        ),
+        cmcc_newmsg_api_key=(
+            Config.get("Notify", "CMCCNewMsgApiKey")
+            if Config.get("Notify", "IfCMCCNewMsg")
             else None
         ),
         webhooks=_webhooks(Config.Notify_CustomWebhooks),
@@ -331,6 +351,9 @@ def _target_channels(target: NotifyTarget) -> dict[str, str]:
     if target.serverchan_key is not None:
         channel = f"{target.name} ServerChan"
         channels[channel] = channel
+    if target.cmcc_newmsg_api_key is not None:
+        channel = f"{target.name} 中国移动5G短信"
+        channels[channel] = channel
     for uid, webhook in target.webhooks:
         channels[f"{target.name} Webhook {uid}"] = (
             f"{target.name} Webhook {_webhook_name(uid, webhook)}"
@@ -345,12 +368,6 @@ def _target_channels(target: NotifyTarget) -> dict[str, str]:
         channel = f"{target.name} QQ（官方机器人）"
         channels[channel] = channel
     return channels
-
-
-def target_channel_names(target: NotifyTarget) -> tuple[str, ...]:
-    """返回用户可见的渠道名，保持既有名称枚举接口。"""
-
-    return tuple(_target_channels(target).values())
 
 
 async def _send(
@@ -395,6 +412,54 @@ def _recipient_action(
     return False, False
 
 
+class Notifier(Protocol):
+    """``dispatch`` 需要的通知渠道发送面。
+
+    默认实现是 ``app.services.notification.Notify``（模块级单例），测试与
+    未来的渠道扩展可传入自己的实现。按 ``_send`` 的判定，返回 ``False``
+    表示该渠道发送失败，``None`` 表示成功。
+    """
+
+    async def push_plyer(
+        self, title: str, message: str, ticker: str, t: int
+    ) -> bool | None: ...
+
+    async def send_mail(
+        self,
+        mode: Literal["文本", "网页"],
+        title: str,
+        content: str,
+        to_address: str,
+        *,
+        images: Sequence[MailInlineImage] = (),
+    ) -> bool | None: ...
+
+    async def ServerChanPush(
+        self, title: str, content: str, send_key: str
+    ) -> bool | None: ...
+
+    async def send_cmcc_newmsg(
+        self, title: str, content: str, api_key: str
+    ) -> bool | None: ...
+
+    async def WebhookPush(
+        self,
+        title: str,
+        content: str,
+        webhook: Webhook,
+        *,
+        image_base64: str = "",
+    ) -> bool | None: ...
+
+    async def send_koishi(
+        self, message: str, msgtype: str = "text", client_name: str = "Koishi"
+    ) -> bool | None: ...
+
+    async def send_openclaw_weixin(self, title: str, content: str) -> bool | None: ...
+
+    async def send_openclaw_qq(self, title: str, content: str) -> bool | None: ...
+
+
 async def dispatch(
     payload: NotifyPayload,
     targets: Iterable[NotifyTarget],
@@ -403,16 +468,20 @@ async def dispatch(
     retry_delay: float = 0,
     skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
+    notifier: Notifier | None = None,
 ) -> DispatchResult:
     """向所有目标分发通知，返回实际尝试/成功/失败渠道。
 
     ``skip_channels`` 中的渠道不会被发送（也不计入尝试次数），用于签到汇总
     等场景只向尚未送达的渠道重试，避免已成功渠道收到重复内容。
     ``skip_channel_ids`` 按稳定 ID 跳过，不受 Webhook 同名或改名影响。
+    ``notifier`` 缺省用全局 Notify 单例，注入面供测试与渠道扩展替换。
     """
 
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
+
+    sender = Notify if notifier is None else notifier
 
     skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
@@ -449,7 +518,7 @@ async def dispatch(
         if target.system:
             await attempt(
                 f"{target.name}系统",
-                lambda: Notify.push_plyer(
+                lambda: sender.push_plyer(
                     title=payload.system_title or payload.title,
                     message=payload.system_message or payload.system_content,
                     ticker=payload.system_ticker or payload.title,
@@ -470,11 +539,12 @@ async def dispatch(
             if should_send:
                 await attempt(
                     channel,
-                    lambda t=target: Notify.send_mail(
+                    lambda t=target: sender.send_mail(
                         mode=payload.email_mode,
                         title=payload.title,
                         content=payload.email_content,
                         to_address=t.mail_to,
+                        images=payload.mail_images,
                     ),
                 )
 
@@ -491,17 +561,37 @@ async def dispatch(
             if should_send:
                 await attempt(
                     channel,
-                    lambda t=target: Notify.ServerChanPush(
+                    lambda t=target: sender.ServerChanPush(
                         title=payload.title,
                         content=payload.serverchan_content,
                         send_key=t.serverchan_key,
                     ),
                 )
 
+        if target.cmcc_newmsg_api_key is not None:
+            channel = f"{target.name} 中国移动5G短信"
+            should_send, missing = _recipient_action(
+                target.cmcc_newmsg_api_key,
+                target.empty_policy,
+                channel=channel,
+                hint=f"{target.name}中国移动5G短信 API Key",
+            )
+            if missing:
+                miss(channel)
+            if should_send:
+                await attempt(
+                    channel,
+                    lambda t=target: sender.send_cmcc_newmsg(
+                        title=payload.title,
+                        content=payload.cmcc_newmsg_content,
+                        api_key=t.cmcc_newmsg_api_key,
+                    ),
+                )
+
         for uid, webhook in target.webhooks:
             await attempt(
                 f"{target.name} Webhook {_webhook_name(uid, webhook)}",
-                lambda w=webhook: Notify.WebhookPush(
+                lambda w=webhook: sender.WebhookPush(
                     title=payload.title,
                     content=payload.webhook_content_for(w),
                     image_base64=payload.webhook_image_base64 or "",
@@ -514,19 +604,19 @@ async def dispatch(
             await attempt(
                 f"{target.name} Koishi",
                 lambda: (
-                    Notify.send_koishi(
+                    sender.send_koishi(
                         payload.koishi_content,
                         msgtype=payload.koishi_msgtype,
                     )
                     if payload.koishi_msgtype != "text"
-                    else Notify.send_koishi(payload.koishi_content)
+                    else sender.send_koishi(payload.koishi_content)
                 ),
             )
 
         if target.openclaw_weixin:
             await attempt(
                 f"{target.name} 微信（iLink）",
-                lambda: Notify.send_openclaw_weixin(
+                lambda: sender.send_openclaw_weixin(
                     title=payload.title,
                     content=payload.openclaw_weixin_content,
                 ),
@@ -535,7 +625,7 @@ async def dispatch(
         if target.openclaw_qq:
             await attempt(
                 f"{target.name} QQ（官方机器人）",
-                lambda: Notify.send_openclaw_qq(
+                lambda: sender.send_openclaw_qq(
                     title=payload.title,
                     content=payload.openclaw_qq_content,
                 ),
@@ -557,6 +647,7 @@ async def dispatch_task_report(
     summary_text: str = "",
     attempts: int = 1,
     retry_delay: float = 0,
+    notifier: Notifier | None = None,
 ) -> DispatchResult:
     """统一附加社区结果，并按渠道维护任务报告的投递状态。
 
@@ -642,7 +733,11 @@ async def dispatch_task_report(
 
     if not summary_text:
         result = await dispatch(
-            payload, targets, attempts=attempts, retry_delay=retry_delay
+            payload,
+            targets,
+            attempts=attempts,
+            retry_delay=retry_delay,
+            notifier=notifier,
         )
     else:
         channels = {
@@ -654,6 +749,7 @@ async def dispatch_task_report(
             attempts=attempts,
             retry_delay=retry_delay,
             skip_channel_ids=delivered,
+            notifier=notifier,
         )
         # 只给本轮开始前已送达摘要的渠道发原始报告，避免同一轮发送两次。
         without_summary = (
@@ -663,6 +759,7 @@ async def dispatch_task_report(
                 attempts=attempts,
                 retry_delay=retry_delay,
                 skip_channel_ids=channels - delivered,
+                notifier=notifier,
             )
             if delivered & channels
             else DispatchResult()

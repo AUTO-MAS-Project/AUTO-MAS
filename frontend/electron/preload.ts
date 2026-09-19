@@ -119,6 +119,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('log:getContent', lines, fileName, fromOffset),
   openLogWindow: (file?: 'app' | 'frontend') => ipcRenderer.invoke('log:openWindow', file),
 
+  // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程开窗；弹窗页面自己取数据、自己关
+  showVirtualDisplayPrompt: (payload: unknown) => ipcRenderer.invoke('vdd-prompt:show', payload),
+  closeVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:close'),
+  getVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:get'),
+  onVirtualDisplayPromptData: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload)
+    ipcRenderer.on('vdd-prompt:data', listener)
+    return () => ipcRenderer.removeListener('vdd-prompt:data', listener)
+  },
+
   // 日志窗已经开着时主进程不会重新载入，改由主进程推送要看的那一份
   onLogSelectFile: (callback: (file: 'app' | 'frontend') => void) => {
     ipcRenderer.on('log:selectFile', (_, file) => callback(file))

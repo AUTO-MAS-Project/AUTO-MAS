@@ -8,12 +8,7 @@
       <a-col :span="8">
         <a-form-item name="name">
           <template #label>
-            <a-tooltip :title="t('edit.giveProjectNameYou')">
-              <span class="form-label">
-                {{ t('edit.scriptName') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.scriptName') }}</span>
           </template>
           <a-input
             v-model:value="formData.name"
@@ -54,37 +49,71 @@
               </template>
               {{ t('edit.pickLocalDirectory') }}
             </a-button>
-            <a-button
-              size="large"
-              class="path-button"
-              :loading="interfaceLoading"
-              :disabled="!maafwConfig.Info.Path || updateApplying"
-              @click="emit('preview-interface')"
-            >
-              <template #icon>
-                <FileSearchOutlined />
-              </template>
-              {{ t('edit.readInterface') }}
-            </a-button>
           </a-input-group>
         </a-form-item>
       </a-col>
     </a-row>
 
-    <div v-if="previewData" class="interface-summary">
-      <div class="interface-project-bar">
-        <span class="project-bar-name">{{ previewProjectTitle }}</span>
-        <span v-if="previewData.project.version" class="project-bar-meta">
-          {{ previewData.project.version }}
-          <template v-if="previewData.project?.description">
-            · {{ previewData.project.description }}
-          </template>
-        </span>
-      </div>
-      <div class="interface-stat-grid">
-        <div v-for="item in interfaceStats" :key="item.label" class="interface-stat-card">
-          <div class="interface-stat-value">{{ item.value }}</div>
-          <div class="interface-stat-label">{{ item.label }}</div>
+    <!-- 左边 interface 概览表（表头是项目名与简介），右边运行环境准备面板：
+         结论直接作为日志的最后一行用强调色写出来，不另起状态行 -->
+    <div v-if="previewData" class="interface-body">
+      <a-descriptions bordered size="small" :column="2" class="interface-table">
+        <template #title>
+          <div class="interface-table-head">
+            <span class="interface-table-title">{{ previewProjectTitle }}</span>
+            <span v-if="previewData.project.version" class="interface-table-subtitle">
+              {{ previewData.project.version }}
+              <template v-if="previewData.project?.description">
+                · {{ previewData.project.description }}
+              </template>
+            </span>
+          </div>
+        </template>
+        <a-descriptions-item v-for="item in interfaceStats" :key="item.label" :label="item.label">
+          {{ item.value }}
+        </a-descriptions-item>
+      </a-descriptions>
+      <div class="env-panel">
+        <div class="env-panel-header">
+          <span class="env-panel-title">{{ t('edit.envPanelTitle') }}</span>
+          <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
+               重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
+          <a-button
+            size="small"
+            :loading="interfaceLoading || envPreparing"
+            :disabled="!maafwConfig.Info.Path || updateApplying"
+            @click="emit('preview-interface')"
+          >
+            <template #icon>
+              <ToolOutlined />
+            </template>
+            {{ envTone === 'failed' ? t('edit.envRetry') : t('edit.prepareRuntimeEnv') }}
+          </a-button>
+        </div>
+        <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
+             日志再多也不会把面板撑高，底边永远和表格齐 -->
+        <div class="env-log-wrap">
+          <div ref="envLogBoxRef" class="env-log-box">
+            <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
+              {{ t('edit.envPanelPlaceholder') }}
+            </div>
+            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
+              {{ line }}
+            </div>
+            <div
+              v-if="envTone !== 'idle'"
+              class="env-log-status"
+              :class="`env-log-status--${envTone}`"
+            >
+              <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
+              <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
+              <CloseCircleOutlined v-else class="env-log-status-icon" />
+              <span>{{ envStatusText }}</span>
+              <div v-if="envTone === 'failed'" class="env-log-status-hint">
+                {{ t('edit.envFailedHint') }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -119,17 +148,24 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
-  FileSearchOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   FolderOpenOutlined,
   InboxOutlined,
+  LoadingOutlined,
   QuestionCircleOutlined,
+  ToolOutlined,
 } from '@ant-design/icons-vue'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
 
+/** 一次准备的结果：首次准备 / 更新了已有环境 / 项目没变直接沿用。 */
+export type MaaFWEnvOutcome = 'prepared' | 'updated' | 'cached'
+
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   maafwConfig: MaaFWScriptConfig
   formData: { type: ScriptType; name: string; path: string }
   rules: { name: unknown[]; path: unknown[] }
@@ -139,6 +175,15 @@ defineProps<{
   interfaceStats: Array<{ label: string; value: number }>
   /** 项目更新正在落盘：此时读 interface 会读到半成品，按钮一律禁用。 */
   updateApplying: boolean
+  envPreparing: boolean
+  envReady: boolean
+  envFailed: boolean
+  /** 准备中是后端当前阶段那句话；成功后是 MaaFramework 版本；失败时是错误原因。 */
+  envMessage: string
+  envPercent: number | null
+  envLogs: string[]
+  envAgents: Array<{ runtimeKind?: string | null; executable: string }>
+  envOutcome: MaaFWEnvOutcome | null
 }>()
 
 const emit = defineEmits<{
@@ -146,6 +191,56 @@ const emit = defineEmits<{
   'select-path': []
   'preview-interface': []
 }>()
+
+const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
+  if (props.envPreparing) return 'running'
+  if (props.envFailed) return 'failed'
+  if (props.envReady) return 'success'
+  return 'idle'
+})
+
+// 状态词就是结论本身：准备完成 / 更新完成 / 无需更新 / 失败，不再另起一条绿色 alert
+const envPhaseLabel = computed(() => {
+  switch (envTone.value) {
+    case 'running': {
+      const label = t('edit.envStatusPreparing')
+      return props.envPercent === null ? label : `${label} ${Math.round(props.envPercent)}%`
+    }
+    case 'failed':
+      return t('edit.envStatusFailed')
+    case 'success':
+      if (props.envOutcome === 'cached') return t('edit.envStatusCached')
+      if (props.envOutcome === 'updated') return t('edit.envStatusUpdated')
+      return t('edit.envStatusPrepared')
+    default:
+      return ''
+  }
+})
+
+// 整行一个颜色：状态词 · MaaFramework 版本 · 已就绪的 Agent；失败时后端那句原因就是整行
+const envStatusText = computed(() => {
+  if (envTone.value === 'failed') return props.envMessage || envPhaseLabel.value
+  const parts: string[] = [envPhaseLabel.value]
+  if (props.envMessage) parts.push(props.envMessage)
+  if (envTone.value === 'success' && props.envAgents.length) {
+    const agents = props.envAgents.map(a => a.runtimeKind || t('common.unknown')).join('、')
+    parts.push(`${t('edit.envReadyAgents')}: ${agents}`)
+  }
+  return parts.filter(Boolean).join('  ·  ')
+})
+
+// 新日志或结论行变了就贴到底部；用户手动往上翻时不打断
+const envLogBoxRef = ref<HTMLElement | null>(null)
+watch(
+  () => [props.envLogs.length, envTone.value, envStatusText.value],
+  async () => {
+    const box = envLogBoxRef.value
+    if (!box) return
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    await nextTick()
+    if (nearBottom) box.scrollTop = box.scrollHeight
+  }
+)
 </script>
 
 <style scoped>
@@ -226,66 +321,144 @@ const emit = defineEmits<{
   font-weight: 600;
 }
 
-.interface-summary {
+/* 左边 interface 概览表（四列：两组「项 / 值」），右边运行环境面板；两边等高，面板里的日志框撑满 */
+.interface-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 2fr) 3fr;
+  gap: 12px;
+  align-items: stretch;
   margin-top: 8px;
 }
 
-.interface-project-bar {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
+.interface-table {
+  min-width: 0;
 }
 
-.project-bar-name {
-  max-width: 300px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.interface-table :deep(.ant-descriptions-header) {
+  margin-bottom: 8px;
+}
+
+/* 六个数字而已，用不着 small 档默认的 8px 16px 内距，压紧一点。
+   antd 自己的选择器比 scoped :deep 更具体，不加 !important 压不过去 */
+.interface-table :deep(.ant-descriptions-item-label),
+.interface-table :deep(.ant-descriptions-item-content) {
+  padding: 4px 12px !important;
+  font-size: 13px;
+}
+
+.interface-table :deep(.ant-descriptions-item-label) {
+  width: 22%;
+  color: var(--ant-color-text-secondary);
+}
+
+.interface-table :deep(.ant-descriptions-item-content) {
+  width: 28%;
+}
+
+/* 表头一行：项目名在左，版本 · 简介跟在右边 */
+.interface-table-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  white-space: normal;
+}
+
+.interface-table-title {
   font-size: 16px;
   font-weight: 700;
   color: var(--ant-color-text);
-}
-
-.project-bar-meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.interface-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 12px;
-}
-
-.interface-stat-card {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-}
-
-.interface-stat-value {
-  color: var(--ant-color-text);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
-.interface-stat-label {
-  margin-top: 6px;
-  color: var(--ant-color-text-secondary);
+.interface-table-subtitle {
+  min-width: 0;
   font-size: 13px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* 面板本身不画框：标题 + 日志框就够了，外面再套一层边框显得重 */
+.env-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 与左边表头同高（24px）同下距（8px），日志框顶边才能和表格顶边齐 */
+.env-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 24px;
+  margin-bottom: 8px;
+}
+
+/* 与左边概览表的表头同一字号字重，两边标题齐平 */
+.env-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--ant-color-text);
+}
+
+/* 面板标题行与表头等高（24px + 8px 下距），下面剩的高度全给日志框 */
+.env-log-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.env-log-box {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  font-family: var(--ant-font-family-code, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.env-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.env-log-line--empty {
+  color: var(--ant-color-text-tertiary);
+}
+
+/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色 */
+.env-log-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.env-log-status--running {
+  color: var(--ant-color-primary);
+}
+
+.env-log-status--success {
+  color: var(--ant-color-success);
+}
+
+.env-log-status--failed {
+  color: var(--ant-color-error);
+}
+
+.env-log-status-hint {
+  flex-basis: 100%;
+  color: var(--ant-color-text-secondary);
 }
 
 .interface-guide-card {
@@ -330,8 +503,13 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 768px) {
-  .interface-stat-grid {
-    grid-template-columns: repeat(3, 1fr);
+  .interface-body {
+    grid-template-columns: 1fr;
+  }
+
+  /* 折成上下两块后没有左边表格做参照，给日志框一个固定高度 */
+  .env-log-wrap {
+    min-height: 160px;
   }
 }
 </style>

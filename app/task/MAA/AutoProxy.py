@@ -25,6 +25,7 @@ import calendar
 import json
 import re
 import shutil
+import time
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -32,7 +33,13 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models.config import (
+    MaaConfig,
+    MaaUserConfig,
+    infrast_plan_mode,
+    load_infrast_plans,
+    maa_scheme_name,
+)
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
@@ -40,6 +47,11 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
+    CONFIG_SOURCE_USER,
+    resolve_config_source,
+)
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
     ARKNIGHTS_PACKAGE_NAME,
@@ -54,13 +66,28 @@ from app.utils.constants import (
     MAA_TASKS_ZH,
     UTC4,
 )
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
     push_notification,
     update_maa,
+)
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.cultivate import (
+    CultivatePlan,
+    ProviderContext,
+    apply_achievements,
+    depot_cultivate_service,
+    dump_cultivate_targets,
+    get_certifying_chain,
+    judge_achievements,
+    load_oper_box_names,
+    parse_cultivate_targets,
+    parse_depot_payload,
+    resolve_progression,
+    summarize_achievements,
 )
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -89,6 +116,22 @@ _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 活动关优先",
     "完成任务: 库存保持",
     "完成任务: 剩余理智",
+    "完成任务: 养成计划",
+)
+# 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
+_MAA_CULTIVATE_TASK_NAME = "养成计划"
+_MAA_DATA_UPDATE_TASK_NAME = "更新数据"
+# 识别数据档案文件名（MAA 原生格式透传，MAS 绝不回写 MAA，方案决策 31）
+_MAA_DEPOT_ARCHIVE_NAME = "DepotData.json"
+_MAA_OPER_BOX_ARCHIVE_NAME = "OperBoxData.json"
+# 识别链完成标记：锚定注入的任务名 + 链后缀（MAS 强制 zh-cn，方案 §4.2/T0.3）
+_MAA_DEPOT_CHAIN_COMPLETION_MARKERS = (
+    "完成任务: 库存保持 (仓库识别)",
+    f"完成任务: {_MAA_CULTIVATE_TASK_NAME} (仓库识别)",
+    f"完成任务: {_MAA_DATA_UPDATE_TASK_NAME} (仓库识别)",
+)
+_MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS = (
+    f"完成任务: {_MAA_DATA_UPDATE_TASK_NAME} (干员识别)",
 )
 _MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
 # MAA 的停滞提示：只说明任务没有推进，本身不是推进信号。若让它参与 latest_time
@@ -213,34 +256,61 @@ def _merge_task_queue(
 ) -> bool:
     """按 (TaskType, Name) 把运行期任务队列相对基线的变更合并进存档队列。
 
-    基线队列含 MAS 托管注入的合成任务且顺序与存档不同, 不能按索引回写;
-    找不到对应任务项或队列新增元素时跳过, 删除不透传。
+    两侧都按身份对齐而不是按位置: 队列顺序由 MAS 安排, 用户在 MAA 里插一条、
+    删一条都会让下标整体错位, 按下标回写会把 A 的改动写进存档的 B。MAS 没安排
+    过的条目(用户自己加的自定义任务等)在存档里找不到对应项, 一律跳过: 队列
+    顺序由 MAS 决定, 用户塞进来的东西不回写; 删除同样不透传。
     """
 
     if not isinstance(archive_queue, list) or not isinstance(baseline_queue, list):
         return False
+
+    def identity(item: object) -> tuple | None:
+        if not isinstance(item, dict):
+            return None
+        return (item.get("TaskType"), item.get("Name"))
+
     index_by_id: dict[tuple, int] = {}
     for index, item in enumerate(archive_queue):
-        if isinstance(item, dict):
-            index_by_id[(item.get("TaskType"), item.get("Name"))] = index
+        key = identity(item)
+        if key is not None:
+            index_by_id[key] = index
+    baseline_by_id: dict[tuple, dict] = {}
+    for item in baseline_queue:
+        key = identity(item)
+        if key is not None:
+            baseline_by_id[key] = item
 
     changed = False
-    for pos, task in enumerate(current_queue):
-        if pos >= len(baseline_queue):
+    for task in current_queue:
+        key = identity(task)
+        if key is None:
             continue
-        base_task = baseline_queue[pos]
-        if not isinstance(task, dict) or not isinstance(base_task, dict):
-            continue
-        target_index = index_by_id.get(
-            (base_task.get("TaskType"), base_task.get("Name"))
-        )
-        if target_index is None:
+        base_task = baseline_by_id.get(key)
+        target_index = index_by_id.get(key)
+        if base_task is None or target_index is None:
             continue
         target = archive_queue[target_index]
-        for key, value in task.items():
-            if base_task.get(key) != value and target.get(key) != value:
-                target[key] = deepcopy(value)
+        for key_, value in task.items():
+            if base_task.get(key_) != value and target.get(key_) != value:
+                target[key_] = deepcopy(value)
                 changed = True
+
+    # 运行期从队列里消失的条目: 用户在 MAA 里删掉了这条任务。MAS 的队列顺序由
+    # 自己安排, 删除不改变「下次照样生成」, 但要让重建回到默认: 把存档里的这条
+    # 一并移除, 托管任务下次按空壳重建、未知任务不再复活。
+    current_keys = {identity(task) for task in current_queue}
+    dropped = [key for key in baseline_by_id if key not in current_keys]
+    if dropped:
+        drop_set = set(dropped)
+        archive_queue[:] = [
+            item for item in archive_queue if identity(item) not in drop_set
+        ]
+        for _, name in dropped:
+            logger.info(
+                f"用户已从 MAA 队列删除「{name}」，存档设置一并重置，下次按默认重建"
+            )
+        changed = True
     return changed
 
 
@@ -251,7 +321,10 @@ def _merge_maa_changes(
 ) -> bool:
     """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
 
-    只透传新增与修改, 删除不透传; 顶层结构不匹配(如写盘半截被截断)整体跳过。
+    只透传运行期(相对基线)真正发生的变更, 新增与修改透传、删除不透传; MAS 托管
+    注入自己改写的键(baseline 与 current 相同、仅与存档不同)不能被带回存档,
+    否则运行一次就会把用户自己的配置抹成注入值。顶层结构不匹配(如写盘半截被
+    截断)整体跳过。
     """
 
     if type(archive) is not type(baseline) or type(baseline) is not type(current):
@@ -275,16 +348,56 @@ def _merge_maa_changes(
                     _merge_task_queue(archive.get("TaskQueue"), base_value, value)
                     or changed
                 )
-            elif archive.get(key) != value:
+            elif base_value != value and archive.get(key) != value:
                 archive[key] = deepcopy(value)
                 changed = True
     return changed
 
 
-def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
-    """继承 MAA 原生配置，并以基础任务覆盖 MAS 托管字段。"""
+def _merge_maa_config_file(
+    archive: dict, baseline: dict, current: dict, scheme: str
+) -> bool:
+    """按生效方案合并一份 MAA 配置, 返回是否有变更。
 
-    return {**deepcopy(source_task), **deepcopy(managed_task)}
+    set_maa 会把存档 Current 方案的内容复制进运行目录的 Default 再运行, 运行期
+    的变更因此都记在 Default 键上; 存档生效方案不是 Default 时, 把合并目标临时
+    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。
+    """
+
+    if scheme == "Default":
+        return _merge_maa_changes(archive, baseline, current)
+
+    configurations = archive.get("Configurations")
+    if not isinstance(configurations, dict) or not isinstance(
+        configurations.get(scheme), dict
+    ):
+        return _merge_maa_changes(archive, baseline, current)
+
+    original_default = configurations.get("Default")
+    configurations["Default"] = configurations[scheme]
+    try:
+        changed = _merge_maa_changes(archive, baseline, current)
+    finally:
+        merged = configurations["Default"]
+        if original_default is None:
+            del configurations["Default"]
+        else:
+            configurations["Default"] = original_default
+        configurations[scheme] = merged
+    return changed
+
+
+def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
+    """以 MAA 原生配置为底，只用 MAS 托管补丁覆盖它声明接管的键。
+
+    补丁是 merge patch 语义：**补丁里出现的键才算 MAS 接管，没出现的键一律
+    透传用户在上游界面里的选择**（临期药、源石、博朗台、周计划、指定材料/
+    次数、隐藏项等）。因此补丁表（MAA_ANNIHILATION_FIGHT_BASE /
+    MAA_REMAIN_FIGHT_BASE）只允许列 MAS 运行必需且自己会消费的字段；往表里
+    补一个 MAS 不消费的默认值，等于把用户的选择静默抹掉。
+    """
+
+    return {**deepcopy(source_task), **deepcopy(managed_patch)}
 
 
 def _find_task_source(
@@ -326,10 +439,12 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
             name,
             task_type,
             allow_type_fallback=allow_type_fallback,
-        ) or {
-            "$type": f"{task_type}Task",
-            "IsEnable": True,
-        }
+        )
+        if task is None:
+            # 用户在上游删掉了这条托管任务：只补一个空壳，字段全交给 MAA
+            # 自己的默认值；下次会话照此重新生成，用户不必再删一次
+            logger.info(f"用户队列中缺少「{name}」，本次按 MAA 默认设置重新生成")
+            task = {"$type": f"{task_type}Task", "IsEnable": True}
         task.update({"Name": name, "TaskType": task_type})
         return task
 
@@ -375,10 +490,10 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
     ]
 
     known_names = {task["Name"] for task in queue}
+    # 上游其余任务(自动肉鸽、生息演算、用户自定义任务等)对 MAS 是未知任务:
+    # 只透传原样条目, 不合成、不改写、不判定。队列顺序也由 MAA 自己维护。
     queue.extend(
-        deepcopy(task)
-        for task in source_tasks
-        if task.get("TaskType") != "Reclamation" and task.get("Name") not in known_names
+        deepcopy(task) for task in source_tasks if task.get("Name") not in known_names
     )
     return queue
 
@@ -444,6 +559,89 @@ def _build_depot_maintain_task(
     }
 
 
+def _build_cultivate_task(
+    plan: "CultivatePlan",
+    source_task: dict | None,
+    *,
+    skip_during_activity: bool,
+    skip_during_resource_collection: bool,
+) -> dict | None:
+    """把内核养成计划映射为 MAA 养成任务（MAA 字段名唯一出现点，方案 §4.1）。
+
+    药剂/源石按决策 5 硬编码关闭；计划无可用刷取条目时不生成任务。
+    DropCount 是 MAA 的"保有量目标"语义（need = DropCount − 该材料现存，
+    只比对本材料），故写净缺口 + 档案现存，MAA 现算后落回净缺口。
+    """
+
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
+    plans = []
+    for entry in plan.entries:
+        source_plan = next(
+            (
+                item
+                for item in source_plans
+                if isinstance(item, dict)
+                and item.get("Stage") == entry.stage_code
+                and item.get("DropId") == entry.item_id
+            ),
+            {},
+        )
+        plans.append(
+            {
+                **deepcopy(source_plan),
+                "UseMedicine": False,
+                "MedicineCount": 0,
+                "UseStone": False,
+                "StoneCount": 0,
+                "Stage": entry.stage_code,
+                "DropId": entry.item_id,
+                "DropCount": entry.amount + entry.held,
+            }
+        )
+    if not plans:
+        return None
+
+    return {
+        "$type": source_task.get("$type", "DepotMaintainTask"),
+        "Name": _MAA_CULTIVATE_TASK_NAME,
+        "IsEnable": True,
+        "TaskType": "DepotMaintain",
+        # 仓库识别随养成任务执行，缺口由 MAA 按最新库存现算（方案 §9）
+        "UpdateDepot": True,
+        "IsStageManually": True,
+        "SkipDuringActivity": skip_during_activity,
+        "SkipDuringResourceCollection": skip_during_resource_collection,
+        "OnlyFirstInsufficientPlan": False,
+        "UseAutoSeries": False,
+        "UseMedicine": False,
+        "UseStone": False,
+        "UseExpiringMedicine": False,
+        "PlanList": plans,
+    }
+
+
+def _build_data_update_task(source_task: dict | None) -> dict:
+    """构建更新数据任务（干员识别 + 仓库识别，方案决策 7/30）。
+
+    识别结果供 check_log 采集落用户档案，缺口始终由 MAA 执行时现算。
+    """
+
+    source_task = source_task or {}
+    return {
+        **deepcopy(source_task),
+        "$type": source_task.get("$type", "UserDataUpdateTask"),
+        "Name": _MAA_DATA_UPDATE_TASK_NAME,
+        "IsEnable": True,
+        "TaskType": "UserDataUpdate",
+        "UpdateOperBox": True,
+        "UpdateDepot": True,
+        "TriggerInterval": "EveryTime",
+    }
+
+
 def _resolve_activity_stage(
     activity_stages: list[dict], configured_index: int
 ) -> str | None:
@@ -482,6 +680,8 @@ def _build_activity_priority_fight(
             "IsStageManually": True,
             "UseOptionalStage": False,
             "UseWeeklySchedule": False,
+            # 活动关优先不继承理智作战的「指定材料 / 指定次数」门禁：它是同一套
+            # 打法换个关卡，带上这些门禁会在刷够材料或跑满次数后提前收工
             "EnableTargetDrop": False,
             "DropId": "",
             "DropCount": 0,
@@ -497,6 +697,12 @@ def _build_activity_priority_fight(
 
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
+
+    # 养成采集状态：prepare() 每轮重置；类级默认保证未跑 prepare 的
+    # 实例（如单测直接构造）调用 check_log 时不炸
+    _cultivate_collected_depot: bool = False
+    _cultivate_collected_oper_box: bool = False
+    _depot_maintain_suppressed: bool = False
 
     def __init__(
         self,
@@ -518,6 +724,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
+        # 快速配置决定是否把面板值写进 MAA 原生配置（两段互不替代）。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
 
@@ -559,6 +770,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_game_hot_update = False
         self.pending_res_version = ""
         self._maa_config_baseline: dict[str, dict] | None = None
+        # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
+        # 见 _collect_cultivate_archive）；
+        # 达成文案供 final_task 的统计信息报告，按 (干员, 档位) 去重累积
+        self._cultivate_collected_depot = False
+        self._cultivate_collected_oper_box = False
+        self._cultivate_achievement_summary: list[str] = []
+        # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
+        # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
+        self._depot_maintain_suppressed = False
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -566,11 +786,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
 
+        quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
         self.run_book = {
-            "GreenTicketStore": not self.cur_user_config.get(
-                "Task", "IfGreenTicketStore"
-            ),
-            "Annihilation": self.cur_user_config.get("Info", "Annihilation") == "Close",
+            "GreenTicketStore": not quick_config
+            or not self.cur_user_config.get("Task", "IfGreenTicketStore"),
+            "Annihilation": not quick_config
+            or self.cur_user_config.get("Info", "Annihilation") == "Close",
             "Routine": False,
         }
 
@@ -645,7 +866,10 @@ class AutoProxyTask(TaskExecuteBase):
 
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
-            if self.mode == "Routine":
+            if not self.cur_user_config.get("Info", "IfQuickConfig"):
+                # 来源队列整体交给 MAA 执行，不从隐藏面板推导任务或拆分阶段。
+                self.task_dict = {}
+            elif self.mode == "Routine":
                 self.task_dict = {
                     task: self.cur_user_config.get("Task", f"If{task}")
                     for task in MAA_TASKS
@@ -707,6 +931,13 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     continue
 
+                logger.info(
+                    f"模拟器启动完成: 用户 {self.cur_user_uid} - 模式 "
+                    f"{self.mode} - 实例 "
+                    f"{self.script_config.get('Emulator', 'Index')} - "
+                    f"ADB {emulator_info.adb_address}"
+                )
+
                 if Config.get("Function", "IfSilence"):
                     try:
                         await self.emulator_manager.setVisible(
@@ -726,7 +957,15 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
+                logger.info(
+                    f"MAA 进程已创建: {self.maa_exe_path} - "
+                    f"PID: {self.maa_process_manager.main_pid}"
+                )
                 await asyncio.sleep(1)  # 等待 MAA 处理日志文件
+                logger.info(
+                    "MAA 进程等待日志文件后状态: "
+                    f"running={await self.maa_process_manager.is_running()}"
+                )
                 await self.maa_log_monitor.start_monitor_file(
                     self._resolve_log_file_path, self.log_start_time
                 )
@@ -768,6 +1007,8 @@ class AutoProxyTask(TaskExecuteBase):
                             3,
                         )
 
+                if self.cur_user_config.get("Info", "IfQuickConfig"):
+                    await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
                 await update_maa(self.maa_root_path)
@@ -779,6 +1020,226 @@ class AutoProxyTask(TaskExecuteBase):
                 Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                 "脚本后任务",
             )
+
+    def _cultivate_archive_dir(self) -> Path:
+        """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
+        cur_user_uid 为准，查询与注入判定只读档案，绝不回写 MAA）。"""
+
+        return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
+
+    def _archive_recognition_file(
+        self, name: str, *, require_fresh_sync_time: bool = False
+    ) -> bool:
+        """把 MAA 安装目录的识别结果只读复制进当前用户档案（T1.17）。
+
+        整份原子覆盖：识别数据是全量快照且档案可由下一轮重跑再生，
+        无 diff、无回滚（方案决策 31）。
+
+        Args:
+            name: 识别数据文件名（DepotData.json / OperBoxData.json）。
+            require_fresh_sync_time: 是否校验 syncTime 不早于本轮开始
+                （DepotData 有该字段；OperBoxData 无时间字段，靠会话归因）。
+
+        Returns:
+            是否成功落档；失败不阻断运行，下一轮重新采集。
+        """
+
+        source = self.maa_root_path / "data" / name
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            if require_fresh_sync_time:
+                _, sync_time = parse_depot_payload(payload)
+                if sync_time < int(self.log_start_time.timestamp()):
+                    logger.warning(
+                        f"用户 {self.cur_user_item.name} 的 {name} syncTime 早于本轮开始, 弃用本次采集"
+                    )
+                    return False
+            archive_dir = self._cultivate_archive_dir()
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            write_file(archive_dir / name, payload)
+            logger.info(f"用户 {self.cur_user_item.name} 的识别数据已落档案: {name}")
+            return True
+        except (OSError, ValueError, TypeError):
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 采集识别数据失败: {name}"
+            )
+            return False
+
+    async def _collect_cultivate_archive(self, log: str) -> None:
+        """识别链完成标记 → 立即读安装目录识别数据落用户档案（方案 §4.2）。
+
+        归因依据"该链运行在当前用户的 MAA 会话内"（串行调度 + StartUp 已
+        切号）；每类数据每轮以最后一次识别标记为准并覆盖档案——队列里养成
+        计划（刷取前）与更新数据（刷取后）各有一条仓库识别，取后者下一轮
+        缺口判定才用得上刷取后的库存，否则补齐材料后仍会多接管一轮。
+        """
+
+        if any(marker in log for marker in _MAA_DEPOT_CHAIN_COMPLETION_MARKERS):
+            self._cultivate_collected_depot = self._archive_recognition_file(
+                _MAA_DEPOT_ARCHIVE_NAME, require_fresh_sync_time=True
+            )
+        if any(marker in log for marker in _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS):
+            self._cultivate_collected_oper_box = self._archive_recognition_file(
+                _MAA_OPER_BOX_ARCHIVE_NAME
+            )
+
+    async def _finish_cultivate_round(self) -> None:
+        """运行结束钩子：本轮采集到识别数据时刷新达成状态并持久化（T1.11）。
+
+        无采集观测时 no-op（绿票/剿灭轮天然空转）；判定只用可自证链，
+        异常只记日志，档案留待下一轮注入前拦截兜底。
+        """
+
+        if not (self._cultivate_collected_depot or self._cultivate_collected_oper_box):
+            return
+        self._cultivate_collected_depot = False
+        self._cultivate_collected_oper_box = False
+        try:
+            targets = parse_cultivate_targets(
+                json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
+            )
+            if not targets:
+                return
+            # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
+            # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
+            skland = await Config.get_maa_cultivate_skland_progression(
+                str(self.script_info.script_id), str(self.cur_user_uid)
+            )
+            context = ProviderContext(
+                maa_data_dir=self._cultivate_archive_dir(),
+                skland_progressions=skland[0] if skland else {},
+                skland_captured_at=skland[1] if skland else 0,
+            )
+            snapshots = {
+                target.operator_id: resolve_progression(
+                    target.operator_id, get_certifying_chain(), context
+                )
+                for target in targets
+            }
+            achievements = judge_achievements(targets, snapshots)
+            updated = apply_achievements(targets, achievements)
+            if updated != list(targets):
+                await self.cur_user_config.set(
+                    "Task",
+                    "CultivateTargets",
+                    json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
+                )
+                removed = summarize_achievements(
+                    targets, achievements, load_oper_box_names(context)
+                )
+                for line in removed:
+                    if line not in self._cultivate_achievement_summary:
+                        self._cultivate_achievement_summary.append(line)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 养成达成刷新失败: {e}"
+            )
+
+    async def _set_cultivate_notice(self, notice: str) -> None:
+        """写接管提示字段；值未变化时跳过，避免每轮无谓的配置写盘。"""
+
+        if self.cur_user_config.get("Data", "CultivateNotice") == notice:
+            return
+        await self.cur_user_config.set("Data", "CultivateNotice", notice)
+
+    async def _prepare_cultivate_injection(
+        self, source_queue: list[dict]
+    ) -> tuple[dict | None, bool, bool]:
+        """准备养成计划注入：达成拦截 → 计划构建 → 接管判定（方案 §4.1/§9）。
+
+        仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
+        练度、库存任何异常一律 fail-open——本轮不注入、不接管，既有任务
+        队列不受影响（决策 28）。
+
+        Returns:
+            (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
+        """
+
+        if not self.cur_user_config.get("Task", "IfCultivate"):
+            await self._set_cultivate_notice("")
+            return None, False, False
+        try:
+            raw_targets = json.loads(
+                self.cur_user_config.get("Task", "CultivateTargets")
+            )
+        except (TypeError, ValueError):
+            raw_targets = []
+        targets = parse_cultivate_targets(raw_targets)
+        if not targets:
+            await self._set_cultivate_notice("")
+            return None, False, False
+
+        try:
+            # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
+            # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
+            skland = await Config.get_maa_cultivate_skland_progression(
+                str(self.script_info.script_id), str(self.cur_user_uid), force=True
+            )
+            (
+                updated_targets,
+                plan,
+                gap,
+            ) = await depot_cultivate_service.prepare_cultivate(
+                targets=targets,
+                # 只读用户档案（归属正确）：隔日档案对达成判定只会保守
+                # （练度单调），缺口判定的新鲜度由每轮采集保底（方案决策 31）
+                maa_data_dir=self._cultivate_archive_dir(),
+                config_path=Config.config_path,
+                proxy=Config.proxy,
+                skland=skland,
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 养成数据准备失败, 本轮跳过养成注入: {e}"
+            )
+            await self._set_cultivate_notice("")
+            return None, True, False
+
+        # 达成拦截后把目标状态写回档案：可自证达成的目标已移除（方案 §7.6）；
+        # 状态无变化时跳过，避免每轮无谓写盘
+        if updated_targets != list(targets):
+            await self.cur_user_config.set(
+                "Task",
+                "CultivateTargets",
+                json.dumps(dump_cultivate_targets(updated_targets), ensure_ascii=False),
+            )
+        # 接管态写提示字段供前端展示（方案 T1.19；空 = 未接管）
+        await self._set_cultivate_notice(
+            "材料存在缺口，本轮库存保持暂停，由养成计划接管" if gap else ""
+        )
+
+        cultivate_task = None
+        # gap 与计划条目同源（同一份净需求），缺口为假即无条目可刷；
+        # 显式门控，接管判定与注入判定不允许出现任何分歧
+        if plan is not None and gap:
+            cultivate_task = _build_cultivate_task(
+                plan,
+                _find_task_source(
+                    source_queue, _MAA_CULTIVATE_TASK_NAME, "DepotMaintain"
+                ),
+                skip_during_activity=self.cur_user_config.get(
+                    "Task", "CultivateSkipDuringActivity"
+                ),
+                skip_during_resource_collection=self.cur_user_config.get(
+                    "Task", "CultivateSkipDuringResourceCollection"
+                ),
+            )
+        return cultivate_task, True, gap
+
+    def _restore_depot_maintain(self) -> None:
+        """按开关事实恢复库存保持，仅限上一轮确实被养成接管抑制过时。
+
+        每次 set_maa 都无条件恢复会把上一轮已完成（check_log 已置 False）
+        的库存保持重新点亮，重试轮把它整个重跑一遍；决策 28 的 fail-open
+        只在抑制过的那一轮之后需要。
+        """
+
+        if not self._depot_maintain_suppressed:
+            return
+        self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+            "Task", "IfDepotMaintain"
+        )
+        self._depot_maintain_suppressed = False
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -794,14 +1255,32 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             await agree_bilibili(self.maa_tasks_path, False)
 
-        # 基础配置内容
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        # 下发前归档 MAS 配置到用户池（下发源，运行回写 _sync_maa_config_updates
+        # 会覆盖它；带页面任务字段侧车，指纹去重，失败不阻断运行）。目标路径
+        # 按来源 owner（脚本态共享 Default 目录，直控无 MAS 配置目录不归档）。
+        # native 池由 manager prepare 在任务级一次性归档
+        archive_dir = self._config_archive_dir()
+        if archive_dir is not None:
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                archive_dir,
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=str(self.cur_user_config.get("Info", "Mode") or "").strip()
+                or None,
+            )
+
+        # ── 第一段：来源落盘 ──────────────────────────────────────────
+        # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
+        # 直控的事实源是 MAA 安装目录里现有的原生配置。
+        if self.config_mode == CONFIG_SOURCE_SCRIPT:
             shutil.copytree(
                 (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
-        elif self.cur_user_config.get("Info", "Mode") == "用户":
+        elif self.config_mode == CONFIG_SOURCE_USER:
             shutil.copytree(
                 (
                     Path.cwd()
@@ -810,6 +1289,11 @@ class AutoProxyTask(TaskExecuteBase):
                 self.maa_set_path,
                 dirs_exist_ok=True,
             )
+        elif self.direct_control:
+            # 直控从本轮原生快照开始，不能继承上一用户或上一阶段的快速配置。
+            source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if source.is_dir():
+                shutil.copytree(source, self.maa_set_path, dirs_exist_ok=True)
 
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
@@ -829,11 +1313,27 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
-        default_set = gui_set["Configurations"]["Default"]
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
+
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            await self._apply_maa_quick_config(gui_new_set)
+        self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
+
+        write_file(self.maa_set_path / "gui.json", gui_set)
+        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        self._snapshot_maa_config()
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
+        logger.success(f"MAA运行参数配置完成: {self.mode}")
+
+    async def _apply_maa_quick_config(self, gui_new_set: dict) -> None:
+        """仅开启快速配置时构造面板任务，来源导入与启动设置留在外层。"""
 
         task_set = {}
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
@@ -853,6 +1353,34 @@ class AutoProxyTask(TaskExecuteBase):
                 stage_info.get("Activity", []),
                 self.cur_user_config.get("Task", "ActivityStageIndex"),
             )
+
+        # 养成计划注入，仅 Routine 模式（方案决策 27）：剿灭/绿票轮不注入。
+        # 必须在下方 MAA_TASKS 装配循环之前执行：接管抑制靠提前置
+        # task_dict["DepotMaintain"] = False 走既有"开关关→整条不写"路径
+        # （方案决策 20/28，不得只从队列剔除）
+        cultivate_task = None
+        update_task = None
+        if self.mode == "Routine":
+            self._restore_depot_maintain()
+            (
+                cultivate_task,
+                has_targets,
+                takes_over,
+            ) = await self._prepare_cultivate_injection(source_queue)
+            if has_targets:
+                # 更新数据紧跟养成/库存保持注入（方案决策 30），为下一轮
+                # 提供归属正确的识别数据
+                update_task = _build_data_update_task(
+                    _find_task_source(
+                        source_queue, _MAA_DATA_UPDATE_TASK_NAME, "UserDataUpdate"
+                    )
+                )
+            if takes_over:
+                self.task_dict["DepotMaintain"] = False
+                self._depot_maintain_suppressed = True
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 养成计划接管本轮, 库存保持暂停注入"
+                )
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
@@ -891,96 +1419,6 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config.get("Task", "DepotMaintainPlans"),
                 source_task=task_set["DepotMaintain"],
             )
-
-        # 关闭所有定时
-        for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
-        # NEW: Timers.List[*].IsEnabled = false
-        if "Timers" not in gui_new_set:
-            gui_new_set["Timers"] = {}
-        if "List" not in gui_new_set["Timers"]:
-            gui_new_set["Timers"]["List"] = []
-        for timer in gui_new_set["Timers"].get("List", []):
-            if isinstance(timer, dict):
-                timer["IsEnabled"] = False
-
-        # 矫正 ADB 地址
-        if emulator_info.adb_address != "Unknown":
-            default_set["Connect.Address"] = emulator_info.adb_address  # OLD: 即将移除
-            gui_new_set.setdefault("Configurations", {}).setdefault(
-                "Default", {}
-            ).setdefault("Gui", {}).setdefault("ConnectSettings", {})[
-                "Address"
-            ] = emulator_info.adb_address
-
-        # 任务间切换方式
-        post_actions_str = MAA_TASK_TRANSITION_METHOD_BOOK[
-            self.script_config.get("Run", "TaskTransitionMethod")
-        ]
-        default_set["MainFunction.PostActions"] = post_actions_str  # OLD: 即将移除
-        # NEW: PostActions [Flags] 枚举整数 (None=0, ExitSelf=8, ExitArknights=1, ExitEmulator=4)
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {})["PostActions"] = int(post_actions_str)
-
-        # 直接运行任务
-        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
-        default_set["Start.RunDirectly"] = "True"  # OLD: 即将移除
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
-        # NEW:
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = True
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
-            "StartEmulator"
-        ] = False
-
-        # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "True"  # OLD: 即将移除
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"  # OLD: 即将移除
-        # NEW:
-        gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
-        gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = True
-        gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
-
-        # 静默模式相关配置
-        if Config.get("Function", "IfSilence"):
-            global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
-            global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
-            global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
-            # NEW:
-            gui_new_set.setdefault("Gui", {})["UseTray"] = True
-            gui_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
-            gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
-
-        # 服务器与账号切换
-        default_set["Start.ClientType"] = self.cur_user_config.get(
-            "Info", "Server"
-        )  # OLD: 即将移除
-        # NEW: ClientType 枚举整数 (Official=0, Bilibili=1, ...)
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})[
-            "ClientType"
-        ] = _MAA_CLIENT_TYPE_TO_INT.get(self.cur_user_config.get("Info", "Server"), 0)
-        if self.cur_user_config.get("Info", "Server") == "Official":
-            task_set["StartUp"]["AccountName"] = (
-                f"{self.cur_user_config.get('Info', 'Id')[:3]}****{self.cur_user_config.get('Info', 'Id')[7:]}"
-                if len(self.cur_user_config.get("Info", "Id")) == 11
-                else self.cur_user_config.get("Info", "Id")
-            )
-        elif self.cur_user_config.get("Info", "Server") == "Bilibili":
-            task_set["StartUp"]["AccountName"] = self.cur_user_config.get("Info", "Id")
-        # MAA v6.14.0-b2 起账号切换由独立开关控制，配置里已存为 false 时只写账号名不会切号；
-        # 接管时强制为开，账号名为空时 MAA 侧传空 account_name，仍不会执行切号
-        if self.cur_user_config.get("Info", "Server") in ("Official", "Bilibili"):
-            task_set["StartUp"]["AccountSwitchEnabled"] = True
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
@@ -1054,7 +1492,10 @@ class AutoProxyTask(TaskExecuteBase):
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
                 )
-                if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
+                infrast_plans, infrast_problem = load_infrast_plans(
+                    self.cur_user_config.get("Data", "CustomInfrast")
+                )
+                if infrast_problem is None:
                     infrast_path.parent.mkdir(parents=True, exist_ok=True)
                     infrast_path.write_text(
                         self.cur_user_config.get("Data", "CustomInfrast"),
@@ -1070,25 +1511,31 @@ class AutoProxyTask(TaskExecuteBase):
                             "DescriptionPost": infrast.get("description_post", ""),
                             "Period": infrast.get("period", []),
                         }
-                        for index, infrast in enumerate(
-                            json.loads(
-                                self.cur_user_config.get("Data", "CustomInfrast")
-                            ).get("plans", [])
-                        )
+                        for index, infrast in enumerate(infrast_plans)
                     ]
-                    task_set["Infrast"]["PlanSelect"] = int(
-                        self.cur_user_config.get("Info", "InfrastIndex")
-                    )
+                    # PlanSelect 保留用户存档中的值(不按轮次改写)——带时段表默认 -1=MAA
+                    # 按时段自动选班; 手动选班/无时段表的轮换推进均由 MAA 原生「自动保存
+                    # 为下个计划」完成, 经运行后配置回写管道存回每用户存档
+                    if (
+                        infrast_plan_mode(infrast_plans) == "rotate"
+                        and task_set["Infrast"].get("PlanSelect", -1) == -1
+                    ):
+                        # 无时段表: 缺省与显式「自动换班」(-1)都归一到第一班开始轮换。
+                        # -1 时 MAA 匹配不到时段, 会永远跑第一班且无法推进(并打错误日志)
+                        task_set["Infrast"]["PlanSelect"] = 0
                 else:
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
+                        f"用户 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
                     )
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(
                             level="warning",
-                            message=f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件",
+                            message=(
+                                f"用户 {self.cur_user_item.name} 的{infrast_problem}，"
+                                f"将使用普通基建模式"
+                            ),
                         ),
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
@@ -1114,10 +1561,16 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
+            if task_type == "Fight" and update_task is not None:
+                # 更新数据位于库存保持之后、理智作战之前（方案 §9 队列 #5）
+                task_queue.append(update_task)
             task_queue.append(task_set[task_type])
 
             if task_type == "StartUp" and activity_fight:
                 task_queue.append(activity_fight)
+            if task_type == "StartUp" and cultivate_task is not None:
+                # 养成计划位于活动关优先之后、库存保持之前（方案 §9 队列 #3）
+                task_queue.append(cultivate_task)
 
             # 剩余理智关卡配置
             if (
@@ -1143,16 +1596,88 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "GreenTicketStore":
             task_queue.append(dict(MAA_GREEN_TICKET_STORE_TASK))
 
-        (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
-            json.dumps(gui_set, ensure_ascii=False, indent=4),
-            encoding="utf-8",  # OLD: 即将移除
-        )  # OLD: 即将移除
-        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        # 来源队列里的未知任务(自动肉鸽、生息演算、用户自定义任务等)原样带回来:
+        # MAS 不合成也不接管它们, 只保证用户在上游开的任务不会被快速配置抹掉。
+        # MAA 只认一种自定义任务类型, 按 TaskType 取即可。
+        scheduled = {task.get("TaskType") for task in task_queue}
+        task_queue.extend(
+            deepcopy(task)
+            for task in source_queue
+            if isinstance(task, dict) and task.get("TaskType") not in scheduled
+        )
 
-        # 拍下托管注入完成后的配置基线, 供任务结束后甄别 MAA 自身的写盘变更
-        self._snapshot_maa_config()
+    def _configure_maa_runtime(
+        self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
+    ) -> None:
+        """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
 
-        logger.success(f"MAA运行参数配置完成: {self.mode}")
+        global_set = gui_set["Global"]
+        default_set = gui_set["Configurations"]["Default"]
+        current_gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
+
+        # 关闭定时，避免与 MAS 调度重叠。
+        for i in range(1, 9):
+            global_set[f"Timer.Timer{i}"] = "False"
+        for timer in gui_new_set.setdefault("Timers", {}).setdefault("List", []):
+            if isinstance(timer, dict):
+                timer["IsEnabled"] = False
+
+        if emulator_info.adb_address != "Unknown":
+            default_set["Connect.Address"] = emulator_info.adb_address
+            current_gui.setdefault("ConnectSettings", {})["Address"] = (
+                emulator_info.adb_address
+            )
+
+        post_actions = MAA_TASK_TRANSITION_METHOD_BOOK[
+            self.script_config.get("Run", "TaskTransitionMethod")
+        ]
+        default_set["MainFunction.PostActions"] = post_actions
+        current_gui["PostActions"] = int(post_actions)
+        default_set["Start.StartGame"] = "True"
+        default_set["Start.RunDirectly"] = "True"
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
+        current_gui.setdefault("RuntimeSettings", {})["StartGame"] = True
+        current_gui.setdefault("StartUpSettings", {}).update(
+            {"RunDirectly": True, "StartEmulator": False}
+        )
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "True"
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        gui_new_set.setdefault("Update", {}).update(
+            {
+                "CheckOnSchedule": False,
+                "AutoDownloadUpdatePackage": True,
+                "AutoInstallUpdatePackage": False,
+            }
+        )
+        if Config.get("Function", "IfSilence"):
+            global_set["GUI.UseTray"] = "True"
+            global_set["GUI.MinimizeToTray"] = "True"
+            global_set["Start.MinimizeDirectly"] = "True"
+            gui_new_set.setdefault("Gui", {}).update(
+                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
+            )
+
+        server = self.cur_user_config.get("Info", "Server")
+        account = self.cur_user_config.get("Info", "Id")
+        default_set["Start.ClientType"] = server
+        current_gui["RuntimeSettings"]["ClientType"] = _MAA_CLIENT_TYPE_TO_INT.get(
+            server, 0
+        )
+        # 账号属于基本信息；关闭快速配置时只更新来源中已有的开始唤醒任务。
+        for task in gui_new_set["Configurations"]["Default"].get("TaskQueue", []):
+            if task.get("TaskType") != "StartUp" or server not in (
+                "Official",
+                "Bilibili",
+            ):
+                continue
+            task["AccountName"] = (
+                f"{account[:3]}****{account[7:]}"
+                if server == "Official" and len(account) == 11
+                else account
+            )
+            # MAA 账号切换需要独立开关，空账号仍由 MAA 沿用登录态。
+            task["AccountSwitchEnabled"] = True
 
     def _snapshot_maa_config(self) -> None:
         """记录托管注入完成后的 MAA 配置基线, 供任务结束后甄别 MAA 自身的写盘变更。"""
@@ -1168,10 +1693,18 @@ class AutoProxyTask(TaskExecuteBase):
             )
             self._maa_config_baseline = None
 
-    def _config_archive_dir(self) -> Path:
-        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。"""
+    def _config_archive_dir(self) -> Path | None:
+        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。
 
-        if self.cur_user_config.get("Info", "Mode") == "脚本":
+        直控用户没有 MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），
+        返回 ``None``：不下发前归档、运行产出也不回写——安装目录现场由
+        任务结束的原生配置快照恢复机制管理。
+        """
+
+        mode = str(self.cur_user_config.get("Info", "Mode") or "").strip()
+        if mode == "直控":
+            return None
+        if mode == "脚本":
             return Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         return (
             Path.cwd()
@@ -1185,11 +1718,13 @@ class AutoProxyTask(TaskExecuteBase):
         存活, 下次托管 MAA 读到自己的记录后自行去重; 失败只记日志不抛出。
         """
 
+        if self.direct_control:
+            return
         baseline = self._maa_config_baseline
         if baseline is None:
             return
         archive_dir = self._config_archive_dir()
-        if not archive_dir.is_dir():
+        if archive_dir is None or not archive_dir.is_dir():
             return
 
         for name in _MAA_CONFIG_FILES:
@@ -1208,7 +1743,13 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             archive_new = deepcopy(archive)
-            if not _merge_maa_changes(archive_new, baseline[name], current):
+            # 运行期写盘的是归一后的 Default 方案, 生效方案不是 Default 时合并回该方案键
+            if not _merge_maa_config_file(
+                archive_new,
+                baseline[name],
+                current,
+                maa_scheme_name(archive_dir, archive),
+            ):
                 continue
             write_file(archive_dir / name, archive_new)
             logger.info(
@@ -1324,16 +1865,32 @@ class AutoProxyTask(TaskExecuteBase):
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
+        # 养成采集：识别链完成标记 → 立即读安装目录识别数据落用户档案
+        # （方案 §4.2/决策 31，T1.17；无标记时不读不采）
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            await self._collect_cultivate_archive(log)
+
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
+            # 关闭时不读取/反推来源队列；成功与失败均取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-                if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
+                if (
+                    f"完成任务: {zh_task}" in log
+                    or f"{zh_task} 任务跳过" in log
+                    or (en_task == "Fight" and "完成任务: 剿灭作战" in log)
+                ):
                     self.task_dict[en_task] = False
 
-            if any(self.task_dict.values()):
+            if any(self.task_dict.values()) or (
+                not self.cur_user_config.get("Info", "IfQuickConfig")
+                and any(
+                    log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
+                    for name in re.findall(r"任务出错: ([^\r\n]+)", log)
+                )
+            ):
                 self.cur_user_log.status = "MAA 部分任务执行失败"
             else:
                 self.cur_user_log.status = "Success!"
@@ -1371,13 +1928,19 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
+            logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
 
+        started_at = time.monotonic()
+
+        logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
+        logger.info("MAA 收尾: 停止 MAA 进程")
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+        logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
@@ -1409,6 +1972,11 @@ class AutoProxyTask(TaskExecuteBase):
             if (self.run_book["Annihilation"] and self.run_book["Routine"])
             else self.cur_user_item.result
         )
+        # 本轮有干员达成养成目标时随统计报告告知用户（目标消失可查）
+        if self._cultivate_achievement_summary:
+            statistics["cultivate_achievement"] = "、".join(
+                self._cultivate_achievement_summary
+            )
 
         # 判断是否成功
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
@@ -1471,20 +2039,6 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_config.get("Data", "ProxyTimes") + 1,
             )
 
-            if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
-                await self.cur_user_config.set(
-                    "Data",
-                    "InfrastIndex",
-                    str(
-                        (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)
-                        % len(
-                            json.loads(
-                                self.cur_user_config.get("Data", "CustomInfrast")
-                            ).get("plans", [])
-                        )
-                    ),
-                )
-
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
             await Notify.push_plyer(
@@ -1496,6 +2050,8 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
+
+        logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

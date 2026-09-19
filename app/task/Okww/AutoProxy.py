@@ -52,7 +52,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import replace_dir, write_file
+from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -62,6 +62,7 @@ from .push_log import (
     okww_resolve,
 )
 from .tools import async_switch_account, push_notification
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -315,7 +316,11 @@ class AutoProxyTask(TaskExecuteBase):
             for rule in OKWW_PUSH_RULES:
                 self.log_collect.collect(*rule)
 
-        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
+        self.task_index = (
+            int(self.cur_user_config.get("Task", "TaskIndex"))
+            if self.cur_user_config.get("Info", "IfQuickConfig")
+            else OkwwUserConfig().get("Task", "TaskIndex")
+        )
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
@@ -326,10 +331,20 @@ class AutoProxyTask(TaskExecuteBase):
         return self.script_log_path
 
     def _apply_mas_overrides(self) -> None:
-        _update_json(
-            self.script_config_path / "Basic Options.json",
-            {"Exit App when Game Exits": True},
-        )
+        """快速配置覆盖段：把 MAS 面板值写入脚本 working 配置。
+
+        DailyTask.json 是快速配置子集，由 IfQuickConfig 守卫、与来源独立——
+        直控+开启同样写入，任务结束由 manager 既有快照恢复；直控+关闭零写入。
+        Basic Options.json 是全局运行选项、不属于快速配置子集，直控来源下
+        零写入（F13 修复：直控时不得污染用户自己维护的原生配置），只有
+        脚本/用户来源（MAS 配置整体落盘）才写它。
+        """
+
+        if _okww_config_mode(self.cur_user_config.get("Info", "Mode")) != "直控":
+            _update_json(
+                self.script_config_path / "Basic Options.json",
+                {"Exit App when Game Exits": True},
+            )
         if not self.cur_user_config.get("Info", "IfQuickConfig"):
             return
         _update_json(
@@ -366,13 +381,38 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
+            # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
+            # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（脚本态
+            # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
+            # 性归档，此处不重复
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                _okww_mas_config_dir(
+                    self.script_info.script_id,
+                    str(self.cur_user_uid),
+                    config_mode,
+                ),
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
+            )
             mas_config_dir = _okww_mas_config_dir(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
                 config_mode,
             )
-            replace_dir(mas_config_dir, self.script_config_path)
+            swap_in_dir(mas_config_dir, self.script_config_path)
+        else:
+            source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if source.is_dir():
+                swap_in_dir(source, self.script_config_path)
         self._apply_mas_overrides()
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.script_config_path,
+            script_id=self.script_info.script_id,
+        )
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 
     async def _push_dispatch_log(self, line: str) -> None:
@@ -483,6 +523,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
                 else:
                     logger.info("检测到已配置的鸣潮客户端进程正在运行，跳过重复启动")
+                    await self._note_launch_arguments_skipped()
                     return
 
             await self.game_manager.open_process(
@@ -499,6 +540,15 @@ class AutoProxyTask(TaskExecuteBase):
             name=_WUWA_CLIENT_PROCESS,
             exe=str(self.game_process_path),
         )
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def main_task(self):
         await self.prepare()

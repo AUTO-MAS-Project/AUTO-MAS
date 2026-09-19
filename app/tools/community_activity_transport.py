@@ -93,9 +93,17 @@ def _normalize_transport_reason(
         r"(?i)(?:token|cookie|authorization|cred|device[_-]?(?:id|fp))\s*[:=]",
         text,
     ):
-        text = "社区活动接口受到上游限制" if status == "limited" else "社区活动接口请求失败"
+        text = (
+            "社区活动接口受到上游限制"
+            if status == "limited"
+            else "社区活动接口请求失败"
+        )
     if not text:
-        text = "社区活动接口受到上游限制" if status == "limited" else "社区活动接口请求失败"
+        text = (
+            "社区活动接口受到上游限制"
+            if status == "limited"
+            else "社区活动接口请求失败"
+        )
     return text[:240]
 
 
@@ -360,8 +368,7 @@ def build_community_activity_requests(
             CommunityActivityRequest(
                 target=target,
                 source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/game_record/app/genshin/api/dailyNote"
+                    f"{MIYOUSHE_RECORD_BASE_URL}/game_record/app/genshin/api/dailyNote"
                 ),
                 method="GET",
                 params=role_params,
@@ -375,8 +382,7 @@ def build_community_activity_requests(
             CommunityActivityRequest(
                 target=target,
                 source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/game_record/genshin/aapi/widget/v2"
+                    f"{MIYOUSHE_RECORD_BASE_URL}/game_record/genshin/aapi/widget/v2"
                 ),
                 method="GET",
                 headers=_miyoushe_widget_headers(target, client_type="1"),
@@ -393,8 +399,7 @@ def build_community_activity_requests(
             CommunityActivityRequest(
                 target=target,
                 source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/game_record/app/hkrpg/aapi/widget"
+                    f"{MIYOUSHE_RECORD_BASE_URL}/game_record/app/hkrpg/aapi/widget"
                 ),
                 method="GET",
                 headers=_miyoushe_widget_headers(target, client_type="2"),
@@ -406,10 +411,7 @@ def build_community_activity_requests(
             ),
             CommunityActivityRequest(
                 target=target,
-                source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/game_record/app/hkrpg/api/note"
-                ),
+                source=(f"{MIYOUSHE_RECORD_BASE_URL}/game_record/app/hkrpg/api/note"),
                 method="GET",
                 params=role_params,
                 headers=_miyoushe_bbs_headers(
@@ -430,8 +432,7 @@ def build_community_activity_requests(
             CommunityActivityRequest(
                 target=target,
                 source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/event/game_record_zzz/api/zzz/note"
+                    f"{MIYOUSHE_RECORD_BASE_URL}/event/game_record_zzz/api/zzz/note"
                 ),
                 method="GET",
                 params=role_params,
@@ -445,8 +446,7 @@ def build_community_activity_requests(
             CommunityActivityRequest(
                 target=target,
                 source=(
-                    f"{MIYOUSHE_RECORD_BASE_URL}"
-                    "/event/game_record_zzz/api/zzz/widget"
+                    f"{MIYOUSHE_RECORD_BASE_URL}/event/game_record_zzz/api/zzz/widget"
                 ),
                 method="GET",
                 headers=_miyoushe_zzz_widget_headers(target),

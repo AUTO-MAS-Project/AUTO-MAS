@@ -1,8 +1,13 @@
 import asyncio
 import locale
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.utils.logger import get_logger
+
+logger = get_logger("进程管理")
 
 
 @dataclass
@@ -96,6 +101,9 @@ class ProcessRunner:
         其余（taskkill/schtasks/adb 等工具）保持默认 False，留在监督器的 Job 里。
         """
 
+        command = [str(program), *args]
+        started_at = time.monotonic()
+        logger.debug(f"启动子进程: {command}")
         process = await create_subprocess(
             program,
             *args,
@@ -115,7 +123,15 @@ class ProcessRunner:
             with suppress(ProcessLookupError):
                 process.kill()
             await process.wait()
+            logger.warning(
+                f"子进程执行超时，已结束进程: {command} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒 - 超时时间: {timeout}秒"
+            )
             raise
+
+        logger.info(
+            f"子进程已退出: {command} - 用时: {time.monotonic() - started_at:.3f}秒"
+        )
 
         return ProcessResult(
             stdout=decode_bytes(stdout),

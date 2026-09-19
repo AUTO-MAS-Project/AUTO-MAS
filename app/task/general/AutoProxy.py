@@ -41,6 +41,7 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import (
     LogMonitor,
     ProcessInfo,
@@ -54,6 +55,7 @@ from app.utils import (
     strptime,
 )
 from app.utils.constants import UTC4
+from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 
 from .tools import execute_script_task, push_notification
@@ -130,7 +132,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.use_mas_config = bool(self.cur_user_config.get("Info", "IfUseMasConfig"))
+        self.config_mode = read_config_source(self.cur_user_config)
+        # 是否写 MAS 侧配置：直控=不写，脚本/用户来源都写面板值。
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -278,6 +282,13 @@ class AutoProxyTask(TaskExecuteBase):
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
+    def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            logger.info(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -345,6 +356,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {self.game_process_name}"
                                 )
+                                self._note_launch_arguments_skipped()
                                 await asyncio.sleep(2)
                             else:
                                 logger.info(
@@ -363,6 +375,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
                                 )
+                                self._note_launch_arguments_skipped()
                                 await asyncio.sleep(
                                     self.script_config.get("Game", "WaitTime")
                                 )
@@ -624,17 +637,28 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("脚本直控配置：跳过写入脚本配置")
             return
 
+        # 下发前归档 MAS 配置到用户池（下发源，运行回写 update_config 会覆盖
+        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按用户
+        from .tools.backup_archive import archive_mas_runtime_backup
+
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            str(self.cur_user_uid),
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+        )
+
         # 导入配置文件
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if self.script_config_path.is_dir():
-                shutil.rmtree(self.script_config_path)
-            elif self.script_config_path.exists():
-                self.script_config_path.unlink()
-            shutil.copytree(
+            swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                 self.script_config_path,
-                dirs_exist_ok=True,
+            )
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(

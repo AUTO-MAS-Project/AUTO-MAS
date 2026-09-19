@@ -69,8 +69,7 @@ const activeTab = computed<CommunityTab>(() =>
 )
 
 const handleTabChange = (key: string | number) => {
-  const tab: CommunityTab =
-    key === 'activity' && activityEnabled.value ? 'activity' : 'sign'
+  const tab: CommunityTab = key === 'activity' && activityEnabled.value ? 'activity' : 'sign'
   void router.replace({
     path: '/gamesign',
     query: tab === 'activity' ? { tab: 'activity' } : {},
@@ -202,12 +201,7 @@ onUnmounted(() => {
       <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
-      <a-tabs
-        :active-key="activeTab"
-        type="card"
-        class="community-tabs"
-        @change="handleTabChange"
-      >
+      <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
         <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
           <TabGameSign
             v-if="editingConfig.GameSign"

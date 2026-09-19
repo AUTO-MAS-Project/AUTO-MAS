@@ -125,6 +125,30 @@ export class BetterGiService {
         });
     }
     /**
+     * 获取 BetterGI 可用键鼠脚本（录制）列表
+     * 返回 BetterGI 键鼠脚本（录制）候选。
+     *
+     * ``label`` 与 ``value`` 同为 {RootPath}/User/KeyMouseScript*.json 的文件名（即脚本名）。
+     * 供一条龙「添加配置组」弹窗的「录制」标签页作为候选（贴录制标签）选择。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiKeyMouseScriptsApiApiScriptsBettergiKeyMouseScriptsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/key-mouse-scripts',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 BetterGI 可用配置组列表
      * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
      *
@@ -342,8 +366,10 @@ export class BetterGiService {
      * 按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
      *
      * 步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
-     * 「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
-     * 一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+     * 「后名」解耦，改名不会丢设置。本接口只写 Plan（不改原生副本文件），但它是前端
+     * 队列行的启停开关：运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层，
+     * 且 AutoProxy 会把 Plan 中配过实例的战斗组整体从原生副本剔除——因此 enabled=false
+     * 的最终语义是「本次不跑」，而不是「退回原生一条龙跑」。
      *
      * 步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
      * 后端无步骤可写，刷新后回退。

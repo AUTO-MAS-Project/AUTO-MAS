@@ -57,8 +57,11 @@ from .project_path import normalize_project_path
 
 logger = get_logger("MFW 运行环境缓存")
 
-# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。
-CACHE_FORMAT_VERSION = 2
+# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。MAS 自己的准备规则变了也在
+# 这里递增——指纹只看项目文件，规则变了项目没动，旧缓存会一直命中。
+# 3：没有 requirements.txt 的 Python agent 开始在隔离 venv 里装 maafw（FOS 类项目），
+#    此前按旧规则备好的 venv 里没有 binding，必须重备一次。
+CACHE_FORMAT_VERSION = 3
 
 
 def _host_python_identity() -> dict[str, str]:
@@ -198,6 +201,16 @@ def store_prepared_environment(
             pass
 
 
+def has_prepared_environment(project_path: str | Path) -> bool:
+    """这个项目此前有没有准备过（不看指纹是否还匹配）。
+
+    只用来给界面分「首次准备完成」与「运行环境更新完成」两句话，所以缓存文件
+    在就算有过，坏了、过期了都不深究——那些交给 ``load_prepared_environment``。
+    """
+
+    return _cache_path(project_path).is_file()
+
+
 def discard_prepared_environment(project_path: str | Path) -> None:
     """丢掉缓存，让下次调用走完整准备。"""
 
@@ -210,6 +223,7 @@ def discard_prepared_environment(project_path: str | Path) -> None:
 __all__ = [
     "CACHE_FORMAT_VERSION",
     "discard_prepared_environment",
+    "has_prepared_environment",
     "load_prepared_environment",
     "store_prepared_environment",
 ]

@@ -35,6 +35,8 @@ from typing import Any, Mapping
 
 import httpx
 
+from app.utils.io import write_file
+
 from .types import (
     CultivateDataSet,
     DemandEntry,
@@ -87,6 +89,35 @@ _FIXED_SOURCE_STAGES: dict[str, str] = {
     "4001": "wk_melee_6",  # 龙门币   ← CE-6
 }
 
+# 芯片配方：一图流 composite 表不收芯片条目（实测 2026-09-15 线上表零条），
+# 但游戏内双芯片由「对应职业芯片组×2 + 芯片助剂×1」在加工站合成。本地补齐
+# 这 8 条边后：双芯片从"不可获取"变为"可合成"，需求自动折算到芯片组（PR
+# 芯片关可刷，开放日在 _PERMANENT_STAGES）。
+_CHIP_CATALYST_ITEM_ID = "32001"
+_CHIP_RECIPES: tuple[Recipe, ...] = tuple(
+    Recipe(
+        result_item_id=double_id,
+        ingredients={group_id: 2, _CHIP_CATALYST_ITEM_ID: 1},
+    )
+    for group_id, double_id in (
+        ("3212", "3213"),  # 先锋
+        ("3222", "3223"),  # 近卫
+        ("3232", "3233"),  # 重装
+        ("3242", "3243"),  # 狙击
+        ("3252", "3253"),  # 术师
+        ("3262", "3263"),  # 医疗
+        ("3272", "3273"),  # 辅助
+        ("3282", "3283"),  # 特种
+    )
+)
+
+# 凭证兑换：芯片助剂在凭证交易所以采购凭证×90 兑换（composite 表同样不收，
+# 本地补齐）。采购凭证是固定产出材料，选路层按 0 中性成本当可获取处理，
+# 于是助剂折算为"刷 AP-5 攒采购凭证"，理智不可估算；月度限购不在建模范围。
+_VOUCHER_RECIPES: tuple[Recipe, ...] = (
+    Recipe(result_item_id=_CHIP_CATALYST_ITEM_ID, ingredients={"4006": 90}),
+)
+
 # 实测 matrix 0 条直掉关且不在 MAA 排除表（2026-09-11）：模组凭证类属
 # "不可获取"，绝不进 PlanList，否则 MaxTimes=∞ 无限刷。龙门币（4001）与
 # 采购凭证（4006）不在其中——它们有确定的资源关产出（见 _FIXED_SOURCE_STAGES）。
@@ -98,6 +129,15 @@ _UNOBTAINABLE_ITEM_IDS = frozenset(
 # 数字"代码会被 StageManager 判为过期活动关拒绝），矩阵里的 RI 掉落数据
 # 对自动刷取无意义，数据层直接剔除。
 _EXCLUDED_STAGE_CODE_PREFIXES = ("RI-",)
+
+# 插曲/别传常驻（一图流 stageType=ACT_PERM，游戏内长期开放，end 是远期占位
+# 时间）不在 MAA 常驻关卡表内：StageManager.GetStageInfo 把不在表内、形如
+# "2字母+数字"的编号判为过期活动关，库存保持/养成计划随即整条跳过（日志记
+# "关卡未开放"）。这类关永远刷不到，会让材料缺口恒存在并持续抑制库存保持，
+# 故数据层直接剔除。stageType 缺失时按 stageId 的 _perm 后缀兜底（实测两侧
+# 158/158 完全等价）。
+_EXCLUDED_STAGE_TYPES = frozenset({"ACT_PERM"})
+_EXCLUDED_STAGE_ID_SUFFIXES = ("_perm",)
 
 
 class YituliuDataError(RuntimeError):
@@ -289,6 +329,18 @@ def parse_recipes(raw: Any) -> tuple[Recipe, ...]:
     )
 
 
+def _with_local_recipes(recipes: tuple[Recipe, ...]) -> tuple[Recipe, ...]:
+    """合并本地补充配方（一图流未收录的芯片链/凭证兑换）；表中已有同结果条目时以表为准。"""
+
+    existing = {recipe.result_item_id for recipe in recipes}
+    local = tuple(
+        recipe
+        for recipe in (*_CHIP_RECIPES, *_VOUCHER_RECIPES)
+        if recipe.result_item_id not in existing
+    )
+    return recipes + local
+
+
 def build_material_class(
     demands: Mapping[str, tuple[DemandEntry, ...]],
     drops: tuple[DropEntry, ...],
@@ -370,6 +422,28 @@ def apply_composite(
     return result
 
 
+def _excluded_stage_ids(stage_raw: Mapping[str, Any] | list) -> set[str]:
+    """MAA 无法导航的关卡 stageId 集（别传常驻；stageType 缺失时按后缀兜底）。"""
+
+    entries: Any = (
+        stage_raw
+        if isinstance(stage_raw, list)
+        else (stage_raw.get("data") or stage_raw.get("stages") or [])
+    )
+    excluded: set[str] = set()
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        stage_id = str(entry.get("stageId") or "")
+        if not stage_id:
+            continue
+        if entry.get("stageType") in _EXCLUDED_STAGE_TYPES or stage_id.endswith(
+            _EXCLUDED_STAGE_ID_SUFFIXES
+        ):
+            excluded.add(stage_id)
+    return excluded
+
+
 def normalize_dataset(
     demand_raw: Mapping[str, Any],
     matrix_raw: Mapping[str, Any] | list,
@@ -384,11 +458,13 @@ def normalize_dataset(
     demands = parse_demand_table(demand_raw)
     drops = parse_drop_matrix(matrix_raw)
     stages = parse_stage_info(stage_raw)
-    recipes = parse_recipes(recipe_raw)
+    recipes = _with_local_recipes(parse_recipes(recipe_raw))
+    excluded_stage_ids = _excluded_stage_ids(stage_raw)
     drops = tuple(
         drop
         for drop in drops
-        if not (
+        if drop.stage_id not in excluded_stage_ids
+        and not (
             drop.stage_id in stages
             and stages[drop.stage_id].stage_code.startswith(
                 _EXCLUDED_STAGE_CODE_PREFIXES
@@ -410,7 +486,7 @@ def normalize_dataset(
 
 
 def stage_candidates(
-    dataset: CultivateDataSet, now_ms: int | None = None
+    dataset: CultivateDataSet, now_ms: int | None = None, *, limit: int | None = 10
 ) -> dict[str, list[dict[str, Any]]]:
     """按物品聚合可刷关卡候选，按该材料的单件期望理智升序（库存保持选择器用）。
 
@@ -424,6 +500,9 @@ def stage_candidates(
 
     now_ms 提供时过滤时间窗已结束的活动关（编辑器里选了过期关会被
     MAA 直接跳过，没有意义）。
+
+    limit 截断排序去重后的候选（默认 10）：排名靠后的关单件理智全面
+    更差，下拉只留噪音；首项（自动填关结果）不受影响。传 None 取全量。
 
     资源关的固定产出材料（采购凭证 ← AP-5 等）没有概率掉落数据，按
     dataset.fixed_source_stages 直接给出唯一候选，保证选中物品后一定有
@@ -487,7 +566,7 @@ def stage_candidates(
                 continue
             seen.add(option["stage"])
             deduped.append(option)
-        candidates[item_id_key] = deduped
+        candidates[item_id_key] = deduped[:limit] if limit is not None else deduped
     return candidates
 
 
@@ -545,51 +624,64 @@ def dataset_to_json(dataset: CultivateDataSet) -> dict[str, Any]:
 
 
 def dataset_from_json(raw: Mapping[str, Any]) -> CultivateDataSet:
-    """快照 JSON → 契约数据集。"""
+    """快照 JSON → 契约数据集。
 
-    return CultivateDataSet(
-        demands={
-            char_id: tuple(
-                DemandEntry(
-                    kind=entry["kind"],
-                    target_id=entry["target_id"],
-                    level=entry["level"],
-                    items=entry["items"],
-                )
-                for entry in raw.get("demands", {}).get(char_id, [])
+    快照可能写于剔除规则生效之前，故加载时同样剔除 MAA 无法导航的别传常驻
+    关：stageType 不进快照，按 _perm 后缀判定（与 stageType 等价，见上方常量）。
+    配方合并本地补充（旧快照缺芯片链）后按当前规则**重算**material_class——
+    快照里存的是写入时代的分类结果，直接沿用会让新增配方/规则失效。
+    """
+
+    demands = {
+        char_id: tuple(
+            DemandEntry(
+                kind=entry["kind"],
+                target_id=entry["target_id"],
+                level=entry["level"],
+                items=entry["items"],
             )
-            for char_id in raw.get("demands", {})
-        },
-        drops=tuple(
-            DropEntry(
-                stage_id=drop["stage_id"],
-                item_id=drop["item_id"],
-                expected_per_run=drop["expected_per_run"],
-                start_ms=drop["start_ms"],
-                end_ms=drop["end_ms"],
-            )
-            for drop in raw.get("drops", [])
-        ),
-        stages={
-            meta["stage_id"]: StageMeta(
-                stage_id=meta["stage_id"],
-                stage_code=meta["stage_code"],
-                ap_cost=meta["ap_cost"],
-                open_weekdays=tuple(meta["open_weekdays"])
-                if meta["open_weekdays"] is not None
-                else None,
-                composite=meta.get("composite", 0.0),
-            )
-            for meta in raw.get("stages", [])
-        },
-        recipes=tuple(
+            for entry in raw.get("demands", {}).get(char_id, [])
+        )
+        for char_id in raw.get("demands", {})
+    }
+    drops = tuple(
+        DropEntry(
+            stage_id=drop["stage_id"],
+            item_id=drop["item_id"],
+            expected_per_run=drop["expected_per_run"],
+            start_ms=drop["start_ms"],
+            end_ms=drop["end_ms"],
+        )
+        for drop in raw.get("drops", [])
+        if not drop["stage_id"].endswith(_EXCLUDED_STAGE_ID_SUFFIXES)
+    )
+    stages = {
+        meta["stage_id"]: StageMeta(
+            stage_id=meta["stage_id"],
+            stage_code=meta["stage_code"],
+            ap_cost=meta["ap_cost"],
+            open_weekdays=tuple(meta["open_weekdays"])
+            if meta["open_weekdays"] is not None
+            else None,
+            composite=meta.get("composite", 0.0),
+        )
+        for meta in raw.get("stages", [])
+    }
+    recipes = _with_local_recipes(
+        tuple(
             Recipe(
                 result_item_id=recipe["result"],
                 ingredients=recipe["ingredients"],
             )
             for recipe in raw.get("recipes", [])
-        ),
-        material_class=dict(raw.get("material_class", {})),
+        )
+    )
+    return CultivateDataSet(
+        demands=demands,
+        drops=drops,
+        stages=stages,
+        recipes=recipes,
+        material_class=build_material_class(demands, drops, stages, recipes),
         fixed_source_stages=dict(raw.get("fixed_source_stages", {})),
         item_value=dict(raw.get("item_value", {})),
         data_version=raw.get("data_version", ""),
@@ -632,6 +724,163 @@ async def download_dataset(
     )
 
 
+def _max_cost_level(costs: Any, *, start: int) -> int:
+    """消耗档位列表里"非空消耗的最高档"：可达档位上限（决策 40）。
+
+    与 parse_demand_table 同判据（非空消耗才成档），保证选择器给出的档位
+    一定能在需求层展开；全空/字段缺失返回 0（该维度无可达档位）。
+    """
+
+    if not isinstance(costs, list):
+        return 0
+    reachable = 0
+    for level, cost in enumerate(costs, start=start):
+        items = _positive_items(
+            {
+                item.get("id"): item.get("count")
+                for item in cost or []
+                if isinstance(item, dict)
+            }
+            if isinstance(cost, list)
+            else cost
+        )
+        if items:
+            reachable = max(reachable, level)
+    return reachable
+
+
+def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """解析干员选择器目录：id/名称/稀有度/职业 + 技能/模组名称（决策 11/38）。
+
+    只取展示字段，不进内核契约（CultivateDataSet 保持中性领域词汇）；
+    技能/模组名称供目标编辑行展示（一图流原表自带，R4 起随目录透传）；
+    排序为稀有度降序、名称升序。
+
+    同时给出各维度可达档位上限（决策 40）：``maxElite`` 为该干员表中非空
+    消耗的最高精英化档（1/2/3★ 与上游缺数据者恒 0，另用 ``dataMissing``
+    区分"本就没有精英化"与"上游数据缺失"）；``skills``/``modules`` 每个选项
+    带 ``maxLevel``，无可达档位的项不进入目录——选择器不给出刷不到的档位。
+    """
+
+    catalog: list[dict[str, Any]] = []
+    for char_id, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not char_id or not isinstance(name, str) or not name:
+            continue
+        rarity = entry.get("rarity")
+        rarity = rarity if isinstance(rarity, int) else 0
+        profession = entry.get("profession")
+        max_elite = _max_cost_level(entry.get("elite"), start=0)
+        skills: list[dict[str, Any]] = []
+        for skill in entry.get("skills") or []:
+            if (
+                not isinstance(skill, dict)
+                or not skill.get("skillId")
+                or not skill.get("skillName")
+            ):
+                continue
+            max_level = _max_cost_level(skill.get("skillLevelUpCost"), start=1)
+            if max_level <= 0:
+                continue
+            skills.append(
+                {
+                    "value": str(skill["skillId"]),
+                    "label": str(skill["skillName"]),
+                    "maxLevel": max_level,
+                }
+            )
+        modules: list[dict[str, Any]] = []
+        for equip in entry.get("equip") or []:
+            if (
+                not isinstance(equip, dict)
+                or not equip.get("uniEquipId")
+                or not equip.get("uniEquipName")
+            ):
+                continue
+            max_level = _max_cost_level(equip.get("itemCost"), start=1)
+            if max_level <= 0:
+                continue
+            modules.append(
+                {
+                    "value": str(equip["uniEquipId"]),
+                    "label": (
+                        f"{equip['uniEquipName']}（{equip['typeName2']}）"
+                        if equip.get("typeName2")
+                        else str(equip["uniEquipName"])
+                    ),
+                    "maxLevel": max_level,
+                }
+            )
+        catalog.append(
+            {
+                "value": char_id,
+                "label": name,
+                "rarity": rarity,
+                "profession": profession if isinstance(profession, str) else "",
+                "maxElite": max_elite,
+                "dataMissing": max_elite == 0 and rarity >= 4,
+                "skills": skills,
+                "modules": modules,
+            }
+        )
+    catalog.sort(key=lambda item: (-item["rarity"], item["label"]))
+    return catalog
+
+
+async def load_operator_catalog(
+    cache_dir: Path,
+    proxy: httpx.Proxy | str | None = None,
+    *,
+    timeout: float = 30.0,
+) -> list[dict[str, Any]]:
+    """加载干员选择器目录：快照直读，缺失则拉取需求表并并回快照。
+
+    目录存在快照的 ``operators`` 键，与数据集共用保鲜机制；数据集刷新
+    （write_snapshot 重写快照）会丢弃该键，下次调用自动重拉自愈。拉取
+    失败抛 YituliuDataError，由调用方兜底。
+    """
+
+    snapshot = read_snapshot(cache_dir)
+    operators = snapshot.get("operators") if isinstance(snapshot, dict) else None
+    if (
+        isinstance(operators, list)
+        and operators
+        and isinstance(operators[0], dict)
+        and "skills" in operators[0]
+        and "maxElite" in operators[0]
+    ):
+        return operators
+    # 旧版目录条目无技能/模组名称（R4 起）或无可达档位上限（决策 40 起），
+    # 视为过期走重拉自愈——缺 maxElite 会让选择器整体禁用，不能靠 schema
+    # 默认值兜底
+
+    try:
+        async with httpx.AsyncClient(
+            proxy=proxy, timeout=timeout, follow_redirects=True
+        ) as client:
+            response = await client.get(_DEMAND_URL)
+            response.raise_for_status()
+            raw = response.json()
+    except Exception as e:
+        raise YituliuDataError(f"干员目录拉取失败: {e}") from e
+    if not isinstance(raw, Mapping):
+        raise YituliuDataError("干员目录数据格式异常（根不是对象）")
+
+    catalog = parse_operator_catalog(raw)
+    payload = snapshot if isinstance(snapshot, dict) else {}
+    payload["operators"] = catalog
+    payload.setdefault("saved_at", time.time())
+    path = snapshot_path(cache_dir)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_file(path, payload)
+    except OSError:
+        pass  # 目录只是缓存，写失败不影响本次返回
+    return catalog
+
+
 def snapshot_path(cache_dir: Path) -> Path:
     """快照文件路径（版本化目录由调用方决定，本模块只管单个文件）。"""
 
@@ -660,7 +909,7 @@ def write_snapshot(cache_dir: Path, dataset: CultivateDataSet) -> None:
             "saved_at": time.time(),
             "dataset": dataset_to_json(dataset),
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        write_file(path, payload)
     except OSError:
         pass
 

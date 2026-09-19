@@ -21,7 +21,6 @@
 
 
 import asyncio
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -30,17 +29,29 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import M9AConfig, M9AUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
 from app.task.emulator_core import close_emulator
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import read_file, write_file
+from app.utils.io import (
+    clear_native_config_snapshot,
+    dir_fingerprint,
+    read_file,
+    recover_native_config,
+    replace_dir,
+    swap_in_dir,
+    write_file,
+    write_native_config_snapshot,
+)
 
 from .AutoProxy import AutoProxyTask
 from .task_loader import M9ATaskLoader
 from .tools import push_notification, push_version_update
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("M9A 调度器")
 
@@ -50,7 +61,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {"AutoProxy": AutoProxyTask}
 class M9AManager(TaskExecuteBase):
     """M9A 调度器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -63,6 +79,7 @@ class M9AManager(TaskExecuteBase):
         self.auto_update_fix_enabled = False
         self._virtual_user_old_version = None
         self._virtual_user_new_version = None
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验 M9A 配置是否可用"""
@@ -149,6 +166,22 @@ class M9AManager(TaskExecuteBase):
         except Exception as e:
             logger.warning(f"读写 M9A config.json 失败，跳过静默模式配置: {e}")
 
+    def _uses_direct_control(self) -> bool:
+        """本次运行的用户列表里是否存在直控来源的用户。
+
+        直控用户的配置来自 M9A 安装目录的原生配置，因此本次运行前不得清理
+        instances 目录、也不得改写 M9A 原生 config.json（自动更新/静默模式）。
+        只统计真正参与本次运行的用户（启用、剩余天数非 0、命中目标用户）。
+        """
+
+        return any(
+            read_config_source(config) == CONFIG_SOURCE_DIRECT
+            for uid, config in self.user_config.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
+        )
+
     async def prepare(self):
         """运行前准备"""
 
@@ -167,30 +200,32 @@ class M9AManager(TaskExecuteBase):
         )
 
         # 初始化模拟器管理器
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
-        # 备份原始配置并清空 instances 目录（仅保留 default.json）
-        shutil.rmtree(self.temp_path, ignore_errors=True)
-        self.temp_path.mkdir(parents=True, exist_ok=True)
+        # 先处置上次崩溃残留的快照, 再备份原始配置（直控时不清 instances: 原生配置
+        # 是直控的事实源, 删了用户配置就没了）
+        self._recover_previous_run()
+        direct_control = self._uses_direct_control()
         if self.m9a_config_path.exists():
-            shutil.copytree(self.m9a_config_path, self.temp_path, dirs_exist_ok=True)
+            self.had_original_script_config = True
+            replace_dir(self.m9a_config_path, self.temp_path)
+            write_native_config_snapshot(
+                self.temp_path,
+                script_id=self.script_info.script_id,
+                original_exists=True,
+                baseline=dir_fingerprint(self.temp_path),
+            )
 
-            instances_dir = self.m9a_config_path / "instances"
-            if instances_dir.exists():
-                for json_file in instances_dir.glob("*.json"):
-                    # default.json 是 AutoProxy.build_config 的配置模板：把用户在 M9A
-                    # 里设的实例级选项带进本次运行。连它一起删，每轮第一个用户必然落到
-                    # 「无法读取配置模板，使用最小默认配置」，后续用户读到的还是 MAS 自己
-                    # 刚写的那份——用户的实例配置从来没生效过。
-                    if json_file.name.casefold() == "default.json":
-                        continue
-                    try:
-                        json_file.unlink()
-                        logger.info(f"已删除原始配置文件：{json_file}")
-                    except Exception as e:
-                        logger.warning(f"删除原始配置文件 {json_file} 失败：{e}")
+            # 任务级一次性归档 M9A 原生配置（项目级池，指纹去重，失败不阻断
+            # 任务）：此刻 config/ 仍是任务动手前的完整现场（replace_dir 是
+            # 复制不动源目录），必须在随后的实例注入前归档
+            try:
+                archive_native_backup(self.m9a_config_path)
+            except Exception:
+                logger.opt(exception=True).warning("M9A 运行前原生配置归档失败，已跳过（不阻断任务）")
 
         # 构建用户列表
         self.script_info.user_list = [
@@ -207,8 +242,10 @@ class M9AManager(TaskExecuteBase):
         m9a_exe = Path(self.script_config.get("Info", "Path")) / "M9A.exe"
         await System.kill_process(m9a_exe)
 
-        await self._set_m9a_auto_update(False)
-        await self._set_m9a_silent_mode()
+        # 直控: MAS 不改写 M9A 原生 config.json（自动更新/静默模式开关）
+        if not direct_control:
+            await self._set_m9a_auto_update(False)
+            await self._set_m9a_silent_mode()
 
         self.auto_update_fix_enabled = self.script_config.get(
             "Run", "IfAutoUpdateAfterQueue"
@@ -217,6 +254,21 @@ class M9AManager(TaskExecuteBase):
             logger.success("已开启队列结束后自动更新，将在批量任务后统一处理")
         else:
             logger.info("队列结束后自动更新未开启，跳过自动更新处理")
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.m9a_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 M9A 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 M9A 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     async def main_task(self):
 
@@ -379,9 +431,8 @@ class M9AManager(TaskExecuteBase):
             await self._notify_version_update_result()
 
         if (self.temp_path).exists():
-            shutil.rmtree(self.m9a_config_path, ignore_errors=True)
-            shutil.copytree(self.temp_path, self.m9a_config_path, dirs_exist_ok=True)
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+            swap_in_dir(self.temp_path, self.m9a_config_path)
+        clear_native_config_snapshot(self.temp_path)
 
         self.script_info.status = "完成"
 

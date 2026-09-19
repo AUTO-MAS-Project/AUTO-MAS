@@ -56,6 +56,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_native_backup
 from .tools.external_locks import (
     HSRExternalPathLockLease,
     acquire_external_path_locks,
@@ -703,6 +704,17 @@ class HSRManager(TaskExecuteBase):
             await self._rollback_pending_updates()
             self._backup_external_configs()
             self._append_log("HSR 外部脚本配置已备份")
+            # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
+            # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
+            # 失败不阻断任务）
+            m7a_root = resolve_script_path(self.script_config, "M7A")
+            try:
+                archive_native_backup(
+                    Path(m7a_root) if m7a_root else None,
+                    get_sra_app_data_dir(),
+                )
+            except Exception:
+                logger.opt(exception=True).warning("HSR 运行前原生配置归档失败，已跳过（不阻断任务）")
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()
@@ -1057,7 +1069,11 @@ class HSRManager(TaskExecuteBase):
         try:
             # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
             # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
-            if is_game_management_enabled(self.script_config):
+            # 配置检查未通过或 prepare() 未走完时 script_config 仍为 None，
+            # 与上面 _close_game_if_needed 一样跳过，不把它记成收尾异常。
+            if isinstance(self.script_config, HSRConfig) and is_game_management_enabled(
+                self.script_config
+            ):
                 restore_game_resolution_if_needed(
                     self._runtime,
                     self._append_log,

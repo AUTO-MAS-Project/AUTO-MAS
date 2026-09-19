@@ -38,10 +38,14 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
     append_push_log,
     find_pids_by_name,
     push_dispatch_log,
+    quick_config_takeover,
+    resolve_config_source,
     split_args,
+    user_uses_quick_config,
 )
 from app.utils import (
     ProcessInfo,
@@ -51,7 +55,7 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import UTC4
-from app.utils.io import read_file, replace_dir
+from app.utils.io import mark_native_config_injected, read_file, swap_in_dir
 from app.utils.LogMonitor import LogMonitor
 from app.utils.LogPatternExtractor import (
     SIGN_MODE_SPLIT,
@@ -62,12 +66,17 @@ from app.utils.LogPatternExtractor import (
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
     LEGACY_DAILY_TASK_FILE,
-    ensure_oknte_daily_routine_configs,
+    get_all_config_info,
 )
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
 from .tools.account_switch import async_switch_account
-from .tools.backup_archive import archive_mas_runtime_backup
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    ensure_quick_config_dir,
+    mas_config_dir,
+    quick_config_dir,
+)
 from .tools.launcher_start import async_start_game_via_launcher
 
 logger = get_logger("OK-NTE 自动代理")
@@ -259,6 +268,10 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkNteUserConfig = self.user_config[self.cur_user_uid]
+        # 来源负责基线，面板独立保存，只在开启时覆盖。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
@@ -290,6 +303,11 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "RemainedDay") == 0:
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
+
+        # 直控不做任何下发，脚本原生配置就是本次运行的全部配置来源：缺失时
+        # 必须提前报错，否则会静默启动一个未配置的 ok-nte（对齐 Okww）。
+        if self.direct_control and not self._native_config_ready():
+            return "未找到 OK-NTE 脚本原有配置，请先在 OK-NTE 中保存设置"
 
         if (
             self.script_config.get("Game", "Enabled")
@@ -427,18 +445,32 @@ class AutoProxyTask(TaskExecuteBase):
             Path.cwd() / "data" / self.script_info.script_id / "Default" / "ConfigFile"
         )
 
+    def _native_config_ready(self) -> bool:
+        """直控运行前检查：脚本原生配置是否存在（Folder=目录非空 / File=文件存在）。
+
+        从 ScriptConfig 现场解析 ConfigPath：本方法在 check() 阶段调用，早于
+        prepare()，此时 self.script_config_path 尚未赋值。
+        """
+
+        target = Path(self.script_config.get("Script", "ConfigPath"))
+        if self.script_config.get("Script", "ConfigPathMode") == "File":
+            return target.is_file()
+        with suppress(OSError):
+            return target.is_dir() and any(target.iterdir())
+        return False
+
     def _oknte_mas_config_dir(self) -> Path:
-        return (
-            Path.cwd()
-            / "data"
-            / self.script_info.script_id
-            / str(self.cur_user_uid)
-            / "ConfigFile"
+        return mas_config_dir(
+            self.script_info.script_id,
+            "Default"
+            if self.config_mode == CONFIG_SOURCE_SCRIPT
+            else str(self.cur_user_uid),
         )
 
     def _oknte_source_config_dir(self, mas_config_dir: Path) -> Path | None:
         candidates = [
             self._oknte_legacy_mas_config_dir(),
+            Path.cwd() / "data" / self.script_info.script_id / "Temp",
             self.script_config_path,
             self.script_root_path / "data" / "apps" / "ok-nte" / "working" / "configs",
             self.script_root_path / "configs",
@@ -455,18 +487,18 @@ class AutoProxyTask(TaskExecuteBase):
     def _ensure_oknte_mas_config_dir(self) -> Path:
         mas_config_dir = self._oknte_mas_config_dir()
         if mas_config_dir.exists() and any(mas_config_dir.iterdir()):
-            ensure_oknte_daily_routine_configs(mas_config_dir)
             return mas_config_dir
 
         mas_config_dir.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "File":
-            if not self.script_config_path.is_file():
+            native = Path.cwd() / f"data/{self.script_info.script_id}/Temp/config.temp"
+            source = native if native.is_file() else self.script_config_path
+            if not source.is_file():
                 raise FileNotFoundError("OK-NTE 配置文件未初始化，请先设置有效配置路径")
             shutil.copy(
-                self.script_config_path,
+                source,
                 mas_config_dir / self.script_config_path.name,
             )
-            ensure_oknte_daily_routine_configs(mas_config_dir)
             return mas_config_dir
 
         source_config_dir = self._oknte_source_config_dir(mas_config_dir)
@@ -474,7 +506,6 @@ class AutoProxyTask(TaskExecuteBase):
             raise FileNotFoundError("OK-NTE 配置目录未初始化，请先设置有效配置路径")
 
         shutil.copytree(source_config_dir, mas_config_dir, dirs_exist_ok=True)
-        ensure_oknte_daily_routine_configs(mas_config_dir)
         return mas_config_dir
 
     async def set_oknte(self) -> None:
@@ -483,27 +514,77 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
 
-        # 下发前归档 MAS 用户配置（下发源，运行回写 update_config 会覆盖它；
-        # 指纹去重，失败不阻断运行）。native 池不在此处归档：原生配置跨用户
-        # 共享，按用户/重试归档会把上一轮下发的 MAS 配置误当原生内容挤进
-        # 保留池，由 manager.prepare 在任务级一次性完成
-        archive_mas_runtime_backup(self.script_info.script_id, str(self.cur_user_uid))
-
-        mas_config_dir = self._ensure_oknte_mas_config_dir()
-        self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            replace_dir(mas_config_dir, self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            shutil.copy(
-                mas_config_dir / self.script_config_path.name,
+        temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
+        folder_mode = self.script_config.get("Script", "ConfigPathMode") == "Folder"
+        if not self.direct_control or user_uses_quick_config(self.cur_user_config):
+            archive_mas_runtime_backup(
+                self.script_info.script_id, str(self.cur_user_uid)
+            )
+        # 每用户先还原任务级原生基线，避免直控沿用上一用户的注入值。
+        if self.direct_control:
+            if folder_mode and temp.is_dir():
+                swap_in_dir(temp, self.script_config_path)
+            elif not folder_mode and (temp / "config.temp").is_file():
+                shutil.copyfile(temp / "config.temp", self.script_config_path)
+        else:
+            source = self._ensure_oknte_mas_config_dir()
+            if folder_mode:
+                swap_in_dir(source, self.script_config_path)
+            else:
+                shutil.copyfile(
+                    source / self.script_config_path.name, self.script_config_path
+                )
+        quick_config_takeover(self.cur_user_config, self._apply_oknte_quick_config)
+        target_dir = (
+            self.script_config_path if folder_mode else self.script_config_path.parent
+        )
+        self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
+        if folder_mode:
+            mark_native_config_injected(
+                temp,
                 self.script_config_path,
+                script_id=self.script_info.script_id,
             )
         logger.info("OK-NTE 运行参数配置完成: 自动代理")
+
+    def _apply_oknte_quick_config(self) -> None:
+        """覆盖编辑器实际保存的原生文件，不解析或重新建模任务内容。"""
+
+        source = ensure_quick_config_dir(
+            self.script_info.script_id, str(self.cur_user_uid), self.script_config
+        )
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            for info in get_all_config_info():
+                src = source / info["filename"]
+                if not src.is_file():
+                    continue
+                target = self.script_config_path / src.name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_suffix(".json.tmp")
+                shutil.copyfile(src, tmp)
+                tmp.replace(target)
+        else:
+            src = source / self.script_config_path.name
+            tmp = self.script_config_path.with_suffix(".tmp")
+            shutil.copyfile(src, tmp)
+            tmp.replace(self.script_config_path)
+        logger.info("OK-NTE 快速配置已应用")
 
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
 
-        mas_config_dir = self._oknte_mas_config_dir()
+        # 直控：原生配置不属于 MAS，不得把它抄回 MAS 侧 ConfigFile——否则
+        # 下一次切回「用户」来源会把这个直控用户的原生配置当成他的独立配置。
+        quick = user_uses_quick_config(self.cur_user_config)
+        if self.direct_control and not quick:
+            logger.info("OK-NTE 直控配置：跳过配置回写 MAS")
+            return
+
+        mas_config_dir = (
+            quick_config_dir(self.script_info.script_id, str(self.cur_user_uid))
+            if quick
+            else self._oknte_mas_config_dir()
+        )
         mas_config_dir.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             shutil.copytree(self.script_config_path, mas_config_dir, dirs_exist_ok=True)
@@ -575,6 +656,7 @@ class AutoProxyTask(TaskExecuteBase):
             if is_process_running(_NTE_CLIENT_PROCESS):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                await self._note_launch_arguments_skipped()
                 return
 
             await self._push_dispatch_log("未检测到运行中的客户端，正在拉起启动器...")
@@ -617,6 +699,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"检测到异环客户端进程已在运行，跳过启动: {game_process_name}"
                 )
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                await self._note_launch_arguments_skipped()
                 return
             await self.game_manager.open_protocol(
                 game_url,
@@ -625,6 +708,15 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(2)
             await self._push_dispatch_log("游戏启动指令已发送")
             return
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def handle_pre_oknte_error(
         self, error_message: str, e: Exception | None = None

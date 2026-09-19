@@ -6,8 +6,8 @@
 //
 // ⚠️ 待实机复核（技术路径文档 #4/#5/#7）：
 //   - settings 注入方式（全局 `settings` 还是脚本参数）、脚本入口约定；
-//   - 地脉花 useAdventurerHandbook 语义反转（AutoPlan 记录需取反）；
-//   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算；
+//   - ~~地脉花 useAdventurerHandbook 语义反转~~（2026-09-15 实机确认同名同义，已改直通）；
+//   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算（已落地，见 dispatchCombat 自动秘境分支）；
 //   - 字段名以目标版本 bettergi.d.ts 复核（本文件依据 bettergi-scripts-list 0.64 附近 d.ts）。
 
 const COMBAT_STEPS = ["自动秘境", "自动地脉花", "自动幽境危战", "自动首领讨伐"];
@@ -19,6 +19,36 @@ function baseStepName(name) {
   if (COMBAT_STEPS.includes(name) || DAILY_STEPS.includes(name)) return name;
   const idx = name.indexOf("-");
   return idx > 0 ? name.slice(0, idx) : name;
+}
+
+// 战斗步骤的必填设置项：缺失时不进 BGI，直接跳过该步并打 MAS_STEP_MISSING_CONFIG。
+// 两层目的：
+//   1) 不让「配置缺失」被降级成 BGI 内部的静默跳过（原生分支只 LogError 后 return），
+//      也避免落到 AutoBossParam 无参构造的 SetDefault 兜底上 —— 那会读 BGI 全局
+//      autoBossConfig.bossName，使右栏显示「未选择首领」时静默讨伐一个 BGI 旧配置里的首领；
+//   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_execution_layer）。
+// 键为归一化基名（baseStepName），值为 [settings 键, 用户可读缺失原因] 数组。
+// 秘境/地脉花的目标值要按「当天行 → 默认行 → 步骤级」解析，故不进本表，见下面单独判。
+const REQUIRED_STEP_FIELDS = {
+  自动首领讨伐: [["bossName", "未选择首领"]],
+};
+
+// 返回该步骤缺失的必填项（用户可读原因数组；空数组表示齐全或该步无需校验）。
+// 本函数只在 shouldRunToday 通过后调用，所以秘境/地脉花解析为空即「今天要跑但没选值」：
+// 先于进 BGI 报出原因，不再等 BGI 自己抛内部异常（2026-09-19 实机：地脉花报
+// 「地脉花类型未选择」被算成运行失败，秘境则是静默 SKIP_WEEKDAY 看不出原因）。
+function missingRequiredFields(step) {
+  const base = baseStepName(step.name);
+  const s = step.settings || {};
+  const missing = [];
+  for (const [key, reason] of REQUIRED_STEP_FIELDS[base] || []) {
+    if (!s[key]) missing.push(reason);
+  }
+  if (base === "自动秘境" && !domainNameOf(step)) missing.push("未选择秘境");
+  if (base === "自动地脉花" && weeklyLeyLineRunsToday(step) && !leyLineTypeOf(step)) {
+    missing.push("未选择地脉花类型");
+  }
+  return missing;
 }
 
 // 日志：优先 BGI 注入的 log（写入 BGI 日志文件，供 MAS 监控解析 MAS_STEP_* 标记），
@@ -53,36 +83,91 @@ function setProp(obj, name, value) {
 // new Date().getDay() 的顺序：0=周日..6=周六
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-// 星期执行标记：地脉花的「执行」勾选由 MAS 托管在 weeklyLeyLine[day].run；
-// 其余任务读扁平的 run{Day}。全部未勾选视为不限制（每天执行）。
-function weekdayRunFlags(step) {
-  const s = step.settings || {};
-  const weekly = s.weeklyLeyLine;
-  if (weekly && typeof weekly === "object") {
-    const flags = DAY_NAMES.map((d) => !!(weekly[d] && weekly[d].run === true));
-    if (flags.some(Boolean)) return flags;
-  }
-  return DAY_NAMES.map((d) => s["run" + d] === true);
+// 本次运行所属的星期键：在 main() 开头取一次，全程复用。
+// 不逐次取 now：跨零点的一次运行里 gate（23:59:59）与 dispatch（00:00:00）会读到不同的
+// 行，出现「gate 说跑、dispatch 跳过」这类错位（2026-09-19 地脉花口径问题的翻版）。
+// 周表按「本次启动日」解析，也与通知里「这次运行」的语义一致。
+let runDayKey = DAY_NAMES[new Date().getDay()];
+
+// settings 经 JSON 注入/回读，布尔可能以字符串形态出现（见下面 specifyResinUse 的教训：
+// "false" 会被 !! 转成 true，导致「模式=耗尽 / 参数=指定次数」自相矛盾）。所有模式与
+// 星期开关统一经此规范化，避免 gate / 必填校验 / 执行分支各判一套。
+// 返回 true/false；非布尔形态返回 null（= 未设置，默认值由调用方决定）。
+function toBool(value) {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return null;
+}
+
+// 秘境是否走「每周秘境」表：仅显式 false 才走每日（与右栏「开启每日秘境」默认开启一致）。
+function domainWeeklyEnabled(step) {
+  return toBool((step.settings || {}).weeklyDomainEnabled) !== false;
+}
+
+// 地脉花是否走「每日地脉花」：仅显式 false 才走每周（同上，右栏默认开启每日）。
+function leyLineDailyEnabled(step) {
+  return toBool((step.settings || {}).leyLineDailyEnabled) !== false;
 }
 
 // 星期编排：仅当勾选的星期包含今天才执行；全部未勾选视为不限制（每天执行）。
 // 由 MAS 自行管理，不依赖被过滤掉的原生一条龙「每周刷取」配置表。
 function shouldRunToday(step) {
-  const s = step.settings || {};
+  const base = baseStepName(step.name);
   // 秘境特殊处理：每周秘境开启时按当天的「执行」开关（开启才执行）；全关=不执行。
   // 每日秘境（关闭每周）不受星期限制，每天都跑。
-  if (baseStepName(step.name) === "自动秘境") {
-    const useWeekly = s.weeklyDomainEnabled !== false;
-    if (useWeekly) {
-      const wd = s.weeklyDomain || {};
-      const wdName = DAY_NAMES[new Date().getDay()];
-      return !!(wd[wdName] && wd[wdName].run === true);
-    }
-    return true;
+  if (base === "自动秘境") {
+    if (!domainWeeklyEnabled(step)) return true;
+    const row = ((step.settings || {}).weeklyDomain || {})[runDayKey] || {};
+    return toBool(row.run) === true;
   }
-  const flags = weekdayRunFlags(step);
-  if (!flags.some(Boolean)) return true;
-  return flags[new Date().getDay()];
+  // 地脉花与秘境同口径：每周地脉花按「当天行勾了执行才跑」，一行都没勾＝本周不跑。
+  // 不能落到「全部未勾选视为不限制」的通用回退，否则 gate 说今天要跑、dispatchCombat
+  // 却跳过，而必填校验夹在两者中间（2026-09-19 PR #890 review 指出的错位）。
+  if (base === "自动地脉花") return weeklyLeyLineRunsToday(step);
+  // 幽境危战 / 首领讨伐：右栏没有星期表（见 one_dragon_plan.BUILTIN_STEP_SETTING_KEYS，
+  // 只有秘境/地脉花有 weekly 嵌套结构），一律每天执行。此处曾有一层扁平 run{Day} 回退，
+  // 全仓无生产者，且「一行都没勾＝不限制」的语义正是这次地脉花错位的来源，已删除。
+  return true;
+}
+
+// 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
+// 抽出来供必填校验复用，避免「校验用一套、执行用另一套」而误报或漏报。
+function domainNameOf(step) {
+  const s = step.settings || {};
+  const wd = s.weeklyDomain || {};
+  const todayRow = (domainWeeklyEnabled(step) && wd[runDayKey]) || {};
+  return todayRow.domainName || (wd.default || {}).domainName || s.domainName;
+}
+
+// 地脉花今天是否会真的跑：与 dispatchCombat 的跳过判定同口径——每日模式直接跑；每周模式
+// 只有当天行勾了「执行」才跑（一行都没勾＝本周不跑）。gate（shouldRunToday）与必填校验都
+// 走它，保证「今天跑不跑」只有一处结论。
+function weeklyLeyLineRunsToday(step) {
+  if (leyLineDailyEnabled(step)) return true;
+  const wd = (step.settings || {}).weeklyLeyLine || {};
+  return toBool((wd[runDayKey] || {}).run) === true;
+}
+
+// 地脉花类型：开启每日地脉花时取步骤级；每周地脉花按「当天行 → 默认行 → 步骤级」兜底。
+// BGI 的 AutoLeyLineOutcropTask.ValidateSettings 缺类型会直接抛「地脉花类型未选择」，
+// 故这里与执行分支共用同一取值，缺失时由必填校验先拦下。
+function leyLineTypeOf(step) {
+  const s = step.settings || {};
+  if (leyLineDailyEnabled(step)) return s.leyLineOutcropType;
+  const wd = s.weeklyLeyLine || {};
+  const row = wd[runDayKey] || {};
+  const def = wd.default || {};
+  return row.type != null ? row.type : def.type != null ? def.type : s.leyLineOutcropType;
+}
+
+// 执行层内部跳过原因（空串 = 本次真的要跑）：与 gate、必填校验共用上面同一批取值函数，
+// 保证「跑不跑」只有一处结论。主循环据此在打 MAS_STEP_BEGIN **之前** 打
+// MAS_STEP_SKIP_WEEKDAY —— 先 BEGIN 再跳过会让 one_dragon_report 把这步当「未完成」记成失败。
+function combatSkipReason(step) {
+  const base = baseStepName(step.name);
+  if (base === "自动秘境" && !domainNameOf(step)) return "无对应秘境";
+  if (base === "自动地脉花" && !weeklyLeyLineRunsToday(step)) return "当天未勾选执行";
+  return "";
 }
 
 // 树脂耗尽是用户开启「树脂耗尽模式」后的预期停止条件：BGI 抛
@@ -93,6 +178,10 @@ function isResinExhausted(msg) {
   return s.indexOf("树脂耗尽") >= 0 || s.indexOf("树脂不足") >= 0;
 }
 
+// 执行单个战斗步。
+// 返回 "skipped" = 本次本就不跑（无对应目标 / 当天未勾选执行）；其余情况返回 undefined（已执行）。
+// 主循环调用前已用 combatSkipReason 拦过一遍（同源判定），这里的守卫只是兜底——
+// 但即便走到也必须回 "skipped"，不能静默 return，否则会被打成 MAS_STEP_DONE（假成功）。
 async function dispatchCombat(step) {
   const s = step.settings || {};
   switch (baseStepName(step.name)) {
@@ -100,13 +189,14 @@ async function dispatchCombat(step) {
       // 每周配置由 MAS 托管：按今天星期从 settings.weeklyDomain 取对应行（回退 default）。
       // 关闭「每周秘境」时只走每日行；奖励档位同理，每周走 default.reward（每周表默认行），
       // 走每日则用 sundaySelectedValue（每日行），两者不可混用。
-      const wdName = DAY_NAMES[new Date().getDay()];
       const wd = s.weeklyDomain || {};
       const defaultRow = wd.default || {};
-      const useWeekly = s.weeklyDomainEnabled !== false;
-      const todayRow = (useWeekly && wd[wdName]) || {};
-      const partyName = todayRow.partyName || defaultRow.partyName || s.partyName;
-      const domainName = todayRow.domainName || defaultRow.domainName || s.domainName;
+      const useWeekly = domainWeeklyEnabled(step);
+      const todayRow = (useWeekly && wd[runDayKey]) || {};
+      // 队伍配置表「战斗场景」选队结果优先级最高（压过每周行与步骤级），见后端 team_resolver.py
+      const partyName = s.masTeamOverride || todayRow.partyName || defaultRow.partyName || s.partyName;
+      // 与必填校验同口径（见 domainNameOf），避免两处漂移
+      const domainName = domainNameOf(step);
       const reward = useWeekly
         ? todayRow.reward != null
           ? todayRow.reward
@@ -116,19 +206,46 @@ async function dispatchCombat(step) {
         : s.sundaySelectedValue;
       // 战斗策略：优先当天行，其次每周默认行，最后才是步骤级 combatStrategyPath（全局兜底）。
       // 留空则完全不设置，由 BGI 沿用 autoFightConfig 的全局策略。
-      const strategyName = todayRow.strategy || defaultRow.strategy || s.combatStrategyPath;
-      // 今天无对应秘境配置则跳过（不执行）
-      if (!domainName) {
-        masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
-        return;
+      const strategyName = s.masStrategyOverride || todayRow.strategy || defaultRow.strategy || s.combatStrategyPath;
+      // 无对应秘境配置：正常已由主循环 combatSkipReason 前置拦下（同一个 domainNameOf）。
+      // 这里保留兜底，但返回 "skipped" 而不是静默 return——静默 return 会让主循环接着打
+      // MAS_STEP_DONE，把「没跑的步」记成成功。
+      if (!domainName) return "skipped";
+      // 轮数换算（原文件头 TODO #7）：前端右栏不暴露 domainRoundNum，直接取默认值 1
+      // 会让 BGI 的 AutoDomain 只刷 1 轮就「正常返回」（不抛异常）——表现为第二轮角色
+      // 一动不动、攒够超时后反复 ESC 回主界面、最后被 MAS 记成 MAS_STEP_DONE 成功。
+      // 这里按「指定树脂刷取次数」求和换算轮数：浓缩/须臾/脆弱/原粹每次各计 1 轮。
+      const resinRounds =
+        (s.condensedResinUseCount || 0) +
+        (s.transientResinUseCount || 0) +
+        (s.fragileResinUseCount || 0) +
+        (s.originalResinUseCount || 0);
+      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现；用统一的 toBool 规范化一次，
+      // 结果同时用于「模式判断」与下面的 Param 透传，避免两处得出相反结论（例如字符串
+      // "false" 会被 !! 转成 true，BGI 就会收到「模式=树脂耗尽 / 参数=指定次数」的矛盾设置）。
+      const specifyResinUse = toBool(s.specifyResinUse) === true;
+      let roundNum;
+      if (specifyResinUse) {
+        // 指定次数模式：轮数 = 各树脂次数之和；次数全为 0 时回退步骤级配置
+        roundNum = resinRounds > 0 ? resinRounds : s.domainRoundNum != null ? s.domainRoundNum : 1;
+      } else {
+        // 耗尽模式：不设轮数上界，由 BGI 在体力耗尽时自行正常结束
+        // （实测收尾行「体力耗尽或者设置轮次已达标，结束自动秘境」，不抛异常）。
+        // 不回退 s.domainRoundNum：耗尽模式与「限定轮数」互斥，该键前端从不产出，
+        // 回退只会让残留它的旧设置被意外截断。
+        roundNum = 999;
       }
-      const p = new AutoDomainParam(s.domainRoundNum != null ? s.domainRoundNum : 1);
-      if (partyName) p.partyName = partyName;
+      const p = new AutoDomainParam(roundNum);
+      // 队伍无条件赋值：空 = 不切换队伍（BGI AutoDomainTask.SwitchParty 对空串直接 return）。
+      // 不能用 `if (partyName)` 守卫跳过赋值——那会留下 Param 构造时 SetDefault() 从全局
+      // AutoDomainConfig.PartyName 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
+      p.partyName = partyName || "";
       if (domainName) p.domainName = domainName;
       if (reward != null) p.sundaySelectedValue = String(reward);
       if (s.autoArtifactSalvage != null) p.autoArtifactSalvage = !!s.autoArtifactSalvage;
       if (s.maxArtifactStar != null) p.maxArtifactStar = String(s.maxArtifactStar);
-      if (s.specifyResinUse != null) p.specifyResinUse = !!s.specifyResinUse;
+      // 用上面规范化后的值，确保与轮数换算取到同一个模式
+      if (s.specifyResinUse != null) p.specifyResinUse = specifyResinUse;
       if (s.originalResinUseCount != null) p.originalResinUseCount = s.originalResinUseCount;
       if (s.condensedResinUseCount != null) p.condensedResinUseCount = s.condensedResinUseCount;
       if (s.transientResinUseCount != null) p.transientResinUseCount = s.transientResinUseCount;
@@ -147,30 +264,30 @@ async function dispatchCombat(step) {
       // 每日地脉花（leyLineDailyEnabled）优先于每周地脉花：开启时走每日统一配置，直接执行；
       // 否则走每周地脉花：按今天星期取对应行，仅当该行执行开关开启才刷取，
       // 当天某字段为空时按「默认」行兜底（默认行无执行开关）。
-      const wdName = DAY_NAMES[new Date().getDay()];
       // 未配置（新用户）默认走每日模式，与右栏「开启每日地脉花」默认开启一致；
       // 仅显式 false（用户选了每周地脉花）才走每周分支。
-      const daily = s.leyLineDailyEnabled !== false;
-      let country, leyLineOutcropType, team, strategy;
+      const daily = leyLineDailyEnabled(step);
+      // 类型取值与必填校验同口径（见 leyLineTypeOf），避免两处漂移
+      const leyLineOutcropType = leyLineTypeOf(step);
+      let country, team, strategy;
       if (daily) {
         country = s.country;
-        leyLineOutcropType = s.leyLineOutcropType;
         team = s.team;
         strategy = s.combatStrategyPath;
       } else {
+        // 当天行未勾选「执行」即不执行：与 gate / 必填校验同口径（weeklyLeyLineRunsToday），
+        // 正常已由主循环 combatSkipReason 前置拦下（见上面 skipped 的约定）。
+        if (!weeklyLeyLineRunsToday(step)) return "skipped";
         const weeklyLeyLine = s.weeklyLeyLine || {};
-        const wdRow = weeklyLeyLine[wdName] || {};
-        // 执行开关全部关闭（今天的行未勾选）即不执行
-        if (wdRow.run !== true) {
-          masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
-          break;
-        }
+        const wdRow = weeklyLeyLine[runDayKey] || {};
         const def = weeklyLeyLine.default || {};
         country = wdRow.country != null ? wdRow.country : (def.country != null ? def.country : s.country);
-        leyLineOutcropType = wdRow.type != null ? wdRow.type : (def.type != null ? def.type : s.leyLineOutcropType);
         team = wdRow.team || def.team || s.team;
         strategy = wdRow.strategy || def.strategy || s.combatStrategyPath;
       }
+      // 队伍配置表「战斗场景」选队结果优先级最高（压过每日/每周行）
+      team = s.masTeamOverride || team;
+      strategy = s.masStrategyOverride || strategy;
       const p = new AutoLeyLineOutcropParam(
         s.count != null ? s.count : 3,
         country || "",
@@ -179,21 +296,36 @@ async function dispatchCombat(step) {
       if (s.isResinExhaustionMode != null) p.isResinExhaustionMode = !!s.isResinExhaustionMode;
       if (s.openModeCountMin != null) p.openModeCountMin = !!s.openModeCountMin;
       // 前端「不使用冒险之证寻路」勾选=true 表示不通过冒险之证，与 BGI Param 的
-      // useAdventurerHandbook 语义相反，此处取反后透传（原 TODO(#4) 已据 UI 语义落地）。
-      if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !s.useAdventurerHandbook;
+      // useAdventurerHandbook **同名同义**（BGI 原生配置里 true 也是「不使用」），直接透传。
+      // ⚠️ 2026-09-15 实机修正：此处原先按「语义相反」取反，于是用户不勾选（= 要用冒险之证）
+      // 时反而给 BGI 传了 true，BGI 报「当前已勾选不使用冒险之证寻路」并导致地脉花失败；
+      // 同一份 Plan 走原生一条龙（one_dragon_plan 直通不取反）时却正常，两条路径行为不一致。
+      if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !!s.useAdventurerHandbook;
       // 「跳过准备流程」(LeyLineOneDragonMode) 因 BGI 未向 JS 暴露注入点，在 MAS 接管路径
       // 下无效，已从右栏移除；此处不再消费该键（如将来 BGI 提供注入点可在此补回）。
       // 地脉花无原生超时，不兜底（前端默认 0=不限制）；仅当显式 >0 时透传。
       if (s.timeout != null && s.timeout > 0) p.timeout = s.timeout;
       if (s.useFragileResin != null) p.useFragileResin = !!s.useFragileResin;
       if (s.useTransientResin != null) p.useTransientResin = !!s.useTransientResin;
-      // 好感队仅在战斗队伍填写后才透传（冻结态视为空）
-      if (team) p.team = team;
-      if (team && s.friendshipTeam) p.friendshipTeam = s.friendshipTeam;
-      // 地脉花 Param 在部分 BGI 版本无 setCombatStrategyPath（d.ts 未声明），做存在性守卫防 TypeError
+      // 队伍无条件赋值：空 = 不切换队伍（BGI AutoLeyLineOutcropTask 仅在 Team 非空时切队）。
+      // 不能用 `if (team)` 守卫跳过——那会留下 Param 构造时 SetDefault() 从全局
+      // AutoLeyLineOutcropConfig.Team 读来的旧值。
+      // 好感队必须随战斗队伍一起清空：BGI 校验「配置好感队时必须配置战斗队伍」，
+      // 且战斗队伍为空时保留好感队会沿用全局 FriendshipTeam（右栏清空却仍切好感队）。
+      p.team = team || "";
+      p.friendshipTeam = team ? s.friendshipTeam || "" : "";
+      // 地脉花策略：留空则完全不设置（BGI 回退全局，等价于「跟随顶部通用战斗策略」，
+      // 由 MAS 物化的全局叶子保证确定值，见 apply_global_battle_strategy）。
+      // 非空则必须真正落到 Param 上，否则右栏单独给地脉花选的策略不生效。
       if (strategy) {
+        // 部分 BGI 版本的 AutoLeyLineOutcropParam 无 setCombatStrategyPath（d.ts 未声明），
+        // 该情况改直接写 Param 上的 FightConfig.StrategyName：地脉花的战斗配置取
+        // _taskParam.FightConfig，其 StrategyName 非空时 BuildLeyLineAutoFightConfig
+        // 就不再回退全局 AutoFightConfig（源码已核实）。
         if (typeof p.setCombatStrategyPath === "function") {
           p.combatStrategyPath = p.setCombatStrategyPath(strategy);
+        } else if (p.fightConfig) {
+          setProp(p.fightConfig, "strategyName", strategy);
         } else {
           masLog("MAS_LEYLINE_STRATEGY_UNSUPPORTED: " + strategy);
         }
@@ -221,9 +353,13 @@ async function dispatchCombat(step) {
       if (s.condensedResinUseCount != null) setProp(p, "condensedResinUseCount", s.condensedResinUseCount);
       if (s.transientResinUseCount != null) setProp(p, "transientResinUseCount", s.transientResinUseCount);
       if (s.fragileResinUseCount != null) setProp(p, "fragileResinUseCount", s.fragileResinUseCount);
-      // 右栏幽境面板的战斗队伍/策略优先（fightTeamName/strategyName 来自 globalStygian），
-      // 留空时 Param 不设置，BGI 回退全局 config.json 段（顶部通用队伍/策略兜底）。
-      if (s.fightTeamName) setProp(p, "fightTeamName", s.fightTeamName);
+      // 右栏幽境面板的战斗队伍/策略优先（fightTeamName/strategyName 来自 globalStygian）。
+      // 策略留空时 Param 不设置，由 BGI 回退全局 config.json 段——「空 = 跟随顶部通用策略」
+      // 由 MAS 物化的全局叶子保证（见 one_dragon.apply_global_battle_strategy）。
+      // 队伍则无条件赋值：空 = 不切换队伍（BGI AutoStygianOnslaughtTask.SwitchTeam 对空串直接 return）。
+      // 跳过赋值会留下 Param 构造时 SetDefault() 从全局 autoStygianOnslaughtConfig.fightTeamName
+      // 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
+      setProp(p, "fightTeamName", s.fightTeamName || "");
       const stygianStrategy = s.strategyName || s.combatStrategyPath;
       // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
       // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
@@ -252,9 +388,14 @@ async function dispatchCombat(step) {
       // 正确通道：new AutoBossParam()（无参=SetDefault 读本体配置）+ 逐字段覆盖
       // + dispatcher.runAutoBossTask(param)。属性赋值统一走 setProp，兼容未暴露属性。
       const p = new AutoBossParam();
-      // bossName 必填（Validate 第一道校验）；Param 无参构造已读本体配置作兜底
-      if (s.bossName) setProp(p, "bossName", s.bossName);
-      if (s.teamName) setProp(p, "teamName", s.teamName);
+      // bossName 必填：缺失已由 REQUIRED_STEP_FIELDS 前置拦截（MAS_STEP_MISSING_CONFIG），
+      // 走不到这里。这里「无条件赋值」是刻意的——不要退回 `if (s.bossName)` 而依赖 Param
+      // 无参构造的 SetDefault 兜底：那会读 BGI 全局 autoBossConfig.bossName，使右栏显示
+      // 「未选择首领」时静默讨伐一个 BGI 旧配置里的首领。
+      setProp(p, "bossName", s.bossName);
+      // 队伍配置表「战斗场景」选队结果优先级最高（压过步骤级 teamName）
+      const bossTeam = s.masTeamOverride || s.teamName;
+      setProp(p, "teamName", bossTeam || "");
       if (s.specifyRunCount != null) setProp(p, "specifyRunCount", !!s.specifyRunCount);
       if (s.runCount != null) setProp(p, "runCount", s.runCount);
       if (s.useTransientResin != null) setProp(p, "useTransientResin", !!s.useTransientResin);
@@ -267,7 +408,7 @@ async function dispatchCombat(step) {
       if (s.timeout != null) setProp(p, "timeout", s.timeout);
       // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
       // 其余组策略走 s.combatStrategyPath。两者取其一经 setCombatStrategyPath 按策略名重算路径。
-      const bossStrategy = s.strategyName || s.combatStrategyPath;
+      const bossStrategy = s.masStrategyOverride || s.strategyName || s.combatStrategyPath;
       if (bossStrategy && typeof p.setCombatStrategyPath === "function") {
         p.setCombatStrategyPath(bossStrategy);
       }
@@ -294,6 +435,10 @@ function safeParsePlan(raw) {
 }
 
 async function main() {
+  // 冻结本次运行所属的星期：整条编排（gate / 必填校验 / 执行分支 / 队伍覆盖）只认这一个
+  // 取值，跨零点启动也不会前后读到不同的行。
+  runDayKey = DAY_NAMES[new Date().getDay()];
+  masLog("MAS_RUN_DAY " + runDayKey);
   masLog(
     "MAS_SETTINGS_KEYS " +
       (typeof settings !== "undefined" && settings
@@ -329,9 +474,38 @@ async function main() {
       masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
       continue;
     }
+    // 必填项缺失：跳过该步并打标记（MAS 侧据此判负并提示用户），不进 BGI。
+    // 放在 shouldRunToday 之后：今天本就不执行的步骤不必报缺失。
+    const missing = missingRequiredFields(step);
+    if (missing.length > 0) {
+      masLog(
+        "MAS_STEP_MISSING_CONFIG: " +
+          step.uid +
+          " " +
+          step.name +
+          " " +
+          missing.join("/")
+      );
+      continue;
+    }
+    // 本次本就不跑（无对应秘境 / 当天未勾选执行）：在打 BEGIN 之前拦下。
+    // MAS_STEP_SKIP_WEEKDAY 不进分步表（见 one_dragon_report.parse_execution_layer_report：
+    // 这类步「要么由随后启动的原生一条龙承接、要么本次本就不跑」）；若先打 BEGIN 再跳过，
+    // 解析器会把这步当「未完成」记成失败。
+    const skipReason = combatSkipReason(step);
+    if (skipReason) {
+      masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name + " " + skipReason);
+      continue;
+    }
     masLog("MAS_STEP_BEGIN: " + step.uid + " " + step.name);
     try {
-      await dispatchCombat(step);
+      const outcome = await dispatchCombat(step);
+      // 兜底：理论上走不到（combatSkipReason 与 dispatchCombat 的守卫同源同参数）。
+      // 真走到这里说明两处判定漂移了，宁可让解析器按「未完成」暴露出来，也不记成成功。
+      if (outcome === "skipped") {
+        masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
+        continue;
+      }
       masLog("MAS_STEP_DONE: " + step.uid + " " + step.name);
     } catch (e) {
       const msg = (e && (e.message || e.toString())) || String(e);

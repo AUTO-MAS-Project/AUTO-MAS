@@ -85,26 +85,6 @@ MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
 MAAEND_AUTO_COLLECT_MODES = ("Distributed", "Concentrated")
 """MaaEnd 自动采集的三日周期模式"""
 
-MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS = tuple(
-    f"AutoCollectSchedule{weekday}"
-    for weekday in (
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    )
-)
-"""MaaEnd 自动采集任务的星期计划选项"""
-
-MAAEND_AUTO_COLLECT_ROUTE_OPTIONS = {
-    "AutoCollectRoutes": tuple(f"Route{index}" for index in range(1, 16)),
-    "AutoCollectCommonRoutes": tuple(f"CommonRoute{index}" for index in range(1, 9)),
-}
-"""MaaEnd 自动采集两类路线选项"""
-
 MAA_TASKS = [
     "StartUp",
     "DepotMaintain",
@@ -113,10 +93,13 @@ MAA_TASKS = [
     "Recruit",
     "Mall",
     "Award",
-    "Roguelike",
     "SwitchTheme",
 ]
-"""MAA任务列表"""
+"""MAS 托管的 MAA 任务类型
+
+只列 MAS 会接管开关与配置的任务。上游还有的类型（自动肉鸽、生息演算、自定义
+任务等）对 MAS 是未知任务：队列里遇到就原样透传，不合成、不接管、不判定。
+"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
@@ -126,10 +109,9 @@ MAA_TASKS_ZH = [
     "自动公招",
     "信用收支",
     "领取奖励",
-    "自动肉鸽",
     "更换主题",
 ]
-"""MAA任务列表"""
+"""MAA_TASKS 对应的中文任务名（与 MAA_TASKS 逐位对齐）"""
 
 MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "3213",
@@ -210,84 +192,48 @@ MAA_TASK_TRANSITION_METHOD_BOOK = {
 
 MAA_ANNIHILATION_FIGHT_BASE = {
     "$type": "FightTask",
-    "UseMedicine": False,
-    "MedicineCount": 0,
-    "UseStone": False,
-    "StoneCount": 0,
-    "EnableTargetDrop": False,
-    "DropId": "",
-    "DropCount": 0,
-    "IsInventoryTarget": False,
-    "EnableTimesLimit": False,
-    "TimesLimit": 999,
-    "Series": 0,
-    "StagePlan": ["Annihilation"],
-    "IsDrGrandet": False,
-    "UseExpiringMedicine": True,
-    "UseExpireMedicineForActivity": False,
-    "UseCustomAnnihilation": True,
-    "AnnihilationStage": "Annihilation",
-    "HideUnavailableStage": True,
-    "IsStageManually": False,
-    "UseOptionalStage": False,
-    "UseStoneAllowSave": False,
-    "HideSeries": False,
-    "UseWeeklySchedule": False,
-    "WeeklySchedule": {
-        "Sunday": True,
-        "Monday": True,
-        "Tuesday": True,
-        "Wednesday": True,
-        "Thursday": True,
-        "Friday": True,
-        "Saturday": True,
-    },
     "Name": "剿灭作战",
     "IsEnable": True,
     "TaskType": "Fight",
+    "StagePlan": ["Annihilation"],
+    "Series": 0,
+    "IsStageManually": False,
+    "UseMedicine": False,
+    "MedicineCount": 0,
+    "EnableTimesLimit": False,
+    "TimesLimit": 999,
+    "UseCustomAnnihilation": True,
+    "AnnihilationStage": "Annihilation",
 }
-"""MAA剿灭作战基础配置"""
+"""MAA剿灭作战托管补丁
+
+**出现在这里的键即 MAS 声明接管，未出现的一律由 MAA 原生配置透传**——
+用户在上游界面里设的临期药、源石、博朗台、周计划、指定材料/次数、隐藏项等
+高级设置原样生效，MAS 不经手。反过来说：只要 MAS 不消费某个字段，就不得写进
+本表，写了既会覆盖用户在原生界面里的选择，又会在上游新增字段时静默失效。
+"""
 
 
 MAA_REMAIN_FIGHT_BASE = {
     "$type": "FightTask",
-    "UseMedicine": False,
-    "MedicineCount": 0,
-    "UseStone": False,
-    "StoneCount": 0,
-    "EnableTargetDrop": False,
-    "DropId": "",
-    "DropCount": 0,
-    "IsInventoryTarget": False,
-    "EnableTimesLimit": False,
-    "TimesLimit": 999,
-    "Series": 0,
-    "StagePlan": [""],
-    "IsDrGrandet": False,
-    "UseExpiringMedicine": False,
-    "UseExpireMedicineForActivity": False,
-    "UseCustomAnnihilation": False,
-    "AnnihilationStage": "Annihilation",
-    "HideUnavailableStage": True,
-    "IsStageManually": True,
-    "UseOptionalStage": False,
-    "UseStoneAllowSave": False,
-    "HideSeries": False,
-    "UseWeeklySchedule": False,
-    "WeeklySchedule": {
-        "Sunday": True,
-        "Monday": True,
-        "Tuesday": True,
-        "Wednesday": True,
-        "Thursday": True,
-        "Friday": True,
-        "Saturday": True,
-    },
     "Name": "剩余理智",
     "IsEnable": True,
     "TaskType": "Fight",
+    "StagePlan": [""],
+    "Series": 0,
+    "IsStageManually": True,
+    "UseMedicine": False,
+    "MedicineCount": 0,
+    "EnableTimesLimit": False,
+    "TimesLimit": 999,
+    "UseCustomAnnihilation": False,
+    "AnnihilationStage": "Annihilation",
 }
-"""MAA剩余理智作战基础配置"""
+"""MAA剩余理智作战托管补丁
+
+键的取舍口径同 :data:`MAA_ANNIHILATION_FIGHT_BASE`：只写 MAS 运行必需的托管键，
+其余（临期药、源石、博朗台、周计划、指定材料/次数、隐藏项）由 MAA 原生配置透传。
+剩余理智是 MAS 合成任务，原生没有该项时补丁即完整任务定义。"""
 
 MAA_GREEN_TICKET_STORE_TASK = {
     "$type": "CustomTask",
@@ -730,6 +676,23 @@ STARRAIL_PACKAGE_NAME = {
     "OVERSEA-TWHKMO": "com.HoYoverse.hkrpgoversea",
 }
 """崩坏·星穹铁道包名映射表"""
+
+STARRAIL_CN_UPDATE_LINK_URL = (
+    "https://act-api-takumi.mihoyo.com/event/download_porter/link"
+    "/hkrpg_cn/official/android_default"
+)
+"""崩坏·星穹铁道国服官服安卓更新入口，302 跳转至 CDN 上的真实安装包地址"""
+
+STARRAIL_UPDATE_LINK_SERVER = {
+    "CN-Official": STARRAIL_CN_UPDATE_LINK_URL,
+}
+"""崩坏·星穹铁道各服务器的更新入口映射表
+
+入口的跳转地址同时提供版本号与安装包，因此版本号与将安装的包必然一致。
+目前只有国服官服放出了安卓安装包直链，其余服务器还没有公开可用的安卓入口。
+
+不在此表中的服务器会跳过客户端版本检查。
+"""
 
 STARRAIL_STAGE_BOOK = {
     "-": "禁用",

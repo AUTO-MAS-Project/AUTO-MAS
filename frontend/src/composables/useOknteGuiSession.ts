@@ -104,9 +104,7 @@ export function useOknteGuiSession() {
           clearSession()
         }),
       ]
-      message.success(
-        viewOnly ? t('edit.oknteViewOpened') : t('edit.oknteSessionOpened')
-      )
+      message.success(viewOnly ? t('edit.oknteViewOpened') : t('edit.oknteSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         oknteConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)

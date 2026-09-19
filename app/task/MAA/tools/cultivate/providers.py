@@ -29,6 +29,7 @@ ProviderContext 注入。链执行器只依赖契约端口，接收调用方给�
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -61,8 +62,85 @@ def parse_oper_box_payload(payload: Mapping[str, Any]) -> dict[str, Progression]
     return progressions
 
 
+def parse_oper_box_names(payload: Mapping[str, Any]) -> dict[str, str]:
+    """把 MAA OperBoxData.json 原始数据解析为干员名字映射（纯函数）。
+
+    名字仅用于用户可见文案（推送报告等），不进练度契约 Progression；
+    达成判定可自证即干员必在识别数据中，名字因此总能随判定取到。
+    """
+
+    names: dict[str, str] = {}
+    for oper in payload.get("own_opers") or []:
+        if not isinstance(oper, dict) or not oper.get("id"):
+            continue
+        name = oper.get("name")
+        if isinstance(name, str) and name:
+            names[str(oper["id"])] = name
+    return names
+
+
+def _non_negative_int(raw: Any) -> int:
+    """取非负整数；类型不符（字符串/浮点/bool/缺失）一律按 0。
+
+    网络源字段类型漂移时不得让非 int 值进入 Progression——后续按等级比较
+    会抛 TypeError（预览接口 500）。
+    """
+
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
+        return raw
+    return 0
+
+
+def parse_player_info_payload(payload: Mapping[str, Any]) -> dict[str, Progression]:
+    """把森空岛 player/info 原始数据解析为全量练度（纯函数，真机实测口径）。
+
+    - elite ← evolvePhase，level ← level；干员标识 ← **charId**（真机实测
+      2026-09-15：顶层是 charId 不是 id，写错会让全部条目被当坏数据跳过、
+      练度静默变空表）；专精 ← skills[].specializeLevel（按 skills[].id 建
+      masteries）；模组 ← equip[]，**locked 非 False 的分支一律不计级**
+      （含字段缺失）——locked=true 是未解锁占位（level 恒 1），计入会误判
+      达成 → 误移除（T4.4 实测 equip 字段名 id/level/locked）；
+    - chars[].name 恒为 null，名字不在此取；坏条目跳过（宁缺勿滥）；
+    - 数值字段统一按 `_non_negative_int` 收敛，类型漂移不炸下游比较。
+    API 编排路径与调用方共用本函数（规则 1.3-3）。
+    """
+
+    progressions: dict[str, Progression] = {}
+    for char in payload.get("chars") or []:
+        char_id = char.get("charId") if isinstance(char, dict) else None
+        if not char_id:
+            continue
+        masteries: dict[str, int] = {}
+        for skill in char.get("skills") or []:
+            if not isinstance(skill, dict) or not skill.get("id"):
+                continue
+            level = _non_negative_int(skill.get("specializeLevel"))
+            if level > 0:
+                masteries[str(skill["id"])] = level
+        modules: dict[str, int] = {}
+        for equip in char.get("equip") or []:
+            if not isinstance(equip, dict) or not equip.get("id"):
+                continue
+            if equip.get("locked") is not False:
+                continue
+            level = _non_negative_int(equip.get("level"))
+            if level > 0:
+                modules[str(equip["id"])] = level
+        progressions[str(char_id)] = Progression(
+            elite=_non_negative_int(char.get("evolvePhase")),
+            level=_non_negative_int(char.get("level")),
+            masteries=masteries,
+            modules=modules,
+        )
+    return progressions
+
+
 def parse_depot_payload(payload: Mapping[str, Any]) -> tuple[dict[str, int], int]:
-    """把 MAA DepotData.json 原始数据解析为 (库存映射, 时间戳)。"""
+    """把 MAA DepotData.json 原始数据解析为 (库存映射, 时间戳)。
+
+    syncTime 兼容 epoch 秒与 ISO 8601 字符串两种格式（MAA 以
+    ``ToLocalTime().ToString("o")`` 写 ISO，方案决策 26/31）。
+    """
 
     data = payload.get("data")
     inventory = {
@@ -71,11 +149,62 @@ def parse_depot_payload(payload: Mapping[str, Any]) -> tuple[dict[str, int], int
         if isinstance(item_id, str) and isinstance(count, int)
     }
     sync_time = payload.get("syncTime")
-    if isinstance(sync_time, (int, float)):
+    if isinstance(sync_time, (int, float)) and not isinstance(sync_time, bool):
         return inventory, int(sync_time)
-    if isinstance(sync_time, str) and sync_time.isdigit():
-        return inventory, int(sync_time)
+    if isinstance(sync_time, str):
+        if sync_time.isdigit():
+            return inventory, int(sync_time)
+        try:
+            return inventory, int(datetime.fromisoformat(sync_time).timestamp())
+        except ValueError:
+            pass
     return inventory, 0
+
+
+def load_oper_box_names(context: ProviderContext) -> dict[str, str]:
+    """读取（带 context 级缓存）干员名字映射：char_id → 名称。
+
+    与练度索引共用同一份磁盘读取与缓存（_load_oper_box 三元组）。
+    """
+
+    return _load_oper_box(context)[2]
+
+
+def has_oper_box_data(context: ProviderContext) -> bool:
+    """干员识别数据是否可用：文件存在且可解析。
+
+    与库存的"空仓库 ≠ 数据缺失"（决策 24）同口径——识别过但结果为空
+    （新号/无干员）算作"有数据"，只有缺失/损坏才算"未识别"。消费方据此
+    区分"按精 0 估算"与"确实没有干员"。
+    """
+
+    return _load_oper_box(context)[0] is not None
+
+
+def _load_oper_box(
+    context: ProviderContext,
+) -> tuple[float | None, dict[str, Progression], dict[str, str]]:
+    """读取干员识别文件，返回 (mtime, 练度索引, 名字映射)；缺失/损坏时 mtime 为 None。"""
+
+    cached = context.file_cache.get("oper_box")
+    if cached is None:
+        index: dict[str, Progression] = {}
+        names: dict[str, str] = {}
+        mtime: float | None = None
+        if context.maa_data_dir is not None:
+            path = Path(context.maa_data_dir) / "OperBoxData.json"
+            if path.exists():
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    pass
+                else:
+                    mtime = path.stat().st_mtime
+                    index = parse_oper_box_payload(payload)
+                    names = parse_oper_box_names(payload)
+        cached = (mtime, index, names)
+        context.file_cache["oper_box"] = cached
+    return cached
 
 
 class LocalProgressionProvider:
@@ -89,19 +218,38 @@ class LocalProgressionProvider:
     ) -> ProgressionSnapshot | None:
         if context.maa_data_dir is None:
             return None
-        path = Path(context.maa_data_dir) / "OperBoxData.json"
-        if not path.exists():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        progression = parse_oper_box_payload(payload).get(operator_id)
+        mtime, index = _load_oper_box(context)[:2]
+        progression = index.get(operator_id)
         if progression is None:
             return None
-        mtime = path.stat().st_mtime
         return ProgressionSnapshot(
-            source="local", timestamp=int(mtime), data=progression
+            source="local", timestamp=int(mtime or 0), data=progression
+        )
+
+
+class SklandProgressionProvider:
+    """森空岛练度（player/info 整表快照），可自证精英化/专精/模组。
+
+    快照由异步驱动层（cultivate/skland.py，带 TTL 缓存与凭据轮换回写）
+    拉取后经 ProviderContext 注入，本适配器只做同步查表（决策 38）；
+    快照缺失或目标干员不在数据中时返回 None，链短路落到 local。
+    """
+
+    name = "skland"
+    self_certifying = True
+
+    def fetch(
+        self, operator_id: str, context: ProviderContext
+    ) -> ProgressionSnapshot | None:
+        if not context.skland_progressions:
+            return None
+        progression = context.skland_progressions.get(operator_id)
+        if progression is None:
+            return None
+        return ProgressionSnapshot(
+            source="skland",
+            timestamp=context.skland_captured_at,
+            data=progression,
         )
 
 
@@ -136,7 +284,7 @@ class DefaultProgressionProvider:
 
 
 class LocalInventoryProvider:
-    """MAA 本地仓库识别数据（DepotData.json，安装级单文件）。"""
+    """MAA 本地仓库识别数据（DepotData.json，目录由 ProviderContext 注入）。"""
 
     name = "local"
 
@@ -150,9 +298,16 @@ class LocalInventoryProvider:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
+        inventory, sync_time = parse_depot_payload(payload)
+        if sync_time <= 0:
+            # 档案缺 syncTime 时退回文件 mtime，识别时间仍有据可依（决策 31）
+            try:
+                sync_time = int(path.stat().st_mtime)
+            except OSError:
+                pass
         # 合法但为空的库存原样返回：空映射是"仓库确实没有"（新号、刚清空），
         # None 是"还没识别过"，上游据此区分是否提示重新识别
-        return parse_depot_payload(payload)
+        return inventory, sync_time
 
 
 # 池的定义（选哪些实现、什么顺序）属组合根职责，见 service.py。

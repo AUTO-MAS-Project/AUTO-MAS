@@ -40,7 +40,7 @@ SIGNATURE_SEP = "\n"
 
 
 def _statistic_text(message: dict) -> str:
-    """拼装掉落与招募统计的纯文本正文。"""
+    """拼装掉落、招募与养成达成统计的纯文本正文。"""
 
     formatted = []
     if "drop_statistics" in message:
@@ -56,12 +56,20 @@ def _statistic_text(message: dict) -> str:
             formatted.append(f"  {star}: {count}")
     recruit_text = "\n".join(formatted)
 
+    # 本轮有干员达成养成目标时附一行；无则不占位
+    cultivate_text = (
+        f"养成达成: {message['cultivate_achievement']}\n"
+        if message.get("cultivate_achievement")
+        else ""
+    )
+
     return (
         f"开始时间: {message['start_time']}\n"
         f"结束时间: {message['end_time']}\n"
         f"理智剩余: {message.get('sanity', '未知')}\n"
         f"回复时间: {message.get('sanity_full_at', '未知')}\n"
         f"MAA执行结果: {message['maa_result']}\n"
+        f"{cultivate_text}"
         f"{recruit_text}\n"
         f"{drop_text}"
     )

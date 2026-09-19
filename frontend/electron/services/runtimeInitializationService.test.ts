@@ -14,6 +14,7 @@ import {
   RuntimeInitializationService,
   describeRuntimeFailureDetails,
   emitDevelopmentSkipProgress,
+  formatRuntimeFailureMessage,
   mapDoctorChecksToCriticalFiles,
   mapMirrorSelection,
   mapRuntimeStage,
@@ -65,6 +66,7 @@ function fixtureEvents(name: string): RuntimeEvent[] {
 
 const APP_ROOT = 'D:\\AUTO-MAS'
 const RUNTIME_PATH = 'D:\\AUTO-MAS\\runtime\\auto-mas-runtime.exe'
+const updateStatePath = join(APP_ROOT, 'runtime-state', 'update.json')
 
 interface FakeCall {
   command: string[]
@@ -335,6 +337,19 @@ describe('失败 details 摘要', () => {
     const text = describeRuntimeFailureDetails({ blob: 'x'.repeat(5000) })
     expect(text.length).toBeLessThan(1100)
     expect(text).toContain('已截断')
+  })
+})
+
+describe('用户可处理的仓库错误', () => {
+  it.each([
+    ['GIT_REPO_CLEANUP_FAILED', 'repo.previous-', updateStatePath, false],
+    ['UPDATE_STATE_AMBIGUOUS', 'repo', updateStatePath, true],
+  ])('%s 给出明确的删除说明', (code, expectedPath, statePath, includesStatePath) => {
+    const message = formatRuntimeFailureMessage(code, APP_ROOT, '原始错误')
+
+    expect(message).toContain('完全退出 AUTO-MAS')
+    expect(message).toContain(expectedPath)
+    expect(message.includes(statePath)).toBe(includesStatePath)
   })
 })
 

@@ -20,13 +20,12 @@ export interface LogHookRule {
   _uid?: string
 }
 
-export const normalizeHookType = (raw: unknown): LogHookType =>
-  raw === 'replace' ? 'replace' : 'drop'
+const normalizeHookType = (raw: unknown): LogHookType => (raw === 'replace' ? 'replace' : 'drop')
 
 let uidCounter = 0
 const newUid = (): string => `hook_${Date.now()}_${++uidCounter}`
 
-export const createHookRule = (type: LogHookType): LogHookRule => ({
+const createHookRule = (type: LogHookType): LogHookRule => ({
   _uid: newUid(),
   type,
   enabled: true,
@@ -34,7 +33,7 @@ export const createHookRule = (type: LogHookType): LogHookRule => ({
   ...(type === 'replace' ? { replace: '' } : {}),
 })
 
-export const parseLogHookRules = (json: string): LogHookRule[] => {
+const parseLogHookRules = (json: string): LogHookRule[] => {
   if (!json) return []
   try {
     const items = JSON.parse(json)
@@ -60,7 +59,7 @@ export const parseLogHookRules = (json: string): LogHookRule[] => {
   }
 }
 
-export const serializeLogHookRules = (rules: LogHookRule[]): string => {
+const serializeLogHookRules = (rules: LogHookRule[]): string => {
   const cleaned: LogHookRule[] = []
   for (const rule of rules) {
     const enabled = rule.enabled === false ? false : true
@@ -84,7 +83,7 @@ export const serializeLogHookRules = (rules: LogHookRule[]): string => {
 const ruleDisplayName = (rule: LogHookRule, idx: number): string =>
   (rule.name || '').trim() || `规则${idx + 1}`
 
-export interface UseLogHookRulesOptions {
+interface UseLogHookRulesOptions {
   rulesJson: Ref<string>
   onChange?: (json: string) => void
 }

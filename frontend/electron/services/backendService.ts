@@ -84,7 +84,7 @@ export interface BackendStartResult {
 }
 
 /** 渲染进程实际使用的后端地址。 */
-export interface BackendApiEndpoints {
+interface BackendApiEndpoints {
   local: string
   websocket: string
 }
@@ -101,7 +101,7 @@ export interface BackendStopResult {
   error?: string
 }
 
-export interface RuntimeBackendUpdateCheck {
+interface RuntimeBackendUpdateCheck {
   updateAvailable: boolean
   staged?: boolean
   currentCommit?: string

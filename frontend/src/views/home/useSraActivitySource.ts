@@ -1,4 +1,5 @@
 import { onScopeDispose, ref } from 'vue'
+import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('活动数据')
@@ -20,17 +21,6 @@ interface SraSourceData {
 
 const SOURCE_BASE = 'https://starrailassistant.top/api/v1/activity'
 
-const createEmptyOverview = (message: string): SraActivityOverview => ({
-  Available: false,
-  Stale: false,
-  Message: message,
-  version: '',
-  versionName: '',
-  startTime: '',
-  endTime: '',
-  activities: [],
-})
-
 const snapshotKey = (game: string) => 'auto-mas.home.sra-snapshot.' + game
 
 /**
@@ -41,7 +31,7 @@ const snapshotKey = (game: string) => 'auto-mas.home.sra-snapshot.' + game
  * 独立失败态——任一源异常只影响本卡片，不阻塞其它卡片。
  */
 export const useSraActivitySource = (game: string, displayName: string) => {
-  const overview = ref<SraActivityOverview>(createEmptyOverview(''))
+  const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
   const loading = ref(false)
   const hasData = ref(false)
   let retryTimer: number | null = null
@@ -101,7 +91,7 @@ export const useSraActivitySource = (game: string, displayName: string) => {
           Message: '正在使用上次成功获取的活动数据',
         }
       } else {
-        overview.value = createEmptyOverview(displayName + '活动数据暂不可用')
+        overview.value = createEmptySraActivityOverview(displayName + '活动数据暂不可用')
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1
