@@ -73,32 +73,5 @@ export function resolveActivityStageState(
     }
   }
 
-  if (intent.startsWith('mat:')) {
-    const materialId = intent.slice(4)
-    const matched = stages.find(stage => (stage.RawDrop ?? '') === materialId)
-    if (!matched) {
-      // 本期不掉：材料名尽量从另一期线谱对上，找不到就显示原始 ID
-      const other = period === 'ongoing' ? preview : activity
-      const matName =
-        other.find(stage => (stage.RawDrop ?? '') === materialId)?.DropName ??
-        materialId
-      return {
-        tone: 'warn',
-        messageKey: 'edit.activityStateMatMissing',
-        params: { mat: matName },
-      }
-    }
-    return {
-      tone: common.tone,
-      messageKey:
-        period === 'preview' ? 'edit.activityStatePreview' : 'edit.activityStateOk',
-      params: {
-        stage: matched.Value,
-        mat: matched.DropName,
-        name: meta?.name ?? '',
-      },
-    }
-  }
-
   return { tone: 'muted', messageKey: 'edit.activityStateNoIntent', params: {} }
 }

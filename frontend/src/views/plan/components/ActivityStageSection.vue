@@ -53,7 +53,6 @@
             <tr v-for="row in slotRows" :key="row.key" :class="{ gap: row.notStarted, missing: !rowStageExists(row) }">
               <td>
                 <span class="slot-name">{{ row.label }}</span>
-                <div v-if="row.key === 'mat'" class="slot-sub">{{ t('plan.activity.matSub') }}</div>
               </td>
               <td>
                 <template v-if="row.stageCode">
@@ -61,18 +60,6 @@
                   <span class="stage-mat">{{ row.stageMat }}</span>
                   <span v-if="row.notStarted" class="tag-future">{{ t('plan.activity.notStarted') }}</span>
                 </template>
-                <span v-else-if="row.key === 'mat'" class="stage-none">
-                  <a-select
-                    :value="slotMaterialValue"
-                    :options="materialOptions"
-                    size="small"
-                    :placeholder="t('plan.activity.pickMaterial')"
-                    class="mat-select"
-                    :allow-clear="false"
-                    :disabled="saving || materialOptions.length === 0"
-                    @change="onSlotMaterialChange"
-                  />
-                </span>
                 <span v-else class="stage-none">
                   {{ row.skeleton ? t('plan.activity.pendingEntry') : t('plan.activity.noStage') }}
                 </span>
@@ -182,7 +169,6 @@ import { useUserApi } from '@/composables/useUserApi'
 import type { ActivityItem } from '@/types/home'
 import {
   buildSlotRows,
-  collectMaterialOptions,
   readActivityMeta,
   resolveUserInjectStatus,
   slotKeyOfIntent,
@@ -343,7 +329,6 @@ const candidatesFor = (rowKey: string) => {
 const slotLabelOfIntent = (intent: string) => {
   const key = slotKeyOfIntent(intent)
   if (key === 'jade') return t('plan.activity.slotJade')
-  if (key === 'mat') return t('plan.activity.slotMat')
   if (key.startsWith('last:')) return t('plan.activity.slotLast', { n: key.slice(5) })
   return key
 }
@@ -457,38 +442,6 @@ const metaText = computed(() => {
 
 const chipTitle = (item: UserSlotItem): string => blockingText(item)
 
-// ==================== 自定义材料槽 ====================
-
-const materialOptions = computed(() =>
-  collectMaterialOptions(
-    Object.fromEntries(
-      Object.keys(activityByServer.value).map(server => [
-        server,
-        [
-          ...(activityByServer.value[server] ?? []),
-          ...(previewByServer.value[server] ?? []),
-        ],
-      ]),
-    ),
-  ),
-)
-
-const matSlotUsers = computed(() => usersInSlot('mat'))
-
-/** 槽内尚无用户时暂存的待选材料（首个指派落地后继续沿用） */
-const pendingMaterialId = ref('')
-
-/** 下拉显示裸材料 ID（选项 value 同为裸 ID）；指派写入时才补 mat: 前缀 */
-const slotMaterialValue = computed<string | undefined>(() => {
-  if (pendingMaterialId.value) return pendingMaterialId.value
-  const ids = matSlotUsers.value
-    .map(item => item.user.intent)
-    .filter(intent => intent.startsWith('mat:'))
-    .map(intent => intent.slice(4))
-  const distinct = [...new Set(ids)]
-  return distinct.length === 1 ? distinct[0] : undefined
-})
-
 // ==================== 数据加载与写回 ====================
 
 /** 跳过簿命中判定：按用户自己服务器的进行中活动名对条目（后端同规则） */
@@ -584,8 +537,6 @@ const loadData = async () => {
     logger.error(`加载活动关指派数据失败: ${errorMsg}`)
     error.value = t('plan.activity.loadFailed')
   } finally {
-    // 重载后以实际数据为准，清掉上一次会话残留的待选材料
-    pendingMaterialId.value = ''
     loading.value = false
   }
 }
@@ -616,16 +567,7 @@ const onAssignUser = async (
   user: ActivityUserRow,
   row: StageSlotRow,
 ) => {
-  let intent = row.key
-  if (row.key === 'mat') {
-    const shared = slotMaterialValue.value
-    if (!shared) {
-      message.warning(t('plan.activity.pickMaterialFirst'))
-      return
-    }
-    intent = `mat:${shared}`
-  }
-  if (await persistIntent(user, intent)) {
+  if (await persistIntent(user, row.key)) {
     openSlotKey.value = ''
     message.success(t('plan.activity.assignDone', { name: user.userName }))
   }
@@ -634,18 +576,6 @@ const onAssignUser = async (
 const onRemoveUser = async (user: ActivityUserRow) => {
   if (await persistIntent(user, '')) {
     message.success(t('plan.activity.removeDone', { name: user.userName }))
-  }
-}
-
-const onSlotMaterialChange = async (materialId: string) => {
-  pendingMaterialId.value = materialId
-  const intent = `mat:${materialId}`
-  let failed = 0
-  for (const item of matSlotUsers.value) {
-    if (!(await persistIntent(item.user, intent))) failed += 1
-  }
-  if (failed > 0) {
-    message.warning(t('plan.activity.partialSave', { n: failed }))
   }
 }
 
@@ -865,10 +795,6 @@ table.slots tr.missing td {
   border-radius: 3px;
   padding: 0 6px;
   margin-left: 6px;
-}
-
-.mat-select {
-  min-width: 200px;
 }
 
 .chips {

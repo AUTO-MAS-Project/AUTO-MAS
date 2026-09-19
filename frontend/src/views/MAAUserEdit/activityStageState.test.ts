@@ -44,16 +44,12 @@ describe('resolveActivityStageState', () => {
     })
   })
 
-  it('warns when the material is not dropped this period', () => {
-    const state = resolveActivityStageState('mat:30063', ongoing, [])
-    expect(state.tone).toBe('warn')
-    expect(state.messageKey).toBe('edit.activityStateMatMissing')
-    expect(state.params).toEqual({ mat: '30063' })
-
-    const named = resolveActivityStageState('mat:30063', ongoing, [
-      stage('PA-8', '30063', '晶体元件'),
-    ])
-    expect(named.params).toEqual({ mat: '晶体元件' })
+  it('treats unknown intents as unconfigured', () => {
+    expect(resolveActivityStageState('mat:30063', ongoing, [])).toEqual({
+      tone: 'muted',
+      messageKey: 'edit.activityStateNoIntent',
+      params: {},
+    })
   })
 
   it('marks out-of-range last:N as muted', () => {

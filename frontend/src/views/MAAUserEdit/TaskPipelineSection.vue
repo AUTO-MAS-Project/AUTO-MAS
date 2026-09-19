@@ -145,17 +145,6 @@
                 option-filter-prop="label"
                 @change="handleActivityStageChange"
               />
-              <a-select
-                v-if="isMatIntent"
-                :value="matMaterialId"
-                :options="activityMaterialOptions"
-                class="mat-material-select"
-                :placeholder="t('edit.maaPickMaterial')"
-                :disabled="loading || activityMaterialOptions.length === 0"
-                show-search
-                option-filter-prop="label"
-                @change="handleActivityMaterialChange"
-              />
               <div
                 v-if="activityStageState"
                 class="stage-state-line"
@@ -373,7 +362,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { message } from 'ant-design-vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
@@ -383,7 +371,6 @@ import type {
   CultivateOperatorCatalogEntry as OperatorCatalogEntry,
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
-import { MATERIAL_PSEUDO_VALUE } from '@/utils/activityStage'
 import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
@@ -411,8 +398,6 @@ const props = defineProps<{
   activityStageLoading: boolean
   activityStageError: string
   displayActivityStageIntent?: string
-  /** 自定义材料白名单（各服两期线谱并集，value=原始掉落 ID） */
-  activityMaterialOptions: SelectOption[]
   /** 选关下方状态行（统一状态机输出） */
   activityStageState: {
     tone: 'ok' | 'warn' | 'info' | 'muted'
@@ -503,33 +488,8 @@ const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
 
 const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
 
-const isMatIntent = computed(() =>
-  String(formData.value.Task.ActivityStageIntent ?? '').startsWith('mat:'),
-)
-
-const matMaterialId = computed(() => {
-  const intent = String(formData.value.Task.ActivityStageIntent ?? '')
-  return intent.startsWith('mat:') ? intent.slice(4) : undefined
-})
-
-const handleActivityStageChange = (value: string) => {
-  if (value === MATERIAL_PSEUDO_VALUE) {
-    // 进入材料模式：默认选白名单第一项，避免落下无后缀的非法意图；
-    // 白名单为空时保留原意图不清空（间隙期提示等待下期即可）
-    const first = props.activityMaterialOptions[0]
-    if (!first) {
-      message.warning(t('edit.maaNoMaterialOptions'))
-      return
-    }
-    emitSave('Task.ActivityStageIntent', `mat:${first.value}`)
-    return
-  }
+const handleActivityStageChange = (value: string) =>
   emitSave('Task.ActivityStageIntent', value)
-}
-
-const handleActivityMaterialChange = (materialId: string) => {
-  emitSave('Task.ActivityStageIntent', `mat:${materialId}`)
-}
 
 const activitySummary = computed(() =>
   summarizeActivity({
@@ -665,10 +625,6 @@ const greenTicketStoreSummary = computed(() => {
 
 .task-alert {
   margin: 12px 0;
-}
-
-.mat-material-select {
-  margin-top: 8px;
 }
 
 .stage-state-line {

@@ -859,13 +859,11 @@ def _tag_notes(config: ConfigBase) -> dict:
     }
 
 
-_ACTIVITY_STAGE_INTENT_PATTERN = re.compile(
-    r"jade|last:[1-9][0-9]{0,3}|mat:[1-9][0-9]{0,5}"
-)
+_ACTIVITY_STAGE_INTENT_PATTERN = re.compile(r"jade|last:[1-9][0-9]{0,3}")
 
 
 class ActivityStageIntentValidator(ValidatorBase):
-    """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关 / mat:ID=指定材料，空串表示未指派。
+    """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关，空串表示未指派。
 
     兼容旧版关卡序号：整型或纯数字串按同锚（自最高编号关倒数）转为 last:N。
     """
@@ -5018,16 +5016,16 @@ class GlobalConfig(ConfigBase):
                     drop_id = "30012"
                 else:
                     drop_id = "NotFound"
-                return {
-                    "Display": stage["Display"],
-                    "Value": stage["Value"],
-                    # 原始掉落文本：搓玉检测与材料精确匹配必须用它，
-                    # 归一化 30012 与真固源岩线同 ID
-                    "RawDrop": stage["Drop"],
-                    "Drop": drop_id,
-                    "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
-                    "Activity": activity,
-                }
+                    return {
+                        "Display": stage["Display"],
+                        "Value": stage["Value"],
+                        # 原始掉落文本：搓玉检测必须用它，
+                        # 归一化 30012 与真固源岩线同 ID
+                        "RawDrop": stage["Drop"],
+                        "Drop": drop_id,
+                        "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
+                        "Activity": activity,
+                    }
 
             for server, server_stage_data in stage_data_by_server.items():
                 activity_stage_drop_info = []

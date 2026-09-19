@@ -1596,7 +1596,7 @@ class MaaUserConfig_Task(BaseModel):
     )
     ActivityStageIntent: Optional[str] = Field(
         default=None,
-        description="活动关选关意图（jade=搓玉 / last:N=倒数第N关 / mat:ID=指定材料，空=未指派）",
+        description="活动关选关意图（jade=搓玉 / last:N=倒数第N关，空=未指派）",
     )
     ActivityMedicineNumb: Optional[int] = Field(
         default=None, description="活动关优先任务吃理智药数量"

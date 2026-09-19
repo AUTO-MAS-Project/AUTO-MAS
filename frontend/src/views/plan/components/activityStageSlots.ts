@@ -4,7 +4,6 @@
 
 import type { ActivityItem } from '@/types/home'
 import {
-  collectMaterialOptions,
   formatActivityTime,
   isJadeStage,
   readActivityMeta,
@@ -15,7 +14,6 @@ import {
 
 export type { ActivityItem } from '@/types/home'
 export {
-  collectMaterialOptions,
   formatActivityTime,
   isJadeStage,
   readActivityMeta,
@@ -118,15 +116,6 @@ export function buildSlotRows(
       skeleton,
     })
   }
-
-  rows.push({
-    key: 'mat',
-    label: '自定义材料',
-    stageCode: null,
-    stageMat: null,
-    notStarted: notStarted || skeleton,
-    skeleton,
-  })
   return rows
 }
 

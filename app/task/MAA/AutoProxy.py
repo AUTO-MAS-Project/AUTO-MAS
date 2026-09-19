@@ -625,9 +625,7 @@ def _resolve_activity_stage(
     """按用户选关意图解析当前活动材料关，返回 (关卡码, 解析摘要)。
 
     jade=含玉关；last:N=非玉关按关卡号降序第 N 项（倒1=最高编号关，与旧
-    版序号同锚）；mat:ID=按原始掉落材料精确匹配（归一化 30012 与真固源
-    岩线同 ID，不得用于材料匹配）。失配返回 (None, 原因)，由调用方决定
-    跳过与提示。
+    版序号同锚）。失配返回 (None, 原因)，由调用方决定跳过与提示。
     """
 
     stages = [
@@ -668,13 +666,6 @@ def _resolve_activity_stage(
             return None, f"倒数第{index}关超出本期范围"
         value, drop_name = ranked[index - 1]
         return value, f"倒{index} → {value} · {drop_name}"
-
-    if intent.startswith("mat:"):
-        material_id = intent[4:]
-        for value, raw_drop, drop_name in stages:
-            if raw_drop == material_id:
-                return value, f"{drop_name} → {value}"
-        return None, "指定材料本期不掉，将跳过"
 
     return None, "未配置活动关意图"
 

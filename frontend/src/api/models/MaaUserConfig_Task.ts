@@ -52,7 +52,7 @@ export type MaaUserConfig_Task = {
      */
     IfActivityFirst?: (boolean | null);
     /**
-     * 活动关选关意图（jade=搓玉 / last:N=倒数第N关 / mat:ID=指定材料，空=未指派）
+     * 活动关选关意图（jade=搓玉 / last:N=倒数第N关，空=未指派）
      */
     ActivityStageIntent?: (string | null);
     /**

@@ -269,14 +269,12 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 
 
 def _intent_display(value: str) -> str:
-    """活动关意图转人话（jade / last:N / mat:ID，空串=未指派）。"""
+    """活动关意图转人话（jade / last:N，空串=未指派）。"""
 
     if value == "jade":
         return "搓玉"
     if value.startswith("last:"):
         return f"倒数第{value[5:]}关"
-    if value.startswith("mat:"):
-        return f"材料{value[4:]}"
     return value or "未指派"
 
 

@@ -13,7 +13,6 @@ export const MATERIAL_PSEUDO_VALUE = '__mat__'
 export function slotKeyOfIntent(intent: string): string {
   if (intent === 'jade') return 'jade'
   if (intent.startsWith('last:')) return intent
-  if (intent.startsWith('mat:')) return 'mat'
   return ''
 }
 
@@ -45,29 +44,7 @@ export function resolveIntentStage(
       .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
     return ranked[index - 1]?.Value ?? null
   }
-  if (intent.startsWith('mat:')) {
-    const materialId = intent.slice(4)
-    return stages.find(stage => (stage.RawDrop ?? '') === materialId)?.Value ?? null
-  }
   return null
-}
-
-/** 材料白名单：当前数据里作为活动掉落出现过的材料（各服并集，含下期预览） */
-export function collectMaterialOptions(
-  stageByServer: Record<string, ActivityItem[]>,
-): Array<{ label: string; value: string }> {
-  const seen = new Map<string, string>()
-  for (const stages of Object.values(stageByServer)) {
-    for (const stage of stages) {
-      const raw = stage.RawDrop ?? ''
-      if (raw && /^\d+$/.test(raw) && !seen.has(raw)) {
-        seen.set(raw, stage.DropName || raw)
-      }
-    }
-  }
-  return [...seen.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1], 'zh-Hans-CN'))
-    .map(([value, label]) => ({ label: `${label}（${value}）`, value }))
 }
 
 /** 活动元信息（名称/起止文本）取自该组关卡第一条的 Activity 描述 */

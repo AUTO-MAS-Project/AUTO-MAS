@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSlotRows,
-  collectMaterialOptions,
   formatActivityTime,
   resolveIntentStage,
   resolveUserInjectStatus,
@@ -55,16 +54,15 @@ describe('slotKeyOfIntent', () => {
   it('maps intents to slot keys and drops unknown intents', () => {
     expect(slotKeyOfIntent('jade')).toBe('jade')
     expect(slotKeyOfIntent('last:2')).toBe('last:2')
-    expect(slotKeyOfIntent('mat:30012')).toBe('mat')
     expect(slotKeyOfIntent('')).toBe('')
     expect(slotKeyOfIntent('bogus')).toBe('')
   })
 })
 
 describe('buildSlotRows', () => {
-  it('orders rows as last:1..N, jade, mat', () => {
+  it('orders rows as last:1..N, jade', () => {
     const rows = buildSlotRows(srStages, [], false)
-    expect(rows.map(row => row.key)).toEqual(['last:1', 'last:2', 'last:3', 'jade', 'mat'])
+    expect(rows.map(row => row.key)).toEqual(['last:1', 'last:2', 'last:3', 'jade'])
     expect(rows[0].stageCode).toBe('SR-8')
     expect(rows[1].stageCode).toBe('SR-7')
     expect(rows[3].stageCode).toBe('SR-5')
@@ -86,12 +84,12 @@ describe('buildSlotRows', () => {
 
   it('omits the jade row when the event has no jade stage and nobody is assigned', () => {
     const rows = buildSlotRows([stage('PA-8', '30063', '晶体元件')], [], false)
-    expect(rows.map(row => row.key)).toEqual(['last:1', 'mat'])
+    expect(rows.map(row => row.key)).toEqual(['last:1'])
   })
 
   it('falls back to the default skeleton when no stage data exists', () => {
     const rows = buildSlotRows([], [], false)
-    expect(rows.map(row => row.key)).toEqual(['last:1', 'last:2', 'last:3', 'jade', 'mat'])
+    expect(rows.map(row => row.key)).toEqual(['last:1', 'last:2', 'last:3', 'jade'])
     expect(rows.every(row => row.skeleton && row.notStarted && row.stageCode === null)).toBe(true)
   })
 
@@ -104,7 +102,6 @@ describe('buildSlotRows', () => {
       'last:4',
       'last:5',
       'jade',
-      'mat',
     ])
     expect(rows.find(row => row.key === 'last:4')?.skeleton).toBe(true)
   })
@@ -120,17 +117,14 @@ describe('resolveIntentStage', () => {
     expect(resolveIntentStage('last:1', srStages)).toBe('SR-8')
     expect(resolveIntentStage('last:2', srStages)).toBe('SR-7')
     expect(resolveIntentStage('jade', srStages)).toBe('SR-5')
-    expect(resolveIntentStage('mat:31014', srStages)).toBe('SR-7')
     expect(resolveIntentStage('last:4', srStages)).toBeNull()
-    expect(resolveIntentStage('mat:00000', srStages)).toBeNull()
   })
 
-  it('keeps real material stages apart from the jade sentinel', () => {
+  it('detects jade by raw drop even when the normalized id collides', () => {
     const stages = [
       stage('SR-7', '30012', '固源岩组'),
       stage('SR-6', '搓玉效率0.91', '搓玉效率0.91'),
     ]
-    expect(resolveIntentStage('mat:30012', stages)).toBe('SR-7')
     expect(resolveIntentStage('jade', stages)).toBe('SR-6')
   })
 })
@@ -166,24 +160,6 @@ describe('resolveUserInjectStatus', () => {
     expect(
       resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'ongoing'),
     ).toEqual({ willInject: true, reason: 'ok' })
-  })
-})
-
-describe('collectMaterialOptions', () => {
-  it('unions raw numeric drops across servers and translates names', () => {
-    const options = collectMaterialOptions({
-      Official: srStages,
-      YoStarJP: [stage('PA-8', '30063', '晶体元件'), stage('PA-7', '玉关', '搓玉效率0.9')],
-    })
-    expect([...options.map(option => option.value)].sort()).toEqual([
-      '30013',
-      '30031',
-      '30063',
-      '31014',
-    ])
-    expect(options.find(option => option.value === '31014')?.label).toBe(
-      '化合切削液（31014）',
-    )
   })
 })
 
