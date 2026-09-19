@@ -94,6 +94,10 @@ def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) 
 # 开启时把该用户面板值覆盖到所选来源，关闭时保留来源配置；必要的启动、
 # 模拟器与恢复流程不属于快速配置。写入和恢复仍由各专项按自身架构负责。
 # （旧版「简洁/详细/自定义」由模型层 ConfigSourceValidator 加载时归一。）
+#
+# 例外：BetterGI 用户页已隐藏该开关，改由 Info.Mode 派生（直控=关，脚本/用户=开），
+# 见 app/models/config.py 的 BetterGIUserConfig.load。即直控下它恒为关 ⇒ AutoProxy 的
+# writes_native_config 不可达（保留实现，将来恢复开关可直接复用）。
 
 CONFIG_SOURCE_SCRIPT = "脚本"
 CONFIG_SOURCE_USER = "用户"

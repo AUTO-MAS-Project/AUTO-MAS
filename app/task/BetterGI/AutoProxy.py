@@ -252,6 +252,38 @@ def _party_config_error(log: str) -> str | None:
     return name or None
 
 
+# ── 进副本后「打不了 / 卡在副本里」的提示 ─────────────────
+# 战斗队伍在游戏内存在、但 BGI 拿它匹配不到自动战斗脚本时（AutoDomainTask →
+# CombatScriptBag.FindCombatScript 打「未匹配到任何战斗脚本」），BGI 会把自动秘境直接结束掉：
+# 副本进了、仗没打，人还留在副本里；紧接着领奖的切队也会因「未能返回主界面」失败。
+# 两种情况 BGI 都照打「任务结束」继续后面的任务，只看收尾标记会整条判成功——这里给用户
+# 可操作的原因（分步表判失败由 one_dragon_report._BGI_STEP_FATAL_HINTS 负责）。
+_BGI_PARTY_ROLES_RE = re.compile(r'识别到的队伍角色[:：]\s*"([^"]+)"')
+
+
+def _combat_script_miss_hint(log: str) -> str | None:
+    """「队伍匹配不到自动战斗脚本」（进副本后无法开打）的用户可读提示；无则 None。"""
+    if "未匹配到任何战斗脚本" not in log:
+        return None
+    roles = _BGI_PARTY_ROLES_RE.findall(log)
+    party = roles[-1].strip() if roles else ""
+    who = f"队伍「{party}」" if party else "当前队伍"
+    return (
+        f"{who}在 BGI 的自动战斗里没有匹配的脚本，进副本后无法开打（该任务被跳过）；"
+        "请在 BGI「自动战斗」里为该队伍配置脚本，或改用已有脚本的队伍"
+    )
+
+
+def _back_to_main_failed_hint(log: str) -> str | None:
+    """「切队回不到主界面」（游戏被留在副本/子界面）的用户可读提示；无则 None。"""
+    if "未能返回主界面" not in log:
+        return None
+    return (
+        "切换队伍失败：游戏被留在副本/子界面（未能返回主界面），"
+        "本次领奖等后续步骤未干成；请手动回到主界面后重试"
+    )
+
+
 def _missing_config_reasons(log: str) -> list[str]:
     """从执行层累计日志提取「必填配置缺失」的用户可读原因（``步骤名：原因``）。
 
@@ -322,6 +354,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
+        # ⚠️ 该开关已从 BetterGI 用户页隐藏，改由配置来源派生（BetterGIUserConfig.load：
+        # 直控 = 关，脚本 / 用户 = 开），故此处对直控恒为假 —— 整条 _write_native_one_dragon
+        # 路径当前不可达（含一条龙平面周表键那部分写入）。按维护者决策保留实现，
+        # 将来若恢复开关可直接复用。
         self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
             self.cur_user_config.get("Info", "IfQuickConfig")
         )
@@ -337,6 +373,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_monitor: LogMonitor | None = None
         # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
         self._party_err_pushed = False
+        # 运行时提示（找不到自动战斗脚本、切队回不到主界面）同样只推一次
+        self._bgi_hints_pushed: set[str] = set()
 
     async def check(self) -> str:
         # 跨日重置：必须在 ProxyTimesLimit 上限比较之前完成，否则昨日达上限的用户
@@ -1426,6 +1464,14 @@ class AutoProxyTask(TaskExecuteBase):
         log_status = "BetterGI 正常运行中"
         user_item_status: str | None = None
 
+        # 进副本后打不了 / 游戏被留在副本里的提示：BGI 两种情况都照打「任务结束」继续后面的
+        # 任务（不判负），但要给一次可操作的原因；分步表与「部分失败」由 final_task 收尾处理
+        for hint in (_combat_script_miss_hint(log), _back_to_main_failed_hint(log)):
+            if hint and hint not in self._bgi_hints_pushed:
+                self._bgi_hints_pushed.add(hint)
+                logger.warning(f"用户 {self.cur_user_item.name} {hint}")
+                await self._push_dispatch_log(f"BetterGI 运行提示：{hint}")
+
         # 切队配置错误（战斗队伍名在游戏内置找不到）优先于笼统的 [ERR] 判定，
         # 并给一次指明队伍名的明确报错
         if party_err := _party_config_error(log):
@@ -1548,6 +1594,17 @@ class AutoProxyTask(TaskExecuteBase):
             lambda content: parse_one_dragon_report(content, native_task_names)
         )
         one_dragon_report = _merge_one_dragon_reports(exec_steps, native_steps)
+        # 原生一条龙的任务级异常（匹配不到自动战斗脚本、切队回不到主界面…）会让该任务被跳过，
+        # BGI 却照打「任务结束」并继续后面的任务，只看「一条龙和配置组任务结束」会整条判成功
+        # （2026-09-19 实机：秘境一仗没打、领奖也没领，通知却是「成功」）。分步表里判失败的步
+        # 计入「部分失败」——与执行层同口径：不判负、照常计次，但状态与通知要说清。
+        native_failed = sum(1 for s in native_steps or [] if not s["ok"])
+        if native_failed:
+            self.partial_failed_steps += native_failed
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 一条龙有 {native_failed} 个任务未干成"
+                f"（已跳过并继续后续任务）"
+            )
         if one_dragon_report:
             # 必须留痕：分步表少了一相时，先看这行就知道是「那相没跑/没解析出步骤」还是「拼接漏了」
             logger.info(
