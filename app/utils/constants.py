@@ -93,10 +93,13 @@ MAA_TASKS = [
     "Recruit",
     "Mall",
     "Award",
-    "Roguelike",
     "SwitchTheme",
 ]
-"""MAA任务列表"""
+"""MAS 托管的 MAA 任务类型
+
+只列 MAS 会接管开关与配置的任务。上游还有的类型（自动肉鸽、生息演算、自定义
+任务等）对 MAS 是未知任务：队列里遇到就原样透传，不合成、不接管、不判定。
+"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
@@ -106,10 +109,9 @@ MAA_TASKS_ZH = [
     "自动公招",
     "信用收支",
     "领取奖励",
-    "自动肉鸽",
     "更换主题",
 ]
-"""MAA任务列表"""
+"""MAA_TASKS 对应的中文任务名（与 MAA_TASKS 逐位对齐）"""
 
 MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "3213",

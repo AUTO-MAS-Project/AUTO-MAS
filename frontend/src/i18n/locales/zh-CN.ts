@@ -370,8 +370,6 @@ export default {
     maaSwitchTheme: '更换主题',
     maaSwitchThemeHint:
       '主题名称在 MAA 的「更换主题」任务里配置，可填多个，每次运行随机切换一个，为空时自动跳过；需要 MAA v6.17.3 及以上版本',
-    maaRoguelike: '自动肉鸽',
-    maaRoguelikeHint: '长时间运行可能被误判超时',
     maaGreenTicketStore: '绿票商店',
     maaGreenTicketStoreHint:
       '每月单独启动一次 MAA 购买，排在剿灭之前：一层全买，二层买寻访凭证和招聘许可；当月买过就跳过，失败也不影响后面的任务。需要 MAA v6.3.0 及以上版本',

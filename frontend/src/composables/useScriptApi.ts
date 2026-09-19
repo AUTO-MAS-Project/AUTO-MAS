@@ -260,10 +260,6 @@ export function useScriptApi() {
                           maaUserData.Task?.IfSwitchTheme !== undefined
                             ? maaUserData.Task.IfSwitchTheme
                             : false,
-                        IfRoguelike:
-                          maaUserData.Task?.IfRoguelike !== undefined
-                            ? maaUserData.Task.IfRoguelike
-                            : false,
                         IfReclamation:
                           maaUserData.Task?.IfReclamation !== undefined
                             ? maaUserData.Task.IfReclamation

@@ -380,8 +380,6 @@ export default {
     maaSwitchTheme: 'Switch theme',
     maaSwitchThemeHint:
       'Theme names are configured in MAA\'s "Switch Theme" task. Multiple names are picked at random each run; an empty list skips the task. Requires MAA v6.17.3 or later',
-    maaRoguelike: 'Integrated Strategies',
-    maaRoguelikeHint: 'A long run may be mistaken for a timeout',
     maaGreenTicketStore: 'Green Ticket Store',
     maaGreenTicketStoreHint:
       'Starts its own MAA session once a month, before annihilation, buying everything on the 1st floor plus Headhunting Permits and Recruitment Permits on the 2nd floor. Skipped once bought this month, and a failure does not affect the later tasks. Requires MAA v6.3.0 or newer',
