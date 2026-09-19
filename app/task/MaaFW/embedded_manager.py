@@ -82,6 +82,11 @@ logger = get_logger("MFW 内置运行")
 # ``_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS`` 取同一个值（那边导入即打开
 # maa DLL，不为一个常数把它拉进来）。
 _ENV_PREPARE_CANCEL_GRACE_SECONDS = 2.0
+# 取消项目更新后等事务收尾的上限。更新事务在提交前要真建运行环境（预检），
+# 取消令牌只能停掉 uv 子进程，回滚本身还要把备份挪回去——比准备路径多等
+# 得多，等不到才放手（线程随子进程结束，journal 里留着中间态，下次启动由
+# ``recover_interrupted_update`` 收尾）。
+_UPDATE_CANCEL_GRACE_SECONDS = 60.0
 # CDK 距到期不足这些天时提醒用户续费
 CDK_EXPIRY_WARNING_DAYS = 7
 
@@ -289,6 +294,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._auto_update_mode: AutoUpdateMode = "Off"
         # 只有 main_task 正常跑完全部用户才置位；取消/崩溃路径不跑运行后更新。
         self._users_completed = False
+        # 本轮 ``_run_project_update`` 是否真提交了更新；紧随其后的运行环境确认
+        # 用它决定「沿用」那句话怎么说。
+        self._last_update_committed = False
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。"""
@@ -467,35 +475,101 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         return load_interface_model_cached(project_path, force_reload=force_reload)
 
     async def _invoke_project_update(
-        self, project_path: Path, credentials: MaaFWUpdateCredentials
+        self,
+        project_path: Path,
+        credentials: MaaFWUpdateCredentials,
+        *,
+        precheck_cancel: threading.Event | None = None,
+        precheck_failure: dict[str, Any] | None = None,
     ) -> Any:
-        """直接调核心包（不经 ``tools/project_updater.py`` 门面）。
+        """直接调核心包。
 
         锁在 manager 层是空的（用户 inner task 才拿项目锁），让核心包自己拿，
         所以 ``project_lock_already_held=False``。
+
+        ``precheck_cancel`` / ``precheck_failure`` 由 ``_run_project_update`` 建：
+        前者是用户停止时置位的令牌，交给预检回调里的 uv 安装；后者是预检失败
+        时回调写进来的 ``{targetVersion, requirement, kind, reason, …}``，
+        调用方据此决定发 warning 还是 error（D2）。
         """
 
         from app.task.MaaFW.tools.core.automas_maafw_project_update import (
             update_maafw_project_if_needed,
         )
+        from app.task.MaaFW.tools.embedded.precheck import (
+            build_precheck_validator,
+            precheck_agent_root,
+        )
+        from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
 
+        send_log = self._threadsafe_update_log()
         kwargs: dict[str, Any] = {
             "mirror_cdk": credentials.cdk,
             "channel": credentials.channel,
             # 下载源由用户显式选定，核心包不再自动分流。
             "source_config": {"package_source": credentials.package_source},
-            "send_log": self._threadsafe_update_log(),
+            "send_log": send_log,
             "project_lock_already_held": False,
         }
-        # 核心包签名正在收敛：``interface_model`` 位置参数可能被拿掉（改为包内
-        # 自己读）。按实际签名决定传不传，两种形态都能跑。
-        kwargs["interface_model"] = await asyncio.to_thread(
+        interface_model = await asyncio.to_thread(
             self._load_interface_model, project_path
         )
+        kwargs["interface_model"] = interface_model
         # 与手动更新的 API 路径一致：用户配了代理，运行时更新也得走代理，
         # 否则受限网络下「手动能更、自动不能」。
         kwargs["proxy"] = Config.proxy
+
+        # 提交前真建运行环境：建不出来就回滚、继续跑旧版本。isolated_venv 的
+        # agent 建在池根下的预检目录，不写环境缓存（D6）；提交后
+        # ``_ensure_project_environment`` 在正式根再备一次。
+        route = self._resolve_runtime_pool_route()
+        kwargs["post_validate"] = build_precheck_validator(
+            prepare=self._prepare_project_environment_sync,
+            cancel_event=precheck_cancel or threading.Event(),
+            send_log=send_log,
+            agent_env_root=precheck_agent_root(route.root),
+            failure=precheck_failure if precheck_failure is not None else {},
+            previous_version=getattr(interface_model, "version", None),
+            project_name=getattr(interface_model, "name", None),
+        )
+        # 上次预检失败的版本先轻探一下，拿不到就不再下包建池（D1：只有运行前
+        # 自动更新读备忘，手动更新不传即忽略）。
+        kwargs["precheck_gate"] = build_precheck_gate(
+            project_path,
+            project_name=getattr(interface_model, "name", None),
+            proxy=kwargs["proxy"],
+            send_log=send_log,
+        )
         return await update_maafw_project_if_needed(project_path, **kwargs)
+
+    @staticmethod
+    def _describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
+        """预检失败给用户看的一句话；按 ``kind`` 分文案。"""
+
+        from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+            KIND_BINDING_UNAVAILABLE,
+        )
+
+        name = str(failure.get("projectName") or "MFW 项目").strip()
+        target = str(failure.get("targetVersion") or "新版本").strip()
+        previous = str(failure.get("previousVersion") or "当前版本").strip()
+        if failure.get("kind") == KIND_BINDING_UNAVAILABLE:
+            requirement = str(failure.get("requirement") or "maafw").strip()
+            return (
+                f"MFW 项目{phase_zh}更新：{name} {target} 需要 "
+                f"{requirement.replace('==', ' ')}，PyPI/GitHub 都拿不到，"
+                f"本次不升级，继续 {previous}"
+            )
+        reason = str(failure.get("reason") or "").strip()
+        summary = next(
+            (line.strip() for line in reason.splitlines() if line.strip()), "无原因"
+        )
+        if len(summary) > 120:
+            summary = summary[:119] + "…"
+        return (
+            f"MFW 项目{phase_zh}更新：运行环境预检失败（{summary}），"
+            f"本次不升级，继续 {previous}"
+        )
 
     async def _run_project_update(self, phase: AutoUpdateMode) -> None:
         """按时机更新项目目录。整个脚本只跑一次，且在用户任务之外。
@@ -516,10 +590,47 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}"
         )
 
+        self._last_update_committed = False
+        # 用户点停止时 ``CancelledError`` 从 await 上抛出，但事务跑在工作线程
+        # 里不会自己停：预检期间的 uv 安装靠令牌终止，随后事务回滚。与
+        # ``_ensure_project_environment`` 同一套 shield + 有限宽限，只是宽限要
+        # 长得多——回滚得把备份挪回去，半途放手就是新旧混杂的树。
+        precheck_cancel = threading.Event()
+        precheck_failure: dict[str, Any] = {}
+        update_task = asyncio.create_task(
+            self._invoke_project_update(
+                project_path,
+                credentials,
+                precheck_cancel=precheck_cancel,
+                precheck_failure=precheck_failure,
+            )
+        )
         try:
-            result = await self._invoke_project_update(project_path, credentials)
+            result = await asyncio.shield(update_task)
+        except asyncio.CancelledError:
+            precheck_cancel.set()
+            self._append_update_log("正在回滚更新，请勿关闭")
+            # 宽限内没等到也不再拖着关机；线程随子进程结束，其异常在这里
+            # 主动取走，免得事件循环报「Task exception was never retrieved」。
+            update_task.add_done_callback(
+                lambda task: None if task.cancelled() else task.exception()
+            )
+            with suppress(BaseException):
+                await asyncio.wait_for(
+                    asyncio.shield(update_task),
+                    timeout=_UPDATE_CANCEL_GRACE_SECONDS,
+                )
+            raise
         except Exception as exc:  # noqa: BLE001 - 更新失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
+            if precheck_failure:
+                # 预检没过、文件已回滚：项目还是原样、照常能跑。这是「不升级」
+                # 而不是事故，只发一次 warning（D2）；其它失败仍是 error。
+                text = self._describe_precheck_failure(phase_zh, precheck_failure)
+                logger.warning(f"{text}：{reason}")
+                self._append_update_log(text)
+                await self._notify_update("warning", text)
+                return
             logger.opt(exception=True).warning(
                 f"MFW 项目{phase_zh}更新失败，任务继续：{reason}"
             )
@@ -530,6 +641,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
 
         if bool(_result_field(result, "updated")):
+            self._last_update_committed = True
+            # 提交成功就意味着预检建出了环境，上次失败的备忘（若有）作废。
+            try:
+                from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+                    clear_runtime_precheck,
+                )
+
+                await asyncio.to_thread(clear_runtime_precheck, project_path)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"清理运行环境预检备忘失败：{exc}")
             # interface.json 已经变了：不刷新缓存，本轮用户仍按旧版任务表跑。
             try:
                 interface_model = await asyncio.to_thread(
@@ -557,16 +678,24 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 "；".join(text for _, text in lines),
             )
 
+    @staticmethod
     def _prepare_project_environment_sync(
-        self,
         project_path: Path,
         cancel_event: threading.Event,
         send_log: Callable[[str], None],
+        *,
+        agent_env_root: Path | None = None,
+        store_cache: bool = True,
     ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
 
         先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
         几个 stat，直接跳过。
+
+        更新事务的提交前预检也走这里（``tools/embedded/precheck.py``），只是
+        把 isolated_venv 的 agent 建到 ``agent_env_root``（池根下的预检目录）
+        并且 ``store_cache=False`` 不写环境缓存（D6）。静态方法：手动更新的
+        API 路径没有 manager 实例，也要用同一份逻辑。
         """
 
         # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
@@ -590,24 +719,26 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if load_prepared_environment(project_path, fingerprint) is not None:
             return False
 
-        interface = self._load_interface_model(project_path)
+        interface = MaaFWEmbeddedManager._load_interface_model(project_path)
         route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
         result = MaaFWRunnerService().prepare_project_environment(
             project_path,
             interface,
             runtime_pool_root=route.root,
             runtime_pool_id=route.pool_id,
+            agent_env_root=agent_env_root,
             # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
             # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
             import_paths=[SOURCE_ROOT],
             send_log=send_log,
             cancel_event=cancel_event,
         )
-        store_prepared_environment(
-            project_path,
-            str(result.get("projectFingerprint") or "") or fingerprint,
-            result,
-        )
+        if store_cache:
+            store_prepared_environment(
+                project_path,
+                str(result.get("projectFingerprint") or "") or fingerprint,
+                result,
+            )
         return True
 
     async def _ensure_project_environment(self, phase: AutoUpdateMode) -> None:
@@ -669,11 +800,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             await release_project_path(reservation_key)
 
         # 没变化时只留一行日志，别为「什么都没做」弹通知。
-        self._append_update_log(
-            f"{phase_zh}运行环境已重新准备完成"
-            if prepared
-            else "项目文件没有变化，运行环境沿用上次的准备结果"
-        )
+        if prepared:
+            self._append_update_log(f"{phase_zh}运行环境已重新准备完成")
+        elif self._last_update_committed:
+            # 本轮刚提交了更新：预检已经真建过一次环境，这里命中的是它。
+            self._append_update_log("运行环境已在更新前预检时备好，沿用")
+        else:
+            self._append_update_log("项目文件没有变化，运行环境沿用上次的准备结果")
 
     async def main_task(self) -> None:
         self.check_result = await self.check()
