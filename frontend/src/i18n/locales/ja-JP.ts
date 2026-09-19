@@ -1559,6 +1559,51 @@ export default {
     wutheringWavesUpdateTimed: '鳴潮の更新がタイムアウトしたため、自動的に停止しました',
     k60SecondsRecommendedDefault: '既定の待機時間は 60 秒への変更をおすすめします。',
     whichSpellsOutEvery: 'には設定手順がすべて明記されています。',
+    // BAAH 専用
+    baahScriptConfiguration: 'BAAH スクリプト設定',
+    baahScriptNameHint: '複数の BAAH スクリプトインスタンスを区別するための名前です',
+    baahScriptPathHint:
+      'BAAH 本体（BAAH.exe）のフルパスです。プログラムフォルダー・設定フォルダー・ログフォルダーはすべてこの場所から導出されるため、別途指定する必要はありません',
+    baahManageConfig: '重要な設定項目を管理する',
+    baahManageConfigHint:
+      '有効にすると、実行前に BAAH の動作に必要な設定（終了後に自動終了、ログのファイル出力）を本ソフトが自動で書き込み、実行後に元の値へ戻します',
+    baahAutoStartNotice:
+      'BAAH 側でエミュレーターの自動起動をオフにしてください：BAAH の「エミュレーターのパス」を空にし、エミュレーターは本ソフトに起動させます。上の「重要な設定項目を管理する」を有効にすると本ソフトが自動で空にします。「いいえ」にした場合は BAAH のエミュレーター設定でご自身で空にしてください。そうしないと両方が別々にエミュレーターを起動して取り合いになります',
+    baahPushLogEnabled: 'タスクノードの詳細を通知する',
+    baahPushLogEnabledHint:
+      '有効にすると、今回の実行の BAAH タスクノード（成功／スキップ／失敗）がタスクレポートと一緒に通知されます。無効にしてもタスクノードを収集しないだけで、タスクログの記録と結果判定には影響しません',
+    baahEmulatorHint:
+      '本ソフトが起動を管理するエミュレーターを選択します。実行前に本ソフトが起動してデバイスの準備完了を待ち、BAAH は接続するだけです。BAAH 側でエミュレーターのパスとポートを入力する必要はありません',
+    baahNotBaahScript: 'このスクリプトは BAAH ではありません',
+    baahRunTimesLimitHint: 'この回数を超えても失敗した場合は今回の実行を中止します',
+    baahRunTimeLimitHint:
+      '実行中にログの更新が止まってから待つ最大時間（分）。超えると実行失敗として扱います',
+    baahConfigName: '既定の設定名',
+    baahConfigNameHint:
+      '通常使用する BAAH 設定です。本ソフトはこれを使って BAAH.exe <名前>.json を起動します。イベント対応を有効にすると、イベント期間中は「イベント期間中の設定ファイル名」に置き換わります',
+    baahConfigNamePlaceholder: '通常使用する設定を選択してください',
+    baahActivityConfigName: 'イベント期間中の設定ファイル名',
+    baahActivityConfigNameHint:
+      '上の「イベント対応」を有効にすると、ブルーアーカイブで開催中のイベントがある間はこの設定で BAAH を起動します。空欄の場合やイベント日程を取得できない場合は既定の設定名を使用します',
+    baahActivityConfigNamePlaceholder: '空欄の場合は常に既定の設定を使用します',
+    baahIfActivityAdapt: 'イベント対応',
+    baahIfActivityAdaptHint:
+      '有効にするとブルーアーカイブのイベント日程に応じて設定ファイルを切り替えます。イベント中は「イベント期間中の設定ファイル名」、イベントがないときは「既定の設定名」を使用します',
+    baahActivityLineType: 'イベント日程のサーバー',
+    baahActivityLineTypeHint:
+      'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください',
+    baahActivityLineCN: '中国版',
+    baahActivityLineJP: '日本版',
+    baahActivityLineGloble: 'グローバル版',
+    baahActivityRunning: '開催中：',
+    baahActivityUpcoming: '次のイベント：',
+    baahActivityNone: '現在開催中または開始予定のイベントはありません',
+    baahActivityUnavailable: 'イベント日程を取得できませんでした',
+    baahUserTag: 'ユーザータグ',
+    baahUserTagHint: '本ソフトが実行状況に応じて自動生成します。閲覧のみ',
+    baahLastProxyDate: '前回の実行日',
+    baahProxyTimes: '実行回数',
+    baahDataReadOnlyHint: '本ソフトが自動で集計します。閲覧のみ',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI スクリプト設定',
     bettergiInstanceNameHint: '複数の BetterGI スクリプトインスタンスを区別するための名前です',

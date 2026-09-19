@@ -888,6 +888,18 @@ class AppConfig(GlobalConfig):
 
         return script_config.get_loaded_resource()
 
+    def get_baah_config_names(self, script_id: str) -> list[str]:
+        """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, BAAHConfig):
+            raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
+
+        from app.task.BAAH.tools import CONFIG_DIR_NAME, list_config_names
+
+        baah_path = Path(str(script_config.get("Script", "BAAHPath")))
+        return list_config_names(baah_path.parent / CONFIG_DIR_NAME)
+
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:

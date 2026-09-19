@@ -24,6 +24,7 @@
 import asyncio
 import uuid
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -64,6 +65,7 @@ from app.task.MaaFW.tools.embedded.update_progress import (
 )
 from app.utils import get_logger
 from app.utils.paths import SOURCE_ROOT
+from app.utils.constants import UTC8
 from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -1860,6 +1862,88 @@ async def get_bettergi_custom_groups_api(
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
         )
+
+
+@router.get(
+    "/baah/config-names",
+    tags=["BAAH"],
+    summary="获取 BAAH 配置文件名列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
+    """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。"""
+
+    try:
+        data = [
+            ComboBoxItem(label=name, value=name)
+            for name in Config.get_baah_config_names(scriptId)
+        ]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 份 BAAH 配置",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_baah_config_names_api失败: {type(e).__name__}: {e}"
+        )
+        return ComboBoxOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+def _format_beijing_time(timestamp: float) -> str:
+    """Unix 秒 → 「YYYY-MM-DD HH:MM」（东八区）。"""
+
+    return datetime.fromtimestamp(timestamp, tz=UTC8).strftime("%Y-%m-%d %H:%M")
+
+
+@router.get(
+    "/baah/activity-status",
+    tags=["BAAH"],
+    summary="获取碧蓝档案活动状态",
+    response_model=BlueArchiveActivityStatusOut,
+    status_code=200,
+)
+async def get_baah_activity_status_api(
+    lineType: Literal["JP", "Globle", "CN"] = "CN",
+) -> BlueArchiveActivityStatusOut:
+    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。"""
+
+    from app.tools.bluearchive_activity import resolve_activity_state
+
+    state = await resolve_activity_state(lineType)
+    if state is None:
+        ## 取不到排期不算错误，如实说明即可
+        return BlueArchiveActivityStatusOut(
+            message="未取到碧蓝档案活动排期，请稍后重试",
+        )
+
+    running, upcoming = state
+    if running is not None:
+        return BlueArchiveActivityStatusOut(
+            Running=True,
+            Name=running.name,
+            StartTime=_format_beijing_time(running.start_time),
+            EndTime=_format_beijing_time(running.end_time),
+            message=f"进行中: {running.name}",
+        )
+
+    if upcoming is not None:
+        return BlueArchiveActivityStatusOut(
+            NextName=upcoming.name,
+            NextStartTime=_format_beijing_time(upcoming.start_time),
+            message=f"下一个活动: {upcoming.name}",
+        )
+
+    return BlueArchiveActivityStatusOut(message="没有进行中或即将开始的活动")
 
 
 @router.get(

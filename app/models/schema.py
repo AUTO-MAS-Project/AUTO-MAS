@@ -2134,7 +2134,16 @@ class BAAHUserConfig_Info(BaseModel):
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
     )
-    ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
+    ConfigName: Optional[str] = Field(default=None, description="默认使用的 BAAH 配置文件名")
+    ActivityConfigName: Optional[str] = Field(
+        default=None, description="活动期间使用的 BAAH 配置文件名"
+    )
+    IfActivityAdapt: Optional[bool] = Field(
+        default=None, description="是否按碧蓝档案有没有活动切换使用的配置文件"
+    )
+    ActivityLineType: Optional[Literal["JP", "Globle", "CN"]] = Field(
+        default=None, description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服"
+    )
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
         default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
@@ -2452,6 +2461,17 @@ class BAAHConfig(BaseModel):
     Emulator: Optional[BAAHConfig_Emulator] = Field(
         default=None, description="模拟器配置"
     )
+
+
+class BlueArchiveActivityStatusOut(OutBase):
+    """碧蓝档案活动状态：进行中的活动，或下一个未开始的活动"""
+
+    Running: bool = Field(default=False, description="当前是否有进行中的活动")
+    Name: str = Field(default="", description="进行中的活动名称")
+    StartTime: str = Field(default="", description="进行中活动的开始时间")
+    EndTime: str = Field(default="", description="进行中活动的结束时间")
+    NextName: str = Field(default="", description="下一个活动的名称")
+    NextStartTime: str = Field(default="", description="下一个活动的开始时间")
 
 
 class MaaEndUserConfig_Info(BaseModel):

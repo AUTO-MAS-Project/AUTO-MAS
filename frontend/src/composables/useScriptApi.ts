@@ -1275,6 +1275,18 @@ export function useScriptApi() {
                           baahUserData.Info?.ConfigName !== undefined
                             ? baahUserData.Info.ConfigName
                             : '',
+                        ActivityConfigName:
+                          baahUserData.Info?.ActivityConfigName !== undefined
+                            ? baahUserData.Info.ActivityConfigName
+                            : '',
+                        IfActivityAdapt:
+                          baahUserData.Info?.IfActivityAdapt != null
+                            ? baahUserData.Info.IfActivityAdapt
+                            : false,
+                        ActivityLineType:
+                          baahUserData.Info?.ActivityLineType != null
+                            ? baahUserData.Info.ActivityLineType
+                            : 'CN',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
                         Tag: baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
