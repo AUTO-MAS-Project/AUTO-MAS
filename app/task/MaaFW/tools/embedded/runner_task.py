@@ -1871,8 +1871,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """等到游戏窗口（或配置了句柄时等到进程）就绪。
 
         返回窗口是不是**等出来的**：第一轮就在的算 False（游戏早就在跑），至少睡过
-        一轮才出现的算 True（游戏正在启动）。调用方据此决定要不要按 Game.StartupSettleTime
-        等画面加载。
+        一轮才出现的算 True（游戏正在启动）。调用方据此决定要不要再等画面稳定。
         """
 
         wait_time = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
@@ -1968,26 +1967,28 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         raise RuntimeError(f"游戏进程在 {wait_time}s 内未启动: {game_path.name}")
 
     def _task_start_not_before(self) -> float | None:
-        """刚启动的桌面游戏，第一个任务最早可下发的墙钟时刻；不用等时返回 None。
+        """刚启动的桌面游戏，第一个任务最晚可下发的墙钟时刻；不用等时返回 None。
 
-        从窗口出现起算 ``Game.StartupSettleTime`` 秒，扣掉已经过去的部分（窗口前置、
-        运行池租约、job 落盘）；剩下的交给 worker 在初始化完成后补足，这样 MaaFW
-        加载资源、连 controller、起 agent 的几秒到十几秒也算在等待里。重试轮次时
-        游戏已经跑了很久，剩余为负，直接不等。
+        沿用 ``Game.WaitTime``——等窗口出现用的就是它，等画面稳定再用一次同样的上限，
+        用户只需要理解一个「启动等待时间」。从窗口出现起算，扣掉已经过去的部分
+        （窗口前置、运行池租约、job 落盘）；剩下的交给 worker 在初始化完成后补足，
+        这样 MaaFW 加载资源、连 controller、起 agent 的几秒到十几秒也算在等待里。
+        worker 看到画面稳定会提前放行，这个时刻只是上限。重试轮次时游戏已经跑了
+        很久，剩余为负，直接不等。
         """
 
         ready_at = self.game_window_ready_at
         if ready_at is None:
             return None
-        settle = max(0, int(self.script_config.get("Game", "StartupSettleTime") or 0))
+        settle = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
         if settle <= 0:
             return None
         remaining = settle - (time.monotonic() - ready_at)
         if remaining <= 0:
             return None
         self._append_log(
-            f"游戏窗口出现后至少等 {settle}s 再下发任务，剩余约 {remaining:.0f}s"
-            "（与 MaaFW 初始化并行）"
+            f"游戏窗口出现后最多等 {settle}s 再下发任务，画面稳定即提前；"
+            f"剩余约 {remaining:.0f}s（与 MaaFW 初始化并行）"
         )
         return time.time() + remaining
 

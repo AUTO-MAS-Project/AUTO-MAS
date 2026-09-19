@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable, TextIO
 
 import maa as maa_package
+import numpy as np
 from maa.agent_client import AgentClient
 from maa.buffer import ImageBuffer
 from maa.controller import (
@@ -133,6 +134,16 @@ FAILURE_NODE_NAME_LIMIT = 3
 # 等「最早可下发任务」时刻最多等这么久。时刻是宿主按墙钟算的，两边钟对不上时
 # 这条上限保证不会把整轮吊死。
 TASK_START_GATE_MAX_SECONDS = 600.0
+# 启动画面稳定判定：等第一个任务的这段时间里每秒截一帧，连续这么多秒画面没有变化、
+# 且不是黑屏/纯色，就当登录界面已经渲染出来，不必等满上限。阈值按 PrintWindow / ADB
+# 截图没有噪声这个前提定：同一画面逐像素差为 0，进度条、加载动画、粒子背景都会超过。
+# 像素按 stride 抽样后比较，1280×720 抽成 320×180，一次比较不到 1ms。
+STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS = 1.0
+STARTUP_SCREEN_STABLE_SECONDS = 5
+STARTUP_SCREEN_SAMPLE_STRIDE = 4
+STARTUP_SCREEN_PIXEL_DELTA = 16
+STARTUP_SCREEN_CHANGED_PIXELS = 8
+STARTUP_SCREEN_BLANK_STD = 6.0
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 
 
@@ -1439,13 +1450,16 @@ class MaaFWRunner:
         return False
 
     def _wait_task_start_gate(self) -> None:
-        """桌面游戏刚启动时，等到宿主给的时刻再投递第一个任务。
+        """桌面游戏刚启动时，等画面稳定（最多等到宿主给的时刻）再投递第一个任务。
 
         窗口出现时 Unity 游戏还在黑屏加载，登录界面要二三十秒后才渲染；MaaEnd 的
         SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。资源、
         controller、agent 的初始化已经在前面做完，这里只补足剩余的等待；游戏早就
-        在跑（重试轮次、AttachOnly、宿主没给时刻）时剩余 ≤ 0，直接过。用 stop
-        事件的 wait 而不是 sleep，取消能立即打断。
+        在跑（重试轮次、AttachOnly、宿主没给时刻）时剩余 ≤ 0，直接过。
+
+        等待期间每秒截一帧：画面有内容且连续几秒不再变化就提前放行——这是登录界面
+        渲染完成最直接的迹象；截不到图、画面一直在动（动态背景、进度条）就等到上限，
+        和以前一样。用 stop 事件的 wait 代替 sleep，取消能立即打断。
         """
 
         not_before = self._task_start_not_before
@@ -1458,10 +1472,47 @@ class MaaFWRunner:
         if remaining <= 0:
             self._raise_if_deadline_hit()
             return
-        self.send_log(f"游戏刚启动，再等 {remaining:.0f}s 让画面加载完成后下发任务")
-        if self._stop_requested.wait(timeout=remaining):
-            raise RuntimeError("MaaFW 任务已停止")
-        self._raise_if_deadline_hit()
+        self.send_log(
+            f"游戏刚启动，最多再等 {remaining:.0f}s；画面连续 "
+            f"{STARTUP_SCREEN_STABLE_SECONDS}s 没有变化就提前下发任务"
+        )
+        gate_ends_at = time.monotonic() + remaining
+        previous: Any | None = None
+        stable_seconds = 0
+        capture_error_logged = False
+        while True:
+            if self._stop_requested.wait(
+                timeout=STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS
+            ):
+                raise RuntimeError("MaaFW 任务已停止")
+            self._raise_if_deadline_hit()
+            left = gate_ends_at - time.monotonic()
+            if left <= 0:
+                self.send_log(f"等满 {remaining:.0f}s，画面仍在变化，按上限下发任务")
+                return
+            try:
+                frame = _sample_startup_screen(self.controller)
+            except Exception as exc:
+                if not capture_error_logged:
+                    capture_error_logged = True
+                    self.send_log(f"启动画面截图失败，改为等满上限: {exc}")
+                frame = None
+            if frame is None or _startup_screen_is_blank(frame):
+                # 截不到、黑屏、纯色：都还在加载，重新计数
+                previous = None
+                stable_seconds = 0
+                continue
+            if previous is not None and not _startup_screen_changed(previous, frame):
+                stable_seconds += 1
+            else:
+                stable_seconds = 0
+            previous = frame
+            if stable_seconds >= STARTUP_SCREEN_STABLE_SECONDS:
+                self.send_log(
+                    f"画面连续 {stable_seconds}s 没有变化，提前下发任务"
+                    f"（实际等了 {remaining - left:.0f}s）"
+                )
+                return
 
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []
@@ -1678,6 +1729,47 @@ class MaaFWRunner:
                 continue
             kept.append(summary)
         return "框架失败事件: " + "；".join(kept) if kept else ""
+
+
+def _sample_startup_screen(controller: Any) -> Any | None:
+    """截一帧并按 stride 抽样，供启动画面稳定判定用；controller 还没有时返回 None。"""
+
+    if controller is None:
+        return None
+    job = controller.post_screencap()
+    job.wait()
+    if job.failed:
+        raise RuntimeError("controller 截图失败")
+    image = controller.cached_image
+    if image is None or getattr(image, "size", 0) == 0:
+        return None
+    stride = STARTUP_SCREEN_SAMPLE_STRIDE
+    return image[::stride, ::stride].astype(np.int16)
+
+
+def _startup_screen_is_blank(frame: Any) -> bool:
+    """黑屏或整屏一个颜色：还在加载，不算稳定。"""
+
+    return float(frame.std()) < STARTUP_SCREEN_BLANK_STD
+
+
+def _startup_screen_changed(previous: Any, frame: Any) -> bool:
+    """两帧之间有没有肉眼可见的变化。
+
+    逐像素取通道最大差，超过 ``STARTUP_SCREEN_PIXEL_DELTA`` 的抽样点多于
+    ``STARTUP_SCREEN_CHANGED_PIXELS`` 个就算变了。数个数而不是看平均差：进度条这种
+    只动一小条的变化平均下来会被整屏稀释掉。宁可误判成「在变」——那只是等到上限，
+    和以前一样；判「稳定」判早了才会把加载画面交给脚本。
+    """
+
+    if previous.shape != frame.shape:
+        return True
+    delta = np.abs(frame - previous)
+    if delta.ndim == 3:
+        delta = delta.max(axis=2)
+    return (
+        int((delta > STARTUP_SCREEN_PIXEL_DELTA).sum()) > STARTUP_SCREEN_CHANGED_PIXELS
+    )
 
 
 def _encode_current_screen_png(controller: Any) -> bytes:
