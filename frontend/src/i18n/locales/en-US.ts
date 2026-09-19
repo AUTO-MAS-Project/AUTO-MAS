@@ -199,6 +199,7 @@ export default {
     backendUpdateFailedRestart:
       'The source and the dependencies are in place, but the new backend did not start',
     backendUpdateUnsupportedMode: 'This mode does not support updating the backend automatically',
+    backendUpdateRetryBootstrap: 'Start the update again',
     backendUpdateRetryWorkspaceSync: 'Sync the source again',
     backendUpdateRetryDependenciesSync: 'Retry the dependency sync',
     backendUpdateRetryDependenciesRebuild: 'Rebuild the dependency environment',

@@ -4,9 +4,11 @@
 `res/runtime-version.txt`。Runtime 有自己的发布节奏，因此这里钉死具体版本、不追 `latest`；
 需要升级时，先发布并完成联调，再在要构建的分支更新该文件。CI 会从本次构建所选分支读取版本，
 并拒绝缺少后台更新协议的二进制，防止生成无法正常启动的安装包。
-bump 该文件后，已装用户在下次本体更新后的首次启动会自动换到这一版（桌面端按
-`<app-root>/repo/res/runtime-version.txt` 校对并替换 Runtime，哈希取自该 Release 的
-`SHA256SUMS.txt`）。
+bump 该文件后，已装用户在下次本体更新时会先换到这一版、再更新源码：桌面端在跑 `bootstrap`
+之前（首次初始化与本体更新都是）到目标发布分支上读这份文件（CNB 与 GitHub 并行、先到先用），
+与 exe 自报的版本不一致就下载替换（首选 CNB，再 gh-proxy，GitHub 官方兜底；哈希取自该 Release
+的 `SHA256SUMS.txt`）；每次 managed 启动还会按 `<app-root>/repo/res/runtime-version.txt` 兜底
+核对一次。所以 bump 之前请确认那版 Runtime 能配合要构建的分支启动。
 
 本地验证可直接使用本次源码构建的 Runtime，不必等待 Release：
 
@@ -27,12 +29,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Runtime verification failed' }
 `workspace stage` 和 `bootstrap --if-needed`，然后生成携带指定 Runtime 的安装包和解压目录。
 `-SkipInstall` 仅适用于前端依赖已经安装的环境；脚本不会发布或上传安装包。
 
-**运行 `-LocalRuntimePath` 打出来的包时必须设置 `AUTO_MAS_RUNTIME_EXE`。** 桌面端每次
-managed 启动都会拿 `<app-root>/repo/res/runtime-version.txt` 的钉扎去核对 exe 自报的版本，
-本地构建的 Runtime 自报 `dev`，与钉扎不一致就会被下载的发布版原地覆盖——之后跑的就不是
-你要验证的那一份了。`repo/` 是 Runtime 从发布分支克隆的，安装包不带
-`res/runtime-version.txt`，所以打包脚本改不了这份钉扎；唯一的逃生口是让桌面端认出这是
-开发者自带的 Runtime：
+**运行 `-LocalRuntimePath` 打出来的包时必须设置 `AUTO_MAS_RUNTIME_EXE`。** 桌面端在初始化
+与本体更新之前会按目标发布分支上的 `res/runtime-version.txt` 核对 exe 自报的版本，每次
+managed 启动还会按 `<app-root>/repo/res/runtime-version.txt` 再核对一次；本地构建的 Runtime
+自报 `dev`，与钉扎不一致就会被下载的发布版原地覆盖——之后跑的就不是你要验证的那一份了。
+钉扎来自发布分支，安装包不带 `res/runtime-version.txt`，所以打包脚本改不了它；唯一的逃生口
+是让桌面端认出这是开发者自带的 Runtime：
 
 ```powershell
 $env:AUTO_MAS_RUNTIME_EXE = 'D:/Github/AUTO-MAS-Runtime/bin/auto-mas-runtime.exe'

@@ -202,6 +202,7 @@ export default {
     backendUpdateFailedRestart:
       'ソースと依存関係は揃いましたが、新しいバックエンドを起動できませんでした',
     backendUpdateUnsupportedMode: '現在のモードではバックエンドの自動更新に対応していません',
+    backendUpdateRetryBootstrap: '更新をやり直す',
     backendUpdateRetryWorkspaceSync: 'ソースを同期し直す',
     backendUpdateRetryDependenciesSync: '依存関係の同期を再試行',
     backendUpdateRetryDependenciesRebuild: '依存環境を再構築',

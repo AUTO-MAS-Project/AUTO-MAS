@@ -27,7 +27,7 @@ import {
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
 } from './runtime'
-import { syncRuntimeBinary } from './runtimeBinaryService'
+import { readRuntimeBinaryPin, syncRuntimeBinary } from './runtimeBinaryService'
 import { resolveRuntimeTargetVersion } from './runtimeInitializationService'
 
 import { getLogger } from './logger'
@@ -386,9 +386,10 @@ export class BackendService {
         ])
         if (!prepared.success) return this.buildRuntimeStartFailure(prepared, [], [])
         this.runtimeUpdateReady = null
-        // 源码已经是目标版本了，Runtime 自己也得跟上：此刻旧监督进程已退出、新的还没起来，
-        // 是唯一能安全替换 exe 的窗口。替换的是同一个路径，下面 supervise 用的还是这个
-        // client，spawn 到的已经是新二进制。
+        // 兜底核对：初始化与更新链路在 bootstrap 之前已经按远端钉扎对齐过 Runtime（第 0 步），
+        // 这里按 `repo/` 里的钉扎再看一眼，补上那两条路没走到的情形（旧版本本体更新上来、
+        // exe 被杀软还原）。此刻旧监督进程已退出、新的还没起来，是唯一能安全替换 exe 的
+        // 窗口；替换的是同一个路径，下面 supervise 用的还是这个 client，spawn 到的已是新二进制。
         await this.alignRuntimeBinaryWithRepo(runtimePath, config.appRoot)
       } catch (error) {
         return this.buildRuntimeStartFailure(error, [], [])
@@ -1209,7 +1210,7 @@ export class BackendService {
   }
 
   /**
-   * 让 Runtime 可执行文件与受管源码的钉扎一致。
+   * 让 Runtime 可执行文件与受管源码里的钉扎一致（不联网读钉扎，只读 `repo/`）。
    *
    * 失败只记警告不阻断启动：旧 Runtime 仍然能监督后端，而把用户卡在「更新完就打不开」
    * 比多跑一版旧 Runtime 糟得多。真正需要新 Runtime 的功能会在自己那条路上报错。
@@ -1220,13 +1221,13 @@ export class BackendService {
     if (this.runtimeStopping) return
 
     try {
-      const outcome = await syncRuntimeBinary({
-        runtimePath,
-        appRoot,
-        sourceRoot: path.join(appRoot, 'repo'),
-      })
+      // 没带钉扎文件的本体版本（该机制之前发布的）什么都不做。
+      const pin = readRuntimeBinaryPin(path.join(appRoot, 'repo'))
+      if (!pin) return
+
+      const outcome = await syncRuntimeBinary({ runtimePath, appRoot, pin })
       if (outcome.status === 'failed') {
-        logger.warn(`Runtime 未能随本体更新到 ${outcome.pin?.version}，继续用现有版本启动`)
+        logger.warn(`Runtime 未能随本体更新到 ${pin.version}，继续用现有版本启动：${outcome.error}`)
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
