@@ -5,6 +5,7 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       :loading="loading"
+      :user-id="userId"
       @handle-cancel="handleCancel"
     />
 

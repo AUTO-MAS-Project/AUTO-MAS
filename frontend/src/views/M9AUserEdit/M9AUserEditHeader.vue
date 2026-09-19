@@ -17,6 +17,17 @@
     </div>
 
     <a-space size="middle">
+      <a-button
+        v-if="props.userId"
+        size="large"
+        :loading="folderLoading"
+        @click="handleOpenFolder"
+      >
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
@@ -29,20 +40,29 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
+import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   scriptId: string
   scriptName: string
   isEdit: boolean
   loading: boolean
+  userId?: string
 }>()
 
 defineEmits<{
   handleCancel: []
 }>()
+
+const { loading: folderLoading, openUserConfigFolder } = useUserApi()
+
+const handleOpenFolder = async () => {
+  if (!props.userId) return
+  await openUserConfigFolder(props.scriptId, props.userId)
+}
 </script>
 
 <style scoped>

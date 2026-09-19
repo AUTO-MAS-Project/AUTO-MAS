@@ -41,6 +41,7 @@
       :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
       :config-locked="configLocked"
+      :user-id="userId"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
