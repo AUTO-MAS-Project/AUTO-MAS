@@ -136,6 +136,13 @@ _UNRETRYABLE_ENVIRONMENT_MARKERS = (
     "MaaFW Runner 环境准备失败",
     "MaaFW Runner 环境准备超时",
 )
+# worker 到点自己停任务、截图、回传结果需要一点时间；宿主的硬超时在此之后才到，
+# 只兜 worker 没能停下来的情况（原生层卡死、agent 自定义动作不返回）。
+_RUN_DEADLINE_GRACE_SECONDS = 90.0
+# worker 把结果发回来之后还要收尾（断开 agent、结束 agent 进程）才退出。agent 卡死时
+# 这一步可能拖很久，而结果已经在手里了：给有限时间，到点强杀，别让宽限期把已经
+# 拿到的截图和进度一起作废。
+_WORKER_EXIT_AFTER_RESULT_SECONDS = 30.0
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERBOSE_FRAMEWORK_LOG_MARKERS = (
     "Transceiver::send] send canceled",
@@ -224,6 +231,10 @@ async def _abandon_environment_preparation(
         # 再次被取消：同样不再等，收尾留给后台任务。
         _ABANDONED_PREPARATION_CLEANUPS.add(cleanup_task)
         cleanup_task.add_done_callback(_ABANDONED_PREPARATION_CLEANUPS.discard)
+
+
+class _MaaFWRunTimeoutError(RuntimeError):
+    """worker 在宽限期内也没停下，宿主强杀了它。"""
 
 
 class _FrameworkLogWriter:
@@ -514,6 +525,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                     if unretryable:
                         break
+                    await self._restart_client_before_retry(index + 1)
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
@@ -530,7 +542,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                     self._record_attempt(index + 1, completed_task_labels, None)
                 else:
-                    message = _failed_task_user_summary(result, self.run_plan)
+                    if result.timedOut:
+                        message = self._timed_out_user_summary(result)
+                    else:
+                        message = _failed_task_user_summary(result, self.run_plan)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     self._append_log(message)
@@ -554,6 +569,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
                         self._append_log("MaaFW 剩余周期任务已完成，停止本轮重试")
+                    else:
+                        await self._restart_client_before_retry(index + 1)
         finally:
             # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
             # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
@@ -1139,15 +1156,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _run_maafw(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
-        timeout = self.script_config.get("Run", "RunTimeLimit") * 60
+        limit_minutes = self.script_config.get("Run", "RunTimeLimit")
+        timeout = limit_minutes * 60
+        # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
+        # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
+        run_deadline_at = time.time() + timeout
         try:
             return await asyncio.wait_for(
-                self._run_maafw_worker(device_config),
-                timeout=timeout,
+                self._run_maafw_worker(device_config, run_deadline_at=run_deadline_at),
+                timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
         except asyncio.TimeoutError as exc:
             await self._terminate_runner_process()
-            raise RuntimeError("MaaFW 任务运行超时") from exc
+            raise _MaaFWRunTimeoutError(
+                f"MaaFW 任务运行超时（限制 {limit_minutes} 分钟，worker 未能自行停止，已强制结束）"
+            ) from exc
         except asyncio.CancelledError:
             await self._terminate_runner_process()
             raise
@@ -1155,6 +1178,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _run_maafw_worker(
         self,
         device_config: MaaFWDeviceConfig,
+        *,
+        run_deadline_at: float | None = None,
     ) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
@@ -1242,6 +1267,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 failure_screenshot_dir=history_dir,
                 failure_screenshot_prefix=history_stamp,
                 task_start_not_before=self._task_start_not_before(),
+                run_deadline_at=run_deadline_at,
             )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
@@ -1268,6 +1294,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise
         self.runner_process = process
         result_payload: dict[str, Any] | None = None
+        result_received = asyncio.Event()
         stderr_lines: list[str] = []
         framework_log_path: Path | None = None
         framework_log_writer: _FrameworkLogWriter | None = None
@@ -1332,6 +1359,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self._append_log(_framework_ui_message(message))
                 elif event_type == "result" and isinstance(event.get("data"), dict):
                     result_payload = event["data"]
+                    result_received.set()
                 elif event_type == "error":
                     message = str(event.get("message") or "")
                     write_framework_log("runner-error", message)
@@ -1381,7 +1409,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         raise result
 
         try:
-            returncode = await process.wait()
+            returncode = await self._wait_worker_exit(process, result_received)
             await drain_readers(propagate_errors=True)
         finally:
             if process.returncode is None:
@@ -1443,6 +1471,37 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # the worker exits without a protocol result.
             message += ": MaaFW worker 未返回任务结果，完整原生日志已保存到本次运行的 .maafw.log"
         raise RuntimeError(message)
+
+    async def _wait_worker_exit(
+        self,
+        process: asyncio.subprocess.Process,
+        result_received: asyncio.Event,
+    ) -> int | None:
+        """等 worker 退出；结果已经回传的话只再等有限时间。"""
+
+        exit_task = asyncio.ensure_future(process.wait())
+        result_task = asyncio.ensure_future(result_received.wait())
+        try:
+            await asyncio.wait(
+                {exit_task, result_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if exit_task.done():
+                return exit_task.result()
+            try:
+                return await asyncio.wait_for(
+                    asyncio.shield(exit_task),
+                    timeout=_WORKER_EXIT_AFTER_RESULT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                self._append_log(
+                    "MaaFW worker 已回传结果但迟迟不退出，强制结束以免拖过时限"
+                )
+                await self._terminate_runner_process()
+                return process.returncode
+        finally:
+            for task in (exit_task, result_task):
+                if not task.done():
+                    task.cancel()
 
     async def _shutdown_runner(self) -> None:
         await self._terminate_pretask_process()
@@ -1673,6 +1732,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await close_emulator(self, log_failure=False)
         finally:
             self.opened_emulator = False
+            # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
+            self._cached_adb_address = None
+            self._cached_device_info = None
 
     async def _ensure_desktop_game_started(self) -> None:
         """Win32 场景下由 MAS 负责启动/激活桌面游戏客户端，供后续窗口解析使用。"""
@@ -1964,6 +2026,36 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(0.5)
 
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
+
+    async def _restart_client_before_retry(self, attempt: int) -> None:
+        """一轮失败后把 MAS 自己拉起的游戏/模拟器关掉，让下一轮从启动重新来。
+
+        和 MAA 专项的重试一个口径：出了问题就整个重来。以前重试只是重启 MaaFW 框架
+        再接回同一个窗口——超时那种卡在某一屏的情况（弹窗关不掉、按钮点不动），
+        第二、三轮 3 秒内就撞回同一屏，白等两倍时限。
+        游戏/模拟器不是 MAS 起的（AttachOnly、发现已在运行）时照旧不碰；
+        这是最后一轮时也不在这里关，收尾统一关。
+        """
+
+        if attempt >= self.script_config.get("Run", "RunTimesLimit"):
+            return
+        if not self.opened_game and not self.opened_emulator:
+            return
+        self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
+        await self._close_emulator()
+        await self._close_game()
+
+    def _timed_out_user_summary(self, result: MaaFWRunResult) -> str:
+        limit = self.script_config.get("Run", "RunTimeLimit")
+        total = len(self.run_plan.tasks) if self.run_plan is not None else 0
+        stopped_at = ""
+        if result.failedTask and self.run_plan is not None:
+            labels = _format_completed_task_labels(self.run_plan, [result.failedTask])
+            stopped_at = f"，最后停在 {labels[0]}"
+        return (
+            f"MaaFW 任务运行超时（限制 {limit} 分钟，已完成 "
+            f"{len(result.completedTasks)}/{total}{stopped_at}）"
+        )
 
     async def _close_game(self) -> None:
         """关闭由 MAS 启动的游戏。
