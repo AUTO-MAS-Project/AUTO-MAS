@@ -57,6 +57,17 @@ _BGI_STEP_TIME_RE = re.compile(r"\[(\d{1,2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]")
 # 消息/异常原因另起一行；``任务执行异常``/``执行失败`` 则直接出现在消息行。
 _BGI_STEP_HEADER_ERR_HINTS = ("[ERR]", "[FTL]")
 _BGI_STEP_ISSUE_HINTS = ("[ERR]", "任务执行异常", "执行失败")
+# 步内「致命」异常信号：出现即说明这一步实际没干成，BGI 却照样打 ``→ "任务结束"``，
+# 只看收尾行会把它报成「已完成（含 N 处异常）」。命中即判该步失败，原因照旧交给通知。
+#   - 未匹配到任何战斗脚本：进副本后拿当前队伍找不到自动战斗脚本，仗没打（AutoDomainTask）；
+#   - 未能返回主界面：SwitchPartyTask 回不到主界面（通常上一步把游戏留在了副本/子界面）；
+#   - 未找到队伍 / Sequence contains no elements：游戏队伍列表里没有这支队伍。
+_BGI_STEP_FATAL_HINTS = (
+    "未匹配到任何战斗脚本",
+    "未能返回主界面",
+    "未找到队伍",
+    "Sequence contains no elements",
+)
 
 # ── BGI 配置组内「项目」的执行行 ──────────────────────────────
 # 队列里的自定义项（配置组 / 脚本 / 路径 / 录制）由 ``--startGroups`` 直连 BGI 配置组执行，
@@ -93,6 +104,17 @@ def _clean_step_task(line: str) -> str:
     return s.strip() or "未知任务"
 
 
+def _note_step_issue(step: dict, line: str) -> None:
+    """把一条异常行记入步内问题；命中「致命」信号时额外把该步标记为失败。
+
+    见 ``_BGI_STEP_FATAL_HINTS``：BGI 的 TaskRunner 捕获任务级异常后不再 rethrow，照打
+    ``→ "任务结束"`` 继续跑后面的任务，所以「打没打成」只能靠这类信号区分。
+    """
+    step["issue"].append(line)
+    if any(h in line for h in _BGI_STEP_FATAL_HINTS):
+        step["fatal"] = True
+
+
 def _align_task_names(
     steps: list[dict], task_names: list[str] | None
 ) -> list[str] | None:
@@ -120,7 +142,8 @@ def parse_one_dragon_report(
     """解析「一条龙」分步执行报告，按执行顺序返回步骤字典列表。
 
     每步字段：``index``/``total``（第几条/共几条）、``task``（任务名）、``start``/``end``
-    （起止时间 HH:MM:SS）、``ok``（是否走完 ``→ "任务结束"``）、``issue_count``/``issue_text``
+    （起止时间 HH:MM:SS）、``ok``（是否走完 ``→ "任务结束"`` 且步内没有致命异常，见
+    ``_BGI_STEP_FATAL_HINTS``）、``issue_count``/``issue_text``
     （步内可恢复异常数目与首条原因摘要，无异常为空串）。
     本会话未跑一条龙（无 ``一条龙任务执行`` 行）时返回 None，调用方据此省略分步区块。
 
@@ -161,7 +184,7 @@ def parse_one_dragon_report(
             # 该消息属于上一条 [ERR] 头行：记入问题，不参与任务名解析
             pending_err = False
             if cur is not None and "任务启动" not in line and "任务结束" not in line:
-                cur["issue"].append(line)
+                _note_step_issue(cur, line)
             continue
 
         pm = _BGI_STEP_PROGRESS_RE.match(line)
@@ -178,6 +201,7 @@ def parse_one_dragon_report(
                 "end": "",
                 "ok": True,
                 "issue": [],
+                "fatal": False,
             }
             continue
         if cur is None:
@@ -186,8 +210,10 @@ def parse_one_dragon_report(
         if line == '→ "任务结束"':
             # 走完「任务结束」即该步成功；步内 [ERR] 是 BGI 可恢复异常，只记为 issue，
             # 不把本可完成的一条龙某步误判失败（与 _one_dragon_sequence_done 语义一致）。
+            # 例外：步内出现「致命」信号（找不到自动战斗脚本、切队回不到主界面…）时这一步
+            # 实际没干成，收尾行只是 BGI 跳过继续，判失败并把原因交给通知。
             cur["end"] = last_time
-            cur["ok"] = True
+            cur["ok"] = not cur["fatal"]
             steps.append(finalize())
             cur = None
         elif "任务启动" in line:
@@ -196,7 +222,7 @@ def parse_one_dragon_report(
             if not cur["task"]:
                 cur["task"] = _clean_step_task(line)
             if any(h in line for h in _BGI_STEP_ISSUE_HINTS):
-                cur["issue"].append(line)
+                _note_step_issue(cur, line)
 
     if cur is not None:  # 日志结束仍停留在某一步（未收尾）→ 该步未完成
         cur["end"] = cur["end"] or last_time
@@ -212,6 +238,7 @@ def parse_one_dragon_report(
         if aligned is not None:
             s["task"] = aligned[int(s["index"]) - 1]
         s.pop("issue", None)
+        s.pop("fatal", None)
     return steps
 
 
