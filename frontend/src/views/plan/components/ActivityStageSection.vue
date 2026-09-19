@@ -337,8 +337,7 @@ const slotLabelOfIntent = (intent: string) => {
 
 const rowUserStatuses = (row: StageSlotRow): UserSlotItem[] => usersInSlot(row.key)
 
-const rowStageExists = (row: StageSlotRow) =>
-  row.key === 'mat' || row.stageCode !== null
+const rowStageExists = (row: StageSlotRow) => row.stageCode !== null
 
 /** 行内需要黄字提示的用户：预览行与骨架行的 gap 是「待开启」不算警告 */
 const rowBlockingItems = (row: StageSlotRow): UserSlotItem[] => {
@@ -767,11 +766,6 @@ table.slots tr.missing td {
   white-space: nowrap;
 }
 
-.slot-sub {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  font-weight: 400;
-}
 
 .stage-code {
   font-weight: 600;

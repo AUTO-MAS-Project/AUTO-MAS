@@ -790,7 +790,7 @@ def _overlay_value(key: str, value) -> str:
     elif key == "StageMode":
         text = "固定" if str(value) == "Fixed" else "计划表"
     elif key == "ActivityStageIntent":
-        # 意图键转人话（搓玉 / 倒数第N关 / 材料ID），与编辑页词表同口径
+        # 意图键转人话（搓玉 / 倒数第N关），与编辑页词表同口径
         text = _intent_display(str(value))
     elif key == "SeriesNumb":
         text = {"0": "AUTO", "-1": "不切换"}.get(str(value), str(value))
@@ -883,6 +883,9 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
                 rows.append({"key": "关卡", "value": _compose_stage_text(overlay)})
                 continue
             value = overlay[key]
+            if key == "ActivityStageIntent":
+                # 预览与恢复走同一校验器：非法值显示归一结果而非原始串
+                value = ActivityStageIntentValidator().correct(str(value))
             if isinstance(value, list):
                 joined = "、".join(
                     _overlay_value(key, item)

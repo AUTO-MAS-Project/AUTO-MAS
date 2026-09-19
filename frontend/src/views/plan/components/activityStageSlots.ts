@@ -1,5 +1,5 @@
 // 活动关批量指派表的纯逻辑：槽位行推导、用户注入状态判定。
-// 共享原语（判玉/排序/材料白名单）在 @/utils/activityStage，本模块只保留
+// 共享原语（判玉/排序）在 @/utils/activityStage，本模块只保留
 // 计划表页特有的槽位行与用户行模型。
 
 import type { ActivityItem } from '@/types/home'
@@ -48,7 +48,7 @@ export interface ActivityUserRow {
   skipDetail: string
 }
 
-/** 槽位行（倒N → 搓玉 → 自定义材料） */
+/** 槽位行（倒N → 搓玉） */
 export interface StageSlotRow {
   key: string
   label: string

@@ -290,7 +290,7 @@ export default {
     maaEventFirst: '活动关优先',
     maaEventFirstHint: '这是日常流程中的独立合成任务，会在普通理智作战之前执行',
     maaEventStage: '活动关卡',
-    maaEventStageHint: '保存选关意图（搓玉 / 倒数第N关 / 指定材料），下期活动按同一意图自动解析，本期无匹配关时跳过并提示',
+    maaEventStageHint: '保存选关意图（搓玉 / 倒数第N关），下期活动按同一意图自动解析，本期无匹配关时跳过并提示',
     maaStageNotStarted: '未开始',
     activityStateOk: '本期：{stage} · {mat}（{name}）· 正常注入',
     activityStatePreview: '下期：{stage} · {mat}（{name}）· 待开启，开启后自动注入',

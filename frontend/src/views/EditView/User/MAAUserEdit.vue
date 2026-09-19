@@ -672,7 +672,7 @@ const displayActivityStageIntent = computed(() => {
     : undefined
 })
 
-/** 该用户服务器视角的两期关卡（状态行与材料白名单共用） */
+/** 该用户服务器视角的两期关卡（状态行取数用） */
 const serverStageLists = computed(() => {
   const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
   const overview = stageOverviewByServer.value[server]

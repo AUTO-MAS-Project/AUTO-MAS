@@ -1,13 +1,10 @@
-// 活动关选关意图的共享纯逻辑：意图解析、判玉、材料白名单、活动时间。
+// 活动关选关意图的共享纯逻辑：意图解析、判玉、活动时间。
 // 排序与判玉规则必须与后端 _resolve_activity_stage / getStage 保持同锚；
 // 计划表页槽位逻辑（activityStageSlots.ts）与用户编辑页状态机共用本模块。
 
 import type { ActivityItem } from '@/types/home'
 
 export type { ActivityItem } from '@/types/home'
-
-/** 选关下拉里「自定义材料」的伪值（选中后展开材料子选，写回 mat:<id>；不落库） */
-export const MATERIAL_PSEUDO_VALUE = '__mat__'
 
 /** 槽位键：意图 → 归并键 */
 export function slotKeyOfIntent(intent: string): string {

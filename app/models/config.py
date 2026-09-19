@@ -1088,7 +1088,7 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfActivityFirst = ConfigItem(
             "Task", "IfActivityFirst", False, BoolValidator()
         )
-        ## 优先刷取的活动关卡意图（jade / last:N / mat:材料ID；旧序号经 legacy 同锚迁移）
+        ## 优先刷取的活动关卡意图（jade / last:N；旧序号经 legacy 同锚迁移）
         self.Task_ActivityStageIntent = ConfigItem(
             "Task",
             "ActivityStageIntent",
@@ -5016,16 +5016,16 @@ class GlobalConfig(ConfigBase):
                     drop_id = "30012"
                 else:
                     drop_id = "NotFound"
-                    return {
-                        "Display": stage["Display"],
-                        "Value": stage["Value"],
-                        # 原始掉落文本：搓玉检测必须用它，
-                        # 归一化 30012 与真固源岩线同 ID
-                        "RawDrop": stage["Drop"],
-                        "Drop": drop_id,
-                        "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
-                        "Activity": activity,
-                    }
+                return {
+                    "Display": stage["Display"],
+                    "Value": stage["Value"],
+                    # 原始掉落文本：搓玉检测必须用它，
+                    # 归一化 30012 与真固源岩线同 ID
+                    "RawDrop": stage["Drop"],
+                    "Drop": drop_id,
+                    "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
+                    "Activity": activity,
+                }
 
             for server, server_stage_data in stage_data_by_server.items():
                 activity_stage_drop_info = []

@@ -622,7 +622,7 @@ def _activity_today() -> str:
 def _resolve_activity_stage(
     activity_stages: list[dict], intent: str
 ) -> tuple[str | None, str]:
-    """按用户选关意图解析当前活动材料关，返回 (关卡码, 解析摘要)。
+    """按用户选关意图解析当前活动关，返回 (关卡码, 解析摘要)。
 
     jade=含玉关；last:N=非玉关按关卡号降序第 N 项（倒1=最高编号关，与旧
     版序号同锚）。失配返回 (None, 原因)，由调用方决定跳过与提示。
