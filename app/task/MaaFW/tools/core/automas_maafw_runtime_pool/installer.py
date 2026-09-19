@@ -1450,6 +1450,14 @@ def _run_subprocess(
     uv 下载依赖，没有这一步，任务取消只能干等安装线程跑完。
     """
 
+    if env is not None and logger.isEnabledFor(logging.DEBUG):
+        # 只打代理变量的键名与 NO_PROXY 的值：HTTP_PROXY 里可能带 user:pw@。
+        logger.debug(
+            "MaaFW runtime 子进程 %s：代理变量=%s，NO_PROXY=%s",
+            command[:3],
+            sorted(key for key in env if key.upper().endswith("_PROXY")),
+            env.get("NO_PROXY") or env.get("no_proxy") or "",
+        )
     cancel_event = current_install_cancel_event()
     if cancel_event is None:
         return subprocess.run(

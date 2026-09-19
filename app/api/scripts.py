@@ -1537,6 +1537,9 @@ async def prepare_maafw_agent_env(
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
         MaaFWRuntimePoolService,
     )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+        subprocess_proxy_scope,
+    )
     from app.task.MaaFW.tools.embedded.env_cache import (
         has_prepared_environment,
         load_prepared_environment,
@@ -1654,19 +1657,26 @@ async def prepare_maafw_agent_env(
         route = await asyncio.to_thread(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
         )
+        proxy_url = Config.proxy_url
+
+        def _prepare_with_proxy() -> dict[str, Any]:
+            # 代理作用域按线程登记，必须在 to_thread 的目标函数体内进入，
+            # uv / pip 子进程环境才带上用户在 MAS 里填的代理。
+            with subprocess_proxy_scope(proxy_url):
+                return MaaFWRunnerService().prepare_project_environment(
+                    root_path,
+                    interface,
+                    runtime_pool_root=route.root,
+                    runtime_pool_id=route.pool_id,
+                    # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+                    # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+                    import_paths=[SOURCE_ROOT],
+                    send_log=append_log,
+                    progress=publish_progress,
+                )
+
         try:
-            result = await asyncio.to_thread(
-                MaaFWRunnerService().prepare_project_environment,
-                root_path,
-                interface,
-                runtime_pool_root=route.root,
-                runtime_pool_id=route.pool_id,
-                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                import_paths=[SOURCE_ROOT],
-                send_log=append_log,
-                progress=publish_progress,
-            )
+            result = await asyncio.to_thread(_prepare_with_proxy)
         except Exception as exc:
             # 失败原因此前只活在响应体与 WS 事件里，两边都不落盘：用户报障时
             # app.log 里一行都没有，只能对着界面截图猜。准备过程的逐行日志
