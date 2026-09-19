@@ -133,6 +133,11 @@ FAILURE_NODE_NAME_LIMIT = 3
 # 等「最早可下发任务」时刻最多等这么久。时刻是宿主按墙钟算的，两边钟对不上时
 # 这条上限保证不会把整轮吊死。
 TASK_START_GATE_MAX_SECONDS = 600.0
+RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
+
+
+class MaaFWRunTimeoutError(RuntimeError):
+    """到了宿主给的截止时刻，worker 自己停掉了当前任务。"""
 
 
 def decode_bytes(data: bytes) -> str:
@@ -430,6 +435,7 @@ class MaaFWRunner:
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
+        run_deadline_at: float | None = None,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -454,6 +460,17 @@ class MaaFWRunner:
         self._failure_screenshot_prefix: str = failure_screenshot_prefix
         self._failure_screenshots: list[MaaFWFailureScreenshot] = []
         self._task_start_not_before: float | None = task_start_not_before
+        # 截止时刻到了由定时器线程置位并 post_stop；主线程看到它就截图、按超时收尾。
+        # 不复用 _stop_requested：那个表示「用户取消」，取消不截图也不算失败。
+        self._run_deadline_at: float | None = run_deadline_at
+        self._deadline_hit: threading.Event = threading.Event()
+        self._deadline_timer: threading.Timer | None = None
+        # 投递任务与超时定时器之间的互斥：定时器在锁内置位并看有没有任务在跑，
+        # 主线程在锁内先看标志再投递。没有这把锁，定时器刚看完「没在跑」、主线程
+        # 就把任务投出去，那个任务就没人停了。
+        self._post_lock: threading.Lock = threading.Lock()
+        self._task_in_flight: bool = False
+        self._deadline_stop_posted: bool = False
 
     @property
     def failure_screenshots(self) -> list[MaaFWFailureScreenshot]:
@@ -525,7 +542,10 @@ class MaaFWRunner:
     def run(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         self._stop_requested.clear()
         self._external_stop_seen.clear()
+        self._deadline_hit.clear()
+        self._deadline_stop_posted = False
         self._failure_screenshots = []
+        self._start_deadline_timer()
         try:
             self._ensure_initialized(device_config)
             self._wait_task_start_gate()
@@ -578,7 +598,73 @@ class MaaFWRunner:
                 failedTask=failed_task,
                 errorMessage=str(exc),
                 failureScreenshots=self.failure_screenshots,
+                timedOut=isinstance(exc, MaaFWRunTimeoutError),
             )
+        finally:
+            self._cancel_deadline_timer()
+
+    def _start_deadline_timer(self) -> None:
+        """到宿主给的截止时刻就停掉当前任务。
+
+        宿主以前是到点直接 terminate 整个 worker：controller 随进程一起没了，卡在
+        哪一屏没人知道，已完成的任务也带不回去。现在由 worker 自己在同一时刻
+        post_stop，主线程从 `_wait_job` 里出来后截图、按超时收尾并正常回传结果；
+        宿主只在 worker 没能及时停下时才强杀。截止时刻已过时定时器立即触发。
+        """
+
+        self._cancel_deadline_timer()
+        deadline_at = self._run_deadline_at
+        if deadline_at is None:
+            return
+        timer = threading.Timer(
+            max(0.0, deadline_at - time.time()), self._on_run_deadline
+        )
+        timer.name = "maafw-run-deadline"
+        timer.daemon = True
+        self._deadline_timer = timer
+        timer.start()
+
+    def _cancel_deadline_timer(self) -> None:
+        timer = self._deadline_timer
+        self._deadline_timer = None
+        if timer is not None:
+            timer.cancel()
+
+    def _on_run_deadline(self) -> None:
+        # 定时器线程里只做两件事：置位、让正在跑的任务停下。截图与收尾都在主线程，
+        # 那里 controller 的使用方式和普通任务失败完全一样。
+        with self._post_lock:
+            self._deadline_hit.set()
+            in_flight = self._task_in_flight
+        if self._stop_requested.is_set():
+            return
+        if not in_flight:
+            self.send_log(f"{RUN_TIMEOUT_MESSAGE}，不再投递后续任务")
+            return
+        self.send_log(f"{RUN_TIMEOUT_MESSAGE}，正在停止当前任务并截图")
+        self._deadline_stop_posted = True
+        try:
+            self._post_self_stop()
+        except Exception as exc:
+            self.send_log(f"超时停止 MaaFW tasker 失败: {exc}")
+
+    def _raise_if_deadline_hit(
+        self, task_name: str | None = None, *, only_if_stopped: bool = False
+    ) -> None:
+        """截止时刻到了就按超时收尾；给了任务名就先截一张当前画面。
+
+        ``only_if_stopped``：任务刚从 ``_wait_job`` 回来时用。定时器若是在它跑完之后
+        才触发（没有为它 post_stop），这个任务就是真的做完了，应记完成，超时留到
+        下一次投递前再抛；否则一个已完成的任务会被记成「最后停在」并重做。
+        """
+
+        if not self._deadline_hit.is_set():
+            return
+        if only_if_stopped and not self._deadline_stop_posted:
+            return
+        if task_name is not None:
+            self._capture_failure_screenshot(task_name, kind="timeout")
+        raise MaaFWRunTimeoutError(RUN_TIMEOUT_MESSAGE)
 
     def cleanup(self) -> None:
         self._stop_requested.set()
@@ -592,6 +678,7 @@ class MaaFWRunner:
 
     def shutdown(self) -> None:
         self._stop_requested.set()
+        self._cancel_deadline_timer()
         try:
             _ensure_maafw_client_library_mode()
             self.cleanup()
@@ -1347,11 +1434,16 @@ class MaaFWRunner:
         if not_before is None:
             return
         remaining = min(not_before - time.time(), TASK_START_GATE_MAX_SECONDS)
+        if self._run_deadline_at is not None:
+            # 截止时刻比等待结束还早时只等到截止时刻，下面按超时收尾。
+            remaining = min(remaining, self._run_deadline_at - time.time())
         if remaining <= 0:
+            self._raise_if_deadline_hit()
             return
         self.send_log(f"游戏刚启动，再等 {remaining:.0f}s 让画面加载完成后下发任务")
         if self._stop_requested.wait(timeout=remaining):
             raise RuntimeError("MaaFW 任务已停止")
+        self._raise_if_deadline_hit()
 
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []
@@ -1370,14 +1462,26 @@ class MaaFWRunner:
             self._task_failure_summaries.clear()
             self._failed_controller_actions.clear()
             try:
-                if task.pipelineOverride:
-                    job = tasker.post_task(task.entry, task.pipelineOverride)
-                else:
-                    job = tasker.post_task(task.entry)
-                self._wait_job(job)
+                with self._post_lock:
+                    self._raise_if_deadline_hit()
+                    if task.pipelineOverride:
+                        job = tasker.post_task(task.entry, task.pipelineOverride)
+                    else:
+                        job = tasker.post_task(task.entry)
+                    self._task_in_flight = True
+                try:
+                    self._wait_job(job)
+                finally:
+                    self._task_in_flight = False
             except Exception as exc:
                 if self._stop_requested.is_set():
                     raise RuntimeError("MaaFW 任务已停止") from exc
+                if isinstance(exc, MaaFWRunTimeoutError):
+                    # 投递前就到点了（锁内那次检查抛的）：截一张当前画面再往上抛
+                    self._raise_if_deadline_hit(task.name)
+                # 超时的 post_stop 也会让当前任务以失败返回，要先于普通失败判定：
+                # 否则它会被记成任务失败，甚至被 `_external_stop_active` 当成脚本侧强停。
+                self._raise_if_deadline_hit(task.name, only_if_stopped=True)
                 message = str(exc)
                 self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
@@ -1408,6 +1512,7 @@ class MaaFWRunner:
                 continue
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
+            self._raise_if_deadline_hit(task.name, only_if_stopped=True)
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
             # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
             # `job.failed` 会把一件没做的事记成「任务完成」，整轮还可能被报成
@@ -1425,12 +1530,15 @@ class MaaFWRunner:
             time.sleep(0.1)
         return completed_tasks
 
-    def _capture_failure_screenshot(self, task_name: str) -> None:
+    def _capture_failure_screenshot(
+        self, task_name: str, *, kind: str = "failed"
+    ) -> None:
         """把任务失败当刻的画面存成 PNG，随运行结果回传宿主。
 
         画面就是用户排查时最想看的那一眼——卡在哪个弹窗、哪个界面。
         取消（stop_requested）不算失败，不截；controller 已经没了也截不到。
         截图失败只记一行日志，绝不能反过来影响任务结果。
+        ``kind`` 进文件名：普通失败是 ``failed``，超时停下的是 ``timeout``。
         """
 
         directory = self._failure_screenshot_dir
@@ -1448,7 +1556,7 @@ class MaaFWRunner:
                 if self._failure_screenshot_prefix
                 else ""
             )
-            path = directory / f"{prefix}failed-{stamp}-{name}.png"
+            path = directory / f"{prefix}{kind}-{stamp}-{name}.png"
             path.write_bytes(data)
         except Exception as exc:
             self.send_log(f"任务失败截图未能保存: {exc}")
