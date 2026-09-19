@@ -503,6 +503,18 @@ export interface RuntimeStageOutcome {
   failedStage?: InitializationRunStage
 }
 
+/** 第 0 步被取消时的结局：与 Runtime 自己的取消同码，调用方按「源码一动没动」处置。 */
+function cancelledOutcome(): RuntimeStageOutcome {
+  return {
+    success: false,
+    error: '已取消',
+    code: RUNTIME_BINARY_CANCELLED,
+    retryable: true,
+    remediation: ['retry'],
+    failedStage: 'python',
+  }
+}
+
 /**
  * 从事件 details 里读 Runtime 自己的轮转日志路径。
  *
@@ -846,6 +858,17 @@ export class RuntimeInitializationService {
    * （原因只会是网络与文件占用，都是重试能解决的），并给「重试」与「打开日志」两个入口。
    */
   private async alignRuntime(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
+    const outcome = await this.runAlignment(bridge)
+    // 对齐期间收到的取消不能丢：exe 本来就一致、目标分支没钉扎这些路径不会去看取消判据，
+    // 而此时 Runtime 命令还没起、stdin cancel 也没有去处，这里是它唯一的落点。
+    if (outcome.success && this.cancelRequested) {
+      logger.info('第 0 步结束时发现已被取消，不再进入 bootstrap')
+      return cancelledOutcome()
+    }
+    return outcome
+  }
+
+  private async runAlignment(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
     const { mode, runtimePath, appRoot } = this.options.launchConfig
     if (mode !== 'managed' || !runtimePath) return { success: true }
 
@@ -903,14 +926,7 @@ export class RuntimeInitializationService {
         return { success: true }
       case 'cancelled':
         logger.info('第 0 步被取消，源码一动没动')
-        return {
-          success: false,
-          error: '已取消',
-          code: RUNTIME_BINARY_CANCELLED,
-          retryable: true,
-          remediation: ['retry'],
-          failedStage: 'python',
-        }
+        return cancelledOutcome()
       case 'failed':
         logger.error(`第 0 步失败: ${result.code} ${result.error}`)
         return {

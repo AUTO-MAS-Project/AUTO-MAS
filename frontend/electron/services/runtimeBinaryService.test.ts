@@ -544,6 +544,46 @@ describe('syncRuntimeBinary', () => {
       expect(secondProgress.at(-1)).toEqual(firstProgress.at(-1))
     })
 
+    it('在途的是另一个版本时，等它结束后再按本次钉扎同步一次，不拿它的结果冒充', async () => {
+      const OTHER_VERSION = 'v0.1.9'
+      const otherAsset = runtimeAssetName(OTHER_VERSION)
+      let finishOther: (() => void) | undefined
+      const download = vi.fn(
+        (url: string, savePath: string) =>
+          new Promise<{ success: boolean }>(resolve => {
+            const asset = url.includes(OTHER_VERSION) ? otherAsset : PINNED_ASSET
+            const content = url.includes(OTHER_VERSION) ? 'other-runtime-binary' : NEW_BINARY
+            if (isSumsUrl(url)) {
+              fs.writeFileSync(savePath, sumsFor(content, asset), 'utf8')
+              resolve({ success: true })
+              return
+            }
+            const write = () => {
+              fs.writeFileSync(savePath, content, 'utf8')
+              resolve({ success: true })
+            }
+            if (url.includes(OTHER_VERSION)) {
+              finishOther = write
+            } else {
+              write()
+            }
+          })
+      )
+
+      const first = syncRuntimeBinary(syncOptions({ download, pin: { version: OTHER_VERSION } }))
+      const second = syncRuntimeBinary(syncOptions({ download }))
+      await vi.waitFor(() => expect(finishOther).toBeDefined())
+      finishOther?.()
+
+      const [firstOutcome, secondOutcome] = await Promise.all([first, second])
+
+      expect(firstOutcome).toMatchObject({ status: 'upgraded', pin: { version: OTHER_VERSION } })
+      expect(secondOutcome).toMatchObject({ status: 'upgraded', pin: { version: PINNED_VERSION } })
+      // 两轮各自一份清单加一份 exe，最终落盘的是后来者要的那一版。
+      expect(download).toHaveBeenCalledTimes(4)
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+    })
+
     it('上一次结束后再调用会重新同步', async () => {
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 

@@ -1151,6 +1151,26 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
     expect(FakeRuntimeClient.calls).toHaveLength(0)
   })
 
+  it('exe 本来就一致时第 0 步不看取消判据，但期间的 cancel 仍要在进入 bootstrap 前生效', async () => {
+    let release: (() => void) | undefined
+    alignStub.hold = new Promise(resolve => {
+      release = resolve
+    })
+    // 对齐桩照常返回 current（真实实现在版本相等时不查取消判据，就会这样返回）。
+    alignStub.result = { status: 'current', pin: { version: 'v0.1.7' } }
+    const service = createService()
+
+    const pending = service.bootstrap(() => undefined)
+    await vi.waitFor(() => expect(alignStub.calls).toHaveLength(1))
+    expect(service.cancel()).toBe(true)
+    release?.()
+    const outcome = await pending
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe(RUNTIME_BINARY_CANCELLED)
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+  })
+
   it('上一次的取消不会带进下一次 bootstrap', async () => {
     const service = createService()
     service.cancel()

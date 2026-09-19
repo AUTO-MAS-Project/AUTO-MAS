@@ -576,12 +576,16 @@ export function syncRuntimeBinary(
 ): Promise<RuntimeBinarySyncResult> {
   if (inFlight) {
     if (inFlight.pin.version !== options.pin.version) {
-      logger.warn(
-        `已有一次到 ${inFlight.pin.version} 的 Runtime 同步在进行，本次要求的 ${options.pin.version} 等它结束后由下一次启动兜底`
+      // 要的不是同一版（启动兜底按本地钉扎、第 0 步按远端钉扎，两者可能不同步）：拿前一次的
+      // 结果当自己的会让第 0 步误判「已一致」放行 bootstrap，所以等它落地后再按本次要求同步。
+      logger.info(
+        `已有一次到 ${inFlight.pin.version} 的 Runtime 同步在进行，等它结束后再同步到 ${options.pin.version}`
       )
-    } else {
-      logger.info('已有一次 Runtime 同步在进行，等待其结果')
+      const previous = inFlight.promise
+      const rerun = (): Promise<RuntimeBinarySyncResult> => syncRuntimeBinary(options)
+      return previous.then(rerun, rerun)
     }
+    logger.info('已有一次 Runtime 同步在进行，等待其结果')
     if (options.onProgress) inFlight.listeners.add(options.onProgress)
     return inFlight.promise
   }
