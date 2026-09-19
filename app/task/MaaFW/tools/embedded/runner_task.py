@@ -1706,6 +1706,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"title={selected.windowName}"
                 )
                 self._note_resolution_override_skipped()
+                self._note_launch_arguments_skipped()
                 await self._activate_desktop_game_window(game_path)
                 return
 
@@ -1716,6 +1717,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             logger.info(message)
             self.script_info.log = message
             self._note_resolution_override_skipped()
+            self._note_launch_arguments_skipped()
             if await self._wait_for_desktop_game_ready(game_path):
                 # 进程在、窗口是等出来的：游戏正在启动，和 MAS 自己拉起的一样要等画面
                 self.game_window_ready_at = time.monotonic()
@@ -1760,6 +1762,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if self._unity_resolution_target() is not None:
             self._append_log("检测到游戏已在运行，本轮不会中途修改分辨率")
+
+    def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            self._append_log(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
 
     async def _apply_game_resolution_override(self, game_path: Path) -> None:
         """按 exe 反查 Unity 注册表并临时写入所选尺寸的窗口模式。
