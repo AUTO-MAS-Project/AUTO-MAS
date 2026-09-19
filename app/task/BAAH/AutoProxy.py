@@ -157,9 +157,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def _resolve_effective_config_name(self) -> str:
         """决定本次运行使用哪份 BAAH 配置文件。
 
-        开启活动适配后，碧蓝档案有进行中的活动时改用用户填写的活动配置；
-        没有活动、或拿不到排期（第三方接口不可用）时一律用默认配置——查不到
-        活动状态只该退回默认行为，不该挡住脚本执行。
+        开启活动适配且当前有进行中的活动时用活动配置，其余情况（未开启、
+        没有活动、排期取不到、活动配置名无效）都用默认配置。
 
         Returns:
             str: 规范化后的配置名。
@@ -183,7 +182,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.effective_config_name = default_name
 
-        ## 用 or "" 兜住 None：str(None) 会得到非空的 "None"，会被当成配置名去找 None.json
+        ## or "" 兜住 None：str(None) 会得到 "None"，被当成配置名去找 None.json
         activity_name = (
             self.cur_user_config.get("Info", "ActivityConfigName") or ""
         ).strip()

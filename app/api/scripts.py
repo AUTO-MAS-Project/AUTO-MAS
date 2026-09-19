@@ -24,7 +24,7 @@
 import asyncio
 import uuid
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,13 +32,11 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.core import Config
-from app.models.config import BAAHConfig as RuntimeBAAHConfig
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
-from app.task.BAAH.tools import CONFIG_DIR_NAME, list_config_names
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
@@ -67,19 +65,11 @@ from app.task.MaaFW.tools.embedded.update_progress import (
 )
 from app.utils import get_logger
 from app.utils.paths import SOURCE_ROOT
+from app.utils.constants import UTC8
 from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
-
-
-def _baah_script_config(script_id: str):
-    """Resolve a BAAH script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeBAAHConfig):
-        raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
-    return script_config
 
 
 def _hsr_script_config(script_id: str):
@@ -1882,17 +1872,13 @@ async def get_bettergi_custom_groups_api(
     status_code=200,
 )
 async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
-    """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
-
-    配置目录由脚本配置里的主程序路径派生（``BAAH.exe`` 同级的 ``BAAH_CONFIGS``），
-    与运行时读写的是同一个目录，供界面下拉选择，避免手输一个不存在的配置名。
-    """
+    """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。"""
 
     try:
-        script_config = _baah_script_config(scriptId)
-        baah_path = Path(str(script_config.get("Script", "BAAHPath")))
-        names = list_config_names(baah_path.parent / CONFIG_DIR_NAME)
-        data = [ComboBoxItem(label=name, value=name) for name in names]
+        data = [
+            ComboBoxItem(label=name, value=name)
+            for name in Config.get_baah_config_names(scriptId)
+        ]
         return ComboBoxOut(
             code=200,
             status="success",
@@ -1913,14 +1899,10 @@ async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
         )
 
 
-## Kivo 的时间戳是 Unix 秒；碧蓝档案各服排期按北京时间展示，与首页卡片的惯例一致
-_BEIJING_TZ = timezone(timedelta(hours=8))
-
-
 def _format_beijing_time(timestamp: float) -> str:
-    """Unix 秒 → 北京时间「YYYY-MM-DD HH:MM」。"""
+    """Unix 秒 → 「YYYY-MM-DD HH:MM」（东八区）。"""
 
-    return datetime.fromtimestamp(timestamp, tz=_BEIJING_TZ).strftime("%Y-%m-%d %H:%M")
+    return datetime.fromtimestamp(timestamp, tz=UTC8).strftime("%Y-%m-%d %H:%M")
 
 
 @router.get(
@@ -1933,17 +1915,13 @@ def _format_beijing_time(timestamp: float) -> str:
 async def get_baah_activity_status_api(
     lineType: Literal["JP", "Globle", "CN"] = "CN",
 ) -> BlueArchiveActivityStatusOut:
-    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。
-
-    与 BAAH 活动适配用的是同一份数据、同一套口径（只认「活动」分类，同一
-    活动被拆成多条时保留结束最晚的那条），界面据此显示当前会按哪一边切换。
-    """
+    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。"""
 
     from app.tools.bluearchive_activity import resolve_activity_state
 
     state = await resolve_activity_state(lineType)
     if state is None:
-        ## 取不到排期不是错误：说明情况即可，活动适配本身也会退回默认配置
+        ## 取不到排期不算错误，如实说明即可
         return BlueArchiveActivityStatusOut(
             message="未取到碧蓝档案活动排期，请稍后重试",
         )

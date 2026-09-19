@@ -482,8 +482,7 @@ const formData = reactive({
   ...getDefaultBAAHUserData(),
 })
 
-// BAAH 配置文件名下拉候选：由后端按脚本配置里的主程序路径实时读取 BAAH_CONFIGS
-// 目录，两份配置名（默认与活动期间）共用同一份候选，避免手输不存在的配置名
+// 配置名下拉候选：由后端按主程序路径实时读取 BAAH_CONFIGS，两份配置名共用
 const configNameOptions = ref<{ label: string; value: string }[]>([])
 const configNamesLoading = ref(false)
 const loadConfigNames = async () => {
@@ -500,8 +499,7 @@ const loadConfigNames = async () => {
   }
 }
 
-// 所选服当前的活动排期：界面据此说明活动期间会切到哪份配置。开着活动适配
-// 才有意义，所以开关或服务器一变就重新取；取不到时后端会带说明回来。
+// 所选服的活动排期，开关或服务器变化时重新取
 const activityStatus = ref<BlueArchiveActivityStatusOut | null>(null)
 const activityStatusLoading = ref(false)
 // 快速切换服务器时先发的请求可能后到：用代数标记，只采纳最新一次的结果
@@ -997,7 +995,8 @@ onUnmounted(() => {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
   cursor: help;
-  transition: color 0.3s ease;}
+  transition: color 0.3s ease;
+}
 
 .help-icon:hover {
   color: var(--ant-color-primary);

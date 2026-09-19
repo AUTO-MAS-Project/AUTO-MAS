@@ -20,10 +20,9 @@
 
 """碧蓝档案活动排期查询。
 
-活动数据来自上游已有的 Kivo 中转接口（``POST /api/info/bluearchive/activity``），
-本模块只把它翻译成两个口径：调度侧只要「当前有没有进行中的活动」，界面还要知道
-活动叫什么、什么时候开始结束。第三方接口不可用不应挡住脚本执行，因此取数失败
-一律返回 None，由调用方退回默认行为。
+取数复用上游的 Kivo 中转接口（``POST /api/info/bluearchive/activity``），本模块
+只负责把它翻译成两个口径：调度侧要「当前有没有进行中的活动」，界面还要活动名与
+起止时间。取数失败返回 None，由调用方退回默认行为。
 """
 
 import time
@@ -85,19 +84,17 @@ def has_running_activity_in(
 def collect_activities(
     items: Sequence[Mapping[str, object]], now_seconds: float
 ) -> tuple[ActivityInfo | None, ActivityInfo | None]:
-    """挑出正在进行中的活动与下一个还没开始的活动。
+    """挑出进行中的活动与下一个还没开始的活动。
 
-    与前端首页卡片的取值口径一致：只认「活动」分类，同一活动被拆成多条
-    （活动本体与介绍 PV）时保留结束时间最晚的那条；没有标题的条目无法展示，
-    直接跳过。
+    与前端的取值口径一致：只认「活动」分类；同名条目保留结束最晚的一条；
+    没有标题、时间不是数字、开始与结束同一时刻的条目一律跳过。
 
     Args:
         items: Kivo 时间轴条目。
         now_seconds: 判定时刻的 Unix 秒。
 
     Returns:
-        tuple[ActivityInfo | None, ActivityInfo | None]: 依次为进行中的活动、
-            下一个未开始的活动；没有则为 None。
+        tuple[ActivityInfo | None, ActivityInfo | None]: 进行中的活动、下一个未开始的活动。
     """
 
     picked: dict[str, ActivityInfo] = {}
@@ -113,6 +110,7 @@ def collect_activities(
             not name
             or not isinstance(start, (int, float))
             or not isinstance(end, (int, float))
+            or end <= start
         ):
             continue
 
@@ -122,8 +120,7 @@ def collect_activities(
 
         picked[name] = ActivityInfo(name, float(start), float(end))
 
-    # 同时有好几场进行中时取最早结束的那场：与首页卡片（blueArchivePresentation）同口径，
-    # 否则同一时刻两处会指向不同的活动
+    # 进行中同时有多场时取最早结束的那场，与前端的取值保持一致
     running = sorted(
         (item for item in picked.values() if item.start_time <= now_seconds < item.end_time),
         key=lambda item: item.end_time,
