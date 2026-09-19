@@ -354,6 +354,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
+        # ⚠️ 该开关已从 BetterGI 用户页隐藏，改由配置来源派生（BetterGIUserConfig.load：
+        # 直控 = 关，脚本 / 用户 = 开），故此处对直控恒为假 —— 整条 _write_native_one_dragon
+        # 路径当前不可达（含一条龙平面周表键那部分写入）。按维护者决策保留实现，
+        # 将来若恢复开关可直接复用。
         self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
             self.cur_user_config.get("Info", "IfQuickConfig")
         )
