@@ -360,10 +360,17 @@ def _merge_maa_config_file(
     return changed
 
 
-def _merge_fight_task(source_task: dict, managed_task: dict) -> dict:
-    """继承 MAA 原生配置，并以基础任务覆盖 MAS 托管字段。"""
+def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
+    """以 MAA 原生配置为底，只用 MAS 托管补丁覆盖它声明接管的键。
 
-    return {**deepcopy(source_task), **deepcopy(managed_task)}
+    补丁是 merge patch 语义：**补丁里出现的键才算 MAS 接管，没出现的键一律
+    透传用户在上游界面里的选择**（临期药、源石、博朗台、周计划、指定材料/
+    次数、隐藏项等）。因此补丁表（MAA_ANNIHILATION_FIGHT_BASE /
+    MAA_REMAIN_FIGHT_BASE）只允许列 MAS 运行必需且自己会消费的字段；往表里
+    补一个 MAS 不消费的默认值，等于把用户的选择静默抹掉。
+    """
+
+    return {**deepcopy(source_task), **deepcopy(managed_patch)}
 
 
 def _find_task_source(
@@ -644,6 +651,8 @@ def _build_activity_priority_fight(
             "IsStageManually": True,
             "UseOptionalStage": False,
             "UseWeeklySchedule": False,
+            # 活动关优先不继承理智作战的「指定材料 / 指定次数」门禁：它是同一套
+            # 打法换个关卡，带上这些门禁会在刷够材料或跑满次数后提前收工
             "EnableTargetDrop": False,
             "DropId": "",
             "DropCount": 0,
