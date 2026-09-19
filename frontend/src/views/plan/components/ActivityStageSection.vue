@@ -75,7 +75,6 @@
                 </span>
                 <span v-else class="stage-none">
                   {{ row.skeleton ? t('plan.activity.pendingEntry') : t('plan.activity.noStage') }}
-                  <span v-if="row.skeleton" class="tag-future">{{ t('plan.activity.notStarted') }}</span>
                 </span>
               </td>
               <td>
