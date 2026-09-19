@@ -68,6 +68,8 @@ import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
+import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
@@ -904,6 +906,29 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按所选 resource 推断 MFW 项目的安卓游戏包名
+     * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     *
+     * 只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+     * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+     * @param requestBody
+     * @returns MaaFWGamePackageOut Successful Response
+     * @throws ApiError
+     */
+    public static resolveMaafwGamePackageApiScriptsMaafwGamePackagePost(
+        requestBody: MaaFWGamePackageIn,
+    ): CancelablePromise<MaaFWGamePackageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/game-package',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -2200,7 +2225,8 @@ export class Service {
     }
     /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
-     * 运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
      * @param userId
      * @param target

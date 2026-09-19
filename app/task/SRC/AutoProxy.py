@@ -49,6 +49,7 @@ from app.utils.io import read_file, write_file
 
 from .tools import (
     archive_mas_runtime_backup,
+    ensure_game_updated,
     kill_src_processes,
     login,
     poor_yaml_read,
@@ -231,6 +232,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」..."
             )
+
+            # 需要用户手动更新游戏时重试无意义，直接结束本模式的重试
+            if self.script_config.get(
+                "Run", "IfCheckGameUpdate"
+            ) and not await self.handle_game_update(emulator_info):
+                break
 
             if await login(
                 emulator_info,
@@ -416,6 +423,60 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception:
             pass
         return cleanup_success
+
+    async def handle_game_update(self, emulator_info: DeviceInfo) -> bool:
+        """登录游戏前接管游戏更新。
+
+        Returns:
+            bool: 是否可以继续本次代理；``False`` 表示需要用户手动更新游戏。
+        """
+
+        self.script_info.log = "正在检查游戏更新"
+
+        async def report(text: str) -> None:
+            self.script_info.log = text
+
+        try:
+            result = await ensure_game_updated(
+                adb_path=self.emulator_manager.get_adb_path(),
+                adb_address=emulator_info.adb_address,
+                server=self.cur_user_config.get("Info", "Server"),
+                package_name=STARRAIL_PACKAGE_NAME[
+                    self.cur_user_config.get("Info", "Server")
+                ],
+                apk_dir=Path.cwd() / "data/GameApk",
+                if_auto_install=self.script_config.get("Run", "IfAutoInstallGameApk"),
+                time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
+                progress=report,
+            )
+        except Exception as e:
+            # 检查本身异常不应阻断代理，交回原有登录流程判定
+            logger.opt(exception=True).warning(f"游戏更新检查异常: {e}")
+            return True
+
+        logger.info(f"游戏更新检查结果: {result.status} - {result.message}")
+
+        if result.status != "NeedManualUpdate":
+            return True
+
+        self.cur_user_log.content = [result.message]
+        self.cur_user_log.status = "游戏需要手动更新"
+        self.script_info.log = result.message
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=result.message),
+        )
+        await close_emulator(self)
+
+        await Notify.push_plyer(
+            "游戏需要手动更新！",
+            result.message,
+            f"{self.cur_user_item.name}的游戏需要手动更新",
+            3,
+        )
+        return False
 
     async def kill_managed_process(self) -> bool:
         """中止 SRC 和模拟器关联进程。

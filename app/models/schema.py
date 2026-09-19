@@ -1580,7 +1580,6 @@ class MaaUserConfig_Task(BaseModel):
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
-    IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
     IfGreenTicketStore: Optional[bool] = Field(default=None, description="绿票商店")
@@ -2578,6 +2577,10 @@ class MaaEndUserConfig_Task(BaseModel):
 
 class MaaEndUserConfig_Notify(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    PushLogMode: Optional[Literal["关闭", "逐条", "汇总"]] = Field(
+        default=None,
+        description="任务报告节点详情的推送模式：关闭=不采集；逐条=采集并逐条带回时间戳；汇总=采集并按状态聚合",
+    )
     IfSendStatistic: Optional[bool] = Field(
         default=None, description="是否发送统计信息"
     )
@@ -2852,6 +2855,15 @@ class SrcConfig_Emulator(BaseModel):
 class SrcConfig_Run(BaseModel):
     TaskTransitionMethod: Optional[Literal["ExitGame", "ExitEmulator"]] = Field(
         default=None, description="任务切换方式"
+    )
+    IfCheckGameUpdate: Optional[bool] = Field(
+        default=None, description="登录游戏前检查游戏更新"
+    )
+    IfAutoInstallGameApk: Optional[bool] = Field(
+        default=None, description="自动下载并安装游戏安装包（仅国服官服）"
+    )
+    GameUpdateTimeLimit: Optional[int] = Field(
+        default=None, description="游戏更新超时限制"
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
@@ -3571,7 +3583,8 @@ class MaaFWConfig_Game(BaseModel):
     )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
-        default=None, description="游戏启动后等待窗口就绪的时间（秒）"
+        default=None,
+        description="游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前",
     )
 
 
@@ -3719,6 +3732,25 @@ class MaaFWConfig(BaseModel):
 
 class MaaFWInterfacePreviewIn(BaseModel):
     path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+
+
+class MaaFWGamePackageIn(BaseModel):
+    path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+    resource: str = Field(..., description="要按哪个 resource 的 pipeline 推断包名")
+
+
+class MaaFWGamePackageData(BaseModel):
+    reason: Literal["resolved", "not-found", "ambiguous"] = Field(
+        ..., description="推断结果：唯一 / 没找到 / 多个互相矛盾"
+    )
+    package: str = Field(default="", description="推出来的包名，仅 resolved 时非空")
+    candidates: List[str] = Field(
+        default_factory=list, description="ambiguous 时列出全部候选，供界面提示"
+    )
+
+
+class MaaFWGamePackageOut(OutBase):
+    data: Optional[MaaFWGamePackageData] = Field(default=None, description="包名推断结果")
 
 
 class MaaFWAdbEmulatorExtraCapabilityInfo(BaseModel):

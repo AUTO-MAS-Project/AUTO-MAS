@@ -55,6 +55,10 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _public_package_source,
     detect_maafw_project_shell_hint,
 )
+from app.task.MaaFW.tools.embedded.game_package import (
+    resolve_game_package,
+    resource_paths_for,
+)
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
 )
@@ -1102,6 +1106,47 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/maafw/game-package",
+    tags=["MaaFW"],
+    summary="按所选 resource 推断 MFW 项目的安卓游戏包名",
+    response_model=MaaFWGamePackageOut,
+    status_code=200,
+)
+async def resolve_maafw_game_package(
+    payload: MaaFWGamePackageIn = Body(...),
+) -> MaaFWGamePackageOut:
+    """脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+
+    只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+    运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+    """
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        paths = await asyncio.to_thread(
+            resource_paths_for, root_path, interface, payload.resource
+        )
+        resolution = await asyncio.to_thread(resolve_game_package, paths)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWGamePackageOut(code=400, status="error", message=str(exc))
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"resolve_maafw_game_package失败: {type(exc).__name__}: {exc}"
+        )
+        return MaaFWGamePackageOut(
+            code=500, status="error", message=f"推断游戏包名失败: {exc}"
+        )
+    return MaaFWGamePackageOut(
+        data=MaaFWGamePackageData(
+            reason=resolution.reason,
+            package=resolution.package,
+            candidates=list(resolution.candidates),
+        )
+    )
 
 
 @router.post(
@@ -2750,7 +2795,9 @@ async def save_bettergi_script_group_api(
     """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
     该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
 
-    不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+    「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+    （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+    ``User/ScriptGroup/{name}.json`` 同名实配。
     """
 
     try:
@@ -2766,12 +2813,11 @@ async def save_bettergi_script_group_api(
             root, req.scriptId, req.userId, req.name, req.data
         )
         if out is None:
-            # 路径类引用（名字含 /）由路径文件驱动、没有 per-user 副本：按成功返回，
-            # 不把「配置组名非法」弹给用户（2026-09-16 实机）
+            # 名为空等无可写内容的情况：按成功返回，不把「配置组名非法」弹给用户
             return OutBase(
                 code=200,
                 status="success",
-                message=f"{req.name} 是路径类引用，内容由路径文件决定，无需保存副本",
+                message=f"{req.name} 无需保存副本",
             )
         return OutBase(
             code=200,

@@ -805,6 +805,14 @@ class QueueConfig(ConfigBase):
         return await super().load(data)
 
 
+def _tag_last_status(status: object) -> str:
+    """「上次」标签文案。存储值的默认是「未知」，但从没跑过的用户显示「未知」很怪，
+    页面上写成「未运行」；其余状态（成功 / 失败 / 运行中）原样。"""
+
+    text = str(status or "").strip()
+    return "未运行" if text in ("", "未知") else text
+
+
 def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
     """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
     if (
@@ -1021,10 +1029,6 @@ class MaaUserConfig(ConfigBase):
         ## 是否更换主题（主题名称在 MAA 侧配置，MAS 仅透传）
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
-        )
-        ## 是否自动肉鸽
-        self.Task_IfRoguelike = ConfigItem(
-            "Task", "IfRoguelike", False, BoolValidator()
         )
         ## 是否生息演算
         self.Task_IfReclamation = ConfigItem(
@@ -1404,6 +1408,14 @@ class MaaEndUserConfig(ConfigBase):
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（log_box 采集的关键节点）：
+        ## 关闭 = 不采集；逐条 = 采集并逐条带回时间戳；汇总 = 采集并按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
         ## 是否发送统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
@@ -1482,7 +1494,7 @@ class MaaEndUserConfig(ConfigBase):
         # 上次代理标签
         tags.append(
             {
-                "text": f"上次：{self.get('Data', 'LastProxyStatus')}",
+                "text": f"上次：{_tag_last_status(self.get('Data', 'LastProxyStatus'))}",
                 "color": (
                     "red" if self.get("Data", "LastProxyStatus") == "失败" else "green"
                 ),
@@ -1579,7 +1591,7 @@ class MaaEndConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 账号切换方式（MAS 自建切换已废弃，字段仅保留旧配置兼容）
+        ## 账号切换方式（默认使用 MAAEND，MAS 为兼容入口）
         self.Run_AccountSwitchMethod = ConfigItem(
             "Run",
             "AccountSwitchMethod",
@@ -2036,6 +2048,18 @@ class SrcConfig(ConfigBase):
             "TaskTransitionMethod",
             "ExitGame",
             OptionsValidator(["ExitGame", "ExitEmulator"]),
+        )
+        ## 是否在登录游戏前检查游戏更新
+        self.Run_IfCheckGameUpdate = ConfigItem(
+            "Run", "IfCheckGameUpdate", False, BoolValidator()
+        )
+        ## 版本落后时是否由 MAS 自动下载并安装安装包
+        self.Run_IfAutoInstallGameApk = ConfigItem(
+            "Run", "IfAutoInstallGameApk", False, BoolValidator()
+        )
+        ## 游戏更新时间限制（分钟）
+        self.Run_GameUpdateTimeLimit = ConfigItem(
+            "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
         )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
@@ -2744,7 +2768,7 @@ class MaaFWUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append(
             {
-                "text": f"上次：{last_status}",
+                "text": f"上次：{_tag_last_status(last_status)}",
                 "color": "red" if last_status == "失败" else "green",
             }
         )
@@ -2883,7 +2907,12 @@ class MaaFWConfig(ConfigBase):
         self.Game_PackageName = ConfigItem("Game", "PackageName", "")
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
-        ## 游戏启动后等待窗口就绪的时间（秒）
+        ## 游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。
+        ## Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来；
+        ## MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。
+        ## 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满；
+        ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
+        ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
         # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
@@ -2996,9 +3025,11 @@ class MaaFWConfig(ConfigBase):
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
-        ## 运行次数限制
+        ## 运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑；
+        ## 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败，
+        ## 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
         ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
@@ -3433,7 +3464,9 @@ class OkwwUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
@@ -3565,7 +3598,9 @@ class OkNteUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
@@ -3773,7 +3808,13 @@ class BetterGIUserConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
-        """加载配置前，把旧版「国际服账号 + 国际服服务器 / B服切换模式」迁移为「游戏服务器」。"""
+        """加载配置前迁移旧版「游戏服务器」写法，并把快速配置开关按配置来源归一。
+
+        快速配置开关已从 BetterGI 用户页隐藏，改为按 ``Info.Mode`` 派生（维护者决策）：
+        直控 = 用 BGI 所选原生配置、MAS 不接管 ⇒ 恒为关；脚本 / 用户 = MAS 侧面板生效 ⇒ 开。
+        存量数据里可能残留与来源相左的值（如「直控 + 开」），加载时统一以来源为准，
+        免得 ``AutoProxy.writes_native_config`` 与界面语义又对不上。
+        """
         normalized_data = deepcopy(data) if isinstance(data, dict) else {}
         switch = normalized_data.get("Switch")
         if isinstance(switch, dict) and "Resource" not in switch:
@@ -3786,13 +3827,19 @@ class BetterGIUserConfig(ConfigBase):
                 )
             else:
                 switch["Resource"] = "官服"
+        # 来源字面量与 UserDirectConfigModeValidator 的取值一致（模型层不反向依赖 app.task）
+        info = normalized_data.get("Info")
+        if isinstance(info, dict) and info.get("Mode") in ("脚本", "用户", "直控"):
+            info["IfQuickConfig"] = info["Mode"] != "直控"
         return await super().load(normalized_data)
 
     def getTags(self) -> str:
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         # 快速配置开启时运行 MAS 槽位，关闭时运行所选原生配置。
         if self.get("Info", "IfQuickConfig"):
@@ -4325,7 +4372,7 @@ class ZzzOdUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append(
             {
-                "text": f"上次：{last_status}",
+                "text": f"上次：{_tag_last_status(last_status)}",
                 "color": "red" if last_status == "失败" else "green",
             }
         )

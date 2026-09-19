@@ -380,8 +380,6 @@ export default {
     maaSwitchTheme: 'Switch theme',
     maaSwitchThemeHint:
       'Theme names are configured in MAA\'s "Switch Theme" task. Multiple names are picked at random each run; an empty list skips the task. Requires MAA v6.17.3 or later',
-    maaRoguelike: 'Integrated Strategies',
-    maaRoguelikeHint: 'A long run may be mistaken for a timeout',
     maaGreenTicketStore: 'Green Ticket Store',
     maaGreenTicketStoreHint:
       'Starts its own MAA session once a month, before annihilation, buying everything on the 1st floor plus Headhunting Permits and Recruitment Permits on the 2nd floor. Skipped once bought this month, and a failure does not affect the later tasks. Requires MAA v6.3.0 or newer',
@@ -958,6 +956,11 @@ export default {
     readInterface: 'Read the interface',
     debug: 'Debug',
     accountSwitchingMethod: 'Account switching method',
+    accountSwitchMethodMas: 'MAS account switching',
+    accountSwitchMethodMaaend: 'MAAEND built-in switching',
+    maaendMasAccountSwitchWarningTitle: 'MAS account switching risk',
+    maaendMasAccountSwitchWarning:
+      'MAS account switching can mix up Zipline data. Disable the "Import/update Zipline coordinates" feature before using it.',
     giveUpAfterThis: 'Give up after this many failures',
     pickGameResourceThis: 'Pick the game resource this user runs',
     clickSaveConfigurationWhen: 'Click "Save configuration" when you are done to end this session.',
@@ -984,8 +987,8 @@ export default {
     masManagesGame: 'MAS manages the game',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
-      'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
-    mfwGamePackageNamePlaceholder: 'Empty to auto-detect, e.g. com.hypergryph.arknights',
+      'Launch the game together with the emulator. Detected from the project pipeline and filled in when the interface is read or the resource changes; when detection finds nothing or several candidates it stays empty, the game is not launched, and you can fill it in here',
+    mfwGamePackageNamePlaceholder: 'e.g. com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:
@@ -1017,7 +1020,6 @@ export default {
     okWwSettingsSaved: 'ok-ww settings saved',
     okWwPath: 'ok-ww path',
     originalUiRecommended: '- the original UI is recommended',
-    applyPreset: 'Apply a preset',
     march7thPath: 'March7th path',
     uploadFailedCheckYour: 'Upload failed — check your connection and try again',
     uploadThisScriptConfiguration: 'Upload this script configuration to the cloud',
@@ -1111,6 +1113,8 @@ export default {
     optional: 'Optional',
     couldNotStartSrc: 'Could not start the SRC configuration',
     checkGameUpdateBefore: 'Check for a game update before launching',
+    checkGameUpdateBeforeLogin:
+      'When enabled, the game client version is compared between the server and the emulator before logging in. An outdated client gets stuck on the force-update screen during login',
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
@@ -1173,7 +1177,7 @@ export default {
     whenThisScriptRuns:
       'When this script runs in a queue, the M9A resource version is updated after every user task finishes. Open M9A first and configure the update source',
     whenClientDetectedAs:
-      'When the client is detected as out of date, MAS downloads the package and installs it over ADB, then continues the run. CN servers only; the package is around 2 GB, so make sure you have the disk space',
+      'When the client is detected as out of date, MAS downloads the package and installs it over ADB, then continues the run. CN official server only; the package is around 2 GB, so make sure you have the disk space',
     updateAutomaticallyBeforeEvery: 'Update automatically before every run?',
     forceGameClose: 'Force the game to close',
     currentOkWwInstall:
@@ -1506,7 +1510,8 @@ export default {
       'Configuration uploaded — it will be visible to everyone once it is approved',
     scriptConfigurationFileType: 'Script configuration file type',
     automaticSaveFailedSave: 'Automatic save failed — save it manually',
-    installGamePackageAutomatically: 'Install the game package automatically (CN servers only)',
+    installGamePackageAutomatically:
+      'Install the game package automatically (CN official server only)',
     whetherGameClosesAfter: 'Whether the game closes after the auto-login task',
     urlCustomProtocol: 'URL of the custom protocol',
     ifFailureLogAppears: 'If a failure log appears before a success log, the task counts as failed',
@@ -1528,6 +1533,7 @@ export default {
     launchGameOtherWay: 'Start and stop the game another way',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
+    taskDescriptionLabel: 'Notes',
     adbStrategyPerDevice: 'Decided at run time',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: 'Default',
@@ -1545,6 +1551,8 @@ export default {
     envReadyAgents: 'Ready agents',
     envRetry: 'Retry',
     mfwUnityResolutionOff: 'Leave unchanged',
+    mfwWaitTimeTip:
+      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
@@ -1621,7 +1629,6 @@ export default {
     processName: 'Process name',
     processNameEG:
       'Process name, e.g. StarRail.exe. This is required, otherwise the process state may not be tracked correctly. Launch the game and open Task Manager, then check the program details to find it.',
-    appendTask: 'Append a task',
     trackChildProcesses: 'Track child processes',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
@@ -2868,6 +2875,7 @@ export default {
     },
     carousel: {
       remaining: 'Time left',
+      startsIn: 'Starts in',
       prev: 'Previous game',
       next: 'Next game',
       loading: 'Loading events…',
@@ -2918,7 +2926,9 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: 'Ends {time}',
+      startsAt: 'Starts {time}',
       versionRemaining: 'Event time remaining',
+      startsIn: 'Starts in',
       nextVersionSoon: 'More events are coming soon',
       versionTime: 'Event period:',
       serverLabel: 'Server',

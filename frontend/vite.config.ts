@@ -72,6 +72,10 @@ export default defineConfig(({ command }) => {
       'import.meta.env.VITE_APP_CHANGELOG': JSON.stringify(
         versionJson.version_info?.[versionJson.version] ?? {}
       ),
+      // 合并即入账的条目先放在「未发布」段，开发构建里一并展示；发布构建来自 tag，没有这一段
+      'import.meta.env.VITE_APP_CHANGELOG_UNRELEASED': JSON.stringify(
+        versionJson.version_info?.['未发布'] ?? {}
+      ),
       // 渲染进程兜底端点用，正常仍以 Electron 下发的端点为准
       'import.meta.env.VITE_AUTO_MAS_HTTP_PORT': JSON.stringify(String(backendPort)),
     },

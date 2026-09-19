@@ -616,7 +616,6 @@ const getDefaultMAAUserData = () => ({
     IfSwitchTheme: false,
     IfRecruit: true,
     IfReclamation: false,
-    IfRoguelike: false,
     IfDepotMaintain: false,
     IfCultivate: false,
     IfGreenTicketStore: false,

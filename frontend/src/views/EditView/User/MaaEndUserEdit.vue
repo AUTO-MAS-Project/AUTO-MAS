@@ -390,6 +390,7 @@ const getDefaultMaaEndUserData = () => ({
   },
   Notify: {
     Enabled: false,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',

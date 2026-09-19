@@ -368,8 +368,6 @@ export default {
     maaSwitchTheme: 'テーマ変更',
     maaSwitchThemeHint:
       'テーマ名は MAA の「テーマ変更」タスクで設定します。複数指定すると実行ごとに 1 つランダムに切り替わり、空の場合はスキップされます。MAA v6.17.3 以降が必要です',
-    maaRoguelike: '自動ローグライク',
-    maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
     maaGreenTicketStore: '緑チケット商店',
     maaGreenTicketStoreHint:
       '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
@@ -905,6 +903,11 @@ export default {
     readInterface: 'インターフェースを読み込む',
     debug: 'デバッグ',
     accountSwitchingMethod: 'アカウントの切り替え方法',
+    accountSwitchMethodMas: 'MAS の自動切り替え',
+    accountSwitchMethodMaaend: 'MAAEND 内蔵切り替え',
+    maaendMasAccountSwitchWarningTitle: 'MAS のアカウント切り替えに関する注意',
+    maaendMasAccountSwitchWarning:
+      'MAS の自動切り替えでは滑索データが混在する可能性があります。使用前に「滑索座標のインポート／更新」機能を無効にしてください。',
     giveUpAfterThis: 'この回数を超えて失敗した場合は中止します',
     pickGameResourceThis: 'このユーザーが使うゲームリソースを選びます',
     clickSaveConfigurationWhen:
@@ -932,8 +935,8 @@ export default {
     masManagesGame: 'MAS がゲームを管理',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
-      'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
-    mfwGamePackageNamePlaceholder: '空欄で自動判別、例: com.hypergryph.arknights',
+      'エミュレータ起動と同時にゲームを起動します。interface の読み込み時やリソース切替時にプロジェクトの pipeline から判別して自動入力します。判別できない場合や候補が複数ある場合は空欄のままで起動せず、ここに手動で入力できます',
+    mfwGamePackageNamePlaceholder: '例: com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',
@@ -964,7 +967,6 @@ export default {
     okWwSettingsSaved: 'ok-ww の設定を保存しました',
     okWwPath: 'ok-ww のパス',
     originalUiRecommended: '・元の UI の利用をおすすめします',
-    applyPreset: 'プリセットを適用',
     march7thPath: '三月なのかのパス',
     uploadFailedCheckYour:
       'アップロードに失敗しました。接続を確認して、しばらくしてからお試しください',
@@ -1058,6 +1060,8 @@ export default {
     optional: '任意',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
+    checkGameUpdateBeforeLogin:
+      '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
@@ -1121,7 +1125,7 @@ export default {
     whenThisScriptRuns:
       'オンにすると、このスクリプトがキューで実行される際、すべてのユーザーのタスク完了後に M9A のリソースバージョンを自動更新します。あらかじめ M9A を開いて更新元を設定しておいてください',
     whenClientDetectedAs:
-      'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
+      'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土公式サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
     updateAutomaticallyBeforeEvery: '実行前に毎回自動更新しますか？',
     forceGameClose: 'ゲームを強制終了',
     currentOkWwInstall:
@@ -1386,7 +1390,7 @@ export default {
     scriptConfigurationFileType: 'スクリプトの設定ファイルの種類',
     automaticSaveFailedSave: '自動保存に失敗しました。手動で保存してください',
     installGamePackageAutomatically:
-      'ゲームインストーラーを自動インストール（中国本土サーバーのみ）',
+      'ゲームインストーラーを自動インストール（中国本土公式サーバーのみ）',
     whetherGameClosesAfter: '自動ログインのタスク終了後にゲームを閉じるかどうか',
     urlCustomProtocol: 'カスタムプロトコルの URL',
     ifFailureLogAppears:
@@ -1409,6 +1413,7 @@ export default {
     launchGameOtherWay: '別の方法でゲームを起動・終了する',
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
     envPanelTitle: '実行環境',
+    taskDescriptionLabel: '説明',
     adbStrategyPerDevice: '実行時に判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '既定',
@@ -1425,6 +1430,8 @@ export default {
     envReadyAgents: '準備済みの Agent',
     envRetry: '再試行',
     mfwUnityResolutionOff: '変更しない',
+    mfwWaitTimeTip:
+      'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
@@ -1502,7 +1509,6 @@ export default {
     processName: 'プロセス名',
     processNameEG:
       'プロセス名（例: StarRail.exe）。未入力だとプロセスの状態を正しく監視できない場合があるため必須です。ゲームを起動してからタスクマネージャーでプログラムの詳細を確認すると分かります。',
-    appendTask: 'タスクを追加',
     trackChildProcesses: '子プロセスも追跡する',
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
@@ -2411,6 +2417,7 @@ export default {
     },
     carousel: {
       remaining: '残り時間',
+      startsIn: '開始まで',
       prev: '前のゲーム',
       next: '次のゲーム',
       loading: 'イベント情報を取得しています…',
@@ -2461,7 +2468,9 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: '{time} 終了',
+      startsAt: '{time} 開始',
       versionRemaining: 'イベントの残り時間',
+      startsIn: '開始まで',
       nextVersionSoon: '次のイベントがまもなく始まります',
       versionTime: 'イベント期間：',
       serverLabel: 'サーバー',

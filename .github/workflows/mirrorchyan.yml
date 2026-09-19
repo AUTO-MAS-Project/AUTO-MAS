@@ -33,7 +33,7 @@ jobs:
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: latest-release
-          filename: "AUTO-MAS-Lite-Setup-*.exe"
+          filename: "AUTO-MAS-Setup-*.exe"
           mirrorchyan_rid: AUTO_MAS
 
           owner: AUTO-MAS-Project

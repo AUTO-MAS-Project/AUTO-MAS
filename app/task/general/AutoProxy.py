@@ -282,6 +282,13 @@ class AutoProxyTask(TaskExecuteBase):
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
+    def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            logger.info(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -349,6 +356,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {self.game_process_name}"
                                 )
+                                self._note_launch_arguments_skipped()
                                 await asyncio.sleep(2)
                             else:
                                 logger.info(
@@ -367,6 +375,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
                                 )
+                                self._note_launch_arguments_skipped()
                                 await asyncio.sleep(
                                     self.script_config.get("Game", "WaitTime")
                                 )

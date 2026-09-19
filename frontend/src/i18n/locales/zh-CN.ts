@@ -370,8 +370,6 @@ export default {
     maaSwitchTheme: '更换主题',
     maaSwitchThemeHint:
       '主题名称在 MAA 的「更换主题」任务里配置，可填多个，每次运行随机切换一个，为空时自动跳过；需要 MAA v6.17.3 及以上版本',
-    maaRoguelike: '自动肉鸽',
-    maaRoguelikeHint: '长时间运行可能被误判超时',
     maaGreenTicketStore: '绿票商店',
     maaGreenTicketStoreHint:
       '每月单独启动一次 MAA 购买，排在剿灭之前：一层全买，二层买寻访凭证和招聘许可；当月买过就跳过，失败也不影响后面的任务。需要 MAA v6.3.0 及以上版本',
@@ -491,8 +489,7 @@ export default {
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
     maaEndSetResolution: '启动时设置分辨率',
-    maaEndSetResolutionHint:
-      '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
+    maaEndSetResolutionHint: '默认关闭；开启后会在首次启动游戏前执行 MaaEnd 的分辨率设置预任务。',
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
     maaEndRestoreResolutionHint:
       '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
@@ -936,6 +933,11 @@ export default {
     readInterface: '读取 interface',
     debug: '调试',
     accountSwitchingMethod: '账号切换方法',
+    accountSwitchMethodMas: 'MAS 自建切号',
+    accountSwitchMethodMaaend: 'MAAEND 内置切号',
+    maaendMasAccountSwitchWarningTitle: 'MAS 自建切号风险提示',
+    maaendMasAccountSwitchWarning:
+      'MAS 自建切号会导致滑索数据混杂，建议禁用「导入/更新滑索坐标」功能后再使用。',
     giveUpAfterThis: '超过该次数仍失败则终止',
     pickGameResourceThis: '选择当前用户使用的游戏资源',
     clickSaveConfigurationWhen: '配置完成后，点击“保存配置”结束本次会话。',
@@ -961,8 +963,8 @@ export default {
     masManagesGame: 'MAS 管理游戏',
     mfwGamePackageName: '游戏包名',
     mfwGamePackageNamePassed:
-      '启动模拟器时顺带把游戏拉起来。留空则从项目的 pipeline 中自动识别；识别不出或识别到多个时不启动游戏，可在此手动填写',
-    mfwGamePackageNamePlaceholder: '留空则自动识别，如 com.hypergryph.arknights',
+      '启动模拟器时顺带把游戏拉起来。读取 interface 或切换资源时会从项目的 pipeline 里识别并自动填入；识别不出或识别到多个时留空、运行时不启动游戏，可在此手动填写',
+    mfwGamePackageNamePlaceholder: '如 com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd 脚本配置',
     maaendPath: 'MaaEnd 路径',
     maaendAdapterStillUnder: 'MaaEnd专项还在积极测试中，如有问题请加入',
@@ -991,7 +993,6 @@ export default {
     okWwSettingsSaved: 'ok-ww 设置已保存',
     okWwPath: 'ok-ww 路径',
     originalUiRecommended: '· 建议使用原 UI',
-    applyPreset: '一键切换预设',
     march7thPath: '三月七路径',
     uploadFailedCheckYour: '上传失败，请检查网络连接或稍后重试',
     uploadThisScriptConfiguration: '上传脚本配置到云端',
@@ -1077,6 +1078,8 @@ export default {
     optional: '可选',
     couldNotStartSrc: '启动SRC配置失败',
     checkGameUpdateBefore: '启动前检查游戏更新',
+    checkGameUpdateBeforeLogin:
+      '开启后，登录游戏前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时游戏会停在强制更新界面，导致登录一直卡住',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
     waitAfterLaunchSeconds: '启动后等待时间（秒）',
     launchMode: '启动方式',
@@ -1130,7 +1133,7 @@ export default {
     whenThisScriptRuns:
       '开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源',
     whenClientDetectedAs:
-      '开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅官服可用，安装包约 2 GB，请确保磁盘空间充足',
+      '开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅国服官服可用，安装包约 2 GB，请确保磁盘空间充足',
     updateAutomaticallyBeforeEvery: '开启运行前自动更新？',
     forceGameClose: '强制关闭游戏',
     currentOkWwInstall:
@@ -1431,7 +1434,7 @@ export default {
     configurationUploadedItWill: '脚本配置上传成功，等待审核通过后即可向所有用户展示~',
     scriptConfigurationFileType: '脚本配置文件类型',
     automaticSaveFailedSave: '自动保存配置失败，请手动保存',
-    installGamePackageAutomatically: '自动安装游戏安装包（仅官服）',
+    installGamePackageAutomatically: '自动安装游戏安装包（仅国服官服）',
     whetherGameClosesAfter: '自动登录任务结束后是否关闭游戏',
     urlCustomProtocol: '自定义协议的URL',
     ifFailureLogAppears: '若任务异常日志先于任务成功日志出现，则视为任务失败',
@@ -1453,6 +1456,7 @@ export default {
     launchGameOtherWay: '使用其他方式启停游戏',
     mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
     envPanelTitle: '运行环境',
+    taskDescriptionLabel: '说明',
     adbStrategyPerDevice: '运行时判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '默认',
@@ -1468,6 +1472,8 @@ export default {
     envReadyAgents: '已就绪的 Agent',
     envRetry: '重试',
     mfwUnityResolutionOff: '不修改',
+    mfwWaitTimeTip:
+      'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
@@ -1546,7 +1552,6 @@ export default {
     processName: '进程名称',
     processNameEG:
       '进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。',
-    appendTask: '追加任务',
     trackChildProcesses: '追踪子进程',
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
@@ -2746,6 +2751,7 @@ export default {
     },
     carousel: {
       remaining: '剩余时间',
+      startsIn: '距开始',
       prev: '上一个游戏',
       next: '下一个游戏',
       loading: '正在获取活动信息…',
@@ -2796,7 +2802,9 @@ export default {
     bluearchive: {
       versionBadge: '{version} 月',
       endsAt: '{time} 结束',
+      startsAt: '{time} 开始',
       versionRemaining: '活动剩余时间',
+      startsIn: '距开始',
       nextVersionSoon: '后续活动即将开始',
       versionTime: '活动时间：',
       serverLabel: '服务器',
