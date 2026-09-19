@@ -75,6 +75,7 @@
                 </span>
                 <span v-else class="stage-none">
                   {{ row.skeleton ? t('plan.activity.pendingEntry') : t('plan.activity.noStage') }}
+                  <span v-if="row.skeleton" class="tag-future">{{ t('plan.activity.notStarted') }}</span>
                 </span>
               </td>
               <td>
@@ -854,7 +855,7 @@ table.slots tr.missing td {
 }
 
 .stage-none {
-  color: var(--ant-color-text-quaternary);
+  color: var(--ant-color-text-tertiary);
 }
 
 .tag-future {
