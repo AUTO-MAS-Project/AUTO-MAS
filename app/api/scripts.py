@@ -2689,7 +2689,9 @@ async def save_bettergi_script_group_api(
     """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
     该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
 
-    不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+    「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+    （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+    ``User/ScriptGroup/{name}.json`` 同名实配。
     """
 
     try:
@@ -2705,12 +2707,11 @@ async def save_bettergi_script_group_api(
             root, req.scriptId, req.userId, req.name, req.data
         )
         if out is None:
-            # 路径类引用（名字含 /）由路径文件驱动、没有 per-user 副本：按成功返回，
-            # 不把「配置组名非法」弹给用户（2026-09-16 实机）
+            # 名为空等无可写内容的情况：按成功返回，不把「配置组名非法」弹给用户
             return OutBase(
                 code=200,
                 status="success",
-                message=f"{req.name} 是路径类引用，内容由路径文件决定，无需保存副本",
+                message=f"{req.name} 无需保存副本",
             )
         return OutBase(
             code=200,

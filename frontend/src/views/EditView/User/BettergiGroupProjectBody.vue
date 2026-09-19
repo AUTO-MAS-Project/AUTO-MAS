@@ -145,7 +145,7 @@
       width="720px"
       :z-index="1100"
       class="bgi-project-settings-modal"
-      :ok-button-props="{ disabled: props.kind !== 'scriptgroup' || configLocked }"
+      :ok-button-props="{ disabled: !isScriptGroup || configLocked }"
       @ok="saveProjectSettings"
       @cancel="settingsModal.open = false"
     >
@@ -292,7 +292,6 @@ const logger = window.electronAPI.getLogger('BetterGI配置组项目编辑')
 const { configLocked } = useScriptConfigLock(() => props.scriptId)
 
 const loading = ref(false)
-const saving = ref(false)
 // 是否已存在 per-user 配置组副本（js/路径 未编辑时为 false，仅合成单项目展示）
 const hasPerUserReplica = ref(false)
 
@@ -503,16 +502,20 @@ const reload = async () => {
   }
 }
 
-// 拖拽排序结束 / 各保存路径统一写回 per-user 副本；写前规范化 index 并剔除 _uid
-const persistProjects = async (): Promise<boolean> => {
-  if (!isScriptGroup.value || saving.value) return false
-  if (configLocked.value) {
-    message.error(t('edit.configLocked'))
-    return false
-  }
-  saving.value = true
+// 一次保存的目标快照：发起时刻的组名 / 项目 / 组 json。
+// 保存排队期间用户可能已切到别的配置组，快照保证这一次保存仍写回原组，
+// 不会拿新组的 projects 去覆盖别的组（也不会把原组的改动丢掉）。
+type PersistSnapshot = {
+  name: string
+  rows: ProjectRow[]
+  groupJson: Record<string, any>
+}
+
+// 拖拽排序结束 / 各保存路径统一写回 per-user 副本；写前规范化 index 并剔除 _uid。
+// 返回是否真正落盘成功：调用方据此回滚界面上的乐观改动（见 addProjects / clearProjects）。
+const writeProjects = async (snapshot: PersistSnapshot): Promise<boolean> => {
   try {
-    const rows = projects.value.map((item, idx) => {
+    const rows = snapshot.rows.map((item, idx) => {
       const { _uid: _removed, ...rest } = item as ProjectRow & { _uid?: number }
       void _removed
       return { ...rest, index: idx + 1 }
@@ -520,9 +523,9 @@ const persistProjects = async (): Promise<boolean> => {
     const body: BetterGIScriptGroupSaveIn = {
       scriptId: props.scriptId,
       userId: props.userId,
-      name: props.groupName,
+      name: snapshot.name,
       data: {
-        ...groupJson.value,
+        ...snapshot.groupJson,
         projects: rows,
       },
     }
@@ -531,18 +534,39 @@ const persistProjects = async (): Promise<boolean> => {
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.bettergiProjectSaveFailed'))
     }
-    groupJson.value = { ...groupJson.value, projects: rows }
-    // 落盘后即存在 per-user 副本：JS/路径 由「独立单脚本」转为真正的配置组，解除清空/移除限制
-    if (props.kind === 'js' || props.kind === 'pathing') hasPerUserReplica.value = true
+    // 落盘期间没切组才回填本地状态（切走了就不是当前组的 json）
+    if (props.groupName === snapshot.name) {
+      groupJson.value = { ...snapshot.groupJson, projects: rows }
+      // 落盘后即存在 per-user 副本：JS/路径 由「独立单脚本」转为真正的配置组，解除清空/移除限制
+      if (props.kind === 'js' || props.kind === 'pathing') hasPerUserReplica.value = true
+    }
     message.success(t('edit.bettergiProjectSaved'))
     return true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
     return false
-  } finally {
-    saving.value = false
   }
+}
+
+// 保存串行化：以 promise 链取代布尔互斥——布尔守卫会在「上一次保存尚未返回」时静默丢弃
+// 紧随其后的保存（拖拽落定、添加脚本、弹窗保存接连触发即可命中，表现为「设置保存不上」）。
+// 链上传递的是「本次快照的落盘结果」：每个调用方拿到的都是自己那一次的结果。
+let persistChain: Promise<boolean> = Promise.resolve(true)
+
+const persistProjects = (): Promise<boolean> => {
+  if (!isScriptGroup.value) return persistChain
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return Promise.resolve(false)
+  }
+  const snapshot: PersistSnapshot = {
+    name: props.groupName,
+    rows: projects.value.map(item => ({ ...item })),
+    groupJson: { ...groupJson.value },
+  }
+  persistChain = persistChain.then(() => writeProjects(snapshot))
+  return persistChain
 }
 
 // 父组件「添加配置组弹窗(冻结配置组标签)」确认后调用：把 JS/路径行追加到末尾并保存
@@ -567,9 +591,9 @@ const addProjects = async (rows: ProjectRow[]) => {
 
 // 删除选中行（多选 + 「删除脚本」确认后）
 const removeSelectedProjects = async () => {
-  if (!isScriptGroup.value) return
+  if (!isScriptGroup.value) return false
   const keep = projects.value.filter(r => !isRowSelected(r))
-  if (keep.length === projects.value.length) return
+  if (keep.length === projects.value.length) return false
   const previous = projects.value
   projects.value = keep
   const saved = await persistProjects()
@@ -583,7 +607,7 @@ const removeSelectedProjects = async () => {
 
 // 清空全部脚本项目（破坏性，需二次确认）
 const clearProjects = async () => {
-  if (!isScriptGroup.value || !projects.value.length) return
+  if (!isScriptGroup.value || !projects.value.length) return false
   const previous = projects.value
   projects.value = []
   const saved = await persistProjects()
@@ -595,10 +619,11 @@ const clearProjects = async () => {
   return true
 }
 
-const projRowKey = (proj: ProjectRow, index: number): string => {
-  const base = proj.folderName ? proj.folderName : String(proj.name || proj.key || '')
-  return `${props.kind}:${base}:${index}`
-}
+// draggable 的 item-key 函数只收到行本身（vuedraggable 内部是 getKey(element)，不传 index），
+// 必须按行实例唯一——用加载/新增时注入的 _uid。旧实现按「folderName/名字 + index」拼 key，
+// index 恒为 undefined：同目录下的多个路径项目、重复添加的同一个脚本会撞 key，
+// Vue 只渲染其中一行（表现为「加进配置组了但队列里看不到」）。
+const projRowKey = (proj: ProjectRow): string => `proj:${String(proj._uid ?? '')}`
 
 // 双击项目：并行读取 settings.json UI 定义 + README，打开弹窗（两标签）
 const openProjectSettings = async (proj: ProjectRow, index: number) => {
@@ -764,7 +789,9 @@ const setField = (name: string, value: unknown) => {
   settingsModal.values[name] = value
 }
 
-// 保存弹窗修改：js/pathing 无 json 载体时给出提示（保存按钮对非 scriptgroup 已禁用）
+// 保存弹窗修改：四类可编辑配置组（配置组/录制/脚本/路径）的项目都落 per-user 配置组副本，
+// 保存后由运行时物化给 BGI；路径类引用（名字含分隔符）由路径文件驱动、后端跳过落盘，
+// 保存按钮对四类一律开放（此前只对 scriptgroup 开放，双击脚本后保存被禁用）
 const saveProjectSettings = async () => {
   if (!isScriptGroup.value) {
     message.info(t('edit.bettergiProjectIndependentSaveLater'))

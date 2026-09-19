@@ -28,16 +28,27 @@ function baseStepName(name) {
 //      autoBossConfig.bossName，使右栏显示「未选择首领」时静默讨伐一个 BGI 旧配置里的首领；
 //   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_execution_layer）。
 // 键为归一化基名（baseStepName），值为 [settings 键, 用户可读缺失原因] 数组。
+// 秘境/地脉花的目标值要按「当天行 → 默认行 → 步骤级」解析，故不进本表，见下面单独判。
 const REQUIRED_STEP_FIELDS = {
   自动首领讨伐: [["bossName", "未选择首领"]],
 };
 
-// 返回该步骤缺失的必填项（空数组表示齐全或该步无需校验）。
+// 返回该步骤缺失的必填项（用户可读原因数组；空数组表示齐全或该步无需校验）。
+// 本函数只在 shouldRunToday 通过后调用，所以秘境/地脉花解析为空即「今天要跑但没选值」：
+// 先于进 BGI 报出原因，不再等 BGI 自己抛内部异常（2026-09-19 实机：地脉花报
+// 「地脉花类型未选择」被算成运行失败，秘境则是静默 SKIP_WEEKDAY 看不出原因）。
 function missingRequiredFields(step) {
-  const items = REQUIRED_STEP_FIELDS[baseStepName(step.name)];
-  if (!items) return [];
+  const base = baseStepName(step.name);
   const s = step.settings || {};
-  return items.filter((item) => !s[item[0]]);
+  const missing = [];
+  for (const [key, reason] of REQUIRED_STEP_FIELDS[base] || []) {
+    if (!s[key]) missing.push(reason);
+  }
+  if (base === "自动秘境" && !domainNameOf(step)) missing.push("未选择秘境");
+  if (base === "自动地脉花" && leyLineRunsToday(step) && !leyLineTypeOf(step)) {
+    missing.push("未选择地脉花类型");
+  }
+  return missing;
 }
 
 // 日志：优先 BGI 注入的 log（写入 BGI 日志文件，供 MAS 监控解析 MAS_STEP_* 标记），
@@ -104,6 +115,39 @@ function shouldRunToday(step) {
   return flags[new Date().getDay()];
 }
 
+// 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
+// 抽出来供必填校验复用，避免「校验用一套、执行用另一套」而误报或漏报。
+function domainNameOf(step) {
+  const s = step.settings || {};
+  const wd = s.weeklyDomain || {};
+  const useWeekly = s.weeklyDomainEnabled !== false;
+  const todayRow = (useWeekly && wd[DAY_NAMES[new Date().getDay()]]) || {};
+  return todayRow.domainName || (wd.default || {}).domainName || s.domainName;
+}
+
+// 地脉花今天是否会真的跑：与 dispatchCombat 的 SKIP_WEEKDAY 判定同口径——每日模式直接跑；
+// 每周模式只有当天行勾了「执行」才跑。必填校验要它，否则「每周模式一天都没勾」
+// （shouldRunToday 对「全部未勾选」按不限制处理）会被误报成配置缺失。
+function leyLineRunsToday(step) {
+  const s = step.settings || {};
+  if (s.leyLineDailyEnabled !== false) return true;
+  const wd = s.weeklyLeyLine || {};
+  const row = wd[DAY_NAMES[new Date().getDay()]] || {};
+  return row.run === true;
+}
+
+// 地脉花类型：开启每日地脉花时取步骤级；每周地脉花按「当天行 → 默认行 → 步骤级」兜底。
+// BGI 的 AutoLeyLineOutcropTask.ValidateSettings 缺类型会直接抛「地脉花类型未选择」，
+// 故这里与执行分支共用同一取值，缺失时由必填校验先拦下。
+function leyLineTypeOf(step) {
+  const s = step.settings || {};
+  if (s.leyLineDailyEnabled !== false) return s.leyLineOutcropType;
+  const wd = s.weeklyLeyLine || {};
+  const row = wd[DAY_NAMES[new Date().getDay()]] || {};
+  const def = wd.default || {};
+  return row.type != null ? row.type : def.type != null ? def.type : s.leyLineOutcropType;
+}
+
 // 树脂耗尽是用户开启「树脂耗尽模式」后的预期停止条件：BGI 抛
 // System.Exception「树脂耗尽，任务结束」（AutoLeyLineOutcropTask.cs:120），
 // 属正常收尾而非失败。识别它以免中断整个执行层、连坐后续步骤。
@@ -126,7 +170,8 @@ async function dispatchCombat(step) {
       const todayRow = (useWeekly && wd[wdName]) || {};
       // 队伍配置表「战斗场景」选队结果优先级最高（压过每周行与步骤级），见后端 team_resolver.py
       const partyName = s.masTeamOverride || todayRow.partyName || defaultRow.partyName || s.partyName;
-      const domainName = todayRow.domainName || defaultRow.domainName || s.domainName;
+      // 与必填校验同口径（见 domainNameOf），避免两处漂移
+      const domainName = domainNameOf(step);
       const reward = useWeekly
         ? todayRow.reward != null
           ? todayRow.reward
@@ -200,10 +245,11 @@ async function dispatchCombat(step) {
       // 未配置（新用户）默认走每日模式，与右栏「开启每日地脉花」默认开启一致；
       // 仅显式 false（用户选了每周地脉花）才走每周分支。
       const daily = s.leyLineDailyEnabled !== false;
-      let country, leyLineOutcropType, team, strategy;
+      // 类型取值与必填校验同口径（见 leyLineTypeOf），避免两处漂移
+      const leyLineOutcropType = leyLineTypeOf(step);
+      let country, team, strategy;
       if (daily) {
         country = s.country;
-        leyLineOutcropType = s.leyLineOutcropType;
         team = s.team;
         strategy = s.combatStrategyPath;
       } else {
@@ -216,7 +262,6 @@ async function dispatchCombat(step) {
         }
         const def = weeklyLeyLine.default || {};
         country = wdRow.country != null ? wdRow.country : (def.country != null ? def.country : s.country);
-        leyLineOutcropType = wdRow.type != null ? wdRow.type : (def.type != null ? def.type : s.leyLineOutcropType);
         team = wdRow.team || def.team || s.team;
         strategy = wdRow.strategy || def.strategy || s.combatStrategyPath;
       }
@@ -415,7 +460,7 @@ async function main() {
           " " +
           step.name +
           " " +
-          missing.map((item) => item[1]).join("/")
+          missing.join("/")
       );
       continue;
     }
