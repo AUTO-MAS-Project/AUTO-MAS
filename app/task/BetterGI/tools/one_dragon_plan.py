@@ -394,6 +394,9 @@ def plan_steps_to_native_settings(
             if value is None or value == "":
                 continue
             bucket[native_key] = value
+    # 只剔除「空桶」：这里的 value 是 {原生键: 值} 整桶，不是叶子值——桶里哪怕只有 False
+    # （某工作日行被取消勾选）也是非空 dict，恒为真、照样返回；False 在上面两个插入循环里
+    # 已经过了 None/空串判断（False == "" 为假），不会被任何一处滤掉。
     return {key: value for key, value in out.items() if value}
 
 

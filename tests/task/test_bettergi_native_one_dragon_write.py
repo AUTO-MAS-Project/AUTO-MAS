@@ -151,6 +151,24 @@ def test_plan_weekly_tables_flatten_to_native_keys():
     assert leyline["LeyLineDefaultType"] == "藏金之花"
 
 
+def test_plan_group_with_only_false_weekly_flag_is_kept():
+    """PR #896 review：返回值按真值过滤的是「整桶」而非叶子值，False 不会被丢掉。
+
+    触发条件取自 review——快速配置用户取消勾选某个工作日，而它是该组唯一写出的值。
+    """
+    settings = one_dragon_plan.plan_steps_to_native_settings(
+        [
+            {
+                "name": "自动秘境",
+                "settings": {"weeklyDomain": {"Tuesday": {"run": False}}},
+            }
+        ]
+    )
+
+    # 桶里只有 False 也必须原样返回，否则原生表会保留旧的「已启用」标记
+    assert settings == {"自动秘境": {"DomainRunTuesday": False}}
+
+
 def test_combat_plan_settings_reach_native_one_dragon_file(tmp_path):
     """2026-09-19 ⑥：秘境/地脉花的 per-任务键与周表键要落一条龙文件。
 
