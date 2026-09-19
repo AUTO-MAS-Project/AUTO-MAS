@@ -288,22 +288,14 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管
         # （一条龙配置名回到 Task.OneDragonConfigName，前端也据此显示原生控件）；
         # 脚本/用户 = MAS 侧配置（脚本级共享 / per-user 独立）。
-        # 注：快速配置不参与这里的判定——它在直控下的语义是「要不要把面板值写入
-        # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让直控被锁回 MAS 槽位。
-        # （合并 dev #781「全专项快速配置开关语义」时保留本分支这一语义：见下 writes_native_config。）
+        # 注：页面已移除「快速配置」开关，直控下**固定接管写入**——把面板值写入 BGI
+        # 那份原生配置（见下方 writes_native_config），与「用哪份配置启动」是两件事：
+        # use_mas_config 决定用哪份启动，writes_native_config 决定直控下要不要接管写入。
         self.config_mode = read_config_source(self.cur_user_config)
-        # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管；
-        # 脚本/用户 = MAS 侧配置。**快速配置不参与这个判定**（维护者决策：放弃把快速配置
-        # 当作配置来源开关）——它在直控下只表示「要不要把面板值写进那份原生配置」，
-        # 见下方 writes_native_config。
-        # 注：此处与 dev #781 的 use_mas_config = IfQuickConfig 相左，PR 内已同步调整 dev 的
-        # test_quick_config_sources 相应断言，评审时请一并确认。
         self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
-        # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
+        # 直控：固定把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
-        self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
-            self.cur_user_config.get("Info", "IfQuickConfig")
-        )
+        self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT
         # 原生配置的运行前快照与本次写入内容（还原前比对，保护运行期间的外部修改）
         self._native_one_dragon_snapshot: dict | None = None
         self._native_one_dragon_written: dict | None = None
@@ -435,7 +427,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
         # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
         # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
-        # 条件比 dev #781 宽一档：直控 + 快速配置时**要**算 Plan——那一路由
+        # 条件比 dev #781 宽一档：直控时**要**算 Plan——那一路由
         # _write_native_one_dragon 把 Plan 写成原生设置，不算出来就没内容可写。
         _plan_steps = (
             parse_one_dragon_plan(self.cur_user_config.get("OneDragon", "Plan") or "")
@@ -548,7 +540,7 @@ class AutoProxyTask(TaskExecuteBase):
         ``exclude_task_names`` 用于路径 B：把已改由执行层直连的战斗 4 项从一条龙副本过滤掉。
         """
         if not self.use_mas_config:
-            # 直控来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
+            # 直控来源：固定接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
             self._write_native_one_dragon(exclude_task_names=exclude_task_names)
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
@@ -653,7 +645,7 @@ class AutoProxyTask(TaskExecuteBase):
     def _write_native_one_dragon(
         self, exclude_task_names: list[str] | None = None
     ) -> None:
-        """直控 + 快速配置开启：把面板值写入 BGI **那份原生一条龙配置**。
+        """直控（固定）：把面板值写入 BGI **那份原生一条龙配置**。
 
         不建 MAS 槽位、不物化 ``MAS-`` 前缀配置组（原生配置引用的是用户自己的组）。
         写入内容留档给 ``_restore_one_dragon_config`` 比对，用于保护运行期间的外部修改。
@@ -704,7 +696,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
         logger.info(
             f"已把用户 {self.cur_user_item.name} 的面板值写入一条龙配置"
-            f"「{self.one_dragon_config}」（直控 + 快速配置）"
+            f"「{self.one_dragon_config}」（直控）"
         )
 
     def _backup_one_dragon_config(self) -> None:
@@ -715,7 +707,7 @@ class AutoProxyTask(TaskExecuteBase):
         仍需运行时临时补写、结束还原，故这里先快照。同时清理上一轮强杀可能残留的
         前缀物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）。
 
-        直控来源且快速配置开启时改为接管 **BGI 那份原生一条龙配置**：先整份快照，
+        直控来源时固定接管 **BGI 那份原生一条龙配置**：先整份快照，
         再连同全局叶子一起补写，运行/异常结束由 ``_restore_one_dragon_config`` 还原。
         """
         if not self.use_mas_config:
@@ -726,7 +718,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
             if self._native_one_dragon_snapshot is None:
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 直控快速配置：未找到一条龙配置"
+                    f"用户 {self.cur_user_item.name} 直控：未找到一条龙配置"
                     f"「{self.one_dragon_config}」，本次不写入面板值"
                 )
             self._reseed_global_config = one_dragon.snapshot_global_battle_config(
@@ -753,7 +745,7 @@ class AutoProxyTask(TaskExecuteBase):
         各步置空后再次调用即安全，避免 final_task 与 on_crash 相继触发时重复操作。
         """
         if not self.use_mas_config:
-            # 直控 + 快速配置：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
+            # 直控：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
             # 被外部改过的配置保留外部改动（与各专项「发现外侧新修改时保护该修改」同口径）
             if self.writes_native_config:
                 if self._native_one_dragon_written is not None:

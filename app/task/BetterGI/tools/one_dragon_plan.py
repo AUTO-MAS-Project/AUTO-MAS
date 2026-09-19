@@ -351,7 +351,7 @@ def plan_steps_to_native_settings(
 ) -> dict[str, dict[str, Any]]:
     """把 Plan 战斗步骤的 settings 反转成「右栏/原生键」字典，按组基名归集。
 
-    用途：直控来源 + 快速配置开启时把面板值写进 BGI 原生配置——与执行层方向相反
+    用途：直控来源时把面板值写进 BGI 原生配置——与执行层方向相反
     （执行层是原生键 → Plan settings）。落点由调用方按存储归属分派：
     首领讨伐/地脉花 → 一条龙文件；秘境 → 全局 ``autoDomainConfig`` 段；
     幽境危战 → 全局 ``autoStygianOnslaughtConfig`` 段。

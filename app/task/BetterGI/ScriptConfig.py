@@ -65,7 +65,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 直控来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
+            # 直控来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径）
             mode = read_config_source(user_config)
             self.use_mas_config = mode != CONFIG_SOURCE_DIRECT
         self.process_manager = ProcessManager()

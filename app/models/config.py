@@ -3672,10 +3672,6 @@ class BetterGIUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "用户", UserDirectConfigModeValidator()
         )
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem(
-            "Info", "IfQuickConfig", True, BoolValidator()
-        )
         ## 兼容旧版用户独立一条龙配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
@@ -3831,11 +3827,12 @@ class BetterGIUserConfig(ConfigBase):
             {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
         )
 
-        # 快速配置开启时运行 MAS 槽位，关闭时运行所选原生配置。
-        if self.get("Info", "IfQuickConfig"):
-            config_name = "MAS独立配置"
-        else:
+        # 配置来源决定运行哪份一条龙配置（与 AutoProxy.one_dragon_config 同口径）：
+        # 非直控 = MAS 槽位（面板值物化），直控 = 所选原生配置（面板值固定写入）。
+        if self.get("Info", "Mode") == "直控":
             config_name = self.get("Task", "OneDragonConfigName") or "未设置"
+        else:
+            config_name = "MAS独立配置"
         tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
 
         # 剩余天数标签

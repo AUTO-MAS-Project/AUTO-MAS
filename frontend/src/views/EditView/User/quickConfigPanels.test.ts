@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { parse } from '@vue/compiler-sfc'
 
 describe('quick configuration panel visibility', () => {
-  // BetterGI 不在列：本 PR 决定「快速配置不作为配置来源开关」，该页面恢复原貌——
-  // 任务配置卡片常显、开关回到 GeneralConfigModeSelector 内（按来源而非开关决定面板形态）。
+  // 以下专项保留快速配置开关（页面内 handleQuickConfigChange + 面板按开关门控）。
+  // BetterGI 不在列：已移除「是否启用快速配置」选项，直控下固定接管写入（见底部断言组）。
   for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
     it(`${name} keeps its switch outside the conditional panel`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
@@ -50,21 +50,14 @@ describe('quick configuration panel visibility', () => {
     expect(source).toContain('v-if="quickConfig !== undefined"')
   })
 
-  it('flushes BetterGI task settings before hiding the panel', () => {
+  it('keeps BetterGI source-driven panel independent of quick config', () => {
+    // BetterGI 已移除「是否启用快速配置」选项：页面不再出现开关或字段。
     const source = readFileSync(new URL('./BetterGIUserEdit.vue', import.meta.url), 'utf8')
-    const handler = source.slice(
-      source.indexOf('const handleQuickConfigChange ='),
-      source.indexOf('const toggleGroup =')
-    )
-    expect(handler.indexOf('await saveDragonGroupSettings(true, dragonGroupSaveSel)')).toBeLessThan(
-      handler.indexOf('formData.Info.IfQuickConfig = value')
-    )
-    expect(handler).toMatch(/!\(await saveDragonGroupSettings\([\s\S]*?\)\)\s*\)\s*return/)
-    expect(source).toContain('masConfigEnabled.value\n')
-    expect(source).toContain('const globalUserId = masConfigEnabled.value ?')
+    expect(source).not.toContain('handleQuickConfigChange')
+    expect(source).not.toContain('Info.IfQuickConfig')
   })
 
-  for (const name of ['General', 'HSR', 'BAAH', 'ZzzOd']) {
+  for (const name of ['BetterGI', 'General', 'HSR', 'BAAH', 'ZzzOd']) {
     it(`${name} has no inactive or newly invented quick switch`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content

@@ -286,9 +286,7 @@
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
-                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -1285,8 +1283,8 @@ const bettergiConfigModeOptions: Array<{
     icon: 'setting',
   },
 ]
-// 面板可见性由**配置来源**决定（维护者决策：放弃把快速配置当作来源开关）：直控 = 用 BGI
-// 所选原生配置（显示原生「一条龙名称」与「配置 BetterGI」，MAS 不接管）；脚本/用户 = MAS 面板。
+// 面板可见性由**配置来源**决定：直控 = 用 BGI 所选原生配置（显示原生「一条龙名称」与
+// 「配置 BetterGI」，MAS 不接管，运行时固定把面板值写入那份原生配置）；脚本/用户 = MAS 面板。
 const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
@@ -1323,7 +1321,6 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Password: '',
     RemainedDay: -1,
     Mode: '用户',
-    IfQuickConfig: true,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
@@ -1425,23 +1422,6 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
   }
 
   return enqueue(persist)
-}
-
-const handleQuickConfigChange = async (value: boolean) => {
-  if (!value) {
-    if (dragonGroupAutoSaveTimer) {
-      clearTimeout(dragonGroupAutoSaveTimer)
-      dragonGroupAutoSaveTimer = null
-    }
-    while (hasDragonGroupSettingsDirty.value) {
-      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
-    }
-  }
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await saveField('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
 }
 
 const toggleGroup = (value: string) => {

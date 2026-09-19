@@ -1466,7 +1466,7 @@ def write_native_one_dragon(
     exclude_task_names: list[str] | None = None,
     native_step_settings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """把面板值写入 **BGI 原生一条龙配置**（直控来源 + 快速配置开启时使用）。
+    """把面板值写入 **BGI 原生一条龙配置**（直控来源时使用）。
 
     与 ``write_user_one_dragon`` 的区别：
     - 种子是**该原生配置自身**（保留用户的一条龙结构与自定义组定义，不回退内置模板）；

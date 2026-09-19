@@ -13,7 +13,7 @@ BetterGI 基于 BetterGI 程序（`BetterGI.exe`）跑原神一条龙，与 ZzzO
 | 用户字段 | `UserData`（Info/OneDragon/Switch/Data/Notify） | 前端编辑，事实源之一 |
 | per-user 副本 | `data/{script_id}/{user_id}/` 的 `OneDragon/`（一条龙副本）、`ScriptGroup/`（配置组）、`GlobalDomain/`（秘境刷取） | **前端端点直接读写**（`/scripts` 的 read/write_user_script_group、read/write_global_domain_settings 等）——就是页面编辑对象 |
 | BGI 全局主配置 | `{RootPath}/User/config.json` | **MAS 每次运行临时补写队伍/策略叶子、结束还原**（`apply_global_battle_*` + `snapshot/restore_global_battle_config`）——唯一被触碰的持久原生文件 |
-| BGI 一条龙实配 | `{RootPath}/User/OneDragon/*.json`（含「默认配置」） | 直控+关闭时直接跑；用户独立配置模式 MAS **零接触** |
+| BGI 一条龙实配 | `{RootPath}/User/OneDragon/*.json`（含「默认配置」） | 直控时固定把面板值写入（快照/还原，已移除快速配置开关）；用户独立配置模式 MAS **零接触** |
 | 临时槽位 | `{RootPath}/User/OneDragon/MAS独立配置.json` + 前缀配置组 | 运行时物化、结束删除（`_restore_one_dragon_config`） |
 
 ## 配置恢复接入要求（mas=per-user 副本 + 字段侧车；native=全局 config.json）
