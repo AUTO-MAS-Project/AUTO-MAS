@@ -207,16 +207,27 @@ const configMaskView = computed(() => {
         tip: t('scripts.mask.unlockTip'),
         button: t('scripts.mask.saveConfig'),
       }
-    case 'MaaEnd':
+    case 'MaaEnd': {
+      // 用户级入口对用户/直控两种来源的用户都开放（ScriptTable 只在 Mode=脚本 时隐藏按钮）。
+      // 直控会话改的是 MaaEnd 原有配置，不能沿用“正在配置用户 X”的措辞。
+      const maaEndUser = mask.user
+      let title = t('scripts.mask.maaEndScriptTitle')
+      let description = t('scripts.mask.maaEndScriptDesc')
+      if (maaEndUser?.Info.Mode === '直控') {
+        title = t('scripts.mask.maaEndDirectTitle')
+        description = t('scripts.mask.maaEndDirectDesc')
+      } else if (maaEndUser) {
+        title = t('scripts.mask.maaEndUserTitle')
+        description = t('scripts.mask.maaEndUserDesc', { name: maaEndUser.Info.Name })
+      }
       return {
         iconColor: 'var(--ant-color-primary)',
-        title: mask.user ? t('scripts.mask.maaEndUserTitle') : t('scripts.mask.maaEndScriptTitle'),
-        description: mask.user
-          ? t('scripts.mask.maaEndUserDesc', { name: mask.user.Info.Name })
-          : t('scripts.mask.maaEndScriptDesc'),
+        title,
+        description,
         tip: t('scripts.mask.maaEndUnlockTip'),
         button: t('scripts.mask.saveConfig'),
       }
+    }
     case 'Okww':
       return {
         iconColor: 'var(--ant-color-primary)',

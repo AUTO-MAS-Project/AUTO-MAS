@@ -3482,9 +3482,12 @@ export default {
       unlockTip: 'Click "Save configuration" when you are done to unlock this page.',
       maaEndUserTitle: 'MaaEnd user configuration in progress',
       maaEndScriptTitle: 'MaaEnd script configuration in progress',
+      maaEndDirectTitle: 'MaaEnd direct control configuration in progress',
       maaEndUserDesc: 'Configuring user {name} — finish the setup in the MaaEnd window.',
       maaEndScriptDesc:
         'Configuring the script-level MaaEnd settings — finish the setup in the MaaEnd window.',
+      maaEndDirectDesc:
+        "Configuring MaaEnd's own configuration (shared by every direct-control user) — finish the setup in the MaaEnd window.",
       maaEndUnlockTip: 'Click "Save configuration" when you are done to unlock this page.',
       okwwTitle: 'ok-ww setup in progress',
       okwwDesc: 'Finish the setup in the ok-ww window.',
