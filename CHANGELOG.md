@@ -61,6 +61,7 @@
 - 【MFW】MFW 运行超时时先截图再停止，每轮失败后重启 MAS 拉起的游戏或模拟器再重试（仅公测） (#880) by @qiyinxi
 - 【MFW】Agent 连不上时说清自带 Python 的 maafw 与原生库协议不匹配，不再只报连接超时 (#885) by @qiyinxi
 - 【MFW】修复 FOS 等没有 requirements.txt 的 Python agent 启动即退出 (#884) by @qiyinxi
+- 【MFW】更新前先预检运行环境，建不出来就不升级；PyPI 缺 maafw 版本时改从源码打包（仅公测） (#901) by @qiyinxi
 - 【通用脚本】修复配置备份静默失败，以及 M9A 通知版本号截断、掉落统计丢失的问题 (#822) by @jinghero
 - 【主页】修复碧蓝档案活动卡片在活动间隙把已结束的活动当成当前活动展示、倒计时停在 0 天 0 时的问题（仅公测） (#823) by @beichen24a1
 - 【调度】修复删除脚本或用户时因数据目录里有只读文件而失败、目录残留的问题 (#824) by @beichen24a1
