@@ -243,6 +243,7 @@ const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.v
 
 // 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
 const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
+  bootstrap: t('comp.backendUpdateRetryBootstrap'),
   'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
   'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
   'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
