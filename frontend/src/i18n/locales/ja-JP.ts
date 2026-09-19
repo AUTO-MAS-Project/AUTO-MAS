@@ -2372,6 +2372,7 @@ export default {
     },
     carousel: {
       remaining: '残り時間',
+      startsIn: '開始まで',
       prev: '前のゲーム',
       next: '次のゲーム',
       loading: 'イベント情報を取得しています…',
@@ -2422,7 +2423,9 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: '{time} 終了',
+      startsAt: '{time} 開始',
       versionRemaining: 'イベントの残り時間',
+      startsIn: '開始まで',
       nextVersionSoon: '次のイベントがまもなく始まります',
       versionTime: 'イベント期間：',
       serverLabel: 'サーバー',
