@@ -485,6 +485,7 @@ def _write_isolated_venv_manifest(venv_path: Path, project_path: Path) -> None:
 def _load_project_agent_requirements(project_path: Path) -> list[str]:
     requirements_path = project_path / "requirements.txt"
     packages: list[str] = []
+    declared = True
     try:
         with requirements_path.open("r", encoding="utf-8") as file:
             for raw_line in file:
@@ -493,7 +494,7 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
                     continue
                 packages.append(line)
     except FileNotFoundError:
-        pass
+        declared = False
 
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
@@ -504,9 +505,20 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
     # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
     from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
         pin_agent_maafw_requirement,
+        resolve_project_maafw_requirement,
     )
 
-    return pin_agent_maafw_requirement(project_path, packages)
+    pinned = pin_agent_maafw_requirement(project_path, packages)
+    if not declared:
+        # 压根没有 requirements.txt 的 Python agent：MFW-PyQt6 的「嵌入式 Agent」
+        # 模式（FOS 这类，CFA_setting.json 里 embedded=true）把 maa 与 numpy 冻进了
+        # 外壳自己的程序里，发行包不写依赖。这份 venv 只会给 Python agent 用，里面
+        # 至少得有跟项目自带原生库同版本的 binding，否则 agent import maa 当场退出。
+        # 项目没自带原生库时拿不到版本，就还是原样。
+        requirement = resolve_project_maafw_requirement(project_path)
+        if requirement is not None:
+            pinned.append(requirement)
+    return pinned
 
 
 def _project_agent_requirements_hash(project_path: Path) -> str:
