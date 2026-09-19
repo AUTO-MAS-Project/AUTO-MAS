@@ -1366,6 +1366,11 @@ def _install_requirements_with_uv(
         missing_version = _missing_maafw_version_for_fallback(requirements, exc)
         if missing_version is None or pool_root is None:
             raise
+        # ``exc`` 的 message 只带最后一轮的 stderr；触发兜底的「索引上没有这个
+        # 版本」可能是前几轮说的（最后一轮恰好超时）。兜底也失败时把那一段
+        # 拼进去，备忘按异常文本分类（``binding_unavailable`` / ``other``）才不会
+        # 把缺版本记成别的原因。
+        base_message = _message_with_missing_version_detail(exc)
         try:
             wheel_path, tag = ensure_binding_wheel(
                 missing_version,
@@ -1378,7 +1383,7 @@ def _install_requirements_with_uv(
             raise
         except Exception as fallback_exc:
             raise RuntimeError(
-                f"{exc}；GitHub 兜底也失败：{fallback_exc}"
+                f"{base_message}；GitHub 兜底也失败：{fallback_exc}"
             ) from fallback_exc
         if log is not None:
             log(
@@ -1394,7 +1399,8 @@ def _install_requirements_with_uv(
             source, attempt = _rotate(fallback_requirements)
         except RuntimeError as fallback_exc:
             raise RuntimeError(
-                f"{exc}；GitHub 兜底也失败：安装源码打包的 binding 失败：{fallback_exc}"
+                f"{base_message}；GitHub 兜底也失败："
+                f"安装源码打包的 binding 失败：{fallback_exc}"
             ) from fallback_exc
         binding_source = f"github-source:{tag}"
 
@@ -1405,6 +1411,21 @@ def _install_requirements_with_uv(
     if binding_source is not None:
         result["bindingSource"] = binding_source
     return result or None
+
+
+def _message_with_missing_version_detail(
+    error: MaaFWRuntimeSourceRotationError,
+) -> str:
+    """把「索引上没有这个版本」那一轮的 stderr 补进 message（若最后一轮说的不是它）。"""
+
+    message = str(error)
+    if maafw_version_missing_from_index(message):
+        return message
+    for source, _, detail in error.attempts:
+        if maafw_version_missing_from_index(detail):
+            snippet = " ".join(detail.split())[:400]
+            return f"{message}；索引 {source or '默认'} 报告：{snippet}"
+    return message
 
 
 def _missing_maafw_version_for_fallback(

@@ -367,6 +367,42 @@ def test_fallback_download_failure_is_appended_to_original_error(
     assert not any("改用 MaaFramework" in line for line in logs)
 
 
+def test_fallback_failure_keeps_missing_version_text_from_earlier_candidate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """最后一轮是网络错误、前几轮说「没这个版本」：兜底也失败时缺版本文本要留在
+    message 里，备忘才会记成 binding_unavailable 而不是 other。"""
+
+    empty_pool = tmp_path / "pool"
+    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, ";".join(FIVE_CANDIDATES))
+
+    def _refuse(*_args, **_kwargs):
+        raise MaaFWBindingFallbackError("HTTP 404")
+
+    monkeypatch.setattr(
+        "app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding_fallback._download_to_file",
+        _refuse,
+    )
+    stderrs = iter(
+        [UV_MISSING_VERSION_STDERR] * (len(FIVE_CANDIDATES) - 1) + [UV_NETWORK_STDERR]
+    )
+
+    def fake_run(command, **_kwargs):
+        return _FakeCompleted(1, stderr=next(stderrs))
+
+    monkeypatch.setattr(installer_module.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _install(tmp_path, pool_root=empty_pool)
+
+    message = str(excinfo.value)
+    # 最后一轮的文本仍是主体，缺版本那一轮补在后面
+    assert "Request failed after 3 retries" in message
+    assert "索引 http://127.0.0.1:41234/simple/ 报告：" in message
+    assert "there is no version of maafw==5.14.0b1" in message
+    assert "；GitHub 兜底也失败：" in message
+
+
 def test_fallback_reinstall_failure_is_appended_to_original_error(
     tmp_path: Path, monkeypatch, pool_root: Path, no_network
 ) -> None:
