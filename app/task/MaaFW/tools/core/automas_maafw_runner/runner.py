@@ -1128,9 +1128,27 @@ class MaaFWRunner:
         """
 
         venv_path = getattr(agent_plan, "isolatedVenvPath", None)
-        if not venv_path:
+        runtime_kind = str(getattr(agent_plan, "runtimeKind", "") or "")
+        if venv_path:
+            agent_root = Path(venv_path)
+            where = "agent 隔离 venv"
+            advice = "删掉该 venv 让它重建即可"
+        elif runtime_kind == "project_python":
+            # 项目自带的解释器：binding 装在它自己的 site-packages 里。项目的部署脚本
+            # 若不加约束地 ``pip install --upgrade maafw``，就会升到比自带原生库更新的
+            # 协议版本（Maa_bbb v1.12.8 实测：binding 5.13.1/协议 8 对原生库 5.11.1/协议 7）。
+            executable = str(getattr(agent_plan, "executable", "") or "")
+            if not executable:
+                return ""
+            agent_root = Path(executable).parent
+            where = "项目自带 Python 里"
+            advice = (
+                "多半是项目自己的部署脚本把 binding 升过了头：更新项目到自带新原生库的版本，"
+                "或把它降回与原生库相同的版本"
+            )
+        else:
             return ""
-        agent_version = _installed_maafw_version(Path(venv_path))
+        agent_version = _installed_maafw_version(agent_root)
         runner_version, _ = describe_loaded_maafw()
         if not agent_version or not runner_version:
             return ""
@@ -1139,9 +1157,9 @@ class MaaFWRunner:
         ):
             return ""
         return (
-            f"；agent 隔离 venv 里的 maafw 是 {agent_version}，runner 加载的"
+            f"；{where}的 maafw 是 {agent_version}，runner 加载的"
             f" MaaFramework 是 {_display_maafw_version(runner_version)}，"
-            "两者的 Agent 协议版本不兼容。删掉该 venv 让它重建即可"
+            f"两者的 Agent 协议版本不兼容。{advice}"
         )
 
     def _start_agent_output_reader(
