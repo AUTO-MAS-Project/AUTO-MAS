@@ -1349,6 +1349,10 @@ class MaaFWRunner:
         # build_runner_environment），但不能透传给项目 agent：agent 以 `python ./agent/main.py`
         # 启动，靠脚本目录进 sys.path[0] 才能 import 同级模块，官方模板就是这么写的，
         # 继承过去会当场 ModuleNotFoundError——它随 PYTHON* 前缀一起被剔除。
+        # 用户在 MAS 里填了代理时，宿主起 worker 前已把 HTTP(S)_PROXY / ALL_PROXY /
+        # NO_PROXY 写进 worker 环境（host_environment.subprocess_proxy_scope），
+        # 这里从 os.environ 复制会一并带上，项目 agent 进程因此也走这个代理——
+        # 有意为之：agent 自己 pip 装依赖、拉资源同样在用户的网络环境里。
         env = strip_host_python_environment()
         env.update(self.plan.piEnv)
 
