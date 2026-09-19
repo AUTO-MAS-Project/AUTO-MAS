@@ -50,6 +50,9 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import
     read_runtime_precheck,
     write_runtime_precheck,
 )
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding_fallback import (
+    pep440_to_maafw_tag,
+)
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
@@ -76,24 +79,11 @@ BindingProbe = Callable[[str], Awaitable[bool]]
 def maafw_git_tag_for(version_text: str) -> str | None:
     """PEP 440 版本号 → MaaFramework 的 git tag；映射不出来返回 None。
 
-    ``5.14.0b1`` → ``v5.14.0-beta.1``，``5.13.1`` → ``v5.13.1``。带 post / dev /
-    local 段的（nightly 的 DLL 串形如 ``v5.13.1-post.6-ci.<id>``）PyPI 与 tag 都
-    没有，直接放弃。与 ``runtime_pool/binding_fallback.py`` 里那份是同一规则。
+    与兜底打包用的是同一份规则（``runtime_pool/binding_fallback.pep440_to_maafw_tag``），
+    这里只是宿主侧的别名，免得轻探探的 tag 和兜底下载的 tag 各算各的。
     """
 
-    try:
-        parsed = Version(str(version_text or "").strip())
-    except InvalidVersion:
-        return None
-    if parsed.post is not None or parsed.dev is not None or parsed.local:
-        return None
-    base = ".".join(str(part) for part in parsed.release)
-    if parsed.pre is None:
-        return f"v{base}"
-    label = {"a": "alpha", "b": "beta", "rc": "rc"}.get(parsed.pre[0])
-    if label is None:
-        return None
-    return f"v{base}-{label}.{parsed.pre[1]}"
+    return pep440_to_maafw_tag(version_text)
 
 
 def exact_maafw_version(requirement_text: str | None) -> str | None:
