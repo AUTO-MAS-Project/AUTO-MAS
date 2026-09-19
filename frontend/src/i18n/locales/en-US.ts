@@ -3774,7 +3774,7 @@ export default {
       recruitTip: 'Push an alert when recruitment shows the Senior Operator tag',
       systemSection: 'System notifications',
       systemEnable: 'Enable system notifications',
-      systemTip: 'Uses plyer for system-level notifications; they do not stay in the action center',
+      systemTip: 'Uses native system notifications; they stay in the action center',
       mailSection: 'Email notifications',
       mailDoc: 'Open the email configuration docs',
       mailEnable: 'Enable email notifications',

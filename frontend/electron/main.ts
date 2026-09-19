@@ -54,10 +54,17 @@ import {
   isPersistedRuntimeLaunchMode,
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
+import { execFile } from 'node:child_process'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
 applyInstanceIdentity()
+
+// Windows 通知的归属身份跟随应用名：打包版当前取到 frontend、开发态 frontend-dev，
+// issue #847 修复后自动变为 AUTO-MAS / AUTO-MAS-dev。头部显示名与徽标由注册表登记
+// 提供（见 ensureNotificationIdentity），不依赖 AUMID 字符串；但系统会固化每个 AUMID
+// 首条通知时的身份，登记晚于首条通知的 AUMID 要等换成新 AUMID 后才显示正确。
+app.setAppUserModelId(app.getName())
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
@@ -93,6 +100,64 @@ function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
     new Notification({ title, body }).show()
   }
+}
+
+/**
+ * 定位通知图标：按托盘图标的同款路径探测找 AUTO-MAS.ico。
+ *
+ * 注册表 AUMID 登记的 IconUri 与通知的 icon 选项都用这份图。
+ */
+function resolveNotificationIconPath(): string | undefined {
+  const iconPaths = [
+    path.join(__dirname, '../public/AUTO-MAS.ico'),
+    path.join(process.resourcesPath, 'assets/AUTO-MAS.ico'),
+    path.join(app.getAppPath(), 'public/AUTO-MAS.ico'),
+    path.join(app.getAppPath(), 'dist/AUTO-MAS.ico'),
+  ]
+  return iconPaths.find(iconPath => fs.existsSync(iconPath))
+}
+
+/**
+ * 向 Windows 登记通知身份：通知头部的显示名与左上角应用徽标都取自这里，
+ * 未登记时头部显示 AUMID 字符串、徽标为空。取值随启动刷新，安装版与便携版
+ * 各自登记自己那份图标路径；失败只记日志，不影响通知本身。
+ */
+function ensureNotificationIdentity(): void {
+  const key = `HKCU\\Software\\Classes\\AppUserModelId\\${app.getName()}`
+  const entries: Array<[string, string]> = [["DisplayName", "AUTO-MAS"]]
+  const iconPath = resolveNotificationIconPath()
+  if (iconPath) {
+    entries.push(["IconUri", iconPath])
+  }
+
+  for (const [name, value] of entries) {
+    execFile("reg.exe", ["add", key, "/v", name, "/t", "REG_SZ", "/d", value, "/f"], error => {
+      if (error) {
+        logger.warn(`登记通知身份失败 (${name}): ${error.message}`)
+      }
+    })
+  }
+}
+
+/**
+ * 弹出后端的系统通知（系统原生 Toast）。
+ *
+ * 点击通知把主窗口拉起来。左上角应用徽标来自 AUMID 登记（见
+ * ensureNotificationIdentity），正文旁的图标由 icon 选项提供，两者同时在位。
+ */
+function showSystemNotification(title: string, body: string): void {
+  if (!Notification.isSupported()) {
+    return
+  }
+
+  const iconPath = resolveNotificationIconPath()
+  const notification = iconPath
+    ? new Notification({ title, body, icon: iconPath })
+    : new Notification({ title, body })
+  notification.on('click', () => {
+    showMainWindow()
+  })
+  notification.show()
 }
 
 async function stopAllTasksByShortcut(): Promise<void> {
@@ -1583,6 +1648,15 @@ ipcMain.handle('window-focus', () => {
   }
 })
 
+// 系统通知：渲染进程转发后端的系统通知，由主进程弹出
+ipcMain.handle('system-notify', (_event, payload: unknown) => {
+  const notice = (payload ?? {}) as Record<string, unknown>
+  if (typeof notice.title !== 'string' || typeof notice.message !== 'string') {
+    return
+  }
+  showSystemNotification(notice.title, notice.message)
+})
+
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
@@ -2004,6 +2078,9 @@ app.whenReady().then(async () => {
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)
   logger.info(`平台: ${process.platform}`)
+
+  // 登记通知身份（显示名 / 徽标图标），须早于第一条系统通知
+  ensureNotificationIdentity()
 
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()

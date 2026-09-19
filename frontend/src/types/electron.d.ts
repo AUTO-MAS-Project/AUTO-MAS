@@ -299,6 +299,9 @@ export interface ElectronAPI {
   onLogSelectFile?: (callback: (file: 'app' | 'frontend') => void) => void
   removeLogSelectFileListener?: () => void
 
+  /** 系统通知：主进程以系统原生通知弹出（Windows 为 Toast） */
+  systemNotify?: (payload: { title: string; message: string }) => Promise<void>
+
   // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程另开窗口放到真实屏右下角
   showVirtualDisplayPrompt?: (
     payload: VirtualDisplayPromptPayload

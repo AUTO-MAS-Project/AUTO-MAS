@@ -125,7 +125,7 @@ def test_dispatch_reports_named_webhook_failure() -> None:
 def test_dispatch_continues_after_system_failure() -> None:
     class _SystemFailingNotify(_Notify):
         async def push_plyer(self, **kwargs) -> None:
-            raise RuntimeError("plyer 未初始化")
+            raise RuntimeError("系统通知未初始化")
 
     notify = _SystemFailingNotify()
     target = NotifyTarget(

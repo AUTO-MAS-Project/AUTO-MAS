@@ -3307,7 +3307,7 @@ export default {
       recruitTip: '公開求人に『上級エリート』のタグが出たときに通知します',
       systemSection: 'システム通知',
       systemEnable: 'システム通知を有効にする',
-      systemTip: 'plyer を使った OS レベルの通知です。通知センターには残りません',
+      systemTip: 'OS 標準の通知で配信されます。通知センターにも残ります',
       mailSection: 'メール通知',
       mailDoc: 'メール設定のドキュメントを開く',
       mailEnable: 'メール通知を有効にする',

@@ -83,6 +83,9 @@ GAMESIGN_RESULT_UPDATED = "gamesign.result.updated"
 EMULATOR_NOTICE = "emulator.notice"
 TOOLKIT_NOTICE = "toolkit.notice"
 
+# 系统原生通知（id=Main）：前端转交 Electron 主进程弹出，不走应用内提示
+SYSTEM_NOTICE = "system.notice"
+
 # 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
 
