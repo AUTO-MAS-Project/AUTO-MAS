@@ -11,5 +11,9 @@ export type MaaFWGamePackageIn = {
      * 要按哪个 resource 的 pipeline 推断包名
      */
     resource: string;
+    /**
+     * MaaFW 脚本 ID；给出时按脚本解析有效根（内嵌脚本读副本），path 只兜底
+     */
+    scriptId?: (string | null);
 };
 

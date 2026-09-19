@@ -361,6 +361,8 @@ def main():
                 await Config.get_stage()
                 await Config.clean_old_history()
                 await Config.clean_maafw_agent_venvs()
+                await Config.clean_maafw_embedded_copies()
+                await Config.clean_maafw_runtime_blobs()
                 await Config.clean_debug_diagnostics()
                 await Config.clean_maafw_native_debug_logs()
 

@@ -2,14 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type M9AConfig_Info = {
+export type MaaFWEmbeddedReimportIn = {
     /**
-     * M9A 脚本名称
+     * MFW 脚本 ID
      */
-    Name?: (string | null);
+    scriptId: string;
     /**
-     * M9A 路径
+     * 新的来源目录，会写入 Info.Path
      */
-    Path?: (string | null);
+    sourcePath: string;
 };
 

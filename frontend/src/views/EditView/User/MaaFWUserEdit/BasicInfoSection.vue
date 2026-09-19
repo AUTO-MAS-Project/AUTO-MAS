@@ -64,7 +64,7 @@
             v-model:value="formData.Info.Account"
             size="large"
             autocomplete="off"
-            :placeholder="t('edit.localNoteOnly')"
+            :placeholder="accountPlaceholder || t('edit.localNoteOnly')"
             @blur="emitSave('Info.Account', formData.Info.Account)"
           />
         </a-form-item>
@@ -120,6 +120,8 @@ const props = defineProps<{
   formData: MaaFWUserFormData
   interfaceDependentDisabled: boolean
   accountRecordTooltip: string
+  /** 账号字段占位：特调类型（M9A）把账号绑成切号任务，文案不再是「仅本地记录」 */
+  accountPlaceholder?: string
 }>()
 
 const emit = defineEmits<{

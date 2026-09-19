@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .blob_store import BLOB_STORE_DIR_NAME, RuntimeBlobStore
 from .contracts import (
     ArtifactType,
     is_within,
@@ -127,6 +128,27 @@ def update_baseline_matches_project(
         return False
 
 
+def discard_update_baseline(
+    project_path: Path,
+    *,
+    operation_root: Path | None = None,
+) -> bool:
+    """丢掉 MAS 为该项目记下的更新清单，让下一次更新走「无可信基线 → 全量包」。
+
+    调用时机是**项目树被 MAS 自己整体换掉**之后（内嵌副本重新导入、退出内嵌删副本）：
+    清单里记的是上一棵树的文件哈希，留着只会让每次落地都以「managed project file
+    was modified locally」失败。只删清单目录，不碰 operation 目录。
+    """
+
+    state_dir = _resolve_project_state_dir(
+        Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
+    )
+    if state_dir.is_symlink() or not state_dir.is_dir():
+        return False
+    shutil.rmtree(state_dir)
+    return True
+
+
 def _owned_state_path(path: Path, state_dir: Path) -> Path:
     candidate = path.expanduser().resolve(strict=False)
     base = state_dir.expanduser().resolve(strict=False)
@@ -155,6 +177,8 @@ class PackagePlan:
     base_version: str | None = None
     base_fingerprint: str | None = None
     target_version: str | None = None
+    # 内嵌副本里按内容与其它副本共用的运行时文件（``files`` 的子集）。
+    shared_runtime: frozenset[str] = frozenset()
 
 
 def apply_package_transaction(
@@ -172,6 +196,7 @@ def apply_package_transaction(
     send_log: Callable[[str], None] | None = None,
     progress: Callable[[str, dict[str, Any]], None] | None = None,
     project_lock_already_held: bool = False,
+    projection: bool = False,
 ) -> dict[str, Any]:
     """Apply a package using a durable stage/backup transaction.
 
@@ -249,6 +274,8 @@ def apply_package_transaction(
                 expected_package_type=expected_package_type,
                 from_version=from_version,
                 target_version=target_version,
+                projection=projection,
+                send_log=send_log,
             )
             _validate_plan_base(root, plan, old_manifest, current)
             if plan.package_type == "full":
@@ -347,18 +374,28 @@ def apply_package_transaction(
                 stale, key=lambda item: len(Path(item).parts), reverse=True
             ):
                 _remove_path(_project_target(root, relative))
+            blob_store = (
+                RuntimeBlobStore(_blob_store_root(store.root))
+                if plan.shared_runtime
+                else None
+            )
             applied_files = 0
             report_step = _apply_progress_step(total_files)
             next_report_at = report_step
             for relative, source in plan.files.items():
                 target = _project_target(root, relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                # 暂存区已经是解压好的完整副本，回滚只看 backup/，所以同盘
-                # 直接挪过去；跨盘 os.replace 会报 OSError，再退回复制。
-                try:
-                    os.replace(source, target)
-                except OSError:
-                    shutil.copy2(source, target)
+                if blob_store is not None and relative in plan.shared_runtime:
+                    # 运行时文件按内容与其它副本共用；内容没变的连碰都不碰。
+                    blob_store.place(source, target)
+                else:
+                    # 暂存区已经是解压好的完整副本，回滚只看 backup/，所以同盘
+                    # 直接挪过去；跨盘 os.replace 会报 OSError，再退回复制——
+                    # 复制走 _copy_path（先删再写），目标可能是共用库的硬链接。
+                    try:
+                        os.replace(source, target)
+                    except OSError:
+                        _copy_path(source, target)
                 applied_files += 1
                 # 覆盖进度只是旁观：按步长节流，最后一个文件必报，
                 # 让前端的「n/m」能走到满格。
@@ -479,6 +516,8 @@ def build_package_plan(
     expected_package_type: ArtifactType | None = None,
     from_version: str | None = None,
     target_version: str | None = None,
+    projection: bool = False,
+    send_log: Callable[[str], None] | None = None,
 ) -> PackagePlan:
     changes_path = _find_changes_file(package_root, extract_dir)
     changes = _load_json(changes_path) if changes_path else {}
@@ -548,6 +587,13 @@ def build_package_plan(
         safe_relative_path(relative)
     if package_type == "full" and not _has_interface_file(package_root):
         raise UpdateApplyError("full update package must contain interface.json")
+    shared_runtime: frozenset[str] = frozenset()
+    if projection:
+        # 内嵌副本：只按 interface 白名单落盘。这是唯一的枚举口，三张表一起过滤，
+        # 下游的清单、孤儿清理、回滚看到的就都是瘦树。
+        files, hashes, deleted, shared_runtime = _project_package_entries(
+            payload_root, project_path, files, hashes, deleted, send_log
+        )
     return PackagePlan(
         package_type=package_type,
         package_root=package_root,
@@ -557,6 +603,53 @@ def build_package_plan(
         base_version=base_version,
         base_fingerprint=base_fingerprint,
         target_version=declared_target or target_version,
+        shared_runtime=shared_runtime,
+    )
+
+
+def _project_package_entries(
+    payload_root: Path,
+    project_path: Path,
+    files: dict[str, Path],
+    hashes: dict[str, str],
+    deleted: tuple[str, ...],
+    send_log: Callable[[str], None] | None,
+) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...], frozenset[str]]:
+    from .projection import (
+        ProjectionError,
+        filter_package_entries,
+        package_projection_rules,
+    )
+
+    try:
+        rules = package_projection_rules(payload_root, project_path)
+    except ProjectionError as exc:
+        raise UpdateApplyError(f"projection rules unavailable: {exc}") from exc
+    kept_files, dropped_files = filter_package_entries(rules, files)
+    kept_deleted, _dropped_deleted = filter_package_entries(rules, deleted)
+    if send_log is not None:
+        dropped_count = len(dropped_files)
+        if dropped_count:
+            send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
+        for warning in rules.warnings:
+            send_log(f"内嵌投影：{warning}")
+    return (
+        {
+            relative: source
+            for relative, source in files.items()
+            if relative in kept_files
+        },
+        {
+            relative: digest
+            for relative, digest in hashes.items()
+            if relative in kept_files
+        },
+        tuple(relative for relative in deleted if relative in kept_deleted),
+        frozenset(
+            relative
+            for relative in kept_files
+            if rules.is_shared_runtime_file(Path(relative))
+        ),
     )
 
 
@@ -1043,12 +1136,30 @@ def _project_target(project_path: Path, relative: str) -> Path:
     return target
 
 
+def _blob_store_root(operation_root: Path) -> Path:
+    """共用库与 ``maafw_project_state`` 同级：都挂在 operation 根的上一层。"""
+
+    return operation_root.resolve(strict=False).parent / BLOB_STORE_DIR_NAME
+
+
+def _copy_file_fresh(source: str | Path, target: str | Path) -> None:
+    """复制成一个新文件：先删旧的。目标可能是与其它副本共用的硬链接，往里写就是改
+    所有项目的那份。"""
+
+    destination = Path(target)
+    if destination.exists() or destination.is_symlink():
+        destination.unlink()
+    shutil.copy2(source, destination)
+
+
 def _copy_path(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if source.is_dir() and not source.is_symlink():
-        shutil.copytree(source, target, dirs_exist_ok=True)
+        shutil.copytree(
+            source, target, dirs_exist_ok=True, copy_function=_copy_file_fresh
+        )
     else:
-        shutil.copy2(source, target)
+        _copy_file_fresh(source, target)
 
 
 def _remove_path(path: Path) -> None:

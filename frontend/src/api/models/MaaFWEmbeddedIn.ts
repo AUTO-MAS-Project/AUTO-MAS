@@ -2,14 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type M9AConfig_Emulator = {
+export type MaaFWEmbeddedIn = {
     /**
-     * 模拟器 ID
+     * MFW 脚本 ID
      */
-    Id?: (string | null);
-    /**
-     * 模拟器索引
-     */
-    Index?: (string | null);
+    scriptId: string;
 };
 

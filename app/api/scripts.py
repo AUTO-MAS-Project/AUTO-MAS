@@ -22,6 +22,7 @@
 
 
 import asyncio
+import json
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -50,11 +51,27 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _public_package_source,
-    detect_maafw_project_shell_hint,
+)
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    EmbeddedProjectError,
+    embedded_project_dir,
+    embedded_status,
+    ensure_embedded_copy,
+    import_embedded_project,
+    resolve_maafw_project_root,
+    shell_hint_from_report,
+)
+from app.task.MaaFW.tools.embedded.flavor import (
+    decide_project_config_class,
+    user_config_type_transform,
 )
 from app.task.MaaFW.tools.embedded.game_package import (
     resolve_game_package,
     resource_paths_for,
+)
+from app.task.MaaFW.tools.embedded.project_path import (
+    release_project_path,
+    try_reserve_project_path,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
@@ -285,15 +302,6 @@ def _maafw_update_message_with_cdk(message: str, extra: dict[str, Any]) -> str:
     return message
 
 
-def _config_text(config: Any, group: str, name: str) -> str:
-    """读取一个可能不存在的配置项并归一为去空白字符串。"""
-
-    try:
-        return str(config.get(group, name) or "").strip()
-    except AttributeError:
-        return ""
-
-
 def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
     """组装 MaaFW 项目更新实现所需的 source_config。
 
@@ -320,12 +328,63 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
         "channel": credentials.channel,
         "package_source": credentials.package_source,
     }
-    project_path = _config_text(script_config, "Info", "Path")
-    if project_path:
-        shell_hint = detect_maafw_project_shell_hint(Path(project_path))
-        if shell_hint:
-            config["project_shell_hint"] = shell_hint
+    # 副本里没有 MFW.exe / maafw/ 可扫，外壳家族从导入报告取。
+    shell_hint = shell_hint_from_report(script_config)
+    if shell_hint:
+        config["project_shell_hint"] = shell_hint
     return config
+
+
+async def _maafw_effective_root(
+    script_id: str | None, fallback_path: str
+) -> tuple[Path | None, str]:
+    """按脚本解析有效根；内嵌脚本副本缺失时先从来源重建。
+
+    返回 ``(root, error)``：root 为 None 时 error 是给用户的一句话。
+    """
+
+    if script_id:
+        try:
+            script_config = _maafw_script_config(script_id)
+        except (KeyError, ValueError, TypeError) as exc:
+            return None, f"MFW 脚本无效: {exc}"
+        # 副本还没建（老脚本）或来源换了目录：先导入，报告写回配置。
+        # 导入期间持有项目预约：正在更新 / 准备 / 运行的脚本不能被整棵换树。
+        root_key = await try_reserve_project_path(embedded_project_dir(script_id))
+        if root_key is None:
+            copy_dir = resolve_maafw_project_root(script_id, script_config)
+            if copy_dir.is_dir():
+                return copy_dir.resolve(), ""
+            return None, "该 MFW 脚本正在运行或更新，稍后再试"
+        try:
+            rebuilt = await asyncio.to_thread(
+                ensure_embedded_copy, script_id, script_config
+            )
+        except EmbeddedProjectError as exc:
+            return None, str(exc)
+        except Exception as exc:  # noqa: BLE001 - 磁盘满、文件被占用之类的 OSError 也要给出文案
+            logger.opt(exception=True).warning(
+                f"MFW 项目导入失败（{script_id}）：{exc}"
+            )
+            return None, f"MFW 项目导入失败：{exc}"
+        finally:
+            await release_project_path(root_key)
+        if rebuilt is not None:
+            await Config.update_script(
+                script_id,
+                {
+                    "Embedded": {
+                        "Report": json.dumps(rebuilt["report"], ensure_ascii=False),
+                        "SourceVersion": rebuilt["sourceVersion"],
+                        "ImportedAt": rebuilt["importedAt"],
+                    }
+                },
+            )
+        return resolve_maafw_project_root(script_id, script_config).resolve(), ""
+    value = str(fallback_path or "").strip()
+    if not value:
+        return None, "请先设置 MFW 项目路径"
+    return Path(value).resolve(), ""
 
 
 SCRIPT_BOOK = {
@@ -1096,6 +1155,193 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+async def _embedded_status_out(
+    script_id: str, script_config: Any
+) -> MaaFWEmbeddedStatusOut:
+    # 来源目录的 is_dir 可能是断开的网络盘，别在事件循环上做。
+    status = await asyncio.to_thread(embedded_status, script_id, script_config)
+    report = status.get("report") or {}
+    return MaaFWEmbeddedStatusOut(
+        data=MaaFWEmbeddedStatusData(
+            copyPath=str(status["copyPath"]),
+            copyHealthy=bool(status["copyHealthy"]),
+            sourcePath=str(status["sourcePath"]),
+            sourceExists=bool(status["sourceExists"]),
+            sourceVersion=str(status["sourceVersion"]),
+            importedAt=str(status["importedAt"]),
+            report=MaaFWEmbeddedProjection(**_pick_projection_fields(report))
+            if report
+            else None,
+        )
+    )
+
+
+def _pick_projection_fields(report: Mapping[str, Any]) -> dict[str, Any]:
+    keys = MaaFWEmbeddedProjection.model_fields.keys()
+    return {key: report[key] for key in keys if key in report}
+
+
+_EMBEDDED_SCRIPT_BUSY = "脚本正在运行，运行结束后再操作内嵌"
+_UPDATE_SCRIPT_BUSY = "脚本正在运行，运行结束后再更新项目"
+_EMBEDDED_COPY_BUSY = "该 MFW 项目正在更新或准备环境，请稍后重试"
+
+
+def _embedded_busy_reason(script_config: Any) -> str:
+    """运行中不许动副本：换树会让正在跑的 worker 失去资源，写配置也会被锁拒绝。"""
+
+    return _EMBEDDED_SCRIPT_BUSY if getattr(script_config, "is_locked", False) else ""
+
+
+async def _embed_from_source(
+    script_id: str, source_path: str
+) -> tuple[MaaFWEmbeddedStatusOut | None, str]:
+    """导入副本并把报告写回配置。失败时原因原样带出——闸门理由就是用户要看的东西。
+
+    副本路径与 `/maafw/update`、`/agent-env/prepare` 共用同一把项目锁：更新落地或
+    环境准备进行到一半时换树，两边都会坏。
+    """
+
+    reservation = await try_reserve_project_path(embedded_project_dir(script_id))
+    if reservation is None:
+        return None, _EMBEDDED_COPY_BUSY
+    try:
+        imported = await asyncio.to_thread(
+            import_embedded_project, script_id, source_path
+        )
+    except EmbeddedProjectError as exc:
+        return None, str(exc)
+    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
+        return None, f"{type(exc).__name__}: {exc}"
+    finally:
+        await release_project_path(reservation)
+    await Config.update_script(
+        script_id,
+        {
+            "Embedded": {
+                "Report": json.dumps(imported["report"], ensure_ascii=False),
+                "SourceVersion": imported["sourceVersion"],
+                "ImportedAt": imported["importedAt"],
+            }
+        },
+    )
+    await _apply_project_flavor(script_id)
+    return None, ""
+
+
+async def _apply_project_flavor(script_id: str) -> None:
+    """导入完成后按项目决定脚本类型：特调项目 → 特调类型，否则通用 MaaFW；uid 不变。
+
+    类型由项目决定、双向自动：M9A 目录导进通用 MaaFW 脚本会变成 M9A，M9A 脚本换成别的项目
+    会变回 MaaFW。数据一个字段不动（两类同形），只换 ``instances[].type``。
+    """
+
+    try:
+        script_uid = uuid.UUID(str(script_id))
+        script_config = Config.ScriptConfig[script_uid]
+    except (KeyError, ValueError):
+        return
+    try:
+        interface = await asyncio.to_thread(
+            lambda: load_interface_model_cached(
+                embedded_project_dir(script_id), force_reload=True
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - 识别失败就保持原类型
+        logger.warning(f"导入后识别项目类型失败，保持原类型：{exc}")
+        return
+    target = decide_project_config_class(interface)
+    if type(script_config) is target:
+        return
+    try:
+        await Config.ScriptConfig.retype(
+            script_uid, target, user_config_type_transform(target)
+        )
+    except Exception as exc:  # noqa: BLE001 - 换类型失败不该让导入失败
+        logger.warning(f"按项目切换脚本类型失败，保持原类型：{exc}")
+        return
+    logger.info(f"脚本 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
+    script_name = str(script_config.get("Info", "Name") or str(script_id)[:8])
+    if issubclass(target, RuntimeMaaFWConfig) and target is not RuntimeMaaFWConfig:
+        await Config.push_system_notice(
+            level="warning",
+            title=f"脚本「{script_name}」已按项目识别为 {target.__name__.removesuffix('Config')}",
+            lines=[
+                "运行时会自动补上启动 / 关闭游戏；官服用户的「账号」会用于自动切换账号，"
+                "如果那一栏原来只是备注，请改掉或清空",
+            ],
+        )
+    else:
+        await Config.push_system_notice(
+            level="info",
+            title=f"脚本「{script_name}」已变回通用 MFW 脚本",
+            lines=[
+                "不再自动补启动 / 关闭 / 切换账号；用户与运行设置保留，任务队列请按新项目重排"
+            ],
+        )
+
+
+@router.post(
+    "/maafw/embedded/status",
+    tags=["MaaFW"],
+    summary="查看 MFW 脚本的内嵌副本状态",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def get_maafw_embedded_status(
+    payload: MaaFWEmbeddedIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    return await _embedded_status_out(payload.scriptId, script_config)
+
+
+@router.post(
+    "/maafw/embedded/reimport",
+    tags=["MaaFW"],
+    summary="按来源目录导入（或重新导入）副本",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def reimport_maafw_embedded(
+    payload: MaaFWEmbeddedReimportIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    """脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+
+    导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
+    """
+
+    try:
+        script_config = _maafw_script_config(payload.scriptId)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"MFW 脚本无效: {exc}"
+        )
+    if busy := _embedded_busy_reason(script_config):
+        return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
+    source = str(payload.sourcePath or "").strip()
+    _failed, error = await _embed_from_source(payload.scriptId, source)
+    if error:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"重新导入失败: {error}"
+        )
+    # 导入成功才把来源写进 Info.Path：失败时旧副本与旧来源都原样不动。
+    await Config.update_script(payload.scriptId, {"Info": {"Path": source}})
+    out = await _embedded_status_out(
+        payload.scriptId, _maafw_script_config(payload.scriptId)
+    )
+    report = out.data.report if out.data else None
+    out.message = (
+        f"已导入，副本只有来源的 {100 - report.savedPercent:.0f}%；来源目录未改动"
+        if report
+        else "已导入"
+    )
+    return out
+
+
 @router.post(
     "/maafw/game-package",
     tags=["MaaFW"],
@@ -1112,8 +1358,13 @@ async def resolve_maafw_game_package(
     运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
     """
 
+    # 与 preview / prepare 同一口径：带 scriptId 就按脚本解析有效根（内嵌脚本读的是
+    # 副本，来源目录可能已经不在了），path 只在没有脚本时兜底。
+    root_path, error = await _maafw_effective_root(payload.scriptId, payload.path)
+    if root_path is None:
+        return MaaFWGamePackageOut(code=400, status="error", message=error)
     try:
-        root_path = Path(payload.path).resolve()
+        root_path = root_path.resolve()
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)
         paths = await asyncio.to_thread(
             resource_paths_for, root_path, interface, payload.resource
@@ -1149,8 +1400,10 @@ async def preview_maafw_interface(
 ) -> MaaFWInterfacePreviewOut:
     """读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。"""
 
+    root_path, error = await _maafw_effective_root(payload.scriptId, payload.path)
+    if root_path is None:
+        return MaaFWInterfacePreviewOut(code=400, status="error", message=error)
     try:
-        root_path = Path(payload.path).resolve()
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)
         preview = await asyncio.to_thread(
             build_interface_preview_data,
@@ -1205,12 +1458,9 @@ async def update_maafw_project(
             code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
 
-    project_value = str(script_config.get("Info", "Path") or "").strip()
-    if not project_value:
-        return MaaFWProjectUpdateOut(
-            code=400, status="error", message="请先设置 MFW 项目路径"
-        )
-    root_path = Path(project_value).resolve()
+    root_path, error = await _maafw_effective_root(payload.scriptId, "")
+    if root_path is None:
+        return MaaFWProjectUpdateOut(code=400, status="error", message=error)
     if not root_path.is_dir():
         return MaaFWProjectUpdateOut(
             code=400,
@@ -1351,6 +1601,21 @@ async def update_maafw_project(
             ),
         )
 
+    # 只查版本随时可以；真落地要等运行结束：运行中的 worker 正从这棵树读资源、
+    # 加载库，包一落地就是半新半旧。项目路径的内存预约只有运行前检查那一小段
+    # 才拿着，挡不住这里，得看脚本锁。
+    if getattr(script_config, "is_locked", False):
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message=_UPDATE_SCRIPT_BUSY
+        )
+    # 下载 + 落地要几分钟，锁只在这一刻查过一次：期间开始的运行会撞上半新半旧的树。
+    # 整段持有项目预约，运行前检查看到预约就按「正在更新」跳过。
+    apply_reservation = await try_reserve_project_path(root_path)
+    if apply_reservation is None:
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message=_UPDATE_SCRIPT_BUSY
+        )
+
     try:
         # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
         # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
@@ -1358,16 +1623,21 @@ async def update_maafw_project(
         # 下载，正是本次设计要禁掉的静默换源。
         # 检查 / 下载 / 覆盖 / 校验的收尾事件（completed / failed）由更新实现
         # 自己经 progress 发出，这里不再补发。
-        result = await update_maafw_project_if_needed(
-            root_path,
-            interface,
-            mirror_cdk=source_config["mirror_cdk"],
-            channel=source_config["channel"],
-            source_config=source_config,
-            proxy=proxy,
-            send_log=send_update_log,
-            progress=report_progress,
-        )
+        try:
+            result = await update_maafw_project_if_needed(
+                root_path,
+                interface,
+                mirror_cdk=source_config["mirror_cdk"],
+                channel=source_config["channel"],
+                source_config=source_config,
+                proxy=proxy,
+                send_log=send_update_log,
+                progress=report_progress,
+                # 落在副本上：只写 interface 白名单内的条目。
+                projection=True,
+            )
+        finally:
+            await release_project_path(apply_reservation)
     except MaaFWProjectUpdateError as exc:
         return MaaFWProjectUpdateOut(
             code=400, status="error", message=f"MFW 项目更新失败: {exc}"
@@ -1532,12 +1802,9 @@ async def prepare_maafw_agent_env(
             }
         )
 
-    project_value = str(payload.path or "").strip()
-    if not project_value:
-        return MaaFWAgentEnvPrepareOut(
-            code=400, status="error", message="请先设置 MFW 项目路径"
-        )
-    root_path = Path(project_value).resolve()
+    root_path, error = await _maafw_effective_root(payload.scriptId, payload.path)
+    if root_path is None:
+        return MaaFWAgentEnvPrepareOut(code=400, status="error", message=error)
     if not root_path.is_dir():
         return MaaFWAgentEnvPrepareOut(
             code=400,
@@ -1663,61 +1930,6 @@ async def prepare_maafw_agent_env(
             previously_prepared=previously_prepared,
         ),
     )
-
-
-@router.post(
-    "/m9a/tasks/available",
-    tags=["M9A"],
-    summary="获取 M9A 可用任务列表（排除 standalone 任务）",
-    status_code=200,
-)
-async def get_m9a_available_tasks(script_id: str):
-    """
-    获取 M9A 可用任务列表（排除 standalone 任务）
-
-    前端调用此接口获取可选择的任务列表，
-    用于展示在用户编辑界面的任务选择区域。
-
-    Args:
-        script_id: M9A 脚本 ID
-
-    Returns:
-        dict: 包含任务列表的响应
-    """
-    from pathlib import Path
-
-    from app.task.M9A.task_loader import M9ATaskLoader
-
-    try:
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-        m9a_path = Path(script_config.get("Info", "Path"))
-        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
-
-        # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
-        available_tasks = loader.get_available_tasks()
-        result_tasks = []
-
-        for task in available_tasks:
-            full_def = loader.get_full_definition(task["name"])
-            if full_def:
-                result_tasks.append(full_def)
-
-        return {
-            "code": 200,
-            "status": "success",
-            "message": f"共 {len(result_tasks)} 个可用任务",
-            "data": result_tasks,
-        }
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_m9a_available_tasks失败: {type(e).__name__}: {e}"
-        )
-        return {
-            "code": 500,
-            "status": "error",
-            "message": f"{type(e).__name__}: {str(e)}",
-            "data": [],
-        }
 
 
 @router.get(

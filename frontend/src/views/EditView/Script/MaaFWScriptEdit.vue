@@ -7,15 +7,15 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/maafw.png" alt="MFW" class="breadcrumb-logo" />
-            {{ projectDisplayName }} {{ isWizard ? '项目引导' : '项目配置' }}
+            <img :src="flavor.logo" :alt="flavor.typeTagLabel" class="breadcrumb-logo" />
+            {{ pageTitle }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
     <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scripts" />
+      <DocLink :url="flavor.docUrl" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -26,13 +26,9 @@
   </div>
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="`${projectDisplayName} ${isWizard ? '项目引导' : '项目配置'}`"
-      :loading="pageLoading"
-      class="config-card"
-    >
+    <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="geekblue" class="type-tag"> MFW</a-tag>
+        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ flavor.typeTagLabel }}</a-tag>
       </template>
 
       <a-steps
@@ -54,6 +50,11 @@
             :preview-project-title="previewProjectTitle"
             :interface-stats="interfaceStats"
             :update-applying="updateApplying"
+            :embedded-status="embeddedStatus"
+            :embedded-busy="embeddedBusy"
+            :source-directory-label="t(flavor.sourceDirectoryKey)"
+            :source-hint="t(flavor.sourceHintKey)"
+            :source-placeholder="t(flavor.sourcePlaceholderKey)"
             :env-preparing="envPreparing"
             :env-ready="envReady"
             :env-failed="envFailed"
@@ -65,6 +66,7 @@
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
+            @reimport-embedded="handleReimportEmbedded"
           />
         </div>
 
@@ -151,13 +153,12 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { GetService, MaaFwService } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import {
@@ -167,6 +168,11 @@ import {
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
+import {
+  EMPTY_EMBEDDED_STATUS,
+  useMaaFWEmbeddedApi,
+  type MaaFWEmbeddedStatus,
+} from '@/composables/useMaaFWEmbeddedApi'
 import {
   createUpdateProgressState,
   finishUpdateProgress,
@@ -182,6 +188,7 @@ import {
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
+import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -211,8 +218,25 @@ const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
+const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
 
 const scriptId = route.params.id as string
+
+// flavor 文案以脚本当前类型为准，不看路由 meta：/edit/maafw 与 /edit/m9a 都进这个组件，
+// 而导入完成后后端会按项目内容原地换类型（M9A 项目 → M9A，其它 → MaaFW，uid 不变）。
+const scriptType = ref<ScriptType>('MaaFW')
+const flavor = useMaaFWFlavor(scriptType)
+const refreshScriptType = async () => {
+  try {
+    const detail = await getScript(scriptId)
+    if (detail?.type) {
+      scriptType.value = detail.type
+      formData.type = detail.type
+    }
+  } catch (error) {
+    logger.warn(`刷新脚本类型失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 // 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 脚本后进这里，
 // 之后再编辑走 /scripts/:id/edit/maafw 的完整单页形态。
@@ -325,6 +349,13 @@ const projectDisplayName = computed(() => {
   return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
 })
 
+// 通用 MaaFW 用「<项目名> 项目配置 / 项目引导」；特调类型（M9A）用它自己那句标题
+const pageTitle = computed(() =>
+  flavor.value.scriptTitleKey
+    ? t(flavor.value.scriptTitleKey)
+    : `${projectDisplayName.value} ${isWizard.value ? '项目引导' : '项目配置'}`
+)
+
 const interfaceStats = computed(() => [
   { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
   { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
@@ -421,7 +452,8 @@ const runPreview = async (options: { forceEnv?: boolean } = {}) => {
   }
   previewLoading.value = true
   try {
-    const response = await previewMaaFWInterface(path)
+    // 带 scriptId：内嵌脚本读的是 AUTO-MAS 的副本，path 只在没有脚本时兜底。
+    const response = await previewMaaFWInterface(path, scriptId)
     if (!response || response.code !== 200 || !response.data) {
       previewData.value = null
       message.error(response?.message || 'MaaFW interface 预览失败，请检查后端服务与项目目录')
@@ -572,14 +604,68 @@ const selectMaaFWPath = async () => {
     }
     const path = await window.electronAPI.selectFolder()
     if (!path) return
+    // 选目录 = 导入：第一次建副本，之后是换来源并重新导入。Info.Path 由后端在
+    // 导入成功后写入，失败时旧副本与旧来源都原样不动，这里也就不动本地草稿。
+    const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, path))
+    if (!ok) return
     maafwConfig.Info.Path = path
     formData.path = path
-    await handleChange('Info', 'Path', path)
-    await runPreview()
+    await runPreviewOnNewRoot()
   } catch (error) {
     logger.error(`选择项目目录失败: ${error instanceof Error ? error.message : String(error)}`)
     message.error(t('edit.couldNotPickFolder'))
   }
+}
+
+// ---- 内嵌副本 ----
+// 状态只从后端拿：副本在不在、来源在不在都是磁盘上的事实，本地草稿说了不算。
+const embeddedStatus = ref<MaaFWEmbeddedStatus>({ ...EMPTY_EMBEDDED_STATUS })
+const embeddedBusy = ref(false)
+
+const refreshEmbeddedStatus = async () => {
+  try {
+    const { status } = await getEmbeddedStatus(scriptId)
+    embeddedStatus.value = status
+  } catch (error) {
+    logger.error(`读取内嵌状态失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+// 有效根换了（换来源、重新导入）：Info.Path 文本可能没变，但后端按
+// scriptId 解析到的目录已经不是同一个，运行环境要在新根上重新准备一次。这里只
+// 清掉页面内「这个路径备好过」的记忆；后端仍按项目指纹去重，不会真的重装。
+const runPreviewOnNewRoot = async () => {
+  envPreparedPath.value = ''
+  await runPreview()
+}
+
+/** 跑一个内嵌动作：成功回填状态并提示后端文案，失败提示原因；返回是否成功。 */
+const runEmbeddedAction = async (
+  action: () => Promise<{ status: MaaFWEmbeddedStatus; message: string }>
+): Promise<boolean> => {
+  if (embeddedBusy.value) return false
+  embeddedBusy.value = true
+  try {
+    const { status, message: text } = await action()
+    embeddedStatus.value = status
+    if (text) message.success(text)
+    // 导入完成后后端按项目内容决定脚本类型（M9A 项目 → M9A，其它 → MaaFW），
+    // 重新拉一次类型让 flavor 文案跟上
+    await refreshScriptType()
+    return true
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error))
+    return false
+  } finally {
+    embeddedBusy.value = false
+  }
+}
+
+const handleReimportEmbedded = async () => {
+  const source = maafwConfig.Info.Path.trim()
+  if (!source) return
+  const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, source))
+  if (ok) await runPreviewOnNewRoot()
 }
 
 const updateChecking = ref(false)
@@ -643,9 +729,11 @@ const syncGamePackageName = async (overwrite: boolean) => {
   if (!path || !resource) return
   if (!overwrite && maafwConfig.Game.PackageName.trim()) return
   try {
+    // 带 scriptId：内嵌脚本按副本推断，来源目录不在了也照常。
     const response = await MaaFwService.resolveMaafwGamePackageApiScriptsMaafwGamePackagePost({
       path,
       resource,
+      scriptId,
     })
     const resolved = response.code === 200 && response.data?.reason === 'resolved'
     const packageName = resolved ? (response.data?.package ?? '').trim() : ''
@@ -699,6 +787,8 @@ onMounted(async () => {
       return
     }
     applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
+    scriptType.value = scriptDetail.type
+    formData.type = scriptDetail.type
     scriptLoaded = true
     if (!maafwConfig.Info.Name) {
       maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
@@ -708,8 +798,11 @@ onMounted(async () => {
     if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
       await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
     }
+    await refreshEmbeddedStatus()
     if (maafwConfig.Info.Path) {
       await runPreview()
+      // 老脚本第一次打开：预览会让后端顺手完成导入，面板要按导入后的状态重画。
+      await refreshEmbeddedStatus()
     }
   } catch (error) {
     logger.error(`加载脚本失败: ${error instanceof Error ? error.message : String(error)}`)

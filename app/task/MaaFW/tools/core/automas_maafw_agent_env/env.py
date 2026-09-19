@@ -12,6 +12,8 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from packaging.version import InvalidVersion, Version
+
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
 from ..automas_maafw_runtime_pool.host_environment import (
     strip_host_python_environment,
@@ -215,6 +217,7 @@ def _prepare_project_python_env(
         env=test_env,
         log=log,
     ):
+        _repin_project_python_binding(python_exe, project_path, test_env, log)
         return
 
     raise MaaFWAgentEnvError(
@@ -223,9 +226,84 @@ def _prepare_project_python_env(
         "  处理建议:\n"
         "    方法1: 重新下载并解压完整 MaaFW 项目包\n"
         "    方法2: 检查项目自带 Python 是否能导入 maa.agent.agent_server\n"
-        "  项目 Python 属于 release 内容，AUTO-MAS 不要求其提供 pip，"
-        "也不会自动修改该目录。"
+        "  项目 Python 属于 release 内容，AUTO-MAS 不要求其提供 pip；"
+        "只在自己的内嵌副本里修它的 maafw binding 版本。"
     )
+
+
+def project_python_maafw_version(python_exe: str | Path) -> str | None:
+    """项目自带解释器里装的 maafw binding 版本（读 dist-info 目录名，不起进程）。"""
+
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        try:
+            matches = sorted(site.glob("maafw-*.dist-info"))
+        except OSError:
+            continue
+        for match in matches:
+            version = match.name[len("maafw-") : -len(".dist-info")]
+            if version:
+                return version
+    return None
+
+
+def _is_embedded_copy(project_path: Path) -> bool:
+    """项目目录是不是 AUTO-MAS 自己的内嵌副本（``data/maafw_projects/<uuid>``）。"""
+
+    try:
+        project_path.resolve().relative_to(
+            (Path.cwd() / "data" / "maafw_projects").resolve()
+        )
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _repin_project_python_binding(
+    python_exe: str,
+    project_path: Path,
+    env: dict[str, str],
+    log: Callable[[str], None],
+) -> None:
+    """自带解释器里的 maafw binding 与自带原生库版本不一致时，在副本里把它钉回去。
+
+    runner 加载的是项目自带的原生库（``project_maafw_runtime_path``），agent 侧的 binding
+    必须与之同版本，否则 AgentServer/Client 协议对不上、只表现为「连接超时」。项目自己的
+    部署脚本会把 binding ``pip install --upgrade`` 到 PyPI 最新（Maa_bbb v1.12.8 实测升到
+    5.13.1/协议 8，原生库还是 5.11.1/协议 7）。**只动内嵌副本**：那是 AUTO-MAS 自己铺的；
+    用户手上的项目目录仍然一个字节不碰，只把原因说清。任何一步失败只记日志，不拦准备。
+    """
+
+    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        probe_bundled_maafw_version,
+    )
+
+    installed = project_python_maafw_version(python_exe)
+    native = probe_bundled_maafw_version(project_path)
+    if not installed or not native:
+        return
+    try:
+        same = Version(installed) == Version(native)
+    except InvalidVersion:
+        same = installed == native
+    if same:
+        return
+    mismatch = f"项目自带 Python 里的 maafw 是 {installed}，项目自带的 MaaFramework 原生库是 {native}"
+    if not _is_embedded_copy(Path(project_path)):
+        log(
+            f"[Python环境] {mismatch}，Agent 协议会对不上；这是项目目录，AUTO-MAS 不改它，"
+            "请更新项目或自行把 binding 版本对齐"
+        )
+        return
+    log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
+    ok, detail = _pip_install(
+        python_exe, [f"maafw=={native}"], cwd=str(project_path), env=env, log=log
+    )
+    if not ok:
+        log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
 
 
 def _isolated_venv_lock(path: Path) -> threading.RLock:

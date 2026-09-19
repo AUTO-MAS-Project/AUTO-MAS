@@ -15,7 +15,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import psutil
 
@@ -46,7 +46,10 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
+from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import (
+    MaaFWRunPlanError,
+    select_snapshot_tasks,
+)
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.notify.report import (
@@ -59,6 +62,8 @@ from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
+from .embedded_project import resolve_maafw_project_root
+from .flavor import resolve_flavor
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .project_path import release_project_path, try_reserve_project_path
@@ -351,7 +356,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.project_path = Path(self.script_config.get("Info", "Path")).resolve()
+        self.project_path = resolve_maafw_project_root(
+            str(self.script_info.script_id), self.script_config
+        ).resolve()
         self.interface_model: MaaFWInterface | None = None
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None
@@ -400,6 +407,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         keep_reservation = False
         try:
+            loop = asyncio.get_running_loop()
+
+            def send_plan_log(message: str) -> None:
+                # 运行计划在工作线程里构建，特调钩子的用户日志要回到事件循环线程
+                # 再写 script_info.log（与 send_runner_log 同一做法），否则撞上
+                # 「no running event loop」，整份计划都算构建失败。
+                loop.call_soon_threadsafe(self._append_log, message)
+
             try:
                 (
                     self.interface_model,
@@ -407,7 +422,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self.run_plan,
                     game_path_error,
                 ) = await asyncio.to_thread(
-                    self._load_run_state_for_check,
+                    self._load_run_state_for_check, send_plan_log
                 )
             except Exception as exc:
                 self.cur_user_item.status = "异常"
@@ -447,6 +462,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.check_result = await self.check()
         if self.check_result != "Pass":
+            # 也记一行后端日志：否则只有 WS 通知，事后日志里只见「任务开始」紧接「任务结束」。
+            logger.info(
+                f"MFW 用户运行前检查未通过（{self.cur_user_item.name}，{self.cur_user_item.status}）：{self.check_result}"
+            )
             if self.cur_user_item.status == "异常":
                 await Publisher.send(
                     id=self.task_info.task_id,
@@ -667,9 +686,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     def _load_run_state_for_check(
         self,
+        send_log: Callable[[str], None] | None = None,
     ) -> tuple[MaaFWInterface, MaaFWRunPlan, MaaFWRunPlan, str | None]:
         interface_model = MaaFWInterfaceService().load(self.project_path)
-        base_run_plan = self._build_run_plan(interface_model)
+        base_run_plan = self._build_run_plan(interface_model, send_log=send_log)
         run_plan = self._filter_period_once_tasks(base_run_plan)
 
         game_path_error: str | None = None
@@ -683,7 +703,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 game_path_error = "当前 MaaFW controller 需要由 MAS 启动游戏，请在脚本管理页选择实际游戏 exe"
         return interface_model, base_run_plan, run_plan, game_path_error
 
-    def _build_run_plan(self, interface_model: MaaFWInterface) -> MaaFWRunPlan:
+    def _build_run_plan(
+        self,
+        interface_model: MaaFWInterface,
+        *,
+        send_log: Callable[[str], None] | None = None,
+    ) -> MaaFWRunPlan:
         # 不看 Info.IfQuickConfig：MaaFW 没有可退回的原生配置，用户页上配的任务队列就是
         # 唯一的任务来源。开关在界面上已经不提供，这里若还读它，被隐藏的旧值会让页面上
         # 能改、运行时却不生效。
@@ -695,16 +720,45 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ).strip()
         controller_name = self._select_controller_name(interface_model)
         resource_name = self._select_resource_name(interface_model, controller_name)
+        effective_preset = (
+            selected_preset if selected_preset and not task_snapshot else None
+        )
+        # 特调类型（脚本配置类声明了 FLAVOR）：先把快照归一化成实例 id 列表，交给
+        # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
+        # 没有钩子，仍按快照直接建计划，行为不变。
+        flavor = resolve_flavor(self.script_config)
         try:
+            if flavor is None:
+                return MaaFWRunnerService().build_plan(
+                    self.project_path,
+                    interface_model,
+                    controller_name=controller_name,
+                    resource_name=resource_name,
+                    selected_preset=effective_preset,
+                    task_snapshot=task_snapshot or None,
+                )
+            task_ids, task_options = select_snapshot_tasks(
+                interface_model,
+                selected_preset=effective_preset,
+                task_snapshot=task_snapshot or None,
+            )
+            task_ids, task_options = flavor.decorate_selection(
+                interface_model,
+                task_ids,
+                task_options,
+                script_config=self.script_config,
+                user_config=self.cur_user_config,
+                resource_name=resource_name,
+                # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
+                send_log=send_log if send_log is not None else logger.info,
+            )
             return MaaFWRunnerService().build_plan(
                 self.project_path,
                 interface_model,
                 controller_name=controller_name,
                 resource_name=resource_name,
-                selected_preset=selected_preset
-                if selected_preset and not task_snapshot
-                else None,
-                task_snapshot=task_snapshot or None,
+                task_ids=task_ids,
+                task_options=task_options,
             )
         except Exception as exc:
             raise MaaFWRunPlanError(str(exc)) from exc

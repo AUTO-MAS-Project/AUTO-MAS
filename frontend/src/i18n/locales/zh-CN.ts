@@ -432,7 +432,6 @@ export default {
     startedSrcSetupUser: '已开始配置用户 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置用户 {p0} 的通用设置',
     readP0: '已读取 {p0}',
-    addedP0Tasks: '成功添加 {p0} 个任务',
     configurationSessionUserP02: '用户 {p0} 的配置会话已超时（30分钟），正在自动保存配置...',
     configurationUserP0Was: '用户 {p0} 的配置已保存',
     couldNotSaveUser2: '用户配置保存失败: {p0}',
@@ -472,7 +471,6 @@ export default {
     annihilationDailyRunStart: '剿灭与日常分两次启动 MAA，组内按执行顺序排列',
     annihilationDailyTasksEach: '剿灭作战和日常任务会分别启动两次 MAA',
     annihilationStage: '剿灭关卡',
-    couldNotLoadAvailable: '加载可用任务失败',
     rewardGroupsProtocolSpace: '协议空间奖励任务可在这里选择奖励组',
     rewardGroup: '可选奖励组',
     annihilationMaaStartsOnce:
@@ -545,7 +543,6 @@ export default {
     maaEndRouteSelectedCount: '已选 {n}/{m}',
     markAsDone2: '手动完成',
     takeOverTaskConfiguration: '接管具体任务配置',
-    usedWhenThereNo: '无活动或换完商店时使用，进行常规刷取',
     whetherReservedTrailblazePower: '是否使用储备开拓力',
     whetherFuelUsed: '是否使用燃料',
     ascensionMaterialIce: '晋阶材料：冰（三月七 / 黑塔 / 杰帕德 / 佩拉）',
@@ -608,8 +605,6 @@ export default {
       '用于切换账号，官服输入手机号，两种方式均按账号末四位匹配，无需切换则留空',
     userSPasswordWhen:
       '用户密码，填写时将启用备选的通过输入账号密码方式登录，留空时仅通过识别已登录账号列表登录',
-    leaveEmptySkipAccount: '留空则不切换账号',
-    thisCurrentlyWorksCn: '目前该功能仅支持官服，且仅支持 1280×720 实际未缩放分辨率',
     accountEmailPhoneNumber: '站账号/邮箱号/手机号。',
     accountEmailPhoneNumber2:
       "站账号/邮箱号/手机号，中间使用「{'|'}」分隔，通过账号密码登录时将优先使用 B",
@@ -650,12 +645,10 @@ export default {
     pickCustomBaseLayout: '请选择自定义基建排班',
     pickRelicStage: '请选择遗器关卡',
     pickOrnamentStage: '请选择饰品关卡',
-    accountInfo: '账号信息',
     enterCustomStageE: '输入自定义关卡，如: 11-8',
     pickStage: '选择关卡',
     pickImport: '选择并导入',
     pickSanityTaskType: '选择当前执行的理智任务类型',
-    pickGameServerThis2: '选择当前用户使用的游戏服务器',
     pickItem: '选择物品',
     pickStageTypeFarm: '选择要刷取的关卡类型',
     pickMaterialStageFarm: '选择要刷取的材料关卡',
@@ -665,7 +658,6 @@ export default {
     pickSimulatedUniverseWorld2: '选择要挑战的模拟宇宙世界',
     relic: '遗器',
     relicStage: '遗器关卡',
-    someTasksHadNo: '部分任务未找到对应脚本，已自动跳过',
     configurationSource: '配置文件来源',
     resetState: '重置状态',
     ornament: '饰品',
@@ -682,7 +674,6 @@ export default {
     pickMaaendPath: '请选择 MaaEnd 路径',
     pickOkNtePath: '请选择 OK-NTE 路径',
     pickOkWwPath: '请选择 ok-ww 路径',
-    pickM9aPath: '请选择M9A路径',
     pickMaaPath: '请选择MAA路径',
     pickSrcPath: '请选择SRC路径',
     pickMainProgramPath: '请选择主程序路径',
@@ -948,10 +939,6 @@ export default {
     echoDomainNumberF2: 'F2 列表中的凝素领域序号',
     sonanceCasketNumberF2: 'F2 列表中的无音区序号',
     hsrScriptConfiguration: 'HSR 脚本配置',
-    m9aConfigurationGuide: 'M9A 官方配置指南',
-    m9aScriptConfiguration: 'M9A脚本配置',
-    m9aPath: 'M9A路径',
-    m9aPathSelected: 'M9A路径选择成功',
     maaAdapterSupportsEmulators: 'MAA 专项仅支持模拟器；PC 版请使用通用脚本。',
     maaScriptConfiguration: 'MAA脚本配置',
     maaPath: 'MAA路径',
@@ -1125,13 +1112,8 @@ export default {
       '开启后，代理启动游戏前由 MAS 检查官方版本并自行完成更新；关闭则直接启动游戏',
     overridesCurrentScriptConfiguration:
       '开启后，使用下方快速配置面板中的高频任务字段覆盖当前脚本配置；关闭后保留当前脚本配置中的完整任务设置',
-    onceThisUserS: '开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务',
-    onceAutoDeepSleep:
-      '开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务',
     beforeStartingMaaCompare:
       '开启后，启动 MAA 前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时 MAA 无法通过强制更新界面，只会一直卡到超时',
-    whenThisScriptRuns:
-      '开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源',
     whenClientDetectedAs:
       '开启后，检测到客户端版本落后时由 MAS 自动下载安装包并通过 ADB 安装，安装完成后继续代理。仅国服官服可用，安装包约 2 GB，请确保磁盘空间充足',
     updateAutomaticallyBeforeEvery: '开启运行前自动更新？',
@@ -1143,11 +1125,6 @@ export default {
     // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
     maaendConfigRestoreScriptDesc:
       'MaaEnd 原生配置的备份，恢复会直接作用于 MaaEnd 本体；打开本编辑页、运行 MaaEnd 或打开配置界面前会自动去重创建，保留最近 10 份',
-    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
-    m9aConfigRestoreUserDesc:
-      'MAS 编辑页核心配置（任务队列、服务器资源等）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
-    m9aConfigRestoreScriptDesc:
-      'M9A 本体配置的备份，恢复会直接作用于 M9A 本体；进入本编辑页或运行 M9A 前会自动去重创建，保留最近 10 份',
     // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
     generalConfigRestoreUserDesc:
       '该用户脚本配置的备份，恢复会直接作用于 MAS 配置页；运行或打开配置界面前会自动去重创建，保留最近 10 份',
@@ -1204,7 +1181,6 @@ export default {
     treatRunAsTimed2: '执行代理任务时，SRC日志无变化时间超过该阀值视为超时',
     treatAnnihilationRunAs: '执行剿灭代理任务时，MAA日志无变化时间超过该阀值视为超时',
     engine: '执行引擎',
-    treatDailyRunAs: '执行日常代理任务时，M9A日志无变化时间超过该阀值视为超时',
     treatDailyRunAs2: '执行日常代理任务时，MAA日志无变化时间超过该阀值视为超时',
     update: '执行更新',
     runLimits: '执行限制',
@@ -1269,7 +1245,6 @@ export default {
     pushCollectionOffRules: '推送配置已停用，规则不会参与采集。',
     description: '描述',
     tipFAcceptsBoth: '提示：%f 同时支持 3 位毫秒（如 123）和 6 位微秒（如',
-    reminderIfYouRun: '提醒您：阁下若是遇到了难题，不妨查看',
     searchSettings: '搜索配置项…',
     recipient: '收件地址',
     wholeFileSyncLimit: '整文件同步上限（GB）',
@@ -1295,7 +1270,6 @@ export default {
     maximumLines: '最大行数',
     youHaveUnsavedChanges: '有未保存的更改',
     server: '服务器',
-    localProjectDirectory: '本地项目目录',
     readExtractionPatternReference: '查看日志提取表达式参考文档',
     rootPathSelected: '根路径选择成功',
     rootPathSelectedOther: '根路径选择成功，其他路径已自动调整以保持相对关系',
@@ -1314,12 +1288,10 @@ export default {
     skipOnceDoneThis: '每周完成后跳过',
     extraTasksThatRun: '每日任务后运行的附加任务',
     skipOnceDoneToday: '每日完成后跳过',
-    dailyInsightRunsOnce: '每日心相每日只执行一次',
     skipOnceDoneThis2: '每月完成后跳过',
     exampleStarrailExe: '比如 StarRail.exe',
     nothingConfigure: '没有可配置任务',
     spendSanityFarm: '消耗体力刷取',
-    deepSleepRunsOnce: '深眠浅梦每月只执行一次',
     addTask: '添加任务',
     added: '添加成功',
     clearSraPath: '清空 SRA 路径',
@@ -1515,7 +1487,6 @@ export default {
     pickSraFolderContains: '请选择 SRA 所在文件夹（含 SRA-cli.exe）',
     pickDirectoryHoldingOk: '请选择 ok-nte.exe 所在目录',
     pickDirectoryHoldingOk2: '请选择 ok-ww.exe 所在目录',
-    pickFolderHoldingM9a: '请选择M9A所在的文件夹',
     pickFolderHoldingMaa: '请选择MAA.exe所在的文件夹',
     pickFolderHoldingSrc: '请选择SRC.exe所在的文件夹',
     pickMarch7thFolderContains: '请选择三月七所在文件夹（含 March7th Assistant.exe）',
@@ -1561,13 +1532,40 @@ export default {
     pickExe: '选择 exe',
     pickDirectoryHoldingOk3: '选择 ok-nte.exe 所在目录',
     pickDirectoryHoldingOk4: '选择 ok-ww.exe 所在目录',
-    pickFolderHoldingM9a2: '选择M9A所在的文件夹路径',
     pickFolderHoldingMaa2: '选择MAA.exe所在的文件夹路径',
     pickFolderHoldingSrc2: '选择SRC.exe所在的文件夹路径',
-    pickMfwProjectDirectory: '选择包含 interface.json 的 MFW 项目目录',
     pickProjectDirectoryContaining: '选择包含 interface.json 的项目目录，读取控制器、资源和任务。',
     pickImportPath: '选择导入路径',
     pickLocalDirectory: '选择本地目录',
+    maafwEmbeddedTitle: '内嵌副本',
+    maafwEmbeddedHint:
+      'AUTO-MAS 只把 interface 声明的资源、Agent 和项目自带的运行时复制到自己的目录，运行、更新都在这份副本上；来源目录一个字节不动，导入完成后可以删掉，留着只为重新导入。',
+    maafwEmbeddedSourceDirectory: '来源目录',
+    maafwEmbeddedSourceHint: '副本从这个目录导入；换目录会按新目录重新导入一份副本，原目录不动。',
+    maafwAccountRecordTooltip:
+      '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置',
+    m9aFlavorScriptTitle: '编辑 M9A 脚本',
+    m9aFlavorSourceDirectory: 'M9A 程序目录',
+    m9aFlavorSourceHint:
+      '选择包含 interface.json 的 M9A 目录。副本从这个目录导入；换目录会按新目录重新导入一份副本，原目录不动。',
+    m9aFlavorSourcePlaceholder: '选择包含 interface.json 的 M9A 目录',
+    m9aFlavorAccountPlaceholder: '填写后自动加入「切换账号」任务（官服有效）',
+    m9aFlavorAccountTooltip:
+      '账号填写后会自动加入「切换账号」任务（官服有效）；密码仅用于本地记录，不会传入脚本',
+    m9aFlavorQueueHint: '启动游戏、关闭游戏与切换账号由 M9A 专项自动加入，无需手动添加',
+    maafwEmbeddedCopyHealthy: '副本完整',
+    maafwEmbeddedCopyMissing: '副本缺失，下次运行前会自动从来源目录重建',
+    maafwEmbeddedCopyAndSourceMissing:
+      '副本缺失，来源目录也已不存在：请重新选择一个解压好的 MFW 项目目录',
+    maafwEmbeddedSaved: '副本只有来源的 {percent}%（{source} → {copy}）',
+    maafwEmbeddedShell: '外壳：{shell}',
+    maafwEmbeddedRuntime: 'MaaFramework {version}（项目自带，原样带入副本）',
+    maafwEmbeddedPython: 'Agent Python {version}（项目自带，原样带入副本）',
+    maafwEmbeddedSourceVersion: '导入自来源 {version}',
+    maafwEmbeddedImportedAt: '导入于 {time}',
+    maafwEmbeddedSourceMissing: '来源目录已不存在：副本照常运行、照常更新，只是不能再重新导入',
+    maafwEmbeddedReimport: '重新导入',
+    maafwEmbeddedReimportHint: '按当前来源目录重新导入一份副本；你手动更新过来源目录时用它。',
     pickHowGameControlled: '选择游戏控制方式',
     pickUserWhoseServer: '选择用户（按该用户的服务器检查更新）',
     chooseWhetherMasSwitches:
@@ -1590,7 +1588,6 @@ export default {
     configurationFilePath: '配置文件路径',
     mxuLogsNamedBy:
       '针对 mxu 按日期+自增序号命名的日志：末尾加 ****** 启用mxu日志前缀匹配（如 %Y-%m-%d******）',
-    updateAutomaticallyAfterQueue: '队列结束后自动更新',
     useNightmareNestDaily: '需要时使用梦魇巢穴完成日常声骸',
     projectUpdate: '项目更新',
     ornamentExtraction: '饰品提取',
@@ -1598,7 +1595,6 @@ export default {
     wutheringWavesUpdateTask: '鸣潮更新任务已结束',
     wutheringWavesUpdateTimed: '鸣潮更新超时，已自动停止',
     k60SecondsRecommendedDefault: '默认等待时间建议调到 60 秒。',
-    whichSpellsOutEvery: '，其中清晰写明了所有配置步骤。',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI 脚本配置',
     bettergiInstanceNameHint: '用于区分不同的 BetterGI 脚本实例',

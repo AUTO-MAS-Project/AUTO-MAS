@@ -5,14 +5,14 @@ import { parse } from '@vue/compiler-sfc'
 describe('quick configuration panel visibility', () => {
   // BetterGI 不在列：本 PR 决定「快速配置不作为配置来源开关」，该页面恢复原貌——
   // 任务配置卡片常显、开关回到 GeneralConfigModeSelector 内（按来源而非开关决定面板形态）。
-  for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
+  // M9A 也不在列：它已是 MaaFW 的特调类型，页面就是 MaaFWUserEdit.vue，见下一条
+  for (const name of ['MAA', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
     it(`${name} keeps its switch outside the conditional panel`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
       const panel =
         {
           MAA: '<TaskPipelineSection',
-          M9A: '<TaskQueueSection',
           SRC: '<StageConfigSection',
         }[name] || '<a-card v-if="formData.Info.IfQuickConfig"'
       const start = template.indexOf(panel)

@@ -336,9 +336,9 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导；其余类型直接进编辑页
+    // MFW 新建后进分步引导（M9A 是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
     path:
-      type === 'MaaFW'
+      type === 'MaaFW' || type === 'M9A'
         ? `/scripts/${scriptId}/setup/maafw`
         : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data

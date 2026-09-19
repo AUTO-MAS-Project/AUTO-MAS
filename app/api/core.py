@@ -116,6 +116,8 @@ async def get_ws_meta() -> WebSocketMetaOut:
 
 # 主连接建立后触发启动时调度队列
 MainConnection.on_connect(TaskManager.start_startup_queue)
+# 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
+MainConnection.on_connect(Config.flush_startup_notices)
 
 
 @router.websocket("/ws")
