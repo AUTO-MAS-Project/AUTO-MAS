@@ -275,6 +275,25 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     return all_stage_drops
 
 
+_PROXY_URL_SCHEMES = ("http://", "https://", "socks5://", "socks5h://", "socks4://")
+
+
+def normalize_proxy_address(raw: str | None) -> str | None:
+    """把 ``Update.ProxyAddress`` 规范成带协议的代理地址字符串。
+
+    去首尾空白，空 → ``None``；没有协议前缀时补 ``http://``；``user:pw@`` 原样保留
+    ——这是要写进子进程 ``HTTP_PROXY`` 的字符串，不是 ``httpx.Proxy``（后者会把
+    userinfo 剥到 ``.auth``，``str(proxy.url)`` 会丢凭据）。
+    """
+
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if not text.lower().startswith(_PROXY_URL_SCHEMES):
+        text = f"http://{text}"
+    return text
+
+
 class AppConfig(GlobalConfig):
     VERSION = "v5.5.0-beta.6"
 
@@ -3821,13 +3840,9 @@ class AppConfig(GlobalConfig):
     @property
     def proxy(self) -> Optional[httpx.Proxy]:
         """获取代理设置，返回适用于 httpx 的代理对象"""
-        proxy_addr = self.get("Update", "ProxyAddress")
+        proxy_addr = normalize_proxy_address(self.get("Update", "ProxyAddress"))
         if not proxy_addr:
             return None
-
-        # 如果地址不包含协议，默认为 http
-        if not proxy_addr.startswith(("http://", "https://", "socks5://", "socks4://")):
-            proxy_addr = f"http://{proxy_addr}"
 
         try:
             logger.info(f"使用代理: {proxy_addr}")
@@ -3835,6 +3850,17 @@ class AppConfig(GlobalConfig):
         except Exception as e:
             logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
             return None
+
+    @property
+    def proxy_url(self) -> Optional[str]:
+        """代理地址字符串（含协议、保留 userinfo），给子进程环境变量用；不打日志。
+
+        MFW 运行池的 uv / pip、worker 与项目 agent 都经
+        ``host_environment.subprocess_proxy_scope`` 拿到它；每次准备环境都会读，
+        这里不像 ``proxy`` 那样每次访问都记一行「使用代理」。
+        """
+
+        return normalize_proxy_address(self.get("Update", "ProxyAddress"))
 
     async def get_stage_info(
         self,
