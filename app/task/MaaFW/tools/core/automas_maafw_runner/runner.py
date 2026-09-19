@@ -144,6 +144,13 @@ STARTUP_SCREEN_SAMPLE_STRIDE = 4
 STARTUP_SCREEN_PIXEL_DELTA = 16
 STARTUP_SCREEN_CHANGED_PIXELS = 8
 STARTUP_SCREEN_BLANK_STD = 6.0
+# 「不再变化」对带动态背景的登录界面永远不成立（真机 1 fps 抽样：终末地主界面每秒 3~6%
+# 抽样点在动，崩坏三登录页 22~38%），只靠它会退化成等满上限。第二条放行条件：画面
+# 连续这么多秒都有内容（不黑屏、不纯色），不管动不动。危险的只是加载阶段的黑屏 /
+# 静止画面（MaaEnd 的 SceneManager 见十几秒不变就判环境异常），有内容且在动的画面
+# 早交给脚本没事——终末地在窗口出现后 22s、主界面还没出来时下发，首个任务照样成功。
+# 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
+STARTUP_SCREEN_CONTENT_SECONDS = 20
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 
 
@@ -1457,8 +1464,9 @@ class MaaFWRunner:
         controller、agent 的初始化已经在前面做完，这里只补足剩余的等待；游戏早就
         在跑（重试轮次、AttachOnly、宿主没给时刻）时剩余 ≤ 0，直接过。
 
-        等待期间每秒截一帧：画面有内容且连续几秒不再变化就提前放行——这是登录界面
-        渲染完成最直接的迹象；截不到图、画面一直在动（动态背景、进度条）就等到上限，
+        等待期间每秒截一帧，两条提前放行：画面有内容且连续几秒不再变化（静态登录界面
+        渲染完成）；或者画面连续 ``STARTUP_SCREEN_CONTENT_SECONDS`` 秒都有内容，哪怕一直
+        在动（动态背景、进度条）——黑屏 / 纯色会把两个计数都清零。截不到图就等到上限，
         和以前一样。用 stop 事件的 wait 代替 sleep，取消能立即打断。
         """
 
@@ -1474,11 +1482,13 @@ class MaaFWRunner:
             return
         self.send_log(
             f"游戏刚启动，最多再等 {remaining:.0f}s；画面连续 "
-            f"{STARTUP_SCREEN_STABLE_SECONDS}s 没有变化就提前下发任务"
+            f"{STARTUP_SCREEN_STABLE_SECONDS}s 没有变化、或连续 "
+            f"{STARTUP_SCREEN_CONTENT_SECONDS}s 有内容就提前下发任务"
         )
         gate_ends_at = time.monotonic() + remaining
         previous: Any | None = None
         stable_seconds = 0
+        content_seconds = 0
         capture_error_logged = False
         while True:
             if self._stop_requested.wait(
@@ -1498,10 +1508,12 @@ class MaaFWRunner:
                     self.send_log(f"启动画面截图失败，改为等满上限: {exc}")
                 frame = None
             if frame is None or _startup_screen_is_blank(frame):
-                # 截不到、黑屏、纯色：都还在加载，重新计数
+                # 截不到、黑屏、纯色：都还在加载，两个计数都重来
                 previous = None
                 stable_seconds = 0
+                content_seconds = 0
                 continue
+            content_seconds += 1
             if previous is not None and not _startup_screen_changed(previous, frame):
                 stable_seconds += 1
             else:
@@ -1510,6 +1522,12 @@ class MaaFWRunner:
             if stable_seconds >= STARTUP_SCREEN_STABLE_SECONDS:
                 self.send_log(
                     f"画面连续 {stable_seconds}s 没有变化，提前下发任务"
+                    f"（实际等了 {remaining - left:.0f}s）"
+                )
+                return
+            if content_seconds >= STARTUP_SCREEN_CONTENT_SECONDS:
+                self.send_log(
+                    f"画面连续 {content_seconds}s 有内容（仍在变化），提前下发任务"
                     f"（实际等了 {remaining - left:.0f}s）"
                 )
                 return
