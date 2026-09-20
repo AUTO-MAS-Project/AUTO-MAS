@@ -41,6 +41,7 @@ from .backup_archive import (
     materialize_user_fields,
     native_registry_file,
     onedragon_backup_root,
+    read_native_registry,
     restore_mas_backup,
     restore_onedragon_backup,
 )
@@ -173,6 +174,7 @@ __all__ = [
     "read_native_account_fields",
     "read_native_instance_run",
     "read_native_launch_args",
+    "read_native_registry",
     "read_native_tasks",
     "read_team_list",
     "remove_instance",

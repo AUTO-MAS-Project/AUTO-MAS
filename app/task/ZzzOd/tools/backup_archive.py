@@ -49,7 +49,7 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
-from app.utils.io import read_file
+from app.utils.io import ConfigCorruptedError, read_dict_file
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -162,6 +162,36 @@ def native_registry_file(root: Path) -> Path:
     return _one_dragon_file(root)
 
 
+def read_native_registry(root: Path) -> dict:
+    """读一条龙原生注册表内容（视图在盘时读 sidecar 原件，与备份口径一致）。
+
+    sidecar 后缀是 ``.mas-view.bak``，``read_file`` 按后缀不认得、会退回
+    原始字符串，必须显式指定 YAML 解析；一条龙本体 non-atomic 写落盘可能
+    留下 NUL 填充，故按 ``.sanitized.yaml`` 容错读（与运行记录同款），
+    结构完整时仍能枚举出实例目录。
+
+    文件存在即已初始化：上游启动必补首个实例、GUI 也禁止删光，正常现场
+    必然至少一个实例。故解析失败、非映射、缺 ``instance_list`` 或列表为空
+    都只可能是损坏现场，一律抛 :class:`ConfigCorruptedError` 交由调用方决定
+    （备份拦截不产生残缺快照，恢复由用户确认后强制进行），不再静默按空处理。
+
+    Raises:
+        ConfigCorruptedError: 文件存在但内容不可信（含损坏位置）。
+    """
+
+    od_file = native_registry_file(root)
+    if not od_file.is_file():
+        return {}
+    # 上游 non-atomic 写残留 NUL 属正常可读回，走 sanitized 容错解析；
+    # 其余坏档（截断/非映射）由 read_dict_file 显式报损坏（带路径）
+    data = read_dict_file(od_file, format=".sanitized.yaml")
+    if not data.get("instance_list"):
+        # 文件存在即已初始化：上游启动必补首个实例、GUI 禁止删光，
+        # 正常现场必然至少一个实例——缺键或空列表都只可能是损坏
+        raise ConfigCorruptedError(od_file)
+    return data
+
+
 def collect_onedragon_files(root: Path) -> dict[str, Path]:
     """当前一条龙原生配置的文件集：one_dragon.yml（原生注册表）+ 注册表内原生实例目录。
 
@@ -175,7 +205,7 @@ def collect_onedragon_files(root: Path) -> dict[str, Path]:
     if od_file.is_file():
         # one_dragon.yml 条目始终指向原生注册表内容（sidecar 存在时取 sidecar）
         files["one_dragon.yml"] = od_file
-    for raw in (read_file(od_file) or {}).get("instance_list") or []:
+    for raw in read_native_registry(root).get("instance_list") or []:
         item = raw if isinstance(raw, dict) else {}
         if str(item.get("name") or "").startswith(MAS_SLOT_PREFIX):
             continue  # MAS 用户槽不属于一条龙原生配置
@@ -226,12 +256,23 @@ def get_onedragon_backup_dir(root: str | Path, ts: str) -> Path | None:
     return get_backup_dir(onedragon_backup_root(root), ts)
 
 
-def restore_onedragon_backup(root: Path, ts: str) -> None:
+def restore_onedragon_backup(
+    root: Path, ts: str, *, snapshot_current: bool = True
+) -> None:
     """把归档恢复到一条龙原生位置（恢复前自动归档当前，误恢复可找回）。
 
     只写回备份中存在的文件（one_dragon.yml + 对应实例目录）；MAS 槽目录
     与备份外的实例目录一律不触碰。恢复前先清残留合成视图，防止 sidecar
     自愈把刚恢复的注册表盖回旧内容。
+
+    ``snapshot_current=False``：注册表损坏且用户已确认强制恢复时跳过
+    「恢复前强制归档当前」——该步要读损坏的注册表；跳过即少一份存底，
+    但不阻断用户主动发起的恢复。
+
+    ``snapshot_current=True`` 时先校验注册表可读（损坏抛
+    :class:`ConfigCorruptedError`），且校验在清合成视图之前：否则「清视图」
+    已把 sidecar 覆盖回 ``one_dragon.yml`` 并删掉 sidecar，用户看到的 409
+    发生在现场已被改动之后。校验内容与随后归档读到的同源。
     """
 
     backup_dir = get_onedragon_backup_dir(root, ts)
@@ -241,10 +282,14 @@ def restore_onedragon_backup(root: Path, ts: str) -> None:
     if not backup_files:
         raise ValueError(f"备份内容为空: {ts}")
 
+    if snapshot_current:
+        read_native_registry(root)
+
     # 先清残留合成视图（幂等；无 sidecar 即 no-op）
     restore_instance_view(root)
-    # 恢复前强制归档当前原生配置——「恢复前的配置」在列表里有明确的时间戳条目
-    archive_onedragon_backup(root, force=True)
+    if snapshot_current:
+        # 恢复前强制归档当前原生配置——「恢复前的配置」在列表里有明确的时间戳条目
+        archive_onedragon_backup(root, force=True)
 
     od_file = backup_files.get("one_dragon.yml")
     if od_file is not None:

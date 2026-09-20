@@ -14,7 +14,7 @@ describe('ConfigRestoreSection runtime lock', () => {
   })
 
   it('rechecks the lock after the restore confirmation is opened', () => {
-    expect(source).toContain('const runRestore = async (item: BackupItem) => {')
+    expect(source).toContain('const runRestore = async (item: BackupItem, force = false) => {')
     expect(source).toContain('if (props.disabled) {\n    throw new Error')
   })
 

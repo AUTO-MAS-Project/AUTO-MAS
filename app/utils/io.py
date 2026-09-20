@@ -43,6 +43,22 @@ from .tools import decode_bytes
 
 logger = get_logger("路径迁移")
 
+
+class ConfigCorruptedError(ValueError):
+    """配置文件内容损坏到无法安全读取（解析失败 / 根节点非映射）。
+
+    结构完整性（必备键、列表非空等）由调用方在返回的映射上自行校验,
+    判为损坏时抛出本异常。继承 ``ValueError``: API 层未特别识别时按
+    400 + 可读 message 返回; 恢复入口识别后转为「需用户确认」的 409。
+    ``path`` 供报错文案给出损坏位置。读上游私有文件做枚举/守卫时的约定见
+    ``.agents/skills/mas-script-specialized-adapter/references/blackbox-boundary.md``。
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        super().__init__(f"配置文件已损坏，无法安全读取：{self.path}")
+
+
 # YAML 解析器拒绝的控制字符(除 \t \n \r): 映射为 None 即 translate 时丢弃
 # \t \n \r 是 YAML 结构换行/缩进, 删除会把健康的多行文档压成一行导致解析失败
 _INVALID_YAML_CHARS = dict.fromkeys(
@@ -522,6 +538,42 @@ def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
     if codec is None:
         return decode_bytes(path.read_bytes())
     return codec[1](path.read_bytes())
+
+
+def read_dict_file(path: Path, *, format: str | None = None) -> dict[str, Any]:
+    """
+    严格读取映射型配置文件: 解析失败或根节点非映射时抛 ``ConfigCorruptedError``
+
+    与 :func:`read_file` 的区别: 坏档显式失败而非静默返回原始值, 供备份
+    拦截、恢复二次确认等需要区分「读不到」与「没有」的调用方使用, 杜绝
+    ``read_file(x).get(...)`` 对未知后缀退回原始字符串再炸
+    ``AttributeError`` 的事故形态 (#877 根因)。
+
+    Args:
+        path: 文件路径, 未显式指定 ``format`` 时以其后缀决定解析格式
+        format: 强制使用的解析器后缀 (含点); 读上游非原子写落盘的 YAML
+            (进程被杀/断电可能残留 NUL 填充) 建议传 ``.sanitized.yaml``
+
+    Returns:
+        dict[str, Any]: 解析后的映射; 文件不存在返回空 ``{}``
+
+    Raises:
+        ConfigCorruptedError: 文件存在但解析失败或根节点非映射
+
+    文件锁 / 竞态删除等读取失败（``OSError``）不是内容损坏, 原样上抛交调用
+    方按读取失败处理, 不进入 409/强制恢复决策分支误导用户对好文件确认。
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = read_file(path, format=format)
+    except OSError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 解析层任何失败都按损坏上报
+        raise ConfigCorruptedError(path) from exc
+    if isinstance(data, dict):
+        return data
+    raise ConfigCorruptedError(path)
 
 
 def write_file(

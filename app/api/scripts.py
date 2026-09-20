@@ -64,6 +64,7 @@ from app.task.MaaFW.tools.embedded.update_progress import (
     MaaFWUpdateProgressTracker,
 )
 from app.utils import get_logger
+from app.utils.io import ConfigCorruptedError
 from app.utils.paths import SOURCE_ROOT
 from app.utils.constants import UTC8
 from app.utils.security import sanitize_log_message
@@ -4026,6 +4027,16 @@ async def ensure_config_backup_api(
             message="",
             **data,
         )
+    except ConfigCorruptedError as e:
+        # 源配置损坏：message 用原文（含损坏位置）直达用户，前端编辑页会透传
+        logger.opt(exception=True).warning(f"配置按需归档失败（源配置损坏）: {e}")
+        return ConfigBackupEnsureOut(
+            code=400,
+            status="error",
+            message=str(e),
+            created=False,
+            time="",
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"配置按需归档失败: {e}")
         return ConfigBackupEnsureOut(
@@ -4058,12 +4069,22 @@ async def restore_config_backup_api(
             script.userId,
             script.time,
             target=script.target,
+            force=script.force,
         )
         return ConfigBackupRestoreOut(
             code=200,
             status="success",
             message=f"已恢复备份 {script.time}",
             target=data["target"],
+        )
+    except ConfigCorruptedError as e:
+        # 源配置损坏：带损坏位置返回 409，前端弹二次确认后携带 force 重试
+        logger.opt(exception=True).warning(f"配置备份恢复被拦截（源配置损坏）: {e}")
+        return ConfigBackupRestoreOut(
+            code=409,
+            status="error",
+            message=str(e),
+            target=script.target,
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"配置备份恢复失败: {e}")

@@ -1921,6 +1921,11 @@ export default {
     configRestoreConfirmTitle: '覆盖当前配置',
     configRestoreConfirmDesc:
       '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    // 源配置损坏（后端 409）：写明损坏位置，二次确认后携带 force 强制恢复
+    configRestoreCorruptedTitle: '源配置文件损坏',
+    configRestoreCorruptedDesc:
+      '强制恢复会跳过与该文件相关的保护检查（恢复前备份、占用校验），可能覆盖现有配置；是否继续？',
+    configRestoreForceAction: '强制恢复',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: '脚本级',
     configRestoreModeUser: '用户级',
