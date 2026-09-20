@@ -62,12 +62,16 @@ describe('user config runtime save lock', () => {
     )
 
     const projects = readSource('./BettergiGroupProjectBody.vue')
+    // #890 起「添加脚本」的 OK 按钮对四类可编辑项目（配置组 / 录制 / JS / 路径）都放开，
+    // 判据由 kind !== 'scriptgroup' 放宽为 isScriptGroup（见该组件的计算属性）
     expect(projects).toContain(
-      ':ok-button-props="{ disabled: props.kind !== \'scriptgroup\' || configLocked }"'
+      ':ok-button-props="{ disabled: !isScriptGroup || configLocked }"'
     )
-    expect(projects).toContain('const persistProjects = async (): Promise<boolean>')
+    // #890 起改为箭头函数写法（返回值类型不变）
+    expect(projects).toContain('const persistProjects = (): Promise<boolean> => {')
+    // 该函数现为箭头函数，锁定时返回 Promise.resolve(false)
     expect(projects).toContain(
-      "if (configLocked.value) {\n    message.error(t('edit.configLocked'))\n    return false"
+      "if (configLocked.value) {\n    message.error(t('edit.configLocked'))\n    return Promise.resolve(false)"
     )
 
     const saveSettings = projects.slice(projects.indexOf('const saveProjectSettings'))
