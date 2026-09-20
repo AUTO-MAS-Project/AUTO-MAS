@@ -3612,7 +3612,7 @@ export default {
         General: 'For any automation script that writes a log file',
         MAA: 'Arknights automation and multi-account daily runs',
         SRC: 'Star Rail automation and multi-account runs',
-        MaaEnd: 'Dedicated MFW adapter',
+        MaaEnd: 'Arknights: Endfield automation and multi-account runs',
         M9A: 'Reverse: 1999 automation',
         MaaFW: 'Runs any MaaFramework project that ships an interface.json',
         Okww: 'Dedicated ok-script task runner',
