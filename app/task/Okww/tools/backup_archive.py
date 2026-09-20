@@ -135,7 +135,6 @@ _OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
 恢复时以当前值为准，回填旧值会静默翻转用户态/脚本态。"""
 
 _OVERLAY_TASK_KEYS = (
-    "TaskIndex",
     "WhichToFarm",
     "WhichTacetSuppressionToFarm",
     "WhichForgeryChallengeToFarm",
@@ -448,7 +447,6 @@ _OVERLAY_FIELD_LABELS = {
     "Id": "账号",
     "Mode": "配置文件来源",
     **{overlay: _FIELD_LABELS[file] for file, overlay in _FILE_TO_OVERLAY_KEY.items()},
-    "TaskIndex": "启动任务（-t N）",
 }
 """覆盖层字段（侧车键名）中文标签，文件字段词表派生 + 页面专属键补充"""
 

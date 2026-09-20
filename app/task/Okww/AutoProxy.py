@@ -98,6 +98,9 @@ _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
 _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
+# ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧 account_switch
+# 实现，不再暴露上游 MultiAccountDailyTask（其 -t 序号与 MAS 面板语义不符）。
+_OKWW_TASK_INDEX = 1
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
@@ -305,11 +308,7 @@ class AutoProxyTask(TaskExecuteBase):
             for rule in OKWW_PUSH_RULES:
                 self.log_collect.collect(*rule)
 
-        self.task_index = (
-            int(self.cur_user_config.get("Task", "TaskIndex"))
-            if self.cur_user_config.get("Info", "IfQuickConfig")
-            else OkwwUserConfig().get("Task", "TaskIndex")
-        )
+        self.task_index = _OKWW_TASK_INDEX
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
