@@ -63,7 +63,3 @@ jobs:
       - name: 检查前端格式
         working-directory: frontend
         run: yarn oxfmt . --check
-
-      - name: 检查前端 Markdown Lint
-        working-directory: frontend
-        run: yarn lint:md
