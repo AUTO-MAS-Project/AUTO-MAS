@@ -1,7 +1,7 @@
 {
-    "version": "v5.5.0-beta.6",
+    "version": "v5.5.0-beta.7",
     "version_info": {
-        "未发布": {
+        "v5.5.0-beta.7": {
             "新增": [
                 "【end】任务报告新增各任务执行结果明细，展示方式可调 (#850) by @AthenaHibou",
                 "【BAAH】支持按碧蓝档案活动排期自动切换配置文件，并显示当前活动 (#733) by @beichen24a1",
