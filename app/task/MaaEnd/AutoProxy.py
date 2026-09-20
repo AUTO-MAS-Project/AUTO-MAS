@@ -1010,12 +1010,6 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
                     logger.warning("静默模式: 隐藏 MaaEnd 窗口失败")
-            if self.emulator_manager is None:
-                if await self.game_process_manager.activate_window():
-                    logger.success("前置 Endfield 窗口成功")
-                else:
-                    logger.warning("前置 Endfield 窗口失败")
-
             await asyncio.sleep(1)
             await self._wait_maaend_stage()
 
