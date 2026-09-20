@@ -8,16 +8,25 @@ import os
 import platform
 import re
 import shutil
-import stat
-import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
+from ._shared import (
+    MaaFWRuntimePoolError,
+    assert_existing_chain_has_no_reparse,
+    assert_not_reparse,
+    format_time,
+    parse_time,
+    pool_lock,
+    remove_tree_best_effort,
+    utc_now,
+    write_json_atomic,
+)
 from .cache import clean_uv_cache
 from .identity import (
     IDENTITY_SCHEMA_VERSION,
@@ -46,13 +55,6 @@ RuntimeInstaller = Callable[
     Mapping[str, Any] | None,
 ]
 
-_LOCKS_GUARD = threading.Lock()
-_POOL_LOCKS: dict[str, threading.RLock] = {}
-
-
-class MaaFWRuntimePoolError(RuntimeError):
-    """Raised when a managed MaaFW runtime pool operation is unsafe or invalid."""
-
 
 class _MaaFWRuntimeEntryStaleError(MaaFWRuntimePoolError):
     """Raised for a recoverable runtime entry that no longer resolves."""
@@ -72,20 +74,20 @@ class MaaFWRuntimePool:
                 "configured runtime-pool root must be an absolute path"
             )
         absolute_root = Path(os.path.abspath(requested_root))
-        _assert_existing_chain_has_no_reparse(absolute_root)
+        assert_existing_chain_has_no_reparse(absolute_root)
         if absolute_root.exists() and not absolute_root.is_dir():
             raise MaaFWRuntimePoolError(
                 f"runtime-pool root must be a directory: {absolute_root}"
             )
         absolute_root.mkdir(parents=True, exist_ok=True)
-        _assert_not_reparse(absolute_root)
+        assert_not_reparse(absolute_root)
         self.root = absolute_root.resolve(strict=True)
         self._is_default_root = _same_path(self.root, default_root)
         self.runtime_root = self.root / RUNTIME_DIRECTORY_NAME
         self.staging_root = self.root / STAGING_DIRECTORY_NAME
         self.python_root = self.root / "python"
         self.installer = installer
-        self._lock = _pool_lock(self.root)
+        self._lock = pool_lock(self.root)
         self._root_identity: dict[str, Any] = {}
         with self._lock:
             self._initialize()
@@ -151,7 +153,7 @@ class MaaFWRuntimePool:
             except _MaaFWRuntimeEntryStaleError:
                 return None
             if touch:
-                manifest["lastUsedAt"] = _format_time(_utc_now())
+                manifest["lastUsedAt"] = format_time(utc_now())
                 self._write_manifest(runtime_id, manifest)
                 payload["lastUsedAt"] = manifest["lastUsedAt"]
             return payload
@@ -173,7 +175,7 @@ class MaaFWRuntimePool:
             except _MaaFWRuntimeEntryStaleError:
                 return None
             if touch:
-                manifest["lastUsedAt"] = _format_time(_utc_now())
+                manifest["lastUsedAt"] = format_time(utc_now())
                 self._write_manifest(runtime_id, manifest)
                 payload["lastUsedAt"] = manifest["lastUsedAt"]
             return payload
@@ -236,7 +238,7 @@ class MaaFWRuntimePool:
                     stage_dir / python_relative,
                     identity,
                 )
-                now = _format_time(_utc_now())
+                now = format_time(utc_now())
                 maafw_requirement = find_maafw_requirement(canonical_requirements)
                 maafw_version = _optional_string(
                     install_result.pop("maafwVersion", None)
@@ -286,7 +288,7 @@ class MaaFWRuntimePool:
                     ),
                     "installerMetadata": _json_compatible(install_result),
                 }
-                _write_json_atomic(stage_dir / RUNTIME_MANIFEST_NAME, manifest)
+                write_json_atomic(stage_dir / RUNTIME_MANIFEST_NAME, manifest)
 
                 runtime_dir = self._runtime_dir(runtime_id)
                 if runtime_dir.exists():
@@ -376,8 +378,8 @@ class MaaFWRuntimePool:
         with self._lock:
             manifest = self._read_manifest(runtime_id)
             self._augment_manifest(manifest, verify_python=True)
-            manifest["lastUsedAt"] = _format_time(_parse_time(at) if at else _utc_now())
-            self._prune_expired_leases(manifest, _utc_now())
+            manifest["lastUsedAt"] = format_time(parse_time(at) if at else utc_now())
+            self._prune_expired_leases(manifest, utc_now())
             self._write_manifest(runtime_id, manifest)
             return self._augment_manifest(manifest)
 
@@ -452,20 +454,20 @@ class MaaFWRuntimePool:
         with self._lock:
             manifest = self._read_manifest(runtime_id)
             self._augment_manifest(manifest, verify_python=True)
-            now = _utc_now()
+            now = utc_now()
             self._prune_expired_leases(manifest, now)
             leases = dict(manifest.get("leases") or {})
             leases[normalized] = {
                 "owner": str(owner or ""),
-                "acquiredAt": _format_time(now),
+                "acquiredAt": format_time(now),
                 "expiresAt": (
-                    _format_time(now + timedelta(seconds=float(ttl_seconds)))
+                    format_time(now + timedelta(seconds=float(ttl_seconds)))
                     if ttl_seconds is not None
                     else None
                 ),
             }
             manifest["leases"] = leases
-            manifest["lastUsedAt"] = _format_time(now)
+            manifest["lastUsedAt"] = format_time(now)
             self._write_manifest(runtime_id, manifest)
             return self._augment_manifest(manifest)
 
@@ -482,7 +484,7 @@ class MaaFWRuntimePool:
     def delete(self, runtime_id: str) -> dict[str, Any]:
         with self._lock:
             manifest = self._read_manifest(runtime_id)
-            now = _utc_now()
+            now = utc_now()
             self._prune_expired_leases(manifest, now)
             blocked = self._deletion_blockers(manifest, now)
             if blocked:
@@ -537,7 +539,7 @@ class MaaFWRuntimePool:
 
         if grace_seconds < 0:
             raise MaaFWRuntimePoolError("reclaim grace_seconds cannot be negative")
-        reference_time = _parse_time(now) if now is not None else _utc_now()
+        reference_time = parse_time(now) if now is not None else utc_now()
         cutoff = reference_time - timedelta(seconds=float(grace_seconds))
         valid_ids = {
             str(item).strip() for item in valid_runtime_ids if str(item).strip()
@@ -596,7 +598,7 @@ class MaaFWRuntimePool:
                     reasons.append("leased")
                 if requirement in needed and requirement not in ready:
                     reasons.append("needed_without_replacement")
-                last_used = _parse_time(manifest.get("lastUsedAt"))
+                last_used = parse_time(manifest.get("lastUsedAt"))
                 if last_used > cutoff and version not in replaced:
                     reasons.append("grace_period")
                 if reasons:
@@ -680,7 +682,7 @@ class MaaFWRuntimePool:
         if quarantine_dir is None:
             return "deleted", ""
         # 已经换到隔离目录，剩下的 rmtree 尽力而为；残留由 _sweep_staging 下次再收
-        if _remove_tree_best_effort(quarantine_dir):
+        if remove_tree_best_effort(quarantine_dir):
             return "deleted", ""
         return "quarantined", str(quarantine_dir)
 
@@ -702,7 +704,7 @@ class MaaFWRuntimePool:
                 continue
             if not path.name.startswith(RUNTIME_ID_PREFIX):
                 continue
-            if _remove_tree_best_effort(path):
+            if remove_tree_best_effort(path):
                 swept.append(path.name)
             else:
                 residue.append(path.name)
@@ -717,10 +719,10 @@ class MaaFWRuntimePool:
             self.root / "cache",
             self.python_root,
         ):
-            _assert_existing_chain_has_no_reparse(managed_path)
+            assert_existing_chain_has_no_reparse(managed_path)
         marker_path = self.root / POOL_MARKER_NAME
         if marker_path.exists() or marker_path.is_symlink():
-            _assert_not_reparse(marker_path)
+            assert_not_reparse(marker_path)
             if not marker_path.is_file():
                 raise MaaFWRuntimePoolError(
                     f"runtime pool marker must be a file: {marker_path}"
@@ -742,7 +744,7 @@ class MaaFWRuntimePool:
                     "kind": "auto-mas-maafw-runtime-pool",
                     "poolId": str(uuid.uuid4()),
                 }
-                _write_json_atomic(marker_path, marker)
+                write_json_atomic(marker_path, marker)
             identity = _validate_pool_marker(marker)
         else:
             children = list(self.root.iterdir())
@@ -757,21 +759,21 @@ class MaaFWRuntimePool:
                 "kind": "auto-mas-maafw-runtime-pool",
                 "poolId": str(uuid.uuid4()),
             }
-            _write_json_atomic(marker_path, marker)
+            write_json_atomic(marker_path, marker)
             identity = _validate_pool_marker(marker)
         if self._root_identity and self._root_identity != identity:
             raise MaaFWRuntimePoolError(
                 "runtime pool identity changed during the service lifetime"
             )
         self._root_identity = identity
-        _assert_existing_chain_has_no_reparse(self.runtime_root)
-        _assert_existing_chain_has_no_reparse(self.staging_root)
+        assert_existing_chain_has_no_reparse(self.runtime_root)
+        assert_existing_chain_has_no_reparse(self.staging_root)
         self.runtime_root.mkdir(parents=True, exist_ok=True)
         self.staging_root.mkdir(parents=True, exist_ok=True)
         self.python_root.mkdir(parents=True, exist_ok=True)
-        _assert_not_reparse(self.runtime_root)
-        _assert_not_reparse(self.staging_root)
-        _assert_not_reparse(self.python_root)
+        assert_not_reparse(self.runtime_root)
+        assert_not_reparse(self.staging_root)
+        assert_not_reparse(self.python_root)
 
     def inventory(self) -> dict[str, Any]:
         """List every managed-looking runtime and report corruption explicitly."""
@@ -782,7 +784,7 @@ class MaaFWRuntimePool:
             errors: list[dict[str, Any]] = []
             for path in self.runtime_root.iterdir():
                 try:
-                    _assert_not_reparse(path)
+                    assert_not_reparse(path)
                     if not path.is_dir():
                         raise MaaFWRuntimePoolError(
                             f"managed runtime path must be a directory: {path}"
@@ -824,7 +826,7 @@ class MaaFWRuntimePool:
             runtime_dir, runtime_id, require_manifest=False
         )
         manifest_path = runtime_dir / RUNTIME_MANIFEST_NAME
-        _assert_not_reparse(manifest_path)
+        assert_not_reparse(manifest_path)
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
@@ -945,7 +947,7 @@ class MaaFWRuntimePool:
         self._validate_managed_runtime_dir(
             runtime_dir, runtime_id, require_manifest=True
         )
-        _write_json_atomic(runtime_dir / RUNTIME_MANIFEST_NAME, manifest)
+        write_json_atomic(runtime_dir / RUNTIME_MANIFEST_NAME, manifest)
 
     def _augment_manifest(
         self,
@@ -958,7 +960,7 @@ class MaaFWRuntimePool:
         try:
             runtime_id = str(payload["runtimeId"])
             runtime_path = self._runtime_dir(runtime_id)
-            _assert_not_reparse(runtime_path)
+            assert_not_reparse(runtime_path)
             runtime_dir = runtime_path.resolve()
             environment_relative = Path(str(payload["environmentRelativePath"]))
             python_relative = Path(str(payload["pythonRelativePath"]))
@@ -968,8 +970,8 @@ class MaaFWRuntimePool:
             ) from exc
         environment_candidate = runtime_dir / environment_relative
         python_candidate = runtime_dir / python_relative
-        _assert_existing_chain_has_no_reparse(environment_candidate)
-        _assert_existing_chain_has_no_reparse(python_candidate)
+        assert_existing_chain_has_no_reparse(environment_candidate)
+        assert_existing_chain_has_no_reparse(python_candidate)
         environment_path = environment_candidate.resolve()
         python_executable = python_candidate.resolve()
         if not _is_within(environment_path, runtime_dir) or not _is_within(
@@ -994,7 +996,7 @@ class MaaFWRuntimePool:
             # violation. Keep that fail-closed contract instead of silently
             # quarantining and rebuilding under an untrusted interpretation.
             _verify_installed_python_identity(python_executable, identity)
-        now = _utc_now()
+        now = utc_now()
         payload["path"] = str(runtime_dir)
         payload["poolId"] = self._root_identity["poolId"]
         payload["environmentPath"] = str(environment_path)
@@ -1029,7 +1031,7 @@ class MaaFWRuntimePool:
                 candidate = environment_path / candidate
         else:
             candidate = _venv_python(environment_path)
-        _assert_existing_chain_has_no_reparse(candidate)
+        assert_existing_chain_has_no_reparse(candidate)
         resolved = candidate.resolve()
         if not _is_within(resolved, stage_dir.resolve()) or not resolved.is_file():
             raise MaaFWRuntimePoolError(
@@ -1063,7 +1065,7 @@ class MaaFWRuntimePool:
 
     def _read_recovery_metadata(self, runtime_dir: Path) -> dict[str, Any]:
         manifest_path = runtime_dir / RUNTIME_MANIFEST_NAME
-        _assert_not_reparse(manifest_path)
+        assert_not_reparse(manifest_path)
         try:
             value = json.loads(manifest_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -1126,7 +1128,7 @@ class MaaFWRuntimePool:
             if not isinstance(payload, Mapping):
                 continue
             expires_at = payload.get("expiresAt")
-            if expires_at is None or _parse_time(expires_at) > now:
+            if expires_at is None or parse_time(expires_at) > now:
                 active.append(str(lease_id))
         return sorted(active)
 
@@ -1141,7 +1143,7 @@ class MaaFWRuntimePool:
             if isinstance(payload, Mapping)
             and (
                 payload.get("expiresAt") is None
-                or _parse_time(payload.get("expiresAt")) > now
+                or parse_time(payload.get("expiresAt")) > now
             )
         }
 
@@ -1160,7 +1162,7 @@ class MaaFWRuntimePool:
 
     def _validate_staging_path(self, path: Path, runtime_id: str) -> None:
         _validate_runtime_id(runtime_id)
-        _assert_not_reparse(path)
+        assert_not_reparse(path)
         resolved = path.resolve()
         if resolved.parent != self.staging_root.resolve():
             raise MaaFWRuntimePoolError(f"staging path escapes runtime pool: {path}")
@@ -1175,7 +1177,7 @@ class MaaFWRuntimePool:
         require_manifest: bool,
     ) -> None:
         _validate_runtime_id(runtime_id)
-        _assert_not_reparse(path)
+        assert_not_reparse(path)
         if not path.is_dir():
             raise MaaFWRuntimePoolError(f"managed runtime must be a directory: {path}")
         resolved = path.resolve()
@@ -1185,17 +1187,11 @@ class MaaFWRuntimePool:
         ):
             raise MaaFWRuntimePoolError(f"runtime path escapes managed pool: {path}")
         manifest_path = resolved / RUNTIME_MANIFEST_NAME
-        _assert_not_reparse(manifest_path)
+        assert_not_reparse(manifest_path)
         if require_manifest and not manifest_path.is_file():
             raise MaaFWRuntimePoolError(
                 f"managed runtime has no manifest: {runtime_id}"
             )
-
-
-def _pool_lock(root: Path) -> threading.RLock:
-    key = os.path.normcase(str(root.resolve()))
-    with _LOCKS_GUARD:
-        return _POOL_LOCKS.setdefault(key, threading.RLock())
 
 
 def _validate_pool_marker(value: Any) -> dict[str, Any]:
@@ -1225,34 +1221,10 @@ def _is_legacy_default_pool(children: Iterable[Path]) -> bool:
         "python",
     }
     for child in children:
-        _assert_not_reparse(child)
+        assert_not_reparse(child)
         if child.name not in known_names or not child.is_dir():
             return False
     return True
-
-
-def _assert_existing_chain_has_no_reparse(path: Path) -> None:
-    existing: list[Path] = []
-    current = path
-    while True:
-        if current.exists() or current.is_symlink():
-            existing.append(current)
-        if current.parent == current:
-            break
-        current = current.parent
-    for item in reversed(existing):
-        _assert_not_reparse(item)
-
-
-def _assert_not_reparse(path: Path) -> None:
-    try:
-        metadata = path.lstat()
-    except FileNotFoundError:
-        return
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-    file_attributes = getattr(metadata, "st_file_attributes", 0)
-    if path.is_symlink() or bool(file_attributes & reparse_flag):
-        raise MaaFWRuntimePoolError(f"reparse points are not allowed: {path}")
 
 
 def _same_path(left: Path, right: Path) -> bool:
@@ -1264,19 +1236,6 @@ def _same_path(left: Path, right: Path) -> bool:
 def _validate_runtime_id(runtime_id: str) -> None:
     if not RUNTIME_ID_RE.fullmatch(str(runtime_id or "")):
         raise MaaFWRuntimePoolError(f"invalid managed runtime id: {runtime_id}")
-
-
-def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex}")
-    try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def _json_compatible(value: Any) -> Any:
@@ -1411,10 +1370,6 @@ def _normalize_string_list(value: Any, field_name: str) -> list[str]:
     return sorted(normalized, key=str.casefold)
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _validate_runtime_leases(value: Any) -> None:
     if not isinstance(value, Mapping):
         raise MaaFWRuntimePoolError("runtime manifest leases must be an object")
@@ -1432,32 +1387,11 @@ def _validate_runtime_leases(value: Any) -> None:
         if not isinstance(expires_at, str) or not expires_at.strip():
             raise MaaFWRuntimePoolError("runtime manifest lease expiry is invalid")
         try:
-            _parse_time(expires_at)
+            parse_time(expires_at)
         except ValueError as exc:
             raise MaaFWRuntimePoolError(
                 "runtime manifest lease expiry is invalid"
             ) from exc
-
-
-def _clear_readonly_and_retry(func: Any, path: str, _exc_info: Any) -> None:
-    """``shutil.rmtree`` 的 onexc：只读位（git 对象、发行包里的资源）清掉再试一次。"""
-
-    try:
-        os.chmod(path, stat.S_IWRITE)
-        func(path)
-    except OSError:
-        # 真被映射 / 占用的文件这里也删不掉，交给调用方按残留处理
-        pass
-
-
-def _remove_tree_best_effort(path: Path) -> bool:
-    """尽力删整棵目录，返回是否删干净了。不抛：残留由调用方如实报告。"""
-
-    try:
-        shutil.rmtree(path, onexc=_clear_readonly_and_retry)
-    except OSError:
-        pass
-    return not path.exists() and not path.is_symlink()
 
 
 def _maafw_requirement_key(value: Any) -> str:
@@ -1493,29 +1427,6 @@ def _normalize_maafw_version(value: Any) -> str:
         return str(Version(text))
     except InvalidVersion:
         return text.lower()
-
-
-def _parse_time(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str) and value.strip():
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    else:
-        return datetime.fromtimestamp(0, timezone.utc)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def _format_time(value: datetime) -> str:
-    return (
-        value.astimezone(timezone.utc)
-        .isoformat(timespec="seconds")
-        .replace(
-            "+00:00",
-            "Z",
-        )
-    )
 
 
 def _venv_python(environment_path: Path) -> Path:
