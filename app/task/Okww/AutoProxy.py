@@ -52,12 +52,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import (
-    mark_native_config_injected,
-    read_file,
-    swap_in_dir,
-    write_file,
-)
+from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -67,7 +62,12 @@ from .push_log import (
     okww_resolve,
 )
 from .tools import async_switch_account, push_notification
-from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    mas_config_dir,
+    owner_for_mode,
+    read_overlay_values,
+)
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -97,9 +97,6 @@ _OKWW_REL_CONFIG_DIR = "data/apps/ok-ww/working/configs"
 _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
-_OKWW_PROFILE_BY_RESOURCE = {"官服": "China", "国际服": "Global"}
-# 启动器 app.json 中按用户资源覆盖的键（覆盖 base、任务结束按键还原）
-_OKWW_LAUNCHER_PROFILE_KEY = "current_profile"
 _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
@@ -113,10 +110,10 @@ def _okww_config_mode(raw: object) -> str:
 
 def _okww_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
     mode = _okww_config_mode(mode)
-    if mode == "直控":
+    owner = owner_for_mode(mode, user_id)
+    if owner is None:
         raise ValueError("直控配置不使用 MAS 全量配置目录")
-    owner = "Default" if mode == "脚本" else user_id
-    return Path.cwd() / "data" / script_id / owner / "ConfigFile"
+    return mas_config_dir(script_id, owner)
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -129,111 +126,12 @@ def _update_json(path: Path, values: dict[str, object]) -> None:
     write_file(path, data)
 
 
-# ── 启动器 app.json 的 overlay 键级快照 ──────────────────────────────
-# app.json 与 working/configs 同级，不在整目录快照范围内，因此单独按键记原值：
-# 任务开始前 commit 原值 → 运行期覆盖 → 任务结束（成功/失败/取消/超时/异常/
-# 崩溃）restore 回原值。只保护 MAS 自己写下的那个键，任务期外部改动不动。
+def _configure_okww_launcher(script_root_path: Path) -> None:
+    """补齐 OK-WW 启动器设置（缺省才补、无事零写入）。
 
-
-def _okww_launcher_snapshot_path(script_id: str) -> Path:
-    return Path.cwd() / "data" / script_id / "Temp.launcher.json"
-
-
-def commit_okww_launcher_profile(script_root_path: Path, script_id: str) -> None:
-    """任务开始前记录启动器 profile 原值（必须在任何覆盖之前调用一次）。
-
-    残留快照先按 restore 处置（上次崩溃遗留的覆盖先还回去），再记录本次原值。
-    """
-
-    restore_okww_launcher_profile(script_root_path, script_id)
-    app_json_path = script_root_path / _OKWW_REL_APP_JSON
-    if not app_json_path.is_file():
-        return
-    try:
-        app_config = json.loads(app_json_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    if not isinstance(app_config, dict):
-        return
-
-    has_original = _OKWW_LAUNCHER_PROFILE_KEY in app_config
-    write_file(
-        _okww_launcher_snapshot_path(script_id),
-        {
-            "script_id": script_id,
-            "has_original": has_original,
-            "original": app_config.get(_OKWW_LAUNCHER_PROFILE_KEY),
-            "written": None,
-        },
-    )
-
-
-def _mark_okww_launcher_profile_written(script_id: str, profile: str) -> None:
-    """记录本次 MAS 写入的 profile 值，供 restore 区分 MAS 覆盖与外部改动。"""
-
-    snapshot_path = _okww_launcher_snapshot_path(script_id)
-    state = read_file(snapshot_path)
-    if not isinstance(state, dict) or state.get("script_id") != script_id:
-        return
-    state["written"] = profile
-    write_file(snapshot_path, state)
-
-
-def restore_okww_launcher_profile(script_root_path: Path, script_id: str) -> None:
-    """把启动器 profile 还原为任务前原值。
-
-    仅当现场值仍等于 MAS 写入值时才还原——任务期外部改过（既非原值也非
-    MAS 写入值）就保留外部改动，与原生配置快照的保护策略一致。
-    快照本身保留到任务收尾，多用户轮流覆盖都能各自回到原值。
-    """
-
-    snapshot_path = _okww_launcher_snapshot_path(script_id)
-    state = read_file(snapshot_path)
-    if not isinstance(state, dict) or state.get("script_id") != script_id:
-        return
-
-    written = state.get("written")
-    app_json_path = script_root_path / _OKWW_REL_APP_JSON
-    if written is not None and app_json_path.is_file():
-        try:
-            app_config = json.loads(app_json_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            app_config = None
-        if (
-            isinstance(app_config, dict)
-            and app_config.get(_OKWW_LAUNCHER_PROFILE_KEY) == written
-        ):
-            if state.get("has_original"):
-                app_config[_OKWW_LAUNCHER_PROFILE_KEY] = state.get("original")
-            else:
-                app_config.pop(_OKWW_LAUNCHER_PROFILE_KEY, None)
-            write_file(app_json_path, app_config)
-            logger.info("已还原 OK-WW 启动器配置到任务前状态")
-
-    state["written"] = None
-    write_file(snapshot_path, state)
-
-
-def clear_okww_launcher_snapshot(script_id: str) -> None:
-    """任务收尾丢弃启动器快照。"""
-
-    with suppress(OSError):
-        _okww_launcher_snapshot_path(script_id).unlink(missing_ok=True)
-
-
-def _configure_okww_launcher(
-    script_root_path: Path,
-    resource: str | None = None,
-    *,
-    script_id: str | None = None,
-) -> None:
-    """补齐 OK-WW 启动器设置，并按用户资源覆盖 profile。
-
-    ``auto_start`` / ``update_method`` 是「缺省才补」的启动器默认值，无事零
-    写入、不进快照；``current_profile`` 是按用户 ``Info.Resource`` 覆盖的运行期
-    项——覆盖 base 后由 :func:`restore_okww_launcher_profile` 在任务结束按键
-    还原，因此传 ``script_id`` 时把本次写入值记进快照（用于区分 MAS 覆盖与
-    任务期外部改动）。
+    只补 ``auto_start`` / ``update_method`` 两项启动器默认值，不改动用户安装
+    时选择的更新渠道（``current_profile`` 由 ok-ww 安装包决定，与游戏区服
+    无关，MAS 不接管）。
     """
     app_json_path = script_root_path / _OKWW_REL_APP_JSON
     if not app_json_path.is_file():
@@ -243,22 +141,6 @@ def _configure_okww_launcher(
     if not isinstance(app_config, dict):
         raise ValueError("OK-WW app.json 格式错误")
 
-    profile = app_config.get("current_profile")
-    if resource is not None:
-        profile = _OKWW_PROFILE_BY_RESOURCE.get(resource)
-        if profile is None:
-            raise ValueError(f"不支持的 OK-WW 游戏资源: {resource}")
-    available_profiles = {
-        item.get("name")
-        for item in (app_config.get("profiles") or [])
-        if isinstance(item, dict)
-    }
-    if (
-        resource is not None
-        and available_profiles
-        and profile not in available_profiles
-    ):
-        raise ValueError(f"当前 OK-WW 安装不支持{resource}资源")
     changed = False
     if app_config.get("auto_start") is not True:
         app_config["auto_start"] = True
@@ -266,22 +148,11 @@ def _configure_okww_launcher(
     if "update_method" not in app_config:
         app_config["update_method"] = _OKWW_UPDATE_METHOD
         changed = True
-    profile_written = False
-    if resource is not None and app_config.get(_OKWW_LAUNCHER_PROFILE_KEY) != profile:
-        app_config[_OKWW_LAUNCHER_PROFILE_KEY] = profile
-        changed = True
-        profile_written = True
     if not changed:
         return
 
     write_file(app_json_path, app_config)
-    if profile_written and script_id is not None and profile is not None:
-        _mark_okww_launcher_profile_written(script_id, profile)
-    logger.info(
-        "已按用户资源切换 OK-WW 启动器配置"
-        if profile_written
-        else "已补齐 OK-WW 启动器默认设置"
-    )
+    logger.info("已补齐 OK-WW 启动器默认设置")
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -494,11 +365,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info("开始配置 OK-WW 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
-        _configure_okww_launcher(
-            self.script_root_path,
-            str(self.cur_user_config.get("Info", "Resource")),
-            script_id=self.script_info.script_id,
-        )
+        _configure_okww_launcher(self.script_root_path)
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
