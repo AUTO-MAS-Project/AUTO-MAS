@@ -171,9 +171,12 @@ def read_native_registry(root: Path) -> dict:
     结构完整时仍能枚举出实例目录。
 
     文件存在即已初始化：上游启动必补首个实例、GUI 也禁止删光，正常现场
-    必然至少一个实例。故解析失败、非映射、缺 ``instance_list`` 或列表为空
-    都只可能是损坏现场，一律抛 :class:`ConfigCorruptedError` 交由调用方决定
-    （备份拦截不产生残缺快照，恢复由用户确认后强制进行），不再静默按空处理。
+    必然至少一个实例。故解析失败、非映射、``instance_list`` 缺失/为空/
+    非列表真值/条目缺整数 idx 都只可能是损坏，一律抛
+    :class:`ConfigCorruptedError` 交由调用方决定（备份拦截不产生残缺
+    快照，恢复由用户确认后强制进行），不再静默按空处理——结构判据放在
+    本入口而非各调用方：占用判定在损坏现场静默放行、归档静默产出残缺
+    文件集，都比「响亮失败」难收拾。
 
     Raises:
         ConfigCorruptedError: 文件存在但内容不可信（含损坏位置）。
@@ -185,9 +188,20 @@ def read_native_registry(root: Path) -> dict:
     # 上游 non-atomic 写残留 NUL 属正常可读回，走 sanitized 容错解析；
     # 其余坏档（截断/非映射）由 read_dict_file 显式报损坏（带路径）
     data = read_dict_file(od_file, format=".sanitized.yaml")
-    if not data.get("instance_list"):
+    entries = data.get("instance_list")
+    if not isinstance(entries, list) or not entries:
         # 文件存在即已初始化：上游启动必补首个实例、GUI 禁止删光，
         # 正常现场必然至少一个实例——缺键或空列表都只可能是损坏
+        raise ConfigCorruptedError(od_file)
+    if any(
+        not isinstance(item, dict)
+        or not isinstance(item.get("idx"), int)
+        or isinstance(item.get("idx"), bool)
+        for item in entries
+    ):
+        # 真值但畸形（字符串/数字/映射、条目非映射或 idx 缺失/非整数）：
+        # 调用方遍历会炸无关 TypeError/ValueError，或静默得出错误的
+        # 占用判定与文件集，一律按损坏上报
         raise ConfigCorruptedError(od_file)
     return data
 
