@@ -253,6 +253,8 @@ def _merge_task_queue(
     archive_queue: list | None,
     baseline_queue: list | None,
     current_queue: list,
+    *,
+    drop_missing: bool = True,
 ) -> bool:
     """按 (TaskType, Name) 把运行期任务队列相对基线的变更合并进存档队列。
 
@@ -260,6 +262,11 @@ def _merge_task_queue(
     删一条都会让下标整体错位, 按下标回写会把 A 的改动写进存档的 B。MAS 没安排
     过的条目(用户自己加的自定义任务等)在存档里找不到对应项, 一律跳过: 队列
     顺序由 MAS 决定, 用户塞进来的东西不回写; 删除同样不透传。
+
+    drop_missing=True(运行回写)时, 基线有而当前没有的条目视为用户删除, 从
+    存档一并移除、下次按默认重建; False(脚本设置会话)时保留——设置会话里
+    MAA 用自己的默认队列保存, 合成任务从当前队列消失是回写行为而非用户删除,
+    不能据此抹掉存档里用户在这些任务上的高级字段。
     """
 
     if not isinstance(archive_queue, list) or not isinstance(baseline_queue, list):
@@ -287,8 +294,19 @@ def _merge_task_queue(
         if key is None:
             continue
         base_task = baseline_by_id.get(key)
+        if base_task is None:
+            continue
         target_index = index_by_id.get(key)
-        if base_task is None or target_index is None:
+        if target_index is None:
+            # 基线认识但存档缺失: 以基线为底重建条目再吸收当前修改, 让存档
+            # 向基线结构收敛(MAA 保存重写结构后, 用户对合成任务的修改不丢)
+            merged_task = deepcopy(base_task)
+            for key_, value in task.items():
+                if base_task.get(key_) != value:
+                    merged_task[key_] = deepcopy(value)
+            archive_queue.append(merged_task)
+            index_by_id[key] = len(archive_queue) - 1
+            changed = True
             continue
         target = archive_queue[target_index]
         for key_, value in task.items():
@@ -299,18 +317,19 @@ def _merge_task_queue(
     # 运行期从队列里消失的条目: 用户在 MAA 里删掉了这条任务。MAS 的队列顺序由
     # 自己安排, 删除不改变「下次照样生成」, 但要让重建回到默认: 把存档里的这条
     # 一并移除, 托管任务下次按空壳重建、未知任务不再复活。
-    current_keys = {identity(task) for task in current_queue}
-    dropped = [key for key in baseline_by_id if key not in current_keys]
-    if dropped:
-        drop_set = set(dropped)
-        archive_queue[:] = [
-            item for item in archive_queue if identity(item) not in drop_set
-        ]
-        for _, name in dropped:
-            logger.info(
-                f"用户已从 MAA 队列删除「{name}」，存档设置一并重置，下次按默认重建"
-            )
-        changed = True
+    if drop_missing:
+        current_keys = {identity(task) for task in current_queue}
+        dropped = [key for key in baseline_by_id if key not in current_keys]
+        if dropped:
+            drop_set = set(dropped)
+            archive_queue[:] = [
+                item for item in archive_queue if identity(item) not in drop_set
+            ]
+            for _, name in dropped:
+                logger.info(
+                    f"用户已从 MAA 队列删除「{name}」，存档设置一并重置，下次按默认重建"
+                )
+            changed = True
     return changed
 
 
@@ -318,6 +337,8 @@ def _merge_maa_changes(
     archive: dict | list,
     baseline: dict | list,
     current: dict | list,
+    *,
+    drop_missing: bool = True,
 ) -> bool:
     """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
 
@@ -342,10 +363,20 @@ def _merge_maa_changes(
                 # 存档缺该子树时不把运行期内容整棵写入
                 if not isinstance(archive.get(key), dict):
                     continue
-                changed = _merge_maa_changes(archive[key], base_value, value) or changed
+                changed = (
+                    _merge_maa_changes(
+                        archive[key], base_value, value, drop_missing=drop_missing
+                    )
+                    or changed
+                )
             elif key == "TaskQueue" and isinstance(value, list):
                 changed = (
-                    _merge_task_queue(archive.get("TaskQueue"), base_value, value)
+                    _merge_task_queue(
+                        archive.get("TaskQueue"),
+                        base_value,
+                        value,
+                        drop_missing=drop_missing,
+                    )
                     or changed
                 )
             elif base_value != value and archive.get(key) != value:
@@ -355,7 +386,12 @@ def _merge_maa_changes(
 
 
 def _merge_maa_config_file(
-    archive: dict, baseline: dict, current: dict, scheme: str
+    archive: dict,
+    baseline: dict,
+    current: dict,
+    scheme: str,
+    *,
+    drop_missing: bool = True,
 ) -> bool:
     """按生效方案合并一份 MAA 配置, 返回是否有变更。
 
@@ -365,18 +401,20 @@ def _merge_maa_config_file(
     """
 
     if scheme == "Default":
-        return _merge_maa_changes(archive, baseline, current)
+        return _merge_maa_changes(archive, baseline, current, drop_missing=drop_missing)
 
     configurations = archive.get("Configurations")
     if not isinstance(configurations, dict) or not isinstance(
         configurations.get(scheme), dict
     ):
-        return _merge_maa_changes(archive, baseline, current)
+        return _merge_maa_changes(archive, baseline, current, drop_missing=drop_missing)
 
     original_default = configurations.get("Default")
     configurations["Default"] = configurations[scheme]
     try:
-        changed = _merge_maa_changes(archive, baseline, current)
+        changed = _merge_maa_changes(
+            archive, baseline, current, drop_missing=drop_missing
+        )
     finally:
         merged = configurations["Default"]
         if original_default is None:
@@ -385,6 +423,58 @@ def _merge_maa_config_file(
             configurations["Default"] = original_default
         configurations[scheme] = merged
     return changed
+
+
+def _restrict_task_queue_to_baseline(archive: dict, baseline: dict, scheme: str) -> bool:
+    """把存档生效方案的 TaskQueue 收敛到会话基线(即 set_maa 合成结果)的成员与顺序。
+
+    脚本设置会话里 MAA 保存会用内存默认队列整体重写, 基线之外的原生/自定义条目
+    不是用户对 MAS 队列的表达(用户自定义任务队列只在直控模式存在), 一律移除;
+    基线任务按身份保留(字段已由身份对齐合并先行写入)并按 MAS 顺序重排。返回
+    是否发生变更。gui.json(OLD 格式)没有 TaskQueue, 原样跳过。
+    """
+
+    configurations = archive.get("Configurations")
+    if not isinstance(configurations, dict):
+        return False
+    target = configurations.get(scheme)
+    base_configurations = baseline.get("Configurations")
+    base_default = (
+        base_configurations.get("Default")
+        if isinstance(base_configurations, dict)
+        else None
+    )
+    if not isinstance(target, dict) or not isinstance(base_default, dict):
+        return False
+    base_queue = base_default.get("TaskQueue")
+    queue = target.get("TaskQueue")
+    if not isinstance(base_queue, list) or not isinstance(queue, list):
+        return False
+
+    def identity(item: object) -> tuple | None:
+        if not isinstance(item, dict):
+            return None
+        return (item.get("TaskType"), item.get("Name"))
+
+    order: dict[tuple, int] = {}
+    for index, item in enumerate(base_queue):
+        key = identity(item)
+        if key is not None and key not in order:
+            order[key] = index
+
+    restricted: list[dict] = []
+    seen: set[tuple] = set()
+    for item in queue:
+        key = identity(item)
+        if key is None or key not in order or key in seen:
+            continue
+        seen.add(key)
+        restricted.append(item)
+    restricted.sort(key=lambda item: order[identity(item)])
+    if restricted == queue:
+        return False
+    target["TaskQueue"] = restricted
+    return True
 
 
 def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
@@ -445,7 +535,9 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
             # 自己的默认值；下次会话照此重新生成，用户不必再删一次
             logger.info(f"用户队列中缺少「{name}」，本次按 MAA 默认设置重新生成")
             task = {"$type": f"{task_type}Task", "IsEnable": True}
-        task.update({"Name": name, "TaskType": task_type})
+        # 设置界面队列开关统一为开启（视觉一致）：用户在 MAA GUI 里的真实
+        # 开关选择由会话结束的配置回写按身份对齐合并回来，不以这里为准
+        task.update({"Name": name, "TaskType": task_type, "IsEnable": True})
         return task
 
     fight_source = (
@@ -489,12 +581,9 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
         source_or_default("领取奖励", "Award"),
     ]
 
-    known_names = {task["Name"] for task in queue}
-    # 上游其余任务(自动肉鸽、生息演算、用户自定义任务等)对 MAS 是未知任务:
-    # 只透传原样条目, 不合成、不改写、不判定。队列顺序也由 MAA 自己维护。
-    queue.extend(
-        deepcopy(task) for task in source_tasks if task.get("Name") not in known_names
-    )
+    # 非直控模式队列严格等于 MAS 合成结果：上游其余任务(自动肉鸽、生息演算、
+    # 用户自定义任务等)不是 MAS 预设队列的成员，一律不透传带回——用户自定义
+    # 任务队列只在直控模式存在（安装目录原生配置即现场，MAS 零写入）。
     return queue
 
 
@@ -1596,15 +1685,9 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "GreenTicketStore":
             task_queue.append(dict(MAA_GREEN_TICKET_STORE_TASK))
 
-        # 来源队列里的未知任务(自动肉鸽、生息演算、用户自定义任务等)原样带回来:
-        # MAS 不合成也不接管它们, 只保证用户在上游开的任务不会被快速配置抹掉。
-        # MAA 只认一种自定义任务类型, 按 TaskType 取即可。
-        scheduled = {task.get("TaskType") for task in task_queue}
-        task_queue.extend(
-            deepcopy(task)
-            for task in source_queue
-            if isinstance(task, dict) and task.get("TaskType") not in scheduled
-        )
+        # 非直控模式队列严格等于 MAS 合成结果：来源队列里的未知任务(自动肉鸽、
+        # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在直控
+        # 模式存在(MAS 零写入, 安装目录原生配置即现场)。
 
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
