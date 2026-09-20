@@ -714,7 +714,9 @@ class HSRManager(TaskExecuteBase):
                     get_sra_app_data_dir(),
                 )
             except Exception:
-                logger.opt(exception=True).warning("HSR 运行前原生配置归档失败，已跳过（不阻断任务）")
+                logger.opt(exception=True).warning(
+                    "HSR 运行前原生配置归档失败，已跳过（不阻断任务）"
+                )
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()

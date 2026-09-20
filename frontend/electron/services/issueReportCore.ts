@@ -374,11 +374,7 @@ export function addLatestMasHistoryLog(
 ): string | undefined {
   let latest: HistoryLogCandidate | undefined
 
-  const visitDirectory = (
-    historyRoot: string,
-    currentDir: string,
-    archiveRoot: string
-  ): void => {
+  const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true })
@@ -450,11 +446,7 @@ export function addRecentFailedMaaEndHistoryLogs(
   const candidates: HistoryRecordCandidate[] = []
   const seenPaths = new Set<string>()
 
-  const visitDirectory = (
-    historyRoot: string,
-    currentDir: string,
-    archiveRoot: string
-  ): void => {
+  const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true })

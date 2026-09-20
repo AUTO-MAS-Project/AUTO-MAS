@@ -480,5 +480,7 @@ def archive_mas_config_backup(
     except Exception:
         if fail_on_snapshot_error:
             raise
-        logger.opt(exception=True).warning("ZZZ-OD 用户槽配置快照失败，已跳过（不阻断注入/会话）")
+        logger.opt(exception=True).warning(
+            "ZZZ-OD 用户槽配置快照失败，已跳过（不阻断注入/会话）"
+        )
         return None

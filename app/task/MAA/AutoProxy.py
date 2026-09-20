@@ -422,7 +422,9 @@ def _merge_maa_config_file(
     return changed
 
 
-def _restrict_task_queue_to_baseline(archive: dict, baseline: dict, scheme: str) -> bool:
+def _restrict_task_queue_to_baseline(
+    archive: dict, baseline: dict, scheme: str
+) -> bool:
     """把存档生效方案的 TaskQueue 收敛到会话基线(即 set_maa 合成结果)的成员与顺序。
 
     脚本设置会话里 MAA 保存会用内存默认队列整体重写, 基线之外的原生/自定义条目

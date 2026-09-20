@@ -582,7 +582,6 @@ def plan_combat_bases(plan_steps: list[dict[str, Any]]) -> set[str]:
     return bases
 
 
-
 def build_combat_steps(
     plan_steps: list[dict[str, Any]],
     queue: list[dict[str, Any]] | None = None,

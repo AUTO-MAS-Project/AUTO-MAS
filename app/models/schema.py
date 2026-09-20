@@ -700,7 +700,8 @@ class ConfigBackupFileOut(OutBase):
     path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
     size: int = Field(..., description="文件字节数")
     content: str = Field(
-        ..., description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）"
+        ...,
+        description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）",
     )
 
 
@@ -724,9 +725,7 @@ class ZzzOdNativeLaunchArgs(BaseModel):
     screen_size: Literal["1920x1080", "2560x1440", "3840x2160"] = Field(
         ..., description="窗口尺寸"
     )
-    full_screen: Literal["0", "1"] = Field(
-        ..., description="全屏模式：0=窗口化 1=全屏"
-    )
+    full_screen: Literal["0", "1"] = Field(..., description="全屏模式：0=窗口化 1=全屏")
     popup_window: bool = Field(..., description="无边框窗口（-popupwindow）")
     dx12: bool = Field(
         ..., description="DX12 启动（写回时把 -use-d3d12 合并进高级参数）"
@@ -2135,7 +2134,9 @@ class BAAHUserConfig_Info(BaseModel):
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
     )
-    ConfigName: Optional[str] = Field(default=None, description="默认使用的 BAAH 配置文件名")
+    ConfigName: Optional[str] = Field(
+        default=None, description="默认使用的 BAAH 配置文件名"
+    )
     ActivityConfigName: Optional[str] = Field(
         default=None, description="活动期间使用的 BAAH 配置文件名"
     )
@@ -2143,7 +2144,8 @@ class BAAHUserConfig_Info(BaseModel):
         default=None, description="是否按碧蓝档案有没有活动切换使用的配置文件"
     )
     ActivityLineType: Optional[Literal["JP", "Globle", "CN"]] = Field(
-        default=None, description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服"
+        default=None,
+        description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服",
     )
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
@@ -2650,7 +2652,9 @@ class MaaEndConfig_Game(BaseModel):
             "Fullscreen",
             "Custom",
         ]
-    ] = Field(default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改")
+    ] = Field(
+        default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改"
+    )
     RestoreResolutionWidth: Optional[int] = Field(
         default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
     )
@@ -3751,7 +3755,9 @@ class MaaFWGamePackageData(BaseModel):
 
 
 class MaaFWGamePackageOut(OutBase):
-    data: Optional[MaaFWGamePackageData] = Field(default=None, description="包名推断结果")
+    data: Optional[MaaFWGamePackageData] = Field(
+        default=None, description="包名推断结果"
+    )
 
 
 class MaaFWAdbEmulatorExtraCapabilityInfo(BaseModel):

@@ -318,7 +318,9 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
                 {
                     **project,
                     "issue_count": len(project["issue"]),
-                    "issue_text": project["issue"][0].strip() if project["issue"] else "",
+                    "issue_text": project["issue"][0].strip()
+                    if project["issue"]
+                    else "",
                     # 标记来源：调用方据此把自定义项失败计入「部分失败」（见 count_failed_custom_items）
                     "bgi_project": True,
                 }

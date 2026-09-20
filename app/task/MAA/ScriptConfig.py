@@ -292,7 +292,9 @@ class ScriptConfigTask(TaskExecuteBase):
             try:
                 current = read_file(self.maa_set_path / name)
             except (OSError, json.JSONDecodeError) as e:
-                logger.opt(exception=True).warning(f"读取 MAA 配置以对比回写失败({name}): {e}")
+                logger.opt(exception=True).warning(
+                    f"读取 MAA 配置以对比回写失败({name}): {e}"
+                )
                 continue
             if not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
@@ -310,8 +312,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 archive_new, base, current, scheme, drop_missing=False
             )
             changed = (
-                _restrict_task_queue_to_baseline(archive_new, base, scheme)
-                or changed
+                _restrict_task_queue_to_baseline(archive_new, base, scheme) or changed
             )
             if not changed:
                 continue

@@ -4281,7 +4281,9 @@ class ZzzOdUserConfig(ConfigBase):
             "Game", "FullScreen", "0", OptionsValidator(["0", "1"])
         )
         ## 无边框窗口（一条龙拼参时转 -popupwindow）
-        self.Game_PopupWindow = ConfigItem("Game", "PopupWindow", False, BoolValidator())
+        self.Game_PopupWindow = ConfigItem(
+            "Game", "PopupWindow", False, BoolValidator()
+        )
         ## DX12 启动（MAS 便捷开关：注入时把 -use-d3d12 合并进一条龙的
         ## launch_argument_advance；上游无独立字段，勾选框是唯一权威）
         self.Game_Dx12 = ConfigItem("Game", "Dx12", False, BoolValidator())

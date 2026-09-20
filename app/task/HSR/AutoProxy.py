@@ -1593,9 +1593,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
         # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
         # prepare 在任务级一次性归档）
-        archive_mas_runtime_backup(
-            script_id, uid, read_overlay_values(user_cfg)
-        )
+        archive_mas_runtime_backup(script_id, uid, read_overlay_values(user_cfg))
 
         full_queue = self._build_user_queue(
             user_item=user_item,

@@ -120,9 +120,7 @@
         <a-statistic-countdown
           :title="remainingLabel"
           :value="countdownTarget"
-          :format="
-            currentPhase === 'ended' ? t('home.countdown.ended') : t('home.countdown.dh')
-          "
+          :format="currentPhase === 'ended' ? t('home.countdown.ended') : t('home.countdown.dh')"
           :value-style="plainRemainingCountdownStyle"
         />
       </div>

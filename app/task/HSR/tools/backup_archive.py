@@ -277,7 +277,9 @@ def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> N
     try:
         archive_mas_backup(script_id, user_id, overlay)
     except Exception:
-        logger.opt(exception=True).warning("HSR 运行前 MAS 字段侧车归档失败，已跳过（不阻断任务）")
+        logger.opt(exception=True).warning(
+            "HSR 运行前 MAS 字段侧车归档失败，已跳过（不阻断任务）"
+        )
 
 
 # ══════════════════ M7A + SRA 原生配置（两引擎） ══════════════════
@@ -344,9 +346,7 @@ def archive_native_backup(
     files = collect_native_files(m7a_root, sra_app_data)
     if not files:
         return None
-    dest = archive_files(
-        files, native_backup_root(sra_app_data, m7a_root), force=force
-    )
+    dest = archive_files(files, native_backup_root(sra_app_data, m7a_root), force=force)
     if dest is None:
         logger.info("HSR 原生配置无变化，跳过归档")
         return None
