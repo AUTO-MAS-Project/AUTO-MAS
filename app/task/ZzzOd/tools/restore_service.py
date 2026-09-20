@@ -112,7 +112,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
 
 async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     await ctx.config.restore_zzzod_backup(
-        ctx.script_id, ctx.user_id, ts, target="mas"
+        ctx.script_id, ctx.user_id, ts, target="mas", force=ctx.force
     )
 
 
@@ -147,7 +147,7 @@ async def _preview_onedragon(ctx: RestoreContext, ts: str) -> dict:
 
 async def _restore_onedragon(ctx: RestoreContext, ts: str) -> None:
     await ctx.config.restore_zzzod_backup(
-        ctx.script_id, ctx.user_id, ts, target="onedragon"
+        ctx.script_id, ctx.user_id, ts, target="onedragon", force=ctx.force
     )
 
 

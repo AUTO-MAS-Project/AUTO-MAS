@@ -2374,12 +2374,15 @@ class AppConfig(GlobalConfig):
 
     # ════════════ 配置恢复（基座统一分发，池声明见各专项 tools/restore_service） ════════════
 
-    def restore_service(self, script_id: str, user_id: str) -> "ConfigRestoreService":
+    def restore_service(
+        self, script_id: str, user_id: str, *, force: bool = False
+    ) -> "ConfigRestoreService":
         """按脚本类型分发到专项恢复池，绑定上下文构建运行时服务。
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
         与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
-        与 schema，只在分发链加一个分支。
+        与 schema，只在分发链加一个分支。``force`` 随上下文下发，供专项
+        池的恢复函数读取（当前仅 ZzzOd 消费）。
         """
 
         from app.utils.config_restore import RestoreContext, build_restore_service
@@ -2441,6 +2444,7 @@ class AppConfig(GlobalConfig):
                 script_config=script_config,
                 script_id=script_id,
                 user_id=user_id,
+                force=force,
             ),
             RESTORE_POOLS,
         )
@@ -2481,22 +2485,17 @@ class AppConfig(GlobalConfig):
         否则 mas 池「先换目录再回填 UserData」会在 update 处撞锁，留下
         目录已换、字段未回填的半恢复现场。
 
-        源配置损坏（``ConfigCorruptedError``）时默认原样抛出（API 层转
-        409 交前端二次确认）；``force=True`` 且确属 ZzzOd 脚本时直接以
-        force 语义重试 zzzod 专属恢复——跳过注册表依赖步骤（恢复前存底 /
-        占用守卫），其余专项不消费 force。
+        ``force`` 随上下文下发到专项池恢复函数（当前仅 ZzzOd 消费：跳过
+        注册表依赖步骤——恢复前存底 / 占用守卫），其余专项忽略。源配置
+        损坏（``ConfigCorruptedError``）原样抛出，API 层转 409 交前端二次
+        确认。
         """
 
         uid = uuid.UUID(script_id)
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法恢复配置")
 
-        try:
-            await self.restore_service(script_id, user_id).restore(target, ts)
-        except ConfigCorruptedError:
-            if not force or not isinstance(self.ScriptConfig[uid], ZzzOdConfig):
-                raise
-            await self.restore_zzzod_backup(script_id, user_id, ts, target, force=True)
+        await self.restore_service(script_id, user_id, force=force).restore(target, ts)
         return {"target": target}
 
     async def get_config_backup_preview(
