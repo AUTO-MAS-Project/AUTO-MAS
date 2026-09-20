@@ -305,11 +305,14 @@ class MaaEndManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
+            await close_emulator(
+                self,
+                index=self.script_config.get("Game", "EmulatorIndex"),
+            )
 
             error_count = sum(
                 1 for u in self.script_info.user_list if u.status == "异常"
