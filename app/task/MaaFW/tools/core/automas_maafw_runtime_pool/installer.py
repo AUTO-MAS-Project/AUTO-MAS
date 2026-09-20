@@ -1342,16 +1342,27 @@ def _install_requirements_with_uv(
 
     candidates = resolve_package_index_candidates()
 
-    source, attempt = _run_with_source_rotation(
-        lambda index_source: _base_command(
-            ["--index-url", index_source] if index_source else []
-        ),
-        candidates,
-        cwd=cwd,
-        build_env=lambda _source: env,
-        timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
-        failure_label="MaaFW runtime 依赖安装",
-    )
+    try:
+        source, attempt = _run_with_source_rotation(
+            lambda index_source: _base_command(
+                ["--index-url", index_source] if index_source else []
+            ),
+            candidates,
+            cwd=cwd,
+            build_env=lambda _source: env,
+            timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
+            failure_label="MaaFW runtime 依赖安装",
+        )
+    except MaaFWRuntimeSourceRotationError as online_error:
+        # 没网时 uv 连索引都摸不到就报错，哪怕缓存里每个包都在。base 集合全是 PyPI
+        # 上的常驻包，联网全失败几乎只可能是网络；退一步只从缓存解析再试一次——
+        # 升级后第一次运行要建 base 的离线用户就靠这条（旧 runtime 是从同一份缓存
+        # 硬链接出来的，包都在）。缓存里也没有的话原样抛出联网那次的错误。
+        try:
+            _run(_base_command(["--offline"]), cwd=cwd, env=env)
+        except RuntimeError:
+            raise online_error from None
+        return {"source": None, "attempt": 1, "offline": True, "fallback": "cache"}
     result: dict[str, Any] = {}
     if source is not None:
         result["source"] = source

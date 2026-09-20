@@ -455,16 +455,24 @@ def _check_binding_requires(runtime: Mapping[str, Any], binding: BindingInfo) ->
             installed[name] = specifiers[0].version
     problems: list[str] = []
     for declared in binding.requires_dist:
-        text = str(declared).split(";", 1)[0].strip()
-        name = requirement_distribution_name(text)
+        try:
+            parsed = Requirement(str(declared).strip())
+        except InvalidRequirement:
+            continue
+        # 环境标记按 base 解释器求值（base 与宿主同小版本）：``extra == "test"`` 这类
+        # 可选依赖不带 extra 时为假、``python_version < "3.10"`` 在 3.12 上为假，
+        # 都不是硬性依赖，不能拿去 fail-closed。
+        if parsed.marker is not None:
+            try:
+                if not parsed.marker.evaluate({"extra": ""}):
+                    continue
+            except Exception:  # noqa: BLE001 - 标记求值失败按「不适用」处理
+                continue
+        name = requirement_distribution_name(str(parsed))
         if not name:
             continue
         if name not in base_names:
             problems.append(f"{name}（不在 base 集合里）")
-            continue
-        try:
-            parsed = Requirement(text)
-        except InvalidRequirement:
             continue
         if not list(parsed.specifier):
             continue
@@ -473,7 +481,7 @@ def _check_binding_requires(runtime: Mapping[str, Any], binding: BindingInfo) ->
             continue
         try:
             if not parsed.specifier.contains(Version(actual), prereleases=True):
-                problems.append(f"{text}（base 里是 {actual}）")
+                problems.append(f"{declared}（base 里是 {actual}）")
         except InvalidVersion:
             continue
     if problems:

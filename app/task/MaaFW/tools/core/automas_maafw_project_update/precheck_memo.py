@@ -43,11 +43,19 @@ _MEMO_KEYS = ("targetVersion", "requirement", "kind", "failedAt", "reason", "att
 # 只认「索引里没有这个版本」的文本。连不上索引（``Request failed after 3
 # retries`` / ``Failed to fetch``）与离线（``was not found in the cache``）都
 # 不算：那是网络问题，下次可能就好了，不该按「binding 不存在」去轻探。
-# 夹具来源：uv 0.11.26 与 pip 的真实 stderr（方案 §1.1）。
+# 前三条是 uv 0.11.26 与 pip 的真实 stderr（agent 隔离 venv 仍经 pip 装 maafw）；
+# 后几条是运行池 binding 目录（``runtime_pool/binding.py``）自己的文案：索引可达但
+# 没有这个版本 / 没有满足范围的版本、没自带 DLL 的项目遇到只有源码 binding、映射不到
+# 发布 tag——都是「这个版本拿不到 binding」，与网络无关。
 _BINDING_UNAVAILABLE_PATTERNS = (
     re.compile(r"there is no version of maafw==", re.IGNORECASE),
     re.compile(r"maafw was not found in the package registry", re.IGNORECASE),
     re.compile(r"No matching distribution found for maafw==", re.IGNORECASE),
+    re.compile(r"索引上没有 maafw"),
+    re.compile(r"索引上没有满足"),
+    re.compile(r"映射不到 MaaFramework 的发布 tag"),
+    re.compile(r"源码打包的 binding 没有 DLL"),
+    re.compile(r"binding 来自源码打包"),
 )
 
 

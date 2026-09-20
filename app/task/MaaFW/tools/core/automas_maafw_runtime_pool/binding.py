@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import html.parser
 import json
+import logging
 import os
 import platform as platform_module
 import re
@@ -73,6 +74,8 @@ from .host_environment import (
     LOOPBACK_NO_PROXY_HOSTS,
     strip_host_python_environment,
 )
+
+logger = logging.getLogger("automas.maafw.runtime_pool.binding")
 
 BINDINGS_DIRECTORY_NAME = "bindings"
 NATIVE_DIRECTORY_NAME = "native"
@@ -1021,10 +1024,10 @@ def _read_wheel_metadata(archive: zipfile.ZipFile) -> tuple[str, tuple[str, ...]
 
 def _lay_out_binding_from_wheel(
     wheel_path: Path,
-    binding_stage: Path,
+    binding_stage: Path | None,
     native_stage: Path | None,
 ) -> tuple[str, tuple[str, ...], str | None]:
-    """把 wheel 解到 staging：binding 成员进 ``binding_stage``，``maa/bin/**`` 进 ``native_stage``（给了才铺）。
+    """把 wheel 解到 staging：binding 成员进 ``binding_stage``，``maa/bin/**`` 进 ``native_stage``（各自给了才铺）。
 
     返回 ``(METADATA 里的版本, Requires-Dist, maa/bin/MaaFramework.dll 的 sha256)``。
     """
@@ -1037,6 +1040,8 @@ def _lay_out_binding_from_wheel(
             raise MaaFWBindingError("wheel 里没有 maa/__init__.py")
         for name in names:
             if _is_binding_member(name):
+                if binding_stage is None:
+                    continue
                 target = _safe_join(binding_stage, name)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.read(name))
@@ -1048,7 +1053,8 @@ def _lay_out_binding_from_wheel(
                     target = _safe_join(native_stage, name[len("maa/bin/") :])
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(data)
-    _write_bin_placeholder(binding_stage)
+    if binding_stage is not None:
+        _write_bin_placeholder(binding_stage)
     return version, requires, native_dll_sha256
 
 
@@ -1144,19 +1150,29 @@ def _download_wheel(
     request = urllib.request.Request(link.url, headers={"User-Agent": "AUTO-MAS"})
     digest = hashlib.sha256()
     written = 0
-    with _build_opener(proxy_url, link.url).open(request, timeout=timeout) as response:
-        with destination.open("wb") as stream:
-            while True:
-                if check_cancelled is not None:
-                    check_cancelled()
-                chunk = response.read(_DOWNLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > _MAX_WHEEL_BYTES:
-                    raise MaaFWBindingError("wheel 响应体超过大小上限")
-                digest.update(chunk)
-                stream.write(chunk)
+    try:
+        with _build_opener(proxy_url, link.url).open(
+            request, timeout=timeout
+        ) as response:
+            with destination.open("wb") as stream:
+                while True:
+                    if check_cancelled is not None:
+                        check_cancelled()
+                    chunk = response.read(_DOWNLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > _MAX_WHEEL_BYTES:
+                        raise MaaFWBindingError("wheel 响应体超过大小上限")
+                    digest.update(chunk)
+                    stream.write(chunk)
+    except urllib.error.HTTPError as exc:
+        raise MaaFWBindingNetworkError(
+            f"下载 wheel 失败: HTTP {exc.code} {link.url}"
+        ) from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        # 索引已经说了有这个版本，下载不下来就是网络问题，不是「没有」
+        raise MaaFWBindingNetworkError(f"下载 wheel 失败: {link.url}: {exc}") from exc
     if written == 0:
         raise MaaFWBindingError("wheel 响应体为空")
     if link.sha256 and digest.hexdigest() != link.sha256:
@@ -1291,6 +1307,18 @@ def _self_check(
 # ---------------------------------------------------------------------------
 
 
+_INSTALL_LOCKS_GUARD = threading.Lock()
+_INSTALL_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+
+
+def _install_lock(pool_root: Path, version: str) -> threading.Lock:
+    """按 (池根, 版本) 的下载 / 铺目录锁：同一版本只让一个线程去下，别的等它换入后命中。"""
+
+    key = (os.path.normcase(str(Path(pool_root).resolve())), version)
+    with _INSTALL_LOCKS_GUARD:
+        return _INSTALL_LOCKS.setdefault(key, threading.Lock())
+
+
 def ensure_binding(
     pool_root: Path,
     version: str,
@@ -1305,33 +1333,39 @@ def ensure_binding(
 ) -> BindingInfo:
     """确保 ``bindings/maafw-<ver>``（及 ``native_needed`` 时的 ``native/maafw-<ver>``）就绪。
 
-    命中 → 刷新 ``lastUsedAt`` 返回。未命中：离线直接报错；否则按索引候选找官方
-    wheel（任一候选给出「索引可达但没有这个版本」的确定结论就改走 tag 源码；全部
-    不可达才报网络错误）。源码 binding 没有 DLL，``native_needed`` 时拒绝。
-    ``base_python`` 为 None 时跳过自检（``selfChecked=False``，收割路径用）。
+    命中 → 刷新 ``lastUsedAt`` 返回（收割来的、还没自检过的 binding 在这里补一次
+    自检，过了把清单标成已自检，不过就当没有重建）。未命中：离线直接报错；否则按
+    索引候选找官方 wheel（任一候选给出「索引可达但没有这个版本」的确定结论就改走
+    tag 源码；全部不可达才报网络错误）。源码 binding 没有 DLL，``native_needed`` 时
+    拒绝。binding 已在、只缺 native 时只补 native，不动正被 worker 用着的 binding 目录。
+
+    池锁只包住「命中判定」与「换入」两段；下载 / 铺目录 / 自检要几十秒到几分钟，
+    在锁外跑（同一版本另有一把安装锁，别的线程等它换入后直接命中），别的项目的
+    prepare、运行前自检与回收不用排队。``base_python`` 为 None 时跳过自检。
     """
 
     pool_root = Path(pool_root)
     version = normalize_version(version)
     emit = log or (lambda _message: None)
-    with pool_lock(pool_root):
-        existing = verify_binding(pool_root, version)
-        if existing is not None and (
-            not native_needed or existing.native_directory is not None
-        ):
-            touch_binding(pool_root, version)
-            return verify_binding(pool_root, version) or existing
-        if existing is not None and native_needed and existing.is_source_built:
-            raise MaaFWBindingError(
-                "项目未自带 MaaFramework 原生库，而本地的 binding 来自源码打包"
-                f"（无 DLL，{existing.source}），无法运行"
-            )
-        if offline:
-            raise MaaFWBindingUnavailableError(
-                f"离线模式，且本地没有 maafw {version} 的 binding"
-                + ("（或缺官方原生库）" if native_needed else "")
-            )
-        base = Path(base_python) if base_python is not None else None
+    base = Path(base_python) if base_python is not None else None
+
+    hit = _try_hit(pool_root, version, native_needed=native_needed, base_python=base)
+    if hit is not None:
+        return hit
+    if offline:
+        raise MaaFWBindingUnavailableError(
+            f"离线模式，且本地没有 maafw {version} 的 binding"
+            + ("（或缺官方原生库）" if native_needed else "")
+        )
+    with _install_lock(pool_root, version):
+        # 等锁期间别的线程可能已经换入同一个版本
+        hit = _try_hit(
+            pool_root, version, native_needed=native_needed, base_python=base
+        )
+        if hit is not None:
+            return hit
+        with pool_lock(pool_root):
+            existing = verify_binding(pool_root, version)
         return _fetch_and_install(
             pool_root,
             version,
@@ -1341,7 +1375,58 @@ def ensure_binding(
             proxy_url=proxy_url,
             check_cancelled=check_cancelled,
             log=emit,
+            existing=existing,
         )
+
+
+def _try_hit(
+    pool_root: Path,
+    version: str,
+    *,
+    native_needed: bool,
+    base_python: Path | None,
+) -> BindingInfo | None:
+    """本地已就绪就 touch 并返回；源码 binding 遇到要 native 的项目直接拒绝。"""
+
+    with pool_lock(pool_root):
+        existing = verify_binding(pool_root, version)
+        if existing is None:
+            return None
+        if native_needed and existing.is_source_built:
+            raise MaaFWBindingError(
+                "项目未自带 MaaFramework 原生库，而本地的 binding 来自源码打包"
+                f"（无 DLL，{existing.source}），无法运行"
+            )
+        if native_needed and existing.native_directory is None:
+            return None
+        if not existing.self_checked and base_python is not None:
+            # 收割来的：base 当时还没建，现在有了，补一次自检
+            try:
+                _self_check(
+                    pool_root,
+                    base_python,
+                    binding_stage=existing.directory,
+                    native_stage=existing.native_directory,
+                    expected_version=version,
+                )
+            except MaaFWBindingError as exc:
+                logger.warning(
+                    "收割来的 maafw %s binding 自检不过，改为重新下载: %s", version, exc
+                )
+                return None
+            _mark_self_checked(existing.directory)
+        touch_binding(pool_root, version)
+        return verify_binding(pool_root, version) or existing
+
+
+def _mark_self_checked(directory: Path) -> None:
+    manifest_path = directory / BINDING_MANIFEST_NAME
+    manifest = _read_manifest(manifest_path)
+    if manifest is None:
+        return
+    manifest["selfChecked"] = True
+    write_json_atomic(manifest_path, manifest)
+    _refresh_verified_after_touch(directory, manifest_path, manifest)
 
 
 def _fetch_and_install(
@@ -1354,6 +1439,7 @@ def _fetch_and_install(
     proxy_url: str | None,
     check_cancelled: Callable[[], None] | None,
     log: Callable[[str], None],
+    existing: BindingInfo | None = None,
 ) -> BindingInfo:
     tag_platform = wheel_platform_tag()
     failures: list[str] = []
@@ -1382,6 +1468,7 @@ def _fetch_and_install(
             base_python=base_python,
             proxy_url=proxy_url,
             check_cancelled=check_cancelled,
+            existing=existing,
         )
     if not definite_missing:
         raise MaaFWBindingNetworkError(
@@ -1422,11 +1509,22 @@ def _install_from_wheel_link(
     base_python: Path | None,
     proxy_url: str | None,
     check_cancelled: Callable[[], None] | None,
+    existing: BindingInfo | None = None,
 ) -> BindingInfo:
     staging = _staging_root(pool_root)
     staging.mkdir(parents=True, exist_ok=True)
     wheel_path = staging / f"binding-{version}-{uuid.uuid4().hex}.whl"
-    binding_stage = _new_staging_dir(pool_root, "binding", version)
+    # binding 已经在、来源也是官方 wheel、只缺 native：只铺 native，不动可能正被 worker
+    # 用着的 binding 目录（换入会把它整个换掉）。
+    native_only = (
+        existing is not None
+        and not existing.is_source_built
+        and native_needed
+        and existing.native_directory is None
+    )
+    binding_stage = (
+        None if native_only else _new_staging_dir(pool_root, "binding", version)
+    )
     native_stage = (
         _new_staging_dir(pool_root, "native", version) if native_needed else None
     )
@@ -1445,6 +1543,26 @@ def _install_from_wheel_link(
             for name in NATIVE_REQUIRED_LIBRARIES:
                 if not (native_stage / name).is_file():
                     raise MaaFWBindingError(f"官方 wheel 的 maa/bin 里缺少 {name}")
+        if native_only:
+            assert existing is not None and native_stage is not None
+            if (
+                existing.native_dll_sha256
+                and dll_sha256
+                and existing.native_dll_sha256 != dll_sha256
+            ):
+                raise MaaFWBindingError(
+                    f"官方 wheel 里的 MaaFramework.dll 与本地 binding 记录的不一致"
+                    f"（{dll_sha256[:12]}… vs {existing.native_dll_sha256[:12]}…）"
+                )
+            return _finish_native_only(
+                pool_root,
+                version,
+                existing=existing,
+                native_stage=native_stage,
+                source=source,
+                base_python=base_python,
+            )
+        assert binding_stage is not None
         return _finish_install(
             pool_root,
             version,
@@ -1460,6 +1578,36 @@ def _install_from_wheel_link(
         for stage in (binding_stage, native_stage):
             if stage is not None and stage.exists():
                 remove_tree_best_effort(stage)
+
+
+def _finish_native_only(
+    pool_root: Path,
+    version: str,
+    *,
+    existing: BindingInfo,
+    native_stage: Path,
+    source: str,
+    base_python: Path | None,
+) -> BindingInfo:
+    """只给已有的 binding 补 native：自检 → 写 native 清单 → 换入 native。"""
+
+    if base_python is not None:
+        _self_check(
+            pool_root,
+            base_python,
+            binding_stage=existing.directory,
+            native_stage=native_stage,
+            expected_version=version,
+        )
+    _write_native_manifest(
+        native_stage, version=version, source=source, last_used_at=None
+    )
+    with pool_lock(pool_root):
+        _swap_in(pool_root, native_stage, native_directory(pool_root, version))
+        info = verify_binding(pool_root, version)
+    if info is None or info.native_directory is None:
+        raise MaaFWBindingError(f"maafw {version} 的官方原生库换入后校验不通过")
+    return info
 
 
 def _install_from_source(
@@ -1542,10 +1690,11 @@ def _finish_install(
         self_checked=self_checked,
         last_used_at=last_used_at,
     )
-    if native_stage is not None:
-        _swap_in(pool_root, native_stage, native_directory(pool_root, version))
-    _swap_in(pool_root, binding_stage, binding_directory(pool_root, version))
-    info = verify_binding(pool_root, version)
+    with pool_lock(pool_root):
+        if native_stage is not None:
+            _swap_in(pool_root, native_stage, native_directory(pool_root, version))
+        _swap_in(pool_root, binding_stage, binding_directory(pool_root, version))
+        info = verify_binding(pool_root, version)
     if info is None:
         raise MaaFWBindingError(f"maafw {version} 的 binding 换入后校验不通过")
     return info
