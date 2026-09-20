@@ -595,6 +595,7 @@ const confirmForceRestore = (item: BackupItem, detail: string) => {
     content: corruptedForceConfirmContent(copy.detail, copy.desc),
     okText: copy.okText,
     okType: 'danger',
+    cancelText: t('edit.cancel'),
     onOk: async () => {
       try {
         const resp = await runRestore(item, true)
