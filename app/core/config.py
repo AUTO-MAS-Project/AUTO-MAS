@@ -109,7 +109,7 @@ from app.utils.constants import (
     UTC4,
     UTC8,
 )
-from app.utils.io import force_rmtree, write_file
+from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
@@ -1732,7 +1732,7 @@ class AppConfig(GlobalConfig):
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
     async def restore_zzzod_backup(
-        self, script_id: str, user_id: str, ts: str, target: str
+        self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
     ) -> int:
         """把指定备份恢复到目标位置，返回关联槽 idx（-1 表示不涉及槽）。
 
@@ -1742,6 +1742,10 @@ class AppConfig(GlobalConfig):
         - target="mas"：把 MAS 用户槽备份恢复到绑定槽，并从恢复后的槽内容
           把账号字段与任务编排全量回填到 MAS 本页字段（表单随即刷新）——
           配队等 MAS 不管的内容随槽内容回到该时点。
+
+        ``force=True``：源注册表损坏且用户已在二次确认中选择强制恢复——
+        onedragon 跳过「恢复前存底」（该步要读损坏的注册表），mas 跳过
+        占用守卫（可能覆盖原生实例槽，覆盖前仍会对槽做强制存底）。
         """
 
         from app.task.ZzzOd.tools import (
@@ -1793,7 +1797,7 @@ class AppConfig(GlobalConfig):
                         f"备份含原生实例 {bound_slot:02d}，已被{who}绑定为配置槽，"
                         "恢复会覆盖其内容，已中止"
                     )
-            restore_onedragon_backup(root, ts)
+            restore_onedragon_backup(root, ts, snapshot_current=not force)
             logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
             return -1
 
@@ -1801,8 +1805,15 @@ class AppConfig(GlobalConfig):
         if slot <= 0:
             raise ValueError("该用户还没有生成过配置备份")
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
-        # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）
-        occupant = self._zzzod_slot_occupant(root, script_id, uid, slot)
+        # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
+        # 守卫读不了原生占用，未 force 抛给上层转 409；force 视为空闲放行
+        # （用户已确认，覆盖前 restore_mas_backup 内部仍会强制存底）
+        try:
+            occupant = self._zzzod_slot_occupant(root, script_id, uid, slot)
+        except ConfigCorruptedError:
+            if not force:
+                raise
+            occupant = None
         if occupant is not None:
             raise ValueError(
                 f"目标槽 {slot:02d} 当前已被「{occupant}」占用，"
@@ -2022,8 +2033,7 @@ class AppConfig(GlobalConfig):
         无人认领（孤儿槽）视为空闲——孤儿槽可被恢复重新认领。
         """
 
-        from app.task.ZzzOd.tools import native_registry_file
-        from app.utils.io import read_file
+        from app.task.ZzzOd.tools import read_native_registry
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
         for script_config in self.ScriptConfig.values():
@@ -2038,7 +2048,7 @@ class AppConfig(GlobalConfig):
                     return f"脚本「{script_name}」的用户「{user_name}」"
 
         # 2) 一条龙原生实例（按原生注册表）
-        data = read_file(native_registry_file(root)) or {}
+        data = read_native_registry(root)
         for item in data.get("instance_list") or []:
             if not isinstance(item, dict):
                 continue
@@ -2364,12 +2374,15 @@ class AppConfig(GlobalConfig):
 
     # ════════════ 配置恢复（基座统一分发，池声明见各专项 tools/restore_service） ════════════
 
-    def restore_service(self, script_id: str, user_id: str) -> "ConfigRestoreService":
+    def restore_service(
+        self, script_id: str, user_id: str, *, force: bool = False
+    ) -> "ConfigRestoreService":
         """按脚本类型分发到专项恢复池，绑定上下文构建运行时服务。
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
         与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
-        与 schema，只在分发链加一个分支。
+        与 schema，只在分发链加一个分支。``force`` 随上下文下发，供专项
+        池的恢复函数读取（当前仅 ZzzOd 消费）。
         """
 
         from app.utils.config_restore import RestoreContext, build_restore_service
@@ -2431,6 +2444,7 @@ class AppConfig(GlobalConfig):
                 script_config=script_config,
                 script_id=script_id,
                 user_id=user_id,
+                force=force,
             ),
             RESTORE_POOLS,
         )
@@ -2463,20 +2477,25 @@ class AppConfig(GlobalConfig):
         return await self.restore_service(script_id, user_id).ensure(target)
 
     async def restore_config_backup(
-        self, script_id: str, user_id: str, ts: str, target: str
+        self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
     ) -> dict:
         """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。
 
         恢复是覆盖性写配置操作：脚本锁着（任务/配置会话运行中）时拒绝，
         否则 mas 池「先换目录再回填 UserData」会在 update 处撞锁，留下
         目录已换、字段未回填的半恢复现场。
+
+        ``force`` 随上下文下发到专项池恢复函数（当前仅 ZzzOd 消费：跳过
+        注册表依赖步骤——恢复前存底 / 占用守卫），其余专项忽略。源配置
+        损坏（``ConfigCorruptedError``）原样抛出，API 层转 409 交前端二次
+        确认。
         """
 
         uid = uuid.UUID(script_id)
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法恢复配置")
 
-        await self.restore_service(script_id, user_id).restore(target, ts)
+        await self.restore_service(script_id, user_id, force=force).restore(target, ts)
         return {"target": target}
 
     async def get_config_backup_preview(

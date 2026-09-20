@@ -775,7 +775,12 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('screen_size', nativeLaunchArgs.screen_size)"
+                              @change="
+                                saveNativeLaunchArgsField(
+                                  'screen_size',
+                                  nativeLaunchArgs.screen_size
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -790,7 +795,12 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('full_screen', nativeLaunchArgs.full_screen)"
+                              @change="
+                                saveNativeLaunchArgsField(
+                                  'full_screen',
+                                  nativeLaunchArgs.full_screen
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -805,7 +815,9 @@
                               v-model:checked="nativeLaunchArgs.popup_window"
                               size="large"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="(v: any) => saveNativeLaunchArgsField('popup_window', v === true)"
+                              @change="
+                                (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -840,7 +852,9 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)"
+                              @change="
+                                saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -857,7 +871,12 @@
                               size="large"
                               class="modern-input"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @blur="saveNativeLaunchArgsField('launch_argument_advance', nativeLaunchArgs.launch_argument_advance)"
+                              @blur="
+                                saveNativeLaunchArgsField(
+                                  'launch_argument_advance',
+                                  nativeLaunchArgs.launch_argument_advance
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -962,7 +981,12 @@
                           size="large"
                           class="modern-input"
                           :disabled="!formData.Game.LaunchArgument"
-                          @blur="saveField('Game.LaunchArgumentAdvance', formData.Game.LaunchArgumentAdvance)"
+                          @blur="
+                            saveField(
+                              'Game.LaunchArgumentAdvance',
+                              formData.Game.LaunchArgumentAdvance
+                            )
+                          "
                         />
                       </a-form-item>
                     </a-col>
@@ -1154,7 +1178,7 @@
       <ConfigRestoreSection
         v-model:open="restoreOpen"
         :disabled="configLocked"
-      :script-name="ZZZOD_DISPLAY_NAME"
+        :script-name="ZZZOD_DISPLAY_NAME"
         :targets="restoreTargets"
         :api="restoreApi"
         :field-labels="previewFieldLabels"
@@ -1240,6 +1264,7 @@ import {
   type ZzzOdUserConfig,
   ZzzOdNativeLaunchArgs,
 } from '@/api'
+import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/utils/configRestoreMode'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ZzzOdPlanListEditor from '@/components/ZzzOdPlanListEditor.vue'
@@ -1547,9 +1572,11 @@ const ensurePoolBackup = async (target: string): Promise<void> => {
     })
     if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
   } catch (e) {
-    // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）
-    logger.warn(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.zzzodBackupFailed'))
+    // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）；
+    // 后端诊断（配置损坏时含损坏位置）附加展示，便于用户自愈
+    const detail = e instanceof Error ? e.message : String(e)
+    logger.warn(detail)
+    message.warning(`${t('edit.zzzodBackupFailed')}（${detail}）`)
   }
 }
 
@@ -1890,7 +1917,8 @@ const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
 // 开关下次变化（watch 只在来源值变化时触发，手动的 activeKey 不会被覆盖）
 const launchArgsOpen = ref<string[]>([])
 watch(
-  () => [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
+  () =>
+    [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
   ([mode, userOn, nativeOn]) => {
     launchArgsOpen.value = (mode === '直控' ? nativeOn : userOn) ? ['launch-args'] : []
   },
@@ -2033,7 +2061,11 @@ const saveNativeConfig = async (
  */
 const saveNativeLaunchArgsField = (key: keyof ZzzOdNativeLaunchArgs, value: unknown) => {
   ;(nativeLaunchArgs as Record<string, unknown>)[key] = value
-  return saveNativeConfig({ launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs }, 'launchArgs', true)
+  return saveNativeConfig(
+    { launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs },
+    'launchArgs',
+    true
+  )
 }
 
 /** 「保存设置」：账号字段全量写回（连同当前任务编排与运行实例，保持表单一致） */
@@ -2386,12 +2418,13 @@ const restoreApi = {
       time,
       target
     ),
-  restore: async (target: string, time: string) =>
+  restore: async (target: string, time: string, force?: boolean) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
       userId: userId.value,
       time,
       target,
+      force,
     }),
   readFile: async (target: string, time: string, path: string) =>
     Service.getConfigBackupFileApiApiScriptsBackupFileGet(
@@ -2424,7 +2457,6 @@ const handleRestored = (target: string) => {
 const handleRestoreView = (target: string, item: { time: string }) => {
   if (configLocked.value) return Promise.resolve(false)
   return new Promise<boolean>(resolve => {
-    const isMas = target === 'mas'
     // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
     // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
     // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
@@ -2446,28 +2478,9 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           return
         }
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId: userId.value,
-            time: item.time,
-            target,
-          })
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
-          // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          if (isMas) {
-            // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
-            // （槽内容即恢复的备份，不注入基线、不回读字段）
-            await startSession(userId.value, true)
-          } else {
-            // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
-            // 与 MAS 侧完全无关
-            await startSession(scriptId, true)
-          }
-          resolve(true)
+          // 恢复流程（含损坏时的强制恢复确认）全部走完才 resolve，避免本入口
+          // 提前放行、查看会话对着没被恢复的配置打开
+          resolve(await restoreForDetailView(target, item, target === 'mas'))
         } catch (e) {
           message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
           resolve(false)
@@ -2477,6 +2490,73 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     })
   })
 }
+
+/** 「查看详细配置」的恢复：成功后拉起对应查看会话；损坏时转强制恢复二次确认 */
+const restoreForDetailView = async (
+  target: string,
+  item: { time: string },
+  isMas: boolean,
+  force = false
+): Promise<boolean> => {
+  const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+    scriptId,
+    userId: userId.value,
+    time: item.time,
+    target,
+    force,
+  })
+  // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
+  // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
+  if (resp.code === 409) {
+    if (force) {
+      // force 仍被拦：不再重复弹确认，直接把原因报给用户
+      throw new Error(resp.message || t('edit.configRestoreFailed'))
+    }
+    // 源配置损坏：与「一键恢复」同一套二次确认，确认后带 force 重试本入口流程
+    return confirmForceRestoreDetail(target, item, isMas, resp.message || '')
+  }
+  if (resp.code !== 200) {
+    throw new Error(resp.message || t('edit.configRestoreFailed'))
+  }
+  restoreOpen.value = false
+  if (isMas) {
+    // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
+    // （槽内容即恢复的备份，不注入基线、不回读字段）
+    await startSession(userId.value, true)
+  } else {
+    // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
+    // 与 MAS 侧完全无关
+    await startSession(scriptId, true)
+  }
+  return true
+}
+
+/** 损坏强制恢复二次确认（「查看详细配置」入口）：文案与渲染复用一键恢复那套 */
+const confirmForceRestoreDetail = (
+  target: string,
+  item: { time: string },
+  isMas: boolean,
+  detail: string
+): Promise<boolean> =>
+  new Promise<boolean>(forceResolve => {
+    const copy = buildCorruptedForceConfirm(t, detail)
+    Modal.confirm({
+      title: copy.title,
+      content: corruptedForceConfirmContent(copy.detail, copy.desc),
+      okText: copy.okText,
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          forceResolve(await restoreForDetailView(target, item, isMas, true))
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          forceResolve(false)
+        }
+      },
+      onCancel: () => forceResolve(false),
+    })
+  })
 
 // ══ 一条龙任务（OneDragon.AppList JSON 字段，打开页面即可开关）══
 // 卡片结构与操作封装见 useZzzOdTaskBoard（用户模式与直控模式共用）

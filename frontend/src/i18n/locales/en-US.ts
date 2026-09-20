@@ -2026,6 +2026,11 @@ export default {
     configRestoreConfirmTitle: 'Overwrite current config',
     configRestoreConfirmDesc:
       'Restores the config at this point in time to its location. The current config is backed up automatically before restoring and can be recovered anytime via "Config restore". Continue?',
+    // 源配置损坏（后端 409）：写明损坏位置，二次确认后携带 force 强制恢复
+    configRestoreCorruptedTitle: 'Source config file is corrupted',
+    configRestoreCorruptedDesc:
+      'Force restore skips the safety checks related to this file (pre-restore backup and occupancy guard) and may overwrite existing configs. Continue?',
+    configRestoreForceAction: 'Force restore',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: 'Script-level',
     configRestoreModeUser: 'User-level',
