@@ -22,7 +22,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 项目目录与运行
 
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
-  ——**永远是** `data/maafw_projects/<脚本 uuid>/` 的副本，没有"路径模式"。`Info.Path` 只是
+  ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的副本，没有"路径模式"。`Info.Path` 只是
   导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
   `api/scripts.py` 的 `/maafw/update` 都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
@@ -36,10 +36,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
   `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
   这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
-  副本路径由脚本 ID 推出、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
+  副本路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
+  与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
   「选择本地目录」就是 `/maafw/embedded/reimport`：第一次是导入，之后是换来源或按当前来源重导；
   没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、来源版本与导入时间。
-  导入在 `data/maafw_projects/.staging/` 里投影完再原子换入，失败不动旧副本；副本缺失且来源
+  导入在 `data/mfw/.staging/` 里投影完再原子换入，失败不动旧副本；副本缺失且来源
   还在时 check / preview / update 入口自修复。删脚本连带删副本。
 - 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），副本去掉的只有外壳、
   .NET 托管库、界面用的运行时、缓存与日志。**项目自带的运行时原样带走**：MaaFramework 原生库

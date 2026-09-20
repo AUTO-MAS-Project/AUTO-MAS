@@ -32,7 +32,7 @@ from pathlib import Path
 # 200 MB 上下, 重下即可) 与原生日志 (单个可达百 MB)
 _EXCLUDED_DIRS = {
     "config/maafw_runtime_pool",
-    "data/maafw_projects",
+    "data/mfw",
     "data/maafw_blobs",
     "data/maafw_update_cache",
 }

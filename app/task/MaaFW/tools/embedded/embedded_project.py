@@ -26,7 +26,7 @@ MFW 脚本一律在副本上跑，没有开关：用户选一次项目目录，A
 老脚本（副本还不存在）与来源换了目录（``Info.Path`` 与导入报告里记的来源不一致）都在
 ``ensure_embedded_copy`` 里自动导入一次，各入口（运行前检查、预览、更新）都经过它。
 
-副本放在 ``data/maafw_projects/<uuid>/`` 而不是 ``data/<uuid>/``：后者会被配置备份
+副本放在 ``data/mfw/<脚本 uuid 前 12 位>/`` 而不是 ``data/<uuid>/``：后者会被配置备份
 整目录快照，几十到两百 MB 的项目副本不该混进去。删脚本时 ``remove_script`` 连带删。
 
 这里全是同步的文件操作，API 与管理器用 ``asyncio.to_thread`` 调。
@@ -58,6 +58,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
     read_json_object,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    EMBEDDED_COPIES_DIR_PARTS,
     PROJECT_PYCACHE_DIR_NAME,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -66,8 +67,12 @@ from app.task.MaaFW.tools.embedded.project_path import (
 )
 from app.utils import get_logger
 
-EMBEDDED_PROJECTS_DIR = Path("data") / "maafw_projects"
+EMBEDDED_PROJECTS_DIR = Path(*EMBEDDED_COPIES_DIR_PARTS)
 logger = get_logger("MFW 内嵌")
+
+# 副本目录名 = 脚本 uuid 去掉连字符的前 12 位（48 位，一个用户几百个脚本撞上的概率可以忽略），
+# 仍能从脚本 ID 直接推出、不用查表。不用完整 uuid 只为路径长度，见 EMBEDDED_COPIES_DIR_PARTS。
+COPY_DIR_NAME_LENGTH = 12
 
 STAGING_DIR_NAME = ".staging"
 # 副本里 Python 字节码缓存的落点（``PYTHONPYCACHEPREFIX``，见 host_environment）：agent 与
@@ -83,18 +88,30 @@ def embedded_projects_root(base: Path | None = None) -> Path:
     return (base if base is not None else Path.cwd()) / EMBEDDED_PROJECTS_DIR
 
 
-def embedded_project_dir(script_id: str, base: Path | None = None) -> Path:
-    """副本目录。用完整 uuid：与 data/<uuid>/ 同一套身份，找起来不用查表。"""
+def embedded_copy_dir_name(script_id: str) -> str:
+    """副本目录名：脚本 uuid 去掉连字符的前 12 位；不是 uuid 形状就拒绝，别让别的东西拼进路径。"""
 
     normalized = str(script_id or "").strip()
     if not normalized:
         raise EmbeddedProjectError("内嵌副本需要 scriptId")
-    # 只允许 uuid 形状，防止拼进路径里的东西不是脚本 ID。
     try:
-        normalized = str(uuid.UUID(normalized))
+        return uuid.UUID(normalized).hex[:COPY_DIR_NAME_LENGTH]
     except ValueError as exc:
         raise EmbeddedProjectError(f"scriptId 不是合法的 uuid：{script_id}") from exc
-    return embedded_projects_root(base) / normalized
+
+
+def is_embedded_copy_dir_name(name: str) -> bool:
+    """根目录下一个条目是不是副本目录的名字形状（启动期清理只认这种形状）。"""
+
+    return len(name) == COPY_DIR_NAME_LENGTH and all(
+        ch in "0123456789abcdef" for ch in name
+    )
+
+
+def embedded_project_dir(script_id: str, base: Path | None = None) -> Path:
+    """副本目录：``data/mfw/<脚本 uuid 前 12 位>``，由脚本 ID 推出、不进配置。"""
+
+    return embedded_projects_root(base) / embedded_copy_dir_name(script_id)
 
 
 def resolve_maafw_project_root(

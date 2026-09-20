@@ -2810,7 +2810,7 @@ class MaaFWConfig(ConfigBase):
 
         ## Embedded -------------------------------------------------------
         ## 由 AUTO-MAS 内嵌一份按 interface 白名单投影的副本来运行。副本在
-        ## data/maafw_projects/<脚本 uuid>/，由脚本 ID 推出、不进配置、用户不可手改；
+        ## data/mfw/<脚本 uuid 前 12 位>/，由脚本 ID 推出、不进配置、用户不可手改；
         ## Info.Path 继续存用户选的来源目录。更新落地时同样只写白名单内的条目。
         ## 导入时来源的 interface 版本，仅展示
         self.Embedded_SourceVersion = ConfigItem("Embedded", "SourceVersion", "")

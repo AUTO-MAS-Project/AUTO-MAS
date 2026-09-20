@@ -16,6 +16,7 @@ from packaging.version import InvalidVersion, Version
 
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
 from ..automas_maafw_runtime_pool.host_environment import (
+    EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
     strip_host_python_environment,
 )
@@ -252,11 +253,11 @@ def project_python_maafw_version(python_exe: str | Path) -> str | None:
 
 
 def _is_embedded_copy(project_path: Path) -> bool:
-    """项目目录是不是 AUTO-MAS 自己的内嵌副本（``data/maafw_projects/<uuid>``）。"""
+    """项目目录是不是 AUTO-MAS 自己的内嵌副本（``data/mfw/<脚本 id>``）。"""
 
     try:
         project_path.resolve().relative_to(
-            (Path.cwd() / "data" / "maafw_projects").resolve()
+            Path.cwd().joinpath(*EMBEDDED_COPIES_DIR_PARTS).resolve()
         )
     except (ValueError, OSError):
         return False

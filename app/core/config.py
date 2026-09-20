@@ -992,7 +992,9 @@ class AppConfig(GlobalConfig):
             await asyncio.to_thread(force_rmtree, script_data_dir)
         # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
         # 快照），所以这里单独删。
-        embedded_copy = Path.cwd() / "data" / "maafw_projects" / str(uid)
+        from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
+
+        embedded_copy = embedded_project_dir(str(uid))
         if embedded_copy.exists():
             await asyncio.to_thread(force_rmtree, embedded_copy)
 
@@ -4969,14 +4971,15 @@ class AppConfig(GlobalConfig):
 
         导入在 ``.staging/`` 里投影完再换入，进程中途退出会留下半成品；删脚本时
         副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
-        内容，启动期没有任务在跑，直接清。目录名必须是 uuid 形状才会被当作副本。
+        内容，启动期没有任务在跑，直接清。目录名必须是副本目录名的形状才会被当作副本。
         """
 
         from app.models.config import MaaFWConfig
         from app.task.MaaFW.tools.embedded.embedded_project import (
             STAGING_DIR_NAME,
-            embedded_project_dir,
+            embedded_copy_dir_name,
             embedded_projects_root,
+            is_embedded_copy_dir_name,
             remove_tree,
         )
         from app.task.MaaFW.tools.embedded.project_path import (
@@ -4997,8 +5000,9 @@ class AppConfig(GlobalConfig):
                         continue
                 except OSError:
                     continue
+                # 半成品叫 <副本目录名>-<8 位随机> 或 <副本目录名>-old-<8 位随机>
                 reservation = await try_reserve_project_path(
-                    embedded_project_dir(leftover.name[:36])
+                    root / leftover.name.split("-", 1)[0]
                 )
                 if reservation is None:
                     continue
@@ -5022,18 +5026,14 @@ class AppConfig(GlobalConfig):
             )
             return
         live = {
-            str(uid)
+            embedded_copy_dir_name(str(uid))
             for uid, config in self.ScriptConfig.items()
             if isinstance(config, MaaFWConfig)
         }
         for child in root.iterdir():
             if child.name == STAGING_DIR_NAME or not child.is_dir():
                 continue
-            try:
-                uuid.UUID(child.name)
-            except ValueError:
-                continue
-            if child.name in live:
+            if not is_embedded_copy_dir_name(child.name) or child.name in live:
                 continue
             try:
                 remove_tree(child)

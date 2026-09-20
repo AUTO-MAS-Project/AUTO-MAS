@@ -62,6 +62,12 @@ ISOLATED_HOST_KEYS: frozenset[str] = frozenset(
 #: 副本从此和导入时对不上；``PYTHONDONTWRITEBYTECODE`` 不是替代——那会让每次启动多 1–2 s 编译。
 PROJECT_PYCACHE_DIR_NAME = ".pycache"
 
+#: 内嵌副本根目录（相对 AUTO-MAS 工作目录），副本目录名是脚本 uuid 去掉连字符的前 12 位
+#: （``embedded_project.embedded_copy_dir_name``）。名字这么短是为了路径长度：pyc 前缀树里
+#: 项目根出现两遍，M9A 自带 site-packages 最深 75 字符，``data/maafw_projects/<完整 uuid>``
+#: 在每用户安装目录（%LOCALAPPDATA%\Programs\AUTO-MAS）下就撞 MAX_PATH。
+EMBEDDED_COPIES_DIR_PARTS = ("data", "mfw")
+
 
 #: 前缀树里一个 pyc 的路径 = 前缀 + 去掉盘符的源码绝对路径，项目根会出现两遍；给源码相对
 #: 路径（site-packages 里实测最深 72 字符）留的余量。超过 Windows 的 MAX_PATH 时解释器写 pyc
