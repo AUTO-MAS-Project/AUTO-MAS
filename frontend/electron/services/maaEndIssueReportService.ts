@@ -6,7 +6,7 @@ import { getLogger } from './logger'
 import {
   CollectorState,
   addDirectory,
-  addLatestMasHistoryLog,
+  addRecentFailedMaaEndHistoryLogs,
   addSanitizedJsonFile,
   discoverInstallations,
   resolveDataRoots,
@@ -30,7 +30,7 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
     pathField: 'Path',
     labelPrefix: 'maaend',
   })
-  addLatestMasHistoryLog(state, dataRoots)
+  addRecentFailedMaaEndHistoryLogs(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
     addDirectory(
