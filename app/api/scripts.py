@@ -2369,6 +2369,110 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
 
 
 @router.get(
+    "/bettergi/script-repo/catalog",
+    tags=["BetterGI"],
+    summary="浏览 BetterGI 本地脚本仓库目录",
+    response_model=BetterGIScriptRepoCatalogOut,
+    status_code=200,
+)
+async def get_bettergi_script_repo_catalog_api(scriptId: str) -> BetterGIScriptRepoCatalogOut:
+    """解析 BetterGI 本地仓库索引（repo.json），返回分类与节点树，供「浏览脚本仓库」面板展示。
+
+    索引由 BetterGI 的 ``ScriptRepoUpdater`` 在用户打开脚本仓库时下载维护；若用户从未
+    在 BGI 内打开过脚本仓库，索引可能缺失，此时 ``repoExists=False``。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import script_repo
+
+        catalog = script_repo.list_repo_catalog(root)
+        return BetterGIScriptRepoCatalogOut(
+            code=200,
+            status="success",
+            message="目录解析成功" if catalog["repo_exists"] else "本地仓库索引尚未下载",
+            repoExists=catalog["repo_exists"],
+            updateTime=catalog["update_time"],
+            categories=catalog["categories"],
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_script_repo_catalog_api失败: {type(e).__name__}: {e}"
+        )
+        return BetterGIScriptRepoCatalogOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            repoExists=False,
+            updateTime=None,
+            categories={},
+        )
+
+
+@router.post(
+    "/bettergi/script-repo/subscribe",
+    tags=["BetterGI"],
+    summary="订阅 BetterGI 脚本仓库中的脚本（默认仅记录，可选立即落地）",
+    response_model=BetterGIScriptRepoSubscribeOut,
+    status_code=200,
+)
+async def subscribe_bettergi_script_repo_api(
+    body: BetterGIScriptRepoSubscribeIn,
+) -> BetterGIScriptRepoSubscribeOut:
+    """订阅指定脚本：写入 BGI 原生订阅清单，并视 ``immediate`` 决定是否立即落地。
+
+    - ``immediate=False``（默认、轻量）：仅写入 BGI 原生订阅清单，脚本本体由 BetterGI
+      下次启动时按其原生订阅链路自动拉取，无需等待仓库压缩包下载。
+    - ``immediate=True``（进阶、立即可用）：额外下载仓库压缩包（MAS 侧按索引时间缓存，
+      之后复用）并解压拷贝到 BGI 原生目录，脚本立刻可用。首次可能耗时较长。
+    """
+
+    try:
+        script_config = _bettergi_script_config(body.scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import script_repo
+
+        result = await script_repo.subscribe_script(
+            root, body.scriptId, body.path, immediate=body.immediate
+        )
+        if result["immediate"]:
+            message = (
+                "订阅并落地成功" if result["copied"] else "已订阅（原生目录已存在，跳过拷贝）"
+            )
+        else:
+            message = "已记录订阅，BetterGI 启动后将自动拉取"
+        return BetterGIScriptRepoSubscribeOut(
+            code=200,
+            status="success",
+            message=message,
+            subscribed=result["subscribed"],
+            nativePath=result["native_path"],
+            alreadyExisted=result["already_existed"],
+            copied=result["copied"],
+            immediate=result["immediate"],
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"subscribe_bettergi_script_repo_api失败: {type(e).__name__}: {e}"
+        )
+        return BetterGIScriptRepoSubscribeOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError, FileNotFoundError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            subscribed=None,
+            nativePath=None,
+            alreadyExisted=None,
+            copied=False,
+            immediate=body.immediate,
+        )
+
+
+@router.get(
     "/bettergi/auto-pathing-tree",
     tags=["BetterGI"],
     summary="获取 BetterGI 地图追踪目录树",

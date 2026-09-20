@@ -295,6 +295,8 @@ export interface ElectronAPI {
   }
   /** file 指定打开时选中哪一份日志，省略则沿用日志页自己的默认（后端日志）。 */
   openLogWindow: (file?: 'app' | 'frontend') => Promise<{ success: boolean; error?: string }>
+  /** 打开 BetterGI 脚本仓库独立窗口（可最小化/最大化/关闭）。scriptId 为 BetterGI 脚本 ID。 */
+  openBettergiScriptRepoWindow: (scriptId: string) => Promise<{ success: boolean; error?: string }>
   /** 日志窗已经开着时，主进程用它通知日志页换到请求的那一份。 */
   onLogSelectFile?: (callback: (file: 'app' | 'frontend') => void) => void
   removeLogSelectFileListener?: () => void
