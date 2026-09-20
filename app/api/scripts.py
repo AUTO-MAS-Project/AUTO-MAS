@@ -1454,8 +1454,9 @@ def _embedded_summary_lines(script_id: str) -> list[str]:
         origin.append(f"来源 {status['sourcePath']}")
         if not status.get("sourceExists"):
             origin.append("来源目录已不存在，副本照常运行与更新")
+    # 记的是导入那一刻来源目录的版本；副本之后自己更新过的话，界面表头显示的才是现在的版本
     if status.get("sourceVersion"):
-        origin.append(f"版本 {status['sourceVersion']}")
+        origin.append(f"导入时版本 {status['sourceVersion']}")
     imported_at = str(status.get("importedAt") or "")
     if imported_at:
         origin.append(f"导入于 {imported_at[:19].replace('T', ' ')}")

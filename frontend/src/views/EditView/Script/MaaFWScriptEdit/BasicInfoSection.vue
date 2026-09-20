@@ -394,6 +394,14 @@ watch(
   font-weight: 600;
 }
 
+/* 自定义底色盖掉了 antd 的禁用态：导入后目录锁死时按钮要看得出点不了 */
+.path-button:disabled,
+.path-button.ant-btn-disabled {
+  color: var(--ant-color-text-disabled);
+  background: var(--ant-color-bg-container-disabled);
+  cursor: not-allowed;
+}
+
 /* 左边 interface 概览表（四列：两组「项 / 值」），右边运行环境面板；两边等高，面板里的日志框撑满 */
 .interface-body {
   display: grid;
