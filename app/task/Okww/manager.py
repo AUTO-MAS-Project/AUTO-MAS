@@ -44,6 +44,9 @@ from .AutoProxy import (
     _OKWW_REL_EXE,
     AutoProxyTask,
     _okww_config_mode,
+    clear_okww_launcher_snapshot,
+    commit_okww_launcher_profile,
+    restore_okww_launcher_profile,
 )
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
@@ -215,6 +218,15 @@ class OkwwManager(TaskExecuteBase):
             with suppress(Exception):
                 archive_native_backup(self.script_config_path)
 
+        # 启动器 app.json 与 working/configs 同级，不在整目录快照范围内，
+        # 单独按键记原值：任务级一次性 commit（在任何覆盖之前），任务收尾还原
+        if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
+            with suppress(Exception):
+                commit_okww_launcher_profile(
+                    Path(self.script_config.get("Info", "RootPath")),
+                    self.script_info.script_id,
+                )
+
     async def _restore_script_config_from_temp(self) -> None:
         if not (
             self.task_info.mode in ("AutoProxy", "ScriptConfig")
@@ -245,6 +257,21 @@ class OkwwManager(TaskExecuteBase):
         elif result == "skipped":
             logger.warning(
                 "检测到 OK-WW 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
+
+    async def _restore_launcher_profile(self) -> None:
+        """还原启动器 profile 到任务前原值（overlay 键级还原）。
+
+        与整目录快照独立：app.json 不在 working/configs 内。失败只记日志，
+        不阻断收尾——它保护的是启动器设置，不是任务成败。
+        """
+
+        if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
+            return
+        with suppress(Exception):
+            restore_okww_launcher_profile(
+                Path(self.script_config.get("Info", "RootPath")),
+                self.script_info.script_id,
             )
 
     def _cleanup_script_config_temp(self) -> None:
@@ -327,8 +354,9 @@ class OkwwManager(TaskExecuteBase):
             try:
                 await self.spawn(method)
             finally:
-                # 每个用户任务结束后立即恢复快照，快速配置不得残留到脚本原配置。
+                # 每个用户任务结束后立即恢复快照，overlay 不得残留到脚本原配置。
                 await self._restore_script_config_from_temp()
+                await self._restore_launcher_profile()
 
     async def final_task(self):
         script_uid = uuid.UUID(self.script_info.script_id)
@@ -339,7 +367,10 @@ class OkwwManager(TaskExecuteBase):
                 await self._restore_script_config_from_temp()
             else:
                 logger.info("直控配置会话成功，保留脚本原生配置")
+            # 启动器 profile 是 overlay 覆盖，无论会话是否保留原生配置都要还原
+            await self._restore_launcher_profile()
             self._cleanup_script_config_temp()
+            clear_okww_launcher_snapshot(self.script_info.script_id)
 
             # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
             if script_cfg.is_locked:
@@ -443,7 +474,10 @@ class OkwwManager(TaskExecuteBase):
 
         with suppress(Exception):
             await self._restore_script_config_from_temp()
+        with suppress(Exception):
+            await self._restore_launcher_profile()
         self._cleanup_script_config_temp()
+        clear_okww_launcher_snapshot(self.script_info.script_id)
 
         try:
             script_cfg = Config.ScriptConfig[script_uid]
