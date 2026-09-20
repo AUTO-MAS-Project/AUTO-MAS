@@ -50,6 +50,13 @@ interface HistoryLogCandidate {
   mtimeMs: number
 }
 
+interface HistoryRecordCandidate {
+  logPath: string
+  jsonPath: string
+  relativeBasePath: string
+  mtimeMs: number
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -424,4 +431,102 @@ export function addLatestMasHistoryLog(
     return undefined
   }
   return state.entries[state.entries.length - 1]?.path
+}
+
+export function addRecentFailedMaaEndHistoryLogs(
+  state: CollectorState,
+  dataRoots: string[],
+  limit = 3
+): string[] {
+  const candidates: HistoryRecordCandidate[] = []
+  const seenPaths = new Set<string>()
+
+  const visitDirectory = (historyRoot: string, currentDir: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    } catch (error) {
+      logger.debug(`读取 MaaEnd 历史日志目录失败: ${currentDir}, ${String(error)}`)
+      return
+    }
+
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) {
+        continue
+      }
+
+      const sourcePath = path.join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        visitDirectory(historyRoot, sourcePath)
+        continue
+      }
+
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.json') {
+        continue
+      }
+
+      const data = readJson(sourcePath)
+      if (!isRecord(data) || typeof data.maaend_result !== 'string') {
+        continue
+      }
+
+      const result = data.maaend_result.replace(/^\[[^\]]+\]\s*/, '')
+      if (result === 'Success!') {
+        continue
+      }
+
+      const normalizedPath = path.resolve(sourcePath)
+      const pathKey = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
+      if (seenPaths.has(pathKey)) {
+        continue
+      }
+
+      try {
+        const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
+        candidates.push({
+          logPath: sourcePath.slice(0, -path.extname(sourcePath).length) + '.log',
+          jsonPath: sourcePath,
+          relativeBasePath: relativePath.slice(0, -path.extname(relativePath).length),
+          mtimeMs: fs.statSync(sourcePath).mtimeMs,
+        })
+        seenPaths.add(pathKey)
+      } catch (error) {
+        logger.debug(`读取 MaaEnd 历史日志信息失败: ${sourcePath}, ${String(error)}`)
+      }
+    }
+  }
+
+  for (const dataRoot of dataRoots) {
+    const historyRoot = path.join(dataRoot, 'history')
+    if (fs.existsSync(historyRoot)) {
+      visitDirectory(historyRoot, historyRoot)
+    }
+  }
+
+  const addedPaths: string[] = []
+  const selected = candidates
+    .sort(
+      (left, right) =>
+        right.mtimeMs - left.mtimeMs || right.relativeBasePath.localeCompare(left.relativeBasePath)
+    )
+    .slice(0, Math.max(limit, 0))
+
+  for (const candidate of selected) {
+    for (const [sourcePath, extension] of [
+      [candidate.logPath, '.log'],
+      [candidate.jsonPath, '.json'],
+    ] as const) {
+      const archivePath = path.posix.join(
+        'logs/mas-history',
+        `${candidate.relativeBasePath}${extension}`
+      )
+      const entryCount = state.entries.length
+      addDiagnosticFile(state, sourcePath, archivePath)
+      if (state.entries.length > entryCount) {
+        addedPaths.push(state.entries[state.entries.length - 1].path)
+      }
+    }
+  }
+
+  return addedPaths
 }
