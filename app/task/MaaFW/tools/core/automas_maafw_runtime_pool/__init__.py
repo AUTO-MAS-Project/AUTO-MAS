@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .cache import clean_uv_cache, prune_uv_cache
+from .cache import clean_uv_cache
 from .identity import (
     MaaFWRuntimeIdentityError,
     build_runtime_id,
@@ -34,6 +34,5 @@ __all__ = [
     "clean_uv_cache",
     "find_maafw_requirement",
     "install_python_runtime",
-    "prune_uv_cache",
     "runtime_managed_uv_executable",
 ]

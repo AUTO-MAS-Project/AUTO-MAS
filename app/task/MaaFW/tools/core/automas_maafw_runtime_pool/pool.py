@@ -566,6 +566,7 @@ class MaaFWRuntimePool:
                     ready.add(key)
 
             deleted: list[str] = []
+            quarantined: list[dict[str, str]] = []
             kept: list[dict[str, Any]] = []
             skipped: list[dict[str, str]] = []
             errors: list[dict[str, str]] = []
@@ -601,14 +602,21 @@ class MaaFWRuntimePool:
                 if dry_run:
                     deleted.append(runtime_id)
                     continue
-                outcome = self._reclaim_runtime_dir(runtime_id)
-                if outcome is None:
+                outcome, detail = self._reclaim_runtime_dir(runtime_id)
+                if outcome == "deleted":
                     deleted.append(runtime_id)
+                elif outcome == "quarantined":
+                    # 已经不在 runtimes/ 里、不再是可用的 runtime，但盘上还有残留
+                    deleted.append(runtime_id)
+                    quarantined.append({"runtimeId": runtime_id, "path": detail})
                 else:
-                    skipped.append({"runtimeId": runtime_id, "error": outcome})
+                    skipped.append({"runtimeId": runtime_id, "error": detail})
                     remaining_legacy.append(runtime_id)
 
-            staging_swept = [] if dry_run else self._sweep_staging()
+            staging_swept: list[str] = []
+            staging_residue: list[str] = []
+            if not dry_run:
+                staging_swept, staging_residue = self._sweep_staging()
             return {
                 "dryRun": bool(dry_run),
                 "graceSeconds": float(grace_seconds),
@@ -617,11 +625,13 @@ class MaaFWRuntimePool:
                 "readyRequirements": sorted(ready),
                 "replacedVersions": sorted(replaced),
                 "deleted": deleted,
+                "quarantined": quarantined,
                 "kept": kept,
                 "skipped": skipped,
                 "errors": errors,
                 "remainingLegacy": sorted(remaining_legacy),
                 "stagingSwept": staging_swept,
+                "stagingResidue": staging_residue,
             }
 
     def clean_cache(self) -> dict[str, Any]:
@@ -650,40 +660,49 @@ class MaaFWRuntimePool:
         except MaaFWRuntimePoolError:
             return None
 
-    def _reclaim_runtime_dir(self, runtime_id: str) -> str | None:
-        """rename-first 删除一个 runtime；返回 None 表示已换出，否则是跳过原因。"""
+    def _reclaim_runtime_dir(self, runtime_id: str) -> tuple[str, str]:
+        """rename-first 删除一个 runtime。
+
+        返回 ``("deleted", "")``、``("quarantined", <残留路径>)``（已换出 runtimes/
+        但 rmtree 没删干净——某个 .pyd/.dll 还被映射着或被杀软占着）或
+        ``("skipped", <原因>)``（连 rename 都失败，条目原样留在池里）。
+        """
 
         try:
             _, quarantine_dir = self._quarantine_stale_runtime(runtime_id)
         except (OSError, MaaFWRuntimePoolError) as exc:
             # 目录里有被 worker 映射着的 DLL 时 os.replace 会失败：原样留下，下次再试
-            return str(exc)
+            return "skipped", str(exc)
         if quarantine_dir is None:
-            return None
+            return "deleted", ""
         # 已经换到隔离目录，剩下的 rmtree 尽力而为；残留由 _sweep_staging 下次再收
-        shutil.rmtree(quarantine_dir, ignore_errors=True)
-        return None
+        if _remove_tree_best_effort(quarantine_dir):
+            return "deleted", ""
+        return "quarantined", str(quarantine_dir)
 
-    def _sweep_staging(self) -> list[str]:
-        """清掉 ``.staging`` 里遗留的半成品 / 隔离目录，返回本轮清空的目录名。
+    def _sweep_staging(self) -> tuple[list[str], list[str]]:
+        """清掉 ``.staging`` 里遗留的半成品 / 隔离目录。
 
-        只在持有池锁时调用：``ensure`` 的安装全程也持有同一把锁，所以这里看到的
-        每个 ``maafw-runtime-*`` 子目录都不再有人用（安装失败没删干净的、隔离后
-        rmtree 半途而废的）。仍删不掉的（DLL 还被映射着）留到下次。
+        返回 ``(本轮清空的目录名, 仍有残留的目录名)``。只在持有池锁时调用：
+        ``ensure`` 的安装全程也持有同一把锁，所以这里看到的每个 ``maafw-runtime-*``
+        子目录都不再有人用（安装失败没删干净的、隔离后 rmtree 半途而废的）。
+        仍删不掉的（DLL 还被映射着）留到下次。
         """
 
         swept: list[str] = []
+        residue: list[str] = []
         if not self.staging_root.is_dir():
-            return swept
+            return swept, residue
         for path in sorted(self.staging_root.iterdir()):
             if path.is_symlink() or not path.is_dir():
                 continue
             if not path.name.startswith(RUNTIME_ID_PREFIX):
                 continue
-            shutil.rmtree(path, ignore_errors=True)
-            if not path.exists():
+            if _remove_tree_best_effort(path):
                 swept.append(path.name)
-        return swept
+            else:
+                residue.append(path.name)
+        return swept, residue
 
     def _initialize(self) -> None:
         # Validate every managed child before reading or upgrading the marker so
@@ -1414,6 +1433,27 @@ def _validate_runtime_leases(value: Any) -> None:
             raise MaaFWRuntimePoolError(
                 "runtime manifest lease expiry is invalid"
             ) from exc
+
+
+def _clear_readonly_and_retry(func: Any, path: str, _exc_info: Any) -> None:
+    """``shutil.rmtree`` 的 onexc：只读位（git 对象、发行包里的资源）清掉再试一次。"""
+
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        # 真被映射 / 占用的文件这里也删不掉，交给调用方按残留处理
+        pass
+
+
+def _remove_tree_best_effort(path: Path) -> bool:
+    """尽力删整棵目录，返回是否删干净了。不抛：残留由调用方如实报告。"""
+
+    try:
+        shutil.rmtree(path, onexc=_clear_readonly_and_retry)
+    except OSError:
+        pass
+    return not path.exists() and not path.is_symlink()
 
 
 def _maafw_requirement_key(value: Any) -> str:

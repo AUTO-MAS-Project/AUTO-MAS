@@ -194,16 +194,28 @@ def _reconcile(
         return None
 
     deleted = list(report.get("deleted") or [])
+    quarantined = list(report.get("quarantined") or [])
     kept = list(report.get("kept") or [])
     skipped = list(report.get("skipped") or [])
     errors = list(report.get("errors") or [])
     remaining = list(report.get("remainingLegacy") or [])
     swept = list(report.get("stagingSwept") or [])
+    staging_residue = list(report.get("stagingResidue") or [])
     if deleted:
         verb = "将清理" if dry_run else "已清理"
         logger.info(
             f"MFW 运行池回收（{reason}）：{verb}无人引用的 runtime {len(deleted)} 个: "
             + ", ".join(deleted)
+        )
+    for item in quarantined:
+        logger.warning(
+            f"MFW 运行池回收：runtime {item.get('runtimeId')} 已移出池但有文件删不掉"
+            f"（多半还被进程映射着），残留在 {item.get('path')}，下次启动再清"
+        )
+    if staging_residue:
+        logger.warning(
+            "MFW 运行池回收：staging 里仍有删不掉的残留，下次再清: "
+            + ", ".join(staging_residue)
         )
     if kept:
         logger.debug(
@@ -273,6 +285,7 @@ def previous_maafw_version(project_path: str | Path) -> str | None:
 
 
 def reconcile_after_project_update(
+    project_paths: Iterable[str | Path],
     project_path: str | Path,
     previous_version: str | None,
     *,
@@ -282,7 +295,8 @@ def reconcile_after_project_update(
 
     提交前的运行环境预检已经把新版本的 runtime 建好了（见
     ``tools/embedded/precheck.py``），所以此时删旧的不会让项目暂时跑不了。
-    阻塞调用，放线程里跑。
+    阻塞调用，放线程里跑；``project_paths`` 是权威集合，由调用方在事件循环
+    线程上先算好传进来。
     """
 
     replaced: list[str] = []
@@ -291,7 +305,7 @@ def reconcile_after_project_update(
         if current_version != previous_version:
             replaced.append(previous_version)
     return reconcile_runtime_pool(
-        collect_live_project_paths(),
+        project_paths,
         replaced_versions=replaced,
         reason=reason,
     )
@@ -308,21 +322,29 @@ def reconcile_in_background(
     删脚本、项目更新提交这类路径都不该被回收拖慢（解释器探针 + 可能的
     ``uv cache clean`` 要几秒）。给了 ``updated_project_path`` 就走
     ``reconcile_after_project_update``，把被替换掉的旧版本一并豁免宽限。
+
+    权威集合在**调用方线程**（事件循环）上先算好：``Config.ScriptConfig`` 只在
+    事件循环上改，守护线程里去遍历它会撞上「dict changed size」。
     """
+
+    if not script_config_loaded_intact():
+        logger.warning(
+            "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
+        )
+        return
+    project_paths = collect_live_project_paths()
 
     def _run() -> None:
         try:
-            if not script_config_loaded_intact():
-                logger.warning(
-                    "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
-                )
-                return
             if updated_project_path is not None:
                 reconcile_after_project_update(
-                    updated_project_path, previous_version, reason=reason
+                    project_paths,
+                    updated_project_path,
+                    previous_version,
+                    reason=reason,
                 )
             else:
-                reconcile_runtime_pool(collect_live_project_paths(), reason=reason)
+                reconcile_runtime_pool(project_paths, reason=reason)
         except Exception:  # noqa: BLE001 - 后台维护，失败只记日志
             logger.opt(exception=True).warning(f"MFW 运行池后台回收失败（{reason}）")
 
