@@ -24,7 +24,7 @@
         size="large"
         :loading="generalConfigLoading"
         :disabled="configLocked"
-        @click="handleGeneralConfig"
+        @click="handleGeneralConfig()"
       >
         <template #icon>
           <SettingOutlined />
