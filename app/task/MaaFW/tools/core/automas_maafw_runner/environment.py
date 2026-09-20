@@ -564,26 +564,24 @@ def build_runner_packages(
     *,
     maafw_requirement: str | None = None,
 ) -> list[str]:
-    project_packages = _load_requirements(Path(project_path).resolve())
-    if maafw_requirement is not None:
-        project_packages = [
-            requirement
-            for requirement in project_packages
-            if requirement_distribution_name(requirement) != "maafw"
-        ]
-        project_packages.append(maafw_requirement)
-    project_distribution_names = {
-        name
-        for requirement in project_packages
-        if (name := requirement_distribution_name(requirement)) is not None
-    }
-    packages = [
-        package
+    """runner venv 的包集合：只有 runner 自身依赖，maafw 按项目钉定版本。
+
+    项目 ``requirements.txt`` **不再**折进来——worker 从不执行项目代码（interface
+    声明的 embedded agent 一律改成隔离子进程，见 ``runner._load_embedded_agents``），
+    项目依赖只会让同一个 maafw 版本因 requirements.txt 不同裂成多份 runtime
+    （实测 5.13.0 裂成 19 条依赖 / 6 条依赖两份）。项目自带 maafw 的版本仍由
+    ``maafw_requirement`` 钉定，来源见 ``resolve_project_maafw_requirement``；
+    ``project_path`` 保留在签名里给调用方对齐，这里不再读它。
+    """
+
+    if maafw_requirement is None:
+        return list(RUNNER_DEFAULT_PACKAGES)
+    return [
+        maafw_requirement
+        if requirement_distribution_name(package) == "maafw"
+        else package
         for package in RUNNER_DEFAULT_PACKAGES
-        if requirement_distribution_name(package) not in project_distribution_names
     ]
-    packages.extend(project_packages)
-    return packages
 
 
 def _load_project_runtime_route(project_path: Path) -> dict[str, Any]:
