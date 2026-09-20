@@ -106,7 +106,6 @@ export {
   RuntimeBinarySyncProgress,
   RuntimeBinarySyncResult,
   RuntimeBinarySyncStatus,
-  RuntimePinSource,
   RuntimeTextSource,
   TrustedRuntimeHashLookup,
   alignRuntimeBinaryWithVersion,

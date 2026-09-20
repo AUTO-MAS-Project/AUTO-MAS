@@ -38,6 +38,10 @@ const renameHook = vi.hoisted(() => ({
   before: null as ((from: string, to: string) => void) | null,
   calls: [] as [string, string][],
 }))
+/** 同理给 `fs.rmSync` 一个前置钩子，模拟「被占用的文件删不掉」。 */
+const rmHook = vi.hoisted(() => ({
+  before: null as ((target: string) => void) | null,
+}))
 vi.mock('fs', async importOriginal => {
   const actual = await importOriginal<typeof import('fs')>()
   return {
@@ -46,6 +50,10 @@ vi.mock('fs', async importOriginal => {
       renameHook.calls.push([String(from), String(to)])
       renameHook.before?.(String(from), String(to))
       return actual.renameSync(from, to)
+    },
+    rmSync: (target: fs.PathLike, options?: fs.RmOptions) => {
+      rmHook.before?.(String(target))
+      return actual.rmSync(target, options)
     },
   }
 })
@@ -173,6 +181,7 @@ afterEach(() => {
   delete process.env[RUNTIME_EXE_ENV]
   renameHook.before = null
   renameHook.calls.length = 0
+  rmHook.before = null
   fs.rmSync(workspace, { recursive: true, force: true })
 })
 
@@ -873,6 +882,32 @@ describe('syncRuntimeBinary', () => {
       expect(installDir()).toEqual(['auto-mas-runtime.exe'])
     })
 
+    it('新文件跑不起来又被占用换不回去：备份留在 .old，提示下次启动会换回', async () => {
+      newBinaryVersion = null
+      const newInPlace = () => {
+        try {
+          return fs.readFileSync(runtimePath, 'utf8') === NEW_BINARY
+        } catch {
+          return false
+        }
+      }
+      rmHook.before = target => {
+        if (target === runtimePath && newInPlace()) throw busyError()
+      }
+      renameHook.before = (from, to) => {
+        if (isRestore(from, to) && newInPlace()) throw busyError()
+      }
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+      const outcome = await syncRuntimeBinary(syncOptions({ download }))
+
+      expect(outcome.status).toBe('failed')
+      expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
+      expect(outcome.error).toContain(`仍保留在 ${runtimePath}.old`)
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+      expect(fs.readFileSync(`${runtimePath}.old`, 'utf8')).toBe(OLD_BINARY)
+    })
+
     it('原来就没有 exe、新文件又跑不起来时报失败但保留新文件', async () => {
       installedVersion = null
       newBinaryVersion = null
@@ -911,28 +946,75 @@ describe('syncRuntimeBinary', () => {
       expect(renameHook.calls.filter(([from, to]) => isRestore(from, to))).toHaveLength(2)
     })
 
-    it('exe 跑不起来时不清备份；exe 能跑时才清', async () => {
+    it('exe 能跑时才清陈旧备份', async () => {
       fs.writeFileSync(`${runtimePath}.old`, '上次留下的备份', 'utf8')
       installedVersion = PINNED_VERSION
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
-      await syncRuntimeBinary(syncOptions({ download }))
-      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+      const outcome = await syncRuntimeBinary(syncOptions({ download }))
 
-      // 再造一次：exe 存在但问不出版本，备份要留着，直到换上能跑的新文件。
-      fs.writeFileSync(`${runtimePath}.old`, '上次留下的备份', 'utf8')
-      installedVersion = null
-      let backupSeenDuringDownload = false
-      const probing = createDownload(() => {
-        backupSeenDuringDownload = fs.existsSync(`${runtimePath}.old`)
-        return { success: true, content: NEW_BINARY }
+      expect(outcome.status).toBe('current')
+      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+    })
+
+    it('exe 跑不起来而备份还在：先把备份换回来，再照常更新', async () => {
+      // 上次换上的新文件跑不起来、换回去又没成功留下的现场：坏的在正式路径，好的在 .old。
+      fs.writeFileSync(runtimePath, 'broken-runtime-binary', 'utf8')
+      fs.writeFileSync(`${runtimePath}.old`, OLD_BINARY, 'utf8')
+      const versionOf = vi.fn(async (target: string) => {
+        const content = fs.readFileSync(target, 'utf8')
+        if (content === OLD_BINARY) return INSTALLED_VERSION
+        if (content === NEW_BINARY) return PINNED_VERSION
+        return null
       })
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
-      const outcome = await syncRuntimeBinary(syncOptions({ download: probing.download }))
+      const outcome = await syncRuntimeBinary(syncOptions({ download, readVersion: versionOf }))
 
-      expect(backupSeenDuringDownload).toBe(true)
       expect(outcome.status).toBe('upgraded')
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
       expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+      // 顺序：先 .old → exe（恢复），再 exe → .old（让路），最后新文件挪进来。
+      expect(renameHook.calls).toEqual([
+        [`${runtimePath}.old`, runtimePath],
+        [runtimePath, `${runtimePath}.old`],
+        [expect.stringContaining('.download'), runtimePath],
+      ])
+    })
+
+    it('坏 exe 被占用换不回备份时，替换不拿坏文件覆盖备份；新文件又跑不起来就恢复备份', async () => {
+      fs.writeFileSync(runtimePath, 'broken-runtime-binary', 'utf8')
+      fs.writeFileSync(`${runtimePath}.old`, OLD_BINARY, 'utf8')
+      const versionOf = vi.fn(async (target: string) => {
+        const content = fs.readFileSync(target, 'utf8')
+        return content === OLD_BINARY ? INSTALLED_VERSION : null
+      })
+      // 坏文件被占用：删不掉，.old 也改不回正式路径（目标还在）；坏文件挪开之后一切放行。
+      const brokenInPlace = () => {
+        try {
+          return fs.readFileSync(runtimePath, 'utf8') === 'broken-runtime-binary'
+        } catch {
+          return false
+        }
+      }
+      rmHook.before = target => {
+        if (target === runtimePath && brokenInPlace()) throw busyError()
+      }
+      renameHook.before = (from, to) => {
+        if (isRestore(from, to) && brokenInPlace()) throw busyError()
+      }
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+      const outcome = await syncRuntimeBinary(syncOptions({ download, readVersion: versionOf }))
+
+      // 新文件也跑不起来 → 恢复的是最后一份能跑的 OLD_BINARY，而不是那份坏文件。
+      expect(outcome.status).toBe('failed')
+      expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+      // 让路时坏文件没有被改名成 .old，而是按半截下载的名字挪开后清掉。
+      expect(renameHook.calls).not.toContainEqual([runtimePath, `${runtimePath}.old`])
+      expect(renameHook.calls).toContainEqual([runtimePath, expect.stringContaining('.download')])
     })
   })
 })

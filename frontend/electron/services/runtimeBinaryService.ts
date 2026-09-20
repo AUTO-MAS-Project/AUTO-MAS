@@ -146,9 +146,6 @@ export interface RuntimeTextSource {
   url: string
 }
 
-/** @deprecated 旧名，等同 {@link RuntimeTextSource}。 */
-export type RuntimePinSource = RuntimeTextSource
-
 /**
  * 远端钉扎的两个来源：CNB 与 GitHub，同时发起、先拿到的先用。
  *
@@ -174,9 +171,6 @@ export function buildRuntimePinSources(version: string): RuntimeTextSource[] {
 
 /** 单个文本来源的时长上限：文件不到一百字节，超过这个时间就是这条路不通。 */
 export const RUNTIME_TEXT_FETCH_TIMEOUT_MS = 15 * 1000
-
-/** @deprecated 旧名，等同 {@link RUNTIME_TEXT_FETCH_TIMEOUT_MS}。 */
-export const RUNTIME_PIN_FETCH_TIMEOUT_MS = RUNTIME_TEXT_FETCH_TIMEOUT_MS
 
 /** 远端读取的三种结局。 */
 export type RemoteRuntimePinLookup =
@@ -706,7 +700,13 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   // 版本一直对得上时那条路根本不会走到，十几兆就会一直留在安装目录里。
   removeStaleDownloads(runtimePath)
 
-  const installed = await readVersion(runtimePath, appRoot)
+  let installed = await readVersion(runtimePath, appRoot)
+  if (installed === null && fs.existsSync(backupPath)) {
+    // exe 跑不起来而备份还在（上次换上的新文件跑不起来、换回去又没成功）：备份是最后一份
+    // 能跑的，先把它换回来再谈更新。换不回来（坏文件被占用）就让它留着，下面替换时也不会
+    // 拿坏文件去覆盖它。
+    if (restoreBackup(runtimePath, backupPath)) installed = await readVersion(runtimePath, appRoot)
+  }
   // 备份只在正式 exe 存在且跑得起来之后才清：它是替换失败时唯一能救回来的东西。
   if (installed !== null) removeQuietly(backupPath)
 
@@ -751,27 +751,26 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   const verified = await readVersion(runtimePath, appRoot)
   if (verified === null) {
     logger.error(`下载到的 Runtime ${pin.version} 无法运行${backedUp ? '，恢复原文件' : ''}`)
-    if (backedUp) {
-      const restored = restoreBackup(runtimePath, backupPath)
-      return {
-        status: 'failed',
-        pin,
-        error: describeUnrunnableReplacement(pin, runtimePath, restored),
-        code: RUNTIME_BINARY_REPLACE_FAILED,
-      }
-    }
+    const backup: BackupOutcome = !backedUp
+      ? 'none'
+      : restoreBackup(runtimePath, backupPath)
+        ? 'restored'
+        : 'kept'
     return {
       status: 'failed',
       pin,
-      error: describeUnrunnableReplacement(pin, runtimePath, false),
+      error: describeUnrunnableReplacement(pin, runtimePath, backup),
       code: RUNTIME_BINARY_REPLACE_FAILED,
     }
   }
   if (backedUp) removeQuietly(backupPath)
   if (verified !== pin.version) {
-    // Release 里的文件自报的版本与 tag 不一致，是发布侧的问题；文件本身是对的，照常放行，
-    // 只是下次核对还会再换一遍。
-    logger.warn(`Runtime ${pin.version} 的可执行文件自报版本为 ${verified}`)
+    // Release 里的文件自报的版本与 tag 不一致，是发布侧的问题；文件本身按可信清单验过，
+    // 照常放行。后果是「版本相等」永远不成立：每次启动兜底与每次第 0 步都会再下载、再换
+    // 一遍，直到发布侧修正——有意为之，宁可多下也不装来路不明的东西。
+    logger.warn(
+      `Runtime ${pin.version} 的可执行文件自报版本为 ${verified}，与 tag 不一致；在发布侧修正之前每次核对都会重新下载`
+    )
   }
 
   logger.info(`Runtime 已随本体更新到 ${pin.version}`)
@@ -809,15 +808,20 @@ function describeReplaceFailure(runtimePath: string, error: unknown): string {
   return `替换 ${runtimePath} 失败（${detail}），请重试；仍然失败时请带上日志反馈。`
 }
 
+/** 新文件跑不起来之后原文件的下落：已换回 / 仍在 `.old` 里等下次启动恢复 / 本来就没有。 */
+type BackupOutcome = 'restored' | 'kept' | 'none'
+
 /** 新文件挪进来了却跑不起来。 */
 function describeUnrunnableReplacement(
   pin: RuntimeBinaryPin,
   runtimePath: string,
-  restored: boolean
+  backup: BackupOutcome
 ): string {
-  const tail = restored
-    ? '已恢复原来的文件。'
-    : `原来的文件已不在，${path.basename(runtimePath)} 现在是新下载的那份。`
+  const tail = {
+    restored: '已恢复原来的文件。',
+    kept: `原来的文件仍保留在 ${runtimePath}${BACKUP_SUFFIX}，下次启动会自动换回。`,
+    none: `原来的文件已不在，${path.basename(runtimePath)} 现在是新下载的那份。`,
+  }[backup]
   return (
     `下载到的 Runtime ${pin.version} 校验无误但无法运行（${runtimePath}），${tail}` +
     `请检查安全软件是否拦截了它，放行后重试。`
@@ -1049,15 +1053,26 @@ function replaceRuntimeBinary(
   backupPath: string
 ): boolean {
   const hadExisting = fs.existsSync(runtimePath)
-  if (hadExisting) fs.renameSync(runtimePath, backupPath)
+  const hadBackup = fs.existsSync(backupPath)
+  let discarded: string | null = null
+  if (hadExisting && hadBackup) {
+    // 备份还在，说明现在这份 exe 已经被判定跑不起来、且换不回去：它不配当备份，按半截
+    // 下载的命名挪开（挪不走就清不掉，下次当残留再清），别拿它覆盖最后一份能跑的。
+    discarded = nextDownloadPath(runtimePath)
+    fs.renameSync(runtimePath, discarded)
+  } else if (hadExisting) {
+    fs.renameSync(runtimePath, backupPath)
+  }
 
   try {
     fs.renameSync(downloadPath, runtimePath)
   } catch (error) {
-    if (hadExisting) restoreBackup(runtimePath, backupPath)
+    if (hadExisting || hadBackup) restoreBackup(runtimePath, backupPath)
+    if (discarded) removeQuietly(discarded)
     throw error
   }
-  return hadExisting
+  if (discarded) removeQuietly(discarded)
+  return hadExisting || hadBackup
 }
 
 /** 把备份改回正式路径；成功返回 true，失败时保留备份供下次启动恢复。 */
