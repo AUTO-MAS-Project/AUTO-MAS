@@ -1613,18 +1613,16 @@ export default {
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
-    maafwEmbeddedTitle: 'Embedded copy',
-    maafwEmbeddedHint:
-      'AUTO-MAS copies only the resources declared in the interface, the Agent and the runtime bundled with the project into its own directory; runs and updates happen on that copy. The source directory is never touched and can be deleted once the import is done; it is only needed for a re-import.',
-    maafwEmbeddedSourceDirectory: 'Source directory',
-    maafwEmbeddedSourceHint:
-      'The copy is imported from this directory; picking another directory re-imports the copy from it, the original is left alone.',
+    localProjectDirectory: 'Local project directory',
+    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
+    maafwDirectoryLockedHint:
+      'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new script to use another project',
+    maafwImportingCopy: 'Importing project...',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     m9aFlavorScriptTitle: 'Edit M9A script',
     m9aFlavorSourceDirectory: 'M9A program directory',
-    m9aFlavorSourceHint:
-      'Pick the M9A directory that contains interface.json. The copy is imported from this directory; picking another one re-imports a copy from it and leaves the original untouched.',
+    m9aFlavorSourceHint: 'Pick the M9A directory that contains interface.json',
     m9aFlavorSourcePlaceholder: 'Pick the M9A directory that contains interface.json',
     m9aFlavorAccountPlaceholder:
       'When filled, a “Switch account” task is added automatically (CN official server only)',
@@ -1632,21 +1630,6 @@ export default {
       'When the account is filled, a “Switch account” task is added automatically (CN official server only); the password is a local note only and is never passed to the script',
     m9aFlavorQueueHint:
       'Start game, close game and switch account are added automatically by the M9A adapter; no need to add them by hand',
-    maafwEmbeddedCopyHealthy: 'Copy intact',
-    maafwEmbeddedCopyMissing: 'Copy missing; it is rebuilt from the source before the next run',
-    maafwEmbeddedCopyAndSourceMissing:
-      'The copy is missing and the source directory no longer exists: pick an extracted MFW project directory again',
-    maafwEmbeddedSaved: 'The copy is {percent}% of the source ({source} → {copy})',
-    maafwEmbeddedShell: 'Shell: {shell}',
-    maafwEmbeddedRuntime: 'MaaFramework {version} (bundled by the project, copied as is)',
-    maafwEmbeddedPython: 'Agent Python {version} (bundled by the project, copied as is)',
-    maafwEmbeddedSourceVersion: 'Imported from source {version}',
-    maafwEmbeddedImportedAt: 'Imported {time}',
-    maafwEmbeddedSourceMissing:
-      'Source directory no longer exists: the copy keeps running and updating, it just cannot be re-imported',
-    maafwEmbeddedReimport: 'Re-import',
-    maafwEmbeddedReimportHint:
-      'Import the copy again from the current source directory; use it after updating the source by hand.',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
@@ -3558,15 +3541,17 @@ export default {
       createFromTemplate: 'Create from template',
       mfwSourceHeading: 'Where does the project come from',
       mfwSourceHeadingDesc:
-        'Opening a second script for the same MFW project? Reuse that script’s project instead of picking the directory again.',
-      mfwNewProject: 'New project: pick a local directory',
+        'Projects imported before can be reused directly, so several scripts of one project never need the directory picked again; or start another project.',
+      mfwNewProject: 'Another project: pick a local directory',
       mfwNewProjectDesc:
-        'Go to the guide and pick a project directory with interface.json; it is imported as a copy',
-      mfwReuse: 'Reuse a project from another script',
+        'Go to the guide and pick a project directory with interface.json to import',
+      mfwReuse: 'Reuse an imported project',
       mfwReuseDesc:
-        'Clone that script’s copy directly: runtime and model files are shared and take no extra space, and it works even after the source directory was deleted; users and run settings are not carried over',
-      mfwReuseLoading: 'Loading reusable scripts...',
-      mfwReuseEmpty: 'No other MFW script to reuse yet',
+        'Use that script’s project as is: runtime and model files are shared and take no extra space; users and run settings are not carried over',
+      mfwReuseFrom: 'From script “{name}”',
+      mfwReuseFromMany: 'From script “{name}” and {count} scripts in total',
+      mfwReuseLoading: 'Loading imported projects...',
+      mfwReuseEmpty: 'No {type} project has been imported yet',
       mfwReuseBusy: 'running',
       createAndReuse: 'Create and reuse project',
       next: 'Next',

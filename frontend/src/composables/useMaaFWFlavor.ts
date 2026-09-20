@@ -21,7 +21,7 @@ export interface MaaFWFlavor {
   docUrl: string
   /** 脚本页标题；为空表示沿用 MaaFW 的「<项目名> 项目配置 / 项目引导」 */
   scriptTitleKey: string | null
-  /** 来源目录字段：标签 / 问号提示 / 输入框占位 */
+  /** 项目目录字段：标签 / 问号提示 / 输入框占位（导入后字段锁死，提示换成统一的「已导入」那句） */
   sourceDirectoryKey: string
   sourceHintKey: string
   sourcePlaceholderKey: string
@@ -39,8 +39,8 @@ const MAAFW_FLAVOR: MaaFWFlavor = {
   logo: SCRIPT_LOGOS.MaaFW,
   docUrl: MAS_DOC_URLS.scripts,
   scriptTitleKey: null,
-  sourceDirectoryKey: 'edit.maafwEmbeddedSourceDirectory',
-  sourceHintKey: 'edit.maafwEmbeddedSourceHint',
+  sourceDirectoryKey: 'edit.localProjectDirectory',
+  sourceHintKey: 'edit.pickMfwProjectDirectory',
   sourcePlaceholderKey: 'edit.pickActualMfwProject',
   accountPlaceholderKey: 'edit.localNoteOnly',
   accountTooltipKey: 'edit.maafwAccountRecordTooltip',

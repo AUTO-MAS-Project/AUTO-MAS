@@ -1509,6 +1509,8 @@ def materialize_projection(
     """把 plan 里要留的文件复制到 ``target_dir``（assets 布局在这里被提升）。
 
     给了 ``blob_store`` 时，运行时目录与模型类大文件按内容与其它副本共用（硬链接）。
+    ``progress(done_bytes, total_bytes)`` 按已复制字节回调（按文件数算的话一个几百 MB
+    的模型会让进度条先冲到 90% 再卡住）；每个文件复制完调一次，最后一次 done == total。
     返回共用统计：``sharedFiles`` / ``sharedBytes``。
     """
 
@@ -1530,13 +1532,18 @@ def materialize_projection(
         (target / output_directory).mkdir(parents=True, exist_ok=True)
 
     ordered = sorted(plan.copied_files, key=lambda path: path.as_posix())
-    total = len(ordered)
+    total_bytes = max(plan.projected_bytes, 0)
+    done_bytes = 0
     shared_files = 0
     shared_bytes = 0
     for index, relative_file in enumerate(ordered, start=1):
         source = rules.source_root / relative_file
         destination = target / rules.output_path(relative_file)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            size = source.stat().st_size
+        except OSError:
+            size = 0
         if blob_store is not None and rules.is_shared_file(relative_file):
             placed = blob_store.place(source, destination)
             if placed.action == "linked":
@@ -1545,7 +1552,13 @@ def materialize_projection(
         else:
             shutil.copy2(source, destination)
         if progress is not None:
-            progress(index, total)
+            # 计划里的字节数是建计划时统计的，复制期间文件可能变；最后一个文件一律报满
+            done_bytes = (
+                total_bytes
+                if index == len(ordered)
+                else min(done_bytes + size, total_bytes)
+            )
+            progress(done_bytes, total_bytes)
     return {"sharedFiles": shared_files, "sharedBytes": shared_bytes}
 
 

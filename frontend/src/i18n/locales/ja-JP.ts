@@ -1498,18 +1498,16 @@ export default {
       'interface.json を含むプロジェクトフォルダを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
     pickLocalDirectory: 'ローカルフォルダを選択',
-    maafwEmbeddedTitle: '内蔵コピー',
-    maafwEmbeddedHint:
-      'AUTO-MAS は interface に宣言されたリソース、Agent、プロジェクト同梱のランタイムだけを自分のフォルダへコピーし、実行も更新もそのコピー上で行います。元フォルダには一切触れず、取り込み後は削除しても構いません（再取り込みにだけ必要です）。',
-    maafwEmbeddedSourceDirectory: '元フォルダ',
-    maafwEmbeddedSourceHint:
-      'コピーはこのフォルダから取り込みます。別のフォルダを選ぶとそこから取り込み直し、元フォルダは変更しません。',
+    localProjectDirectory: 'ローカルのプロジェクトフォルダ',
+    pickMfwProjectDirectory: 'interface.json を含む MFW プロジェクトのフォルダを選択',
+    maafwDirectoryLockedHint:
+      'プロジェクトは AUTO-MAS 自身のフォルダへ取り込み済みで、実行も更新もそこで行います。元フォルダは削除しても構いません。別のプロジェクトを使うには新しいスクリプトを作成してください',
+    maafwImportingCopy: 'プロジェクトを取り込み中...',
     maafwAccountRecordTooltip:
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
     m9aFlavorScriptTitle: 'M9A スクリプトを編集',
     m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
-    m9aFlavorSourceHint:
-      'interface.json を含む M9A ディレクトリを選択します。コピーはこのディレクトリから取り込まれ、別のディレクトリを選ぶとそこから取り込み直します。元のディレクトリは変更しません。',
+    m9aFlavorSourceHint: 'interface.json を含む M9A ディレクトリを選択します',
     m9aFlavorSourcePlaceholder: 'interface.json を含む M9A ディレクトリを選択',
     m9aFlavorAccountPlaceholder:
       '入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）',
@@ -1517,21 +1515,6 @@ export default {
       'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
     m9aFlavorQueueHint:
       'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
-    maafwEmbeddedCopyHealthy: 'コピーは正常',
-    maafwEmbeddedCopyMissing: 'コピーがありません。次回実行前に元フォルダから作り直します',
-    maafwEmbeddedCopyAndSourceMissing:
-      'コピーがなく、元のフォルダも存在しません。展開済みの MFW プロジェクトフォルダを選び直してください',
-    maafwEmbeddedSaved: 'コピーは元の {percent}%（{source} → {copy}）',
-    maafwEmbeddedShell: 'シェル：{shell}',
-    maafwEmbeddedRuntime: 'MaaFramework {version}（プロジェクト同梱、そのままコピー）',
-    maafwEmbeddedPython: 'Agent の Python {version}（プロジェクト同梱、そのままコピー）',
-    maafwEmbeddedSourceVersion: '取り込み元 {version}',
-    maafwEmbeddedImportedAt: '取り込み日時 {time}',
-    maafwEmbeddedSourceMissing:
-      '元フォルダはもうありません。コピーはそのまま実行・更新できますが、再取り込みはできません',
-    maafwEmbeddedReimport: '取り込み直す',
-    maafwEmbeddedReimportHint:
-      '現在の元フォルダからコピーを取り込み直します。元フォルダを手動で更新したときに使います。',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:
@@ -3094,15 +3077,16 @@ export default {
       createFromTemplate: 'テンプレートから作成',
       mfwSourceHeading: 'プロジェクトの取得元',
       mfwSourceHeadingDesc:
-        '同じ MFW プロジェクトで 2 つ目のスクリプトを作るなら、フォルダを選び直さず既存スクリプトのプロジェクトを再利用できます。',
-      mfwNewProject: '新規プロジェクト：ローカルフォルダを選択',
-      mfwNewProjectDesc:
-        'ガイドで interface.json を含むプロジェクトフォルダを選ぶと、コピーとして取り込まれます',
-      mfwReuse: '既存スクリプトのプロジェクトを再利用',
+        '取り込み済みのプロジェクトはそのまま再利用でき、同じプロジェクトで何本スクリプトを作ってもフォルダを選び直す必要はありません。別のプロジェクトを新しく取り込むこともできます。',
+      mfwNewProject: '別のプロジェクトを取り込む：ローカルフォルダを選択',
+      mfwNewProjectDesc: 'ガイドで interface.json を含むプロジェクトフォルダを選んで取り込みます',
+      mfwReuse: '取り込み済みのプロジェクトを再利用',
       mfwReuseDesc:
-        'そのスクリプトのコピーから直接複製します。ランタイムとモデルは共有され追加容量を取らず、元フォルダを削除済みでも作れます。ユーザーと実行設定は引き継ぎません',
-      mfwReuseLoading: '再利用できるスクリプトを読み込み中...',
-      mfwReuseEmpty: '再利用できる MFW スクリプトはまだありません',
+        'そのスクリプトのプロジェクトをそのまま使います。ランタイムとモデルは共有され追加容量を取りません。ユーザーと実行設定は引き継ぎません',
+      mfwReuseFrom: 'スクリプト「{name}」より',
+      mfwReuseFromMany: 'スクリプト「{name}」ほか計 {count} 本より',
+      mfwReuseLoading: '取り込み済みのプロジェクトを読み込み中...',
+      mfwReuseEmpty: '{type} プロジェクトはまだ取り込まれていません',
       mfwReuseBusy: '実行中',
       createAndReuse: '作成してプロジェクトを再利用',
       next: '次へ',

@@ -1,3 +1,4 @@
+import type { MaaFWEmbeddedSourceItem } from '@/api'
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
@@ -142,6 +143,58 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: SCRIPT_LOGOS.BAAH,
   },
 ]
+
+/** 第二步列表里的一行「已导入的项目」：同一项目开了几个脚本只列一行，克隆源取其中一个 */
+export interface MfwReuseChoice {
+  /** 克隆源脚本：同一项目有多个脚本时优先没在跑的那个 */
+  scriptId: string
+  scriptName: string
+  projectName: string
+  version: string
+  /** 所有持有该项目的脚本都在跑，此刻不能克隆 */
+  busy: boolean
+  /** 持有该项目的脚本数 */
+  scriptCount: number
+}
+
+/**
+ * 把后端给的「有副本的脚本」按项目归成可复用的选项：
+ * - 只留与新建入口同类型的（选了 M9A 入口就只能复用 M9A 项目，通用 MaaFW 入口同理）；
+ * - 同名同版本的项目并成一行，克隆源优先取没在跑的脚本；读不出项目名的按脚本单列。
+ */
+export const buildMfwReuseChoices = (
+  items: readonly MaaFWEmbeddedSourceItem[],
+  type: ScriptType
+): MfwReuseChoice[] => {
+  const byProject = new Map<string, MfwReuseChoice>()
+  for (const item of items) {
+    if (item.type !== type) continue
+    const projectName = (item.projectName || '').trim()
+    const version = (item.version || '').trim()
+    const key = projectName
+      ? `project:${JSON.stringify([projectName.toLowerCase(), version.toLowerCase()])}`
+      : `script:${item.scriptId}`
+    const existing = byProject.get(key)
+    if (!existing) {
+      byProject.set(key, {
+        scriptId: item.scriptId,
+        scriptName: item.name || '',
+        projectName,
+        version,
+        busy: Boolean(item.busy),
+        scriptCount: 1,
+      })
+      continue
+    }
+    existing.scriptCount += 1
+    if (existing.busy && !item.busy) {
+      existing.scriptId = item.scriptId
+      existing.scriptName = item.name || ''
+      existing.busy = false
+    }
+  }
+  return [...byProject.values()]
+}
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
   const steps: CreateStep[] = [{ key: 'type', titleKey: 'scripts.create.step.type' }]

@@ -794,53 +794,88 @@ def _pip_install(
     env: dict[str, str],
     log: Callable[[str], None],
 ) -> tuple[bool, str]:
-    """安装隔离 venv 依赖，返回 (是否成功, 最后一次失败原因)。
+    """往 ``python_exe`` 里装包，返回 (是否成功, 最后一次失败原因)。
 
     与运行池的 ``_run_with_source_rotation`` 有一处有意的分歧：那边超时直接抛出、
     不换源，这里超时也接着试下一个候选。装不上的首要成因就是某个索引连不通，而
     连不通的典型表现正是超时，不换源等于白轮换。反过来，解释器自己起不来
     （``OSError``）与索引无关，立即停手，不必对着每个候选各失败一次。
+
+    项目自带的 Python 常是 embeddable 发行版，没有 pip（M9A 就是：``python -m pip``
+    报 ``No module named pip``）；遇到就换成 ``uv pip install --python <exe>`` 往同一个
+    解释器里装，同一个索引候选重试一次。
     """
 
     last_detail = ""
+    uv_exe: str | None = None
     for label, index_args in _pip_index_arg_candidates():
-        try:
-            result = subprocess.run(
-                [
-                    python_exe,
-                    "-m",
+        while True:
+            if uv_exe is None:
+                command = [python_exe, "-m", "pip", "install", "--quiet"]
+                tool = "pip install"
+            else:
+                # uv 不认 PIP_INDEX_URL，用户配了就显式带上；--no-config 免得读到
+                # 用户目录里的 uv.toml / 项目 pyproject 的 uv 段
+                uv_index_args = list(index_args)
+                user_index = str(
+                    env.get("PIP_INDEX_URL") or os.environ.get("PIP_INDEX_URL") or ""
+                ).strip()
+                if not uv_index_args and user_index:
+                    uv_index_args = ["--index-url", user_index]
+                command = [
+                    uv_exe,
                     "pip",
                     "install",
+                    "--python",
+                    python_exe,
+                    "--no-config",
                     "--quiet",
-                    *index_args,
-                    *packages,
-                ],
-                capture_output=True,
-                timeout=PIP_INSTALL_PER_INDEX_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=cwd,
-                env=env,
-            )
-            if result.returncode == 0:
-                log(f"[Python环境] pip install 完成 ({label}): {', '.join(packages)}")
-                return True, ""
-            last_detail = (result.stderr or result.stdout or "").strip()
-            log(f"[Python环境] pip install 未成功 ({label}): {last_detail[:300]}")
-        except subprocess.TimeoutExpired:
-            last_detail = f"{label} 超时 ({PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
-            log(
-                f"[Python环境] pip install 超时 ({label}, {PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
-            )
-        except OSError as exc:
-            # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
-            last_detail = f"无法启动 {python_exe}: {exc}"
-            log(f"[Python环境] pip install 无法启动 ({label}): {exc}")
+                    *uv_index_args,
+                ]
+                index_args = []
+                tool = "uv pip install"
+            try:
+                result = subprocess.run(
+                    [*command, *index_args, *packages],
+                    capture_output=True,
+                    timeout=PIP_INSTALL_PER_INDEX_TIMEOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=cwd,
+                    env=env,
+                )
+                if result.returncode == 0:
+                    log(f"[Python环境] {tool} 完成 ({label}): {', '.join(packages)}")
+                    return True, ""
+                last_detail = (result.stderr or result.stdout or "").strip()
+                if uv_exe is None and "No module named pip" in last_detail:
+                    uv_exe = _find_uv_executable()
+                    if uv_exe is None:
+                        log(
+                            "[Python环境] 解释器不带 pip（embeddable 发行版），"
+                            "也找不到可用的 uv，无法安装"
+                        )
+                        return False, last_detail[:300]
+                    log(
+                        "[Python环境] 解释器不带 pip（embeddable 发行版），改用 uv 安装"
+                    )
+                    continue
+                log(f"[Python环境] {tool} 未成功 ({label}): {last_detail[:300]}")
+            except subprocess.TimeoutExpired:
+                last_detail = f"{label} 超时 ({PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
+                log(
+                    f"[Python环境] {tool} 超时 ({label}, {PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
+                )
+            except OSError as exc:
+                # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
+                last_detail = f"无法启动 {command[0]}: {exc}"
+                log(f"[Python环境] {tool} 无法启动 ({label}): {exc}")
+                return False, last_detail[:300]
+            except Exception as exc:
+                last_detail = f"{label}: {exc}"
+                log(f"[Python环境] {tool} 异常 ({label}): {exc}")
             break
-        except Exception as exc:
-            last_detail = f"{label}: {exc}"
-            log(f"[Python环境] pip install 异常 ({label}): {exc}")
     return False, last_detail[:300]
 
 

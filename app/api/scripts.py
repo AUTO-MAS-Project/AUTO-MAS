@@ -23,8 +23,9 @@
 
 import asyncio
 import json
+import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1222,10 +1223,17 @@ async def _embed_from_source(
     reservation = await try_reserve_project_path(embedded_project_dir(script_id))
     if reservation is None:
         return None, _EMBEDDED_COPY_BUSY
+    publish = _embedded_import_publisher(script_id)
     try:
+        # 扫目录、建计划这一段没有进度，先把阶段告诉页面，别让进度条一直是 0
+        publish("importing", "running", "正在扫描项目目录", None)
         imported = await asyncio.to_thread(
-            import_embedded_project, script_id, source_path
+            import_embedded_project,
+            script_id,
+            source_path,
+            progress=_embedded_import_progress(publish),
         )
+        publish("imported", "success", "导入完成", 100.0)
     except EmbeddedProjectError as exc:
         return None, str(exc)
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
@@ -1244,6 +1252,60 @@ async def _embed_from_source(
     )
     await _apply_project_flavor(script_id)
     return None, ""
+
+
+_EmbeddedImportPublish = Callable[[str, str, str, float | None], None]
+
+
+def _embedded_import_publisher(script_id: str) -> _EmbeddedImportPublish:
+    """导入进度走运行环境准备那条 WS 通道（同一个脚本 id）：页面早就订着它，
+    两件事不会同时发生，用 ``stage=importing / imported`` 区分。"""
+
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
+
+    loop = asyncio.get_running_loop()
+
+    def publish(stage: str, status: str, message: str, percent: float | None) -> None:
+        data = WSMaaFWEnvPrepareProgressData(
+            stage=stage, status=status, message=message, percent=percent
+        )
+        # 导入跑在工作线程里，回调要跨回事件循环才能发 WS
+        asyncio.run_coroutine_threadsafe(
+            Publisher.send(
+                id=script_id,
+                type=ws_protocol.MAAFW_ENV_PREPARE_PROGRESS,
+                data=data,
+            ),
+            loop,
+        )
+
+    return publish
+
+
+def _embedded_import_progress(
+    publish: _EmbeddedImportPublish,
+) -> Callable[[int, int], None]:
+    """把投影的字节进度节流成百分比事件：至少涨 1 个点或隔 0.5 秒才推一次，满了必推。"""
+
+    last_percent = -1.0
+    last_at = 0.0
+
+    def on_progress(done: int, total: int) -> None:
+        nonlocal last_percent, last_at
+        percent = min(100.0, done * 100 / total) if total > 0 else 100.0
+        now = time.monotonic()
+        if percent < 100 and percent - last_percent < 1 and now - last_at < 0.5:
+            return
+        last_percent, last_at = percent, now
+        publish(
+            "importing",
+            "running",
+            f"正在复制项目文件 {percent:.0f}%",
+            round(percent, 1),
+        )
+
+    return on_progress
 
 
 async def _apply_project_flavor(script_id: str) -> None:
@@ -1351,13 +1413,78 @@ async def reimport_maafw_embedded(
     out = await _embedded_status_out(
         payload.scriptId, _maafw_script_config(payload.scriptId)
     )
-    report = out.data.report if out.data else None
-    out.message = (
-        f"已导入，副本只有来源的 {100 - report.savedPercent:.0f}%；来源目录未改动"
-        if report
-        else "已导入"
-    )
+    # 副本、来源、省了多少这些细节只进运行环境日志（见 _embedded_summary_lines），
+    # 页面上就是一句「项目已导入」
+    out.message = "项目已导入"
     return out
+
+
+def _format_bytes(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if number < 1024 or unit == "GB":
+            return f"{number:.0f} {unit}" if unit == "B" else f"{number:.1f} {unit}"
+        number /= 1024
+    return ""
+
+
+def _embedded_summary_lines(script_id: str) -> list[str]:
+    """运行环境日志开头那两行：项目跑在哪份副本上、从哪导入的、省了多少。
+
+    界面上的目录字段只显示副本位置，「内嵌」这件事只在这里体现；没有副本
+    （老脚本、导入失败）就一行都不写。
+    """
+
+    try:
+        script_config = _maafw_script_config(script_id)
+        status = embedded_status(script_id, script_config)
+    except Exception:  # noqa: BLE001 - 日志装饰，读不出来就不写
+        return []
+    if not status.get("copyHealthy"):
+        return []
+    report = status.get("report") or {}
+    if not isinstance(report, dict):
+        report = {}
+
+    origin: list[str] = []
+    if status.get("sourcePath"):
+        origin.append(f"来源 {status['sourcePath']}")
+        if not status.get("sourceExists"):
+            origin.append("来源目录已不存在，副本照常运行与更新")
+    if status.get("sourceVersion"):
+        origin.append(f"版本 {status['sourceVersion']}")
+    imported_at = str(status.get("importedAt") or "")
+    if imported_at:
+        origin.append(f"导入于 {imported_at[:19].replace('T', ' ')}")
+    lines = [
+        f"项目已导入到 AUTO-MAS 目录 {status['copyPath']}"
+        + (f"（{'，'.join(origin)}）" if origin else "")
+    ]
+
+    details: list[str] = []
+    payload_size = _format_bytes(report.get("payloadSizeBytes"))
+    source_size = _format_bytes(report.get("sourceSizeBytes"))
+    if payload_size and source_size:
+        details.append(f"副本 {payload_size}，来源 {source_size}")
+    shared = report.get("sharedBytes")
+    if shared:
+        details.append(f"与其它副本共用 {_format_bytes(shared)}")
+    families = report.get("shellFamilies")
+    if isinstance(families, list) and families:
+        details.append(f"外壳 {' / '.join(str(f) for f in families)} 未带入")
+    bundled: list[str] = []
+    if report.get("bundledMaaFWVersion"):
+        bundled.append(f"MaaFramework {report['bundledMaaFWVersion']}")
+    if report.get("bundledPythonVersion"):
+        bundled.append(f"Python {report['bundledPythonVersion']}")
+    if bundled:
+        details.append(f"项目自带 {'、'.join(bundled)}")
+    if details:
+        lines.append("；".join(details))
+    return lines
 
 
 def _embedded_source_project(script_id: str) -> tuple[str, str]:
@@ -1997,6 +2124,10 @@ async def prepare_maafw_agent_env(
         )
 
     try:
+        # 目录字段只显示副本位置，「项目跑在导入副本上」这件事只在日志里交代
+        if progress_id:
+            for line in await asyncio.to_thread(_embedded_summary_lines, progress_id):
+                append_log(line)
         # 指纹哈希的是 interface / requirements / uv.lock 这些「脚本更新了没」
         # 的输入，所以项目一更新缓存自然失效。放在拿到项目锁之后：此刻没人在
         # 更新这个目录，算出来的指纹不会是半个更新中间态。

@@ -52,6 +52,8 @@
             :update-applying="updateApplying"
             :embedded-status="embeddedStatus"
             :embedded-busy="embeddedBusy"
+            :import-percent="importPercent"
+            :import-message="importMessage"
             :source-directory-label="t(flavor.sourceDirectoryKey)"
             :source-hint="t(flavor.sourceHintKey)"
             :source-placeholder="t(flavor.sourcePlaceholderKey)"
@@ -66,7 +68,6 @@
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
-            @reimport-embedded="handleReimportEmbedded"
           />
         </div>
 
@@ -501,6 +502,12 @@ const ensureEnvSubscription = () => {
     { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
     wsMessage => {
       const data = wsMessage.data
+      // 导入副本的进度也走这条通道（同一个脚本、同一个订阅），和环境准备不会同时发生
+      if (data.stage === 'importing' || data.stage === 'imported') {
+        if (typeof data.percent === 'number') importPercent.value = data.percent
+        if (data.message) importMessage.value = data.message
+        return
+      }
       // 响应处理完就不再理会 WS：它走的是另一条路，可能比响应还晚到——日志行会把
       // 最后几行写成两遍，ready 事件那句「MFW 运行环境已就绪」会把响应里写好的
       // 「MaaFramework x.y.z」盖掉
@@ -606,6 +613,10 @@ const selectMaaFWPath = async () => {
     if (!path) return
     // 选目录 = 导入：第一次建副本，之后是换来源并重新导入。Info.Path 由后端在
     // 导入成功后写入，失败时旧副本与旧来源都原样不动，这里也就不动本地草稿。
+    // 进度由后端按文件数推过来，订阅要在请求发出前挂上，否则头几条会漏。
+    ensureEnvSubscription()
+    importPercent.value = 0
+    importMessage.value = ''
     const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, path))
     if (!ok) return
     maafwConfig.Info.Path = path
@@ -621,6 +632,9 @@ const selectMaaFWPath = async () => {
 // 状态只从后端拿：副本在不在、来源在不在都是磁盘上的事实，本地草稿说了不算。
 const embeddedStatus = ref<MaaFWEmbeddedStatus>({ ...EMPTY_EMBEDDED_STATUS })
 const embeddedBusy = ref(false)
+// 导入进度：后端按投影的文件数推百分比与阶段文案，导入几百 MB 时进度条顶在目录字段下面
+const importPercent = ref<number | null>(null)
+const importMessage = ref('')
 
 const refreshEmbeddedStatus = async () => {
   try {
@@ -659,13 +673,6 @@ const runEmbeddedAction = async (
   } finally {
     embeddedBusy.value = false
   }
-}
-
-const handleReimportEmbedded = async () => {
-  const source = maafwConfig.Info.Path.trim()
-  if (!source) return
-  const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, source))
-  if (ok) await runPreviewOnNewRoot()
 }
 
 const updateChecking = ref(false)
