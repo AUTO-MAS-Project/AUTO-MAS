@@ -10,7 +10,7 @@ import re
 import shutil
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +49,8 @@ RUNTIME_MANIFEST_NAME = "manifest.json"
 RUNTIME_DIRECTORY_NAME = "runtimes"
 STAGING_DIRECTORY_NAME = ".staging"
 RUNTIME_ID_RE = re.compile(r"^maafw-runtime-[0-9a-f]{24}$")
+#: ``.staging`` 里归池管的条目前缀：runtime 安装 / 隔离、binding / native 换入、rename-first 的 trash。
+_STAGING_PREFIXES = (RUNTIME_ID_PREFIX, "binding-", "native-", "trash-")
 
 RuntimeInstaller = Callable[
     [Path, Sequence[str], dict[str, Any]],
@@ -501,41 +503,49 @@ class MaaFWRuntimePool:
         self,
         *,
         valid_runtime_ids: Iterable[str],
-        needed_requirements: Iterable[str],
+        binding_versions: Iterable[str] = (),
+        native_versions: Iterable[str] = (),
         replaced_versions: Iterable[str] = (),
+        retained_versions: Iterable[str] = (),
         grace_seconds: float = RECLAIM_GRACE_SECONDS,
         now: str | datetime | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """按引用对账回收过时的 runtime（取代按 lastUsedAt 宽限 + keep_latest 的 gc）。
+        """按引用对账回收池里过时的东西（取代按 lastUsedAt 宽限 + keep_latest 的 gc）。
 
-        权威清单由宿主侧算好传进来（核心包不读 Config）：
+        权威清单由宿主侧算好传进来（核心包不读 Config，见 ``tools/embedded/pool_reconcile``）：
 
-        - ``valid_runtime_ids``：当前身份下、权威集合里每个项目应落到的 runtime id
-          （``describe_runner_runtime_selection``，与 ``prepare_runner_environment``
-          同一套推导）。不在这里面的 runtime 都是「旧身份」孤儿——例如 D1 之前把
-          项目 requirements.txt 折进去裂出来的那些。
-        - ``needed_requirements``：权威集合里各项目选中的 maafw requirement。runtime
-          身份按 requirement 而不是按解析出的版本键（``maafw>=5.10`` 这类范围声明
-          没有「版本」可言），所以这里也按 requirement 对账。
-        - ``replaced_versions``：本轮明确被替换掉的旧 maafw 版本（项目更新提交时
-          传，按 manifest 的 ``maafwVersion`` 匹配），只豁免宽限，不越过租约。
+        - ``valid_runtime_ids``：当前宿主身份下的 base runtime id（所有项目共用一个；
+          宿主是 embeddable 且托管解释器未装时算不出，宿主侧整轮弃权不会调到这里）。
+        - ``binding_versions``：权威集合里各项目钉定 / 已能定下来的 maafw 精确版本；
+          ``native_versions`` 是其中没自带 DLL、还要池里官方原生库的。
+        - ``replaced_versions``：本轮明确被替换掉的旧版本（项目更新提交时传），只
+          豁免宽限，不越过租约 / 引用计数 / 权威集合。
+        - ``retained_versions``：本进程里正被引用的 binding 版本（prepare 后未 release、
+          预检进行中），无条件保留——binding 的 .py 读完即关句柄，rename 对在用目录
+          会成功，而 maa 有运行期懒加载，删了会半程 ModuleNotFoundError。
 
-        孤儿（requirement R）删除 ⇔ 无活租约 ∧ (R ∉ needed ∨ 新身份下 R 的 runtime 已
-        存在且解析通过) ∧ (过宽限 ∨ 其 maafwVersion ∈ replaced)。第二个条件是离线
-        用户的保命符：新身份 runtime 还没建出来之前，旧那份不能删，否则 uv 缓存一清
-        就再也建不出来。
+        回收对象与判据：
 
-        保护只用租约，不引入引用计数（PR1 口径）。每个条目独立判定，manifest 坏了
-        单条跳过并记进 ``errors``，不像旧 gc 那样整轮拒绝。删除走 rename-first
-        （``_quarantine_stale_runtime``）：目录里有被映射的 DLL 时 rename 会失败、
-        条目原样留到下次；换出去之后 rmtree 失败也不要紧，残留在 ``.staging`` 里，
-        本方法末尾会顺手再扫一遍 staging（``ensure`` 与本方法共用同一把池锁，
-        扫的时候不会有进行中的安装）。
+        1. ``runtimes/<id>``（不在 valid 里的）：
+           - ``layout=base`` 的旧身份 base → 无活租约即删（重建只是重装一次依赖）；
+           - 旧布局（maafw 装在 venv 里，版本 X）→ 先**就地收割** binding（RECORD 校验，
+             零网络，见 ``binding.harvest_binding``），然后：X 的 binding（及需要时的
+             native）已就绪 → 无活租约即删；否则 X 仍在权威集合里就保留
+             （``needed_without_replacement``），不在集合里过了宽限（或 X 被替换）才删。
+        2. ``bindings/maafw-X`` / ``native/maafw-X``：被引用或在权威集合里 → 保留；否则
+           ``lastUsedAt`` 过了宽限（或 X 被替换）才删。
+        3. ``cache/binding-src/<tag>.zip``：版本不在集合且文件过了宽限 → 删；
+           ``cache/binding-wheels/``（旧的源码 wheel 缓存）整目录作废。
+        4. 坏 manifest / 坏清单：单条记进 ``errors``，跳过，不锁死整轮。
+        5. 删除一律 rename-first（换到 ``.staging`` 再 rmtree）：被映射的 DLL 让 rename
+           失败时原样留到下次；换出后 rmtree 半途而废的残留由末尾的 staging 扫描收。
 
-        返回里的 ``remainingLegacy`` 是本轮之后仍留在池里的旧身份条目，调用方据此
+        返回里的 ``remainingLegacy`` 是本轮之后仍留在池里的旧布局 runtime，调用方据此
         决定要不要清 uv 缓存（仍有旧布局在就别清，保住离线重建）。
         """
+
+        from . import binding as binding_module
 
         if grace_seconds < 0:
             raise MaaFWRuntimePoolError("reclaim grace_seconds cannot be negative")
@@ -544,35 +554,30 @@ class MaaFWRuntimePool:
         valid_ids = {
             str(item).strip() for item in valid_runtime_ids if str(item).strip()
         }
-        needed = {
-            key
-            for key in (_maafw_requirement_key(item) for item in needed_requirements)
-            if key
-        }
-        replaced = {
-            key
-            for key in (_normalize_maafw_version(item) for item in replaced_versions)
-            if key
-        }
+        needed_bindings = _version_set(binding_versions)
+        needed_natives = _version_set(native_versions)
+        replaced = _version_set(replaced_versions)
+        retained = _version_set(retained_versions)
 
         with self._lock:
             self._initialize()
-            # 新身份下已经建好且解析得过的 requirement：只有它们能放行同 requirement 的旧孤儿
-            ready: set[str] = set()
-            for runtime_id in sorted(valid_ids):
-                payload = self._usable_runtime_payload(runtime_id)
-                if payload is None:
-                    continue
-                key = _maafw_requirement_key(payload.get("maafwRequirement"))
-                if key:
-                    ready.add(key)
-
             deleted: list[str] = []
             quarantined: list[dict[str, str]] = []
             kept: list[dict[str, Any]] = []
             skipped: list[dict[str, str]] = []
             errors: list[dict[str, str]] = []
+            harvested: list[dict[str, str]] = []
             remaining_legacy: list[str] = []
+
+            def binding_ready(version: str) -> bool:
+                if not version:
+                    return False
+                if binding_module.verify_binding(self.root, version) is None:
+                    return False
+                if version in needed_natives:
+                    return binding_module.verify_native(self.root, version) is not None
+                return True
+
             for path in sorted(self.runtime_root.glob(f"{RUNTIME_ID_PREFIX}*")):
                 if not path.is_dir() or path.is_symlink():
                     continue
@@ -587,7 +592,11 @@ class MaaFWRuntimePool:
                     remaining_legacy.append(runtime_id)
                     continue
 
-                requirement = _maafw_requirement_key(manifest.get("maafwRequirement"))
+                installer_metadata = manifest.get("installerMetadata")
+                is_base = (
+                    isinstance(installer_metadata, Mapping)
+                    and installer_metadata.get("layout") == "base"
+                )
                 version = _normalize_maafw_version(manifest.get("maafwVersion"))
                 reasons: list[str] = []
                 if bool(manifest.get("pinned")):
@@ -596,14 +605,30 @@ class MaaFWRuntimePool:
                     reasons.append("pinned")
                 if self._active_lease_ids(manifest, reference_time):
                     reasons.append("leased")
-                if requirement in needed and requirement not in ready:
-                    reasons.append("needed_without_replacement")
-                last_used = parse_time(manifest.get("lastUsedAt"))
-                if last_used > cutoff and version not in replaced:
-                    reasons.append("grace_period")
+                if not is_base:
+                    # 旧布局：先把 binding 收割出来（零网络），有了它旧 venv 就没用了
+                    if version and not dry_run and not binding_ready(version):
+                        outcome = self._harvest_legacy_runtime(
+                            path,
+                            manifest,
+                            version,
+                            native_needed=version in needed_natives,
+                        )
+                        if outcome is not None:
+                            harvested.append(
+                                {"runtimeId": runtime_id, "version": version, **outcome}
+                            )
+                    ready = binding_ready(version)
+                    if not ready:
+                        if version in needed_bindings:
+                            reasons.append("needed_without_replacement")
+                        last_used = parse_time(manifest.get("lastUsedAt"))
+                        if last_used > cutoff and version not in replaced:
+                            reasons.append("grace_period")
                 if reasons:
                     kept.append({"runtimeId": runtime_id, "reasons": sorted(reasons)})
-                    remaining_legacy.append(runtime_id)
+                    if not is_base:
+                        remaining_legacy.append(runtime_id)
                     continue
                 if dry_run:
                     deleted.append(runtime_id)
@@ -617,7 +642,102 @@ class MaaFWRuntimePool:
                     quarantined.append({"runtimeId": runtime_id, "path": detail})
                 else:
                     skipped.append({"runtimeId": runtime_id, "error": detail})
-                    remaining_legacy.append(runtime_id)
+                    if not is_base:
+                        remaining_legacy.append(runtime_id)
+
+            # binding / native 目录
+            bindings_deleted: list[str] = []
+            bindings_kept: list[dict[str, Any]] = []
+            for kind, root_dir, needed in (
+                (
+                    "binding",
+                    self.root / binding_module.BINDINGS_DIRECTORY_NAME,
+                    needed_bindings,
+                ),
+                (
+                    "native",
+                    self.root / binding_module.NATIVE_DIRECTORY_NAME,
+                    needed_natives,
+                ),
+            ):
+                if not root_dir.is_dir():
+                    continue
+                for child in sorted(root_dir.iterdir()):
+                    if child.is_symlink() or not child.is_dir():
+                        continue
+                    version = binding_module.directory_version(child.name)
+                    if version is None:
+                        continue
+                    label = f"{kind}:{version}"
+                    reasons = []
+                    if version in retained:
+                        reasons.append("retained")
+                    if version in needed:
+                        reasons.append("needed")
+                    if not reasons:
+                        last_used = binding_module.manifest_last_used(
+                            self.root, version, native=(kind == "native")
+                        )
+                        if (
+                            last_used is not None
+                            and last_used > cutoff
+                            and version not in replaced
+                        ):
+                            reasons.append("grace_period")
+                    if reasons:
+                        bindings_kept.append(
+                            {"entry": label, "reasons": sorted(reasons)}
+                        )
+                        continue
+                    if dry_run:
+                        bindings_deleted.append(label)
+                        continue
+                    outcome, detail = self._reclaim_directory(child)
+                    if outcome == "deleted":
+                        bindings_deleted.append(label)
+                    elif outcome == "quarantined":
+                        bindings_deleted.append(label)
+                        quarantined.append({"entry": label, "path": detail})
+                    else:
+                        skipped.append({"entry": label, "error": detail})
+
+            # 源码包缓存与作废的 wheel 缓存
+            cache_deleted: list[str] = []
+            source_cache = self.root / binding_module.BINDING_SRC_CACHE_RELATIVE_PATH
+            if source_cache.is_dir():
+                for archive in sorted(source_cache.glob("*.zip")):
+                    version = _tag_version(archive.stem)
+                    if version and version in (needed_bindings | retained):
+                        continue
+                    try:
+                        modified = datetime.fromtimestamp(
+                            archive.stat().st_mtime, tz=timezone.utc
+                        )
+                    except OSError:
+                        continue
+                    if modified > cutoff and version not in replaced:
+                        continue
+                    if not dry_run:
+                        try:
+                            archive.unlink()
+                        except OSError as exc:
+                            skipped.append(
+                                {"entry": f"source:{archive.name}", "error": str(exc)}
+                            )
+                            continue
+                    cache_deleted.append(f"source:{archive.name}")
+            wheel_cache = self.root / "cache" / "binding-wheels"
+            if wheel_cache.is_dir() and not wheel_cache.is_symlink():
+                if not dry_run:
+                    outcome, detail = self._reclaim_directory(wheel_cache)
+                    if outcome == "skipped":
+                        skipped.append(
+                            {"entry": "cache:binding-wheels", "error": detail}
+                        )
+                    else:
+                        cache_deleted.append("cache:binding-wheels")
+                else:
+                    cache_deleted.append("cache:binding-wheels")
 
             staging_swept: list[str] = []
             staging_residue: list[str] = []
@@ -627,18 +747,88 @@ class MaaFWRuntimePool:
                 "dryRun": bool(dry_run),
                 "graceSeconds": float(grace_seconds),
                 "validRuntimeIds": sorted(valid_ids),
-                "neededRequirements": sorted(needed),
-                "readyRequirements": sorted(ready),
+                "bindingVersions": sorted(needed_bindings),
+                "nativeVersions": sorted(needed_natives),
                 "replacedVersions": sorted(replaced),
+                "retainedVersions": sorted(retained),
                 "deleted": deleted,
                 "quarantined": quarantined,
                 "kept": kept,
                 "skipped": skipped,
                 "errors": errors,
+                "harvested": harvested,
+                "bindingsDeleted": bindings_deleted,
+                "bindingsKept": bindings_kept,
+                "cacheDeleted": cache_deleted,
                 "remainingLegacy": sorted(remaining_legacy),
                 "stagingSwept": staging_swept,
                 "stagingResidue": staging_residue,
             }
+
+    def _harvest_legacy_runtime(
+        self,
+        runtime_dir: Path,
+        manifest: Mapping[str, Any],
+        version: str,
+        *,
+        native_needed: bool,
+    ) -> dict[str, str] | None:
+        """从一个旧布局 runtime 就地收割 binding；失败只记日志，返回 None。"""
+
+        from . import binding as binding_module
+
+        environment = runtime_dir / str(
+            manifest.get("environmentRelativePath") or "environment"
+        )
+        candidates = [environment / "Lib" / "site-packages"]
+        candidates.extend(sorted(environment.glob("lib/python*/site-packages")))
+        site_packages = next((item for item in candidates if item.is_dir()), None)
+        if site_packages is None:
+            return None
+        installer_metadata = manifest.get("installerMetadata")
+        source_hint = ""
+        if isinstance(installer_metadata, Mapping):
+            source_hint = str(installer_metadata.get("bindingSource") or "").strip()
+        if not source_hint:
+            source_hint = f"harvest:{runtime_dir.name}"
+        try:
+            last_used = parse_time(manifest.get("lastUsedAt"))
+        except ValueError:
+            last_used = None
+        try:
+            info = binding_module.harvest_binding(
+                self.root,
+                site_packages,
+                native_needed=native_needed,
+                source_hint=source_hint,
+                last_used_at=last_used,
+            )
+        except Exception as exc:  # noqa: BLE001 - 收割失败改走下载，不影响回收其它条目
+            return {"status": "failed", "error": str(exc)}
+        if info is None:
+            return {"status": "rejected"}
+        return {
+            "status": "harvested",
+            "bindingDir": str(info.directory),
+            "nativeDir": str(info.native_directory) if info.native_directory else "",
+        }
+
+    def _reclaim_directory(self, path: Path) -> tuple[str, str]:
+        """rename-first 删一个池内目录（binding / native / 作废缓存）。
+
+        返回 ``("deleted", "")`` / ``("quarantined", <残留路径>)`` / ``("skipped", <原因>)``。
+        """
+
+        try:
+            assert_not_reparse(path)
+            trash = self.staging_root / f"trash-{path.name}-{uuid.uuid4().hex}"
+            self.staging_root.mkdir(parents=True, exist_ok=True)
+            path.replace(trash)
+        except (OSError, MaaFWRuntimePoolError) as exc:
+            return "skipped", str(exc)
+        if remove_tree_best_effort(trash):
+            return "deleted", ""
+        return "quarantined", str(trash)
 
     def clean_cache(self) -> dict[str, Any]:
         """整个清掉池自己的 uv 缓存（见 ``cache.clean_uv_cache``）。
@@ -689,9 +879,10 @@ class MaaFWRuntimePool:
     def _sweep_staging(self) -> tuple[list[str], list[str]]:
         """清掉 ``.staging`` 里遗留的半成品 / 隔离目录。
 
-        返回 ``(本轮清空的目录名, 仍有残留的目录名)``。只在持有池锁时调用：
-        ``ensure`` 的安装全程也持有同一把锁，所以这里看到的每个 ``maafw-runtime-*``
-        子目录都不再有人用（安装失败没删干净的、隔离后 rmtree 半途而废的）。
+        返回 ``(本轮清空的条目名, 仍有残留的条目名)``。只在持有池锁时调用：
+        ``ensure`` 的安装与 binding 的换入全程也持有同一把锁，所以这里看到的每个
+        ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目都不再有人用
+        （安装失败没删干净的、隔离后 rmtree 半途而废的、下载到一半的 wheel）。
         仍删不掉的（DLL 还被映射着）留到下次。
         """
 
@@ -700,9 +891,17 @@ class MaaFWRuntimePool:
         if not self.staging_root.is_dir():
             return swept, residue
         for path in sorted(self.staging_root.iterdir()):
-            if path.is_symlink() or not path.is_dir():
+            if path.is_symlink():
                 continue
-            if not path.name.startswith(RUNTIME_ID_PREFIX):
+            if not path.name.startswith(_STAGING_PREFIXES):
+                continue
+            if path.is_file():
+                # binding 下载到一半的 .whl
+                try:
+                    path.unlink()
+                    swept.append(path.name)
+                except OSError:
+                    residue.append(path.name)
                 continue
             if remove_tree_best_effort(path):
                 swept.append(path.name)
@@ -718,6 +917,8 @@ class MaaFWRuntimePool:
             self.staging_root,
             self.root / "cache",
             self.python_root,
+            self.root / "bindings",
+            self.root / "native",
         ):
             assert_existing_chain_has_no_reparse(managed_path)
         marker_path = self.root / POOL_MARKER_NAME
@@ -1392,6 +1593,23 @@ def _validate_runtime_leases(value: Any) -> None:
             raise MaaFWRuntimePoolError(
                 "runtime manifest lease expiry is invalid"
             ) from exc
+
+
+def _version_set(values: Iterable[str]) -> set[str]:
+    return {key for key in (_normalize_maafw_version(item) for item in values) if key}
+
+
+def _tag_version(tag: str) -> str | None:
+    """``v5.14.0-beta.1`` → ``5.14.0b1``；不是 tag 形状返回 None。"""
+
+    text = str(tag or "").strip()
+    if not text.lower().startswith("v"):
+        return None
+    try:
+        # packaging 认 ``5.14.0-beta.1`` 这种写法，直接给 ``5.14.0b1``
+        return str(Version(text[1:]))
+    except InvalidVersion:
+        return None
 
 
 def _maafw_requirement_key(value: Any) -> str:

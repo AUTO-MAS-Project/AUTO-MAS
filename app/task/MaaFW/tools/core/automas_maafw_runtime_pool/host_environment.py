@@ -55,6 +55,15 @@ ISOLATED_HOST_KEYS: frozenset[str] = frozenset(
         "RUST_LOG",
         "RUST_BACKTRACE",
         "RUST_MIN_STACK",
+        # worker 自己拿到的 binding / DLL 指向（见 runtime_pool/binding.py 的
+        # BINDING_ENVIRONMENT_KEYS）不能再往下传：worker 在进程内派生 agent 子进程、
+        # agent 的 pip 检测都从这里起步，透传会让 agent 侧的 maa/agent/__init__.py 拿
+        # runner 的 DLL 目录去 Library.open(agent_server=True)——目标副本缺
+        # MaaAgentServer.dll 就「Agent 进程已退出」。worker 的 build_runner_environment
+        # 先剥后设，剥掉不影响 worker 自己。
+        "MAAFW_BINARY_PATH",
+        "AUTO_MAS_MAAFW_BINDING_DIR",
+        "AUTO_MAS_MAAFW_NATIVE_DIR",
     }
 )
 

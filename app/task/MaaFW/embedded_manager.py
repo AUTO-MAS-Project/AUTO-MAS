@@ -219,6 +219,10 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
         MaaFWRuntimePoolError,
         MaaFWRuntimePoolService,
     )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
+        verify_binding,
+        verify_native,
+    )
 
     try:
         service = MaaFWRuntimePoolService()
@@ -230,10 +234,39 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
         return None
 
     try:
-        # 找到 runtime 后 get() 会真的起一次解释器核对 ABI，起不来就是坏了。
-        service.pool.get(selection.runtime_id)
+        # 找到 base 后 get() 会真的起一次解释器核对 ABI，起不来就是坏了。
+        runtime = service.pool.get(selection.runtime_id)
     except MaaFWRuntimePoolError as exc:  # 原文就是给用户看的
         return f"MFW 运行环境不可用：{exc}"
+    except Exception:  # noqa: BLE001
+        return None
+    if runtime is None or selection.binding_version is None:
+        # base 没建过 / binding 版本还没定：运行时按需准备，失败自有它的报错路径
+        return None
+    try:
+        # binding 目录存在但清单校验不过（被删了一半、文件被改）→ 拦下来说清楚；
+        # 压根没有则同样交给运行时准备。
+        binding_dir = (
+            service.pool.root / "bindings" / f"maafw-{selection.binding_version}"
+        )
+        if (
+            binding_dir.is_dir()
+            and verify_binding(service.pool.root, selection.binding_version) is None
+        ):
+            return (
+                f"MFW 运行环境不可用：maafw {selection.binding_version} 的 binding 目录"
+                f"校验不通过（{binding_dir}），请重新准备运行环境"
+            )
+        native_dir = service.pool.root / "native" / f"maafw-{selection.binding_version}"
+        if (
+            selection.native_needed
+            and native_dir.is_dir()
+            and verify_native(service.pool.root, selection.binding_version) is None
+        ):
+            return (
+                f"MFW 运行环境不可用：maafw {selection.binding_version} 的官方原生库目录"
+                f"校验不通过（{native_dir}），请重新准备运行环境"
+            )
     except Exception:  # noqa: BLE001
         return None
     return None

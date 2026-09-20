@@ -30,10 +30,9 @@
    ``describe_runner_runtime_selection`` 算出 ``prepare_runner_environment`` 会选中
    的 runtime id 与 maafw requirement——两边走同一批 helper，算出来的就是运行时
    会用的那一个。
-2. 不在权威集合里的 runtime 都是孤儿，交给 ``MaaFWRuntimePool.reclaim_stale_runtimes``
-   按「无活租约 ∧（requirement 已不再被任何项目需要 ∨ 新身份下它的 runtime 已建好）
-   ∧（过 24 h 宽限 ∨ 本轮被项目更新替换掉）」删除。租约是唯一的运行期保护：
-   正在跑的 worker 拿着租约，回收永远绕开它。
+2. 交给 ``MaaFWRuntimePool.reclaim_stale_runtimes``：不在权威集合里的 runtime、
+   binding、native 与作废缓存按各自的判据删（旧布局 runtime 先就地收割 binding；
+   在用的靠租约 / 进程内引用计数保护；其余过 24 h 宽限或本轮被替换才删）。
 3. 池里已无旧身份 runtime 时顺手 ``uv cache clean``：runtime 是从池自己的 uv
    缓存硬链接出来的，旧 runtime 删掉后那些文件就只剩缓存这一份，不清等于没删。
    仍有旧 runtime 在等新身份替换时不清，保住离线用户靠缓存重建的能力。
@@ -168,8 +167,15 @@ def _reconcile(
         logger.warning(f"MFW 运行池回收已跳过：池初始化失败: {exc}")
         return None
 
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
+        prune_selections,
+        retained_versions,
+    )
+
     valid_runtime_ids: set[str] = set()
-    needed_requirements: set[str] = set()
+    binding_versions: set[str] = set()
+    native_versions: set[str] = set()
+    unresolved: list[str] = []
     for path in project_paths:
         try:
             selection = describe_runner_runtime_selection(path, pool)
@@ -184,13 +190,28 @@ def _reconcile(
             )
             return None
         valid_runtime_ids.add(selection.runtime_id)
-        needed_requirements.add(selection.maafw_requirement)
+        if selection.binding_version is None:
+            # 范围声明且本地还定不下来：它的 binding 还没建，靠宽限兜住即可
+            unresolved.append(path)
+            continue
+        binding_versions.add(selection.binding_version)
+        if selection.native_needed:
+            native_versions.add(selection.binding_version)
+    if unresolved:
+        logger.debug(
+            f"MFW 运行池回收：{len(unresolved)} 个项目的 binding 版本尚未定下（范围声明、"
+            f"本地无候选），只靠宽限保护: {unresolved[:3]}"
+        )
 
     try:
+        if not dry_run:
+            prune_selections(pool.root, project_paths)
         report = pool.reclaim_stale_runtimes(
             valid_runtime_ids=valid_runtime_ids,
-            needed_requirements=needed_requirements,
+            binding_versions=binding_versions,
+            native_versions=native_versions,
             replaced_versions=replaced_versions,
+            retained_versions=retained_versions(pool.root),
             dry_run=dry_run,
         )
     except Exception as exc:  # noqa: BLE001 - 回收失败不该影响调用方
@@ -202,19 +223,45 @@ def _reconcile(
     kept = list(report.get("kept") or [])
     skipped = list(report.get("skipped") or [])
     errors = list(report.get("errors") or [])
+    harvested = list(report.get("harvested") or [])
+    bindings_deleted = list(report.get("bindingsDeleted") or [])
+    cache_deleted = list(report.get("cacheDeleted") or [])
     remaining = list(report.get("remainingLegacy") or [])
     swept = list(report.get("stagingSwept") or [])
     staging_residue = list(report.get("stagingResidue") or [])
+    verb = "将清理" if dry_run else "已清理"
+    for item in harvested:
+        status = item.get("status")
+        if status == "harvested":
+            logger.info(
+                f"MFW 运行池回收：已从旧运行环境 {item.get('runtimeId')} 收割 maafw "
+                f"{item.get('version')} 的 binding（零下载）"
+            )
+        else:
+            logger.warning(
+                f"MFW 运行池回收：旧运行环境 {item.get('runtimeId')} 里 maafw "
+                f"{item.get('version')} 的 binding 收割失败（{status}），"
+                f"下次准备环境时改为下载: {item.get('error') or ''}"
+            )
     if deleted:
-        verb = "将清理" if dry_run else "已清理"
         logger.info(
             f"MFW 运行池回收（{reason}）：{verb}无人引用的 runtime {len(deleted)} 个: "
             + ", ".join(deleted)
         )
+    if bindings_deleted:
+        logger.info(
+            f"MFW 运行池回收（{reason}）：{verb}无人引用的 binding / 原生库 "
+            f"{len(bindings_deleted)} 个: " + ", ".join(bindings_deleted)
+        )
+    if cache_deleted:
+        logger.info(
+            f"MFW 运行池回收（{reason}）：{verb}作废缓存 {len(cache_deleted)} 项: "
+            + ", ".join(cache_deleted)
+        )
     for item in quarantined:
         logger.warning(
-            f"MFW 运行池回收：runtime {item.get('runtimeId')} 已移出池但有文件删不掉"
-            f"（多半还被进程映射着），残留在 {item.get('path')}，下次启动再清"
+            f"MFW 运行池回收：{item.get('runtimeId') or item.get('entry')} 已移出池但有"
+            f"文件删不掉（多半还被进程映射着），残留在 {item.get('path')}，下次启动再清"
         )
     if staging_residue:
         logger.warning(
@@ -231,8 +278,8 @@ def _reconcile(
         )
     for item in skipped:
         logger.warning(
-            f"MFW 运行池回收：runtime {item.get('runtimeId')} 本轮删不掉，下次再试: "
-            f"{item.get('error')}"
+            f"MFW 运行池回收：{item.get('runtimeId') or item.get('entry')} 本轮删不掉，"
+            f"下次再试: {item.get('error')}"
         )
     for item in errors:
         logger.warning(
@@ -245,7 +292,7 @@ def _reconcile(
     # D8：只有池里已无旧身份 runtime、且本轮确实删了东西时才清缓存。旧 runtime 还在
     # 等新身份替换时不清（离线用户要靠缓存建新的）；什么都没删也不清（缓存里没
     # 有新垃圾，白跑一次子进程）。
-    if not dry_run and not remaining and (deleted or swept):
+    if not dry_run and not remaining and (deleted or bindings_deleted or swept):
         try:
             cache = pool.clean_cache()
         except Exception as exc:  # noqa: BLE001

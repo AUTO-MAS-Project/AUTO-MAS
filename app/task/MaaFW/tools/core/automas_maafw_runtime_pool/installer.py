@@ -18,18 +18,9 @@ from typing import Any
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from .binding_fallback import (
-    ensure_binding_wheel,
-    local_wheel_requirement,
-    maafw_version_missing_from_index,
-    replace_maafw_requirement,
-)
-from .host_environment import current_subprocess_proxy, strip_host_python_environment
+from .host_environment import strip_host_python_environment
 from .identity import (
-    MaaFWRuntimeIdentityError,
     find_maafw_requirement,
-    infer_exact_maafw_version,
-    requirement_distribution_name,
 )
 
 logger = logging.getLogger("automas.maafw.runtime_pool.installer")
@@ -614,10 +605,6 @@ def install_python_runtime(
             cache_dir=uv_cache_dir,
             link_mode=UV_LINK_MODE,
             cwd=resolved_cwd,
-            pool_root=pool_root,
-            # 兜底下载走 urllib，拿不到子进程环境里的代理变量，显式传同一个代理串。
-            proxy_url=current_subprocess_proxy(),
-            log=log,
         )
         dependency_installer = "uv-pip"
         resolved_requirements = _resolved_requirements_with_uv(
@@ -634,8 +621,15 @@ def install_python_runtime(
         dependency_installer = "pip"
         resolved_requirements = _resolved_requirements(python_executable)
         index_metadata = None
-    _verify_maafw_importable(python_executable)
-    version = _installed_maafw_version(python_executable)
+    has_maafw = find_maafw_requirement(requirements) is not None
+    if has_maafw:
+        # 旧布局（maafw 装进 venv）：只剩本地测试与显式传 requirements 的调用方会走到。
+        _verify_maafw_importable(python_executable)
+        version = _installed_maafw_version(python_executable)
+    else:
+        # base 布局：maafw 不在 venv 里，按版本存在 <pool>/bindings（runtime_pool/binding.py）。
+        _verify_base_importable(python_executable)
+        version = None
     installer_name = "uv" if uv_executable is not None else "pip"
     cache_relative_to_pool: str | None = None
     if uv_executable is not None:
@@ -674,13 +668,11 @@ def install_python_runtime(
     }
     if index_metadata is not None:
         index_metadata = dict(index_metadata)
-        binding_source = index_metadata.pop("bindingSource", None)
         if index_metadata:
             installer_metadata["index"] = index_metadata
-        if binding_source:
-            # 无 DLL 项目守卫（runner/environment.py::prepare_runner_environment）
-            # 按这个字段判断共享环境里的 binding 是不是源码打包的。
-            installer_metadata["bindingSource"] = binding_source
+    if not has_maafw:
+        # 回收对账按它区分 base 与旧布局条目（旧布局的 manifest 没有这个键）。
+        installer_metadata["layout"] = "base"
     return {
         "pythonExecutable": str(python_executable),
         "pythonVersion": probe.get("version") or platform.python_version(),
@@ -1293,9 +1285,6 @@ def _install_requirements_with_uv(
     cache_dir: Path,
     link_mode: str,
     cwd: Path,
-    pool_root: Path | None = None,
-    proxy_url: str | None = None,
-    log: Callable[[str], None] | None = None,
 ) -> dict[str, Any] | None:
     """按 ``resolve_package_index_candidates()`` 的顺序重试同一条安装命令。
 
@@ -1310,12 +1299,8 @@ def _install_requirements_with_uv(
     离线时返回 ``{"source": None, "attempt": 1, "offline": True}``；未使用候选
     列表（未配置任何镜像/单值索引，或命中上面的显式旁路）时返回 ``None``。
 
-    候选轮换路径上多一层 binding 兜底：全部候选都失败、且任一候选的 stderr 说的是
-    「索引上没有 ``maafw==X`` 这个版本」（不是连不上索引）时，从 MaaFramework 的
-    tag 源码包自打 wheel（``binding_fallback``），把 requirements 里的 ``maafw==X``
-    换成 ``maafw @ file:///…`` 再按同样的候选轮换装一次；成功时返回值多一个
-    ``"bindingSource": "github-source:<tag>"``。``--offline`` 与显式 ``UV_INDEX_URL``
-    旁路不做兜底。``pool_root`` 为 ``None`` 时兜底关闭（缓存目录无处可放）。
+    maafw 不再经 uv 安装（按版本存在 ``<pool>/bindings``，见 ``binding.py``），此前
+    「索引上没有 ``maafw==X`` 就从 tag 源码自打 wheel」的兜底随之从这里拿掉。
     """
 
     env = _uv_install_environment(
@@ -1324,9 +1309,7 @@ def _install_requirements_with_uv(
         link_mode,
     )
 
-    def _base_command(
-        index_args: list[str], install_requirements: Sequence[str] = requirements
-    ) -> list[str]:
+    def _base_command(index_args: list[str]) -> list[str]:
         return [
             uv_executable,
             "pip",
@@ -1343,7 +1326,7 @@ def _install_requirements_with_uv(
             "--upgrade",
             "--quiet",
             *index_args,
-            *install_requirements,
+            *requirements,
         ]
 
     if is_package_index_offline():
@@ -1359,108 +1342,21 @@ def _install_requirements_with_uv(
 
     candidates = resolve_package_index_candidates()
 
-    def _rotate(install_requirements: Sequence[str]) -> tuple[str | None, int]:
-        return _run_with_source_rotation(
-            lambda index_source: _base_command(
-                ["--index-url", index_source] if index_source else [],
-                install_requirements,
-            ),
-            candidates,
-            cwd=cwd,
-            build_env=lambda _source: env,
-            timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
-            failure_label="MaaFW runtime 依赖安装",
-        )
-
-    binding_source: str | None = None
-    try:
-        source, attempt = _rotate(requirements)
-    except MaaFWRuntimeSourceRotationError as exc:
-        missing_version = _missing_maafw_version_for_fallback(requirements, exc)
-        if missing_version is None or pool_root is None:
-            raise
-        # ``exc`` 的 message 只带最后一轮的 stderr；触发兜底的「索引上没有这个
-        # 版本」可能是前几轮说的（最后一轮恰好超时）。兜底也失败时把那一段
-        # 拼进去，备忘按异常文本分类（``binding_unavailable`` / ``other``）才不会
-        # 把缺版本记成别的原因。
-        base_message = _message_with_missing_version_detail(exc)
-        try:
-            wheel_path, tag = ensure_binding_wheel(
-                missing_version,
-                pool_root,
-                proxy_url=proxy_url,
-                check_cancelled=raise_if_install_cancelled,
-                log=log,
-            )
-        except MaaFWRuntimeInstallCancelled:
-            raise
-        except Exception as fallback_exc:
-            raise RuntimeError(
-                f"{base_message}；GitHub 兜底也失败：{fallback_exc}"
-            ) from fallback_exc
-        if log is not None:
-            log(
-                f"PyPI 无 maafw {missing_version}，"
-                f"改用 MaaFramework {tag} 源码打包的 binding"
-            )
-        fallback_requirements = replace_maafw_requirement(
-            requirements,
-            local_wheel_requirement(wheel_path),
-            is_maafw=lambda item: requirement_distribution_name(item) == "maafw",
-        )
-        try:
-            source, attempt = _rotate(fallback_requirements)
-        except RuntimeError as fallback_exc:
-            raise RuntimeError(
-                f"{base_message}；GitHub 兜底也失败："
-                f"安装源码打包的 binding 失败：{fallback_exc}"
-            ) from fallback_exc
-        binding_source = f"github-source:{tag}"
-
+    source, attempt = _run_with_source_rotation(
+        lambda index_source: _base_command(
+            ["--index-url", index_source] if index_source else []
+        ),
+        candidates,
+        cwd=cwd,
+        build_env=lambda _source: env,
+        timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
+        failure_label="MaaFW runtime 依赖安装",
+    )
     result: dict[str, Any] = {}
     if source is not None:
         result["source"] = source
         result["attempt"] = attempt
-    if binding_source is not None:
-        result["bindingSource"] = binding_source
     return result or None
-
-
-def _message_with_missing_version_detail(
-    error: MaaFWRuntimeSourceRotationError,
-) -> str:
-    """把「索引上没有这个版本」那一轮的 stderr 补进 message（若最后一轮说的不是它）。"""
-
-    message = str(error)
-    if maafw_version_missing_from_index(message):
-        return message
-    for source, _, detail in error.attempts:
-        if maafw_version_missing_from_index(detail):
-            snippet = " ".join(detail.split())[:400]
-            return f"{message}；索引 {source or '默认'} 报告：{snippet}"
-    return message
-
-
-def _missing_maafw_version_for_fallback(
-    requirements: Sequence[str],
-    error: MaaFWRuntimeSourceRotationError,
-) -> str | None:
-    """判断这次全候选失败是否该走 binding 兜底，是则返回 requirement 里钉的 ``X``。
-
-    判据两条都要满足：任一候选的 stderr 匹配「索引上没有 maafw==」（连不上索引、
-    离线缓存缺包都不算）；requirements 里 ``maafw`` 是精确 ``==``。版本从 requirement
-    取，不从 stderr 抠。
-    """
-
-    if not any(
-        maafw_version_missing_from_index(detail) for _, _, detail in error.attempts
-    ):
-        return None
-    try:
-        requirement = find_maafw_requirement(requirements)
-    except MaaFWRuntimeIdentityError:
-        return None
-    return infer_exact_maafw_version(requirement)
 
 
 def _install_requirements_with_pip(
@@ -1820,6 +1716,45 @@ def _verify_maafw_importable(python_executable: Path) -> None:
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime 校验失败：依赖已安装但 import maa 不成功，"
+            f"该环境不可用。原始错误：{detail[-400:]}"
+        )
+
+
+#: base venv 自检要能 import 的模块：runner 三包与 maafw binding 的全部三方 import。
+_BASE_IMPORT_CHECK = (
+    "import numpy, strenum, pydantic, psutil, packaging, json5, jsonc;"
+    "import sysconfig, pathlib;"
+    "site = pathlib.Path(sysconfig.get_path('purelib'));"
+    "assert (site / 'MaaAgentBinary').is_dir(), f'MaaAgentBinary missing in {site}';"
+    "print('ok')"
+)
+
+
+def _verify_base_importable(python_executable: Path) -> None:
+    """base 布局的自检：常量集合里的包都 import 得动、MaaAgentBinary 目录在。
+
+    与 ``_verify_maafw_importable`` 同一个道理——元数据里有不等于能用；worker 起来
+    才发现 ``import numpy`` 炸掉，用户看到的是一句天书。
+    """
+
+    try:
+        result = subprocess.run(
+            [str(python_executable), "-c", _BASE_IMPORT_CHECK],
+            capture_output=True,
+            timeout=60,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_clean_install_environment(python_executable.parent.parent),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"MaaFW runtime 校验失败：无法执行 {python_executable}"
+        ) from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            "MaaFW runtime 校验失败：base 依赖已安装但 import 不成功，"
             f"该环境不可用。原始错误：{detail[-400:]}"
         )
 

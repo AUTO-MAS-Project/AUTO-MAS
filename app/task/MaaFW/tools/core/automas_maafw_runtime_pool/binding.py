@@ -1063,7 +1063,7 @@ def _write_bin_placeholder(binding_stage: Path) -> None:
 def _lay_out_binding_from_source(
     archive_path: Path, binding_stage: Path, *, version: str, tag: str
 ) -> tuple[str, ...]:
-    """tag 源码包 → 铺 ``maa/**`` + 生成 dist-info（与 ``binding_fallback.build_binding_wheel`` 同一份成员过滤与 METADATA）。"""
+    """tag 源码包 → 铺 ``maa/**`` + 生成 dist-info（成员过滤与 METADATA 沿用此前自打 wheel 的口径）。"""
 
     info = validate_source_archive(archive_path)
     dist_info = f"maafw-{version}.dist-info"
@@ -1172,6 +1172,42 @@ def _download_wheel(
 # ---------------------------------------------------------------------------
 
 
+#: worker / 自检环境里 binding 相关的键；它们必须进 ``ISOLATED_HOST_KEYS``：worker 派生
+#: agent 子进程时从 ``strip_host_python_environment`` 起步，这几个键透传过去会让 agent 侧
+#: 的 ``maa/agent/__init__.py`` 拿 runner 的 DLL 目录去 ``Library.open(agent_server=True)``。
+BINDING_ENVIRONMENT_KEYS: tuple[str, ...] = (
+    "MAAFW_BINARY_PATH",
+    "AUTO_MAS_MAAFW_BINDING_DIR",
+    "AUTO_MAS_MAAFW_NATIVE_DIR",
+)
+
+
+def binding_environment_variables(
+    pool_root: Path,
+    *,
+    binding_dir: Path,
+    native_dir: Path | None,
+    project_runtime_path: Path | None = None,
+) -> dict[str, str]:
+    """worker 与自检共用的 binding 相关环境键（``PYTHONPATH`` 由调用方拼，binding 目录放最前）。
+
+    ``MAAFW_BINARY_PATH`` = 副本自带的 ``maafw/`` 或池里的 native 目录，皆无则不设（import 期
+    退到 binding 目录里的 ``maa/bin`` 占位）。``PYTHONPYCACHEPREFIX`` 让 pyc 落到池的
+    ``.pycache``，binding 目录的清单才稳定。
+    """
+
+    env = {
+        "PYTHONPYCACHEPREFIX": str(pycache_directory(pool_root)),
+        "AUTO_MAS_MAAFW_BINDING_DIR": str(binding_dir),
+    }
+    binary_path = project_runtime_path or native_dir
+    if binary_path is not None:
+        env["MAAFW_BINARY_PATH"] = str(binary_path)
+    if native_dir is not None:
+        env["AUTO_MAS_MAAFW_NATIVE_DIR"] = str(native_dir)
+    return env
+
+
 def self_check_environment(
     pool_root: Path,
     *,
@@ -1180,7 +1216,7 @@ def self_check_environment(
     project_runtime_path: Path | None = None,
     import_paths: Iterable[str | Path] = (),
 ) -> dict[str, str]:
-    """worker 同款的环境变量（``build_runner_environment`` 也用它拼 binding 那几项）。"""
+    """自检子进程的环境：worker 同款的隔离 + binding 键。"""
 
     env = strip_host_python_environment()
     paths = [str(binding_dir)] + [str(Path(item)) for item in import_paths]
@@ -1188,13 +1224,14 @@ def self_check_environment(
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONSAFEPATH"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONPYCACHEPREFIX"] = str(pycache_directory(pool_root))
-    env["AUTO_MAS_MAAFW_BINDING_DIR"] = str(binding_dir)
-    binary_path = project_runtime_path or native_dir
-    if binary_path is not None:
-        env["MAAFW_BINARY_PATH"] = str(binary_path)
-    if native_dir is not None:
-        env["AUTO_MAS_MAAFW_NATIVE_DIR"] = str(native_dir)
+    env.update(
+        binding_environment_variables(
+            pool_root,
+            binding_dir=binding_dir,
+            native_dir=native_dir,
+            project_runtime_path=project_runtime_path,
+        )
+    )
     return env
 
 
@@ -1685,8 +1722,10 @@ __all__ = [
     "MaaFWBindingNetworkError",
     "MaaFWBindingUnavailableError",
     "WheelLink",
+    "BINDING_ENVIRONMENT_KEYS",
     "available_versions",
     "binding_directory",
+    "binding_environment_variables",
     "directory_version",
     "ensure_binding",
     "exact_version_of",

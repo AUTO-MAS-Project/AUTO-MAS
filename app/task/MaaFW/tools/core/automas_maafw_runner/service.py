@@ -25,6 +25,7 @@ from .environment import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
     MaaFWRunnerEnvironment,
     prepare_runner_environment,
+    probe_bundled_maafw_version,
     release_runner_environment,
 )
 from .models import (
@@ -49,7 +50,12 @@ _PROJECT_ENVIRONMENT_INPUTS = (
 
 
 def project_environment_fingerprint(project_path: str | Path) -> str | None:
-    """Hash the project inputs that determine the prepared Runner route."""
+    """Hash the project inputs that determine the prepared Runner route.
+
+    项目自带原生库的版本也进指纹：binding 按它钉（``resolve_project_maafw_requirement``
+    的第一优先级），项目更新只换了 DLL、interface / requirements 没动时，旧指纹会
+    命中上一个版本的 binding。
+    """
 
     root = Path(project_path).expanduser().resolve(strict=False)
     if not root.is_dir():
@@ -57,6 +63,8 @@ def project_environment_fingerprint(project_path: str | Path) -> str | None:
 
     digest = hashlib.sha256()
     found_interface = False
+    bundled_version = probe_bundled_maafw_version(root)
+    digest.update(f"bundled-maafw:{bundled_version or ''}\0".encode("utf-8"))
     for relative_name in _PROJECT_ENVIRONMENT_INPUTS:
         candidate = root / relative_name
         if not candidate.is_file():
@@ -183,11 +191,7 @@ class MaaFWRunnerService:
         runtime_pool_root: str | Path | None = None,
         runtime_pool: MaaFWRuntimePool | None = None,
         runtime_installer: RuntimeInstaller | None = None,
-        runtime_requirement: str | None = None,
-        runtime_requirements: list[str] | tuple[str, ...] | None = None,
-        runtime_id: str | None = None,
         runtime_pool_id: str | None = None,
-        runtime_python_constraint: str | None = None,
         lease_owner: str = "automas-maafw-runner",
         lease_ttl_seconds: float | None = DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
         import_paths: list[str | Path] | None = None,
@@ -201,11 +205,7 @@ class MaaFWRunnerService:
             runtime_pool_root=runtime_pool_root,
             runtime_pool=runtime_pool,
             runtime_installer=runtime_installer,
-            runtime_requirement=runtime_requirement,
-            runtime_requirements=runtime_requirements,
-            runtime_id=runtime_id,
             runtime_pool_id=runtime_pool_id,
-            runtime_python_constraint=runtime_python_constraint,
             lease_owner=lease_owner,
             lease_ttl_seconds=lease_ttl_seconds,
             import_paths=import_paths or [],
@@ -233,11 +233,7 @@ class MaaFWRunnerService:
         runtime_pool_root: str | Path | None = None,
         runtime_pool: MaaFWRuntimePool | None = None,
         runtime_installer: RuntimeInstaller | None = None,
-        runtime_requirement: str | None = None,
-        runtime_requirements: list[str] | tuple[str, ...] | None = None,
-        runtime_id: str | None = None,
         runtime_pool_id: str | None = None,
-        runtime_python_constraint: str | None = None,
         agent_env_root: str | Path | None = None,
         import_paths: list[str | Path] | None = None,
         send_log: Callable[[str], None] | None = None,
@@ -266,11 +262,7 @@ class MaaFWRunnerService:
                 runtime_pool_root=runtime_pool_root,
                 runtime_pool=runtime_pool,
                 runtime_installer=runtime_installer,
-                runtime_requirement=runtime_requirement,
-                runtime_requirements=runtime_requirements,
-                runtime_id=runtime_id,
                 runtime_pool_id=runtime_pool_id,
-                runtime_python_constraint=runtime_python_constraint,
                 lease_owner=f"automas-maafw-preflight:{uuid.uuid4().hex}",
                 lease_ttl_seconds=600,
                 import_paths=import_paths,
@@ -338,7 +330,19 @@ class MaaFWRunnerService:
                     "venvPath": str(environment.venv_path),
                     "packages": list(environment.packages),
                     "maafwRequirement": environment.maafw_requirement,
+                    # 就是 binding 的版本（runner_task 拿它填 PI_CLIENT_MAAFW_VERSION）
                     "maafwVersion": environment.maafw_version,
+                    "bindingDir": (
+                        str(environment.binding_dir)
+                        if environment.binding_dir is not None
+                        else None
+                    ),
+                    "bindingVersion": environment.binding_version,
+                    "nativeDir": (
+                        str(environment.native_dir)
+                        if environment.native_dir is not None
+                        else None
+                    ),
                 },
                 "agents": agent_result.model_dump(mode="json"),
             }

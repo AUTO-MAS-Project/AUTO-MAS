@@ -13,6 +13,7 @@ import os
 import shutil
 import stat
 import threading
+import time
 import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -85,13 +86,22 @@ def _clear_readonly_and_retry(func: Any, path: str, _exc_info: Any) -> None:
 
 
 def remove_tree_best_effort(path: Path) -> bool:
-    """尽力删整棵目录，返回是否删干净了。不抛：残留由调用方如实报告。"""
+    """尽力删整棵目录，返回是否删干净了。不抛：残留由调用方如实报告。
 
-    try:
-        shutil.rmtree(path, onexc=_clear_readonly_and_retry)
-    except OSError:
-        pass
-    return not path.exists() and not path.is_symlink()
+    第一遍没删干净就歇一下再来一遍：刚写出来的文件常被杀软 / 索引器短暂占住
+    （本地测试里刚解出来的 .pyc 就被拦下过一次），几百毫秒后就放开了。
+    """
+
+    for attempt in range(2):
+        if attempt:
+            time.sleep(0.3)
+        try:
+            shutil.rmtree(path, onexc=_clear_readonly_and_retry)
+        except OSError:
+            pass
+        if not path.exists() and not path.is_symlink():
+            return True
+    return False
 
 
 def utc_now() -> datetime:

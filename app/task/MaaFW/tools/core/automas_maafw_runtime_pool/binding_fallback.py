@@ -1,46 +1,42 @@
-"""PyPI 缺 ``maafw`` 版本时，从 MaaFramework 的 git tag 源码包自打纯 Python wheel。
+"""PyPI 缺 ``maafw`` 版本时，MaaFramework git tag 源码包的下载与校验（给 ``binding.py`` 用）。
 
 背景：MaaEnd v2.29.0 打包了 MaaFramework ``v5.14.0-beta.1`` 的 DLL，运行池据此把 binding
 钉成 ``maafw==5.14.0b1``，而 MaaFramework 发版工作流的 pip job 上传失败、PyPI 上没有这个
 版本——环境建不出来、任务每次必挂。binding 是纯 Python（``source/binding/Python/maa``），
 DLL 由项目自带的 ``maafw/`` 目录提供（``runner.py`` 会 ``Library.open(runtime_path)``），
-所以从 tag 源码包打一个不带原生库的 wheel 就够用。
+所以从 tag 源码包铺一份不带原生库的 binding 目录就够用（铺目录与生成 dist-info 在
+``binding.py::_lay_out_binding_from_source``；此前「自打 wheel 再经 uv 安装」的那条路随
+maafw 不再进 venv 一起拿掉了）。
 
 约束：
 - 本模块在 ``runtime_pool`` 包内，而 worker 子进程的导入闭包包含整个包、池 venv 里只有
-  ``RUNNER_DEFAULT_PACKAGES``——**模块级 import 只允许标准库 + packaging**，HTTP 用
+  ``BASE_RUNTIME_PACKAGES``——**模块级 import 只允许标准库 + packaging**，HTTP 用
   ``urllib``，代理串由调用方传入（不读 ``Config``）。
-- wheel 必须带 ``maa/bin/.auto-mas-no-bundled-dll`` 占位文件：``maa/__init__.py`` 在
-  import 时就 ``Library.open(<maa>/bin)``，目录不存在直接 ``FileNotFoundError``；池装完
-  依赖后 ``installer._verify_maafw_importable`` 在干净 env 里 ``import maa``，拿不到项目
-  路径，给 worker 设 ``MAAFW_BINARY_PATH`` 救不了这一步。
+- binding 目录必须带 ``maa/bin/.auto-mas-no-bundled-dll`` 占位文件：``maa/__init__.py`` 在
+  import 时就 ``Library.open(<maa>/bin)``，目录不存在直接 ``FileNotFoundError``。
 - ``pyproject.toml`` 的 ``dependencies`` 原样全部带入 ``Requires-Dist``，含
   ``MaaAgentBinary``：它不是被 import，而是 ``AdbController.__init__`` 默认参数
-  ``agent_path = <maa>/../MaaAgentBinary``，剔了它，落到这份共享环境的 ADB 项目会静默丢
-  maatouch / minitouch / minicap。
-- 兜底只对自带 ``MaaFramework.dll`` 的项目有意义，无 DLL 项目的守卫在
-  ``automas_maafw_runner/environment.py::prepare_runner_environment``。
+  ``agent_path = <maa>/../MaaAgentBinary``。
+- 源码 binding 只对自带 ``MaaFramework.dll`` 的项目有意义，无 DLL 项目在
+  ``binding.py::ensure_binding`` 里被拒。
 - agent 侧不覆盖：isolated_venv 的 pip（``agent_env/env.py::_pip_install``）钉同样的
   ``maafw==X``，PyPI 缺货抛 ``MaaFWAgentEnvError`` → 预检失败 → 回滚 → 不升级，这是预期；
   ``project_python`` 不装东西。
-- 许可：MaaFramework 是 LGPL-3.0；运行时把源码装进用户自己的 venv 不构成再分发，wheel
+- 许可：MaaFramework 是 LGPL-3.0；运行时把源码铺进用户自己的运行池不构成再分发，目录
   带 ``LICENSE.md``，不 vendor 进 MAS 仓库。
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import logging
 import os
-import re
 import tomllib
 import urllib.error
 import urllib.request
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
@@ -55,7 +51,6 @@ SOURCE_ARCHIVE_URL_TEMPLATES: tuple[str, ...] = (
 )
 BINDING_SOURCE_PREFIX = "source/binding/Python/"
 BINDING_SRC_CACHE_RELATIVE_PATH = Path("cache") / "binding-src"
-BINDING_WHEEL_CACHE_RELATIVE_PATH = Path("cache") / "binding-wheels"
 NO_BUNDLED_DLL_MARKER_NAME = ".auto-mas-no-bundled-dll"
 NO_BUNDLED_DLL_MARKER_TEXT = (
     "原生库由项目自带 maafw/ 目录提供；本目录仅为让 maa/__init__.py 的 "
@@ -66,14 +61,6 @@ DOWNLOAD_TIMEOUT_SECONDS = 30
 _DOWNLOAD_CHUNK_SIZE = 256 * 1024
 # 源码包实测 1.2 MB；给一个远超正常值的上限，防止跟错跳转把整站页面当 zip 落盘。
 _MAX_SOURCE_ARCHIVE_BYTES = 64 * 1024 * 1024
-
-# uv 0.11 对「索引上没有这个版本」的两种原文（连不上索引的 ``Request failed after 3
-# retries`` / ``Failed to fetch`` 与离线的 ``was not found in the cache`` 都不算）。
-# uv 会把长句按 60 列折行，匹配前先把空白归一。
-_MISSING_VERSION_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"there is no version of maafw==", re.IGNORECASE),
-    re.compile(r"maafw was not found in the package registry", re.IGNORECASE),
-)
 
 
 class MaaFWBindingFallbackError(RuntimeError):
@@ -116,26 +103,11 @@ def pep440_to_maafw_tag(version_text: str) -> str | None:
     return f"v{base}-{suffix}.{number}"
 
 
-def maafw_version_missing_from_index(detail: str | None) -> bool:
-    """判断一段 uv stderr 是否表示「索引上没有这个 maafw 版本」。"""
-
-    text = " ".join(str(detail or "").split())
-    if not text:
-        return False
-    return any(pattern.search(text) for pattern in _MISSING_VERSION_PATTERNS)
-
-
 def source_archive_candidates(tag: str) -> tuple[str, ...]:
     return tuple(
         template.format(repo=MAAFW_REPOSITORY, tag=tag)
         for template in SOURCE_ARCHIVE_URL_TEMPLATES
     )
-
-
-def local_wheel_requirement(wheel_path: Path) -> str:
-    """uv / pip 都接受的本地 wheel 位置参数：``maafw @ file:///D:/abs/path.whl``。"""
-
-    return f"maafw @ {Path(wheel_path).resolve().as_uri()}"
 
 
 def download_source_archive(
@@ -278,153 +250,3 @@ def validate_source_archive(archive: Path) -> BindingSourceInfo:
         dependencies=tuple(item.strip() for item in raw_dependencies),
         requires_python=requires_python or DEFAULT_REQUIRES_PYTHON,
     )
-
-
-def build_binding_wheel(
-    archive: Path,
-    version_text: str,
-    output_dir: Path,
-    *,
-    tag: str,
-) -> Path:
-    """从校验过的源码包打 ``maafw-<X>-py3-none-any.whl``（纯 zipfile，不依赖构建后端）。
-
-    ``X = str(Version(version_text))``，文件名、dist-info 目录名、METADATA ``Version``
-    三处一致（``importlib.metadata.version('maafw')`` 读的就是 METADATA）。
-    内容：``maa/**``（剔 ``__pycache__``）+ ``maa/bin/.auto-mas-no-bundled-dll`` 占位 +
-    ``maafw-<X>.dist-info/{METADATA, WHEEL, RECORD, licenses/LICENSE.md}``。
-    按文件名缓存，已存在且是合法 zip 时不重打。
-    """
-
-    try:
-        version = str(Version(str(version_text).strip()))
-    except InvalidVersion as exc:
-        raise MaaFWBindingFallbackError(f"maafw 版本不合法: {version_text}") from exc
-    output_dir = Path(output_dir)
-    wheel_path = output_dir / f"maafw-{version}-py3-none-any.whl"
-    if wheel_path.is_file() and zipfile.is_zipfile(wheel_path):
-        return wheel_path
-
-    info = validate_source_archive(archive)
-    dist_info = f"maafw-{version}.dist-info"
-    metadata_lines = [
-        "Metadata-Version: 2.1",
-        "Name: maafw",
-        f"Version: {version}",
-        (
-            f"Summary: 由 AUTO-MAS 从 MaaFramework {tag} 源码打包，"
-            "无自带原生库（maa/bin 仅占位）"
-        ),
-        f"Requires-Python: {info.requires_python}",
-        *(f"Requires-Dist: {dependency}" for dependency in info.dependencies),
-        "License-File: LICENSE.md",
-    ]
-    metadata = ("\n".join(metadata_lines) + "\n").encode("utf-8")
-    wheel_metadata = (
-        "Wheel-Version: 1.0\n"
-        "Generator: auto-mas\n"
-        "Root-Is-Purelib: true\n"
-        "Tag: py3-none-any\n"
-    ).encode("utf-8")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    partial = output_dir / f"{wheel_path.name}.part"
-    record_rows: list[str] = []
-    try:
-        with (
-            zipfile.ZipFile(archive) as source,
-            zipfile.ZipFile(partial, "w", zipfile.ZIP_DEFLATED) as wheel,
-        ):
-
-            def add(arcname: str, data: bytes) -> None:
-                wheel.writestr(arcname, data)
-                digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest())
-                record_rows.append(
-                    f"{arcname},sha256={digest.rstrip(b'=').decode('ascii')},{len(data)}"
-                )
-
-            base = f"{info.top_level}/{BINDING_SOURCE_PREFIX}"
-            package_prefix = f"{base}maa/"
-            members = [
-                name
-                for name in source.namelist()
-                if name.startswith(package_prefix)
-                and not name.endswith("/")
-                and "__pycache__" not in name
-                and not name.endswith(".pyc")
-            ]
-            if not members:
-                raise MaaFWBindingFallbackError("源码包的 maa/ 下没有文件")
-            for name in members:
-                add(str(PurePosixPath(name[len(base) :])), source.read(name))
-            add(
-                f"maa/bin/{NO_BUNDLED_DLL_MARKER_NAME}",
-                NO_BUNDLED_DLL_MARKER_TEXT.encode("utf-8"),
-            )
-            add(
-                f"{dist_info}/licenses/LICENSE.md",
-                source.read(f"{info.top_level}/LICENSE.md"),
-            )
-            add(f"{dist_info}/METADATA", metadata)
-            add(f"{dist_info}/WHEEL", wheel_metadata)
-            record_rows.append(f"{dist_info}/RECORD,,")
-            wheel.writestr(
-                f"{dist_info}/RECORD", ("\n".join(record_rows) + "\n").encode("utf-8")
-            )
-        os.replace(partial, wheel_path)
-    except zipfile.BadZipFile as exc:
-        raise MaaFWBindingFallbackError(f"源码包不是合法 zip: {exc}") from exc
-    finally:
-        if partial.exists():
-            try:
-                partial.unlink()
-            except OSError:
-                pass
-    return wheel_path
-
-
-def ensure_binding_wheel(
-    version_text: str,
-    pool_root: Path,
-    *,
-    proxy_url: str | None = None,
-    check_cancelled: Callable[[], None] | None = None,
-    log: Callable[[str], None] | None = None,
-) -> tuple[Path, str]:
-    """整条兜底：映射 tag → 下载（缓存）→ 校验 → 打 wheel（缓存）。返回 ``(wheel, tag)``。"""
-
-    tag = pep440_to_maafw_tag(version_text)
-    if tag is None:
-        raise MaaFWBindingFallbackError(
-            f"maafw {version_text} 映射不到 MaaFramework 的发布 tag（post/dev/local 版本没有源码包）"
-        )
-    pool_root = Path(pool_root)
-    try:
-        version = str(Version(str(version_text).strip()))
-    except InvalidVersion as exc:
-        raise MaaFWBindingFallbackError(f"maafw 版本不合法: {version_text}") from exc
-    wheel_dir = pool_root / BINDING_WHEEL_CACHE_RELATIVE_PATH
-    cached = wheel_dir / f"maafw-{version}-py3-none-any.whl"
-    if cached.is_file() and zipfile.is_zipfile(cached):
-        return cached, tag
-    archive = download_source_archive(
-        tag,
-        pool_root / BINDING_SRC_CACHE_RELATIVE_PATH,
-        proxy_url=proxy_url,
-        check_cancelled=check_cancelled,
-        log=log,
-    )
-    wheel = build_binding_wheel(archive, version, wheel_dir, tag=tag)
-    logger.info("已从 MaaFramework %s 源码打包 binding: %s", tag, wheel)
-    return wheel, tag
-
-
-def replace_maafw_requirement(
-    requirements: Sequence[str],
-    replacement: str,
-    *,
-    is_maafw: Callable[[str], bool],
-) -> list[str]:
-    """把 requirements 里的 ``maafw==X`` 换成 ``replacement``，其余原样。"""
-
-    return [replacement if is_maafw(item) else item for item in requirements]
