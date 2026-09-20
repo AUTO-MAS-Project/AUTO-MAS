@@ -36,11 +36,11 @@ from typing import Any
 from app.models.schema import ComboBoxItem
 
 from .zzz_od_config import (
+    _YAML_LOCK,
     DEFAULT_GAME_ACCOUNT,
     DEFAULT_GAME_LAUNCH_ARGS,
     ZZZOD_GAME_LANGUAGE_LABELS,
     ZZZOD_GAME_REGION_LABELS,
-    _YAML_LOCK,
     instance_dir,
     merge_dx12_argument,
     read_app_group,

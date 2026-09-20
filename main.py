@@ -21,10 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
-import sys
 import ctypes
 import logging
+import os
+import sys
 from pathlib import Path
 
 current_dir = Path(__file__).resolve().parent
@@ -36,8 +36,13 @@ if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
     # app.utils.logger 会在导入时以 Path.cwd() 建 debug/ 目录，导入必须留在 chdir 之后）
     os.chdir(current_dir)
 
-from app.utils.platform import IS_WINDOWS, is_admin
-from app.utils import get_logger, is_supervised, resource_path, sanitize_log_message
+from app.utils import (  # noqa: E402
+    get_logger,
+    is_supervised,
+    resource_path,
+    sanitize_log_message,
+)
+from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
 
 logger = get_logger("主程序")
 
@@ -261,17 +266,18 @@ def main():
     )
 
     import asyncio
+    from contextlib import asynccontextmanager, suppress
+
     import uvicorn
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
-    from contextlib import asynccontextmanager, suppress
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from app.core import Config, MainTimer, TaskManager
-
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         import ssl
+
+        from app.core import Config, MainTimer, TaskManager
 
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
@@ -473,24 +479,25 @@ def main():
             logger.info("AUTO-MAS 后端程序关闭")
 
     from fastapi.middleware.cors import CORSMiddleware
+
     from app.api import (
         core_router,
-        info_router,
-        scripts_router,
-        plan_router,
-        emulator_router,
-        emulator2_router,
-        queue_router,
         dispatch_router,
+        emulator2_router,
+        emulator_router,
         history_router,
-        tools_router,
-        setting_router,
-        update_router,
+        info_router,
         ocr_router,
         openclaw_qq_router,
         openclaw_weixin_router,
+        plan_router,
         qr_login_router,
+        queue_router,
+        scripts_router,
+        setting_router,
         skland_qr_router,
+        tools_router,
+        update_router,
     )
 
     app = FastAPI(
