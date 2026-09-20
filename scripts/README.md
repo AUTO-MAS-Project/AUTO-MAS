@@ -6,9 +6,10 @@
 并拒绝缺少后台更新协议的二进制，防止生成无法正常启动的安装包。
 bump 该文件后，已装用户在下次本体更新时会先换到这一版、再更新源码：桌面端在跑 `bootstrap`
 之前（首次初始化与本体更新都是）到目标发布分支上读这份文件（CNB 与 GitHub 并行、先到先用），
-与 exe 自报的版本不一致就下载替换（首选 CNB，再 gh-proxy，GitHub 官方兜底；哈希取自该 Release
-的 `SHA256SUMS.txt`）；每次 managed 启动还会按 `<app-root>/repo/res/runtime-version.txt` 兜底
-核对一次。所以 bump 之前请确认那版 Runtime 能配合要构建的分支启动。
+与 exe 自报的版本不一致就下载替换（exe 首选 CNB，再 gh-proxy，GitHub 官方兜底；期望哈希只从
+GitHub / CNB 的 `SHA256SUMS.txt` 取，代理只负责下 exe）；每次 managed 启动还会按
+`<app-root>/repo/res/runtime-version.txt` 兜底核对一次。所以 bump 之前请确认那版 Runtime 能配合
+要构建的分支启动。
 
 本地验证可直接使用本次源码构建的 Runtime，不必等待 Release：
 
