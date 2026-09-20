@@ -56,6 +56,10 @@ jobs:
         working-directory: frontend
         run: yarn lint
 
+      - name: 检查前端类型
+        working-directory: frontend
+        run: yarn typecheck
+
       - name: 检查前端格式
         working-directory: frontend
         run: yarn oxfmt . --check
