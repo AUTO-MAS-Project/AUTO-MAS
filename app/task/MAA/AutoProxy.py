@@ -1984,6 +1984,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
             self.cur_user_log.status = "MAA 未检测到任何模拟器"
+        elif "任务因内存不足停止" in log:
+            # v6.17 起 MAA 内存不足走专属提示，不再带「任务出错:」前缀
+            self.cur_user_log.status = "MAA 因内存不足停止，请关闭部分程序后重试"
         elif "已停止" in log:
             self.cur_user_log.status = "MAA 在完成任务前中止"
         elif (

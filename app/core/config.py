@@ -159,6 +159,28 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏社区结果快照失败: {e}")
 
 
+def _parse_maa_drop_count(text: str) -> int:
+    """把 MAA 掉落行中的数量换算成整数。
+
+    MAA 对较大数量输出 ``1.5k``（≥1 万）与 ``1.2M``（≥100 万）缩写（不区分
+    大小写），其余为 ``864`` 或 ``9,999`` 形态。
+
+    Args:
+        text: 掉落行中的数量原文。
+
+    Returns:
+        换算后的整数数量。
+    """
+
+    text = text.replace(",", "")
+    multiplier = 1
+    if text[-1:] in ("k", "K"):
+        multiplier, text = 1000, text[:-1]
+    elif text[-1:] in ("m", "M"):
+        multiplier, text = 1_000_000, text[:-1]
+    return round(float(text) * multiplier)
+
+
 def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     """按理智任务边界解析 MAA 日志中的关卡掉落统计。
 
@@ -249,16 +271,12 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
                 continue
 
             item_match: list[tuple[str, str]] = re.findall(
-                r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
+                r"^(?!\[)(\S+?)\s*:\s*([\d,]+(?:\.\d+)?[kKmM]?)(?:\s*\(\+[\d,]+(?:\.\d+)?[kKmM]?\))?",
                 line,
                 re.M,
             )
             for item, total in item_match:
-                total = total.replace(",", "")
-                if total.lower().endswith("k"):
-                    total = int(total[:-1]) * 1000
-                else:
-                    total = int(total)
+                total = _parse_maa_drop_count(total)
 
                 if item not in [
                     "当前次数",
