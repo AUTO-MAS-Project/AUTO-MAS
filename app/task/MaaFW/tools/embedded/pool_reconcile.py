@@ -111,8 +111,12 @@ def reconcile_runtime_pool(
     """按权威集合对账一轮运行池；返回池的回收报告，弃权时返回 ``None``。
 
     阻塞调用（要起解释器探针、可能跑 ``uv cache clean``），放线程里跑。同一进程
-    里同时只跑一轮：另一轮正在跑时直接返回 ``None``，不排队——权威集合是全局
-    状态，后到的那轮看到的和正在跑的没区别。
+    里同时只跑一轮：另一轮正在跑时**直接丢弃、不排队**——权威集合是全局状态，
+    后到的那轮看到的和正在跑的没区别；丢掉的那轮想清的东西最晚下次启动清。
+
+    任一项目算不出 selection 时整轮弃权，而且这是**永久性**的：只要那个项目的
+    ``requirements.txt`` 一直声明两行 maafw / 一直不是 UTF-8，回收就一直不跑。
+    这种项目 prepare 同样会报同一个错，用户在运行它时会看到；日志里每轮都会点名。
     """
 
     if not _RECONCILE_LOCK.acquire(blocking=False):
@@ -254,6 +258,13 @@ def _reconcile(
                     "MFW 运行池 uv 缓存已清理: "
                     f"removedFiles={int(cache.get('removedFiles') or 0)}, "
                     f"removedBytes={int(cache.get('removedBytes') or 0)}"
+                )
+            elif status == "skipped":
+                # managed 安装：缓存是 Runtime 注入的共享目录，归它管。这里必须留痕，
+                # 否则用户在这类安装上看不到「旧 runtime 删了但包文件还在缓存里」。
+                logger.info(
+                    "MFW 运行池 uv 缓存未清理：缓存由 Runtime 注入共享，交给 Runtime 维护"
+                    f"（{cache.get('cachePath')}）"
                 )
             elif status in {"error", "unavailable", "unsafe"}:
                 logger.warning(

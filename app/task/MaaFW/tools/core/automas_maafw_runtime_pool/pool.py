@@ -588,6 +588,10 @@ class MaaFWRuntimePool:
                 requirement = _maafw_requirement_key(manifest.get("maafwRequirement"))
                 version = _normalize_maafw_version(manifest.get("maafwVersion"))
                 reasons: list[str] = []
+                if bool(manifest.get("pinned")):
+                    # 手动钉住的条目（manifest 契约里的 pinned）不进回收；今天没人写它，
+                    # 但既然 delete() 认它，回收也认，别让同一个字段两套语义。
+                    reasons.append("pinned")
                 if self._active_lease_ids(manifest, reference_time):
                     reasons.append("leased")
                 if requirement in needed and requirement not in ready:
