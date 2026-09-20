@@ -220,18 +220,18 @@
     </a-card>
   </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="GENERAL_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('edit.generalConfigRestoreUserDesc')"
-      :script-desc="t('edit.generalConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    />
+  <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
+  <ConfigRestoreSection
+    v-model:open="restoreOpen"
+    :disabled="configLocked"
+    :script-name="GENERAL_DISPLAY_NAME"
+    :targets="restoreTargets"
+    :api="restoreApi"
+    :user-desc="t('edit.generalConfigRestoreUserDesc')"
+    :script-desc="t('edit.generalConfigRestoreScriptDesc')"
+    :on-restored="handleRestored"
+    :on-detail="handleRestoreView"
+  />
 </template>
 
 <script setup lang="ts">

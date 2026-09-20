@@ -1,8 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const readSource = (filename: string) =>
-  readFileSync(new URL(filename, import.meta.url), 'utf8')
+const readSource = (filename: string) => readFileSync(new URL(filename, import.meta.url), 'utf8')
 
 describe('user config runtime save lock', () => {
   it('fails pending saves instead of reporting success while locked', () => {
@@ -64,9 +63,7 @@ describe('user config runtime save lock', () => {
     const projects = readSource('./BettergiGroupProjectBody.vue')
     // #890 起「添加脚本」的 OK 按钮对四类可编辑项目（配置组 / 录制 / JS / 路径）都放开，
     // 判据由 kind !== 'scriptgroup' 放宽为 isScriptGroup（见该组件的计算属性）
-    expect(projects).toContain(
-      ':ok-button-props="{ disabled: !isScriptGroup || configLocked }"'
-    )
+    expect(projects).toContain(':ok-button-props="{ disabled: !isScriptGroup || configLocked }"')
     // #890 起改为箭头函数写法（返回值类型不变）
     expect(projects).toContain('const persistProjects = (): Promise<boolean> => {')
     // 该函数现为箭头函数，锁定时返回 Promise.resolve(false)
@@ -76,8 +73,6 @@ describe('user config runtime save lock', () => {
 
     const saveSettings = projects.slice(projects.indexOf('const saveProjectSettings'))
     const savedIndex = saveSettings.indexOf('const saved = await persistProjects()')
-    expect(savedIndex).toBeLessThan(
-      saveSettings.indexOf('settingsModal.open = false', savedIndex)
-    )
+    expect(savedIndex).toBeLessThan(saveSettings.indexOf('settingsModal.open = false', savedIndex))
   })
 })

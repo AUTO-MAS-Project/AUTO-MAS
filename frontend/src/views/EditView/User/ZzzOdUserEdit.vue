@@ -775,7 +775,12 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('screen_size', nativeLaunchArgs.screen_size)"
+                              @change="
+                                saveNativeLaunchArgsField(
+                                  'screen_size',
+                                  nativeLaunchArgs.screen_size
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -790,7 +795,12 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('full_screen', nativeLaunchArgs.full_screen)"
+                              @change="
+                                saveNativeLaunchArgsField(
+                                  'full_screen',
+                                  nativeLaunchArgs.full_screen
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -805,7 +815,9 @@
                               v-model:checked="nativeLaunchArgs.popup_window"
                               size="large"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="(v: any) => saveNativeLaunchArgsField('popup_window', v === true)"
+                              @change="
+                                (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -840,7 +852,9 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)"
+                              @change="
+                                saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -857,7 +871,12 @@
                               size="large"
                               class="modern-input"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @blur="saveNativeLaunchArgsField('launch_argument_advance', nativeLaunchArgs.launch_argument_advance)"
+                              @blur="
+                                saveNativeLaunchArgsField(
+                                  'launch_argument_advance',
+                                  nativeLaunchArgs.launch_argument_advance
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -962,7 +981,12 @@
                           size="large"
                           class="modern-input"
                           :disabled="!formData.Game.LaunchArgument"
-                          @blur="saveField('Game.LaunchArgumentAdvance', formData.Game.LaunchArgumentAdvance)"
+                          @blur="
+                            saveField(
+                              'Game.LaunchArgumentAdvance',
+                              formData.Game.LaunchArgumentAdvance
+                            )
+                          "
                         />
                       </a-form-item>
                     </a-col>
@@ -1154,7 +1178,7 @@
       <ConfigRestoreSection
         v-model:open="restoreOpen"
         :disabled="configLocked"
-      :script-name="ZZZOD_DISPLAY_NAME"
+        :script-name="ZZZOD_DISPLAY_NAME"
         :targets="restoreTargets"
         :api="restoreApi"
         :field-labels="previewFieldLabels"
@@ -1890,7 +1914,8 @@ const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
 // 开关下次变化（watch 只在来源值变化时触发，手动的 activeKey 不会被覆盖）
 const launchArgsOpen = ref<string[]>([])
 watch(
-  () => [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
+  () =>
+    [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
   ([mode, userOn, nativeOn]) => {
     launchArgsOpen.value = (mode === '直控' ? nativeOn : userOn) ? ['launch-args'] : []
   },
@@ -2033,7 +2058,11 @@ const saveNativeConfig = async (
  */
 const saveNativeLaunchArgsField = (key: keyof ZzzOdNativeLaunchArgs, value: unknown) => {
   ;(nativeLaunchArgs as Record<string, unknown>)[key] = value
-  return saveNativeConfig({ launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs }, 'launchArgs', true)
+  return saveNativeConfig(
+    { launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs },
+    'launchArgs',
+    true
+  )
 }
 
 /** 「保存设置」：账号字段全量写回（连同当前任务编排与运行实例，保持表单一致） */

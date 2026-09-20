@@ -179,7 +179,10 @@
            依赖父组件的 onDetail 回调（恢复 + 拉起查看会话），专项未提供时
            不渲染，避免出现无响应的按钮 -->
       <div class="preview-actions">
-        <a-tooltip v-if="onDetail" :title="t('edit.configRestoreDetailHint', { script: scriptName })">
+        <a-tooltip
+          v-if="onDetail"
+          :title="t('edit.configRestoreDetailHint', { script: scriptName })"
+        >
           <a-button :disabled="disabled" @click="handlePreviewDetail">
             {{ t('edit.configRestoreDetailView') }}
           </a-button>
