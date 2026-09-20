@@ -298,17 +298,14 @@ def _merge_task_queue(
             continue
         target_index = index_by_id.get(key)
         if target_index is None:
-            # 基线认识但存档缺失: 以基线为底重建条目再吸收当前修改, 让存档
-            # 向基线结构收敛(MAA 保存重写结构后, 用户对合成任务的修改不丢)
-            merged_task = deepcopy(base_task)
-            for key_, value in task.items():
-                if base_task.get(key_) != value:
-                    merged_task[key_] = deepcopy(value)
-            archive_queue.append(merged_task)
+            # 基线认识但存档缺失: 以基线为底补回条目, 让存档向基线结构收敛
+            # (MAA 保存重写结构后, 用户对合成任务的修改不丢)
+            target = deepcopy(base_task)
+            archive_queue.append(target)
             index_by_id[key] = len(archive_queue) - 1
             changed = True
-            continue
-        target = archive_queue[target_index]
+        else:
+            target = archive_queue[target_index]
         for key_, value in task.items():
             if base_task.get(key_) != value and target.get(key_) != value:
                 target[key_] = deepcopy(value)

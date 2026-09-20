@@ -63,6 +63,9 @@ class ScriptConfigTask(TaskExecuteBase):
     注入，看完还原）。
     """
 
+    _maa_config_baseline: dict[str, dict] | None = None
+    """set_maa 写盘快照；final_task 以此甄别用户的 GUI 修改。"""
+
     def __init__(
         self,
         script_info: ScriptItem,
@@ -275,8 +278,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
-        baseline = getattr(self, "_maa_config_baseline", None) or {}
-        mas_dir.mkdir(parents=True, exist_ok=True)
+        baseline = self._maa_config_baseline or {}
 
         # 归一回写：按 (TaskType, Name) 身份对齐合并，只透传用户在 MAA GUI 里
         # 的真实修改；MAA 保存时自带的原生默认任务(UserDataUpdate/生息演算等)
