@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import psutil
+from packaging.version import InvalidVersion, Version
 
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import prepare_agent_envs
 from app.task.MaaFW.tools.core.automas_maafw_agent_env.service import (
@@ -25,6 +26,7 @@ from .environment import (
     DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
     MaaFWRunnerEnvironment,
     prepare_runner_environment,
+    probe_bundled_maafw_version,
     release_runner_environment,
 )
 from .models import (
@@ -48,8 +50,14 @@ _PROJECT_ENVIRONMENT_INPUTS = (
 )
 
 
-def project_environment_fingerprint(project_path: str | Path) -> str | None:
-    """Hash the project inputs that determine the prepared Runner route."""
+def project_environment_fingerprint(
+    project_path: str | Path, *, include_binding: bool = True
+) -> str | None:
+    """Hash the project inputs that determine the prepared Runner route.
+
+    ``include_binding=False`` 只算项目文件、不算自带解释器里的 binding 版本：准备流程
+    用它判断「准备期间变的是不是只有我们自己钉回的 binding」。
+    """
 
     root = Path(project_path).expanduser().resolve(strict=False)
     if not root.is_dir():
@@ -74,10 +82,42 @@ def project_environment_fingerprint(project_path: str | Path) -> str | None:
         digest.update(content)
     # 项目自带解释器里的 maafw binding 版本也是输入：agent 的部署脚本会在运行期改写它，
     # 不算进来的话准备结果会被缓存沿用，钉回 binding 的那一步永远不再跑。
-    for site in sorted(root.glob("python/Lib/site-packages/maafw-*.dist-info")):
-        digest.update(b"project-python-binding\0")
-        digest.update(site.name.encode("utf-8"))
+    if include_binding:
+        for site in sorted(root.glob("python/Lib/site-packages/maafw-*.dist-info")):
+            digest.update(b"project-python-binding\0")
+            digest.update(site.name.encode("utf-8"))
     return digest.hexdigest() if found_interface else None
+
+
+def _only_binding_repinned(
+    project_path: str | Path, files_fingerprint: str | None
+) -> bool:
+    """准备期间项目文件一个没变、只有自带解释器里的 maafw binding 变成了与自带原生库
+    一致的版本——这正是 ``_repin_project_python_binding`` 干的事，不是别人动了项目。
+
+    钉回本身会改 ``python/Lib/site-packages/maafw-*.dist-info``，而它又是指纹的输入，
+    不认这一条的话「binding 版本漂了」的项目第一次准备必定被当成并发改动拒绝，第二次
+    才过（M9A v4.9.0 自带 5.12.3 的 binding 配 5.13.0 的原生库，出厂就是这样）。
+    """
+
+    from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
+        project_python_maafw_version,
+    )
+
+    if (
+        project_environment_fingerprint(project_path, include_binding=False)
+        != files_fingerprint
+    ):
+        return False
+    root = Path(project_path)
+    installed = project_python_maafw_version(root / "python" / "python.exe")
+    native = probe_bundled_maafw_version(root)
+    if not installed or not native:
+        return False
+    try:
+        return Version(installed) == Version(native)
+    except InvalidVersion:
+        return installed == native
 
 
 def _report_project_progress(
@@ -266,6 +306,9 @@ class MaaFWRunnerService:
         environment: MaaFWRunnerEnvironment | None = None
         try:
             input_fingerprint = project_environment_fingerprint(project_path)
+            files_fingerprint = project_environment_fingerprint(
+                project_path, include_binding=False
+            )
             environment = self.prepare_environment(
                 project_path,
                 runtime_pool_root=runtime_pool_root,
@@ -328,12 +371,19 @@ class MaaFWRunnerService:
                 install_dependencies=install_agent_dependencies,
                 progress=report_agent_progress,
             )
-            if input_fingerprint is not None and (
-                project_environment_fingerprint(project_path) != input_fingerprint
+            output_fingerprint = project_environment_fingerprint(project_path)
+            if (
+                input_fingerprint is not None
+                and output_fingerprint != input_fingerprint
             ):
-                raise RuntimeError(
-                    "MaaFW 项目环境输入在准备期间发生变化；拒绝缓存旧运行环境"
-                )
+                # 准备自己把副本里的 binding 钉回原生库版本时指纹必然变：这不是并发改动，
+                # 结果按准备后的指纹缓存，下次打开页面才能命中
+                if _only_binding_repinned(project_path, files_fingerprint):
+                    input_fingerprint = output_fingerprint
+                else:
+                    raise RuntimeError(
+                        "MaaFW 项目环境输入在准备期间发生变化；拒绝缓存旧运行环境"
+                    )
             result = {
                 "status": "ready",
                 "runtime": {
