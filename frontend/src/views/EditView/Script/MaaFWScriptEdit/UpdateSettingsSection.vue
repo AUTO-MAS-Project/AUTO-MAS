@@ -167,8 +167,9 @@
             <a-button size="small" :loading="updateChecking" @click="emit('check-update')">{{
               t('edit.checkUpdates2')
             }}</a-button>
+            <!-- apply 的响应沿用检查结果的 installable=true，更新成功后按钮还挂在那；updated 为真时隐藏 -->
             <a-button
-              v-if="updateResult && updateResult.installable"
+              v-if="updateResult && updateResult.installable && !updateResult.updated"
               type="primary"
               size="small"
               :loading="updateApplying"
