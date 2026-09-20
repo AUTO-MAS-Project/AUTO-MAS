@@ -213,37 +213,25 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
 
     # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
     from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
-        build_runner_packages,
-        resolve_project_maafw_requirement,
+        describe_runner_runtime_selection,
     )
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
         MaaFWRuntimePoolError,
         MaaFWRuntimePoolService,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
-        host_bootstrap_python_request,
-    )
 
     try:
-        requirement = resolve_project_maafw_requirement(project_path)
-        if not requirement:
-            return None
-        packages = build_runner_packages(project_path, maafw_requirement=requirement)
         service = MaaFWRuntimePoolService()
-        python_identity = None
-        bootstrap_request = host_bootstrap_python_request()
-        if bootstrap_request is not None:
-            target = service.pool.resolve_python(bootstrap_request, allow_install=False)
-            if target is None:
-                # 托管解释器还没装，runtime 也就不可能存在。
-                return None
-            python_identity = target["identity"]
+        # 与 prepare 同一套推导；托管解释器还没装时返回 None，runtime 也就不可能存在。
+        selection = describe_runner_runtime_selection(project_path, service.pool)
+        if selection is None:
+            return None
     except Exception:  # noqa: BLE001 - 自检失败不该反过来挡住运行
         return None
 
     try:
-        # 找到 runtime 后 resolve() 会真的起一次解释器核对 ABI，起不来就是坏了。
-        service.resolve(packages, python_identity=python_identity)
+        # 找到 runtime 后 get() 会真的起一次解释器核对 ABI，起不来就是坏了。
+        service.pool.get(selection.runtime_id)
     except MaaFWRuntimePoolError as exc:  # 原文就是给用户看的
         return f"MFW 运行环境不可用：{exc}"
     except Exception:  # noqa: BLE001

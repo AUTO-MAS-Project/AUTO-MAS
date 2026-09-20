@@ -307,13 +307,26 @@ def host_bootstrap_python_request() -> dict[str, str] | None:
         交给 ``resolve_python_interpreter`` 去找或下载。
     """
 
+    # 宿主解释器整个进程生命周期不会变，探针（起一个子进程）只做一次；启动期
+    # 对账要给每个项目算一遍身份，不缓存就是每个项目一个子进程。探测失败不缓存。
+    key = str(Path(sys.executable))
+    if key in _HOST_BOOTSTRAP_REQUEST_CACHE:
+        cached = _HOST_BOOTSTRAP_REQUEST_CACHE[key]
+        return dict(cached) if cached is not None else None
     probe = probe_python_identity(Path(sys.executable))
+    request: dict[str, str] | None
     if _python_probe_can_bootstrap(probe):
-        return None
-    return {
-        "implementation": "cpython",
-        "constraint": f"=={sys.version_info.major}.{sys.version_info.minor}.*",
-    }
+        request = None
+    else:
+        request = {
+            "implementation": "cpython",
+            "constraint": f"=={sys.version_info.major}.{sys.version_info.minor}.*",
+        }
+    _HOST_BOOTSTRAP_REQUEST_CACHE[key] = request
+    return dict(request) if request is not None else None
+
+
+_HOST_BOOTSTRAP_REQUEST_CACHE: dict[str, dict[str, str] | None] = {}
 
 
 def resolve_python_interpreter(
