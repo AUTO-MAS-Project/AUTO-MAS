@@ -18,7 +18,7 @@
 
 """MaaFW 项目更新的凭据与时机合并。
 
-核心更新包（``tools/core/automas_maafw_project_update``）不读 Config，配置到
+核心更新包（``tools/core/project_update``）不读 Config，配置到
 参数的翻译只在这里做一次；API 侧直接复用本函数，保证手动更新与运行时自动更新
 的行为一致。
 

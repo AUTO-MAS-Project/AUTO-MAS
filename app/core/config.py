@@ -4798,7 +4798,7 @@ class AppConfig(GlobalConfig):
         """
 
         from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+        from app.task.MaaFW.tools.core.agent_env.planner import (
             collect_orphan_agent_venvs,
         )
 

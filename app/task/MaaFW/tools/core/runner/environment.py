@@ -21,17 +21,17 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+from app.task.MaaFW.tools.core.runtime_pool import (
     MaaFWRuntimePool,
     RuntimeInstaller,
     build_runtime_id,
     canonicalize_requirements,
     install_python_runtime,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     strip_host_python_environment,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
+from app.task.MaaFW.tools.core.runtime_pool.installer import (
     MaaFWRuntimeInstallCancelled,
     host_bootstrap_python_request,
     install_cancel_scope,

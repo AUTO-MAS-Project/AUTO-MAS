@@ -19,7 +19,7 @@ DLL 由项目自带的 ``maafw/`` 目录提供（``runner.py`` 会 ``Library.ope
   ``agent_path = <maa>/../MaaAgentBinary``，剔了它，落到这份共享环境的 ADB 项目会静默丢
   maatouch / minitouch / minicap。
 - 兜底只对自带 ``MaaFramework.dll`` 的项目有意义，无 DLL 项目的守卫在
-  ``automas_maafw_runner/environment.py::prepare_runner_environment``。
+  ``runner/environment.py::prepare_runner_environment``。
 - agent 侧不覆盖：isolated_venv 的 pip（``agent_env/env.py::_pip_install``）钉同样的
   ``maafw==X``，PyPI 缺货抛 ``MaaFWAgentEnvError`` → 预检失败 → 回滚 → 不升级，这是预期；
   ``project_python`` 不装东西。

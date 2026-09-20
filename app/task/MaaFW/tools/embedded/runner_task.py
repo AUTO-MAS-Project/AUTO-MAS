@@ -27,31 +27,31 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
-from app.task.MaaFW.tools.core.automas_maafw_controller_win32.service import (
+from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
+from app.task.MaaFW.tools.core.interface.models import (
     MaaFWController,
     MaaFWInterface,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
+from app.task.MaaFW.tools.core.interface.preview import (
     build_adb_emulator_extra_capabilities,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.service import (
+from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+from app.task.MaaFW.tools.core.runner.environment import (
     MaaFWRunnerEnvironment,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
+from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import MaaFWRunPlanError
-from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+from app.task.MaaFW.tools.core.runner.run_plan import MaaFWRunPlanError
+from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
+from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     subprocess_proxy_scope,
 )
 from app.task.MaaFW.tools.notify import push_notification
@@ -1291,7 +1291,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             process = await asyncio.create_subprocess_exec(
                 str(runner_environment.python_executable),
                 "-m",
-                "app.task.MaaFW.tools.core.automas_maafw_runner.worker",
+                "app.task.MaaFW.tools.core.runner.worker",
                 str(job_path),
                 cwd=str(Path.cwd()),
                 env=runner_environment.env,

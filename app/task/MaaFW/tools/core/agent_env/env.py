@@ -12,11 +12,11 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
-from ..automas_maafw_runtime_pool.host_environment import (
+from ..runtime_pool import runtime_managed_uv_executable
+from ..runtime_pool.host_environment import (
     strip_host_python_environment,
 )
-from ..automas_maafw_runtime_pool.installer import (
+from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
@@ -501,9 +501,9 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
         packages.append(AGENT_BOOTSTRAP_PACKAGE)
     # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
     # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
-    # 延迟导入：``automas_maafw_runner`` 的包初始化会 import ``run_plan``，而
+    # 延迟导入：``runner`` 的包初始化会 import ``run_plan``，而
     # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
-    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    from app.task.MaaFW.tools.core.runner.environment import (
         pin_agent_maafw_requirement,
         resolve_project_maafw_requirement,
     )

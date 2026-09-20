@@ -11,12 +11,12 @@ from typing import Any, Callable
 
 import psutil
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import prepare_agent_envs
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.service import (
+from app.task.MaaFW.tools.core.agent_env import prepare_agent_envs
+from app.task.MaaFW.tools.core.agent_env.service import (
     MaaFWAgentEnvService,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWInterface
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.runtime_pool import (
     MaaFWRuntimePool,
     RuntimeInstaller,
 )

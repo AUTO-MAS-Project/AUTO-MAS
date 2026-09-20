@@ -37,19 +37,19 @@ from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
+from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+from app.task.MaaFW.tools.core.project_update import (
     MaaFWProjectUpdateError,
     discover_maafw_project_update,
     update_maafw_project_if_needed,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+from app.task.MaaFW.tools.core.project_update.updater import (
     _public_package_source,
     detect_maafw_project_shell_hint,
 )
@@ -1362,10 +1362,10 @@ async def update_maafw_project(
     import threading
 
     from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
-    from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+    from app.task.MaaFW.tools.core.project_update import (
         clear_runtime_precheck,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    from app.task.MaaFW.tools.core.runtime_pool import (
         MaaFWRuntimePoolService,
     )
     from app.task.MaaFW.tools.embedded.precheck import (
@@ -1532,14 +1532,14 @@ async def prepare_maafw_agent_env(
     # 避免所有 API 请求都为它们付出导入成本。
     from app.core.ws import protocol as ws_protocol
     from app.core.ws.publisher import Publisher
-    from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+    from app.task.MaaFW.tools.core.runner.service import (
         MaaFWRunnerService,
         project_environment_fingerprint,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    from app.task.MaaFW.tools.core.runtime_pool import (
         MaaFWRuntimePoolService,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
         subprocess_proxy_scope,
     )
     from app.task.MaaFW.tools.embedded.env_cache import (

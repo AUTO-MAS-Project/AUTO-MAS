@@ -7,7 +7,7 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel
 
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWController
+from app.task.MaaFW.tools.core.interface.models import MaaFWController
 
 MAX_REGEX_PATTERN_LENGTH = 256
 MAX_REGEX_VALUE_LENGTH = 4096

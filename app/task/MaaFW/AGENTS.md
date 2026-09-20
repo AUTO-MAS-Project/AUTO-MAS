@@ -11,10 +11,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `update_credentials`、`project_path`、`env_cache`、`game_package`、`game_resolution`、
   `update_progress`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
-- `tools/core/automas_maafw_*`：六个核心包（interface / runner / runtime_pool / agent_env /
+- `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`——它只在宿主进程里跑；不要再加新的。
-- **worker 子进程**（`automas_maafw_runner/worker.py`）以 `python -m` 启动，其导入闭包内的
+- **worker 子进程**（`runner/worker.py`）以 `python -m` 启动，其导入闭包内的
   `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下，由
   `tests/task/test_maafw_worker_import_isolation.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
   就是链路上多了一处 `from app.utils import ...`。改 runner 子树前先跑这个测试。
