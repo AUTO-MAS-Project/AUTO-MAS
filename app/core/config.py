@@ -115,6 +115,8 @@ from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
+# 登录失败截图的总容量上限，超出后按时间从旧到新回收。
+LOGIN_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
 
 logger = get_logger("配置管理")
 
@@ -4846,14 +4848,20 @@ class AppConfig(GlobalConfig):
 
         终末地登录失败截图与 OK-WW / OK-NTE 切号诊断只会随失败新增，
         此前没有任何回收；保留时长沿用历史记录的保留天数设置。
+        登录截图总大小超过 10 MB 时，额外按时间从旧到新清理，
+        不受历史记录永久保留设置影响。
         """
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
-            logger.info("诊断文件永久保留, 跳过诊断文件清理")
-            return
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
+            logger.info("诊断文件永久保留, 跳过按保留期限清理")
+            cutoff = None
+        else:
+            cutoff = time.time() - retention_days * 86400
 
-        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
         deleted_count = 0
+        screenshot_files: list[tuple[Path, float, int]] = []
+        screenshot_size = 0
         for name in ("maaend-login", "okww-account-switch", "oknte-account-switch"):
             folder = Path.cwd() / "debug" / name
             if not folder.is_dir():
@@ -4862,15 +4870,39 @@ class AppConfig(GlobalConfig):
                 if not file.is_file():
                     continue
                 try:
-                    if file.stat().st_mtime >= cutoff:
-                        continue
-                    file.unlink()
+                    file_stat = file.stat()
                 except OSError as exc:
                     logger.warning(f"诊断文件清理失败: {file} - {exc}")
                     continue
-                deleted_count += 1
+                if cutoff is not None and file_stat.st_mtime < cutoff:
+                    try:
+                        file.unlink()
+                    except OSError as exc:
+                        logger.warning(f"诊断文件清理失败: {file} - {exc}")
+                    else:
+                        deleted_count += 1
+                        continue
+                if file.suffix.lower() == ".png":
+                    screenshot_files.append(
+                        (file, file_stat.st_mtime, file_stat.st_size)
+                    )
+                    screenshot_size += file_stat.st_size
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
+
+        screenshot_deleted_count = 0
+        for file, _, file_size in sorted(screenshot_files, key=lambda item: item[1]):
+            if screenshot_size <= LOGIN_SCREENSHOT_MAX_BYTES:
+                break
+            try:
+                file.unlink()
+            except OSError as exc:
+                logger.warning(f"登录截图清理失败: {file} - {exc}")
+                continue
+            screenshot_size -= file_size
+            screenshot_deleted_count += 1
+        if screenshot_deleted_count:
+            logger.success(f"清理完成: {screenshot_deleted_count} 个超限登录截图")
 
     async def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
