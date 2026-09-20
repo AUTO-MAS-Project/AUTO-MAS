@@ -53,8 +53,13 @@ interface HistoryLogCandidate {
 interface HistoryRecordCandidate {
   logPath: string
   jsonPath: string
+  archiveRoot: string
   relativeBasePath: string
   mtimeMs: number
+}
+
+function historyArchiveRoot(rootIndex: number): string {
+  return rootIndex === 0 ? 'logs/mas-history' : 'logs/mas-history/backend'
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -369,7 +374,11 @@ export function addLatestMasHistoryLog(
 ): string | undefined {
   let latest: HistoryLogCandidate | undefined
 
-  const visitDirectory = (historyRoot: string, currentDir: string): void => {
+  const visitDirectory = (
+    historyRoot: string,
+    currentDir: string,
+    archiveRoot: string
+  ): void => {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true })
@@ -385,7 +394,7 @@ export function addLatestMasHistoryLog(
 
       const sourcePath = path.join(currentDir, entry.name)
       if (entry.isDirectory()) {
-        visitDirectory(historyRoot, sourcePath)
+        visitDirectory(historyRoot, sourcePath, archiveRoot)
         continue
       }
 
@@ -398,7 +407,7 @@ export function addLatestMasHistoryLog(
         const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
         const candidate = {
           sourcePath,
-          archivePath: path.posix.join('logs/mas-history', relativePath),
+          archivePath: path.posix.join(archiveRoot, relativePath),
           mtimeMs,
         }
         if (
@@ -414,10 +423,10 @@ export function addLatestMasHistoryLog(
     }
   }
 
-  for (const dataRoot of dataRoots) {
+  for (const [rootIndex, dataRoot] of dataRoots.entries()) {
     const historyRoot = path.join(dataRoot, 'history')
     if (fs.existsSync(historyRoot)) {
-      visitDirectory(historyRoot, historyRoot)
+      visitDirectory(historyRoot, historyRoot, historyArchiveRoot(rootIndex))
     }
   }
 
@@ -441,7 +450,11 @@ export function addRecentFailedMaaEndHistoryLogs(
   const candidates: HistoryRecordCandidate[] = []
   const seenPaths = new Set<string>()
 
-  const visitDirectory = (historyRoot: string, currentDir: string): void => {
+  const visitDirectory = (
+    historyRoot: string,
+    currentDir: string,
+    archiveRoot: string
+  ): void => {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true })
@@ -457,7 +470,7 @@ export function addRecentFailedMaaEndHistoryLogs(
 
       const sourcePath = path.join(currentDir, entry.name)
       if (entry.isDirectory()) {
-        visitDirectory(historyRoot, sourcePath)
+        visitDirectory(historyRoot, sourcePath, archiveRoot)
         continue
       }
 
@@ -486,6 +499,7 @@ export function addRecentFailedMaaEndHistoryLogs(
         candidates.push({
           logPath: sourcePath.slice(0, -path.extname(sourcePath).length) + '.log',
           jsonPath: sourcePath,
+          archiveRoot,
           relativeBasePath: relativePath.slice(0, -path.extname(relativePath).length),
           mtimeMs: fs.statSync(sourcePath).mtimeMs,
         })
@@ -496,10 +510,10 @@ export function addRecentFailedMaaEndHistoryLogs(
     }
   }
 
-  for (const dataRoot of dataRoots) {
+  for (const [rootIndex, dataRoot] of dataRoots.entries()) {
     const historyRoot = path.join(dataRoot, 'history')
     if (fs.existsSync(historyRoot)) {
-      visitDirectory(historyRoot, historyRoot)
+      visitDirectory(historyRoot, historyRoot, historyArchiveRoot(rootIndex))
     }
   }
 
@@ -517,7 +531,7 @@ export function addRecentFailedMaaEndHistoryLogs(
       [candidate.jsonPath, '.json'],
     ] as const) {
       const archivePath = path.posix.join(
-        'logs/mas-history',
+        candidate.archiveRoot,
         `${candidate.relativeBasePath}${extension}`
       )
       const entryCount = state.entries.length
