@@ -120,6 +120,13 @@ async def update_maa(maa_path: Path):
     maa_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
     maa_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = True
 
+    # 无人值守拉起装更新，公告与更新后首启的版本说明弹窗一并关闭
+    global_set["Announcement.DoNotShowAnnouncement"] = "True"  # OLD: 即将移除
+    global_set["VersionUpdate.doNotShowUpdate"] = "True"  # OLD: 即将移除
+    # NEW:
+    maa_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
+    maa_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
+
     (maa_path / "config/gui.json").write_text(  # OLD: 即将移除
         json.dumps(maa_set, ensure_ascii=False, indent=4),
         encoding="utf-8",  # OLD: 即将移除

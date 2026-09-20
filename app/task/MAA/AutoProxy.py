@@ -1737,6 +1737,11 @@ class AutoProxyTask(TaskExecuteBase):
             gui_new_set.setdefault("Gui", {}).update(
                 {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
             )
+            # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
+            global_set["Announcement.DoNotShowAnnouncement"] = "True"
+            global_set["VersionUpdate.doNotShowUpdate"] = "True"
+            gui_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
+            gui_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
 
         server = self.cur_user_config.get("Info", "Server")
         account = self.cur_user_config.get("Info", "Id")
