@@ -3473,7 +3473,7 @@ export default {
         General: '适用于具备日志文件的自动化脚本',
         MAA: '明日方舟自动化与多账号日常代理',
         SRC: '星穹铁道自动化与多账号代理',
-        MaaEnd: 'MFW 专项适配脚本',
+        MaaEnd: '明日方舟：终末地自动化与多账号代理',
         M9A: '重返未来：1999 自动化脚本',
         MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',
