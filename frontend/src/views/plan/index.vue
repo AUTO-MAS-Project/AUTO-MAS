@@ -2,7 +2,7 @@
   <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" tip="加载中，请稍候..." />
+      <a-spin size="large" :tip="t('plan.loading')" />
     </div>
 
     <!-- 主要内容 -->
@@ -19,11 +19,11 @@
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
-            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+            <img src="@/assets/NoData.png" :alt="t('plan.noData')" class="empty-image" />
           </div>
           <div class="empty-text-content">
-            <h3 class="empty-title">暂无计划</h3>
-            <p class="empty-description">您还没有创建任何计划</p>
+            <h3 class="empty-title">{{ t('plan.emptyTitle') }}</h3>
+            <p class="empty-description">{{ t('plan.emptyDesc') }}</p>
           </div>
         </div>
       </div>
@@ -35,6 +35,8 @@
           :plan-list="planList"
           :active-plan-id="activePlanId"
           @plan-change="onPlanChange"
+          @reorder="handlePlanReorder"
+          @rename="renamePlan"
         />
 
         <!-- 计划配置 -->
@@ -67,12 +69,17 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
 import type { PlanIndexItem } from '@/api'
-import { generateUniquePlanName, getPlanTypeLabel, validatePlanName } from '@/utils/planNameUtils'
+import {
+  generateUniquePlanName,
+  getPlanTypeLabelKey,
+  validatePlanName,
+} from '@/utils/planNameUtils'
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
@@ -85,13 +92,15 @@ import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
+const { t } = useI18n()
+
 defineOptions({
   name: 'PlanManagementView',
 })
 
 const logger = window.electronAPI.getLogger('计划管理')
 
-const { getPlans, createPlan, updatePlan, deletePlan } = usePlanApi()
+const { getPlans, createPlan, updatePlan, deletePlan, reorderPlans } = usePlanApi()
 const route = useRoute()
 
 interface PlanListItem {
@@ -128,7 +137,7 @@ const currentPlanDescriptor = computed(() => {
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
-const clonePlanData = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const clonePlanData = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   const planData = planDataMap.value[planId]
@@ -197,11 +206,19 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
-        `已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"，建议您修改为更有意义的名称`,
+        t('plan.toast.createdHint', {
+          type: t(getPlanTypeLabelKey(planType)),
+          name: uniqueName,
+        }),
         4
       )
     } else {
-      message.success(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"`)
+      message.success(
+        t('plan.toast.created', {
+          type: t(getPlanTypeLabelKey(planType)),
+          name: uniqueName,
+        })
+      )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -339,6 +356,63 @@ const onPlanChange = async (planId: string) => {
   }
 }
 
+/** 排序请求串行化：并发请求会按完成顺序落盘，与界面上的拖拽顺序不一致 */
+let reorderTask: Promise<unknown> = Promise.resolve()
+
+/** 拖拽排序结果落盘：界面先就位，保存失败再退回 */
+const handlePlanReorder = async (planIds: string[]) => {
+  const planById = new Map(planList.value.map(plan => [plan.id, plan]))
+  const nextPlanList: PlanListItem[] = []
+
+  for (const planId of planIds) {
+    const plan = planById.get(planId)
+    // 顺序列表必须是全部计划的完整顺序，缺项说明计划列表已变化，放弃本次排序
+    if (!plan) return
+    nextPlanList.push(plan)
+  }
+  if (nextPlanList.length !== planList.value.length) return
+
+  const previousPlanList = planList.value
+  planList.value = nextPlanList
+
+  reorderTask = reorderTask.catch(() => undefined).then(() => reorderPlans(planIds))
+
+  try {
+    await reorderTask
+  } catch {
+    // 接口层已提示失败原因，这里只把界面顺序退回去
+    planList.value = previousPlanList
+  }
+}
+
+/** 改名：校验、落盘、同步本地缓存，返回是否改名成功 */
+const renamePlan = async (planId: string, newName: string): Promise<boolean> => {
+  const plan = planList.value.find(item => item.id === planId)
+  if (!plan) {
+    return false
+  }
+
+  const existingNames = planList.value.filter(item => item.id !== planId).map(item => item.name)
+  const validation = validatePlanName(newName, existingNames, plan.name)
+
+  if (!validation.isValid) {
+    message.error(validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid'))
+    return false
+  }
+
+  const success = await savePlanField(planId, buildNestedObject('Info.Name', newName))
+  if (!success) {
+    return false
+  }
+
+  plan.name = newName
+  applyLocalPlanChange(planId, 'Info.Name', newName)
+  if (isActivePlan(planId)) {
+    currentPlanName.value = newName
+  }
+  return true
+}
+
 const startEditPlanName = () => {
   isEditingPlanName.value = true
   setTimeout(() => {
@@ -351,29 +425,26 @@ const startEditPlanName = () => {
 }
 
 const finishEditPlanName = async () => {
-  if (activePlanId.value) {
-    const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
-    if (currentPlan) {
-      const newName = currentPlanName.value?.trim() || ''
-      const existingNames = planList.value.map(plan => plan.name)
-
-      // 验证新名称
-      const validation = validatePlanName(newName, existingNames, currentPlan.name)
-
-      if (!validation.isValid) {
-        // 如果验证失败，显示错误消息并恢复原名称
-        message.error(validation.message || '计划表名称无效')
-        currentPlanName.value = currentPlan.name
-      } else {
-        // 如果验证成功，更新名称并保存到后端
-        currentPlan.name = newName
-        currentPlanName.value = newName
-        // 只发送修改的字段
-        await handlePlanChange('Info.Name', newName)
-      }
-    }
-  }
   isEditingPlanName.value = false
+
+  const planId = activePlanId.value
+  const currentPlan = planList.value.find(plan => plan.id === planId)
+  if (!currentPlan) {
+    return
+  }
+
+  const newName = currentPlanName.value?.trim() || ''
+  if (newName === currentPlan.name) {
+    // 只差首尾空格：把标题回写成规范名称，别把多余空格留在界面上
+    currentPlanName.value = newName
+    return
+  }
+
+  const renamed = await renamePlan(planId, newName)
+  if (!renamed) {
+    // 校验或保存失败：标题退回原名
+    currentPlanName.value = currentPlan.name
+  }
 }
 
 const onModeChange = async () => {
@@ -413,7 +484,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.code !== 200) {
-      throw new Error(response.message || '获取计划表失败')
+      throw new Error(response.message || t('plan.toast.fetchFailed'))
     }
 
     const nextPlanDataMap: Record<string, PlanConfigData> = {}
@@ -517,8 +588,9 @@ onMounted(() => {
   align-items: center;
   min-height: 500px;
   padding: 60px 20px;
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.02), rgba(24, 144, 255, 0.01));
-  border-radius: 16px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
   margin: 20px 0;
 }
 
@@ -541,7 +613,7 @@ onMounted(() => {
   left: -20px;
   right: -20px;
   bottom: -20px;
-  background: radial-gradient(circle, rgba(24, 144, 255, 0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--ant-color-primary-bg) 0%, transparent 70%);
   border-radius: 50%;
   animation: pulse 3s ease-in-out infinite;
 }

@@ -19,5 +19,9 @@ export type MaaEndConfig_Run = {
      * 账号切换方式
      */
     AccountSwitchMethod?: ('MAS' | 'MAAEND' | null);
+    /**
+     * 任务切换方式
+     */
+    TaskTransitionMethod?: ('NoAction' | 'ExitGame' | null);
 };
 

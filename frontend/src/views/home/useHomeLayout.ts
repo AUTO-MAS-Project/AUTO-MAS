@@ -1,59 +1,43 @@
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import type { HomeLayoutConfig, HomeModuleDescriptor, HomeModuleKey } from '@/types/home'
+import {
+  HOME_ACTIVITY_CAROUSEL_KEY,
+  defaultHomeModuleOrder,
+  isHomeActivityModuleKey,
+  normalizeHomeLayoutConfig,
+} from '@/views/home/homeLayoutConfig'
 
-export const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
+const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
 
-export const defaultHomeModuleOrder: HomeModuleKey[] = [
-  'command',
-  'quick',
-  'satellite',
-  'proxy',
-  'endfield',
-  'starrail',
-  'genshin',
-  'zenless',
-  'wutheringwaves',
-  'nte',
-  'reverse1999',
-  'arknights',
-]
+export {
+  HOME_ACTIVITY_CAROUSEL_KEY,
+  HOME_ACTIVITY_MODULE_KEYS,
+  defaultHomeModuleOrder,
+  isHomeActivityModuleKey,
+  normalizeHomeLayoutConfig,
+} from '@/views/home/homeLayoutConfig'
 
-export const moduleTitleMap: Record<HomeModuleKey, string> = {
-  command: '快速开始',
-  quick: '常用入口',
-  satellite: '卫星环绕',
-  proxy: '代理状态',
-  endfield: '终末地活动信息',
-  starrail: '崩坏：星穹铁道活动信息',
-  genshin: '原神活动信息',
-  zenless: '绝区零活动信息',
-  wutheringwaves: '鸣潮活动信息',
-  nte: '异环活动信息',
-  reverse1999: '重返未来：1999活动信息',
-  arknights: '明日方舟活动信息',
-}
+/** 配置里是一条扁平顺序，界面上却是两级：顶层模块 + 轮播内部的游戏卡 */
+const splitModuleOrder = (order: HomeModuleKey[]) => ({
+  topLevel: order.filter(key => !isHomeActivityModuleKey(key)),
+  activities: order.filter(isHomeActivityModuleKey),
+})
 
-const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
-  return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
-}
-
-const normalizeModuleKeys = (value: unknown): HomeModuleKey[] => {
-  const keys = Array.isArray(value) ? value.filter(isHomeModuleKey) : []
-  return keys.filter((key, index, array) => array.indexOf(key) === index)
-}
-
-export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
-  const config =
-    typeof value === 'object' && value !== null ? (value as Partial<HomeLayoutConfig>) : {}
-  const configuredOrder = normalizeModuleKeys(config.moduleOrder)
-  const missingModules = defaultHomeModuleOrder.filter(key => !configuredOrder.includes(key))
-
-  return {
-    moduleOrder: [...configuredOrder, ...missingModules],
-    hiddenModules: normalizeModuleKeys(config.hiddenModules),
-    hideScrollHint: config.hideScrollHint === true,
+/** 存回配置时把游戏卡顺序紧跟在轮播模块后面，保证两级视图能原样还原 */
+const composeModuleOrder = (
+  topLevel: HomeModuleKey[],
+  activities: HomeModuleKey[]
+): HomeModuleKey[] => {
+  const order: HomeModuleKey[] = []
+  for (const key of topLevel) {
+    order.push(key)
+    if (key === HOME_ACTIVITY_CAROUSEL_KEY) {
+      order.push(...activities)
+    }
   }
+  return order
 }
 
 const getLayoutLogger = () => window.electronAPI.getLogger('首页布局')
@@ -61,21 +45,32 @@ const getLayoutLogger = () => window.electronAPI.getLogger('首页布局')
 export const useHomeLayout = () => {
   const layoutReady = ref(false)
   const layoutDrawerOpen = ref(false)
-  const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
+  const defaultSplit = splitModuleOrder(defaultHomeModuleOrder)
+  const homeTopLevelOrder = ref<HomeModuleKey[]>([...defaultSplit.topLevel])
+  const homeActivityOrder = ref<HomeModuleKey[]>([...defaultSplit.activities])
   const hiddenHomeModules = ref<HomeModuleKey[]>([])
   const scrollHintHidden = ref(false)
+  const carouselAutoplay = ref(false)
   let saveQueue = Promise.resolve()
+
+  const homeModuleOrder = computed(() =>
+    composeModuleOrder(homeTopLevelOrder.value, homeActivityOrder.value)
+  )
 
   const currentLayout = (): HomeLayoutConfig => ({
     moduleOrder: [...homeModuleOrder.value],
     hiddenModules: [...hiddenHomeModules.value],
     hideScrollHint: scrollHintHidden.value,
+    carouselAutoplay: carouselAutoplay.value,
   })
 
   const applyLayout = (layout: HomeLayoutConfig) => {
-    homeModuleOrder.value = [...layout.moduleOrder]
+    const split = splitModuleOrder(layout.moduleOrder)
+    homeTopLevelOrder.value = split.topLevel
+    homeActivityOrder.value = split.activities
     hiddenHomeModules.value = [...layout.hiddenModules]
     scrollHintHidden.value = layout.hideScrollHint === true
+    carouselAutoplay.value = layout.carouselAutoplay === true
   }
 
   const logWarning = (message: string, error: unknown) => {
@@ -87,6 +82,8 @@ export const useHomeLayout = () => {
     const snapshot: HomeLayoutConfig = {
       moduleOrder: [...layout.moduleOrder],
       hiddenModules: [...layout.hiddenModules],
+      hideScrollHint: layout.hideScrollHint === true,
+      carouselAutoplay: layout.carouselAutoplay === true,
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
     saveQueue = saveTask.catch(error => {
@@ -134,8 +131,23 @@ export const useHomeLayout = () => {
 
   const reorderHomeModules = (order: HomeModuleKey[]) => {
     const nextLayout = normalizeHomeLayoutConfig({
-      moduleOrder: order,
-      hiddenModules: hiddenHomeModules.value,
+      ...currentLayout(),
+      moduleOrder: composeModuleOrder(
+        order.filter(key => !isHomeActivityModuleKey(key)),
+        homeActivityOrder.value
+      ),
+    })
+    applyLayout(nextLayout)
+    return queueLayoutSave(currentLayout())
+  }
+
+  const reorderActivityModules = (order: HomeModuleKey[]) => {
+    const nextLayout = normalizeHomeLayoutConfig({
+      ...currentLayout(),
+      moduleOrder: composeModuleOrder(
+        homeTopLevelOrder.value,
+        order.filter(isHomeActivityModuleKey)
+      ),
     })
     applyLayout(nextLayout)
     return queueLayoutSave(currentLayout())
@@ -155,25 +167,51 @@ export const useHomeLayout = () => {
     return queueLayoutSave(currentLayout())
   }
 
-  const homeModules = computed<HomeModuleDescriptor[]>(() =>
-    homeModuleOrder.value.map(key => ({
+  const setCarouselAutoplay = (autoplay: boolean) => {
+    carouselAutoplay.value = autoplay
+    return queueLayoutSave(currentLayout())
+  }
+
+  const { t } = useI18n()
+
+  const toDescriptors = (keys: HomeModuleKey[], titleKey: (key: HomeModuleKey) => string) =>
+    keys.map(key => ({
       key,
-      title: moduleTitleMap[key],
+      title: t(titleKey(key)),
       visible: isHomeModuleShown(key),
     }))
+
+  const homeModules = computed<HomeModuleDescriptor[]>(() =>
+    toDescriptors(homeTopLevelOrder.value, key => `home.module.${key}`)
+  )
+
+  // 轮播内部用游戏短名，顶层列表用带“活动信息”的完整模块名
+  const homeActivityModules = computed<HomeModuleDescriptor[]>(() =>
+    toDescriptors(homeActivityOrder.value, key => `home.game.${key}`)
+  )
+
+  const visibleActivityKeys = computed(() =>
+    homeActivityOrder.value.filter(key => isHomeModuleShown(key))
   )
 
   return {
     layoutReady,
     layoutDrawerOpen,
     homeModuleOrder,
+    homeTopLevelOrder,
+    homeActivityOrder,
     hiddenHomeModules,
     scrollHintHidden,
+    carouselAutoplay,
     homeModules,
+    homeActivityModules,
+    visibleActivityKeys,
     loadHomeLayout,
     reorderHomeModules,
+    reorderActivityModules,
     setHomeModuleShown,
     setScrollHintHidden,
+    setCarouselAutoplay,
     isHomeModuleShown,
     isHomeModuleVisible,
   }

@@ -19,7 +19,11 @@ export type OkwwUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
-     * 是否使用用户独立脚本配置
+     * 配置来源（脚本/用户/直控）
+     */
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 兼容旧版用户独立配置开关
      */
     IfUseMasConfig?: (boolean | null);
     /**
@@ -50,14 +54,6 @@ export type OkwwUserConfig_Info = {
      * 账号
      */
     Id?: (string | null);
-    /**
-     * 密码
-     */
-    Password?: (string | null);
-    /**
-     * 配置来源（脚本共享、用户独立、直控优先读取脚本原配置）
-     */
-    Mode?: ('脚本' | '用户' | '直控' | null);
     /**
      * 是否启用快速配置覆盖 OK-WW 高频任务字段
      */

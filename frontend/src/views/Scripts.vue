@@ -1,105 +1,19 @@
 <template>
-  <!-- MAA配置遮罩层 -->
-  <div v-if="showMAAConfigMask" class="maa-config-mask">
+  <!-- 配置会话遮罩层：MAA / SRC / MaaEnd / ok-ww 共用一份，按会话种类取文案 -->
+  <div v-if="configMaskView" class="maa-config-mask">
     <div class="mask-content">
       <div class="mask-icon">
-        <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+        <SettingOutlined :style="{ fontSize: '48px', color: configMaskView.iconColor }" />
       </div>
-      <h2 class="mask-title">正在进行MAA配置</h2>
+      <h2 class="mask-title">{{ configMaskView.title }}</h2>
       <p class="mask-description">
-        当前正在配置MAA脚本，请在MAA配置界面完成相关设置。
+        {{ configMaskView.description }}
         <br />
-        配置完成后，请点击"保存配置"按钮来解除页面锁定。
+        {{ configMaskView.tip }}
       </p>
       <div class="mask-actions">
-        <a-button
-          v-if="currentConfigScript"
-          type="primary"
-          size="large"
-          @click="handleSaveMAAConfig(currentConfigScript)"
-        >
-          保存配置
-        </a-button>
-      </div>
-    </div>
-  </div>
-
-  <!-- SRC配置遮罩层 -->
-  <div v-if="showSRCConfigMask" class="maa-config-mask">
-    <div class="mask-content">
-      <div class="mask-icon">
-        <SettingOutlined :style="{ fontSize: '48px', color: '#722ed1' }" />
-      </div>
-      <h2 class="mask-title">正在进行SRC配置</h2>
-      <p class="mask-description">
-        当前正在配置SRC脚本，请在SRC配置界面完成相关设置。
-        <br />
-        配置完成后，请点击"保存配置"按钮来解除页面锁定。
-      </p>
-      <div class="mask-actions">
-        <a-button
-          v-if="currentConfigScript"
-          type="primary"
-          size="large"
-          @click="handleSaveSRCConfig(currentConfigScript)"
-        >
-          保存配置
-        </a-button>
-      </div>
-    </div>
-  </div>
-
-  <div v-if="showMaaEndConfigMask" class="maa-config-mask">
-    <div class="mask-content">
-      <div class="mask-icon">
-        <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
-      </div>
-      <h2 class="mask-title">
-        {{ currentMaaEndConfigUser ? '正在进行 MaaEnd 用户级配置' : '正在进行 MaaEnd 脚本级配置' }}
-      </h2>
-      <p class="mask-description">
-        当前正在配置
-        {{
-          currentMaaEndConfigUser
-            ? `用户 ${currentMaaEndConfigUser.Info.Name}`
-            : '脚本级 MaaEnd 配置'
-        }}
-        ，请在 MaaEnd 配置界面完成相关设置。
-        <br />
-        配置完成后，点击“保存配置”解除页面锁定。
-      </p>
-      <div class="mask-actions">
-        <a-button
-          v-if="currentConfigScript"
-          type="primary"
-          size="large"
-          @click="handleSaveMaaEndConfig(currentConfigScript)"
-        >
-          保存配置
-        </a-button>
-      </div>
-    </div>
-  </div>
-
-  <div v-if="showOkwwConfigMask" class="maa-config-mask">
-    <div class="mask-content">
-      <div class="mask-icon">
-        <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
-      </div>
-      <h2 class="mask-title">正在进行 ok-ww 设置</h2>
-      <p class="mask-description">
-        请在 ok-ww 界面完成设置。
-        <br />
-        完成后点击“保存设置”结束本次会话。
-      </p>
-      <div class="mask-actions">
-        <a-button
-          v-if="currentConfigScript"
-          type="primary"
-          size="large"
-          @click="handleSaveOkwwConfig(currentConfigScript)"
-        >
-          保存设置
+        <a-button type="primary" size="large" @click="handleSaveConfigMask">
+          {{ configMaskView.button }}
         </a-button>
       </div>
     </div>
@@ -108,44 +22,45 @@
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
-      <h1 class="page-title">脚本管理</h1>
+      <h1 class="page-title">{{ t('scripts.title') }}</h1>
+      <DocLink :url="MAS_DOC_URLS.scripts" />
       <a-input
         v-model:value="scriptSearchKeyword"
         allow-clear
         class="script-search"
-        placeholder="搜索脚本或用户名称、ID"
-        aria-label="搜索脚本或用户"
+        :placeholder="t('scripts.searchPlaceholder')"
+        :aria-label="t('scripts.searchAria')"
       >
         <template #prefix><SearchOutlined /></template>
       </a-input>
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a-tooltip title="收起所有脚本的用户列表">
+        <a-tooltip :title="t('scripts.collapseAllTip')">
           <a-button
             size="large"
             :disabled="scripts.length === 0 || isSearching"
             @click="handleCollapseAll"
           >
             <template #icon><UpOutlined /></template>
-            一键收起
+            {{ t('scripts.collapseAll') }}
           </a-button>
         </a-tooltip>
-        <a-tooltip title="展开所有脚本的用户列表">
+        <a-tooltip :title="t('scripts.expandAllTip')">
           <a-button
             size="large"
             :disabled="scripts.length === 0 || isSearching"
             @click="handleExpandAll"
           >
             <template #icon><DownOutlined /></template>
-            一键展开
+            {{ t('scripts.expandAll') }}
           </a-button>
         </a-tooltip>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
           </template>
-          新建脚本
+          {{ t('scripts.create.title') }}
         </a-button>
       </a-space>
     </div>
@@ -156,18 +71,18 @@
   <div v-if="!addLoading && loadedOnce && scripts.length === 0" class="empty-state">
     <div class="empty-content">
       <div class="empty-image-container">
-        <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+        <img src="@/assets/NoData.png" :alt="t('scripts.empty.alt')" class="empty-image" />
       </div>
       <div class="empty-text-content">
-        <h3 class="empty-title">暂无脚本</h3>
-        <p class="empty-description">您还没有创建任何脚本</p>
+        <h3 class="empty-title">{{ t('scripts.empty.title') }}</h3>
+        <p class="empty-description">{{ t('scripts.empty.desc') }}</p>
       </div>
     </div>
   </div>
 
   <div v-else-if="!addLoading && loadedOnce && filteredScripts.length === 0" class="empty-state">
-    <a-empty description="未找到匹配的脚本或用户">
-      <a-button @click="scriptSearchKeyword = ''">清空搜索</a-button>
+    <a-empty :description="t('scripts.empty.noMatch')">
+      <a-button @click="scriptSearchKeyword = ''">{{ t('scripts.clearSearch') }}</a-button>
     </a-empty>
   </div>
 
@@ -178,7 +93,6 @@
     :searching="isSearching"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
-    :all-plans-data="allPlansData"
     @edit="handleEditScript"
     @copy="handleCopyScript"
     @delete="handleDeleteScript"
@@ -186,15 +100,12 @@
     @edit-user="handleEditUser"
     @delete-user="handleDeleteUser"
     @start-maa-config="handleStartMAAConfig"
-    @save-maa-config="handleSaveMAAConfig"
     @start-src-config="handleStartSRCConfig"
-    @save-src-config="handleSaveSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
     @start-maa-end-user-config="handleStartMaaEndUserConfig"
-    @save-maa-end-config="handleSaveMaaEndConfig"
     @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
-    @pass-check-user="handlePassCheckUser"
+    @scripts-reordered="handleScriptsReordered"
   />
 
   <ScriptCreateDialog
@@ -206,416 +117,19 @@
     @request-templates="loadTemplates"
     @submit="handleSubmitScriptCreate"
   />
-
-  <!-- 创建方式选择弹窗 -->
-  <a-modal
-    v-model:open="createModeSelectVisible"
-    title="选择创建方式"
-    :confirm-loading="addLoading"
-    class="create-mode-modal"
-    width="600px"
-    ok-text="确定"
-    cancel-text="取消"
-    @ok="handleConfirmCreateMode"
-    @cancel="createModeSelectVisible = false"
-  >
-    <div class="mode-selection">
-      <a-radio-group v-model:value="selectedCreateMode" class="mode-radio-group">
-        <a-radio-button value="copy" class="mode-option">
-          <div class="mode-content">
-            <div class="mode-icon">
-              <FileTextOutlined />
-            </div>
-            <div class="mode-info">
-              <div class="mode-title">复制已有脚本</div>
-              <div class="mode-description">从现有脚本复制配置，快速创建相似脚本</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="new" class="mode-option">
-          <div class="mode-content">
-            <div class="mode-icon">
-              <PlusOutlined />
-            </div>
-            <div class="mode-info">
-              <div class="mode-title">创建全新脚本</div>
-              <div class="mode-description">从头开始创建一个全新的脚本实例</div>
-            </div>
-          </div>
-        </a-radio-button>
-      </a-radio-group>
-    </div>
-  </a-modal>
-
-  <!-- 脚本选择弹窗 -->
-  <a-modal
-    v-model:open="scriptSelectVisible"
-    title="选择要复制的脚本"
-    :confirm-loading="addLoading"
-    class="script-select-modal"
-    width="800px"
-    ok-text="确定复制"
-    cancel-text="返回"
-    :ok-button-props="{ disabled: !selectedScriptId }"
-    @ok="handleConfirmScriptSelect"
-    @cancel="
-      () => {
-        scriptSelectVisible = false
-        createModeSelectVisible = true
-      }
-    "
-  >
-    <div class="script-selection">
-      <div v-if="scripts.length === 0" class="no-scripts">
-        <p>暂无可用脚本</p>
-      </div>
-      <div v-else class="scripts-list">
-        <div
-          v-for="script in scripts"
-          :key="script.id"
-          :class="['script-item', { selected: selectedScriptId === script.id }]"
-          @click="selectedScriptId = script.id"
-        >
-          <div class="script-item-content">
-            <div class="script-icon">
-              <img
-                v-if="script.type === 'MAA'"
-                src="@/assets/MAA.png"
-                alt="MAA"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'SRC'"
-                src="@/assets/SRC.png"
-                alt="SRC"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'MaaEnd'"
-                src="@/assets/MaaEnd.png"
-                alt="MaaEnd"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'M9A'"
-                src="@/assets/M9A.png"
-                alt="M9A"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'Okww'"
-                src="@/assets/ok-ww.ico"
-                alt="ok-ww"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'OkNte'"
-                src="@/assets/ok-nte.ico"
-                alt="ok-nte"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'HSR'"
-                src="@/assets/hsr.png"
-                alt="HSR"
-                class="type-icon"
-              />
-              <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
-            </div>
-            <div class="script-info">
-              <div class="script-name">{{ script.name }}</div>
-              <div class="script-meta">
-                <span
-                  class="script-type"
-                  :class="{
-                    'script-type-okww': script.type === 'Okww',
-                    'script-type-oknte': script.type === 'OkNte',
-                  }"
-                >
-                  {{
-                    script.type === 'MAA'
-                      ? 'MAA脚本'
-                      : script.type === 'SRC'
-                        ? 'SRC脚本'
-                        : script.type === 'MaaEnd'
-                          ? 'MaaEnd脚本'
-                          : script.type === 'M9A'
-                            ? 'M9A脚本'
-                            : script.type === 'Okww'
-                              ? 'ok-ww脚本'
-                              : script.type === 'OkNte'
-                                ? 'ok-nte脚本'
-                                : script.type === 'HSR'
-                                  ? 'HSR脚本'
-                                  : '通用脚本'
-                  }}
-                </span>
-                <span class="script-users">
-                  <UserOutlined />
-                  {{ script.users?.length || 0 }} 个用户
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </a-modal>
-
-  <!-- 脚本类型选择弹窗 -->
-  <a-modal
-    v-model:open="typeSelectVisible"
-    title="选择脚本类型"
-    :confirm-loading="addLoading"
-    class="type-select-modal"
-    width="500px"
-    ok-text="确定"
-    cancel-text="取消"
-    @ok="handleConfirmAddScript"
-    @cancel="typeSelectVisible = false"
-  >
-    <div class="type-selection">
-      <a-radio-group v-model:value="selectedType" class="type-radio-group">
-        <a-radio-button value="MAA" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/MAA.png" alt="MAA" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">MAA脚本</div>
-              <div class="type-description">明日方舟自动化脚本，支持多账号日常代理等功能</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="SRC" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/SRC.png" alt="SRC" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">SRC脚本</div>
-              <div class="type-description">崩坏星穹铁道自动化脚本，支持多账号日常代理等功能</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="MaaEnd" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">MaaEnd 脚本</div>
-              <div class="type-description">
-                明日方舟：终末地自动化脚本，支持多账号代理与协议空间配置
-              </div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="M9A" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/M9A.png" alt="M9A" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">M9A脚本</div>
-              <div class="type-description">
-                重返未来: 1999 自动化脚本，支持多账号日常代理等功能
-              </div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="Okww" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/ok-ww.ico" alt="ok-ww" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">ok-ww脚本</div>
-              <div class="type-description">ok-script 线专项：通过 -t/-e 启动参数运行任务</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="OkNte" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/ok-nte.ico" alt="ok-nte" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">ok-nte脚本</div>
-              <div class="type-description">异环 OK-NTE 自动化脚本，支持 -t/-e 任务启动</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="HSR" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/hsr.png" alt="HSR" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">HSR 脚本</div>
-              <div class="type-description">崩坏：星穹铁道 三月七 / SRA 双脚本适配</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="General" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">通用脚本</div>
-              <div class="type-description">通用自动化脚本，适用于所有具备日志文件的脚本</div>
-            </div>
-          </div>
-        </a-radio-button>
-      </a-radio-group>
-    </div>
-  </a-modal>
-
-  <!-- 通用脚本创建方式选择弹窗 -->
-  <a-modal
-    v-model:open="generalModeSelectVisible"
-    title="选择创建方式"
-    :confirm-loading="addLoading"
-    class="general-mode-modal"
-    width="600px"
-    ok-text="确定"
-    cancel-text="返回"
-    @ok="handleConfirmGeneralMode"
-    @cancel="generalModeSelectVisible = false"
-  >
-    <div class="mode-selection">
-      <a-radio-group v-model:value="selectedGeneralMode" class="mode-radio-group">
-        <a-radio-button value="template" class="mode-option">
-          <div class="mode-content">
-            <div class="mode-icon">
-              <FileTextOutlined />
-            </div>
-            <div class="mode-info">
-              <div class="mode-title">从模板创建</div>
-              <div class="mode-description">选择现有的配置模板快速创建脚本</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="custom" class="mode-option">
-          <div class="mode-content">
-            <div class="mode-icon">
-              <SettingOutlined />
-            </div>
-            <div class="mode-info">
-              <div class="mode-title">自定义配置</div>
-              <div class="mode-description">从空白配置开始，完全自定义脚本设置</div>
-            </div>
-          </div>
-        </a-radio-button>
-      </a-radio-group>
-    </div>
-  </a-modal>
-
-  <!-- 模板选择弹窗 -->
-  <a-modal
-    v-model:open="templateSelectVisible"
-    title="选择配置模板"
-    :confirm-loading="templateLoading"
-    class="template-select-modal"
-    width="1000px"
-    ok-text="使用此模板"
-    cancel-text="返回"
-    :ok-button-props="{ disabled: !selectedTemplate }"
-    @ok="handleConfirmTemplate"
-    @cancel="handleCancelTemplate"
-  >
-    <div class="template-selection">
-      <a-spin :spinning="templateLoading">
-        <div v-if="templates.length === 0 && !templateLoading" class="no-templates">
-          <div class="no-templates-content">
-            <FileSearchOutlined class="no-templates-icon" />
-            <h3>暂无可用模板</h3>
-            <p>当前没有找到任何配置模板，请稍后再试或联系管理员</p>
-          </div>
-        </div>
-        <div v-else class="templates-container">
-          <div class="templates-header">
-            <div class="templates-count">
-              <span class="count-badge">{{ filteredTemplates.length }}</span>
-              <span class="count-text">个可用模板</span>
-            </div>
-            <div class="search-container">
-              <a-input
-                v-model:value="pendingSearchKeyword"
-                placeholder="搜索模板名称、作者或描述..."
-                allow-clear
-                size="large"
-                class="template-search"
-                @press-enter="handleSearchTemplates"
-                @change="handleSearchInputChange"
-              >
-                <template #prefix>
-                  <FileSearchOutlined />
-                </template>
-              </a-input>
-              <a-button type="primary" @click="handleSearchTemplates">搜索</a-button>
-            </div>
-          </div>
-          <div class="templates-list">
-            <div v-if="filteredTemplates.length === 0" class="no-search-results">
-              <FileSearchOutlined class="no-results-icon" />
-              <p>未找到匹配的模板</p>
-              <p class="no-results-tip">请尝试其他关键词</p>
-            </div>
-            <template v-else>
-              <div
-                v-for="(template, index) in filteredTemplates"
-                :key="getTemplateKey(template, index)"
-                :class="['template-item', { selected: isSelectedTemplate(template) }]"
-                @click="selectedTemplate = template"
-              >
-                <div class="template-content">
-                  <div class="template-header">
-                    <div class="template-info">
-                      <h3 class="template-name">{{ template.configName }}</h3>
-                      <div class="template-meta">
-                        <span class="template-author">
-                          <UserOutlined />
-                          {{ template.author || '未知作者' }}
-                        </span>
-                        <span class="template-time">
-                          <ClockCircleOutlined />
-                          {{ template.createTime || '未知时间' }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    class="template-description"
-                    @click="handleTemplateDescriptionClick"
-                    v-html="parseMarkdown(template.description)"
-                  ></div>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-      </a-spin>
-    </div>
-  </a-modal>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
-  ClockCircleOutlined,
   DownOutlined,
-  FileSearchOutlined,
-  FileTextOutlined,
   PlusOutlined,
   SearchOutlined,
   SettingOutlined,
   UpOutlined,
-  UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
@@ -627,14 +141,20 @@ import {
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
-import { usePlanApi } from '@/composables/usePlanApi'
-import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { openExternalUrl } from '@/utils/openExternal'
-import MarkdownIt from 'markdown-it'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
+
+const { t } = useI18n()
 
 defineOptions({ name: 'ScriptsPage' })
 
@@ -645,14 +165,6 @@ const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
-const { getPlans } = usePlanApi()
-
-// 初始化markdown解析器
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  typographer: true,
-})
 
 const scripts = ref<Script[]>([])
 const scriptSearchKeyword = ref('')
@@ -663,31 +175,78 @@ const filteredScripts = computed(() =>
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
-// 所有计划表数据 (planId -> planData)
-const allPlansData = ref<Record<string, Record<string, any>>>({})
 const scriptCreateVisible = ref(false)
-const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
-const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
-const typeSelectVisible = ref(false)
-const generalModeSelectVisible = ref(false)
-const templateSelectVisible = ref(false)
-const selectedCreateMode = ref('new') // 'copy' or 'new'
-const selectedScriptId = ref<string | null>(null) // 选中要复制的脚本ID
-const selectedType = ref<ScriptType>('MAA')
-const selectedGeneralMode = ref('template')
-const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
 const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
-const pendingSearchKeyword = ref('')
-const appliedSearchKeyword = ref('')
-const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
-const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
-const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
-const showOkwwConfigMask = ref(false) // 控制ok-ww配置遮罩层的显示
-const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
-const currentMaaEndConfigUser = ref<User | null>(null)
+
+// 配置会话遮罩：同一时刻只会有一个配置会话在前台
+type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww'
+const configMask = ref<{ kind: ConfigMaskKind; script: Script; user: User | null } | null>(null)
+const clearConfigMask = () => {
+  configMask.value = null
+}
+const configMaskView = computed(() => {
+  const mask = configMask.value
+  if (!mask) return null
+  switch (mask.kind) {
+    case 'MAA':
+      return {
+        iconColor: '#1890ff',
+        title: t('scripts.mask.maaTitle'),
+        description: t('scripts.mask.maaDesc'),
+        tip: t('scripts.mask.unlockTip'),
+        button: t('scripts.mask.saveConfig'),
+      }
+    case 'SRC':
+      return {
+        iconColor: '#722ed1',
+        title: t('scripts.mask.srcTitle'),
+        description: t('scripts.mask.srcDesc'),
+        tip: t('scripts.mask.unlockTip'),
+        button: t('scripts.mask.saveConfig'),
+      }
+    case 'MaaEnd':
+      return {
+        iconColor: 'var(--ant-color-primary)',
+        title: mask.user ? t('scripts.mask.maaEndUserTitle') : t('scripts.mask.maaEndScriptTitle'),
+        description: mask.user
+          ? t('scripts.mask.maaEndUserDesc', { name: mask.user.Info.Name })
+          : t('scripts.mask.maaEndScriptDesc'),
+        tip: t('scripts.mask.maaEndUnlockTip'),
+        button: t('scripts.mask.saveConfig'),
+      }
+    case 'Okww':
+      return {
+        iconColor: 'var(--ant-color-primary)',
+        title: t('scripts.mask.okwwTitle'),
+        description: t('scripts.mask.okwwDesc'),
+        tip: t('scripts.mask.okwwUnlockTip'),
+        button: t('scripts.mask.saveSettings'),
+      }
+    default:
+      return null
+  }
+})
+const handleSaveConfigMask = () => {
+  const mask = configMask.value
+  if (!mask) return
+  switch (mask.kind) {
+    case 'MAA':
+      void handleSaveMAAConfig(mask.script)
+      break
+    case 'SRC':
+      void handleSaveSRCConfig(mask.script)
+      break
+    case 'MaaEnd':
+      void handleSaveMaaEndConfig(mask.script)
+      break
+    case 'Okww':
+      void handleSaveOkwwConfig(mask.script)
+      break
+  }
+}
 
 const scriptEditPathMap: Record<ScriptType, string> = {
   MAA: 'maa',
@@ -697,74 +256,39 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   SRC: 'src',
   MaaEnd: 'maaend',
   M9A: 'm9a',
+  MaaFW: 'maafw',
   HSR: 'hsr',
+  BetterGI: 'bettergi',
+  ZzzOd: 'zzzod',
+  BAAH: 'baah',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
 
-// WebSocket连接管理
-const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
-  new Map()
-) // scriptId -> { subscriptionId, websocketId }
+// 配置会话超时：30 分钟没保存就自动断开
+const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
 
-// 解析模板描述的markdown
-const parseMarkdown = (text: string) => {
-  if (!text) return '暂无描述信息'
-  return md.render(text)
-}
-
-const getTemplateKey = (template: WebConfigTemplate, index: number) =>
-  [template.downloadUrl, template.configName, template.author, template.createTime, index]
-    .filter(value => value !== undefined && value !== '')
-    .join('::')
-
-const isSelectedTemplate = (template: WebConfigTemplate) => selectedTemplate.value === template
-
-const handleTemplateDescriptionClick = (event: MouseEvent) => {
-  const link = (event.target as HTMLElement | null)?.closest('a')
-  if (!link) return
-
-  event.preventDefault()
-  const url = link.getAttribute('href')
-  if (url) {
-    openExternalUrl(url)
-  }
-}
-
-// 过滤模板
-const filteredTemplates = computed(() => {
-  if (!appliedSearchKeyword.value.trim()) {
-    return templates.value
-  }
-
-  const keyword = appliedSearchKeyword.value.toLowerCase()
-  return templates.value.filter(
-    template =>
-      template.configName.toLowerCase().includes(keyword) ||
-      (template.author && template.author.toLowerCase().includes(keyword)) ||
-      (template.description && template.description.toLowerCase().includes(keyword))
-  )
-})
-
-const handleSearchTemplates = () => {
-  appliedSearchKeyword.value = pendingSearchKeyword.value.trim()
-}
-
-const handleSearchInputChange = () => {
-  if (!pendingSearchKeyword.value.trim()) {
-    appliedSearchKeyword.value = ''
-  }
-}
-
-watch(filteredTemplates, filtered => {
-  if (selectedTemplate.value && !filtered.includes(selectedTemplate.value)) {
-    selectedTemplate.value = null
-  }
-})
+// WebSocket连接管理：scriptId/userId -> { subscriptionIds, taskId, timeoutId }
+const activeConnections = ref<
+  Map<
+    string,
+    { subscriptionIds: string[]; taskId: string; timeoutId?: ReturnType<typeof setTimeout> }
+  >
+>(new Map())
 
 onMounted(() => {
   loadScripts()
-  loadCurrentPlan()
+})
+
+// 离开页面时释放全部配置会话订阅并清掉超时定时器，不会在其他页面弹出提示
+onUnmounted(() => {
+  for (const connection of activeConnections.value.values()) {
+    for (const subscriptionId of connection.subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
+    if (connection.timeoutId) clearTimeout(connection.timeoutId)
+  }
+  activeConnections.value.clear()
 })
 
 const loadScripts = async () => {
@@ -778,37 +302,14 @@ const loadScripts = async () => {
       name: detail.name,
       config: detail.config,
       users: (detail.users || []).filter((user): user is NonNullable<typeof user> => user !== null),
-      createTime: new Date().toLocaleString(),
     }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本列表失败: ${errorMsg}`)
-    message.error(`加载脚本列表失败: ${errorMsg}`)
+    message.error(t('scripts.toast.loadListFailed', { error: errorMsg }))
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
-  }
-}
-
-// 加载所有计划表数据
-const loadCurrentPlan = async () => {
-  try {
-    const response = await getPlans()
-    if (response.data && response.index) {
-      const maaPlanIds = response.index
-        .filter(plan => plan.type === PLAN_CONFIG_TYPES.MAA)
-        .map(plan => plan.uid)
-
-      allPlansData.value = Object.fromEntries(
-        maaPlanIds
-          .filter(planId => response.data[planId])
-          .map(planId => [planId, response.data[planId]])
-      )
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载计划表数据失败: ${errorMsg}`)
-    // 不显示错误消息，因为计划表数据是可选的
   }
 }
 
@@ -824,13 +325,22 @@ const handleExpandAll = () => {
   scriptTableRef.value?.expandAllUsers()
 }
 
+// 拖拽排序已写回后端，父级列表同步成新顺序，否则后续共享对象改动会把顺序弹回去
+const handleScriptsReordered = (reordered: Script[]) => {
+  scripts.value = [...reordered]
+}
+
 const navigateToCreatedScript = (
   scriptId: string,
   type: ScriptType,
   data?: Record<string, unknown>
 ) => {
   const route = {
-    path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    // MFW 新建后进分步引导；其余类型直接进编辑页
+    path:
+      type === 'MaaFW'
+        ? `/scripts/${scriptId}/setup/maafw`
+        : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
       ? {
           state: {
@@ -856,7 +366,7 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
     if (request.kind === 'general-template') {
       const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
       if (!imported) return
-      message.success(`已根据模板 "${request.template.configName}" 创建脚本`)
+      message.success(t('scripts.toast.createdFromTemplate', { name: request.template.configName }))
       await loadScripts()
       scriptCreateVisible.value = false
       navigateToCreatedScript(result.scriptId, 'General')
@@ -873,186 +383,16 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
   }
 }
 
-const handleConfirmCreateMode = () => {
-  if (selectedCreateMode.value === 'copy') {
-    // 复制已有脚本 - 打开脚本选择弹窗
-    createModeSelectVisible.value = false
-    selectedScriptId.value = null
-    scriptSelectVisible.value = true
-  } else {
-    // 创建新脚本 - 进入类型选择
-    createModeSelectVisible.value = false
-    selectedType.value = 'MAA'
-    typeSelectVisible.value = true
-  }
-}
-
-const handleConfirmScriptSelect = async () => {
-  if (!selectedScriptId.value) {
-    message.warning('请先选择一个脚本')
-    return
-  }
-
-  // 获取选中的脚本信息
-  const selectedScript = scripts.value.find(s => s.id === selectedScriptId.value)
-  if (!selectedScript) {
-    message.error('所选脚本不存在')
-    return
-  }
-
-  addLoading.value = true
-  try {
-    // 使用选中的脚本ID调用addScript，传入scriptId进行复制创建
-    const result = await addScript(selectedScript.type, selectedScriptId.value)
-    if (result) {
-      scriptSelectVisible.value = false
-      // 跳转到编辑页面
-      const editPath = getScriptEditPath(selectedScript.type)
-      router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
-        state: {
-          scriptData: {
-            id: result.scriptId,
-            type: selectedScript.type,
-            config: result.data,
-          },
-        },
-      })
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`复制脚本失败: ${errorMsg}`)
-  } finally {
-    addLoading.value = false
-  }
-}
-
-const handleConfirmAddScript = async () => {
-  if (selectedType.value === 'General') {
-    // 如果选择通用脚本，进入创建方式选择
-    typeSelectVisible.value = false
-    generalModeSelectVisible.value = true
-    return
-  }
-
-  // MAA和SRC脚本直接创建
-  addLoading.value = true
-  try {
-    const result = await addScript(selectedType.value)
-    if (result) {
-      typeSelectVisible.value = false
-      // 跳转到编辑页面，传递API返回的数据
-      const editPath = getScriptEditPath(selectedType.value)
-      router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
-        state: {
-          scriptData: {
-            id: result.scriptId,
-            type: selectedType.value,
-            config: result.data,
-          },
-        },
-      })
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`添加脚本失败: ${errorMsg}`)
-  } finally {
-    addLoading.value = false
-  }
-}
-
-const handleConfirmGeneralMode = async () => {
-  if (selectedGeneralMode.value === 'template') {
-    // 加载模板列表并打开模板选择弹窗
-    await loadTemplates()
-    generalModeSelectVisible.value = false
-    templateSelectVisible.value = true
-  } else {
-    // 自定义配置 - 直接创建通用脚本
-    generalModeSelectVisible.value = false
-    addLoading.value = true
-    try {
-      const result = await addScript('General')
-      if (result) {
-        router.push({
-          path: `/scripts/${result.scriptId}/edit/general`,
-          state: {
-            scriptData: {
-              id: result.scriptId,
-              type: 'General',
-              config: result.data,
-            },
-          },
-        })
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`添加脚本失败: ${errorMsg}`)
-    } finally {
-      addLoading.value = false
-    }
-  }
-}
-
 const loadTemplates = async () => {
   templateLoading.value = true
   try {
     templates.value = await getWebConfigTemplates()
-    selectedTemplate.value = null
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载模板列表失败: ${errorMsg}`)
   } finally {
     templateLoading.value = false
   }
-}
-
-const handleConfirmTemplate = async () => {
-  if (!selectedTemplate.value) {
-    message.warning('请先选择一个模板')
-    return
-  }
-
-  templateLoading.value = true
-  try {
-    // 1. 先创建通用脚本
-    const createResult = await addScript('General')
-    if (!createResult) {
-      return
-    }
-
-    // 2. 使用模板URL导入配置
-    const importResult = await importScriptFromWeb(
-      createResult.scriptId,
-      selectedTemplate.value.downloadUrl
-    )
-
-    if (importResult) {
-      message.success(`已根据模板 "${selectedTemplate.value.configName}" 创建脚本`)
-      templateSelectVisible.value = false
-      selectedTemplate.value = null
-
-      // 刷新脚本列表
-      await loadScripts()
-
-      // 跳转到编辑页面，不传递state数据，让编辑页面从API重新加载最新配置
-      router.push(`/scripts/${createResult.scriptId}/edit/general`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`使用模板创建脚本失败: ${errorMsg}`)
-    message.error(`使用模板创建脚本失败: ${errorMsg}`)
-  } finally {
-    templateLoading.value = false
-  }
-}
-
-const handleCancelTemplate = () => {
-  templateSelectVisible.value = false
-  selectedTemplate.value = null
-  // 返回到创建方式选择
-  generalModeSelectVisible.value = true
 }
 
 const handleEditScript = (script: Script) => {
@@ -1062,7 +402,8 @@ const handleEditScript = (script: Script) => {
 const handleDeleteScript = async (script: Script) => {
   const result = await deleteScript(script.id)
   if (result) {
-    loadScripts()
+    // 后端已删除，本地直接移除即可，不必整份重拉
+    scripts.value = scripts.value.filter(item => item.id !== script.id)
   }
 }
 
@@ -1073,7 +414,7 @@ const handleCopyScript = async (script: Script) => {
     const result = await addScript(script.type, script.id)
     if (result) {
       await loadScripts()
-      message.success(`已复制脚本「${script.name}」`)
+      message.success(t('scripts.toast.copied', { name: script.name }))
     }
   } finally {
     addLoading.value = false
@@ -1091,12 +432,20 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/maaend`)
   } else if (script.type === 'M9A') {
     router.push(`/scripts/${script.id}/users/add/m9a`)
+  } else if (script.type === 'MaaFW') {
+    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
     router.push(`/scripts/${script.id}/users/add/oknte`)
   } else if (script.type === 'HSR') {
     router.push(`/scripts/${script.id}/users/add/hsr`)
+  } else if (script.type === 'BetterGI') {
+    router.push(`/scripts/${script.id}/users/add/bettergi`)
+  } else if (script.type === 'ZzzOd') {
+    router.push(`/scripts/${script.id}/users/add/zzzod`)
+  } else if (script.type === 'BAAH') {
+    router.push(`/scripts/${script.id}/users/add/baah`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -1115,17 +464,25 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
     } else if (script.type === 'M9A') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
+    } else if (script.type === 'MaaFW') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
     } else if (script.type === 'HSR') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
+    } else if (script.type === 'BetterGI') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/bettergi`)
+    } else if (script.type === 'ZzzOd') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
+    } else if (script.type === 'BAAH') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
   } else {
-    message.error('找不到对应的脚本')
+    message.error(t('scripts.toast.scriptNotFound'))
   }
 }
 
@@ -1133,7 +490,7 @@ const handleDeleteUser = async (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (!script) {
-    message.error('找不到对应的脚本')
+    message.error(t('scripts.toast.scriptNotFound'))
     return
   }
 
@@ -1147,292 +504,47 @@ const handleDeleteUser = async (user: User) => {
   }
 }
 
-const handleStartMAAConfig = async (script: Script) => {
-  try {
-    // 检查是否已有连接
-    const existingConnection = activeConnections.value.get(script.id)
-    if (existingConnection) {
-      message.warning('该脚本已在配置中，请先保存配置')
-      return
-    }
-
-    // 调用启动配置任务API
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: script.id,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (response.code === 200) {
-      // 显示遮罩层
-      showMAAConfigMask.value = true
-      currentConfigScript.value = script
-
-      // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        // 处理错误消息
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`MAA配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showMAAConfigMask.value = false
-          currentConfigScript.value = null
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`MAA配置失败: ${errorMsg}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
-          logger.info(`脚本 ${script.name} 配置任务已结束`)
-          // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
-            message.success(`${script.name} 配置已完成`)
-          }
-          // 清理连接
-          unsubscribe(subscriptionId)
-          activeConnections.value.delete(script.id)
-          showMAAConfigMask.value = false
-          currentConfigScript.value = null
-        }
-      })
-
-      // 记录连接和subscriptionId
-      activeConnections.value.set(script.id, {
-        subscriptionId,
-        websocketId: response.taskId,
-      })
-      message.success(`已启动 ${script.name} 的MAA配置`)
-
-      // 设置自动断开连接的定时器（30分钟后）
-      setTimeout(
-        () => {
-          if (activeConnections.value.has(script.id)) {
-            const connection = activeConnections.value.get(script.id)
-            if (connection) {
-              unsubscribe(connection.subscriptionId)
-            }
-            activeConnections.value.delete(script.id)
-            // 超时时隐藏遮罩
-            showMAAConfigMask.value = false
-            currentConfigScript.value = null
-            message.info(`${script.name} 配置会话已超时断开`)
-          }
-        },
-        30 * 60 * 1000
-      ) // 30分钟
-    } else {
-      message.error(response.message || '启动MAA配置失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`启动MAA配置失败: ${errorMsg}`)
-    message.error(`启动MAA配置失败: ${errorMsg}`)
-  }
-}
-
-const handleSaveMAAConfig = async (script: Script) => {
-  try {
-    const connection = activeConnections.value.get(script.id)
-    if (!connection) {
-      message.error('未找到活动的配置会话')
-      return
-    }
-
-    // 调用停止配置任务API
-    const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
-    })
-
-    if (response.code === 200) {
-      // 取消订阅
-      unsubscribe(connection.subscriptionId)
-      activeConnections.value.delete(script.id)
-
-      // 隐藏遮罩
-      showMAAConfigMask.value = false
-      currentConfigScript.value = null
-
-      message.success(`${script.name} 的配置已保存`)
-    } else {
-      message.error(response.message || '保存配置失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存MAA配置失败: ${errorMsg}`)
-    message.error(`保存MAA配置失败: ${errorMsg}`)
-  }
-}
-
-const handleStartSRCConfig = async (script: Script) => {
-  try {
-    // 检查是否已有连接
-    const existingConnection = activeConnections.value.get(script.id)
-    if (existingConnection) {
-      message.warning('该脚本已在配置中，请先保存配置')
-      return
-    }
-
-    // 调用启动配置任务API
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: script.id,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (response.code === 200) {
-      // 显示遮罩层
-      showSRCConfigMask.value = true
-      currentConfigScript.value = script
-
-      // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-        // 处理错误消息
-        if (wsMessage.type === 'error') {
-          const errorMsg =
-            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
-          message.error(`SRC配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showSRCConfigMask.value = false
-          currentConfigScript.value = null
-          return
-        }
-
-        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
-        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg =
-            wsMessage.data.Error instanceof Error
-              ? wsMessage.data.Error.message
-              : String(wsMessage.data.Error)
-          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
-          message.error(`SRC配置失败: ${errorMsg}`)
-          // 不取消订阅，等待Signal类型的Accomplish消息
-          return
-        }
-
-        // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (
-          wsMessage.type === 'Signal' &&
-          wsMessage.data &&
-          wsMessage.data.Accomplish !== undefined
-        ) {
-          logger.info(`脚本 ${script.name} 配置任务已结束`)
-          // 根据结果显示不同消息
-          const result = wsMessage.data.Accomplish
-          if (result && !result.includes('异常') && !result.includes('错误')) {
-            message.success(`${script.name} 配置已完成`)
-          }
-          // 清理连接
-          unsubscribe(subscriptionId)
-          activeConnections.value.delete(script.id)
-          showSRCConfigMask.value = false
-          currentConfigScript.value = null
-        }
-      })
-
-      // 记录连接和subscriptionId
-      activeConnections.value.set(script.id, {
-        subscriptionId,
-        websocketId: response.taskId,
-      })
-      message.success(`已启动 ${script.name} 的SRC配置`)
-
-      // 设置自动断开连接的定时器（30分钟后）
-      setTimeout(
-        () => {
-          if (activeConnections.value.has(script.id)) {
-            const connection = activeConnections.value.get(script.id)
-            if (connection) {
-              unsubscribe(connection.subscriptionId)
-            }
-            activeConnections.value.delete(script.id)
-            // 超时时隐藏遮罩
-            showSRCConfigMask.value = false
-            currentConfigScript.value = null
-            message.info(`${script.name} 配置会话已超时断开`)
-          }
-        },
-        30 * 60 * 1000
-      ) // 30分钟
-    } else {
-      message.error(response.message || '启动SRC配置失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`启动SRC配置失败: ${errorMsg}`)
-    message.error(`启动SRC配置失败: ${errorMsg}`)
-  }
-}
-
-const handleSaveSRCConfig = async (script: Script) => {
-  try {
-    const connection = activeConnections.value.get(script.id)
-    if (!connection) {
-      message.error('未找到活动的配置会话')
-      return
-    }
-
-    // 调用停止配置任务API
-    const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: connection.websocketId,
-    })
-
-    if (response.code === 200) {
-      // 取消订阅
-      unsubscribe(connection.subscriptionId)
-      activeConnections.value.delete(script.id)
-
-      // 隐藏遮罩
-      showSRCConfigMask.value = false
-      currentConfigScript.value = null
-
-      message.success(`${script.name} 的配置已保存`)
-    } else {
-      message.error(response.message || '保存配置失败')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存SRC配置失败: ${errorMsg}`)
-    message.error(`保存SRC配置失败: ${errorMsg}`)
-  }
-}
-
 const clearConfigSession = (
   targetId: string,
-  subscriptionId: string | undefined,
+  subscriptionIds: string[] | undefined,
   clearState: () => void
 ) => {
-  if (subscriptionId) unsubscribe(subscriptionId)
+  if (subscriptionIds) {
+    for (const subscriptionId of subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
+  }
+  const connection = activeConnections.value.get(targetId)
+  if (connection?.timeoutId) clearTimeout(connection.timeoutId)
   activeConnections.value.delete(targetId)
   clearState()
+}
+
+// 会话超时定时器挂在连接记录上，会话结束或页面卸载时一并清掉
+const scheduleConfigSessionTimeout = (
+  targetId: string,
+  clearState: () => void,
+  onTimeout: () => void
+) => {
+  const connection = activeConnections.value.get(targetId)
+  if (!connection) return
+  connection.timeoutId = setTimeout(() => {
+    const current = activeConnections.value.get(targetId)
+    if (!current) return
+    clearConfigSession(targetId, current.subscriptionIds, clearState)
+    onTimeout()
+  }, CONFIG_SESSION_TIMEOUT_MS)
 }
 
 const startConfigSession = async (
   targetId: string,
   label: string,
   setActiveState: () => void,
-  clearState: () => void
+  clearState: () => void,
+  onCompleted?: (data: WSTaskCompletedData) => void
 ) => {
   if (activeConnections.value.has(targetId)) {
-    message.warning('该配置目标已在配置中，请先保存当前配置')
+    message.warning(t('scripts.toast.targetConfiguring'))
     return false
   }
 
@@ -1441,35 +553,34 @@ const startConfigSession = async (
     mode: TaskCreateIn.mode.SCRIPT_CONFIG,
   })
   if (response.code !== 200 || !response.taskId) {
-    throw new Error(response.message || `启动 ${label} 配置失败`)
+    throw new Error(response.message || t('scripts.toast.startFailedRaw', { label }))
   }
 
   setActiveState()
   let sessionEnded = false
-  let subscriptionId = ''
-  subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
-    if (wsMessage.type === 'error') {
+  const subscriptionIds: string[] = []
+  subscriptionIds.push(
+    subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+      const data = wsMessage.data as unknown as WSTaskNoticeData
+      if (data.level === 'error') {
+        message.error(t('scripts.toast.configFailed', { label, error: data.message }))
+      }
+    }),
+    subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
       sessionEnded = true
-      message.error(`${label} 配置连接失败: ${String(wsMessage.data)}`)
-      clearConfigSession(targetId, subscriptionId, clearState)
-      return
-    }
-    if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
-      message.error(`${label} 配置失败: ${String(wsMessage.data.Error)}`)
-      return
-    }
-    if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-      sessionEnded = true
-      clearConfigSession(targetId, subscriptionId, clearState)
-    }
-  })
+      clearConfigSession(targetId, subscriptionIds, clearState)
+      onCompleted?.(wsMessage.data as unknown as WSTaskCompletedData)
+    })
+  )
   if (sessionEnded) {
-    unsubscribe(subscriptionId)
+    for (const subscriptionId of subscriptionIds) {
+      unsubscribe(subscriptionId)
+    }
     return false
   }
   activeConnections.value.set(targetId, {
-    subscriptionId,
-    websocketId: response.taskId,
+    subscriptionIds,
+    taskId: response.taskId,
   })
   return true
 }
@@ -1477,67 +588,100 @@ const startConfigSession = async (
 const stopConfigSession = async (targetId: string, label: string, clearState: () => void) => {
   const connection = activeConnections.value.get(targetId)
   if (!connection) {
-    message.error('未找到活动的配置会话')
+    message.error(t('scripts.toast.noSession'))
     return false
   }
   const response = await Service.stopTaskApiDispatchStopPost({
-    taskId: connection.websocketId,
+    taskId: connection.taskId,
   })
   if (response.code !== 200) {
-    throw new Error(response.message || `保存 ${label} 配置失败`)
+    throw new Error(response.message || t('scripts.toast.saveFailedRaw', { label }))
   }
-  clearConfigSession(targetId, connection.subscriptionId, clearState)
+  clearConfigSession(targetId, connection.subscriptionIds, clearState)
   return true
 }
+
+// MAA / SRC 脚本级配置会话：走通用的 start/stop，带 sessionEnded 竞态守卫
+const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
+  try {
+    const started = await startConfigSession(
+      script.id,
+      kind,
+      () => {
+        configMask.value = { kind, script, user: null }
+      },
+      clearConfigMask,
+      data => {
+        logger.info(`脚本 ${script.name} 配置任务已结束`)
+        if (data.outcome === 'success') {
+          message.success(t('scripts.toast.configDone', { name: script.name }))
+        }
+      }
+    )
+    if (!started) return
+
+    message.success(t('scripts.toast.configStarted', { name: script.name, label: kind }))
+    scheduleConfigSessionTimeout(script.id, clearConfigMask, () =>
+      message.info(t('scripts.toast.sessionTimeout', { name: script.name }))
+    )
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动${kind}配置失败: ${errorMsg}`)
+    message.error(t('scripts.toast.startConfigError', { label: kind, error: errorMsg }))
+  }
+}
+
+const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
+  try {
+    const saved = await stopConfigSession(script.id, kind, clearConfigMask)
+    if (saved) message.success(t('scripts.toast.configSaved', { name: script.name }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存${kind}配置失败: ${errorMsg}`)
+    message.error(t('scripts.toast.saveConfigError', { label: kind, error: errorMsg }))
+  }
+}
+
+const handleStartMAAConfig = (script: Script) => handleStartScriptConfig(script, 'MAA')
+const handleSaveMAAConfig = (script: Script) => handleSaveScriptConfig(script, 'MAA')
+const handleStartSRCConfig = (script: Script) => handleStartScriptConfig(script, 'SRC')
+const handleSaveSRCConfig = (script: Script) => handleSaveScriptConfig(script, 'SRC')
 
 const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {
     const controllerType = (script.config as any).Game?.ControllerType
     if (!user && controllerType !== 'Win32-Front') {
-      message.warning('当前控制器暂不支持脚本级 MaaEnd 配置，请使用用户级配置入口')
+      message.warning(t('scripts.toast.maaEndUnsupported'))
       return
     }
 
     const targetId = user?.id ?? script.id
-    const clearState = () => {
-      showMaaEndConfigMask.value = false
-      currentConfigScript.value = null
-      currentMaaEndConfigUser.value = null
-    }
     const started = await startConfigSession(
       targetId,
       'MaaEnd',
       () => {
-        showMaaEndConfigMask.value = true
-        currentConfigScript.value = script
-        currentMaaEndConfigUser.value = user
+        configMask.value = { kind: 'MaaEnd', script, user }
       },
-      clearState
+      clearConfigMask
     )
     if (!started) return
 
     message.success(
       user
-        ? `已启动 ${script.name} / ${user.Info.Name} 的 MaaEnd 配置`
-        : `已启动 ${script.name} 的 MaaEnd 配置`
+        ? t('scripts.toast.maaEndUserStarted', { script: script.name, user: user.Info.Name })
+        : t('scripts.toast.maaEndScriptStarted', { script: script.name })
     )
-    setTimeout(
-      () => {
-        const connection = activeConnections.value.get(targetId)
-        if (!connection) return
-        clearConfigSession(targetId, connection.subscriptionId, clearState)
-        message.info(
-          user
-            ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
-            : `${script.name} 配置会话已超时断开`
-        )
-      },
-      30 * 60 * 1000
+    scheduleConfigSessionTimeout(targetId, clearConfigMask, () =>
+      message.info(
+        user
+          ? t('scripts.toast.maaEndUserTimeout', { script: script.name, user: user.Info.Name })
+          : t('scripts.toast.sessionTimeout', { name: script.name })
+      )
     )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 MaaEnd 配置失败: ${errorMsg}`)
-    message.error(`启动 MaaEnd 配置失败: ${errorMsg}`)
+    message.error(t('scripts.toast.startConfigError', { label: 'MaaEnd', error: errorMsg }))
   }
 }
 
@@ -1547,24 +691,20 @@ const handleStartMaaEndUserConfig = async (script: Script, user: User) => {
 
 const handleSaveMaaEndConfig = async (script: Script) => {
   try {
-    const targetId = currentMaaEndConfigUser.value?.id ?? script.id
-    const currentUser = currentMaaEndConfigUser.value
-    const saved = await stopConfigSession(targetId, 'MaaEnd', () => {
-      showMaaEndConfigMask.value = false
-      currentConfigScript.value = null
-      currentMaaEndConfigUser.value = null
-    })
+    const currentUser = configMask.value?.kind === 'MaaEnd' ? configMask.value.user : null
+    const targetId = currentUser?.id ?? script.id
+    const saved = await stopConfigSession(targetId, 'MaaEnd', clearConfigMask)
     if (saved) {
       message.success(
         currentUser
-          ? `${script.name} / ${currentUser.Info.Name} 的配置已保存`
-          : `${script.name} 的配置已保存`
+          ? t('scripts.toast.maaEndUserSaved', { script: script.name, user: currentUser.Info.Name })
+          : t('scripts.toast.configSaved', { name: script.name })
       )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
-    message.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
+    message.error(t('scripts.toast.saveConfigError', { label: 'MaaEnd', error: errorMsg }))
   }
 }
 
@@ -1574,33 +714,26 @@ const handleStartOkwwConfig = async (script: Script) => {
       script.id,
       'ok-ww',
       () => {
-        showOkwwConfigMask.value = true
-        currentConfigScript.value = script
+        configMask.value = { kind: 'Okww', script, user: null }
       },
-      () => {
-        showOkwwConfigMask.value = false
-        currentConfigScript.value = null
-      }
+      clearConfigMask
     )
-    if (started) message.success(`已打开 ${script.name} 的 ok-ww 设置`)
+    if (started) message.success(t('scripts.toast.okwwStarted', { name: script.name }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 ok-ww 设置失败: ${errorMsg}`)
-    message.error(`启动 ok-ww 设置失败: ${errorMsg}`)
+    message.error(t('scripts.toast.okwwStartFailed', { error: errorMsg }))
   }
 }
 
 const handleSaveOkwwConfig = async (script: Script) => {
   try {
-    const saved = await stopConfigSession(script.id, 'ok-ww', () => {
-      showOkwwConfigMask.value = false
-      currentConfigScript.value = null
-    })
-    if (saved) message.success(`${script.name} 的设置已保存`)
+    const saved = await stopConfigSession(script.id, 'ok-ww', clearConfigMask)
+    if (saved) message.success(t('scripts.toast.okwwSaved', { name: script.name }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
-    message.error(`保存 ok-ww 设置失败: ${errorMsg}`)
+    message.error(t('scripts.toast.okwwSaveFailed', { error: errorMsg }))
   }
 }
 
@@ -1609,7 +742,7 @@ const handleToggleUserStatus = async (user: User) => {
     // 找到该用户对应的脚本
     const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
     if (!script) {
-      message.error('找不到对应的脚本')
+      message.error(t('scripts.toast.scriptNotFound'))
       return
     }
     const newStatus = !user.Info.Status
@@ -1620,42 +753,14 @@ const handleToggleUserStatus = async (user: User) => {
     })
 
     if (result) {
-      message.success('用户状态更新成功')
+      message.success(t('scripts.toast.userStatusUpdated'))
       // 更新本地用户状态
       user.Info.Status = newStatus
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
-    message.error(`更新用户状态失败: ${errorMsg}`)
-  }
-}
-
-const handlePassCheckUser = async (user: User) => {
-  try {
-    // 找到该用户对应的脚本
-    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
-    if (!script) {
-      message.error('找不到对应的脚本')
-      return
-    }
-
-    // 调用 updateUser API，更新 Data.IfPassCheck 为 true
-    const result = await updateUser(script.id, user.id, {
-      Data: {
-        IfPassCheck: true,
-      },
-    })
-
-    if (result) {
-      message.success('已标记为「通过人工排查」')
-      // 刷新脚本配置
-      await loadScripts()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`更新人工排查状态失败: ${errorMsg}`)
-    message.error(`更新人工排查状态失败: ${errorMsg}`)
+    message.error(t('scripts.toast.userStatusFailed', { error: errorMsg }))
   }
 }
 </script>
@@ -1718,19 +823,6 @@ const handlePassCheckUser = async (user: User) => {
 
 .link .anticon {
   margin-right: 8px;
-}
-
-.loading-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
 }
 
 .empty-state {
@@ -1827,505 +919,5 @@ const handlePassCheckUser = async (user: User) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.type-select-modal,
-.general-mode-modal,
-.template-select-modal {
-  text-align: left;
-}
-
-.type-select-modal :deep(.ant-modal-header),
-.general-mode-modal :deep(.ant-modal-header),
-.template-select-modal :deep(.ant-modal-header) {
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 20px 24px;
-}
-
-.type-select-modal :deep(.ant-modal-title),
-.general-mode-modal :deep(.ant-modal-title),
-.template-select-modal :deep(.ant-modal-title) {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.type-select-modal :deep(.ant-modal-body),
-.general-mode-modal :deep(.ant-modal-body),
-.template-select-modal :deep(.ant-modal-body) {
-  padding: 24px;
-}
-
-.type-select-modal :deep(.ant-modal-footer),
-.general-mode-modal :deep(.ant-modal-footer),
-.template-select-modal :deep(.ant-modal-footer) {
-  padding: 16px 24px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-.type-selection,
-.mode-selection,
-.template-selection {
-  margin-top: 16px;
-}
-
-.type-radio-group,
-.mode-radio-group {
-  display: flex;
-  flex-direction: column;
-}
-
-/* Hide the small separator (::before) AntD injects between button wrappers */
-.type-radio-group :deep(.ant-radio-button-wrapper:not(:first-child)::before) {
-  display: none !important;
-}
-
-.type-option,
-.mode-option {
-  height: auto;
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  border: 2px solid var(--ant-color-border);
-  border-radius: 12px;
-  margin-bottom: 12px;
-  cursor: pointer;
-  background: var(--ant-color-bg-container);
-  position: relative;
-  overflow: hidden;
-}
-
-.type-option:hover,
-.mode-option:hover {
-  border-color: var(--ant-color-primary);
-}
-
-.type-option:deep(.ant-radio-button-input:checked + .ant-radio-button-wrapper),
-.mode-option:deep(.ant-radio-button-input:checked + .ant-radio-button-wrapper) {
-  border-color: var(--ant-color-primary) !important;
-  background: var(--ant-color-primary-bg) !important;
-}
-
-/* 选中状态样式 */
-.type-radio-group :deep(.ant-radio-button-wrapper-checked) {
-  border-color: var(--ant-color-primary) !important;
-  background: var(--ant-color-primary-bg) !important;
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
-  border-color: var(--ant-color-primary) !important;
-  background: var(--ant-color-primary-bg) !important;
-}
-
-/* 选中状态的文字颜色增强 */
-.type-radio-group :deep(.ant-radio-button-wrapper-checked) .type-title {
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper-checked) .mode-title {
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-
-.type-content,
-.mode-content {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.type-logo-container,
-.mode-icon {
-  width: 48px;
-  height: 48px;
-  margin-right: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--ant-color-primary-bg);
-  flex-shrink: 0;
-}
-
-.type-logo {
-  width: 32px;
-  height: 32px;
-}
-
-.mode-icon {
-  font-size: 24px;
-  color: var(--ant-color-primary);
-}
-
-.type-info,
-.mode-info {
-  flex: 1;
-}
-
-.type-title,
-.mode-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 6px;
-  color: var(--ant-color-text);
-}
-
-.type-description,
-.mode-description {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
-  line-height: 1.4;
-}
-
-.templates-container {
-  margin-top: 16px;
-}
-
-.templates-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.templates-count {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  color: var(--ant-color-text);
-}
-
-.count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
-  background: var(--ant-color-primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  margin-right: 8px;
-}
-
-.count-text {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-}
-
-.search-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 380px;
-  margin-left: 16px;
-}
-
-.template-search {
-  flex: 1;
-  min-width: 0;
-}
-
-.search-container .ant-btn {
-  flex-shrink: 0;
-}
-
-.templates-list {
-  max-height: 400px;
-  overflow-y: auto;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  background: var(--ant-color-bg-container);
-  scrollbar-width: thin;
-  scrollbar-color: var(--ant-color-border) transparent;
-}
-
-.templates-list::-webkit-scrollbar {
-  width: 6px !important;
-  display: block !important;
-}
-
-.templates-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.templates-list::-webkit-scrollbar-thumb {
-  background-color: var(--ant-color-border);
-  border-radius: 3px;
-}
-
-.templates-list::-webkit-scrollbar-thumb:hover {
-  background-color: var(--ant-color-border-secondary);
-}
-
-.template-item {
-  padding: 16px;
-  border-bottom: 1px solid var(--ant-color-border);
-  cursor: pointer;
-  background: var(--ant-color-bg-container);
-  position: relative;
-  border-left: 3px solid transparent;
-}
-
-.template-item:last-child {
-  border-bottom: none;
-}
-
-.template-item:hover {
-  border-left-color: var(--ant-color-primary-hover);
-}
-
-.template-item.selected {
-  background: var(--ant-color-primary-bg);
-  border-left-color: var(--ant-color-primary);
-}
-
-.template-item.selected .template-name {
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-
-.template-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.template-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.template-info {
-  flex: 1;
-}
-
-.template-name {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px;
-  color: var(--ant-color-text);
-}
-
-.template-meta {
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.template-author,
-.template-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.template-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
-  line-height: 1.5;
-}
-
-.no-search-results,
-.no-templates {
-  text-align: center;
-  padding: 32px 16px;
-  color: var(--ant-color-text-secondary);
-}
-
-.no-results-icon,
-.no-templates-icon {
-  font-size: 48px;
-  color: var(--ant-color-text-tertiary);
-  margin-bottom: 16px;
-}
-
-.no-templates-content h3 {
-  color: var(--ant-color-text);
-  margin: 0 0 8px;
-}
-
-.no-templates-content p {
-  color: var(--ant-color-text-secondary);
-  margin: 0;
-}
-
-.no-results-tip {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  margin-top: 4px;
-}
-
-/* 创建方式选择弹窗样式 */
-.create-mode-modal {
-  text-align: left;
-}
-
-.create-mode-modal :deep(.ant-modal-header) {
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 20px 24px;
-}
-
-.create-mode-modal :deep(.ant-modal-title) {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.create-mode-modal :deep(.ant-modal-body) {
-  padding: 24px;
-}
-
-.create-mode-modal :deep(.ant-modal-footer) {
-  padding: 16px 24px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-/* 脚本选择弹窗样式 */
-.script-select-modal {
-  text-align: left;
-}
-
-.script-select-modal :deep(.ant-modal-header) {
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 20px 24px;
-}
-
-.script-select-modal :deep(.ant-modal-title) {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.script-select-modal :deep(.ant-modal-body) {
-  padding: 24px;
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.script-select-modal :deep(.ant-modal-footer) {
-  padding: 16px 24px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-.script-selection {
-  margin-top: 8px;
-}
-
-.scripts-list {
-  max-height: 450px;
-  overflow-y: auto;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  background: var(--ant-color-bg-container);
-}
-
-.script-item {
-  padding: 16px;
-  border-bottom: 1px solid var(--ant-color-border);
-  cursor: pointer;
-  background: var(--ant-color-bg-container);
-  position: relative;
-  border-left: 3px solid transparent;
-}
-
-.script-item:last-child {
-  border-bottom: none;
-}
-
-.script-item:hover {
-  border-left-color: var(--ant-color-primary-hover);
-}
-
-.script-item.selected {
-  background: var(--ant-color-primary-bg);
-  border-left-color: var(--ant-color-primary);
-}
-
-.script-item.selected .script-name {
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-
-.script-item-content {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.script-icon {
-  width: 48px;
-  height: 48px;
-  margin-right: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--ant-color-primary-bg);
-  flex-shrink: 0;
-}
-
-.type-icon {
-  width: 32px;
-  height: 32px;
-}
-
-.script-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.script-name {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 6px;
-  color: var(--ant-color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.script-meta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
-.script-type {
-  font-weight: 500;
-}
-
-.script-type-okww {
-  color: var(--ant-color-primary);
-}
-
-.script-type-oknte {
-  color: var(--ant-color-primary);
-}
-
-.script-type-hsr {
-  color: var(--ant-color-primary);
-}
-
-.script-users {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.no-scripts {
-  text-align: center;
-  padding: 48px 16px;
-  color: var(--ant-color-text-secondary);
 }
 </style>

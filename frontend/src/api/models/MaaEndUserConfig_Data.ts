@@ -16,12 +16,8 @@ export type MaaEndUserConfig_Data = {
      */
     LastProxyStatus?: ('未知' | '成功' | '失败' | null);
     /**
-     * 上次森空岛签到日期
+     * MaaEnd 每日任务完成记录
      */
-    LastSklandDate?: (string | null);
-    /**
-     * 是否通过检查
-     */
-    IfPassCheck?: (boolean | null);
+    PeriodTaskRecords?: (string | null);
 };
 

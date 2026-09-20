@@ -1,7 +1,7 @@
 <template>
   <div class="log-panel">
-    <div class="section-header">
-      <h3>日志</h3>
+    <div class="scheduler-panel-header">
+      <h3>{{ t('scheduler.log.title') }}</h3>
       <div class="log-controls">
         <a-space size="small">
           <a-button
@@ -9,7 +9,7 @@
             :type="logMode === 'follow' ? 'primary' : 'default'"
             @click="toggleLogMode"
           >
-            {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
+            {{ logMode === 'follow' ? t('scheduler.log.follow') : t('scheduler.log.browse') }}
           </a-button>
         </a-space>
       </div>
@@ -18,9 +18,12 @@
       <div v-if="!logContent" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
-            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
           </div>
         </div>
+      </div>
+      <div v-else-if="usePlainLog" ref="plainLogContainerRef" class="plain-log-container">
+        <pre class="log-text">{{ logContent }}</pre>
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
@@ -37,41 +40,38 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { computed, nextTick, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
+
+const { t } = useI18n()
 
 interface Props {
   logContent: string
-  tabKey: string
-  isLogAtBottom: boolean
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
-}
-
-interface Emits {
-  (_e: 'scroll', _isAtBottom: boolean): void
-  (_e: 'setRef', _el: HTMLElement | null, _key: string): void
 }
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
 
 const props = defineProps<Props>()
-const emit = defineEmits<Emits>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
-const { logContent, tabKey: _tabKey } = toRefs(props)
+const { logContent } = toRefs(props)
+const LARGE_LOG_MONACO_THRESHOLD = 60000
+const usePlainLog = computed(() => logContent.value.length > LARGE_LOG_MONACO_THRESHOLD)
 
 // 使用日志高亮 composable
 const { registerLogLanguage, editorTheme, editorConfig } = useLogHighlight()
 
 const logContentRef = ref<HTMLElement | null>(null)
+const plainLogContainerRef = ref<HTMLElement | null>(null)
 
 // 在编辑器挂载前注册语言
 const handleBeforeMount = (monaco: any) => {
   registerLogLanguage(monaco)
 }
-// 根据 isLogAtBottom 属性初始化模式
 const logMode = ref<LogMode>('follow')
 
 // 监听外部控制的日志模式变化
@@ -86,6 +86,12 @@ watch(
     }
   }
 )
+
+watch(usePlainLog, plain => {
+  if (plain) {
+    editorInstance = null
+  }
+})
 
 // Monaco Editor 实例
 let editorInstance: any = null
@@ -151,8 +157,11 @@ const scrollToBottom = () => {
       editorInstance.revealLine(lineCount)
       editorInstance.setScrollTop(editorInstance.getScrollHeight())
     }
+  } else if (plainLogContainerRef.value) {
+    plainLogContainerRef.value.scrollTop = plainLogContainerRef.value.scrollHeight
+  } else if (logContentRef.value) {
+    logContentRef.value.scrollTop = logContentRef.value.scrollHeight
   }
-  emit('scroll', true)
 }
 
 // 只监听日志内容变化
@@ -166,16 +175,7 @@ watch(
   }
 )
 
-// 组件挂载时设置引用
-onMounted(() => {
-  if (logContentRef.value) {
-    emit('setRef', logContentRef.value, props.tabKey)
-  }
-})
-
-// 组件卸载前清理引用
 onUnmounted(() => {
-  emit('setRef', null, props.tabKey)
   editorInstance = null
 })
 </script>
@@ -185,14 +185,14 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
 }
 
-.section-header {
+.scheduler-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -202,7 +202,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.section-header h3 {
+.scheduler-panel-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
@@ -227,6 +227,13 @@ onUnmounted(() => {
   width: 100%;
 }
 
+.plain-log-container {
+  height: 100%;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--ant-color-bg-container);
+}
+
 .monaco-container :deep(.monaco-editor) {
   height: 100% !important;
 }
@@ -246,6 +253,7 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--ant-color-text);
+  font: inherit;
 }
 
 .empty-state-mini {
@@ -260,7 +268,7 @@ onUnmounted(() => {
     border-radius: 8px;
   }
 
-  .section-header {
+  .scheduler-panel-header {
     padding: 12px;
   }
 

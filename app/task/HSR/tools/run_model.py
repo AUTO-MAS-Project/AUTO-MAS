@@ -20,11 +20,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
-from app.models.config import HSRUserConfig
-from app.models.task import UserItem
 from app.utils import ProcessManager
 
 from .game_resolution import HSRGameResolutionOverride
+from .log_detect import select_failure_summary_lines
 from .m7a_runtime import M7ARunner
 from .sra_runtime import SRAProcessRegistry
 
@@ -81,8 +80,6 @@ class HSRModuleResult:
 class HSRRunItem:
     """HSR 队列中的一个真实执行项。"""
 
-    user_item: UserItem
-    user_cfg: HSRUserConfig
     user_name: str
     user_id: str
     phase: HSRPhase
@@ -90,11 +87,13 @@ class HSRRunItem:
     module_name: str
     script: HSRScriptRunner
     description: str
-    timeout_seconds: int
     run: Callable[[], Awaitable[object]]
     on_success: Callable[[object], None] | None = None
     last_error: str = ""
     attempts: int = 0
+    # 非 HSRRetryableTaskError 的异常（配置或代码错误）补跑也不会变好，置 False 后
+    # 只记失败、不进补跑队列
+    retryable: bool = True
 
 
 class HSRRetryableTaskError(RuntimeError):
@@ -108,6 +107,14 @@ class HSRRetryableTaskError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.result = result
+
+
+class HSRGameExitedError(HSRRetryableTaskError):
+    """游戏进程在外部脚本运行中途退出，当前阶段的剩余模块不应继续。
+
+    继承 ``HSRRetryableTaskError`` 以保持既有的本轮末尾补跑语义；
+    ``_run_queue_items`` 按类型识别它，不靠错误文案匹配。
+    """
 
 
 @dataclass
@@ -137,8 +144,7 @@ class HSRRuntimeState:
             item
             for item in self.module_results
             if not (
-                item.user_id == result.user_id
-                and item.module_key == result.module_key
+                item.user_id == result.user_id and item.module_key == result.module_key
             )
         ]
         self.module_results.append(result)
@@ -158,6 +164,4 @@ def external_result_failure_summary(result: object) -> str:
     if not text:
         text = "未知错误"
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if len(lines) > 8:
-        lines = lines[-8:]
-    return "\n".join(lines)
+    return "\n".join(select_failure_summary_lines(lines))

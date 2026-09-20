@@ -24,10 +24,38 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config, TaskManager
-from app.services import System
 from app.models.schema import *
+from app.services import System
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
+logger = get_logger("任务调度 API")
+
+
+@router.get(
+    "/runtime-snapshot",
+    tags=["Get"],
+    summary="获取运行中任务初始快照",
+    response_model=TaskRuntimeSnapshot,
+    status_code=200,
+)
+async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
+    """返回当前运行任务；WS 只承载后续状态、日志与完成事件。"""
+
+    return TaskManager.get_runtime_snapshot()
+
+
+@router.get(
+    "/power/countdown-snapshot",
+    tags=["Get"],
+    summary="获取电源倒计时初始快照",
+    response_model=PowerCountdownSnapshot,
+    status_code=200,
+)
+async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
+    """返回当前倒计时；WS 只承载后续逐秒更新与取消事件。"""
+
+    return System.get_power_countdown_snapshot()
 
 
 @router.post(
@@ -44,8 +72,12 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             mode=task.mode,
             id=task.taskId,
             resume_from_script_id=task.resumeFromScriptId,
+            user_id=task.userId,
+            view_only=task.viewOnly,
+            instance_idx=task.instanceIdx,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")
         return TaskCreateOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
         )
@@ -64,6 +96,7 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
         await TaskManager.stop_task(task.taskId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"stop_task失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -80,8 +113,10 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 async def get_power() -> PowerOut:
 
     try:
-        signal = Config.power_sign
+        # 电源任务启动后标志已清空, 等待期间要回报任务实际待执行的操作
+        signal = System.current_power_operation or Config.power_sign
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_power失败: {type(e).__name__}: {e}")
         return PowerOut(
             code=500,
             status="error",
@@ -102,7 +137,13 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
     try:
         Config.power_sign = task.signal
+        # 手动选择的电源操作不带延时, 同时清掉队列可能残留的延时
+        Config.power_delay = 0
+        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
+        # 因此手动改选一律撤销它, 新选择留给下一次任务结束时生效
+        await System.cancel_pending_power_task()
     except Exception as e:
+        logger.opt(exception=True).warning(f"set_power失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -121,6 +162,9 @@ async def cancel_power_task() -> OutBase:
     try:
         await System.cancel_power_task()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"cancel_power_task失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

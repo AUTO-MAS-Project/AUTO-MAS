@@ -16,7 +16,6 @@ from typing import Any
 from .native_control import resolve_script_path
 from .sra_runtime import get_sra_app_data_dir
 
-
 _PATH_LOCKS: dict[str, asyncio.Lock] = {}
 
 
@@ -73,14 +72,6 @@ class HSRExternalPathLockLease:
         self._locks = locks
         self._released = False
 
-    @property
-    def keys(self) -> tuple[str, ...]:
-        return self._keys
-
-    @property
-    def released(self) -> bool:
-        return self._released
-
     def release(self) -> None:
         """释放全部路径锁；可重复调用，适合 session/finally 收尾。"""
 
@@ -90,12 +81,6 @@ class HSRExternalPathLockLease:
         for lock in reversed(self._locks):
             if lock.locked():
                 lock.release()
-
-    async def __aenter__(self) -> "HSRExternalPathLockLease":
-        return self
-
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
-        self.release()
 
 
 async def acquire_external_path_locks(

@@ -38,6 +38,9 @@ from time import sleep
 from typing import Any
 from xml.etree import ElementTree
 
+from app.utils import get_logger
+
+logger = get_logger("OK-NTE 配置 Schema")
 
 # ─── OK-NTE 翻译文件自动加载 ─────────────────────────────────────────────────
 
@@ -59,8 +62,8 @@ def _parse_po_file(po_path: Path) -> dict[str, str]:
             msgstr = match.group(2)
             if msgid and msgstr:
                 labels[msgid] = msgstr
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
     return labels
 
 
@@ -85,9 +88,7 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
         def read_strings(table_offset: int) -> list[str]:
             strings: list[str] = []
             for i in range(n_strings):
-                length, offset = struct.unpack_from(
-                    fmt, data, table_offset + i * 8
-                )
+                length, offset = struct.unpack_from(fmt, data, table_offset + i * 8)
                 if length > 0:
                     s = data[offset : offset + length]
                     strings.append(s.decode("utf-8", errors="replace"))
@@ -101,8 +102,8 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
         for orig, trans in zip(orig_strings, trans_strings):
             if orig and trans:
                 labels[orig] = trans
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path} ({e})")
     return labels
 
 
@@ -122,18 +123,32 @@ def _parse_ts_file(ts_path: Path) -> dict[str, str]:
                 and translation.attrib.get("type") != "unfinished"
             ):
                 labels[source.text] = translation.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 ok-script 翻译文件失败，选项将显示英文: {ts_path} ({e})")
     return labels
+
+
+# 标签解析缓存: 安装目录 -> (实际解析过的文件及其 mtime_ns, 标签); 每次请求重解析 .mo/.ts 太慢
+_OPTION_LABELS_CACHE: dict[
+    Path, tuple[tuple[tuple[Path, int], ...], dict[str, str]]
+] = {}
 
 
 def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
     """从 OK-NTE 安装目录自动加载选项的英文→中文翻译映射。
 
     搜索优先级：ok.mo > ok.po，同时补充 ok-script 框架的 zh_CN.ts。
+    解析结果按实际读取过的文件 mtime 缓存。
     """
     root = Path(root_path)
+    cached = _OPTION_LABELS_CACHE.get(root)
+    if cached is not None and all(
+        f.is_file() and f.stat().st_mtime_ns == mtime for f, mtime in cached[0]
+    ):
+        return cached[1]
+
     labels: dict[str, str] = {}
+    used_files: list[tuple[Path, int]] = []
 
     i18n_candidates = [
         root / "i18n",
@@ -148,6 +163,7 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
             loaded = _parse_mo_file(mo_file)
             if loaded:
                 labels.update(loaded)
+                used_files.append((mo_file, mo_file.stat().st_mtime_ns))
                 break
 
         po_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.po"
@@ -155,6 +171,7 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
             loaded = _parse_po_file(po_file)
             if loaded:
                 labels.update(loaded)
+                used_files.append((po_file, po_file.stat().st_mtime_ns))
                 break
 
     ts_candidates = [
@@ -167,8 +184,12 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
             loaded = _parse_ts_file(ts_file)
             if loaded:
                 labels.update(loaded)
+                used_files.append((ts_file, ts_file.stat().st_mtime_ns))
                 break
 
+    # 没读到任何文件时不缓存, 否则安装完成后也不会再去找
+    if used_files:
+        _OPTION_LABELS_CACHE[root] = (tuple(used_files), labels)
     return labels
 
 
@@ -212,7 +233,12 @@ DAILY_ROUTINE_ITEMS: list[dict[str, Any]] = [
     },
     {"id": "coffee", "label": "一咖舍", "enabled": False, "exclusiveGroup": None},
     {"id": "daily_claim", "label": "日常领取", "enabled": True, "exclusiveGroup": None},
-    {"id": "cinema_date", "label": "影院约会", "enabled": False, "exclusiveGroup": None},
+    {
+        "id": "cinema_date",
+        "label": "影院约会",
+        "enabled": False,
+        "exclusiveGroup": None,
+    },
     {"id": "fountain", "label": "喷泉签到", "enabled": False, "exclusiveGroup": None},
     {"id": "furniture", "label": "异象家具", "enabled": False, "exclusiveGroup": None},
     {"id": "gift", "label": "羁遇赠礼", "enabled": False, "exclusiveGroup": None},
@@ -323,7 +349,9 @@ def _normalize_daily_routine_items(raw_items: Any) -> list[dict[str, Any]]:
             task_id = raw_item.get("id")
             if task_id not in entries or task_id in seen:
                 continue
-            normalized.append({"id": task_id, "enabled": bool(raw_item.get("enabled", False))})
+            normalized.append(
+                {"id": task_id, "enabled": bool(raw_item.get("enabled", False))}
+            )
             seen.add(task_id)
 
     for item in DAILY_ROUTINE_ITEMS:
@@ -544,7 +572,15 @@ SELECT_OPTIONS: dict[str, dict[str, list[str]]] = {
             "空幕: 5",
             "空幕: 6",
         ],
-        "追猎目标": ["音霸魔王", "无首铁驭", "塞润尼缇", "黑之书", "海囚", "围巢鸟", "斑蝶"],
+        "追猎目标": [
+            "音霸魔王",
+            "无首铁驭",
+            "塞润尼缇",
+            "黑之书",
+            "海囚",
+            "围巢鸟",
+            "斑蝶",
+        ],
         "模式": ["领取/补货", "自动化"],
         "补货时长": ["auto", "2小时", "4小时", "8小时", "24小时"],
         "商品位数量": ["auto", "1", "2", "3", "4", "5"],
@@ -672,6 +708,7 @@ TASK_INDEX_MAP: dict[str, int] = {
 
 # ─── JSON 字段自动发现 ────────────────────────────────────────────────────
 
+
 def _infer_field_type(value: Any) -> str:
     """从 JSON 值推断前端字段类型。"""
     if isinstance(value, bool):
@@ -725,19 +762,21 @@ def build_fields_for_config(
             )
             if not child_fields:
                 continue
-            fields.append({
-                "name": task_id,
-                "type": "object",
-                "label": item["label"],
-                "description": "",
-                "value": value,
-                "options": None,
-                "children": child_fields,
-                "itemDefinitions": None,
-                "min": None,
-                "max": None,
-                "step": None,
-            })
+            fields.append(
+                {
+                    "name": task_id,
+                    "type": "object",
+                    "label": item["label"],
+                    "description": "",
+                    "value": value,
+                    "options": None,
+                    "children": child_fields,
+                    "itemDefinitions": None,
+                    "min": None,
+                    "max": None,
+                    "step": None,
+                }
+            )
         return fields
 
     seen: set[str] = set()
@@ -819,6 +858,7 @@ def build_fields_for_config(
 
 # ─── API 辅助函数 ─────────────────────────────────────────────────────────
 
+
 def get_all_config_info() -> list[dict[str, Any]]:
     """获取所有配置文件的元信息（用于前端列表展示）。"""
     result = []
@@ -829,11 +869,13 @@ def get_all_config_info() -> list[dict[str, Any]]:
                 len(DEFAULT_CONFIG_DATA.get(filename, {})),
                 len(SELECT_OPTIONS.get(filename, {})),
             )
-            result.append({
-                "filename": filename,
-                "displayName": CONFIG_DISPLAY_NAMES.get(filename, filename),
-                "group": group_name,
-                "taskIndex": TASK_INDEX_MAP.get(filename),
-                "fieldCount": max(field_count, 1),  # 至少 1，避免显示 0
-            })
+            result.append(
+                {
+                    "filename": filename,
+                    "displayName": CONFIG_DISPLAY_NAMES.get(filename, filename),
+                    "group": group_name,
+                    "taskIndex": TASK_INDEX_MAP.get(filename),
+                    "fieldCount": max(field_count, 1),  # 至少 1，避免显示 0
+                }
+            )
     return result

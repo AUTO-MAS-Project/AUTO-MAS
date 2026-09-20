@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import FluidCursor from '@/components/inspira/FluidCursor.vue'
+import FluidCursor from '@/components/inspira/FluidCursorOfficial.vue'
 import SleekLineCursor from '@/components/inspira/SleekLineCursor.vue'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'

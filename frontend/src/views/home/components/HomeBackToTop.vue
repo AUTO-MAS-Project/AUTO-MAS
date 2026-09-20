@@ -1,12 +1,20 @@
 <template>
   <Transition name="back-to-top">
-    <button v-if="visible" class="back-to-top" aria-label="返回顶部" @click="scrollToTop">
+    <button
+      v-if="visible"
+      class="back-to-top"
+      :aria-label="t('home.backToTop')"
+      @click="scrollToTop"
+    >
       <UpOutlined class="back-to-top-icon" />
     </button>
   </Transition>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { UpOutlined } from '@ant-design/icons-vue'
 
@@ -55,7 +63,9 @@ onBeforeUnmount(() => {
   color: #fff;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  transition: background 0.2s, transform 0.2s;
+  transition:
+    background 0.2s,
+    transform 0.2s;
 }
 
 .back-to-top:hover {
@@ -74,7 +84,9 @@ onBeforeUnmount(() => {
 
 .back-to-top-enter-active,
 .back-to-top-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .back-to-top-enter-from,

@@ -12,10 +12,6 @@ export type HSRUserConfig_Data = {
      */
     ProxyTimes?: (number | null);
     /**
-     * 是否通过检查
-     */
-    IfPassCheck?: (boolean | null);
-    /**
      * 本周是否已完成历战余响
      */
     EchoOfWarCompletedThisWeek?: (boolean | null);

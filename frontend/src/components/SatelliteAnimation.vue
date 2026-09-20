@@ -9,13 +9,11 @@ import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
-import {
-  getSatelliteModuleStatuses,
-  type SatelliteModuleStatus,
-} from '@/composables/useSatelliteStatus'
+import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
+import { connectionState, onConnected } from '@/services/websocket/connection'
 import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
 import {
   createExplosionFragmentMotion,
@@ -82,6 +80,9 @@ interface SatelliteState {
   errorGlowSprite: THREE.Sprite | null
   status: SatelliteModuleStatus
 }
+// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
+const { statuses: satelliteStatuses, refresh: refreshSatelliteStatuses } = useSatelliteStatus()
+
 let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
 let glowTexture: THREE.CanvasTexture | null = null
@@ -146,11 +147,30 @@ function stopStatusPolling() {
 }
 
 function startStatusPolling() {
-  if (performanceStore.isBackgrounded || updateInterval !== null) {
+  if (
+    performanceStore.isBackgrounded ||
+    updateInterval !== null ||
+    connectionState().value === 'open'
+  ) {
     return
   }
 
-  updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
+  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
+  updateInterval = setInterval(() => void refreshSatelliteStatuses(), CONFIG.statusUpdateInterval)
+}
+
+// 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
+// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+let disposeBackendReadyListener: (() => void) | null = null
+
+function waitBackendReady(): Promise<void> {
+  if (connectionState().value === 'open') return Promise.resolve()
+  return new Promise(resolve => {
+    disposeBackendReadyListener = onConnected(() => {
+      disposeBackendReadyListener = null
+      resolve()
+    })
+  })
 }
 
 function showCardsImmediately() {
@@ -232,6 +252,7 @@ function disposeCardMesh(card: CardMesh) {
 
 onUnmounted(() => {
   isUnmounted = true
+  disposeBackendReadyListener?.()
   window.removeEventListener('resize', handleResize)
   disposeScene()
 })
@@ -1021,7 +1042,7 @@ async function initSceneInternal(): Promise<void> {
       status: {
         queued: false,
         running: false,
-        errorVisible: false,
+        lastFailed: false,
       },
     })
   }
@@ -1138,7 +1159,7 @@ function animate(): void {
       )
 
       const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
-      if (state.status.errorVisible) {
+      if (state.status.lastFailed) {
         state.activityGlowSprite.material.opacity = 0
       } else if (state.status.running) {
         const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
@@ -1162,7 +1183,7 @@ function animate(): void {
         sat.position.z + CONFIG.errorGlowZOffset
       )
 
-      if (state.status.errorVisible) {
+      if (state.status.lastFailed) {
         const faintPulse = state.status.running
           ? 0.5 + 0.5 * Math.sin(time * 0.003)
           : 0.5 + 0.5 * Math.sin(time * 0.0016)
@@ -1229,26 +1250,25 @@ watch(isDark, () => {
   if (performanceStore.isLowPower) renderCurrentFrame()
 })
 
-async function updateSatelliteStates() {
-  try {
-    const statusByType = await getSatelliteModuleStatuses()
-    if (isUnmounted) return
+function updateSatelliteStates() {
+  if (isUnmounted) return
 
-    satelliteStates.forEach(state => {
-      state.status = statusByType.get(state.type) ?? {
-        queued: false,
-        running: false,
-        errorVisible: false,
-      }
-    })
-
-    if (performanceStore.isLowPower && !performanceStore.isBackgrounded) {
-      renderCurrentFrame()
+  const statusByType = satelliteStatuses.value
+  satelliteStates.forEach(state => {
+    state.status = statusByType.get(state.type) ?? {
+      queued: false,
+      running: false,
+      lastFailed: false,
     }
-  } catch (error) {
-    logger.error(`更新状态失败: ${String(error)}`)
+  })
+
+  if (performanceStore.isLowPower && !performanceStore.isBackgrounded) {
+    renderCurrentFrame()
   }
 }
+
+// 常驻订阅推送新状态时同步刷新展示
+watch(satelliteStatuses, () => updateSatelliteStates())
 
 watch(
   () => performanceStore.lowPerformanceMode,
@@ -1273,6 +1293,17 @@ watch(
   }
 )
 
+// WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
+// 掉线期间再靠轮询兜底
+watch(connectionState(), state => {
+  if (isUnmounted || performanceStore.isBackgrounded) return
+  if (state === 'open') {
+    stopStatusPolling()
+  } else {
+    startStatusPolling()
+  }
+})
+
 watch(
   () => performanceStore.isBackgrounded,
   async isBackgrounded => {
@@ -1296,13 +1327,19 @@ watch(
       createGlowRenderer()
       startAnimation()
     }
-    void updateSatelliteStates()
-    startStatusPolling()
+    updateSatelliteStates()
+    void waitBackendReady().then(() => {
+      if (isUnmounted || performanceStore.isBackgrounded) return
+      void refreshSatelliteStatuses()
+      startStatusPolling()
+    })
   }
 )
 
 onMounted(async () => {
   isUnmounted = false
+  await waitBackendReady()
+  if (isUnmounted) return
   try {
     await initScene()
   } catch (e) {
@@ -1317,7 +1354,8 @@ onMounted(async () => {
   }
   window.addEventListener('resize', handleResize)
 
-  void updateSatelliteStates()
+  updateSatelliteStates()
+  void refreshSatelliteStatuses()
   startStatusPolling()
 
   // 检查更新状态

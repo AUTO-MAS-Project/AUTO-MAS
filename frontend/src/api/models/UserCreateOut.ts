@@ -2,14 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BAAHUserConfig } from './BAAHUserConfig';
+import type { BetterGIUserConfig } from './BetterGIUserConfig';
 import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { HSRUserConfig } from './HSRUserConfig';
 import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
+import type { MaaFWUserConfig } from './MaaFWUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
 import type { OkNteUserConfig } from './OkNteUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
+import type { ZzzOdUserConfig } from './ZzzOdUserConfig';
 export type UserCreateOut = {
     /**
      * 状态码
@@ -30,6 +34,6 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | HSRUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig);
 };
 

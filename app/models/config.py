@@ -20,60 +20,227 @@
 
 
 import asyncio
-import uuid
-import json
 import calendar
+import json
+import uuid
 from copy import deepcopy
-from functools import partial
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable
 
+from app.utils import get_logger
 from app.utils.constants import (
-    UTC4,
-    UTC8,
-    MATERIALS_MAP,
-    RESOURCE_STAGE_INFO,
+    CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
+    MAAEND_AUTO_COLLECT_MODES,
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_AUTO_ESSENCE_MENUS,
+    MAAEND_DELIVERY_COMMISSION_SOURCES,
+    MAAEND_DELIVERY_TASK,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
+    MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_WITH_AB,
     MAAEND_TASKS,
-    MAAEND_SANITY_TASK_TYPES,
+    MATERIALS_MAP,
     PLAN_CONSUMER_VALUES,
+    RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
+    UTC4,
 )
+from app.utils.io import read_file
+
 from . import schema as schema_model
 from .ConfigBase import (
-    ConfigBase,
-    ValidatorBase,
-    MultipleConfig,
-    ConfigItem,
-    MultipleUIDValidator,
-    TypedMultipleUIDValidator,
+    AdvancedArgumentValidator,
+    ArgumentValidator,
     BoolValidator,
-    OptionsValidator,
-    MultipleOptionsValidator,
-    RangeValidator,
-    StringValidator,
-    VirtualConfigValidator,
-    FileValidator,
-    FolderValidator,
+    ConfigBase,
+    ConfigItem,
+    DateTimeValidator,
     EmulatorPathValidator,
     EncryptValidator,
-    UUIDValidator,
-    DateTimeValidator,
+    FileValidator,
+    FolderValidator,
     JSONValidator,
+    KeyValidator,
+    MultipleConfig,
+    MultipleOptionsValidator,
+    MultipleUIDValidator,
+    OptionsValidator,
+    RangeValidator,
+    StringListValidator,
+    StringValidator,
+    TypedMultipleUIDValidator,
     URLValidator,
     UserNameValidator,
-    KeyValidator,
-    ArgumentValidator,
-    AdvancedArgumentValidator,
+    UUIDValidator,
+    ValidatorBase,
+    VirtualConfigValidator,
 )
 from .schema import TagItem
+
+logger = get_logger("配置模型")
+
+
+def infrast_plan_mode(plans: list[dict]) -> str:
+    """排班表的时段形态: period=全带时段, rotate=全不带, mixed=混合, empty=无班次。
+
+    前提: ``plans`` 元素为 dict(``infrast_format_problem`` 已先行校验)。
+    """
+
+    if not plans:
+        return "empty"
+    has_period = [bool(plan.get("period")) for plan in plans]
+    if all(has_period):
+        return "period"
+    if any(has_period):
+        return "mixed"
+    return "rotate"
+
+
+def _is_infrast_time(value: Any) -> bool:
+    """是否为 MAA 时间字段可解析的值(TimeOnly.Parse 接受 HH:MM[:SS[.fff]])。
+
+    不用 ``time.fromisoformat``: 它拒绝上游接受的 ``8:00``, 却接受上游拒绝的
+    ``2000`` / ``20-00``, 两边松紧正好相反。先 strip 对齐 .NET Parse 会跳过
+    首尾空白的行为, 避免把上游能解析的值误判为坏值。
+    """
+
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    for time_format in ("%H:%M", "%H:%M:%S", "%H:%M:%S.%f"):
+        try:
+            datetime.strptime(value, time_format)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
+def _is_infrast_period(period: Any) -> bool:
+    """period 是否为 MAA 可解析的时段表: 每段恰两个时间字符串(TimeOnly[])。
+
+    MAA 的 TimeOnlyArrayListConverter 只接受 ``[["HH:MM", "HH:MM"], ...]``,
+    段长不为 2 或时间无法解析都会抛异常, 连累整份排班在 MAA 侧反序列化失败
+    (自愈为 0 且班次表为空), 因此这里按上游契约严格校验。
+    """
+
+    if period is None:
+        return True
+    if not isinstance(period, list):
+        return False
+    return all(
+        isinstance(segment, list)
+        and len(segment) == 2
+        and all(_is_infrast_time(value) for value in segment)
+        for segment in period
+    )
+
+
+def infrast_plan_state(custom_infrast: str | None) -> str:
+    """排班表状态: period/rotate/mixed(时段不一致, 不可用)/empty(缺省或不可解析)。
+
+    与 ``infrast_format_problem`` 用同一把尺子: 时段形态不合法的表同样按
+    empty 处理, 否则运行期已判不可用, 下拉提示却还在宣称按时间段换班。
+    """
+
+    try:
+        data = json.loads(custom_infrast)
+    except (json.JSONDecodeError, TypeError):
+        return "empty"
+    plans = data.get("plans") if isinstance(data, dict) else None
+    if not isinstance(plans, list) or not all(isinstance(plan, dict) for plan in plans):
+        return "empty"
+    if not all(_is_infrast_period(plan.get("period")) for plan in plans):
+        return "empty"
+    return infrast_plan_mode(plans)
+
+
+def infrast_format_problem(infrast_data: Any) -> str | None:
+    """校验自定义基建排班表的格式不变量, 返回问题描述; None 表示格式可用。
+
+    不变量: plans 非空且元素为对象, 各班次要么全部带 period 要么全部不带,
+    且 period 是 MAA 可解析的时段表(每段恰两个时间字符串)。
+    混合格式在 MAA 侧会被静默按"有时段的班按时段命中, 其余永不命中"解释,
+    MAS 不猜测这种意图, 统一按无效处理。
+    """
+    if not isinstance(infrast_data, dict):
+        return "排班表不是有效的 JSON 对象"
+    plans = infrast_data.get("plans")
+    if not isinstance(plans, list) or not plans:
+        return "排班表没有任何班次"
+    if not all(isinstance(plan, dict) for plan in plans):
+        return "排班表的班次格式不正确"
+    if not all(_is_infrast_period(plan.get("period")) for plan in plans):
+        return "排班表的时间段格式不正确（每段应为起止两个 HH:MM 时间）"
+    if infrast_plan_mode(plans) == "mixed":
+        return "排班表时段配置不一致（部分班次有时间段、部分没有）"
+    return None
+
+
+def load_infrast_plans(custom_infrast: str | None) -> tuple[list[dict], str | None]:
+    """解析自定义基建排班 JSON, 返回 (plans, problem); problem 非 None 时 plans 为 []。"""
+    try:
+        data = json.loads(custom_infrast)
+    except (json.JSONDecodeError, TypeError):
+        return [], "排班表不是有效的 JSON"
+    problem = infrast_format_problem(data)
+    if problem is not None:
+        return [], problem
+    return data.get("plans", []), None
+
+
+def read_maa_config(path: Path) -> dict | None:
+    """读取 MAA gui.new.json 配置; 缺失或损坏返回 None(损坏另记警告)。"""
+
+    try:
+        data = read_file(path)
+    except (OSError, json.JSONDecodeError):
+        logger.opt(exception=True).warning(f"读取 MAA 配置失败: {path}")
+        return None
+    return data if isinstance(data, dict) and data else None
+
+
+def maa_scheme_name(config_dir: Path, data: dict) -> str:
+    """MAA 生效方案名, 与 AutoProxy.set_maa 的方案归一判定对称。
+
+    多方案配置下 set_maa 把 gui.json 的 Current 方案复制进 gui.new.json 的
+    Default 再注入, 故运行时读到的队列就是 Current 方案(该方案不在
+    gui.new.json 里时才是 Default)。读取与回写都要落在同一方案, 否则写进去的
+    班次会被方案归一覆盖。``data`` 为已读取的 gui.new.json 内容。
+    """
+
+    try:
+        gui = read_file(config_dir / "gui.json")
+    except (OSError, json.JSONDecodeError):
+        return "Default"
+    current = gui.get("Current") if isinstance(gui, dict) else None
+    configurations = data.get("Configurations")
+    if (
+        isinstance(current, str)
+        and current not in ("", "Default")
+        and isinstance(configurations, dict)
+        and isinstance(configurations.get(current), dict)
+    ):
+        return current
+    return "Default"
+
+
+def maa_task_queue(data: dict, scheme: str) -> Any:
+    """取 MAA 配置中指定方案的任务队列; 结构不符返回 None。"""
+
+    configurations = data.get("Configurations")
+    if not isinstance(configurations, dict):
+        return None
+    configuration = configurations.get(scheme)
+    if not isinstance(configuration, dict):
+        return None
+    return configuration.get("TaskQueue")
 
 
 def init_maaend_task_config(config) -> None:
@@ -123,6 +290,69 @@ def init_maaend_task_config(config) -> None:
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
         StringValidator(),
     )
+    ## 基质刷取模式（兼容 MaaEnd 2.28+ 的 Random/Location/Target）
+    config.Task_AutoEssenceMenu = ConfigItem(
+        "Task",
+        "AutoEssenceMenu",
+        MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceMenu"],
+        OptionsValidator(list(MAAEND_AUTO_ESSENCE_MENUS)),
+    )
+    ## 基质目标武器 ID（选项由 MaaEnd 安装目录动态提供）
+    config.Task_AutoEssenceTargetWeapons = ConfigItem(
+        "Task",
+        "AutoEssenceTargetWeapons",
+        list(MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceTargetWeapons"]),
+        StringListValidator(),
+    )
+
+    ## 抢委托送货最低接取价格（万）
+    config.Task_SeizeDeliveryJobsReward = ConfigItem(
+        "Task", "SeizeDeliveryJobsReward", 15.9, RangeValidator(0, 9999)
+    )
+    ## 抢委托送货委托接收点
+    config.Task_SeizeDeliveryJobsCommissionSource = ConfigItem(
+        "Task",
+        "SeizeDeliveryJobsCommissionSource",
+        "Unlimited",
+        OptionsValidator(list(MAAEND_DELIVERY_COMMISSION_SOURCES)),
+    )
+    ## 独立送货任务
+    setattr(
+        config,
+        f"Task_If{MAAEND_DELIVERY_TASK}",
+        ConfigItem("Task", f"If{MAAEND_DELIVERY_TASK}", True, BoolValidator()),
+    )
+
+    ## 独立自动采集任务
+    config.Task_IfAutoCollect = ConfigItem(
+        "Task", f"If{MAAEND_AUTO_COLLECT_TASK}", True, BoolValidator()
+    )
+    ## 自动采集路线安排：分散为三日轮换，集中为每三日执行一次
+    config.Task_AutoCollectMode = ConfigItem(
+        "Task",
+        "AutoCollectMode",
+        "Distributed",
+        OptionsValidator(list(MAAEND_AUTO_COLLECT_MODES)),
+    )
+    ## 自动采集区域资源路线
+    config.Task_AutoCollectRoutes = ConfigItem(
+        "Task",
+        "AutoCollectRoutes",
+        None,  # 未配置时采用安装版本的默认路线，空列表表示不采集
+        StringListValidator(allow_none=True),
+    )
+    ## 自动采集通用资源路线
+    config.Task_AutoCollectCommonRoutes = ConfigItem(
+        "Task",
+        "AutoCollectCommonRoutes",
+        None,  # 未配置时采用安装版本的默认路线，空列表表示不采集
+        StringListValidator(allow_none=True),
+    )
+
+    ## 每日正常完成一次后，当天剩余时间跳过的任务名列表
+    config.Task_DailyOnceTasks = ConfigItem(
+        "Task", "DailyOnceTasks", "[ ]", JSONValidator(list)
+    )
 
     for task_name in MAAEND_TASKS:
         setattr(
@@ -150,16 +380,25 @@ def _normalize_maaend_sanity_task_type(task_data: object) -> None:
         return
 
     sanity_task_type = task_data.get("SanityTaskType")
-    if sanity_task_type in MAAEND_SANITY_TASK_TYPES:
-        return
-
     if sanity_task_type == "ProtocolSpace":
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
         if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
 
+    if task_data.get("SanityTaskType") not in MAAEND_SANITY_TASK_TYPES:
+        return
 
-def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
+    # 2.28+ 将基质模式拆为 AutoEssenceMenu；旧用户配置只有地点字段。
+    menu = task_data.get("AutoEssenceMenu")
+    if menu not in MAAEND_AUTO_ESSENCE_MENUS:
+        target_weapons = task_data.get("AutoEssenceTargetWeapons")
+        if isinstance(target_weapons, list) and target_weapons:
+            task_data["AutoEssenceMenu"] = "Target"
+        elif isinstance(task_data.get("AutoEssenceSpecifiedLocation"), str):
+            task_data["AutoEssenceMenu"] = "Location"
+
+
+def normalize_maaend_plan_key(raw_key: object) -> dict[str, Any]:
     """将固定配置或旧计划表日期槽位转换为 MaaEnd key。"""
 
     if isinstance(raw_key, dict) and "Key" in raw_key:
@@ -180,6 +419,25 @@ def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
             if isinstance(location, str)
             else "",
         }
+        if "AutoEssenceMenu" in data:
+            menu = data["AutoEssenceMenu"]
+            target_weapons = data.get("AutoEssenceTargetWeapons")
+            candidate["AutoEssenceMenu"] = (
+                menu
+                if menu in MAAEND_AUTO_ESSENCE_MENUS
+                else (
+                    "Target"
+                    if isinstance(target_weapons, list) and target_weapons
+                    else "Location"
+                )
+            )
+        if "AutoEssenceTargetWeapons" in data:
+            target_weapons = data["AutoEssenceTargetWeapons"]
+            candidate["AutoEssenceTargetWeapons"] = (
+                [item for item in target_weapons if isinstance(item, str)]
+                if isinstance(target_weapons, list)
+                else []
+            )
     else:
         if sanity_task_type not in MAAEND_SANITY_TASK_TYPES[:-1]:
             sanity_task_type = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
@@ -205,14 +463,46 @@ def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
     try:
         key = schema_model.MaaEndPlanConfig_Item(Key=candidate).Key
     except ValueError:
-        key = schema_model.MaaEndProtocolSpacePlanKey()
+        # Essence 的新字段来自动态资源；字段漂移或旧值损坏时仍保留基质任务，
+        # 不应因为模式值无法识别而退回协议空间。
+        key = (
+            schema_model.MaaEndAutoEssencePlanKey()
+            if sanity_task_type == "Essence"
+            else schema_model.MaaEndProtocolSpacePlanKey()
+        )
+    if isinstance(key, schema_model.MaaEndAutoEssencePlanKey):
+        # 保留历史 key 的稳定形状：新字段只在调用方明确提供时写入。
+        result: dict[str, Any] = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": key.AutoEssenceSpecifiedLocation,
+        }
+        if key.AutoEssenceMenu is not None and "AutoEssenceMenu" in candidate:
+            result["AutoEssenceMenu"] = key.AutoEssenceMenu
+        if key.AutoEssenceTargetWeapons and "AutoEssenceTargetWeapons" in candidate:
+            result["AutoEssenceTargetWeapons"] = list(key.AutoEssenceTargetWeapons)
+        return result
     return key.model_dump()
 
 
-def validate_maaend_plan_key(raw_key: object) -> dict[str, str]:
+def validate_maaend_plan_key(raw_key: object) -> dict[str, Any]:
     """严格校验并返回规范化的 MaaEnd key。"""
 
     key = schema_model.MaaEndPlanConfig_Item(Key=raw_key).Key
+    if isinstance(key, schema_model.MaaEndAutoEssencePlanKey):
+        data = raw_key.get("Key", raw_key) if isinstance(raw_key, dict) else {}
+        result: dict[str, Any] = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": key.AutoEssenceSpecifiedLocation,
+        }
+        if isinstance(data, dict) and "AutoEssenceMenu" in data:
+            result["AutoEssenceMenu"] = key.AutoEssenceMenu
+        if (
+            isinstance(data, dict)
+            and "AutoEssenceTargetWeapons" in data
+            and key.AutoEssenceTargetWeapons
+        ):
+            result["AutoEssenceTargetWeapons"] = list(key.AutoEssenceTargetWeapons)
+        return result
     return key.model_dump()
 
 
@@ -225,8 +515,27 @@ class MaaEndPlanKeyValidator(ValidatorBase):
         except ValueError:
             return False
 
-    def correct(self, value: Any) -> dict[str, str]:
+    def correct(self, value: Any) -> dict[str, Any]:
         return normalize_maaend_plan_key(value)
+
+
+class SRAProfileValidator(ValidatorBase):
+    """SRA 配置档案名验证器：只接受能直接拼成文件名的档案 id，空串表示自动。"""
+
+    _FORBIDDEN = frozenset('\\/:*?"<>|')
+
+    def validate(self, value):
+        if not isinstance(value, str):
+            return False
+        if value == "":
+            return True
+        stripped = value.strip()
+        if stripped != value or stripped in {".", ".."}:
+            return False
+        return not any(ch in self._FORBIDDEN or ord(ch) < 32 for ch in value)
+
+    def correct(self, value):
+        return value if self.validate(value) else ""
 
 
 class EmulatorConfig(ConfigBase):
@@ -247,6 +556,9 @@ class EmulatorConfig(ConfigBase):
                     "general",
                     "mumu",
                     "ldplayer",
+                    # Emulator 2.0: 一条配置管多条模拟器路径, 路径写在 Info_Paths,
+                    # Info_Path 保持空串(EmulatorPathValidator 允许空串)
+                    "emulator2",
                     # "nox",  # 以下都是骗你的, 根本没有写~~
                     # "memu",
                     # "blueStacks",
@@ -258,6 +570,24 @@ class EmulatorConfig(ConfigBase):
         self.Info_Path = ConfigItem(
             "Info", "Path", "", EmulatorPathValidator(self.Info_Type)
         )
+        ## Emulator 2.0 纳管的模拟器路径列表
+        ## [{"pathId", "installPath", "alias", "type", "version"}]
+        self.Info_Paths = ConfigItem("Info", "Paths", "[]", JSONValidator(list))
+        ## Emulator 2.0 的设备号槽位表
+        ## [{"slot", "pathId", "nativeIndex", "state": "active"|"tombstone"}]
+        ## 槽位号在本配置内单调递增分配, 移除路径写墓碑, 号码永不复用
+        self.Info_Slots = ConfigItem("Info", "Slots", "[]", JSONValidator(list))
+        ## Emulator 2.0 的稳定模式：开着就把会干扰截图识别的模拟器功能压住,
+        ## 启动实例前顺带确保一次, 这样新建的实例也会跟着进入安全状态。
+        ## 关掉只是不再确保, **不会把那些项改回去**——不知道用户原本想要什么值。
+        ## Emulator 2.0 的配置守卫：以 MAS 存的这份设置为准, 启动前与关闭后各核验一次,
+        ## 对不上就写回去。与旧雷电那套「开机拍快照关机还原」不是一回事, 见 utils/emulator2/guard.py
+        self.Info_ConfigGuard = ConfigItem(
+            "Info", "ConfigGuard", False, BoolValidator()
+        )
+        ## 守卫的基准: {设备号: {字段: 值}}, 只记用户显式设过的字段
+        self.Info_Baselines = ConfigItem("Info", "Baselines", "{}", JSONValidator(dict))
+        self.Info_StableMode = ConfigItem("Info", "StableMode", False, BoolValidator())
         ## 老板键快捷键配置
         self.Info_BossKey = ConfigItem(
             "Info", "BossKey", "[ ]", JSONValidator(list), legacy_group="Data"
@@ -316,6 +646,62 @@ class QueueItem(ConfigBase):
             MultipleUIDValidator("-", self.related_config, "ScriptConfig"),
         )
 
+        ## Schedule --------------------------------------------------------
+        ## 是否参与循环调度
+        self.Schedule_Enabled = ConfigItem("Schedule", "Enabled", True, BoolValidator())
+        ## 循环调度模式: fixed_time 为固定时间, interval 为间隔
+        self.Schedule_Mode = ConfigItem(
+            "Schedule",
+            "Mode",
+            "fixed_time",
+            OptionsValidator(["fixed_time", "interval"]),
+        )
+        ## 固定时间模式的执行周期
+        self.Schedule_Days = ConfigItem(
+            "Schedule",
+            "Days",
+            list(calendar.day_name),
+            MultipleOptionsValidator(list(calendar.day_name)),
+        )
+        ## 固定时间模式的执行时间
+        self.Schedule_Time = ConfigItem(
+            "Schedule", "Time", "00:00", DateTimeValidator("%H:%M")
+        )
+        ## 间隔模式的间隔分钟数
+        self.Schedule_IntervalMinutes = ConfigItem(
+            "Schedule", "IntervalMinutes", 480, RangeValidator(1, 10080)
+        )
+        ## 间隔模式的计时基准: start 为上次开始, finish 为上次结束
+        self.Schedule_IntervalAnchor = ConfigItem(
+            "Schedule",
+            "IntervalAnchor",
+            "start",
+            OptionsValidator(["start", "finish"]),
+        )
+        ## 下次运行时间, 空值哨兵表示由调度器按模式推算
+        self.Schedule_NextRunAt = ConfigItem(
+            "Schedule",
+            "NextRunAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次循环开始时间
+        self.Data_LastCycleStartedAt = ConfigItem(
+            "Data",
+            "LastCycleStartedAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 上次循环结束时间
+        self.Data_LastCycleFinishedAt = ConfigItem(
+            "Data",
+            "LastCycleFinishedAt",
+            CYCLE_EMPTY_TIME,
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
         super().__init__()
 
 
@@ -353,8 +739,15 @@ class QueueConfig(ConfigBase):
             "Info", "TimeEnabled", False, BoolValidator()
         )
         ## 是否在启动时自动运行
-        self.Info_StartUpEnabled = ConfigItem(
-            "Info", "StartUpEnabled", False, BoolValidator()
+        self.Info_StartUpMode = ConfigItem(
+            "Info",
+            "StartUpMode",
+            "Never",
+            OptionsValidator(["Never", "Always", "DailyFirst"]),
+        )
+        ## 是否为循环队列: 定时与循环互斥, 循环队列按队列项各自的周期持续运行
+        self.Info_CycleEnabled = ConfigItem(
+            "Info", "CycleEnabled", False, BoolValidator()
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
@@ -374,6 +767,10 @@ class QueueConfig(ConfigBase):
                 ]
             ),
         )
+        ## 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+        self.Info_AfterAccomplishDelay = ConfigItem(
+            "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次定时启动时间
@@ -383,11 +780,82 @@ class QueueConfig(ConfigBase):
             "2000-01-01 00:00",
             DateTimeValidator("%Y-%m-%d %H:%M"),
         )
+        # 上次启动时运行时间
+        self.Data_LastStartupTime = ConfigItem(
+            "Data",
+            "LastStartupTime",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
 
         self.TimeSet = MultipleConfig([TimeSet])
         self.QueueItem = MultipleConfig([QueueItem])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载并迁移旧版调度队列配置文件"""
+
+        info_data = data.get("Info")
+        if isinstance(info_data, dict) and "StartUpMode" not in info_data:
+            StartUpEnabled = info_data.get("StartUpEnabled")
+            if isinstance(StartUpEnabled, bool):
+                info_data["StartUpMode"] = "Always" if StartUpEnabled else "Never"
+
+        return await super().load(data)
+
+
+def _tag_last_status(status: object) -> str:
+    """「上次」标签文案。存储值的默认是「未知」，但从没跑过的用户显示「未知」很怪，
+    页面上写成「未运行」；其余状态（成功 / 失败 / 运行中）原样。"""
+
+    text = str(status or "").strip()
+    return "未运行" if text in ("", "未知") else text
+
+
+def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
+    """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
+    if (
+        datetime.strptime(config.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+        == datetime.now(tz=UTC4).date()
+    ):
+        return {
+            "text": f"{label}：已代理{config.get('Data', 'ProxyTimes')}次",
+            "color": "green",
+        }
+    return {"text": f"{label}：未代理", "color": "orange"}
+
+
+def _tag_remained_days(config: ConfigBase) -> dict:
+    """剩余天数标签。"""
+    remained_day = config.get("Info", "RemainedDay")
+    if remained_day == -1:
+        tag_color = "gold"
+    elif remained_day == 0:
+        tag_color = "red"
+    elif remained_day <= 3:
+        tag_color = "orange"
+    elif remained_day <= 7:
+        tag_color = "yellow"
+    elif remained_day <= 30:
+        tag_color = "blue"
+    else:
+        tag_color = "green"
+    return {
+        "text": (
+            f"剩余天数：{remained_day}天" if remained_day >= 0 else "剩余天数：无期限"
+        ),
+        "color": tag_color,
+    }
+
+
+def _tag_notes(config: ConfigBase) -> dict:
+    """备注标签。"""
+    notes = config.get("Info", "Notes")
+    return {
+        "text": (f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."),
+        "color": "pink",
+    }
 
 
 class MaaUserConfig(ConfigBase):
@@ -404,9 +872,11 @@ class MaaUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 脚本模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
         )
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
@@ -475,10 +945,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_InfrastName = ConfigItem(
             "Info", "InfrastName", "-", VirtualConfigValidator(self.getInfrastName)
         )
-        ## 基建配置索引
-        self.Info_InfrastIndex = ConfigItem(
-            "Info", "InfrastIndex", "-", VirtualConfigValidator(self.getInfrastIndex)
-        )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -516,12 +982,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
         ## 备用关卡
         self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
-        ## 是否启用森空岛签到
-        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-        ## 森空岛 Token
-        self.Info_SklandToken = ConfigItem(
-            "Info", "SklandToken", "", EncryptValidator()
-        )
         ## 用户标签信息（虚拟字段，供前端显示）
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -532,10 +992,6 @@ class MaaUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## 上次森空岛签到日期
-        self.Data_LastSklandDate = ConfigItem(
-            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
         ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
@@ -544,15 +1000,17 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+        ## 上次完成绿票商店购买的月份
+        self.Data_GreenTicketStoreMonth = ConfigItem(
+            "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
+        ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
+        self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
+        ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
+        self.Data_CultivateNotice = ConfigItem("Data", "CultivateNotice", "")
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
-        )
-        ## 基建配置索引数据
-        self.Data_InfrastIndex = ConfigItem(
-            "Data", "InfrastIndex", "0", legacy_group="Info"
         )
 
         ## Task ------------------------------------------------------------
@@ -568,9 +1026,9 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
         ## 是否领取奖励
         self.Task_IfAward = ConfigItem("Task", "IfAward", True, BoolValidator())
-        ## 是否自动肉鸽
-        self.Task_IfRoguelike = ConfigItem(
-            "Task", "IfRoguelike", False, BoolValidator()
+        ## 是否更换主题（主题名称在 MAA 侧配置，MAS 仅透传）
+        self.Task_IfSwitchTheme = ConfigItem(
+            "Task", "IfSwitchTheme", False, BoolValidator()
         )
         ## 是否生息演算
         self.Task_IfReclamation = ConfigItem(
@@ -579,6 +1037,10 @@ class MaaUserConfig(ConfigBase):
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 是否每月自动购买一次绿票商店
+        self.Task_IfGreenTicketStore = ConfigItem(
+            "Task", "IfGreenTicketStore", False, BoolValidator()
         )
         ## 活动期间是否优先刷活动关
         self.Task_IfActivityFirst = ConfigItem(
@@ -600,6 +1062,30 @@ class MaaUserConfig(ConfigBase):
         ## 库存保持计划
         self.Task_DepotMaintainPlans = ConfigItem(
             "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
+        )
+        ## 是否干员养成
+        self.Task_IfCultivate = ConfigItem(
+            "Task", "IfCultivate", False, BoolValidator()
+        )
+        ## 干员养成目标
+        self.Task_CultivateTargets = ConfigItem(
+            "Task", "CultivateTargets", "[]", JSONValidator(list)
+        )
+        ## 活动期间是否跳过养成计划
+        self.Task_CultivateSkipDuringActivity = ConfigItem(
+            "Task", "CultivateSkipDuringActivity", False, BoolValidator()
+        )
+        ## 资源收集期是否跳过养成计划
+        self.Task_CultivateSkipDuringResourceCollection = ConfigItem(
+            "Task", "CultivateSkipDuringResourceCollection", False, BoolValidator()
+        )
+        ## 森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）
+        self.Task_CultivateSklandAccount = ConfigItem(
+            "Task", "CultivateSklandAccount", "", StringValidator()
+        )
+        ## 森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）
+        self.Task_CultivateSklandUid = ConfigItem(
+            "Task", "CultivateSklandUid", "", StringValidator()
         )
 
         ## Notify ----------------------------------------------------------
@@ -648,87 +1134,15 @@ class MaaUserConfig(ConfigBase):
         else:
             return "未命名自定义基建"
 
-    def getInfrastIndex(self) -> str:
-
-        if self.get("Info", "InfrastMode") != "Custom":
-            return "-1"
-
-        infrast_data = json.loads(self.get("Data", "CustomInfrast"))
-
-        if len(infrast_data.get("plans", [])) == 0:
-            return "-1"
-
-        for i, plan in enumerate(infrast_data.get("plans", [])):
-
-            for t in plan.get("period", []):
-                if (
-                    datetime.strptime(t[0], "%H:%M").time()
-                    <= datetime.now().time()
-                    <= datetime.strptime(t[1], "%H:%M").time()
-                ):
-                    return str(i)
-
-        else:
-            return self.get("Data", "InfrastIndex") or "0"
-
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
-
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
-
-        # 森空岛签到标签（使用东8区时间）
-        if self.get("Info", "IfSkland"):
-            if (
-                datetime.strptime(self.get("Data", "LastSklandDate"), "%Y-%m-%d").date()
-                == datetime.now(tz=UTC8).date()
-            ):
-                tags.append({"text": "森空岛：已签到", "color": "green"})
-            else:
-                tags.append({"text": "森空岛：未签到", "color": "orange"})
-        else:
-            tags.append({"text": "森空岛：禁用", "color": "red"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 基建模式标签
         infrast_mode = self.get("Info", "InfrastMode")
@@ -783,15 +1197,7 @@ class MaaUserConfig(ConfigBase):
             )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -860,10 +1266,59 @@ class MaaConfig(ConfigBase):
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
         )
+        ## 是否在启动 MAA 前检查游戏更新
+        self.Run_IfCheckGameUpdate = ConfigItem(
+            "Run", "IfCheckGameUpdate", False, BoolValidator()
+        )
+        ## 是否允许自动下载并安装游戏安装包（仅官服）
+        self.Run_IfAutoInstallGameApk = ConfigItem(
+            "Run", "IfAutoInstallGameApk", False, BoolValidator()
+        )
+        ## 游戏更新时间限制（分钟）
+        self.Run_GameUpdateTimeLimit = ConfigItem(
+            "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
+        )
 
         self.UserData = MultipleConfig([MaaUserConfig])
 
         super().__init__()
+
+
+class ConfigSourceValidator(OptionsValidator):
+    """配置来源校验器, 支持两态或三态, 并兼容旧版来源名。
+
+    Args:
+        modes: 允许的配置来源。三态=脚本/用户/直控, 两态=用户/直控。
+        legacy_map: 旧版来源名到新名的映射, 加载时自动归一。
+    """
+
+    def __init__(
+        self, modes: tuple[str, ...], legacy_map: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(list(modes))
+        self.legacy_map = legacy_map or {}
+
+    def correct(self, value: Any) -> Any:
+        if value in self.legacy_map:
+            return self.legacy_map[value]
+        return super().correct(value)
+
+
+class MaaEndConfigModeValidator(ConfigSourceValidator):
+    """脚本/用户/直控配置来源（兼容旧版“简洁/详细/自定义”）。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            ("脚本", "用户", "直控"),
+            {"简洁": "脚本", "详细": "用户", "自定义": "用户"},
+        )
+
+
+class UserDirectConfigModeValidator(ConfigSourceValidator):
+    """脚本/用户/直控配置来源。"""
+
+    def __init__(self) -> None:
+        super().__init__(("脚本", "用户", "直控"))
 
 
 class MaaEndUserConfig(ConfigBase):
@@ -884,9 +1339,7 @@ class MaaEndUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置文件来源
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", MaaEndConfigModeValidator())
         ## 是否启用快速配置
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
@@ -924,12 +1377,6 @@ class MaaEndUserConfig(ConfigBase):
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
-        ## 是否启用森空岛签到
-        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-        ## 森空岛 Token
-        self.Info_SklandToken = ConfigItem(
-            "Info", "SklandToken", "", EncryptValidator()
-        )
         ## 用户标签信息
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -954,15 +1401,21 @@ class MaaEndUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
-        ## 上次森空岛签到日期
-        self.Data_LastSklandDate = ConfigItem(
-            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        ## MaaEnd 每日任务完成记录，结构为 daily -> task name -> 日期
+        self.Data_PeriodTaskRecords = ConfigItem(
+            "Data", "PeriodTaskRecords", "{ }", JSONValidator(dict)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（log_box 采集的关键节点）：
+        ## 关闭 = 不采集；逐条 = 采集并逐条带回时间戳；汇总 = 采集并按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
         ## 是否发送统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
@@ -987,30 +1440,30 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
-        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
+        # 旧“自定义”仍等价于用户级配置且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本级配置来源，快速配置使用默认值。
         if isinstance(info_data, dict):
             if info_data.get("Mode") == "自定义":
-                info_data["Mode"] = "详细"
+                info_data["Mode"] = "用户"
                 info_data["IfQuickConfig"] = False
             elif (
                 info_data.get("Mode") in ("简洁", "详细")
                 and "SanityMode" not in info_data
             ):
-                info_data["Mode"] = "简洁"
+                info_data["Mode"] = "脚本"
                 info_data.pop("IfQuickConfig", None)
-
         task_data = data.get("Task")
         if isinstance(task_data, dict):
             _normalize_maaend_sanity_task_type(task_data)
         await super().load(data)
 
     def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
-        """缓存 MaaEnd 基质刷取地点资源。"""
+        """缓存 MaaEnd 动态资源的展示文本。"""
 
         self._maaend_essence_location_labels = {
             str(item["value"]): str(item["label"])
-            for item in resource["essenceLocations"]
+            for item in resource.get("essenceLocations", [])
+            if isinstance(item, dict) and item.get("value") is not None
         }
 
     def _get_maaend_location_label(self, value: str) -> str:
@@ -1018,16 +1471,13 @@ class MaaEndUserConfig(ConfigBase):
             return ""
         return self._maaend_essence_location_labels.get(value, value)
 
-    def get_effective_sanity_task_key(self) -> tuple[dict[str, str], str]:
+    def get_effective_sanity_task_key(self) -> tuple[dict[str, Any], str]:
         """获取当前生效的完整 MaaEnd key。"""
 
         mode = self.get("Info", "SanityMode")
         if mode == "Fixed":
             return normalize_maaend_plan_key(
-                {
-                    field: self.get("Task", field)
-                    for field in MAAEND_SANITY_TASK_FIELDS
-                }
+                {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS}
             ), mode
 
         try:
@@ -1040,14 +1490,11 @@ class MaaEndUserConfig(ConfigBase):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
 
         # 上次代理标签
         tags.append(
             {
-                "text": f"上次：{self.get('Data', 'LastProxyStatus')}",
+                "text": f"上次：{_tag_last_status(self.get('Data', 'LastProxyStatus'))}",
                 "color": (
                     "red" if self.get("Data", "LastProxyStatus") == "失败" else "green"
                 ),
@@ -1055,55 +1502,10 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
-
-        # 森空岛签到标签（使用东8区时间）
-        if self.get("Info", "IfSkland"):
-            if (
-                datetime.strptime(self.get("Data", "LastSklandDate"), "%Y-%m-%d").date()
-                == datetime.now(tz=UTC8).date()
-            ):
-                tags.append({"text": "森空岛：已签到", "color": "green"})
-            else:
-                tags.append({"text": "森空岛：未签到", "color": "orange"})
-        else:
-            tags.append({"text": "森空岛：禁用", "color": "red"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 理智任务标签
         if self.get("Task", "IfSanity"):
@@ -1116,16 +1518,28 @@ class MaaEndUserConfig(ConfigBase):
                 }
             )
 
-            detail_key = (
-                task_key["AutoEssenceSpecifiedLocation"]
-                if sanity_task_type == "Essence"
-                else task_key[sanity_task_type]
-            )
-            detail_label = (
-                self._get_maaend_location_label(detail_key)
-                if sanity_task_type == "Essence"
-                else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
-            )
+            if (
+                sanity_task_type == "Essence"
+                and task_key.get("AutoEssenceMenu") == "Target"
+            ):
+                target_weapons = task_key.get("AutoEssenceTargetWeapons", [])
+                detail_key = "Target"
+                detail_label = (
+                    "目标武器（未限制）"
+                    if not target_weapons
+                    else f"目标武器（{len(target_weapons)} 件）"
+                )
+            else:
+                detail_key = (
+                    task_key["AutoEssenceSpecifiedLocation"]
+                    if sanity_task_type == "Essence"
+                    else task_key[sanity_task_type]
+                )
+                detail_label = (
+                    self._get_maaend_location_label(detail_key)
+                    if sanity_task_type == "Essence"
+                    else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
+                )
             tags.append(
                 {
                     "text": f"详细任务：{detail_label}",
@@ -1146,15 +1560,7 @@ class MaaEndUserConfig(ConfigBase):
                 )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1185,12 +1591,19 @@ class MaaEndConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 账号切换方式
+        ## 账号切换方式（默认使用 MAAEND，MAS 为兼容入口）
         self.Run_AccountSwitchMethod = ConfigItem(
             "Run",
             "AccountSwitchMethod",
-            "MAS",
+            "MAAEND",
             OptionsValidator(["MAS", "MAAEND"]),
+        )
+        ## 任务切换方式
+        self.Run_TaskTransitionMethod = ConfigItem(
+            "Run",
+            "TaskTransitionMethod",
+            "NoAction",
+            OptionsValidator(["NoAction", "ExitGame"]),
         )
 
         ## Game ------------------------------------------------------------
@@ -1218,9 +1631,38 @@ class MaaEndConfig(ConfigBase):
         )
         ## 模拟器索引
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
+        ## 是否在启动游戏时执行 MaaEnd 分辨率设置预任务
+        self.Game_SetResolution = ConfigItem(
+            "Game", "SetResolution", False, BoolValidator()
+        )
         ## 结束后是否关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        ## 关闭游戏时恢复分辨率或显示模式；关闭时完全沿用原生设置
+        self.Game_RestoreResolution = ConfigItem(
+            "Game",
+            "RestoreResolution",
+            "Off",
+            OptionsValidator(
+                [
+                    "Off",
+                    "1920x1080",
+                    "2560x1440",
+                    "3840x2160",
+                    "Fullscreen",
+                    "Custom",
+                ]
+            ),
+        )
+        ## 自定义恢复分辨率宽度
+        self.Game_RestoreResolutionWidth = ConfigItem(
+            "Game", "RestoreResolutionWidth", 1920, RangeValidator(1, 16384)
+        )
+        ## 自定义恢复分辨率高度
+        self.Game_RestoreResolutionHeight = ConfigItem(
+            "Game", "RestoreResolutionHeight", 1080, RangeValidator(1, 16384)
         )
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
@@ -1232,38 +1674,24 @@ class MaaEndConfig(ConfigBase):
         root_path_value = str(self.get("Info", "Path")).strip()
         resource_interface_path = Path(root_path_value) / "interface.json"
         if root_path_value and resource_interface_path.is_file():
-            await self.preload_resource()
+            # 预加载搬入后台：MaaEnd 资源链的 import（约 270ms）与磁盘读取
+            # 不再阻塞启动路径，资源就绪后仍会缓存到用户配置
+            self._preload_task = asyncio.create_task(self.preload_resource())
         return is_dirty
 
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
 
-        from app.task.MaaEnd.resource_loader import try_load_maaend_options
+        def _try_load_in_thread():
+            from app.task.MaaEnd.resource_loader import try_load_maaend_options
 
-        resource = await asyncio.to_thread(
-            try_load_maaend_options,
-            Path(self.get("Info", "Path")),
-        )
+            return try_load_maaend_options(Path(self.get("Info", "Path")))
+
+        resource = await asyncio.to_thread(_try_load_in_thread)
         if resource is None:
             return
         for user_config in self.UserData.values():
             user_config.cache_maaend_resource(resource)
-
-    async def load_resource(self, force_reload: bool = False) -> dict[str, Any]:
-        """加载并缓存 MaaEnd 动态资源。"""
-
-        from app.task.MaaEnd.resource_loader import load_maaend_options
-
-        resource = await asyncio.to_thread(
-            partial(
-                load_maaend_options,
-                Path(self.get("Info", "Path")),
-                force_reload=force_reload,
-            )
-        )
-        for user_config in self.UserData.values():
-            user_config.cache_maaend_resource(resource)
-        return resource
 
     def get_loaded_resource(self) -> dict[str, Any]:
         """读取已经载入内存的 MaaEnd 动态资源。"""
@@ -1289,9 +1717,11 @@ class SrcUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 脚本模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -1526,8 +1956,6 @@ class SrcUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -1557,48 +1985,11 @@ class SrcUserConfig(ConfigBase):
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
-
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 关卡信息标签
         tags.append(
@@ -1621,15 +2012,7 @@ class SrcUserConfig(ConfigBase):
         )
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1666,6 +2049,18 @@ class SrcConfig(ConfigBase):
             "ExitGame",
             OptionsValidator(["ExitGame", "ExitEmulator"]),
         )
+        ## 是否在登录游戏前检查游戏更新
+        self.Run_IfCheckGameUpdate = ConfigItem(
+            "Run", "IfCheckGameUpdate", False, BoolValidator()
+        )
+        ## 版本落后时是否由 MAS 自动下载并安装安装包
+        self.Run_IfAutoInstallGameApk = ConfigItem(
+            "Run", "IfAutoInstallGameApk", False, BoolValidator()
+        )
+        ## 游戏更新时间限制（分钟）
+        self.Run_GameUpdateTimeLimit = ConfigItem(
+            "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
+        )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -1700,6 +2095,14 @@ class HSRUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "", EncryptValidator())
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -1710,6 +2113,20 @@ class HSRUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -1727,8 +2144,6 @@ class HSRUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         ## 本周是否已完成历战余响
         self.Data_EchoOfWarCompletedThisWeek = ConfigItem(
             "Data", "EchoOfWarCompletedThisWeek", False, BoolValidator()
@@ -1862,13 +2277,33 @@ class HSRUserConfig(ConfigBase):
 
         super().__init__()
 
+    async def load(self, data: dict) -> bool:
+        """加载用户配置，并把旧版 ``Control.Mode`` 迁移到 ``Info.Mode``。
+
+        HSR 历史上用 ``Control.Mode``（managed/direct）表达「运行模式」，本次统一
+        到 ``Info.Mode`` 三态来源后两者若不归一就会并存打架：界面上用户改的是
+        来源，运行时却还被旧字段左右。迁移规则：
+
+        - 旧 ``Control.Mode == "direct"`` → ``Info.Mode = "直控"``（只在 Info.Mode
+          仍是默认值「用户」时迁移，避免覆盖用户本次显式选择的来源）。
+        - ``Control.Mode`` 本身保留：``resolve_user_control`` 仍读它做兼容，
+          保证未迁移的存量配置行为不变。
+        """
+
+        is_dirty = await super().load(data)
+
+        raw_control_mode = str(self.get("Control", "Mode") or "").strip().lower()
+        if raw_control_mode == "direct" and str(
+            self.get("Info", "Mode") or ""
+        ).strip() in ("", "用户"):
+            await self.set("Info", "Mode", "直控")
+            is_dirty = True
+
+        return is_dirty
+
     def getTags(self) -> str:
         """生成 HSR 用户标签列表，返回JSON字符串格式的TagItem列表。"""
         tags: list[dict] = []
-
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
 
         server = self.get("Info", "Server")
         server_label_map = {"CN-Official": "官服"}
@@ -1876,45 +2311,15 @@ class HSRUserConfig(ConfigBase):
         tags.append({"text": f"服务器：{server_label}", "color": "blue"})
 
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
-        now = datetime.now(tz=UTC8)
+        # 与 HSRAutoProxyTask._period_markers 同口径：星铁在服务器时间周一 04:00
+        # 重置，UTC+4 的零点正是这一刻。两边必须一致，否则用户列表上的「本周已完成」
+        # 标签会和实际跑不跑这个任务对不上。
+        now = datetime.now(tz=UTC4)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -1946,15 +2351,8 @@ class HSRUserConfig(ConfigBase):
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -1973,14 +2371,16 @@ class HSRConfig(ConfigBase):
         self.Info_M7APath = ConfigItem("Info", "M7APath", "", FolderValidator())
         ## SRA 路径
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
+        ## SRA 配置档案（%APPDATA%\SRA\configs 下的文件名，不含扩展名；空串表示自动）
+        self.Info_SRAProfile = ConfigItem(
+            "Info", "SRAProfile", "", SRAProfileValidator()
+        )
 
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
         self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 游戏启动参数
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
@@ -2009,6 +2409,49 @@ class HSRConfig(ConfigBase):
         self.Run_LowPerformanceMode = ConfigItem(
             "Run", "LowPerformanceMode", False, BoolValidator()
         )
+        ## Update ----------------------------------------------------------
+        ## 外部脚本（M7A / SRA）的自动更新。默认关闭：这两个是用户自己安装、
+        ## 自带更新器的第三方工具，未经开启就改写它们的目录属于越界；停留在
+        ## 某个旧版也是真实需求。
+        ## 只有 AfterRun 一档，没有 BeforeRun：更新的收益本来就落在下一次运行
+        ## 上，没有理由让当前这轮先等一个 170–750MB 的下载。想立刻更新走配置
+        ## 页的手动按钮。留成枚举而非布尔，是为了日后要加档时不必做
+        ## bool→enum 迁移（MaaFW 正为此背着一个废弃字段）。
+        ## 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**，
+        ## 不是这里的默认值，Off 必须排在最前。
+        self.Update_AutoUpdateMode = ConfigItem(
+            "Update", "AutoUpdateMode", "Off", OptionsValidator(["Off", "AfterRun"])
+        )
+        ## 更新渠道，两个引擎共用。Mirror 酱还支持 alpha，**故意不开放**——
+        ## 那是项目方的内部验证档。这两个值必须与前端选项和 schema 的 Literal
+        ## 一致，三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
+        self.Update_Channel = ConfigItem(
+            "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
+        )
+        ## 下载源按引擎拆开：两者可用的源本就不同，共用一项给不出不同默认值。
+        ## 版本检查恒走 Mirror 酱的免 CDK 接口（自建站没有 latest 接口，只能用
+        ## tag 拼 URL，靠这条口径补上）；这里只决定字节从哪来，且**不做自动
+        ## 分流**——选了 Mirror 酱而 CDK 不可用时报明原因并跳过，不悄悄换成
+        ## GitHub，用户得知道自己在从哪下载。
+        ## M7A 没有上 AUTO-MAS 自建站，所以只有两个源，默认 GitHub。
+        self.Update_M7ASource = ConfigItem(
+            "Update", "M7ASource", "GitHub", OptionsValidator(["GitHub", "MirrorChyan"])
+        )
+        ## SRA 默认自建站：免 CDK、不限流、sha256 与 GitHub 逐字节一致，且
+        ## SRA 上游 CI 会主动往这里推送，其自带更新器也有 AUTO-MAS 这一档。
+        self.Update_SRASource = ConfigItem(
+            "Update",
+            "SRASource",
+            "AutoSite",
+            OptionsValidator(["AutoSite", "GitHub", "MirrorChyan"]),
+        )
+        ## Mirror 酱 CDK，由用户自己填，**不做全局兜底**：全局那个服务的是
+        ## AUTO-MAS 自身的更新，和外部脚本不是一回事，串在一起只会让人猜自己
+        ## 在用哪个。选 Mirror 酱作为下载源时这一项必填。
+        self.Update_MirrorChyanCDK = ConfigItem(
+            "Update", "MirrorChyanCDK", "", EncryptValidator()
+        )
+
         ## TaskMapping -----------------------------------------------------
         ## 模块脚本分配（延迟导入以避免循环依赖）
         from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
@@ -2044,6 +2487,14 @@ class M9AUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
         )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
@@ -2099,8 +2550,6 @@ class M9AUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 是否通过检查
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -2130,58 +2579,13 @@ class M9AUserConfig(ConfigBase):
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 人工排查状态标签
-        if not self.get("Data", "IfPassCheck"):
-            tags.append({"text": "人工排查未通过", "color": "red"})
-
         # 日常代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2241,6 +2645,436 @@ class M9AConfig(ConfigBase):
         super().__init__()
 
 
+class MaaFWUserConfig(ConfigBase):
+    """MaaFW 用户配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
+        ## 是否在任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        ## 任务前脚本路径
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 是否在任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        ## 任务后脚本路径
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+        ## 账号信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
+        self.Info_Account = ConfigItem("Info", "Account", "")
+        ## 密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## MaaFW controller 名称，留空时按 interface 和设备配置自动选择
+        self.Info_Controller = ConfigItem("Info", "Controller", "")
+        ## MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
+        self.Info_Resource = ConfigItem("Info", "Resource", "")
+
+        ## Task ------------------------------------------------------------
+        ## 当前选中的 interface preset 名称，留空时使用 interface 默认逻辑
+        self.Task_SelectedPreset = ConfigItem("Task", "SelectedPreset", "")
+        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions；
+        ## 三者的键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）
+        self.Task_TaskSnapshot = ConfigItem(
+            "Task", "TaskSnapshot", "{ }", JSONValidator(dict)
+        )
+
+        ## Device ----------------------------------------------------------
+        ## 当前用户覆盖 ADB 地址，留空时使用脚本级模拟器配置
+        self.Device_AdbAddress = ConfigItem("Device", "AdbAddress", "")
+        ## Win32 / Gamepad 窗口句柄，0 表示未指定
+        self.Device_HWnd = ConfigItem(
+            "Device", "HWnd", 0, RangeValidator(0, 999999999999)
+        )
+        ## PlayCover 地址
+        self.Device_PlayCoverAddress = ConfigItem("Device", "PlayCoverAddress", "")
+        ## PlayCover UUID
+        self.Device_PlayCoverUuid = ConfigItem("Device", "PlayCoverUuid", "")
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        ## 是否通过检查
+        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+        ## 上次运行状态
+        self.Data_LastProxyStatus = ConfigItem("Data", "LastProxyStatus", "未知")
+        ## MaaFW 周期任务完成记录，结构为 weekly/monthly -> task name -> period key
+        self.Data_PeriodTaskRecords = ConfigItem(
+            "Data", "PeriodTaskRecords", "{ }", JSONValidator(dict)
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成 MaaFW 用户标签列表"""
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append(
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
+
+        if not self.get("Data", "IfPassCheck"):
+            tags.append({"text": "人工排查未通过", "color": "red"})
+
+        # 任务代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self, "任务"))
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+def _migrate_maafw_auto_update_mode(data: dict) -> dict:
+    """兼容旧版 Update.IfAutoUpdate 布尔开关 → 三态 Update.AutoUpdateMode
+
+    旧值 False（关闭）迁移为 ``Off``，保留用户之前的关闭选择；旧值 True 交由
+    新默认 ``BeforeRun`` 生效。只在新项尚未显式写入时迁移，且不动旧键：
+    ``IfAutoUpdate`` 的 ConfigItem 还保留一个版本兼容旧配置文件。
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    update = normalized_data.get("Update")
+    if (
+        isinstance(update, dict)
+        and update.get("IfAutoUpdate") is False
+        and "AutoUpdateMode" not in update
+    ):
+        update["AutoUpdateMode"] = "Off"
+    return normalized_data
+
+
+class MaaFWConfig(ConfigBase):
+    """MaaFW 项目配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## MaaFW 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MFW 脚本")
+        ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
+        self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
+        ## MaaFW 项目根目录，应包含 interface.json
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
+        ## MaaFW controller 名称，留空时按 interface 和设备配置自动选择
+        self.Info_Controller = ConfigItem("Info", "Controller", "")
+        ## MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
+        self.Info_Resource = ConfigItem("Info", "Resource", "")
+
+        ## Emulator --------------------------------------------------------
+        ## 模拟器 ID，ADB controller 留空地址时使用
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器索引
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
+
+        ## Device ----------------------------------------------------------
+        ## ADB 路径，留空时从 MAS 模拟器配置或 MaaFW Toolkit 推导
+        self.Device_AdbPath = ConfigItem("Device", "AdbPath", "", FileValidator())
+        ## ADB 地址，留空时启动脚本级模拟器获取
+        self.Device_AdbAddress = ConfigItem("Device", "AdbAddress", "")
+        ## ADB 截图方法，默认优先模拟器增强，失败后回退到 ADB 截图
+        ## 仅第二层（MAS 进程内 runner）适用：第一层由外壳自己创建控制器，运行期按
+        ## M9A 专项的既验证取值写死（ScreencapMethods=64），本项不参与外部运行，
+        ## 接线前不要暴露到前端，否则用户改了不会生效也没有提示
+        self.Device_AdbScreencapMethods = ConfigItem(
+            "Device", "AdbScreencapMethods", -57, RangeValidator(-999, 999999999999)
+        )
+        ## ADB 输入方法，默认优先模拟器增强，失败后回退到 MaaTouch / MiniTouch / ADB
+        ## 同上，仅第二层适用；第一层运行期写死 InputMethods=18446744073709551607
+        self.Device_AdbInputMethods = ConfigItem(
+            "Device", "AdbInputMethods", -1, RangeValidator(-999, 999999999999)
+        )
+        ## Win32 / Gamepad 窗口句柄，0 表示未指定
+        self.Device_HWnd = ConfigItem(
+            "Device", "HWnd", 0, RangeValidator(0, 999999999999)
+        )
+        ## Win32 截图方法，0 表示使用 interface 声明或 MaaFW 默认值
+        self.Device_Win32ScreencapMethod = ConfigItem(
+            "Device", "Win32ScreencapMethod", 0, RangeValidator(0, 999999999999)
+        )
+        ## Win32 鼠标方法，0 表示使用 interface 声明或 MaaFW 默认值
+        self.Device_Win32MouseMethod = ConfigItem(
+            "Device", "Win32MouseMethod", 0, RangeValidator(0, 999999999999)
+        )
+        ## Win32 键盘方法，0 表示使用 interface 声明或 MaaFW 默认值
+        self.Device_Win32KeyboardMethod = ConfigItem(
+            "Device", "Win32KeyboardMethod", 0, RangeValidator(0, 999999999999)
+        )
+        ## Gamepad 类型，默认 Xbox360
+        self.Device_GamepadType = ConfigItem(
+            "Device", "GamepadType", 0, RangeValidator(0, 999999999999)
+        )
+        ## PlayCover 地址
+        self.Device_PlayCoverAddress = ConfigItem("Device", "PlayCoverAddress", "")
+        ## PlayCover UUID
+        self.Device_PlayCoverUuid = ConfigItem("Device", "PlayCoverUuid", "")
+
+        ## Game ------------------------------------------------------------
+        ## 游戏生命周期模式
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "DirectExe",
+            # 只保留两种：让 MAS 启动游戏（DirectExe，默认；由 MAS 启动的游戏结束后
+            # 一律由 MAS 关闭）/ 使用其他方式启停游戏（AttachOnly，MAS 只接管已运行
+            # 的窗口，不启动也不关闭）。LauncherExe 与 URL 已下线，旧配置由校验器
+            # 纠正回 options[0]——它们本来就是「MAS 启动」的变体，落到 DirectExe 最贴近。
+            OptionsValidator(["DirectExe", "AttachOnly"]),
+        )
+        ## DirectExe 模式下 MAS 启动的游戏 exe
+        self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选
+        ## 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。
+        ## 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。
+        self.Game_UnityResolution = ConfigItem(
+            "Game",
+            "UnityResolution",
+            "Off",
+            OptionsValidator(["Off", "1920x1080", "1280x720"]),
+        )
+        ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
+        ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
+        ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
+        self.Game_PackageName = ConfigItem("Game", "PackageName", "")
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。
+        ## Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来；
+        ## MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。
+        ## 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满；
+        ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
+        ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
+        # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
+
+        ## Update ----------------------------------------------------------
+        ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。
+        ## 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。
+        self.Update_AutoUpdateMode = ConfigItem(
+            "Update",
+            "AutoUpdateMode",
+            "BeforeRun",
+            OptionsValidator(["Off", "BeforeRun", "AfterRun"]),
+        )
+        ## [已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off），
+        ## 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
+        self.Update_IfAutoUpdate = ConfigItem(
+            "Update", "IfAutoUpdate", True, BoolValidator()
+        )
+        ## 更新包的下载源，由用户显式选择——**不做自动分流**。
+        ## 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定：
+        ## 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成
+        ## GitHub——用户得知道自己在从哪下载，出问题才查得动。
+        ## 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。
+        # 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**，
+        # 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被
+        # correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有
+        # 脚本会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。
+        self.Update_Source = ConfigItem(
+            "Update", "Source", "GitHub", OptionsValidator(["GitHub", "MirrorChyan"])
+        )
+        ## 更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。
+        ## 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道，
+        ## 和脚本本体的版本档位是两回事，串在一起只会让人猜。
+        ## Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部
+        ## 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。
+        ## 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致：
+        ## 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
+        ## 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]，
+        ## 即 stable——这里的顺序同样不能随意调换。
+        self.Update_Channel = ConfigItem(
+            "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
+        )
+        ## Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是
+        ## AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜
+        ## 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。
+        ## （合并逻辑见 tools/embedded/update_credentials.py）
+        self.Update_MirrorChyanCDK = ConfigItem(
+            "Update", "MirrorChyanCDK", "", EncryptValidator()
+        )
+        ## [已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json
+        ## 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。
+        self.Update_GitHubRepo = ConfigItem("Update", "GitHubRepo", "")
+        self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
+        self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
+
+        ## Managed --------------------------------------------------------
+        ## 是否由 Project Store 和 Runtime Pool 托管项目资源
+        self.Managed_Enabled = ConfigItem("Managed", "Enabled", False, BoolValidator())
+        self.Managed_ProjectId = ConfigItem("Managed", "ProjectId", "")
+        self.Managed_StoreId = ConfigItem("Managed", "StoreId", "")
+        self.Managed_Version = ConfigItem("Managed", "Version", "")
+        self.Managed_RuntimeConstraint = ConfigItem("Managed", "RuntimeConstraint", "")
+        self.Managed_ProjectManifest = ConfigItem(
+            "Managed", "ProjectManifest", "{ }", JSONValidator(dict)
+        )
+        self.Managed_CheckoutPath = ConfigItem("Managed", "CheckoutPath", "")
+        self.Managed_PendingUpgrade = ConfigItem(
+            "Managed", "PendingUpgrade", "{ }", JSONValidator(dict)
+        )
+        self.Managed_LastOperation = ConfigItem(
+            "Managed", "LastOperation", "{ }", JSONValidator(dict)
+        )
+
+        ## ManagedRuntime -------------------------------------------------
+        self.ManagedRuntime_RuntimeId = ConfigItem("ManagedRuntime", "RuntimeId", "")
+        self.ManagedRuntime_PoolId = ConfigItem("ManagedRuntime", "PoolId", "")
+        self.ManagedRuntime_PythonExecutable = ConfigItem(
+            "ManagedRuntime", "PythonExecutable", ""
+        )
+        self.ManagedRuntime_VenvPath = ConfigItem("ManagedRuntime", "VenvPath", "")
+        self.ManagedRuntime_RuntimeBinding = ConfigItem(
+            "ManagedRuntime", "RuntimeBinding", "{ }", JSONValidator(dict)
+        )
+
+        ## ManagedRemote --------------------------------------------------
+        self.ManagedRemote_Source = ConfigItem(
+            "ManagedRemote",
+            "Source",
+            "MirrorChyan",
+            OptionsValidator(["MirrorChyan", "GitHub"]),
+        )
+        self.ManagedRemote_Channel = ConfigItem(
+            "ManagedRemote", "Channel", "stable", OptionsValidator(["stable", "beta"])
+        )
+        self.ManagedRemote_MirrorChyanRID = ConfigItem(
+            "ManagedRemote", "MirrorChyanRID", ""
+        )
+        self.ManagedRemote_MirrorChyanCDK = ConfigItem(
+            "ManagedRemote", "MirrorChyanCDK", "", EncryptValidator()
+        )
+        self.ManagedRemote_GitHubRepo = ConfigItem("ManagedRemote", "GitHubRepo", "")
+        self.ManagedRemote_GitHubTag = ConfigItem("ManagedRemote", "GitHubTag", "")
+        self.ManagedRemote_GitHubAssetPattern = ConfigItem(
+            "ManagedRemote", "GitHubAssetPattern", r"\.zip$"
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 运行引擎，决定「谁来跑」：
+        ## 代理次数限制
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑；
+        ## 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败，
+        ## 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
+        ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
+        ## 几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
+        )
+        ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
+        self.Run_DailyOnceTasks = ConfigItem(
+            "Run", "DailyOnceTasks", "[ ]", JSONValidator(list)
+        )
+        ## 每周正常完成一次后，本周剩余时间跳过的 MaaFW 任务名列表
+        self.Run_WeeklyOnceTasks = ConfigItem(
+            "Run", "WeeklyOnceTasks", "[ ]", JSONValidator(list)
+        )
+        ## 每月正常完成一次后，本月剩余时间跳过的 MaaFW 任务名列表
+        self.Run_MonthlyOnceTasks = ConfigItem(
+            "Run", "MonthlyOnceTasks", "[ ]", JSONValidator(list)
+        )
+
+        ## Selection -------------------------------------------------------
+        ## 当前阶段保留：manager.py 仍从 Selection.* 读取运行范围，
+        ## 字段迁移到 Info.* / 用户任务配置属于后续 P3 前端回收。
+        ## 选中的 controller 列表
+        self.Selection_Controller = ConfigItem(
+            "Selection", "Controller", "[ ]", JSONValidator(list)
+        )
+        ## 选中的 resource 列表
+        self.Selection_Resource = ConfigItem(
+            "Selection", "Resource", "[ ]", JSONValidator(list)
+        )
+        ## 选中的 task 列表
+        self.Selection_Tasks = ConfigItem(
+            "Selection", "Tasks", "[ ]", JSONValidator(list)
+        )
+
+        self.UserData = MultipleConfig([MaaFWUserConfig])
+
+        super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
+        return await super().load(_migrate_maafw_auto_update_mode(data))
+
+
 class MaaPlanConfig(ConfigBase):
     """MAA计划表配置"""
 
@@ -2287,7 +3121,6 @@ class MaaPlanConfig(ConfigBase):
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-
             today = datetime.now(tz=UTC4).strftime("%A")
 
             if today in self.config_item_dict:
@@ -2348,9 +3181,7 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
         for group in ["ALL", *calendar.day_name]:
             group_data = normalized_data.get(group)
             if isinstance(group_data, dict):
-                normalized_data[group] = {
-                    "Key": normalize_maaend_plan_key(group_data)
-                }
+                normalized_data[group] = {"Key": normalize_maaend_plan_key(group_data)}
         return await super().load(normalized_data)
 
 
@@ -2368,7 +3199,11 @@ class GeneralUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        ## 是否使用用户独立脚本配置
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 兼容旧版用户独立脚本配置
         self.Info_IfUseMasConfig = ConfigItem(
             "Info", "IfUseMasConfig", True, BoolValidator()
         )
@@ -2434,87 +3269,52 @@ class GeneralUserConfig(ConfigBase):
         tags = []
 
         # 任务代理标签（使用东4区时间）
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+        tags.append(_tag_proxy(self, "任务"))
 
         # 剩余天数标签
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(_tag_remained_days(self))
 
         # 备注标签
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
 
-class OkwwTaskIndexValidator(OptionsValidator):
-    """兼容旧版中以序号 2 保存的多账号日常任务。"""
+class OkwwConfigModeValidator(ConfigSourceValidator):
+    """脚本/用户/直控配置来源（兼容旧版“简洁/详细”）。"""
 
     def __init__(self) -> None:
-        super().__init__([1, 7])
-
-    def correct(self, value: Any) -> Any:
-        return 7 if value == 2 else super().correct(value)
+        super().__init__(("脚本", "用户", "直控"), {"简洁": "脚本", "详细": "用户"})
 
 
-class OkwwConfigModeValidator(OptionsValidator):
-    """兼容旧版“简洁/详细”，统一为脚本/用户/直控配置来源。"""
+def _migrate_push_log_mode(data: dict) -> None:
+    """兼容旧版 Notify.PushLogEnabled 布尔开关 → 三态 PushLogMode
 
-    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户"}
-
-    def __init__(self) -> None:
-        super().__init__(["脚本", "用户", "直控"])
-
-    def correct(self, value: Any) -> Any:
-        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+    旧值 False（关闭）迁移为「关闭」，保留用户之前的关闭选择；旧值 True 交由
+    新默认「汇总」生效；随后清理旧键，避免其作为未知字段残留。
+    """
+    notify = data.get("Notify")
+    if (
+        isinstance(notify, dict)
+        and "PushLogEnabled" in notify
+        and "PushLogMode" not in notify
+    ):
+        if notify.get("PushLogEnabled") is False:
+            notify["PushLogMode"] = "关闭"
+        notify.pop("PushLogEnabled", None)
 
 
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
 
+    async def load(self, data: dict):
+        """加载用户配置前迁移旧版推送模式字段。"""
+        _migrate_push_log_mode(data)
+        await super().load(data)
+
     # 用户卡 Tag 仅展示中文简称（与编辑页下拉的 English（中文） 区分）
     OKWW_TASK_BOOK: dict[int, str] = {
         1: "日常",
-        7: "多账号日常",
     }
 
     def __init__(self) -> None:
@@ -2523,16 +3323,13 @@ class OkwwUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_Id = ConfigItem("Info", "Id", "")
-        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Resource = ConfigItem(
             "Info", "Resource", "官服", OptionsValidator(["官服", "国际服"])
         )
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", OkwwConfigModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
         # 是否启用 MAS 快速配置覆盖高频任务字段
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
@@ -2555,11 +3352,8 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # MAS 仅接管 DailyTask / MultiAccountDailyTask 及 DailyTask 高频设置。
-        ## 启动任务序号
-        self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 1, OkwwTaskIndexValidator()
-        )
+        # MAS 仅接管 DailyTask 及 DailyTask 高频设置；账号切换由 MAS 侧
+        # account_switch 实现，不再暴露上游 MultiAccountDailyTask。
         ## 每日任务体力用途
         self.Task_WhichToFarm = ConfigItem(
             "Task",
@@ -2623,6 +3417,14 @@ class OkwwUserConfig(ConfigBase):
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（log_box 采集的关键节点）：
+        ## 关闭 = 不采集；逐条 = 采集并逐条带回时间戳；汇总 = 采集并按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
         ## 是否发送用户统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
@@ -2648,51 +3450,30 @@ class OkwwUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
-        )
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
 
 class OkNteUserConfig(ConfigBase):
     """OK-NTE 用户配置（ok-script 线）"""
+
+    async def load(self, data: dict):
+        """加载用户配置前迁移旧版推送模式字段。"""
+        _migrate_push_log_mode(data)
+        await super().load(data)
 
     OKNTE_TASK_BOOK: dict[int, str] = {
         1: "启动游戏",
@@ -2729,8 +3510,9 @@ class OkNteUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", OkwwConfigModeValidator())
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2775,6 +3557,14 @@ class OkNteUserConfig(ConfigBase):
 
         ## Notify ----------------------------------------------------------
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（log_box 采集的关键节点）：
+        ## 关闭 = 不采集；逐条 = 采集并逐条带回时间戳；汇总 = 采集并按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
@@ -2794,45 +3584,261 @@ class OkNteUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
         task_label = self.OKNTE_TASK_BOOK.get(last_task_index, "未知")
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+# BetterGI 一条龙内置配置组（MAS 默认顺序，与 tools/one_dragon.py 保持同步）。
+# 「体力作战」为 MAS 前端预留的虚拟项（尚未开展制作，前端默认隐藏，不在此表），
+# 恢复展示后在 initDragonList 插入「合成树脂」之后；此处仅列 BetterGI 官方内置 8 组。
+_BGI_BUILTIN_ONE_DRAGON_GROUPS = [
+    "领取邮件",
+    "合成树脂",
+    "自动幽境危战",
+    "自动地脉花",
+    "自动首领讨伐",
+    "自动秘境",
+    "领取尘歌壶奖励",
+    "领取每日奖励",
+]
+
+# 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。
+# 用于加载旧配置时迁移（GlobalAccount=True 且 Servers 未知/「不切换服务器」时兜底为亚服）。
+_BGI_LEGACY_SERVERS_TO_RESOURCE = {
+    "Asia": "亚服",
+    "Europe": "欧服",
+    "America": "美服",
+    "TW,HK,MO": "港澳台服",
+}
+
+
+class BetterGIUserConfig(ConfigBase):
+    """BetterGI 用户配置（更好的原神）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        self.Info_Id = ConfigItem("Info", "Id", "")
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
+        ## 兼容旧版用户独立一条龙配置
+        self.Info_IfUseMasConfig = ConfigItem(
+            "Info", "IfUseMasConfig", True, BoolValidator()
         )
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": (
-                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-                ),
-                "color": "pink",
-            }
+        ## Task ------------------------------------------------------------
+        ## BetterGI「一条龙」配置名，对应脚本一条龙页面中已保存的配置名称
+        self.Task_OneDragonConfigName = ConfigItem("Task", "OneDragonConfigName", "")
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙要执行的内置配置组（按组名，默认全部 8 组开启）
+        self.OneDragon_Groups = ConfigItem(
+            "OneDragon",
+            "Groups",
+            list(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
+            MultipleOptionsValidator(_BGI_BUILTIN_ONE_DRAGON_GROUPS),
         )
+        ## 领取奖励队伍（对应 BetterGI 一条龙的 DailyRewardPartyName，留空不覆盖）
+        self.OneDragon_DailyRewardPartyName = ConfigItem(
+            "OneDragon", "DailyRewardPartyName", ""
+        )
+        ## 战斗队伍（对应 BetterGI 一条龙的通用 PartyName，留空不覆盖）
+        self.OneDragon_PartyName = ConfigItem("OneDragon", "PartyName", "")
+        ## 战斗策略（对应 BetterGI 一条龙的 AutoBossStrategyName，留空不覆盖）
+        ## 默认「根据队伍自动选择」为 BetterGI 内置策略名
+        self.OneDragon_AutoBossStrategyName = ConfigItem(
+            "OneDragon", "AutoBossStrategyName", ""
+        )
+        ## 「队伍配置」总开关（胶囊开关）：ON 时表格内队伍参与运行时「战斗场景」选队；
+        ## OFF 时数据保留但不参与匹配（通用队伍 PartyName/AutoBossStrategyName 照旧生效）。
+        self.OneDragon_IfUseTeams = ConfigItem(
+            "OneDragon", "IfUseTeams", False, BoolValidator()
+        )
+        ## 队伍配置表：JSON 数组字符串，数组顺序即界面展示顺序（可拖拽重排），元素为
+        ## {"name": str,            # 队伍名称（游戏内队伍名）
+        ##  "strategy": str,        # 战斗策略名（留空 = 跟随通用策略 AutoBossStrategyName）
+        ##  "scenes": {             # 战斗场景（可跨标签页任意叠加，空则本行不参与匹配）
+        ##    "domain": [{"region": str, "domain": str, "reward": str}],   # 秘境：地区/秘境名/奖励档
+        ##    "leyline": [{"country": str, "type": str}],                  # 地脉花：地区/地脉类型
+        ##    "boss": [{"region": str, "boss": str}]},                     # 首领讨伐：地区/首领名
+        ##  "note": str,            # 备注
+        ##  "enabled": bool}        # 启用状态
+        ## 序号 0 的「通用队伍」不落本字段（直绑 PartyName / AutoBossStrategyName）。
+        ## 运行期由 team_resolver 按 L1 精确匹配 + 随机选取，写入 Plan 步骤的
+        ## masTeamOverride / masStrategyOverride（最高优先级，压过每周行与步骤级字段）。
+        self.OneDragon_Teams = ConfigItem(
+            "OneDragon", "Teams", "[]", JSONValidator(list)
+        )
+        ## 是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）
+        self.OneDragon_IfUseCustomGroups = ConfigItem(
+            "OneDragon", "IfUseCustomGroups", False, BoolValidator()
+        )
+        ## 自定义配置组列表：JSON 数组字符串，元素为 {"name": str, "enabled": bool}
+        self.OneDragon_CustomGroups = ConfigItem(
+            "OneDragon", "CustomGroups", "[]", JSONValidator(list)
+        )
+        ## 一条龙队列（可视化编排）：JSON 数组字符串，按执行顺序存储，元素为
+        ## {"kind": str, "name": str}（kind ∈ builtin/js/pathing/scriptgroup/custom，
+        ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
+        ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
+        ## （按副本 TaskOrder 相对顺序，不重排）。
+        self.OneDragon_Queue = ConfigItem(
+            "OneDragon", "Queue", "[]", JSONValidator(list)
+        )
+        ## 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。
+        ## 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段
+        ## 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。
+        self.OneDragon_Plan = ConfigItem("OneDragon", "Plan", "", StringValidator())
+        ## 是否启用「直连执行层」：战斗 4 项由 MAS 自编排 Plan 驱动（按需求恒开，预留开关）。
+        self.OneDragon_UseExecutionLayer = ConfigItem(
+            "OneDragon", "UseExecutionLayer", True, BoolValidator()
+        )
+
+        ## Switch ----------------------------------------------------------
+        ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）
+        ## 账号/密码复用 Info.Id / Info.Password（密码经 EncryptValidator 加密）
+        ## 切换模式不再由用户配置，运行时按密码是否填写推断：
+        ##   填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」；B服 强制「B服切换另一个账号匹配+键鼠」。
+        ## 游戏服务器（账号所在服务器：官服/B服/国际服各服务器）
+        self.Switch_Resource = ConfigItem(
+            "Switch",
+            "Resource",
+            "官服",
+            OptionsValidator(["官服", "B服", "亚服", "欧服", "美服", "港澳台服"]),
+        )
+        ## 账号 UID（可不填，切换前识别一致将不执行切换动作）
+        self.Switch_Uid = ConfigItem("Switch", "Uid", "")
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送用户统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否统计掉落（BGI「奖励识别」）：默认开启；开启后运行前强制打开奖励识别，
+        ## 并把日志里的逐轮识别结果汇总进统计通知
+        self.Notify_IfSendDropStatistics = ConfigItem(
+            "Notify", "IfSendDropStatistics", True, BoolValidator()
+        )
+        ## 用户自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载配置前迁移旧版「游戏服务器」写法，并把快速配置开关按配置来源归一。
+
+        快速配置开关已从 BetterGI 用户页隐藏，改为按 ``Info.Mode`` 派生（维护者决策）：
+        直控 = 用 BGI 所选原生配置、MAS 不接管 ⇒ 恒为关；脚本 / 用户 = MAS 侧面板生效 ⇒ 开。
+        存量数据里可能残留与来源相左的值（如「直控 + 开」），加载时统一以来源为准，
+        免得 ``AutoProxy.writes_native_config`` 与界面语义又对不上。
+        """
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        switch = normalized_data.get("Switch")
+        if isinstance(switch, dict) and "Resource" not in switch:
+            if switch.get("Modes") == "B服切换另一个账号匹配+键鼠":
+                # 旧版 B服 是切换模式，现作为游戏服务器
+                switch["Resource"] = "B服"
+            elif switch.get("GlobalAccount"):
+                switch["Resource"] = _BGI_LEGACY_SERVERS_TO_RESOURCE.get(
+                    switch.get("Servers"), "亚服"
+                )
+            else:
+                switch["Resource"] = "官服"
+        # 来源字面量与 UserDirectConfigModeValidator 的取值一致（模型层不反向依赖 app.task）
+        info = normalized_data.get("Info")
+        if isinstance(info, dict) and info.get("Mode") in ("脚本", "用户", "直控"):
+            info["IfQuickConfig"] = info["Mode"] != "直控"
+        return await super().load(normalized_data)
+
+    def getTags(self) -> str:
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
+
+        # 快速配置开启时运行 MAS 槽位，关闭时运行所选原生配置。
+        if self.get("Info", "IfQuickConfig"):
+            config_name = "MAS独立配置"
+        else:
+            config_name = self.get("Task", "OneDragonConfigName") or "未设置"
+        tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -2897,10 +3903,31 @@ class GeneralConfig(ConfigBase):
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
         )
+        ## 日志处理钩子启用开关：关闭时保留规则配置，行为与未配置钩子完全一致
+        self.Script_LogHookEnabled = ConfigItem(
+            "Script", "LogHookEnabled", False, BoolValidator()
+        )
+        ## 日志处理钩子规则（JSON 数组，每项形如 {"type":"drop|replace",...}）；
+        ## 钩子先于任务日志、推送日志采集与成功/失败判定执行，丢弃的行不进入下游
+        self.Script_LogHookRules = ConfigItem("Script", "LogHookRules", "")
         ## 成功日志匹配
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
+        ## 成功日志匹配模式：Split = 「|」分隔关键字子串包含；Regex = 正则表达式
+        self.Script_SuccessLogMode = ConfigItem(
+            "Script", "SuccessLogMode", "Split", OptionsValidator(["Split", "Regex"])
+        )
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+        ## 错误日志匹配模式：Split = 「|」分隔关键字子串包含；Regex = 正则表达式
+        self.Script_ErrorLogMode = ConfigItem(
+            "Script", "ErrorLogMode", "Split", OptionsValidator(["Split", "Regex"])
+        )
+        ## 推送日志启用开关：关闭后保留高级正则配置，但不会实际采集推送日志
+        self.Script_PushLogEnabled = ConfigItem(
+            "Script", "PushLogEnabled", False, BoolValidator()
+        )
+        ## 推送日志高级模式（JSON 数组，每项形如 {"type":"regex|multiline",...}）
+        self.Script_PushLogPatterns = ConfigItem("Script", "PushLogPatterns", "")
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
@@ -2955,8 +3982,6 @@ class GeneralConfig(ConfigBase):
 class OkwwConfig(ConfigBase):
     """OK-WW 配置（ok-script 线）"""
 
-    related_config: dict[str, MultipleConfig] = {}
-
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -2968,16 +3993,24 @@ class OkwwConfig(ConfigBase):
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        ## 兼容旧配置：游戏启动由 Enabled 统一控制
-        self.Game_LaunchBeforeTask = ConfigItem(
-            "Game", "LaunchBeforeTask", False, BoolValidator()
-        )
         ## 鸣潮启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 鸣潮启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务前是否由 MAS 检查并接管更新游戏
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", True, BoolValidator()
+        )
+        ## 整文件同步体积上限（GB），超过则中止并提示手动处理
+        self.Game_UpdateFullSyncLimit = ConfigItem(
+            "Game", "UpdateFullSyncLimit", 30, RangeValidator(1, 9999)
+        )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
+        )
         ## Run -------------------------------------------------------------
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
@@ -3044,11 +4077,17 @@ class OkNteConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem(
             "Script", "SuccessLog", "Successfully Executed Task|任务执行完成"
         )
+        self.Script_SuccessLogMode = ConfigItem(
+            "Script", "SuccessLogMode", "Split", OptionsValidator(["Split", "Regex"])
+        )
         self.Script_ErrorLog = ConfigItem(
             "Script",
             "ErrorLog",
             "connected:False|Resolution Error|Timed out waiting for game process|"
             "Timed out waiting for launcher process",
+        )
+        self.Script_ErrorLogMode = ConfigItem(
+            "Script", "ErrorLogMode", "Split", OptionsValidator(["Split", "Regex"])
         )
 
         ## Game ------------------------------------------------------------
@@ -3059,6 +4098,8 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
+        # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
+        # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
@@ -3069,6 +4110,10 @@ class OkNteConfig(ConfigBase):
         )
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+        self.Game_AccountSwitch = ConfigItem(
+            "Game", "AccountSwitch", False, BoolValidator()
         )
 
         ## Run -------------------------------------------------------------
@@ -3087,8 +4132,358 @@ class OkNteConfig(ConfigBase):
         super().__init__()
 
 
+class BetterGIConfig(ConfigBase):
+    """BetterGI 配置（更好的原神，原生 GUI 直控 + 仅一条龙任务）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新 BetterGI 脚本")
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
+
+        ## Run -------------------------------------------------------------
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
+        ## 是否以管理员权限启动 BetterGI。默认提权（贴近旧行为）；若 MAS 平时以非管理员
+        ## 运行、又不希望每次启动 BGI 都弹 UAC（无人值守任务尤其容易挂在授权上），可关闭。
+        ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
+        self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
+
+        ## Game ------------------------------------------------------------
+        ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）
+        ## ⚠️ 预留字段：当前运行时不读取（BetterGI 自行管理游戏控制），云原神 / 桌面分身
+        ##    尚未开发。为将来支持而保留占位并持久化，恒为默认「电脑端-前台」，勿被判定死代码误删。
+        self.Game_Controller = ConfigItem(
+            "Game",
+            "Controller",
+            "电脑端-前台",
+            OptionsValidator(["电脑端-前台", "电脑端-云原神", "电脑端-桌面分身"]),
+        )
+        ## 任务结束后关闭游戏
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        self.UserData = MultipleConfig([BetterGIUserConfig])
+
+        super().__init__()
+
+
+class ZzzOdUserConfig(ConfigBase):
+    """绝区零一条龙用户配置（zzz-od 线，MaaEnd 式字段化用户配置）
+
+    用户配置的事实源是本类的 ConfigItem 字段（web 界面直接编辑，走通用
+    updateUser 链路）：Game 区为账号/区服/游戏路径，OneDragon 区为一条龙
+    任务编排（JSON，顺序即执行顺序）。运行时由这些字段生成 game_account.yml
+    与 one_dragon/_group.yml 注入当前活跃实例槽、结束恢复原状（MAS 不留
+    痕迹）。「直控」模式不使用字段配置，直接以 zzz-od 原生配置运行。
+    """
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
+        ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
+        ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
+        ## 此后配置会话与运行时注入都固定使用该槽
+        self.Info_SlotIdx = ConfigItem("Info", "SlotIdx", -1, RangeValidator(-1, 999))
+        ## 一条龙启动器选择（直控/用户两态通用）：
+        ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
+        ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
+        self.Info_LauncherMode = ConfigItem(
+            "Info",
+            "LauncherMode",
+            "自动",
+            OptionsValidator(["自动", "原始", "集成"]),
+        )
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 游戏区服（zzz-od game_account.yml 的 game_region 取值）
+        self.Game_GameRegion = ConfigItem(
+            "Game",
+            "GameRegion",
+            "cn",
+            OptionsValidator(["cn", "cn_b", "us", "eu", "asia", "twhkmo"]),
+        )
+        ## 游戏 exe 完整路径（ZenlessZoneZero.exe）
+        self.Game_GamePath = ConfigItem("Game", "GamePath", "", FileValidator())
+        ## 游戏界面语言
+        self.Game_GameLanguage = ConfigItem(
+            "Game", "GameLanguage", "cn", OptionsValidator(["cn", "en"])
+        )
+        ## 登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）
+        self.Game_Account = ConfigItem("Game", "Account", "")
+        ## 登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）
+        self.Game_Password = ConfigItem("Game", "Password", "", EncryptValidator())
+        ## B服登录账号名
+        self.Game_BilibiliAccountName = ConfigItem("Game", "BilibiliAccountName", "")
+        ## 游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）
+        self.Game_Platform = ConfigItem(
+            "Game", "Platform", "PC", OptionsValidator(["PC"])
+        )
+        ## 是否使用自定义窗口标题
+        self.Game_UseCustomWinTitle = ConfigItem(
+            "Game", "UseCustomWinTitle", False, BoolValidator()
+        )
+        ## 自定义窗口标题
+        self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
+
+        ## 一条龙游戏启动参数（game.yml 六字段，照抄上游 BasicGameConfig
+        ## 默认值与取值；一条龙启动游戏时消费，总开关关闭则全部不生效）：
+        ## 启动参数总开关
+        self.Game_LaunchArgument = ConfigItem(
+            "Game", "LaunchArgument", False, BoolValidator()
+        )
+        ## 窗口尺寸（上游枚举原值）
+        self.Game_ScreenSize = ConfigItem(
+            "Game",
+            "ScreenSize",
+            "1920x1080",
+            OptionsValidator(["1920x1080", "2560x1440", "3840x2160"]),
+        )
+        ## 全屏模式（上游枚举原值为字符串：'0'=窗口化 '1'=全屏）
+        self.Game_FullScreen = ConfigItem(
+            "Game", "FullScreen", "0", OptionsValidator(["0", "1"])
+        )
+        ## 无边框窗口（一条龙拼参时转 -popupwindow）
+        self.Game_PopupWindow = ConfigItem("Game", "PopupWindow", False, BoolValidator())
+        ## DX12 启动（MAS 便捷开关：注入时把 -use-d3d12 合并进一条龙的
+        ## launch_argument_advance；上游无独立字段，勾选框是唯一权威）
+        self.Game_Dx12 = ConfigItem("Game", "Dx12", False, BoolValidator())
+        ## 显示器序号（上游枚举原值为字符串）
+        self.Game_Monitor = ConfigItem(
+            "Game", "Monitor", "1", OptionsValidator(["1", "2", "3", "4"])
+        )
+        ## 高级参数（原样透传给一条龙拼接，上游不解析，不做 shlex 校验）
+        self.Game_LaunchArgumentAdvance = ConfigItem(
+            "Game", "LaunchArgumentAdvance", "", StringValidator()
+        )
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
+        ## 数组顺序即执行顺序；enabled=false 的任务由 zzz-od 跳过）
+        self.OneDragon_AppList = ConfigItem("OneDragon", "AppList", "[]")
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+        ## 智能启动器模式最近一次成功运行的启动器（""=尚未记录；下次智能优先用它）
+        self.Data_LauncherLastGood = ConfigItem(
+            "Data",
+            "LauncherLastGood",
+            "",
+            OptionsValidator(["", "原始", "集成"]),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（运行记录 diff 出的各任务结果）：
+        ## 关闭 = 不采集；逐条 = 逐条带回时间戳；汇总 = 按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
+        ## 是否发送用户统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append(
+            {
+                "text": f"上次：{_tag_last_status(last_status)}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
+
+        mode = str(self.get("Info", "Mode") or "用户")
+        if mode == "用户":
+            ## 一条龙任务编排仅用户模式消费（直控事实源是原生配置，MAS 字段会失真）
+            try:
+                app_list = json.loads(self.get("OneDragon", "AppList") or "[]")
+            except (TypeError, ValueError):
+                app_list = []
+            if not isinstance(app_list, list):
+                app_list = []
+            enabled_count = sum(
+                1 for item in app_list if isinstance(item, dict) and item.get("enabled")
+            )
+            if enabled_count > 0:
+                tags.append({"text": f"一条龙：{enabled_count} 项", "color": "orange"})
+            else:
+                tags.append({"text": "一条龙：未编排", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class ZzzOdConfig(ConfigBase):
+    """绝区零一条龙配置（zzz-od 线）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新绝区零一条龙脚本")
+        ## zzz-od 安装根目录（含 OneDragon 启动器、src 与 config）
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FolderValidator())
+
+        ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）
+        self.Game_LaunchBeforeTask = ConfigItem(
+            "Game", "LaunchBeforeTask", False, BoolValidator()
+        )
+        ## 游戏路径（游戏本体 ZenlessZoneZero.exe）
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 启动游戏后的等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体，
+        ## 不再委托一条龙 --close-game）
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 多用户账号切换方式（脚本级下拉，value 对应 manager 的分派分支）：
+        ## 单实例切换（默认，推荐）= 逐用户独立会话：注入该用户配置 → 单实例
+        ##   运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。失败域
+        ##   隔离最好，重试只重启失败用户；
+        ## 多实例切换（不推荐）= 全部启用用户合并为一轮多账号运行，一条龙内部
+        ##   依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随
+        ##   用户数线性增长；
+        ## MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。
+        self.Game_AccountSwitch = ConfigItem(
+            "Game",
+            "AccountSwitch",
+            "单实例切换",
+            OptionsValidator(["单实例切换", "多实例切换", "MAS切换"]),
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 单次任务重试次数
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是
+        ## 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层
+        ## 日志）也靠它兜底超时后切换启动器
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 40, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([ZzzOdUserConfig])
+
+        super().__init__()
+
+
 class GameSignAccountGroup(ConfigBase):
-    """游戏签到账号组配置"""
+    """游戏社区账号组配置"""
 
     def __init__(self) -> None:
 
@@ -3099,6 +4494,18 @@ class GameSignAccountGroup(ConfigBase):
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceId = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceId", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceFp = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceFp", "", EncryptValidator()
+        )
+        ## GameSignAccount - 云原神 combo token (DPAPI 加密)
+        self.CloudGenshinToken = ConfigItem(
+            "GameSignAccount", "CloudGenshinToken", "", EncryptValidator()
         )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
@@ -3165,21 +4572,13 @@ class ToolsConfig(ConfigBase):
         self.GameSign_NotifyEnabled = ConfigItem(
             "GameSign", "NotifyEnabled", False, BoolValidator()
         )
-        ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
-        self.GameSign_WindowStart = ConfigItem(
-            "GameSign", "WindowStart", "08:00", DateTimeValidator("%H:%M")
-        )
-        ## GameSign - 旧版签到窗口终点（保留用于读取历史配置，不参与调度）
-        self.GameSign_WindowEnd = ConfigItem(
-            "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
+        ## GameSign - 启用日常便笺
+        self.GameSign_ActivityEnabled = ConfigItem(
+            "GameSign", "ActivityEnabled", True, BoolValidator()
         )
         ## GameSign - 启动时运行
         self.GameSign_RunOnStartup = ConfigItem(
             "GameSign", "RunOnStartup", False, BoolValidator()
-        )
-        ## GameSign - 旧版自动签到开关（保留用于读取历史配置，不参与调度）
-        self.GameSign_ScheduledRun = ConfigItem(
-            "GameSign", "ScheduledRun", True, BoolValidator()
         )
         ## GameSign - 是否立即开始
         self.GameSign_AutoStart = ConfigItem(
@@ -3190,10 +4589,6 @@ class ToolsConfig(ConfigBase):
         ## GameSign - 上次签到日期 (防止重复触发)
         self.GameSign_LastSignDate = ConfigItem(
             "GameSign", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## GameSign - 旧版今日随机签到时间（保留用于读取历史配置，不参与调度）
-        self.GameSign_ScheduledTime = ConfigItem(
-            "GameSign", "ScheduledTime", "", StringValidator()
         )
         ## GameSign - 签到状态标签 (虚拟字段)
         self.GameSign_Status = ConfigItem(
@@ -3250,14 +4645,14 @@ class ToolsConfig(ConfigBase):
         ]
 
     def game_sign_status(self) -> str:
-        """游戏签到状态标签"""
+        """游戏社区状态标签"""
 
         if not self.get("GameSign", "Enabled"):
             return TagItem(text="未启用", color="gray").model_dump_json()
         return TagItem(text="已启用", color="green").model_dump_json()
 
     def game_sign_result(self) -> str:
-        """游戏签到结果 JSON"""
+        """游戏社区结果 JSON"""
 
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 
@@ -3294,6 +4689,26 @@ class GlobalConfig(ConfigBase):
         ## 是否启用匿名遥测
         self.Function_IfEnableTelemetry = ConfigItem(
             "Function", "IfEnableTelemetry", True, BoolValidator()
+        )
+
+        ## Display ----------------------------------------------------------
+        ## 无人值守时是否允许 MAS 挂载虚拟显示器。
+        ## 所有真实显示输出都断开后 Windows 只保留一块占位的幻影屏，它照旧上报正常的
+        ## 分辨率但背后没有输出；冷启动时更会起在很小的分辨率上，把被托管的 PC 端游戏
+        ## 窗口压小并被游戏写进自己的配置，之后每轮都在同一处失败。挂一块真实的虚拟屏
+        ## 可从源头断掉。
+        ## 需要用户自行安装 Parsec 虚拟显示驱动，MAS 不分发驱动。
+        self.Display_IfEnableVirtualDisplay = ConfigItem(
+            "Display", "IfEnableVirtualDisplay", False, BoolValidator()
+        )
+        ## 虚拟显示器的刷新率（分辨率固定 1920x1080）。
+        ## 分辨率固定是因为只有它 Windows 给 100% 缩放，再高会被自动上缩放，游戏窗口
+        ## 又要面对 DPI 虚拟化。取值必须在驱动 advertise 的模式表里，否则会被 BADMODE 拒绝。
+        self.Display_VirtualDisplayMode = ConfigItem(
+            "Display",
+            "VirtualDisplayMode",
+            "1920x1080@60",
+            OptionsValidator(["1920x1080@60", "1920x1080@30"]),
         )
 
         ## Voice ------------------------------------------------------------
@@ -3361,6 +4776,41 @@ class GlobalConfig(ConfigBase):
         )
         ## Koishi Token
         self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
+        ## 是否启用微信 Claw 通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawWeixin = ConfigItem(
+            "Notify", "IfOpenClawWeixin", False, BoolValidator()
+        )
+        ## 是否启用 QQ 官方机器人通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawQQ = ConfigItem(
+            "Notify", "IfOpenClawQQ", False, BoolValidator()
+        )
+        ## QQ 官方机器人应用 ID（由扫码登录响应返回）
+        self.Notify_OpenClawQQAppId = ConfigItem("Notify", "OpenClawQQAppId", "")
+        ## QQ 官方机器人客户端密钥（由扫码登录响应返回）
+        self.Notify_OpenClawQQClientSecret = ConfigItem(
+            "Notify", "OpenClawQQClientSecret", "", EncryptValidator()
+        )
+        ## QQ 官方机器人目标用户 OpenID（由扫码登录响应返回）
+        self.Notify_OpenClawQQTargetOpenId = ConfigItem(
+            "Notify", "OpenClawQQTargetOpenId", ""
+        )
+        self.Notify_OpenClawWeixinServerAddress = ConfigItem(
+            "Notify",
+            "OpenClawWeixinServerAddress",
+            "https://ilinkai.weixin.qq.com",
+            URLValidator(schemes=["https"]),
+        )
+        self.Notify_OpenClawWeixinBotToken = ConfigItem(
+            "Notify", "OpenClawWeixinBotToken", "", EncryptValidator()
+        )
+        ## 微信 Claw 账号 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinAccountId = ConfigItem(
+            "Notify", "OpenClawWeixinAccountId", ""
+        )
+        ## 微信 Claw 用户 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
+            "Notify", "OpenClawWeixinTargetUserId", ""
+        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码
@@ -3377,6 +4827,14 @@ class GlobalConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否启用中国移动新消息通知
+        self.Notify_IfCMCCNewMsg = ConfigItem(
+            "Notify", "IfCMCCNewMsg", False, BoolValidator()
+        )
+        ## 中国移动新消息 Channel API Key
+        self.Notify_CMCCNewMsgApiKey = ConfigItem(
+            "Notify", "CMCCNewMsgApiKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -3464,19 +4922,8 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig(
             [item["config_class"] for item in PLAN_BOOK.values()]
         )
-        ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig(
-            [
-                MaaConfig,
-                MaaEndConfig,
-                SrcConfig,
-                M9AConfig,
-                GeneralConfig,
-                OkwwConfig,
-                OkNteConfig,
-                HSRConfig,
-            ]
-        )
+        ## 脚本配置列表（顺序与 CLASS_BOOK 一致）
+        self.ScriptConfig = MultipleConfig(list(CLASS_BOOK.values()))
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
@@ -3486,8 +4933,9 @@ class GlobalConfig(ConfigBase):
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
@@ -3531,7 +4979,6 @@ class GlobalConfig(ConfigBase):
                             )
 
                             if "SSReopen" not in stage["Display"]:
-
                                 if stage["Drop"] in MATERIALS_MAP:
                                     drop_id = stage["Drop"]
                                 elif "玉" in stage["Drop"]:
@@ -3567,23 +5014,170 @@ class GlobalConfig(ConfigBase):
                     )
 
                 all_stage_data[server] = stage_data
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(
+                f"解析活动关卡信息失败, 按空关卡处理: {type(e).__name__}: {e}"
+            )
             return "{ }"
 
         return json.dumps(all_stage_data, ensure_ascii=False)
 
 
+class BAAHUserConfig(ConfigBase):
+    """BAAH 用户配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
+        ## 默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
+        self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
+        ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
+        self.Info_ActivityConfigName = ConfigItem("Info", "ActivityConfigName", "")
+        ## 是否按碧蓝档案有没有活动切换使用的配置文件
+        self.Info_IfActivityAdapt = ConfigItem(
+            "Info", "IfActivityAdapt", False, BoolValidator()
+        )
+        ## 活动排期按哪个服判断（Kivo 时间轴的原文拼写：JP / Globle / CN）
+        self.Info_ActivityLineType = ConfigItem(
+            "Info", "ActivityLineType", "CN", OptionsValidator(["JP", "Globle", "CN"])
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成 BAAH 用户标签列表"""
+        tags = []
+
+        # 任务代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self, "任务"))
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class BAAHConfig(ConfigBase):
+    """BAAH 配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 BAAH 脚本")
+
+        ## Script ----------------------------------------------------------
+        ## BAAH 主程序路径；程序目录、配置目录与日志目录都从它派生
+        self.Script_BAAHPath = ConfigItem("Script", "BAAHPath", "", FileValidator())
+        ## 是否由本软件托管运行所需的关键配置项
+        self.Script_IfManageConfig = ConfigItem(
+            "Script", "IfManageConfig", True, BoolValidator()
+        )
+        ## 是否在任务报告中展示 BAAH 的任务节点详情
+        self.Script_PushLogEnabled = ConfigItem(
+            "Script", "PushLogEnabled", True, BoolValidator()
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 运行次数限制
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
+        )
+        ## 运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
+        )
+
+        ## Emulator --------------------------------------------------------
+        ## 模拟器 ID
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器索引
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
+
+        self.UserData = MultipleConfig([BAAHUserConfig])
+
+        super().__init__()
+
+
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
+    "SRC": SrcConfig,
     "M9A": M9AConfig,
+    "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
+    "BetterGI": BetterGIConfig,
+    "ZzzOd": ZzzOdConfig,
+    "BAAH": BAAHConfig,
 }
-"""配置类映射表"""
+"""配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
 PLAN_BOOK = {
     "MaaPlanConfig": {

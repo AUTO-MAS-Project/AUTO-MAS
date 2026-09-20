@@ -59,6 +59,81 @@ class MainDevelopmentEnvironmentTest(unittest.TestCase):
             self.assertFalse(main.is_hosted_launch())
 
 
+class IsSupervisedTest(unittest.TestCase):
+    """AUTO-MAS-Runtime 注入的判据要求精确匹配字符串 "1"，不做 true/yes 等宽松解析。"""
+
+    def test_exact_match_required(self) -> None:
+        for raw, expected in (
+            ("1", True),
+            ("true", False),
+            ("True", False),
+            ("yes", False),
+            ("on", False),
+            ("0", False),
+            ("", False),
+        ):
+            with self.subTest(raw=raw):
+                with patch.dict(os.environ, {"AUTO_MAS_SUPERVISED": raw}):
+                    self.assertIs(main.is_supervised(), expected)
+
+
+class ShouldRestartAsAdminTest(unittest.TestCase):
+    """提权判断抽成纯函数单独测：main() 直接调用它决定是否 restart_as_admin()，
+    避免测试触发 main() 内部真实的 uvicorn 启动。"""
+
+    def test_supervised_never_restarts_regardless_of_other_flags(self) -> None:
+        """受监督优先级最高：即便 admin/hosted_launch/development 都不成立也不重启。
+
+        对应受监督场景下真实会发生的情况——非管理员终端下由 Runtime 拉起。
+        """
+
+        for admin, hosted_launch, development_environment in (
+            (False, False, False),
+            (True, False, False),
+            (False, True, False),
+            (False, False, True),
+            (True, True, True),
+        ):
+            with self.subTest(
+                admin=admin,
+                hosted_launch=hosted_launch,
+                development_environment=development_environment,
+            ):
+                self.assertFalse(
+                    main.should_restart_as_admin(
+                        supervised=True,
+                        admin=admin,
+                        hosted_launch=hosted_launch,
+                        development_environment=development_environment,
+                    )
+                )
+
+    def test_unsupervised_matches_legacy_behavior(self) -> None:
+        """未受监督时行为不变：仅当三项判据都不成立才需要提权重启。"""
+
+        cases = [
+            ((False, False, False), True),
+            ((True, False, False), False),
+            ((False, True, False), False),
+            ((False, False, True), False),
+        ]
+        for (admin, hosted_launch, development_environment), expected in cases:
+            with self.subTest(
+                admin=admin,
+                hosted_launch=hosted_launch,
+                development_environment=development_environment,
+            ):
+                self.assertEqual(
+                    main.should_restart_as_admin(
+                        supervised=False,
+                        admin=admin,
+                        hosted_launch=hosted_launch,
+                        development_environment=development_environment,
+                    ),
+                    expected,
+                )
+
+
 class TelemetryDevelopmentTest(unittest.TestCase):
     def setUp(self) -> None:
         telemetry._sentry_release = None

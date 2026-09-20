@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { ComboBoxItem } from './ComboBoxItem';
+import type { MaaEndAutoCollectGroup } from './MaaEndAutoCollectGroup';
+import type { MaaEndEssenceTargetGroup } from './MaaEndEssenceTargetGroup';
 export type MaaEndOptionsOut = {
     /**
      * 状态码
@@ -17,6 +19,10 @@ export type MaaEndOptionsOut = {
      */
     message?: string;
     /**
+     * MaaEnd 自动采集地区与分类
+     */
+    autoCollectGroups?: Array<MaaEndAutoCollectGroup>;
+    /**
      * MaaEnd 控制器选项
      */
     controllers: Array<ComboBoxItem>;
@@ -28,5 +34,13 @@ export type MaaEndOptionsOut = {
      * MaaEnd 基质刷取地点选项
      */
     essenceLocations: Array<ComboBoxItem>;
+    /**
+     * MaaEnd 基质刷取模式选项
+     */
+    essenceMenus: Array<ComboBoxItem>;
+    /**
+     * MaaEnd 基质目标武器分组
+     */
+    essenceTargetWeaponGroups: Array<MaaEndEssenceTargetGroup>;
 };
 

@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { enterApp } from '@/utils/appEntry'
@@ -41,7 +42,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
       logger.error(`跳过初始化启动失败: ${errorMsg}`)
       resetInitializationStatus()
       sessionStorage.setItem('disableInitializationSkip', 'true')
-      message.error('后端启动失败，已切换到初始化页面')
+      message.error(t('misc.backendFailedStartSwitching'))
 
       if (window.location.hash !== '#/initialization') {
         window.location.hash = '#/initialization'

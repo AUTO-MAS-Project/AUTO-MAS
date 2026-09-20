@@ -21,32 +21,41 @@
 
 
 import uuid
-import shutil
-from pathlib import Path
+from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 
 from app.core import Config, EmulatorManager
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
-from app.services import Notify
+from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.emulator_core import close_emulator
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_DIRECT,
+    CONFIG_SOURCE_SCRIPT,
+    read_config_source,
+)
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    recover_native_config,
+    swap_in_dir,
 )
-from .tools import push_notification
-from .AutoProxy import AutoProxyTask
-from .ManualReview import ManualReviewTask
-from .ScriptConfig import ScriptConfigTask
 
+from .AutoProxy import AutoProxyTask
+from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("MAA 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
-    "ManualReview": ManualReviewTask,
     "ScriptConfig": ScriptConfigTask,
 }
 
@@ -54,7 +63,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]
 class MaaManager(TaskExecuteBase):
     """MAA控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -63,6 +77,8 @@ class MaaManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.prepared = False
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验MAA配置是否可用"""
@@ -109,14 +125,35 @@ class MaaManager(TaskExecuteBase):
             ).exists()
         ):
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
+        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 MAA 安装目录的原生配置,
+        # 不依赖 MAS 侧的 Default/ConfigFile 存档
         if (
             self.task_info.mode != "ScriptConfig"
+            and self._has_mas_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
         ):
             return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Pass"
+
+    def _has_mas_config_user(self) -> bool:
+        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+
+        check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
+        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
+        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        """
+
+        return any(
+            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            for uid, config in Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].UserData.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
+        )
 
     async def prepare(self):
         """运行前准备"""
@@ -132,14 +169,27 @@ class MaaManager(TaskExecuteBase):
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
         # 初始化模拟器管理器
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
-        # 备份原始配置
-        self.temp_path.mkdir(parents=True, exist_ok=True)
-        if self.maa_set_path.exists():
-            shutil.copytree(self.maa_set_path, self.temp_path, dirs_exist_ok=True)
+        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
+        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
+        self._recover_previous_run()
+        if commit_native_config_snapshot(
+            self.temp_path,
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        ):
+            self.had_original_script_config = True
+
+        # 任务级一次性归档 MAA 原生配置（项目级池，指纹去重，失败不阻断
+        # 任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」的安装
+        # 现场——下发处按用户归档会把上一轮下发的 MAS 配置误当原生内容挤进
+        # 保留池，必须在任何下发前归档这一次
+        with suppress(Exception):
+            archive_native_backup(self.maa_set_path)
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -156,40 +206,104 @@ class MaaManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
+
+        # 活动关卡信息整个任务只刷新一次, 各用户注入配置时直接用缓存
+        if self.task_info.mode == "AutoProxy":
+            await Config.get_stage(refresh=True)
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.maa_set_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 MAA 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 MAA 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
+
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功时保留 MAA 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+
+        直控会话 MAS 零写入（ScriptConfig ``set_maa`` 直控分支直接 return），
+        安装 config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
+        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与用户
+        脚本态会话不豁免——它们的 GUI 改动已由 ``set_maa`` 收尾回写 MAS 目
+        录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留任何现
+        场改动，结束后也还原任务前快照。
+        """
+
+        if self.task_info.mode != "ScriptConfig" or self.task_info.view_only:
+            return False
+        if not (
+            self.script_info.user_list
+            and self.script_info.user_list[0].status == "完成"
+        ):
+            return False
+        user_id = self.script_info.user_list[0].user_id
+        if user_id == "Default":
+            return False
+        try:
+            mode = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            ).strip()
+        except (KeyError, ValueError, TypeError):
+            return False
+        return mode == "直控"
 
     async def main_task(self):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+        # prepare() 内每次 await 都可能被中止。只有它整体返回后，收尾依赖的
+        # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
+        self.prepared = True
 
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            task = METHOD_BOOK[self.task_info.mode](
-                self.script_info,
-                self.script_config,
-                self.user_config,
-                self.emulator_manager,
+            kwargs: dict = dict(
+                script_info=self.script_info,
+                script_config=self.script_config,
+                user_config=self.user_config,
+                emulator_manager=self.emulator_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+                kwargs["view_only"] = self.task_info.view_only
+            task = METHOD_BOOK[self.task_info.mode](**kwargs)
             await self.spawn(task)
 
     async def final_task(self):
         """运行结束后的收尾工作"""
+
+        if not self.prepared:
+            # prepare() 未走完就结束：配置锁、备份目录与模拟器实例都还没建立，
+            # 没有可收尾的资源。此时收尾只应回报状态——主动停止不算异常，
+            # 而 prepare() 自身的失败则要保留异常
+            if not self.stopped_manually:
+                self.script_info.status = "异常"
+            return self.check_result
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
@@ -199,65 +313,57 @@ class MaaManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["AutoProxy", "ManualReview"]:
-
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
+        if self.task_info.mode in ["AutoProxy"]:
+            await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_user = [
-                u.name for u in self.script_info.user_list if u.status == "异常"
-            ]
-            over_user = [
-                u.name for u in self.script_info.user_list if u.status == "完成"
-            ]
-            wait_user = [
-                u.name for u in self.script_info.user_list if u.status == "等待"
-            ]
+            error_count = sum(
+                1 for u in self.script_info.user_list if u.status == "异常"
+            )
+            over_count = sum(
+                1 for u in self.script_info.user_list if u.status == "完成"
+            )
+            wait_count = sum(
+                1 for u in self.script_info.user_list if u.status == "等待"
+            )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            task_result = append_task_game_sign_summary(
-                self.task_info, self.script_info.result
-            )
-            has_game_sign_summary = task_result != self.script_info.result
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
                 "start_time": self.begin_time,
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": len(over_user),
-                "uncompleted_count": len(error_user) + len(wait_user),
-                "result": task_result,
-                "game_sign_summary": has_game_sign_summary,
+                "completed_count": over_count,
+                "uncompleted_count": error_count + wait_count,
+                "result": self.script_info.result,
             }
 
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                10,
-            )
             try:
-                await push_notification("代理结果", title, result, None)
-                if has_game_sign_summary:
-                    mark_task_game_sign_summary_consumed(self.task_info)
+                await push_notification(
+                    mode="代理结果",
+                    title=title,
+                    message=result,
+                    user_config=None,
+                    task_info=self.task_info,
+                )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
-        # 还原配置
-        if (self.temp_path).exists():
-            shutil.rmtree(self.maa_set_path, ignore_errors=True)
-            shutil.copytree(self.temp_path, self.maa_set_path, dirs_exist_ok=True)
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+        # 还原配置：直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
+        # 其余按任务前快照还原
+        if (self.temp_path).exists() and not self._keep_script_config_changes():
+            swap_in_dir(self.temp_path, self.maa_set_path)
+        clear_native_config_snapshot(self.temp_path)
 
         self.script_info.status = "完成"
 
@@ -265,8 +371,8 @@ class MaaManager(TaskExecuteBase):
 
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MAA任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"MAA任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"MAA任务出现异常: {e}"),
         )

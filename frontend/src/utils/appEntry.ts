@@ -1,6 +1,7 @@
 // appEntry.ts - 统一的应用进入逻辑
 import router from '@/router'
-import { connectAfterBackendStart, forceConnectWebSocket } from '@/composables/useWebSocket'
+import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
+import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
@@ -56,11 +57,15 @@ export async function enterApp(
 ): Promise<boolean> {
   logger.info(`${reason}：开始进入应用流程，尝试建立WebSocket连接...`)
 
+  // 先注册应用级常驻订阅与调度中心常驻订阅，再建立连接，保证生命周期与任务创建消息不丢失
+  bootstrapRealtimeResidents()
+  initializeAppLifecycle()
+
   let wsConnected = false
 
   try {
     // 尝试建立WebSocket连接
-    wsConnected = await connectAfterBackendStart()
+    wsConnected = await connectWithRetry()
     if (wsConnected) {
       logger.info(`${reason}：WebSocket连接建立成功`)
     } else {
@@ -78,7 +83,7 @@ export async function enterApp(
     }
 
     // 标记应用已初始化完成
-    await markAsInitialized()
+    markAsInitialized()
 
     // 预加载调度中心
     preloadSchedulerView(reason)
@@ -105,29 +110,28 @@ export async function enterApp(
  */
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
   logger.info(`${reason}：跳过初始化流程开始`)
-  logger.info(`${reason}：尝试强制建立WebSocket连接...`)
+  logger.info(`${reason}：尝试建立WebSocket连接...`)
+
+  bootstrapRealtimeResidents()
+  initializeAppLifecycle()
 
   try {
-    // 使用强制连接模式
-    const wsConnected = await forceConnectWebSocket()
+    const wsConnected = await connectWithRetry()
     if (wsConnected) {
-      logger.info(`${reason}：强制WebSocket连接成功！`)
+      logger.info(`${reason}：WebSocket连接成功！`)
     } else {
-      logger.warn(`${reason}：强制WebSocket连接失败，但继续进入应用`)
+      logger.warn(`${reason}：WebSocket连接失败，但继续进入应用`)
     }
-
-    // 等待一下确保连接状态稳定
-    await new Promise(resolve => setTimeout(resolve, 500))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`${reason}：强制WebSocket连接异常: ${errorMsg}`)
+    logger.error(`${reason}：WebSocket连接异常: ${errorMsg}`)
   }
 
   // 无论WebSocket是否成功，都进入应用
   logger.info(`${reason}：跳转到主页...`)
 
   // 标记应用已初始化完成
-  await markAsInitialized()
+  markAsInitialized()
 
   if (router.currentRoute.value.path !== '/home') {
     router.push('/home')
@@ -139,15 +143,6 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
 
   // 预加载调度中心
   preloadSchedulerView(reason)
-}
-
-/**
- * 正常进入应用（需要WebSocket连接成功）
- * @param reason 进入原因
- * @returns 是否成功进入
- */
-export async function normalEnterApp(reason: string = '正常进入'): Promise<boolean> {
-  return await enterApp(reason, false)
 }
 
 /**

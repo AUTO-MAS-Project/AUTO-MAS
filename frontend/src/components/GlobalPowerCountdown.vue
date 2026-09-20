@@ -1,24 +1,35 @@
 <template>
-  <!-- 电源操作倒计时弹窗 - 使用 Ant Design Vue Modal -->
-  <a-modal v-model:open="visible" :title="null" :footer="null" :closable="false" :keyboard="false"
-    :mask-closable="false" :mask="{ blur: true }" :width="480" centered wrap-class-name="power-countdown-modal">
+  <!-- 电源操作倒计时弹窗 - 倒计时状态由后端 power.countdown.updated 驱动 -->
+  <a-modal
+    v-model:open="visible"
+    :title="null"
+    :footer="null"
+    :closable="false"
+    :keyboard="false"
+    :mask-closable="false"
+    :mask="{ blur: true }"
+    :width="480"
+    centered
+    wrap-class-name="power-countdown-modal"
+  >
     <div class="countdown-content">
       <div class="warning-icon">⚠️</div>
       <h2 class="countdown-title">{{ title }}</h2>
       <p class="countdown-message">{{ message }}</p>
-      <div v-if="countdown !== undefined" class="countdown-timer">
-        <span class="countdown-number">{{ countdown }}</span>
-        <span class="countdown-unit">秒</span>
+      <div class="countdown-timer">
+        <span class="countdown-number">{{ remaining }}</span>
+        <span class="countdown-unit">{{ t('comp.seconds') }}</span>
       </div>
-      <div v-else class="countdown-timer">
-        <span class="countdown-text">等待后端倒计时...</span>
-      </div>
-      <a-progress v-if="countdown !== undefined" :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
-        :show-info="false" :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'" :stroke-width="8"
-        class="countdown-progress" />
+      <a-progress
+        :percent="Math.max(0, Math.min(100, ((60 - remaining) / 60) * 100))"
+        :show-info="false"
+        :stroke-color="remaining <= 10 ? '#ff4d4f' : '#1890ff'"
+        :stroke-width="8"
+        class="countdown-progress"
+      />
       <div class="countdown-actions">
         <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
-          取消操作
+          {{ t('comp.cancel2') }}
         </a-button>
       </div>
     </div>
@@ -26,21 +37,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { computed, ref, watch } from 'vue'
 import { Service } from '@/api'
-import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import { useAppLifecycle } from '@/composables/useAppLifecycle'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('全局电源倒计时')
 
-// 响应式状态
-const visible = ref(false)
-const title = ref('')
-const message = ref('')
-const countdown = ref<number | undefined>(undefined)
+// 电源操作显示名
+const POWER_OPERATION_LABEL: Record<string, string> = {
+  Shutdown: '关机',
+  ShutdownForce: '强制关机',
+  Reboot: '重启',
+  Hibernate: '休眠',
+  Sleep: '睡眠',
+  KillSelf: '关闭软件',
+  Logoff: '注销',
+}
 
-// 倒计时定时器
-let countdownTimer: ReturnType<typeof setInterval> | null = null
-// WebSocket 订阅 ID
-let subscriptionId: string | null = null
+const { powerCountdown } = useAppLifecycle()
+
+const visible = ref(false)
+const remaining = computed(() => powerCountdown.value?.remaining ?? 0)
+const operationLabel = computed(() => {
+  const operation = powerCountdown.value?.operation || ''
+  return POWER_OPERATION_LABEL[operation] || operation || '电源操作'
+})
+const title = computed(() => `${operationLabel.value}倒计时`)
+const message = computed(() => `程序将在倒计时结束后执行 ${operationLabel.value} 操作`)
 
 // 激活窗口到前台
 const focusWindow = async () => {
@@ -55,60 +80,25 @@ const focusWindow = async () => {
   }
 }
 
-// 启动倒计时
-const startCountdown = (data: any) => {
-  logger.info(`启动倒计时: ${JSON.stringify(data)}`)
-
-  // 清除之前的计时器
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
-
-  // 激活窗口到前台（即使在托盘状态）
-  focusWindow()
-
-  // 显示倒计时弹窗
-  visible.value = true
-
-  // 设置倒计时数据，从60秒开始
-  title.value = data.title || '电源操作倒计时'
-  message.value = data.message || '程序将在倒计时结束后执行电源操作'
-  countdown.value = 60
-
-  // 启动每秒倒计时
-  countdownTimer = setInterval(() => {
-    if (countdown.value !== undefined && countdown.value > 0) {
-      countdown.value--
-      logger.debug(`倒计时: ${countdown.value}`)
-
-      // 倒计时结束
-      if (countdown.value <= 0) {
-        if (countdownTimer) {
-          clearInterval(countdownTimer)
-          countdownTimer = null
-        }
-        visible.value = false
-        logger.info('倒计时结束，弹窗关闭')
-      }
+// 倒计时出现时弹窗并拉起窗口（即使在托盘状态）；倒计时结束/取消时关闭
+watch(
+  () => powerCountdown.value,
+  (current, previous) => {
+    if (current && !previous) {
+      logger.info(`收到电源倒计时: ${current.operation}, 剩余 ${current.remaining} 秒`)
+      visible.value = true
+      void focusWindow()
+    } else if (!current && previous) {
+      logger.info('电源倒计时结束或已取消，关闭弹窗')
+      visible.value = false
     }
-  }, 1000)
-}
+  },
+  { immediate: true }
+)
 
-// 取消电源操作
+// 取消电源操作（走现有 HTTP API，后端会回发 power.countdown.cancelled）
 const handleCancel = async () => {
   logger.info('用户取消电源操作')
-
-  // 清除倒计时器
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
-
-  // 关闭倒计时弹窗
-  visible.value = false
-
-  // 调用取消电源操作的API
   try {
     await Service.cancelPowerTaskApiDispatchCancelPowerPost()
     logger.info('电源操作已取消')
@@ -121,40 +111,6 @@ const handleCancel = async () => {
     logger.error(`取消电源操作失败: ${errorMsg}`)
   }
 }
-
-// 清理函数
-const cleanup = () => {
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
-  if (subscriptionId) {
-    unsubscribe(subscriptionId)
-    subscriptionId = null
-  }
-}
-
-// 生命周期
-onMounted(() => {
-  // 直接订阅 Main 消息，处理倒计时
-  subscriptionId = subscribe({ id: 'Main' }, (msg: any) => {
-    if (!msg || typeof msg !== 'object') return
-
-    const { type, data } = msg
-
-    if (type === 'Message' && data && data.type === 'Countdown') {
-      logger.info(`收到倒计时消息: ${JSON.stringify(data)}`)
-      startCountdown(data)
-    }
-  })
-
-  logger.info(`全局电源倒计时组件已挂载, subscriptionId: ${subscriptionId}`)
-})
-
-onUnmounted(() => {
-  cleanup()
-  logger.info('全局电源倒计时组件已卸载')
-})
 </script>
 
 <style>
@@ -218,12 +174,6 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.countdown-text {
-  font-size: 24px;
-  color: var(--ant-color-text-secondary);
-  font-weight: 500;
-}
-
 .countdown-progress {
   margin-bottom: 32px;
 }
@@ -242,7 +192,6 @@ onUnmounted(() => {
 
 /* 动画效果 */
 @keyframes pulse {
-
   0%,
   100% {
     transform: scale(1);

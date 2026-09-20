@@ -22,13 +22,29 @@
 
 
 import asyncio
+
 from fastapi import APIRouter, Body, Query
 
 from app.core import Config
-from app.services import Updater
 from app.models.schema import *
+from app.services import Updater
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
+logger = get_logger("软件更新 API")
+
+
+@router.get(
+    "/download/status",
+    tags=["Get"],
+    summary="获取更新下载初始快照",
+    response_model=UpdateDownloadSnapshot,
+    status_code=200,
+)
+async def get_update_download_status() -> UpdateDownloadSnapshot:
+    """返回当前下载权威状态；WS 只承载后续进度与终态事件。"""
+
+    return Updater.get_download_snapshot()
 
 
 @router.post(
@@ -45,6 +61,7 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
             current_version=version.current_version, if_force=version.if_force
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"check_update失败: {type(e).__name__}: {e}")
         return UpdateCheckOut(
             code=500,
             status="error",
@@ -66,19 +83,20 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     status_code=200,
 )
 async def download_update(
-    target_version: str | None = Query(default=None, alias="version")
+    target_version: str | None = Query(default=None, alias="version"),
 ) -> OutBase:
 
     try:
-        if target_version:
-            Updater.remote_version = target_version
-        if not await Updater.start_download():
+        if not await Updater.start_download(target_version=target_version):
             return OutBase(
                 code=409,
                 status="error",
                 message="已有更新任务在进行中, 请勿重复操作",
             )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"download_update失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -96,8 +114,13 @@ async def cancel_update_download() -> OutBase:
 
     try:
         if not await Updater.cancel_download():
-            return OutBase(code=409, status="error", message="当前没有正在进行中的下载任务")
+            return OutBase(
+                code=409, status="error", message="当前没有正在进行中的下载任务"
+            )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"cancel_update_download失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500,
             status="error",
@@ -123,6 +146,9 @@ async def switch_update_download_to_cnb() -> OutBase:
                 message="当前无法切换到 CNB 下载源, 请确认正在从 GitHub 源下载",
             )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"switch_update_download_to_cnb失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500,
             status="error",
@@ -145,6 +171,9 @@ async def install_update() -> OutBase:
         Config.temp_task.append(task)
         task.add_done_callback(lambda t: Config.temp_task.remove(t))
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"install_update失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

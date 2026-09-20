@@ -26,15 +26,16 @@ import types
 
 from .constants import *
 from .logger import get_logger
+from .paths import resource_path
 from .security import (
-    dpapi_encrypt,
     dpapi_decrypt,
+    dpapi_encrypt,
     format_exception_reason,
     sanitize_log_message,
 )
+from .supervision import is_backend_dev_mode, is_supervised
 
 _LAZY_EXPORTS = {
-    "ImageUtils": (".ImageUtils", "ImageUtils"),
     "LogMonitor": (".LogMonitor", "LogMonitor"),
     "strptime": (".LogMonitor", "strptime"),
     "ProcessManager": (".ProcessManager", "ProcessManager"),
@@ -42,6 +43,16 @@ _LAZY_EXPORTS = {
     "ProcessInfo": (".ProcessManager", "ProcessInfo"),
     "ProcessResult": (".ProcessManager", "ProcessResult"),
     "is_process_running": (".ProcessManager", "is_process_running"),
+    "is_process_alive": (".ProcessManager", "is_process_alive"),
+    "RegexMatcher": (".LogPatternExtractor", "RegexMatcher"),
+    "MultiLineAggregator": (".LogPatternExtractor", "MultiLineAggregator"),
+    "compile_regex": (".LogPatternExtractor", "compile_regex"),
+    "load_patterns": (".LogPatternExtractor", "load_patterns"),
+    "apply_patterns": (".LogPatternExtractor", "apply_patterns"),
+    "flush_patterns": (".LogPatternExtractor", "flush_patterns"),
+    "debug_pattern": (".LogPatternExtractor", "debug_pattern"),
+    "LogSignMatcher": (".LogPatternExtractor", "LogSignMatcher"),
+    "compile_log_signs": (".LogPatternExtractor", "compile_log_signs"),
     "MumuManager": (".emulator", "MumuManager"),
     "LDManager": (".emulator", "LDManager"),
     "search_all_emulators": (".emulator", "search_all_emulators"),
@@ -49,7 +60,6 @@ _LAZY_EXPORTS = {
     "decode_bytes": (".tools", "decode_bytes"),
     "busy_wait": (".tools", "busy_wait"),
     "WebSocketClient": (".websocket", "WebSocketClient"),
-    "create_ws_client": (".websocket", "create_ws_client"),
 }
 
 
@@ -68,6 +78,35 @@ def __getattr__(name: str):
     if name not in _LAZY_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     return _resolve_lazy(name)
+
+
+class LazyProxy:
+    """惰性代理：首次属性访问时才导入真实对象，避免初始化期间的循环导入。
+
+    与模块级 __getattr__ 不同，它绑定为一个真实的模块全局名，因此函数内的
+    裸全局名引用（LOAD_GLOBAL）也能正常解析；同时转发属性读写，保证
+    ``Config.xxx = yyy`` 这类赋值落到真实对象上。
+    """
+
+    def __init__(self, module: str, name: str) -> None:
+        object.__setattr__(self, "_module", module)
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_obj", None)
+
+    def _resolve(self):
+        obj = self.__dict__["_obj"]
+        if obj is None:
+            from importlib import import_module
+
+            obj = getattr(import_module(self._module), self._name)
+            object.__setattr__(self, "_obj", obj)
+        return obj
+
+    def __getattr__(self, attr: str):
+        return getattr(self._resolve(), attr)
+
+    def __setattr__(self, attr: str, value) -> None:
+        setattr(self._resolve(), attr, value)
 
 
 class _LazyModule(types.ModuleType):
@@ -96,4 +135,22 @@ __all__ = [
     "dpapi_decrypt",
     "format_exception_reason",
     "sanitize_log_message",
+    "is_backend_dev_mode",
+    "is_supervised",
+    "resource_path",
+    "strptime",
+    "MumuManager",
+    "LDManager",
+    "search_all_emulators",
+    "EMULATOR_TYPE_BOOK",
+    "decode_bytes",
+    "busy_wait",
+    "WebSocketClient",
+    "RegexMatcher",
+    "MultiLineAggregator",
+    "compile_regex",
+    "load_patterns",
+    "apply_patterns",
+    "flush_patterns",
+    "debug_pattern",
 ]

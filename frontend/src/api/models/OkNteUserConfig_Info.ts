@@ -19,6 +19,14 @@ export type OkNteUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
+     * 配置来源（脚本/用户/直控）
+     */
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 兼容旧版用户独立配置开关
+     */
+    IfUseMasConfig?: (boolean | null);
+    /**
      * 是否在任务前执行脚本
      */
     IfScriptBeforeTask?: (boolean | null);
@@ -51,9 +59,9 @@ export type OkNteUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 用户配置模式（简洁/详细）
+     * 是否启用快速配置（与配置来源独立）
      */
-    Mode?: ('简洁' | '详细' | null);
+    IfQuickConfig?: (boolean | null);
     /**
      * 游戏资源
      */

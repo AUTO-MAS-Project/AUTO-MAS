@@ -1,0 +1,54 @@
+/**
+ * 表单分区骨架样式（全局）。
+ *
+ * setting / tools / gamesign 三个页面原先各自用 :deep() 向子组件广播同一套规则，
+ * 另有 20+ 个 UserEdit / ScriptEdit 分区组件在自己的 <style scoped> 里逐份复制。
+ * 这里提供公共基础定义，取的就是那三个父页面广播的版本，也是出现次数最多的版本。
+ * 尚未迁移的父页面可以继续用更高特异性的 :deep() 规则覆盖，不影响分批收敛。
+ *
+ * 局部差异不需要迁就：组件自己的 <style scoped> 规则会带上 [data-v-xxx]，
+ * 特异性高于这里的全局规则，因此需要改尺寸/间距的分区继续在本地覆盖即可。
+ *
+ * 注意这里没有 .form-section:last-child——它的特异性是 (0,2,0)，会和子组件里
+ * 的 .form-section[data-v-xxx] 打平，胜负取决于样式注入顺序。该规则仍留在
+ * setting / tools / gamesign 三个父页面的 :deep() 里，那里是 (0,3,0)，稳定生效。
+ */
+
+.form-section {
+  margin-bottom: 32px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+}
+
+.section-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+/* 标题左侧的主题色竖条 */
+.section-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+}
+
+/* 开关右侧的补充说明文案 */
+.switch-description {
+  margin-left: 12px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}

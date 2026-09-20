@@ -24,13 +24,6 @@ export function useRouteLock() {
   }
 
   /**
-   * 检查路由是否被锁定
-   */
-  const checkRouteLocked = () => {
-    return isRouteLocked.value
-  }
-
-  /**
    * 触发路由阻止回调
    * @param targetRoute 用户尝试访问的目标路由
    */
@@ -44,7 +37,6 @@ export function useRouteLock() {
     isRouteLocked,
     lockRoute,
     unlockRoute,
-    checkRouteLocked,
     triggerBlockCallback,
   }
 }

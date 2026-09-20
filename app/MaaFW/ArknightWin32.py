@@ -20,38 +20,69 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
-import sys
-import time
-import ctypes
-import psutil
 import asyncio
-import win32gui
+import ctypes
+import math
+import os
+import time
+
+import psutil
 import pyautogui
 import pygetwindow
-from pynput import keyboard
-
-from maa.tasker import Tasker
+import win32gui
 from maa.context import Context
 from maa.controller import (
-    MaaWin32ScreencapMethodEnum,
     MaaWin32InputMethodEnum,
+    MaaWin32ScreencapMethodEnum,
 )
 from maa.custom_action import CustomAction
-
+from maa.tasker import Tasker
+from pynput import keyboard
 
 from app.core import Config, MaaFWManager
-from app.utils import get_logger, busy_wait
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
+from app.utils import busy_wait, get_logger
 
 logger = get_logger("明日方舟PC工具")
 
+# 定时任务每秒触发一次，连接失败后若不退避就会以秒级频率反复重试并刷屏；
+# 上限取 60 秒，保证用户随时进入游戏后仍能在一分钟内自动接上。
+CONNECT_RETRY_BASE_SECONDS = 2.0
+CONNECT_RETRY_MAX_SECONDS = 60.0
+# 指数要先封顶：失败次数一直累加时 2 ** (failures - 1) 会在第 1025 次转 float 溢出，
+# 异常从 except 块里抛出会直接终止每秒定时任务；封顶到刚越过上限的那一档即可。
+_CONNECT_RETRY_MAX_EXPONENT = math.ceil(
+    math.log2(CONNECT_RETRY_MAX_SECONDS / CONNECT_RETRY_BASE_SECONDS)
+)
+
+
+def connect_retry_delay(failures: int) -> float:
+    """
+    按连续失败次数计算下次重试前的等待秒数
+
+    Args:
+        failures: 已连续失败的次数, 首次失败传 1
+
+    Returns:
+        float: 等待秒数, 指数增长并封顶到 ``CONNECT_RETRY_MAX_SECONDS``
+    """
+
+    exponent = min(max(failures - 1, 0), _CONNECT_RETRY_MAX_EXPONENT)
+    return min(
+        CONNECT_RETRY_BASE_SECONDS * 2**exponent,
+        CONNECT_RETRY_MAX_SECONDS,
+    )
+
 
 class _ArknightWin32Toolkit:
-
     def __init__(self):
 
         self.arknights_hwnd = -1
         self.arknights_window = None
+
+        self.connect_failures = 0
+        self.next_connect_attempt = 0.0
 
         self.tasker = Tasker()
         self.listener = keyboard.Listener()
@@ -77,8 +108,7 @@ class _ArknightWin32Toolkit:
         if enabled:
             # 提高进程优先级，启用1ms定时器精度
             self.p.nice(psutil.HIGH_PRIORITY_CLASS)
-            if sys.platform == "win32":
-                ctypes.windll.winmm.timeBeginPeriod(1)
+            ctypes.windll.winmm.timeBeginPeriod(1)
 
             # 启动键盘监听
             self.arknights_hwnd = -1
@@ -89,8 +119,7 @@ class _ArknightWin32Toolkit:
         else:
             # 恢复进程优先级，恢复定时器精度
             self.p.nice(self.original_nice)
-            if sys.platform == "win32":
-                ctypes.windll.winmm.timeEndPeriod(1)
+            ctypes.windll.winmm.timeEndPeriod(1)
 
             # 停止键盘监听
             self.listener.stop()
@@ -102,8 +131,9 @@ class _ArknightWin32Toolkit:
         new_hwnd = win32gui.FindWindow(None, "明日方舟")
 
         if self.arknights_hwnd != new_hwnd:
-
             self.arknights_hwnd = new_hwnd
+            # 窗口发生变化意味着新的连接机会，清掉上一轮的退避
+            self.reset_connect_backoff()
 
             if new_hwnd == 0:
                 logger.warning("未检测到明日方舟窗口，暂停任务器")
@@ -113,8 +143,18 @@ class _ArknightWin32Toolkit:
             else:
                 await self.connect_arknights()
 
-        if not self.get_connect_status() and self.arknights_hwnd > 0:
+        if (
+            not self.get_connect_status()
+            and self.arknights_hwnd > 0
+            and time.monotonic() >= self.next_connect_attempt
+        ):
             await self.connect_arknights()
+
+    def reset_connect_backoff(self) -> None:
+        """清空连接失败计数与退避窗口"""
+
+        self.connect_failures = 0
+        self.next_connect_attempt = 0.0
 
     def get_connect_status(self) -> bool:
         """获取连接状态"""
@@ -147,13 +187,24 @@ class _ArknightWin32Toolkit:
                 keyboard_method=MaaWin32InputMethodEnum.Seize,
             )
             logger.success("已连接到明日方舟")
+            self.reset_connect_backoff()
         except Exception as e:
-            logger.error(f"连接明日方舟失败: {e}")
-            await Config.send_websocket_message(
-                id="ArknightsPCToolkit",
-                type="Info",
-                data={"error": f"无法连接明日方舟: {str(e)}"},
+            self.connect_failures += 1
+            delay = connect_retry_delay(self.connect_failures)
+            self.next_connect_attempt = time.monotonic() + delay
+            logger.error(
+                f"连接明日方舟失败（第 {self.connect_failures} 次，"
+                f"{delay:.0f} 秒后重试）: {e}"
             )
+            # 仅首次失败提示用户，避免重试期间反复弹出同一条通知
+            if self.connect_failures == 1:
+                await Publisher.send(
+                    id=protocol.ID_ARKNIGHTS_PC_TOOLKIT,
+                    type=protocol.TOOLKIT_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"无法连接明日方舟: {str(e)}"
+                    ),
+                )
 
     def on_key_release(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
         """pynput 回调"""
@@ -231,7 +282,6 @@ ArknightWin32Toolkit = _ArknightWin32Toolkit()
 
 @MaaFWManager.resource.custom_action("PlaySelectDeployed[ArknightsPC]")
 class PlaySelectDeployed(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行战斗时选中已部署干员动作")
@@ -256,7 +306,6 @@ class PlaySelectDeployed(CustomAction):
 
 @MaaFWManager.resource.custom_action("PauseSelectDeployed[ArknightsPC]")
 class PauseSelectDeployed(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行暂停时选中已部署干员动作")
@@ -283,7 +332,6 @@ class PauseSelectDeployed(CustomAction):
 
 @MaaFWManager.resource.custom_action("PlaySkill[ArknightsPC]")
 class PlaySkill(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行战斗时释放技能动作")
@@ -305,7 +353,6 @@ class PlaySkill(CustomAction):
 
 @MaaFWManager.resource.custom_action("PauseSkill[ArknightsPC]")
 class PauseSkill(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行暂停时释放技能动作")
@@ -331,7 +378,6 @@ class PauseSkill(CustomAction):
 
 @MaaFWManager.resource.custom_action("PlayRetreat[ArknightsPC]")
 class PlayRetreat(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行战斗时撤退干员动作")
@@ -354,7 +400,6 @@ class PlayRetreat(CustomAction):
 
 @MaaFWManager.resource.custom_action("PauseRetreat[ArknightsPC]")
 class PauseRetreat(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行暂停时撤退干员动作")
@@ -380,7 +425,6 @@ class PauseRetreat(CustomAction):
 
 @MaaFWManager.resource.custom_action("NextFrame-0.2x[ArknightsPC]")
 class NextFrame_0_2x(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行0.2倍速下一帧动作")
@@ -405,7 +449,6 @@ class NextFrame_0_2x(CustomAction):
 
 @MaaFWManager.resource.custom_action("NextFrame-1x[ArknightsPC]")
 class NextFrame_1x(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行1倍速下一帧动作")
@@ -430,7 +473,6 @@ class NextFrame_1x(CustomAction):
 
 @MaaFWManager.resource.custom_action("NextFrame-2x[ArknightsPC]")
 class NextFrame_2x(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
 
         logger.info("开始执行2倍速下一帧动作")

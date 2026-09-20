@@ -54,7 +54,7 @@
               <span class="download-speed">{{ formatSpeed(speed) }}</span>
             </div>
             <div v-if="estimatedTimeRemaining" class="right-info">
-              <span class="eta-label">预计剩余时间</span>
+              <span class="eta-label">{{ t('comp.estimatedTimeLeft') }}</span>
               <span class="eta-value">{{ estimatedTimeRemaining }}</span>
             </div>
           </div>
@@ -66,20 +66,22 @@
               :disabled="status === 'switchingSource'"
               @click="confirmCancel"
             >
-              取消下载
+              {{ t('comp.cancelDownload') }}
             </a-button>
-            <a-button type="primary" ghost @click="background">后台下载</a-button>
+            <a-button type="primary" ghost @click="background">{{
+              t('comp.downloadBackground')
+            }}</a-button>
           </div>
         </div>
       </div>
 
       <!-- 下载失败区域 -->
       <div v-if="status === 'failed'" class="download-failed-section">
-        <a-result status="error" title="下载失败" :sub-title="failureReason">
+        <a-result status="error" :title="t('comp.downloadFailed')" :sub-title="failureReason">
           <template #extra>
             <div class="failed-actions">
-              <a-button type="primary" @click="retry"> 重试下载 </a-button>
-              <a-button @click="reset">关闭</a-button>
+              <a-button type="primary" @click="retry">{{ t('comp.retryDownload') }}</a-button>
+              <a-button @click="reset">{{ t('comp.close') }}</a-button>
             </div>
           </template>
         </a-result>
@@ -87,11 +89,15 @@
 
       <!-- 下载成功区域 -->
       <div v-if="status === 'completed'" class="download-success-section">
-        <a-result status="success" title="下载完成" sub-title="更新包已下载完成，是否立即安装？">
+        <a-result
+          status="success"
+          :title="t('comp.downloadFinished')"
+          :sub-title="t('comp.updateHasFinishedDownloading')"
+        >
           <template #extra>
             <div class="success-actions">
-              <a-button type="primary" @click="install"> 立即安装 </a-button>
-              <a-button @click="installLater">稍后安装</a-button>
+              <a-button type="primary" @click="install">{{ t('comp.installNow') }}</a-button>
+              <a-button @click="installLater">{{ t('comp.installLater') }}</a-button>
             </div>
           </template>
         </a-result>
@@ -101,8 +107,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { Modal } from 'ant-design-vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+
+const { t } = useI18n()
 
 const {
   status,
@@ -127,10 +136,10 @@ const {
 
 const confirmCancel = () => {
   Modal.confirm({
-    title: '取消更新下载？',
-    content: '取消后将删除当前未完成的下载文件。',
-    okText: '确认取消',
-    cancelText: '继续下载',
+    title: t('comp.cancelUpdateDownload'),
+    content: t('comp.cancellingDeletesUnfinishedDownload'),
+    okText: t('comp.confirmCancellation'),
+    cancelText: t('comp.continueDownload'),
     okType: 'danger',
     centered: true,
     zIndex: 10001,

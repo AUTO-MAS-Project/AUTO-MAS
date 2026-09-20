@@ -45,7 +45,7 @@ description: >-
 | 文件 | 职责 |
 | --- | --- |
 | `app/tools/game_sign.py` | 注册表、锁、编排、结果归一、`format_sign_results` / `merge_sign_results` |
-| `app/tools/skland.py` | 森空岛：凭据校验、角色发现、签到、账号密码登录 |
+| `app/tools/skland.py` | 森空岛：凭据校验、角色发现、签到、账号密码登录；绑定列表与玩家整表数据（`player/info`）的公共拉取（`fetch_skland_bindings` / `fetch_skland_player_info`），供签到与养成练度源共用 |
 | `app/tools/skland_response.py` | 森空岛响应形状判定（如 `is_skland_already_signed`），与请求逻辑分离 |
 | `app/tools/miyoushe.py` | 米游社：DS 签名、多游戏签到 |
 | `app/tools/miyoushe_qr.py` | 米游社扫码登录状态机 |
@@ -103,6 +103,8 @@ description: >-
 | `_game_sign_lock`（`run_all_sign_in` 内部） | 全局签到执行，配合 `_game_sign_lock_owner` ContextVar 支持**同任务嵌套重入** | 同上 |
 
 两把锁都是**快速失败**而非等待：`if lock.locked(): raise`。API 层把 `GameSignInProgressError` 映射为 `code=409`；`timer` 层降级为 `logger.info` 后跳过本次触发。新增触发入口时必须选一种处理，不要静默 `await` 到锁释放。
+
+森空岛另有模块级 `_skland_sign_lock`（公共别名 `skland_sign_lock`，`skland.py`）：签到全流程与**养成练度源**（`app/task/MAA/tools/cultivate/skland.py`）共用，互斥签名 token 的两个独立轮换写者。练度源的凭据回写走注入的 `save_credential` 回调（`core/config.py`），不进 `_ProviderRun.credential_updates`——它不是注册表 runner；改这两条链路时必须保住这把互斥锁，否则会把对方刚回写的 token 作废（`community_sign.py` 收尾回写前重读存量、发现已被轮换即跳过，也是防同一件事）。
 
 通知**必须在流程锁外**发送。慢渠道会阻塞后续操作，这是锁边界画在落盘之后的原因。
 
@@ -185,15 +187,11 @@ reason        失败原因
 
 ## 最小验证
 
-按 `tests/AGENTS.md`，签到测试归 `tests/tools/`（通用工具与外部平台交互）。现有入口：
+按 `tests/AGENTS.md`，开发时在 `tests/tools/` 下编写签到测试用于本地验证（`test_game_sign.py`、`test_game_sign_notification.py`、`test_miyoushe_qr.py`、`test_miyoushe_retry.py`、`test_contracts.py` 等）。
 
-```bash
-python -m pytest tests/tools/test_game_sign.py tests/tools/test_game_sign_notification.py -q
-```
+提交或提 PR 时，测试文件的取舍见根目录 `AGENTS.md`「分支与 PR」。
 
-其余相关入口按改动范围选择：`test_skland_response.py`、`test_skland_proxy.py`、`test_miyoushe_qr.py`、`test_miyoushe_retry.py`、`test_contracts.py`。
-
-改通知文案或分组走 `test_game_sign_notification.py`；改编排、锁或结果归一走 `test_game_sign.py`。前端改动只运行实际受影响的 `*.test.ts`。非必要不新增测试；有缺口就在结果里说明，不编造验证结果。
+前端改动只运行实际受影响的 `*.test.ts`。有缺口就在结果里说明，不编造验证结果。
 
 ## 避免
 

@@ -1,14 +1,11 @@
 <template>
   <div class="direct-control-section">
-    <div class="section-header"><h3>脚本直控</h3></div>
-    <a-alert
-      type="info"
-      show-icon
-      message="请先在 SRA / 三月七助手中完成原生配置，再一键导入；MAS 只负责启动游戏、跟踪/停止脚本进程和最终清理。"
-      class="direct-alert"
-    />
+    <div class="section-header">
+      <h3>{{ t('edit.scriptDirectControl') }}</h3>
+    </div>
+    <a-alert type="info" show-icon :message="t('edit.finishNativeSetupSra')" class="direct-alert" />
 
-    <a-empty v-if="availableEngines.length === 0" description="当前没有可用的 SRA / 三月七助手" />
+    <a-empty v-if="availableEngines.length === 0" :description="t('edit.noSraMarch7thAssistant')" />
     <div v-else class="engine-grid">
       <div v-for="engine in availableEngines" :key="engine" class="engine-card">
         <div class="engine-card-header">
@@ -19,31 +16,57 @@
           <a-switch
             :checked="Boolean(control[engine])"
             :disabled="saving"
-            checked-children="执行"
-            un-checked-children="跳过"
+            :checked-children="t('edit.run')"
+            :un-checked-children="t('edit.skip2')"
             @change="emit('toggle', engine, Boolean($event))"
           />
         </div>
 
-        <div class="import-state" :class="{ 'import-state-ready': importedAt(engine) }">
-          <CheckCircleOutlined v-if="importedAt(engine)" />
-          <InfoCircleOutlined v-else />
+        <!-- 默认「使用脚本当前配置」是正常且推荐的状态；快照只是可选覆盖 -->
+        <div class="config-source" :class="{ 'config-source-snapshot': hasSnapshot(engine) }">
+          <PushpinOutlined v-if="hasSnapshot(engine)" />
+          <CheckCircleOutlined v-else />
           <div>
-            <div>{{ importedAt(engine) ? '已导入用户快照' : '尚未导入用户快照' }}</div>
-            <div v-if="importedAt(engine)" class="import-meta">
-              {{ source(engine) }} · {{ importedAt(engine) }}
+            <div class="config-source-title">
+              {{
+                hasSnapshot(engine)
+                  ? t('edit.directSnapshotTitle')
+                  : t('edit.directLiveConfigTitle')
+              }}
+            </div>
+            <div v-if="hasSnapshot(engine)" class="config-source-meta">
+              {{
+                t('edit.directSnapshotMeta', {
+                  p0: formatTime(importedAt(engine)),
+                  p1: source(engine),
+                })
+              }}
+            </div>
+            <div class="config-source-hint">
+              {{
+                hasSnapshot(engine)
+                  ? t('edit.directSnapshotStaleHint')
+                  : t('edit.directLiveConfigHint', { p0: engineLabel(engine) })
+              }}
             </div>
           </div>
         </div>
 
         <a-space wrap>
           <a-button
-            type="primary"
-            :disabled="saving"
+            :disabled="saving || clearingEngine === engine"
             :loading="importingEngine === engine"
             @click="emit('importConfig', engine)"
           >
-            一键从源配置导入
+            {{ hasSnapshot(engine) ? t('edit.directRepinSnapshot') : t('edit.directPinSnapshot') }}
+          </a-button>
+          <a-button
+            v-if="hasSnapshot(engine)"
+            :disabled="saving || importingEngine === engine"
+            :loading="clearingEngine === engine"
+            @click="emit('clearConfig', engine)"
+          >
+            {{ t('edit.directUseLiveConfig') }}
           </a-button>
         </a-space>
       </div>
@@ -53,14 +76,7 @@
       v-if="selectedEngines.length === 0"
       type="warning"
       show-icon
-      message="请至少启用一个直控脚本。"
-      class="direct-alert bottom-alert"
-    />
-    <a-alert
-      v-else-if="selectedEngines.some(engine => !importedAt(engine))"
-      type="warning"
-      show-icon
-      message="已启用的脚本必须先导入用户快照，任务启动检查才会通过。"
+      :message="t('edit.enableAtLeastOne')"
       class="direct-alert bottom-alert"
     />
 
@@ -68,8 +84,8 @@
       <div class="mask-copy">
         <LockOutlined />
         <div>
-          <strong>MAS 管控配置已停用</strong>
-          <span>任务开关、账号、体力副本和动态选项在脚本直控模式下都不会生效。</span>
+          <strong>{{ t('edit.masManagedConfigurationOff') }}</strong>
+          <span>{{ t('edit.taskSwitchesAccountsSanity') }}</span>
         </div>
       </div>
     </div>
@@ -77,10 +93,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { CheckCircleOutlined, InfoCircleOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { CheckCircleOutlined, LockOutlined, PushpinOutlined } from '@ant-design/icons-vue'
 import type { HSREngine } from '@/composables/useHSRPluginApi'
-import type { HSRUserConfigData } from '@/views/HSRUserEdit/types'
+import type { HSRUserConfigData } from './types'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   availableEngines: HSREngine[]
@@ -88,24 +107,33 @@ const props = defineProps<{
   direct: NonNullable<HSRUserConfigData['Direct']>
   saving: boolean
   importingEngine: HSREngine | null
+  clearingEngine: HSREngine | null
 }>()
 
 const emit = defineEmits<{
   toggle: [engine: HSREngine, enabled: boolean]
   importConfig: [engine: HSREngine]
+  clearConfig: [engine: HSREngine]
 }>()
 
 const selectedEngines = computed(() =>
   props.availableEngines.filter(engine => Boolean(props.control[engine]))
 )
 
-const engineLabel = (engine: HSREngine) => (engine === 'M7A' ? '三月七助手 CLI' : 'SRA CLI')
+const engineLabel = (engine: HSREngine) =>
+  engine === 'M7A' ? t('edit.directEngineM7a') : t('edit.directEngineSra')
 const engineDescription = (engine: HSREngine) =>
-  engine === 'M7A' ? '执行导入的 config.yaml 快照' : '执行导入的 SRA JSON 配置快照'
+  engine === 'M7A' ? t('edit.directEngineDescM7a') : t('edit.directEngineDescSra')
 const importedAt = (engine: HSREngine) =>
   String(props.direct[`${engine}ImportedAt` as keyof HSRUserConfigData['Direct']] || '')
 const source = (engine: HSREngine) =>
   String(props.direct[`${engine}Source` as keyof HSRUserConfigData['Direct']] || '')
+// 用户配置 API 不返回快照内容，前端以导入时间元数据判断是否固定过快照
+const hasSnapshot = (engine: HSREngine) => Boolean(importedAt(engine))
+const formatTime = (value: string) => {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+}
 </script>
 
 <style scoped>
@@ -115,25 +143,17 @@ const source = (engine: HSREngine) =>
 
 .section-header {
   margin-bottom: 12px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  margin: 0;
   font-size: 18px;
-  font-weight: 700;
 }
 
 .section-header h3::before {
-  width: 4px;
   height: 20px;
-  border-radius: 2px;
   background: var(--ant-color-primary);
-  content: '';
 }
 
 .direct-alert {
@@ -154,7 +174,7 @@ const source = (engine: HSREngine) =>
 }
 
 .engine-card-header,
-.import-state,
+.config-source,
 .mask-copy {
   display: flex;
   align-items: center;
@@ -171,31 +191,41 @@ const source = (engine: HSREngine) =>
 }
 
 .engine-description,
-.import-meta,
+.config-source-meta,
+.config-source-hint,
 .mask-copy span {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
 }
 
-.import-state {
+/* 活配置是正常状态，用成功色；固定了快照用主色标记，不是警告 */
+.config-source {
   gap: 10px;
   margin: 16px 0;
   padding: 12px;
   border-radius: 8px;
   background: var(--ant-color-fill-quaternary);
-  color: var(--ant-color-warning);
-}
-
-.import-state-ready {
   color: var(--ant-color-success);
 }
 
-.import-meta {
+.config-source-snapshot {
+  color: var(--ant-color-primary);
+}
+
+.config-source-title {
+  font-weight: 600;
+}
+
+.config-source-meta {
   overflow: hidden;
   max-width: 520px;
   margin-top: 3px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.config-source-hint {
+  margin-top: 3px;
 }
 
 .bottom-alert {

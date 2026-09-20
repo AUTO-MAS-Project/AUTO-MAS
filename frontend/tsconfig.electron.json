@@ -16,5 +16,6 @@
     },
     "verbatimModuleSyntax": false
   },
-  "include": ["electron/**/*.ts"]
+  "include": ["electron/**/*.ts"],
+  "exclude": ["electron/**/*.test.ts"]
 }

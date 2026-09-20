@@ -19,24 +19,22 @@
 from pathlib import Path
 from typing import Callable
 
-import yaml
-
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 from app.utils import get_logger
 from app.utils.io import write_file
 
+from ..task_mapping import HSRTaskModule
+from . import m7a_config as m7a
+from .account_switch import HSRAccountSwitcher
+from .log_detect import detect_weekly_completion
+from .m7a_runtime import M7ARunner
 from .run_model import (
     HSRPhase,
     HSRRetryableTaskError,
     HSRRunItem,
     external_result_failure_summary,
 )
-from ..task_mapping import HSRTaskModule
-from . import m7a_config as m7a
-from .account_switch import HSRAccountSwitcher
-from .log_detect import detect_weekly_completion
-from .m7a_runtime import M7ARunner
 from .stage_runtime import (
     resolve_m7a_eow_stage,
     resolve_m7a_main_stage,
@@ -69,6 +67,15 @@ def _on_m7a_weekly_success(
             reason=reason,
         )
         return
+    record_module_result(
+        user_id=uid,
+        user_name=user_name,
+        module_key=module_key,
+        module_name=module_name,
+        script="M7A",
+        status="completed",
+        reason=reason,
+    )
     queue_weekly_completion(uid, user_name, module_name)
 
 
@@ -105,9 +112,7 @@ class HSRM7AControl:
         """执行一条 M7A 命令并同步调度台日志。"""
 
         await self._account_switcher.wait_before_external_script("M7A", user_name)
-        self._append_log(
-            f"用户「{user_name}」开始执行 M7A {module_name}（{command}）"
-        )
+        self._append_log(f"用户「{user_name}」开始执行 M7A {module_name}（{command}）")
         result = await m7a_runner.run_task(command, timeout=timeout_seconds or 600)
         if getattr(result, "success", False):
             self._append_log(
@@ -129,13 +134,15 @@ class HSRM7AControl:
     ) -> None:
         """把 MAS 模板 patch 直接写入 M7A config.yaml。"""
 
-        effective_patch = m7a.with_disabled_notifications(patch)
+        effective_patch = m7a.with_disabled_finish_action(
+            m7a.with_disabled_notifications(patch)
+        )
         effective_whitelist = (
-            whitelist if whitelist is not None else m7a.M7A_DAILY_PATCH_WHITELIST
-        ) | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
-        current_config = yaml.safe_load(
-            config_path.read_text(encoding="utf-8-sig")
-        ) or {}
+            (whitelist if whitelist is not None else m7a.M7A_DAILY_PATCH_WHITELIST)
+            | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
+            | m7a.M7A_FINISH_ACTION_PATCH_WHITELIST
+        )
+        current_config = m7a.load_m7a_yaml(config_path.read_text(encoding="utf-8-sig"))
         if not isinstance(current_config, dict):
             raise ValueError(f"M7A config.yaml 顶层必须是对象: {config_path}")
         patched_config = m7a.merge_whitelist(
@@ -240,8 +247,6 @@ class HSRM7AControl:
             return last_result
 
         return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
             user_name=user_name,
             user_id=uid,
             phase=phase,
@@ -249,7 +254,6 @@ class HSRM7AControl:
             module_name=module.name,
             script="M7A",
             description=description,
-            timeout_seconds=timeout_seconds,
             run=run_m7a_patched,
             on_success=on_success,
         )
@@ -287,8 +291,6 @@ class HSRM7AControl:
                 )
 
             return HSRRunItem(
-                user_item=user_item,
-                user_cfg=user_cfg,
                 user_name=user_name,
                 user_id=uid,
                 phase=phase,
@@ -299,17 +301,16 @@ class HSRM7AControl:
                     f"M7A routine：主关卡={'已配置' if daily_main_stage else '使用原生动态配置'}，"
                     f"历战余响本周尝试={'是' if daily_eow_enabled else '否'}"
                 ),
-                timeout_seconds=timeout_seconds,
                 run=run_m7a_daily,
                 on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    daily_eow_enabled=daily_eow_enabled:
-                    self._queue_eow_completion(
-                        uid,
-                        user_name,
-                        daily_eow_enabled,
-                        result,
-                        "M7A",
+                    lambda result, uid=uid, user_name=user_name, daily_eow_enabled=daily_eow_enabled: (
+                        self._queue_eow_completion(
+                            uid,
+                            user_name,
+                            daily_eow_enabled,
+                            result,
+                            "M7A",
+                        )
                     )
                 ),
             )
@@ -353,16 +354,16 @@ class HSRM7AControl:
                 commands=list(module.m7a_tasks),
                 description=f"M7A divergent：{module.description}",
                 on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    module_name=module.name, module_key=module.key:
-                    _on_m7a_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
+                    lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
+                        _on_m7a_weekly_success(
+                            result,
+                            uid,
+                            user_name,
+                            module_name,
+                            module_key,
+                            self._queue_weekly_completion,
+                            self._record_module_result,
+                        )
                     )
                 ),
             )
@@ -386,16 +387,16 @@ class HSRM7AControl:
                 commands=list(module.m7a_tasks),
                 description=f"M7A currencywars：{module.description}",
                 on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    module_name=module.name, module_key=module.key:
-                    _on_m7a_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
+                    lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
+                        _on_m7a_weekly_success(
+                            result,
+                            uid,
+                            user_name,
+                            module_name,
+                            module_key,
+                            self._queue_weekly_completion,
+                            self._record_module_result,
+                        )
                     )
                 ),
             )

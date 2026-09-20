@@ -12,12 +12,20 @@ export type QueueConfig_Info = {
      */
     TimeEnabled?: (boolean | null);
     /**
-     * 是否启动时运行
+     * 启动时运行模式
      */
-    StartUpEnabled?: (boolean | null);
+    StartUpMode?: ('Never' | 'Always' | 'DailyFirst' | null);
+    /**
+     * 是否为循环队列, 与定时互斥
+     */
+    CycleEnabled?: (boolean | null);
     /**
      * 完成后操作
      */
     AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'Logoff' | null);
+    /**
+     * 完成后操作的延时时长(分钟)
+     */
+    AfterAccomplishDelay?: (number | null);
 };
 

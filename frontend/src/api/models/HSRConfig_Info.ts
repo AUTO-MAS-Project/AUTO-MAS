@@ -15,5 +15,9 @@ export type HSRConfig_Info = {
      * SRA 路径
      */
     SRAPath?: (string | null);
+    /**
+     * SRA 配置档案 id（%APPDATA%/SRA/configs 下的文件名，不含扩展名）；空串表示自动
+     */
+    SRAProfile?: (string | null);
 };
 

@@ -15,6 +15,10 @@ export type HistoryIndexItem = {
      * 对应JSON文件
      */
     jsonFile: string;
+    /**
+     * 运行结果文本，可能带运行阶段前缀
+     */
+    result?: (string | null);
 };
 export namespace HistoryIndexItem {
     /**

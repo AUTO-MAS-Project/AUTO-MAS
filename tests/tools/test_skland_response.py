@@ -1,6 +1,6 @@
 import unittest
 
-from app.tools.skland_response import is_skland_already_signed
+from app.tools.skland import is_skland_already_signed
 
 
 class SklandResponseTest(unittest.TestCase):

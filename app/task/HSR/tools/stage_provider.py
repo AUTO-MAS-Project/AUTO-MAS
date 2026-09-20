@@ -41,6 +41,7 @@ from app.task.HSR.tools.m7a_config import (
     M7A_INSTANCE_TYPE_RELIC,
     M7A_INSTANCE_TYPE_STAGNANT_SHADOW,
 )
+
 from .native_control import resolve_script_path
 
 HSR_STAGE_ENGINE_M7A = "M7A"
@@ -101,6 +102,7 @@ HSR_STAGE_CATEGORY_LABELS = {
     M7A_EOW_INSTANCE_NAME_KEY: "历战余响",
 }
 
+
 def get_hsr_stage_options(script_config: Any, engine: str) -> dict[str, Any]:
     """返回指定执行脚本的体力副本选项。"""
 
@@ -136,13 +138,14 @@ def _m7a_assets_config_dir(script_config: Any) -> Path:
         path.parent / "assets" / "config",
     ]
     for candidate in candidates:
-        if (
-            (candidate / "instance_names.json").exists()
-            and (candidate / "instance_drops.json").exists()
-        ):
+        if (candidate / "instance_names.json").exists() and (
+            candidate / "instance_drops.json"
+        ).exists():
             return candidate
     checked = "、".join(str(candidate) for candidate in candidates)
-    raise FileNotFoundError(f"未找到三月七 assets/config 副本配置文件，已检查: {checked}")
+    raise FileNotFoundError(
+        f"未找到三月七 assets/config 副本配置文件，已检查: {checked}"
+    )
 
 
 def _sra_trailblaze_power_toml_path(script_config: Any) -> Path:

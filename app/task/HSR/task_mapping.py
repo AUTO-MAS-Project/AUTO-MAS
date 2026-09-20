@@ -115,21 +115,41 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
     return script in module.supported_scripts
 
 
-def get_assigned_script(
+ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七助手", "SRA": "SRA"}
+
+
+@dataclass(frozen=True)
+class HSRScriptAssignment:
+    """模块引擎归属的解析结果。
+
+    ``requested`` 是前三级（用户覆盖 → 脚本 TaskMapping → 模块默认值）解析出的
+    引擎；``script`` 是最终执行引擎。两者不同即发生了第四级回落：指派的引擎没有
+    配置路径，改用 ``supported_scripts`` 里第一个已配置的引擎。
+    """
+
+    script: ScriptType
+    requested: ScriptType
+
+    @property
+    def fallback(self) -> bool:
+        return self.script != self.requested
+
+
+def resolve_script_assignment(
     module: HSRTaskModule,
     script_config,
     *,
     user_config=None,
     effective_engines: tuple[ScriptType, ...] | None = None,
-) -> ScriptType:
-    """获取模块执行脚本；兼容用户级 Managed.TaskMapping 覆盖。"""
+) -> HSRScriptAssignment:
+    """解析模块执行脚本，并保留「是否回落、从哪个到哪个」供调用方呈现。
+
+    纯函数，不写日志。
+    """
 
     assigned = None
     if user_config is not None:
-        try:
-            raw = user_config.get("Managed", "TaskMapping")
-        except (AttributeError, KeyError, TypeError):
-            raw = None
+        raw = user_config.get("Managed", "TaskMapping")
         if isinstance(raw, str):
             try:
                 raw = json.loads(raw)
@@ -141,9 +161,30 @@ def get_assigned_script(
         assigned = script_config.get("TaskMapping", module.key)
     if assigned not in module.supported_scripts:
         assigned = module.default_script
+    requested: ScriptType = "SRA" if assigned == "SRA" else "M7A"
     if effective_engines and assigned not in effective_engines:
         assigned = next(
-            (engine for engine in module.supported_scripts if engine in effective_engines),
+            (
+                engine
+                for engine in module.supported_scripts
+                if engine in effective_engines
+            ),
             assigned,
         )
-    return "SRA" if assigned == "SRA" else "M7A"
+    script: ScriptType = "SRA" if assigned == "SRA" else "M7A"
+    return HSRScriptAssignment(script=script, requested=requested)
+
+
+def describe_script_fallback(
+    module: HSRTaskModule, assignment: HSRScriptAssignment
+) -> str | None:
+    """把一次引擎回落写成用户能看懂的一句话；没有回落时返回 None。"""
+
+    if not assignment.fallback:
+        return None
+    requested = ENGINE_DISPLAY_NAMES.get(assignment.requested, assignment.requested)
+    actual = ENGINE_DISPLAY_NAMES.get(assignment.script, assignment.script)
+    return (
+        f"模块「{module.name}」指派给 {requested}，但 {requested} 未配置路径，"
+        f"已改用 {actual} 执行"
+    )

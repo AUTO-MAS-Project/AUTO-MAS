@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 常见问题 / FAQ
+    url: https://doc.auto-mas.top/docs/FAQ
+    about: 提交 Issue 前请先查阅常见问题
+  - name: 📚 官方文档站 / Documentation
+    url: https://doc.auto-mas.top
+    about: 安装、配置与使用说明
+  - name: 🐧 AUTO-MAS 官方 QQ 群
+    url: https://qm.qq.com/q/hdV065dcbu
+    about: 使用问题与日常交流

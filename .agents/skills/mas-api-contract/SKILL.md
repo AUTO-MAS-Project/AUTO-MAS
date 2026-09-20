@@ -90,7 +90,7 @@ The backend exposes an MCP server derived from the live OpenAPI schema. Know the
 4. Document any breaking contract change before merge.
 5. For OpenAPI-exposed schema fields already consumed by generated frontend clients, avoid rewriting a stable flat `Literal[...]` field into `Union[...]` plus shared type aliases unless you have verified that the generated TypeScript runtime exports remain unchanged.
 6. Treat documented local integration entrypoints as compatibility surfaces too; do not rename or repurpose stable paths such as the MCP endpoint without an explicit migration plan.
-7. After backend API changes, regenerate frontend API clients from `http://127.0.0.1:36163/openapi.json` with `openapi --output ./src/api --client axios` instead of hand-editing generated TypeScript.
+7. After backend API changes, regenerate frontend API clients by running `yarn openapi` in `frontend/` (it targets the development backend port) instead of hand-editing generated TypeScript.
 8. When testing new API calls from the frontend, remember that plain `yarn dev` can use the remote `dev` backend; start the local backend first when verifying local API changes.
 
 ## Layer Boundary Rules

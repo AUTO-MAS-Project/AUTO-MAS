@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
 import { Service } from '@/api'
 import type {
   UserInBase,
@@ -10,6 +11,8 @@ import type {
   UserReorderIn,
 } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 
 const logger = window.electronAPI.getLogger('用户API')
 
@@ -27,6 +30,14 @@ export function useUserApi() {
     scriptId: string,
     options: AddUserOptions = {}
   ): Promise<UserCreateOut | null> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      addUserErrorCode.value = null
+      if (options.showError ?? true) message.warning(errorMsg)
+      return null
+    }
+
     loading.value = true
     error.value = null
     addUserErrorCode.value = null
@@ -63,7 +74,18 @@ export function useUserApi() {
   }
 
   // 更新用户
-  const updateUser = async (scriptId: string, userId: string, userData: any): Promise<boolean> => {
+  const updateUser = async (
+    scriptId: string,
+    userId: string,
+    userData: UserUpdateIn['data']
+  ): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 
@@ -132,6 +154,13 @@ export function useUserApi() {
 
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 
@@ -168,6 +197,13 @@ export function useUserApi() {
 
   // 重新排序用户
   const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     // loading.value = true
     error.value = null
 

@@ -1,33 +1,10 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-            编辑 HSR 脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
+  <ScriptEditHeader script-type="HSR" :title="t('edit.editHsrScript')" @cancel="handleCancel" />
 
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
-
-  <div class="script-edit-content">
-    <a-card title="HSR 脚本配置" :loading="pageLoading" class="config-card">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <a-card :title="t('edit.hsrScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="purple" class="type-tag"> HSR (三月七 / SRA) </a-tag>
+        <a-tag color="purple" class="type-tag">{{ t('edit.hsrMarch7thSra') }}</a-tag>
       </template>
 
       <a-alert
@@ -50,24 +27,23 @@
         <!-- 脚本名称 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="为 HSR 脚本设置一个易于识别的名称">
+                  <a-tooltip :title="t('edit.giveHsrScriptName')">
                     <span class="form-label">
-                      脚本名称
+                      {{ t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.infoName"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.infoName)"
                 />
               </a-form-item>
@@ -79,27 +55,27 @@
           type="info"
           show-icon
           class="user-control-notice"
-          message="运行模式与任务配置已移至用户配置"
-          description="请在用户页选择“MAS 管控”或“脚本直控”。是否由 MAS 启动、关闭、重启和监测游戏由下方开关决定；脚本页继续维护安装路径与公共执行参数。"
+          :message="t('edit.runModeTaskConfiguration')"
+          :description="t('edit.userPageChooseMas')"
         />
 
         <!-- M7A / SRA / 游戏路径 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>脚本与游戏配置</h3>
+            <h3>{{ t('edit.scriptGameConfiguration') }}</h3>
           </div>
           <div class="engine-path-hint">
             <a-typography-text type="secondary">
-              填写对应脚本路径即启用该引擎；清空路径后，该引擎不再校验或参与调度。
+              {{ t('edit.fillingPathEnablesThat') }}
             </a-typography-text>
           </div>
           <a-row :gutter="24">
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="建议在脚本直控且使用云游戏的情况下关闭此开关">
+                  <a-tooltip :title="t('edit.turnThisOffWhen')">
                     <span class="form-label">
-                      MAS 管理游戏
+                      {{ t('edit.masManagesGame') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -107,11 +83,10 @@
                 <a-select
                   :value="hsrConfig.Game.Enabled"
                   size="large"
-                  class="modern-input"
                   @change="handleGameEnabledChange"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -120,9 +95,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="March7th Assistant 安装目录（含 March7th Assistant.exe）">
+                  <a-tooltip :title="t('edit.march7thAssistantInstallDirectory')">
                     <span class="form-label">
-                      三月七路径
+                      {{ t('edit.march7thPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -130,7 +105,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Info.M7APath"
-                    placeholder="请选择三月七所在文件夹（含 March7th Assistant.exe）"
+                    :placeholder="t('edit.pickMarch7thFolderContains')"
                     size="large"
                     class="path-input"
                     readonly
@@ -139,11 +114,11 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                   <a-button
                     v-if="hsrConfig.Info.M7APath"
-                    title="清空三月七路径"
+                    :title="t('edit.clearMarch7thPath')"
                     size="large"
                     class="path-clear-button"
                     @click="clearPath('M7APath')"
@@ -157,9 +132,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="StarRailAssistant 安装目录（含 SRA-cli.exe）">
+                  <a-tooltip :title="t('edit.starrailassistantInstallDirectoryContain')">
                     <span class="form-label">
-                      SRA 路径
+                      {{ t('edit.sraPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -167,7 +142,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Info.SRAPath"
-                    placeholder="请选择 SRA 所在文件夹（含 SRA-cli.exe）"
+                    :placeholder="t('edit.pickSraFolderContains')"
                     size="large"
                     class="path-input"
                     readonly
@@ -176,11 +151,11 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                   <a-button
                     v-if="hsrConfig.Info.SRAPath"
-                    title="清空 SRA 路径"
+                    :title="t('edit.clearSraPath')"
                     size="large"
                     class="path-clear-button"
                     @click="clearPath('SRAPath')"
@@ -192,13 +167,51 @@
             </a-col>
           </a-row>
 
+          <a-row :gutter="24">
+            <a-col :span="12" :offset="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.sraProfileTooltip')">
+                    <span class="form-label">
+                      {{ t('edit.sraProfile') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  :value="hsrConfig.Info.SRAProfile || ''"
+                  :options="sraProfileOptions"
+                  :disabled="Boolean(sraProfileDisabledReason)"
+                  :loading="sraProfilesLoading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleSraProfileChange"
+                />
+                <a-typography-text
+                  v-if="sraProfileDisabledReason"
+                  type="secondary"
+                  class="field-hint"
+                >
+                  {{ sraProfileDisabledReason }}
+                </a-typography-text>
+                <a-typography-text
+                  v-else-if="sraProfiles?.fallback && sraProfiles.fallback_reason"
+                  type="warning"
+                  class="field-hint"
+                >
+                  {{ sraProfiles.fallback_reason }}
+                </a-typography-text>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :xs="24" :lg="16">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="星穹铁道游戏根目录（含 StarRail.exe）">
+                  <a-tooltip :title="t('edit.starRailGameRoot')">
                     <span class="form-label">
-                      游戏路径
+                      {{ t('edit.gamePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -206,7 +219,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Game.Path"
-                    placeholder="请选择星穹铁道安装目录（含 StarRail.exe）"
+                    :placeholder="t('edit.pickStarRailInstall')"
                     size="large"
                     class="path-input"
                     readonly
@@ -215,7 +228,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -223,9 +236,9 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="MAS 启动游戏后等待进入可操作状态的最长时间">
+                  <a-tooltip :title="t('edit.howLongMasWaits')">
                     <span class="form-label">
-                      游戏最大启动等待时间
+                      {{ t('edit.maximumGameLaunchWait') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -234,7 +247,7 @@
                   v-model:value="hsrConfig.Game.WaitTime"
                   :min="0"
                   :max="9999"
-                  addon-after="秒"
+                  :addon-after="t('edit.seconds')"
                   size="large"
                   style="width: 100%"
                   @change="handleGameConfigChange('WaitTime', $event)"
@@ -247,30 +260,9 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="启动星穹铁道时附加的命令行参数">
+                  <a-tooltip :title="t('edit.writtenCurrentUserS')">
                     <span class="form-label">
-                      游戏启动参数
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="hsrConfig.Game.Arguments"
-                  placeholder="请输入启动参数"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Game', 'Arguments', hsrConfig.Game.Arguments)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="6">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    title="仅在 MAS 启动本地游戏前临时写入当前用户注册表并切为窗口模式；任务完成、失败或手动停止并关闭游戏后恢复原值"
-                  >
-                    <span class="form-label">
-                      运行时设为 1920×1080 窗口模式
+                      {{ t('edit.run1920x1080WindowedMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -280,18 +272,18 @@
                     :checked="hsrConfig.Game.ForceResolution1920x1080"
                     @change="handleGameResolutionChange"
                   />
-                  <a-typography-text type="secondary">结束后恢复原注册表值</a-typography-text>
+                  <a-typography-text type="secondary">{{
+                    t('edit.restoreOriginalRegistryValue')
+                  }}</a-typography-text>
                 </div>
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :lg="6">
+            <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="每个用户在每个引擎上首次执行一次；以后仅当原生配置中的兑换码变化时再次兑换，其他奖励不受影响"
-                  >
+                  <a-tooltip :title="t('edit.runsOncePerUser')">
                     <span class="form-label">
-                      兑换码仅在变化时执行
+                      {{ t('edit.redeemCodesRunOnly') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -301,7 +293,9 @@
                     :checked="hsrConfig.Game.RedeemCodesOnlyWhenChanged"
                     @change="handleRedeemCodePolicyChange"
                   />
-                  <a-typography-text type="secondary">新用户先执行一次</a-typography-text>
+                  <a-typography-text type="secondary">{{
+                    t('edit.runOnceNewUser')
+                  }}</a-typography-text>
                 </div>
               </a-form-item>
             </a-col>
@@ -311,11 +305,11 @@
         <!-- 执行限制 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>执行限制</h3>
+            <h3>{{ t('edit.runLimits') }}</h3>
           </div>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="失败任务最大尝试次数">
+              <a-form-item :label="t('edit.maximumAttemptsFailedTask')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.RunTimesLimit"
                   :min="1"
@@ -327,7 +321,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="日常任务超时限制（分钟）">
+              <a-form-item :label="t('edit.dailyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.DailyTimeLimit"
                   :min="1"
@@ -341,7 +335,7 @@
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="周常任务超时限制（分钟）">
+              <a-form-item :label="t('edit.weeklyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.WeeklyTimeLimit"
                   :min="1"
@@ -355,42 +349,302 @@
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="启用低性能兼容模式">
+              <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
                 <a-switch
                   v-model:checked="hsrConfig.Run.LowPerformanceMode"
                   :disabled="!hsrConfig.Info.M7APath"
                   @change="handleRunConfigChange('LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
-                  仅对三月七差分宇宙生效，映射到 weekly_divergent_stable_mode
+                  {{ t('edit.appliesMarch7thDivergentUniverse') }}
                 </div>
               </a-form-item>
             </a-col>
           </a-row>
         </div>
+
+        <!-- 外部脚本更新 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.hsrExternalUpdate') }}</h3>
+          </div>
+          <div class="section-hint">{{ t('edit.hsrUpdateSectionHint') }}</div>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.hsrUpdateModeTip')">
+                    <span class="form-label">
+                      {{ t('edit.autoUpdateMode') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="hsrConfig.Update.AutoUpdateMode"
+                  :options="autoUpdateModeOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleUpdateConfigChange('AutoUpdateMode', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.hsrUpdateChannelTip')">
+                    <span class="form-label">
+                      {{ t('edit.hsrUpdateChannel') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="hsrConfig.Update.Channel"
+                  :options="updateChannelOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleUpdateConfigChange('Channel', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.hsrUpdateM7ASourceTip')">
+                    <span class="form-label">
+                      {{ t('edit.hsrUpdateM7ASource') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="hsrConfig.Update.M7ASource"
+                  :options="m7aSourceOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleUpdateConfigChange('M7ASource', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :lg="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.hsrUpdateSRASourceTip')">
+                    <span class="form-label">
+                      {{ t('edit.hsrUpdateSRASource') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="hsrConfig.Update.SRASource"
+                  :options="sraSourceOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleUpdateConfigChange('SRASource', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :xs="24" :lg="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.hsrUpdateCdkTip')">
+                    <span class="form-label">
+                      {{ t('edit.hsrUpdateCdk') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-password
+                  v-model:value="hsrConfig.Update.MirrorChyanCDK"
+                  :placeholder="t('edit.hsrUpdateCdkPlaceholder')"
+                  size="large"
+                  autocomplete="off"
+                  @blur="
+                    handleUpdateConfigChange('MirrorChyanCDK', hsrConfig.Update.MirrorChyanCDK)
+                  "
+                />
+                <div
+                  class="form-item-hint"
+                  :class="{ 'form-item-hint--warning': isCdkMissingForMirror }"
+                >
+                  {{
+                    isCdkMissingForMirror
+                      ? t('edit.hsrUpdateCdkMissing')
+                      : t('edit.hsrUpdateCdkHint')
+                  }}
+                  <a
+                    :href="MIRRORCHYAN_CDK_URL"
+                    class="form-hint-link"
+                    @click="handleExternalLink"
+                    >{{ t('edit.hsrUpdateCdkGetLink') }}</a
+                  >
+                </div>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-form-item>
+            <template #label>
+              <a-tooltip :title="t('edit.hsrUpdateManualTip')">
+                <span class="form-label">
+                  {{ t('edit.hsrUpdateManual') }}
+                  <QuestionCircleOutlined class="help-icon" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-typography-text v-if="!updateEngines.length" type="secondary">
+              {{ t('edit.hsrUpdateNeedPath') }}
+            </a-typography-text>
+            <a-row v-else :gutter="24">
+              <a-col v-for="engine in updateEngines" :key="engine" :xs="24" :lg="12">
+                <div class="update-engine-card">
+                  <div class="update-engine-header">
+                    <span class="update-engine-name">{{ engineLabel(engine) }}</span>
+                    <a-typography-text type="secondary" class="update-engine-version">
+                      {{
+                        t('edit.hsrUpdateInstalledVersion', {
+                          version: installedVersion(engine) || t('edit.hsrUpdateVersionUnknown'),
+                        })
+                      }}
+                    </a-typography-text>
+                  </div>
+                  <a-space wrap>
+                    <a-button
+                      :loading="updateStates[engine].checking"
+                      :disabled="updateStates[engine].applying"
+                      @click="runManualUpdate(engine, 'check')"
+                    >
+                      {{ t('edit.hsrUpdateCheckNow') }}
+                    </a-button>
+                    <a-button
+                      type="primary"
+                      :loading="updateStates[engine].applying"
+                      :disabled="updateStates[engine].checking"
+                      @click="runManualUpdate(engine, 'apply')"
+                    >
+                      {{ t('edit.hsrUpdateApplyNow') }}
+                    </a-button>
+                  </a-space>
+                  <a-alert
+                    v-if="updateStates[engine].error"
+                    type="error"
+                    show-icon
+                    class="update-alert"
+                    :message="t('edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })"
+                    :description="updateStates[engine].error"
+                  />
+                  <a-alert
+                    v-else-if="updateSummaries[engine]"
+                    :type="updateSummaries[engine]!.type"
+                    show-icon
+                    class="update-alert"
+                    :message="updateSummaries[engine]!.title"
+                    :description="updateSummaries[engine]!.description || undefined"
+                  />
+                </div>
+              </a-col>
+            </a-row>
+          </a-form-item>
+        </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import type { HSRConfig_Update } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
   type HSRCapabilitySnapshot,
   type HSREngine,
+  type HSRSRAProfilesSnapshot,
+  type HSRUpdateAction,
+  type HSRUpdateResult,
 } from '@/composables/useHSRPluginApi'
 import type { HSRConfig_Info, HSRConfig_Game, HSRConfig_Run } from '@/api'
-import type { HSRScriptConfig } from '@/types/script'
+import type { HSRScriptConfig, ScriptDetail } from '@/types/script'
+import { handleExternalLink } from '@/utils/openExternal'
+
+const { t } = useI18n()
+
+const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
+
+// 外部脚本更新配置（Update 组）。选项集合与 app/models/config.py 的 HSRConfig
+// 及 schema 的 Literal 一致：自动更新只有关闭 / 任务完成后两档，没有「运行前」；
+// 下载源按引擎拆开，M7A 没有 AUTO-MAS 自建站。
+type HSRAutoUpdateMode = 'Off' | 'AfterRun'
+type HSRUpdateChannel = 'stable' | 'beta'
+type HSRM7ASource = 'GitHub' | 'MirrorChyan'
+type HSRSRASource = 'AutoSite' | 'GitHub' | 'MirrorChyan'
+type HSRUpdateConfig = {
+  AutoUpdateMode: HSRAutoUpdateMode
+  Channel: HSRUpdateChannel
+  M7ASource: HSRM7ASource
+  SRASource: HSRSRASource
+  MirrorChyanCDK: string
+}
+
+// 上面几个字面量是手写的（生成类型字段全为 optional | null，做不了非空
+// reactive），因此必须钉住它们与 OpenAPI 生成类型一致：后端改了枚举而这里没跟，
+// 下面的赋值会直接 typecheck 失败，而不是等用户选中一个后端不认的值才 422。
+type _AssertUpdateEnums = {
+  mode: HSRAutoUpdateMode extends NonNullable<HSRConfig_Update['AutoUpdateMode']>
+    ? NonNullable<HSRConfig_Update['AutoUpdateMode']> extends HSRAutoUpdateMode
+      ? true
+      : never
+    : never
+  channel: HSRUpdateChannel extends NonNullable<HSRConfig_Update['Channel']>
+    ? NonNullable<HSRConfig_Update['Channel']> extends HSRUpdateChannel
+      ? true
+      : never
+    : never
+  m7a: HSRM7ASource extends NonNullable<HSRConfig_Update['M7ASource']>
+    ? NonNullable<HSRConfig_Update['M7ASource']> extends HSRM7ASource
+      ? true
+      : never
+    : never
+  sra: HSRSRASource extends NonNullable<HSRConfig_Update['SRASource']>
+    ? NonNullable<HSRConfig_Update['SRASource']> extends HSRSRASource
+      ? true
+      : never
+    : never
+}
+const _assertUpdateEnums: _AssertUpdateEnums = {
+  mode: true,
+  channel: true,
+  m7a: true,
+  sra: true,
+}
+void _assertUpdateEnums
+
+const HSR_AUTO_UPDATE_MODES: readonly HSRAutoUpdateMode[] = ['Off', 'AfterRun']
+const HSR_UPDATE_CHANNELS: readonly HSRUpdateChannel[] = ['stable', 'beta']
+const HSR_M7A_SOURCES: readonly HSRM7ASource[] = ['GitHub', 'MirrorChyan']
+const HSR_SRA_SOURCES: readonly HSRSRASource[] = ['AutoSite', 'GitHub', 'MirrorChyan']
+
+const getDefaultUpdateConfig = (): HSRUpdateConfig => ({
+  AutoUpdateMode: 'Off',
+  Channel: 'stable',
+  M7ASource: 'GitHub',
+  SRASource: 'AutoSite',
+  MirrorChyanCDK: '',
+})
 
 // HSR 内部非空 reactive 形态（OpenAPI 生成类型字段全部为 optional | null，
 // 前端实际为非空；通过该形态消除 strict null 警告）。
@@ -402,6 +656,7 @@ type HSRConfigData = {
     RedeemCodesOnlyWhenChanged?: boolean | null
   }
   Run: HSRConfig_Run
+  Update: HSRUpdateConfig
 }
 
 const logger = window.electronAPI.getLogger('HSR 脚本编辑')
@@ -414,22 +669,27 @@ const hsrPluginApi = useHSRPluginApi()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
 )
+
+// SRA 配置档案：%APPDATA%/SRA/configs 下的多份 json，脚本选一份供托管表单、直控与导入快照共用。
+const sraProfiles = ref<HSRSRAProfilesSnapshot | null>(null)
+const sraProfilesLoading = ref(false)
+const sraProfilesError = ref('')
 
 const formData = reactive({
   infoName: '',
 })
 
 const hsrConfig = reactive<HSRConfigData>({
-  Info: { Name: '', M7APath: '', SRAPath: '' },
+  Info: { Name: '', M7APath: '', SRAPath: '', SRAProfile: '' },
   Game: {
     Enabled: true,
     Path: '',
-    Arguments: '',
     WaitTime: 60,
     ForceResolution1920x1080: false,
     RedeemCodesOnlyWhenChanged: true,
@@ -440,6 +700,7 @@ const hsrConfig = reactive<HSRConfigData>({
     WeeklyTimeLimit: 60,
     LowPerformanceMode: false,
   },
+  Update: getDefaultUpdateConfig(),
 })
 
 // 需要后端语义化校正（DPAPI 加解密、路径规范化等）的字段保存后再 GET 拉回；
@@ -448,100 +709,289 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
   'Info.Name',
   'Info.M7APath',
   'Info.SRAPath',
+  'Info.SRAProfile',
   'Game.Path',
 ])
 
 const handleChange = async (category: string, key: string, value: any): Promise<boolean> => {
-  if (isInitializing.value || isSaving.value) return false
-  isSaving.value = true
-  try {
-    const updateData: any = { [category]: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return false
-    logger.info(`配置已保存: ${category}.${key}`)
-    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-      await refreshScript()
-      await loadCapabilities()
+  if (isInitializing.value) return false
+  return enqueue(async () => {
+    try {
+      const updateData: any = { [category]: { [key]: value } }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) return false
+      logger.info(`配置已保存: ${category}.${key}`)
+      if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+        await refreshScript()
+        await Promise.all([loadCapabilities(), loadSraProfiles()])
+      }
+      return true
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      return false
     }
-    return true
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-    return false
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const refreshScript = async () => {
   try {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) return
-    formData.infoName = scriptDetail.name
-    const cfg = scriptDetail.config as HSRScriptConfig
-    if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
-    if (cfg.Game) {
-      Object.assign(hsrConfig.Game, cfg.Game)
-      if (hsrConfig.Game.Arguments === undefined || hsrConfig.Game.Arguments === null) {
-        hsrConfig.Game.Arguments = ''
-      }
-      if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
-        hsrConfig.Game.Enabled = true
-      }
-      if (hsrConfig.Game.WaitTime === undefined || hsrConfig.Game.WaitTime === null) {
-        hsrConfig.Game.WaitTime = 60
-      }
-      if (
-        hsrConfig.Game.ForceResolution1920x1080 === undefined ||
-        hsrConfig.Game.ForceResolution1920x1080 === null
-      ) {
-        hsrConfig.Game.ForceResolution1920x1080 = false
-      }
-      if (
-        hsrConfig.Game.RedeemCodesOnlyWhenChanged === undefined ||
-        hsrConfig.Game.RedeemCodesOnlyWhenChanged === null
-      ) {
-        hsrConfig.Game.RedeemCodesOnlyWhenChanged = true
-      }
-    }
-    if (cfg.Run) {
-      Object.assign(hsrConfig.Run, cfg.Run)
-      if (hsrConfig.Run.RunTimesLimit === undefined) hsrConfig.Run.RunTimesLimit = 3
-      if (hsrConfig.Run.DailyTimeLimit === undefined) hsrConfig.Run.DailyTimeLimit = 20
-      if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
-      if (hsrConfig.Run.LowPerformanceMode === undefined) hsrConfig.Run.LowPerformanceMode = false
-    }
+    applyScriptDetail(scriptDetail)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`刷新配置失败: ${errorMsg}`)
   }
 }
 
+const applyScriptDetail = (scriptDetail: ScriptDetail) => {
+  formData.infoName = scriptDetail.name
+  const cfg = scriptDetail.config as HSRScriptConfig
+  if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
+  if (cfg.Game) {
+    Object.assign(hsrConfig.Game, cfg.Game)
+    if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
+      hsrConfig.Game.Enabled = true
+    }
+    if (hsrConfig.Game.WaitTime === undefined || hsrConfig.Game.WaitTime === null) {
+      hsrConfig.Game.WaitTime = 60
+    }
+    if (
+      hsrConfig.Game.ForceResolution1920x1080 === undefined ||
+      hsrConfig.Game.ForceResolution1920x1080 === null
+    ) {
+      hsrConfig.Game.ForceResolution1920x1080 = false
+    }
+    if (
+      hsrConfig.Game.RedeemCodesOnlyWhenChanged === undefined ||
+      hsrConfig.Game.RedeemCodesOnlyWhenChanged === null
+    ) {
+      hsrConfig.Game.RedeemCodesOnlyWhenChanged = true
+    }
+  }
+  if (cfg.Run) {
+    Object.assign(hsrConfig.Run, cfg.Run)
+    if (hsrConfig.Run.RunTimesLimit === undefined) hsrConfig.Run.RunTimesLimit = 3
+    if (hsrConfig.Run.DailyTimeLimit === undefined) hsrConfig.Run.DailyTimeLimit = 20
+    if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
+    if (hsrConfig.Run.LowPerformanceMode === undefined) hsrConfig.Run.LowPerformanceMode = false
+  }
+  // 生成类型里 Update 的每个字段都是 optional | null，这里归一成非空的本地形态；
+  // 不在选项集合里的值（旧配置或损坏）回退到默认，避免下拉框显示空白。
+  const update = (cfg as { Update?: Partial<Record<keyof HSRUpdateConfig, unknown>> | null }).Update
+  if (update) {
+    const pick = <T extends string>(value: unknown, options: readonly T[], fallback: T): T =>
+      options.includes(value as T) ? (value as T) : fallback
+    const defaults = getDefaultUpdateConfig()
+    hsrConfig.Update.AutoUpdateMode = pick(
+      update.AutoUpdateMode,
+      HSR_AUTO_UPDATE_MODES,
+      defaults.AutoUpdateMode
+    )
+    hsrConfig.Update.Channel = pick(update.Channel, HSR_UPDATE_CHANNELS, defaults.Channel)
+    hsrConfig.Update.M7ASource = pick(update.M7ASource, HSR_M7A_SOURCES, defaults.M7ASource)
+    hsrConfig.Update.SRASource = pick(update.SRASource, HSR_SRA_SOURCES, defaults.SRASource)
+    hsrConfig.Update.MirrorChyanCDK =
+      typeof update.MirrorChyanCDK === 'string' ? update.MirrorChyanCDK : ''
+  }
+}
+
 const handleRunConfigChange = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData: any = { Run: { [key]: value } }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) return
+      logger.info(`配置已保存: Run.${key}`)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+    }
+  }, `Run.${key}`)
+}
+
+const handleUpdateConfigChange = async (key: keyof HSRUpdateConfig, value: unknown) => {
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData: any = { Update: { [key]: value } }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) return
+      logger.info(`配置已保存: Update.${key}`)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+    }
+  }, `Update.${key}`)
+}
+
+const autoUpdateModeOptions = computed(() => [
+  { label: t('edit.hsrUpdateModeOff'), value: 'Off' },
+  { label: t('edit.hsrUpdateModeAfterRun'), value: 'AfterRun' },
+])
+
+const updateChannelOptions = computed(() => [
+  { label: t('edit.hsrUpdateChannelStable'), value: 'stable' },
+  { label: t('edit.hsrUpdateChannelBeta'), value: 'beta' },
+])
+
+const m7aSourceOptions = computed(() => [
+  { label: t('edit.hsrUpdateSourceGithub'), value: 'GitHub' },
+  { label: t('edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
+])
+
+const sraSourceOptions = computed(() => [
+  { label: t('edit.hsrUpdateSourceAutoSite'), value: 'AutoSite' },
+  { label: t('edit.hsrUpdateSourceGithub'), value: 'GitHub' },
+  { label: t('edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
+])
+
+// 选了 Mirror 酱却没填 CDK：后端会报错跳过，不会替用户改走 GitHub，输入框下方直接提醒。
+const isCdkMissingForMirror = computed(
+  () =>
+    (hsrConfig.Update.M7ASource === 'MirrorChyan' ||
+      hsrConfig.Update.SRASource === 'MirrorChyan') &&
+    !hsrConfig.Update.MirrorChyanCDK.trim()
+)
+
+// 手动检查 / 更新：自动更新只在任务完成后触发，首次启用要跑满一轮，
+// 所以这组按钮是必需入口，不是锦上添花。只对已填路径的引擎显示。
+type HSRUpdateEngineState = {
+  checking: boolean
+  applying: boolean
+  result: HSRUpdateResult | null
+  error: string
+}
+
+const createUpdateEngineState = (): HSRUpdateEngineState => ({
+  checking: false,
+  applying: false,
+  result: null,
+  error: '',
+})
+
+const updateStates = reactive<Record<HSREngine, HSRUpdateEngineState>>({
+  M7A: createUpdateEngineState(),
+  SRA: createUpdateEngineState(),
+})
+
+const updateEngines = computed<HSREngine[]>(() => {
+  const engines: HSREngine[] = []
+  if (hsrConfig.Info.M7APath) engines.push('M7A')
+  if (hsrConfig.Info.SRAPath) engines.push('SRA')
+  return engines
+})
+
+const engineLabel = (engine: HSREngine) =>
+  engine === 'M7A' ? t('edit.hsrUpdateEngineM7A') : t('edit.hsrUpdateEngineSRA')
+
+// 能力快照里的 adapters 可能是数组或字典，两种形态都取一遍。
+const installedVersion = (engine: HSREngine): string => {
+  const adapters = capabilitySnapshot.value?.adapters
+  const list = Array.isArray(adapters) ? adapters : Object.values(adapters ?? {})
+  const adapter = list.find(item => item?.engine === engine)
+  return adapter?.version?.trim() || ''
+}
+
+type HSRUpdateSummary = {
+  type: 'success' | 'info' | 'warning' | 'error'
+  title: string
+  description: string
+}
+
+const describeUpdateResult = (
+  engine: HSREngine,
+  result: HSRUpdateResult | null
+): HSRUpdateSummary | null => {
+  if (!result) return null
+  const name = engineLabel(engine)
+  const unknown = t('edit.hsrUpdateVersionUnknown')
+  const current = result.current_version?.trim() || unknown
+  const latest = result.latest_version?.trim() || unknown
+  if (result.updated) {
+    return {
+      type: 'success',
+      title: t('edit.hsrUpdateDone', { engine: name, version: latest }),
+      description: result.message,
+    }
+  }
+  if (!result.checked) {
+    return {
+      type: 'error',
+      title: t('edit.hsrUpdateCheckFailed', { engine: name }),
+      description: result.message,
+    }
+  }
+  if (!result.update_available) {
+    return {
+      type: 'success',
+      title: t('edit.hsrUpdateUpToDate', { engine: name, version: current }),
+      description: result.message,
+    }
+  }
+  if (!result.installable) {
+    // 有新版但装不了：多半是 CDK 问题，和「可更新」明确区分开。
+    return {
+      type: 'warning',
+      title: t('edit.hsrUpdateNotInstallable', { engine: name, version: latest }),
+      description: result.message || t('edit.hsrUpdateNotInstallableHint'),
+    }
+  }
+  return {
+    type: 'info',
+    title: t('edit.hsrUpdateAvailable', { engine: name, latest, current }),
+    description: result.message,
+  }
+}
+
+const updateSummaries = computed<Record<HSREngine, HSRUpdateSummary | null>>(() => ({
+  M7A: describeUpdateResult('M7A', updateStates.M7A.result),
+  SRA: describeUpdateResult('SRA', updateStates.SRA.result),
+}))
+
+const runManualUpdate = async (engine: HSREngine, action: HSRUpdateAction) => {
+  const state = updateStates[engine]
+  if (state.checking || state.applying) return
+  if (action === 'check') state.checking = true
+  else state.applying = true
+  state.error = ''
   try {
-    const updateData: any = { Run: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return
-    logger.info(`配置已保存: Run.${key}`)
+    const result = await hsrPluginApi.runEngineUpdate(scriptId, engine, action)
+    state.result = result
+    const summary = describeUpdateResult(engine, result)
+    if (summary) {
+      if (summary.type === 'success') message.success(summary.title)
+      else if (summary.type === 'warning') message.warning(summary.title)
+      else if (summary.type === 'error') message.error(summary.title)
+      else message.info(summary.title)
+    }
+    // 装完后能力快照里的已安装版本会变，拉一次让「已安装」跟上。
+    if (result.updated) await loadCapabilities()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
+    logger.error(`${engine} ${action} 更新请求失败: ${errorMsg}`)
+    state.result = null
+    state.error = errorMsg
+    message.error(
+      `${t('edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })}: ${errorMsg}`
+    )
   } finally {
-    isSaving.value = false
+    state.checking = false
+    state.applying = false
   }
 }
 
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const normalizedValue = value ?? 60
   hsrConfig.Game[key] = normalizedValue
   await handleChange('Game', key, normalizedValue)
 }
 
 const handleGameEnabledChange = async (value: boolean | string | number) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const previousValue = hsrConfig.Game.Enabled ?? true
   const enabled = Boolean(value)
   hsrConfig.Game.Enabled = enabled
@@ -553,7 +1003,7 @@ const handleGameEnabledChange = async (value: boolean | string | number) => {
 }
 
 const handleGameResolutionChange = async (value: boolean | string | number) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const enabled = Boolean(value)
   hsrConfig.Game.ForceResolution1920x1080 = enabled
   const saved = await handleChange('Game', 'ForceResolution1920x1080', enabled)
@@ -561,7 +1011,7 @@ const handleGameResolutionChange = async (value: boolean | string | number) => {
 }
 
 const handleRedeemCodePolicyChange = async (value: boolean | string | number) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const enabled = Boolean(value)
   hsrConfig.Game.RedeemCodesOnlyWhenChanged = enabled
   const saved = await handleChange('Game', 'RedeemCodesOnlyWhenChanged', enabled)
@@ -581,7 +1031,7 @@ const joinPath = (folder: string, fileName: string) =>
 const selectPath = async (key: string) => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
     const path = await window.electronAPI.selectFolder()
@@ -594,7 +1044,7 @@ const selectPath = async (key: string) => {
       const exists = await window.electronAPI.fileExists(exePath)
       if (!exists) {
         Modal.warning({
-          title: '路径无效',
+          title: t('edit.invalidPath'),
           content: `所选目录下未找到 ${expectedExe}，请重新选择正确的安装目录。`,
         })
         return
@@ -610,11 +1060,11 @@ const selectPath = async (key: string) => {
       logger.warn(`未知的路径 key: ${key}`)
       return
     }
-    message.success('路径已选择')
+    message.success(t('edit.pathSelected'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择路径失败: ${errorMsg}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 
@@ -628,6 +1078,57 @@ const clearPath = async (key: string) => {
     await handleChange('Info', key, '')
     hsrConfig.Info![key] = ''
   }
+}
+
+const loadSraProfiles = async () => {
+  if (!hsrConfig.Info.SRAPath) {
+    sraProfiles.value = null
+    sraProfilesError.value = ''
+    return
+  }
+  sraProfilesLoading.value = true
+  try {
+    sraProfiles.value = await hsrPluginApi.getSraProfiles(scriptId)
+    sraProfilesError.value = ''
+  } catch (error) {
+    sraProfiles.value = null
+    sraProfilesError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    sraProfilesLoading.value = false
+  }
+}
+
+// 「自动」始终可选，其余选项来自档案目录；已配置但文件已不存在的档案也列出来，
+// 否则下拉会显示成一个空值，用户看不出自己配过什么。
+const sraProfileOptions = computed(() => {
+  const snapshot = sraProfiles.value
+  const options = [
+    { value: '', label: t('edit.sraProfileAuto', { name: snapshot?.auto_id || 'Default' }) },
+    ...(snapshot?.profiles ?? []).map(profile => ({ value: profile.id, label: profile.id })),
+  ]
+  const configured = hsrConfig.Info.SRAProfile || ''
+  if (configured && !options.some(option => option.value === configured)) {
+    options.push({ value: configured, label: configured })
+  }
+  return options
+})
+
+const sraProfileDisabledReason = computed(() => {
+  if (!hsrConfig.Info.SRAPath) return t('edit.sraProfileNeedPath')
+  if (sraProfilesError.value) {
+    return t('edit.sraProfileLoadFailed', { reason: sraProfilesError.value })
+  }
+  const snapshot = sraProfiles.value
+  if (snapshot && !snapshot.available) return snapshot.unavailable_reason || ''
+  return ''
+})
+
+const handleSraProfileChange = async (value: unknown) => {
+  const next = typeof value === 'string' ? value : ''
+  const previous = hsrConfig.Info.SRAProfile || ''
+  hsrConfig.Info.SRAProfile = next
+  const saved = await handleChange('Info', 'SRAProfile', next)
+  if (!saved) hsrConfig.Info.SRAProfile = previous
 }
 
 const loadCapabilities = async () => {
@@ -661,16 +1162,17 @@ onMounted(async () => {
   try {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
-    await refreshScript()
-    await loadCapabilities()
+    // 直接用这次拿到的结果填表, 不再重复 GET 一次; 能力快照与 SRA 档案互不依赖, 并行拉
+    applyScriptDetail(scriptDetail)
+    await Promise.all([loadCapabilities(), loadSraProfiles()])
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -680,44 +1182,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
 .script-edit-content {
   flex: 1;
 }
@@ -753,32 +1217,12 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .section-hint {
@@ -787,11 +1231,60 @@ onMounted(async () => {
   margin: 4px 0 12px 0;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
 .game-toggle-option {
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 40px;
+}
+
+.form-item-hint--warning {
+  color: var(--ant-color-warning);
+}
+
+.form-hint-link {
+  margin-left: 4px;
+  color: var(--ant-color-primary);
+  text-decoration: underline;
+}
+
+.form-hint-link:hover {
+  color: var(--ant-color-primary-hover);
+}
+
+.update-engine-card {
+  padding: 12px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  margin-bottom: 12px;
+}
+
+.update-engine-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.update-engine-name {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.update-engine-version {
+  font-size: 12px;
+}
+
+.update-alert {
+  margin-top: 12px;
 }
 
 .form-label {
@@ -812,23 +1305,6 @@ onMounted(async () => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
 }
 
 .path-input-group {
@@ -892,9 +1368,5 @@ onMounted(async () => {
 .path-clear-button:hover {
   background: var(--ant-color-error);
   color: white;
-}
-
-.cancel-button {
-  height: 40px;
 }
 </style>

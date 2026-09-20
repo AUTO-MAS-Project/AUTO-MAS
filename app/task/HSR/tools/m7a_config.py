@@ -24,12 +24,23 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
 
+from app.utils import get_logger
+
+from .managed_overlay import (
+    DroppedOverride,
+    log_dropped_overrides,
+    overlay_managed_options,
+)
+
+logger = get_logger("HSR M7A 配置")
 
 M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
     {
@@ -42,6 +53,10 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         "echo_of_war_timestamp",
         "echo_of_war_start_day_of_week",
         "currencywars_remembrance_trailblazer_name",
+        # 与 echo_of_war_timestamp 同理：MAS 在 patch 里把这两个周常时间戳归零，
+        # 这里挡住 _apply_managed_patch 用 native config.yaml 的值把它们覆盖回去。
+        "weekly_divergent_timestamp",
+        "currencywars_timestamp",
     }
 )
 
@@ -49,7 +64,11 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
 def managed_modules_for_key(key: str) -> tuple[str, ...]:
     """Map a native M7A key to the MAS module that may override it."""
 
-    if key in M7A_MANAGED_STAGE_KEYS or key.endswith("_timestamp") or key == "last_run_timestamp":
+    if (
+        key in M7A_MANAGED_STAGE_KEYS
+        or key.endswith("_timestamp")
+        or key == "last_run_timestamp"
+    ):
         return ()
     if key.startswith("weekly_divergent_"):
         return () if key == "weekly_divergent_enable" else ("DivergentUniverse",)
@@ -102,26 +121,16 @@ def _user_managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
     return dict(module) if isinstance(module, dict) else {}
 
 
-def _same_value_kind(value: Any, reference: Any) -> bool:
-    if isinstance(reference, bool):
-        return isinstance(value, bool)
-    if isinstance(reference, int):
-        return isinstance(value, int) and not isinstance(value, bool)
-    if isinstance(reference, float):
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if isinstance(reference, list):
-        return isinstance(value, list)
-    if isinstance(reference, dict):
-        return isinstance(value, dict)
-    return isinstance(value, str) if isinstance(reference, str) else True
-
-
-def resolve_managed_options(
+def overlay_m7a_managed_options(
     native_config: Mapping[str, Any],
     user_config: Any,
     module_key: str,
-) -> dict[str, Any]:
-    """Overlay one user's dynamic values onto fields discovered in config.yaml."""
+) -> tuple[dict[str, Any], tuple[DroppedOverride, ...]]:
+    """Overlay one user's dynamic values onto fields discovered in config.yaml.
+
+    原生配置里已不存在或类型对不上的覆盖键逐个丢弃、回退到原生值，并作为
+    第二个返回值交给表单与运行日志，不再整体抛错。
+    """
 
     native = {
         str(key): value
@@ -129,15 +138,21 @@ def resolve_managed_options(
         if module_key in managed_modules_for_key(str(key))
     }
     overrides = _user_managed_options(user_config, module_key)
-    unknown = sorted(set(overrides).difference(native))
-    if unknown:
-        raise ValueError(f"M7A {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}")
-    effective = dict(native)
-    for key, value in overrides.items():
-        if not _same_value_kind(value, native[key]):
-            raise ValueError(f"M7A {module_key}.{key} 的值类型与原生配置不一致")
-        effective[key] = value
+    return overlay_managed_options(native, overrides)
+
+
+def resolve_managed_options(
+    native_config: Mapping[str, Any],
+    user_config: Any,
+    module_key: str,
+) -> dict[str, Any]:
+    """Return native M7A values overlaid with a user's Managed.Options."""
+
+    effective, _dropped = overlay_m7a_managed_options(
+        native_config, user_config, module_key
+    )
     return effective
+
 
 _EOW_WEEKDAY_MAP: dict[str, int] = {
     "Monday": 1,
@@ -215,48 +230,63 @@ M7A_NOTIFICATION_PATCH_WHITELIST: frozenset[str] = frozenset(
     M7A_NOTIFICATION_DISABLE_PATCH
 )
 
+# M7A 的 after_finish 取值是字符串 "None"（config.example.yaml 里的字面量），
+# 不是 YAML null；其余取值（Exit / Loop / Shutdown / Sleep / Hibernate / Restart /
+# Logoff / TurnOffDisplay / RunScript）都会先无条件关掉游戏，托管模式下必须钉死。
+M7A_FINISH_ACTION_NONE: str = "None"
+M7A_FINISH_ACTION_DISABLE_PATCH: dict[str, Any] = {
+    "after_finish": M7A_FINISH_ACTION_NONE,
+}
+M7A_FINISH_ACTION_PATCH_WHITELIST: frozenset[str] = frozenset(
+    M7A_FINISH_ACTION_DISABLE_PATCH
+)
 
-M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset({
-    "daily_enable",
-    "daily_material_enable",
-    "daily_himeko_try_enable",
-    "daily_memory_one_enable",
-    "activity_enable",
-    "activity_dailycheckin_enable",
-    "activity_gardenofplenty_enable",
-    "activity_realmofthestrange_enable",
-    "activity_planarfissure_enable",
-    "activity_journey_highlights_notification_enable",
-    "reward_enable",
-    "reward_dispatch_enable",
-    "reward_mail_enable",
-    "reward_assist_enable",
-    "reward_quest_enable",
-    "reward_srpass_enable",
-    "reward_redemption_code_enable",
-    "reward_achievement_enable",
-    "reward_message_enable",
-    "redemption_code",
-    "power_enable",
-    "echo_of_war_enable",
-    "echo_of_war_timestamp",
-    "build_target_enable",
-    "build_target_scheme",
-    "build_target_ornament_weekly_count",
-    "build_target_use_user_instance_when_only_erosion_and_ornament",
-    "instance_type",
-    "instance_names",
-    "instance_names_challenge_count",
-    "use_reserved_trailblaze_power",
-    "use_fuel",
-    "echo_of_war_start_day_of_week",
-    "cloud_game_enable",
-})
 
-M7A_DAILY_DEEP_MERGE_KEYS: frozenset[str] = frozenset({
-    "instance_names",
-    "instance_names_challenge_count",
-})
+M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "daily_enable",
+        "daily_material_enable",
+        "daily_himeko_try_enable",
+        "daily_memory_one_enable",
+        "activity_enable",
+        "activity_dailycheckin_enable",
+        "activity_gardenofplenty_enable",
+        "activity_realmofthestrange_enable",
+        "activity_planarfissure_enable",
+        "activity_journey_highlights_notification_enable",
+        "reward_enable",
+        "reward_dispatch_enable",
+        "reward_mail_enable",
+        "reward_assist_enable",
+        "reward_quest_enable",
+        "reward_srpass_enable",
+        "reward_redemption_code_enable",
+        "reward_achievement_enable",
+        "reward_message_enable",
+        "redemption_code",
+        "power_enable",
+        "echo_of_war_enable",
+        "echo_of_war_timestamp",
+        "build_target_enable",
+        "build_target_scheme",
+        "build_target_ornament_weekly_count",
+        "build_target_use_user_instance_when_only_erosion_and_ornament",
+        "instance_type",
+        "instance_names",
+        "instance_names_challenge_count",
+        "use_reserved_trailblaze_power",
+        "use_fuel",
+        "echo_of_war_start_day_of_week",
+        "cloud_game_enable",
+    }
+)
+
+M7A_DAILY_DEEP_MERGE_KEYS: frozenset[str] = frozenset(
+    {
+        "instance_names",
+        "instance_names_challenge_count",
+    }
+)
 
 
 def build_m7a_daily_patch(
@@ -269,9 +299,7 @@ def build_m7a_daily_patch(
 ) -> dict:
     """构造 M7A routine patch from native config plus Managed.Options."""
     eow_enabled = bool(daily_eow_enabled)
-    native_options = resolve_m7a_managed_options(
-        script_config, user_config, "Daily"
-    )
+    native_options = resolve_m7a_managed_options(script_config, user_config, "Daily")
     cultivation_enabled = bool(native_options.get("build_target_enable", False))
 
     # 配置不完整时直接报错，避免刷错副本。
@@ -363,9 +391,7 @@ def build_m7a_daily_patch(
         patch["build_target_enable"] = True
         patch["build_target_scheme"] = scheme
         patch["build_target_ornament_weekly_count"] = ornament_count
-        patch[
-            "build_target_use_user_instance_when_only_erosion_and_ornament"
-        ] = bool(
+        patch["build_target_use_user_instance_when_only_erosion_and_ornament"] = bool(
             native_options.get(
                 "build_target_use_user_instance_when_only_erosion_and_ornament",
                 False,
@@ -386,6 +412,14 @@ def with_disabled_notifications(patch: Mapping[str, Any]) -> dict[str, Any]:
 
     merged = dict(patch)
     merged.update(M7A_NOTIFICATION_DISABLE_PATCH)
+    return merged
+
+
+def with_disabled_finish_action(patch: Mapping[str, Any]) -> dict[str, Any]:
+    """叠加 M7A 任务完成后操作关闭字段，避免它替 MAS 关游戏或关机。"""
+
+    merged = dict(patch)
+    merged.update(M7A_FINISH_ACTION_DISABLE_PATCH)
     return merged
 
 
@@ -434,8 +468,43 @@ M7A_CURRENCY_WARS_FAST_MODE: bool = False
 M7A_CURRENCY_WARS_BONUS_ENABLE: bool = True  # 积分奖励启用
 
 
+# PyYAML 默认按 YAML 1.1 把未加引号的 ``4:00`` 解析成六十进制整数 240，整份读写回
+# 会把 M7A 的 scheduled_time 改成整数，M7A 再 ``.split(":")`` 即崩。这里去掉 int 规则
+# 里的六十进制分支，其余整数写法（十进制 / 0x / 0b / 0 开头八进制）保持不变。
+_INT_WITHOUT_SEXAGESIMAL = re.compile(
+    r"^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+)$"
+)
+
+
+class _M7AYamlLoader(yaml.SafeLoader):
+    """读 M7A config.yaml 用的 SafeLoader：未加引号的 ``HH:MM`` 保持字符串。"""
+
+
+_M7AYamlLoader.yaml_implicit_resolvers = {
+    first: [
+        (tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:int"
+    ]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+_M7AYamlLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:int", _INT_WITHOUT_SEXAGESIMAL, list("-+0123456789")
+)
+
+
+def load_m7a_yaml(text: str) -> dict[str, Any]:
+    """解析 M7A config.yaml 文本，空文档返回 ``{}``。"""
+    return yaml.load(text, Loader=_M7AYamlLoader) or {}
+
+
+# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每用户一轮会读同一份十余次
+_NATIVE_CONFIG_CACHE: dict[Path, tuple[int, dict[str, Any]]] = {}
+
+
 def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
-    """Load the M7A config.yaml referenced by old-dev Info.M7APath."""
+    """Load the M7A config.yaml referenced by old-dev Info.M7APath.
+
+    结果按文件 mtime 缓存, 返回深拷贝, 调用方可放心修改。
+    """
 
     if script_config is None:
         raise ValueError("缺少 HSR 脚本配置")
@@ -450,14 +519,19 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"三月七助手原生配置不存在：{path}")
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+        mtime_ns = path.stat().st_mtime_ns
+        cached = _NATIVE_CONFIG_CACHE.get(path)
+        if cached is not None and cached[0] == mtime_ns:
+            return copy.deepcopy(cached[1])
+        data = load_m7a_yaml(path.read_text(encoding="utf-8-sig"))
     except OSError as exc:
         raise FileNotFoundError(f"无法读取三月七助手原生配置：{path}") from exc
     except yaml.YAMLError as exc:
         raise ValueError(f"三月七助手原生配置不是有效 YAML：{path}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
-    return data
+    _NATIVE_CONFIG_CACHE[path] = (mtime_ns, data)
+    return copy.deepcopy(data)
 
 
 def resolve_m7a_managed_options(
@@ -485,7 +559,8 @@ def _apply_managed_patch(
     native = load_m7a_native_config(script_config)
     if not native:
         return patch
-    effective = resolve_managed_options(native, user_config, module_key)
+    effective, dropped = overlay_m7a_managed_options(native, user_config, module_key)
+    log_dropped_overrides(logger, "M7A", module_key, dropped)
     protected = M7A_MANAGED_STAGE_KEYS
     for key, value in effective.items():
         if key in whitelist and key not in protected:
@@ -518,14 +593,17 @@ def build_receive_rewards_patch(
         )
     )
     rewards = {
-        "reward_dispatch_enable": bool(native_options.get("reward_dispatch_enable", True)),
+        "reward_dispatch_enable": bool(
+            native_options.get("reward_dispatch_enable", True)
+        ),
         "reward_mail_enable": bool(native_options.get("reward_mail_enable", True)),
         "reward_assist_enable": bool(native_options.get("reward_assist_enable", True)),
         "reward_quest_enable": bool(native_options.get("reward_quest_enable", True)),
         "reward_srpass_enable": bool(native_options.get("reward_srpass_enable", True)),
         "reward_redemption_code_enable": bool(
             native_options.get("reward_redemption_code_enable", True)
-        ) and bool(redeem_codes_enabled),
+        )
+        and bool(redeem_codes_enabled),
         "reward_achievement_enable": bool(
             native_options.get("reward_achievement_enable", False)
         ),
@@ -566,12 +644,14 @@ def build_receive_rewards_patch(
     )
     # 动态原生选项应用后重新收紧 ReceiveRewards 的运行边界；尤其不能让
     # “兑换码仅配置变化时执行”的本轮禁用判定被原生配置重新打开。
-    patch.update({
-        "power_enable": False,
-        "echo_of_war_enable": False,
-        "build_target_enable": False,
-        "cloud_game_enable": False,
-    })
+    patch.update(
+        {
+            "power_enable": False,
+            "echo_of_war_enable": False,
+            "build_target_enable": False,
+            "cloud_game_enable": False,
+        }
+    )
     patch["reward_redemption_code_enable"] = bool(
         patch.get("reward_redemption_code_enable")
     ) and bool(redeem_codes_enabled)
@@ -601,10 +681,7 @@ def build_divergent_universe_patch(
     native_options = resolve_m7a_managed_options(
         script_config, user_config, "DivergentUniverse"
     )
-    try:
-        low_perf_value = script_config.get("Run", "LowPerformanceMode")
-    except (AttributeError, KeyError, TypeError):
-        low_perf_value = None
+    low_perf_value = script_config.get("Run", "LowPerformanceMode")
     low_perf_mode = (
         M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT
         if low_perf_value is None
@@ -627,6 +704,11 @@ def build_divergent_universe_patch(
             )
         ),
         "weekly_divergent_stable_mode": low_perf_mode,
+        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个用户打满后写进共享的
+        # config.yaml，下一个用户的 patch 以这份文件为底合并，M7A 就跳过积分复核、
+        # 不再打印 MAS 唯一认的完成 marker，于是第二个用户起永远记不到完成、天天重跑。
+        # 与日常 patch 归零 echo_of_war_timestamp 是同一口径。
+        "weekly_divergent_timestamp": 0,
     }
     if patch["weekly_divergent_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -682,6 +764,9 @@ def build_currency_wars_patch(
                 "currencywars_bonus_enable", M7A_CURRENCY_WARS_BONUS_ENABLE
             )
         ),
+        # 同 weekly_divergent_timestamp：按安装目录存的时间戳会让共用一套 M7A 的
+        # 第二个用户起永远记不到完成。
+        "currencywars_timestamp": 0,
     }
     if patch["currencywars_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -696,47 +781,55 @@ def build_currency_wars_patch(
     )
 
 
-M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset({
-    "weekly_divergent_enable",
-    "weekly_divergent_type",
-    "weekly_divergent_level",
-    "weekly_divergent_bonus_enable",
-    "weekly_divergent_stable_mode",
-    "currencywars_enable",
-    "currencywars_type",
-    "currencywars_rank_difficulty",
-    "currencywars_strategy",
-    "currencywars_strategy_restart_on_special_tags",
-    "currencywars_fast_mode",
-    "currencywars_remembrance_trailblazer_name",
-    "currencywars_bonus_enable",
-    "instance_names",
-    "cloud_game_enable",
-})
+M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "weekly_divergent_enable",
+        "weekly_divergent_type",
+        "weekly_divergent_level",
+        "weekly_divergent_bonus_enable",
+        "weekly_divergent_stable_mode",
+        "currencywars_enable",
+        "currencywars_type",
+        "currencywars_rank_difficulty",
+        "currencywars_strategy",
+        "currencywars_strategy_restart_on_special_tags",
+        "currencywars_fast_mode",
+        "currencywars_remembrance_trailblazer_name",
+        "currencywars_bonus_enable",
+        "instance_names",
+        "cloud_game_enable",
+        # 两个周常时间戳必须在白名单里，否则 write_m7a_patch 的 merge_whitelist
+        # 会把 patch 里归零的值直接丢掉，写不进 config.yaml
+        "weekly_divergent_timestamp",
+        "currencywars_timestamp",
+    }
+)
 
 
-M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset({
-    "power_enable",
-    "echo_of_war_enable",
-    "build_target_enable",
-    "daily_enable",
-    "daily_material_enable",
-    "daily_himeko_try_enable",
-    "daily_memory_one_enable",
-    "activity_enable",
-    "activity_dailycheckin_enable",
-    "activity_gardenofplenty_enable",
-    "activity_realmofthestrange_enable",
-    "activity_planarfissure_enable",
-    "activity_journey_highlights_notification_enable",
-    "reward_enable",
-    "reward_dispatch_enable",
-    "reward_mail_enable",
-    "reward_assist_enable",
-    "reward_quest_enable",
-    "reward_srpass_enable",
-    "reward_redemption_code_enable",
-    "reward_achievement_enable",
-    "reward_message_enable",
-    "cloud_game_enable",
-})
+M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "power_enable",
+        "echo_of_war_enable",
+        "build_target_enable",
+        "daily_enable",
+        "daily_material_enable",
+        "daily_himeko_try_enable",
+        "daily_memory_one_enable",
+        "activity_enable",
+        "activity_dailycheckin_enable",
+        "activity_gardenofplenty_enable",
+        "activity_realmofthestrange_enable",
+        "activity_planarfissure_enable",
+        "activity_journey_highlights_notification_enable",
+        "reward_enable",
+        "reward_dispatch_enable",
+        "reward_mail_enable",
+        "reward_assist_enable",
+        "reward_quest_enable",
+        "reward_srpass_enable",
+        "reward_redemption_code_enable",
+        "reward_achievement_enable",
+        "reward_message_enable",
+        "cloud_game_enable",
+    }
+)

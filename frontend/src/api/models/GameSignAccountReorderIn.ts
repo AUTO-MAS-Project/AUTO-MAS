@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 游戏签到账号组排序请求
+ * 游戏社区账号组排序请求
  */
 export type GameSignAccountReorderIn = {
     /**

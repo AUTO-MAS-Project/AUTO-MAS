@@ -1,4 +1,4 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
@@ -8,6 +8,31 @@ const logger = window.electronAPI.getLogger('路由管理')
 const SchedulerView = () => import('../views/scheduler/index.vue')
 
 let needInitLanding = true
+
+// 调试页仅在开发环境注册。import.meta.env.DEV 是编译期常量，
+// 生产构建时整个数组会被判定为死代码，这几个页面不会进入产物。
+const devRoutes = import.meta.env.DEV
+  ? [
+      {
+        path: '/TestRouter',
+        name: 'TestRouter',
+        component: () => import('../views/TestRouter.vue'),
+        meta: { title: '测试路由' },
+      },
+      {
+        path: '/OCRdev',
+        name: 'OCRdev',
+        component: () => import('../views/OCRdev.vue'),
+        meta: { title: 'OCR测试' },
+      },
+      {
+        path: '/OverlayMaskDev',
+        name: 'OverlayMaskDev',
+        component: () => import('../views/OverlayMaskDev.vue'),
+        meta: { title: '遮罩彩蛋测试' },
+      },
+    ]
+  : []
 
 const routes = [
   {
@@ -57,6 +82,19 @@ const routes = [
     meta: { title: '编辑M9A脚本' },
   },
   {
+    path: '/scripts/:id/edit/maafw',
+    name: 'MaaFWScriptEdit',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: '编辑MFW脚本' },
+  },
+  {
+    // 新建 MFW 脚本后的分步引导；与编辑页同一个组件，按路由名切换形态
+    path: '/scripts/:id/setup/maafw',
+    name: 'MaaFWSetupWizard',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: 'MaaFramework项目引导' },
+  },
+  {
     path: '/scripts/:id/edit/hsr',
     name: 'HSRScriptEdit',
     component: () => import('../views/EditView/Script/HSRScriptEdit.vue'),
@@ -69,6 +107,12 @@ const routes = [
     meta: { title: '编辑通用脚本' },
   },
   {
+    path: '/scripts/:id/edit/baah',
+    name: 'BAAHScriptEdit',
+    component: () => import('../views/EditView/Script/BAAHScriptEdit.vue'),
+    meta: { title: '编辑BAAH脚本' },
+  },
+  {
     path: '/scripts/:id/edit/okww',
     name: 'OkwwScriptEdit',
     component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
@@ -79,6 +123,30 @@ const routes = [
     name: 'OkNteScriptEdit',
     component: () => import('../views/EditView/Script/OkNteScriptEdit.vue'),
     meta: { title: '编辑ok-nte脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/bettergi',
+    name: 'BetterGIScriptEdit',
+    component: () => import('../views/EditView/Script/BetterGIScriptEdit.vue'),
+    meta: { title: '编辑BetterGI脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/zzzod',
+    name: 'ZzzOdScriptEdit',
+    component: () => import('../views/EditView/Script/ZzzOdScriptEdit.vue'),
+    meta: { title: '编辑ZZZ-OD脚本' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/zzzod',
+    name: 'ZzzOdUserAdd',
+    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
+    meta: { title: '添加ZZZ-OD用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/zzzod',
+    name: 'ZzzOdUserEdit',
+    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
+    meta: { title: '编辑ZZZ-OD用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
@@ -111,6 +179,12 @@ const routes = [
     meta: { title: '添加M9A用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/maafw',
+    name: 'MaaFWUserAdd',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '添加 MFW 用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/hsr',
     name: 'HSRUserAdd',
     component: () => import('../views/EditView/User/HSRUserEdit.vue'),
@@ -135,6 +209,12 @@ const routes = [
     meta: { title: '编辑M9A用户' },
   },
   {
+    path: '/scripts/:scriptId/users/:userId/edit/maafw',
+    name: 'MaaFWUserEdit',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '编辑 MFW 用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/hsr',
     name: 'HSRUserEdit',
     component: () => import('../views/EditView/User/HSRUserEdit.vue'),
@@ -151,6 +231,18 @@ const routes = [
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/baah',
+    name: 'BAAHUserAdd',
+    component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
+    meta: { title: '添加BAAH用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/baah',
+    name: 'BAAHUserEdit',
+    component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
+    meta: { title: '编辑BAAH用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/okww',
@@ -175,6 +267,18 @@ const routes = [
     name: 'OkNteUserEdit',
     component: () => import('../views/EditView/User/OkNteUserEdit.vue'),
     meta: { title: '编辑ok-nte用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/bettergi',
+    name: 'BetterGIUserAdd',
+    component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
+    meta: { title: '添加BetterGI用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/bettergi',
+    name: 'BetterGIUserEdit',
+    component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
+    meta: { title: '编辑BetterGI用户' },
   },
   {
     path: '/plans',
@@ -203,30 +307,7 @@ const routes = [
       keepAlive: true, // 启用 keep-alive，保持组件存活
     },
   },
-  {
-    path: '/TestRouter',
-    name: 'TestRouter',
-    component: () => import('../views/TestRouter.vue'),
-    meta: { title: '测试路由' },
-  },
-  {
-    path: '/OCRdev',
-    name: 'OCRdev',
-    component: () => import('../views/OCRdev.vue'),
-    meta: { title: 'OCR测试' },
-  },
-  {
-    path: '/WSdev',
-    name: 'WSdev',
-    component: () => import('../views/WSdev.vue'),
-    meta: { title: 'WSdev' },
-  },
-  {
-    path: '/OverlayMaskDev',
-    name: 'OverlayMaskDev',
-    component: () => import('../views/OverlayMaskDev.vue'),
-    meta: { title: '遮罩彩蛋测试' },
-  },
+  ...devRoutes,
   {
     path: '/history',
     name: 'History',
@@ -237,7 +318,22 @@ const routes = [
     path: '/gamesign',
     name: 'GameSign',
     component: () => import('../views/gamesign/index.vue'),
-    meta: { title: '游戏签到' },
+    meta: { title: '游戏社区' },
+  },
+  {
+    path: '/gamesign/sign',
+    name: 'CommunityToolSign',
+    redirect: '/gamesign',
+    meta: { title: '游戏社区' },
+  },
+  {
+    path: '/gamesign/activity',
+    name: 'CommunityToolActivity',
+    redirect: {
+      path: '/gamesign',
+      query: { tab: 'activity' },
+    },
+    meta: { title: '游戏社区' },
   },
   {
     path: '/tools',
@@ -257,6 +353,13 @@ const routes = [
     component: () => import('../views/Logs.vue'),
     meta: { title: '日志查看', skipGuard: true },
   },
+  {
+    // 主进程另开的小窗口：真实显示器回来了但有任务在跑，问用户要不要拆虚拟屏
+    path: '/vdd-prompt',
+    name: 'VirtualDisplayPrompt',
+    component: () => import('../views/VirtualDisplayPrompt.vue'),
+    meta: { title: '虚拟显示器', skipGuard: true },
+  },
 ]
 
 const router = createRouter({
@@ -270,7 +373,7 @@ router.beforeEach(async (to, from, next) => {
   const { isInitialized, isBootstrapping } = useAppInitialization()
 
   // 声明跳过的路由：直接放行
-  if ((to.meta as any)?.skipGuard) {
+  if (to.meta.skipGuard === true) {
     next()
     return
   }
@@ -294,7 +397,29 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isDev = import.meta.env.DEV
-  if (isDev) return next()
+  if (isDev) {
+    // 开发模式免初始化门禁，但直达内页（如刷新后落在 /scripts）时仍需
+    // 建立主 WebSocket 连接并标记初始化，否则 isAppReady 恒为 false 导致整窗空白。
+    // 旧版由 useWebSocket 单体的全局自动连接掩盖了这一缺口。
+    if (!isInitialized.value && !isBootstrapping.value) {
+      const { beginBootstrap, finishBootstrap, markAsInitialized } = useAppInitialization()
+      beginBootstrap()
+      void (async () => {
+        try {
+          const { connectWithRetry } = await import('@/composables/useAppLifecycle')
+          await connectWithRetry()
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`开发模式直达内页启动失败: ${errorMsg}`)
+        } finally {
+          // 开发模式容错：连接失败也进入应用，由生命周期协调器继续重连
+          markAsInitialized()
+          finishBootstrap()
+        }
+      })()
+    }
+    return next()
+  }
 
   logger.info(
     `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
@@ -326,28 +451,11 @@ router.beforeEach(async (to, from, next) => {
 
 export function navigateTo(
   path: string,
-  options?: { replace?: boolean; query?: Record<string, any> }
+  options?: { replace?: boolean; query?: LocationQueryRaw }
 ) {
   const { replace = false, query } = options || {}
   if (replace) return router.replace({ path, query })
   return router.push({ path, query })
-}
-
-export function navigateToByName(
-  name: string,
-  options?: { replace?: boolean; query?: Record<string, any>; params?: Record<string, any> }
-) {
-  const { replace = false, query, params } = options || {}
-  if (replace) return router.replace({ name, query, params })
-  return router.push({ name, query, params })
-}
-
-export function goBack() {
-  return router.back()
-}
-
-export function goForward() {
-  return router.forward()
 }
 
 export default router

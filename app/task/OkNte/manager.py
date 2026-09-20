@@ -16,28 +16,34 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-import uuid
 import shutil
+import uuid
 from contextlib import suppress
 from datetime import datetime
-
 from pathlib import Path
 
 from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem, UserItem
+from app.core.ws import Publisher, protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.services import Notify
-from app.utils import get_logger, ProcessManager
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.proxy_helpers import user_uses_direct_control, user_uses_quick_config
+from app.tools.push_log import build_user_result_text
+from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    force_rmtree,
+    recover_native_config,
+    swap_in_dir,
 )
 
-from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -99,10 +105,13 @@ class OkNteManager(TaskExecuteBase):
                 and self.script_info.user_list[0].name == "暂未加载"
             ):
                 self.script_info.user_list = [
-                    UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+                    UserItem(
+                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+                    )
                     for uid, config in Config.ScriptConfig[script_uid].UserData.items()
                     if config.get("Info", "Status")
                     and config.get("Info", "RemainedDay") != 0
+                    and self.task_info.is_target_user(str(uid))
                 ]
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -137,7 +146,8 @@ class OkNteManager(TaskExecuteBase):
                 UserItem(user_id=target_user_id, name=target_user_name, status="等待")
             ]
         else:
-            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
+            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的；
+            # 单独运行指定了用户时只保留该用户
             self.script_info.user_list = [
                 UserItem(
                     user_id=str(uid), name=config.get("Info", "Name"), status="等待"
@@ -145,6 +155,7 @@ class OkNteManager(TaskExecuteBase):
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
                 and config.get("Info", "RemainedDay") != 0
+                and self.task_info.is_target_user(str(uid))
             ]
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
@@ -160,16 +171,43 @@ class OkNteManager(TaskExecuteBase):
                 self.script_config.get("Script", "ConfigPath")
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            shutil.rmtree(self.temp_path, ignore_errors=True)
-            self.temp_path.mkdir(parents=True, exist_ok=True)
+            self._recover_previous_run()
             if self.script_config_path.exists():
                 self.had_original_script_config = True
                 if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                    shutil.copytree(
-                        self.script_config_path, self.temp_path, dirs_exist_ok=True
+                    commit_native_config_snapshot(
+                        self.temp_path,
+                        self.script_config_path,
+                        script_id=self.script_info.script_id,
                     )
                 elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                    self.temp_path.mkdir(parents=True, exist_ok=True)
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+
+            # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
+            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——set_oknte 里按用户/重试归档会把上一轮下发的
+            # MAS 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
+            with suppress(Exception):
+                archive_native_backup(
+                    self.script_config_path,
+                    self.script_config.get("Script", "ConfigPathMode"),
+                )
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.script_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 OK-NTE 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 OK-NTE 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
@@ -180,35 +218,50 @@ class OkNteManager(TaskExecuteBase):
             and self.script_config
         ):
             return
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}")
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-            else:
-                logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
-                tmp_dst = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
-                )
-                shutil.rmtree(tmp_dst, ignore_errors=True)
-                shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                tmp_dst.rename(self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            if (self.temp_path / "config.temp").exists():
-                logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}")
-                shutil.copy(self.temp_path / "config.temp", self.script_config_path)
-            elif not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-NTE 脚本配置文件: {self.script_config_path}")
-                with suppress(FileNotFoundError):
-                    self.script_config_path.unlink()
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+        # 复原属于收尾清理, 失败不应掩盖任务本身的异常, 也不应中断后续解锁与回写
+        try:
+            if self.task_info.mode == "ScriptConfig" and not self.task_info.view_only:
+                user_id = self.task_info.user_id
+                if user_id and user_id != "Default":
+                    cfg = self.user_config[uuid.UUID(user_id)]
+                    if user_uses_direct_control(cfg) and not user_uses_quick_config(
+                        cfg
+                    ):
+                        return
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                if not self.had_original_script_config:
+                    logger.info(
+                        f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}"
+                    )
+                    force_rmtree(self.script_config_path)
+                else:
+                    logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
+                    swap_in_dir(self.temp_path, self.script_config_path)
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                if (self.temp_path / "config.temp").exists():
+                    logger.info(
+                        f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}"
+                    )
+                    shutil.copy(self.temp_path / "config.temp", self.script_config_path)
+                elif not self.had_original_script_config:
+                    logger.info(
+                        f"清理任务期写入的 OK-NTE 脚本配置文件: {self.script_config_path}"
+                    )
+                    with suppress(FileNotFoundError):
+                        self.script_config_path.unlink()
+        except Exception as e:
+            logger.opt(exception=True).warning(f"复原 OK-NTE 脚本配置失败: {e}")
+        finally:
+            clear_native_config_snapshot(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
-                id=self.task_info.task_id, type="Info", data={"Error": self.check_result}
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -218,21 +271,29 @@ class OkNteManager(TaskExecuteBase):
 
         method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            method = method_cls(
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            kwargs: dict = dict(
                 script_info=self.script_info,
                 script_config=self.script_config,  # type: ignore[arg-type]
                 user_config=self.user_config,  # type: ignore[arg-type]
                 game_manager=self.game_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                kwargs["view_only"] = self.task_info.view_only
+            method = method_cls(**kwargs)
 
             sub_check = await method.check()
             if sub_check != "Pass":
                 self.check_result = sub_check
-                current_user = self.script_info.user_list[self.script_info.current_index]
+                current_user = self.script_info.user_list[
+                    self.script_info.current_index
+                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id, type="Info", data={"Error": sub_check}
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=sub_check),
                 )
                 continue
 
@@ -251,6 +312,7 @@ class OkNteManager(TaskExecuteBase):
 
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
 
             if self.crashed:
                 self.script_info.status = "异常"
@@ -268,48 +330,54 @@ class OkNteManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_user = [
-                    u.name for u in self.script_info.user_list if u.status == "异常"
-                ]
-                over_user = [
-                    u.name for u in self.script_info.user_list if u.status == "完成"
-                ]
-                wait_user = [
-                    u.name for u in self.script_info.user_list if u.status == "等待"
-                ]
+                error_count = sum(
+                    1 for u in self.script_info.user_list if u.status == "异常"
+                )
+                over_count = sum(
+                    1 for u in self.script_info.user_list if u.status == "完成"
+                )
+                wait_count = sum(
+                    1 for u in self.script_info.user_list if u.status == "等待"
+                )
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-                task_result = append_task_game_sign_summary(
-                    self.task_info, self.script_info.result
+                # 按用户交错组装「用户结果行 + 该用户节点详情」：
+                # 多账号任务时各用户节点归属清晰，不再全部平铺。
+                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐 ok-ww/通用脚本）。
+                # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
+                # 为空，自然只有结果行。
+                has_uncompleted = error_count + wait_count > 0
+                user_result_text = build_user_result_text(
+                    self.script_info.user_list, has_uncompleted
                 )
-                has_game_sign_summary = task_result != self.script_info.result
                 result = {
                     "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                     "script_name": self.script_info.name or "空白",
                     "start_time": self.begin_time,
                     "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": len(over_user),
-                    "uncompleted_count": len(error_user) + len(wait_user),
-                    "result": task_result,
-                    "game_sign_summary": has_game_sign_summary,
+                    "completed_count": over_count,
+                    "uncompleted_count": error_count + wait_count,
+                    "result": user_result_text,
                 }
 
-                await Notify.push_plyer(
-                    title.replace("报告", "已完成！"),
-                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                    f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
-                    10,
-                )
                 try:
-                    await push_notification("代理结果", title, result, None)
-                    if has_game_sign_summary:
-                        mark_task_game_sign_summary_consumed(self.task_info)
+                    await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                    )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
+                        ),
                     )
         finally:
             if script_cfg.is_locked:
@@ -332,13 +400,14 @@ class OkNteManager(TaskExecuteBase):
 
         try:
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                await script_cfg.UserData.load(
-                    await self.user_config.toDict()
-                )
+                await script_cfg.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
         except Exception:
-            logger.opt(exception=True).warning("on_crash 写回 UserConfig 失败，放弃本次状态变更")
-        await Config.send_websocket_message(
+            logger.opt(exception=True).warning(
+                "on_crash 写回 UserConfig 失败，放弃本次状态变更"
+            )
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-NTE任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"OK-NTE任务出现异常: {e}"),
         )

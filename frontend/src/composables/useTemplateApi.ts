@@ -10,7 +10,7 @@ export interface WebConfigTemplate {
   downloadUrl: string
 }
 
-export interface WebConfigResponse {
+interface WebConfigResponse {
   code: number
   status: string
   message: string
@@ -18,6 +18,11 @@ export interface WebConfigResponse {
     WebConfig: WebConfigTemplate[]
   }
 }
+
+const isWebConfigResponseData = (value: unknown): value is WebConfigResponse['data'] =>
+  typeof value === 'object' &&
+  value !== null &&
+  Array.isArray((value as Partial<WebConfigResponse['data']>).WebConfig)
 
 export function useTemplateApi() {
   const loading = ref(false)
@@ -38,7 +43,7 @@ export function useTemplateApi() {
       }
 
       // 直接返回API响应中的WebConfig数组
-      return (response.data as any).WebConfig || []
+      return isWebConfigResponseData(response.data) ? response.data.WebConfig : []
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取模板列表失败'
       error.value = errorMsg

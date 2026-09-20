@@ -20,7 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .ArknightWin32 import ArknightWin32Toolkit
-from .EndFieldPCWin32 import CheckComboxBox, CheckForm
+"""MaaFW Win32 专项适配器。
 
-__all__ = ["ArknightWin32Toolkit", "CheckComboxBox", "CheckForm"]
+各适配器顶层依赖 pywin32，只能在确认平台支持后按需导入，
+因此这里不做包级 re-export，避免包初始化拉起 Win32 依赖。
+"""

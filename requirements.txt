@@ -10,8 +10,8 @@ gitpython==3.1.45
 plyer==2.1.0
 psutil==7.0.0
 jinja2==3.1.6
-pywin32==310
-keyboard==0.13.5
+pywin32==310; sys_platform == "win32"
+keyboard==0.13.5; sys_platform == "win32"
 pycryptodome==3.23.0
 truststore==0.10.1
 pillow==12.1.1

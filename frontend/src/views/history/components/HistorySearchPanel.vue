@@ -2,7 +2,7 @@
   <div class="search-panel">
     <!-- 快捷时间选择 -->
     <div class="quick-time-section">
-      <span class="section-label">快捷选择</span>
+      <span class="section-label">{{ t('history.filter.quickPick') }}</span>
       <div class="time-buttons">
         <a-button
           v-for="preset in timePresets"
@@ -11,7 +11,7 @@
           size="middle"
           @click="$emit('quick-select', preset)"
         >
-          {{ preset.label }}
+          {{ t(`history.preset.${preset.key}`) }}
         </a-button>
       </div>
     </div>
@@ -19,16 +19,16 @@
     <!-- 详细筛选条件 -->
     <div class="filter-section">
       <div class="filter-item">
-        <span class="filter-label">合并模式</span>
+        <span class="filter-label">{{ t('history.filter.mergeMode') }}</span>
         <a-select v-model:value="localMode" style="width: 120px" @change="handleModeChange">
-          <a-select-option value="DAILY">按日合并</a-select-option>
-          <a-select-option value="WEEKLY">按周合并</a-select-option>
-          <a-select-option value="MONTHLY">按月合并</a-select-option>
+          <a-select-option value="DAILY">{{ t('history.filter.daily') }}</a-select-option>
+          <a-select-option value="WEEKLY">{{ t('history.filter.weekly') }}</a-select-option>
+          <a-select-option value="MONTHLY">{{ t('history.filter.monthly') }}</a-select-option>
         </a-select>
       </div>
 
       <div class="filter-item">
-        <span class="filter-label">开始日期</span>
+        <span class="filter-label">{{ t('history.filter.startDate') }}</span>
         <a-date-picker
           v-model:value="localStartDate"
           style="width: 140px"
@@ -39,7 +39,7 @@
       </div>
 
       <div class="filter-item">
-        <span class="filter-label">结束日期</span>
+        <span class="filter-label">{{ t('history.filter.endDate') }}</span>
         <a-date-picker
           v-model:value="localEndDate"
           style="width: 140px"
@@ -54,13 +54,13 @@
           <template #icon>
             <SearchOutlined />
           </template>
-          搜索
+          {{ t('history.search') }}
         </a-button>
         <a-button @click="$emit('reset')">
           <template #icon>
             <ClearOutlined />
           </template>
-          重置
+          {{ t('history.reset') }}
         </a-button>
       </div>
     </div>
@@ -68,10 +68,13 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ClearOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 import type { HistorySearchIn } from '@/api'
 import { timePresets } from '../useHistoryLogic.ts'
+
+const { t } = useI18n()
 
 interface Props {
   mode: HistorySearchIn.mode

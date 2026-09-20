@@ -28,6 +28,14 @@ export type MaaEndUserConfig_Task = {
      */
     AutoEssenceSpecifiedLocation?: (string | null);
     /**
+     * 基质刷取模式
+     */
+    AutoEssenceMenu?: ('Random' | 'Location' | 'Target' | null);
+    /**
+     * 基质目标武器 ID 列表
+     */
+    AutoEssenceTargetWeapons?: (Array<string> | null);
+    /**
      * 理智任务
      */
     IfSanity?: (boolean | null);
@@ -64,9 +72,17 @@ export type MaaEndUserConfig_Task = {
      */
     IfCreditShoppingN2?: (boolean | null);
     /**
-     * 抢委托
+     * 抢委托送货最低接取价格（万）
      */
-    IfSeizeEntrustTask?: (boolean | null);
+    SeizeDeliveryJobsReward?: (number | null);
+    /**
+     * 抢委托送货委托接收点
+     */
+    SeizeDeliveryJobsCommissionSource?: ('Unlimited' | 'WulingCity' | 'TestArea' | null);
+    /**
+     * 抢委托送货
+     */
+    IfSeizeDeliveryJobs?: (boolean | null);
     /**
      * 生态农场
      */
@@ -83,6 +99,22 @@ export type MaaEndUserConfig_Task = {
      * 自动采集
      */
     IfAutoCollect?: (boolean | null);
+    /**
+     * 自动采集路线安排：分散或集中
+     */
+    AutoCollectMode?: ('Distributed' | 'Concentrated' | null);
+    /**
+     * 自动采集区域资源路线
+     */
+    AutoCollectRoutes?: (Array<string> | null);
+    /**
+     * 自动采集通用资源路线
+     */
+    AutoCollectCommonRoutes?: (Array<string> | null);
+    /**
+     * 每日正常完成一次后当天跳过的 MaaEnd 任务名列表（JSON 字符串）
+     */
+    DailyOnceTasks?: (string | null);
     /**
      * 选剑演武
      */

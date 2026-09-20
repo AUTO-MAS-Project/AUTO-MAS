@@ -1,17 +1,27 @@
 <template>
-  <a-select :value="value" :disabled="loading" size="large" :placeholder="placeholder"
-    @update:value="$emit('update:value', $event)">
+  <a-select
+    :value="value"
+    :disabled="loading"
+    :placeholder="placeholder"
+    @update:value="$emit('update:value', $event)"
+  >
     <template #dropdownRender="{ menuNode: menu }">
       <v-nodes :vnodes="menu" />
       <a-divider style="margin: 4px 0" />
       <a-space style="padding: 4px 8px" size="small">
-        <a-input ref="inputRef" v-model:value="customStageName" placeholder="输入自定义关卡，如: 11-8" style="flex: 1"
-          size="small" @keyup.enter="addCustomStage" />
+        <a-input
+          ref="inputRef"
+          v-model:value="customStageName"
+          :placeholder="t('edit.enterCustomStageE')"
+          style="flex: 1"
+          size="small"
+          @keyup.enter="addCustomStage"
+        />
         <a-button type="text" size="small" @click="addCustomStage">
           <template #icon>
             <PlusOutlined />
           </template>
-          添加关卡
+          {{ t('edit.addStage') }}
         </a-button>
       </a-space>
     </template>
@@ -24,8 +34,13 @@
       </template>
       <template v-else>
         {{ option.label }}
-        <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px">
-          自定义
+        <a-tag
+          v-if="isCustomStage(option.value)"
+          color="blue"
+          size="small"
+          style="margin-left: 8px"
+        >
+          {{ t('edit.custom') }}
         </a-tag>
       </template>
     </a-select-option>
@@ -33,9 +48,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, defineComponent, type PropType, type VNode } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+
+const { t } = useI18n()
 
 // VNodes 组件定义
 const VNodes = defineComponent({
@@ -81,7 +99,7 @@ const validateStageName = (stageName: string): boolean => {
 // 添加自定义关卡
 const addCustomStage = () => {
   if (!validateStageName(customStageName.value)) {
-    message.error('请输入有效的关卡名称')
+    message.error(t('edit.enterValidStageName'))
     return
   }
 
@@ -90,7 +108,7 @@ const addCustomStage = () => {
   // 检查是否已存在
   const exists = props.options.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(`关卡 "${trimmedName}" 已存在`)
+    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
     return
   }
 

@@ -28,6 +28,13 @@ name: Sync to CNB
 on:
   push:
   create:
+  # 发行版分支由 build-app.yml 用 GITHUB_TOKEN 推送，而 GITHUB_TOKEN 造成的 push /
+  # create **不会**触发其它工作流，本工作流因此不会为发版跑一次——CNB 上于是缺当版
+  # release/vX.Y.Z 分支，而 Runtime 首次克隆受管工作区正是按 [cnb, github] 顺序找它。
+  # workflow_dispatch 与 repository_dispatch 是该限制的例外，可以被 GITHUB_TOKEN 显式
+  # 调起，所以 build-app.yml 在推完发行版分支后会 `gh workflow run` 这里。也可以在
+  # Actions 页面手动跑一次，用来给漏同步的历史版本补分支。
+  workflow_dispatch:
 
 jobs:
   sync:

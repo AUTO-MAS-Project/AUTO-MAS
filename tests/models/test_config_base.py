@@ -11,6 +11,7 @@ from app.models.ConfigBase import (
     BoolValidator,
     ConfigBase,
     ConfigItem,
+    MultipleConfig,
     MultipleUIDValidator,
     RangeValidator,
     TypedMultipleUIDValidator,
@@ -234,6 +235,39 @@ class ConfigBaseSaveTest(ConfigBaseTestCase):
 
         self.assertEqual(self.config_path.read_text(encoding="utf-8"), original_content)
         self.assertEqual(list(self.config_path.parent.glob("Config.json.tmp")), [])
+
+
+class MultipleConfigLoadTest(unittest.IsolatedAsyncioTestCase):
+    """MultipleConfig.load 重建的子配置必须继承父级保存回调（#174 回归）。
+
+    复制脚本、任务收尾整表写回用户配置都走 load 重建实例；漏挂回调时这些实例
+    之后的修改只改内存，重启后回退。
+    """
+
+    async def test_reloaded_children_persist_later_changes(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "Multiple.json"
+            multiple: MultipleConfig[SampleConfig] = MultipleConfig([SampleConfig])
+            await multiple.connect(path)
+            uid, _ = await multiple.add(SampleConfig)
+
+            await multiple.load(await multiple.toDict())
+            await multiple[uid].set("Info", "Name", "重载后改的")
+
+            on_disk = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(on_disk[str(uid)]["Info"]["Name"], "重载后改的")
+
+    async def test_reloaded_children_inherit_parent_save_methods(self) -> None:
+        parent_save = AsyncMock()
+        multiple: MultipleConfig[SampleConfig] = MultipleConfig([SampleConfig])
+        await multiple.add_save_method(parent_save)
+        uid, _ = await multiple.add(SampleConfig)
+        parent_save.reset_mock()
+
+        await multiple.load(await multiple.toDict())
+        await multiple[uid].set("Info", "Name", "重载后改的")
+
+        parent_save.assert_awaited_once_with()
 
 
 class FakeMaaPlanConfig:

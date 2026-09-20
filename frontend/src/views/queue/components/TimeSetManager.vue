@@ -1,13 +1,17 @@
 <template>
-  <a-card title="定时列表" class="time-set-card">
+  <a-card :title="t('queue.time.cardTitle')" class="time-set-card">
     <template #extra>
       <a-space>
-        <a-button type="primary" :loading="loading" :disabled="!props.queueId || props.queueId.trim() === ''"
-          @click="addTimeSet">
+        <a-button
+          type="primary"
+          :loading="loading"
+          :disabled="!props.queueId || props.queueId.trim() === ''"
+          @click="addTimeSet"
+        >
           <template #icon>
             <PlusOutlined />
           </template>
-          添加定时
+          {{ t('queue.time.add') }}
         </a-button>
       </a-space>
     </template>
@@ -17,55 +21,94 @@
       <!-- 表头 -->
       <div class="draggable-table-header">
         <div class="header-cell drag-cell"></div>
-        <div class="header-cell index-cell">序号</div>
-        <div class="header-cell status-cell">状态</div>
-        <div class="header-cell days-cell">执行周期</div>
-        <div class="header-cell time-cell">执行时间</div>
-        <div class="header-cell actions-cell">操作</div>
+        <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
+        <div class="header-cell status-cell">{{ t('queue.time.colStatus') }}</div>
+        <div class="header-cell days-cell">{{ t('queue.time.colDays') }}</div>
+        <div class="header-cell time-cell">{{ t('queue.time.colTime') }}</div>
+        <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable v-model="timeSets" group="timeSets" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" handle=".drag-handle"
-        class="draggable-container" @end="onDragEnd">
+      <draggable
+        v-model="timeSets"
+        group="timeSets"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        handle=".drag-handle"
+        class="draggable-container"
+        @end="onDragEnd"
+      >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell drag-cell">
-              <span class="drag-handle" title="拖拽排序" aria-label="拖拽排序">
+              <span
+                class="drag-handle"
+                :title="t('queue.item.dragSort')"
+                :aria-label="t('queue.item.dragSort')"
+              >
                 <span class="drag-dots" aria-hidden="true"></span>
               </span>
             </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
-              <a-select v-model:value="record.enabled" size="small" style="width: 80px" class="status-select"
-                @change="updateTimeSetStatus(record)">
-                <a-select-option :value="true">启用</a-select-option>
-                <a-select-option :value="false">禁用</a-select-option>
+              <a-select
+                v-model:value="record.enabled"
+                size="small"
+                style="width: 80px"
+                class="status-select"
+                @change="updateTimeSetStatus(record)"
+              >
+                <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
+                <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
               </a-select>
             </div>
             <div class="row-cell days-cell">
-              <a-select v-model:value="record.days" mode="multiple" size="small" style="width: 100%"
-                placeholder="请选择执行周期" :disabled="loading" @change="updateTimeSetDays(record)" :maxTagCount="7"
-                :bordered="false" class="days-select">
-                <a-select-option value="Monday">周一</a-select-option>
-                <a-select-option value="Tuesday">周二</a-select-option>
-                <a-select-option value="Wednesday">周三</a-select-option>
-                <a-select-option value="Thursday">周四</a-select-option>
-                <a-select-option value="Friday">周五</a-select-option>
-                <a-select-option value="Saturday">周六</a-select-option>
-                <a-select-option value="Sunday">周日</a-select-option>
+              <a-select
+                v-model:value="record.days"
+                mode="multiple"
+                size="small"
+                style="width: 100%"
+                :placeholder="t('queue.time.selectDays')"
+                :disabled="loading"
+                :max-tag-count="7"
+                :bordered="false"
+                class="days-select"
+                @change="updateTimeSetDays(record)"
+              >
+                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
               </a-select>
             </div>
             <div class="row-cell time-cell">
-              <a-time-picker v-model:value="record.timeValue" format="HH:mm" placeholder="请选择时间" size="small"
-                :disabled="loading" @change="updateTimeSetTime(record)" />
+              <a-time-picker
+                v-model:value="record.timeValue"
+                format="HH:mm"
+                :placeholder="t('queue.time.selectTime')"
+                size="small"
+                :disabled="loading"
+                @change="updateTimeSetTime(record)"
+              />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm title="确定要删除这个定时吗？" ok-text="确定" cancel-text="取消" @confirm="deleteTimeSet(record.id)">
+                <a-popconfirm
+                  :title="t('queue.time.deleteConfirm')"
+                  :ok-text="t('queue.ok')"
+                  :cancel-text="t('queue.cancel')"
+                  @confirm="deleteTimeSet(record.id)"
+                >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
-                    删除
+                    {{ t('queue.del') }}
                   </a-button>
                 </a-popconfirm>
               </a-space>
@@ -77,7 +120,7 @@
       <!-- 空状态 -->
       <div v-if="timeSets.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
         </div>
       </div>
     </div>
@@ -85,12 +128,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import dayjs from 'dayjs'
+
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('定时项管理')
 
 // Props
@@ -150,38 +196,6 @@ const sortDays = (days: string[]): DayOfWeek[] => {
   return [...days].sort((a, b) => dayOrder[a] - dayOrder[b]) as DayOfWeek[]
 }
 
-// 表格列配置
-const _timeColumns = [
-  {
-    title: '序号',
-    dataIndex: 'index',
-    key: 'index',
-    width: 80,
-    align: 'center',
-    customRender: ({ index }: { index: number }) => index + 1,
-  },
-  {
-    title: '状态',
-    dataIndex: 'enabled',
-    key: 'enabled',
-    width: 120,
-    align: 'center',
-  },
-  {
-    title: '执行时间',
-    dataIndex: 'time',
-    key: 'time',
-    align: 'center',
-    ellipsis: true,
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 100,
-    align: 'center',
-  },
-]
-
 // 计算属性 - 使用props传入的数据
 const timeSets = ref([...props.timeSets])
 
@@ -210,7 +224,7 @@ const addTimeSet = async () => {
   try {
     // 验证queueId是否存在
     if (!props.queueId || props.queueId.trim() === '') {
-      message.error('队列ID为空，无法添加定时')
+      message.error(t('queue.toast.queueIdEmpty'))
       return
     }
 
@@ -224,12 +238,16 @@ const addTimeSet = async () => {
     if (createResponse.code === 200 && createResponse.timeSetId) {
       emit('refresh')
     } else {
-      message.error('创建定时项失败: ' + (createResponse.message || '未知错误'))
+      message.error(
+        t('queue.toast.createTimeFailed', {
+          error: createResponse.message || t('queue.toast.unknownError'),
+        })
+      )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加定时项失败: ${errorMsg}`)
-    message.error(`添加定时项失败: ${errorMsg}`)
+    message.error(t('queue.toast.addTimeFailed', { error: errorMsg }))
   } finally {
     loading.value = false
   }
@@ -254,14 +272,18 @@ const updateTimeSetTime = async (timeSet: any) => {
       // 更新本地显示的时间
       timeSet.time = timeString
     } else {
-      message.error('时间更新失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.timeUpdateFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
       // 回滚时间值
       timeSet.timeValue = parseTimeString(timeSet.time)
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新时间失败: ${errorMsg}`)
-    message.error(`更新时间失败: ${errorMsg}`)
+    message.error(t('queue.toast.updateTimeFailed', { error: errorMsg }))
     // 回滚时间值
     timeSet.timeValue = parseTimeString(timeSet.time)
   }
@@ -283,14 +305,18 @@ const updateTimeSetStatus = async (timeSet: any) => {
     if (response.code === 200) {
       // 状态更新成功，无需通知
     } else {
-      message.error('状态更新失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.statusUpdateFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
       // 回滚状态
       timeSet.enabled = !timeSet.enabled
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新状态失败: ${errorMsg}`)
-    message.error(`更新状态失败: ${errorMsg}`)
+    message.error(t('queue.toast.updateStatusFailed', { error: errorMsg }))
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
   }
@@ -316,12 +342,16 @@ const updateTimeSetDays = async (timeSet: any) => {
     if (response.code === 200) {
       // 周期更新成功，无需通知
     } else {
-      message.error('执行周期更新失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.daysUpdateFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新执行周期失败: ${errorMsg}`)
-    message.error(`更新执行周期失败: ${errorMsg}`)
+    message.error(t('queue.toast.updateDaysFailed', { error: errorMsg }))
   }
 }
 
@@ -337,12 +367,16 @@ const deleteTimeSet = async (timeSetId: string) => {
       // 确保删除后刷新数据
       emit('refresh')
     } else {
-      message.error('删除定时项失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.deleteTimeFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除定时项失败: ${errorMsg}`)
-    message.error(`删除定时项失败: ${errorMsg}`)
+    message.error(t('queue.toast.deleteTimeFailed', { error: errorMsg }))
   }
 }
 
@@ -371,14 +405,18 @@ const onDragEnd = async (evt: any) => {
       // 刷新数据以确保与服务器同步
       emit('refresh')
     } else {
-      message.error('更新定时顺序失败: ' + (response.message || '未知错误'))
+      message.error(
+        t('queue.toast.reorderTimeFailed', {
+          error: response.message || t('queue.toast.unknownError'),
+        })
+      )
       // 如果失败，刷新数据恢复原状态
       emit('refresh')
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拖拽排序失败: ${errorMsg}`)
-    message.error(`更新定时顺序失败: ${errorMsg}`)
+    message.error(t('queue.toast.reorderTimeFailed', { error: errorMsg }))
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {
@@ -400,166 +438,6 @@ const onDragEnd = async (evt: any) => {
   font-weight: 600;
 }
 
-/* 表格样式优化 */
-.time-set-table {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-.time-set-table :deep(.ant-table-wrapper) {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-/* 禁用所有滚动条，让表格自动延伸 */
-:deep(.ant-table-wrapper) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table-container) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-body) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-content) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-tbody) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table) {
-  font-size: 14px;
-  table-layout: auto;
-  width: 100%;
-  overflow: visible !important;
-}
-
-/* 强制移除任何可能的滚动条 */
-:deep(.ant-table-wrapper),
-:deep(.ant-table-container),
-:deep(.ant-table-body),
-:deep(.ant-table-content),
-:deep(.ant-table),
-:deep(.ant-table-tbody) {
-  scrollbar-width: none !important;
-  /* Firefox */
-  -ms-overflow-style: none !important;
-  /* IE/Edge */
-}
-
-:deep(.ant-table-wrapper)::-webkit-scrollbar,
-:deep(.ant-table-container)::-webkit-scrollbar,
-:deep(.ant-table-body)::-webkit-scrollbar,
-:deep(.ant-table-content)::-webkit-scrollbar,
-:deep(.ant-table)::-webkit-scrollbar,
-:deep(.ant-table-tbody)::-webkit-scrollbar {
-  display: none !important;
-  /* Chrome/Safari */
-}
-
-/* 列宽度控制 */
-:deep(.ant-table-thead > tr > th:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(2)) {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(3)) {
-  width: auto !important;
-  min-width: 100px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(4)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(2)) {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(3)) {
-  width: auto !important;
-  min-width: 100px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(4)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-/* 表格行和列样式 */
-:deep(.ant-table-tbody > tr > td) {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-:deep(.ant-table-thead > tr > th) {
-  font-weight: 600;
-  padding: 8px 12px;
-  text-align: center;
-  background-color: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-/* 确保列内容正确显示 */
-:deep(.ant-table-thead > tr > th) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-tbody > tr > td) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-cell) {
-  text-align: center;
-}
-
-/* 表格整体布局优化 */
-:deep(.ant-table-wrapper) {
-  width: 100%;
-  min-height: auto;
-}
-
-/* 确保表格不会被压缩 */
-:deep(.ant-table-fixed-header) {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-:deep(.ant-table-fixed-header)::-webkit-scrollbar {
-  display: none !important;
-}
-
 /* 操作按钮布局 */
 :deep(.ant-btn) {
   min-width: auto;
@@ -577,50 +455,9 @@ const onDragEnd = async (evt: any) => {
   margin-right: 6px !important;
 }
 
-/* 操作列内容居中且不超出 */
-:deep(.ant-table-tbody > tr > td:nth-child(4) .ant-space) {
-  justify-content: center;
-  width: 100%;
-}
-
 /* 按钮图标样式调整 */
 :deep(.ant-btn .anticon) {
   font-size: 14px;
-}
-
-/* 序号列样式 */
-:deep(.ant-table-tbody > tr > td:first-child) {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-/* 隐藏所有滚动条 */
-:deep(.ant-table-container)::-webkit-scrollbar,
-:deep(.ant-table-tbody)::-webkit-scrollbar,
-:deep(.ant-table-content)::-webkit-scrollbar,
-:deep(.ant-table-body)::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-
-/* 确保列宽度固定 */
-:deep(.ant-table-thead > tr > th) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:deep(.ant-table-tbody > tr > td) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 序号列样式 */
-:deep(.ant-table-tbody > tr > td:first-child) {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
 }
 
 /* 操作按钮布局 */
@@ -1201,7 +1038,9 @@ const onDragEnd = async (evt: any) => {
   transition: background 0.2s ease;
 }
 
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
+[data-theme='dark']
+  .ant-picker-dropdown
+  .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 </style>

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+import { useLocale } from '@/composables/useLocale'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
+import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
+import TrayMenuEditor from './components/TrayMenuEditor.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -39,20 +44,27 @@ const {
   handleLowPerformanceModeChange,
   handleSettingChange,
 } = defineProps<TabBasicProps>()
+
+const { t } = useI18n()
+const { locale, setLocale } = useLocale()
+
+const handleLocaleChange = (value: unknown): void => {
+  void setLocale(value as AppLocale)
+}
 </script>
 
 <template>
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>外观配置</h3>
+        <h3>{{ t('setting.basic.appearance') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">主题模式</span>
-              <a-tooltip title="界面外观主题">
+              <span class="form-label">{{ t('setting.basic.themeMode') }}</span>
+              <a-tooltip :title="t('setting.basic.themeModeTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -75,8 +87,8 @@ const {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">主题色</span>
-              <a-tooltip title="界面主色调">
+              <span class="form-label">{{ t('setting.basic.themeColor') }}</span>
+              <a-tooltip :title="t('setting.basic.themeColorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -107,18 +119,35 @@ const {
           </div>
         </a-col>
       </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('common.language') }}</span>
+              <a-tooltip :title="t('common.languageTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select :value="locale" size="large" style="width: 100%" @change="handleLocaleChange">
+              <a-select-option v-for="item in SUPPORTED_LOCALES" :key="item" :value="item">
+                {{ t(`locale.${item}`) }}
+              </a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
     </div>
 
     <div class="form-section">
       <div class="section-header">
-        <h3>光标效果</h3>
+        <h3>{{ t('setting.basic.cursorSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">光标动画</span>
-              <a-tooltip title="选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认">
+              <span class="form-label">{{ t('setting.basic.cursorAnim') }}</span>
+              <a-tooltip :title="t('setting.basic.cursorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -136,16 +165,14 @@ const {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>性能配置</h3>
+        <h3>{{ t('setting.basic.perfSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">低性能模式</span>
-              <a-tooltip
-                title="降低装饰性动画和后台渲染占用，不影响脚本执行和任务调度；窗口最小化时会自动暂停装饰性动画"
-              >
+              <span class="form-label">{{ t('setting.basic.lowPerf') }}</span>
+              <a-tooltip :title="t('setting.basic.lowPerfTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -157,8 +184,8 @@ const {
               style="width: 100%"
               @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
             >
-              <a-select-option :value="true">开启</a-select-option>
-              <a-select-option :value="false">关闭</a-select-option>
+              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -167,14 +194,14 @@ const {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>系统托盘</h3>
+        <h3>{{ t('setting.basic.traySection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">常态显示托盘图标</span>
-              <a-tooltip title="即使界面未最小化仍显示系统托盘图标">
+              <span class="form-label">{{ t('setting.basic.showTray') }}</span>
+              <a-tooltip :title="t('setting.basic.showTrayTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -184,16 +211,16 @@ const {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
             >
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">最小化到托盘</span>
-              <a-tooltip title="界面最小化时隐藏到系统托盘">
+              <span class="form-label">{{ t('setting.basic.minToTray') }}</span>
+              <a-tooltip :title="t('setting.basic.minToTrayTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -203,25 +230,24 @@ const {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
             >
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
       </a-row>
+      <TrayMenuEditor />
     </div>
     <div class="form-section">
       <div class="section-header">
-        <h3>窗口控制</h3>
+        <h3>{{ t('setting.basic.windowSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">隐藏关闭按钮</span>
-              <a-tooltip
-                title="隐藏主窗口右上角的关闭按钮，避免误操作；仍可通过 Alt+F4、任务栏窗口菜单或托盘菜单退出"
-              >
+              <span class="form-label">{{ t('setting.basic.hideClose') }}</span>
+              <a-tooltip :title="t('setting.basic.hideCloseTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -231,8 +257,8 @@ const {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
             >
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -240,7 +266,7 @@ const {
     </div>
     <div class="form-section">
       <div class="section-header">
-        <h3>日志样式</h3>
+        <h3>{{ t('setting.basic.logStyle') }}</h3>
       </div>
       <LogHighlightSettings />
     </div>

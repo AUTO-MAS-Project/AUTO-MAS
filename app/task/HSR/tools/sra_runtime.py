@@ -31,12 +31,18 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
-from app.utils.io import atomic_write, read_file, write_file
+from app.utils.io import atomic_write, migrate_legacy_dir, read_file, write_file
 
 from .log_detect import (
+    HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
     can_read_stream_live,
     emit_process_output,
     has_failure_output,
+)
+from .managed_overlay import (
+    DroppedOverride,
+    log_dropped_overrides,
+    overlay_managed_options,
 )
 from .stage_runtime import (
     get_sra_native_stage,
@@ -61,6 +67,11 @@ SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
 SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
 SRA_CACHE_NO_NOTIFY_KEY = "NoNotifyForShortcut"
+# SRA 2.22.0 起领取奖励从数组 rewards[0..6] 改成具名开关 rewards.<name>（与
+# replenish.enabled 一样是平铺在 receiveRewards 下的点号键）；旧 profile 仍是数组。
+# SRA 读取时具名键优先、数组只作旧版兼容，写临时配置时按原生 profile 的形态镜像。
+SRA_REWARD_REDEEM_CODE_KEY = "rewards.redeemCode"
+SRA_REWARD_REDEEM_CODE_LEGACY_KEY = "rewards.6"
 
 
 def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
@@ -113,23 +124,29 @@ def discover_sra_managed_options(
         section_name = "cosmicStrife"
     _source, payload = load_sra_native_config(script_config)
     if module_key == "Daily":
-        predicate = lambda key: key not in {"enabled", "tasklist"}
+
+        def predicate(key):
+            return key not in {"enabled", "tasklist"}
+
     elif module_key == "ReceiveRewards":
-        predicate = lambda key: key not in {"enabled", "redeemCodes"}
+
+        def predicate(key):
+            return key not in {"enabled", "redeemCodes"}
+
     else:
         if module_key == "DivergentUniverse":
-            predicate = (
-                lambda key: (
+
+            def predicate(key):
+                return (
                     key == "pointRewards.enabled"
                     or key.startswith("divergentUniverse.")
-                )
-                and key != "divergentUniverse.enabled"
-            )
+                ) and key != "divergentUniverse.enabled"
+
         else:
-            predicate = (
-                lambda key: key.startswith("currencyWars.")
-                and key != "currencyWars.enabled"
-            )
+
+            def predicate(key):
+                return key.startswith("currencyWars.") and key != "currencyWars.enabled"
+
     section = payload.get(section_name)
     if not isinstance(section, dict):
         return {}, section_name
@@ -143,18 +160,20 @@ def discover_sra_managed_options(
     return options, section_name
 
 
-def _same_value_kind(value: Any, reference: Any) -> bool:
-    if isinstance(reference, bool):
-        return isinstance(value, bool)
-    if isinstance(reference, int):
-        return isinstance(value, int) and not isinstance(value, bool)
-    if isinstance(reference, float):
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if isinstance(reference, list):
-        return isinstance(value, list)
-    if isinstance(reference, dict):
-        return isinstance(value, dict)
-    return isinstance(value, str) if isinstance(reference, str) else True
+def overlay_sra_managed_options(
+    module_key: str,
+    script_config: Any,
+    user_config: Any,
+) -> tuple[dict[str, Any], tuple[DroppedOverride, ...]]:
+    """Overlay a user's Managed.Options on native SRA values.
+
+    原生配置里已不存在或类型对不上的覆盖键逐个丢弃、回退到原生值，并作为
+    第二个返回值交给表单与运行日志，不再整体抛错。
+    """
+
+    native, _section_name = discover_sra_managed_options(module_key, script_config)
+    overrides = _managed_options(user_config, module_key)
+    return overlay_managed_options(native, overrides)
 
 
 def resolve_sra_managed_options(
@@ -164,19 +183,19 @@ def resolve_sra_managed_options(
 ) -> dict[str, Any]:
     """Return native SRA values overlaid with a user's Managed.Options."""
 
-    native, _section_name = discover_sra_managed_options(module_key, script_config)
-    overrides = _managed_options(user_config, module_key)
-    unknown = sorted(set(overrides).difference(native))
-    if unknown:
-        raise ValueError(
-            f"SRA {module_key} 包含当前原生配置不支持的字段：{'、'.join(unknown)}"
-        )
-    effective = dict(native)
-    for key, value in overrides.items():
-        if not _same_value_kind(value, native[key]):
-            raise ValueError(f"SRA {module_key}.{key} 的值类型与原生配置不一致")
-        effective[key] = value
+    effective, _dropped = overlay_sra_managed_options(
+        module_key, script_config, user_config
+    )
     return effective
+
+
+def _reward_list_index(key: str) -> int | None:
+    """``rewards.<下标>`` 返回数组下标；具名开关 ``rewards.<name>`` 与其它键返回 None。"""
+
+    prefix, _sep, suffix = key.partition(".")
+    if prefix != "rewards" or not suffix.isdigit():
+        return None
+    return int(suffix)
 
 
 def _apply_managed_options(
@@ -186,21 +205,24 @@ def _apply_managed_options(
     user_config: Any,
 ) -> None:
     _native, section_name = discover_sra_managed_options(module_key, script_config)
-    effective = resolve_sra_managed_options(module_key, script_config, user_config)
+    effective, dropped = overlay_sra_managed_options(
+        module_key, script_config, user_config
+    )
+    log_dropped_overrides(logger, "SRA", module_key, dropped)
     section = config.get(section_name)
     if not isinstance(section, dict):
         raise ValueError(f"SRA 临时配置缺少 {section_name} 对象")
     for key, value in effective.items():
-        if key.startswith("rewards."):
-            index = int(key.split(".", 1)[1])
-            rewards = section.setdefault("rewards", [])
-            if not isinstance(rewards, list):
-                raise ValueError("SRA receiveRewards.rewards 必须是数组")
-            while len(rewards) <= index:
-                rewards.append(False)
-            rewards[index] = value
-        else:
+        index = _reward_list_index(key)
+        if index is None:
             section[key] = value
+            continue
+        rewards = section.setdefault("rewards", [])
+        if not isinstance(rewards, list):
+            raise ValueError("SRA receiveRewards.rewards 必须是数组")
+        while len(rewards) <= index:
+            rewards.append(False)
+        rewards[index] = value
 
 
 def write_sra_temp_config(
@@ -220,10 +242,7 @@ def write_sra_temp_config(
     return target_path
 
 
-def cleanup_sra_temp_config(path: Path, keep_on_error: bool = False) -> None:
-    if keep_on_error:
-        return
-
+def cleanup_sra_temp_config(path: Path) -> None:
     if path.exists():
         try:
             path.unlink()
@@ -426,13 +445,21 @@ def build_sra_module_config(
                 eow_enabled=daily_eow_enabled,
             )
     elif module.key == "ReceiveRewards":
-        config["receiveRewards"]["enabled"] = True
-        rewards = config["receiveRewards"].setdefault("rewards", [])
+        section = config["receiveRewards"]
+        section["enabled"] = True
+        rewards = section.setdefault("rewards", [])
         while len(rewards) <= 6:
             rewards.append(False)
         rewards[6] = bool(rewards[6]) and bool(redeem_codes_enabled)
-        if not rewards[6]:
-            config["receiveRewards"]["redeemCodes"] = ""
+        redeem_enabled = rewards[6]
+        if SRA_REWARD_REDEEM_CODE_KEY in section:
+            # 具名开关存在时 SRA 以它为准，闸门要同时落在这里
+            section[SRA_REWARD_REDEEM_CODE_KEY] = bool(
+                section[SRA_REWARD_REDEEM_CODE_KEY]
+            ) and bool(redeem_codes_enabled)
+            redeem_enabled = section[SRA_REWARD_REDEEM_CODE_KEY]
+        if not redeem_enabled:
+            section["redeemCodes"] = ""
     elif module.key == "DivergentUniverse":
         config["cosmicStrife"]["enabled"] = True
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
@@ -454,6 +481,102 @@ def get_sra_app_data_dir() -> Path:
     return Path.home() / ".config" / "SRA"
 
 
+def _script_sra_profile_setting(script_config: Any) -> str:
+    """读脚本 ``Info.SRAProfile``；兼容 ConfigBase 与测试里的普通字典。"""
+
+    if script_config is None:
+        return ""
+    if isinstance(script_config, dict):
+        section = script_config.get("Info")
+        value = section.get("SRAProfile") if isinstance(section, dict) else None
+    else:
+        try:
+            value = script_config.get("Info", "SRAProfile")
+        except (AttributeError, KeyError, TypeError):
+            value = None
+    return str(value or "").strip()
+
+
+def list_sra_profiles(config_root: Path | None = None) -> list[Path]:
+    """``configs`` 目录下全部档案文件，按文件名稳定排序；目录不存在时为空。"""
+
+    root = (
+        Path(config_root)
+        if config_root is not None
+        else get_sra_app_data_dir() / "configs"
+    )
+    if not root.is_dir():
+        return []
+    return sorted(
+        (item for item in root.glob("*.json") if item.is_file()),
+        key=lambda item: item.name.casefold(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SRAProfileSelection:
+    """一次 SRA 档案选择的完整结果。
+
+    ``resolve_sra_profile`` 只交回 ``(selected_id, path)``；需要向用户解释
+    「配置的档案不存在、已回退」的调用方（能力快照、托管表单、档案列表端点、
+    运行前检查）改用本结构，``fallback`` 为真时 ``fallback_reason`` 是现成的
+    一句人话。
+    """
+
+    root: Path
+    requested_id: str
+    selected_id: str
+    path: Path
+    fallback: bool = False
+    fallback_reason: str | None = None
+
+
+def _auto_sra_profile(root: Path) -> tuple[str, Path]:
+    """原有的自动选择：优先 ``Default.json``，否则按文件名排序取第一份。"""
+
+    default_path = root / "Default.json"
+    if default_path.is_file():
+        return "Default", default_path
+    candidates = list_sra_profiles(root)
+    if candidates:
+        selected = candidates[0]
+        return selected.stem, selected
+    return "Default", default_path
+
+
+def resolve_sra_profile_selection(
+    script_config: Any,
+    *,
+    config_root: Path | None = None,
+) -> SRAProfileSelection:
+    """按脚本 ``Info.SRAProfile`` 选档案；配了但文件不存在时回退并记下原因。"""
+
+    root = (
+        Path(config_root)
+        if config_root is not None
+        else get_sra_app_data_dir() / "configs"
+    )
+    requested = _script_sra_profile_setting(script_config)
+    if requested:
+        requested_path = root / f"{requested}.json"
+        if requested_path.is_file():
+            return SRAProfileSelection(root, requested, requested, requested_path)
+        auto_id, auto_path = _auto_sra_profile(root)
+        return SRAProfileSelection(
+            root,
+            requested,
+            auto_id,
+            auto_path,
+            fallback=True,
+            fallback_reason=(
+                f"脚本配置的 SRA 配置档案「{requested}」不存在（{requested_path}），"
+                f"已改用「{auto_id}」"
+            ),
+        )
+    auto_id, auto_path = _auto_sra_profile(root)
+    return SRAProfileSelection(root, "", auto_id, auto_path)
+
+
 def resolve_sra_profile(
     script_config: Any,
     *,
@@ -461,31 +584,14 @@ def resolve_sra_profile(
 ) -> tuple[str, Path]:
     """Resolve the one SRA native profile shared by inspect, forms and runtime.
 
-    The conventional ``Default.json`` is preferred when present; otherwise
-    the first profile in stable filename order is selected.
+    The script's ``Info.SRAProfile`` wins when that file exists.  Otherwise the
+    conventional ``Default.json`` is preferred when present, else the first
+    profile in stable filename order is selected.  Callers that need to tell
+    the user about a fallback use :func:`resolve_sra_profile_selection`.
     """
 
-    root = (
-        Path(config_root)
-        if config_root is not None
-        else get_sra_app_data_dir() / "configs"
-    )
-    default_path = root / "Default.json"
-    if default_path.is_file():
-        return "Default", default_path
-
-    candidates = (
-        sorted(
-            (item for item in root.glob("*.json") if item.is_file()),
-            key=lambda item: item.name.casefold(),
-        )
-        if root.is_dir()
-        else []
-    )
-    if candidates:
-        selected = candidates[0]
-        return selected.stem, selected
-    return "Default", default_path
+    selection = resolve_sra_profile_selection(script_config, config_root=config_root)
+    return selection.selected_id, selection.path
 
 
 def disable_sra_windows_notifications() -> Path:
@@ -731,17 +837,19 @@ async def run_sra_config(
 
 
 def _sra_temp_path(script_uid: str, user_uid: str, module_key: str) -> Path:
+    """HSR SRA 临时配置文件路径。
+
+    落在受保护的 ``data/`` 下，避免与 AUTO-MAS-Runtime 监督器接管的
+    ``runtime/`` 撞名；首次访问时把用户机器上已有的旧
+    ``runtime/hsr/sra-config`` 整体迁移过来。
+    """
+
     from app.core import Config
 
-    return (
-        Config.config_path.parent
-        / "runtime"
-        / "hsr"
-        / "sra-config"
-        / script_uid
-        / user_uid
-        / f"{module_key}.json"
-    )
+    app_root = Config.config_path.parent
+    sra_config_dir = app_root / "data" / "hsr" / "sra-config"
+    migrate_legacy_dir(app_root / "runtime" / "hsr" / "sra-config", sra_config_dir)
+    return sra_config_dir / script_uid / user_uid / f"{module_key}.json"
 
 
 def _build_sra_base_config(name: str) -> dict:
@@ -810,6 +918,7 @@ def _native_stage_to_sra_tp_item(
     field: str,
     run_times: int,
     count: int = 1,
+    auto_detect: bool = SRA_TRAILBLAZE_POWER_AUTO_DETECT,
 ) -> dict | None:
     """把 Stage.ScriptStage / ScriptEchoOfWar 转成 SRA tasklist item。"""
 
@@ -831,7 +940,7 @@ def _native_stage_to_sra_tp_item(
         "levelName": label,
         "count": count,
         "runtimes": run_times,
-        "autoDetect": SRA_TRAILBLAZE_POWER_AUTO_DETECT,
+        "autoDetect": auto_detect,
     }
 
 
@@ -851,19 +960,83 @@ def _build_sra_trailblaze_tasklist(
 
     if eow_enabled:
         # SRA autoDetect 路径不读取 RunTimes，这里只保留结构占位。
-        native_eow = _native_stage_to_sra_tp_item(user_config, "ScriptEchoOfWar", 1)
-        if native_eow is None:
-            raise RuntimeError(
-                "本周需要执行历战余响，但 Stage.ScriptEchoOfWar 缺少 SRA 原生"
-                "历战余响字段；请在体力配置中重新选择历战余响"
-            )
-        eow_item = native_eow
+        eow_item = _require_sra_echo_of_war_item(
+            user_config,
+            auto_detect=SRA_TRAILBLAZE_POWER_AUTO_DETECT,
+            count=1,
+        )
 
     if eow_item is not None:
         tasklist.append(eow_item)
     if main_item is not None:
         tasklist.append(main_item)
     return tasklist
+
+
+def _require_sra_echo_of_war_item(
+    user_config,
+    *,
+    auto_detect: bool,
+    count: int,
+) -> dict:
+    """取历战余响的 SRA tasklist item；缺少原生字段时直接报错。"""
+
+    item = _native_stage_to_sra_tp_item(
+        user_config,
+        "ScriptEchoOfWar",
+        1,
+        count=count,
+        auto_detect=auto_detect,
+    )
+    if item is None:
+        raise RuntimeError(
+            "本周需要执行历战余响，但 Stage.ScriptEchoOfWar 缺少 SRA 原生"
+            "历战余响字段；请在体力配置中重新选择历战余响"
+        )
+    return item
+
+
+def build_sra_echo_of_war_config(
+    script_config,
+    user_config,
+    name: str = "_mas_temp_EchoOfWar",
+) -> dict:
+    """构造只跑历战余响的 SRA TrailblazePowerTask 配置。
+
+    培养目标模式下 SRA 由原生识别决定副本，只有培养目标材料正好出自历战余响
+    才会排上周本；2.20.0 之前的 SRA 在该模式下还完全不读 tasklist。周本因此
+    单独跑一次手动副本，不依赖培养目标内容与 SRA 版本。
+
+    Args:
+        script_config: HSR 脚本配置，用于沿用用户的原生体力选项。
+        user_config: HSR 用户配置，提供历战余响关卡。
+        name: 写入 SRA 临时配置的配置名。
+
+    Returns:
+        只启用 trailblazePower、tasklist 仅含历战余响的 SRA TasksConfig。
+
+    Raises:
+        RuntimeError: 用户未配置 SRA 原生历战余响关卡。
+    """
+
+    eow_item = _require_sra_echo_of_war_item(
+        user_config,
+        auto_detect=False,
+        count=HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
+    )
+    config = _build_sra_base_config(name)
+    _apply_managed_options(config, "Daily", script_config, user_config)
+    trailblaze = config["trailblazePower"]
+    trailblaze["enabled"] = True
+    # 本次只为周本而跑：关掉培养目标识别与活动检测，避免顺带消耗体力；
+    # 补充体力仍按体力模块的口径统一关闭。
+    trailblaze["useBuildTarget"] = False
+    trailblaze["activity.enabled"] = False
+    trailblaze["replenish.enabled"] = False
+    trailblaze["replenish.way"] = 0
+    trailblaze["replenish.times"] = 0
+    trailblaze["tasklist"] = [eow_item]
+    return config
 
 
 def _resolve_sra_currency_wars_strategy(script_config) -> str:

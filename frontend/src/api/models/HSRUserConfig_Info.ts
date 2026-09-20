@@ -20,6 +20,14 @@ export type HSRUserConfig_Info = {
      */
     Password?: (string | null);
     /**
+     * 配置来源（脚本/用户/直控）
+     */
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
+    /**
      * 游戏服务器
      */
     Server?: (string | null);
@@ -27,6 +35,22 @@ export type HSRUserConfig_Info = {
      * 剩余天数
      */
     RemainedDay?: (number | null);
+    /**
+     * 是否在任务前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否在任务后执行脚本
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
     /**
      * 备注
      */

@@ -24,7 +24,6 @@ from pathlib import Path
 
 from app.services import System
 from app.utils import ProcessRunner, get_logger
-from app.utils.constants import MAA_TASKS
 from app.utils.io import read_file, write_file
 
 logger = get_logger("MAA 更新工具")
@@ -37,7 +36,7 @@ async def update_maa(maa_path: Path):
     try:
         new_set = read_file(maa_path / "config/gui.new.json")
         maa_update_package = new_set.get("Update", {}).get("UpdatePackage", "")
-    except (FileNotFoundError, json.JSONDecodeError):
+    except json.JSONDecodeError:
         maa_update_package = ""
     # OLD: Global.VersionUpdate.package
     if not maa_update_package:
@@ -46,7 +45,7 @@ async def update_maa(maa_path: Path):
             maa_update_package = old_set.get("Global", {}).get(
                 "VersionUpdate.package", ""
             )
-        except (FileNotFoundError, json.JSONDecodeError):
+        except json.JSONDecodeError:
             maa_update_package = ""
 
     if not maa_update_package or not (maa_path / maa_update_package).exists():
@@ -57,14 +56,16 @@ async def update_maa(maa_path: Path):
     maa_set = read_file(maa_path / "config/gui.json")
     maa_new_set = read_file(maa_path / "config/gui.new.json")
 
-    # 多配置使用默认配置
+    # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
     if maa_set["Current"] != "Default":
         maa_set["Configurations"]["Default"] = maa_set["Configurations"][
             maa_set["Current"]
         ]
-        maa_new_set["Configurations"]["Default"] = maa_new_set["Configurations"][
-            maa_set["Current"]
-        ]
+        maa_new_configurations = maa_new_set.setdefault("Configurations", {})
+        if maa_set["Current"] in maa_new_configurations:
+            maa_new_configurations["Default"] = maa_new_configurations[
+                maa_set["Current"]
+            ]
         maa_set["Current"] = "Default"
 
     # 各配置部分的引用

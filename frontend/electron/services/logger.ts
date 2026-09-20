@@ -1,11 +1,7 @@
 import log from 'electron-log'
 import * as path from 'path'
 import { app } from 'electron'
-
-/**
- * 日志级别类型
- */
-export type LogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug' | 'silly'
+import { isDevelopmentEnvironment } from './instanceConfig'
 
 /**
  * 模块颜色映射
@@ -16,7 +12,7 @@ const moduleColors = new Map<string, string>()
  * 文件日志格式化函数
  * 格式：{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {module} | {message}
  */
-function fileFormat(params: { data: any[]; level: string; message: { date: Date } }): string[] {
+function fileFormat(params: { data: unknown[]; level: string; message: { date: Date } }): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'
@@ -29,7 +25,11 @@ function fileFormat(params: { data: any[]; level: string; message: { date: Date 
  * 控制台日志格式化函数
  * 格式：<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <custom-color>{module}</custom-color> | <level>{message}</level>
  */
-function consoleFormat(params: { data: any[]; level: string; message: { date: Date } }): string[] {
+function consoleFormat(params: {
+  data: unknown[]
+  level: string
+  message: { date: Date }
+}): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'
@@ -95,7 +95,11 @@ export function initializeLogger(): void {
     console.error('日志初始化失败: electron.app 不可用')
     return
   }
-  const appPath = path.dirname(app.getPath('exe'))
+  // 必须和 environmentService 的 getAppRoot() 同口径：日志窗读的是 `<appRoot>/debug`，
+  // 开发环境下 exe 是 node_modules 里的 electron.exe，写到那儿日志页永远读不到。
+  const appPath = isDevelopmentEnvironment()
+    ? path.dirname(app.getAppPath())
+    : path.dirname(app.getPath('exe'))
 
   // 设置日志级别
   log.transports.file.level = 'info'
@@ -117,42 +121,31 @@ export function initializeLogger(): void {
 }
 
 /**
- * 保存原始 console 方法的引用
- */
-const originalConsole = {
-  log: console.log,
-  info: console.info,
-  warn: console.warn,
-  error: console.error,
-  debug: console.debug,
-}
-
-/**
  * Hook console 方法，将所有 console 调用重定向到 logger 系统
  */
 function hookConsole(): void {
   // Hook console.log -> log.info
-  console.log = function (...args: any[]) {
+  console.log = function (...args: unknown[]) {
     log.info('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.info -> log.info
-  console.info = function (...args: any[]) {
+  console.info = function (...args: unknown[]) {
     log.info('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.warn -> log.warn
-  console.warn = function (...args: any[]) {
+  console.warn = function (...args: unknown[]) {
     log.warn('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.error -> log.error
-  console.error = function (...args: any[]) {
+  console.error = function (...args: unknown[]) {
     log.error('控制台', ...formatConsoleArgs(args))
   }
 
   // Hook console.debug -> log.debug
-  console.debug = function (...args: any[]) {
+  console.debug = function (...args: unknown[]) {
     log.debug('控制台', ...formatConsoleArgs(args))
   }
 }
@@ -160,7 +153,7 @@ function hookConsole(): void {
 /**
  * 格式化 console 参数
  */
-function formatConsoleArgs(args: any[]): any[] {
+function formatConsoleArgs(args: unknown[]): unknown[] {
   return args.map(arg => {
     if (arg instanceof Error) {
       // 特殊处理 Error 对象
@@ -174,17 +167,6 @@ function formatConsoleArgs(args: any[]): any[] {
     }
     return arg
   })
-}
-
-/**
- * 恢复原始 console 方法（用于调试或特殊情况）
- */
-export function restoreConsole(): void {
-  console.log = originalConsole.log
-  console.info = originalConsole.info
-  console.warn = originalConsole.warn
-  console.error = originalConsole.error
-  console.debug = originalConsole.debug
 }
 
 /**
@@ -214,16 +196,8 @@ export class Logger {
     log.info(this.moduleName, message, ...args)
   }
 
-  verbose(message: string, ...args: unknown[]): void {
-    log.verbose(this.moduleName, message, ...args)
-  }
-
   debug(message: string, ...args: unknown[]): void {
     log.debug(this.moduleName, message, ...args)
-  }
-
-  silly(message: string, ...args: unknown[]): void {
-    log.silly(this.moduleName, message, ...args)
   }
 }
 

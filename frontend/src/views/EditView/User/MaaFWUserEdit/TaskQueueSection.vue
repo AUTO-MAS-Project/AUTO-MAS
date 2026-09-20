@@ -1,0 +1,855 @@
+<template>
+  <div class="form-section">
+    <div v-if="interfaceLoading" class="task-loading">
+      <a-spin :tip="t('edit.readingInterfaceJson')">
+        <a-alert
+          type="info"
+          show-icon
+          :message="t('edit.loadingMaafwProjectInterface')"
+          :description="t('edit.readingTaskOptionPreset')"
+        />
+      </a-spin>
+    </div>
+    <a-empty
+      v-else-if="!previewData"
+      :description="t('edit.interfaceJsonHasNot')"
+      class="task-empty"
+    />
+    <a-row v-else :gutter="24" class="task-editor-layout">
+      <!-- 队列行只剩标题，左窄右宽：9 / 15 -->
+      <a-col :xs="24" :lg="9" class="task-list-column">
+        <div class="column-header">
+          <span class="column-title">{{ t('edit.taskQueue') }}</span>
+          <!-- 不用 a-space：列窄下来时级联选择器要能收缩，标题行不能折成两行，否则两栏顶边对不齐 -->
+          <div class="column-actions">
+            <a-button
+              v-if="presetTemplates.length > 0 && orderedTasks.length > 0"
+              type="link"
+              size="small"
+              @click="showPresetModalModel = true"
+            >
+              {{ t('edit.presetTemplate') }}
+            </a-button>
+            <a-cascader
+              v-model:value="addTaskCascaderValueModel"
+              :options="addTaskCascaderOptions"
+              :show-search="{ filter: filterAddTaskOption }"
+              :placeholder="t('edit.addTask')"
+              expand-trigger="hover"
+              class="add-task-cascader"
+              :disabled="interfaceDependentDisabled || availableTasks.length === 0"
+              @change="(value: unknown) => emit('addTaskCascaderChange', value)"
+            >
+              <template #suffixIcon>
+                <PlusOutlined />
+              </template>
+            </a-cascader>
+          </div>
+        </div>
+        <div class="task-list">
+          <div
+            v-if="orderedTasks.length === 0 && presetTemplates.length > 0"
+            class="preset-section"
+          >
+            <div
+              v-for="template in presetTemplates"
+              :key="template.preset.name"
+              class="preset-card"
+            >
+              <div class="preset-card-inner">
+                <div class="preset-header">
+                  <div class="preset-icon-wrap">
+                    <ThunderboltOutlined class="preset-icon" />
+                  </div>
+                  <div class="preset-info">
+                    <h3 class="preset-name">{{ getDisplayName(template.preset) }}</h3>
+                    <MaaFWDescriptionView
+                      v-if="template.preset.description"
+                      :content="template.preset.description"
+                      :base-path="previewData.path"
+                      class="preset-desc"
+                    />
+                  </div>
+                  <!-- 「应用预设」就放在标题右边，不再单占一行 -->
+                  <a-button
+                    type="primary"
+                    class="preset-apply-button"
+                    :disabled="template.taskNames.length === 0"
+                    @click="emit('applyPresetTemplate', template.preset.name)"
+                  >
+                    {{ t('edit.applyPreset2') }}
+                  </a-button>
+                </div>
+
+                <div class="preset-tasks-preview">
+                  <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
+                    <span class="task-dot"></span>
+                    <span class="task-chip-name">
+                      {{ getDisplayName(taskByName.get(taskName)!) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <a-empty
+            v-else-if="orderedTasks.length === 0"
+            :description="t('edit.addTaskAbove')"
+            class="task-queue-empty"
+          />
+          <draggable
+            v-else
+            v-model="queuedTaskItemsModel"
+            item-key="id"
+            :animation="200"
+            handle=".task-drag-handle"
+            ghost-class="task-row-ghost"
+            chosen-class="task-row-chosen"
+            drag-class="task-row-drag"
+            class="task-queue-list"
+            :move="canDragTask"
+            @end="emit('taskDragEnd')"
+          >
+            <template #item="{ element: queuedTask, index }">
+              <button
+                type="button"
+                class="task-row"
+                :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
+                @click="emit('selectTask', queuedTask.id)"
+              >
+                <HolderOutlined class="task-drag-handle" aria-hidden="true" />
+                <img
+                  v-if="resolveMaaFWAssetUrl(queuedTask.task.icon)"
+                  :src="resolveMaaFWAssetUrl(queuedTask.task.icon)"
+                  alt=""
+                  width="28"
+                  height="28"
+                  class="task-icon"
+                />
+                <div class="task-main">
+                  <span class="task-title">
+                    {{ getDisplayName(queuedTask.task) }}
+                    <span v-if="queuedTask.copyTotal > 1" class="task-copy-index">
+                      #{{ queuedTask.copyIndex }}
+                    </span>
+                  </span>
+                </div>
+                <a-space @click.stop>
+                  <a-button
+                    type="text"
+                    size="small"
+                    :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, -1)"
+                    :aria-label="t('edit.moveTaskUp')"
+                    @click="emit('moveTask', queuedTask.id, -1)"
+                  >
+                    <template #icon>
+                      <ArrowUpOutlined />
+                    </template>
+                  </a-button>
+                  <a-button
+                    type="text"
+                    size="small"
+                    :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, 1)"
+                    :aria-label="t('edit.moveTaskDown')"
+                    @click="emit('moveTask', queuedTask.id, 1)"
+                  >
+                    <template #icon>
+                      <ArrowDownOutlined />
+                    </template>
+                  </a-button>
+                </a-space>
+              </button>
+            </template>
+          </draggable>
+        </div>
+      </a-col>
+      <a-col :xs="24" :lg="15" class="task-option-column">
+        <div class="column-header">
+          <span>{{ t('edit.taskConfiguration') }}</span>
+        </div>
+        <div v-if="selectedTask" class="task-option-panel">
+          <div class="selected-task-header">
+            <img
+              v-if="resolveMaaFWAssetUrl(selectedTask.icon)"
+              :src="resolveMaaFWAssetUrl(selectedTask.icon)"
+              alt=""
+              width="32"
+              height="32"
+              class="selected-task-icon"
+            />
+            <div>
+              <div class="selected-task-title">
+                {{ getDisplayName(selectedTask) }}
+                <span v-if="(selectedQueuedTask?.copyTotal || 1) > 1" class="task-copy-index">
+                  #{{ selectedQueuedTask?.copyIndex }}
+                </span>
+              </div>
+              <!-- 入口 | 分组：原来是队列行里的两个标签，挪到这里当副标题 -->
+              <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
+            </div>
+          </div>
+          <MaaFWTaskOptionEditor
+            :option-names="getTaskOptionNames(selectedTask)"
+            :options="previewData.options"
+            :task-options="taskSnapshot.taskOptions[selectedTaskId] || {}"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :base-path="previewData.path"
+            :disabled="interfaceDependentDisabled"
+            @update="payload => emit('taskOptionUpdate', selectedTaskId, payload)"
+          />
+          <div v-if="selectedTask.description" class="selected-task-description">
+            <div class="selected-task-description-label">
+              {{ t('edit.taskDescriptionLabel') }}
+            </div>
+            <MaaFWDescriptionView
+              :content="selectedTask.description"
+              :base-path="previewData.path"
+            />
+          </div>
+          <a-popconfirm
+            :title="t('edit.deleteThisTask2')"
+            :ok-text="t('edit.ok')"
+            :cancel-text="t('edit.cancel')"
+            :disabled="interfaceDependentDisabled"
+            @confirm="emit('deleteSelectedTask')"
+          >
+            <a-button
+              danger
+              block
+              class="delete-task-button"
+              :disabled="interfaceDependentDisabled"
+            >
+              <template #icon>
+                <DeleteOutlined />
+              </template>
+              {{ t('edit.deleteThisTask') }}
+            </a-button>
+          </a-popconfirm>
+        </div>
+        <div v-else class="task-option-empty">
+          <a-empty :description="t('edit.pickTaskLeftConfigure')" />
+        </div>
+      </a-col>
+    </a-row>
+
+    <a-modal
+      v-model:open="showPresetModalModel"
+      :title="t('edit.presetTemplate')"
+      :footer="null"
+      width="720px"
+      class="preset-template-modal"
+    >
+      <div v-if="presetTemplates.length > 0" class="preset-section preset-section-modal">
+        <div v-for="template in presetTemplates" :key="template.preset.name" class="preset-card">
+          <div class="preset-card-inner">
+            <div class="preset-header">
+              <div class="preset-icon-wrap">
+                <ThunderboltOutlined class="preset-icon" />
+              </div>
+              <div class="preset-info">
+                <h3 class="preset-name">{{ getDisplayName(template.preset) }}</h3>
+                <MaaFWDescriptionView
+                  v-if="template.preset.description && previewData"
+                  :content="template.preset.description"
+                  :base-path="previewData.path"
+                  class="preset-desc"
+                />
+              </div>
+              <a-button
+                type="primary"
+                class="preset-apply-button"
+                :disabled="template.taskNames.length === 0"
+                @click="emit('applyPresetTemplate', template.preset.name)"
+              >
+                {{ t('edit.applyPreset2') }}
+              </a-button>
+            </div>
+            <div class="preset-tasks-preview">
+              <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
+                <span class="task-dot"></span>
+                <span class="task-chip-name">
+                  {{ getDisplayName(taskByName.get(taskName)!) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <a-empty v-else :description="t('edit.noPresetTemplates')" />
+    </a-modal>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
+import draggable from 'vuedraggable'
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  DeleteOutlined,
+  HolderOutlined,
+  PlusOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons-vue'
+import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
+import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
+import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
+import type {
+  MaaFWInterfacePreviewData,
+  MaaFWPresetInfo,
+  MaaFWQueuedTaskItem,
+  MaaFWTaskInfo,
+  MaaFWTaskOptionValue,
+  MaaFWTaskSnapshot,
+} from '@/types/script'
+
+const { t } = useI18n()
+
+type DisplayItem = {
+  name: string
+  label?: string | null
+}
+
+type AddTaskCascaderOption = {
+  value: string
+  label: string
+  children?: AddTaskCascaderOption[]
+}
+
+type AddTaskCascaderPathOption = {
+  label?: string | number
+  value?: string | number
+}
+
+type PresetTemplate = {
+  preset: MaaFWPresetInfo
+  taskNames: string[]
+}
+
+const props = defineProps<{
+  interfaceLoading: boolean
+  previewData: MaaFWInterfacePreviewData | null
+  interfaceDependentDisabled: boolean
+  availableTasks: MaaFWTaskInfo[]
+  orderedTasks: MaaFWQueuedTaskItem[]
+  addTaskCascaderValue: string[]
+  addTaskCascaderOptions: AddTaskCascaderOption[]
+  presetTemplates: PresetTemplate[]
+  showPresetModal: boolean
+  taskByName: Map<string, MaaFWTaskInfo>
+  selectedTask: MaaFWTaskInfo | null
+  selectedTaskId: string
+  taskSnapshot: MaaFWTaskSnapshot
+  effectiveControllerName: string
+  effectiveResourceName: string
+}>()
+
+const emit = defineEmits<{
+  'update:addTaskCascaderValue': [value: string[]]
+  'update:showPresetModal': [value: boolean]
+  addTaskCascaderChange: [value: unknown]
+  applyPresetTemplate: [presetName: string]
+  reorderTasks: [taskIds: string[]]
+  selectTask: [taskId: string]
+  moveTask: [taskId: string, direction: -1 | 1]
+  taskDragEnd: []
+  taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
+  deleteSelectedTask: []
+}>()
+
+const queuedTaskItemsModel = computed({
+  get: () => props.orderedTasks,
+  set: value =>
+    emit(
+      'reorderTasks',
+      value.map(item => item.id)
+    ),
+})
+
+const selectedQueuedTask = computed(
+  () => props.orderedTasks.find(item => item.id === props.selectedTaskId) || null
+)
+
+const addTaskCascaderValueModel = computed({
+  get: () => props.addTaskCascaderValue,
+  set: value => emit('update:addTaskCascaderValue', value),
+})
+
+const showPresetModalModel = computed({
+  get: () => props.showPresetModal,
+  set: value => emit('update:showPresetModal', value),
+})
+
+const getDisplayName = (item: DisplayItem) => item.label || item.name
+
+// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签
+const selectedTaskMeta = computed(() => {
+  const task = props.selectedTask
+  if (!task) return ''
+  return [task.entry || task.name, ...(task.group || [])].filter(Boolean).join(' | ')
+})
+
+const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
+  return buildMaaFWAssetUrl(props.previewData?.path, rawPath)
+}
+
+const isPretaskItem = (item?: MaaFWQueuedTaskItem | null) => item?.task.entry === 'MXU_PRETASK'
+
+const canMoveTaskByOffset = (index: number, direction: -1 | 1) => {
+  const current = props.orderedTasks[index]
+  const target = props.orderedTasks[index + direction]
+  return Boolean(target && isPretaskItem(current) === isPretaskItem(target))
+}
+
+const canDragTask = (event: {
+  draggedContext: { element: MaaFWQueuedTaskItem; futureIndex: number }
+}) => {
+  const pretaskCount = props.orderedTasks.filter(item => isPretaskItem(item)).length
+  return isPretaskItem(event.draggedContext.element)
+    ? event.draggedContext.futureIndex < pretaskCount
+    : event.draggedContext.futureIndex >= pretaskCount
+}
+
+const uniqueOptionNames = (optionGroups: string[][]) => {
+  const optionNames: string[] = []
+  const seen = new Set<string>()
+  for (const group of optionGroups) {
+    for (const optionName of group) {
+      if (seen.has(optionName)) continue
+      seen.add(optionName)
+      optionNames.push(optionName)
+    }
+  }
+  return optionNames
+}
+
+const getTaskOptionNames = (task: MaaFWTaskInfo) => {
+  if (task.entry === 'MXU_PRETASK') {
+    return uniqueOptionNames([task.option || []])
+  }
+  const previewData = props.previewData
+  const effectiveResource = previewData?.resources.find(
+    item => item.name === props.effectiveResourceName
+  )
+  const effectiveController = previewData?.controllers.find(
+    item => item.name === props.effectiveControllerName
+  )
+  return uniqueOptionNames([
+    previewData?.globalOption || [],
+    effectiveResource?.option || [],
+    effectiveController?.option || [],
+    task.option || [],
+  ])
+}
+
+const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) => {
+  const keyword = inputValue.trim().toLowerCase()
+  if (!keyword) return true
+  return path.some(option =>
+    String(option.label || '')
+      .toLowerCase()
+      .includes(keyword)
+  )
+}
+</script>
+
+<style scoped>
+.form-section {
+  margin-bottom: 24px;
+}
+
+.section-header {
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-header h3::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: var(--ant-color-primary);
+  border-radius: 2px;
+}
+
+.task-loading {
+  padding: 24px;
+}
+
+.task-loading :deep(.ant-spin-container) {
+  opacity: 1;
+}
+
+.task-empty {
+  padding: 24px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 8px;
+}
+
+/* 左右两栏等高、高度固定：队列再长也不把页面撑长，各自在框里滚 */
+.task-editor-layout {
+  height: 640px;
+}
+
+.task-list-column,
+.task-option-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 两栏标题行同高：左边有 32px 的级联选择器，右边只有文字，不定高的话两个框的顶边差 7px */
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-bottom: 16px;
+  color: var(--ant-color-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.column-title {
+  white-space: nowrap;
+}
+
+.column-actions {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.add-task-cascader {
+  flex: 0 1 220px;
+  min-width: 140px;
+}
+
+.task-list {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--ant-color-bg-container);
+}
+
+.task-queue-list {
+  min-height: 100%;
+}
+
+.preset-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.preset-section-modal {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 0;
+}
+
+.preset-card {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.preset-card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.preset-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* 与图标同高（36px）、靠右，不随描述换行下坠 */
+.preset-apply-button {
+  flex: 0 0 auto;
+  height: 36px;
+  align-self: flex-start;
+}
+
+.preset-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  flex: 0 0 auto;
+}
+
+.preset-icon {
+  font-size: 18px;
+}
+
+.preset-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.preset-name {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.preset-desc {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.preset-tasks-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.task-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px 3px 7px;
+  border-radius: 16px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font-size: 13px;
+}
+
+.task-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ant-color-success);
+  flex: 0 0 auto;
+}
+
+.task-chip-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  /* 标签行去掉后行变矮，内距放宽到 14px，别挤成一排细条 */
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.task-row-chosen,
+.task-row-drag {
+  cursor: grabbing;
+}
+
+.task-drag-handle {
+  flex: 0 0 auto;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--ant-color-text-quaternary);
+  font-size: 16px;
+  cursor: grab;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.task-drag-handle:hover {
+  color: var(--ant-color-text-secondary);
+  background: var(--ant-color-fill-tertiary);
+}
+
+.task-row-chosen .task-drag-handle,
+.task-row-drag .task-drag-handle {
+  cursor: grabbing;
+}
+
+.task-row-ghost {
+  opacity: 0.45;
+  background: var(--ant-color-primary-bg);
+}
+
+.task-row:last-child {
+  border-bottom: none;
+}
+
+.task-row:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
+.task-row-selected {
+  background: var(--ant-color-primary-bg);
+  border-left: 3px solid var(--ant-color-primary);
+  padding-left: 13px;
+}
+
+.task-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.task-title {
+  font-weight: 600;
+}
+
+/* 同一个任务被加了多份时的副本序号 */
+.task-copy-index {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ant-color-text-tertiary);
+}
+
+.task-option-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.selected-task-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.selected-task-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.selected-task-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.selected-task-meta {
+  margin-top: 4px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+}
+
+.selected-task-description {
+  margin: 20px 0 0;
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.selected-task-description-label {
+  margin-bottom: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-option-empty {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 8px;
+}
+
+.delete-task-button {
+  margin-top: 24px;
+  height: 40px;
+}
+
+@media (max-width: 768px) {
+  .column-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .task-row {
+    gap: 12px;
+  }
+
+  /* 折成上下两块后整行不再定高，改成每一栏各自定高 */
+  .task-editor-layout {
+    height: auto;
+    row-gap: 16px;
+  }
+
+  .task-list-column,
+  .task-option-column {
+    height: 420px;
+  }
+
+  .add-task-cascader {
+    flex: 1 1 auto;
+  }
+
+  .task-editor-layout :deep(.ant-col) {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+}
+</style>

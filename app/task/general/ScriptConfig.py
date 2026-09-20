@@ -20,19 +20,22 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import shlex
 import shutil
-import asyncio
 import uuid
 from pathlib import Path
 
-from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
+from app.utils import ProcessManager, get_logger
+from app.utils.io import mark_native_config_injected, swap_in_dir
 
 logger = get_logger("通用脚本设置")
 
@@ -58,20 +61,19 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        self.config_mode = "脚本"
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
-            self.use_mas_config = bool(
-                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
-                    "Info", "IfUseMasConfig"
-                )
-            )
+            user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            self.config_mode = read_config_source(user_config)
+            # 直控=不写；脚本/用户来源都写面板值（见 AutoProxy 同款说明）
+            self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
 
     async def prepare(self):
 
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
 
         arguments_list = []
@@ -126,9 +128,28 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await System.kill_process(self.script_set_exe_path)
 
-        if not self.use_mas_config:
+        # 查看会话的脚本级入口：原生配置即所选备份，跳过下发（用户级为目录
+        # 副本型，强制照常下发——GUI 所见即备份，不受直控门控影响）
+        if self.task_info.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("通用脚本查看会话跳过配置下发: 原生配置即所选备份")
+            return
+
+        if not self.use_mas_config and not self.task_info.view_only:
             logger.info("脚本直控配置：跳过写入脚本配置")
             return
+
+        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
+        # 失败不阻断会话）。General 的 ConfigFile 恒按用户，无 owner 解耦；
+        # 查看会话的 ConfigFile 即刚恢复的备份，无需再归档
+        if not self.task_info.view_only:
+            from .tools.backup_archive import archive_mas_runtime_backup
+
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                self.cur_user_item.user_id,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
+            )
 
         if (
             self.script_config.get("Script", "ConfigPathMode") == "Folder"
@@ -137,15 +158,15 @@ class ScriptConfigTask(TaskExecuteBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
             ).exists()
         ):
-            if self.script_config_path.is_dir():
-                shutil.rmtree(self.script_config_path)
-            elif self.script_config_path.exists():
-                self.script_config_path.unlink()
-            shutil.copytree(
+            swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
                 self.script_config_path,
-                dirs_exist_ok=True,
+            )
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
         elif (
             self.script_config.get("Script", "ConfigPathMode") == "File"
@@ -169,6 +190,13 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.general_process_manager.kill()
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
+
+        # 查看会话：只读预览，不把 GUI 内的改动回写 MAS 配置副本（原生配置
+        # 现场由 manager 的任务前快照还原）
+        if self.task_info.view_only:
+            logger.success("通用脚本查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
 
         if not self.use_mas_config:
             logger.info("脚本直控配置：跳过回写用户独立配置")
@@ -207,8 +235,8 @@ class ScriptConfigTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"脚本设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
         )

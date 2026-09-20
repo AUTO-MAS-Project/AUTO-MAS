@@ -1,0 +1,139 @@
+{
+  "index": 999,
+  "name": "MAS切换账号",
+  "config": {
+    "pathingConfig": {
+      "recoverTiming": 0,
+      "enabled": true,
+      "autoPickEnabled": true,
+      "partyName": "",
+      "isVisitStatueBeforeSwitchParty": false,
+      "mainAvatarIndex": "",
+      "guardianAvatarIndex": "",
+      "guardianElementalSkillSecondInterval": "",
+      "guardianElementalSkillLongPress": false,
+      "onlyInTeleportRecover": false,
+      "jsScriptUseEnabled": true,
+      "soloTaskUseFightEnabled": true,
+      "skipDuring": "",
+      "useGadgetIntervalMs": 0,
+      "autoSkipEnabled": true,
+      "autoRunEnabled": true,
+      "autoEatEnabled": false,
+      "autoEatConfig": {
+        "enabled": false,
+        "showNotification": true,
+        "checkInterval": 150,
+        "eatInterval": 1000,
+        "testFoodName": null,
+        "defaultAtkBoostingDishName": "炸萝卜丸子",
+        "defaultAdventurersDishName": null,
+        "defaultDefBoostingDishName": null
+      },
+      "hideOnRepeat": false,
+      "taskCycleConfig": {
+        "enable": false,
+        "boundaryTime": 0,
+        "isBoundaryTimeBasedOnServerTime": false,
+        "cycle": 1,
+        "index": 1
+      },
+      "taskCompletionSkipRuleConfig": {
+        "enable": false,
+        "skipPolicy": "GroupPhysicalPathSkipPolicy",
+        "boundaryTime": 4,
+        "isBoundaryTimeBasedOnServerTime": false,
+        "lastRunGapSeconds": -1,
+        "referencePoint": "EndTime"
+      },
+      "preExecutionPriorityConfig": {
+        "enabled": false,
+        "groupNames": "",
+        "maxRetryCount": 1
+      },
+      "autoFightEnabled": true,
+      "autoFightConfig": {
+        "strategyName": "根据队伍自动选择",
+        "teamNames": "",
+        "fightFinishDetectEnabled": true,
+        "actionSchedulerByCd": "",
+        "onlyPickEliteDropsMode": "Closed",
+        "finishDetectConfig": {
+          "battleEndProgressBarColor": "",
+          "battleEndProgressBarColorTolerance": "",
+          "fastCheckEnabled": false,
+          "rotateFindEnemyEnabled": false,
+          "fastCheckParams": "",
+          "checkAfterSwitchAvatar": false,
+          "checkEndDelay": "0.4;钟离,1.4;",
+          "beforeDetectDelay": "0.4",
+          "rotaryFactor": 12,
+          "isFirstCheck": false,
+          "checkBeforeBurst": false,
+          "skipFightEndCheckWhenEnemyVisible": false,
+          "blockCheckBeforeBattleSeconds": 0,
+          "paimonEndCheckEnabled": true,
+          "paimonEndCheckDelay": 0.075
+        },
+        "pickDropsAfterFightEnabled": false,
+        "pickDropsAfterFightSeconds": 15,
+        "battleThresholdForLoot": null,
+        "kazuhaPickupEnabled": true,
+        "qinDoublePickUp": false,
+        "guardianAvatar": "",
+        "guardianCombatSkip": false,
+        "skipModel": false,
+        "guardianAvatarHold": false,
+        "burstEnabled": false,
+        "kazuhaPartyName": "",
+        "swimmingEnabled": true,
+        "expBasedPickupEnabled": false,
+        "timeout": 120,
+        "enableCombatTargeting": false,
+        "lockLostWaitTime": 0.5,
+        "targetingDetectionInterval": 50,
+        "damageNumberRecognitionMode": 2,
+        "drawRecognitionResults": true
+      },
+      "distance": 45,
+      "approachStopDistance": 25,
+      "hurryOnAvatar": "",
+      "hurryOnFrameInterval": 100,
+      "travelMode": "精准靠近",
+      "switchToWalkEnabled": false,
+      "mwkJumpFlyEnabled": true,
+      "mwkJumpFlyDistance": 75,
+      "mwkJumpFlyIntervalSeconds": 1,
+      "mwkDisableSprintEnabled": false,
+      "mwkJumpFlySprintCount": 0
+    },
+    "shellConfig": {
+      "disable": false,
+      "timeout": 60,
+      "noWindow": true,
+      "output": true
+    },
+    "enableShellConfig": false
+  },
+  "projects": [
+    {
+      "name": "切换账号多模式",
+      "folderName": "SwitchAccountMultipleMode",
+      "jsScriptSettingsObject": {
+        "Modes": "下拉列表",
+        "username": "",
+        "password": "",
+        "GlobalAccount": false,
+        "Servers": "不切换服务器",
+        "uid": ""
+      },
+      "index": 1,
+      "type": "Javascript",
+      "status": "Enabled",
+      "schedule": "Daily",
+      "runNum": 1,
+      "allowJsNotification": true,
+      "allowJsHTTPHash": ""
+    }
+  ]
+}

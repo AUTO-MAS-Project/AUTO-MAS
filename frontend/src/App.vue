@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
@@ -10,31 +10,38 @@ import { useAppInitialization } from './composables/useAppInitialization.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
-import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
-import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
+import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
-import zhCN from 'ant-design-vue/es/locale/zh_CN'
+import { useLocale } from './composables/useLocale.ts'
 
 const logger = window.electronAPI.getLogger('App组件')
 
+// 调试面板及其子页只进开发构建：编译期常量让生产包直接摇掉这近两千行
+const DebugPanel = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
+  : null
+
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
+const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
-const { isInitialized, isAppReady } = useAppInitialization()
+const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
 
-// 判断是否为独立页面（不需要 AppLayout 的页面）
-const isStandalonePage = computed(() => route.name === 'Logs')
+// 判断是否为独立页面（不需要 AppLayout 的页面：日志窗口、虚拟显示器询问弹窗）
+const isStandalonePage = computed(
+  () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
+)
 
 onMounted(async () => {
   logger.info('App组件已挂载')
@@ -64,7 +71,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <ConfigProvider :theme="antdTheme" :locale="zhCN">
+  <ConfigProvider :theme="antdTheme" :locale="antdLocale">
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />
@@ -82,8 +89,8 @@ onMounted(async () => {
       <AppLayout />
     </div>
 
-    <!-- 开发环境调试面板 - 开发工具始终可用 -->
-    <DevDebugPanel />
+    <!-- 开发构建才带调试面板；独立小窗口（日志、虚拟显示器询问）里它会盖住内容，不挂 -->
+    <DebugPanel v-if="DebugPanel && !isStandalonePage" />
 
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">
@@ -97,13 +104,11 @@ onMounted(async () => {
 
       <!-- 全局电源倒计时弹窗 -->
       <GlobalPowerCountdown />
-
-      <!-- WebSocket 消息监听组件 -->
-      <WebSocketMessageListener />
     </template>
 
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
+    <BackendStartupOverlay :visible="isBootstrapping" />
     <CursorEffectLayer v-if="isAppReady && performanceStore.initialized" />
   </ConfigProvider>
 </template>

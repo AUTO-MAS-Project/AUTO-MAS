@@ -2,8 +2,8 @@
   <a-card class="endfield-card" :loading="loading">
     <template #title>
       <div class="card-title">
-        <span>终末地活动信息</span>
-        <a-tag v-if="overview.Stale" color="orange">缓存数据</a-tag>
+        <span>{{ t('home.module.endfield') }}</span>
+        <a-tag v-if="overview.Stale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
       </div>
     </template>
 
@@ -15,7 +15,7 @@
         class="source-link"
         @click="handleExternalLink"
       >
-        数据来源：{{ overview.SourceName }}
+        {{ t('home.endfield.source', { name: overview.SourceName }) }}
       </a-typography-link>
     </template>
 
@@ -27,38 +27,18 @@
       class="status-alert"
     />
 
-    <a-carousel
-      v-if="overview.Pools.length"
-      class="pool-carousel"
-      :dots="overview.Pools.length > 1"
-    >
-      <div v-for="pool in overview.Pools" :key="pool.Id">
-        <div class="pool-banner">
-          <div class="pool-content">
-            <div class="pool-heading">
-              <a-tag color="blue">{{ pool.Type }}</a-tag>
-              <span v-if="pool.UpCharacters.length" class="up-characters">
-                UP：{{ pool.UpCharacters.join('、') }}
-              </span>
-            </div>
-            <div class="pool-name">{{ pool.Name }}</div>
-            <div class="pool-end-time">
-              <ClockCircleOutlined />
-              <span>{{ formatTime(pool.EndTime) }} 结束</span>
-            </div>
-            <a-statistic-countdown
-              title="卡池剩余时间"
-              :value="getCountdownValue(pool.EndTime)"
-              format="D 天 H 时 m 分"
-              :value-style="poolCountdownValueStyle"
-              @finish="emit('refresh')"
-            />
-          </div>
+    <!-- 卡池头像按原始方形展示，和同期活动横图分开排版。 -->
+    <section v-if="overview.Pools.length" class="activity-section">
+      <div class="activity-section-header">
+        <span>{{ t('home.endfield.poolSection') }}</span>
+      </div>
 
-          <div class="pool-art">
+      <div class="activity-grid">
+        <div v-for="pool in overview.Pools" :key="pool.Id" class="activity-item pool-item">
+          <div class="activity-thumbnail">
             <PictureOutlined
               v-if="!pool.ImageUrl || failedImageIds.has(pool.Id)"
-              class="pool-placeholder"
+              class="activity-placeholder"
             />
             <img
               v-if="pool.ImageUrl && !failedImageIds.has(pool.Id)"
@@ -67,14 +47,39 @@
               @error="handleImageError(pool.Id)"
             />
           </div>
+
+          <div class="activity-info">
+            <div class="activity-title-row">
+              <span class="activity-name">{{ pool.Name }}</span>
+              <a-tag v-if="pool.Type" color="blue">{{ pool.Type }}</a-tag>
+            </div>
+            <div v-if="pool.UpCharacters.length" class="pool-up">
+              {{ t('home.endfield.upCharacters', { names: pool.UpCharacters.join('、') }) }}
+            </div>
+            <div class="activity-meta">
+              <span>{{ t('home.endfield.endsAt', { time: formatShortTime(pool.EndTime) }) }}</span>
+              <a-statistic-countdown
+                :value="getCountdownValue(pool.EndTime)"
+                :format="t('home.countdown.dh')"
+                :value-style="activityCountdownValueStyle"
+                @finish="emit('refresh')"
+              />
+            </div>
+          </div>
         </div>
       </div>
-    </a-carousel>
+    </section>
 
     <section v-if="overview.Activities.length" class="activity-section">
       <div class="activity-section-header">
-        <span>同期活动</span>
-        <span class="activity-count">{{ overview.Activities.length }} 项进行中</span>
+        <span>{{ t('home.endfield.concurrent') }}</span>
+        <span class="activity-count">{{
+          t(
+            'home.endfield.ongoing',
+            { count: overview.Activities.length },
+            overview.Activities.length
+          )
+        }}</span>
       </div>
 
       <div class="activity-grid">
@@ -98,10 +103,12 @@
               <a-tag v-if="activity.Tags[0]">{{ activity.Tags[0] }}</a-tag>
             </div>
             <div class="activity-meta">
-              <span>{{ formatShortTime(activity.EndTime) }} 结束</span>
+              <span>{{
+                t('home.endfield.endsAt', { time: formatShortTime(activity.EndTime) })
+              }}</span>
               <a-statistic-countdown
                 :value="getCountdownValue(activity.EndTime)"
-                format="D 天 H 时"
+                :format="t('home.countdown.dh')"
                 :value-style="activityCountdownValueStyle"
                 @finish="emit('refresh')"
               />
@@ -116,8 +123,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
-import { ClockCircleOutlined, PictureOutlined } from '@ant-design/icons-vue'
+import { PictureOutlined } from '@ant-design/icons-vue'
 import type { CSSProperties } from 'vue'
 import type { EndfieldActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -139,31 +147,17 @@ const emit = defineEmits<{
 
 const failedImageIds = ref(new Set<string>())
 
-const poolCountdownValueStyle: CSSProperties = {
-  color: 'var(--ant-color-text)',
-  fontSize: '28px',
-  fontWeight: 700,
-}
-
 const activityCountdownValueStyle: CSSProperties = {
   color: 'var(--ant-color-primary)',
   fontSize: '13px',
   fontWeight: 600,
 }
 
-const emptyDescription = computed(() =>
-  props.overview.Available ? '暂无进行中的卡池或活动' : '暂无终末地活动数据'
-)
+const { t } = useI18n()
 
-const formatTime = (timeString: string) => {
-  return new Date(timeString).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+const emptyDescription = computed(() =>
+  props.overview.Available ? t('home.empty.endfield') : t('home.empty.endfieldNoData')
+)
 
 const formatShortTime = (timeString: string) => {
   return new Date(timeString).toLocaleString('zh-CN', {
@@ -193,8 +187,6 @@ const handleImageError = (itemId: string) => {
 }
 
 .card-title,
-.pool-heading,
-.pool-end-time,
 .activity-section-header,
 .activity-title-row,
 .activity-meta {
@@ -202,15 +194,12 @@ const handleImageError = (itemId: string) => {
   align-items: center;
 }
 
-.card-title,
-.pool-heading,
-.pool-end-time {
+.card-title {
   gap: 8px;
 }
 
 .source-link,
 .activity-count,
-.pool-end-time,
 .activity-meta {
   font-size: 13px;
 }
@@ -219,80 +208,17 @@ const handleImageError = (itemId: string) => {
   margin-bottom: 16px;
 }
 
-.pool-carousel {
-  min-width: 0;
-}
-
-.pool-banner {
-  min-height: 220px;
-  padding: 28px 32px;
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.pool-content {
-  position: relative;
-  z-index: 1;
-}
-
-.up-characters,
-.pool-end-time,
+.pool-up,
 .activity-count,
 .activity-meta {
   color: var(--ant-color-text-secondary);
 }
 
-.pool-name {
-  margin: 14px 0 8px;
-  color: var(--ant-color-text);
-  font-size: 28px;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.pool-end-time {
-  margin-bottom: 16px;
-}
-
-.pool-art {
-  min-height: 164px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-quaternary);
-}
-
-.pool-art img {
-  width: 100%;
-  height: 210px;
-  position: absolute;
-  inset: auto 0 -28px;
-  z-index: 1;
-  object-fit: contain;
-  object-position: center bottom;
-}
-
-.pool-placeholder {
-  z-index: 1;
-  font-size: 44px;
-}
-
-.pool-carousel :deep(.slick-dots) {
-  bottom: 10px;
-}
-
-.pool-carousel :deep(.slick-dots li button) {
-  background: var(--ant-color-text-quaternary);
-}
-
-.pool-carousel :deep(.slick-dots li.slick-active button) {
-  background: var(--ant-color-primary);
+.pool-up {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .activity-section {
@@ -386,6 +312,41 @@ const handleImageError = (itemId: string) => {
   line-height: 1;
 }
 
+.activity-section:first-child {
+  margin-top: 0;
+}
+
+.pool-item {
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  padding: 12px;
+  gap: 16px;
+  border-radius: 10px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.pool-item .activity-thumbnail {
+  height: 88px;
+  border-radius: 8px;
+}
+.pool-item .activity-thumbnail img {
+  object-fit: contain;
+}
+.pool-item .activity-title-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.pool-item .activity-name {
+  white-space: normal;
+}
+.pool-item .pool-up {
+  margin-top: 6px;
+  white-space: normal;
+}
+.activity-meta {
+  flex-wrap: wrap;
+}
+
 @media (max-width: 900px) {
   .activity-grid {
     grid-template-columns: 1fr;
@@ -393,19 +354,6 @@ const handleImageError = (itemId: string) => {
 }
 
 @media (max-width: 640px) {
-  .pool-banner {
-    padding: 24px;
-    grid-template-columns: 1fr;
-  }
-
-  .pool-art {
-    display: none;
-  }
-
-  .pool-name {
-    font-size: 24px;
-  }
-
   .activity-item {
     grid-template-columns: 88px minmax(0, 1fr);
   }

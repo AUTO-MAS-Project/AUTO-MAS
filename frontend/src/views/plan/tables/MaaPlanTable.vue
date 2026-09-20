@@ -87,10 +87,12 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'globalControl'">
             <a-space>
-              <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)"
-                >开</a-button
-              >
-              <a-button size="small" danger @click="disableAllStages(record.key)">关</a-button>
+              <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">{{
+                t('plan.table.on')
+              }}</a-button>
+              <a-button size="small" danger @click="disableAllStages(record.key)">{{
+                t('plan.table.off')
+              }}</a-button>
             </a-space>
           </template>
 
@@ -122,20 +124,19 @@
         <a-col v-for="i in 4" :key="i" :span="6">
           <a-form-item :colon="false" class="compact-form-item">
             <template #label>
-              <a-tooltip title="关卡选择中可选的自定义关卡号">
+              <a-tooltip :title="t('plan.table.customStageTip')">
                 <span class="form-label">
-                  自定义关卡 {{ i }}
+                  {{ t('plan.table.customStage', { n: i }) }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
-              placeholder="输入关卡号"
+              :placeholder="t('plan.table.stagePlaceholder')"
               :maxlength="50"
               allow-clear
               size="large"
-              class="modern-input"
               @input="onCustomStageInput(i as 1 | 2 | 3 | 4)"
               @blur="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
               @press-enter="onCustomStageBlurOrEnter(i as 1 | 2 | 3 | 4)"
@@ -148,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref, watch, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
@@ -156,6 +158,8 @@ import {
   preloadAllStageOptions,
   getCachedStageOptions,
 } from '@/composables/usePlanDataCoordinator'
+
+const { t } = useI18n()
 
 interface Props {
   tableData: Record<string, any> | null
@@ -169,7 +173,6 @@ const props = defineProps<Props>()
 
 // 使用数据协调器 - 单一数据源
 const coordinator = usePlanDataCoordinator()
-
 
 // 临时自定义关卡输入
 const tempCustomStages = ref({
@@ -205,38 +208,68 @@ const currentCustomStages = computed(() => {
 })
 
 // 配置视图列定义
-const configColumns = [
+const configColumns = computed(() => [
   {
-    title: '配置项',
+    title: t('plan.table.field'),
     dataIndex: 'taskName',
     key: 'taskName',
     width: 120,
     fixed: 'left',
     align: 'center',
   },
-  { title: '全局', dataIndex: 'ALL', key: 'ALL', width: 120, align: 'center' },
-  { title: '周一', dataIndex: 'Monday', key: 'Monday', width: 120, align: 'center' },
-  { title: '周二', dataIndex: 'Tuesday', key: 'Tuesday', width: 120, align: 'center' },
-  { title: '周三', dataIndex: 'Wednesday', key: 'Wednesday', width: 120, align: 'center' },
-  { title: '周四', dataIndex: 'Thursday', key: 'Thursday', width: 120, align: 'center' },
-  { title: '周五', dataIndex: 'Friday', key: 'Friday', width: 120, align: 'center' },
-  { title: '周六', dataIndex: 'Saturday', key: 'Saturday', width: 120, align: 'center' },
-  { title: '周日', dataIndex: 'Sunday', key: 'Sunday', width: 120, align: 'center' },
-]
+  { title: t('plan.week.ALL'), dataIndex: 'ALL', key: 'ALL', width: 120, align: 'center' },
+  { title: t('plan.week.Monday'), dataIndex: 'Monday', key: 'Monday', width: 120, align: 'center' },
+  {
+    title: t('plan.week.Tuesday'),
+    dataIndex: 'Tuesday',
+    key: 'Tuesday',
+    width: 120,
+    align: 'center',
+  },
+  {
+    title: t('plan.week.Wednesday'),
+    dataIndex: 'Wednesday',
+    key: 'Wednesday',
+    width: 120,
+    align: 'center',
+  },
+  {
+    title: t('plan.week.Thursday'),
+    dataIndex: 'Thursday',
+    key: 'Thursday',
+    width: 120,
+    align: 'center',
+  },
+  { title: t('plan.week.Friday'), dataIndex: 'Friday', key: 'Friday', width: 120, align: 'center' },
+  {
+    title: t('plan.week.Saturday'),
+    dataIndex: 'Saturday',
+    key: 'Saturday',
+    width: 120,
+    align: 'center',
+  },
+  { title: t('plan.week.Sunday'), dataIndex: 'Sunday', key: 'Sunday', width: 120, align: 'center' },
+])
 
 // 简化视图列定义
-const simpleColumns = [
-  { title: '全局控制', key: 'globalControl', width: 75, fixed: 'left', align: 'center' },
+const simpleColumns = computed(() => [
   {
-    title: '关卡',
+    title: t('plan.table.globalControl'),
+    key: 'globalControl',
+    width: 75,
+    fixed: 'left',
+    align: 'center',
+  },
+  {
+    title: t('plan.table.stage'),
     dataIndex: 'taskName',
     key: 'taskName',
     width: 120,
     fixed: 'left',
     align: 'center',
   },
-  ...configColumns.filter(col => col.key !== 'taskName'),
-]
+  ...configColumns.value.filter(col => col.key !== 'taskName'),
+])
 
 // 更新配置数据 - 直接调用父组件的保存函数
 const updateConfigValue = async (rowKey: string, timeKey: TimeKey, value: any) => {
@@ -319,8 +352,8 @@ const onCustomStageBlurOrEnter = (index: 1 | 2 | 3 | 4) => {
   saveCustomStage(index)
 }
 
-// 连战次数选项
-const SERIES_OPTIONS: SelectOption[] = [
+// 连战次数选项。label 里的“不切换”随语言变，所以整表是 computed
+const SERIES_OPTIONS = computed<SelectOption[]>(() => [
   { label: 'AUTO', value: '0' },
   { label: '1', value: '1' },
   { label: '2', value: '2' },
@@ -328,8 +361,8 @@ const SERIES_OPTIONS: SelectOption[] = [
   { label: '4', value: '4' },
   { label: '5', value: '5' },
   { label: '6', value: '6' },
-  { label: '不切换', value: '-1' },
-]
+  { label: t('plan.table.noSwitch'), value: '-1' },
+])
 
 // 选项类型定义
 interface SelectOption {
@@ -345,7 +378,7 @@ const getSelectOptions = (
   currentValue: string
 ): SelectOption[] => {
   if (taskName === '连战次数') {
-    return SERIES_OPTIONS
+    return SERIES_OPTIONS.value
   }
 
   // 关卡选择选项 - 从 API 缓存获取
@@ -367,7 +400,7 @@ const getSelectOptions = (
     disabled: usedStages.includes(option.value) && option.value !== currentValue,
     label:
       usedStages.includes(option.value) && option.value !== currentValue
-        ? `${option.label} (已选择)`
+        ? t('plan.table.usedSuffix', { label: option.label })
         : option.label,
   }))
 }
@@ -468,27 +501,24 @@ const enableAllStages = async (stageKey: string) => {
       }
     }
   }
-  // 保存整个时间配置
-  const planConfig = coordinator.toApiData()
-  for (const timeKey of TIME_KEYS) {
-    const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
-    }
-  }
+  await saveAllTimeConfigs()
 }
 
 const disableAllStages = async (stageKey: string) => {
   for (const timeKey of TIME_KEYS) {
     coordinator.toggleStage(stageKey, timeKey, false)
   }
-  // 保存整个时间配置
+  await saveAllTimeConfigs()
+}
+
+// 逐个时间键保存整份时间配置，只在最后一次回读，避免 8 次 update 各带一次 get
+const saveAllTimeConfigs = async () => {
   const planConfig = coordinator.toApiData()
-  for (const timeKey of TIME_KEYS) {
-    const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
-    }
+  const timeKeys = TIME_KEYS.filter(timeKey => planConfig[timeKey])
+  for (const [i, timeKey] of timeKeys.entries()) {
+    await props.handlePlanChange(timeKey, planConfig[timeKey], {
+      refresh: i === timeKeys.length - 1,
+    })
   }
 }
 
@@ -653,23 +683,6 @@ watch(
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 4px;
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.2s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
 }
 
 .task-tag {

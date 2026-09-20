@@ -1,0 +1,108 @@
+name: Bug 反馈 · 通用问题（使用中文）
+description: 与具体脚本无关的问题：界面、调度、队列、通知、更新、游戏签到、启动与退出等
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 在提问之前...
+      description: |
+        请确认自己完成了下列必选项之后再进行勾选，若未完成必选项或勾选了「我未仔细阅读」选项，将视为自愿接受被直接关闭 Issue
+      options:
+        - label: 我理解 Issue 是用于反馈和解决问题的，而非吐槽评论区，将尽可能提供更多信息帮助问题解决
+          required: true
+        - label: 我未仔细阅读这些内容，只是一键已读所有内容，并相信这不会影响问题的处理
+        - label: 我填写了简短且清晰明确的标题，以便开发者在翻阅 Issue 列表时能快速确定大致问题，而不是「一个建议」「卡住了」等
+          required: true
+        - label: 我使用的是当前的最新版本，并已查看 Release 与 Pull Requests 中尚未发布的更新内容，其中并未提及该 Bug 已被修复
+          required: true
+        - label: 我已检查了常见问题、公告、活跃议题与已关闭议题，确认我的问题未被提及
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的位置
+      description: 若问题出在某个具体脚本的运行过程中，请改用「Bug 反馈 · 脚本专项」模板
+      options:
+        - 首页
+        - 脚本
+        - 计划
+        - 模拟器
+        - 队列
+        - 调度中心
+        - 历史记录
+        - 工具
+        - 游戏签到
+        - 设置
+        - 通知推送
+        - 软件更新
+        - 启动与退出
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: mas_version
+    attributes:
+      label: AUTO-MAS 版本
+      description: 见 设置 →「关于」
+      placeholder: v5.5.0-beta.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: describe
+    attributes:
+      label: 问题描述
+      description: 描述问题时请尽可能详细，说明你期望的行为与实际发生的行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 请按顺序写明操作步骤，以及该问题是必现还是偶发
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 日志
+
+        请在提交本 Issue 后，**在评论区补充日志**：
+
+        1. **AUTO-MAS 本体日志**（必须）：设置 →「日志管理」→「导出日志压缩包」
+        2. 若问题涉及某个脚本，请一并附上该脚本自身的日志
+
+        请上传压缩包原文件，不要解压后只粘贴其中几行文字。
+
+  - type: checkboxes
+    id: logs
+    attributes:
+      label: 日志确认
+      options:
+        - label: 我已了解需要在提交后于评论区补充 AUTO-MAS 本体日志压缩包，缺少日志的 Issue 可能无法排查并被关闭
+          required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 请说明操作系统及版本、屏幕分辨率与缩放比例
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或录屏
+      description: 可上传屏幕截图或录制以帮助解释你的问题
+    validations:
+      required: false

@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { GameSignAccountGroupConfig } from './GameSignAccountGroupConfig';
 /**
- * 游戏签到账号组更新请求
+ * 游戏社区账号组更新请求
  */
 export type GameSignAccountUpdateIn = {
     /**

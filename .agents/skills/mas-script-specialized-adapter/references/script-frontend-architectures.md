@@ -8,6 +8,7 @@
 
 | 上游信号 | 架构线 | 本仓参照 |
 | --- | --- | --- |
+| 任何带 `interface.json` 的 MaaFramework 项目 | **先用通用 `MaaFW` 类型**，它能直接运行；需要更精细的控制时（原生编辑器会话、登录/切号、按游戏语义组织的专属界面、动态读取上游资源文件等）再按下面两线立专项，并写明比通用 MaaFW 多控制了什么 | `MaaFW`（见 `app/task/MaaFW/AGENTS.md`）；已立专项的例子：`MaaEnd`、`M9A` |
 | `from ok import OK`、`ok-script`、README 含 `-t` / `-e` | **ok-script 线** | `Okww`（鸣潮）、`OkNte`（异环） |
 | README/依赖写明 MXU、PI V2、`interface.json`，或 Tauri + React/TS 壳 | **MXU 线** | `MaaEnd` |
 | Avalonia / MFAA，`interface.json` + C# 客户端 | **MFAA 线** | `M9A` |
@@ -46,7 +47,7 @@
 | MXU（MaaEnd） | `mxu-*.json` 可设 autoRun 类字段；必要时对照壳 CLI | 常 ScriptConfig 拉起本体会话；日常字段走 Section |
 | MAA | 依 MAA 文档，常见 ScriptConfig 路径 | ScriptConfig 调本体 + 关卡/plan Section |
 | SRC | 依 SRC.exe / Alas 文档 | 多为大表单 + Section 写映射配置 |
-| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染，直控导入加密快照 |
+| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染，直控默认直接用脚本当前配置、加密快照仅为可选覆盖 |
 | General | 先最小 `open_process` + 日志，再按上游补 argv | 通用路径与简单字段 |
 
 **实施顺序建议**：先用 `General` 验证对接可行 → 再新增专项 `ScriptType` 承载默认值与 UI → 最后删掉 General 页的临时预设入口。
@@ -65,7 +66,7 @@
 | 外部程序数 | 1 | 1 | 1 | 1 | 1 | 1 | **2** |
 | ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 有（脚本级+用户级+直控） | **有，且另有 REST 动态表单** | **无** |
 | 计划表 | 有 | 无 | 有 | 无 | 无 | 无 | 无 |
-| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | **队列 JSON + draggable** | TaskIndex + 高频字段 | 动态表单（后端下发字段） | 后端下发托管字段动态渲染 |
+| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | **队列 JSON + draggable** | 高频字段（固定 -t 1 日常） | 动态表单（后端下发字段） | 后端下发托管字段动态渲染 |
 | 后端侧重 | 进程与实例 | 任务栈、模拟器、Stage | runtime_bridge、MXU 路径、切号 | 管线、实例目录、队列消费 | 三态来源、working 备份恢复 | 半自动 schema、双通道配置 | 模块→引擎分配、双份配置备份、路径锁 |
 
 ## 前端表面通用约定

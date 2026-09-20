@@ -1,34 +1,16 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link
-              :to="{ name: 'HSRScriptEdit', params: { id: scriptId } }"
-              class="breadcrumb-link"
-            >
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <span class="breadcrumb-current">
-              <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-              {{ isEdit ? '编辑 HSR 用户' : '添加 HSR 用户' }}
-            </span>
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon><ArrowLeftOutlined /></template>
-        返回
-      </a-button>
-    </div>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="hsr"
+      :current-label="isEdit ? t('edit.editHsrUser') : t('edit.addHsrUser')"
+      :logo-src="hsrLogo"
+      @cancel="handleCancel"
+    />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-alert
           v-if="capabilitySnapshot?.unavailable_reason && !visibleCapabilityWarnings.length"
@@ -48,21 +30,34 @@
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
           <div class="form-section form-section-flat">
-            <div class="section-header"><h3>基本信息</h3></div>
+            <div class="section-header">
+              <h3>{{ t('edit.basicInfo') }}</h3>
+              <!-- 体力配置区块隐藏（直控模式，或未给 Daily 配引擎）时，恢复入口兜底到这里 -->
+              <div
+                v-if="controlMode !== 'managed' || !dailyStageEngine"
+                class="section-header-actions"
+              >
+                <a-button size="small" @click="restoreOpen = true">
+                  <template #icon>
+                    <HistoryOutlined />
+                  </template>
+                  {{ t('edit.configRestoreTitle') }}
+                </a-button>
+              </div>
+            </div>
             <a-row :gutter="24">
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="该名称也会作为货币战争的开拓者名称写入 M7A/SRA">
+                    <a-tooltip :title="t('edit.thisNameAlsoWritten')">
                       <span class="form-label"
-                        >用户名 <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.username') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Name"
                     size="large"
-                    class="modern-input"
                     @blur="handleFieldSave('Info.Name', formData.Info.Name)"
                   />
                 </a-form-item>
@@ -70,12 +65,12 @@
               <a-col :span="4">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">启用</span>
+                    <span class="form-label">{{ t('edit.enabled2') }}</span>
                   </template>
                   <a-switch
                     v-model:checked="formData.Info.Status"
-                    checked-children="启用"
-                    un-checked-children="禁用"
+                    :checked-children="t('edit.enabled3')"
+                    :un-checked-children="t('edit.disabled')"
                     @change="handleFieldSave('Info.Status', formData.Info.Status)"
                   />
                 </a-form-item>
@@ -83,13 +78,12 @@
               <a-col v-if="controlMode === 'managed' && effectiveEngines.includes('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">账号</span>
+                    <span class="form-label">{{ t('edit.account') }}</span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    placeholder="请输入账号"
+                    :placeholder="t('edit.enterAccount')"
                     size="large"
-                    class="modern-input"
                     @blur="handleFieldSave('Info.Id', formData.Info.Id)"
                   />
                 </a-form-item>
@@ -97,14 +91,12 @@
               <a-col v-if="controlMode === 'managed' && effectiveEngines.includes('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">密码</span>
+                    <span class="form-label">{{ t('edit.password') }}</span>
                   </template>
-                  <!-- 用 input-class 把 modern-input 挂到内部 <input>，避免 a-input-password 外层嵌套 div -->
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    placeholder="请输入密码"
+                    :placeholder="t('edit.enterPassword')"
                     size="large"
-                    :input-class="'modern-input'"
                     @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
@@ -114,7 +106,7 @@
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">服务器</span>
+                    <span class="form-label">{{ t('edit.server') }}</span>
                   </template>
                   <a-select
                     v-model:value="formData.Info.Server"
@@ -127,11 +119,9 @@
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip
-                      title="剩余天数，-1 表示不限制；0 表示今日到期；正数表示距到期还剩 N 天"
-                    >
+                    <a-tooltip :title="t('edit.daysLeft1Means')">
                       <span class="form-label"
-                        >剩余天数 <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -148,7 +138,7 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">备注</span>
+                    <span class="form-label">{{ t('edit.note') }}</span>
                   </template>
                   <a-textarea
                     v-model:value="formData.Info.Notes"
@@ -161,7 +151,23 @@
                 </a-form-item>
               </a-col>
             </a-row>
-            <a-form-item label="运行模式" style="margin-top: 8px">
+            <GeneralConfigModeSelector
+              :model-value="formData.Info.Mode ?? '用户'"
+              :options="hsrConfigModeOptions"
+              :disabled="isSaving"
+              :saving="isSaving"
+              :alert-message="t('edit.configSourceHintBase')"
+              @change="handleConfigModeChange"
+            />
+            <a-form-item style="margin-top: 8px">
+              <template #label>
+                <span class="form-label">
+                  {{ t('edit.runMode') }}
+                  <a-tooltip :title="t('edit.hsrRunModeHint')">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </span>
+              </template>
               <a-select
                 :value="controlMode"
                 :options="controlModeOptions"
@@ -175,7 +181,7 @@
               type="info"
               show-icon
               style="margin-top: 8px"
-              message="保存时 MAS 会自动加密账号密码。未配置 SRA 或未使用 SRA 模块时，账号密码不会用于切号。"
+              :message="t('edit.whenSavingMasEncrypts')"
             />
           </div>
 
@@ -184,7 +190,7 @@
             <a-alert
               type="info"
               show-icon
-              message="MAS 按这个用户的任务开关、动态原生选项和执行引擎运行。"
+              :message="t('edit.masRunsThisUser')"
               class="mode-alert"
             />
             <StageConfigSection
@@ -196,23 +202,25 @@
               :stage-options-loading="hsrStageOptionsLoading"
               :stage-options-error="hsrStageOptionsError"
               @save="handleFieldSave"
+              @open-restore="restoreOpen = true"
             />
             <ManagedTaskSection
               :snapshot="managedConfigSnapshot"
               :task-switch="formData.TaskSwitch"
               :saving="isSaving"
               :loading="managedConfigLoading"
-              @import-source="handleManagedSourceImport"
+              @reset-overrides="handleManagedOverridesReset"
               @task-toggle="handleTaskSwitchToggle"
               @mapping-change="handleManagedMappingChange"
               @field-change="handleManagedFieldChange"
+              @clear-invalid-overrides="handleManagedInvalidOverridesClear"
             />
           </div>
           <div v-else class="control-mode-content">
             <a-alert
               type="warning"
               show-icon
-              message="脚本直控不会读取该用户的账号、体力副本和 MAS 任务开关。"
+              :message="t('edit.scriptDirectControlIgnores')"
               class="mode-alert"
             />
             <DirectControlSection
@@ -221,37 +229,47 @@
               :direct="formData.Direct"
               :saving="isSaving"
               :importing-engine="importingDirectEngine"
+              :clearing-engine="clearingDirectEngine"
               @toggle="handleDirectEngineToggle"
               @import-config="handleDirectConfigImport"
+              @clear-config="handleDirectConfigClear"
             />
           </div>
 
           <!-- 进度与重置 (历战余响开始日 已下沉到 体力配置 区) -->
           <div v-if="controlMode === 'managed'" class="form-section">
-            <div class="section-header"><h3>进度与重置</h3></div>
+            <div class="section-header">
+              <h3>{{ t('edit.progressReset') }}</h3>
+            </div>
 
             <!-- 历战余响进度 -->
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">历战余响</span>
+                  <span class="progress-label">{{ t('edit.echoOfWar') }}</span>
                   <a-tag :color="eowCompletedThisWeek ? 'green' : 'orange'">
-                    本周 {{ eowCompletedThisWeek ? '已完成' : '未完成' }}
+                    {{ eowCompletedThisWeek ? t('edit.hsrWeekDone') : t('edit.hsrWeekNotDone') }}
                   </a-tag>
                   <span
                     v-if="hasValidCompletionDate(formData.Data.EchoOfWarLastCompletionDate)"
                     class="date-hint"
                   >
-                    最近完成：{{ formData.Data.EchoOfWarLastCompletionDate }}
+                    {{
+                      t('edit.hsrLastCompleted', {
+                        date: formData.Data.EchoOfWarLastCompletionDate,
+                      })
+                    }}
                   </span>
                 </div>
               </a-col>
               <a-col :span="14">
                 <a-space>
                   <a-button size="small" :disabled="eowCompletedThisWeek" @click="markEowCompleted">
-                    标记完成
+                    {{ t('edit.markAsDone') }}
                   </a-button>
-                  <a-button size="small" danger @click="resetEowProgress"> 重置 </a-button>
+                  <a-button size="small" danger @click="resetEowProgress">{{
+                    t('edit.reset')
+                  }}</a-button>
                 </a-space>
               </a-col>
             </a-row>
@@ -260,15 +278,21 @@
             <a-row :gutter="24" align="middle" style="margin-top: 16px">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">周常</span>
+                  <span class="progress-label">{{ t('edit.weekly') }}</span>
                   <a-tag :color="formData.Data.WeeklyCompletedThisWeek ? 'green' : 'orange'">
-                    本周 {{ formData.Data.WeeklyCompletedThisWeek ? '已完成' : '未完成' }}
+                    {{
+                      formData.Data.WeeklyCompletedThisWeek
+                        ? t('edit.hsrWeekDone')
+                        : t('edit.hsrWeekNotDone')
+                    }}
                   </a-tag>
                   <span
                     v-if="hasValidCompletionDate(formData.Data.WeeklyLastCompletionDate)"
                     class="date-hint"
                   >
-                    最近完成：{{ formData.Data.WeeklyLastCompletionDate }}
+                    {{
+                      t('edit.hsrLastCompleted', { date: formData.Data.WeeklyLastCompletionDate })
+                    }}
                   </span>
                 </div>
               </a-col>
@@ -279,26 +303,89 @@
                     :disabled="formData.Data.WeeklyCompletedThisWeek"
                     @click="markWeeklyCompleted"
                   >
-                    标记完成
+                    {{ t('edit.markAsDone') }}
                   </a-button>
-                  <a-button size="small" danger @click="resetWeeklyProgress"> 重置 </a-button>
+                  <a-button size="small" danger @click="resetWeeklyProgress">{{
+                    t('edit.reset')
+                  }}</a-button>
                 </a-space>
               </a-col>
             </a-row>
           </div>
+
+          <!-- 额外脚本组件 -->
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="isSaving"
+            @save="handleFieldSave"
+          />
+
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="isSaving"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :disabled="configLocked"
+      :script-name="HSR_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.hsrConfigRestoreUserDesc')"
+      :script-desc="t('edit.hsrConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+    >
+      <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewSections(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="s in previewSections(raw)" :key="s.name">
+            <h4 class="hsr-preview-title">{{ s.label }}</h4>
+            <a-descriptions
+              v-if="s.rows && s.rows.length"
+              :column="1"
+              size="small"
+              bordered
+              class="hsr-preview-box"
+            >
+              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
+import { useI18n } from 'vue-i18n'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import hsrLogo from '@/assets/hsr.png'
+import UserEditHeader from '@/components/UserEditHeader.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
@@ -309,27 +396,40 @@ import {
 import type { HSRConfig_TaskMapping } from '@/api'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
 import type { HSRScriptConfig } from '@/types/script'
-import StageConfigSection from '@/views/HSRUserEdit/StageConfigSection.vue'
-import type { HSRDynamicStageOptionsData, HSRUserConfigData } from '@/views/HSRUserEdit/types'
-import { buildHSRCapabilityView } from '@/views/HSRUserEdit/capabilityView'
+import StageConfigSection from './HSRUserEdit/StageConfigSection.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import type { HSRDynamicStageOptionsData, HSRUserConfigData } from './HSRUserEdit/types'
+import { buildHSRCapabilityView } from './HSRUserEdit/capabilityView'
 import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
 import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
 
+const { t } = useI18n()
+
+/**
+ * 游戏服务器口径的「现在」：星铁在服务器时间（UTC+8）周一 04:00 重置，等价于 UTC+4 的
+ * 零点。后端 HSRAutoProxyTask._period_markers 就是按 UTC+4 算日期和 ISO 周的，这里必须
+ * 用同一口径——按本机时区算的话，跨周边界时前端写下的周标记和后端判定的周对不上：
+ * 页面显示「本周已完成」，运行时却当成新一周照样去打。
+ *
+ * 全程用 UTC 取值（在时间戳上加偏移后读 getUTC*），顺带避开本机夏令时对天数差的干扰。
+ */
+const nowAtServerDayBoundary = (): Date => new Date(Date.now() + 4 * 3600 * 1000)
+
 const getCurrentISOWeek = (): string => {
-  const d = new Date()
-  const dayNum = d.getDay() || 7
+  const d = nowAtServerDayBoundary()
+  const dayNum = d.getUTCDay() || 7
   const thursday = new Date(d)
-  thursday.setDate(d.getDate() + 4 - dayNum)
-  const yearStart = new Date(thursday.getFullYear(), 0, 1)
+  thursday.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1))
   const weekNo = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
-  return `${thursday.getFullYear()}-W${String(weekNo).padStart(2, '0')}`
+  return `${thursday.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
 }
 
 const getCurrentDate = (): string => {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
+  const d = nowAtServerDayBoundary()
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}`
 }
 
@@ -342,7 +442,8 @@ const { getScript } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 
 // Initialize the reactive form before any computed/watch that can evaluate it
 // during setup.  Keeping this declaration first avoids a browser TDZ error.
@@ -352,8 +453,16 @@ const formData = reactive<HSRUserConfigData>({
     Status: true,
     Id: '',
     Password: '',
+    // 配置来源三态（脚本/用户/直控），与下方 Control.Mode（托管/直连）是不同的轴，勿混用
+    Mode: '用户',
+    // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
+    // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
     Server: 'CN-Official',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
   },
   Stage: {
@@ -362,7 +471,7 @@ const formData = reactive<HSRUserConfigData>({
     ScriptEchoOfWar: '{ }',
   },
   TaskSwitch: {
-    Daily: false,
+    Daily: true,
     ReceiveRewards: false,
     DivergentUniverse: false,
     CurrencyWars: false,
@@ -377,6 +486,14 @@ const formData = reactive<HSRUserConfigData>({
     WeeklyCompletedThisWeek: false,
     WeeklyLastResetWeek: '',
     WeeklyLastCompletionDate: '',
+  },
+  Notify: {
+    Enabled: false,
+    IfSendStatistic: false,
+    IfSendMail: false,
+    ToAddress: '',
+    IfServerChan: false,
+    ServerChanKey: '',
   },
   Control: {
     Mode: 'managed',
@@ -398,6 +515,7 @@ const formData = reactive<HSRUserConfigData>({
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptConfig = ref<HSRScriptConfig | null>(null)
@@ -410,14 +528,54 @@ const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
 const managedConfigLoading = ref(false)
 const importingDirectEngine = ref<HSREngine | null>(null)
+const clearingDirectEngine = ref<HSREngine | null>(null)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
 
-const serverOptions = [{ value: 'CN-Official', label: '官服' }]
+const serverOptions = computed(() => [
+  { value: 'CN-Official', label: t('edit.hsrServerCnOfficial') },
+])
 const controlModeOptions = [
-  { value: 'managed', label: 'MAS 管控' },
-  { value: 'direct', label: '脚本直控' },
+  { value: 'managed', label: t('edit.masManaged') },
+  { value: 'direct', label: t('edit.scriptDirectControl') },
+]
+
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 「脚本」置灰：HSR 运行时脚本态与用户态同分支（native_control 仅按 直控/其余 折进 Control.Mode），
+// 选了也不生效——禁用并悬停说明原因
+const hsrConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
+}> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useScriptS'),
+    icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: t('edit.useScriptSCurrent'),
+    icon: 'setting',
+  },
 ]
 
 type MutableRecord = Record<string, unknown>
@@ -458,6 +616,9 @@ const getTaskMapping = (moduleKey: 'Daily'): HSREngine | undefined => {
   return resolveTaskMappingValue(mapping[moduleKey] ?? undefined, new Set(effectiveEngines.value))
 }
 
+// 同一组参数（引擎 + 用户）的在途请求只发一次，重复调用复用同一个 promise
+let hsrStageOptionsRequest: { key: string; promise: Promise<void> } | null = null
+
 const loadHsrStageOptions = async () => {
   if (!scriptId || !scriptConfig.value) return
   const engine = getTaskMapping('Daily')
@@ -467,6 +628,18 @@ const loadHsrStageOptions = async () => {
     hsrStageOptionsLoading.value = false
     return
   }
+  const requestKey = `${engine}|${userId || ''}`
+  if (hsrStageOptionsRequest?.key === requestKey) return hsrStageOptionsRequest.promise
+  const request = { key: requestKey, promise: fetchHsrStageOptions(engine) }
+  hsrStageOptionsRequest = request
+  try {
+    await request.promise
+  } finally {
+    if (hsrStageOptionsRequest === request) hsrStageOptionsRequest = null
+  }
+}
+
+const fetchHsrStageOptions = async (engine: HSREngine) => {
   hsrStageOptionsLoading.value = true
   hsrStageOptionsError.value = ''
   try {
@@ -506,8 +679,10 @@ const loadHsrStageOptions = async () => {
   }
 }
 
+// getter 返回字符串而不是新数组，否则 formData.Managed 每次整体赋值都会触发一次重拉
 watch(
-  () => [scriptConfig.value?.TaskMapping?.Daily, formData.Managed?.TaskMapping?.Daily],
+  () =>
+    `${scriptConfig.value?.TaskMapping?.Daily ?? ''}|${formData.Managed?.TaskMapping?.Daily ?? ''}`,
   () => {
     void loadHsrStageOptions()
   }
@@ -516,21 +691,20 @@ watch(
 const handleTaskSwitchToggle = async (moduleKey: string, enabled: boolean) => {
   ;(formData.TaskSwitch as Record<string, boolean | null | undefined>)[moduleKey] = enabled
   const userData: Record<string, unknown> = { TaskSwitch: { [moduleKey]: enabled } }
-  if (isInitializing.value || isSaving.value || !userId) return
-  isSaving.value = true
-  try {
-    const saved = await updateUser(scriptId, userId, userData)
-    if (saved) {
-      logger.info(`用户配置已保存: TaskSwitch.${moduleKey}=${enabled}`)
-    } else {
-      logger.error(`保存失败: TaskSwitch.${moduleKey}`)
+  if (isInitializing.value || !userId) return
+  await enqueue(async () => {
+    try {
+      const saved = await updateUser(scriptId, userId, userData)
+      if (saved) {
+        logger.info(`用户配置已保存: TaskSwitch.${moduleKey}=${enabled}`)
+      } else {
+        logger.error(`保存失败: TaskSwitch.${moduleKey}`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, `TaskSwitch.${moduleKey}`)
 }
 
 const controlMode = computed<'managed' | 'direct'>(() =>
@@ -551,7 +725,6 @@ const loadManagedConfig = async () => {
       },
       Options: formData.Managed?.Options ?? {},
     }
-    await loadHsrStageOptions()
   } catch (error) {
     managedConfigSnapshot.value = null
     logger.warn(`HSR 动态任务配置加载失败: ${String(error)}`)
@@ -560,26 +733,60 @@ const loadManagedConfig = async () => {
   }
 }
 
-const handleManagedSourceImport = async () => {
-  if (!userId || managedConfigLoading.value || isSaving.value) return
+// 「重置为源配置」：清空这个用户在 MAS 里的全部 Managed.Options 覆盖值，
+// 之后表单和运行都按 SRA / 三月七助手当前配置走。确认弹窗在子组件里。
+const handleManagedOverridesReset = async () => {
+  if (!userId || managedConfigLoading.value) return
   const saved = await handleFieldSave('Managed.Options', {})
   if (!saved) {
-    message.error('从源配置导入失败')
+    message.error(t('edit.couldNotResetManagedOverrides'))
     return
   }
   await loadManagedConfig()
-  message.success('已从当前 SRA / 三月七助手源配置导入')
+  message.success(t('edit.managedOverridesReset'))
+}
+
+// 只剔掉后端报告为失效（原生配置里已没有、或类型对不上）的覆盖键，其余保留。
+const handleManagedInvalidOverridesClear = async (
+  engine: HSREngine,
+  task: string,
+  keys: string[]
+) => {
+  if (!userId || managedConfigLoading.value || keys.length === 0) return
+  const options = { ...(formData.Managed?.Options ?? {}) }
+  const engineOptions = { ...(options[engine] ?? {}) }
+  const taskOptions = { ...(engineOptions[task] ?? {}) }
+  for (const key of keys) delete taskOptions[key]
+  if (Object.keys(taskOptions).length > 0) engineOptions[task] = taskOptions
+  else delete engineOptions[task]
+  if (Object.keys(engineOptions).length > 0) options[engine] = engineOptions
+  else delete options[engine]
+  formData.Managed = { ...(formData.Managed ?? {}), Options: options }
+  const saved = await handleFieldSave('Managed.Options', options)
+  if (!saved) {
+    message.error(t('edit.couldNotClearInvalidManagedOverrides'))
+    return
+  }
+  await loadManagedConfig()
+  message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
+}
+
+// 配置来源三态切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await handleFieldSave('Info.Mode', formData.Info.Mode)
 }
 
 const handleControlModeChange = async (value: string | number) => {
-  if ((value !== 'managed' && value !== 'direct') || isSaving.value) return
+  if (value !== 'managed' && value !== 'direct') return
   const previousMode = formData.Control?.Mode
   if (!formData.Control) formData.Control = { Mode: 'managed' }
   formData.Control.Mode = value
   const saved = await handleFieldSave('Control.Mode', value)
   if (!saved) {
     formData.Control.Mode = previousMode || 'managed'
-    message.error('运行模式保存失败，请重试')
+    message.error(t('edit.couldNotSaveRun'))
     return
   }
   if (value === 'managed') await loadManagedConfig()
@@ -624,20 +831,45 @@ const handleDirectEngineToggle = async (engine: HSREngine, enabled: boolean) => 
 }
 
 const handleDirectConfigImport = async (engine: HSREngine) => {
-  if (!userId || importingDirectEngine.value) return
+  if (!userId || importingDirectEngine.value || configLocked.value) return
   importingDirectEngine.value = engine
   try {
     const result = await hsrPluginApi.importDirectConfig(scriptId, userId, engine)
     if (!formData.Direct) formData.Direct = {}
     formData.Direct[`${engine}ImportedAt`] = result.imported_at
     formData.Direct[`${engine}Source`] = result.source
-    message.success(`${engine} 原生配置已导入当前用户`)
+    message.success(t('edit.nativeP0ConfigurationWas', { p0: engine }))
   } catch (error) {
     message.error(
-      `${engine} 配置导入失败：${error instanceof Error ? error.message : String(error)}`
+      t('edit.couldNotImportP0', {
+        p0: engine,
+        p1: error instanceof Error ? error.message : String(error),
+      })
     )
   } finally {
     importingDirectEngine.value = null
+  }
+}
+
+// 与 handleDirectConfigImport 对称：清掉快照后直控回到直接使用脚本当前配置
+const handleDirectConfigClear = async (engine: HSREngine) => {
+  if (!userId || clearingDirectEngine.value || importingDirectEngine.value || configLocked.value) return
+  clearingDirectEngine.value = engine
+  try {
+    await hsrPluginApi.clearDirectConfig(scriptId, userId, engine)
+    if (!formData.Direct) formData.Direct = {}
+    formData.Direct[`${engine}ImportedAt`] = ''
+    formData.Direct[`${engine}Source`] = ''
+    message.success(t('edit.directSnapshotCleared', { p0: engine }))
+  } catch (error) {
+    message.error(
+      t('edit.couldNotClearP0', {
+        p0: engine,
+        p1: error instanceof Error ? error.message : String(error),
+      })
+    )
+  } finally {
+    clearingDirectEngine.value = null
   }
 }
 
@@ -758,40 +990,39 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
   }
   localTarget[parts[parts.length - 1]] = value
 
-  if (isInitializing.value || isSaving.value || !userId) return true
-  isSaving.value = true
-  try {
-    const userData: MutableRecord = {}
-    let current = userData
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]] as MutableRecord
-    }
-    const isManagedJsonField =
-      parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
-    const isStageJsonField =
-      parts[0] === 'Stage' && (parts[1] === 'ScriptStage' || parts[1] === 'ScriptEchoOfWar')
-    const persistedValue = isManagedJsonField
-      ? stringifyJsonRecord(value)
-      : isStageJsonField && typeof value !== 'string'
-        ? JSON.stringify(value ?? {})
-        : value
-    current[parts[parts.length - 1]] = persistedValue
-    const saved = await updateUser(scriptId, userId, userData)
-    if (saved) {
-      logger.info(`用户配置已保存: ${key}`)
-      return true
-    } else {
-      logger.error(`保存失败: ${key}`)
+  if (isInitializing.value || !userId) return false
+  return enqueue(async () => {
+    try {
+      const userData: MutableRecord = {}
+      let current = userData
+      for (let i = 0; i < parts.length - 1; i++) {
+        current[parts[i]] = {}
+        current = current[parts[i]] as MutableRecord
+      }
+      const isManagedJsonField =
+        parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
+      const isStageJsonField =
+        parts[0] === 'Stage' && (parts[1] === 'ScriptStage' || parts[1] === 'ScriptEchoOfWar')
+      const persistedValue = isManagedJsonField
+        ? stringifyJsonRecord(value)
+        : isStageJsonField && typeof value !== 'string'
+          ? JSON.stringify(value ?? {})
+          : value
+      current[parts[parts.length - 1]] = persistedValue
+      const saved = await updateUser(scriptId, userId, userData)
+      if (saved) {
+        logger.info(`用户配置已保存: ${key}`)
+        return true
+      } else {
+        logger.error(`保存失败: ${key}`)
+        return false
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
       return false
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-    return false
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 const handleCancel = () => router.push('/scripts')
@@ -825,16 +1056,81 @@ const loadCapabilities = async () => {
   }
 }
 
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：HSR 统一叫「hsr」
+const HSR_DISPLAY_NAME = 'hsr'
+const restoreOpen = ref(false)
+
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+interface HSRPreviewRow {
+  key: string
+  value: string
+}
+interface HSRPreviewSection {
+  name: string
+  label: string
+  rows?: HSRPreviewRow[]
+}
+const previewSections = (raw: unknown): HSRPreviewSection[] =>
+  (raw as { sections?: HSRPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填字段（托管配置等），需重拉表单；native 恢复写
+// 两引擎原生配置，MAS 表单不受影响
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    await loadUserData()
+    if (controlMode.value === 'managed') await loadManagedConfig()
+  }
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：进入归档两引擎原生配置当前状态
+// （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
+const ensureHSRBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
 onMounted(async () => {
   if (!scriptId) {
-    message.error('缺少脚本ID参数')
+    message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
   try {
     const script = await getScript(scriptId)
     if (!script) {
-      message.error('脚本不存在')
+      message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
       return
     }
@@ -849,16 +1145,25 @@ onMounted(async () => {
     } else {
       await createUserImmediately()
     }
+    // 编辑界面进入：归档两引擎原生配置当前状态（须在 userId 就绪后）
+    void ensureHSRBackup('native')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error('加载脚本信息失败')
+    message.error(t('edit.couldNotLoadScript2'))
   } finally {
     isInitializing.value = false
   }
 })
 
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 用户字段侧车终态（编辑会话包络；HSR 无遮罩会话）
+  void ensureHSRBackup('mas')
+})
+
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {
@@ -871,13 +1176,13 @@ const createUserImmediately = async () => {
       await loadUserData()
       if (controlMode.value === 'managed') await loadManagedConfig()
     } else {
-      message.error('创建用户失败')
+      message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error('创建用户失败')
+    message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -895,6 +1200,7 @@ const loadUserData = async () => {
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
         if (userData.TaskOpt) formData.TaskOpt = { ...formData.TaskOpt, ...userData.TaskOpt }
         if (userData.Data) formData.Data = { ...formData.Data, ...userData.Data }
+        if (userData.Notify) formData.Notify = { ...formData.Notify, ...userData.Notify }
         if (userData.Control)
           formData.Control = { ...(formData.Control ?? {}), ...userData.Control }
         if (userData.Managed) {
@@ -912,17 +1218,17 @@ const loadUserData = async () => {
         if (userData.Direct) formData.Direct = { ...(formData.Direct ?? {}), ...userData.Direct }
         logger.info('用户数据加载成功')
       } else {
-        message.error('用户不存在')
+        message.error(t('edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      message.error('获取用户数据失败')
+      message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error('加载用户数据失败')
+    message.error(t('edit.couldNotLoadUser2'))
   }
 }
 </script>
@@ -932,36 +1238,6 @@ const loadUserData = async () => {
   padding: 32px;
   min-height: 100vh;
   background: var(--ant-color-bg-layout);
-}
-
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  padding: 0 8px;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
 }
 
 .user-edit-content {
@@ -1000,26 +1276,37 @@ const loadUserData = async () => {
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
+.hsr-preview-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--ant-color-text);
+}
+
+.hsr-preview-box {
+  margin-bottom: 8px;
 }
 
 .section-header h3 {
-  margin: 0;
   font-size: 18px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
   height: 22px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .form-label {
@@ -1033,24 +1320,6 @@ const loadUserData = async () => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
-}
-
-.modern-input,
-.modern-input :deep(.ant-input),
-.modern-input :deep(.ant-input-number) {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-}
-
-.modern-input:focus,
-.modern-input :deep(.ant-input:focus) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
-.cancel-button {
-  height: 40px;
 }
 
 .progress-group {

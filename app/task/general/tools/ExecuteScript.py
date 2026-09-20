@@ -20,11 +20,11 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
 import sys
 from pathlib import Path
 
 from app.utils import ProcessRunner, get_logger
+from app.utils.platform.process import platform_process
 
 logger = get_logger("自定义脚本执行工具")
 
@@ -52,7 +52,7 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
             return False
         else:
             # 使用系统默认程序打开
-            os.startfile(str(script_path))
+            await platform_process.open_protocol(str(script_path))
             return True
 
         # 创建异步子进程

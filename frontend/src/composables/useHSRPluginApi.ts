@@ -4,7 +4,7 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 /** Engines exposed by the built-in HSR adapter. */
 export type HSREngine = 'SRA' | 'M7A'
 
-export interface HSRBrowserCapability {
+interface HSRBrowserCapability {
   service: string
   handoff_protocol?: string
   service_available: boolean
@@ -19,7 +19,7 @@ export interface HSRBrowserCapability {
   }>
 }
 
-export interface HSRAdapterCapability {
+interface HSRAdapterCapability {
   engine: HSREngine
   display_name: string
   version?: string | null
@@ -38,16 +38,9 @@ export interface HSRTaskCapability {
   strategies?: Partial<Record<HSREngine, string[]>>
 }
 
-export type HSRManagedFieldType =
-  | 'boolean'
-  | 'integer'
-  | 'number'
-  | 'string'
-  | 'select'
-  | 'json'
-  | 'stage'
+type HSRManagedFieldType = 'boolean' | 'integer' | 'number' | 'string' | 'select' | 'json' | 'stage'
 
-export interface HSRManagedFieldOption {
+interface HSRManagedFieldOption {
   value: unknown
   label: string
 }
@@ -64,12 +57,45 @@ export interface HSRManagedField {
   readonly?: boolean
 }
 
-export interface HSRManagedEngineForm {
+export type HSRDroppedOverrideReason = 'unknown' | 'type'
+
+/** 一条被后端忽略的 Managed.Options 覆盖值（原生配置里没有该键，或类型对不上）。 */
+export interface HSRDroppedOverride {
+  key: string
+  reason: HSRDroppedOverrideReason
+  value: unknown
+  message: string
+}
+
+interface HSRManagedEngineForm {
   key?: string
   engine: HSREngine
   fields: HSRManagedField[]
   source?: string | null
+  /** 表单级人类可读提示（如三月七助手缺少配置说明文件）。 */
   warnings?: string[]
+  /** 在当前源配置中失效、运行时会被忽略的覆盖值；对应后端 `HSRManagedForm.dropped_overrides`。 */
+  dropped_overrides?: HSRDroppedOverride[]
+}
+
+/**
+ * 读出一个表单里被忽略的覆盖键。字段已经是结构化的，这里只做防御性归一：
+ * 缺 key 的条目丢掉，未知 reason 归为 unknown，message 缺失时补空串。
+ */
+export const getHSRDroppedOverrides = (
+  form?: Pick<HSRManagedEngineForm, 'dropped_overrides'> | null
+): HSRDroppedOverride[] => {
+  const result: HSRDroppedOverride[] = []
+  for (const item of form?.dropped_overrides ?? []) {
+    if (!item || typeof item !== 'object' || typeof item.key !== 'string') continue
+    result.push({
+      key: item.key,
+      reason: item.reason === 'type' ? 'type' : 'unknown',
+      value: item.value,
+      message: typeof item.message === 'string' ? item.message : '',
+    })
+  }
+  return result
 }
 
 export interface HSRManagedTask extends HSRTaskCapability {
@@ -83,11 +109,50 @@ export interface HSRManagedConfigSnapshot {
   warnings: string[]
 }
 
-export interface HSRDirectConfigImportResult {
+/** 一份可选的 SRA 配置档案（%APPDATA%/SRA/configs 下的一个 json）。 */
+export interface HSRSRAProfile {
+  id: string
+  path: string
+  selected: boolean
+}
+
+/** 后端 `/hsr/sra-profiles` 的响应；`configured` 为空串表示脚本用自动选择。 */
+export interface HSRSRAProfilesSnapshot {
+  engine: 'SRA'
+  root: string
+  available: boolean
+  unavailable_reason?: string | null
+  configured: string
+  auto_id: string
+  selected: string
+  fallback: boolean
+  fallback_reason?: string | null
+  profiles: HSRSRAProfile[]
+}
+
+interface HSRDirectConfigImportResult {
   engine: HSREngine
   source?: string | null
   imported_at?: string | null
   size?: number
+}
+
+/** `check` 只查版本；`apply` 查完就地安装（目录被任务占用时后端回 409）。 */
+export type HSRUpdateAction = 'check' | 'apply'
+
+/**
+ * 后端 `/hsr/update` 的结果。`message` 是后端给的面向用户说明，直接展示；
+ * `installable` 为假表示有新版但当前下载源装不了（多半是 Mirror 酱 CDK 问题）。
+ */
+export interface HSRUpdateResult {
+  engine: HSREngine
+  checked: boolean
+  updated: boolean
+  current_version?: string | null
+  latest_version?: string | null
+  update_available: boolean
+  installable: boolean
+  message: string
 }
 
 export interface HSRCapabilitySnapshot {
@@ -123,7 +188,17 @@ interface PluginEnvelope<T> {
   data?: T
 }
 
-export interface HSRStageOption {
+type HSRStageSource = Record<string, unknown>
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const firstNumber = (...values: unknown[]): number | null => {
+  const value = values.find(candidate => typeof candidate === 'number')
+  return typeof value === 'number' ? value : null
+}
+
+interface HSRStageOption {
   id: string
   label: string
   detail: string
@@ -132,7 +207,7 @@ export interface HSRStageOption {
   native_payload: Record<string, unknown>
 }
 
-export interface HSRStageCategory {
+interface HSRStageCategory {
   key: string
   label: string
   options: HSRStageOption[]
@@ -173,7 +248,7 @@ const requestPluginData = async <T>(
 }
 
 const normalizeStageOptions = (
-  data: { engine: HSREngine; categories?: Array<Record<string, any>> } | undefined,
+  data: { engine: HSREngine; categories?: HSRStageSource[] } | undefined,
   engine: HSREngine
 ): { engine: HSREngine; categories: HSRStageCategory[] } => ({
   engine: data?.engine || engine,
@@ -182,21 +257,26 @@ const normalizeStageOptions = (
     label: String(
       category.label ?? category.categoryLabel ?? category.key ?? category.categoryKey ?? ''
     ),
-    options: (Array.isArray(category.options) ? category.options : []).map(option => ({
-      id: String(option.id ?? option.value ?? ''),
-      label: String(option.label ?? option.name ?? option.value ?? ''),
-      detail: String(option.detail ?? ''),
-      cost: option.cost ?? category.cost ?? null,
-      max_count:
-        option.max_count ?? option.maxCount ?? category.max_count ?? category.maxCount ?? null,
-      native_payload:
-        option.native_payload && typeof option.native_payload === 'object'
+    options: (Array.isArray(category.options) ? category.options.filter(isRecord) : []).map(
+      option => ({
+        id: String(option.id ?? option.value ?? ''),
+        label: String(option.label ?? option.name ?? option.value ?? ''),
+        detail: String(option.detail ?? ''),
+        cost: firstNumber(option.cost, category.cost),
+        max_count: firstNumber(
+          option.max_count,
+          option.maxCount,
+          category.max_count,
+          category.maxCount
+        ),
+        native_payload: isRecord(option.native_payload)
           ? option.native_payload
           : {
               ...(option.m7a ? { m7a: option.m7a } : {}),
               ...(option.sra ? { sra: option.sra } : {}),
             },
-    })),
+      })
+    ),
   })),
 })
 
@@ -217,9 +297,9 @@ export function useHSRPluginApi() {
   ): Promise<{ engine: HSREngine; categories: HSRStageCategory[] }> => {
     const data = await requestPluginData<{
       engine: HSREngine
-      categories?: Array<Record<string, any>>
+      categories?: HSRStageSource[]
     }>(
-      axios.get<PluginEnvelope<{ engine: HSREngine; categories?: Array<Record<string, any>> }>>(
+      axios.get<PluginEnvelope<{ engine: HSREngine; categories?: HSRStageSource[] }>>(
         url('/stage-options'),
         { params: { scriptId, userId, engine, slot } }
       )
@@ -238,6 +318,15 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 列出脚本可选的 SRA 配置档案，并标出当前生效的那份。 */
+  const getSraProfiles = async (scriptId: string): Promise<HSRSRAProfilesSnapshot> => {
+    return requestPluginData(
+      axios.get<PluginEnvelope<HSRSRAProfilesSnapshot>>(url('/sra-profiles'), {
+        params: { scriptId },
+      })
+    )
+  }
+
   const importDirectConfig = async (
     scriptId: string,
     userId: string,
@@ -252,10 +341,43 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 清掉该用户的直控快照，直控回到直接使用脚本当前配置。 */
+  const clearDirectConfig = async (
+    scriptId: string,
+    userId: string,
+    engine: HSREngine
+  ): Promise<HSRDirectConfigImportResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/clear'), {
+        scriptId,
+        userId,
+        engine,
+      })
+    )
+  }
+
+  /** 手动检查或安装 M7A / SRA 的更新；这是唯一不必等一轮任务跑完就能更新的入口。 */
+  const runEngineUpdate = async (
+    scriptId: string,
+    engine: HSREngine,
+    action: HSRUpdateAction
+  ): Promise<HSRUpdateResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRUpdateResult>>(url('/update'), {
+        scriptId,
+        engine,
+        action,
+      })
+    )
+  }
+
   return {
     getCapabilities,
     getStageOptions,
     getManagedConfig,
+    getSraProfiles,
     importDirectConfig,
+    clearDirectConfig,
+    runEngineUpdate,
   }
 }

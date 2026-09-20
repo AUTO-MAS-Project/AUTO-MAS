@@ -23,5 +23,17 @@ export type MaaConfig_Run = {
      * 日常超时限制
      */
     RoutineTimeLimit?: (number | null);
+    /**
+     * 启动 MAA 前检查游戏更新
+     */
+    IfCheckGameUpdate?: (boolean | null);
+    /**
+     * 自动下载并安装游戏安装包（仅官服）
+     */
+    IfAutoInstallGameApk?: (boolean | null);
+    /**
+     * 游戏更新超时限制
+     */
+    GameUpdateTimeLimit?: (number | null);
 };
 

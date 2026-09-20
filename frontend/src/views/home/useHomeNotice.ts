@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -47,15 +48,15 @@ export const useHomeNotice = () => {
           noticeVisible.value = true
           await playSound('announcement_display')
         } else {
-          message.info('暂无公告信息')
+          message.info(t('home.notice.empty'))
         }
       } else {
-        message.error(response.message || '获取公告失败')
+        message.error(response.message || t('home.notice.failed'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`显示公告失败: ${errorMsg}`)
-      message.error('显示公告失败，请稍后重试')
+      message.error(t('home.notice.showFailed'))
     } finally {
       noticeLoading.value = false
     }

@@ -3,29 +3,30 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="@/assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
     <a-space size="middle">
+      <DocLink :url="MAS_DOC_URLS.scriptTypes.SRC" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
-  <div class="script-edit-content">
-    <a-card title="SRC脚本配置" :loading="pageLoading" class="config-card">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <a-card :title="t('edit.srcScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag"> SRC </a-tag>
       </template>
@@ -34,41 +35,51 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip title="为脚本设置一个易于识别的名称">
+                  <a-tooltip :title="t('edit.giveScriptNameYou')">
                     <span class="form-label">
-                      脚本名称
+                      {{ t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)" />
+                <a-input
+                  v-model:value="formData.name"
+                  :placeholder="t('edit.enterScriptName')"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <a-tooltip title="选择SRC.exe所在的文件夹路径">
+                  <a-tooltip :title="t('edit.pickFolderHoldingSrc2')">
                     <span class="form-label">
-                      SRC路径
+                      {{ t('edit.srcPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.path" placeholder="请选择SRC.exe所在的文件夹" size="large" class="path-input"
-                    readonly />
+                  <a-input
+                    v-model:value="formData.path"
+                    :placeholder="t('edit.pickFolderHoldingSrc')"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectSRCPath">
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -79,22 +90,31 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>模拟器管理</h3>
+            <h3>{{ t('edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="选择要使用的模拟器">
+                  <a-tooltip :title="t('edit.pickEmulatorUse')">
                     <span class="form-label">
-                      模拟器
+                      {{ t('edit.emulator') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="srcConfig.Emulator.Id" size="large" placeholder="请选择模拟器"
-                  :loading="emulatorLoading" @change="handleEmulatorSelectChange">
-                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-model:value="srcConfig.Emulator.Id"
+                  size="large"
+                  :placeholder="t('edit.pickEmulator')"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorSelectChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -104,22 +124,46 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                    :title="
+                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                        ? t('edit.thisEmulatorCannotBe')
+                        : t('edit.pickEmulatorInstance')
+                    "
+                  >
                     <span class="form-label">
-                      模拟器实例
+                      {{ t('edit.emulatorInstance') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
-                <a-input v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && srcConfig.Emulator.Id"
-                  v-model:value="srcConfig.Emulator.Index" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
-                  class="modern-input" @blur="handleChange('Emulator', 'Index', srcConfig.Emulator.Index)" />
+                <a-input
+                  v-if="
+                    emulatorDeviceOptions.length === 0 &&
+                    !emulatorDeviceLoading &&
+                    srcConfig.Emulator.Id
+                  "
+                  v-model:value="srcConfig.Emulator.Index"
+                  size="large"
+                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  class="modern-input"
+                  @blur="handleChange('Emulator', 'Index', srcConfig.Emulator.Index)"
+                />
                 <!-- 正常情况下显示下拉框 -->
-                <a-select v-else v-model:value="srcConfig.Emulator.Index" size="large" placeholder="请先选择模拟器"
-                  :loading="emulatorDeviceLoading" :disabled="!srcConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)">
-                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-else
+                  v-model:value="srcConfig.Emulator.Index"
+                  size="large"
+                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!srcConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -131,54 +175,71 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="切换账号时需要执行的操作">
+                  <a-tooltip :title="t('edit.whatDoWhenSwitching')">
                     <span class="form-label">
-                      账号切换方法
+                      {{ t('edit.accountSwitchingMethod') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="srcConfig.Run.TaskTransitionMethod" size="large"
-                  @change="handleChange('Run', 'TaskTransitionMethod', $event)">
-                  <a-select-option value="ExitEmulator">重启模拟器</a-select-option>
-                  <a-select-option value="ExitGame">重启游戏</a-select-option>
+                <a-select
+                  v-model:value="srcConfig.Run.TaskTransitionMethod"
+                  size="large"
+                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                >
+                  <a-select-option value="ExitEmulator">{{
+                    t('edit.restartEmulator')
+                  }}</a-select-option>
+                  <a-select-option value="ExitGame">{{ t('edit.restartGame') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                  <a-tooltip :title="t('edit.skipRunOnceThis')">
                     <span class="form-label">
-                      用户单日代理次数上限
+                      {{ t('edit.runsPerDayThis') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="srcConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)" />
+                <a-input-number
+                  v-model:value="srcConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
+                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
                     <span class="form-label">
-                      代理重试次数限制
+                      {{ t('edit.retryLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="srcConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)" />
+                <a-input-number
+                  v-model:value="srcConfig.Run.RunTimesLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -186,27 +247,112 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="执行代理任务时，SRC日志无变化时间超过该阀值视为超时">
+                  <a-tooltip :title="t('edit.treatRunAsTimed2')">
                     <span class="form-label">
-                      运行超时限制（分钟）
+                      {{ t('edit.runTimeoutMinutes2') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="srcConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)" />
+                <a-input-number
+                  v-model:value="srcConfig.Run.RunTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
         </div>
 
+        <!-- 游戏更新 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.gameUpdate') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.checkGameUpdateBeforeLogin')">
+                    <span class="form-label">
+                      {{ t('edit.checkGameUpdateBefore') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.whenClientDetectedAs')">
+                    <span class="form-label">
+                      {{ t('edit.installGamePackageAutomatically') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.timeoutDownloadingInstallingGame')">
+                    <span class="form-label">
+                      {{ t('edit.gameUpdateTimeoutMinutes') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.GameUpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @blur="
+                    handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -214,12 +360,15 @@ import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('SRC脚本编辑')
 
@@ -237,7 +386,8 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formData = reactive({
   name: '',
@@ -263,6 +413,9 @@ const srcConfig = reactive<SRCScriptConfig>({
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     RunTimeLimit: 40,
+    IfCheckGameUpdate: false,
+    IfAutoInstallGameApk: false,
+    GameUpdateTimeLimit: 60,
   },
   Emulator: {
     Id: '',
@@ -271,9 +424,9 @@ const srcConfig = reactive<SRCScriptConfig>({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
-  path: [{ required: true, message: '请选择SRC路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  type: [{ required: true, message: t('edit.pickScriptType'), trigger: 'change' }],
+  path: [{ required: true, message: t('edit.pickSrcPath'), trigger: 'blur' }],
 }
 
 // 模拟器相关状态
@@ -281,45 +434,43 @@ const emulatorLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path'])
 
-  isSaving.value = true
-  try {
-    // 构建只包含单个修改字段的更新数据（遵循最小原则）
-    const updateData: any = { [category]: { [key]: value } }
-
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-      // 保存成功后刷新数据
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
+const refreshNormalizedField = async (category: string, key: string) => {
+  const scriptDetail = await getScript(scriptId)
+  const normalized = (scriptDetail?.config as Record<string, any> | undefined)?.[category]?.[key]
+  if (normalized !== undefined) {
+    ;(srcConfig as Record<string, any>)[category][key] = normalized
   }
 }
 
-// 刷新脚本配置
-const refreshScript = async () => {
-  try {
-    const scriptDetail = await getScript(scriptId)
-    if (scriptDetail) {
-      Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
-      formData.name = scriptDetail.name
+const handleChange = async (category: string, key: string, value: any) => {
+  if (isInitializing.value) return
+
+  await enqueue(async () => {
+    try {
+      // 构建只包含单个修改字段的更新数据（遵循最小原则）
+      const updateData: any = { [category]: { [key]: value } }
+
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+          await refreshNormalizedField(category, key)
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新配置失败: ${errorMsg}`)
-  }
+  }, `${category}.${key}`)
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -353,7 +504,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        message.error('脚本不存在或加载失败')
+        message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -371,7 +522,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -390,12 +541,12 @@ const loadEmulatorOptions = async () => {
     if (response && response.code === 200) {
       emulatorOptions.value = response.data || []
     } else {
-      message.error('加载模拟器选项失败')
+      message.error(t('edit.couldNotLoadEmulator'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error('加载模拟器选项失败')
+    message.error(t('edit.couldNotLoadEmulator'))
   } finally {
     emulatorLoading.value = false
   }
@@ -411,32 +562,30 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
   }
 
   // 保存模拟器选择和清空的实例字段
-  isSaving.value = true
-  try {
-    const updateData = {
-      Emulator: {
-        Id: emulatorId,
-        Index: ''
+  await enqueue(async () => {
+    try {
+      const updateData = {
+        Emulator: {
+          Id: emulatorId,
+          Index: '',
+        },
       }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info('模拟器配置已保存')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存模拟器配置失败: ${errorMsg}`)
     }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('模拟器配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存模拟器配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 // 文件选择方法
 const selectSRCPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
 
@@ -448,12 +597,12 @@ const selectSRCPath = async () => {
       srcConfig.Info.Path = path
       // 选择路径后立即保存
       await handleChange('Info', 'Path', path)
-      message.success('SRC路径选择成功')
+      message.success(t('edit.srcPathSelected'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择SRC路径失败: ${errorMsg}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 </script>

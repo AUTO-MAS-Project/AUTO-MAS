@@ -4,8 +4,12 @@
     <div class="debug-section">
       <h4>🎯 手动导航</h4>
       <div class="manual-nav">
-        <input v-model="manualPath" placeholder="输入路径 (例: /home, /scripts)" class="path-input"
-          @keyup.enter="navigateToManualPath" />
+        <input
+          v-model="manualPath"
+          placeholder="输入路径 (例: /home, /scripts)"
+          class="path-input"
+          @keyup.enter="navigateToManualPath"
+        />
         <button class="nav-go-btn" @click="navigateToManualPath">跳转</button>
       </div>
     </div>
@@ -14,9 +18,14 @@
     <div class="debug-section">
       <h4>🚀 快捷导航</h4>
       <div class="quick-nav">
-        <button v-for="route in commonRoutes" :key="route.path" class="nav-btn"
-          :class="{ active: currentRoute.path === route.path }" @click="navigateTo(route.path)">
-          {{ route.title }}
+        <button
+          v-for="navRoute in commonRoutes"
+          :key="navRoute.path"
+          class="nav-btn"
+          :class="{ active: currentRoute.path === navRoute.path }"
+          @click="navigateTo(navRoute.path)"
+        >
+          {{ navRoute.title }}
         </button>
       </div>
     </div>
@@ -29,10 +38,6 @@
         <button class="action-btn" @click="reloadPage">重新加载</button>
         <button class="action-btn" @click="toggleConsole">切换控制台</button>
         <button class="action-btn" @click="openDevtool">打开开发者工具</button>
-        <!-- 新增：3s 后触发 Popup 弹窗 -->
-        <button class="action-btn" :disabled="isPopupScheduled" @click="schedulePopup">
-          {{ isPopupScheduled ? '已计划：3s 后弹窗...' : '3s 后触发 Popup' }}
-        </button>
       </div>
     </div>
 
@@ -111,7 +116,7 @@ const navigateToManualPath = () => {
 const openDevtool = () => {
   try {
     if ((window as any).electronAPI?.openDevTools) {
-      ; (window as any).electronAPI.openDevTools()
+      ;(window as any).electronAPI.openDevTools()
       logger.info('开发者工具已打开')
     } else {
       logger.warn('开发者工具API不可用')
@@ -175,30 +180,6 @@ const toggleConsole = () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取调试信息失败: ${errorMsg}`)
   }
-}
-
-// 新增：3s 后触发 Popup 弹窗
-const isPopupScheduled = ref(false)
-const schedulePopup = () => {
-  if (isPopupScheduled.value) return
-  isPopupScheduled.value = true
-
-  setTimeout(() => {
-    const data = {
-      title: '调试弹窗',
-      message: '这是在 3 秒后自动触发的 Popup 测试弹窗。',
-      options: ['确定', '取消'],
-      messageId: '',
-    }
-
-    router.push({
-      path: '/popup',
-      query: { data: encodeURIComponent(JSON.stringify(data)) },
-    })
-
-    // 计划触发一次后即可再次使用
-    isPopupScheduled.value = false
-  }, 3000)
 }
 </script>
 

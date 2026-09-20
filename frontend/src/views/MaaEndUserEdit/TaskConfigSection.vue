@@ -1,46 +1,34 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>任务配置</h3>
-      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
-        <template #icon><CalendarOutlined /></template>
-        跳转到计划表
-      </a-button>
-    </div>
-
+  <div>
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
-      <div class="task-group-sidebar">
-        <button
-          v-for="group in visibleTaskGroups"
-          :key="group.key"
-          class="task-group-item"
-          :class="{ active: group.key === activeGroupKey }"
-          type="button"
-          @click="activeGroupKey = group.key"
-        >
-          <span class="task-group-main">
-            <span class="task-group-title">{{ group.label }}</span>
-            <span class="task-group-count">
-              {{ enabledGroupTaskCount(group) }}/{{ group.tasks.length }}
-            </span>
-          </span>
-          <span class="task-group-switch" @click.stop>
-            <a-switch
-              :checked="isGroupEnabled(group)"
-              :disabled="controlsDisabled"
-              size="small"
-              @change="handleGroupSwitchChange(group, $event)"
-            />
-          </span>
-        </button>
-      </div>
+      <a-tabs v-model:active-key="activeGroupKey" size="small">
+        <a-tab-pane v-for="group in visibleTaskGroups" :key="group.key">
+          <template #tab>
+            <span>{{ group.label }}</span>
+            <span class="task-group-count"
+              >{{ enabledGroupTaskCount(group) }}/{{ group.tasks.length }}</span
+            >
+          </template>
+        </a-tab-pane>
+      </a-tabs>
 
       <div v-if="activeGroup" class="task-group-detail">
         <div class="task-group-detail-header">
-          <span>{{ activeGroup.label }}</span>
-          <span class="task-group-count">
-            {{ enabledGroupTaskCount(activeGroup) }}/{{ activeGroup.tasks.length }}
-          </span>
+          <span>{{
+            t('edit.maaEndGroupEnabled', {
+              n: enabledGroupTaskCount(activeGroup),
+              m: activeGroup.tasks.length,
+            })
+          }}</span>
+          <label v-if="activeGroup.tasks.length > 1" class="task-group-toggle">
+            <span>{{ t('edit.maaEndEnableGroup') }}</span>
+            <a-switch
+              :checked="isGroupEnabled(activeGroup)"
+              :disabled="controlsDisabled"
+              :aria-label="t('edit.maaEndEnableGroup')"
+              @change="handleGroupSwitchChange(activeGroup, $event)"
+            />
+          </label>
         </div>
 
         <div class="task-switch-list">
@@ -49,6 +37,7 @@
             <a-switch
               v-model:checked="formData.Task[taskSwitchKey(task.name)]"
               :disabled="controlsDisabled"
+              :aria-label="task.label"
               @change="handleTaskSwitchChange(task.name)"
             />
           </div>
@@ -57,44 +46,61 @@
     </div>
 
     <a-row v-if="showSanityDetail" :gutter="24">
-      <a-col :span="optionColumnSpan">
-        <a-form-item label="理智任务配置模式">
+      <a-col :xs="24" :sm="12">
+        <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
-            :options="sanityModeOptions"
+            :options="resolvedSanityModeOptions"
             :disabled="loading"
-            size="large"
+            size="middle"
             @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="optionColumnSpan">
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择当前执行的理智任务类型">
+            <a-tooltip :title="t('edit.pickSanityTaskType')">
               <span class="form-label">
-                理智任务
+                {{ t('edit.sanityTask') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displaySanityTaskType }}</span>
-            <span class="plan-source">来自计划表</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
             v-model:value="formData.Task.SanityTaskType"
             :options="sanityTaskTypeOptions"
             :disabled="optionControlsDisabled"
-            size="large"
+            size="middle"
             @change="handleSanityTaskTypeChange"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="optionColumnSpan">
+      <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
+        <a-form-item label="基质刷取模式">
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayEssenceMenu }}</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+          </div>
+          <a-select
+            v-else
+            :value="formData.Task.AutoEssenceMenu"
+            :options="resolvedEssenceMenuOptions"
+            :disabled="optionControlsDisabled"
+            size="middle"
+            @change="handleEssenceMenuChange"
+          />
+        </a-form-item>
+      </a-col>
+
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="taskOptionTooltip">
@@ -106,42 +112,40 @@
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayCurrentTask }}</span>
-            <span class="plan-source">来自计划表</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
+            :mode="isTargetEssenceMode ? 'multiple' : undefined"
             :disabled="optionControlsDisabled"
             :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
-            size="large"
+            size="middle"
             @change="handleTaskOptionChange"
           />
         </a-form-item>
       </a-col>
-    </a-row>
-
-    <a-row v-if="showRewardGroupSelect" :gutter="24">
-      <a-col :span="8">
+      <a-col v-if="showRewardGroupSelect" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip title="协议空间奖励任务可在这里选择奖励组">
+            <a-tooltip :title="t('edit.rewardGroupsProtocolSpace')">
               <span class="form-label">
-                可选奖励组
+                {{ t('edit.rewardGroup') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayRewardsSet }}</span>
-            <span class="plan-source">来自计划表</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
             v-model:value="formData.Task.RewardsSetOption"
             :options="REWARD_OPTIONS"
             :disabled="optionControlsDisabled"
-            size="large"
+            size="middle"
             @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
           />
         </a-form-item>
@@ -151,10 +155,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
-import { navigateTo } from '@/router'
 import {
   MAAEND_TASK_GROUPS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -168,11 +172,16 @@ import {
   getSanityTaskDisplayValue,
   isProtocolSpaceRewardEnabled,
   normalizeMaaEndSanityConfig,
+  AUTO_ESSENCE_MENU_OPTIONS,
+  type AutoEssenceMenu,
+  type MaaEndEssenceTargetGroup,
   type MaaEndSanityConfig,
   type MaaEndTaskSwitch,
   type ProtocolSpaceTab,
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
+
+const { t } = useI18n()
 
 interface FieldChange {
   key: string
@@ -185,9 +194,14 @@ const props = withDefaults(
     loading?: boolean
     ifQuickConfig?: boolean
     essenceLocationOptions: ComboBoxItem[]
+    essenceMenuOptions?: ComboBoxItem[]
+    essenceTargetWeaponGroups?: MaaEndEssenceTargetGroup[]
     optionsLoading?: boolean
     optionsLoaded?: boolean
     isPlanMode?: boolean
+    // 默认值不写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+    // 引用不到 useI18n() 的 t。兜底见下方 resolvedSanityModeOptions。
+    // oxlint-disable-next-line vue/require-default-prop
     sanityModeOptions?: Array<{ label: string; value: string }>
     planModeConfig?: MaaEndSanityConfig | null
   }>(),
@@ -197,9 +211,16 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
-    sanityModeOptions: () => [{ label: '固定', value: 'Fixed' }],
+    essenceMenuOptions: () => [],
+    essenceTargetWeaponGroups: () => [],
     planModeConfig: null,
   }
+)
+
+// 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
+// 引用不到 useI18n() 返回的 t，编译期直接报错。改成在这里兜底。
+const resolvedSanityModeOptions = computed(
+  () => props.sanityModeOptions ?? [{ label: t('edit.fixed'), value: 'Fixed' }]
 )
 
 const emit = defineEmits<{
@@ -208,7 +229,6 @@ const emit = defineEmits<{
 }>()
 
 const formData = props.formData
-const optionColumnSpan = 8
 const activeGroupKey = ref('')
 const showManagedTaskConfig = computed(() => props.ifQuickConfig)
 const visibleTaskGroups = computed(() => MAAEND_TASK_GROUPS)
@@ -237,6 +257,16 @@ const displayCurrentTask = computed(() =>
     ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
     : '未读取到计划表配置'
 )
+const displayEssenceMenu = computed(() => {
+  if (!displayPlanConfig.value || displayPlanConfig.value.SanityTaskType !== 'Essence') {
+    return '未读取到计划表配置'
+  }
+  return (
+    resolvedEssenceMenuOptions.value.find(
+      option => option.value === displayPlanConfig.value?.AutoEssenceMenu
+    )?.label ?? displayPlanConfig.value.AutoEssenceMenu
+  )
+})
 const displayRewardsSet = computed(() =>
   displayPlanConfig.value
     ? REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
@@ -246,8 +276,50 @@ const displayRewardsSet = computed(() =>
 const sanityTaskTypeOptions = computed(() =>
   SANITY_TASK_TYPE_OPTIONS.filter(
     option =>
-      option.value !== 'Essence' || !props.optionsLoaded || props.essenceLocationOptions.length > 0
+      option.value !== 'Essence' ||
+      !props.optionsLoaded ||
+      props.essenceLocationOptions.length > 0 ||
+      props.essenceTargetWeaponGroups.length > 0
   )
+)
+
+const resolvedEssenceMenuOptions = computed(() => {
+  if (props.essenceMenuOptions.length) return props.essenceMenuOptions
+  // 旧版 MaaEnd 没有 AutoEssenceMenu；只暴露 MAS 原有的指定地点语义。
+  if (props.optionsLoaded) return [{ label: '指定地点', value: 'Location' }]
+  return AUTO_ESSENCE_MENU_OPTIONS.map(option => ({
+    label: option.label,
+    value: option.value,
+  }))
+})
+
+const essenceTargetWeaponOptions = computed<ComboBoxItem[]>(() => {
+  const options = props.essenceTargetWeaponGroups.flatMap(group =>
+    group.options.map(option => ({
+      label: `${group.label} · ${option.label}`,
+      value: option.value,
+    }))
+  )
+  const values = new Set(options.map(option => option.value))
+  const selected = Array.isArray(formData.Task.AutoEssenceTargetWeapons)
+    ? formData.Task.AutoEssenceTargetWeapons
+    : []
+  for (const value of selected) {
+    if (typeof value === 'string' && value && !values.has(value)) {
+      options.unshift({ label: value, value })
+    }
+  }
+  return options
+})
+
+const effectiveEssenceMenu = computed<AutoEssenceMenu>(() => {
+  const value = displayPlanConfig.value?.AutoEssenceMenu ?? formData.Task.AutoEssenceMenu
+  return resolvedEssenceMenuOptions.value.some(option => option.value === value)
+    ? value
+    : 'Location'
+})
+const isTargetEssenceMode = computed(
+  () => normalizedSanityTaskType.value === 'Essence' && effectiveEssenceMenu.value === 'Target'
 )
 
 const normalizedSanityTaskType = computed<SanityTaskType>(() =>
@@ -265,13 +337,17 @@ const currentField = computed(
 )
 const currentTaskSaveKey = computed(() =>
   normalizedSanityTaskType.value === 'Essence'
-    ? 'Task.AutoEssenceSpecifiedLocation'
+    ? isTargetEssenceMode.value
+      ? 'Task.AutoEssenceTargetWeapons'
+      : 'Task.AutoEssenceSpecifiedLocation'
     : `Task.${currentField.value}`
 )
 
 const currentTaskOptions = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') {
-    return props.essenceLocationOptions
+    return isTargetEssenceMode.value
+      ? essenceTargetWeaponOptions.value
+      : props.essenceLocationOptions
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
 })
@@ -279,13 +355,19 @@ const currentTaskOptions = computed(() => {
 const currentTaskValue = computed({
   get: () => {
     if (normalizedSanityTaskType.value === 'Essence') {
-      return formData.Task.AutoEssenceSpecifiedLocation
+      return isTargetEssenceMode.value
+        ? formData.Task.AutoEssenceTargetWeapons
+        : formData.Task.AutoEssenceSpecifiedLocation
     }
     return formData.Task[currentField.value]
   },
   set: value => {
     if (normalizedSanityTaskType.value === 'Essence') {
-      formData.Task.AutoEssenceSpecifiedLocation = value
+      if (isTargetEssenceMode.value) {
+        formData.Task.AutoEssenceTargetWeapons = Array.isArray(value) ? value : []
+      } else {
+        formData.Task.AutoEssenceSpecifiedLocation = value
+      }
       return
     }
     formData.Task[currentField.value] = value
@@ -307,14 +389,18 @@ const rewardGroupEnabled = computed(() => {
 
 const taskOptionLabel = computed(() =>
   effectiveSanityTaskType.value === 'Essence'
-    ? '基质地点'
+    ? effectiveEssenceMenu.value === 'Target'
+      ? '目标武器'
+      : '基质地点'
     : (PROTOCOL_SPACE_TASK_TITLE_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
   effectiveSanityTaskType.value === 'Essence'
-    ? '选择当前基质刷取地点'
+    ? effectiveEssenceMenu.value === 'Target'
+      ? '选择需要刷取的目标武器，留空表示不限制武器'
+      : '选择当前基质刷取地点'
     : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
@@ -322,6 +408,19 @@ const taskOptionTooltip = computed(() =>
 const emitSave = (key: string, value: any) => {
   if (controlsDisabled.value) return
   emit('save', key, value)
+}
+
+const handleEssenceMenuChange = (value: AutoEssenceMenu) => {
+  if (optionControlsDisabled.value) return
+  const normalized = AUTO_ESSENCE_MENU_OPTIONS.some(option => option.value === value)
+    ? value
+    : 'Location'
+  formData.Task.AutoEssenceMenu = normalized
+  const taskValueChange = ensureCurrentTaskValue()
+  emitSaveBatch([
+    { key: 'Task.AutoEssenceMenu', value: normalized },
+    ...(taskValueChange ? [taskValueChange] : []),
+  ])
 }
 
 const taskSwitchKey = (taskName: MaaEndTaskSwitch) => `If${taskName}` as const
@@ -340,10 +439,6 @@ const showRewardGroupSelect = computed(
         isProtocolSpaceRewardEnabled(displayPlanConfig.value)
       : rewardGroupEnabled.value)
 )
-
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
-}
 
 const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
   emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
@@ -378,6 +473,16 @@ const ensureCurrentTaskValue = (): FieldChange | null => {
   if (optionControlsDisabled.value) return null
   const options = currentTaskOptions.value
   if (!options.length) return null
+  if (isTargetEssenceMode.value) {
+    const selected = Array.isArray(currentTaskValue.value) ? currentTaskValue.value : []
+    const validValues = new Set(options.map(option => option.value).filter(Boolean))
+    const normalized = selected.filter(
+      (value: unknown): value is string => typeof value === 'string' && validValues.has(value)
+    )
+    if (JSON.stringify(normalized) === JSON.stringify(selected)) return null
+    currentTaskValue.value = normalized
+    return { key: currentTaskSaveKey.value, value: normalized }
+  }
   if (options.some(option => option.value === currentTaskValue.value)) return null
 
   currentTaskValue.value = options[0].value
@@ -428,6 +533,9 @@ watch(
     () => props.optionsLoading,
     () => formData.Task.SanityTaskType,
     () => props.essenceLocationOptions,
+    () => props.essenceMenuOptions,
+    () => props.essenceTargetWeaponGroups,
+    () => formData.Task.AutoEssenceMenu,
   ],
   () => {
     if (optionControlsDisabled.value) return
@@ -467,90 +575,30 @@ watch(
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.mode-notice {
-  margin-bottom: 16px;
-}
-
 .task-switch-layout {
-  display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.task-group-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.task-group-item {
-  width: 100%;
-  min-height: 52px;
-  padding: 10px 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  text-align: left;
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease;
-}
-
-.task-group-item.active {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-}
-
-.task-group-main {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.task-group-title {
-  font-size: 14px;
-  font-weight: 600;
+  margin-bottom: 24px;
 }
 
 .task-group-count {
-  color: var(--ant-color-text-secondary);
+  margin-inline-start: 8px;
+  color: var(--ant-color-text-tertiary);
   font-size: 12px;
 }
 
-.task-group-detail {
-  min-height: 220px;
-  padding: 4px 0;
+.task-group-detail-header,
+.task-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .task-group-detail-header {
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  color: var(--ant-color-text);
-  font-size: 15px;
-  font-weight: 600;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 .task-switch-list {
@@ -572,28 +620,6 @@ watch(
 .task-switch-label {
   color: var(--ant-color-text);
   font-size: 14px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.plans-button {
-  padding-inline: 0;
 }
 
 .plan-mode-display {
@@ -618,7 +644,7 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ant-color-text);
   font-size: 14px;
 }
@@ -634,16 +660,7 @@ watch(
   color: var(--ant-color-primary);
 }
 
-@media (max-width: 900px) {
-  .task-switch-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .task-group-sidebar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
+@media (max-width: 600px) {
   .task-switch-list {
     grid-template-columns: 1fr;
   }

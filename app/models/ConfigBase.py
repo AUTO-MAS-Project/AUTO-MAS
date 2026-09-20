@@ -22,33 +22,61 @@
 
 
 from __future__ import annotations
-import os
-import json
-import uuid
-import shlex
-import inspect
-import asyncio
-from copy import deepcopy
-from urllib.parse import urlparse
-from datetime import datetime
-from contextlib import suppress
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
-from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
-from app.utils.io import write_file
+import asyncio
+import inspect
+import json
+import os
+import shlex
+import shutil
+import uuid
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
+from urllib.parse import urlparse
+
+from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
 from app.utils.constants import (
-    RESERVED_NAMES,
-    ILLEGAL_CHARS,
-    KEYBOARD_KEYS,
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
-    FORBIDDEN_PATH_PREFIXES,
     FORBIDDEN_PATH_EXACT,
+    FORBIDDEN_PATH_PREFIXES,
+    ILLEGAL_CHARS,
+    KEYBOARD_KEYS,
+    RESERVED_NAMES,
 )
+from app.utils.io import write_file
 
 logger = get_logger("配置基类")
+
+
+def _load_json_file(path: Path) -> dict[str, Any]:
+    """
+    读取配置文件, 解析失败时保留 ``.corrupt-<时间戳>`` 副本后按空配置继续
+
+    Args:
+        path: 配置文件路径, 空文件视为空配置
+
+    Returns:
+        dict[str, Any]: 解析结果; 空文件或损坏文件返回 ``{}``
+    """
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        corrupt_path = path.with_name(
+            f"{path.name}.corrupt-{datetime.now():%Y%m%d-%H%M%S}"
+        )
+        shutil.copyfile(path, corrupt_path)
+        logger.error(
+            f"配置文件 {path} 解析失败, 已保留副本 {corrupt_path.name}, 按默认值加载: {e}"
+        )
+        return {}
 
 
 class ValidatorBase(ABC):
@@ -81,7 +109,6 @@ class RangeValidator(ValidatorBase):
     def __init__(self, min: int | float, max: int | float):
         self.min = min
         self.max = max
-        self.range = (min, max)
 
     def validate(self, value):
         if not isinstance(value, (int, float)):
@@ -130,6 +157,30 @@ class MultipleOptionsValidator(ValidatorBase):
 
     def correct(self, value):
         return value if self.validate(value) else []
+
+
+class StringListValidator(ValidatorBase):
+    """仅允许字符串成员的动态多选列表。
+
+    MaaEnd 的目标武器选项来自安装目录，无法在配置模型初始化时写死，
+    因此不能使用需要静态选项表的 ``MultipleOptionsValidator``。
+    allow_none 用于区分“沿用动态默认值”和显式清空列表。
+    """
+
+    def __init__(self, *, allow_none: bool = False):
+        self.allow_none = allow_none
+
+    def validate(self, value):
+        if value is None and self.allow_none:
+            return True
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+    def correct(self, value):
+        if value is None and self.allow_none:
+            return None
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
 
 
 class UUIDValidator(ValidatorBase):
@@ -249,7 +300,7 @@ class JSONValidator(ValidatorBase):
 
     def correct(self, value):
         return (
-            value if self.validate(value) else ("{ }" if self.type == dict else "[ ]")
+            value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
         )
 
 
@@ -262,11 +313,14 @@ class EncryptValidator(ValidatorBase):
         try:
             dpapi_decrypt(value)
             return True
-        except:
+        except Exception:
             return False
 
     def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else dpapi_encrypt("数据损坏, 请重新设置")
+        if self.validate(value):
+            return value
+        logger.warning("加密配置项无法解密, 已替换为占位值, 请重新设置")
+        return dpapi_encrypt("数据损坏, 请重新设置")
 
 
 class VirtualConfigValidator(ValidatorBase):
@@ -611,7 +665,6 @@ class URLValidator(ValidatorBase):
 
 
 class ArgumentValidator(ValidatorBase):
-
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -627,7 +680,6 @@ class ArgumentValidator(ValidatorBase):
 
 
 class AdvancedArgumentValidator(ValidatorBase):
-
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -721,7 +773,7 @@ class ConfigItem:
         # deepcopy new value
         try:
             self.value = deepcopy(value)
-        except:
+        except Exception:
             self.value = value
 
         if isinstance(self.validator, EncryptValidator):
@@ -770,7 +822,7 @@ class ConfigItem:
             槽函数，接收新值作为参数，支持同步和异步函数
         """
         if not callable(slot):
-            raise TypeError(f"槽函数必须是可调用对象")
+            raise TypeError("槽函数必须是可调用对象")
 
         if slot not in self._slots:
             self._slots.append(slot)
@@ -786,10 +838,6 @@ class ConfigItem:
         """
         if slot in self._slots:
             self._slots.remove(slot)
-
-    def unbind_all(self):
-        """断开所有槽函数连接"""
-        self._slots.clear()
 
     @logger.catch
     async def _emit_signal(self, value: Any) -> None:
@@ -838,6 +886,7 @@ class ConfigBase(ABC):
         self.file: Path | None = None
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        self._save_lock = asyncio.Lock()
 
         # 配置项索引
         self._config_item_index: dict[str, dict[str, ConfigItem]] = {}
@@ -875,10 +924,7 @@ class ConfigBase(ABC):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        try:
-            data = json.loads(self.file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            data = {}
+        data = _load_json_file(self.file)
 
         await self.load(data)
 
@@ -955,7 +1001,7 @@ class ConfigBase(ABC):
             for name, item in info.items():
                 try:
                     item.setValue(working_data[group][name])
-                except:
+                except Exception:
                     if item.legacy_group_name is not None:
                         with suppress(Exception):
                             item.setValue(
@@ -1000,9 +1046,7 @@ class ConfigBase(ABC):
 
         return self._config_item_index[group][name].getValue()
 
-    async def set(
-        self, group: str, name: str, value: Any, commit: bool = True
-    ) -> bool:
+    async def set(self, group: str, name: str, value: Any, commit: bool = True) -> bool:
         """
         设置配置项的值
 
@@ -1107,7 +1151,10 @@ class ConfigBase(ABC):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        write_file(self.file, await self.toDict(if_decrypt=False))
+        # 序列化与落盘整体串行, 保证连续两次保存的落盘顺序与调用顺序一致
+        async with self._save_lock:
+            data = await self.toDict(if_decrypt=False)
+            await asyncio.to_thread(write_file, self.file, data)
 
     async def lock(self):
         """
@@ -1170,6 +1217,7 @@ class MultipleConfig(Generic[T]):
         self.data: dict[uuid.UUID, T] = {}
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        self._save_lock = asyncio.Lock()
 
     def __getitem__(self, key: uuid.UUID) -> T:
         """允许通过 config[uuid] 访问配置项"""
@@ -1215,10 +1263,7 @@ class MultipleConfig(Generic[T]):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        try:
-            data = json.loads(self.file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            data = {}
+        data = _load_json_file(self.file)
 
         await self.load(data)
 
@@ -1305,6 +1350,14 @@ class MultipleConfig(Generic[T]):
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
 
+                # 重建出来的子配置要挂上父级保存回调（#174），否则复制脚本、任务
+                # 收尾整表写回之后，对这些子配置的修改只改内存、不落盘。放在子配置
+                # load 之后：它自己的纠错保存不该触发父级半途落盘。
+                for save_method in self._save_methods:
+                    await self.data[self.order[-1]].add_save_method(save_method)
+                if self.file:
+                    await self.data[self.order[-1]].add_save_method(self.save)
+
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
 
@@ -1383,7 +1436,10 @@ class MultipleConfig(Generic[T]):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        write_file(self.file, await self.toDict(if_decrypt=False))
+        # 序列化与落盘整体串行, 保证连续两次保存的落盘顺序与调用顺序一致
+        async with self._save_lock:
+            data = await self.toDict(if_decrypt=False)
+            await asyncio.to_thread(write_file, self.file, data)
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """

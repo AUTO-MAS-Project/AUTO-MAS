@@ -1,0 +1,124 @@
+name: Bug 反馈 · 脚本专项（使用中文）
+description: MAA、M9A、MaaEnd、HSR、SRC、OK-WW、OK-NTE、BetterGI 与通用脚本的识别错误、任务异常、连接失败等
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 在提问之前...
+      description: |
+        请确认自己完成了下列必选项之后再进行勾选，若未完成必选项或勾选了「我未仔细阅读」选项，将视为自愿接受被直接关闭 Issue
+      options:
+        - label: 我理解 Issue 是用于反馈和解决问题的，而非吐槽评论区，将尽可能提供更多信息帮助问题解决
+          required: true
+        - label: 我未仔细阅读这些内容，只是一键已读所有内容，并相信这不会影响问题的处理
+        - label: 我填写了简短且清晰明确的标题，以便开发者在翻阅 Issue 列表时能快速确定大致问题，而不是「一个建议」「卡住了」等
+          required: true
+        - label: 我使用的是当前的最新版本，并已查看 Release 与 Pull Requests 中尚未发布的更新内容，其中并未提及该 Bug 已被修复
+          required: true
+        - label: 我已检查了常见问题、公告、活跃议题与已关闭议题，确认我的问题未被提及
+          required: true
+
+  - type: dropdown
+    id: script_type
+    attributes:
+      label: 涉及的脚本类型
+      description: MaaFW 脚本请改用「Bug 反馈 · MaaFW 专项」模板；与具体脚本无关的问题请改用「Bug 反馈 · 通用问题」模板
+      options:
+        - MAA
+        - M9A
+        - MaaEnd
+        - HSR
+        - SRC
+        - OK-WW
+        - OK-NTE
+        - BetterGI
+        - 通用脚本
+    validations:
+      required: true
+
+  - type: input
+    id: mas_version
+    attributes:
+      label: AUTO-MAS 版本
+      description: 见 设置 →「关于」
+      placeholder: v5.5.0-beta.3
+    validations:
+      required: true
+
+  - type: input
+    id: script_version
+    attributes:
+      label: 被托管脚本的版本
+      description: 上面所选脚本自身的版本号
+      placeholder: MAA v5.x.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: describe
+    attributes:
+      label: 问题描述
+      description: 描述问题时请尽可能详细，说明你期望的行为与实际发生的行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 请按顺序写明操作步骤，以及该问题是必现还是偶发
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 日志
+
+        请在提交本 Issue 后，**在评论区补充以下两份日志**：
+
+        1. **AUTO-MAS 本体日志**：设置 →「日志管理」→「导出日志压缩包」
+        2. **脚本日志**：被托管脚本自身的日志。部分专项在 AUTO-MAS 内已有「导出 XX 问题包」按钮，可直接使用
+
+        请上传压缩包原文件，不要解压后只粘贴其中几行文字。
+
+  - type: checkboxes
+    id: logs
+    attributes:
+      label: 日志确认
+      options:
+        - label: 我已了解需要在提交后于评论区补充 AUTO-MAS 本体日志压缩包与脚本日志两份，缺少日志的 Issue 可能无法排查并被关闭
+          required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: |
+        请说明操作系统及版本、模拟器品牌与版本、模拟器分辨率、DPI；
+        若正在使用 MuMu 12 或雷电 9，请说明截图增强是否开启
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或录屏
+      description: |
+        若是识别相关问题，请尽可能提供模拟器自带截图工具截取的无遮挡原图（或通过 adb 截取）；
+        用 QQ、微信等工具截取的图片包含窗口边框且长宽比不固定，不利于排查
+    validations:
+      required: false
+
+  - type: textarea
+    id: others
+    attributes:
+      label: 还有别的吗？
+      description: 任何能让我们对你所遇到的问题有更多了解的东西
+    validations:
+      required: false

@@ -1,6 +1,6 @@
 <template>
-  <a-card class="shortcut-card" title="常用入口">
-    <section class="quick-actions" aria-label="快捷入口">
+  <a-card class="shortcut-card" :title="t('home.quick.title')">
+    <section class="quick-actions" :aria-label="t('home.quick.aria')">
       <button
         v-for="action in quickActions"
         :key="action.path"
@@ -21,6 +21,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   CalendarOutlined,
   ControlOutlined,
@@ -30,38 +32,40 @@ import {
 } from '@ant-design/icons-vue'
 import { navigateTo } from '@/router'
 
-const quickActions = [
+const { t } = useI18n()
+
+const quickActions = computed(() => [
   {
-    title: '脚本管理',
-    description: '配置自动化脚本',
+    title: t('home.quick.scripts'),
+    description: t('home.quick.scriptsDesc'),
     path: '/scripts',
     icon: FileTextOutlined,
   },
   {
-    title: '计划管理',
-    description: '编排运行计划',
+    title: t('home.quick.plans'),
+    description: t('home.quick.plansDesc'),
     path: '/plans',
     icon: CalendarOutlined,
   },
   {
-    title: '模拟器管理',
-    description: '维护设备环境',
+    title: t('home.quick.emulators'),
+    description: t('home.quick.emulatorsDesc'),
     path: '/emulators',
     icon: DatabaseOutlined,
   },
   {
-    title: '调度队列',
-    description: '查看排队任务',
+    title: t('home.quick.queue'),
+    description: t('home.quick.queueDesc'),
     path: '/queue',
     icon: UnorderedListOutlined,
   },
   {
-    title: '调度中心',
-    description: '控制执行状态',
+    title: t('home.quick.scheduler'),
+    description: t('home.quick.schedulerDesc'),
     path: '/scheduler',
     icon: ControlOutlined,
   },
-]
+])
 </script>
 
 <style scoped>

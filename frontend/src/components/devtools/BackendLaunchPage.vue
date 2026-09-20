@@ -16,13 +16,21 @@
 
       <!-- 控制按钮 -->
       <div class="action-buttons">
-        <button :disabled="isLoading || isBackendRunning" class="action-btn start-btn" @click="startBackend">
+        <button
+          :disabled="isLoading || isBackendRunning"
+          class="action-btn start-btn"
+          @click="startBackend"
+        >
           <span v-if="isLoading" class="loading-spinner">⏳</span>
           <span v-else>▶️</span>
           启动后端
         </button>
 
-        <button :disabled="isLoading || !isBackendRunning" class="action-btn stop-btn" @click="stopBackend">
+        <button
+          :disabled="isLoading || !isBackendRunning"
+          class="action-btn stop-btn"
+          @click="stopBackend"
+        >
           <span v-if="isLoading" class="loading-spinner">⏳</span>
           <span v-else>⏹️</span>
           停止后端
@@ -36,7 +44,11 @@
       </div>
 
       <!-- 操作结果显示 -->
-      <div v-if="lastResult" class="result-card" :class="{ success: lastResult.success, error: !lastResult.success }">
+      <div
+        v-if="lastResult"
+        class="result-card"
+        :class="{ success: lastResult.success, error: !lastResult.success }"
+      >
         <div class="result-title">
           {{ lastResult.success ? '操作成功' : '❌ 操作失败' }}
         </div>
@@ -100,9 +112,7 @@
       <div class="ws-status-card">
         <div class="status-row">
           <span class="status-label">WebSocket状态:</span>
-          <span class="status-value" :class="wsStatus.toLowerCase().replace('已', '')">{{
-            wsStatus
-          }}</span>
+          <span class="status-value" :class="state">{{ state }}</span>
         </div>
         <div class="status-row">
           <span class="status-label">后端状态:</span>
@@ -113,8 +123,12 @@
           <span class="status-value">{{ subscriberCount }}</span>
         </div>
         <div class="status-row">
-          <span class="status-label">已连接过:</span>
-          <span class="status-value">{{ connectionInfo.hasEverConnected ? '是' : '否' }}</span>
+          <span class="status-label">连接地址:</span>
+          <span class="status-value">{{ connectionInfo.url || '-' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">后端开发模式:</span>
+          <span class="status-value">{{ connectionInfo.backendDevMode ? '是' : '否' }}</span>
         </div>
       </div>
 
@@ -122,51 +136,27 @@
       <div class="ws-reconnect-card">
         <div class="status-row">
           <span class="status-label">重连次数:</span>
-          <span class="status-value">{{ connectionInfo.wsReconnectAttempts || 0 }}</span>
+          <span class="status-value">{{ connectionInfo.reconnectAttempts || 0 }}</span>
         </div>
         <div class="status-row">
           <span class="status-label">自动重连中:</span>
-          <span class="status-value" :class="{ active: connectionInfo.isAutoReconnecting }">
-            {{ connectionInfo.isAutoReconnecting ? '是' : '否' }}
+          <span class="status-value" :class="{ active: connectionInfo.hasReconnectTimer }">
+            {{ connectionInfo.hasReconnectTimer ? '是' : '否' }}
           </span>
         </div>
       </div>
 
       <!-- WebSocket控制按钮 -->
       <div class="ws-actions">
-        <button :disabled="isWsReconnecting || connectionInfo.isAutoReconnecting" class="action-btn reconnect-btn"
-          @click="handleManualReconnect">
+        <button
+          :disabled="isWsReconnecting"
+          class="action-btn reconnect-btn"
+          @click="handleManualReconnect"
+        >
           <span v-if="isWsReconnecting" class="loading-spinner">⏳</span>
           <span v-else>🔄</span>
           {{ isWsReconnecting ? '重连中...' : '手动重连' }}
         </button>
-
-        <button :disabled="connectionInfo.isAutoReconnecting" class="action-btn reset-btn"
-          @click="handleResetReconnect">
-          🔧 重置重连状态
-        </button>
-
-        <button class="action-btn test-btn" @click="testWsMessage">💬 测试消息</button>
-      </div>
-    </div>
-
-    <!-- 消息日志区域 -->
-    <div class="section">
-      <h3 class="section-title">📝 消息日志</h3>
-
-      <div class="log-container">
-        <div v-if="wsMessages.length === 0" class="no-logs">暂无WebSocket消息</div>
-        <div v-else class="log-entries">
-          <div v-for="(msg, index) in wsMessages" :key="index" class="log-entry ws-message">
-            <span class="log-time">{{ msg.timestamp }}</span>
-            <span class="log-message">{{ formatMessage(msg.data) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="log-actions">
-        <button class="action-btn clear-btn" @click="clearWsMessages">🗑️ 清空消息</button>
-        <button class="action-btn export-btn" @click="exportLogs">📤 导出日志</button>
       </div>
     </div>
 
@@ -191,25 +181,18 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
-
-const logger = window.electronAPI.getLogger('后端调试面板')
+import { useWebSocket } from '@/composables/useWebSocket'
+import { useAppLifecycle } from '@/composables/useAppLifecycle'
+import { subscriptionCount } from '@/services/websocket/subscriptions'
 
 // 临时的类型断言，确保能访问到完整的electronAPI
 const electronAPI = window.electronAPI
 
-// WebSocket相关
-const {
-  subscribe,
-  unsubscribe,
-  sendRaw,
-  getConnectionInfo,
-  status,
-  backendStatus,
-  manualReconnect,
-  resetReconnect,
-  connectAfterBackendStart,
-} = useWebSocket()
+// WebSocket相关（连接层）
+const { state, getConnectionInfo } = useWebSocket()
+
+// 应用生命周期（后端状态与恢复入口）
+const { backendStatus, manualReconnect, connectWithRetry } = useAppLifecycle()
 
 // 状态管理
 const isBackendRunning = ref(false)
@@ -226,12 +209,9 @@ const workingDir = ref<string>('')
 const logs = ref<Array<{ time: string; message: string; type: 'info' | 'success' | 'error' }>>([])
 
 // WebSocket相关状态
-const wsStatus = ref('')
 const subscriberCount = ref(0)
-const connectionInfo = ref<any>({})
+const connectionInfo = ref<Record<string, unknown>>({})
 const isWsReconnecting = ref(false)
-const wsMessages = ref<Array<{ timestamp: string; data: any }>>([])
-let wsSubscriptionId: string
 
 // 添加日志
 const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
@@ -247,29 +227,8 @@ const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') =>
 
 // 更新WebSocket状态
 const updateWsStatus = () => {
-  const connInfo = getConnectionInfo()
-  wsStatus.value = status.value // 使用响应式的status
-  subscriberCount.value = connInfo.subscriberCount
-  connectionInfo.value = connInfo
-}
-
-// 处理WebSocket消息
-const handleWsMessage = (message: WebSocketBaseMessage) => {
-
-  // 添加到消息列表
-  wsMessages.value.unshift({
-    timestamp: new Date().toLocaleTimeString(),
-    data: message,
-  })
-
-  // 保持最近20条消息
-  if (wsMessages.value.length > 20) {
-    wsMessages.value = wsMessages.value.slice(0, 20)
-  }
-
-  // 立即更新状态显示
-  updateWsStatus()
-  quickStatusCheck()
+  connectionInfo.value = getConnectionInfo()
+  subscriberCount.value = subscriptionCount()
 }
 
 // 手动重连WebSocket
@@ -294,71 +253,10 @@ const handleManualReconnect = async () => {
   }
 }
 
-// 重置重连状态
-const handleResetReconnect = () => {
-  addLog('重置WebSocket重连状态', 'info')
-  resetReconnect()
-  updateWsStatus()
-}
-
-// 测试WebSocket消息
-const testWsMessage = () => {
-  const message = {
-    id: 'debug_test_' + Date.now(),
-    type: 'message',
-    data: {
-      type: 'Question',
-      message_id: 'q_' + Date.now(),
-      title: '调试测试问题',
-      message: '这是来自后端调试面板的测试消息',
-    },
-  }
-
-  logger.info(`发送测试消息: ${JSON.stringify(message)}`)
-  sendRaw('message', message.data)
-  addLog('发送测试消息: ' + message.data.title, 'info')
-}
-
-// 格式化消息显示
-const formatMessage = (data: any) => {
-  if (typeof data === 'object') {
-    return (
-      JSON.stringify(data, null, 0).substring(0, 100) +
-      (JSON.stringify(data).length > 100 ? '...' : '')
-    )
-  }
-  return String(data)
-}
-
-// 清空WebSocket消息
-const clearWsMessages = () => {
-  wsMessages.value = []
-  addLog('WebSocket消息已清空', 'info')
-}
-
-// 导出日志
-const exportLogs = () => {
-  const allLogs = {
-    wsMessages: wsMessages.value,
-    operationLogs: logs.value,
-    timestamp: new Date().toISOString(),
-  }
-
-  const blob = new Blob([JSON.stringify(allLogs, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `backend-debug-logs-${new Date().toISOString().split('T')[0]}.json`
-  a.click()
-  URL.revokeObjectURL(url)
-
-  addLog('日志已导出', 'success')
-}
-
 // 快速状态检查 - 轻量级，主要基于WebSocket状态
 const quickStatusCheck = () => {
-  const wsConnected = status.value === '已连接'
-  const wsConnecting = status.value === '连接中'
+  const wsConnected = state.value === 'open'
+  const wsConnecting = state.value === 'connecting' || state.value === 'reconnecting'
   const backendRunning = backendStatus.value === 'running'
   const currentBackendRunning = isBackendRunning.value
 
@@ -367,19 +265,20 @@ const quickStatusCheck = () => {
 
   if (shouldBeRunning && !currentBackendRunning) {
     isBackendRunning.value = true
-    addLog(`检测到后端运行 (WS: ${status.value}, Backend: ${backendStatus.value})`, 'success')
+    addLog(`检测到后端运行 (WS: ${state.value}, Backend: ${backendStatus.value})`, 'success')
   } else if (!shouldBeRunning && !wsConnecting && currentBackendRunning) {
     // 如果WebSocket断开且不是连接中状态，且backendStatus也不是running
     // 给一些时间缓冲，避免状态频繁切换
     setTimeout(() => {
       if (
-        status.value !== '已连接' &&
-        status.value !== '连接中' &&
+        state.value !== 'open' &&
+        state.value !== 'connecting' &&
+        state.value !== 'reconnecting' &&
         backendStatus.value !== 'running'
       ) {
         isBackendRunning.value = false
         backendPid.value = null
-        addLog(`❌ 后端服务已停止 (WS: ${status.value}, Backend: ${backendStatus.value})`, 'error')
+        addLog(`❌ 后端服务已停止 (WS: ${state.value}, Backend: ${backendStatus.value})`, 'error')
       }
     }, 1000) // 1秒缓冲时间，更快响应
   }
@@ -413,7 +312,7 @@ const startBackend = async () => {
       // 尝试连接WebSocket
       addLog('🔌 尝试连接WebSocket（最多3次重试）...', 'info')
       try {
-        const connected = await connectAfterBackendStart()
+        const connected = await connectWithRetry()
         if (connected) {
           addLog('WebSocket连接成功，后端服务可用', 'success')
         } else {
@@ -528,7 +427,7 @@ const refreshStatus = async () => {
     updateWsStatus()
 
     // 主要基于WebSocket连接状态判断后端状态
-    const wsConnected = status.value === '已连接'
+    const wsConnected = state.value === 'open'
     const backendRunning = backendStatus.value === 'running'
 
     // 如果WebSocket已连接，说明后端肯定在运行
@@ -566,10 +465,10 @@ const refreshStatus = async () => {
       backendPid.value = null
 
       // 检查WebSocket状态给出更详细的信息
-      if (status.value === '连接中') {
+      if (state.value === 'connecting' || state.value === 'reconnecting') {
         addLog(`🔄 WebSocket连接中，后端可能正在启动`, 'info')
-      } else if (status.value === '连接错误') {
-        addLog(`❌ WebSocket连接错误，后端可能已停止`, 'error')
+      } else if (state.value === 'closed') {
+        addLog(`❌ WebSocket连接已关闭，后端可能已停止`, 'error')
       } else {
         addLog(`ℹ️ WebSocket已断开，后端未运行`, 'info')
       }
@@ -578,7 +477,7 @@ const refreshStatus = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     addLog(`❌ 刷新状态失败: ${errorMsg}`, 'error')
     // 发生错误时，基于WebSocket基本状态判断
-    isBackendRunning.value = status.value === '已连接'
+    isBackendRunning.value = state.value === 'open'
   } finally {
     isLoading.value = false
   }
@@ -614,18 +513,18 @@ onMounted(() => {
   addLog('📱 后端控制面板已加载', 'info')
 
   // 初始化时根据WebSocket状态设置后端状态
-  const wsConnected = status.value === '已连接'
+  const wsConnected = state.value === 'open'
   const backendRunning = backendStatus.value === 'running'
   isBackendRunning.value = wsConnected || backendRunning
 
   if (isBackendRunning.value) {
     addLog(
-      `初始化检测：后端服务正在运行 (WS: ${status.value}, Backend: ${backendStatus.value})`,
+      `初始化检测：后端服务正在运行 (WS: ${state.value}, Backend: ${backendStatus.value})`,
       'success'
     )
   } else {
     addLog(
-      `❌ 初始化检测：后端服务未运行 (WS: ${status.value}, Backend: ${backendStatus.value})`,
+      `❌ 初始化检测：后端服务未运行 (WS: ${state.value}, Backend: ${backendStatus.value})`,
       'info'
     )
   }
@@ -636,10 +535,6 @@ onMounted(() => {
 
   // 初始化WebSocket状态
   updateWsStatus()
-
-  // 订阅WebSocket消息
-  wsSubscriptionId = subscribe({}, handleWsMessage)
-  addLog('🔌 WebSocket消息订阅已启动', 'info')
 
   // 每1秒自动刷新状态（更频繁，更及时）
   statusInterval = setInterval(() => {
@@ -652,12 +547,6 @@ onMounted(() => {
 onUnmounted(() => {
   if (statusInterval) {
     clearInterval(statusInterval)
-  }
-
-  // 取消WebSocket订阅
-  if (wsSubscriptionId) {
-    unsubscribe(wsSubscriptionId)
-    addLog('🔌 WebSocket消息订阅已取消', 'info')
   }
 })
 </script>
@@ -975,23 +864,20 @@ onUnmounted(() => {
   font-weight: normal;
 }
 
-.status-value.connected {
+.status-value.open {
   color: #4caf50;
 }
 
-.status-value.已连接 {
-  color: #4caf50;
-}
-
-.status-value.连接 {
+.status-value.connecting,
+.status-value.reconnecting {
   color: #2196f3;
 }
 
-.status-value.断开 {
+.status-value.idle {
   color: #f44336;
 }
 
-.status-value.错误 {
+.status-value.closed {
   color: #ff5722;
 }
 
@@ -1022,40 +908,5 @@ onUnmounted(() => {
 
 .reconnect-btn:hover:not(:disabled) {
   background: #45a049 !important;
-}
-
-.reset-btn {
-  background: #ff5722 !important;
-}
-
-.reset-btn:hover:not(:disabled) {
-  background: #e64a19 !important;
-}
-
-.test-btn {
-  background: #2196f3 !important;
-}
-
-.test-btn:hover:not(:disabled) {
-  background: #1976d2 !important;
-}
-
-.log-entry.ws-message {
-  border-left: 3px solid #2196f3;
-  background: rgba(33, 150, 243, 0.05);
-}
-
-.log-actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.export-btn {
-  background: #9c27b0 !important;
-}
-
-.export-btn:hover:not(:disabled) {
-  background: #7b1fa2 !important;
 }
 </style>

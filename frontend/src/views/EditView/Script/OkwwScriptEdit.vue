@@ -3,29 +3,30 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="@/assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
-            编辑脚本
+            {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
 
     <a-space size="middle">
+      <DocLink :url="MAS_DOC_URLS.scriptTypes.Okww" />
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        返回
+        {{ t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 
-  <div class="script-edit-content">
-    <a-card title="ok-ww 脚本配置" :loading="pageLoading" class="config-card">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <a-card :title="t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ok-ww</a-tag>
       </template>
@@ -33,22 +34,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    脚本名称
-                    <a-tooltip title="用于区分不同的 ok-ww 脚本实例">
+                    {{ t('edit.scriptName') }}
+                    <a-tooltip :title="t('edit.tellsOkWwScript')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -59,8 +60,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    ok-ww 路径
-                    <a-tooltip title="选择 ok-ww.exe 所在目录">
+                    {{ t('edit.okWwPath') }}
+                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk4')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -68,7 +69,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="请选择 ok-ww.exe 所在目录"
+                    :placeholder="t('edit.pickDirectoryHoldingOk2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -84,7 +85,7 @@
                     <template #icon>
                       <ImportOutlined />
                     </template>
-                    一键导入
+                    {{ t('edit.import') }}
                   </a-button>
                   <a-button
                     size="large"
@@ -95,7 +96,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -105,15 +106,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>游戏配置</h3>
+            <h3>{{ t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后由 MAS 接管游戏启停">
+                  <a-tooltip :title="t('edit.masTakesOverStarting')">
                     <span class="form-label">
-                      启用游戏配置
+                      {{ t('edit.enableGameConfiguration') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -124,10 +125,104 @@
                   class="modern-input"
                   @change="handleChange('Game', 'Enabled', $event)"
                 >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换"
+                  >
+                    <span class="form-label">
+                      运行前强制切换账号
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="okwwConfig.Game.AccountSwitch"
+                  size="large"
+                  class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @change="handleChange('Game', 'AccountSwitch', $event)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
               </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="24" class="game-control-row">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.beforeLaunchingGameRun')">
+                    <span class="form-label">
+                      {{ t('edit.updateAutomaticallyBeforeLaunching') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="okwwConfig.Game.IfAutoUpdate"
+                  size="large"
+                  class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @change="handleChange('Game', 'IfAutoUpdate', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.largeVersionGapNeeds')">
+                    <span class="form-label">
+                      {{ t('edit.wholeFileSyncLimit') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="okwwConfig.Game.UpdateFullSyncLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @blur="
+                    handleChange('Game', 'UpdateFullSyncLimit', okwwConfig.Game.UpdateFullSyncLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="24" class="game-control-row">
+            <a-col :span="12">
+              <a-button
+                size="large"
+                :disabled="
+                  !okwwConfig.Game.Enabled || gamePathValidation.status !== 'valid' || isSaving
+                "
+                @click="handleCheckUpdate"
+              >
+                <template #icon>
+                  <ThunderboltOutlined />
+                </template>
+                {{ t('edit.checkUpdates') }}
+              </a-button>
+            </a-col>
+            <a-col :span="12">
+              <span class="label-hint">
+                {{ t('edit.masChecksOfficialVersion') }}
+              </span>
             </a-col>
           </a-row>
 
@@ -136,14 +231,14 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    游戏启动器
-                    <span class="label-hint">仅支持鸣潮官方启动器</span>
+                    {{ t('edit.gameLauncher') }}
+                    <span class="label-hint">{{ t('edit.officialWutheringWavesLauncher') }}</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="okwwConfig.Game.Path"
-                    placeholder="请选择启动器所在目录"
+                    :placeholder="t('edit.pickLauncherDirectory')"
                     size="large"
                     class="path-input"
                     readonly
@@ -160,7 +255,7 @@
                     <template #icon>
                       <ImportOutlined />
                     </template>
-                    一键导入
+                    {{ t('edit.import') }}
                   </a-button>
                   <a-button
                     size="large"
@@ -171,7 +266,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择目录
+                    {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
                 <a-alert
@@ -187,15 +282,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动参数
-                    <a-tooltip title="游戏启动参数（非 ok-ww 启动参数）">
+                    {{ t('edit.launchArguments') }}
+                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot2')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="okwwConfig.Game.Arguments"
-                  placeholder="请输入游戏启动参数"
+                  :placeholder="t('edit.enterGameLaunchArguments')"
                   size="large"
                   class="modern-input"
                   :disabled="!okwwConfig.Game.Enabled"
@@ -207,8 +302,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    启动等待时间
-                    <a-tooltip title="拉起游戏后的等待时间（秒）">
+                    {{ t('edit.startupWait') }}
+                    <a-tooltip :title="t('edit.howLongWaitAfter')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -229,15 +324,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>运行配置</h3>
+            <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    单日代理次数上限
-                    <a-tooltip title="阈值为 0 时表示不限制">
+                    {{ t('edit.runsPerDay') }}
+                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -256,8 +351,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    重试次数限制
-                    <a-tooltip title="超过该次数仍失败则终止">
+                    {{ t('edit.retryLimit2') }}
+                    <a-tooltip :title="t('edit.giveUpAfterThis')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -276,8 +371,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    代理超时限制（分钟）
-                    <a-tooltip title="日志长期无变化将判定超时">
+                    {{ t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -296,17 +391,45 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
+
+  <a-modal
+    v-model:open="updateModal.open"
+    :title="updateModal.running ? '鸣潮更新进度' : '检查鸣潮更新'"
+    :confirm-loading="updateModal.starting"
+    :mask-closable="!updateModal.running"
+    :footer="updateModal.running ? null : undefined"
+    @ok="startUpdate"
+    @cancel="handleUpdateModalCancel"
+  >
+    <template v-if="!updateModal.running">
+      <a-form layout="vertical">
+        <a-form-item :label="t('edit.pickUserWhoseServer')">
+          <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
+            <a-select-option v-for="user in updateModal.users" :key="user.uid" :value="user.uid">
+              {{ user.name }}（{{ user.resource }}）
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-alert type="info" show-icon :message="t('edit.wutheringWavesWillBe')" />
+      </a-form>
+    </template>
+    <template v-else>
+      <div class="update-log-area">
+        <pre class="update-log-content">{{ updateModal.log || '正在连接更新任务...' }}</pre>
+      </div>
+    </template>
+  </a-modal>
 
   <a-modal
     v-model:open="candidateModal.open"
-    title="选择导入路径"
+    :title="t('edit.pickImportPath')"
     :confirm-loading="candidateModal.loading"
     @ok="confirmCandidateSelection"
     @cancel="closeCandidateModal"
   >
     <a-form layout="vertical">
-      <a-form-item label="检测到多个可用路径，请选择当前脚本使用的路径">
+      <a-form-item :label="t('edit.severalUsablePathsWere')">
         <a-select v-model:value="candidateModal.selectedPath" style="width: 100%">
           <a-select-option
             v-for="candidate in candidateModal.candidates"
@@ -322,7 +445,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { useI18n } from 'vue-i18n'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -330,18 +457,36 @@ import {
   FolderOpenOutlined,
   ImportOutlined,
   QuestionCircleOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
+import { Service, TaskCreateIn } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useUserApi } from '@/composables/useUserApi'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_LOG_UPDATED,
+  WS_TASK_NOTICE,
+  type WSTaskLogUpdatedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import type { PathDiscoveryCandidate } from '@/types/electron'
+
+const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const { getUsers } = useUserApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
 const isDiscoveringOkww = ref(false)
 const isDiscoveringGame = ref(false)
@@ -357,9 +502,12 @@ interface OkwwInfoForm {
 
 interface OkwwGameForm {
   Enabled: boolean
+  AccountSwitch: boolean
   Path: string
   Arguments: string
   WaitTime: number
+  IfAutoUpdate: boolean
+  UpdateFullSyncLimit: number
 }
 
 interface OkwwRunForm {
@@ -370,7 +518,6 @@ interface OkwwRunForm {
 
 interface OkwwScriptConfigForm {
   Info: OkwwInfoForm
-  Script: Record<string, never>
   Game: OkwwGameForm
   Run: OkwwRunForm
 }
@@ -387,19 +534,21 @@ const formData = reactive({
 
 const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Script: {},
   Game: {
     Enabled: false,
+    AccountSwitch: false,
     Path: '.',
     Arguments: '',
     WaitTime: 60,
+    IfAutoUpdate: true,
+    UpdateFullSyncLimit: 30,
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请选择 ok-ww 路径', trigger: 'blur' }],
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('edit.pickOkWwPath'), trigger: 'blur' }],
 }
 
 const WUWA_LAUNCHER_EXECUTABLE = 'launcher.exe'
@@ -420,8 +569,184 @@ const gamePathValidation = reactive({
   message: '',
 })
 
+interface UpdateUserOption {
+  uid: string
+  name: string
+  resource: string
+}
+
+const updateModal = reactive({
+  open: false,
+  running: false,
+  starting: false,
+  users: [] as UpdateUserOption[],
+  selectedUserId: '',
+  log: '',
+})
+
+const updateSession = reactive({
+  subscriptionIds: [] as string[],
+  taskId: '',
+  timeout: null as number | null,
+})
+
+const clearUpdateSession = () => {
+  for (const subscriptionId of updateSession.subscriptionIds) {
+    unsubscribe(subscriptionId)
+  }
+  updateSession.subscriptionIds = []
+  updateSession.taskId = ''
+  if (updateSession.timeout) {
+    window.clearTimeout(updateSession.timeout)
+    updateSession.timeout = null
+  }
+}
+
+const stopUpdateSession = async (): Promise<boolean> => {
+  const taskId = updateSession.taskId
+  if (!taskId) {
+    clearUpdateSession()
+    return true
+  }
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    if (response.code !== 200) {
+      throw new Error(response.message || '停止鸣潮更新失败')
+    }
+    return true
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    return false
+  } finally {
+    clearUpdateSession()
+  }
+}
+
+const handleCheckUpdate = async () => {
+  if (updateModal.running) return
+  try {
+    const resp = await getUsers(scriptId)
+    const data = (resp?.data || {}) as Record<string, any>
+    const users: UpdateUserOption[] = Object.entries(data)
+      .filter(([, user]) => user?.Info?.Status !== false)
+      .map(([uid, user]) => ({
+        uid,
+        name: user?.Info?.Name || uid,
+        resource: user?.Info?.Resource || '官服',
+      }))
+    if (!users.length) {
+      message.warning(t('edit.addEnableUserBefore'))
+      return
+    }
+    updateModal.users = users
+    updateModal.selectedUserId = users[0].uid
+    updateModal.log = ''
+    updateLogSeq = null
+    updateModal.open = true
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(t('edit.couldNotLoadUser'))
+  }
+}
+
+// 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
+// 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
+// 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。缓冲上限 200,000 字符。
+const UPDATE_LOG_MAX_CHARS = 200_000
+let updateLogSeq: number | null = null
+let updateLogResyncing = false
+const resyncUpdateLog = async () => {
+  if (updateLogResyncing || !updateSession.taskId) return
+  updateLogResyncing = true
+  try {
+    const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
+    const item = (snapshot.tasks ?? []).find(task => task.taskId === updateSession.taskId)
+    if (!item) return
+    updateModal.log = item.log ?? ''
+    updateLogSeq = item.logSeq ?? null
+  } catch (e) {
+    logger.warn(`重建鸣潮更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    updateLogResyncing = false
+  }
+}
+const applyUpdateLog = (data: { log: string; seq?: number; append?: boolean }) => {
+  if (!data.append) {
+    updateModal.log = data.log
+    updateLogSeq = data.seq ?? null
+  } else if (updateLogSeq !== null && data.seq === updateLogSeq + 1) {
+    updateModal.log += data.log
+    updateLogSeq = data.seq
+  } else {
+    updateLogSeq = null
+    void resyncUpdateLog()
+    return
+  }
+  if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
+    updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
+  }
+}
+
+const startUpdate = async () => {
+  if (!updateModal.selectedUserId) return
+  updateModal.starting = true
+  try {
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: updateModal.selectedUserId,
+      mode: TaskCreateIn.mode.UPDATE,
+    })
+    if (response.code !== 200 || !response.taskId) {
+      throw new Error(response.message || '启动鸣潮更新失败')
+    }
+    updateModal.running = true
+    updateSession.taskId = response.taskId
+    updateSession.subscriptionIds = [
+      subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
+        applyUpdateLog(
+          wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
+        )
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
+        const data = wsMessage.data as unknown as WSTaskNoticeData
+        if (data.level === 'error') {
+          message.error(t('edit.wutheringWavesUpdateFailed', { p0: data.message }))
+          updateModal.running = false
+          updateModal.open = false
+          void stopUpdateSession()
+        }
+      }),
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
+        message.success(t('edit.wutheringWavesUpdateTask'))
+        updateModal.running = false
+        updateModal.open = false
+        void stopUpdateSession()
+      }),
+    ]
+    updateSession.timeout = window.setTimeout(
+      () => {
+        message.error(t('edit.wutheringWavesUpdateTimed'))
+        void stopUpdateSession()
+      },
+      30 * 60 * 1000
+    )
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : '启动鸣潮更新失败')
+  } finally {
+    updateModal.starting = false
+  }
+}
+
+const handleUpdateModalCancel = () => {
+  if (updateModal.running) {
+    void stopUpdateSession()
+  }
+  updateModal.running = false
+  updateModal.open = false
+}
+
 const showPathRejectModal = (title: string, content: string) => {
-  Modal.error({ title, content, okText: '我知道了' })
+  Modal.error({ title, content, okText: t('edit.gotIt') })
 }
 
 const closeCandidateModal = () => {
@@ -441,20 +766,19 @@ const openCandidateModal = (kind: DiscoveryKind, candidates: PathDiscoveryCandid
 const handleCancel = () => router.push('/scripts')
 
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      logger.error(msg)
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    logger.error(msg)
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const validateGamePath = async (launcherPath: string) => {
@@ -487,30 +811,29 @@ const validateGamePath = async (launcherPath: string) => {
 
 const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww 根目录已保存') => {
   if (!rootPath || rootPath === '.') {
-    message.warning('请先选择脚本根目录')
+    message.warning(t('edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
   const previousPath = okwwConfig.Info.RootPath
   okwwConfig.Info.RootPath = norm
 
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
-      Info: { RootPath: norm },
-    })
-    if (success) {
-      message.success(successMessage)
-      return true
+  return enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, {
+        Info: { RootPath: norm },
+      })
+      if (success) {
+        message.success(successMessage)
+        return true
+      }
+      okwwConfig.Info.RootPath = previousPath
+      return false
+    } catch (error) {
+      okwwConfig.Info.RootPath = previousPath
+      throw error
     }
-    okwwConfig.Info.RootPath = previousPath
-    return false
-  } catch (error) {
-    okwwConfig.Info.RootPath = previousPath
-    throw error
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const saveGamePath = async (launcherPath: string, successMessage: string) => {
@@ -518,25 +841,24 @@ const saveGamePath = async (launcherPath: string, successMessage: string) => {
   if (!(await validateGamePath(normalized))) return false
   const previousPath = okwwConfig.Game.Path
   okwwConfig.Game.Path = normalized
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
-      Game: { Path: normalized },
-    })
-    if (success) {
-      message.success(successMessage)
-      return true
+  return enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, {
+        Game: { Path: normalized },
+      })
+      if (success) {
+        message.success(successMessage)
+        return true
+      }
+      okwwConfig.Game.Path = previousPath
+      await validateGamePath(previousPath)
+      return false
+    } catch (error) {
+      okwwConfig.Game.Path = previousPath
+      await validateGamePath(previousPath)
+      throw error
     }
-    okwwConfig.Game.Path = previousPath
-    await validateGamePath(previousPath)
-    return false
-  } catch (error) {
-    okwwConfig.Game.Path = previousPath
-    await validateGamePath(previousPath)
-    throw error
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const loadScript = async () => {
@@ -545,26 +867,25 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'Okww') {
-      message.error('脚本类型不是 ok-ww')
+      message.error(t('edit.scriptTypeNotOk2'))
       handleCancel()
       return
     }
     formData.name = detail.name
     const config = detail.config as Partial<OkwwScriptConfigForm>
     Object.assign(okwwConfig.Info, config.Info || {})
-    Object.assign(okwwConfig.Script, config.Script || {})
     Object.assign(okwwConfig.Game, config.Game || {})
     Object.assign(okwwConfig.Run, config.Run || {})
     if (okwwConfig.Game.Path && okwwConfig.Game.Path !== '.') {
       await validateGamePath(okwwConfig.Game.Path)
     }
   } catch {
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -695,6 +1016,10 @@ const selectGameRootPath = async () => {
 }
 
 onMounted(loadScript)
+
+onUnmounted(() => {
+  void stopUpdateSession()
+})
 </script>
 
 <style scoped>
@@ -832,6 +1157,24 @@ onMounted(loadScript)
 
 .path-validation-alert {
   margin-top: 8px;
+}
+
+.update-log-area {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.update-log-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text);
 }
 
 .config-form :deep(.ant-form-item) {

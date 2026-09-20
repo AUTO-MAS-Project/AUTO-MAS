@@ -1,11 +1,13 @@
 import type { ElectronAPI } from '@/types/electron'
+import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
 
 type BrowserDevWindow = Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }
 type Logger = ReturnType<ElectronAPI['getLogger']>
 
-const BACKEND_HTTP_ENDPOINT = 'http://127.0.0.1:36163'
-const BACKEND_WS_ENDPOINT = 'ws://127.0.0.1:36163'
-const CONFIG_KEY = 'app-config'
+const BACKEND_HTTP_ENDPOINT = getDefaultHttpEndpoint()
+const BACKEND_WS_ENDPOINT = getDefaultWebSocketEndpoint()
+// 不能叫 app-config：utils/config.ts 把它当旧版 localStorage 配置，读一次就迁移并删除
+const CONFIG_KEY = 'auto-mas.browser-dev.config'
 const INITIALIZED_VERSION_KEY = 'app-initialized-version'
 
 const readJsonStorage = <T>(key: string): T | null => {
@@ -38,7 +40,6 @@ const browserDevElectronAPI = {
   getLogger,
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,
-  getApiEndpoints: async () => ({ local: BACKEND_HTTP_ENDPOINT, websocket: BACKEND_WS_ENDPOINT }),
   openUrl: async (url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer')
     return { success: true }
@@ -61,7 +62,7 @@ const browserDevElectronAPI = {
   fileExists: async () => false,
   readFile: async () => '',
   getAppPath: async () => '',
-  backendStatus: async () => ({ isRunning: true, wsConnected: false }),
+  backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
 if (import.meta.env.DEV && !window.electronAPI) {
