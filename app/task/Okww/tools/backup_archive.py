@@ -104,6 +104,19 @@ def native_backup_root(config_path: str | Path) -> Path:
     return project_backup_root() / "native" / config_root_key(config_path)
 
 
+def owner_for_mode(mode: str, user_id: str) -> str | None:
+    """三态配置来源 → MAS 配置目录 owner（单一事实来源）。
+
+    脚本=共享 ``Default`` 目录、用户=当前用户独立目录、直控=无 MAS 配置
+    （返回 ``None``）。运行下发（``_okww_mas_config_dir``）、归档/恢复
+    （``restore_service``）都必须经此解析，禁止各自内联映射。
+    """
+
+    if mode == "直控":
+        return None
+    return "Default" if mode == "脚本" else user_id
+
+
 def mas_config_dir(script_id: str, owner: str) -> Path:
     """MAS 配置目录：``data/{script_id}/{owner}/ConfigFile``。"""
 
@@ -122,7 +135,6 @@ _OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
 恢复时以当前值为准，回填旧值会静默翻转用户态/脚本态。"""
 
 _OVERLAY_TASK_KEYS = (
-    "TaskIndex",
     "WhichToFarm",
     "WhichTacetSuppressionToFarm",
     "WhichForgeryChallengeToFarm",
@@ -435,7 +447,6 @@ _OVERLAY_FIELD_LABELS = {
     "Id": "账号",
     "Mode": "配置文件来源",
     **{overlay: _FIELD_LABELS[file] for file, overlay in _FILE_TO_OVERLAY_KEY.items()},
-    "TaskIndex": "启动任务（-t N）",
 }
 """覆盖层字段（侧车键名）中文标签，文件字段词表派生 + 页面专属键补充"""
 

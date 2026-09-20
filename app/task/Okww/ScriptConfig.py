@@ -38,7 +38,11 @@ from .AutoProxy import (
     _okww_config_mode,
     _okww_mas_config_dir,
 )
-from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    owner_for_mode,
+    read_overlay_values,
+)
 
 logger = get_logger("OK-WW 脚本设置")
 
@@ -77,17 +81,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config_path = self.root_path / _OKWW_REL_CONFIG_DIR
         target_user_id = self.cur_user_item.user_id
         mode = "脚本"
-        self.resource: str | None = None
         if target_user_id != "Default":
             target_user_config = self.user_config[uuid.UUID(target_user_id)]
             mode = _okww_config_mode(target_user_config.get("Info", "Mode"))
-            self.resource = str(target_user_config.get("Info", "Resource"))
         self.use_mas_config = mode != "直控"
         # MAS 配置目录 owner（脚本态共享 Default、用户态独立目录；直控无 MAS 配置）
         self.mas_owner = (
-            ("Default" if mode == "脚本" else target_user_id)
-            if self.use_mas_config
-            else None
+            owner_for_mode(mode, target_user_id) if self.use_mas_config else None
         )
         # 本会话涉及用户的覆盖层字段（脚本级 Default 入口无单一用户，不带侧车）
         self.mas_overlay = (
@@ -103,9 +103,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def main_task(self) -> None:
         await self._kill_processes()
-        _configure_okww_launcher(
-            self.root_path, self.resource, script_id=self.script_info.script_id
-        )
+        _configure_okww_launcher(self.root_path)
 
         # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
         # 失败不阻断会话）。native 池由 manager.prepare 在任务级一次性归档
@@ -153,9 +151,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
-            _configure_okww_launcher(
-                self.root_path, self.resource, script_id=self.script_info.script_id
-            )
+            _configure_okww_launcher(self.root_path)
             if not self.script_config_path.is_dir():
                 raise FileNotFoundError(
                     "未找到 OK-WW 配置目录，请先在 OK-WW 中保存设置"

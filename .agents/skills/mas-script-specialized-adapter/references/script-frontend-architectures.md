@@ -66,7 +66,7 @@
 | 外部程序数 | 1 | 1 | 1 | 1 | 1 | 1 | **2** |
 | ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 有（脚本级+用户级+直控） | **有，且另有 REST 动态表单** | **无** |
 | 计划表 | 有 | 无 | 有 | 无 | 无 | 无 | 无 |
-| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | **队列 JSON + draggable** | TaskIndex + 高频字段 | 动态表单（后端下发字段） | 后端下发托管字段动态渲染 |
+| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | **队列 JSON + draggable** | 高频字段（固定 -t 1 日常） | 动态表单（后端下发字段） | 后端下发托管字段动态渲染 |
 | 后端侧重 | 进程与实例 | 任务栈、模拟器、Stage | runtime_bridge、MXU 路径、切号 | 管线、实例目录、队列消费 | 三态来源、working 备份恢复 | 半自动 schema、双通道配置 | 模块→引擎分配、双份配置备份、路径锁 |
 
 ## 前端表面通用约定

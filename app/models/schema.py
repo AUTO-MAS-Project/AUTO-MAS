@@ -1724,9 +1724,6 @@ class GeneralUserConfig(BaseModel):
 
 
 class OkwwUserConfig_Task(BaseModel):
-    TaskIndex: Optional[Literal[1, 7]] = Field(
-        default=None, description="启动任务：1=DailyTask，7=MultiAccountDailyTask"
-    )
     WhichToFarm: Optional[
         Literal["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
     ] = Field(default=None, description="每日任务体力用途")

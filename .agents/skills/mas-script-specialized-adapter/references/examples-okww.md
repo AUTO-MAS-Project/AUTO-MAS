@@ -30,18 +30,18 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 **判据只有一条：这次写入任务结束能不能还原。** 能还原的写入属 overlay（覆盖 base、结束还原），与来源无关，三态一律适用；不能还原的才是越界写入。
 
-`working/configs` 整目录由 manager 的既有快照覆盖（成功/失败/取消/超时/异常/崩溃全路径），因此**写进该目录的一切都是 overlay**。`data/apps/ok-ww/app.json` 是它的**兄弟路径、不在快照范围内**，写它必须自带键级快照，否则就是不可还原的越界写入。
+`working/configs` 整目录由 manager 的既有快照覆盖（成功/失败/取消/超时/异常/崩溃全路径），因此**写进该目录的一切都是 overlay**。
 
 | 写入目标 | 内容 | 语义 | 还原方式 |
 | --- | --- | --- | --- |
 | `app.json` | `auto_start=True` | 启动器默认值，**缺省才补** | 不需要（缺省补齐不是覆盖） |
-| `app.json` | `update_method=AUTO_UPDATE` | 同上，键不存在才补 | 不需要 |
-| `app.json` | `current_profile`（按 `Info.Resource` 映射 China/Global） | **overlay 覆盖** | 键级快照（`commit_okww_launcher_profile` → `restore_okww_launcher_profile`） |
+| \`app.json\` | `update_method=AUTO_UPDATE` | 同上，键不存在才补 | 不需要 |
+| \`app.json\` | `current_profile` | **MAS 不接管** | 不写（发行渠道与游戏区服无关） |
 | `working/configs/Basic Options.json` | `Exit App when Game Exits: True` | **overlay 覆盖**（非面板字段，但运行期需要） | 整目录快照 |
 | `working/configs/DailyTask.json` | 面板任务字段 | **overlay 覆盖**（面板子集） | 整目录快照，由 `Info.IfQuickConfig` 守卫 |
 
-- `app.json` 键级快照在 manager `prepare` **任务级一次性** commit（在任何覆盖之前），逐用户结束后各自还原、收尾与异常路径同样还原、残留快照在下次 commit 时先还回去。只保护 MAS 自己写下的那个键：任务期外部改过就保留外部改动（与原生配置快照同一保护策略）。
-- `current_profile` 改的是**跑哪个 ok-ww 发行 profile**（`China`/`Global` 对应不同 git 源，见上游 `pyappify.yml`），不是游戏服务器；它属安装级共享状态，多脚本实例共用同一份 `app.json`。
+- `current_profile` 是**发行/更新渠道**（`China`=阿里云+腾讯CNB、`Global`=GitHub+PyPi 更新源，见上游 `pyappify.yml` 与 `build.yml` 发行说明），**与游戏区服（官服/国际服）无关**——ok-ww 本体不消费它（仅 ok-script 用于窗口标题）。MAS 不写它、不接管：用户安装哪个包就保持哪个更新渠道，避免静默改指向另一 git 源。真正按区服区分的是 MAS 自己的鸣潮更新器（`app/services/wuthering_waves.py` 两个官方 index.json）。
+- `auto_start` / `update_method` 是「缺省才补」的启动器默认值，无事零写入、不需要还原。
 - `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（直控同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
 - **配置会话（`ScriptConfig`）不得注入 overlay 值**：会话结束时原生目录会整目录回写 base，且会话没有还原路径，写进去就是永久固化。base 只保留用户在 ok-ww GUI 里的设置。
 
