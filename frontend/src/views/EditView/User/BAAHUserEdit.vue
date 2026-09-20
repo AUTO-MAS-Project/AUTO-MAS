@@ -402,7 +402,6 @@
         </div>
       </template>
     </ConfigRestoreSection>
-  </div>
 </template>
 
 <script setup lang="ts">
