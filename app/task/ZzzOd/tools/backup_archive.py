@@ -170,13 +170,15 @@ def read_native_registry(root: Path) -> dict:
     留下 NUL 填充，故按 ``.sanitized.yaml`` 容错读（与运行记录同款），
     结构完整时仍能枚举出实例目录。
 
-    文件存在即已初始化：上游启动必补首个实例、GUI 也禁止删光，正常现场
-    必然至少一个实例。故解析失败、非映射、``instance_list`` 缺失/为空/
-    非列表真值/条目缺整数 idx 都只可能是损坏，一律抛
-    :class:`ConfigCorruptedError` 交由调用方决定（备份拦截不产生残缺
-    快照，恢复由用户确认后强制进行），不再静默按空处理——结构判据放在
-    本入口而非各调用方：占用判定在损坏现场静默放行、归档静默产出残缺
-    文件集，都比「响亮失败」难收拾。
+    结构判据（依据上游源码 ``src/one_dragon/base/config/one_dragon_config.py``）：
+    ``dict_instance_list`` 对缺键按 ``get('instance_list', [])`` 默认空读，
+    ``delete_instance`` 没有「至少留一个」守卫（上游 GUI 删光实例后落盘
+    ``instance_list: []`` 是真实可达状态），首次落盘也可能只写
+    ``instance_run`` 等键——故**缺键与空列表都是上游语义内的合法状态**
+    （等价空注册表），只有「键存在但不是列表」「条目不是映射或 idx 不是
+    整数」才只可能是损坏，抛 :class:`ConfigCorruptedError` 交由调用方
+    决定（备份拦截不产生残缺快照，恢复由用户确认后强制进行），不再静默
+    按空处理。
 
     Raises:
         ConfigCorruptedError: 文件存在但内容不可信（含损坏位置）。
@@ -188,20 +190,20 @@ def read_native_registry(root: Path) -> dict:
     # 上游 non-atomic 写残留 NUL 属正常可读回，走 sanitized 容错解析；
     # 其余坏档（截断/非映射）由 read_dict_file 显式报损坏（带路径）
     data = read_dict_file(od_file, format=".sanitized.yaml")
-    entries = data.get("instance_list")
-    if not isinstance(entries, list) or not entries:
-        # 文件存在即已初始化：上游启动必补首个实例、GUI 禁止删光，
-        # 正常现场必然至少一个实例——缺键或空列表都只可能是损坏
-        raise ConfigCorruptedError(od_file)
-    if any(
+    if "instance_list" not in data:
+        # 缺键：上游 getter 对缺键默认空读，等价空注册表
+        return data
+    entries = data["instance_list"]
+    if not isinstance(entries, list) or any(
         not isinstance(item, dict)
         or not isinstance(item.get("idx"), int)
         or isinstance(item.get("idx"), bool)
         for item in entries
     ):
-        # 真值但畸形（字符串/数字/映射、条目非映射或 idx 缺失/非整数）：
-        # 调用方遍历会炸无关 TypeError/ValueError，或静默得出错误的
-        # 占用判定与文件集，一律按损坏上报
+        # 键存在但不是列表（含显式 null——上游遍历会直接崩），或条目
+        # 非映射 / idx 缺失或非整数：调用方遍历会炸无关
+        # TypeError/ValueError，或静默得出错误的占用判定与文件集，
+        # 一律按损坏上报
         raise ConfigCorruptedError(od_file)
     return data
 
