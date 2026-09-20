@@ -425,10 +425,11 @@ def _merge_maa_config_file(
 def _restrict_task_queue_to_baseline(archive: dict, baseline: dict, scheme: str) -> bool:
     """把存档生效方案的 TaskQueue 收敛到会话基线(即 set_maa 合成结果)的成员与顺序。
 
-    脚本设置会话里 MAA 保存会用内存默认队列整体重写, 基线之外的原生/自定义条目
-    不是用户对 MAS 队列的表达(用户自定义任务队列只在直控模式存在), 一律移除;
-    基线任务按身份保留(字段已由身份对齐合并先行写入)并按 MAS 顺序重排。返回
-    是否发生变更。gui.json(OLD 格式)没有 TaskQueue, 原样跳过。
+    结构以基线为准: 基线之外的条目(原生默认任务、用户自定义任务)不保留, 基线条目
+    即使存档里没有同身份的条目也按基线补回——MAA 保存时可能把队列整体重写成
+    不带名称的原生条目(或干脆删掉合成任务), 此时绝不能把存档队列清空或留在被
+    重写的形态, 宁可回到下发态。字段优先取存档里同身份的条目(用户历史修改与
+    已合并的 GUI 修改), 缺失时用基线条目。返回是否发生变更。
     """
 
     configurations = archive.get("Configurations")
@@ -453,24 +454,26 @@ def _restrict_task_queue_to_baseline(archive: dict, baseline: dict, scheme: str)
             return None
         return (item.get("TaskType"), item.get("Name"))
 
-    order: dict[tuple, int] = {}
-    for index, item in enumerate(base_queue):
-        key = identity(item)
-        if key is not None and key not in order:
-            order[key] = index
-
-    restricted: list[dict] = []
-    seen: set[tuple] = set()
+    archived_by_id: dict[tuple, dict] = {}
     for item in queue:
         key = identity(item)
-        if key is None or key not in order or key in seen:
+        if key is not None and key not in archived_by_id:
+            archived_by_id[key] = item
+
+    rebuilt: list[dict] = []
+    for base_task in base_queue:
+        if not isinstance(base_task, dict):
             continue
-        seen.add(key)
-        restricted.append(item)
-    restricted.sort(key=lambda item: order[identity(item)])
-    if restricted == queue:
+        archived = archived_by_id.get(identity(base_task))
+        task = deepcopy(archived) if archived is not None else deepcopy(base_task)
+        # 身份以基线为准: MAA 重写可能清空名称, 不能让身份跟着漂移
+        task["Name"] = base_task.get("Name")
+        task["TaskType"] = base_task.get("TaskType")
+        rebuilt.append(task)
+
+    if rebuilt == queue:
         return False
-    target["TaskQueue"] = restricted
+    target["TaskQueue"] = rebuilt
     return True
 
 
@@ -491,22 +494,27 @@ def _find_task_source(
     task_queue: list[dict],
     name: str,
     task_type: str,
-    *,
-    allow_type_fallback: bool = True,
 ) -> dict | None:
-    """按任务名称取原生配置，必要时兼容旧配置中的类型匹配。"""
+    """按任务名称取原生配置；名称对不上时只接受**同类型唯一**的那条。
 
+    MAA 保存会把它重写的队列条目名称清空（issue #898 取证），此时同类型唯一
+    的一条就是用户原配置，按类型取回能保住用户在原生界面里设的高级选项。
+    MAS 自己合成的队列里 Fight 有多条（剿灭/活动/理智/剩余），按类型取会张冠
+    李戴，所以类型兜底必须限定在唯一一条时才生效。
+    """
+
+    first_of_type: dict | None = None
+    type_count = 0
     for task in task_queue:
-        if (
-            isinstance(task, dict)
-            and task.get("TaskType") == task_type
-            and task.get("Name") == name
-        ):
+        if not isinstance(task, dict) or task.get("TaskType") != task_type:
+            continue
+        if task.get("Name") == name:
             return deepcopy(task)
-    if allow_type_fallback:
-        for task in task_queue:
-            if isinstance(task, dict) and task.get("TaskType") == task_type:
-                return deepcopy(task)
+        type_count += 1
+        if first_of_type is None:
+            first_of_type = task
+    if type_count == 1 and first_of_type is not None:
+        return deepcopy(first_of_type)
     return None
 
 
@@ -515,18 +523,8 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
 
     source_tasks = [deepcopy(task) for task in source_queue if isinstance(task, dict)]
 
-    def source_or_default(
-        name: str,
-        task_type: str,
-        *,
-        allow_type_fallback: bool = True,
-    ) -> dict:
-        task = _find_task_source(
-            source_tasks,
-            name,
-            task_type,
-            allow_type_fallback=allow_type_fallback,
-        )
+    def source_or_default(name: str, task_type: str) -> dict:
+        task = _find_task_source(source_tasks, name, task_type)
         if task is None:
             # 用户在上游删掉了这条托管任务：只补一个空壳，字段全交给 MAA
             # 自己的默认值；下次会话照此重新生成，用户不必再删一次
@@ -537,26 +535,17 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
         task.update({"Name": name, "TaskType": task_type, "IsEnable": True})
         return task
 
-    fight_source = (
-        _find_task_source(source_tasks, "理智作战", "Fight", allow_type_fallback=False)
-        or {}
-    )
+    fight_source = _find_task_source(source_tasks, "理智作战", "Fight") or {}
     annihilation = _merge_fight_task(
-        _find_task_source(source_tasks, "剿灭作战", "Fight", allow_type_fallback=False)
-        or {},
+        _find_task_source(source_tasks, "剿灭作战", "Fight") or {},
         MAA_ANNIHILATION_FIGHT_BASE,
     )
     activity = _build_activity_priority_fight(
-        _find_task_source(
-            source_tasks, "活动关优先", "Fight", allow_type_fallback=False
-        )
-        or fight_source,
+        _find_task_source(source_tasks, "活动关优先", "Fight") or fight_source,
         "",
         0,
     )
-    remain = _find_task_source(
-        source_tasks, "剩余理智", "Fight", allow_type_fallback=False
-    )
+    remain = _find_task_source(source_tasks, "剩余理智", "Fight")
     if remain is None:
         remain = _merge_fight_task(fight_source, MAA_REMAIN_FIGHT_BASE)
     remain.update({"Name": "剩余理智", "TaskType": "Fight", "IsEnable": True})
@@ -572,7 +561,7 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
         source_or_default("基建换班", "Infrast"),
         activity,
         depot,
-        source_or_default("理智作战", "Fight", allow_type_fallback=False),
+        source_or_default("理智作战", "Fight"),
         remain,
         source_or_default("信用收支", "Mall"),
         source_or_default("领取奖励", "Award"),
@@ -1478,12 +1467,7 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 continue
 
-            task_set[en_task] = _find_task_source(
-                source_queue,
-                zh_task,
-                en_task,
-                allow_type_fallback=en_task != "Fight",
-            ) or {
+            task_set[en_task] = _find_task_source(source_queue, zh_task, en_task) or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
                 "IsEnable": False,
@@ -1491,13 +1475,13 @@ class AutoProxyTask(TaskExecuteBase):
             }
 
         annihilation_source = _find_task_source(
-            source_queue, "剿灭作战", "Fight", allow_type_fallback=False
+            source_queue, "剿灭作战", "Fight"
         )
         activity_source = _find_task_source(
-            source_queue, "活动关优先", "Fight", allow_type_fallback=False
+            source_queue, "活动关优先", "Fight"
         )
         remain_source = _find_task_source(
-            source_queue, "剩余理智", "Fight", allow_type_fallback=False
+            source_queue, "剩余理智", "Fight"
         )
 
         if "DepotMaintain" in task_set:
