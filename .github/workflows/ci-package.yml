@@ -74,7 +74,7 @@ jobs:
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'dist/ci-artifacts'
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           Move-Item -LiteralPath $env:PORTABLE_NAME -Destination $artifactDir
-          Move-Item -LiteralPath $env:SETUP_NAME -Destination $artifactDir
+          Move-Item -LiteralPath 'AUTO-MAS-Setup.exe' -Destination (Join-Path $artifactDir $env:SETUP_NAME)
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v7.0.1
