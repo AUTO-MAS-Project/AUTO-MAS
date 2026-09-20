@@ -289,10 +289,19 @@ def _reconcile(
     if swept:
         logger.info(f"MFW 运行池回收：已清掉 staging 残留 {len(swept)} 个")
 
-    # D8：只有池里已无旧身份 runtime、且本轮确实删了东西时才清缓存。旧 runtime 还在
-    # 等新身份替换时不清（离线用户要靠缓存建新的）；什么都没删也不清（缓存里没
-    # 有新垃圾，白跑一次子进程）。
-    if not dry_run and not remaining and (deleted or bindings_deleted or swept):
+    # D8：只有池里已无旧布局 runtime、当前身份的 base 已经建好、且本轮确实删了东西时
+    # 才清缓存。旧 runtime 还在等替换时不清、base 还没建时也不清（升级后第一次启动
+    # 就把旧布局全收割掉了，base 要靠这份缓存离线建出来）；什么都没删也不清（缓存里
+    # 没有新垃圾，白跑一次子进程）。
+    base_ready = all(
+        _runtime_usable(pool, runtime_id) for runtime_id in valid_runtime_ids
+    )
+    if (
+        not dry_run
+        and not remaining
+        and base_ready
+        and (deleted or bindings_deleted or swept)
+    ):
         try:
             cache = pool.clean_cache()
         except Exception as exc:  # noqa: BLE001
@@ -319,6 +328,15 @@ def _reconcile(
                     f"error={cache.get('error') or 'no detail'}"
                 )
     return report
+
+
+def _runtime_usable(pool: Any, runtime_id: str) -> bool:
+    """当前身份的 base 在不在池里、能不能用（``pool.get`` 会真起一次解释器核 ABI）。"""
+
+    try:
+        return pool.get(runtime_id) is not None
+    except Exception:  # noqa: BLE001 - ABI 对不上等同不可用
+        return False
 
 
 def previous_maafw_version(project_path: str | Path) -> str | None:
