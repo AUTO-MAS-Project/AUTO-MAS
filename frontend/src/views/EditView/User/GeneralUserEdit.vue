@@ -232,7 +232,6 @@
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     />
-  </div>
 </template>
 
 <script setup lang="ts">
