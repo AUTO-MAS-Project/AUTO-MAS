@@ -8,15 +8,9 @@ from typing import Any
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from .cache import prune_uv_cache
 from .identity import build_runtime_id, canonicalize_requirements
 from .installer import host_bootstrap_python_request, install_python_runtime
-from .pool import (
-    MaaFWRuntimePool,
-    MaaFWRuntimePoolError,
-    RuntimeCachePruner,
-    RuntimeInstaller,
-)
+from .pool import MaaFWRuntimePool, MaaFWRuntimePoolError, RuntimeInstaller
 
 
 class MaaFWRuntimePoolService:
@@ -27,14 +21,9 @@ class MaaFWRuntimePoolService:
         pool_root: str | Path | None = None,
         *,
         installer: RuntimeInstaller | None = install_python_runtime,
-        cache_pruner: RuntimeCachePruner | None = prune_uv_cache,
     ) -> None:
         root = pool_root or (Path.cwd() / "config" / "maafw_runtime_pool")
-        self.pool = MaaFWRuntimePool(
-            root,
-            installer=installer,
-            cache_pruner=cache_pruner,
-        )
+        self.pool = MaaFWRuntimePool(root, installer=installer)
 
     @property
     def root_identity(self) -> dict[str, Any]:
@@ -248,35 +237,10 @@ class MaaFWRuntimePoolService:
     def delete(self, runtime_id: str) -> dict[str, Any]:
         return self.pool.delete(runtime_id)
 
-    def gc(
-        self,
-        *,
-        dry_run: bool = True,
-        grace_seconds: float = 7 * 24 * 60 * 60,
-        keep_latest: int = 1,
-        now: str | datetime | None = None,
-    ) -> dict[str, Any]:
-        return self.pool.gc(
-            dry_run=dry_run,
-            grace_seconds=grace_seconds,
-            keep_latest=keep_latest,
-            now=now,
-        )
+    def reclaim_stale_runtimes(self, **kwargs: Any) -> dict[str, Any]:
+        """见 ``MaaFWRuntimePool.reclaim_stale_runtimes``；权威清单由宿主侧算好传入。"""
 
-    def collect_garbage(
-        self,
-        *,
-        dry_run: bool = True,
-        grace_seconds: float = 7 * 24 * 60 * 60,
-        keep_latest: int = 1,
-        now: str | datetime | None = None,
-    ) -> dict[str, Any]:
-        return self.gc(
-            dry_run=dry_run,
-            grace_seconds=grace_seconds,
-            keep_latest=keep_latest,
-            now=now,
-        )
+        return self.pool.reclaim_stale_runtimes(**kwargs)
 
 
 def _normalize_runtime_request(

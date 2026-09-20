@@ -1369,6 +1369,10 @@ async def update_maafw_project(
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
         MaaFWRuntimePoolService,
     )
+    from app.task.MaaFW.tools.embedded.pool_reconcile import (
+        previous_maafw_version,
+        reconcile_in_background,
+    )
     from app.task.MaaFW.tools.embedded.precheck import (
         build_precheck_validator,
         precheck_agent_root,
@@ -1380,6 +1384,8 @@ async def update_maafw_project(
     route = await asyncio.to_thread(
         lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
     )
+    # 记下更新前钉定的 maafw 版本：提交后若换了版本，旧 runtime 不必再等宽限。
+    previous_version = await asyncio.to_thread(previous_maafw_version, root_path)
     precheck_failure: dict[str, Any] = {}
     # 不把 report_progress 交给环境准备：它的收尾事件 completed / failed 会被
     # 进度跟踪器当成更新终态，而事务此时还在 post_validating。
@@ -1437,6 +1443,12 @@ async def update_maafw_project(
             await asyncio.to_thread(clear_runtime_precheck, root_path)
         except Exception as exc:  # noqa: BLE001
             _maafw_update_logger.warning(f"清理运行环境预检备忘失败: {exc}")
+        # 新版本的 runtime 预检时已建好；旧版本的那份此刻可能已无人引用。
+        reconcile_in_background(
+            "manual-update",
+            updated_project_path=root_path,
+            previous_version=previous_version,
+        )
 
     extra = _maafw_update_extra_fields(result)
     message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"

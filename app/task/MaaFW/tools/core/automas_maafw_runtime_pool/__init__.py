@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .cache import prune_uv_cache
+from .cache import clean_uv_cache, prune_uv_cache
 from .identity import (
     MaaFWRuntimeIdentityError,
     build_runtime_id,
@@ -12,9 +12,9 @@ from .installer import install_python_runtime, runtime_managed_uv_executable
 from .pool import (
     POOL_MARKER_NAME,
     POOL_SCHEMA_VERSION,
+    RECLAIM_GRACE_SECONDS,
     MaaFWRuntimePool,
     MaaFWRuntimePoolError,
-    RuntimeCachePruner,
     RuntimeInstaller,
 )
 from .service import MaaFWRuntimePoolService
@@ -26,11 +26,12 @@ __all__ = [
     "MaaFWRuntimePoolService",
     "POOL_MARKER_NAME",
     "POOL_SCHEMA_VERSION",
-    "RuntimeCachePruner",
+    "RECLAIM_GRACE_SECONDS",
     "RuntimeInstaller",
     "build_runtime_identity",
     "build_runtime_id",
     "canonicalize_requirements",
+    "clean_uv_cache",
     "find_maafw_requirement",
     "install_python_runtime",
     "prune_uv_cache",

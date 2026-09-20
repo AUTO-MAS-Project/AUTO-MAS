@@ -960,7 +960,15 @@ class AppConfig(GlobalConfig):
                 if value.get("Info", "ScriptId") == str(uid):
                     await queue.QueueItem.remove(key)
 
+        was_maafw = isinstance(self.ScriptConfig[uid], MaaFWConfig)
         await self.ScriptConfig.remove(uid)
+        if was_maafw:
+            # 它的共享 runtime 可能就此无人引用；后台对账一轮，不拖慢删除响应。
+            from app.task.MaaFW.tools.embedded.pool_reconcile import (
+                reconcile_in_background,
+            )
+
+            reconcile_in_background("script-deleted")
         # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
         # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
         # 再点这个脚本还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
@@ -4861,6 +4869,38 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    async def clean_maafw_runtime_pool(self) -> None:
+        """按引用对账回收 MFW 运行池里无人引用的共享 runtime。
+
+        与 ``clean_maafw_agent_venvs`` 同一个道理放在启动清理里：判定依赖「当前
+        全部脚本配置」这个全局状态，只有真实启动时它才可信。规则与保守条件见
+        ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（全部 MaaFW 类
+        脚本的项目目录）交过去，并在脚本表疑似没加载起来时弃权。
+        """
+
+        from app.task.MaaFW.tools.embedded.pool_reconcile import (
+            collect_live_project_paths,
+            reconcile_runtime_pool,
+            runtime_pool_root,
+            script_config_loaded_intact,
+        )
+
+        if not (runtime_pool_root() / "runtimes").is_dir():
+            return
+        if not script_config_loaded_intact():
+            logger.warning(
+                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
+            )
+            return
+        try:
+            await asyncio.to_thread(
+                reconcile_runtime_pool,
+                collect_live_project_paths(),
+                reason="startup",
+            )
+        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
+            logger.warning(f"MFW 运行池回收失败: {exc}")
 
     async def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。

@@ -586,6 +586,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"开始{phase_zh}检查 MFW 项目更新：下载源 {credentials.source}，"
             f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}"
         )
+        # 记下更新前钉定的 maafw 版本：提交后若换了版本，旧 runtime 不必再等宽限。
+        from app.task.MaaFW.tools.embedded.pool_reconcile import (
+            previous_maafw_version,
+            reconcile_in_background,
+        )
+
+        previous_version = await asyncio.to_thread(previous_maafw_version, project_path)
 
         # 用户点停止时 ``CancelledError`` 从 await 上抛出，但事务跑在工作线程
         # 里不会自己停：预检期间的 uv 安装靠令牌终止，随后事务回滚。与
@@ -649,6 +656,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 await asyncio.to_thread(clear_runtime_precheck, project_path)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"清理运行环境预检备忘失败：{exc}")
+            # 新版本的 runtime 预检时已建好；旧版本的那份此刻可能已无人引用。
+            reconcile_in_background(
+                f"{phase.lower()}-update",
+                updated_project_path=project_path,
+                previous_version=previous_version,
+            )
             # interface.json 已经变了：不刷新缓存，本轮用户仍按旧版任务表跑。
             try:
                 interface_model = await asyncio.to_thread(

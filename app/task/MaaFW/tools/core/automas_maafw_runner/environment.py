@@ -50,15 +50,10 @@ RUNNER_DEFAULT_PACKAGES = (
     "packaging",
 )
 DEFAULT_RUNTIME_LEASE_TTL_SECONDS = 24 * 60 * 60
-AUTOMATIC_RUNTIME_GC_GRACE_SECONDS = 7 * 24 * 60 * 60
-AUTOMATIC_RUNTIME_GC_KEEP_LATEST = 1
 REQUIREMENT_NAME_RE = re.compile(
     r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)"
     r"\s*(?:\[[^\]]+\])?\s*(?:===|[<>=!~]=?|@|;|\s|$)"
 )
-
-_AUTOMATIC_GC_ROOTS: set[str] = set()
-_AUTOMATIC_GC_LOCK = threading.Lock()
 
 EnvironmentProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -231,31 +226,11 @@ def prepare_runner_environment(
             str(route.get("runtimeRequirement") or "").strip() or None
         )
     if explicit_requirements is None:
-        if selected_requirement is None:
-            # 自带原生库的版本优先于 requirements.txt 的声明：我们加载的就是
-            # 项目自带的那份库，binding 必须跟它一致。实测 46 个发行包里有 3 个
-            # 声明是陈旧的（MAAAE 声明 5.3.0 实际 5.6.0、MaaNTE 声明 v5.10.4
-            # 实际 5.10.5、MaaADr 声明 5.12.2 实际 5.12.3），另有 20 个压根
-            # 没有 requirements.txt、4 个写的是无版本约束。
-            selected_requirement = _bundled_project_maafw_requirement(project)
-        if selected_requirement is None:
-            selected_requirement = _declared_project_maafw_requirement(project)
-        if selected_requirement is None and bound_runtime is not None:
-            selected_requirement = (
-                str(bound_runtime.get("maafwRequirement") or "").strip() or None
-            )
-        if selected_requirement is None and managed_project:
-            raise RuntimeError(
-                "MaaFW runtime 未绑定且项目未声明 runtime constraint；"
-                f"请在 {PROJECT_RUNTIME_MANIFEST_NAME} 中设置 runtime.constraint"
-            )
-        if selected_requirement is None:
-            # Legacy projects keep the historical unpinned default. Managed
-            # project-store entries must always provide a constraint or binding.
-            selected_requirement = "maafw"
-        selected_requirement = _normalize_maafw_requirement(
-            selected_requirement,
-            allow_unconstrained=not managed_project,
+        selected_requirement = _select_project_maafw_requirement(
+            project,
+            preselected=selected_requirement,
+            bound_runtime=bound_runtime,
+            managed_project=managed_project,
         )
         packages = tuple(
             build_runner_packages(
@@ -417,7 +392,6 @@ def prepare_runner_environment(
     try:
         venv_path = Path(str(runtime["venvPath"])).resolve()
         python_executable = Path(str(runtime["pythonExecutable"])).resolve()
-        _collect_stale_runtimes_once(pool, send_log=send_log)
         resolved_packages = tuple(
             str(item) for item in runtime.get("packages", packages)
         )
@@ -496,69 +470,6 @@ def release_runner_environment(
     return pool.release_lease(runtime_id, lease_id)
 
 
-def _collect_stale_runtimes_once(
-    pool: MaaFWRuntimePool,
-    *,
-    send_log: Callable[[str], None] | None,
-) -> None:
-    """Collect stale runtimes once per pool root for this process.
-
-    The current runtime already holds a lease when this runs, so pool GC keeps
-    it along with pinned, referenced, recently used, and keep-latest runtimes.
-    Cleanup is maintenance rather than a run prerequisite: failures are logged
-    without blocking the first run or retrying in this process.
-    """
-
-    root_key = os.path.normcase(str(pool.root.resolve()))
-    with _AUTOMATIC_GC_LOCK:
-        if root_key in _AUTOMATIC_GC_ROOTS:
-            return
-        _AUTOMATIC_GC_ROOTS.add(root_key)
-
-    try:
-        result = pool.gc(
-            dry_run=False,
-            grace_seconds=AUTOMATIC_RUNTIME_GC_GRACE_SECONDS,
-            keep_latest=AUTOMATIC_RUNTIME_GC_KEEP_LATEST,
-        )
-    except Exception as exc:
-        _send_log(
-            send_log,
-            f"[MaaFW Runner] 过时 runtime 自动清理失败，继续运行: {exc}",
-        )
-        return
-
-    deleted = [str(item) for item in result.get("deleted", [])]
-    errors = [item for item in result.get("errors", []) if isinstance(item, Mapping)]
-    if deleted:
-        _send_log(
-            send_log,
-            "[MaaFW Runner] 已清理过时 runtime: " + ", ".join(deleted),
-        )
-    if errors:
-        _send_log(
-            send_log,
-            f"[MaaFW Runner] 部分过时 runtime 清理失败，继续运行: {errors}",
-        )
-    cache_prune = result.get("cachePrune")
-    if isinstance(cache_prune, Mapping):
-        status = str(cache_prune.get("status") or "unknown")
-        if status == "pruned":
-            _send_log(
-                send_log,
-                "[MaaFW Runner] uv 缓存清理完成: "
-                f"removedFiles={int(cache_prune.get('removedFiles') or 0)}, "
-                f"removedBytes={int(cache_prune.get('removedBytes') or 0)}",
-            )
-        elif status in {"disabled", "error", "unavailable", "unsafe"}:
-            detail = str(cache_prune.get("error") or "no detail")
-            _send_log(
-                send_log,
-                "[MaaFW Runner] uv 缓存清理未完成，继续运行: "
-                f"status={status}, error={detail}",
-            )
-
-
 def build_runner_packages(
     project_path: str | Path,
     *,
@@ -582,6 +493,106 @@ def build_runner_packages(
         else package
         for package in RUNNER_DEFAULT_PACKAGES
     ]
+
+
+def _select_project_maafw_requirement(
+    project: Path,
+    *,
+    preselected: str | None,
+    bound_runtime: Mapping[str, Any] | None,
+    managed_project: bool,
+) -> str:
+    """非显式 selector 下项目会用的 maafw requirement（已规范化）。
+
+    ``prepare_runner_environment`` 与 ``describe_runner_runtime_selection`` 共用这
+    一段，两边的 runtime id 才不会岔开。顺序：调用方/路由已定的 → 项目自带原生库的
+    实测版本 → ``requirements.txt`` 的声明 → 已绑定 runtime 的 requirement →
+    Managed 项目报错、普通项目回退到历史上的无约束 ``maafw``。
+
+    自带原生库的版本优先于 requirements.txt 的声明：我们加载的就是项目自带的那份
+    库，binding 必须跟它一致。实测 46 个发行包里有 3 个声明是陈旧的（MAAAE 声明
+    5.3.0 实际 5.6.0、MaaNTE 声明 v5.10.4 实际 5.10.5、MaaADr 声明 5.12.2 实际
+    5.12.3），另有 20 个压根没有 requirements.txt、4 个写的是无版本约束。
+    """
+
+    selected_requirement = preselected
+    if selected_requirement is None:
+        selected_requirement = _bundled_project_maafw_requirement(project)
+    if selected_requirement is None:
+        selected_requirement = _declared_project_maafw_requirement(project)
+    if selected_requirement is None and bound_runtime is not None:
+        selected_requirement = (
+            str(bound_runtime.get("maafwRequirement") or "").strip() or None
+        )
+    if selected_requirement is None and managed_project:
+        raise RuntimeError(
+            "MaaFW runtime 未绑定且项目未声明 runtime constraint；"
+            f"请在 {PROJECT_RUNTIME_MANIFEST_NAME} 中设置 runtime.constraint"
+        )
+    if selected_requirement is None:
+        # Legacy projects keep the historical unpinned default. Managed
+        # project-store entries must always provide a constraint or binding.
+        selected_requirement = "maafw"
+    return _normalize_maafw_requirement(
+        selected_requirement,
+        allow_unconstrained=not managed_project,
+    )
+
+
+@dataclass(frozen=True)
+class RunnerRuntimeSelection:
+    """``describe_runner_runtime_selection`` 的结果：项目会落到哪个 runtime。"""
+
+    runtime_id: str
+    maafw_requirement: str
+    packages: tuple[str, ...]
+
+
+def describe_runner_runtime_selection(
+    project_path: str | Path,
+    pool: MaaFWRuntimePool,
+) -> RunnerRuntimeSelection | None:
+    """不联网、不建 venv：算出 ``prepare_runner_environment`` 对这个项目会选中的 runtime。
+
+    宿主侧回收对账用它把权威集合里的每个项目翻成「当前身份下应存在的 runtime id」，
+    推导与 prepare 的非显式路由走同一批 helper（路由 sidecar → 已绑定 runtime →
+    ``_select_project_maafw_requirement`` → ``build_runner_packages`` →
+    ``build_runtime_id``）。Python 身份取 ``host_bootstrap_python_request``——宿主是
+    embeddable 时身份来自池内托管解释器，它还没装时**算不出身份**，返回 None，
+    调用方此时不得删任何 runtime。项目读不出 requirement（Managed 缺约束、
+    requirements.txt 声明了多个 maafw）时抛 ``RuntimeError``，由调用方决定怎么处理。
+    """
+
+    project = Path(project_path).resolve()
+    route = _load_project_runtime_route(project)
+    managed_project = bool(route.get("managed"))
+    bound_runtime_id = str(route.get("runtimeId") or "").strip() or None
+    bound_runtime = pool.get(bound_runtime_id) if bound_runtime_id else None
+    if bound_runtime is not None:
+        preselected = str(bound_runtime.get("maafwRequirement") or "").strip() or None
+    else:
+        preselected = str(route.get("runtimeRequirement") or "").strip() or None
+    selected_requirement = _select_project_maafw_requirement(
+        project,
+        preselected=preselected,
+        bound_runtime=bound_runtime,
+        managed_project=managed_project,
+    )
+    packages = tuple(
+        build_runner_packages(project, maafw_requirement=selected_requirement)
+    )
+    python_identity: dict[str, Any] | None = None
+    bootstrap_request = host_bootstrap_python_request()
+    if bootstrap_request is not None:
+        target = pool.resolve_python(bootstrap_request, allow_install=False)
+        if target is None:
+            return None
+        python_identity = dict(target["identity"])
+    return RunnerRuntimeSelection(
+        runtime_id=build_runtime_id(packages, python_identity=python_identity),
+        maafw_requirement=selected_requirement,
+        packages=packages,
+    )
 
 
 def _load_project_runtime_route(project_path: Path) -> dict[str, Any]:

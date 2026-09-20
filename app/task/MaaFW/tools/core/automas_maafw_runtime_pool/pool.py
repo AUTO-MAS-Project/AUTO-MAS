@@ -18,7 +18,7 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
-from .cache import prune_uv_cache
+from .cache import clean_uv_cache
 from .identity import (
     IDENTITY_SCHEMA_VERSION,
     RUNTIME_ID_PREFIX,
@@ -32,6 +32,9 @@ from .installer import probe_python_identity, resolve_python_interpreter
 POOL_SCHEMA_VERSION = 2
 LEGACY_POOL_SCHEMA_VERSION = 1
 MANIFEST_SCHEMA_VERSION = 1
+#: 旧身份 runtime 无引用后的宽限：重建只是重装一次依赖，不值得为它多留几天；
+#: 24 小时只为兜住「算不出版本」的脚本一轮（见 reclaim_stale_runtimes）。
+RECLAIM_GRACE_SECONDS = 24 * 60 * 60
 POOL_MARKER_NAME = ".auto_mas_maafw_runtime_pool.json"
 RUNTIME_MANIFEST_NAME = "manifest.json"
 RUNTIME_DIRECTORY_NAME = "runtimes"
@@ -42,7 +45,6 @@ RuntimeInstaller = Callable[
     [Path, Sequence[str], dict[str, Any]],
     Mapping[str, Any] | None,
 ]
-RuntimeCachePruner = Callable[..., Mapping[str, Any]]
 
 _LOCKS_GUARD = threading.Lock()
 _POOL_LOCKS: dict[str, threading.RLock] = {}
@@ -62,7 +64,6 @@ class MaaFWRuntimePool:
         root: str | Path,
         *,
         installer: RuntimeInstaller | None = None,
-        cache_pruner: RuntimeCachePruner | None = prune_uv_cache,
     ) -> None:
         default_root = Path.cwd() / "config" / "maafw_runtime_pool"
         requested_root = Path(root)
@@ -84,7 +85,6 @@ class MaaFWRuntimePool:
         self.staging_root = self.root / STAGING_DIRECTORY_NAME
         self.python_root = self.root / "python"
         self.installer = installer
-        self.cache_pruner = cache_pruner
         self._lock = _pool_lock(self.root)
         self._root_identity: dict[str, Any] = {}
         with self._lock:
@@ -495,119 +495,195 @@ class MaaFWRuntimePool:
             self._remove_runtime_dir(runtime_id)
             return {"runtimeId": runtime_id, "deleted": True, "blocked": []}
 
-    def gc(
+    def reclaim_stale_runtimes(
         self,
         *,
-        dry_run: bool = True,
-        grace_seconds: float = 7 * 24 * 60 * 60,
-        keep_latest: int = 1,
+        valid_runtime_ids: Iterable[str],
+        needed_requirements: Iterable[str],
+        replaced_versions: Iterable[str] = (),
+        grace_seconds: float = RECLAIM_GRACE_SECONDS,
         now: str | datetime | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
+        """按引用对账回收过时的 runtime（取代按 lastUsedAt 宽限 + keep_latest 的 gc）。
+
+        权威清单由宿主侧算好传进来（核心包不读 Config）：
+
+        - ``valid_runtime_ids``：当前身份下、权威集合里每个项目应落到的 runtime id
+          （``describe_runner_runtime_selection``，与 ``prepare_runner_environment``
+          同一套推导）。不在这里面的 runtime 都是「旧身份」孤儿——例如 D1 之前把
+          项目 requirements.txt 折进去裂出来的那些。
+        - ``needed_requirements``：权威集合里各项目选中的 maafw requirement。runtime
+          身份按 requirement 而不是按解析出的版本键（``maafw>=5.10`` 这类范围声明
+          没有「版本」可言），所以这里也按 requirement 对账。
+        - ``replaced_versions``：本轮明确被替换掉的旧 maafw 版本（项目更新提交时
+          传，按 manifest 的 ``maafwVersion`` 匹配），只豁免宽限，不越过租约。
+
+        孤儿（requirement R）删除 ⇔ 无活租约 ∧ (R ∉ needed ∨ 新身份下 R 的 runtime 已
+        存在且解析通过) ∧ (过宽限 ∨ 其 maafwVersion ∈ replaced)。第二个条件是离线
+        用户的保命符：新身份 runtime 还没建出来之前，旧那份不能删，否则 uv 缓存一清
+        就再也建不出来。
+
+        保护只用租约，不引入引用计数（PR1 口径）。每个条目独立判定，manifest 坏了
+        单条跳过并记进 ``errors``，不像旧 gc 那样整轮拒绝。删除走 rename-first
+        （``_quarantine_stale_runtime``）：目录里有被映射的 DLL 时 rename 会失败、
+        条目原样留到下次；换出去之后 rmtree 失败也不要紧，残留在 ``.staging`` 里，
+        本方法末尾会顺手再扫一遍 staging（``ensure`` 与本方法共用同一把池锁，
+        扫的时候不会有进行中的安装）。
+
+        返回里的 ``remainingLegacy`` 是本轮之后仍留在池里的旧身份条目，调用方据此
+        决定要不要清 uv 缓存（仍有旧布局在就别清，保住离线重建）。
+        """
+
         if grace_seconds < 0:
-            raise MaaFWRuntimePoolError("gc grace_seconds cannot be negative")
-        if keep_latest < 0:
-            raise MaaFWRuntimePoolError("gc keep_latest cannot be negative")
+            raise MaaFWRuntimePoolError("reclaim grace_seconds cannot be negative")
         reference_time = _parse_time(now) if now is not None else _utc_now()
         cutoff = reference_time - timedelta(seconds=float(grace_seconds))
+        valid_ids = {
+            str(item).strip() for item in valid_runtime_ids if str(item).strip()
+        }
+        needed = {
+            key
+            for key in (_maafw_requirement_key(item) for item in needed_requirements)
+            if key
+        }
+        replaced = {
+            key
+            for key in (_normalize_maafw_version(item) for item in replaced_versions)
+            if key
+        }
 
         with self._lock:
-            inventory = self.inventory()
-            if not inventory["complete"]:
-                if not dry_run:
-                    raise MaaFWRuntimePoolError(
-                        "refusing runtime-pool garbage collection because "
-                        "resource inventory is incomplete"
-                    )
-                return {
-                    "dryRun": True,
-                    "complete": False,
-                    "inventoryErrors": copy.deepcopy(inventory["errors"]),
-                    "graceSeconds": float(grace_seconds),
-                    "keepLatest": int(keep_latest),
-                    "candidates": [],
-                    "deleted": [],
-                    "kept": [],
-                    "errors": [],
-                    "cachePrune": {
-                        "kind": "uv",
-                        "scope": "pool",
-                        "dryRun": True,
-                        "attempted": False,
-                        "status": "skipped-incomplete-inventory",
-                        "error": "resource inventory is incomplete",
-                    },
-                }
-            runtimes = self.list()
-            keep_ids = {str(item["runtimeId"]) for item in runtimes[:keep_latest]}
-            candidates: list[dict[str, Any]] = []
-            kept: list[dict[str, Any]] = []
-            deleted: list[str] = []
-            errors: list[dict[str, str]] = []
-            for item in runtimes:
-                runtime_id = str(item["runtimeId"])
-                reasons: list[str] = []
-                if runtime_id in keep_ids:
-                    reasons.append("keep_latest")
-                reasons.extend(self._deletion_blockers(item, reference_time))
-                last_used = _parse_time(item.get("lastUsedAt"))
-                if last_used > cutoff:
-                    reasons.append("grace_period")
-                if reasons:
-                    kept.append(
-                        {"runtimeId": runtime_id, "reasons": sorted(set(reasons))}
-                    )
+            self._initialize()
+            # 新身份下已经建好且解析得过的 requirement：只有它们能放行同 requirement 的旧孤儿
+            ready: set[str] = set()
+            for runtime_id in sorted(valid_ids):
+                payload = self._usable_runtime_payload(runtime_id)
+                if payload is None:
                     continue
+                key = _maafw_requirement_key(payload.get("maafwRequirement"))
+                if key:
+                    ready.add(key)
 
-                candidate = {
-                    "runtimeId": runtime_id,
-                    "path": item["path"],
-                    "lastUsedAt": item.get("lastUsedAt"),
-                    "sizeBytes": item.get("sizeBytes", 0),
-                }
-                candidates.append(candidate)
-                if dry_run:
+            deleted: list[str] = []
+            kept: list[dict[str, Any]] = []
+            skipped: list[dict[str, str]] = []
+            errors: list[dict[str, str]] = []
+            remaining_legacy: list[str] = []
+            for path in sorted(self.runtime_root.glob(f"{RUNTIME_ID_PREFIX}*")):
+                if not path.is_dir() or path.is_symlink():
+                    continue
+                runtime_id = path.name
+                if runtime_id in valid_ids:
                     continue
                 try:
-                    self._remove_runtime_dir(runtime_id)
-                    deleted.append(runtime_id)
-                except Exception as exc:
+                    manifest = self._read_manifest(runtime_id)
+                except MaaFWRuntimePoolError as exc:
+                    # 坏条目单独记录、单独跳过；别让一条坏 manifest 锁死整轮回收
                     errors.append({"runtimeId": runtime_id, "error": str(exc)})
+                    remaining_legacy.append(runtime_id)
+                    continue
 
-            cache_prune = self._prune_cache(dry_run=bool(dry_run))
+                requirement = _maafw_requirement_key(manifest.get("maafwRequirement"))
+                version = _normalize_maafw_version(manifest.get("maafwVersion"))
+                reasons: list[str] = []
+                if self._active_lease_ids(manifest, reference_time):
+                    reasons.append("leased")
+                if requirement in needed and requirement not in ready:
+                    reasons.append("needed_without_replacement")
+                last_used = _parse_time(manifest.get("lastUsedAt"))
+                if last_used > cutoff and version not in replaced:
+                    reasons.append("grace_period")
+                if reasons:
+                    kept.append({"runtimeId": runtime_id, "reasons": sorted(reasons)})
+                    remaining_legacy.append(runtime_id)
+                    continue
+                if dry_run:
+                    deleted.append(runtime_id)
+                    continue
+                outcome = self._reclaim_runtime_dir(runtime_id)
+                if outcome is None:
+                    deleted.append(runtime_id)
+                else:
+                    skipped.append({"runtimeId": runtime_id, "error": outcome})
+                    remaining_legacy.append(runtime_id)
+
+            staging_swept = [] if dry_run else self._sweep_staging()
             return {
                 "dryRun": bool(dry_run),
-                "complete": True,
-                "inventoryErrors": [],
                 "graceSeconds": float(grace_seconds),
-                "keepLatest": int(keep_latest),
-                "candidates": candidates,
+                "validRuntimeIds": sorted(valid_ids),
+                "neededRequirements": sorted(needed),
+                "readyRequirements": sorted(ready),
+                "replacedVersions": sorted(replaced),
                 "deleted": deleted,
                 "kept": kept,
+                "skipped": skipped,
                 "errors": errors,
-                "cachePrune": cache_prune,
+                "remainingLegacy": sorted(remaining_legacy),
+                "stagingSwept": staging_swept,
             }
 
-    def _prune_cache(self, *, dry_run: bool) -> dict[str, Any]:
-        if self.cache_pruner is None:
-            return {
-                "kind": "uv",
-                "scope": "pool",
-                "dryRun": dry_run,
-                "attempted": False,
-                "status": "disabled",
-                "error": "runtime pool cache pruner is disabled",
-            }
+    def clean_cache(self) -> dict[str, Any]:
+        """整个清掉池自己的 uv 缓存（见 ``cache.clean_uv_cache``）。
+
+        持池锁：``ensure`` 的安装全程也持这把锁，缓存不会在 uv 正往里写的时候
+        被清掉。什么时候该清由宿主侧的对账决定（池里已无旧身份 runtime）。
+        """
+
+        with self._lock:
+            self._initialize()
+            return clean_uv_cache(self.root)
+
+    def _usable_runtime_payload(self, runtime_id: str) -> dict[str, Any] | None:
+        """与 ``get`` 同一套判定（manifest 合法、环境齐全、解释器 ABI 对得上），
+        但不统计目录大小；只想知道「能不能用」时用它。持锁调用。"""
+
+        runtime_dir = self._runtime_dir(runtime_id)
+        if not runtime_dir.exists() and not runtime_dir.is_symlink():
+            return None
         try:
-            return dict(self.cache_pruner(self.root, dry_run=dry_run))
-        except Exception as exc:
-            return {
-                "kind": "uv",
-                "scope": "pool",
-                "dryRun": dry_run,
-                "attempted": False,
-                "status": "error",
-                "error": f"runtime pool cache prune failed: {exc}",
-            }
+            manifest = self._read_manifest(runtime_id)
+            return self._augment_manifest(
+                manifest, verify_python=True, include_size=False
+            )
+        except MaaFWRuntimePoolError:
+            return None
+
+    def _reclaim_runtime_dir(self, runtime_id: str) -> str | None:
+        """rename-first 删除一个 runtime；返回 None 表示已换出，否则是跳过原因。"""
+
+        try:
+            _, quarantine_dir = self._quarantine_stale_runtime(runtime_id)
+        except (OSError, MaaFWRuntimePoolError) as exc:
+            # 目录里有被 worker 映射着的 DLL 时 os.replace 会失败：原样留下，下次再试
+            return str(exc)
+        if quarantine_dir is None:
+            return None
+        # 已经换到隔离目录，剩下的 rmtree 尽力而为；残留由 _sweep_staging 下次再收
+        shutil.rmtree(quarantine_dir, ignore_errors=True)
+        return None
+
+    def _sweep_staging(self) -> list[str]:
+        """清掉 ``.staging`` 里遗留的半成品 / 隔离目录，返回本轮清空的目录名。
+
+        只在持有池锁时调用：``ensure`` 的安装全程也持有同一把锁，所以这里看到的
+        每个 ``maafw-runtime-*`` 子目录都不再有人用（安装失败没删干净的、隔离后
+        rmtree 半途而废的）。仍删不掉的（DLL 还被映射着）留到下次。
+        """
+
+        swept: list[str] = []
+        if not self.staging_root.is_dir():
+            return swept
+        for path in sorted(self.staging_root.iterdir()):
+            if path.is_symlink() or not path.is_dir():
+                continue
+            if not path.name.startswith(RUNTIME_ID_PREFIX):
+                continue
+            shutil.rmtree(path, ignore_errors=True)
+            if not path.exists():
+                swept.append(path.name)
+        return swept
 
     def _initialize(self) -> None:
         # Validate every managed child before reading or upgrading the marker so
@@ -853,6 +929,7 @@ class MaaFWRuntimePool:
         manifest: dict[str, Any],
         *,
         verify_python: bool = False,
+        include_size: bool = True,
     ) -> dict[str, Any]:
         payload = copy.deepcopy(manifest)
         try:
@@ -908,7 +985,9 @@ class MaaFWRuntimePool:
             payload.get("resolvedRequirements") or []
         )
         payload["packages"] = selector_requirements
-        payload["sizeBytes"] = _directory_size(runtime_dir)
+        if include_size:
+            # 整棵目录 stat 一遍，几千个文件；只想知道「能不能用」的调用方跳过它。
+            payload["sizeBytes"] = _directory_size(runtime_dir)
         payload["activeLeaseIds"] = self._active_lease_ids(payload, now)
         return payload
 
@@ -1335,6 +1414,41 @@ def _validate_runtime_leases(value: Any) -> None:
             raise MaaFWRuntimePoolError(
                 "runtime manifest lease expiry is invalid"
             ) from exc
+
+
+def _maafw_requirement_key(value: Any) -> str:
+    """把 maafw requirement 归成与 manifest ``maafwRequirement`` 相同的规范形式。
+
+    manifest 里存的是 ``canonicalize_requirements`` 的产物；宿主传来的是
+    ``_normalize_maafw_requirement`` 的产物（``str(Requirement)``，如
+    ``maafw==5.13.0``）。两边都再过一次同一个规范化器才能比。不是 maafw 的、
+    解析不了的给空串。
+    """
+
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return find_maafw_requirement([text]) or ""
+    except Exception:  # noqa: BLE001 - 坏 requirement 只影响它自己那条
+        return ""
+
+
+def _normalize_maafw_version(value: Any) -> str:
+    """把 manifest / 宿主传来的 maafw 版本规范成 PEP 440 字符串；空值给空串。
+
+    manifest 里的 ``maafwVersion`` 来自 ``importlib.metadata``（已规范），宿主那边
+    来自 DLL 探测（``5.14.0-beta.1`` → ``5.14.0b1``）；两边都过一遍 ``Version`` 才能
+    比。解析不了的原样小写返回，至少同一坏值能互相对上。
+    """
+
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return str(Version(text))
+    except InvalidVersion:
+        return text.lower()
 
 
 def _parse_time(value: Any) -> datetime:
