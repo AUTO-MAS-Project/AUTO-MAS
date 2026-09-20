@@ -62,4 +62,4 @@ jobs:
 
       - name: 检查前端格式
         working-directory: frontend
-        run: yarn oxfmt . --check
+        run: yarn format:check
