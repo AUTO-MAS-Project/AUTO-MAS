@@ -1431,6 +1431,9 @@ async def reimport_maafw_embedded(
     if busy := _embedded_busy_reason(script_config):
         return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
     source = str(payload.sourcePath or "").strip()
+    copy_dir = embedded_project_dir(payload.scriptId)
+    # 换树前记下旧副本钉定的 maafw 版本：重导后版本换了，旧 binding 不必再等宽限
+    previous_version = await _previous_maafw_version(copy_dir)
     _failed, error = await _embed_from_source(payload.scriptId, source)
     if error:
         return MaaFWEmbeddedStatusOut(
@@ -1438,6 +1441,7 @@ async def reimport_maafw_embedded(
         )
     # 导入成功才把来源写进 Info.Path：失败时旧副本与旧来源都原样不动。
     await Config.update_script(payload.scriptId, {"Info": {"Path": source}})
+    _reconcile_pool_after_copy_change("reimport", copy_dir, previous_version)
     out = await _embedded_status_out(
         payload.scriptId, _maafw_script_config(payload.scriptId)
     )
@@ -1445,6 +1449,32 @@ async def reimport_maafw_embedded(
     # 页面上就是一句「项目已导入」
     out.message = "项目已导入"
     return out
+
+
+async def _previous_maafw_version(copy_dir: Path) -> str | None:
+    """副本换树（重导 / 克隆覆盖）之前它钉定的 maafw 精确版本；没有副本或读不出为 None。"""
+
+    from app.task.MaaFW.tools.embedded.pool_reconcile import previous_maafw_version
+
+    if not copy_dir.is_dir():
+        return None
+    return await asyncio.to_thread(previous_maafw_version, copy_dir)
+
+
+def _reconcile_pool_after_copy_change(
+    reason: str, copy_dir: Path, previous_version: str | None
+) -> None:
+    """D7 的「reimport / clone 后」触发点：副本换了树，旧版本的 binding 可能已无人引用。
+
+    与手动更新提交后同一条路（``reconcile_in_background``，后台线程），版本换了就把
+    旧版本作为 replaced 传给回收豁免宽限；权威集合按副本目录算，新副本自己在集合里。
+    """
+
+    from app.task.MaaFW.tools.embedded.pool_reconcile import reconcile_in_background
+
+    reconcile_in_background(
+        reason, updated_project_path=copy_dir, previous_version=previous_version
+    )
 
 
 def _format_bytes(value: Any) -> str:
@@ -1614,6 +1644,8 @@ async def clone_maafw_embedded(
 
     target_dir = embedded_project_dir(payload.scriptId)
     source_dir = embedded_project_dir(payload.sourceScriptId)
+    # 老脚本换项目：目标原有副本钉定的版本在克隆后可能就没人用了
+    previous_version = await _previous_maafw_version(target_dir)
     # 两边的副本路径都要预约：源在更新落地 / 准备环境时克隆会带走半截树，
     # 目标正被别的入口导入时更不能同时写。
     target_reservation = await try_reserve_project_path(target_dir)
@@ -1664,6 +1696,8 @@ async def clone_maafw_embedded(
         },
     )
     await _apply_project_flavor(payload.scriptId)
+    # 放在 retype 之后：权威集合在调用线程上按当前脚本表算，要看到换过类型的配置
+    _reconcile_pool_after_copy_change("clone", target_dir, previous_version)
     out = await _embedded_status_out(
         payload.scriptId, _maafw_script_config(payload.scriptId)
     )
