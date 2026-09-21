@@ -204,6 +204,26 @@ def instance_run_is_all(root: Path) -> bool:
     )
 
 
+def read_after_done(root: Path) -> str:
+    """读取 after_done 原值（无/关闭游戏/关机）。
+
+    键缺失回落「无」——对齐上游 ``one_dragon_config.after_done`` 的 get 默认。
+    会话窗口内读的是合成视图（视图由会话注入该键），还原后读的是原生值。
+    """
+
+    data = _read_registry(root)
+    return str(data.get("after_done") or "无")
+
+
+def write_after_done(root: Path, value: str) -> None:
+    """落盘 after_done（直控页直写原生设置；白名单校验由 native_config 层负责）。"""
+
+    with _YAML_LOCK:
+        data = _read_registry(root)
+        data["after_done"] = value
+        write_file(_one_dragon_file(root), data)
+
+
 def write_instance_run(root: Path, value: str) -> None:
     """落盘 instance_run（配合 ``--instance`` 注入运行临时切换，结束后恢复）。"""
 
@@ -413,6 +433,7 @@ def write_instance_view(
     active_idx: int | None = None,
     instance_run: str = INSTANCE_RUN_ALL,
     force_login: bool = False,
+    after_done: str | None = None,
 ) -> None:
     """把 one_dragon.yml 替换为合成视图（仅含给定 MAS 槽）。
 
@@ -447,10 +468,16 @@ def write_instance_view(
         for idx, name in slots
     ]
     with _YAML_LOCK:
-        write_file(
-            original,
-            {"instance_list": entries, "instance_run": instance_run},
-        )
+        payload: dict[str, Any] = {
+            "instance_list": entries,
+            "instance_run": instance_run,
+        }
+        # 会话注入 MAS 侧「游戏结束后操作」：视图期间 GUI 读的就是这份文件，
+        # 带 guarantees GUI 所见即 MAS 下拉；关闭时经 read_after_done 回读。
+        # None（查看会话/运行）不写该键，GUI 按上游默认显示。
+        if after_done is not None:
+            payload["after_done"] = after_done
+        write_file(original, payload)
 
 
 def restore_instance_view(root: Path) -> None:

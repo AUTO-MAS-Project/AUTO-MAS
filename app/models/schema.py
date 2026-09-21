@@ -768,6 +768,10 @@ class ZzzOdNativeConfigOut(OutBase):
         ...,
         description="运行实例（one_dragon.yml instance_run 原值：仅运行当前/全部实例）",
     )
+    afterDone: str = Field(
+        ...,
+        description="游戏结束后操作（one_dragon.yml after_done 原值：无/关闭游戏/关机）",
+    )
     launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
         default=None, description="游戏启动参数（game.yml，缺失字段合并上游默认值）"
     )
@@ -795,6 +799,10 @@ class ZzzOdNativeConfigIn(BaseModel):
     instanceRun: Optional[str] = Field(
         default=None,
         description="运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+    afterDone: Optional[str] = Field(
+        default=None,
+        description="游戏结束后操作（无/关闭游戏/关机，白名单校验后写回 one_dragon.yml；缺省不写回）",
     )
     launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
         default=None, description="游戏启动参数（缺省不写回）"
@@ -2086,6 +2094,10 @@ class ZzzOdUserConfig_OneDragon(BaseModel):
     AppList: Optional[str] = Field(
         default=None,
         description='任务编排 JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，顺序即执行顺序',
+    )
+    AfterDone: Optional[Literal["无", "关闭游戏", "关机"]] = Field(
+        default=None,
+        description="游戏结束后操作（MAS 拉起的一条龙运行结束时执行；无=不处理）",
     )
 
 

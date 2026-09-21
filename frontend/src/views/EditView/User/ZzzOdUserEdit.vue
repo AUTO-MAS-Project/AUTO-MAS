@@ -719,6 +719,26 @@
                   />
                 </a-form-item>
               </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.zzzodAfterDone') }}
+                      <a-tooltip :title="t('edit.zzzodAfterDoneHint')">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="afterDoneValue"
+                    :options="afterDoneOptions"
+                    :loading="afterDoneSaving"
+                    size="large"
+                    class="modern-select"
+                    @change="handleAfterDoneChange"
+                  />
+                </a-form-item>
+              </a-col>
             </a-row>
           </div>
         </a-form>
@@ -1339,6 +1359,7 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
   },
   OneDragon: {
     AppList: '[]',
+    AfterDone: '关闭游戏',
   },
   Notify: {
     Enabled: false,
@@ -1362,6 +1383,46 @@ const pushLogModeOptions = [
   { label: t('edit.pushLogModeList'), value: '逐条' },
   { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
+
+// 游戏结束后操作（value 为后端 OneDragon.AfterDone 取值，与一条龙原生「结束后」
+// 同词表；用户/脚本模式经配置会话双向联动，直控模式直读写原生 after_done）
+const afterDoneOptions = [
+  { label: t('edit.zzzodAfterDoneNone'), value: '无' },
+  { label: t('edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
+  { label: t('edit.zzzodAfterDoneShutdown'), value: '关机' },
+]
+
+/** 「游戏结束后操作」按模式分流：直控写原生 after_done（与原生 GUI 同源），
+ * 用户/脚本写 MAS 用户字段（该模式无原生实例概念） */
+type AfterDoneValue = NonNullable<NonNullable<ZzzOdUserConfig['OneDragon']>['AfterDone']>
+const afterDoneValue = computed<AfterDoneValue>({
+  get: () =>
+    formData.Info.Mode === '直控'
+      ? nativeAfterDone.value
+      : (formData.OneDragon.AfterDone ?? '关闭游戏'),
+  set: value => {
+    if (formData.Info.Mode === '直控') {
+      nativeAfterDone.value = value
+    } else {
+      formData.OneDragon.AfterDone = value
+    }
+  },
+})
+
+const afterDoneSaving = ref(false)
+const handleAfterDoneChange = async () => {
+  if (configLocked.value) return
+  if (formData.Info.Mode === '直控') {
+    afterDoneSaving.value = true
+    try {
+      await saveNativeConfig({ afterDone: nativeAfterDone.value }, 'afterDone', true)
+    } finally {
+      afterDoneSaving.value = false
+    }
+    return
+  }
+  await saveField('OneDragon.AfterDone', formData.OneDragon.AfterDone)
+}
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
 // 「脚本」置灰：一条龙运行时脚本态与用户态同分支（AutoProxy 均按该用户字段注入绑定槽），
@@ -1891,6 +1952,9 @@ const nativeInstanceIdx = ref<number | null>(null)
 // 运行实例（value 为一条龙原生中文取值，label 走词表；初始值对齐上游
 // InstanceRun.ALL 默认，加载后由后端返回值覆盖）
 const nativeInstanceRun = ref('全部实例')
+// 直控模式下「游戏结束后操作」读写的是一条龙原生 after_done（UI 与原生 GUI
+// 同源，改哪边另一边都同步）；用户/脚本模式走 MAS 用户字段（会话双向联动）
+const nativeAfterDone = ref<AfterDoneValue>('无')
 const instanceRunOptions = [
   { label: t('edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
   { label: t('edit.zzzodInstanceRunAll'), value: '全部实例' },
@@ -1935,6 +1999,7 @@ const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
   Object.assign(nativeAccountValues, values)
   Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), data.launchArgs ?? {})
   nativeInstanceRun.value = data.instanceRun || '全部实例'
+  nativeAfterDone.value = (data.afterDone as AfterDoneValue) || '无'
   nativeTasks.value = toTaskCards(data.tasks ?? [])
 }
 
@@ -1953,6 +2018,7 @@ const loadNativeConfig = async (instanceIdx: number) => {
     message.error(e instanceof Error ? e.message : t('edit.zzzodNativeLoadFailed'))
     nativeAccountFields.value = []
     nativeTasks.value = []
+    nativeAfterDone.value = '无'
   } finally {
     nativeLoading.value = false
   }
@@ -1994,7 +2060,7 @@ const handleNativeInstanceRunChange = async () => {
  *  - 任务开关/排序、运行实例：即时增量提交对应字段——不把未保存的账号
  *    草稿一并落盘或覆盖。
  */
-type NativeSaveSection = 'all' | 'tasks' | 'launchArgs'
+type NativeSaveSection = 'all' | 'tasks' | 'launchArgs' | 'afterDone'
 /** 提交给后端的任务条目（后端只认 app_id/enabled） */
 const toNativeTaskIn = (list: TaskCard[]): { app_id: string; enabled: boolean }[] =>
   list.map(t => ({ app_id: t.app_id, enabled: !!t.enabled }))
@@ -2016,6 +2082,7 @@ const saveNativeConfig = async (
     account?: Record<string, string>
     tasks?: { app_id: string; enabled: boolean }[]
     instanceRun?: string
+    afterDone?: string
     launchArgs?: ZzzOdNativeLaunchArgs
   },
   section: NativeSaveSection = 'all',
@@ -2040,6 +2107,8 @@ const saveNativeConfig = async (
       nativeTasks.value = toTaskCards(resp.tasks ?? [])
     } else if (section === 'launchArgs') {
       Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), resp.launchArgs ?? {})
+    } else if (section === 'afterDone') {
+      nativeAfterDone.value = (resp.afterDone as AfterDoneValue) || '无'
     } else {
       applyNativeConfig(resp)
     }
@@ -2075,6 +2144,7 @@ const saveNativeAccount = () =>
       account: { ...nativeAccountValues },
       tasks: toNativeTaskIn(nativeTasks.value),
       instanceRun: nativeInstanceRun.value,
+      afterDone: nativeAfterDone.value,
     },
     'all'
   )
