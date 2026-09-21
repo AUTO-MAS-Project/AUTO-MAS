@@ -1244,6 +1244,60 @@ class GlobalConfig_Notify(BaseModel):
     )
 
 
+class NotifyChannelOptionOut(BaseModel):
+    """渠道下拉选项的取值与文案键；取值保持后端配置字面量（含布尔）。"""
+
+    value: Union[bool, str] = Field(..., description="选项值，保持后端配置字面量")
+    labelKey: str = Field(..., description="选项文案的词表键")
+
+
+class NotifyChannelFieldOut(BaseModel):
+    """渠道在某个作用域暴露的一个配置字段描述。"""
+
+    group: str = Field(..., description="配置组，如 Notify")
+    name: str = Field(..., description="配置字段名")
+    labelKey: str = Field(..., description="字段标签词表键")
+    control: str = Field(
+        ..., description="控件类型：bool/text/password/url/select/json"
+    )
+    options: List[NotifyChannelOptionOut] = Field(default=[], description="下拉选项")
+    placeholderKey: str = Field(default="", description="占位文案词表键")
+    tipKey: str = Field(default="", description="提示文案词表键")
+
+
+class NotifyChannelOut(BaseModel):
+    """一个通知渠道的展示元数据；服务无鉴权，负载不得出现任何配置值。"""
+
+    key: str = Field(..., description="渠道标识")
+    nameKey: str = Field(..., description="渠道名称词表键")
+    descKey: str = Field(default="", description="渠道一句话说明词表键")
+    icon: str = Field(default="", description="图标标识，policy 段为空串")
+    group: str = Field(..., description="分组：builtin/custom")
+    order: int = Field(..., description="排序值，与投递顺序一致")
+    docUrl: Optional[str] = Field(default=None, description="使用文档链接")
+    scopes: List[str] = Field(default=[], description="可用作用域：global/user")
+    kind: str = Field(..., description="渲染类型：fields/custom/policy")
+    customBlock: Optional[str] = Field(
+        default=None, description="自定义块标识：claw:weixin/claw:qq/webhook_list"
+    )
+    enableField: Optional[List[str]] = Field(
+        default=None, description="启用开关的 [配置组, 字段名]"
+    )
+    summaryKey: Optional[str] = Field(default=None, description="卡片摘要词表键")
+    summaryFields: List[str] = Field(
+        default=[], description="参与摘要插值与空值判定的字段名"
+    )
+    fields: Dict[str, List[NotifyChannelFieldOut]] = Field(
+        default={}, description="按作用域分组的字段列表"
+    )
+
+
+class NotifyChannelsOut(OutBase):
+    """通知渠道描述表。"""
+
+    channels: List[NotifyChannelOut] = Field(default=[], description="渠道描述列表")
+
+
 class OpenClawWeixinQrStartOut(OutBase):
     """微信 Claw 二维码创建响应。"""
 

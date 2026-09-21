@@ -75,6 +75,7 @@ import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOu
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
+import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -1128,9 +1129,6 @@ export class Service {
     /**
      * 获取 BAAH 配置文件名列表
      * 返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
-     *
-     * 配置目录由脚本配置里的主程序路径派生（``BAAH.exe`` 同级的 ``BAAH_CONFIGS``），
-     * 与运行时读写的是同一个目录，供界面下拉选择，避免手输一个不存在的配置名。
      * @param scriptId
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
@@ -1152,9 +1150,6 @@ export class Service {
     /**
      * 获取碧蓝档案活动状态
      * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
-     *
-     * 与 BAAH 活动适配用的是同一份数据、同一套口径（只认「活动」分类，同一
-     * 活动被拆成多条时保留结束最晚的那条），界面据此显示当前会按哪一边切换。
      * @param lineType
      * @returns BlueArchiveActivityStatusOut Successful Response
      * @throws ApiError
@@ -1628,7 +1623,9 @@ export class Service {
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
      * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
-     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+     * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+     * ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -3221,6 +3218,18 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/test_notify',
+        });
+    }
+    /**
+     * 查询通知渠道描述
+     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
+     * @returns NotifyChannelsOut Successful Response
+     * @throws ApiError
+     */
+    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/notify/channels',
         });
     }
     /**
