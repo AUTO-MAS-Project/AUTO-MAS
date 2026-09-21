@@ -2,150 +2,145 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { useClawBinding, type ClawChannel } from '../useClawBinding'
+import type { UnwrapNestedRefs } from 'vue'
+import type { useClawBinding, ClawChannel } from '../useClawBinding'
+
+// 提升后的绑定状态：useClawBinding 的返回值经 reactive() 包一层传入，
+// 嵌套 ref 在模板里自动解包。整个对象只由 TabNotify 构造一份。
+export type ClawBindingState = UnwrapNestedRefs<ReturnType<typeof useClawBinding>>
 
 const props = defineProps<{
   channel: ClawChannel
-  enabled: boolean
-  onChange: (enabled: boolean) => Promise<void>
+  binding: ClawBindingState
+  // 二维码弹窗容器；通知配置弹窗场景传其 wrap 节点，其余挂 body
+  getContainer?: () => HTMLElement
 }>()
+
 const { t } = useI18n()
-const {
-  label,
-  status,
-  statusLoading,
-  statusError,
-  unbinding,
-  open,
-  loading,
-  checking,
-  qrDataUrl,
-  state,
-  hint,
-  verifyCode,
-  loadStatus,
-  close,
-  start,
-  submitCode,
-  unbind,
-} = useClawBinding(props.channel, props.onChange)
-const saving = ref(false)
-const setEnabled = async (value: boolean | string | number) => {
-  saving.value = true
-  try {
-    await props.onChange(Boolean(value))
-  } finally {
-    saving.value = false
-  }
+
+const binding = computed(() => props.binding)
+
+const failed = computed(() => ['expired', 'error'].includes(binding.value.state))
+
+// 受控 popconfirm：Esc 关掉确认气泡时不让事件冒泡到弹窗根把弹窗一起关掉。
+// antd popconfirm 自身的 onKeyDown 只关自己、不 stopPropagation。
+const unbindConfirmOpen = ref(false)
+const onEscCapture = (event: KeyboardEvent) => {
+  if (!unbindConfirmOpen.value) return
+  event.stopPropagation()
+  unbindConfirmOpen.value = false
 }
-const failed = computed(() => ['expired', 'error'].includes(state.value))
+// 启停开关在配置弹窗的开关行里，这里只留绑定状态与操作
+const connected = computed(() => !!binding.value.status?.connected)
 </script>
 
 <template>
-  <a-space direction="vertical" :size="16" class="claw-binding">
+  <div class="claw-binding" @keydown.esc.capture="onEscCapture">
     <a-typography-paragraph type="secondary" class="binding-hint">
-      {{ label('SetupHint') }}
+      {{ binding.label('SetupHint') }}
     </a-typography-paragraph>
-    <a-alert v-if="statusError" type="error" show-icon :message="statusError">
+    <a-alert v-if="binding.statusError" type="error" show-icon :message="binding.statusError">
       <template #action>
         <a-button
           size="small"
-          :loading="statusLoading"
-          :aria-label="label('StatusRetry')"
-          @click="loadStatus"
+          :loading="binding.statusLoading"
+          :aria-label="binding.label('StatusRetry')"
+          @click="binding.loadStatus"
         >
           <ReloadOutlined />
         </a-button>
       </template>
     </a-alert>
-    <div class="binding-row">
-      <a-space :size="8">
-        <a-spin v-if="statusLoading" size="small" />
-        <a-tag v-else-if="status" :color="status.connected ? 'success' : 'default'">
-          {{ label(status.connected ? 'Bound' : 'Unbound') }}
-        </a-tag>
-        <span>{{ label('Enable') }}</span>
-        <a-switch
-          :checked="props.enabled && !!status?.connected"
-          :loading="saving"
-          :aria-label="label('Enable')"
-          :disabled="!status?.connected || statusLoading || unbinding"
-          @change="setEnabled"
-        />
-      </a-space>
-      <a-space wrap>
-        <a-button
-          :type="status?.connected ? 'default' : 'primary'"
-          :disabled="statusLoading || unbinding"
-          @click="start"
-        >
-          <template #icon><QrcodeOutlined /></template>
-          {{ label(status?.connected ? 'Rebind' : 'Bind') }}
-        </a-button>
-        <a-popconfirm v-if="status?.connected" :title="label('UnbindConfirm')" @confirm="unbind">
-          <a-button danger :loading="unbinding">{{ label('Unbind') }}</a-button>
-        </a-popconfirm>
-      </a-space>
+    <div class="bind-section">
+      <div class="bind-label">{{ t('setting.notify.bindStatus') }}</div>
+      <div class="bind-row">
+        <a-space :size="8">
+          <a-spin v-if="binding.statusLoading" size="small" />
+          <a-tag v-else-if="binding.status" :color="connected ? 'success' : 'default'">
+            {{ binding.label(connected ? 'Bound' : 'Unbound') }}
+          </a-tag>
+        </a-space>
+        <a-space wrap>
+          <a-button
+            :type="connected ? 'default' : 'primary'"
+            :disabled="binding.statusLoading || binding.unbinding"
+            @click="binding.start"
+          >
+            <template #icon><QrcodeOutlined /></template>
+            {{ binding.label(connected ? 'Rebind' : 'Bind') }}
+          </a-button>
+          <a-popconfirm
+            v-if="connected"
+            v-model:open="unbindConfirmOpen"
+            :title="binding.label('UnbindConfirm')"
+            :get-popup-container="getContainer"
+            @confirm="binding.unbind"
+          >
+            <a-button danger :loading="binding.unbinding">{{ binding.label('Unbind') }}</a-button>
+          </a-popconfirm>
+        </a-space>
+      </div>
     </div>
-  </a-space>
+  </div>
   <a-modal
-    :open="open"
-    :title="label('LoginTitle')"
+    :open="binding.open"
+    :title="binding.label('LoginTitle')"
     :width="400"
-    :z-index="900"
+    :z-index="1050"
+    :get-container="getContainer"
     :footer="null"
     :body-style="{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' }"
     centered
-    @cancel="close"
+    @cancel="binding.close"
   >
     <div class="qr-content">
       <div class="qr-stage">
-        <a-spin v-if="loading" />
-        <CheckCircleOutlined v-else-if="state === 'connected'" class="qr-success" />
-        <a-button v-else-if="failed" type="primary" @click="start">
+        <a-spin v-if="binding.loading" />
+        <CheckCircleOutlined v-else-if="binding.state === 'connected'" class="qr-success" />
+        <a-button v-else-if="failed" type="primary" @click="binding.start">
           <template #icon><ReloadOutlined /></template>
-          {{ label('QrRetry') }}
+          {{ binding.label('QrRetry') }}
         </a-button>
         <img
-          v-else-if="qrDataUrl"
-          :src="qrDataUrl"
-          :alt="label('QrAlt')"
+          v-else-if="binding.qrDataUrl"
+          :src="binding.qrDataUrl"
+          :alt="binding.label('QrAlt')"
           width="240"
           height="240"
         />
       </div>
       <a-alert
-        :type="failed ? 'error' : state === 'connected' ? 'success' : 'info'"
-        :message="hint"
+        :type="failed ? 'error' : binding.state === 'connected' ? 'success' : 'info'"
+        :message="binding.hint"
         show-icon
         role="status"
         class="qr-hint"
       />
       <a-form
-        v-if="props.channel === 'weixin' && state === 'need_verify_code'"
+        v-if="props.channel === 'weixin' && binding.state === 'need_verify_code'"
         layout="vertical"
         class="qr-hint"
-        @finish="submitCode"
+        @finish="binding.submitCode"
       >
-        <a-form-item :label="label('VerifyCodePlaceholder')">
+        <a-form-item :label="binding.label('VerifyCodePlaceholder')">
           <a-input
-            v-model:value="verifyCode"
+            v-model:value="binding.verifyCode"
             maxlength="32"
             autocomplete="one-time-code"
-            :disabled="checking"
+            :disabled="binding.checking"
           />
         </a-form-item>
         <a-button
           type="primary"
           html-type="submit"
           block
-          :loading="checking"
-          :disabled="!verifyCode.trim()"
+          :loading="binding.checking"
+          :disabled="!binding.verifyCode.trim()"
         >
-          {{ label('VerifyCodeSubmit') }}
+          {{ binding.label('VerifyCodeSubmit') }}
         </a-button>
       </a-form>
-      <a-button v-if="state === 'connected'" type="primary" block @click="close">{{
+      <a-button v-if="binding.state === 'connected'" type="primary" block @click="binding.close">{{
         t('common.confirm')
       }}</a-button>
     </div>
@@ -160,7 +155,17 @@ const failed = computed(() => ['expired', 'error'].includes(state.value))
 .binding-hint {
   margin: 0;
 }
-.binding-row {
+.bind-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bind-label {
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+.bind-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
