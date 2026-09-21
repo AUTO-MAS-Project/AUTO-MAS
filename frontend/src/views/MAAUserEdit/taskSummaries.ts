@@ -59,18 +59,6 @@ export const summarizeActivity = (options: {
   return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
 }
 
-export const summarizeDepot = (enabled: boolean, plansJson: string) => {
-  if (!enabled) return ''
-  let count = 0
-  try {
-    const parsed = JSON.parse(plansJson || '[]')
-    count = Array.isArray(parsed) ? parsed.length : 0
-  } catch {
-    count = 0
-  }
-  return count ? `${count} 项计划` : '尚未添加计划'
-}
-
 export const summarizeCultivate = (enabled: boolean, targetsJson: string) => {
   if (!enabled) return ''
   const count = parseCultivateTargets(targetsJson).length
@@ -99,7 +87,6 @@ export const summarizeFight = (options: {
   stage: string
   series: string
   medicine: number
-  remain: string
 }) => {
   if (!options.enabled) return ''
   const parts = [
@@ -107,8 +94,5 @@ export const summarizeFight = (options: {
     `连战 ${seriesLabel(options.series)}`,
     `理智药 ${options.medicine}`,
   ]
-  if (options.remain && options.remain !== '-') {
-    parts.push(`剩余理智 ${options.remain}`)
-  }
   return options.planLabel ? `${options.planLabel} · ${parts.join(' · ')}` : parts.join(' · ')
 }

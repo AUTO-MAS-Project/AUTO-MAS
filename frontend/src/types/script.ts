@@ -603,7 +603,6 @@ export interface User {
     Stage_1: string
     Stage_2: string
     Stage_3: string
-    Stage_Remain: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
@@ -639,7 +638,6 @@ export interface User {
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     IfGreenTicketStore?: boolean
-    DepotMaintainPlans?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

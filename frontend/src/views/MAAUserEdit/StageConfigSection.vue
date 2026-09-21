@@ -229,36 +229,6 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :md="12" :xl="6">
-        <a-form-item name="mode">
-          <template #label>
-            <LabelWithHint text="剩余理智关卡" hint="选择「不选择」时视为不使用剩余理智关卡" />
-          </template>
-          <!-- 计划模式：显示只读文本 -->
-          <div v-if="isPlanMode" class="plan-mode-display">
-            <div class="plan-value">
-              {{ displayStageRemain === '-' ? '不选择' : displayStageRemain || '不选择' }}
-            </div>
-            <a-tooltip>
-              <template #title>
-                <div class="plan-tooltip" v-html="formatTooltip(stageRemainTooltip)"></div>
-                <!-- eslint-enable vue/no-v-html -->
-              </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
-            </a-tooltip>
-          </div>
-          <!-- 固定模式：显示选择框 -->
-          <StageSelector
-            v-else
-            :value="displayStageRemain"
-            :options="stageRemainOptions"
-            :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
-            @update:value="$emit('update-stage-remain', $event)"
-            @add-custom-stage="handleAddCustomStageRemain"
-          />
-        </a-form-item>
-      </a-col>
     </a-row>
   </div>
 </template>
@@ -277,7 +247,6 @@ const props = defineProps<{
   loading: boolean
   stageModeOptions: any[]
   stageOptions: any[]
-  stageRemainOptions: any[]
   isPlanMode: boolean
   displayMedicineNumb: number
   displaySeriesNumb: string
@@ -285,14 +254,12 @@ const props = defineProps<{
   displayStage1: string
   displayStage2: string
   displayStage3: string
-  displayStageRemain: string
   medicineNumbTooltip: string
   seriesNumbTooltip: string
   stageTooltip: string
   stage1Tooltip: string
   stage2Tooltip: string
   stage3Tooltip: string
-  stageRemainTooltip: string
 }>()
 
 const emit = defineEmits<{
@@ -302,12 +269,10 @@ const emit = defineEmits<{
   'update-stage1': [value: string]
   'update-stage2': [value: string]
   'update-stage3': [value: string]
-  'update-stage-remain': [value: string]
   'handle-add-custom-stage': [stageName: string]
   'handle-add-custom-stage1': [stageName: string]
   'handle-add-custom-stage2': [stageName: string]
   'handle-add-custom-stage3': [stageName: string]
-  'handle-add-custom-stage-remain': [stageName: string]
   save: [key: string, value: any]
 }>()
 
@@ -320,8 +285,6 @@ const handleAddCustomStage = (stageName: string) => emit('handle-add-custom-stag
 const handleAddCustomStage1 = (stageName: string) => emit('handle-add-custom-stage1', stageName)
 const handleAddCustomStage2 = (stageName: string) => emit('handle-add-custom-stage2', stageName)
 const handleAddCustomStage3 = (stageName: string) => emit('handle-add-custom-stage3', stageName)
-const handleAddCustomStageRemain = (stageName: string) =>
-  emit('handle-add-custom-stage-remain', stageName)
 
 // 跳转到计划表
 const handleGoToPlans = () => {

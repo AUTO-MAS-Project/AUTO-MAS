@@ -26,9 +26,8 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig, MaaUserConfig, maa_scheme_name
+from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
@@ -39,9 +38,8 @@ from app.utils.io import read_file, write_file
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
-    _build_maa_preset_task_queue,
-    _merge_maa_config_file,
-    _restrict_task_queue_to_baseline,
+    _repair_maa_task_queue,
+    read_maa_config_with_fallback,
 )
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -50,6 +48,107 @@ from .tools.backup_archive import (
 )
 
 logger = get_logger("MAA 脚本设置")
+
+# 配置会话注入的启动编排项：(文件, 路径, 注入值)。配置会话只让用户调设置，
+# 不该自动跑任务、拉模拟器或拉游戏，所以这些项在会话期间强制关闭；会话结束
+# 回写时逐项还原成会话前的值，绝不写进 base——它们是会话级的运行编排，
+# 不是用户配置。StartGame 关掉后 MAA 打开就是可配置状态，用户不必先终止队列。
+_SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "RuntimeSettings", "StartGame"),
+        False,
+    ),
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "StartUpSettings", "RunDirectly"),
+        False,
+    ),
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "StartUpSettings", "StartEmulator"),
+        False,
+    ),
+    ("gui.json", ("Configurations", "Default", "Start.StartGame"), "False"),
+    ("gui.json", ("Configurations", "Default", "Start.RunDirectly"), "False"),
+    (
+        "gui.json",
+        ("Configurations", "Default", "Start.OpenEmulatorAfterLaunch"),
+        "False",
+    ),
+    # 调起 MAA 的 GUI 必有人要操作界面，启动即最小化恒为关——否则用户自己
+    # 设过"启动时最小化"的，配置会话打开就是缩在托盘里。gui.json 的
+    # Start.MinimizeDirectly 与 gui.new.json 的 Gui.MinimizeOnStartup 是同一
+    # 开关的新旧两通道（均为 MAA 真实键，native 池 3/3 实证），必须同时压住。
+    # 会话级覆盖，回写前还原，不进 base。
+    (
+        "gui.json",
+        ("Global", "Start.MinimizeDirectly"),
+        "False",
+    ),
+    (
+        "gui.new.json",
+        ("Gui", "MinimizeOnStartup"),
+        False,
+    ),
+)
+
+
+def _dig(doc: dict, path: tuple[str, ...]) -> tuple[dict, str] | None:
+    """按路径取出 (父容器, 末键)；中间层不存在时返回 None。"""
+
+    node: object = doc
+    for key in path[:-1]:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    if not isinstance(node, dict):
+        return None
+    return node, path[-1]
+
+
+def _apply_session_startup_overrides(
+    docs: dict[str, dict],
+) -> dict[str, list[tuple[tuple[str, ...], object | None]]]:
+    """把启动编排项强制成配置会话的值，返回各项的会话前原值（供回写还原）。"""
+
+    restore: dict[str, list[tuple[tuple[str, ...], object | None]]] = {}
+    for name, path, value in _SESSION_STARTUP_OVERRIDES:
+        doc = docs.get(name)
+        if doc is None:
+            continue
+        located = _dig(doc, path)
+        if located is None:
+            continue
+        parent, key = located
+        restore.setdefault(name, []).append((path, deepcopy(parent.get(key))))
+        parent[key] = value
+    return restore
+
+
+def _restore_session_startup_overrides(
+    docs: dict[str, dict],
+    restore: dict[str, list[tuple[tuple[str, ...], object | None]]],
+) -> None:
+    """把配置会话强制过的启动编排项还原为会话前的值。
+
+    用户在 MAA 里改动这些项不会保留（它们是会话级编排，不进 base），
+    其余一切用户修改原样写回。
+    """
+
+    for name, entries in restore.items():
+        doc = docs.get(name)
+        if doc is None:
+            continue
+        for path, original in entries:
+            located = _dig(doc, path)
+            if located is None:
+                continue
+            parent, key = located
+            if original is None:
+                parent.pop(key, None)
+            else:
+                parent[key] = original
 
 
 class ScriptConfigTask(TaskExecuteBase):
@@ -65,6 +164,11 @@ class ScriptConfigTask(TaskExecuteBase):
 
     _maa_config_baseline: dict[str, dict] | None = None
     """set_maa 写盘快照；final_task 以此甄别用户的 GUI 修改。"""
+
+    _session_startup_restore: (
+        dict[str, list[tuple[tuple[str, ...], object | None]]] | None
+    ) = None
+    """配置会话强制过的启动编排项及其会话前原值，回写时逐项还原。"""
 
     def __init__(
         self,
@@ -167,8 +271,10 @@ class ScriptConfigTask(TaskExecuteBase):
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
             shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
 
-        gui_set = read_file(self.maa_set_path / "gui.json")
-        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
+        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架：骨架不含 TaskQueue，
+        # MAA 加载时用内存默认队列填空——默认队列的唯一生成器是 MAA 本体。
+        gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
+        gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
         # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
         if gui_set["Current"] != "Default":
@@ -185,39 +291,21 @@ class ScriptConfigTask(TaskExecuteBase):
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
-        default_set = gui_set["Configurations"]["Default"]
 
-        # 配置 GUI 使用与 MAS 运行时一致的任务顺序，并预置合成任务。
+        # GUI 直接展示 base（MAA 自己的日常任务配置）：队列成员与顺序都归 MAA 与
+        # 用户所有，MAS 不校对不重建；只修 $type 位置，否则 MAA 读不进整个文件。
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
             source_queue = []
-        gui_new_set["Configurations"]["Default"]["TaskQueue"] = (
-            _build_maa_preset_task_queue(source_queue)
+        gui_new_set["Configurations"]["Default"]["TaskQueue"] = _repair_maa_task_queue(
+            source_queue
         )
 
-        # 任务间切换方式
-        default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
-        # NEW: PostActions [Flags] 枚举 None=0
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {})["PostActions"] = 0
-
-        # 不直接运行任务
-        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
-        default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
-        # NEW:
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = False
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
-            "StartEmulator"
-        ] = False
+        # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
+        # 可配置状态（用户不必先终止队列）。这些是会话级覆盖，回写时还原成原值。
+        self._session_startup_restore = _apply_session_startup_overrides(
+            {"gui.json": gui_set, "gui.new.json": gui_new_set}
+        )
 
         # 关闭所有定时
         for i in range(1, 9):
@@ -239,12 +327,6 @@ class ScriptConfigTask(TaskExecuteBase):
         gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
         gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
         gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
-
-        # 静默模式相关配置
-        if Config.get("Function", "IfSilence"):
-            global_set["Start.MinimizeDirectly"] = "False"  # OLD: 即将移除
-            # NEW:
-            gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = False
 
         (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
             json.dumps(gui_set, ensure_ascii=False, indent=4),
@@ -278,48 +360,35 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
-        baseline = self._maa_config_baseline or {}
 
-        # 归一回写：按 (TaskType, Name) 身份对齐合并，只透传用户在 MAA GUI 里
-        # 的真实修改；MAA 保存时自带的原生默认任务(UserDataUpdate/生息演算等)
-        # 不固化进 MAS 存档，合成任务也不因 MAA 默认队列未包含而被抹除。
-        # 队列结构以 MAS 合成结果为准，其余文件不盲拷。
-        normalized = False
+        # GUI 展示的就是 base，用户在 MAA 里改完落盘的文件即新的 base：整份写回
+        # 即可，不需要按身份归并（那是"GUI 展示映射层"时代的产物）。队列同样原样
+        # 接受——这份文件刚被 MAA 自己写出并读通过，MAS 没有立场替它判定合法。
+        saved = False
         for name in _MAA_CONFIG_FILES:
-            base = baseline.get(name)
-            if base is None:
-                continue
             try:
                 current = read_file(self.maa_set_path / name)
             except (OSError, json.JSONDecodeError) as e:
                 logger.opt(exception=True).warning(
-                    f"读取 MAA 配置以对比回写失败({name}): {e}"
+                    f"读取 MAA 配置以回写失败({name}): {e}"
                 )
                 continue
             if not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
                 continue
-            try:
-                archive = read_file(mas_dir / name)
-            except (OSError, json.JSONDecodeError):
-                archive = None
-            if not archive:
-                # 空存档(首次会话)以会话基线为底，仅叠加用户修改
-                archive = deepcopy(base)
-            archive_new = deepcopy(archive)
-            scheme = maa_scheme_name(mas_dir, archive)
-            changed = _merge_maa_config_file(
-                archive_new, base, current, scheme, drop_missing=False
-            )
-            changed = (
-                _restrict_task_queue_to_baseline(archive_new, base, scheme) or changed
-            )
-            if not changed:
-                continue
-            write_file(mas_dir / name, archive_new)
-            normalized = True
-        if not normalized:
-            logger.info("MAA 配置回写: 相对会话基线无用户修改, 存档保持不变")
+            # 先还原会话强制过的启动编排项：它们是会话级覆盖，不能写进 base
+            entries = (self._session_startup_restore or {}).get(name)
+            if entries:
+                _restore_session_startup_overrides({name: current}, {name: entries})
+            for configurations in (current.get("Configurations") or {}).values():
+                if isinstance(configurations, dict):
+                    queue = configurations.get("TaskQueue")
+                    if isinstance(queue, list):
+                        configurations["TaskQueue"] = _repair_maa_task_queue(queue)
+            write_file(mas_dir / name, current)
+            saved = True
+        if not saved:
+            logger.info("MAA 配置回写: 无落盘内容, 存档保持不变")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

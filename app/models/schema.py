@@ -1556,7 +1556,6 @@ class MaaUserConfig_Info(BaseModel):
     Stage_1: Optional[str] = Field(default=None, description="备选关卡 - 1")
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
-    Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
     Tag: Optional[str] = Field(default=None, description="状态标签列表")
 
 
@@ -1594,9 +1593,6 @@ class MaaUserConfig_Task(BaseModel):
     )
     ActivityMedicineNumb: Optional[int] = Field(
         default=None, description="活动关优先任务吃理智药数量"
-    )
-    DepotMaintainPlans: Optional[str] = Field(
-        default=None, description="库存保持计划 JSON"
     )
     IfCultivate: Optional[bool] = Field(default=None, description="干员养成")
     CultivateTargets: Optional[str] = Field(
@@ -4081,7 +4077,6 @@ class MaaPlanConfig_Item(BaseModel):
     Stage_1: Optional[str] = Field(default=None, description="备选关卡 - 1")
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
-    Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
 
 
 class WeeklyPlanConfig(BaseModel, Generic[TPlanInfo, TPlanItem]):

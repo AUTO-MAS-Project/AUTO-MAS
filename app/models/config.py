@@ -980,8 +980,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
         ## 关卡 3
         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
-        ## 备用关卡
-        self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
         ## 用户标签信息（虚拟字段，供前端显示）
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -1058,10 +1056,6 @@ class MaaUserConfig(ConfigBase):
             RangeValidator(0, 9999),
             legacy_group="Info",
             legacy_name="MedicineNumb",
-        )
-        ## 库存保持计划
-        self.Task_DepotMaintainPlans = ConfigItem(
-            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
         )
         ## 是否干员养成
         self.Task_IfCultivate = ConfigItem(
@@ -1189,11 +1183,6 @@ class MaaUserConfig(ConfigBase):
         if backup_stages:
             tags.append(
                 {"text": f"备选：{', '.join(backup_stages)}", "color": tag_color}
-            )
-        # 剩余关卡
-        if plan_data["Stage_Remain"] != "禁用":
-            tags.append(
-                {"text": f"剩余：{plan_data['Stage_Remain']}", "color": tag_color}
             )
 
         # 备注标签
@@ -3106,7 +3095,7 @@ class MaaPlanConfig(ConfigBase):
 
             ## 理智关卡
             for name in MAA_STAGE_KEY[2:]:
-                # Stage、Stage_1、Stage_2、Stage_3、Stage_Remain
+                # Stage、Stage_1、Stage_2、Stage_3
                 self.config_item_dict[group][name] = ConfigItem(group, name, "-")
 
             for name in MAA_STAGE_KEY:
