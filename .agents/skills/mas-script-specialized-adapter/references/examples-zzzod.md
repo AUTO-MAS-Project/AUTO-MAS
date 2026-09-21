@@ -148,7 +148,7 @@ ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 conf
 - **配置会话必须双向联动**：只激活槽不注入基线 → GUI 与本页配置不一致；只注入不回读 → GUI 内改动下次运行被 MAS 字段覆盖（用户改动静默丢失）。回读时账号/密码非空才读，否则「留空沿用登录态」语义被破坏。
 - **重试重判的幂等**：重试带着同一全零基准重判，推送条目按用户整体重建（clear 后重采），统计只在状态变化时写——否则 ProxyTimes 多次自增、推送重复。
 - **instance_run 随视图恢复**；注册表零持久写入是设计核心，勿把合成视图改成持久注册（会重新引入 GUI 混排/跨脚本串号）。
-- 直控模式不需要注入但仍校验 zzz-od 有活跃实例与**目标实例的游戏路径**：直控读原生实例的 `game_account.yml`，路径缺失时一条龙只报「未配置游戏路径」整体失败、用户难自诊，故运行前按原生 `instance_run` 逐实例校验（全部实例=所有参与实例，其余=活跃实例，与上游 `instance_list_in_od`/`current_active_instance` 同口径）并指明实例名；用户态不需要（绑定槽自动注册）。
+- 直控模式不需要注入但仍校验 zzz-od 有活跃实例与**目标实例的游戏路径**：直控读原生实例的 `game_account.yml`，路径缺失时一条龙只报「未配置游戏路径」整体失败、用户难自诊，故运行前按原生 `instance_run` 逐实例校验（全部实例=所有参与实例，其余含空值=活跃实例，只有键缺失才按上游默认取全部实例，与上游 `handle_init`/`instance_list_in_od`/`current_active_instance` 同口径）并指明实例名；**校验前先 `restore_instance_view` 自愈**——上次用户模式运行崩溃残留的视图只含 MAS 槽，不还原会把 MAS 槽当运行目标、误报未配置路径（`_restore_injection` 只在运行结束还原，直控裸跑前必须自己补一次，无 sidecar 时 no-op）；用户态不需要（绑定槽自动注册，且 `_prepare_injection` 开头已自愈）。
 - manager `final_task` **所有模式**都写回 UserData（ScriptConfig 会话也会产生 SlotIdx 落盘）。
 - schema 变更后离线导出再生成（`PYTHONPATH=. python .dev/export_openapi.py` → `npx openapi --input ../.dev/openapi.json`），禁止手改生成文件。
 - **openapi-typescript-codegen 三个坑**（0.29.0 实测）：① 请求模型用中文 `Literal[...]` 会生成重复 `_` 标识符导致 TS 编译失败——枚举校验放后端原语（如白名单校验），schema 用 `str`；② **路径前缀重叠的端点会被静默丢弃**（`/instances/active` 被 `/instances/active-in-od` 吞掉，无任何报错）——端点命名避免互为前缀（用 `set-active` 不用 `active`）；③ 生成器 `--output ./src/api` 是相对 cwd 的——必须在 `frontend/` 目录下执行，曾误生成整套到仓库根 `src/api`。

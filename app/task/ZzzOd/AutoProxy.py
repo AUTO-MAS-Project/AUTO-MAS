@@ -728,9 +728,13 @@ class AutoProxyTask(TaskExecuteBase):
                 if self.cur_user_config.get("Info", "RemainedDay") == 0:
                     self.cur_user_item.status = "跳过"
                     return "用户剩余天数为 0, 跳过该用户"
-        elif find_active_instance(root) is None:
-            return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
         else:
+            # 直控=原生裸跑零注入，运行前先自愈上次用户模式残留的合成视图
+            # （只含 MAS 槽）：否则下面读到的是视图，会把 MAS 槽当运行目标、
+            # 误报「未配置游戏路径」；无 sidecar 时为 no-op
+            restore_instance_view(root)
+            if find_active_instance(root) is None:
+                return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
             # 直控裸跑读原生实例配置，路径缺失时一条龙只会以「未配置游戏路径」
             # 失败，这里提前给出可读提示并指明实例
             missing = self._direct_missing_game_paths(root)
