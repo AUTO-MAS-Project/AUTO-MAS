@@ -68,16 +68,11 @@ describe('infrast summary', () => {
 })
 
 describe('fight summary', () => {
-  const base = { enabled: true, stage: '1-7', series: '0', medicine: 0, remain: '' }
+  const base = { enabled: true, stage: '1-7', series: '0', medicine: 0 }
 
   it('maps AUTO and 不切换 series codes', () => {
     expect(summarizeFight(base)).toBe('1-7 · 连战 AUTO · 理智药 0')
     expect(summarizeFight({ ...base, series: '-1' })).toBe('1-7 · 连战 不切换 · 理智药 0')
-  })
-
-  it('omits the remaining-sanity stage when unset', () => {
-    expect(summarizeFight({ ...base, remain: '-' })).not.toContain('剩余理智')
-    expect(summarizeFight({ ...base, remain: '1-7' })).toContain('剩余理智 1-7')
   })
 
   it('prefixes the plan name in plan mode', () => {

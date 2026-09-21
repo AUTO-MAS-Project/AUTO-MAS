@@ -27,9 +27,5 @@ export type MaaPlanConfig_Item = {
      * 备选关卡 - 3
      */
     Stage_3?: (string | null);
-    /**
-     * 剩余理智关卡
-     */
-    Stage_Remain?: (string | null);
 };
 

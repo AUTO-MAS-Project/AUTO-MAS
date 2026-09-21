@@ -231,10 +231,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Stage_2 !== undefined ? maaUserData.Info.Stage_2 : '-',
                         Stage_3:
                           maaUserData.Info?.Stage_3 !== undefined ? maaUserData.Info.Stage_3 : '-',
-                        Stage_Remain:
-                          maaUserData.Info?.Stage_Remain !== undefined
-                            ? maaUserData.Info.Stage_Remain
-                            : '-',
                         Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
