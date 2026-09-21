@@ -405,7 +405,7 @@ const getPlanTooltip = (fieldName: string) => {
       ) {
         if (value === '-') value = '当前/上次'
         else if (value === '') value = '不选择'
-      tooltip += `${weekdaysZh[index]}: ${value}\n`
+        tooltip += `${weekdaysZh[index]}: ${value}\n`
       }
     })
 

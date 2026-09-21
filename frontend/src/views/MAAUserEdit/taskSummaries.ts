@@ -94,8 +94,5 @@ export const summarizeFight = (options: {
     `连战 ${seriesLabel(options.series)}`,
     `理智药 ${options.medicine}`,
   ]
-  return options.planLabel
-    ? `${options.planLabel} · ${parts.join(' · ')}`
-    : parts.join(' · ')
+  return options.planLabel ? `${options.planLabel} · ${parts.join(' · ')}` : parts.join(' · ')
 }
-

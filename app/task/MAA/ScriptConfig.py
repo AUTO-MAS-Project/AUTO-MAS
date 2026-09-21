@@ -297,8 +297,8 @@ class ScriptConfigTask(TaskExecuteBase):
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
             source_queue = []
-        gui_new_set["Configurations"]["Default"]["TaskQueue"] = (
-            _repair_maa_task_queue(source_queue)
+        gui_new_set["Configurations"]["Default"]["TaskQueue"] = _repair_maa_task_queue(
+            source_queue
         )
 
         # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
