@@ -93,6 +93,7 @@ from .tools import (
     list_instances,
     push_notification,
     read_game_account,
+    read_native_after_done,
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
@@ -865,9 +866,27 @@ class AutoProxyTask(TaskExecuteBase):
                         "--instance",
                         ",".join(str(slot) for slot, _ in self._injected_slots),
                     ]
+            # 游戏结束后操作：委托一条龙在运行收尾时执行。上游 CLI 只认
+            # --close-game / --shutdown 参数，不读原生 after_done 配置（该
+            # 配置只在一条龙 GUI 内启动运行时生效），故由 MAS 传参；关机
+            # 固定 60 秒，与一条龙 GUI 内启动的口径一致。取值随来源：
+            # 直控=原生 after_done（与直控页/GUI 显示一致），脚本/用户=该
+            # 用户的 MAS 字段（经配置会话双向联动与 GUI 保持一致）。多实例
+            # 切换整轮共用触发者的值。与 MAS 收尾的 CloseOnFinish
+            # （kill_managed_process）相互独立，同时配置会各执行一次，无害。
+            if self.mode == "直控":
+                after_done = read_native_after_done(self.script_root_path)
+            else:
+                after_done = str(
+                    self.cur_user_config.get("OneDragon", "AfterDone") or "关闭游戏"
+                )
+            if after_done == "关闭游戏":
+                launcher_args.append("--close-game")
+            elif after_done == "关机":
+                launcher_args.extend(["--shutdown", "60"])
 
-            # 任务结束后关闭游戏由 MAS 侧执行（见 kill_managed_process），
-            # 不再委托一条龙 --close-game：手动停止调度时 MAS 也能一并关游戏
+            # 任务结束后关闭游戏由 MAS 侧兜底执行（见 kill_managed_process），
+            # 不依赖一条龙 --close-game：手动停止调度时 MAS 也能一并关游戏
 
             # 启动器选择：直控/用户统一按配置——自动=优先上次成功项，原始/集成=固定
             # 对应项（未安装回退可用项）；直控默认「自动」时行为等同原强绑定默认顺序

@@ -4290,6 +4290,16 @@ class ZzzOdUserConfig(ConfigBase):
         ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
         ## 数组顺序即执行顺序；enabled=false 的任务由 zzz-od 跳过）
         self.OneDragon_AppList = ConfigItem("OneDragon", "AppList", "[]")
+        ## 游戏结束后操作（仅 MAS 拉起的一条龙运行消费：CLI 传参
+        ## --close-game / --shutdown 60；无=不传参，游戏保持运行。
+        ## 与一条龙原生 GUI 的「结束后」下拉无关——原生 after_done 只在
+        ## 从 GUI 内启动运行时被消费，CLI 路径不读它）
+        self.OneDragon_AfterDone = ConfigItem(
+            "OneDragon",
+            "AfterDone",
+            "关闭游戏",
+            OptionsValidator(["无", "关闭游戏", "关机"]),
+        )
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -4452,7 +4462,9 @@ class ZzzOdConfig(ConfigBase):
         ## 启动游戏后的等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体，
-        ## 不再委托一条龙 --close-game）
+        ## 覆盖失败重试与手动停止场景，是「结束后操作」的兜底）。与用户级
+        ## OneDragon.AfterDone 下发的 --close-game 相互独立，同时配置会各
+        ## 执行一次（无害）
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )

@@ -3389,6 +3389,7 @@ async def get_zzzod_native_config_api(
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
             launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
+            afterDone=data["afterDone"],
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -3403,6 +3404,7 @@ async def get_zzzod_native_config_api(
             account=[],
             tasks=[],
             instanceRun="仅运行当前",
+            afterDone="无",
         )
 
 
@@ -3416,7 +3418,7 @@ async def get_zzzod_native_config_api(
 async def save_zzzod_native_config_api(
     script: ZzzOdNativeConfigIn = Body(...),
 ) -> ZzzOdNativeConfigOut:
-    """白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。"""
+    """白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。"""
 
     try:
         await Config.save_zzzod_native_config(
@@ -3428,6 +3430,7 @@ async def save_zzzod_native_config_api(
             else None,
             script.instanceRun,
             script.launchArgs.model_dump() if script.launchArgs is not None else None,
+            script.afterDone,
         )
         data = await Config.get_zzzod_native_config(script.scriptId, script.instanceIdx)
         return ZzzOdNativeConfigOut(
@@ -3439,6 +3442,7 @@ async def save_zzzod_native_config_api(
             account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
+            afterDone=data["afterDone"],
             launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
         )
     except Exception as e:
@@ -3454,6 +3458,7 @@ async def save_zzzod_native_config_api(
             account=[],
             tasks=[],
             instanceRun="仅运行当前",
+            afterDone=script.afterDone or "无",
         )
 
 

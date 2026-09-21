@@ -2257,6 +2257,7 @@ class AppConfig(GlobalConfig):
             get_task_app_jump,
             list_app_catalog,
             read_native_account_fields,
+            read_native_after_done,
             read_native_instance_run,
             read_native_launch_args,
             read_native_tasks,
@@ -2276,6 +2277,7 @@ class AppConfig(GlobalConfig):
             "account": read_native_account_fields(root, slot),
             "tasks": read_native_tasks(root, slot, catalog),
             "instanceRun": read_native_instance_run(root),
+            "afterDone": read_native_after_done(root),
             "launchArgs": read_native_launch_args(root, slot),
         }
 
@@ -2287,21 +2289,24 @@ class AppConfig(GlobalConfig):
         tasks: list[dict] | None = None,
         instance_run: str | None = None,
         launch_args: dict | None = None,
+        after_done: str | None = None,
     ) -> dict:
         """把直控页面改动直接写回所选实例原生配置（可选增量，缺省字段不写回）。
 
         账号字段白名单过滤 + 只写非默认值；任务编排保留完整顺序（含未启用项）；
-        instance_run 白名单校验；launchArgs 整组提交（六字段 + dx12 开关合并进
-        高级参数，值未变跳过）。由调用方按需传参：任务开关/运行实例等即时
-        写入只传对应字段，避免把未确认的账号草稿一并落盘。
+        instance_run / after_done 白名单校验；launchArgs 整组提交（六字段 +
+        dx12 开关合并进高级参数，值未变跳过）。由调用方按需传参：任务开关/
+        运行实例等即时写入只传对应字段，避免把未确认的账号草稿一并落盘。
         """
 
         root, instance = self._zzzod_native_instance(script_id, instance_idx)
         slot = int(instance_idx)
 
         from app.task.ZzzOd.tools import (
+            read_native_after_done,
             read_native_instance_run,
             save_native_account_fields,
+            save_native_after_done,
             save_native_instance_run,
             save_native_launch_args,
             save_native_tasks,
@@ -2320,6 +2325,10 @@ class AppConfig(GlobalConfig):
             current = read_native_instance_run(root)
             if instance_run != current:
                 save_native_instance_run(root, instance_run)
+        if after_done is not None:
+            current_after_done = read_native_after_done(root)
+            if after_done != current_after_done:
+                save_native_after_done(root, after_done)
         logger.info(f"ZZZ-OD 实例 {slot:02d} 原生配置已由直控页面保存")
         return {
             "instanceIdx": slot,

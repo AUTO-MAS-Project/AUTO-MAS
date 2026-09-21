@@ -42,6 +42,10 @@ export type ZzzOdNativeConfigOut = {
      */
     instanceRun: string;
     /**
+     * 游戏结束后操作（one_dragon.yml after_done 原值：无/关闭游戏/关机）
+     */
+    afterDone: string;
+    /**
      * 游戏启动参数（game.yml，缺失字段合并上游默认值）
      */
     launchArgs?: (ZzzOdNativeLaunchArgs | null);

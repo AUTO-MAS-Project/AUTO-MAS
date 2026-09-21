@@ -99,7 +99,8 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 ## 游戏进程管理（脚本级 `Game` 配置，对齐 ok-ww/ok-nte）
 
 - 字段：`Enabled`（启用游戏配置，任务前启动的总控）/ `LaunchBeforeTask`（任务前由 MAS 启动游戏，检测到游戏进程已在运行则跳过）/ `Path`（**游戏本体** `ZenlessZoneZero.exe`，不是一条龙启动器）/ `Arguments` / `WaitTime`（拉起后等待秒数）。
-- **关闭游戏由 MAS 负责**：不传一条龙 `--close-game`——收尾/失败重试/手动停止调度都走 `kill_managed_process(kill_game=CloseOnFinish)`，按进程名结束游戏本体（游戏由启动器拉起、可能不在启动器进程树内，进程管理器跟踪不到）。`CloseOnFinish` 不依赖 `Enabled`（历史上默认开启，避免存量配置悄悄变「不关游戏」）。
+- **MAS 侧兜底关闭游戏**：收尾/失败重试/手动停止调度都走 `kill_managed_process(kill_game=CloseOnFinish)`，按进程名结束游戏本体（游戏由启动器拉起、可能不在启动器进程树内，进程管理器跟踪不到）。`CloseOnFinish` 不依赖 `Enabled`（历史上默认开启，避免存量配置悄悄变「不关游戏」）。与下一条的 `--close-game` 相互独立，同时配置会各执行一次（无害）。
+- **游戏结束后操作走 CLI 传参（`OneDragon.AfterDone`，用户级字段）**：上游 `after_done` **配置**只在「从一条龙 GUI 内启动运行」时被消费，CLI（`--onedragon`）路径的结束后动作只认启动参数 `--close-game` / `--shutdown`（`application_launcher` 传的是 `args.close_game` / `args.shutdown`，不读 `one_dragon_config.after_done`）。故 MAS 侧新增下拉（无 / 关闭游戏 / 关机，词表与上游 `AfterDoneOpEnum` 一致），运行时翻译成 `--close-game` 或 `--shutdown 60`（关机固定 60 秒，与上游 GUI 内启动口径一致）；`无` 不追加任何参数。**取值随来源**：脚本/用户读 MAS 字段，直控读原生 `after_done`（`read_native_after_done`）。**两端显示同步靠两条通道**：用户模式由配置会话双向联动（`write_instance_view(after_done=...)` 注入视图 → GUI 所见即本页下拉；`_readback_user_fields` 经 `read_after_done` 回读，须在 `restore_instance_view` 前）；直控模式 UI 直接读写原生 `after_done`（`/native-config` 端点的 `afterDone` 字段，与原生 GUI 同源）。**不要把原生 `after_done` 当 MAS 用户模式的生效开关**——CLI 不读它。与 `CloseOnFinish` 相互独立，同时配置会各执行一次（无害）。
 
 ## 在一条龙内配置（配置会话，双向联动）
 
