@@ -3228,6 +3228,39 @@ async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
 
 
 @router.post(
+    "/zzzod/recycle/clear",
+    tags=["ZZZ-OD"],
+    summary="清空实例槽回收池（删除后不可找回，不碰配置恢复池）",
+    response_model=ZzzOdRecycleClearOut,
+    status_code=200,
+)
+async def clear_zzzod_recycle_api(
+    body: ZzzOdRecycleClearIn = Body(...),
+) -> ZzzOdRecycleClearOut:
+    """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
+
+    try:
+        # 整棵目录删除是阻塞 IO，放线程里跑
+        count = await asyncio.to_thread(Config.clear_zzzod_recycle, body.scriptId)
+        return ZzzOdRecycleClearOut(
+            code=200,
+            status="success",
+            message=f"已清空回收池（{count} 条）",
+            data=count,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clear_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleClearOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=0,
+        )
+
+
+@router.post(
     "/zzzod/recycle/restore",
     tags=["ZZZ-OD"],
     summary="把回收池里的槽快照恢复到该槽号（覆盖性操作，先存底）",

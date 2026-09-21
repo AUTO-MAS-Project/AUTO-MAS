@@ -174,6 +174,8 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleClearIn } from '../models/ZzzOdRecycleClearIn';
+import type { ZzzOdRecycleClearOut } from '../models/ZzzOdRecycleClearOut';
 import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
 import type { ZzzOdRecycleRestoreIn } from '../models/ZzzOdRecycleRestoreIn';
 import type { ZzzOdSlotCleanIn } from '../models/ZzzOdSlotCleanIn';
@@ -1868,6 +1870,26 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清空实例槽回收池（删除后不可找回，不碰配置恢复池）
+     * 只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。
+     * @param requestBody
+     * @returns ZzzOdRecycleClearOut Successful Response
+     * @throws ApiError
+     */
+    public static clearZzzodRecycleApiApiScriptsZzzodRecycleClearPost(
+        requestBody: ZzzOdRecycleClearIn,
+    ): CancelablePromise<ZzzOdRecycleClearOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/clear',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

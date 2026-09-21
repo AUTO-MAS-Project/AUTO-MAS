@@ -2115,6 +2115,11 @@ export default {
     zzzodRecycleRestore: '恢复',
     zzzodRecycleOpen: '查看',
     zzzodRecycleOpenFailed: '打开目录失败',
+    zzzodRecycleClear: '清空回收池',
+    zzzodRecycleClearConfirm:
+      '将删除回收池全部 {count} 条记录（共 {size}），恢复历史一并清空且不可找回；确认清空？',
+    zzzodRecycleClearDone: '回收池已清空（{count} 条）',
+    zzzodRecycleClearFailed: '清空回收池失败',
     zzzodRecycleRestoreConfirm:
       '用这份快照覆盖槽 {slot} 的内容？当前内容会先归档存底；该槽被原生实例或用户占用时会被拒绝。',
     zzzodRecycleRestoreDone: '槽 {slot} 已恢复',

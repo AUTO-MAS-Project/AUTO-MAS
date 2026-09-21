@@ -463,6 +463,8 @@ export type { ZzzOdNativeConfigOut } from './models/ZzzOdNativeConfigOut';
 export { ZzzOdNativeLaunchArgs } from './models/ZzzOdNativeLaunchArgs';
 export type { ZzzOdNativeTaskIn } from './models/ZzzOdNativeTaskIn';
 export type { ZzzOdNativeTaskOut } from './models/ZzzOdNativeTaskOut';
+export type { ZzzOdRecycleClearIn } from './models/ZzzOdRecycleClearIn';
+export type { ZzzOdRecycleClearOut } from './models/ZzzOdRecycleClearOut';
 export type { ZzzOdRecycleEntryOut } from './models/ZzzOdRecycleEntryOut';
 export type { ZzzOdRecycleOut } from './models/ZzzOdRecycleOut';
 export type { ZzzOdRecycleRestoreIn } from './models/ZzzOdRecycleRestoreIn';

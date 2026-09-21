@@ -536,6 +536,16 @@ class ZzzOdRecycleOut(OutBase):
     data: List[ZzzOdRecycleEntryOut] = Field(..., description="回收池条目")
 
 
+class ZzzOdRecycleClearIn(BaseModel):
+    """清空实例槽回收池（只清 recycle 池，不碰配置恢复池）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ZzzOdRecycleClearOut(OutBase):
+    data: int = Field(..., description="删除的条目数")
+
+
 class ZzzOdRecycleRestoreIn(BaseModel):
     """把回收池里的一条槽快照恢复到该槽号"""
 

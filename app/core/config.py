@@ -1466,6 +1466,18 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         return list_recycle_entries(self._zzzod_root(script_config))
 
+    def clear_zzzod_recycle(self, script_id: str) -> int:
+        """清空本安装的回收池，返回删除的条目数。
+
+        只删 recycle 池（被删用户/脚本留下的存底）；``onedragon`` 原生池与
+        mas 配置恢复池在别的子树，不受影响。
+        """
+
+        from app.task.ZzzOd.tools import clear_recycle_pool
+
+        script_config = self._zzzod_script_config(script_id)
+        return clear_recycle_pool(self._zzzod_root(script_config))
+
     def restore_zzzod_recycle(
         self, script_id: str, slot_idx: int, ts: str, *, force: bool = False
     ) -> None:

@@ -506,6 +506,16 @@ def recycle_backup_root(root: str | Path, slot_idx: int) -> Path:
     )
 
 
+def recycle_pool_root(root: str | Path) -> Path:
+    """实例槽回收池的安装根桶：``data/ZzzOdBackups/recycle/{安装根指纹}``。
+
+    清空回收池即删除本目录（只含被删用户/脚本留下的存底；``onedragon`` 与
+    mas 配置恢复池在别的子树，不受影响）。
+    """
+
+    return project_backup_root() / "recycle" / config_root_key(root)
+
+
 def _has_native_registry(root: Path) -> bool:
     """回收前置：一条龙注册表必须在场。
 
@@ -756,3 +766,19 @@ def restore_recycle_slot(root: Path, slot_idx: int, ts: str) -> None:
         except Exception as e:
             raise ValueError(f"恢复前存底失败，已中止: {e}") from e
     restore_dir(store_root, ts, slot_dir)
+
+
+def clear_recycle_pool(root: Path) -> int:
+    """清空本安装的回收池，返回删除的条目数（池不存在时为 0）。
+
+    只删 ``recycle/{安装根指纹}/``（被删用户/脚本留下的存底）；``onedragon``
+    原生池与 mas 配置恢复池在别的子树，不受影响。
+    """
+
+    pool_root = recycle_pool_root(root)
+    if not pool_root.is_dir():
+        return 0
+    count = len(list_recycle_entries(root))
+    force_rmtree(pool_root)
+    logger.info(f"已清空实例槽回收池（{count} 条）")
+    return count

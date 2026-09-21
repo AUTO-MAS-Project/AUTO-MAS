@@ -405,9 +405,21 @@
                   </a-table>
                 </a-tab-pane>
                 <a-tab-pane key="recycle" :tab="recycleTabLabel">
-                  <a-typography-text type="secondary" class="slot-manage-hint">
-                    {{ t('edit.zzzodRecycleHint') }}
-                  </a-typography-text>
+                  <div class="slot-manage-hint-row">
+                    <a-typography-text type="secondary" class="slot-manage-hint">
+                      {{ t('edit.zzzodRecycleHint') }}
+                    </a-typography-text>
+                    <a-button
+                      size="small"
+                      danger
+                      :loading="recycleLoading"
+                      :disabled="!recycleRows.length"
+                      @click="confirmClearRecycle"
+                    >
+                      <template #icon><ClearOutlined /></template>
+                      {{ t('edit.zzzodRecycleClear') }}
+                    </a-button>
+                  </div>
                   <a-table
                     size="small"
                     row-key="key"
@@ -856,6 +868,39 @@ const openRecycleFolder = async (entry: ZzzOdRecycleEntryOut) => {
   }
 }
 
+const clearRecyclePool = async () => {
+  recycleLoading.value = true
+  try {
+    const resp = await Service.clearZzzodRecycleApiApiScriptsZzzodRecycleClearPost({
+      scriptId,
+    })
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.zzzodRecycleClearFailed'))
+    }
+    message.success(t('edit.zzzodRecycleClearDone', { count: resp.data ?? 0 }))
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : t('edit.zzzodRecycleClearFailed'))
+  } finally {
+    recycleLoading.value = false
+    await loadSlotView()
+  }
+}
+
+/** 清空回收池不可找回（恢复历史一并删除），需二次确认 */
+const confirmClearRecycle = () => {
+  const totalSize = recycleRows.value.reduce((sum, item) => sum + item.size, 0)
+  Modal.confirm({
+    title: t('edit.zzzodRecycleClear'),
+    content: t('edit.zzzodRecycleClearConfirm', {
+      count: recycleRows.value.length,
+      size: formatSlotSize(totalSize),
+    }),
+    okText: t('edit.zzzodRecycleClear'),
+    okButtonProps: { danger: true },
+    onOk: () => clearRecyclePool(),
+  })
+}
+
 const restoreRecycle = async (entry: ZzzOdRecycleEntryOut) => {
   try {
     const resp = await Service.restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost({
@@ -1040,6 +1085,20 @@ onMounted(loadScript)
   display: block;
   margin-bottom: 8px;
   font-size: 12px;
+}
+
+.slot-manage-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.slot-manage-hint-row .slot-manage-hint {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {

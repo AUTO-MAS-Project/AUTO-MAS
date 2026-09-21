@@ -2230,6 +2230,11 @@ export default {
     zzzodRecycleRestore: 'Restore',
     zzzodRecycleOpen: 'Open',
     zzzodRecycleOpenFailed: 'Could not open the directory',
+    zzzodRecycleClear: 'Clear recycle pool',
+    zzzodRecycleClearConfirm:
+      'Delete all {count} record(s) ({size} total) in the recycle pool? Restore history is cleared too and cannot be recovered.',
+    zzzodRecycleClearDone: 'Recycle pool cleared ({count} record(s))',
+    zzzodRecycleClearFailed: 'Could not clear the recycle pool',
     zzzodRecycleRestoreConfirm:
       'Overwrite slot {slot} with this snapshot? The current content is archived first; slots held by a native instance or a user are rejected.',
     zzzodRecycleRestoreDone: 'Slot {slot} restored',
