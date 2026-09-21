@@ -802,6 +802,7 @@ const loadRecycle = async () => {
     }))
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : t('edit.zzzodSlotsLoadFailed'))
   } finally {
     recycleLoading.value = false
   }

@@ -1445,18 +1445,48 @@ class AppConfig(GlobalConfig):
         root = self._zzzod_root(script_config)
         return list_slot_overview(root, collect_slot_owners(root))
 
+    def _ensure_zzzod_install_unlocked(self, root: Path) -> None:
+        """任一指向同一安装的 ZzzOd 脚本正在运行时拒绝槽级写操作。
+
+        槽目录跨脚本共享同一份安装目录：另一脚本运行中时，其用户的绑定号
+        可能尚未持久化（首跑的 SlotIdx 只写在运行期副本，final_task 才回写），
+        持久配置里的占用判定读不到——此时清理/恢复会误动在跑用户的槽。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本处于运行中。
+        """
+
+        from app.utils.config_archive import config_root_key
+
+        key = config_root_key(root)
+        for script_config in self.ScriptConfig.values():
+            if (
+                not isinstance(script_config, ZzzOdConfig)
+                or not script_config.is_locked
+            ):
+                continue
+            script_root = str(script_config.get("Info", "RootPath") or "").strip()
+            if script_root and config_root_key(script_root) == key:
+                raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
+
     def clean_zzzod_slots(self, script_id: str) -> list[int]:
         """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
 
         与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
         被任一 ZzzOd 用户绑定的槽不动）。直控用户显式发起即可，不受「直控
         零写入」约束——那条约束管的是 MAS 在运行期间自行写安装目录。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行（在跑用户的绑定号
+                可能未持久化，清理会误收其槽）。
         """
 
         from app.task.ZzzOd.AutoProxy import recycle_unbound_slots
 
         script_config = self._zzzod_script_config(script_id)
-        return recycle_unbound_slots(self._zzzod_root(script_config))
+        root = self._zzzod_root(script_config)
+        self._ensure_zzzod_install_unlocked(root)
+        return recycle_unbound_slots(root)
 
     def get_zzzod_recycle(self, script_id: str) -> list[dict]:
         """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
@@ -1487,6 +1517,8 @@ class AppConfig(GlobalConfig):
         ``force=True`` 表示用户已确认覆盖（仍先存底，误恢复可找回）。
 
         Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行（恢复向安装目录写
+                ``config/NN``，可能与在跑任务竞态）。
             ValueError: 槽被占用且未确认覆盖，或回收条目不存在/内容为空。
         """
 
@@ -1494,6 +1526,7 @@ class AppConfig(GlobalConfig):
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
+        self._ensure_zzzod_install_unlocked(root)
         # 无用户上下文：任何绑定都算占用（回收池跨脚本，恢复目标不属于某个用户）
         try:
             occupant = self._zzzod_slot_occupant(root, script_id, None, slot_idx)
@@ -2185,7 +2218,37 @@ class AppConfig(GlobalConfig):
         action: str,
         exclude_same_script: bool = False,
     ) -> None:
-        """回收用户的绑定槽：归档进项目级回收池后删除槽目录（幂等）。
+        """回收用户的绑定槽（del_script 循环用；del_user 走 _zzzod_recycle_bound_slot）。"""
+
+        if user_uid not in script_config.UserData:
+            return
+        user_cfg = script_config.UserData[user_uid]
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        if slot <= 0:
+            return
+        name = str(user_cfg.get("Info", "Name") or "")
+        await self._zzzod_recycle_bound_slot(
+            script_id,
+            script_config,
+            user_uid,
+            slot,
+            name,
+            action=action,
+            exclude_same_script=exclude_same_script,
+        )
+
+    async def _zzzod_recycle_bound_slot(
+        self,
+        script_id: str,
+        script_config: ZzzOdConfig,
+        user_uid: uuid.UUID | None,
+        slot: int,
+        name: str,
+        *,
+        action: str,
+        exclude_same_script: bool = False,
+    ) -> None:
+        """回收一个已知的绑定槽：归档进项目级回收池后删除槽目录（幂等）。
 
         槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
         直控删实例还受绑定保护，用户/脚本删除后没有任何出口能清掉——只能在
@@ -2204,12 +2267,6 @@ class AppConfig(GlobalConfig):
 
         from app.task.ZzzOd.tools import recycle_mas_backups, recycle_slot
 
-        if user_uid not in script_config.UserData:
-            return
-        user_cfg = script_config.UserData[user_uid]
-        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
-        if slot <= 0:
-            return
         try:
             root = self._zzzod_root(script_config)
         except Exception:
@@ -2226,7 +2283,6 @@ class AppConfig(GlobalConfig):
         if occupant is not None:
             logger.warning(f"槽 {slot:02d} 仍被「{occupant}」占用，跳过回收")
             return
-        name = str(user_cfg.get("Info", "Name") or "")
         reason = f"{action} {name}".strip()
         # 归档 + 删目录是阻塞 IO（拷贝槽目录），放线程里跑
         try:
@@ -2788,16 +2844,25 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
 
         # ZzzOd：用户绑定槽挂在一条龙安装目录里，删除用户必须连带回收（归档后
-        # 删目录）——否则槽目录永久残留，还占着 idx 让新用户只能往后排
+        # 删目录）——否则槽目录永久残留，还占着 idx 让新用户只能往后排。
+        # 先捕获槽信息再移除：UserData.remove 在脚本锁定时抛错，回收若排在
+        # 它前面会「槽已物理删除、删除却被拒绝」，留下用户仍在的中间态
+        recycle_ctx: tuple[int, str] | None = None
         if (
             isinstance(script_config, ZzzOdConfig)
             and user_uid in script_config.UserData
         ):
-            await self._zzzod_recycle_user_slot(
-                script_id, script_config, user_uid, action="删除用户"
-            )
+            user_cfg = script_config.UserData[user_uid]
+            slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+            if slot > 0:
+                recycle_ctx = (slot, str(user_cfg.get("Info", "Name") or ""))
 
         await script_config.UserData.remove(user_uid)
+
+        if recycle_ctx is not None:
+            await self._zzzod_recycle_bound_slot(
+                script_id, script_config, user_uid, *recycle_ctx, action="删除用户"
+            )
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
         if user_data_dir.exists():

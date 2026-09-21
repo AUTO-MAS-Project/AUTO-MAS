@@ -762,7 +762,9 @@ def restore_recycle_slot(root: Path, slot_idx: int, ts: str) -> None:
     slot_dir = instance_dir(root, slot_idx)
     if slot_dir.is_dir():
         try:
-            archive_dir(slot_dir, store_root)
+            # force=True：存底不裁剪现存条目——否则恢复最旧一份时，本次存底
+            # 会把保留池挤满、恰好裁掉正要恢复的那条，restore_dir 报不存在
+            archive_dir(slot_dir, store_root, force=True)
         except Exception as e:
             raise ValueError(f"恢复前存底失败，已中止: {e}") from e
     restore_dir(store_root, ts, slot_dir)

@@ -91,8 +91,11 @@ def config_root_key(config_path: str | Path) -> str:
 
 
 def list_times(root: Path) -> list[str]:
-    """返回 ``root`` 下全部归档时间戳，时间倒序（目录名即时间戳）。
+    """返回 ``root`` 下的归档时间戳，时间倒序（目录名即时间戳）。
 
+    只接受本模块生成的时间戳目录名（``_TS_PATTERN``）——池内与时间戳目录
+    同级可能存在语义不同的子目录（如 ZzzOd 回收池槽桶内的 ``mas-backups``
+    备份池快照），混进列表会让去重恒失效、保留清理误裁真实快照。
     排序键按 ``(基础时间戳, 同秒顺延序号)`` 解析——同秒目录名带 ``-N``
     后缀，直接按字符串倒序会让 ``-10`` 排到 ``-9`` 之前（同秒归档超过
     9 次时 ``times[0]`` 不再是最新那份）。
@@ -110,7 +113,9 @@ def list_times(root: Path) -> list[str]:
         return (name, 0)
 
     return sorted(
-        (p.name for p in root.iterdir() if p.is_dir()), key=sort_key, reverse=True
+        (p.name for p in root.iterdir() if p.is_dir() and _TS_PATTERN.match(p.name)),
+        key=sort_key,
+        reverse=True,
     )
 
 
@@ -189,7 +194,7 @@ def _archive(
     times = list_times(store_root)
     if force:
         protect = frozenset(times) | protect
-        # 只与最新份比：存底时刻紧跟恢复/覆盖，当前现场若与任一历史条目
+        # 与任一历史条目比：存底时刻紧跟恢复/覆盖，当前现场若与任一历史条目
         # 一致，多出来的存底条目没有信息量，却会在 keep 清理时挤掉最旧的
         for ts in times:
             try:
