@@ -46,6 +46,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from collections.abc import Iterable
 from pathlib import Path
@@ -289,45 +290,94 @@ def _reconcile(
     if swept:
         logger.info(f"MFW 运行池回收：已清掉 staging 残留 {len(swept)} 个")
 
-    # D8：只有池里已无旧布局 runtime、当前身份的 base 已经建好、且本轮确实删了东西时
-    # 才清缓存。旧 runtime 还在等替换时不清、base 还没建时也不清（升级后第一次启动
-    # 就把旧布局全收割掉了，base 要靠这份缓存离线建出来）；什么都没删也不清（缓存里
-    # 没有新垃圾，白跑一次子进程）。
-    base_ready = all(
-        _runtime_usable(pool, runtime_id) for runtime_id in valid_runtime_ids
-    )
-    if (
-        not dry_run
-        and not remaining
-        and base_ready
-        and (deleted or bindings_deleted or swept)
-    ):
+    # D8：只有池里已无旧布局 runtime、当前身份的 base 已经建好时才清缓存。旧 runtime
+    # 还在等替换时不清、base 还没建时也不清（升级后第一次启动就把旧布局全收割掉了，
+    # base 要靠这份缓存离线建出来）。「有东西该清」这件事要**记在盘上**：升级后第一
+    # 轮删光旧布局时 base 还没建、清不了，等 base 建好的那一轮又什么都没删——只看
+    # 本轮删没删，缓存会永远留着（测试包上就这么留了 490 MB）。
+    removed_something = bool(deleted or bindings_deleted or cache_deleted or swept)
+    if dry_run:
+        return report
+    pending = _cache_clean_pending_path(pool.root)
+    if removed_something and not pending.exists():
         try:
-            cache = pool.clean_cache()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"MFW 运行池 uv 缓存清理失败: {exc}")
-        else:
-            report["cacheClean"] = cache
-            status = str(cache.get("status") or "unknown")
-            if status == "cleaned":
-                logger.info(
-                    "MFW 运行池 uv 缓存已清理: "
-                    f"removedFiles={int(cache.get('removedFiles') or 0)}, "
-                    f"removedBytes={int(cache.get('removedBytes') or 0)}"
-                )
-            elif status == "skipped":
-                # managed 安装：缓存是 Runtime 注入的共享目录，归它管。这里必须留痕，
-                # 否则用户在这类安装上看不到「旧 runtime 删了但包文件还在缓存里」。
-                logger.info(
-                    "MFW 运行池 uv 缓存未清理：缓存由 Runtime 注入共享，交给 Runtime 维护"
-                    f"（{cache.get('cachePath')}）"
-                )
-            elif status in {"error", "unavailable", "unsafe"}:
-                logger.warning(
-                    f"MFW 运行池 uv 缓存未清理: status={status}, "
-                    f"error={cache.get('error') or 'no detail'}"
-                )
+            pending.write_text(
+                json.dumps({"reason": reason, "markedAt": _now_text()}),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.debug(f"MFW 运行池：写缓存待清理标记失败: {exc}")
+    # 布局 v2 落地后每个池至少清一次：删旧布局那一轮可能跑在还不写标记的老代码上
+    # （测试包就是），那份缓存没有别的机会被清掉。清过一次记个戳，之后只看标记。
+    done_stamp = _cache_clean_done_path(pool.root)
+    first_clean_due = not done_stamp.exists() and _has_files(pool.root / "cache" / "uv")
+    if not (removed_something or pending.exists() or first_clean_due):
+        return report
+    if remaining:
+        logger.debug("MFW 运行池：仍有旧布局 runtime 待替换，uv 缓存留待下次清理")
+        return report
+    if not all(_runtime_usable(pool, runtime_id) for runtime_id in valid_runtime_ids):
+        logger.debug("MFW 运行池：当前身份的 base 尚未建好，uv 缓存留待下次清理")
+        return report
+    try:
+        cache = pool.clean_cache()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"MFW 运行池 uv 缓存清理失败: {exc}")
+        return report
+    report["cacheClean"] = cache
+    status = str(cache.get("status") or "unknown")
+    if status == "cleaned":
+        logger.info(
+            "MFW 运行池 uv 缓存已清理: "
+            f"removedFiles={int(cache.get('removedFiles') or 0)}, "
+            f"removedBytes={int(cache.get('removedBytes') or 0)}"
+        )
+    elif status == "skipped":
+        # managed 安装：缓存是 Runtime 注入的共享目录，归它管。这里必须留痕，
+        # 否则用户在这类安装上看不到「旧 runtime 删了但包文件还在缓存里」。
+        logger.info(
+            "MFW 运行池 uv 缓存未清理：缓存由 Runtime 注入共享，交给 Runtime 维护"
+            f"（{cache.get('cachePath')}）"
+        )
+    elif status in {"error", "unavailable", "unsafe"}:
+        logger.warning(
+            f"MFW 运行池 uv 缓存未清理: status={status}, "
+            f"error={cache.get('error') or 'no detail'}"
+        )
+    if status in {"cleaned", "absent", "skipped"}:
+        # 清过了 / 没有可清的 / 不归我们清：标记撤掉、记戳；出错的留着下次再试
+        try:
+            pending.unlink(missing_ok=True)
+            done_stamp.write_text(
+                json.dumps({"status": status, "cleanedAt": _now_text()}),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.debug(f"MFW 运行池：更新缓存清理标记失败: {exc}")
     return report
+
+
+def _cache_clean_pending_path(pool_root: Path) -> Path:
+    return Path(pool_root) / ".uv-cache-clean-pending"
+
+
+def _cache_clean_done_path(pool_root: Path) -> Path:
+    return Path(pool_root) / ".uv-cache-clean-done"
+
+
+def _has_files(directory: Path) -> bool:
+    if not directory.is_dir():
+        return False
+    for _dirpath, _dirs, files in os.walk(directory):
+        if files:
+            return True
+    return False
+
+
+def _now_text() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _runtime_usable(pool: Any, runtime_id: str) -> bool:
