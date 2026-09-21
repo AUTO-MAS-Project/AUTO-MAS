@@ -34,7 +34,6 @@ import maa as maa_package
 import numpy as np
 from maa.agent_client import AgentClient
 from maa.buffer import ImageBuffer
-from maa.context import ContextEventSink
 from maa.controller import (
     AdbController,
     Controller,
@@ -46,13 +45,20 @@ from maa.controller import (
     Win32Controller,
 )
 from maa.define import MaaImageBufferHandle, MaaSize
-from maa.event_sink import NotificationType
+from maa.event_sink import EventSink, NotificationType
 from maa.job import Job, JobWithResult
 from maa.library import Library
 from maa.resource import Resource, ResourceEventSink
 from maa.tasker import Tasker, TaskerEventSink
 from maa.toolkit import Toolkit
 from packaging.version import InvalidVersion, Version
+
+# 运行池里的 binding 版本由项目自己钉，池子没有版本下限：context sink 是 5.x 才有的
+# 类，导入失败时退回只用 tasker sink，不能让整个 runner 导入即炸。
+try:
+    from maa.context import ContextEventSink as _ContextEventSinkBase
+except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
+    _ContextEventSinkBase = None
 
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
@@ -1373,7 +1379,9 @@ class MaaFWRunner:
                 self.event_sinks.append(tasker_sink)
         except Exception as exc:
             self.send_log(f"注册 MaaFW tasker 日志监听失败: {exc}")
-        if not hasattr(self.tasker, "add_context_sink"):
+        if _ContextEventSinkBase is None or not hasattr(
+            self.tasker, "add_context_sink"
+        ):
             return
         try:
             context_sink = _MaaFWContextLogSink(self._on_node_notification)
@@ -2006,8 +2014,12 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         self.on_notification(msg, details)
 
 
-class _MaaFWContextLogSink(ContextEventSink):
-    """节点级通知（``Node.*``）的监听器：focus 文案与节点失败摘要都从这里来。"""
+class _MaaFWContextLogSink(_ContextEventSinkBase or EventSink):
+    """节点级通知（``Node.*``）的监听器：focus 文案与节点失败摘要都从这里来。
+
+    binding 没有 ContextEventSink 时基类退成 EventSink 只为让模块能导入；
+    那种情况下 ``_install_tasker_sink`` 根本不会实例化它。
+    """
 
     def __init__(self, on_notification: Callable[[str, dict[str, Any]], None]) -> None:
         super().__init__()
