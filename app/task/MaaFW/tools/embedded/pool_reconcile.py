@@ -289,6 +289,19 @@ def _reconcile(
         )
     if swept:
         logger.info(f"MFW 运行池回收：已清掉 staging 残留 {len(swept)} 个")
+    freed_bytes = int(report.get("freedBytes") or 0)
+    cache_shared_bytes = int(report.get("cacheSharedBytes") or 0)
+    if freed_bytes or cache_shared_bytes:
+        # 独占文件删了就腾出来；uv 从缓存硬链接进 venv 的那些要等清缓存那一行
+        logger.info(
+            f"MFW 运行池回收（{reason}）：{'将' if dry_run else '已'}释放 "
+            f"{_format_mb(freed_bytes)}"
+            + (
+                f"（另有 {_format_mb(cache_shared_bytes)} 与 uv 缓存共用，清缓存时释放）"
+                if cache_shared_bytes
+                else ""
+            )
+        )
 
     # D8：只有池里已无旧布局 runtime、当前身份的 base 已经建好时才清缓存。旧 runtime
     # 还在等替换时不清、base 还没建时也不清（升级后第一次启动就把旧布局全收割掉了，
@@ -327,10 +340,11 @@ def _reconcile(
     report["cacheClean"] = cache
     status = str(cache.get("status") or "unknown")
     if status == "cleaned":
+        removed_bytes = int(cache.get("removedBytes") or 0)
         logger.info(
-            "MFW 运行池 uv 缓存已清理: "
+            f"MFW 运行池 uv 缓存已清理，释放 {_format_mb(removed_bytes)}: "
             f"removedFiles={int(cache.get('removedFiles') or 0)}, "
-            f"removedBytes={int(cache.get('removedBytes') or 0)}"
+            f"removedBytes={removed_bytes}"
         )
     elif status == "skipped":
         # managed 安装：缓存是 Runtime 注入的共享目录，归它管。这里必须留痕，
@@ -355,6 +369,10 @@ def _reconcile(
         except OSError as exc:
             logger.debug(f"MFW 运行池：更新缓存清理标记失败: {exc}")
     return report
+
+
+def _format_mb(value: int) -> str:
+    return f"{value / (1024 * 1024):.1f} MB"
 
 
 def _cache_clean_pending_path(pool_root: Path) -> Path:

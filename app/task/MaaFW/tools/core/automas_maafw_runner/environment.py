@@ -20,20 +20,25 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    ExtraPackagesInstaller,
     MaaFWRuntimePool,
+    MaaFWRuntimePoolBusyError,
     RuntimeInstaller,
     build_runtime_id,
+    install_extra_packages,
     install_python_runtime,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
     BindingInfo,
     MaaFWBindingError,
     binding_environment_variables,
+    binding_index_candidates,
     ensure_binding,
     exact_version_of,
     release_binding,
     resolve_binding_version,
     retain_binding,
+    retained_versions,
     select_local_version,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
@@ -46,14 +51,14 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     install_cancel_scope,
     is_package_index_offline,
     raise_if_install_cancelled,
-    resolve_package_index_candidates,
 )
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
 #: base venv 的常量包集合：runner 三包自身的三方依赖 + maafw binding 的运行时依赖。
 #: ``maafw`` 本身不装进 venv——按版本存在 ``<pool>/bindings/``，worker 靠 PYTHONPATH
 #: 找到它（见 runtime_pool/binding.py）。集合是常量，所以一种宿主 Python 身份只有一套
-#: venv；binding 声明了这里没有的依赖时 prepare 直接报错（见 _check_binding_requires）。
+#: venv；某个版本的 binding 多声明了这里没有的发行包时，prepare 会在池锁内把它追加
+#: 装进 base（只新增不升级，manifest 记 ``extraPackages``，见 _check_binding_requires）。
 BASE_RUNTIME_PACKAGES = (
     "pydantic==2.11.7",
     "json5==0.14.0",
@@ -138,6 +143,7 @@ def prepare_runner_environment(
     runtime_pool_root: str | Path | None = None,
     runtime_pool: MaaFWRuntimePool | None = None,
     runtime_installer: RuntimeInstaller | None = None,
+    extras_installer: ExtraPackagesInstaller | None = None,
     runtime_pool_id: str | None = None,
     lease_owner: str = "automas-maafw-runner",
     lease_ttl_seconds: float | None = DEFAULT_RUNTIME_LEASE_TTL_SECONDS,
@@ -151,6 +157,7 @@ def prepare_runner_environment(
     ``managed_env_root`` remains accepted as the legacy pool-root argument.
     base venv 的身份只有常量包集合 + 宿主 Python 身份，所有项目共用；项目之间的差别
     只剩「用哪个版本的 binding」和「DLL 来自副本还是池」，都在返回值里。
+    ``extras_installer`` 只给测试注入：正式路径追加装包走 ``install_extra_packages``。
 
     ``cancel_event`` 置位后，正在跑的 uv/pip 安装子进程与 binding 下载会被终止，本函数
     以 ``MaaFWRuntimeInstallCancelled`` 结束且不会持有租约；半成品留在 staging 目录里
@@ -316,7 +323,29 @@ def prepare_runner_environment(
             send_log=send_log,
         )
     _raise_if_prepare_cancelled(cancel_event)
-    _check_binding_requires(runtime, binding)
+    extras = _check_binding_requires(runtime, binding)
+    if extras:
+        # 在拿自己的租约之前追加（拿了之后「无活租约」永远为假）
+        _report_environment_progress(
+            progress,
+            "installing_extras",
+            "running",
+            f"正在为 MaaFW binding v{binding.version} 追加安装依赖: {', '.join(extras)}",
+            percent=65.0,
+            runtime_id=resolved_runtime_id,
+        )
+        runtime = _install_binding_extras(
+            pool,
+            resolved_runtime_id,
+            binding,
+            extras,
+            cwd=project,
+            bootstrap_python=bootstrap_python,
+            extras_installer=extras_installer,
+            send_log=send_log,
+            cancel_event=cancel_event,
+        )
+        _raise_if_prepare_cancelled(cancel_event)
     _report_environment_progress(
         progress,
         "binding_ready",
@@ -402,7 +431,7 @@ def _ensure_project_binding(
 ) -> BindingInfo:
     """requirement → 精确版本（D14）→ ``ensure_binding``；错误改成给用户看的文案。"""
 
-    index_candidates = resolve_package_index_candidates()
+    index_candidates = binding_index_candidates()
     offline = is_package_index_offline()
     proxy_url = current_subprocess_proxy()
     try:
@@ -430,17 +459,24 @@ def _ensure_project_binding(
         raise RuntimeError(f"MaaFW binding 准备失败：{exc}") from exc
 
 
-def _check_binding_requires(runtime: Mapping[str, Any], binding: BindingInfo) -> None:
-    """binding 的 Requires-Dist 必须落在 base 常量集合里，且 base 已装的版本满足其 specifier。
+def _check_binding_requires(
+    runtime: Mapping[str, Any], binding: BindingInfo
+) -> list[str]:
+    """对账 binding 的 Requires-Dist 与 base 已装的包；返回要追加装进 base 的声明。
 
-    改常量集合是代码变更，不在运行期往共享 venv 里装东西（原地升级会撞正被别的
-    worker 映射着的 ``numpy._multiarray_umath.pyd``）。8 个官方版本的声明全一致，这里
-    只是把「哪天上游多要一个依赖」变成一条能看懂的错误，而不是 worker 起来才
-    ``ModuleNotFoundError``。
+    按发行名比 manifest 里的 freeze 结果（不是常量集合：pydantic 带进来的
+    ``typing-extensions`` 这类传递依赖也算已装）：
+
+    - 已装且版本满足 specifier → 什么都不做；
+    - 已装但版本**不满足** → 报错「请升级 AUTO-MAS」。改常量集合是代码变更，不在运行期
+      原地升级共享 venv（会撞正被别的 worker 映射着的 ``numpy._multiarray_umath.pyd``）；
+    - 没装的发行名 → 返回给调用方在池锁内追加安装（D2 ``extraPackages``，只新增）。
+
+    8 个官方版本的声明全一致（numpy / strenum / maaagentbinary），这里是「哪天上游
+    多要一个依赖」的前向钩子，而不是 worker 起来才 ``ModuleNotFoundError``。
     """
 
-    base_names = {requirement_distribution_name(item) for item in BASE_RUNTIME_PACKAGES}
-    installed: dict[str, str] = {}
+    installed: dict[str, str | None] = {}
     for item in runtime.get("resolvedRequirements") or []:
         text = str(item).split(";", 1)[0].strip()
         name = requirement_distribution_name(text)
@@ -449,11 +485,15 @@ def _check_binding_requires(runtime: Mapping[str, Any], binding: BindingInfo) ->
         try:
             parsed = Requirement(text)
         except InvalidRequirement:
+            installed.setdefault(name, None)
             continue
         specifiers = list(parsed.specifier)
         if len(specifiers) == 1 and specifiers[0].operator == "==":
             installed[name] = specifiers[0].version
+        else:
+            installed.setdefault(name, None)
     problems: list[str] = []
+    extras: list[str] = []
     for declared in binding.requires_dist:
         try:
             parsed = Requirement(str(declared).strip())
@@ -471,8 +511,12 @@ def _check_binding_requires(runtime: Mapping[str, Any], binding: BindingInfo) ->
         name = requirement_distribution_name(str(parsed))
         if not name:
             continue
-        if name not in base_names:
-            problems.append(f"{name}（不在 base 集合里）")
+        if name not in installed:
+            # 去掉标记后的声明原样交给 uv（extras / specifier 都保留）
+            parsed.marker = None
+            requirement_text = str(parsed)
+            if requirement_text not in extras:
+                extras.append(requirement_text)
             continue
         if not list(parsed.specifier):
             continue
@@ -486,10 +530,74 @@ def _check_binding_requires(runtime: Mapping[str, Any], binding: BindingInfo) ->
             continue
     if problems:
         raise RuntimeError(
-            f"maafw {binding.version} 的 binding 需要 base 运行环境里没有的依赖："
+            f"maafw {binding.version} 的 binding 需要 base 运行环境里没有的依赖版本："
             + "、".join(problems)
             + "；请升级 AUTO-MAS"
         )
+    return extras
+
+
+def _install_binding_extras(
+    pool: MaaFWRuntimePool,
+    runtime_id: str,
+    binding: BindingInfo,
+    extras: Sequence[str],
+    *,
+    cwd: Path,
+    bootstrap_python: str,
+    extras_installer: ExtraPackagesInstaller | None,
+    send_log: Callable[[str], None] | None,
+    cancel_event: threading.Event | None,
+) -> dict[str, Any]:
+    """把 binding 多声明的发行包追加装进 base（池锁内、只新增），返回刷新后的 runtime。
+
+    判据照 §2.2：base 无别的活租约（池里查）且本进程没人正引用着 binding（预检 /
+    prepare 后未 release 的运行）时才装；否则报「稍后再试」——base 正被别的 worker
+    用着，哪怕只是新增文件也不在它脚下动 site-packages。
+    """
+
+    declared = ", ".join(extras)
+    busy_hint = (
+        f"maafw {binding.version} 的 binding 需要追加安装 {declared}，"
+        "但共享的 base 运行环境正被其它任务使用，等它们结束后再试"
+    )
+    if retained_versions(pool.root):
+        raise RuntimeError(busy_hint)
+
+    def install(
+        python_executable: Path,
+        requirements: tuple[str, ...],
+        installed: tuple[str, ...],
+    ) -> Mapping[str, Any] | None:
+        with install_cancel_scope(cancel_event):
+            if extras_installer is not None:
+                return extras_installer(python_executable, requirements, installed)
+            return install_extra_packages(
+                python_executable,
+                requirements,
+                pool_root=pool.root,
+                installed=installed,
+                cwd=cwd,
+                bootstrap_python=bootstrap_python,
+                send_log=send_log,
+            )
+
+    try:
+        runtime = pool.install_extra_packages(runtime_id, extras, installer=install)
+    except MaaFWRuntimePoolBusyError as exc:
+        raise RuntimeError(f"{busy_hint}（{exc}）") from exc
+    except MaaFWRuntimeInstallCancelled:
+        raise
+    except Exception as exc:
+        raise RuntimeError(
+            f"maafw {binding.version} 的 binding 需要追加安装 {declared}，但安装失败"
+            f"（与 base 已装的包冲突、或索引上没有）：{exc}"
+        ) from exc
+    _send_log(
+        send_log,
+        f"[MaaFW Runner] 已为 binding maafw {binding.version} 追加安装 {declared}",
+    )
+    return runtime
 
 
 def release_runner_environment(

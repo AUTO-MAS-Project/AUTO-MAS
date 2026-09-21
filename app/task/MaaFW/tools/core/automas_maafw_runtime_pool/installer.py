@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -15,6 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
@@ -682,6 +684,93 @@ def install_python_runtime(
     }
 
 
+def install_extra_packages(
+    python_executable: Path,
+    requirements: Sequence[str],
+    *,
+    pool_root: Path,
+    installed: Sequence[str],
+    cwd: str | Path | None = None,
+    bootstrap_python: str | Path | None = None,
+    send_log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """往已发布的 base venv 追加装 binding 多要的发行包（D2 ``extraPackages``）。
+
+    只新增、不升级：``installed``（manifest 里的 freeze 结果）逐条钉成 ``name==version``
+    写进 constraints 文件，uv 解析时动不了它们——正被别的 worker 映射着的
+    ``numpy._multiarray_umath.pyd`` 不能原地换；新包要求的版本与已装的冲突时 uv
+    直接报错、一个文件都不写（两个 binding 的 extras 互斥就是这种情况）。装完重跑
+    base 自检，返回新的 freeze 结果给池写回 manifest。没有 uv 的 pip 路径不做
+    （只服务旧安装，见 ``_install_requirements_with_pip``）。
+    """
+
+    log = send_log or (lambda _: None)
+    bootstrap = str(bootstrap_python or sys.executable)
+    uv_executable = _find_uv_executable(bootstrap)
+    if uv_executable is None:
+        raise RuntimeError(
+            "MaaFW runtime 追加依赖失败：找不到 uv，不在 pip 建出的环境上追加安装"
+        )
+    resolved_cwd = Path(cwd).resolve() if cwd is not None else Path.cwd()
+    uv_cache_dir = resolve_uv_cache_dir(Path(pool_root))
+    uv_cache_dir.mkdir(parents=True, exist_ok=True)
+    pins = exact_pins(installed)
+    log(
+        "[MaaFW Runtime Pool] 追加安装 binding 依赖: "
+        + ", ".join(requirements)
+        + f"（已装的 {len(pins)} 个包钉死不动）"
+    )
+    with tempfile.TemporaryDirectory(
+        prefix="maafw-extra-", ignore_cleanup_errors=True
+    ) as scratch:
+        constraint_file = Path(scratch) / "constraints.txt"
+        constraint_file.write_text(
+            "".join(f"{pin}\n" for pin in pins), encoding="utf-8"
+        )
+        index_metadata = _install_requirements_with_uv(
+            uv_executable,
+            python_executable,
+            requirements,
+            cache_dir=uv_cache_dir,
+            link_mode=UV_LINK_MODE,
+            cwd=resolved_cwd,
+            upgrade=False,
+            constraint_file=constraint_file,
+        )
+    _verify_base_importable(python_executable)
+    resolved_requirements = _resolved_requirements_with_uv(
+        uv_executable,
+        python_executable,
+        cache_dir=uv_cache_dir,
+    )
+    result: dict[str, Any] = {
+        "resolvedRequirements": resolved_requirements,
+        "extraPackages": list(requirements),
+    }
+    if index_metadata:
+        result["index"] = dict(index_metadata)
+    return result
+
+
+def exact_pins(freeze_lines: Sequence[str]) -> list[str]:
+    """freeze 输出里能当 constraints 用的 ``name==version`` 行（``name @ url`` 之类跳过）。"""
+
+    pins: list[str] = []
+    for line in freeze_lines:
+        text = str(line).split(";", 1)[0].strip()
+        if not text or text.startswith("#"):
+            continue
+        try:
+            parsed = Requirement(text)
+        except InvalidRequirement:
+            continue
+        specifiers = list(parsed.specifier)
+        if parsed.url or len(specifiers) != 1 or specifiers[0].operator != "==":
+            continue
+        pins.append(f"{parsed.name}=={specifiers[0].version}")
+    return pins
+
+
 def _create_environment(
     environment_path: Path,
     bootstrap: str,
@@ -1285,8 +1374,13 @@ def _install_requirements_with_uv(
     cache_dir: Path,
     link_mode: str,
     cwd: Path,
+    upgrade: bool = True,
+    constraint_file: Path | None = None,
 ) -> dict[str, Any] | None:
     """按 ``resolve_package_index_candidates()`` 的顺序重试同一条安装命令。
+
+    ``upgrade=False`` + ``constraint_file`` 是往已发布的 base 追加装包的口径
+    （``install_extra_packages``）：已装的包全钉死在 constraints 里，uv 只能新增。
 
     Runtime 注入离线标记（见 ``is_package_index_offline()``）时优先级最高：
     只给 uv 传 ``--offline`` 跑一次，让它只从缓存解析、绝不联网，也不带任何
@@ -1323,7 +1417,8 @@ def _install_requirements_with_uv(
             str(cache_dir),
             "--link-mode",
             link_mode,
-            "--upgrade",
+            *(["--upgrade"] if upgrade else []),
+            *(["--constraint", str(constraint_file)] if constraint_file else []),
             "--quiet",
             *index_args,
             *requirements,

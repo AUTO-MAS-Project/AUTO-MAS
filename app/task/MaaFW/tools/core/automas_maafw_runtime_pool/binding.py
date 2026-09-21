@@ -656,6 +656,25 @@ def available_versions(
 # ---------------------------------------------------------------------------
 
 
+#: uv 自己认的显式索引变量：用户设了就只用它（与 ``installer._install_requirements_with_uv``
+#: 对 uv 安装 base 的旁路口径一致），不再轮换 AUTO-MAS 的候选列表。
+EXPLICIT_INDEX_ENVIRONMENT_KEYS: tuple[str, ...] = ("UV_INDEX_URL", "UV_DEFAULT_INDEX")
+
+
+def binding_index_candidates() -> list[str] | None:
+    """binding 下载用的索引候选：显式 ``UV_INDEX_URL`` / ``UV_DEFAULT_INDEX`` 优先且唯一，
+    否则走 ``resolve_package_index_candidates()``（``AUTO_MAS_UV_INDEX_URL`` + Runtime 注入的
+    镜像列表），都没有返回 None（调用方用 PyPI 默认）。"""
+
+    for key in EXPLICIT_INDEX_ENVIRONMENT_KEYS:
+        value = str(os.environ.get(key) or "").strip()
+        if value:
+            return [value]
+    from .installer import resolve_package_index_candidates
+
+    return resolve_package_index_candidates()
+
+
 def parse_maafw_requirement(requirement: str) -> Requirement:
     try:
         parsed = Requirement(str(requirement).strip())
@@ -1875,6 +1894,7 @@ __all__ = [
     "available_versions",
     "binding_directory",
     "binding_environment_variables",
+    "binding_index_candidates",
     "directory_version",
     "ensure_binding",
     "exact_version_of",

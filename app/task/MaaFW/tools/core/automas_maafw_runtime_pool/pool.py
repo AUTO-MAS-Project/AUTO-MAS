@@ -56,10 +56,20 @@ RuntimeInstaller = Callable[
     [Path, Sequence[str], dict[str, Any]],
     Mapping[str, Any] | None,
 ]
+#: 往已发布 base 追加装包的安装器：``(venv 的 python, 要装的声明, 已装的 freeze 行)``
+#: → 至少带 ``resolvedRequirements`` 的结果（见 ``installer.install_extra_packages``）。
+ExtraPackagesInstaller = Callable[
+    [Path, tuple[str, ...], tuple[str, ...]],
+    Mapping[str, Any] | None,
+]
 
 
 class _MaaFWRuntimeEntryStaleError(MaaFWRuntimePoolError):
     """Raised for a recoverable runtime entry that no longer resolves."""
+
+
+class MaaFWRuntimePoolBusyError(MaaFWRuntimePoolError):
+    """runtime 正被别的租约用着，这一刻不能对它做改动（追加装包）。"""
 
 
 class MaaFWRuntimePool:
@@ -385,6 +395,76 @@ class MaaFWRuntimePool:
             self._write_manifest(runtime_id, manifest)
             return self._augment_manifest(manifest)
 
+    def install_extra_packages(
+        self,
+        runtime_id: str,
+        requirements: Iterable[str],
+        *,
+        installer: ExtraPackagesInstaller,
+    ) -> dict[str, Any]:
+        """池锁内往已发布的 base 追加装包（D2 ``extraPackages``），身份不变。
+
+        某个版本的 binding 多声明了 base 常量集合里没有的发行包时走这里：
+        ``installer(python, 声明, 已装 freeze)`` 由调用方注入（正式路径是
+        ``installer.install_extra_packages``，只新增不升级），返回的
+        ``resolvedRequirements`` 覆盖 manifest 里的那份，声明记进
+        ``installerMetadata.extraPackages``；runtime id 由常量集合算出，不变。
+
+        有活租约（别的 worker 正用着这份 base）时拒绝，抛
+        ``MaaFWRuntimePoolBusyError``，调用方等它们结束再来；持池锁全程，
+        ``ensure`` / ``clean_cache`` / 回收不会插进来。
+        """
+
+        wanted = tuple(
+            dict.fromkeys(
+                str(item).strip() for item in requirements if str(item).strip()
+            )
+        )
+        if not wanted:
+            raise MaaFWRuntimePoolError("no extra packages were requested")
+        with self._lock:
+            self._initialize()
+            manifest = self._read_manifest(runtime_id)
+            payload = self._augment_manifest(
+                manifest, verify_python=True, include_size=False
+            )
+            active = list(payload.get("activeLeaseIds") or [])
+            if active:
+                raise MaaFWRuntimePoolBusyError(
+                    f"runtime {runtime_id} is leased by {len(active)} holder(s); "
+                    "extra packages cannot be installed while it is in use"
+                )
+            python_executable = Path(str(payload["pythonExecutable"]))
+            installed = tuple(
+                str(item) for item in manifest.get("resolvedRequirements") or []
+            )
+            result = dict(installer(python_executable, wanted, installed) or {})
+            resolved = _normalize_string_list(
+                result.pop("resolvedRequirements", None)
+                or result.pop("resolved_requirements", None),
+                "resolvedRequirements",
+            )
+            if not resolved:
+                raise MaaFWRuntimePoolError(
+                    "extra packages installer did not report resolvedRequirements"
+                )
+            raw_metadata = manifest.get("installerMetadata")
+            installer_metadata = (
+                dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
+            )
+            extras = [
+                str(item)
+                for item in installer_metadata.get("extraPackages") or []
+                if str(item)
+            ]
+            extras.extend(item for item in wanted if item not in extras)
+            installer_metadata["extraPackages"] = extras
+            manifest["resolvedRequirements"] = resolved
+            manifest["installerMetadata"] = _json_compatible(installer_metadata)
+            manifest["lastUsedAt"] = format_time(utc_now())
+            self._write_manifest(runtime_id, manifest)
+            return self._augment_manifest(manifest, include_size=False)
+
     def pin(self, runtime_id: str, pinned: bool = True) -> dict[str, Any]:
         with self._lock:
             manifest = self._read_manifest(runtime_id)
@@ -568,6 +648,22 @@ class MaaFWRuntimePool:
             errors: list[dict[str, str]] = []
             harvested: list[dict[str, str]] = []
             remaining_legacy: list[str] = []
+            # §2.7：回收日志要报释放了多少。独占字节删了就腾出来；与 uv 缓存硬链接
+            # 共用的那部分要等清缓存，单独一笔。dry_run 时是「将释放」。
+            freed_bytes = 0
+            cache_shared_bytes = 0
+
+            def account(
+                footprint: tuple[int, int], residue: Path | None = None
+            ) -> None:
+                nonlocal freed_bytes, cache_shared_bytes
+                exclusive, shared = footprint
+                if residue is not None:
+                    left_exclusive, left_shared = _directory_footprint(residue)
+                    exclusive = max(0, exclusive - left_exclusive)
+                    shared = max(0, shared - left_shared)
+                freed_bytes += exclusive
+                cache_shared_bytes += shared
 
             def binding_ready(version: str) -> bool:
                 if not version:
@@ -630,16 +726,20 @@ class MaaFWRuntimePool:
                     if not is_base:
                         remaining_legacy.append(runtime_id)
                     continue
+                footprint = _directory_footprint(path)
                 if dry_run:
                     deleted.append(runtime_id)
+                    account(footprint)
                     continue
                 outcome, detail = self._reclaim_runtime_dir(runtime_id)
                 if outcome == "deleted":
                     deleted.append(runtime_id)
+                    account(footprint)
                 elif outcome == "quarantined":
                     # 已经不在 runtimes/ 里、不再是可用的 runtime，但盘上还有残留
                     deleted.append(runtime_id)
                     quarantined.append({"runtimeId": runtime_id, "path": detail})
+                    account(footprint, Path(detail))
                 else:
                     skipped.append({"runtimeId": runtime_id, "error": detail})
                     if not is_base:
@@ -689,15 +789,19 @@ class MaaFWRuntimePool:
                             {"entry": label, "reasons": sorted(reasons)}
                         )
                         continue
+                    footprint = _directory_footprint(child)
                     if dry_run:
                         bindings_deleted.append(label)
+                        account(footprint)
                         continue
                     outcome, detail = self._reclaim_directory(child)
                     if outcome == "deleted":
                         bindings_deleted.append(label)
+                        account(footprint)
                     elif outcome == "quarantined":
                         bindings_deleted.append(label)
                         quarantined.append({"entry": label, "path": detail})
+                        account(footprint, Path(detail))
                     else:
                         skipped.append({"entry": label, "error": detail})
 
@@ -710,11 +814,12 @@ class MaaFWRuntimePool:
                     if version and version in (needed_bindings | retained):
                         continue
                     try:
-                        modified = datetime.fromtimestamp(
-                            archive.stat().st_mtime, tz=timezone.utc
-                        )
+                        archive_stat = archive.stat()
                     except OSError:
                         continue
+                    modified = datetime.fromtimestamp(
+                        archive_stat.st_mtime, tz=timezone.utc
+                    )
                     if modified > cutoff and version not in replaced:
                         continue
                     if not dry_run:
@@ -726,23 +831,40 @@ class MaaFWRuntimePool:
                             )
                             continue
                     cache_deleted.append(f"source:{archive.name}")
+                    account(
+                        (0, archive_stat.st_size)
+                        if archive_stat.st_nlink > 1
+                        else (archive_stat.st_size, 0)
+                    )
             wheel_cache = self.root / "cache" / "binding-wheels"
             if wheel_cache.is_dir() and not wheel_cache.is_symlink():
+                footprint = _directory_footprint(wheel_cache)
                 if not dry_run:
                     outcome, detail = self._reclaim_directory(wheel_cache)
                     if outcome == "skipped":
                         skipped.append(
                             {"entry": "cache:binding-wheels", "error": detail}
                         )
+                    elif outcome == "quarantined":
+                        cache_deleted.append("cache:binding-wheels")
+                        quarantined.append(
+                            {"entry": "cache:binding-wheels", "path": detail}
+                        )
+                        account(footprint, Path(detail))
                     else:
                         cache_deleted.append("cache:binding-wheels")
+                        account(footprint)
                 else:
                     cache_deleted.append("cache:binding-wheels")
+                    account(footprint)
 
             staging_swept: list[str] = []
             staging_residue: list[str] = []
             if not dry_run:
-                staging_swept, staging_residue = self._sweep_staging()
+                staging_swept, staging_residue, staging_footprint = (
+                    self._sweep_staging()
+                )
+                account(staging_footprint)
             return {
                 "dryRun": bool(dry_run),
                 "graceSeconds": float(grace_seconds),
@@ -763,6 +885,9 @@ class MaaFWRuntimePool:
                 "remainingLegacy": sorted(remaining_legacy),
                 "stagingSwept": staging_swept,
                 "stagingResidue": staging_residue,
+                # 独占文件删掉即释放；与 uv 缓存硬链接共用的那部分要等清缓存才释放
+                "freedBytes": freed_bytes,
+                "cacheSharedBytes": cache_shared_bytes,
             }
 
     def _harvest_legacy_runtime(
@@ -876,20 +1001,22 @@ class MaaFWRuntimePool:
             return "deleted", ""
         return "quarantined", str(quarantine_dir)
 
-    def _sweep_staging(self) -> tuple[list[str], list[str]]:
+    def _sweep_staging(self) -> tuple[list[str], list[str], tuple[int, int]]:
         """清掉 ``.staging`` 里遗留的半成品 / 隔离目录。
 
-        返回 ``(本轮清空的条目名, 仍有残留的条目名)``。只在持有池锁时调用：
-        ``ensure`` 的安装与 binding 的换入全程也持有同一把锁，所以这里看到的每个
-        ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目都不再有人用
-        （安装失败没删干净的、隔离后 rmtree 半途而废的、下载到一半的 wheel）。
+        返回 ``(本轮清空的条目名, 仍有残留的条目名, (释放的独占字节, 与缓存共用的字节))``。
+        只在持有池锁时调用：``ensure`` 的安装与 binding 的换入全程也持有同一把锁，所以
+        这里看到的每个 ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目
+        都不再有人用（安装失败没删干净的、隔离后 rmtree 半途而废的、下载到一半的 wheel）。
         仍删不掉的（DLL 还被映射着）留到下次。
         """
 
         swept: list[str] = []
         residue: list[str] = []
+        freed = 0
+        shared = 0
         if not self.staging_root.is_dir():
-            return swept, residue
+            return swept, residue, (freed, shared)
         for path in sorted(self.staging_root.iterdir()):
             if path.is_symlink():
                 continue
@@ -898,16 +1025,24 @@ class MaaFWRuntimePool:
             if path.is_file():
                 # binding 下载到一半的 .whl
                 try:
+                    size = path.stat().st_size
                     path.unlink()
                     swept.append(path.name)
+                    freed += size
                 except OSError:
                     residue.append(path.name)
                 continue
+            exclusive, linked = _directory_footprint(path)
             if remove_tree_best_effort(path):
                 swept.append(path.name)
+                freed += exclusive
+                shared += linked
             else:
                 residue.append(path.name)
-        return swept, residue
+                left_exclusive, left_linked = _directory_footprint(path)
+                freed += max(0, exclusive - left_exclusive)
+                shared += max(0, linked - left_linked)
+        return swept, residue, (freed, shared)
 
     def _initialize(self) -> None:
         # Validate every managed child before reading or upgrading the marker so
@@ -1661,8 +1796,17 @@ def _is_within(path: Path, base_dir: Path) -> bool:
         return False
 
 
-def _directory_size(path: Path) -> int:
-    total = 0
+def _directory_footprint(path: Path) -> tuple[int, int]:
+    """``(独占字节, 与别处共用的字节)``，按硬链接数分。
+
+    池里的 venv 是 uv 从 ``cache/uv`` 硬链接出来的：删掉目录时只剩这一个链接
+    （``st_nlink == 1``）的文件才真的腾出磁盘，还挂在缓存（或另一份旧 venv）上的
+    要等 ``uv cache clean`` 才释放，回收日志里两笔要分开报。只有 ``os.stat`` 会填
+    ``st_nlink``（Windows 上 ``DirEntry.stat()`` 恒为 0），别换成 scandir 的结果。
+    """
+
+    exclusive = 0
+    shared = 0
     for directory, directory_names, file_names in os.walk(path):
         directory_path = Path(directory)
         directory_names[:] = [
@@ -1671,8 +1815,17 @@ def _directory_size(path: Path) -> int:
         for name in file_names:
             file_path = directory_path / name
             try:
-                if not file_path.is_symlink():
-                    total += file_path.stat().st_size
+                if file_path.is_symlink():
+                    continue
+                stat = file_path.stat()
             except OSError:
                 continue
-    return total
+            if stat.st_nlink > 1:
+                shared += stat.st_size
+            else:
+                exclusive += stat.st_size
+    return exclusive, shared
+
+
+def _directory_size(path: Path) -> int:
+    return sum(_directory_footprint(path))
