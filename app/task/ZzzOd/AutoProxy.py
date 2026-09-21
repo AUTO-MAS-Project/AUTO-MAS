@@ -66,7 +66,6 @@ from app.task.proxy_helpers import (
     read_config_source,
     split_args,
     user_uses_direct_control,
-    user_uses_quick_config,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
@@ -592,42 +591,6 @@ class AutoProxyTask(TaskExecuteBase):
             self._idx_names[slot] = str(cfg.get("Info", "Name") or "")
         self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
 
-    async def _prepare_direct_quick_config(self) -> None:
-        """直控+快速配置：任务前把该用户面板字段写入绑定实例槽，任务后恢复。
-
-        复用用户态注入原语（ensure_user_slot 解析/分配绑定槽 → 槽目录备份 →
-        由用户配置字段生成 YAML 写入槽），与 ``_prepare_injection`` 共用
-        ``_injected_slots``/``_slot_users`` 现场与 ``_restore_injection`` 恢复路径
-        （无合成视图：直控裸跑走原生注册表，恢复只还原槽目录）。
-
-        绑定槽缺失时按 zzz-od 固定槽形状建空槽（注入原语自动创建
-        game_account.yml / one_dragon/_group.yml），不建平行模型。
-        写失败（含槽备份失败）异常向上传播即任务失败（S5），不吞异常。
-        """
-
-        used_idxs = collect_used_slot_idxs(exclude_uids={self.cur_user_uid})
-        slot = await ensure_user_slot(
-            self.script_root_path, self.cur_user_config, used_idxs
-        )
-        backup_base = (
-            Path.cwd() / "data" / self.script_info.script_id / "Temp" / "InstanceBackup"
-        )
-        backup_dir = backup_base / f"{slot:02d}"
-        if instance_dir(self.script_root_path, slot).is_dir():
-            backup_instance(self.script_root_path, slot, backup_dir)
-            self._injected_slots.append((slot, backup_dir))
-        else:
-            # 槽目录不存在：以固定槽形状建空槽（注入原语创建配置文件）
-            self._injected_slots.append((slot, None))
-        self._inject_user_config(slot, self.cur_user_config, self._enabled_app_list())
-        self._slot_users[slot] = (self.cur_user_item, self.cur_user_config)
-        self._slot_records_before[slot] = snapshot_run_records(
-            self.script_root_path, slot
-        )
-        logger.info(
-            f"ZZZ-OD 直控快速配置：已把用户 {self.cur_user_item.name} 面板字段写入绑定槽 {slot:02d}"
-        )
-
     def _write_view(self) -> None:
         """（重）写合成注册表视图：仅本脚本注入槽，活跃=首槽。
 
@@ -805,11 +768,8 @@ class AutoProxyTask(TaskExecuteBase):
                     for item in list_instances(self.script_root_path)
                     if isinstance(item, dict)
                 }
-                # 直控+快速配置开启：任务前把该用户面板字段（Game/OneDragon）
-                # 复用用户态注入原语写入绑定实例槽（任务结束由既有注入快照
-                # 恢复）；关闭=纯原生裸跑零写入。写失败异常向上传播即任务失败。
-                if user_uses_quick_config(self.cur_user_config):
-                    await self._prepare_direct_quick_config()
+                # 直控=MAS 零注入零干涉（快速配置已封锁，见 ZzzOdUserConfig.load），
+                # 完全尊重 zzz-od 自己的 instance_run / 活跃实例 / 多账号运行设置
                 launcher_args = ["--onedragon"]
             else:
                 if self._is_multi_account():
