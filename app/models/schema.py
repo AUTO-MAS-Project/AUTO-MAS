@@ -479,6 +479,71 @@ class ZzzOdInstanceDeleteIn(BaseModel):
     instanceIdx: int = Field(..., description="目标实例下标")
 
 
+class ZzzOdSlotOwnerOut(BaseModel):
+    """实例槽的 MAS 归属（哪个脚本的哪个用户占着这个号）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    scriptName: str = Field(..., description="所属脚本名称")
+    userName: str = Field(..., description="用户名称")
+    mode: str = Field(..., description="该用户的配置来源（脚本/用户/直控）")
+
+
+class ZzzOdSlotOut(BaseModel):
+    """实例槽总览行（原生实例 / MAS 绑定槽 / 无主残留）"""
+
+    idx: int = Field(..., description="槽下标（config/{idx:02d}）")
+    kind: str = Field(
+        ...,
+        description="槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）",
+    )
+    has_dir: bool = Field(
+        ..., description="盘上是否已有该槽目录（只配了用户没跑过的槽没有目录）"
+    )
+    size: int = Field(default=0, description="槽目录占用字节数（无目录为 0）")
+    owners: List[ZzzOdSlotOwnerOut] = Field(
+        default_factory=list, description="绑定该槽的 MAS 用户（可为多个脚本）"
+    )
+
+
+class ZzzOdSlotsOut(OutBase):
+    data: List[ZzzOdSlotOut] = Field(..., description="实例槽总览")
+
+
+class ZzzOdSlotCleanIn(BaseModel):
+    """手动清理无主实例槽（先归档进回收池再删目录）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ZzzOdSlotCleanOut(OutBase):
+    data: List[int] = Field(..., description="实际回收的槽下标")
+
+
+class ZzzOdRecycleEntryOut(BaseModel):
+    """回收池条目（槽内容或该槽 MAS 备份池的一份快照）"""
+
+    slot: int = Field(..., description="槽下标")
+    kind: str = Field(
+        ..., description="条目类别（slot=槽目录快照 / mas=MAS 备份池快照）"
+    )
+    ts: str = Field(..., description="快照时间戳（归档目录名）")
+    files: int = Field(..., description="快照内文件数")
+    size: int = Field(..., description="快照占用字节数")
+
+
+class ZzzOdRecycleOut(OutBase):
+    data: List[ZzzOdRecycleEntryOut] = Field(..., description="回收池条目")
+
+
+class ZzzOdRecycleRestoreIn(BaseModel):
+    """把回收池里的一条槽快照恢复到该槽号"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    slot: int = Field(..., description="目标槽下标")
+    ts: str = Field(..., description="快照时间戳")
+    force: bool = Field(default=False, description="目标槽被占用时是否确认覆盖")
+
+
 class ZzzOdCatalogItemOut(BaseModel):
     """一条龙任务目录项（静态解析应用注册信息）"""
 

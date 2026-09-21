@@ -335,6 +335,119 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
+        <div class="form-section">
+          <a-collapse
+            v-model:activeKey="slotPanelKeys"
+            ghost
+            class="slot-manage"
+            @change="handleSlotPanelChange"
+          >
+            <a-collapse-panel key="slots">
+              <template #header>
+                <h3 class="slot-manage-title">
+                  {{ t('edit.zzzodSlotsManage') }}
+                  <a-tooltip :title="t('edit.zzzodSlotsManageHint')">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </h3>
+              </template>
+              <div class="slot-manage-actions">
+                <a-space :size="8">
+                  <a-button size="small" :loading="slotsLoading" @click="loadSlotView">
+                    <template #icon><ReloadOutlined /></template>
+                    {{ t('edit.zzzodSlotsRefresh') }}
+                  </a-button>
+                  <a-button
+                    size="small"
+                    danger
+                    :loading="slotsLoading"
+                    @click="confirmCleanOrphanSlots"
+                  >
+                    <template #icon><ClearOutlined /></template>
+                    {{ t('edit.zzzodSlotsClean') }}
+                  </a-button>
+                </a-space>
+              </div>
+              <a-tabs v-model:activeKey="slotTab" size="small">
+                <a-tab-pane key="slots" :tab="t('edit.zzzodSlotTabSlots')">
+                  <a-table
+                    size="small"
+                    row-key="idx"
+                    :columns="slotColumns"
+                    :data-source="slots"
+                    :loading="slotsLoading"
+                    :pagination="false"
+                    :locale="{ emptyText: t('edit.zzzodSlotEmpty') }"
+                  >
+                    <template #bodyCell="{ column, record }">
+                      <template v-if="column.key === 'idx'">
+                        {{ String(record.idx).padStart(2, '0') }}
+                      </template>
+                      <template v-else-if="column.key === 'kind'">
+                        <a-tag :color="slotKindColor(record.kind)">
+                          {{ slotKindLabel(record.kind) }}
+                        </a-tag>
+                      </template>
+                      <template v-else-if="column.key === 'owner'">
+                        {{ slotOwnerText(record) }}
+                      </template>
+                      <template v-else-if="column.key === 'dir'">
+                        {{
+                          record.has_dir ? t('edit.zzzodSlotHasDir') : t('edit.zzzodSlotNoDir')
+                        }}
+                      </template>
+                      <template v-else-if="column.key === 'size'">
+                        {{ formatSlotSize(record.size) }}
+                      </template>
+                    </template>
+                  </a-table>
+                </a-tab-pane>
+                <a-tab-pane key="recycle" :tab="recycleTabLabel">
+                  <a-typography-text type="secondary" class="slot-manage-hint">
+                    {{ t('edit.zzzodRecycleHint') }}
+                  </a-typography-text>
+                  <a-table
+                    size="small"
+                    row-key="key"
+                    :columns="recycleColumns"
+                    :data-source="recycleRows"
+                    :loading="recycleLoading"
+                    :pagination="false"
+                    :locale="{ emptyText: t('edit.zzzodRecycleEmpty') }"
+                  >
+                    <template #bodyCell="{ column, record }">
+                      <template v-if="column.key === 'slot'">
+                        {{ String(record.slot).padStart(2, '0') }}
+                      </template>
+                      <template v-else-if="column.key === 'kind'">
+                        {{ recycleKindLabel(record.kind) }}
+                      </template>
+                      <template v-else-if="column.key === 'ts'">
+                        {{ formatArchiveTs(record.ts) }}
+                      </template>
+                      <template v-else-if="column.key === 'size'">
+                        {{ formatSlotSize(record.size) }}
+                      </template>
+                      <template v-else-if="column.key === 'ops'">
+                        <a-button
+                          v-if="record.kind === 'slot'"
+                          size="small"
+                          type="link"
+                          @click="confirmRestoreRecycle(record)"
+                        >
+                          {{ t('edit.zzzodRecycleRestore') }}
+                        </a-button>
+                        <span v-else>—</span>
+                      </template>
+                    </template>
+                  </a-table>
+                </a-tab-pane>
+              </a-tabs>
+            </a-collapse-panel>
+          </a-collapse>
+        </div>
       </a-form>
     </a-card>
   </ConfigLockPanel>
@@ -348,9 +461,12 @@ import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
+  ClearOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons-vue'
+import { Service, type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 
@@ -567,6 +683,182 @@ const selectRootPath = async () => {
   await applyRootPathDefaults(normalized)
 }
 
+// ══ 实例槽管理（默认折叠，首次展开时才请求）══
+// 槽目录是 MAS 分配在一条龙安装目录里的 config/{idx:02d}，一条龙注册表与 GUI
+// 都看不到；这份对照表用于看清「槽目录数与用户数对不上」（绑定但没跑过的槽没有
+// 目录），回收池则是被删用户/脚本留下的槽内容与备份池快照（可恢复到原槽号）
+const slotPanelKeys = ref<string[]>([])
+const slotLoaded = ref(false)
+const slotTab = ref('slots')
+const slots = ref<ZzzOdSlotOut[]>([])
+const slotsLoading = ref(false)
+const recycleRows = ref<Array<ZzzOdRecycleEntryOut & { key: string }>>([])
+const recycleLoading = ref(false)
+
+const slotColumns = computed(() => [
+  { title: t('edit.zzzodSlotColIdx'), key: 'idx', width: 72 },
+  { title: t('edit.zzzodSlotColKind'), key: 'kind', width: 110 },
+  { title: t('edit.zzzodSlotColOwner'), key: 'owner' },
+  { title: t('edit.zzzodSlotColDir'), key: 'dir', width: 80 },
+  { title: t('edit.zzzodSlotColSize'), key: 'size', width: 96 },
+])
+
+const recycleColumns = computed(() => [
+  { title: t('edit.zzzodRecycleColSlot'), key: 'slot', width: 72 },
+  { title: t('edit.zzzodRecycleColKind'), key: 'kind', width: 100 },
+  { title: t('edit.zzzodRecycleColTime'), key: 'ts', width: 170 },
+  { title: t('edit.zzzodRecycleColFiles'), key: 'files', width: 72 },
+  { title: t('edit.zzzodRecycleColSize'), key: 'size', width: 96 },
+  { title: t('edit.zzzodRecycleColOps'), key: 'ops', width: 88 },
+])
+
+const recycleTabLabel = computed(() =>
+  recycleRows.value.length
+    ? `${t('edit.zzzodSlotTabRecycle')} (${recycleRows.value.length})`
+    : t('edit.zzzodSlotTabRecycle')
+)
+
+const slotKindLabel = (kind: string) =>
+  kind === 'native'
+    ? t('edit.zzzodSlotKindNative')
+    : kind === 'mas'
+      ? t('edit.zzzodSlotKindMas')
+      : t('edit.zzzodSlotKindOrphan')
+
+const slotKindColor = (kind: string) =>
+  kind === 'native' ? 'default' : kind === 'mas' ? 'processing' : 'warning'
+
+const slotOwnerText = (slot: ZzzOdSlotOut) =>
+  slot.owners?.length
+    ? slot.owners.map(item => `${item.userName}（${item.scriptName}）`).join('、')
+    : '—'
+
+const recycleKindLabel = (kind: string) =>
+  kind === 'mas' ? t('edit.zzzodRecycleKindMas') : t('edit.zzzodRecycleKindSlot')
+
+const formatSlotSize = (size: number) =>
+  size >= 1024 * 1024
+    ? `${(size / 1024 / 1024).toFixed(1)} MB`
+    : size >= 1024
+      ? `${(size / 1024).toFixed(1)} KB`
+      : `${size} B`
+
+/** 归档时间戳（目录名 20260921-225131）→ 2026-09-21 22:51:31 */
+const formatArchiveTs = (ts: string) =>
+  `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`
+
+const loadSlots = async () => {
+  slotsLoading.value = true
+  try {
+    const resp = await Service.getZzzodSlotsApiApiScriptsZzzodSlotsGet(scriptId)
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.zzzodSlotsLoadFailed'))
+    }
+    slots.value = resp.data || []
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error(e instanceof Error ? e.message : t('edit.zzzodSlotsLoadFailed'))
+  } finally {
+    slotsLoading.value = false
+  }
+}
+
+const loadRecycle = async () => {
+  recycleLoading.value = true
+  try {
+    const resp = await Service.getZzzodRecycleApiApiScriptsZzzodRecycleGet(scriptId)
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.zzzodSlotsLoadFailed'))
+    }
+    recycleRows.value = (resp.data || []).map(item => ({
+      ...item,
+      key: `${item.slot}-${item.kind}-${item.ts}`,
+    }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    recycleLoading.value = false
+  }
+}
+
+/** 刷新实例槽与回收池（首次展开、清理/恢复后调用） */
+const loadSlotView = async () => {
+  await Promise.all([loadSlots(), loadRecycle()])
+}
+
+/** 折叠面板首次展开时才请求：非常用功能，不进页面首屏 */
+const handleSlotPanelChange = (keys: string[] | string) => {
+  const opened = Array.isArray(keys) ? keys.length > 0 : Boolean(keys)
+  if (opened && !slotLoaded.value) {
+    slotLoaded.value = true
+    void loadSlotView()
+  }
+}
+
+const cleanOrphanSlots = async () => {
+  slotsLoading.value = true
+  try {
+    const resp = await Service.cleanZzzodSlotsApiApiScriptsZzzodSlotsCleanPost({
+      scriptId,
+    })
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.zzzodSlotsCleanFailed'))
+    }
+    message.success(t('edit.zzzodSlotsCleanDone', { count: (resp.data || []).length }))
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : t('edit.zzzodSlotsCleanFailed'))
+  } finally {
+    slotsLoading.value = false
+    await loadSlotView()
+  }
+}
+
+/** 清理无主槽：内容会先归档到回收池，仍属破坏性操作，需二次确认 */
+const confirmCleanOrphanSlots = () => {
+  const count = slots.value.filter(item => item.kind === 'orphan' && item.has_dir).length
+  if (!count) {
+    message.info(t('edit.zzzodSlotsCleanNone'))
+    return
+  }
+  Modal.confirm({
+    title: t('edit.zzzodSlotsClean'),
+    content: t('edit.zzzodSlotsCleanConfirm', { count }),
+    okText: t('edit.zzzodSlotsClean'),
+    okButtonProps: { danger: true },
+    onOk: () => cleanOrphanSlots(),
+  })
+}
+
+const restoreRecycle = async (entry: ZzzOdRecycleEntryOut) => {
+  try {
+    const resp = await Service.restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost({
+      scriptId,
+      slot: entry.slot,
+      ts: entry.ts,
+    })
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.zzzodRecycleRestoreFailed'))
+    }
+    message.success(t('edit.zzzodRecycleRestoreDone', { slot: entry.slot }))
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : t('edit.zzzodRecycleRestoreFailed'))
+  } finally {
+    await loadSlotView()
+  }
+}
+
+/** 恢复槽快照是覆盖性操作（目标槽被占用时后端会拒绝），需二次确认 */
+const confirmRestoreRecycle = (entry: ZzzOdRecycleEntryOut) => {
+  Modal.confirm({
+    title: t('edit.zzzodRecycleRestore'),
+    content: t('edit.zzzodRecycleRestoreConfirm', {
+      slot: String(entry.slot).padStart(2, '0'),
+    }),
+    okText: t('edit.zzzodRecycleRestore'),
+    onOk: () => restoreRecycle(entry),
+  })
+}
+
 onMounted(loadScript)
 </script>
 
@@ -689,6 +981,38 @@ onMounted(loadScript)
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 24px;
+}
+
+/* 实例槽管理：折叠面板标题与其它 section 标题同节奏，展开区不套卡片 */
+.slot-manage :deep(.ant-collapse-header) {
+  padding: 0 0 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.slot-manage :deep(.ant-collapse-content-box) {
+  padding: 12px 0 0;
+}
+
+.slot-manage-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slot-manage-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.slot-manage-hint {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
 }
 
 @media (max-width: 768px) {

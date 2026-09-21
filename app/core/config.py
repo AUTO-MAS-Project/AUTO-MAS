@@ -1419,6 +1419,77 @@ class AppConfig(GlobalConfig):
         logger.info(f"ZZZ-OD 直控删除实例: {instance_idx:02d}")
         return self.get_zzzod_instances(script_id)
 
+    def get_zzzod_slots(self, script_id: str) -> list[dict]:
+        """实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（含未落盘的绑定）。
+
+        槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
+        「槽目录数为什么和用户数对不上」只能靠这份对照表看清：``kind`` 与
+        ``hasDir`` 一起看——绑定但没跑过的用户是「mas 且无目录」。
+
+        Raises:
+            ConfigCorruptedError: 一条龙注册表不可读（原生名单缺失，不能把
+                原生实例误标成无主残留）。
+        """
+
+        from app.task.ZzzOd.AutoProxy import collect_slot_owners
+        from app.task.ZzzOd.tools import list_slot_overview
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        return list_slot_overview(root, collect_slot_owners(root))
+
+    def clean_zzzod_slots(self, script_id: str) -> list[int]:
+        """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
+
+        与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
+        被任一 ZzzOd 用户绑定的槽不动）。直控用户显式发起即可，不受「直控
+        零写入」约束——那条约束管的是 MAS 在运行期间自行写安装目录。
+        """
+
+        from app.task.ZzzOd.AutoProxy import recycle_unbound_slots
+
+        script_config = self._zzzod_script_config(script_id)
+        return recycle_unbound_slots(self._zzzod_root(script_config))
+
+    def get_zzzod_recycle(self, script_id: str) -> list[dict]:
+        """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
+
+        from app.task.ZzzOd.tools import list_recycle_entries
+
+        script_config = self._zzzod_script_config(script_id)
+        return list_recycle_entries(self._zzzod_root(script_config))
+
+    def restore_zzzod_recycle(
+        self, script_id: str, slot_idx: int, ts: str, *, force: bool = False
+    ) -> None:
+        """把回收池里的一条槽快照恢复到该槽号（恢复前自动存底当前内容）。
+
+        恢复是覆盖性操作：目标槽被原生实例或任一 ZzzOd 用户占用时拒绝；
+        ``force=True`` 表示用户已确认覆盖（仍先存底，误恢复可找回）。
+
+        Raises:
+            ValueError: 槽被占用且未确认覆盖，或回收条目不存在/内容为空。
+        """
+
+        from app.task.ZzzOd.tools import restore_recycle_slot
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        # 无用户上下文：任何绑定都算占用（回收池跨脚本，恢复目标不属于某个用户）
+        try:
+            occupant = self._zzzod_slot_occupant(root, script_id, None, slot_idx)
+        except ConfigCorruptedError:
+            if not force:
+                raise
+            occupant = None
+        if occupant is not None and not force:
+            raise ValueError(
+                f"槽 {slot_idx:02d} 当前被「{occupant}」占用，恢复会覆盖其内容，"
+                "请先处理占用后再试"
+            )
+        restore_recycle_slot(root, slot_idx, ts)
+        logger.info(f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到快照 {ts}")
+
     def _zzzod_user(
         self, script_id: str, user_id: str
     ) -> tuple[ZzzOdConfig, Path, ZzzOdUserConfig, uuid.UUID]:
@@ -2032,7 +2103,7 @@ class AppConfig(GlobalConfig):
         }
 
     def _zzzod_slot_occupant(
-        self, root: Path, script_id: str, user_uid: uuid.UUID, slot: int
+        self, root: Path, script_id: str, user_uid: uuid.UUID | None, slot: int
     ) -> str | None:
         """判定目标实例槽当前被谁占用（返回可读描述；空闲/仅本用户时 None）。
 
@@ -2041,7 +2112,8 @@ class AppConfig(GlobalConfig):
         指向本安装的脚本——槽目录按安装目录隔离，别的安装的同号槽互不相干。
         注册表源走原生原件（合成视图在盘时读 sidecar），与备份口径一致。
         仅本用户绑定或槽目录虽在但无人认领（孤儿槽）视为空闲——孤儿槽可被
-        恢复重新认领。
+        恢复重新认领。``user_uid=None`` 表示不排除任何用户（回收池恢复这类
+        没有用户上下文的场景：任何绑定都算占用）。
         """
 
         from app.task.ZzzOd.tools import read_native_registry

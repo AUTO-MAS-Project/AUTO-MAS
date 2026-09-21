@@ -301,22 +301,59 @@ def collect_used_slot_idxs(
     return used
 
 
-def recycle_unbound_slots(root: Path) -> None:
-    """回收盘上无人绑定的实例槽（运行/会话前调用，失败只告警不阻断）。
+def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
+    """按安装根分桶收集槽的 MAS 归属（idx → 归属列表）。
+
+    与 :func:`collect_used_slot_idxs` 同口径（只算指向同一份安装的脚本），
+    但带出脚本/用户名与配置来源，供实例槽总览展示「这个号被谁占着」。
+    **绑定但盘上无目录的槽也要能列出来**——那正是「槽目录数与用户数对不上」
+    时最需要看到的一行（没跑过的用户只有绑定号、没有目录）。
+    """
+
+    key = config_root_key(root)
+    owners: dict[int, list[dict]] = {}
+    for script_uid, script_config in Config.ScriptConfig.items():
+        if not isinstance(script_config, ZzzOdConfig):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if not script_root or config_root_key(script_root) != key:
+            continue
+        script_name = str(script_config.get("Info", "Name") or "")
+        for uid, cfg in script_config.UserData.items():
+            bound = int(cfg.get("Info", "SlotIdx") or -1)
+            if bound <= 0:
+                continue
+            owners.setdefault(bound, []).append(
+                {
+                    "scriptId": str(script_uid),
+                    "scriptName": script_name,
+                    "userName": str(cfg.get("Info", "Name") or ""),
+                    "mode": str(cfg.get("Info", "Mode") or "用户"),
+                }
+            )
+    return owners
+
+
+def recycle_unbound_slots(root: Path) -> list[int]:
+    """回收盘上无人绑定的实例槽（运行/会话前与手动清理共用）。
 
     绑定集合取全部 ZzzOd 用户（**不排除**本次要注入/会话的用户）：排除会把
-    它们正在用的槽当孤儿回收，槽里的配队等随即丢失。回收在
-    ``ensure_user_slot`` 之前，腾出的号本轮即可复用。直控态不调用——直控是
-    纯原生裸跑，MAS 不往安装目录里删东西。
+    它们正在用的槽当孤儿回收，槽里的配队等随即丢失。在 ``ensure_user_slot``
+    之前调用时，腾出的号本轮即可复用。直控态不自动调用——直控是纯原生裸跑，
+    MAS 不往安装目录里删东西；手动清理是用户显式发起的动作，不受此限。
+
+    Returns:
+        实际回收的槽下标（失败只告警，不阻断运行/会话）。
     """
 
     try:
         removed = recycle_orphan_slots(root, collect_used_slot_idxs(root))
     except Exception as e:
         logger.opt(exception=True).warning(f"孤儿实例槽回收失败: {e}")
-        return
+        return []
     if removed:
         logger.info(f"已回收 {len(removed)} 个未绑定的实例槽: {removed}")
+    return removed
 
 
 def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:

@@ -36,6 +36,8 @@ from .backup_archive import (
     get_onedragon_backup_dir,
     list_mas_backups,
     list_onedragon_backups,
+    list_recycle_entries,
+    list_slot_overview,
     mas_backup_root,
     materialize_user_applist,
     materialize_user_fields,
@@ -47,6 +49,7 @@ from .backup_archive import (
     recycle_slot,
     restore_mas_backup,
     restore_onedragon_backup,
+    restore_recycle_slot,
 )
 from .catalog import list_app_catalog
 from .compendium import (
@@ -163,6 +166,8 @@ __all__ = [
     "list_instances",
     "list_mas_backups",
     "list_onedragon_backups",
+    "list_recycle_entries",
+    "list_slot_overview",
     "lost_void_challenge_options",
     "lost_void_missions",
     "MAS_USER_INFO_FILE",
@@ -200,6 +205,7 @@ __all__ = [
     "restore_instance_view",
     "restore_mas_backup",
     "restore_onedragon_backup",
+    "restore_recycle_slot",
     "save_native_account_fields",
     "save_native_after_done",
     "save_native_instance_run",

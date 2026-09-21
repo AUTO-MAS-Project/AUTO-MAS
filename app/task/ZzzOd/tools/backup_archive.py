@@ -639,3 +639,119 @@ def recycle_mas_backups(
     force_rmtree(pool)
     logger.info(f"槽 {slot_idx:02d} 的 MAS 备份池已归档到回收池（{reason}）")
     return True
+
+
+# ══════════════════ 实例槽总览与回收池查看 ══════════════════
+
+
+def _dir_size(directory: Path) -> int:
+    """目录内文件总字节数（总览展示占用用；单个文件读不到不影响合计）。"""
+
+    total = 0
+    for path in directory.rglob("*"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def list_slot_overview(root: Path, owners: dict[int, list[dict]]) -> list[dict]:
+    """盘上实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（按槽号升序）。
+
+    元素含 ``idx`` / ``kind`` / ``has_dir`` / ``size`` / ``owners``。
+    ``kind``：``native``=一条龙原生注册表里的实例；``mas``=有 MAS 用户绑定；
+    ``orphan``=盘上有目录但既非原生也无人绑定（回收对象）。``owners`` 由
+    调用方按同一份安装（:func:`config_root_key`）收集后传入——本模块不感知
+    MAS 用户结构。**绑定但盘上无目录的槽也会出现**（``has_dir=False``）：
+    那正是「槽目录数与用户数对不上」时最该看到的一行。
+
+    Raises:
+        ConfigCorruptedError: 注册表不可读——原生名单缺失，不能把原生实例
+            误标成孤儿。
+    """
+
+    native = native_slot_idxs(root)
+    bound = {int(i) for i in owners}
+    entries: list[dict] = []
+    for idx in sorted(native | set(list_slot_idxs(root)) | bound):
+        slot_dir = instance_dir(root, idx)
+        has_dir = slot_dir.is_dir()
+        if idx in native:
+            kind = "native"
+        elif idx in bound:
+            kind = "mas"
+        else:
+            kind = "orphan"
+        entries.append(
+            {
+                "idx": idx,
+                "kind": kind,
+                "has_dir": has_dir,
+                "size": _dir_size(slot_dir) if has_dir else 0,
+                "owners": owners.get(idx, []),
+            }
+        )
+    return entries
+
+
+def _recycle_entry(slot_idx: int, kind: str, directory: Path) -> dict:
+    """回收池一条记录（槽号 / 类别 / 时间戳 / 文件数 / 字节数）。"""
+
+    return {
+        "slot": slot_idx,
+        "kind": kind,
+        "ts": directory.name,
+        "files": len(dir_files(directory)),
+        "size": _dir_size(directory),
+    }
+
+
+def list_recycle_entries(root: Path) -> list[dict]:
+    """回收池条目（按时间戳倒序，含槽目录快照与 mas 备份池快照两类）。
+
+    布局：``recycle/{安装根指纹}/{slot:02d}/{ts}``（槽目录快照）与
+    ``.../{slot:02d}/mas-backups/{ts}``（该槽的 MAS 备份池快照）。目录名
+    不符合本模块布局的一律跳过。
+    """
+
+    pool_root = project_backup_root() / "recycle" / config_root_key(root)
+    if not pool_root.is_dir():
+        return []
+    entries: list[dict] = []
+    for slot_dir in sorted(pool_root.iterdir()):
+        if not slot_dir.is_dir() or not slot_dir.name.isdigit():
+            continue
+        slot = int(slot_dir.name)
+        # 只认本模块生成的时间戳目录名：同级的 mas-backups 不是槽快照
+        entries.extend(
+            _recycle_entry(slot, "slot", slot_dir / ts)
+            for ts in list_times(slot_dir)
+            if get_backup_dir(slot_dir, ts) is not None
+        )
+        entries.extend(
+            _recycle_entry(slot, "mas", slot_dir / "mas-backups" / ts)
+            for ts in list_times(slot_dir / "mas-backups")
+        )
+    return sorted(entries, key=lambda item: (item["ts"], item["slot"]), reverse=True)
+
+
+def restore_recycle_slot(root: Path, slot_idx: int, ts: str) -> None:
+    """把回收池里的槽目录快照恢复到 ``config/{slot:02d}``（先存底当前内容）。
+
+    恢复是覆盖性操作，占用守卫由调用方负责（槽被原生实例或 MAS 用户占用时
+    需用户确认）。当前槽内容先按同一套归档进回收池——误恢复可找回。
+
+    Raises:
+        ValueError: 回收条目不存在或内容为空。
+    """
+
+    store_root = recycle_backup_root(root, slot_idx)
+    slot_dir = instance_dir(root, slot_idx)
+    if slot_dir.is_dir():
+        try:
+            archive_dir(slot_dir, store_root)
+        except Exception as e:
+            raise ValueError(f"恢复前存底失败，已中止: {e}") from e
+    restore_dir(store_root, ts, slot_dir)
