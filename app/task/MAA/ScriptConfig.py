@@ -46,6 +46,92 @@ from .tools.backup_archive import (
 
 logger = get_logger("MAA 脚本设置")
 
+# 配置会话注入的启动编排项：(文件, 路径, 注入值)。配置会话只让用户调设置，
+# 不该自动跑任务、拉模拟器或拉游戏，所以这些项在会话期间强制关闭；会话结束
+# 回写时逐项还原成会话前的值，绝不写进 base——它们是会话级的运行编排，
+# 不是用户配置。StartGame 关掉后 MAA 打开就是可配置状态，用户不必先终止队列。
+_SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "RuntimeSettings", "StartGame"),
+        False,
+    ),
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "StartUpSettings", "RunDirectly"),
+        False,
+    ),
+    (
+        "gui.new.json",
+        ("Configurations", "Default", "Gui", "StartUpSettings", "StartEmulator"),
+        False,
+    ),
+    ("gui.json", ("Configurations", "Default", "Start.StartGame"), "False"),
+    ("gui.json", ("Configurations", "Default", "Start.RunDirectly"), "False"),
+    (
+        "gui.json",
+        ("Configurations", "Default", "Start.OpenEmulatorAfterLaunch"),
+        "False",
+    ),
+)
+
+
+def _dig(doc: dict, path: tuple[str, ...]) -> tuple[dict, str] | None:
+    """按路径取出 (父容器, 末键)；中间层不存在时返回 None。"""
+
+    node: object = doc
+    for key in path[:-1]:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    if not isinstance(node, dict):
+        return None
+    return node, path[-1]
+
+
+def _apply_session_startup_overrides(
+    docs: dict[str, dict],
+) -> dict[str, list[tuple[tuple[str, ...], object | None]]]:
+    """把启动编排项强制成配置会话的值，返回各项的会话前原值（供回写还原）。"""
+
+    restore: dict[str, list[tuple[tuple[str, ...], object | None]]] = {}
+    for name, path, value in _SESSION_STARTUP_OVERRIDES:
+        doc = docs.get(name)
+        if doc is None:
+            continue
+        located = _dig(doc, path)
+        if located is None:
+            continue
+        parent, key = located
+        restore.setdefault(name, []).append((path, deepcopy(parent.get(key))))
+        parent[key] = value
+    return restore
+
+
+def _restore_session_startup_overrides(
+    docs: dict[str, dict],
+    restore: dict[str, list[tuple[tuple[str, ...], object | None]]],
+) -> None:
+    """把配置会话强制过的启动编排项还原为会话前的值。
+
+    用户在 MAA 里改动这些项不会保留（它们是会话级编排，不进 base），
+    其余一切用户修改原样写回。
+    """
+
+    for name, entries in restore.items():
+        doc = docs.get(name)
+        if doc is None:
+            continue
+        for path, original in entries:
+            located = _dig(doc, path)
+            if located is None:
+                continue
+            parent, key = located
+            if original is None:
+                parent.pop(key, None)
+            else:
+                parent[key] = original
+
 
 class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式
@@ -60,6 +146,11 @@ class ScriptConfigTask(TaskExecuteBase):
 
     _maa_config_baseline: dict[str, dict] | None = None
     """set_maa 写盘快照；final_task 以此甄别用户的 GUI 修改。"""
+
+    _session_startup_restore: (
+        dict[str, list[tuple[tuple[str, ...], object | None]]] | None
+    ) = None
+    """配置会话强制过的启动编排项及其会话前原值，回写时逐项还原。"""
 
     def __init__(
         self,
@@ -180,7 +271,6 @@ class ScriptConfigTask(TaskExecuteBase):
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
-        default_set = gui_set["Configurations"]["Default"]
 
         # GUI 直接展示 base（MAA 自己的日常任务配置）：下发前只做一次布局校对，
         # 队列数量或顺序对不上就整队按默认布局重建，用户把队列改坏也能自愈。
@@ -191,29 +281,11 @@ class ScriptConfigTask(TaskExecuteBase):
             _normalize_maa_task_queue(source_queue)
         )
 
-        # 任务间切换方式
-        default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
-        # NEW: PostActions [Flags] 枚举 None=0
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {})["PostActions"] = 0
-
-        # 不直接运行任务
-        default_set["Start.StartGame"] = "True"  # OLD: 即将移除
-        default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
-        # NEW:
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("RuntimeSettings", {})["StartGame"] = True
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})["RunDirectly"] = False
-        gui_new_set.setdefault("Configurations", {}).setdefault(
-            "Default", {}
-        ).setdefault("Gui", {}).setdefault("StartUpSettings", {})[
-            "StartEmulator"
-        ] = False
+        # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
+        # 可配置状态（用户不必先终止队列）。这些是会话级覆盖，回写时还原成原值。
+        self._session_startup_restore = _apply_session_startup_overrides(
+            {"gui.json": gui_set, "gui.new.json": gui_new_set}
+        )
 
         # 关闭所有定时
         for i in range(1, 9):
@@ -290,6 +362,10 @@ class ScriptConfigTask(TaskExecuteBase):
             if not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
                 continue
+            # 先还原会话强制过的启动编排项：它们是会话级覆盖，不能写进 base
+            entries = (self._session_startup_restore or {}).get(name)
+            if entries:
+                _restore_session_startup_overrides({name: current}, {name: entries})
             for configurations in (current.get("Configurations") or {}).values():
                 if isinstance(configurations, dict):
                     queue = configurations.get("TaskQueue")
