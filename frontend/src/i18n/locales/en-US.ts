@@ -2228,6 +2228,8 @@ export default {
       'Slot contents left by deleted users/scripts and by manual cleaning are archived here (grouped by slot, shared across scripts). To roll back a config while the user still exists, use Config restore on the user page.',
     zzzodRecycleEmpty: 'The recycle pool is empty',
     zzzodRecycleRestore: 'Restore',
+    zzzodRecycleOpen: 'Open',
+    zzzodRecycleOpenFailed: 'Could not open the directory',
     zzzodRecycleRestoreConfirm:
       'Overwrite slot {slot} with this snapshot? The current content is archived first; slots held by a native instance or a user are rejected.',
     zzzodRecycleRestoreDone: 'Slot {slot} restored',

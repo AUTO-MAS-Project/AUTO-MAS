@@ -529,6 +529,7 @@ class ZzzOdRecycleEntryOut(BaseModel):
     ts: str = Field(..., description="快照时间戳（归档目录名）")
     files: int = Field(..., description="快照内文件数")
     size: int = Field(..., description="快照占用字节数")
+    path: str = Field(..., description="归档目录的绝对路径（可在文件管理器打开）")
 
 
 class ZzzOdRecycleOut(OutBase):

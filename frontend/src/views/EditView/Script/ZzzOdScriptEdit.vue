@@ -434,15 +434,23 @@
                         {{ formatSlotSize(record.size) }}
                       </template>
                       <template v-else-if="column.key === 'ops'">
-                        <a-button
-                          v-if="record.kind === 'slot'"
-                          size="small"
-                          type="link"
-                          @click="confirmRestoreRecycle(record)"
-                        >
-                          {{ t('edit.zzzodRecycleRestore') }}
-                        </a-button>
-                        <span v-else>—</span>
+                        <a-space :size="4">
+                          <a-button
+                            size="small"
+                            type="link"
+                            @click="openRecycleFolder(record)"
+                          >
+                            {{ t('edit.zzzodRecycleOpen') }}
+                          </a-button>
+                          <a-button
+                            v-if="record.kind === 'slot'"
+                            size="small"
+                            type="link"
+                            @click="confirmRestoreRecycle(record)"
+                          >
+                            {{ t('edit.zzzodRecycleRestore') }}
+                          </a-button>
+                        </a-space>
                       </template>
                     </template>
                   </a-table>
@@ -833,6 +841,19 @@ const confirmCleanOrphanSlots = () => {
     okButtonProps: { danger: true },
     onOk: () => cleanOrphanSlots(),
   })
+}
+
+/** 在文件管理器里打开回收条目的归档目录（便于核对或手动找回文件） */
+const openRecycleFolder = async (entry: ZzzOdRecycleEntryOut) => {
+  try {
+    if (!window.electronAPI?.openFile) return
+    const result = await window.electronAPI.openFile(entry.path)
+    if (result && !result.success) {
+      message.error(result.error || t('edit.zzzodRecycleOpenFailed'))
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 const restoreRecycle = async (entry: ZzzOdRecycleEntryOut) => {

@@ -697,7 +697,7 @@ def list_slot_overview(root: Path, owners: dict[int, list[dict]]) -> list[dict]:
 
 
 def _recycle_entry(slot_idx: int, kind: str, directory: Path) -> dict:
-    """回收池一条记录（槽号 / 类别 / 时间戳 / 文件数 / 字节数）。"""
+    """回收池一条记录（槽号 / 类别 / 时间戳 / 文件数 / 字节数 / 绝对路径）。"""
 
     return {
         "slot": slot_idx,
@@ -705,6 +705,7 @@ def _recycle_entry(slot_idx: int, kind: str, directory: Path) -> dict:
         "ts": directory.name,
         "files": len(dir_files(directory)),
         "size": _dir_size(directory),
+        "path": str(directory),
     }
 
 

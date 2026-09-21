@@ -26,5 +26,9 @@ export type ZzzOdRecycleEntryOut = {
      * 快照占用字节数
      */
     size: number;
+    /**
+     * 归档目录的绝对路径（可在文件管理器打开）
+     */
+    path: string;
 };
 

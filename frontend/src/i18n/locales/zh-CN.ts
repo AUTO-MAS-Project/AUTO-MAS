@@ -2113,6 +2113,8 @@ export default {
       '被删除的用户/脚本与手动清理掉的槽内容都归档在这里（按槽号归池、跨脚本共享）；用户还在时想回滚配置，请用该用户页的「配置恢复」。',
     zzzodRecycleEmpty: '回收池为空',
     zzzodRecycleRestore: '恢复',
+    zzzodRecycleOpen: '查看',
+    zzzodRecycleOpenFailed: '打开目录失败',
     zzzodRecycleRestoreConfirm:
       '用这份快照覆盖槽 {slot} 的内容？当前内容会先归档存底；该槽被原生实例或用户占用时会被拒绝。',
     zzzodRecycleRestoreDone: '槽 {slot} 已恢复',
