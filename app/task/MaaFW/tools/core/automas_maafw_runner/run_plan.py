@@ -30,6 +30,7 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
     MaaFWTaskPresetSnapshot,
+    _build_option_defaults,
     build_interface_preset_snapshot,
     normalize_snapshot,
     normalize_task_execution_payload,
@@ -133,6 +134,7 @@ def build_maafw_run_plan(
         resource_name=resource.name,
     )
     i18n_mapping = _load_i18n_mapping(resolved_base_dir, interface)
+    option_defaults, _ = _build_option_defaults(interface.option)
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
     skipped_tasks: list[MaaFWSkippedTaskPlan] = []
@@ -176,6 +178,9 @@ def build_maafw_run_plan(
                 pipelineOverride=pipeline_override,
                 logOptions=_build_task_log_options(interface, options),
                 overrideNodes=list(pipeline_override),
+                nonDefaultOptions=_build_non_default_options(
+                    interface, options, option_defaults, i18n_mapping
+                ),
             )
         )
 
@@ -208,6 +213,7 @@ def build_maafw_run_plan(
         piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
         skippedTasks=skipped_tasks,
+        i18n=i18n_mapping,
     )
 
 
@@ -543,6 +549,82 @@ def _build_task_log_options(
             key=option_name,
         )
     return safe_options
+
+
+def _build_non_default_options(
+    interface_model: MaaFWInterface,
+    options: dict[str, Any],
+    option_defaults: dict[str, Any],
+    i18n_mapping: dict[str, Any],
+) -> dict[str, Any]:
+    """挑出与 interface 默认值不同的选项，键值换成给人看的标签。
+
+    默认值口径与 ``task_config._build_option_defaults`` 完全一致：select 类比
+    ``default_case``，checkbox 比集合，input 的默认永远是空串（填了就算非默认），
+    hotkey 比默认键位。脱敏规则与完整配置行相同：敏感项只显示 ``<已配置>``。
+    ``options`` 里未在 interface 声明的键（旧配置残留）原样带出，宁多勿漏。
+    """
+
+    result: dict[str, Any] = {}
+    for option_name, value in options.items():
+        option = interface_model.option.get(option_name)
+        if _is_default_option_value(option, value, option_defaults.get(option_name)):
+            continue
+        label = (
+            _resolve_i18n_label(option.label, option_name, i18n_mapping)
+            if option is not None
+            else option_name
+        )
+        result[label] = _sanitize_config_log_value(
+            _display_option_value(option, value, i18n_mapping),
+            redact_all=bool(option and option.type == "input"),
+            key=option_name,
+        )
+    return result
+
+
+def _is_default_option_value(
+    option: MaaFWOption | None, value: Any, default: Any
+) -> bool:
+    if option is None or default is None:
+        return False
+    if option.type == "checkbox":
+        if not isinstance(value, list) or not isinstance(default, list):
+            return value == default
+        return set(map(str, value)) == set(map(str, default))
+    if option.type == "input":
+        if isinstance(value, dict):
+            return all(not str(item or "").strip() for item in value.values())
+        return not str(value or "").strip()
+    return value == default
+
+
+def _display_option_value(
+    option: MaaFWOption | None, value: Any, i18n_mapping: dict[str, Any]
+) -> Any:
+    """把 case 名换成 case 标签；input / hotkey 的字典按输入项标签展开。"""
+
+    if option is None:
+        return value
+    if option.type in {"select", "scan_select", "switch", "checkbox"}:
+        case_labels = {
+            case.name: _resolve_i18n_label(case.label, case.name, i18n_mapping)
+            for case in option.cases or []
+        }
+        if isinstance(value, list):
+            return [case_labels.get(str(item), str(item)) for item in value]
+        return case_labels.get(str(value), value)
+    if isinstance(value, dict):
+        item_labels = {
+            item.name: _resolve_i18n_label(item.label, item.name, i18n_mapping)
+            for item in [*(option.inputs or []), *(option.hotkeys or [])]
+        }
+        return {
+            item_labels.get(str(key), str(key)): item
+            for key, item in value.items()
+            if option.type != "input" or str(item or "").strip()
+        }
+    return value
 
 
 def _sanitize_config_log_value(

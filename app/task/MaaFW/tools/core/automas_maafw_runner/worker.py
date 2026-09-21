@@ -59,8 +59,17 @@ else:
     from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult
 
 
+_EMIT_LOCK = threading.Lock()
+
+
 def _emit(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    # 一行一次 write 并加锁：focus 文案和失败摘要来自框架回调线程，和主线程的
+    # 日志并发写 stdout；print 是内容、换行两次 write，会把两条 JSON 粘成一行，
+    # 宿主 json.loads 失败就整行当框架噪声丢掉。
+    line = json.dumps(payload, ensure_ascii=False) + "\n"
+    with _EMIT_LOCK:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def _emit_log(message: str) -> None:
