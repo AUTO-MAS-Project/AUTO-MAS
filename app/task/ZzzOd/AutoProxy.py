@@ -91,6 +91,8 @@ from .tools import (
     list_app_catalog,
     list_instances,
     push_notification,
+    read_game_account,
+    read_instance_run,
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
@@ -429,6 +431,47 @@ class AutoProxyTask(TaskExecuteBase):
 
         return self.mode == "直控"
 
+    def _direct_missing_game_paths(self, root: Path) -> list[str]:
+        """直控运行目标实例中未配置游戏路径的实例名（空=全部可运行）。
+
+        直控=原生裸跑、MAS 零注入，游戏路径只可能来自目标实例的
+        ``game_account.yml``；缺失时一条龙会以「未配置游戏路径」整体失败，
+        这里提前拦截并指明是哪个实例。目标随原生 ``instance_run`` 而定：
+        全部实例=所有参与运行的实例，其余（含空值等非法值）=活跃实例——
+        与上游 ``handle_init`` 的判定及 ``instance_list_in_od`` /
+        ``current_active_instance`` 同口径，只有**键缺失**才按上游默认取
+        「全部实例」。读不动或条目结构异常的实例不误判为未配置，交由
+        一条龙自身报错。
+        """
+
+        run_mode = read_instance_run(root)
+        if run_mode is None:  # 键缺失：上游默认「全部实例」
+            run_mode = INSTANCE_RUN_ALL
+        if run_mode == INSTANCE_RUN_ALL:
+            targets = [
+                item for item in list_instances(root) if item.get("active_in_od")
+            ]
+        else:
+            targets = []
+        if not targets:
+            active = find_active_instance(root)
+            targets = [active] if active is not None else []
+
+        missing: list[str] = []
+        for item in targets:
+            try:
+                idx = int(item.get("idx", -1))
+                if idx <= 0:
+                    continue
+                game_path = str(
+                    read_game_account(instance_dir(root, idx)).get("game_path") or ""
+                ).strip()
+            except Exception:
+                continue
+            if not game_path:
+                missing.append(str(item.get("name") or f"{idx:02d}"))
+        return missing
+
     def _push_log_enabled(self) -> bool:
         """节点详情采集开关：触发用户或（多实例切换时）任一启用用户未关闭即采集。"""
 
@@ -687,6 +730,15 @@ class AutoProxyTask(TaskExecuteBase):
                     return "用户剩余天数为 0, 跳过该用户"
         elif find_active_instance(root) is None:
             return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
+        else:
+            # 直控裸跑读原生实例配置，路径缺失时一条龙只会以「未配置游戏路径」
+            # 失败，这里提前给出可读提示并指明实例
+            missing = self._direct_missing_game_paths(root)
+            if missing:
+                return (
+                    f"实例 {'、'.join(missing)} 未配置游戏路径, "
+                    "请在一条龙「账户管理」中设置"
+                )
 
         return "Pass"
 
