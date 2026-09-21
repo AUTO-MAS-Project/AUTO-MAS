@@ -35,8 +35,8 @@ jobs:
 
       - name: 检查 Python 格式
         run: |
-          python -m pip install ruff==0.15.14
-          ruff format --check .
+          uv sync --locked
+          uv run --no-sync ruff format --check .
 
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v7.0.0
