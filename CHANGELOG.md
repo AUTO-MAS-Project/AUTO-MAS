@@ -30,6 +30,12 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 修复
+
+- 【HSR】修复脚本直控忽略日常/周常超时设置、固定 120 分钟后才终止卡住脚本的问题 (#936) by @qiyinxi
+
 ## [v5.5.0-beta.7] - 2026-09-20
 
 ### 新增
@@ -348,6 +354,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.7...dev
 [v5.5.0-beta.7]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.6...v5.5.0-beta.7
 [v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...v5.5.0-beta.6
 [v5.5.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.4...v5.5.0-beta.5
