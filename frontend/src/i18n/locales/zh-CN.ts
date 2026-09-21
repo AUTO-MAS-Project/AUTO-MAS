@@ -353,8 +353,7 @@ export default {
     maaCustomInfrastFileHint: '从 MAA 导出的自定义基建 JSON 文件',
     maaCustomInfrastPlan: '自定义基建排班',
     maaCustomInfrastPlanHint: '从已导入的配置中选择当前使用的排班',
-    maaCustomInfrastPlanHintPeriod:
-      '排班表含时间段，自动模式按时间段换班；选择具体班次将从该班开始轮换',
+    maaCustomInfrastPlanHintPeriod: '排班表含时间段，由 MAA 按时间段自动换班，不支持手选班次',
     maaCustomInfrastPlanHintRotate:
       '排班表无时间段，「自动换班」从第一班起顺序轮换；选择具体班次将从该班开始轮换',
     maaCustomInfrastPlanHintMixed: '排班表时段配置不一致，运行时将使用普通基建模式',
