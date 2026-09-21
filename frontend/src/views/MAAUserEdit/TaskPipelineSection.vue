@@ -486,11 +486,13 @@ const infrastLabelWithPeriod = (option: InfrastPlanOption) =>
     ? t('edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
     : option.label
 
+// 时段表由 MAA 按钟点选班，班次只展示不可选；无时段表可手选起始班
 const infrastSelectOptions = computed(() => [
   { label: infrastAutoLabel.value, value: '-1' },
   ...props.infrastructureOptions.map(option => ({
     label: infrastLabelWithPeriod(option),
     value: option.value,
+    disabled: props.infrastPlanState === 'period',
   })),
 ])
 

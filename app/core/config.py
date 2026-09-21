@@ -2690,14 +2690,29 @@ class AppConfig(GlobalConfig):
             return plans, problem, infrast_plan_state(text)
         return [], "MAA 原生配置中没有基建任务", "empty"
 
+    def _infrast_plan_owned_by_mas(self, script_id: str, user_id: str) -> bool:
+        """班次指针是否由 MAS 用户字段管理, 与 _infrast_plans 的注入判定同源。
+
+        MAS 注入排班表的组合(托管 / 直控+快速配置)下, 班次由 MAS 决定: 带时段表
+        一律交 MAA 按时段选班, 无时段表注入用户自己的 ``Data.InfrastPlanIndex``。
+        直控且关闭快速配置时 MAS 不注入, 班次仍在 MAA 原生配置的 PlanSelect 里。
+        """
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        user_config = script_config.UserData[uuid.UUID(user_id)]
+        return user_config.get("Info", "Mode") != "直控" or bool(
+            user_config.get("Info", "IfQuickConfig")
+        )
+
     async def set_infrast_plan_select(
         self, script_id: str, user_id: str, index: int
     ) -> int:
-        """把用户选定的基建班次写入该用户的事实源配置。
+        """把用户选定的基建班次写入该用户的事实源。
 
-        index 与 MAA 原生语义一致: -1=按时段自动, 0..n-1=从该班开始顺序轮换;
-        轮换推进由 MAA 原生「自动保存为下个计划」完成并经运行后回写管道存回存档。
-        写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
+        index 与 MAA 原生语义一致: -1=自动, 0..n-1=从该班开始顺序轮换。MAS 注入
+        的组合下事实源是用户配置的 ``Data.InfrastPlanIndex``(每用户一份, 推进由
+        MAS 在基建换班完成后做), 带时段表只接受 -1; 直控且关快速配置时写 MAA
+        原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
         """
 
         script_uid = uuid.UUID(script_id)
@@ -2707,19 +2722,33 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建班次")
         if index < -1:
             raise ValueError("基建班次索引不能小于 -1")
+        if user_uid not in script_config.UserData:
+            raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
 
         # 显式班次要落在 -1..班次数-1 内: MAA 侧只会把越界值静默修正成第一班
         # 或直接报错, 与其静默改掉用户的选择不如在入口拒绝; -1 是默认值无需校验
+        plans, problem, state = self._infrast_plans(script_id, user_id)
         if index >= 0:
-            if user_uid not in script_config.UserData:
-                raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
-            plans, problem, _ = self._infrast_plans(script_id, user_id)
             if problem is not None:
                 raise ValueError(f"自定义基建排班不可用, 无法设置基建班次: {problem}")
             if index >= len(plans):
                 raise ValueError(
                     f"基建班次索引 {index} 超出排班表范围, 该排班表共 {len(plans)} 个班次"
                 )
+
+        if self._infrast_plan_owned_by_mas(script_id, user_id):
+            if state == "period":
+                if index >= 0:
+                    raise ValueError(
+                        "带时间段的排班表由 MAA 按时段自动换班, 不支持手选班次"
+                    )
+                return -1
+            # 无时段表: -1(自动)即从第一班起, 指针只存 0..n-1
+            next_index = max(index, 0)
+            await script_config.UserData[user_uid].set(
+                "Data", "InfrastPlanIndex", next_index
+            )
+            return next_index
 
         config_dir = self._infrast_config_dir(script_id, user_id)
         data = read_maa_config(config_dir / "gui.new.json")
@@ -2748,13 +2777,28 @@ class AppConfig(GlobalConfig):
         return index
 
     async def get_infrast_plan_select(self, script_id: str, user_id: str) -> int:
-        """读取当前基建班次索引; 未设置过时返回 -1(按时段自动)。"""
+        """读取当前基建班次索引; 带时段表 / 未设置过时返回 -1(自动)。
+
+        MAS 注入的组合下, 无时段表返回用户字段里的指针(下次从该班开始);
+        直控且关快速配置时读 MAA 原生配置。
+        """
 
         script_uid = uuid.UUID(script_id)
         if script_uid not in self.ScriptConfig:
             return -1
-        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+        script_config = self.ScriptConfig[script_uid]
+        if not isinstance(script_config, MaaConfig):
             return -1
+        user_uid = uuid.UUID(user_id)
+        if user_uid not in script_config.UserData:
+            return -1
+        if self._infrast_plan_owned_by_mas(script_id, user_id):
+            plans, problem, state = self._infrast_plans(script_id, user_id)
+            if problem is not None or state != "rotate":
+                return -1
+            return int(
+                script_config.UserData[user_uid].get("Data", "InfrastPlanIndex")
+            ) % len(plans)
         config_dir = self._infrast_config_dir(script_id, user_id)
         data = read_maa_config(config_dir / "gui.new.json")
         if data is None:

@@ -362,7 +362,7 @@ export default {
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
     maaCustomInfrastPlanHintPeriod:
-      'Shifts carry time periods: auto mode picks by time; picking a shift starts rotation from it',
+      'Shifts carry time periods: MAA picks the shift by time; manual selection is not available',
     maaCustomInfrastPlanHintRotate:
       'Shifts have no time periods: auto rotation starts from the first shift; picking a shift starts rotation from it',
     maaCustomInfrastPlanHintMixed:
