@@ -4184,7 +4184,8 @@ class ZzzOdUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "用户", UserDirectConfigModeValidator()
         )
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        ## 是否启用快速配置（已封锁，仅保留字段兼容存量数据：直控在 load/update
+        ## 归一为关，脚本/用户来源不消费本开关）
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
         )
@@ -4406,6 +4407,24 @@ class ZzzOdUserConfig(ConfigBase):
         )
 
         return json.dumps(tags, ensure_ascii=False)
+
+    async def load(self, data: dict) -> bool:
+        """加载前把直控用户的快速配置开关归一为关（快速配置已封锁，维护者决策）。
+
+        直控 = MAS 零注入零干涉（与 ``update_user`` 切直控守卫同口径），快速配置
+        的覆盖写槽与该语义相悖，消费点已移除。存量数据里「直控 + 开」的残留
+        （旧版默认开、界面无开关可关）在此统一以来源为准归关；脚本 / 用户来源
+        的开关值不消费、保持原样。
+
+        归一作用在传入数据上（与 ``BetterGIConfig.load`` 同款写法），属**内存
+        归一**：每次加载都会重新归位，该字段已无任何消费点，不需要为它额外
+        回写磁盘；切换直控时的 ``update_user`` 守卫会把值真正落到盘上。
+        """
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        info = normalized_data.get("Info")
+        if isinstance(info, dict) and info.get("Mode") == "直控":
+            info["IfQuickConfig"] = False
+        return await super().load(normalized_data)
 
 
 class ZzzOdConfig(ConfigBase):

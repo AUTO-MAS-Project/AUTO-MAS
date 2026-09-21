@@ -2542,6 +2542,9 @@ class AppConfig(GlobalConfig):
             # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）
             if new_mode == "直控" and isinstance(script_config, ZzzOdConfig):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
+                # 快速配置已封锁（覆盖写槽与直控零写入相悖，维护者决策）：
+                # 切直控时同步归关，免得界面隐藏的开关残留旧值
+                data.setdefault("Info", {})["IfQuickConfig"] = False
             if (
                 new_mode == "直控"
                 and str(user_config.get("Info", "Mode") or "用户") != "直控"
