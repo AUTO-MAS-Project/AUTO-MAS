@@ -427,6 +427,9 @@
                       <template v-else-if="column.key === 'ts'">
                         {{ formatArchiveTs(record.ts) }}
                       </template>
+                      <template v-else-if="column.key === 'files'">
+                        {{ record.files }}
+                      </template>
                       <template v-else-if="column.key === 'size'">
                         {{ formatSlotSize(record.size) }}
                       </template>
@@ -743,9 +746,12 @@ const formatSlotSize = (size: number) =>
       ? `${(size / 1024).toFixed(1)} KB`
       : `${size} B`
 
-/** 归档时间戳（目录名 20260921-225131）→ 2026-09-21 22:51:31 */
-const formatArchiveTs = (ts: string) =>
-  `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`
+/** 归档时间戳（目录名 20260921-225131，同秒顺延为 20260921-225131-1）→
+ *  2026-09-21 22:51:31（带同秒序号时末尾拼 .N） */
+const formatArchiveTs = (ts: string) => {
+  const time = `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`
+  return ts.length > 15 ? `${time}.${ts.slice(16)}` : time
+}
 
 const loadSlots = async () => {
   slotsLoading.value = true

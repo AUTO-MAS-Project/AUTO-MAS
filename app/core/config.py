@@ -966,7 +966,14 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, ZzzOdConfig):
             for user_uid in list(script_config.UserData.keys()):
                 await self._zzzod_recycle_user_slot(
-                    script_id, script_config, user_uid, action="删除脚本"
+                    script_id,
+                    script_config,
+                    user_uid,
+                    action="删除脚本",
+                    # 整个脚本都在移除：同脚本用户间的相互占用不挡回收
+                    # （否则共享同一槽的用户双双跳过，mas 备份池随 data/{script_id}
+                    # 整删且未经归档，恢复历史丢失）
+                    exclude_same_script=True,
                 )
 
         await self.ScriptConfig.remove(uid)
@@ -2103,7 +2110,13 @@ class AppConfig(GlobalConfig):
         }
 
     def _zzzod_slot_occupant(
-        self, root: Path, script_id: str, user_uid: uuid.UUID | None, slot: int
+        self,
+        root: Path,
+        script_id: str,
+        user_uid: uuid.UUID | None,
+        slot: int,
+        *,
+        exclude_same_script: bool = False,
     ) -> str | None:
         """判定目标实例槽当前被谁占用（返回可读描述；空闲/仅本用户时 None）。
 
@@ -2114,6 +2127,11 @@ class AppConfig(GlobalConfig):
         仅本用户绑定或槽目录虽在但无人认领（孤儿槽）视为空闲——孤儿槽可被
         恢复重新认领。``user_uid=None`` 表示不排除任何用户（回收池恢复这类
         没有用户上下文的场景：任何绑定都算占用）。
+
+        ``exclude_same_script=True``：忽略本脚本内用户的绑定占用（仅剩其他
+        脚本与原生实例算占用）——删脚本时整个脚本都在移除，同脚本用户间的
+        相互占用不该挡住回收（否则共享同一槽的两个用户会互相把对方当占用、
+        双双跳过，槽与备份池残留）。
         """
 
         from app.task.ZzzOd.tools import read_native_registry
@@ -2121,8 +2139,10 @@ class AppConfig(GlobalConfig):
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
         key = config_root_key(root)
-        for script_config in self.ScriptConfig.values():
+        for script_uid, script_config in self.ScriptConfig.items():
             if not isinstance(script_config, ZzzOdConfig):
+                continue
+            if exclude_same_script and str(script_uid) == script_id:
                 continue
             script_root = str(script_config.get("Info", "RootPath") or "").strip()
             if not script_root or config_root_key(script_root) != key:
@@ -2151,6 +2171,7 @@ class AppConfig(GlobalConfig):
         user_uid: uuid.UUID,
         *,
         action: str,
+        exclude_same_script: bool = False,
     ) -> None:
         """回收用户的绑定槽：归档进项目级回收池后删除槽目录（幂等）。
 
@@ -2163,6 +2184,10 @@ class AppConfig(GlobalConfig):
         槽的 MAS 备份池一并回收：mas 池按（脚本, 槽）分桶、没有用户维度，
         槽号分给新用户后留在原位会串到别人名下（见
         :func:`app.task.ZzzOd.tools.recycle_mas_backups`）。
+
+        ``exclude_same_script``：删脚本时传 True——整个脚本都在移除，同脚本
+        用户间的相互占用不挡回收（否则共享同一槽的两个用户会双双跳过，
+        mas 池随后被 data/{script_id} 整删且未经归档，恢复历史丢失）。
         """
 
         from app.task.ZzzOd.tools import recycle_mas_backups, recycle_slot
@@ -2178,7 +2203,9 @@ class AppConfig(GlobalConfig):
         except Exception:
             return  # 安装目录没配好或已失效，无从回收
         try:
-            occupant = self._zzzod_slot_occupant(root, script_id, user_uid, slot)
+            occupant = self._zzzod_slot_occupant(
+                root, script_id, user_uid, slot, exclude_same_script=exclude_same_script
+            )
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"槽 {slot:02d} 占用判定失败，跳过回收: {e}"

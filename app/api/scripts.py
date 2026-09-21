@@ -3138,7 +3138,11 @@ async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
     """
 
     try:
-        data = [ZzzOdSlotOut(**item) for item in Config.get_zzzod_slots(scriptId)]
+        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
+        data = [
+            ZzzOdSlotOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_slots, scriptId)
+        ]
         return ZzzOdSlotsOut(
             code=200,
             status="success",
@@ -3170,7 +3174,8 @@ async def clean_zzzod_slots_api(
     """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
 
     try:
-        removed = Config.clean_zzzod_slots(body.scriptId)
+        # 清理要整目录拷贝 + 删目录，是阻塞 IO，放线程里跑
+        removed = await asyncio.to_thread(Config.clean_zzzod_slots, body.scriptId)
         return ZzzOdSlotCleanOut(
             code=200,
             status="success",
@@ -3201,7 +3206,8 @@ async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
 
     try:
         data = [
-            ZzzOdRecycleEntryOut(**item) for item in Config.get_zzzod_recycle(scriptId)
+            ZzzOdRecycleEntryOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_recycle, scriptId)
         ]
         return ZzzOdRecycleOut(
             code=200,
@@ -3234,8 +3240,13 @@ async def restore_zzzod_recycle_api(
     """目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。"""
 
     try:
-        Config.restore_zzzod_recycle(
-            body.scriptId, body.slot, body.ts, force=body.force
+        # 恢复要先存底再整目录替换，是阻塞 IO，放线程里跑
+        await asyncio.to_thread(
+            Config.restore_zzzod_recycle,
+            body.scriptId,
+            body.slot,
+            body.ts,
+            force=body.force,
         )
         return OutBase(
             code=200,

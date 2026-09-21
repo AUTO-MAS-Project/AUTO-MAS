@@ -673,8 +673,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 孤儿槽回收：一条龙注册表里没有、也没有任何 ZzzOd 用户绑定的
         # config/NN 是「分配过、用户/脚本已删」的残留——GUI 看不见也删不掉，
         # 不收就永久占号。放在 ensure_user_slot 之前：腾出的号本轮即可复用；
-        # 原生配置快照已归档在前，回收后仍可找回
-        recycle_unbound_slots(self.script_root_path)
+        # 原生配置快照已归档在前，回收后仍可找回（整目录拷贝+删除，线程里跑）
+        await asyncio.to_thread(recycle_unbound_slots, self.script_root_path)
         used_idxs = collect_used_slot_idxs(
             self.script_root_path,
             exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users},

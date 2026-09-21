@@ -132,9 +132,9 @@ class ScriptConfigTask(TaskExecuteBase):
             # 孤儿槽回收：与运行注入同口径，回收在 ensure_user_slot 之前——
             # 腾出的号本次会话即可复用（原生配置快照已归档在前，回收仍可找回）。
             # 查看会话（只读预览历史备份）跳过：用户只是看，不该在安装目录里
-            # 产生删除副作用
+            # 产生删除副作用（整目录拷贝+删除，线程里跑）
             if not self.view_only:
-                recycle_unbound_slots(self.root_path)
+                await asyncio.to_thread(recycle_unbound_slots, self.root_path)
             used = collect_used_slot_idxs(
                 self.root_path, exclude_uids={self._target_uid}
             )
