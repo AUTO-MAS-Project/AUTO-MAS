@@ -4426,6 +4426,10 @@ class ZzzOdUserConfig(ConfigBase):
         的覆盖写槽与该语义相悖，消费点已移除。存量数据里「直控 + 开」的残留
         （旧版默认开、界面无开关可关）在此统一以来源为准归关；脚本 / 用户来源
         的开关值不消费、保持原样。
+
+        归一作用在传入数据上（与 ``BetterGIConfig.load`` 同款写法），属**内存
+        归一**：每次加载都会重新归位，该字段已无任何消费点，不需要为它额外
+        回写磁盘；切换直控时的 ``update_user`` 守卫会把值真正落到盘上。
         """
         normalized_data = deepcopy(data) if isinstance(data, dict) else {}
         info = normalized_data.get("Info")

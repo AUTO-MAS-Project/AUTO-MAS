@@ -87,12 +87,12 @@ from .tools import (
     find_active_instance,
     find_free_instance_idx,
     instance_dir,
+    instance_run_is_all,
     launch_args_patch,
     list_app_catalog,
     list_instances,
     push_notification,
     read_game_account,
-    read_instance_run,
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
@@ -435,16 +435,14 @@ class AutoProxyTask(TaskExecuteBase):
         """直控运行的目标实例列表（与上游 ``handle_init`` 判定同口径）。
 
         随原生 ``instance_run`` 而定：全部实例=所有参与运行（``active_in_od``）
-        的实例，其余（含空值等非法值）=活跃实例——只有**键缺失**才按上游
-        默认取「全部实例」；目标为空时回落活跃实例（对齐上游 ``handle_init``
-        对空参与列表的回落）。上游对「有参与实例但无活跃」会自行切到首个
-        参与实例运行，因此目标非空即放行，不以有无活跃实例拦截。
+        的实例，其余（含 null / 空串等非法值）=活跃实例——只有**键缺失**才按
+        上游默认取「全部实例」（判定见 :func:`instance_run_is_all`）；目标为空
+        时回落活跃实例（对齐上游 ``handle_init`` 对空参与列表的回落）。上游对
+        「有参与实例但无活跃」会自行切到首个参与实例运行，因此目标非空即
+        放行，不以有无活跃实例拦截。
         """
 
-        run_mode = read_instance_run(root)
-        if run_mode is None:  # 键缺失：上游默认「全部实例」
-            run_mode = INSTANCE_RUN_ALL
-        if run_mode == INSTANCE_RUN_ALL:
+        if instance_run_is_all(root):
             targets = [
                 item for item in list_instances(root) if item.get("active_in_od")
             ]
