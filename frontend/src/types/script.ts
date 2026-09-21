@@ -186,13 +186,7 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     SetResolution: boolean
     CloseOnFinish: boolean
-    RestoreResolution:
-      | 'Off'
-      | '1920x1080'
-      | '2560x1440'
-      | '3840x2160'
-      | 'Fullscreen'
-      | 'Custom'
+    RestoreResolution: 'Off' | '1920x1080' | '2560x1440' | '3840x2160' | 'Fullscreen' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
   }
@@ -333,7 +327,6 @@ export interface MaaFWScriptConfig {
     Arguments: string
     WaitTime: number
     /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
-    StartupSettleTime: number
     /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
     UnityResolution: MaaFWUnityResolution
   }
@@ -678,7 +671,6 @@ export interface User {
     Stage_1: string
     Stage_2: string
     Stage_3: string
-    Stage_Remain: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
@@ -700,7 +692,6 @@ export interface User {
     BilibiliAccountName?: string | null
   }
   Task: {
-    IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean
     IfMall: boolean
@@ -715,7 +706,6 @@ export interface User {
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     IfGreenTicketStore?: boolean
-    DepotMaintainPlans?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

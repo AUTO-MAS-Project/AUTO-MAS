@@ -88,7 +88,6 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PackageName: '',
     Arguments: '',
     WaitTime: 60,
-    StartupSettleTime: 300,
     UnityResolution: 'Off',
   },
   Update: {

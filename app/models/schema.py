@@ -656,6 +656,10 @@ class ConfigBackupRestoreIn(BaseModel):
         ...,
         description="恢复目标（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）；非法值返回 400",
     )
+    force: bool = Field(
+        default=False,
+        description="源配置损坏时是否强制恢复（False 时返回 409 由前端二次确认，True 跳过损坏文件相关的保护步骤）",
+    )
 
 
 class ConfigBackupRestoreOut(OutBase):
@@ -696,7 +700,8 @@ class ConfigBackupFileOut(OutBase):
     path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
     size: int = Field(..., description="文件字节数")
     content: str = Field(
-        ..., description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）"
+        ...,
+        description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）",
     )
 
 
@@ -720,9 +725,7 @@ class ZzzOdNativeLaunchArgs(BaseModel):
     screen_size: Literal["1920x1080", "2560x1440", "3840x2160"] = Field(
         ..., description="窗口尺寸"
     )
-    full_screen: Literal["0", "1"] = Field(
-        ..., description="全屏模式：0=窗口化 1=全屏"
-    )
+    full_screen: Literal["0", "1"] = Field(..., description="全屏模式：0=窗口化 1=全屏")
     popup_window: bool = Field(..., description="无边框窗口（-popupwindow）")
     dx12: bool = Field(
         ..., description="DX12 启动（写回时把 -use-d3d12 合并进高级参数）"
@@ -765,6 +768,10 @@ class ZzzOdNativeConfigOut(OutBase):
         ...,
         description="运行实例（one_dragon.yml instance_run 原值：仅运行当前/全部实例）",
     )
+    afterDone: str = Field(
+        ...,
+        description="游戏结束后操作（one_dragon.yml after_done 原值：无/关闭游戏/关机）",
+    )
     launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
         default=None, description="游戏启动参数（game.yml，缺失字段合并上游默认值）"
     )
@@ -792,6 +799,10 @@ class ZzzOdNativeConfigIn(BaseModel):
     instanceRun: Optional[str] = Field(
         default=None,
         description="运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+    afterDone: Optional[str] = Field(
+        default=None,
+        description="游戏结束后操作（无/关闭游戏/关机，白名单校验后写回 one_dragon.yml；缺省不写回）",
     )
     launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
         default=None, description="游戏启动参数（缺省不写回）"
@@ -1555,7 +1566,6 @@ class MaaUserConfig_Info(BaseModel):
     Stage_1: Optional[str] = Field(default=None, description="备选关卡 - 1")
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
-    Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
     Tag: Optional[str] = Field(default=None, description="状态标签列表")
 
 
@@ -1582,7 +1592,6 @@ class MaaUserConfig_Task(BaseModel):
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
-    IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
     IfGreenTicketStore: Optional[bool] = Field(default=None, description="绿票商店")
@@ -1594,9 +1603,6 @@ class MaaUserConfig_Task(BaseModel):
     )
     ActivityMedicineNumb: Optional[int] = Field(
         default=None, description="活动关优先任务吃理智药数量"
-    )
-    DepotMaintainPlans: Optional[str] = Field(
-        default=None, description="库存保持计划 JSON"
     )
     IfCultivate: Optional[bool] = Field(default=None, description="干员养成")
     CultivateTargets: Optional[str] = Field(
@@ -1727,9 +1733,6 @@ class GeneralUserConfig(BaseModel):
 
 
 class OkwwUserConfig_Task(BaseModel):
-    TaskIndex: Optional[Literal[1, 7]] = Field(
-        default=None, description="启动任务：1=DailyTask，7=MultiAccountDailyTask"
-    )
     WhichToFarm: Optional[
         Literal["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
     ] = Field(default=None, description="每日任务体力用途")
@@ -2094,6 +2097,10 @@ class ZzzOdUserConfig_OneDragon(BaseModel):
         default=None,
         description='任务编排 JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，顺序即执行顺序',
     )
+    AfterDone: Optional[Literal["无", "关闭游戏", "关机"]] = Field(
+        default=None,
+        description="游戏结束后操作（MAS 拉起的一条龙运行结束时执行；无=不处理）",
+    )
 
 
 class ZzzOdUserConfig_Data(GeneralUserConfig_Data):
@@ -2137,7 +2144,19 @@ class BAAHUserConfig_Info(BaseModel):
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
     )
-    ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
+    ConfigName: Optional[str] = Field(
+        default=None, description="默认使用的 BAAH 配置文件名"
+    )
+    ActivityConfigName: Optional[str] = Field(
+        default=None, description="活动期间使用的 BAAH 配置文件名"
+    )
+    IfActivityAdapt: Optional[bool] = Field(
+        default=None, description="是否按碧蓝档案有没有活动切换使用的配置文件"
+    )
+    ActivityLineType: Optional[Literal["JP", "Globle", "CN"]] = Field(
+        default=None,
+        description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服",
+    )
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
         default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
@@ -2457,6 +2476,17 @@ class BAAHConfig(BaseModel):
     )
 
 
+class BlueArchiveActivityStatusOut(OutBase):
+    """碧蓝档案活动状态：进行中的活动，或下一个未开始的活动"""
+
+    Running: bool = Field(default=False, description="当前是否有进行中的活动")
+    Name: str = Field(default="", description="进行中的活动名称")
+    StartTime: str = Field(default="", description="进行中活动的开始时间")
+    EndTime: str = Field(default="", description="进行中活动的结束时间")
+    NextName: str = Field(default="", description="下一个活动的名称")
+    NextStartTime: str = Field(default="", description="下一个活动的开始时间")
+
+
 class MaaEndUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
@@ -2632,7 +2662,9 @@ class MaaEndConfig_Game(BaseModel):
             "Fullscreen",
             "Custom",
         ]
-    ] = Field(default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改")
+    ] = Field(
+        default=None, description="关闭游戏时恢复的分辨率或显示模式，Off 表示不修改"
+    )
     RestoreResolutionWidth: Optional[int] = Field(
         default=None, ge=1, le=16384, description="自定义恢复分辨率宽度"
     )
@@ -3674,11 +3706,8 @@ class MaaFWConfig_Game(BaseModel):
     )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
-        default=None, description="游戏启动后等待窗口就绪的时间（秒）"
-    )
-    StartupSettleTime: Optional[int] = Field(
         default=None,
-        description="由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务（秒），0 关闭",
+        description="游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前",
     )
 
 
@@ -3844,7 +3873,9 @@ class MaaFWGamePackageData(BaseModel):
 
 
 class MaaFWGamePackageOut(OutBase):
-    data: Optional[MaaFWGamePackageData] = Field(default=None, description="包名推断结果")
+    data: Optional[MaaFWGamePackageData] = Field(
+        default=None, description="包名推断结果"
+    )
 
 
 class MaaFWAdbEmulatorExtraCapabilityInfo(BaseModel):
@@ -4168,7 +4199,6 @@ class MaaPlanConfig_Item(BaseModel):
     Stage_1: Optional[str] = Field(default=None, description="备选关卡 - 1")
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
-    Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
 
 
 class WeeklyPlanConfig(BaseModel, Generic[TPlanInfo, TPlanItem]):

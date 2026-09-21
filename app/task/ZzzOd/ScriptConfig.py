@@ -53,6 +53,7 @@ from .tools import (
     find_active_instance,
     instance_dir,
     normalize_app_group_entries,
+    read_after_done,
     read_app_group,
     read_game,
     read_game_account,
@@ -134,6 +135,15 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.root_path,
                 [(slot, f"MAS-{self.cur_user_config.get('Info', 'Name')}")],
                 active_idx=slot,
+                # 会话注入 MAS 侧「游戏结束后操作」：GUI 所见即本页下拉；
+                # 查看会话不注入（槽内即恢复的备份，所见即备份）
+                after_done=(
+                    None
+                    if self.view_only
+                    else str(
+                        self.cur_user_config.get("OneDragon", "AfterDone") or "关闭游戏"
+                    )
+                ),
             )
             if self.view_only:
                 logger.info(
@@ -232,9 +242,7 @@ class ScriptConfigTask(TaskExecuteBase):
             "Game", "ScreenSize", str(game_cfg.get("screen_size") or "1920x1080")
         )
         await cfg.set("Game", "FullScreen", str(game_cfg.get("full_screen") or "0"))
-        await cfg.set(
-            "Game", "PopupWindow", bool(game_cfg.get("popup_window", False))
-        )
+        await cfg.set("Game", "PopupWindow", bool(game_cfg.get("popup_window", False)))
         has_dx12, advance_rest = split_dx12_argument(
             str(game_cfg.get("launch_argument_advance") or "")
         )
@@ -243,6 +251,9 @@ class ScriptConfigTask(TaskExecuteBase):
         await cfg.set("Game", "Monitor", str(game_cfg.get("monitor") or "1"))
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
         await cfg.set("OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False))
+        # 「结束后」：视图由会话注入该键，GUI 所见即可回读；必须在
+        # restore_instance_view 还原前执行（本函数由 final_task 在还原前调用）
+        await cfg.set("OneDragon", "AfterDone", read_after_done(self.root_path))
         logger.info(
             f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(all_apps)} 项)"
         )

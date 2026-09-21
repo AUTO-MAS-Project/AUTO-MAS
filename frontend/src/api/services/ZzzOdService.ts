@@ -356,7 +356,7 @@ export class ZzzOdService {
     }
     /**
      * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
-     * 白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。
+     * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
      * @throws ApiError

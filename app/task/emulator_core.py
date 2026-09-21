@@ -54,7 +54,7 @@ async def close_emulator(
     Args:
         owner: 提供 emulator_manager 与 script_config 的任务对象。
         index: 模拟器实例索引；省略时按 config_key 段的 "Index" 读取。
-        config_key: 读取实例索引的配置段，MaaEnd 为 "Game"。
+        config_key: 省略 index 时读取 "Index" 的配置段。特殊键名应显式传入 index。
         timeout: 关闭动作的超时秒数。
         log_failure: 失败时是否记录警告日志。
     """

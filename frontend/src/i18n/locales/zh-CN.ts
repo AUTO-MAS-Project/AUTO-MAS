@@ -345,6 +345,7 @@ export default {
     maaCultivateStateAchieved: '已达成',
     maaCultivateStatePending: '待确认',
     maaDepot: '库存保持',
+    maaDepotHint: '计划列表等高级设置在 MAA 界面里配置',
     maaCombat: '理智作战',
     maaInfrast: '基建换班',
     maaInfrastMode: '基建模式',
@@ -370,8 +371,6 @@ export default {
     maaSwitchTheme: '更换主题',
     maaSwitchThemeHint:
       '主题名称在 MAA 的「更换主题」任务里配置，可填多个，每次运行随机切换一个，为空时自动跳过；需要 MAA v6.17.3 及以上版本',
-    maaRoguelike: '自动肉鸽',
-    maaRoguelikeHint: '长时间运行可能被误判超时',
     maaGreenTicketStore: '绿票商店',
     maaGreenTicketStoreHint:
       '每月单独启动一次 MAA 购买，排在剿灭之前：一层全买，二层买寻访凭证和招聘许可；当月买过就跳过，失败也不影响后面的任务。需要 MAA v6.3.0 及以上版本',
@@ -1474,9 +1473,8 @@ export default {
     envReadyAgents: '已就绪的 Agent',
     envRetry: '重试',
     mfwUnityResolutionOff: '不修改',
-    mfwStartupSettleSeconds: '启动后再等（秒）',
-    mfwStartupSettleTip:
-      '只在由 MAS 启动游戏时生效：窗口出现后至少再等这么多秒才下发第一个任务，MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等，0 关闭。',
+    mfwWaitTimeTip:
+      'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入 M7A/SRA',
@@ -1797,10 +1795,27 @@ export default {
     baahNotBaahScript: '脚本类型不是 BAAH',
     baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
     baahRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
-    baahConfigName: 'BAAH 配置文件名',
+    baahConfigName: '默认配置名',
     baahConfigNameHint:
-      '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',
-    baahConfigNamePlaceholder: '例如：example',
+      '平时使用的 BAAH 配置，本软件用它启动 BAAH.exe <名称>.json；开启活动适配后，它在活动期间会被「活动期间配置文件名」取代',
+    baahConfigNamePlaceholder: '请选择平时使用的配置',
+    baahActivityConfigName: '活动期间配置文件名',
+    baahActivityConfigNameHint:
+      '开启上面的「活动适配」后，碧蓝档案有进行中的活动时改用这个配置启动 BAAH；留空、或活动排期取不到时仍用默认配置名',
+    baahActivityConfigNamePlaceholder: '留空则始终使用默认配置',
+    baahIfActivityAdapt: '活动适配',
+    baahIfActivityAdaptHint:
+      '开启后按碧蓝档案的活动排期切换配置文件：有活动时用「活动期间配置文件名」，没有活动时用「默认配置名」',
+    baahActivityLineType: '活动排期服务器',
+    baahActivityLineTypeHint:
+      '按哪个服的排期判断有没有活动；各服活动时间不同，请选你的账号所在的服',
+    baahActivityLineCN: '国服',
+    baahActivityLineJP: '日服',
+    baahActivityLineGloble: '国际服',
+    baahActivityRunning: '进行中：',
+    baahActivityUpcoming: '下一个活动：',
+    baahActivityNone: '当前没有进行中或即将开始的活动',
+    baahActivityUnavailable: '未取到活动排期',
     baahUserTag: '用户标签',
     baahUserTagHint: '由本软件按运行情况自动生成，仅供查看',
     baahLastProxyDate: '上次代理日期',
@@ -1950,6 +1965,11 @@ export default {
     configRestoreConfirmTitle: '覆盖当前配置',
     configRestoreConfirmDesc:
       '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    // 源配置损坏（后端 409）：写明损坏位置，二次确认后携带 force 强制恢复
+    configRestoreCorruptedTitle: '源配置文件损坏',
+    configRestoreCorruptedDesc:
+      '强制恢复会跳过与该文件相关的保护检查（恢复前备份、占用校验），可能覆盖现有配置；是否继续？',
+    configRestoreForceAction: '强制恢复',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: '脚本级',
     configRestoreModeUser: '用户级',
@@ -2133,6 +2153,12 @@ export default {
       '一条龙系列任务一屏可见，打开开关即加入并按顺序执行，关闭后原位保留；拖动卡片手柄调整执行顺序。',
     zzzodLoadOneDragonFailed: '加载一条龙任务失败',
     zzzodPushLogModeHint: '任务报告中各任务的执行结果展示方式（成功/失败/跳过）',
+    zzzodAfterDone: '游戏结束后操作',
+    zzzodAfterDoneHint:
+      '一条龙运行结束后执行的操作，与一条龙「结束后」下拉同义。用户模式经配置会话与一条龙界面双向同步；直控模式直接读写一条龙原生设置。运行时由 MAS 以启动参数下发（仅运行成功结束时生效）',
+    zzzodAfterDoneNone: '无',
+    zzzodAfterDoneCloseGame: '关闭游戏',
+    zzzodAfterDoneShutdown: '关机',
     zzzodLaunchArgsTitle: '启动参数',
     zzzodLaunchArgsDetail: '参数明细',
     zzzodLaunchArgsDesc:
@@ -2514,6 +2540,11 @@ export default {
       queryFailed: '日常便笺查询失败',
       empty: '暂无可展示的日常便笺',
       drag: '拖拽排序',
+      edit: '编辑',
+      editTitle: '选择展示的游戏',
+      editGame: '展示{game}的日常便笺',
+      switchTitle: '切换游戏查看日常便笺',
+      allHidden: '已关闭全部游戏，点「编辑」可重新开启',
       dailyProgress: '日常情况',
       tasks: '每日任务',
       noteTasks: '任务与周期',
@@ -2564,6 +2595,8 @@ export default {
       enableDesc: '启用后会随 MAS 任务调度执行签到',
       activityEnable: '启用日常便笺',
       activityEnableDesc: '开启后显示各游戏的日常数据；关闭后不查询日常数据',
+      homeActivityEnable: '首页显示签到情况与便笺',
+      homeActivityEnableDesc: '开启后首页活动轮播的游戏下方显示签到情况与日常便笺；关闭后不显示',
       notify: '结果通知',
       notifyDesc: '签到完成后通过已配置的通知渠道推送结果',
       runOnStartup: '启动时签到',
@@ -2657,6 +2690,7 @@ export default {
       signDone: '签到完成',
       signError: '签到失败: {error}',
       externalLinkFailed: '打开外部链接失败，请稍后重试',
+      homeActivityEnableSaveFailed: '保存首页签到情况与便笺显示开关失败',
     },
   },
   history: {
@@ -2780,12 +2814,29 @@ export default {
     },
     carousel: {
       remaining: '剩余时间',
+      startsIn: '距开始',
       prev: '上一个游戏',
       next: '下一个游戏',
       loading: '正在获取活动信息…',
       noActivity: '暂无进行中的活动',
       unavailable: '活动数据暂不可用',
       allHidden: '轮播里的游戏都关掉了，可在「编辑布局」里重新打开',
+    },
+    activityNotes: {
+      title: '日常便笺',
+      selectUser: '选择便笺用户或角色',
+      sign: '签到情况（{signed}/{total}）',
+      user: '用户',
+      signed: '签到成功',
+      alreadySigned: '已签到',
+      failed: '签到失败',
+      noRecord: '暂无签到记录',
+      expand: '展开其余 {count} 位用户',
+      collapse: '收起',
+      latestResult: '最近一次签到记录',
+      loading: '正在加载日常便笺…',
+      unknown: '{count} 个账号暂无签到记录',
+      signFailed: '签到记录读取失败，请刷新重试',
     },
     empty: {
       starrail: '暂无进行中的星穹铁道活动',
@@ -2830,7 +2881,9 @@ export default {
     bluearchive: {
       versionBadge: '{version} 月',
       endsAt: '{time} 结束',
+      startsAt: '{time} 开始',
       versionRemaining: '活动剩余时间',
+      startsIn: '距开始',
       nextVersionSoon: '后续活动即将开始',
       versionTime: '活动时间：',
       serverLabel: '服务器',
@@ -2885,6 +2938,9 @@ export default {
       activityGroup: '轮播中的游戏',
       carouselAutoplay: '自动轮播',
       carouselAutoplayVisibility: '活动轮播自动播放',
+      activityNotesGroup: '首页签到情况与便笺',
+      activityNoteVisibility: '显示{name}的签到情况与便笺',
+      activityNotesMasterOff: '总开关在「游戏社区」设置里，开启后生效',
     },
     scrollHint: {
       aria: '向下滚动查看更多内容',
@@ -3474,7 +3530,7 @@ export default {
         General: '适用于具备日志文件的自动化脚本',
         MAA: '明日方舟自动化与多账号日常代理',
         SRC: '星穹铁道自动化与多账号代理',
-        MaaEnd: 'MFW 专项适配脚本',
+        MaaEnd: '明日方舟：终末地自动化与多账号代理',
         M9A: '重返未来：1999 自动化脚本',
         MaaFW: '运行任何带 interface.json 的 MaaFramework 项目',
         Okww: 'ok-script 专项任务脚本',

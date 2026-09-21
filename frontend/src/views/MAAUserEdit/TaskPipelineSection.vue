@@ -197,29 +197,14 @@
         />
       </PipelineRow>
 
-      <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
+      <!-- 库存保持：MAS 只管开关，计划列表等高级设置交给 MAA 自己的界面 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
-        :summary="depotSummary"
+        :summary="t('edit.maaDepotHint')"
         :checked="formData.Task.IfDepotMaintain"
         :disabled="loading"
         @change="emitSave('Task.IfDepotMaintain', $event)"
-      >
-        <DepotMaintainPlanEditor
-          :form-data="formData"
-          :loading="loading"
-          :stage-options="stageOptions"
-          :item-options="depotItemOptions"
-          :item-options-loading="depotItemOptionsLoading"
-          :item-options-error="depotItemOptionsError"
-          :stage-candidates="depotStageCandidates"
-          :stage-candidates-loading="depotStageCandidatesLoading"
-          :inventory="depotInventory"
-          :depot-inventory-time="depotInventoryTime"
-          :load-stage-candidates="loadDepotStageCandidates"
-          @save="emitSave"
-        />
-      </PipelineRow>
+      />
 
       <!-- 理智作战 -->
       <PipelineRow
@@ -325,16 +310,6 @@
         </template>
       </PipelineRow>
 
-      <!-- 只有一个开关，不必套一层详情面板 -->
-      <PipelineRow
-        :name="t('edit.maaRoguelike')"
-        :summary="formData.Task.IfRoguelike ? t('edit.maaRoguelikeHint') : ''"
-        :checked="formData.Task.IfRoguelike"
-        :disabled="loading"
-        :has-detail="false"
-        @change="emitSave('Task.IfRoguelike', $event)"
-      />
-
       <!-- 更换主题：主题名称在 MAA 中配置，MAS 仅提供调度开关并透传；排在任务队列最后 -->
       <PipelineRow
         :name="t('edit.maaSwitchTheme')"
@@ -353,7 +328,7 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
-import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
   CultivateGoalOption as GoalOption,
@@ -368,7 +343,6 @@ import {
   summarizeActivity,
   summarizeAnnihilation,
   summarizeCultivate,
-  summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
 
@@ -545,10 +519,6 @@ const infrastSummary = computed(() => {
     customLabel
   )
 })
-
-const depotSummary = computed(() =>
-  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
-)
 
 const cultivateSummary = computed(() =>
   summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)

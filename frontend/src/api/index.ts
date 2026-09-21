@@ -46,6 +46,7 @@ export type { BetterGIUserConfig_OneDragon } from './models/BetterGIUserConfig_O
 export type { BetterGIUserConfig_Switch } from './models/BetterGIUserConfig_Switch';
 export type { BetterGIUserConfig_Task } from './models/BetterGIUserConfig_Task';
 export { BlueArchiveActivityIn } from './models/BlueArchiveActivityIn';
+export type { BlueArchiveActivityStatusOut } from './models/BlueArchiveActivityStatusOut';
 export type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from './models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 export type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from './models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 export type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from './models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
@@ -488,6 +489,7 @@ export type { ZzzOdUserConfig_OneDragon } from './models/ZzzOdUserConfig_OneDrag
 export { Service } from './services/Service';
 export { ActionService } from './services/ActionService';
 export { AddService } from './services/AddService';
+export { BaahService } from './services/BaahService';
 export { BackupService } from './services/BackupService';
 export { BetterGiService } from './services/BetterGiService';
 export { ClawService } from './services/ClawService';

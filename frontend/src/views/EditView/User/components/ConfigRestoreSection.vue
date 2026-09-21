@@ -179,7 +179,10 @@
            依赖父组件的 onDetail 回调（恢复 + 拉起查看会话），专项未提供时
            不渲染，避免出现无响应的按钮 -->
       <div class="preview-actions">
-        <a-tooltip v-if="onDetail" :title="t('edit.configRestoreDetailHint', { script: scriptName })">
+        <a-tooltip
+          v-if="onDetail"
+          :title="t('edit.configRestoreDetailHint', { script: scriptName })"
+        >
           <a-button :disabled="disabled" @click="handlePreviewDetail">
             {{ t('edit.configRestoreDetailView') }}
           </a-button>
@@ -218,7 +221,13 @@
 import { computed, h, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { buildRestoreConfirm, sourceLabelKey, sourceTagColor } from '@/utils/configRestoreMode'
+import {
+  buildCorruptedForceConfirm,
+  buildRestoreConfirm,
+  corruptedForceConfirmContent,
+  sourceLabelKey,
+  sourceTagColor,
+} from '@/utils/configRestoreMode'
 
 const { t } = useI18n()
 
@@ -266,7 +275,8 @@ const props = defineProps<{
     }>
     restore: (
       target: string,
-      time: string
+      time: string,
+      force?: boolean
     ) => Promise<{
       code?: number
       message?: string
@@ -557,15 +567,44 @@ const copyFileContent = async () => {
 }
 
 // ══ 一键恢复 ══
-const runRestore = async (item: BackupItem) => {
+/** 执行恢复；源配置损坏（后端 409）时转入强制恢复二次确认并返回 null */
+const runRestore = async (item: BackupItem, force = false) => {
   if (props.disabled) {
     throw new Error(t('edit.configLocked'))
   }
-  const resp = await props.api.restore(restoreTarget.value, item.time)
-  if (resp.code !== 200) {
-    throw new Error(resp.message || t('edit.configRestoreFailed'))
+  const resp = await props.api.restore(restoreTarget.value, item.time, force)
+  if (resp.code === 200) {
+    return resp
   }
-  return resp
+  if (resp.code === 409) {
+    if (force) {
+      // force 仍被拦（如后端另有守卫）：不再重复弹确认，直接把原因报给用户
+      throw new Error(resp.message || t('edit.configRestoreFailed'))
+    }
+    confirmForceRestore(item, resp.message || '')
+    return null
+  }
+  throw new Error(resp.message || t('edit.configRestoreFailed'))
+}
+
+/** 损坏强制恢复二次确认：写明损坏位置与风险，确认后携带 force 重试 */
+const confirmForceRestore = (item: BackupItem, detail: string) => {
+  const copy = buildCorruptedForceConfirm(t, detail)
+  Modal.confirm({
+    title: copy.title,
+    content: corruptedForceConfirmContent(copy.detail, copy.desc),
+    okText: copy.okText,
+    okType: 'danger',
+    cancelText: t('edit.cancel'),
+    onOk: async () => {
+      try {
+        const resp = await runRestore(item, true)
+        if (resp) await finishRestore(item)
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+      }
+    },
+  })
 }
 
 const finishRestore = async (item: BackupItem) => {
@@ -595,8 +634,8 @@ const confirmRestore = (item: BackupItem) => {
     okType: 'danger',
     onOk: async () => {
       try {
-        await runRestore(item)
-        await finishRestore(item)
+        const resp = await runRestore(item)
+        if (resp) await finishRestore(item)
       } catch (e) {
         message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
       }

@@ -47,14 +47,8 @@ describe('ConfigLockPanel edit page bindings', () => {
         ':disabled="pageLoading || !userId || configLocked"',
         'if (configLocked.value) return',
       ],
-      'User/GeneralUserEdit.vue': [
-        ':disabled="configLocked"',
-        'if (configLocked.value) return',
-      ],
-      'User/MAAUserEdit.vue': [
-        ':config-locked="configLocked"',
-        'if (configLocked.value) return',
-      ],
+      'User/GeneralUserEdit.vue': [':disabled="configLocked"', 'if (configLocked.value) return'],
+      'User/MAAUserEdit.vue': [':config-locked="configLocked"', 'if (configLocked.value) return'],
       'User/MaaEndUserEdit.vue': ['if (configLocked.value) return'],
       'User/OkNteUserEdit.vue': [
         ':config-disabled="pageLoading || !activeUserId || configLocked"',
@@ -64,10 +58,7 @@ describe('ConfigLockPanel edit page bindings', () => {
         ':config-disabled="pageLoading || !userId || configLocked"',
         'if (configLocked.value) return',
       ],
-      'User/SRCUserEdit.vue': [
-        ':config-locked="configLocked"',
-        'if (configLocked.value) return',
-      ],
+      'User/SRCUserEdit.vue': [':config-locked="configLocked"', 'if (configLocked.value) return'],
       'User/ZzzOdUserEdit.vue': [
         ':disabled="pageLoading || !userId || configLocked"',
         'if (configLocked.value) return',

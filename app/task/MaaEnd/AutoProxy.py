@@ -931,13 +931,6 @@ class AutoProxyTask(TaskExecuteBase):
                             )
                     else:
                         # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
-                        if self.mode == self.first_run_mode and is_process_running(
-                            "Endfield.exe"
-                        ):
-                            logger.info(
-                                "关闭已运行的终末地，准备执行 MaaEnd 游戏设置预任务"
-                            )
-                            await self.kill_game_process()
                         logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
@@ -984,6 +977,16 @@ class AutoProxyTask(TaskExecuteBase):
                     else "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
                 )
 
+            if (
+                self.emulator_manager is None
+                and self.mode == self.first_run_mode
+                and bool(self.script_config.get("Game", "SetResolution"))
+            ):
+                logger.info(
+                    "启动时设置分辨率：关闭终末地，准备执行 MaaEnd 游戏设置预任务"
+                )
+                await self.kill_game_process()
+
             await self.set_maaend(emulator_info)
 
             if not any(any(tasks.values()) for tasks in self.task_dict.values()):
@@ -1010,12 +1013,6 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
                     logger.warning("静默模式: 隐藏 MaaEnd 窗口失败")
-            if self.emulator_manager is None:
-                if await self.game_process_manager.activate_window():
-                    logger.success("前置 Endfield 窗口成功")
-                else:
-                    logger.warning("前置 Endfield 窗口失败")
-
             await asyncio.sleep(1)
             await self._wait_maaend_stage()
 
@@ -1126,7 +1123,10 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.script_config.get("Game", "Path"))
             else:
                 logger.info("中止模拟器进程")
-                await close_emulator(self)
+                await close_emulator(
+                    self,
+                    index=self.script_config.get("Game", "EmulatorIndex"),
+                )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
 
@@ -1739,7 +1739,9 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             if task_name_value != _MAAEND_CLOSE_GAME_TASK:
-                task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
+                task["enabled"] = self.task_dict.get(task_name, {}).get(
+                    task["id"], False
+                )
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
@@ -1959,7 +1961,10 @@ class AutoProxyTask(TaskExecuteBase):
                                 self.task_name_map.get(task_name, task_name)
                             )
                             task_index[task_name]["index"] += 1
-                        elif f"任务失败: {task_name}" in log_line:
+                        elif (
+                            task_name in task_index
+                            and f"任务失败: {task_name}" in log_line
+                        ):
                             task_index[task_name]["index"] += 1
 
                     await self._mark_daily_once_tasks_completed(completed_task_names)

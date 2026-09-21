@@ -111,12 +111,14 @@ from app.utils.constants import (
     UTC4,
     UTC8,
 )
-from app.utils.io import force_rmtree, write_file
+from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
+# 登录失败截图的总容量上限，超出后按时间从旧到新回收。
+LOGIN_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
 
 logger = get_logger("配置管理")
 
@@ -174,7 +176,6 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "理智作战",
         "活动关优先",
         "库存保持",
-        "剩余理智",
         "养成计划",
     }
     annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
@@ -277,8 +278,27 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     return all_stage_drops
 
 
+_PROXY_URL_SCHEMES = ("http://", "https://", "socks5://", "socks5h://", "socks4://")
+
+
+def normalize_proxy_address(raw: str | None) -> str | None:
+    """把 ``Update.ProxyAddress`` 规范成带协议的代理地址字符串。
+
+    去首尾空白，空 → ``None``；没有协议前缀时补 ``http://``；``user:pw@`` 原样保留
+    ——这是要写进子进程 ``HTTP_PROXY`` 的字符串，不是 ``httpx.Proxy``（后者会把
+    userinfo 剥到 ``.auth``，``str(proxy.url)`` 会丢凭据）。
+    """
+
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if not text.lower().startswith(_PROXY_URL_SCHEMES):
+        text = f"http://{text}"
+    return text
+
+
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.6"
+    VERSION = "v5.5.0-beta.7"
 
     def __init__(self) -> None:
         super().__init__()
@@ -890,6 +910,18 @@ class AppConfig(GlobalConfig):
             raise ValueError("MaaEnd 路径未配置")
 
         return script_config.get_loaded_resource()
+
+    def get_baah_config_names(self, script_id: str) -> list[str]:
+        """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, BAAHConfig):
+            raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
+
+        from app.task.BAAH.tools import CONFIG_DIR_NAME, list_config_names
+
+        baah_path = Path(str(script_config.get("Script", "BAAHPath")))
+        return list_config_names(baah_path.parent / CONFIG_DIR_NAME)
 
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
@@ -1705,7 +1737,7 @@ class AppConfig(GlobalConfig):
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
     async def restore_zzzod_backup(
-        self, script_id: str, user_id: str, ts: str, target: str
+        self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
     ) -> int:
         """把指定备份恢复到目标位置，返回关联槽 idx（-1 表示不涉及槽）。
 
@@ -1715,6 +1747,10 @@ class AppConfig(GlobalConfig):
         - target="mas"：把 MAS 用户槽备份恢复到绑定槽，并从恢复后的槽内容
           把账号字段与任务编排全量回填到 MAS 本页字段（表单随即刷新）——
           配队等 MAS 不管的内容随槽内容回到该时点。
+
+        ``force=True``：源注册表损坏且用户已在二次确认中选择强制恢复——
+        onedragon 跳过「恢复前存底」（该步要读损坏的注册表），mas 跳过
+        占用守卫（可能覆盖原生实例槽，覆盖前仍会对槽做强制存底）。
         """
 
         from app.task.ZzzOd.tools import (
@@ -1766,7 +1802,7 @@ class AppConfig(GlobalConfig):
                         f"备份含原生实例 {bound_slot:02d}，已被{who}绑定为配置槽，"
                         "恢复会覆盖其内容，已中止"
                     )
-            restore_onedragon_backup(root, ts)
+            restore_onedragon_backup(root, ts, snapshot_current=not force)
             logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
             return -1
 
@@ -1774,8 +1810,15 @@ class AppConfig(GlobalConfig):
         if slot <= 0:
             raise ValueError("该用户还没有生成过配置备份")
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
-        # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）
-        occupant = self._zzzod_slot_occupant(root, script_id, uid, slot)
+        # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
+        # 守卫读不了原生占用，未 force 抛给上层转 409；force 视为空闲放行
+        # （用户已确认，覆盖前 restore_mas_backup 内部仍会强制存底）
+        try:
+            occupant = self._zzzod_slot_occupant(root, script_id, uid, slot)
+        except ConfigCorruptedError:
+            if not force:
+                raise
+            occupant = None
         if occupant is not None:
             raise ValueError(
                 f"目标槽 {slot:02d} 当前已被「{occupant}」占用，"
@@ -1995,8 +2038,7 @@ class AppConfig(GlobalConfig):
         无人认领（孤儿槽）视为空闲——孤儿槽可被恢复重新认领。
         """
 
-        from app.task.ZzzOd.tools import native_registry_file
-        from app.utils.io import read_file
+        from app.task.ZzzOd.tools import read_native_registry
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
         for script_config in self.ScriptConfig.values():
@@ -2011,7 +2053,7 @@ class AppConfig(GlobalConfig):
                     return f"脚本「{script_name}」的用户「{user_name}」"
 
         # 2) 一条龙原生实例（按原生注册表）
-        data = read_file(native_registry_file(root)) or {}
+        data = read_native_registry(root)
         for item in data.get("instance_list") or []:
             if not isinstance(item, dict):
                 continue
@@ -2221,6 +2263,7 @@ class AppConfig(GlobalConfig):
             get_task_app_jump,
             list_app_catalog,
             read_native_account_fields,
+            read_native_after_done,
             read_native_instance_run,
             read_native_launch_args,
             read_native_tasks,
@@ -2240,6 +2283,7 @@ class AppConfig(GlobalConfig):
             "account": read_native_account_fields(root, slot),
             "tasks": read_native_tasks(root, slot, catalog),
             "instanceRun": read_native_instance_run(root),
+            "afterDone": read_native_after_done(root),
             "launchArgs": read_native_launch_args(root, slot),
         }
 
@@ -2251,21 +2295,24 @@ class AppConfig(GlobalConfig):
         tasks: list[dict] | None = None,
         instance_run: str | None = None,
         launch_args: dict | None = None,
+        after_done: str | None = None,
     ) -> dict:
         """把直控页面改动直接写回所选实例原生配置（可选增量，缺省字段不写回）。
 
         账号字段白名单过滤 + 只写非默认值；任务编排保留完整顺序（含未启用项）；
-        instance_run 白名单校验；launchArgs 整组提交（六字段 + dx12 开关合并进
-        高级参数，值未变跳过）。由调用方按需传参：任务开关/运行实例等即时
-        写入只传对应字段，避免把未确认的账号草稿一并落盘。
+        instance_run / after_done 白名单校验；launchArgs 整组提交（六字段 +
+        dx12 开关合并进高级参数，值未变跳过）。由调用方按需传参：任务开关/
+        运行实例等即时写入只传对应字段，避免把未确认的账号草稿一并落盘。
         """
 
         root, instance = self._zzzod_native_instance(script_id, instance_idx)
         slot = int(instance_idx)
 
         from app.task.ZzzOd.tools import (
+            read_native_after_done,
             read_native_instance_run,
             save_native_account_fields,
+            save_native_after_done,
             save_native_instance_run,
             save_native_launch_args,
             save_native_tasks,
@@ -2284,6 +2331,10 @@ class AppConfig(GlobalConfig):
             current = read_native_instance_run(root)
             if instance_run != current:
                 save_native_instance_run(root, instance_run)
+        if after_done is not None:
+            current_after_done = read_native_after_done(root)
+            if after_done != current_after_done:
+                save_native_after_done(root, after_done)
         logger.info(f"ZZZ-OD 实例 {slot:02d} 原生配置已由直控页面保存")
         return {
             "instanceIdx": slot,
@@ -2337,12 +2388,15 @@ class AppConfig(GlobalConfig):
 
     # ════════════ 配置恢复（基座统一分发，池声明见各专项 tools/restore_service） ════════════
 
-    def restore_service(self, script_id: str, user_id: str) -> "ConfigRestoreService":
+    def restore_service(
+        self, script_id: str, user_id: str, *, force: bool = False
+    ) -> "ConfigRestoreService":
         """按脚本类型分发到专项恢复池，绑定上下文构建运行时服务。
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
         与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
-        与 schema，只在分发链加一个分支。
+        与 schema，只在分发链加一个分支。``force`` 随上下文下发，供专项
+        池的恢复函数读取（当前仅 ZzzOd 消费）。
         """
 
         from app.utils.config_restore import RestoreContext, build_restore_service
@@ -2404,6 +2458,7 @@ class AppConfig(GlobalConfig):
                 script_config=script_config,
                 script_id=script_id,
                 user_id=user_id,
+                force=force,
             ),
             RESTORE_POOLS,
         )
@@ -2436,20 +2491,25 @@ class AppConfig(GlobalConfig):
         return await self.restore_service(script_id, user_id).ensure(target)
 
     async def restore_config_backup(
-        self, script_id: str, user_id: str, ts: str, target: str
+        self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
     ) -> dict:
         """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。
 
         恢复是覆盖性写配置操作：脚本锁着（任务/配置会话运行中）时拒绝，
         否则 mas 池「先换目录再回填 UserData」会在 update 处撞锁，留下
         目录已换、字段未回填的半恢复现场。
+
+        ``force`` 随上下文下发到专项池恢复函数（当前仅 ZzzOd 消费：跳过
+        注册表依赖步骤——恢复前存底 / 占用守卫），其余专项忽略。源配置
+        损坏（``ConfigCorruptedError``）原样抛出，API 层转 409 交前端二次
+        确认。
         """
 
         uid = uuid.UUID(script_id)
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法恢复配置")
 
-        await self.restore_service(script_id, user_id).restore(target, ts)
+        await self.restore_service(script_id, user_id, force=force).restore(target, ts)
         return {"target": target}
 
     async def get_config_backup_preview(
@@ -2497,6 +2557,9 @@ class AppConfig(GlobalConfig):
             # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）
             if new_mode == "直控" and isinstance(script_config, ZzzOdConfig):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
+                # 快速配置已封锁（覆盖写槽与直控零写入相悖，维护者决策）：
+                # 切直控时同步归关，免得界面隐藏的开关残留旧值
+                data.setdefault("Info", {})["IfQuickConfig"] = False
             if (
                 new_mode == "直控"
                 and str(user_config.get("Info", "Mode") or "用户") != "直控"
@@ -3815,13 +3878,9 @@ class AppConfig(GlobalConfig):
     @property
     def proxy(self) -> Optional[httpx.Proxy]:
         """获取代理设置，返回适用于 httpx 的代理对象"""
-        proxy_addr = self.get("Update", "ProxyAddress")
+        proxy_addr = normalize_proxy_address(self.get("Update", "ProxyAddress"))
         if not proxy_addr:
             return None
-
-        # 如果地址不包含协议，默认为 http
-        if not proxy_addr.startswith(("http://", "https://", "socks5://", "socks4://")):
-            proxy_addr = f"http://{proxy_addr}"
 
         try:
             logger.info(f"使用代理: {proxy_addr}")
@@ -3829,6 +3888,17 @@ class AppConfig(GlobalConfig):
         except Exception as e:
             logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
             return None
+
+    @property
+    def proxy_url(self) -> Optional[str]:
+        """代理地址字符串（含协议、保留 userinfo），给子进程环境变量用；不打日志。
+
+        MFW 运行池的 uv / pip、worker 与项目 agent 都经
+        ``host_environment.subprocess_proxy_scope`` 拿到它；每次准备环境都会读，
+        这里不像 ``proxy`` 那样每次访问都记一行「使用代理」。
+        """
+
+        return normalize_proxy_address(self.get("Update", "ProxyAddress"))
 
     async def get_stage_info(
         self,
@@ -4297,8 +4367,8 @@ class AppConfig(GlobalConfig):
 
             i += 1
 
-        # 掉落统计收集所有由理智任务产生的有效 Fight 任务链，包括活动关优先、
-        # 库存保持和剩余理智任务。
+        # 掉落统计收集所有由理智任务产生的有效 Fight 任务链，包括活动关优先
+        # 和库存保持任务。
         data["drop_statistics"] = _parse_maa_drop_statistics(logs)
 
         # 保存日志
@@ -4814,14 +4884,20 @@ class AppConfig(GlobalConfig):
 
         终末地登录失败截图与 OK-WW / OK-NTE 切号诊断只会随失败新增，
         此前没有任何回收；保留时长沿用历史记录的保留天数设置。
+        登录截图总大小超过 10 MB 时，额外按时间从旧到新清理，
+        不受历史记录永久保留设置影响。
         """
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
-            logger.info("诊断文件永久保留, 跳过诊断文件清理")
-            return
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
+            logger.info("诊断文件永久保留, 跳过按保留期限清理")
+            cutoff = None
+        else:
+            cutoff = time.time() - retention_days * 86400
 
-        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
         deleted_count = 0
+        screenshot_files: list[tuple[Path, float, int]] = []
+        screenshot_size = 0
         for name in ("maaend-login", "okww-account-switch", "oknte-account-switch"):
             folder = Path.cwd() / "debug" / name
             if not folder.is_dir():
@@ -4830,15 +4906,39 @@ class AppConfig(GlobalConfig):
                 if not file.is_file():
                     continue
                 try:
-                    if file.stat().st_mtime >= cutoff:
-                        continue
-                    file.unlink()
+                    file_stat = file.stat()
                 except OSError as exc:
                     logger.warning(f"诊断文件清理失败: {file} - {exc}")
                     continue
-                deleted_count += 1
+                if cutoff is not None and file_stat.st_mtime < cutoff:
+                    try:
+                        file.unlink()
+                    except OSError as exc:
+                        logger.warning(f"诊断文件清理失败: {file} - {exc}")
+                    else:
+                        deleted_count += 1
+                        continue
+                if file.suffix.lower() == ".png":
+                    screenshot_files.append(
+                        (file, file_stat.st_mtime, file_stat.st_size)
+                    )
+                    screenshot_size += file_stat.st_size
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
+
+        screenshot_deleted_count = 0
+        for file, _, file_size in sorted(screenshot_files, key=lambda item: item[1]):
+            if screenshot_size <= LOGIN_SCREENSHOT_MAX_BYTES:
+                break
+            try:
+                file.unlink()
+            except OSError as exc:
+                logger.warning(f"登录截图清理失败: {file} - {exc}")
+                continue
+            screenshot_size -= file_size
+            screenshot_deleted_count += 1
+        if screenshot_deleted_count:
+            logger.success(f"清理完成: {screenshot_deleted_count} 个超限登录截图")
 
     async def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。

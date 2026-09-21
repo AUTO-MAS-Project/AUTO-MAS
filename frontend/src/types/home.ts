@@ -20,6 +20,10 @@ export interface HomeLayoutConfig {
   hideScrollHint?: boolean
   /** 活动轮播是否自动播放；未设置按开启处理 */
   carouselAutoplay?: boolean
+  /** 首页轮播下方是否显示当前游戏的日常便笺；由游戏社区设置里的总开关控制，默认关闭 */
+  activityNotesVisible?: boolean
+  /** 首页便笺被单独关闭的游戏；在「编辑布局」里控制 */
+  hiddenActivityNotes?: HomeModuleKey[]
 }
 
 export interface HomeModuleDescriptor {
@@ -179,6 +183,8 @@ export interface ActivityBannerItem {
   cover: string
   /** 版本名或当期活动名 */
   subtitle: string
+  /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */
+  startTime: string
   /** 倒计时终点，取不到时为空串 */
   endTime: string
   loading: boolean
