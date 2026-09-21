@@ -931,13 +931,6 @@ class AutoProxyTask(TaskExecuteBase):
                             )
                     else:
                         # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
-                        if self.mode == self.first_run_mode and is_process_running(
-                            "Endfield.exe"
-                        ):
-                            logger.info(
-                                "关闭已运行的终末地，准备执行 MaaEnd 游戏设置预任务"
-                            )
-                            await self.kill_game_process()
                         logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
@@ -983,6 +976,16 @@ class AutoProxyTask(TaskExecuteBase):
                     if use_mas_account_switch
                     else "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
                 )
+
+            if (
+                self.emulator_manager is None
+                and self.mode == self.first_run_mode
+                and bool(self.script_config.get("Game", "SetResolution"))
+            ):
+                logger.info(
+                    "启动时设置分辨率：关闭终末地，准备执行 MaaEnd 游戏设置预任务"
+                )
+                await self.kill_game_process()
 
             await self.set_maaend(emulator_info)
 
