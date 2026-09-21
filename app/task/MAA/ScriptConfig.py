@@ -26,7 +26,6 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -37,7 +36,11 @@ from app.services import System
 from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
-from .AutoProxy import _MAA_CONFIG_FILES, _normalize_maa_task_queue
+from .AutoProxy import (
+    _MAA_CONFIG_FILES,
+    _repair_maa_task_queue,
+    read_maa_config_with_fallback,
+)
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -72,6 +75,21 @@ _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
         "gui.json",
         ("Configurations", "Default", "Start.OpenEmulatorAfterLaunch"),
         "False",
+    ),
+    # 调起 MAA 的 GUI 必有人要操作界面，启动即最小化恒为关——否则用户自己
+    # 设过"启动时最小化"的，配置会话打开就是缩在托盘里。gui.json 的
+    # Start.MinimizeDirectly 与 gui.new.json 的 Gui.MinimizeOnStartup 是同一
+    # 开关的新旧两通道（均为 MAA 真实键，native 池 3/3 实证），必须同时压住。
+    # 会话级覆盖，回写前还原，不进 base。
+    (
+        "gui.json",
+        ("Global", "Start.MinimizeDirectly"),
+        "False",
+    ),
+    (
+        "gui.new.json",
+        ("Gui", "MinimizeOnStartup"),
+        False,
     ),
 )
 
@@ -253,8 +271,10 @@ class ScriptConfigTask(TaskExecuteBase):
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
             shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
 
-        gui_set = read_file(self.maa_set_path / "gui.json")
-        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
+        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架：骨架不含 TaskQueue，
+        # MAA 加载时用内存默认队列填空——默认队列的唯一生成器是 MAA 本体。
+        gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
+        gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
         # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
         if gui_set["Current"] != "Default":
@@ -272,13 +292,13 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # GUI 直接展示 base（MAA 自己的日常任务配置）：下发前只做一次布局校对，
-        # 队列数量或顺序对不上就整队按默认布局重建，用户把队列改坏也能自愈。
+        # GUI 直接展示 base（MAA 自己的日常任务配置）：队列成员与顺序都归 MAA 与
+        # 用户所有，MAS 不校对不重建；只修 $type 位置，否则 MAA 读不进整个文件。
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
             source_queue = []
         gui_new_set["Configurations"]["Default"]["TaskQueue"] = (
-            _normalize_maa_task_queue(source_queue)
+            _repair_maa_task_queue(source_queue)
         )
 
         # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
@@ -307,12 +327,6 @@ class ScriptConfigTask(TaskExecuteBase):
         gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
         gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
         gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
-
-        # 静默模式相关配置
-        if Config.get("Function", "IfSilence"):
-            global_set["Start.MinimizeDirectly"] = "False"  # OLD: 即将移除
-            # NEW:
-            gui_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = False
 
         (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
             json.dumps(gui_set, ensure_ascii=False, indent=4),
@@ -348,8 +362,8 @@ class ScriptConfigTask(TaskExecuteBase):
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
 
         # GUI 展示的就是 base，用户在 MAA 里改完落盘的文件即新的 base：整份写回
-        # 即可，不需要按身份归并（那是"GUI 展示映射层"时代的产物）。队列仍按布局
-        # 校对一次，防止用户在 MAA 里把结构改坏后被固化进存档。
+        # 即可，不需要按身份归并（那是"GUI 展示映射层"时代的产物）。队列同样原样
+        # 接受——这份文件刚被 MAA 自己写出并读通过，MAS 没有立场替它判定合法。
         saved = False
         for name in _MAA_CONFIG_FILES:
             try:
@@ -370,7 +384,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 if isinstance(configurations, dict):
                     queue = configurations.get("TaskQueue")
                     if isinstance(queue, list):
-                        configurations["TaskQueue"] = _normalize_maa_task_queue(queue)
+                        configurations["TaskQueue"] = _repair_maa_task_queue(queue)
             write_file(mas_dir / name, current)
             saved = True
         if not saved:

@@ -124,7 +124,6 @@ _OVERLAY_INFO_KEYS = (
     "Stage_1",
     "Stage_2",
     "Stage_3",
-    "Stage_Remain",
     "Annihilation",
     "AnnihilationStartWeekday",
     "InfrastMode",
@@ -179,7 +178,6 @@ _OVERLAY_MAA_ORDER = (
     "MedicineNumb",
     "SeriesNumb",
     "Stage",
-    "Stage_Remain",
     "Annihilation",
     "InfrastMode",
     "InfrastName",
@@ -225,7 +223,6 @@ _OVERLAY_FIELD_LABELS = {
     "MedicineNumb": "吃理智药",
     "SeriesNumb": "连战次数",
     "Stage": "关卡",
-    "Stage_Remain": "剩余理智关卡",
     "Annihilation": "剿灭模式",
     "AnnihilationStartWeekday": "剿灭开始星期",
     "InfrastMode": "基建模式",
@@ -590,8 +587,7 @@ def _task_type_of(task: dict) -> str | None:
 def _stage_plan_text(stage_plan: list) -> str:
     """StagePlan → 关卡展示文本（与 MAA GUI「关卡指定」显示对齐）。
 
-    MAA GUI 的「关卡指定=当前/上次」在配置里就是空 StagePlan——只有 MAS
-    侧的剩余理智关卡才有「不选择」哨兵值，native 侧没有。
+    MAA GUI 的「关卡指定=当前/上次」在配置里就是空 StagePlan。
     """
 
     stages = [str(stage) for stage in stage_plan if str(stage)]
@@ -640,19 +636,6 @@ def _task_queue_rows(queue) -> list[dict]:
             continue
         task_type = _task_type_of(task)
         if task_type is None:
-            continue
-        if task_type == "Fight" and task.get("Name") == "剩余理智":
-            # MAA 的剩余理智是第二个 Fight 任务，不并入理智作战：开关 +
-            # 关卡（关闭且未配置时与 MAS 侧的「不选择」口径一致）
-            rows.append({"key": "剩余理智", "value": _bool_text(task.get("IsEnable"))})
-            if isinstance(task.get("StagePlan"), list):
-                stages = [str(stage) for stage in task["StagePlan"] if str(stage)]
-                value = (
-                    "、".join(stages)
-                    if stages
-                    else ("当前/上次" if task.get("IsEnable") else "不选择")
-                )
-                rows.append({"key": "剩余理智关卡", "value": value})
             continue
         if task_type in seen:
             continue

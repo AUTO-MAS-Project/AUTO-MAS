@@ -56,10 +56,8 @@ from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
     ARKNIGHTS_PACKAGE_NAME,
     MAA_ANNIHILATION_FIGHT_BASE,
-    MAA_BASE_QUEUE_LAYOUT,
     MAA_GREEN_TICKET_STORE_TASK,
     MAA_MODE_TIME_LIMIT_BOOK,
-    MAA_REMAIN_FIGHT_BASE,
     MAA_RUN_MOOD_BOOK,
     MAA_STAGE_KEY,
     MAA_TASK_TRANSITION_METHOD_BOOK,
@@ -116,7 +114,6 @@ _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 理智作战",
     "完成任务: 活动关优先",
     "完成任务: 库存保持",
-    "完成任务: 剩余理智",
     "完成任务: 养成计划",
 )
 # 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
@@ -248,6 +245,45 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 
 _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
+
+_MAA_GUI_SKELETON: dict[str, dict] = {
+    "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
+    "gui.new.json": {"Configurations": {"Default": {}}, "Timers": {"List": []}},
+}
+"""MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
+
+base 缺失或损坏时以骨架为底下发——MAA（System.Text.Json）加载时对缺席属性
+取 C# 内存默认值，**TaskQueue 缺席即由 MAA 内存默认队列填空**（PR #907 实证：
+MAA 保存时用内存默认队列整体重写 gui.new.json）。用户在 MAA 里一保存，
+完整 base 即落盘。默认队列从此只有 MAA 一个生成器，MAS 不再维护队列表单。
+"""
+
+
+def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
+    """读 MAA 配置文件；缺失或损坏时退回骨架（任务内容交 MAA 内存默认填充）。
+
+    损坏但存在 ``.bak`` 时优先用 MAA 自己的备份——那是 MAA 上一次成功落盘的
+    完整现场，比骨架少丢用户数据。返回的 dict 由调用方独立持有，改动不落盘。
+    """
+
+    path = maa_set_path / name
+    try:
+        doc = read_file(path)
+    except (OSError, ValueError) as e:
+        logger.opt(exception=True).warning(f"读取 MAA 配置失败({name}): {e}")
+        doc = {}
+    if doc:
+        return doc
+    if path.exists():
+        # 文件存在但读不出内容（损坏）：优先用 MAA 自己的 .bak——那是 MAA
+        # 上一次成功落盘的完整现场，比骨架少丢用户数据。（.bak 后缀不在
+        # read_file 的编解码器表里，须显式指定 .json 解析）
+        bak = read_file(path.with_suffix(path.suffix + ".bak"), format=".json")
+        if isinstance(bak, dict) and bak:
+            logger.warning(f"MAA 配置损坏, 采用 MAA 自带备份({name}.bak)")
+            return bak
+    logger.warning(f"MAA 配置缺失, 以骨架下发, 任务队列由 MAA 默认值生成({name})")
+    return deepcopy(_MAA_GUI_SKELETON.get(name, {}))
 
 
 def _merge_task_queue(
@@ -428,9 +464,9 @@ def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
 
     补丁是 merge patch 语义：**补丁里出现的键才算 MAS 接管，没出现的键一律
     透传用户在上游界面里的选择**（临期药、源石、博朗台、周计划、指定材料/
-    次数、隐藏项等）。因此补丁表（MAA_ANNIHILATION_FIGHT_BASE /
-    MAA_REMAIN_FIGHT_BASE）只允许列 MAS 运行必需且自己会消费的字段；往表里
-    补一个 MAS 不消费的默认值，等于把用户的选择静默抹掉。
+    次数、隐藏项等）。因此补丁表（MAA_ANNIHILATION_FIGHT_BASE）只允许列
+    MAS 运行必需且自己会消费的字段；往表里补一个 MAS 不消费的默认值，
+    等于把用户的选择静默抹掉。
     """
 
     return {**deepcopy(source_task), **deepcopy(managed_patch)}
@@ -473,41 +509,18 @@ def _with_type_first(task: dict) -> dict:
     }
 
 
-def _normalize_maa_task_queue(source_queue: list[dict]) -> list[dict]:
-    """把队列校对成 base 唯一合法布局，对不上就整队重建。
+def _repair_maa_task_queue(source_queue: list[dict]) -> list[dict]:
+    """逐条把队列条目的 ``$type`` 摆到首位，其余内容一律不动。
 
-    base 就是 MAA 自己的日常任务配置，MAS 不往队列里放自有条目。下发 MAA 前按
-    ``MAA_BASE_QUEUE_LAYOUT`` 校对数量与顺序，任何一处对不上就整队按布局重建——
-    用户第一次把队列改坏（删条目、加条目、改顺序、写盘半截），下一次打开 MAA
-    也能拿到可运行的默认配置，不需要用户自己修。
-
-    重建时逐条按类型取回来源条目（同类型唯一时），用户在各条目里设的高级选项
-    因此得以保留；被删掉的条目按 MAA 默认复活。
+    队列的成员、顺序、条目字段都是 base 的一部分，归用户与 MAA 自己的界面所有，
+    MAS 不校对也不重建——不认识的条目（上游新增类型、用户自定义任务）原样透传。
+    这里只修一个 MAS 有责任修的东西：``$type`` 的位置，见 :func:`_with_type_first`。
     """
 
-    source_tasks = [deepcopy(task) for task in source_queue if isinstance(task, dict)]
-
-    if [task.get("TaskType") for task in source_tasks] == MAA_BASE_QUEUE_LAYOUT:
-        # 布局已合法也要兜底修 $type 的位置：旧存档里可能存在 $type 排在后面的
-        # 条目，不修就会一直把坏数据下发给 MAA（MAA 解析失败→退回 .bak→回写时
-        # 又保留坏条目），形成死循环。
-        return [_with_type_first(task) for task in source_tasks]
-
-    logger.info("MAA 任务队列与预设布局不符，按默认布局重建")
-
-    queue: list[dict] = []
-    for task_type in MAA_BASE_QUEUE_LAYOUT:
-        candidates = [
-            task for task in source_tasks if task.get("TaskType") == task_type
-        ]
-        # 同类型唯一时才取回字段：多条同类型无从判断哪条是用户配的那条
-        task = deepcopy(candidates[0]) if len(candidates) == 1 else {}
-        task.update({"TaskType": task_type, "IsEnable": True})
-        task = _with_type_first(task)
-        task.setdefault("Name", "")
-        queue.append(task)
-
-    return queue
+    return [
+        _with_type_first(task) if isinstance(task, dict) else task
+        for task in source_queue
+    ]
 
 
 def _build_cultivate_task(
@@ -1247,8 +1260,10 @@ class AutoProxyTask(TaskExecuteBase):
             if source.is_dir():
                 shutil.copytree(source, self.maa_set_path, dirs_exist_ok=True)
 
-        gui_set = read_file(self.maa_set_path / "gui.json")
-        gui_new_set = read_file(self.maa_set_path / "gui.new.json")
+        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；运行期任务队列本来就从
+        # MAS 用户配置整体装配，骨架只承载 MAS 托管键的容器路径。
+        gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
+        gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
         # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
         if gui_set["Current"] != "Default":
@@ -1266,14 +1281,14 @@ class AutoProxyTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # 每次启动 MAA 前校对队列布局：用户在 MAA 里把队列改坏（删条目、加条目、
-        # 改顺序、写盘半截），这里整队重建回默认布局，保证下一次打开仍可运行。
+        # 逐条修 $type 位置（布局不校对、成员不动——下方 _apply_maa_quick_config
+        # 会按本轮用户配置重建 TaskQueue，但各条目的高级字段经 _find_task_source
+        # 从这份队列取回，$type 不在首位会让 MAA 读不进整个文件）。
         for configurations in (gui_new_set.get("Configurations") or {}).values():
-            if not isinstance(configurations, dict):
-                continue
-            queue = configurations.get("TaskQueue")
-            if isinstance(queue, list):
-                configurations["TaskQueue"] = _normalize_maa_task_queue(queue)
+            if isinstance(configurations, dict):
+                queue = configurations.get("TaskQueue")
+                if isinstance(queue, list):
+                    configurations["TaskQueue"] = _repair_maa_task_queue(queue)
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
@@ -1383,9 +1398,6 @@ class AutoProxyTask(TaskExecuteBase):
         )
         activity_source = _find_task_source(
             source_queue, "活动关优先", "Fight", allow_type_fallback=False
-        )
-        remain_source = _find_task_source(
-            source_queue, "剩余理智", "Fight", allow_type_fallback=False
         )
 
         # 库存保持的高级设置（计划列表）由 MAA 自己的 GUI 维护，MAS 只负责开关：
@@ -1545,26 +1557,6 @@ class AutoProxyTask(TaskExecuteBase):
                 # 养成计划位于活动关优先之后、库存保持之前（方案 §9 队列 #3）
                 task_queue.append(cultivate_task)
 
-            # 剩余理智关卡配置
-            if (
-                self.mode == "Routine"
-                and task_type == "Fight"
-                and self.task_dict["Fight"]
-                and plan_data.get("Stage_Remain", "-") != "-"
-            ):
-                remain_fight = _merge_fight_task(
-                    remain_source or fight_source, MAA_REMAIN_FIGHT_BASE
-                )
-                remain_fight["StagePlan"] = [
-                    (
-                        ""
-                        if plan_data.get("Stage_Remain", "-") == "*"
-                        else plan_data.get("Stage_Remain", "-")
-                    )
-                ]
-                remain_fight["Series"] = int(plan_data.get("SeriesNumb", "0"))
-                task_queue.append(remain_fight)
-
         # 绿票商店走 MAA 的自定义任务，本模式下队列里只有它和开始唤醒
         if self.mode == "GreenTicketStore":
             task_queue.append(dict(MAA_GREEN_TICKET_STORE_TASK))
@@ -1622,7 +1614,7 @@ class AutoProxyTask(TaskExecuteBase):
             global_set["GUI.MinimizeToTray"] = "True"
             global_set["Start.MinimizeDirectly"] = "True"
             gui_new_set.setdefault("Gui", {}).update(
-                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
+                {"UseTray": True, "MinimizeToTray": True}
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
             global_set["Announcement.DoNotShowAnnouncement"] = "True"
