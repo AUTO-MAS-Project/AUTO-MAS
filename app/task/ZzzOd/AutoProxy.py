@@ -431,17 +431,14 @@ class AutoProxyTask(TaskExecuteBase):
 
         return self.mode == "直控"
 
-    def _direct_missing_game_paths(self, root: Path) -> list[str]:
-        """直控运行目标实例中未配置游戏路径的实例名（空=全部可运行）。
+    def _direct_run_targets(self, root: Path) -> list[dict]:
+        """直控运行的目标实例列表（与上游 ``handle_init`` 判定同口径）。
 
-        直控=原生裸跑、MAS 零注入，游戏路径只可能来自目标实例的
-        ``game_account.yml``；缺失时一条龙会以「未配置游戏路径」整体失败，
-        这里提前拦截并指明是哪个实例。目标随原生 ``instance_run`` 而定：
-        全部实例=所有参与运行的实例，其余（含空值等非法值）=活跃实例——
-        与上游 ``handle_init`` 的判定及 ``instance_list_in_od`` /
-        ``current_active_instance`` 同口径，只有**键缺失**才按上游默认取
-        「全部实例」。读不动或条目结构异常的实例不误判为未配置，交由
-        一条龙自身报错。
+        随原生 ``instance_run`` 而定：全部实例=所有参与运行（``active_in_od``）
+        的实例，其余（含空值等非法值）=活跃实例——只有**键缺失**才按上游
+        默认取「全部实例」；目标为空时回落活跃实例（对齐上游 ``handle_init``
+        对空参与列表的回落）。上游对「有参与实例但无活跃」会自行切到首个
+        参与实例运行，因此目标非空即放行，不以有无活跃实例拦截。
         """
 
         run_mode = read_instance_run(root)
@@ -456,9 +453,19 @@ class AutoProxyTask(TaskExecuteBase):
         if not targets:
             active = find_active_instance(root)
             targets = [active] if active is not None else []
+        return targets
+
+    def _direct_missing_game_paths(self, root: Path) -> list[str]:
+        """直控运行目标实例中未配置游戏路径的实例名（空=全部可运行）。
+
+        直控=原生裸跑、MAS 零注入，游戏路径只可能来自目标实例的
+        ``game_account.yml``；缺失时一条龙会以「未配置游戏路径」整体失败，
+        这里提前拦截并指明是哪个实例。读不动或条目结构异常的实例不误判
+        为未配置，交由一条龙自身报错。
+        """
 
         missing: list[str] = []
-        for item in targets:
+        for item in self._direct_run_targets(root):
             try:
                 idx = int(item.get("idx", -1))
                 if idx <= 0:
@@ -733,7 +740,7 @@ class AutoProxyTask(TaskExecuteBase):
             # （只含 MAS 槽）：否则下面读到的是视图，会把 MAS 槽当运行目标、
             # 误报「未配置游戏路径」；无 sidecar 时为 no-op
             restore_instance_view(root)
-            if find_active_instance(root) is None:
+            if not self._direct_run_targets(root):
                 return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
             # 直控裸跑读原生实例配置，路径缺失时一条龙只会以「未配置游戏路径」
             # 失败，这里提前给出可读提示并指明实例
