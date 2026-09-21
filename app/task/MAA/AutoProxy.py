@@ -297,6 +297,7 @@ def _merge_task_queue(
     current_queue: list,
     *,
     drop_missing: bool = True,
+    ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """按 (TaskType, Name) 把运行期任务队列相对基线的变更合并进存档队列。
 
@@ -309,6 +310,8 @@ def _merge_task_queue(
     存档一并移除、下次按默认重建; False(脚本设置会话)时保留——设置会话里
     MAA 用自己的默认队列保存, 合成任务从当前队列消失是回写行为而非用户删除,
     不能据此抹掉存档里用户在这些任务上的高级字段。
+
+    ignore_keys 里的字段不回写: 由 MAS 每次注入决定、MAA 运行期改了也不算数。
     """
 
     if not isinstance(archive_queue, list) or not isinstance(baseline_queue, list):
@@ -349,7 +352,7 @@ def _merge_task_queue(
         else:
             target = archive_queue[target_index]
         for key_, value in task.items():
-            if key_ in _MAA_TASK_KEYS_NOT_MERGED:
+            if key_ in ignore_keys:
                 continue
             if base_task.get(key_) != value and target.get(key_) != value:
                 target[key_] = deepcopy(value)
@@ -380,6 +383,7 @@ def _merge_maa_changes(
     current: dict | list,
     *,
     drop_missing: bool = True,
+    ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
 
@@ -406,7 +410,11 @@ def _merge_maa_changes(
                     continue
                 changed = (
                     _merge_maa_changes(
-                        archive[key], base_value, value, drop_missing=drop_missing
+                        archive[key],
+                        base_value,
+                        value,
+                        drop_missing=drop_missing,
+                        ignore_keys=ignore_keys,
                     )
                     or changed
                 )
@@ -417,6 +425,7 @@ def _merge_maa_changes(
                         base_value,
                         value,
                         drop_missing=drop_missing,
+                        ignore_keys=ignore_keys,
                     )
                     or changed
                 )
@@ -433,6 +442,7 @@ def _merge_maa_config_file(
     scheme: str,
     *,
     drop_missing: bool = True,
+    ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """按生效方案合并一份 MAA 配置, 返回是否有变更。
 
@@ -442,19 +452,35 @@ def _merge_maa_config_file(
     """
 
     if scheme == "Default":
-        return _merge_maa_changes(archive, baseline, current, drop_missing=drop_missing)
+        return _merge_maa_changes(
+            archive,
+            baseline,
+            current,
+            drop_missing=drop_missing,
+            ignore_keys=ignore_keys,
+        )
 
     configurations = archive.get("Configurations")
     if not isinstance(configurations, dict) or not isinstance(
         configurations.get(scheme), dict
     ):
-        return _merge_maa_changes(archive, baseline, current, drop_missing=drop_missing)
+        return _merge_maa_changes(
+            archive,
+            baseline,
+            current,
+            drop_missing=drop_missing,
+            ignore_keys=ignore_keys,
+        )
 
     original_default = configurations.get("Default")
     configurations["Default"] = configurations[scheme]
     try:
         changed = _merge_maa_changes(
-            archive, baseline, current, drop_missing=drop_missing
+            archive,
+            baseline,
+            current,
+            drop_missing=drop_missing,
+            ignore_keys=ignore_keys,
         )
     finally:
         merged = configurations["Default"]
@@ -1730,6 +1756,13 @@ class AutoProxyTask(TaskExecuteBase):
                 baseline[name],
                 current,
                 maa_scheme_name(archive_dir, archive),
+                # 快速配置开着时班次由 MAS 注入, MAA 自增的 PlanSelect 不回写;
+                # 关着时 MAA 跑的是存档自己的队列, 推进要靠回写保住
+                ignore_keys=(
+                    _MAA_TASK_KEYS_NOT_MERGED
+                    if self.cur_user_config.get("Info", "IfQuickConfig")
+                    else frozenset()
+                ),
             ):
                 continue
             write_file(archive_dir / name, archive_new)

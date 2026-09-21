@@ -2721,18 +2721,16 @@ class AppConfig(GlobalConfig):
         return [], "MAA 原生配置中没有基建任务", "empty"
 
     def _infrast_plan_owned_by_mas(self, script_id: str, user_id: str) -> bool:
-        """班次指针是否由 MAS 用户字段管理, 与 _infrast_plans 的注入判定同源。
+        """班次指针是否由 MAS 用户字段管理, 与 set_maa 的注入判定同源。
 
-        MAS 注入排班表的组合(托管 / 直控+快速配置)下, 班次由 MAS 决定: 带时段表
-        一律交 MAA 按时段选班, 无时段表注入用户自己的 ``Data.InfrastPlanIndex``。
-        直控且关闭快速配置时 MAS 不注入, 班次仍在 MAA 原生配置的 PlanSelect 里。
+        快速配置开着时 MAS 注入排班表, 班次由 MAS 决定: 带时段表一律交 MAA 按
+        时段选班, 无时段表注入用户自己的 ``Data.InfrastPlanIndex``。关着时 MAS
+        不注入, MAA 跑的是来源配置自己的队列, 班次仍在那份配置的 PlanSelect 里。
         """
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         user_config = script_config.UserData[uuid.UUID(user_id)]
-        return user_config.get("Info", "Mode") != "直控" or bool(
-            user_config.get("Info", "IfQuickConfig")
-        )
+        return bool(user_config.get("Info", "IfQuickConfig"))
 
     async def set_infrast_plan_select(
         self, script_id: str, user_id: str, index: int
