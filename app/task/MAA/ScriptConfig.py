@@ -28,7 +28,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig, MaaUserConfig, maa_scheme_name
+from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
@@ -37,12 +37,7 @@ from app.services import System
 from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
-from .AutoProxy import (
-    _MAA_CONFIG_FILES,
-    _build_maa_preset_task_queue,
-    _merge_maa_config_file,
-    _restrict_task_queue_to_baseline,
-)
+from .AutoProxy import _MAA_CONFIG_FILES, _normalize_maa_task_queue
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -187,12 +182,13 @@ class ScriptConfigTask(TaskExecuteBase):
         global_set = gui_set["Global"]
         default_set = gui_set["Configurations"]["Default"]
 
-        # 配置 GUI 使用与 MAS 运行时一致的任务顺序，并预置合成任务。
+        # GUI 直接展示 base（MAA 自己的日常任务配置）：下发前只做一次布局校对，
+        # 队列数量或顺序对不上就整队按默认布局重建，用户把队列改坏也能自愈。
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
             source_queue = []
         gui_new_set["Configurations"]["Default"]["TaskQueue"] = (
-            _build_maa_preset_task_queue(source_queue)
+            _normalize_maa_task_queue(source_queue)
         )
 
         # 任务间切换方式
@@ -278,48 +274,31 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
-        baseline = self._maa_config_baseline or {}
 
-        # 归一回写：按 (TaskType, Name) 身份对齐合并，只透传用户在 MAA GUI 里
-        # 的真实修改；MAA 保存时自带的原生默认任务(UserDataUpdate/生息演算等)
-        # 不固化进 MAS 存档，合成任务也不因 MAA 默认队列未包含而被抹除。
-        # 队列结构以 MAS 合成结果为准，其余文件不盲拷。
-        normalized = False
+        # GUI 展示的就是 base，用户在 MAA 里改完落盘的文件即新的 base：整份写回
+        # 即可，不需要按身份归并（那是"GUI 展示映射层"时代的产物）。队列仍按布局
+        # 校对一次，防止用户在 MAA 里把结构改坏后被固化进存档。
+        saved = False
         for name in _MAA_CONFIG_FILES:
-            base = baseline.get(name)
-            if base is None:
-                continue
             try:
                 current = read_file(self.maa_set_path / name)
             except (OSError, json.JSONDecodeError) as e:
                 logger.opt(exception=True).warning(
-                    f"读取 MAA 配置以对比回写失败({name}): {e}"
+                    f"读取 MAA 配置以回写失败({name}): {e}"
                 )
                 continue
             if not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
                 continue
-            try:
-                archive = read_file(mas_dir / name)
-            except (OSError, json.JSONDecodeError):
-                archive = None
-            if not archive:
-                # 空存档(首次会话)以会话基线为底，仅叠加用户修改
-                archive = deepcopy(base)
-            archive_new = deepcopy(archive)
-            scheme = maa_scheme_name(mas_dir, archive)
-            changed = _merge_maa_config_file(
-                archive_new, base, current, scheme, drop_missing=False
-            )
-            changed = (
-                _restrict_task_queue_to_baseline(archive_new, base, scheme) or changed
-            )
-            if not changed:
-                continue
-            write_file(mas_dir / name, archive_new)
-            normalized = True
-        if not normalized:
-            logger.info("MAA 配置回写: 相对会话基线无用户修改, 存档保持不变")
+            for configurations in (current.get("Configurations") or {}).values():
+                if isinstance(configurations, dict):
+                    queue = configurations.get("TaskQueue")
+                    if isinstance(queue, list):
+                        configurations["TaskQueue"] = _normalize_maa_task_queue(queue)
+            write_file(mas_dir / name, current)
+            saved = True
+        if not saved:
+            logger.info("MAA 配置回写: 无落盘内容, 存档保持不变")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

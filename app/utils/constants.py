@@ -113,6 +113,28 @@ MAA_TASKS_ZH = [
 ]
 """MAA_TASKS 对应的中文任务名（与 MAA_TASKS 逐位对齐）"""
 
+MAA_BASE_QUEUE_LAYOUT = [
+    "StartUp",
+    "DepotMaintain",
+    "Fight",
+    "Infrast",
+    "Recruit",
+    "Mall",
+    "Award",
+    "UserDataUpdate",
+    "Roguelike",
+    "Reclamation",
+]
+"""base 任务队列的唯一合法布局（MAA 原生日常任务的类型序列）。
+
+base 就是 MAA 自己的日常任务配置：MAS 不往队列里放自有条目，只按需在运行期
+注入合成任务。下发 MAA 前按本表校对队列，数量或顺序对不上就整队按本表重建，
+用户即使把队列改坏（删条目、加条目、改顺序、写盘半截），下一次打开 MAA 也能
+拿到可运行的默认配置。
+
+上游新增任务类型时需要同步本表，否则该类型会被判为"不符"而在校对时丢失。
+"""
+
 MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "3213",
     "3223",

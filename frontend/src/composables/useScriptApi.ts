@@ -280,10 +280,6 @@ export function useScriptApi() {
                           maaUserData.Task?.ActivityMedicineNumb !== undefined
                             ? maaUserData.Task.ActivityMedicineNumb
                             : (maaUserData.Info?.MedicineNumb ?? 0),
-                        DepotMaintainPlans:
-                          maaUserData.Task?.DepotMaintainPlans !== undefined
-                            ? maaUserData.Task.DepotMaintainPlans
-                            : '[]',
                       },
                       Notify: {
                         Enabled:

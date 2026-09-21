@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   summarizeActivity,
   summarizeAnnihilation,
-  summarizeDepot,
   summarizeFight,
   summarizeInfrast,
 } from './taskSummaries'
@@ -45,21 +44,6 @@ describe('activity summary', () => {
   it('stays empty when disabled, even while options are still loading', () => {
     expect(summarizeActivity({ ...base, enabled: false })).toBe('')
     expect(summarizeActivity({ ...base, enabled: false, loading: true })).toBe('')
-  })
-})
-
-describe('depot summary', () => {
-  it('counts configured plans', () => {
-    expect(summarizeDepot(true, '[{"a":1},{"b":2}]')).toBe('2 项计划')
-  })
-
-  it('treats malformed or empty plan JSON as no plans', () => {
-    expect(summarizeDepot(true, 'not json')).toBe('尚未添加计划')
-    expect(summarizeDepot(true, '')).toBe('尚未添加计划')
-  })
-
-  it('stays empty when switched off', () => {
-    expect(summarizeDepot(false, '[{"a":1}]')).toBe('')
   })
 })
 

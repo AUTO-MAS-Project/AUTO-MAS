@@ -622,7 +622,6 @@ const getDefaultMAAUserData = () => ({
     IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
-    DepotMaintainPlans: '[]',
     CultivateTargets: '[]',
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,

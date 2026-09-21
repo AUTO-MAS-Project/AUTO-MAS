@@ -1595,9 +1595,6 @@ class MaaUserConfig_Task(BaseModel):
     ActivityMedicineNumb: Optional[int] = Field(
         default=None, description="活动关优先任务吃理智药数量"
     )
-    DepotMaintainPlans: Optional[str] = Field(
-        default=None, description="库存保持计划 JSON"
-    )
     IfCultivate: Optional[bool] = Field(default=None, description="干员养成")
     CultivateTargets: Optional[str] = Field(
         default=None, description="干员养成目标 JSON"

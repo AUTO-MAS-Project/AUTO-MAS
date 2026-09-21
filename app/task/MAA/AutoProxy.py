@@ -56,6 +56,7 @@ from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
     ARKNIGHTS_PACKAGE_NAME,
     MAA_ANNIHILATION_FIGHT_BASE,
+    MAA_BASE_QUEUE_LAYOUT,
     MAA_GREEN_TICKET_STORE_TASK,
     MAA_MODE_TIME_LIMIT_BOOK,
     MAA_REMAIN_FIGHT_BASE,
@@ -422,60 +423,6 @@ def _merge_maa_config_file(
     return changed
 
 
-def _restrict_task_queue_to_baseline(
-    archive: dict, baseline: dict, scheme: str
-) -> bool:
-    """把存档生效方案的 TaskQueue 收敛到会话基线(即 set_maa 合成结果)的成员与顺序。
-
-    脚本设置会话里 MAA 保存会用内存默认队列整体重写, 基线之外的原生/自定义条目
-    不是用户对 MAS 队列的表达(用户自定义任务队列只在直控模式存在), 一律移除;
-    基线任务按身份保留(字段已由身份对齐合并先行写入)并按 MAS 顺序重排。返回
-    是否发生变更。gui.json(OLD 格式)没有 TaskQueue, 原样跳过。
-    """
-
-    configurations = archive.get("Configurations")
-    if not isinstance(configurations, dict):
-        return False
-    target = configurations.get(scheme)
-    base_configurations = baseline.get("Configurations")
-    base_default = (
-        base_configurations.get("Default")
-        if isinstance(base_configurations, dict)
-        else None
-    )
-    if not isinstance(target, dict) or not isinstance(base_default, dict):
-        return False
-    base_queue = base_default.get("TaskQueue")
-    queue = target.get("TaskQueue")
-    if not isinstance(base_queue, list) or not isinstance(queue, list):
-        return False
-
-    def identity(item: object) -> tuple | None:
-        if not isinstance(item, dict):
-            return None
-        return (item.get("TaskType"), item.get("Name"))
-
-    order: dict[tuple, int] = {}
-    for index, item in enumerate(base_queue):
-        key = identity(item)
-        if key is not None and key not in order:
-            order[key] = index
-
-    restricted: list[dict] = []
-    seen: set[tuple] = set()
-    for item in queue:
-        key = identity(item)
-        if key is None or key not in order or key in seen:
-            continue
-        seen.add(key)
-        restricted.append(item)
-    restricted.sort(key=lambda item: order[identity(item)])
-    if restricted == queue:
-        return False
-    target["TaskQueue"] = restricted
-    return True
-
-
 def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
     """以 MAA 原生配置为底，只用 MAS 托管补丁覆盖它声明接管的键。
 
@@ -512,139 +459,38 @@ def _find_task_source(
     return None
 
 
-def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
-    """复用 MAA 原生预设队列，补充 MAS 合成任务并移除生息演算。"""
+def _normalize_maa_task_queue(source_queue: list[dict]) -> list[dict]:
+    """把队列校对成 base 唯一合法布局，对不上就整队重建。
+
+    base 就是 MAA 自己的日常任务配置，MAS 不往队列里放自有条目。下发 MAA 前按
+    ``MAA_BASE_QUEUE_LAYOUT`` 校对数量与顺序，任何一处对不上就整队按布局重建——
+    用户第一次把队列改坏（删条目、加条目、改顺序、写盘半截），下一次打开 MAA
+    也能拿到可运行的默认配置，不需要用户自己修。
+
+    重建时逐条按类型取回来源条目（同类型唯一时），用户在各条目里设的高级选项
+    因此得以保留；被删掉的条目按 MAA 默认复活。
+    """
 
     source_tasks = [deepcopy(task) for task in source_queue if isinstance(task, dict)]
 
-    def source_or_default(
-        name: str,
-        task_type: str,
-        *,
-        allow_type_fallback: bool = True,
-    ) -> dict:
-        task = _find_task_source(
-            source_tasks,
-            name,
-            task_type,
-            allow_type_fallback=allow_type_fallback,
-        )
-        if task is None:
-            # 用户在上游删掉了这条托管任务：只补一个空壳，字段全交给 MAA
-            # 自己的默认值；下次会话照此重新生成，用户不必再删一次
-            logger.info(f"用户队列中缺少「{name}」，本次按 MAA 默认设置重新生成")
-            task = {"$type": f"{task_type}Task", "IsEnable": True}
-        # 设置界面队列开关统一为开启（视觉一致）：用户在 MAA GUI 里的真实
-        # 开关选择由会话结束的配置回写按身份对齐合并回来，不以这里为准
-        task.update({"Name": name, "TaskType": task_type, "IsEnable": True})
-        return task
+    if [task.get("TaskType") for task in source_tasks] == MAA_BASE_QUEUE_LAYOUT:
+        return source_tasks
 
-    fight_source = (
-        _find_task_source(source_tasks, "理智作战", "Fight", allow_type_fallback=False)
-        or {}
-    )
-    annihilation = _merge_fight_task(
-        _find_task_source(source_tasks, "剿灭作战", "Fight", allow_type_fallback=False)
-        or {},
-        MAA_ANNIHILATION_FIGHT_BASE,
-    )
-    activity = _build_activity_priority_fight(
-        _find_task_source(
-            source_tasks, "活动关优先", "Fight", allow_type_fallback=False
-        )
-        or fight_source,
-        "",
-        0,
-    )
-    remain = _find_task_source(
-        source_tasks, "剩余理智", "Fight", allow_type_fallback=False
-    )
-    if remain is None:
-        remain = _merge_fight_task(fight_source, MAA_REMAIN_FIGHT_BASE)
-    remain.update({"Name": "剩余理智", "TaskType": "Fight", "IsEnable": True})
-    depot = _find_task_source(source_tasks, "库存保持", "DepotMaintain")
-    if depot is None:
-        depot = _build_depot_maintain_task("[]")
-    depot.update({"Name": "库存保持", "TaskType": "DepotMaintain", "IsEnable": True})
+    logger.info("MAA 任务队列与预设布局不符，按默认布局重建")
 
-    queue = [
-        source_or_default("开始唤醒", "StartUp"),
-        annihilation,
-        source_or_default("自动公招", "Recruit"),
-        source_or_default("基建换班", "Infrast"),
-        activity,
-        depot,
-        source_or_default("理智作战", "Fight", allow_type_fallback=False),
-        remain,
-        source_or_default("信用收支", "Mall"),
-        source_or_default("领取奖励", "Award"),
-    ]
+    queue: list[dict] = []
+    for task_type in MAA_BASE_QUEUE_LAYOUT:
+        candidates = [
+            task for task in source_tasks if task.get("TaskType") == task_type
+        ]
+        # 同类型唯一时才取回字段：多条同类型无从判断哪条是用户配的那条
+        task = deepcopy(candidates[0]) if len(candidates) == 1 else {}
+        task.update({"TaskType": task_type, "IsEnable": True})
+        task.setdefault("Name", "")
+        task.setdefault("$type", f"{task_type}Task")
+        queue.append(task)
 
-    # 非直控模式队列严格等于 MAS 合成结果：上游其余任务(自动肉鸽、生息演算、
-    # 用户自定义任务等)不是 MAS 预设队列的成员，一律不透传带回——用户自定义
-    # 任务队列只在直控模式存在（安装目录原生配置即现场，MAS 零写入）。
     return queue
-
-
-def _build_depot_maintain_task(
-    plans_json: str,
-    source_task: dict | None = None,
-) -> dict:
-    """生成 MAA 库存保持任务配置。"""
-
-    source_task = source_task or {}
-    source_plans = source_task.get("PlanList") or []
-    if not isinstance(source_plans, list):
-        source_plans = []
-    plans = []
-    for plan in json.loads(plans_json):
-        if (
-            isinstance(plan, dict)
-            and isinstance(plan.get("Stage"), str)
-            and bool(plan["Stage"])
-            and isinstance(plan.get("DropId"), str)
-            and bool(plan["DropId"])
-            and isinstance(plan.get("DropCount"), int)
-            and not isinstance(plan.get("DropCount"), bool)
-            and plan["DropCount"] > 0
-        ):
-            source_plan = next(
-                (
-                    item
-                    for item in source_plans
-                    if isinstance(item, dict)
-                    and item.get("Stage") == plan["Stage"]
-                    and item.get("DropId") == plan["DropId"]
-                ),
-                {},
-            )
-            plans.append(
-                {
-                    **deepcopy(source_plan),
-                    "UseMedicine": False,
-                    "MedicineCount": 0,
-                    "UseStone": False,
-                    "StoneCount": 0,
-                    "Stage": plan["Stage"],
-                    "DropId": plan["DropId"],
-                    "DropCount": plan["DropCount"],
-                }
-            )
-
-    return {
-        "$type": source_task.get("$type", "DepotMaintainTask"),
-        "Name": "库存保持",
-        "IsEnable": True,
-        "TaskType": "DepotMaintain",
-        "UpdateDepot": source_task.get("UpdateDepot", True),
-        "IsStageManually": source_task.get("IsStageManually", False),
-        "SkipDuringActivity": source_task.get("SkipDuringActivity", False),
-        "SkipDuringResourceCollection": source_task.get(
-            "SkipDuringResourceCollection", False
-        ),
-        "UseAutoSeries": source_task.get("UseAutoSeries", True),
-        "PlanList": plans,
-    }
 
 
 def _build_cultivate_task(
@@ -1362,20 +1208,16 @@ class AutoProxyTask(TaskExecuteBase):
         # ── 第一段：来源落盘 ──────────────────────────────────────────
         # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
         # 直控的事实源是 MAA 安装目录里现有的原生配置。
+        # 来源目录可能不存在（新建脚本/用户首次运行，或用户删掉专项重建）：
+        # 此时保持安装目录现有的 MAA 配置不动，它天然是可运行的默认配置。
         if self.config_mode == CONFIG_SOURCE_SCRIPT:
-            shutil.copytree(
-                (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
-                self.maa_set_path,
-                dirs_exist_ok=True,
+            self._copy_source_config(
+                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
         elif self.config_mode == CONFIG_SOURCE_USER:
-            shutil.copytree(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                ),
-                self.maa_set_path,
-                dirs_exist_ok=True,
+            self._copy_source_config(
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
         elif self.direct_control:
             # 直控从本轮原生快照开始，不能继承上一用户或上一阶段的快速配置。
@@ -1402,6 +1244,15 @@ class AutoProxyTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
+        # 每次启动 MAA 前校对队列布局：用户在 MAA 里把队列改坏（删条目、加条目、
+        # 改顺序、写盘半截），这里整队重建回默认布局，保证下一次打开仍可运行。
+        for configurations in (gui_new_set.get("Configurations") or {}).values():
+            if not isinstance(configurations, dict):
+                continue
+            queue = configurations.get("TaskQueue")
+            if isinstance(queue, list):
+                configurations["TaskQueue"] = _normalize_maa_task_queue(queue)
+
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
@@ -1419,6 +1270,19 @@ class AutoProxyTask(TaskExecuteBase):
             script_id=self.script_info.script_id,
         )
         logger.success(f"MAA运行参数配置完成: {self.mode}")
+
+    def _copy_source_config(self, source: Path) -> None:
+        """把 MAS 托管配置覆盖进 MAA 配置目录；来源不存在时保持现状。
+
+        来源目录缺失是正常情形（新建脚本、新建用户、删除专项后重建），此时
+        MAA 安装目录里的现有配置就是可运行的事实源，直接沿用即可，不必也无法
+        从空目录拷贝。
+        """
+
+        if not source.is_dir():
+            logger.info("MAS 配置目录尚未建立, 沿用 MAA 安装目录现有配置")
+            return
+        shutil.copytree(source, self.maa_set_path, dirs_exist_ok=True)
 
     async def _apply_maa_quick_config(self, gui_new_set: dict) -> None:
         """仅开启快速配置时构造面板任务，来源导入与启动设置留在外层。"""
@@ -1502,11 +1366,10 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue, "剩余理智", "Fight", allow_type_fallback=False
         )
 
-        if "DepotMaintain" in task_set:
-            task_set["DepotMaintain"] = _build_depot_maintain_task(
-                self.cur_user_config.get("Task", "DepotMaintainPlans"),
-                source_task=task_set["DepotMaintain"],
-            )
+        # 库存保持的高级设置（计划列表）由 MAA 自己的 GUI 维护，MAS 只负责开关：
+        # task_set["DepotMaintain"] 原样来自来源配置，计划列表不经手、不翻译。
+        # 养成计划是 MAS 自有能力，仍由 _build_cultivate_task 单独注入一条同类型
+        # 任务（Name 不同，MAA 按名称区分）。
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":

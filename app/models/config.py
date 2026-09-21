@@ -1059,10 +1059,6 @@ class MaaUserConfig(ConfigBase):
             legacy_group="Info",
             legacy_name="MedicineNumb",
         )
-        ## 库存保持计划
-        self.Task_DepotMaintainPlans = ConfigItem(
-            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
-        )
         ## 是否干员养成
         self.Task_IfCultivate = ConfigItem(
             "Task", "IfCultivate", False, BoolValidator()

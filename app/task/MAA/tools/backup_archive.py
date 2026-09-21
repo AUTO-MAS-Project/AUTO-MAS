@@ -150,7 +150,6 @@ _OVERLAY_TASK_KEYS = (
     "CultivateTargets",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
-    "DepotMaintainPlans",
 )
 """MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
 
@@ -199,7 +198,6 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
     "IfGreenTicketStore",
-    "DepotMaintainPlans",
 )
 
 _OVERLAY_FIELD_LABELS = {
@@ -224,7 +222,6 @@ _OVERLAY_FIELD_LABELS = {
     "CultivateTargets": "养成目标",
     "CultivateSkipDuringActivity": "活动期间跳过",
     "CultivateSkipDuringResourceCollection": "资源收集期间跳过",
-    "DepotMaintainPlans": "库存保持计划",
     "MedicineNumb": "吃理智药",
     "SeriesNumb": "连战次数",
     "Stage": "关卡",
@@ -773,13 +770,6 @@ def _overlay_value(key: str, value) -> str:
         # 关卡哨兵值（与配置界面同口径）：- = 禁用（下拉原始标签），
         # * = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
         text = {"-": "禁用", "*": "当前/上次", "": "不选择"}.get(str(value), str(value))
-    elif key == "DepotMaintainPlans":
-        # JSON 串存计划列表，预览只给数量（恢复仍整串写回）
-        try:
-            plans = json.loads(value) if isinstance(value, str) else value
-            text = f"{len(plans)} 个计划" if isinstance(plans, list) and plans else "无"
-        except Exception:
-            text = "已配置"
     elif key == "CultivateTargets":
         # JSON 串存养成目标列表，预览只给数量（不臆造目标内容，恢复仍整串写回）
         try:
