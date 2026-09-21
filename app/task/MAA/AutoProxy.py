@@ -459,6 +459,20 @@ def _find_task_source(
     return None
 
 
+def _with_type_first(task: dict) -> dict:
+    """把条目的 ``$type`` 移到第一个属性位。
+
+    MAA 用 System.Text.Json 的多态元数据读任务条目：``$type`` 不在第一个属性就
+    整个配置文件反序列化失败，MAA 退回读 `.bak`（旧值），MAS 写进去的队列与
+    启动编排因此全部静默失效。构造条目时必须走这个函数，不能依赖 dict 的键序。
+    """
+
+    return {
+        "$type": task.get("$type") or f"{task.get('TaskType', '')}Task",
+        **task,
+    }
+
+
 def _normalize_maa_task_queue(source_queue: list[dict]) -> list[dict]:
     """把队列校对成 base 唯一合法布局，对不上就整队重建。
 
@@ -474,7 +488,10 @@ def _normalize_maa_task_queue(source_queue: list[dict]) -> list[dict]:
     source_tasks = [deepcopy(task) for task in source_queue if isinstance(task, dict)]
 
     if [task.get("TaskType") for task in source_tasks] == MAA_BASE_QUEUE_LAYOUT:
-        return source_tasks
+        # 布局已合法也要兜底修 $type 的位置：旧存档里可能存在 $type 排在后面的
+        # 条目，不修就会一直把坏数据下发给 MAA（MAA 解析失败→退回 .bak→回写时
+        # 又保留坏条目），形成死循环。
+        return [_with_type_first(task) for task in source_tasks]
 
     logger.info("MAA 任务队列与预设布局不符，按默认布局重建")
 
@@ -485,10 +502,8 @@ def _normalize_maa_task_queue(source_queue: list[dict]) -> list[dict]:
         ]
         # 同类型唯一时才取回字段：多条同类型无从判断哪条是用户配的那条
         task = deepcopy(candidates[0]) if len(candidates) == 1 else {}
-        # ``$type`` 必须排在首位：System.Text.Json 把它当多态判别元数据，
-        # 不在第一个属性就整个文件反序列化失败（MAA 会退回 .bak 读旧值）。
-        task = {"$type": task.get("$type") or f"{task_type}Task", **task}
         task.update({"TaskType": task_type, "IsEnable": True})
+        task = _with_type_first(task)
         task.setdefault("Name", "")
         queue.append(task)
 
