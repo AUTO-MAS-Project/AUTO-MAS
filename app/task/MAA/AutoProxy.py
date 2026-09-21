@@ -485,9 +485,11 @@ def _normalize_maa_task_queue(source_queue: list[dict]) -> list[dict]:
         ]
         # 同类型唯一时才取回字段：多条同类型无从判断哪条是用户配的那条
         task = deepcopy(candidates[0]) if len(candidates) == 1 else {}
+        # ``$type`` 必须排在首位：System.Text.Json 把它当多态判别元数据，
+        # 不在第一个属性就整个文件反序列化失败（MAA 会退回 .bak 读旧值）。
+        task = {"$type": task.get("$type") or f"{task_type}Task", **task}
         task.update({"TaskType": task_type, "IsEnable": True})
         task.setdefault("Name", "")
-        task.setdefault("$type", f"{task_type}Task")
         queue.append(task)
 
     return queue
@@ -625,7 +627,12 @@ def _build_activity_priority_fight(
             "MedicineCount": medicine_numb,
         }
     )
-    activity_fight.setdefault("$type", "FightTask")
+    # ``$type`` 必须排在首位：System.Text.Json 把它当多态判别元数据，
+    # 不在第一个属性就整个文件反序列化失败（MAA 会退回 .bak 读旧值）。
+    activity_fight = {
+        "$type": activity_fight.pop("$type", "FightTask"),
+        **activity_fight,
+    }
     return activity_fight
 
 
