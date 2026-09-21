@@ -70,6 +70,8 @@ from app.models.config import (
     HSRUserConfig,
     M9AConfig,
     M9AUserConfig,
+    MSSConfig,
+    MSSUserConfig,
     MaaConfig,
     MaaEndConfig,
     MaaEndPlanConfig,
@@ -823,7 +825,8 @@ class AppConfig(GlobalConfig):
         | HSRConfig
         | BetterGIConfig
         | ZzzOdConfig
-        | BAAHConfig,
+        | BAAHConfig
+        | MSSConfig,
     ]:
         """添加脚本配置"""
 
@@ -1093,7 +1096,8 @@ class AppConfig(GlobalConfig):
         | HSRUserConfig
         | BetterGIUserConfig
         | ZzzOdUserConfig
-        | BAAHUserConfig,
+        | BAAHUserConfig
+        | MSSUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1136,6 +1140,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(ZzzOdUserConfig)
         elif isinstance(script_config, BAAHConfig):
             uid, config = await script_config.UserData.add(BAAHUserConfig)
+        elif isinstance(script_config, MSSConfig):
+            uid, config = await script_config.UserData.add(MSSUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 

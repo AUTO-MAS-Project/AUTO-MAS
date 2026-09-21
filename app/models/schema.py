@@ -1475,6 +1475,7 @@ class ScriptIndexItem(BaseModel):
         "BetterGIConfig",
         "ZzzOdConfig",
         "BAAHConfig",
+        "MSSConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1493,6 +1494,7 @@ class UserIndexItem(BaseModel):
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
         "BAAHUserConfig",
+        "MSSUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -3432,6 +3434,114 @@ class M9AConfig(BaseModel):
     Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+class MSSUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用快速配置（与配置来源独立）"
+    )
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
+    Controller: Optional[str] = Field(
+        default=None, description="控制器名称（桌面端/安卓端）"
+    )
+
+
+class MSSUserConfig_Task(BaseModel):
+    AvailableTasks: Optional[Union[str, List]] = Field(
+        default=None, description="可用任务列表 JSON 数组字符串或数组"
+    )
+    Queue: Optional[Union[str, List]] = Field(
+        default=None, description="运行任务队列 JSON 数组字符串或数组"
+    )
+
+
+class MSSUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+
+
+class MSSUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class MSSUserConfig(BaseModel):
+    Info: Optional[MSSUserConfig_Info] = Field(default=None, description="基础信息")
+    Task: Optional[MSSUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[MSSUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[MSSUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
+class MSSConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="MSS 脚本名称")
+    Path: Optional[str] = Field(
+        default=None, description="MSS 根目录，应包含 MFAAvalonia.exe 与 interface.json"
+    )
+
+
+class MSSConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器 ID")
+    Index: Optional[str] = Field(default=None, description="模拟器索引")
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后关闭模拟器"
+    )
+
+
+class MSSConfig_Game(BaseModel):
+    LaunchMode: Optional[Literal["DirectExe", "AttachOnly"]] = Field(
+        default=None, description="游戏生命周期模式"
+    )
+    LaunchPath: Optional[str] = Field(
+        default=None, description="DirectExe 模式下要启动的游戏 exe"
+    )
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(
+        default=None, description="启动游戏后等待窗口就绪的时间（秒）"
+    )
+    UnityResolution: Optional[Literal["Off", "1920x1080", "1280x720"]] = Field(
+        default=None, description="DirectExe 下临时改写 Unity 游戏分辨率的尺寸"
+    )
+
+
+class MSSConfig_Run(BaseModel):
+    RunTimesLimit: Optional[int] = Field(default=None, description="失败任务最大尝试次数")
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="单次运行时间限制（分钟）"
+    )
+    UseAdmin: Optional[bool] = Field(
+        default=None, description="是否以管理员权限启动 MFAAvalonia 外壳"
+    )
+
+
+class MSSConfig(BaseModel):
+    Info: Optional[MSSConfig_Info] = Field(default=None, description="脚本基础信息")
+    Emulator: Optional[MSSConfig_Emulator] = Field(
+        default=None, description="模拟器配置（模拟器端暂不适配）"
+    )
+    Game: Optional[MSSConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[MSSConfig_Run] = Field(default=None, description="脚本运行配置")
+
+
 class MaaFWUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
@@ -4205,9 +4315,10 @@ class ScriptCreateIn(BaseModel):
         "BetterGI",
         "ZzzOd",
         "BAAH",
+        "MSS",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -4229,6 +4340,7 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        MSSConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -4255,6 +4367,7 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
+            MSSConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -4274,6 +4387,7 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        MSSConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -4330,6 +4444,7 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
+            MSSUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -4349,6 +4464,7 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        MSSUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -4367,6 +4483,7 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        MSSUserConfig,
     ] = Field(..., description="用户更新数据")
 
 

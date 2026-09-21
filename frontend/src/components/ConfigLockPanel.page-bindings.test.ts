@@ -8,6 +8,7 @@ const editPages = [
   'Script/HSRScriptEdit.vue',
   'Script/M9AScriptEdit.vue',
   'Script/MAAScriptEdit.vue',
+  'Script/MSSScriptEdit.vue',
   'Script/MaaEndScriptEdit.vue',
   'Script/MaaFWScriptEdit.vue',
   'Script/OkNteScriptEdit.vue',
@@ -20,6 +21,7 @@ const editPages = [
   'User/HSRUserEdit.vue',
   'User/M9AUserEdit.vue',
   'User/MAAUserEdit.vue',
+  'User/MSSUserEdit.vue',
   'User/MaaEndUserEdit.vue',
   'User/MaaFWUserEdit.vue',
   'User/OkNteUserEdit.vue',
@@ -30,7 +32,7 @@ const editPages = [
 
 describe('ConfigLockPanel edit page bindings', () => {
   it('binds every edit page to the route script id', () => {
-    expect(editPages).toHaveLength(24)
+    expect(editPages).toHaveLength(26)
     for (const filename of editPages) {
       const pageUrl = `../views/EditView/${filename}`
       const pageSource = readFileSync(new URL(pageUrl, import.meta.url), 'utf8')

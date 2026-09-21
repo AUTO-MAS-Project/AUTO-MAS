@@ -12,6 +12,7 @@ import type {
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
+  MSSConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -37,6 +38,7 @@ export type ScriptType =
   | 'BetterGI'
   | 'ZzzOd'
   | 'BAAH'
+  | 'MSS'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -218,6 +220,71 @@ export interface M9AScriptConfig {
     UserData: {
       instances: unknown[]
     }
+  }
+}
+
+// MSS（MaaStellaSora / 星塔旅人）脚本配置：Info.Path 是 MSS 根目录
+// （含 MFAAvalonia.exe 与 interface.json），模拟器与运行上限由 MAS 调度
+export type MSSScriptConfig = MSSConfig
+
+/**
+ * 队列项的选项取值：``select`` 型存选项名（case 名）字符串，
+ * ``input`` 型存 ``{ 输入名: 值 }`` 对象。前端不知道选项类型，
+ * 按值的形态区分，写作与后端 ``Task.Queue`` 解析一致。
+ */
+export type MSSTaskOptionValue = string | Record<string, string>
+
+/** MSS 任务队列里的一项：任务显示名、PI V2 entry 与各选项取值 */
+export interface MSSQueuedTaskItem {
+  name: string
+  entry: string
+  options: Record<string, MSSTaskOptionValue>
+}
+
+/**
+ * ``Task.AvailableTasks`` 的一项：后端每次运行前从 MSS 的 interface.json 同步，
+ * ``option`` 只有选项名——选项的类型与候选值在 MSS 项目里，前端不复制。
+ */
+export interface MSSAvailableTaskItem {
+  name: string
+  entry: string
+  description?: string
+  option?: string[]
+}
+
+export interface MSSUserConfig {
+  Info: {
+    Name: string
+    Status: boolean
+    RemainedDay: number
+    Mode: '脚本' | '用户' | '直控'
+    IfQuickConfig: boolean
+    IfScriptBeforeTask: boolean
+    ScriptBeforeTask: string
+    IfScriptAfterTask: boolean
+    ScriptAfterTask: string
+    Notes: string
+    Tag?: string | null
+    Resource?: string
+    Controller?: string
+  }
+  Task: {
+    /** 可用任务清单（JSON 数组字符串） */
+    AvailableTasks: string
+    /** 运行任务队列（JSON 数组字符串） */
+    Queue: string
+  }
+  Data: {
+    LastProxyDate: string
+    ProxyTimes: number
+  }
+  Notify: {
+    Enabled: boolean
+    IfSendStatistic: boolean
+    IfSendMail: boolean
+    ToAddress: string
+    IfServerChan: boolean
+    ServerChanKey: string
   }
 }
 
@@ -574,6 +641,7 @@ export interface Script {
     | HSRConfig
     | BetterGIConfig
     | BAAHConfig
+    | MSSConfig
   users: User[]
 }
 
@@ -679,6 +747,7 @@ export interface ScriptIndexItem {
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
     | 'BAAHConfig'
+    | 'MSSConfig'
 }
 
 // 脚本详情（用于前端展示）
@@ -699,6 +768,7 @@ export interface ScriptDetail {
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
+    | MSSConfig
   users?: User[]
   createTime?: string
 }

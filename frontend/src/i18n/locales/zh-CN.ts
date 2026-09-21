@@ -1806,6 +1806,49 @@ export default {
     baahLastProxyDate: '上次代理日期',
     baahProxyTimes: '代理次数',
     baahDataReadOnlyHint: '由本软件自动统计，仅供查看',
+    // MSS 专项
+    mssScriptConfiguration: 'MSS 脚本配置',
+    mssScriptNameHint: '用于区分不同的 MSS 脚本实例',
+    mssRootPath: 'MSS 根目录',
+    mssRootPathHint:
+      '选择 MSS 发行包的根目录（应同时包含 MFAAvalonia.exe 与 interface.json）；实例配置与日志目录都从它派生，无需另行选择',
+    mssGameSection: '游戏（桌面端）',
+    mssLaunchModeHint:
+      'DirectExe 由本软件启动游戏并在本轮结束后关闭；AttachOnly 只接管已运行的游戏窗口，不启动也不关闭',
+    mssLaunchModeDirect: '由本软件启动',
+    mssLaunchModeAttach: '只接管已运行的游戏',
+    mssLaunchPathHint: 'DirectExe 模式下要启动的游戏 exe',
+    mssGameArguments: '游戏启动参数',
+    mssGameWaitTime: '等待窗口就绪（秒）',
+    mssUnityResolution: '窗口分辨率',
+    mssUnityResolutionHint:
+      '启动游戏前按 exe 反查 Unity 注册表，临时改成所选尺寸的窗口模式，游戏关闭后恢复；只对 Unity 引擎有效。MSS 官方只支持 16:9 的客户端',
+    mssEmulatorHint:
+      '选择本软件要调度的模拟器；运行前由本软件启动它并等待设备就绪，MSS 外壳只负责连接',
+    mssEmulatorUnsupported:
+      '模拟器端的《星塔旅人》存在无法启动游戏的 bug，本脚本因此不适配模拟器，请使用桌面端；除非该问题被修复，否则不会进行适配',
+    mssCloseOnFinish: '任务结束后关闭模拟器',
+    mssCloseOnFinishHint: '开启后本次任务结束会关闭上面选定的模拟器，关闭则保持运行',
+    mssRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
+    mssRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
+    mssUseAdmin: '以管理员权限启动',
+    mssUseAdminHint:
+      'MSS 的桌面端控制器需要管理员权限才能操作游戏窗口；开启后由本软件提权启动外壳（本软件已是管理员时不会重复触发 UAC）',
+    mssNotMssScript: '脚本类型不是 MSS',
+    mssAvailableTasks: '可用任务',
+    mssAvailableTasksHint:
+      '清单由本软件在运行前从 MSS 的 interface.json 同步；勾选即加入下方的任务队列',
+    mssAvailableTasksEmpty:
+      '暂无可用任务清单：请确认脚本配置里的 MSS 根目录正确，并至少运行过一次任务',
+    mssTaskQueueHint: '按顺序执行，可上移/下移调整；选项留空表示沿用 MSS 里的默认值',
+    mssQueueEmpty: '尚未选择任务，请在上方勾选',
+    mssOptionValueHint:
+      "选择型填选项名；输入型填 JSON 对象，例如 {'{\"账号\": \"123\"}'}",
+    mssLastProxyDate: '上次代理日期',
+    mssProxyTimes: '代理次数',
+    mssDataReadOnlyHint: '由本软件自动统计，仅供查看',
+    mssUserTag: '用户标签',
+    mssUserTagHint: '由本软件按运行情况自动生成，仅供查看',
     // ZZZ-OD 专项
     zzzodScriptConfiguration: 'ZZZ-OD 脚本配置',
     zzzodScriptNameHint: '用于区分不同的 ZZZ-OD 脚本实例',
@@ -3325,6 +3368,7 @@ export default {
       BetterGI: 'BetterGI脚本',
       ZzzOd: 'ZZZ-OD脚本',
       BAAH: 'BAAH脚本',
+      MSS: 'MSS脚本',
       General: '通用脚本',
     },
     typeDesc: {
@@ -3338,6 +3382,7 @@ export default {
       BetterGI: '原神BGI专项一条龙脚本',
       ZzzOd: '绝区零一条龙 · 自动每日与实例（账号）管理',
       BAAH: '碧蓝档案爱丽丝助手专项，自动完成每日任务与多实例（账号）管理',
+      MSS: '星塔旅人（MaaStellaSora）专项，自动完成每日任务与多实例（账号）管理',
       General: '通用自动化脚本，适用于所有具备日志文件的脚本',
     },
     mask: {
@@ -3438,6 +3483,7 @@ export default {
         BetterGI: '原神BGI专项一条龙脚本',
         ZzzOd: '绝区零一条龙 · 自动每日与实例（账号）管理',
         BAAH: '碧蓝档案爱丽丝助手专项，自动完成每日任务与多实例（账号）管理',
+        MSS: '星塔旅人（MaaStellaSora）专项，自动完成每日任务与多实例（账号）管理',
       },
     },
     toast: {

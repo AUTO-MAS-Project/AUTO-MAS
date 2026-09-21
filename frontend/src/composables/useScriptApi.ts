@@ -46,6 +46,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   BAAH: ScriptCreateIn.type.BAAH,
+  MSS: ScriptCreateIn.type.MSS,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -61,6 +62,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
+  MSSConfig: 'MSS',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -1317,6 +1319,74 @@ export function useScriptApi() {
                         ProxyTimes:
                           baahUserData.Data?.ProxyTimes !== undefined
                             ? baahUserData.Data.ProxyTimes
+                            : 0,
+                      },
+                    }
+                  } else if (userIndex.type === 'MSSUserConfig' && userData) {
+                    const mssUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: mssUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          mssUserData.Info?.Name !== undefined
+                            ? mssUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          mssUserData.Info?.Status !== undefined ? mssUserData.Info.Status : true,
+                        RemainedDay:
+                          mssUserData.Info?.RemainedDay !== undefined
+                            ? mssUserData.Info.RemainedDay
+                            : -1,
+                        Mode: mssUserData.Info?.Mode !== undefined ? mssUserData.Info.Mode : '用户',
+                        Resource:
+                          mssUserData.Info?.Resource !== undefined ? mssUserData.Info.Resource : '',
+                        Notes:
+                          mssUserData.Info?.Notes !== undefined ? mssUserData.Info.Notes : '',
+                        Tag: mssUserData.Info?.Tag !== undefined ? mssUserData.Info.Tag : null,
+                      },
+                      Task: {
+                        AvailableTasks:
+                          mssUserData.Task?.AvailableTasks !== undefined
+                            ? mssUserData.Task.AvailableTasks
+                            : '[]',
+                        Queue:
+                          mssUserData.Task?.Queue !== undefined ? mssUserData.Task.Queue : '[]',
+                      },
+                      Notify: {
+                        Enabled:
+                          mssUserData.Notify?.Enabled !== undefined
+                            ? mssUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          mssUserData.Notify?.IfSendStatistic !== undefined
+                            ? mssUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          mssUserData.Notify?.IfSendMail !== undefined
+                            ? mssUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          mssUserData.Notify?.ToAddress !== undefined
+                            ? mssUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          mssUserData.Notify?.IfServerChan !== undefined
+                            ? mssUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          mssUserData.Notify?.ServerChanKey !== undefined
+                            ? mssUserData.Notify.ServerChanKey
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          mssUserData.Data?.LastProxyDate !== undefined
+                            ? mssUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          mssUserData.Data?.ProxyTimes !== undefined
+                            ? mssUserData.Data.ProxyTimes
                             : 0,
                       },
                     }

@@ -29,6 +29,7 @@ export namespace UserIndexItem {
         BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
         ZZZ_OD_USER_CONFIG = 'ZzzOdUserConfig',
         BAAHUSER_CONFIG = 'BAAHUserConfig',
+        MSSUSER_CONFIG = 'MSSUserConfig',
     }
 }
 

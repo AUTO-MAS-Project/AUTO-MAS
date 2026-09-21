@@ -1562,6 +1562,52 @@ export default {
     wutheringWavesUpdateTimed: '鳴潮の更新がタイムアウトしたため、自動的に停止しました',
     k60SecondsRecommendedDefault: '既定の待機時間は 60 秒への変更をおすすめします。',
     whichSpellsOutEvery: 'には設定手順がすべて明記されています。',
+    // MSS 专项
+    mssScriptConfiguration: 'MSS スクリプト設定',
+    mssScriptNameHint: '複数の MSS スクリプトインスタンスを区別するための名前です',
+    mssRootPath: 'MSS ルートフォルダー',
+    mssRootPathHint:
+      'MSS 配布物のルートフォルダーを選択します（MFAAvalonia.exe と interface.json の両方が必要）。インスタンス設定とログのフォルダーはここから決まります',
+    mssGameSection: 'ゲーム（デスクトップ版）',
+    mssLaunchModeHint:
+      'DirectExe は本アプリがゲームを起動し、実行終了後に閉じます。AttachOnly は起動済みのウィンドウを引き継ぐだけで、起動も終了も行いません',
+    mssLaunchModeDirect: '本アプリが起動する',
+    mssLaunchModeAttach: '起動済みのゲームを引き継ぐ',
+    mssLaunchPathHint: 'DirectExe モードで起動するゲームの exe',
+    mssGameArguments: 'ゲーム起動引数',
+    mssGameWaitTime: 'ウィンドウ準備待ち（秒）',
+    mssUnityResolution: 'ウィンドウ解像度',
+    mssUnityResolutionHint:
+      '起動前に exe から Unity のレジストリを引き、指定サイズのウィンドウモードへ一時的に変更します（ゲーム終了時に復元）。Unity エンジン専用。MSS 公式は 16:9 のクライアントのみ対応',
+    mssEmulatorHint:
+      'このアプリが起動するエミュレーターを選択します。実行前に起動してデバイスの準備を待ち、MSS 側は接続するだけです',
+    mssEmulatorUnsupported:
+      'エミュレーター版の『ステラソラ』にはゲームが起動できない不具合があるため、このスクリプトはエミュレーターに対応していません。デスクトップ版をご利用ください。上流で修正されない限り対応しません',
+    mssCloseOnFinish: 'タスク終了後にエミュレーターを終了する',
+    mssCloseOnFinishHint:
+      'オンにすると実行後に上のエミュレーターを終了します。オフの場合は起動したままにします',
+    mssRunTimesLimitHint: 'この回数を超えても失敗する場合は中止します',
+    mssRunTimeLimitHint:
+      'ログが更新されない状態の最大待機時間（分）。超えると実行失敗として扱います',
+    mssUseAdmin: '管理者権限で起動',
+    mssUseAdminHint:
+      'MSS のデスクトップコントローラーはゲームウィンドウを操作するために管理者権限が必要です。有効にすると本アプリがシェルを昇格して起動します（本アプリが既に管理者の場合は UAC は再表示されません）',
+    mssNotMssScript: 'このスクリプトは MSS ではありません',
+    mssAvailableTasks: '利用可能なタスク',
+    mssAvailableTasksHint:
+      'この一覧は実行前に MSS の interface.json から同期されます。チェックすると下のタスクキューに追加されます',
+    mssAvailableTasksEmpty:
+      '利用可能なタスク一覧がありません。スクリプト設定の MSS ルートフォルダーを確認し、一度タスクを実行してください',
+    mssTaskQueueHint:
+      '上から順に実行されます。上へ/下へで並べ替えできます。空欄のオプションは MSS 側の値を使います',
+    mssQueueEmpty: 'タスクが選択されていません。上でチェックしてください',
+    mssOptionValueHint:
+      "選択式はオプション名を、入力式は {'{\"アカウント\": \"123\"}'} のような JSON を入力します",
+    mssLastProxyDate: '前回の実行日',
+    mssProxyTimes: '実行回数',
+    mssDataReadOnlyHint: 'このアプリが自動で記録します（閲覧のみ）',
+    mssUserTag: 'ユーザータグ',
+    mssUserTagHint: 'このアプリが実行結果から自動生成します（閲覧のみ）',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI スクリプト設定',
     bettergiInstanceNameHint: '複数の BetterGI スクリプトインスタンスを区別するための名前です',
@@ -2982,6 +3028,7 @@ export default {
       HSR: 'HSR',
       BetterGI: 'BetterGI',
       BAAH: 'BAAH',
+      MSS: 'MSS',
       General: '汎用',
     },
     typeDesc: {
@@ -2995,6 +3042,7 @@ export default {
       HSR: '崩壊：スターレイル — 三月なのか / SRA の 2 種類に対応',
       BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
       BAAH: 'ブルーアーカイブのデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
+      MSS: 'ステラソラ（MaaStellaSora）のデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
     },
     mask: {
@@ -3104,6 +3152,7 @@ export default {
         HSR: '三月なのか / SRA の 2 種類に対応',
         BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
         BAAH: 'ブルーアーカイブのデイリータスク自動化と複数アカウント管理',
+        MSS: 'ステラソラ（MaaStellaSora）のデイリータスク自動化と複数アカウント管理',
       },
     },
     toast: {

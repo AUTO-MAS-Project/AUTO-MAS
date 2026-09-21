@@ -4947,6 +4947,7 @@ class GlobalConfig(ConfigBase):
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        MSSConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
@@ -5164,6 +5165,189 @@ class BAAHConfig(ConfigBase):
         super().__init__()
 
 
+class MSSUserConfig(ConfigBase):
+    """MSS用户配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 配置来源（脚本/用户/直控）
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+        )
+        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", True, BoolValidator()
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+        ## 服务器资源（官服/台服/国际服/日服）
+        self.Info_Resource = ConfigItem("Info", "Resource", "官服")
+        ## 控制器名（桌面端/安卓端，留空时按项目 interface 与设备自动选择）
+        self.Info_Controller = ConfigItem("Info", "Controller", "")
+
+        ## Task -------------------------------------------------------------
+        ## 可用任务列表（从 MSS 项目 interface.json 读取）
+        self.Task_AvailableTasks = ConfigItem(
+            "Task", "AvailableTasks", "[]", JSONValidator(list)
+        )
+        ## 运行任务队列，元素含任务名、entry 与各选项取值
+        self.Task_Queue = ConfigItem("Task", "Queue", "[]", JSONValidator(list))
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        tags = []
+
+        # 日常代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self))
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class MSSConfig(ConfigBase):
+    """MSS配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## MSS 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MSS 脚本")
+        ## MSS 根目录，应包含 MFAAvalonia.exe 与 interface.json
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
+
+        ## Emulator --------------------------------------------------------
+        ## 模拟器端暂不适配：模拟器端的《星塔旅人》存在无法启动游戏的 bug，
+        ## 除非上游修复否则不计划支持，桌面端请用下面的 Game 段。
+        ## 字段保留是因为 app/task/MSS 的安卓端路径仍在读它们。
+        ## 模拟器 ID
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器索引
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
+        ## 任务结束后关闭模拟器
+        self.Emulator_CloseOnFinish = ConfigItem(
+            "Emulator", "CloseOnFinish", False, BoolValidator()
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 游戏生命周期模式。DirectExe：本软件负责启动游戏，并在本轮结束后关闭它；
+        ## AttachOnly：游戏由其他方式启停，本软件只接管已运行的窗口，不启动也不关闭。
+        ## 与 MaaFW 同一套语义，选项顺序有意义——校验器回退的是 options[0]。
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "DirectExe",
+            OptionsValidator(["DirectExe", "AttachOnly"]),
+        )
+        ## DirectExe 模式下要启动的游戏 exe
+        self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 启动游戏后等待窗口就绪的时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## DirectExe 下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选
+        ## 尺寸的窗口模式，游戏关闭后恢复原值。只对 Unity 引擎有效，游戏已在运行时不改。
+        ## MSS 官方只支持 16:9 的游戏客户端，这一项对它的价值比别处更大。
+        self.Game_UnityResolution = ConfigItem(
+            "Game",
+            "UnityResolution",
+            "Off",
+            OptionsValidator(["Off", "1920x1080", "1280x720"]),
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 失败任务最大尝试次数
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
+        )
+        ## 单次运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
+        )
+        ## 是否以管理员权限启动 MFAAvalonia 外壳。MSS 的桌面端 controller 在
+        ## interface 里声明了 permission_required，外壳拿不到管理员权限就操作不了
+        ## 游戏窗口，所以默认提权。MAS 自身已提权时不会重复触发 UAC（子进程自动
+        ## 继承管理员令牌）；MAS 平时以非管理员运行、又不希望每次都弹 UAC 时可关闭。
+        self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
+
+        self.UserData = MultipleConfig([MSSUserConfig])
+
+        super().__init__()
+
+
 CLASS_BOOK = {
     "MAA": MaaConfig,
     "MaaEnd": MaaEndConfig,
@@ -5177,6 +5361,7 @@ CLASS_BOOK = {
     "BetterGI": BetterGIConfig,
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
+    "MSS": MSSConfig,
 }
 """配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 

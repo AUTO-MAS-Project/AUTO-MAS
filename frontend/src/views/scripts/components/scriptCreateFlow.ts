@@ -130,6 +130,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: SCRIPT_LOGOS.BAAH,
   },
+  {
+    value: 'MSS',
+    titleKey: 'scripts.type.MSS',
+    descriptionKey: 'scripts.create.typeDesc.MSS',
+    keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.MSS,
+  },
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
@@ -180,6 +188,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
   BAAH: 'baah',
+  MSS: 'mss',
   General: 'general',
 }
 

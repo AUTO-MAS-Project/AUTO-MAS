@@ -341,6 +341,7 @@ SCRIPT_BOOK = {
     "BetterGIConfig": BetterGIConfig,
     "ZzzOdConfig": ZzzOdConfig,
     "BAAHConfig": BAAHConfig,
+    "MSSConfig": MSSConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -355,6 +356,7 @@ USER_BOOK = {
     "BetterGIConfig": BetterGIUserConfig,
     "ZzzOdConfig": ZzzOdUserConfig,
     "BAAHConfig": BAAHUserConfig,
+    "MSSConfig": MSSUserConfig,
 }
 
 
