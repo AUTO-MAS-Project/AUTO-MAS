@@ -246,6 +246,11 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 
+# 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
+# PlanSelect 是 MAA 跑完基建后自增的班次指针, 脚本模式下存档全脚本共用,
+# 回写会让多个自定义基建用户互相拨对方的班次。
+_MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect"})
+
 _MAA_GUI_SKELETON: dict[str, dict] = {
     "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
     "gui.new.json": {"Configurations": {"Default": {}}, "Timers": {"List": []}},
@@ -344,6 +349,8 @@ def _merge_task_queue(
         else:
             target = archive_queue[target_index]
         for key_, value in task.items():
+            if key_ in _MAA_TASK_KEYS_NOT_MERGED:
+                continue
             if base_task.get(key_) != value and target.get(key_) != value:
                 target[key_] = deepcopy(value)
                 changed = True
@@ -700,6 +707,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
+        # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
+        # 基建换班完成后只把用户配置里的指针推进一次
+        self._infrast_plan_index: int | None = None
+        self._infrast_plan_count = 0
+        self._infrast_plan_advanced = False
 
     async def check(self) -> str:
 
@@ -1498,16 +1510,21 @@ class AutoProxyTask(TaskExecuteBase):
                         }
                         for index, infrast in enumerate(infrast_plans)
                     ]
-                    # PlanSelect 保留用户存档中的值(不按轮次改写)——带时段表默认 -1=MAA
-                    # 按时段自动选班; 手动选班/无时段表的轮换推进均由 MAA 原生「自动保存
-                    # 为下个计划」完成, 经运行后配置回写管道存回每用户存档
-                    if (
-                        infrast_plan_mode(infrast_plans) == "rotate"
-                        and task_set["Infrast"].get("PlanSelect", -1) == -1
-                    ):
-                        # 无时段表: 缺省与显式「自动换班」(-1)都归一到第一班开始轮换。
-                        # -1 时 MAA 匹配不到时段, 会永远跑第一班且无法推进(并打错误日志)
-                        task_set["Infrast"]["PlanSelect"] = 0
+                    # PlanSelect 不沿用存档: 脚本模式下存档是全脚本共用的, MAA 每跑完
+                    # 一次基建就 ++PlanSelect, 多个自定义基建用户会互相拨对方的班次。
+                    # 带时段表 → -1, 时间语义整个交给 MAA 按时段选班(-1 不推进);
+                    # 无时段表 → 注入用户自己的指针, 一轮里重试几次都是同一个值,
+                    # 基建换班完成后由 check_log 推进一次
+                    if infrast_plan_mode(infrast_plans) == "rotate":
+                        if self._infrast_plan_index is None:
+                            self._infrast_plan_count = len(infrast_plans)
+                            self._infrast_plan_index = (
+                                self.cur_user_config.get("Data", "InfrastPlanIndex")
+                                % self._infrast_plan_count
+                            )
+                        task_set["Infrast"]["PlanSelect"] = self._infrast_plan_index
+                    else:
+                        task_set["Infrast"]["PlanSelect"] = -1
                 else:
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
@@ -1828,6 +1845,22 @@ class AutoProxyTask(TaskExecuteBase):
                 _current_month_marker(datetime.now(tz=UTC4)),
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
+
+        # 无时段排班表: 基建换班完成即推进用户自己的班次指针, 一轮内只推一次;
+        # 后续重试注入的仍是本轮的班次, 不会把下一班提前换上
+        if (
+            self.mode == "Routine"
+            and self._infrast_plan_index is not None
+            and not self._infrast_plan_advanced
+            and "完成任务: 基建换班" in log
+        ):
+            self._infrast_plan_advanced = True
+            next_index = (self._infrast_plan_index + 1) % self._infrast_plan_count
+            await self.cur_user_config.set("Data", "InfrastPlanIndex", next_index)
+            logger.info(
+                f"用户 {self.cur_user_item.name} 基建换班已完成第 "
+                f"{self._infrast_plan_index + 1} 班, 下次从第 {next_index + 1} 班开始"
+            )
 
         # 养成采集：识别链完成标记 → 立即读安装目录识别数据落用户档案
         # （方案 §4.2/决策 31，T1.17；无标记时不读不采）
