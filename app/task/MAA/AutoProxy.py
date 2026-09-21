@@ -1545,7 +1545,9 @@ class AutoProxyTask(TaskExecuteBase):
                         if self._infrast_plan_index is None:
                             self._infrast_plan_count = len(infrast_plans)
                             self._infrast_plan_index = (
-                                self.cur_user_config.get("Data", "InfrastPlanIndex")
+                                int(
+                                    self.cur_user_config.get("Data", "InfrastPlanIndex")
+                                )
                                 % self._infrast_plan_count
                             )
                         task_set["Infrast"]["PlanSelect"] = self._infrast_plan_index

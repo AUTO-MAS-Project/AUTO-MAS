@@ -395,7 +395,7 @@ const props = defineProps<{
   infrastructureImporting: boolean
   infrastructureOptions: InfrastPlanOption[]
   infrastructureOptionsLoading: boolean
-  /** 当前基建班次索引（-1=按时段自动；来自 MAA 配置，MAA 原生推进） */
+  /** 当前基建班次索引（时段表恒为 -1；无时段表是下次开始的班，由 MAS 推进） */
   infrastPlanSelect: number
   /** 排班表时段形态（后端判定: period/rotate/mixed/empty） */
   infrastPlanState: string
