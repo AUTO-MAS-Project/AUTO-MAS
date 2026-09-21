@@ -45,6 +45,7 @@ from .AutoProxy import (
     find_launcher_exe,
     inject_user_fields,
     parse_user_apps,
+    recycle_unbound_slots,
 )
 from .tools import (
     archive_mas_config_backup,
@@ -128,7 +129,15 @@ class ScriptConfigTask(TaskExecuteBase):
                 archive_onedragon_backup(self.root_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"归档 zzz-od 原生配置快照失败: {e}")
-            used = collect_used_slot_idxs(exclude_uids={self._target_uid})
+            # 孤儿槽回收：与运行注入同口径，回收在 ensure_user_slot 之前——
+            # 腾出的号本次会话即可复用（原生配置快照已归档在前，回收仍可找回）。
+            # 查看会话（只读预览历史备份）跳过：用户只是看，不该在安装目录里
+            # 产生删除副作用
+            if not self.view_only:
+                recycle_unbound_slots(self.root_path)
+            used = collect_used_slot_idxs(
+                self.root_path, exclude_uids={self._target_uid}
+            )
             slot = await ensure_user_slot(self.root_path, self.cur_user_config, used)
             self._session_slot = slot
             write_instance_view(

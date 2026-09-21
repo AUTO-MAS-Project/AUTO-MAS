@@ -68,6 +68,7 @@ from app.task.proxy_helpers import (
     user_uses_direct_control,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
+from app.utils.config_archive import config_root_key
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
 
@@ -94,6 +95,7 @@ from .tools import (
     push_notification,
     read_game_account,
     read_native_after_done,
+    recycle_orphan_slots,
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
@@ -269,19 +271,26 @@ async def ensure_user_slot(
 
 
 def collect_used_slot_idxs(
+    root: Path,
     exclude_uids: set[uuid.UUID] | None = None,
 ) -> set[int]:
-    """收集所有 ZzzOd 脚本用户已绑定的实例槽 idx（跨脚本全局查重用）。
+    """收集指向同一份安装的 ZzzOd 脚本用户已绑定的实例槽 idx（分配查重用）。
 
-    槽目录 config/{idx:02d} 跨脚本共享文件系统，idx 分配必须全局唯一，
-    否则不同脚本的用户会写入同一目录互相覆盖配置。本次要注入/会话的用户
-    经 ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
+    槽目录挂在某一份安装的 ``config/`` 下，占用判定必须按安装分桶：指向别的
+    安装的脚本用户不该挤占本安装的号（旧口径跨全部 ZzzOd 脚本一起去重，
+    多脚本各指一份安装时会把号白白占掉，新用户只能被挤到更大的 idx）。
+    ``root`` 用 :func:`config_root_key` 归一比对。本次要注入/会话的用户经
+    ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
     """
 
+    key = config_root_key(root)
     used: set[int] = set()
     excluded = exclude_uids or set()
     for script_config in Config.ScriptConfig.values():
         if not isinstance(script_config, ZzzOdConfig):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if not script_root or config_root_key(script_root) != key:
             continue
         for uid, cfg in script_config.UserData.items():
             if uid in excluded:
@@ -290,6 +299,24 @@ def collect_used_slot_idxs(
             if bound > 0:
                 used.add(bound)
     return used
+
+
+def recycle_unbound_slots(root: Path) -> None:
+    """回收盘上无人绑定的实例槽（运行/会话前调用，失败只告警不阻断）。
+
+    绑定集合取全部 ZzzOd 用户（**不排除**本次要注入/会话的用户）：排除会把
+    它们正在用的槽当孤儿回收，槽里的配队等随即丢失。回收在
+    ``ensure_user_slot`` 之前，腾出的号本轮即可复用。直控态不调用——直控是
+    纯原生裸跑，MAS 不往安装目录里删东西。
+    """
+
+    try:
+        removed = recycle_orphan_slots(root, collect_used_slot_idxs(root))
+    except Exception as e:
+        logger.opt(exception=True).warning(f"孤儿实例槽回收失败: {e}")
+        return
+    if removed:
+        logger.info(f"已回收 {len(removed)} 个未绑定的实例槽: {removed}")
 
 
 def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
@@ -606,8 +633,14 @@ class AutoProxyTask(TaskExecuteBase):
             archive_onedragon_backup(self.script_root_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"归档 ZZZ-OD 原生配置快照失败: {e}")
+        # 孤儿槽回收：一条龙注册表里没有、也没有任何 ZzzOd 用户绑定的
+        # config/NN 是「分配过、用户/脚本已删」的残留——GUI 看不见也删不掉，
+        # 不收就永久占号。放在 ensure_user_slot 之前：腾出的号本轮即可复用；
+        # 原生配置快照已归档在前，回收后仍可找回
+        recycle_unbound_slots(self.script_root_path)
         used_idxs = collect_used_slot_idxs(
-            exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users}
+            self.script_root_path,
+            exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users},
         )
 
         for user_item, cfg, apps in users:

@@ -27,6 +27,11 @@
   MAS 槽目录永不触碰。
 - ``mas``：MAS 用户配置 = 绑定槽（MAS-xxx）目录整份快照——含本页注入的
   账号/任务编排与用户在原生 GUI 里维护的配队等；恢复到槽并回填本页字段。
+- ``recycle``：槽回收池 = 槽目录被删除前的最后一份存底（删用户/删脚本/
+  孤儿槽回收三处），挂在项目级、按安装根指纹分桶——槽目录的归属是那份
+  安装目录而不是某个脚本实例，删脚本不该把存底一起删掉。槽的 mas 备份池
+  也随槽一起搬进来（``{slot}/mas-backups``）：mas 池按脚本+槽分桶、没有
+  用户维度，槽号被新用户复用后留在原位会串到别人名下。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
 ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
@@ -42,6 +47,7 @@ import yaml
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    archive_dir,
     archive_files,
     config_root_key,
     dir_files,
@@ -49,7 +55,7 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
-from app.utils.io import ConfigCorruptedError, read_dict_file
+from app.utils.io import ConfigCorruptedError, force_rmtree, read_dict_file
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -484,3 +490,152 @@ def archive_mas_config_backup(
             "ZZZ-OD 用户槽配置快照失败，已跳过（不阻断注入/会话）"
         )
         return None
+
+
+# ══════════════════ 实例槽回收（删除前存底） ══════════════════
+
+
+def recycle_backup_root(root: str | Path, slot_idx: int) -> Path:
+    """实例槽回收池：``data/ZzzOdBackups/recycle/{安装根指纹}/{slot:02d}``。"""
+
+    return (
+        project_backup_root()
+        / "recycle"
+        / config_root_key(root)
+        / f"{int(slot_idx):02d}"
+    )
+
+
+def _has_native_registry(root: Path) -> bool:
+    """回收前置：一条龙注册表必须在场。
+
+    注册表缺失时无从区分「盘上的目录是原生实例」与「是 MAS 残留」，回收
+    可能删掉用户自己的原生实例目录（含账号配置），故一律放弃；注册表损坏
+    由 :func:`read_native_registry` 抛错，同样交给调用方放弃。
+    """
+
+    return native_registry_file(root).is_file()
+
+
+def native_slot_idxs(root: Path) -> set[int]:
+    """一条龙原生注册表登记的实例下标。
+
+    走 :func:`read_native_registry`（合成视图在盘时读 sidecar 原件）：按现场
+    ``one_dragon.yml`` 判定会把合成视图里的 MAS 槽当原生、把原生实例目录当
+    孤儿，回收就会删掉用户自己的实例目录。
+
+    Raises:
+        ConfigCorruptedError: 注册表内容不可信，调用方必须放弃回收。
+    """
+
+    return {
+        int(item.get("idx", -1))
+        for item in read_native_registry(root).get("instance_list") or []
+        if isinstance(item, dict)
+    }
+
+
+def list_slot_idxs(root: Path) -> list[int]:
+    """盘上实际存在的实例槽下标（``config/NN`` 数字目录，升序）。"""
+
+    config_root = Path(root) / "config"
+    if not config_root.is_dir():
+        return []
+    return sorted(
+        int(child.name)
+        for child in config_root.iterdir()
+        if child.is_dir() and child.name.isdigit()
+    )
+
+
+def list_orphan_slots(root: Path, bound_idxs: set[int]) -> list[int]:
+    """盘上既不在原生注册表、也没有 MAS 用户绑定的槽（升序）。
+
+    这类槽是「MAS 分配过、用户或脚本已删除」的残留：一条龙注册表里没有它，
+    GUI 看不见也删不掉，只能由 MAS 回收；不回收就永久占用 idx
+    （``find_free_instance_idx`` 把盘上目录也当占用），新用户只能往后排。
+    ``bound_idxs`` 必须含全部 ZzzOd 用户（含本次要注入/会话的），否则会把
+    正在用的槽当孤儿回收，槽里的配队等随即丢失。
+    """
+
+    native = native_slot_idxs(root)
+    bound = {int(i) for i in bound_idxs}
+    return [
+        idx for idx in list_slot_idxs(root) if idx not in native and idx not in bound
+    ]
+
+
+def recycle_slot(root: Path, slot_idx: int, *, reason: str) -> bool:
+    """把一个实例槽归档进回收池后删除目录（幂等，目录不存在即无操作）。
+
+    先归档后删除：归档失败（文件被占用、磁盘满）时保留目录——宁可留下残留，
+    也不做没有存底的删除；内容与回收池最近一份一致时归档原语自动跳过
+    （内容已在池里），照常删除目录。
+
+    Returns:
+        是否真的删掉了目录（目录不存在、被跳过或归档失败时为 ``False``）。
+    """
+
+    slot_dir = instance_dir(root, slot_idx)
+    if not slot_dir.is_dir():
+        return False
+    if not _has_native_registry(root):
+        logger.warning(f"一条龙注册表不存在，跳过槽 {slot_idx:02d} 回收（{reason}）")
+        return False
+    try:
+        archive_dir(slot_dir, recycle_backup_root(root, slot_idx))
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"槽 {slot_idx:02d} 归档失败，保留目录不回收（{reason}）: {e}"
+        )
+        return False
+    force_rmtree(slot_dir)
+    logger.info(f"槽 {slot_idx:02d} 已回收（{reason}）")
+    return True
+
+
+def recycle_orphan_slots(root: Path, bound_idxs: set[int]) -> list[int]:
+    """回收全部孤儿槽，返回实际删掉的槽下标。
+
+    拿不到权威的原生名单时整体放弃（注册表缺失或损坏），宁可不收。
+    """
+
+    if not _has_native_registry(root):
+        logger.warning("一条龙注册表不存在，跳过孤儿槽回收")
+        return []
+    try:
+        orphans = list_orphan_slots(root, bound_idxs)
+    except ConfigCorruptedError as e:
+        logger.warning(f"一条龙注册表不可读，跳过孤儿槽回收: {e}")
+        return []
+    return [idx for idx in orphans if recycle_slot(root, idx, reason="未绑定任何用户")]
+
+
+def recycle_mas_backups(
+    root: Path, script_id: str, slot_idx: int, *, reason: str
+) -> bool:
+    """把槽的 MAS 备份池整体归档进回收池后删除原池（幂等）。
+
+    mas 池按 ``(脚本, 槽)`` 分桶、没有用户维度，槽被回收后 idx 会分给新用户
+    ——留在原位会让新用户在「配置恢复」里看到前任用户的备份，甚至一键把
+    前任的账号/编排恢复到自己的槽。归档进回收池（``.../{slot}/mas-backups``）
+    而不是直接删：不丢历史，仍可从回收池找回。
+
+    Returns:
+        是否真的删掉了原池（池不存在、被跳过或归档失败时为 ``False``）。
+    """
+
+    pool = mas_backup_root(script_id, slot_idx)
+    if not pool.is_dir():
+        return False
+    dest_root = recycle_backup_root(root, slot_idx) / "mas-backups"
+    try:
+        archive_dir(pool, dest_root)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"槽 {slot_idx:02d} 的 MAS 备份池归档失败，保留原池不回收（{reason}）: {e}"
+        )
+        return False
+    force_rmtree(pool)
+    logger.info(f"槽 {slot_idx:02d} 的 MAS 备份池已归档到回收池（{reason}）")
+    return True
