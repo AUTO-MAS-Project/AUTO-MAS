@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -30,6 +31,15 @@ MAX_REDIRECTS = 10
 RETRY_COUNT = 3
 RETRY_DELAY = 1.0
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
+CANCELLED_MESSAGE = "MaaFW update package download cancelled"
+
+
+class UpdateDownloadCancelled(RuntimeError):
+    """调用方置位 ``cancel_event`` 后下载主动停下。
+
+    这不是网络错误，**绝不能进重试循环**：用户点的是停止。``.partial`` 与
+    checkpoint 元数据原样留着，下次运行按既有的 Range 逻辑续传。
+    """
 
 
 @dataclass(frozen=True)
@@ -188,8 +198,14 @@ async def download_resumable(
     max_bytes: int = 4 * 1024 * 1024 * 1024,
     send_log: Callable[[str], None] | None = None,
     progress: Callable[[dict[str, Any]], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> DownloadOutcome:
-    """Download an artifact with Range/validator-aware checkpointing."""
+    """Download an artifact with Range/validator-aware checkpointing.
+
+    ``cancel_event`` 置位后抛 :class:`UpdateDownloadCancelled`：每写完一个
+    chunk 检查一次，所以「多久停下来」取决于还有没有字节在到达——整条连接
+    卡死时要等 httpx 的读超时才会观察到。
+    """
 
     validated_url = _validate_url(download_url)
     expected = normalise_sha256(expected_sha256)
@@ -310,8 +326,25 @@ async def download_resumable(
             }
         )
 
+        def cancelled() -> bool:
+            return cancel_event is not None and cancel_event.is_set()
+
+        def record_cancelled() -> None:
+            """把取消记进 journal；断点与元数据都不动，留给下次续传。"""
+
+            store.update(
+                "cancelled",
+                downloadedBytes=(
+                    partial_path.stat().st_size if partial_path.is_file() else 0
+                ),
+                totalBytes=_optional_int(metadata.get("totalBytes")),
+            )
+
         last_error: Exception | None = None
         for attempt in range(1, RETRY_COUNT + 1):
+            if cancelled():
+                record_cancelled()
+                raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
             try:
                 outcome = await _download_attempt(
                     partial_path=partial_path,
@@ -323,6 +356,7 @@ async def download_resumable(
                     operation=store,
                     proxy=proxy,
                     progress=emit,
+                    cancel_event=cancel_event,
                 )
                 store.update(
                     "verified",
@@ -336,6 +370,22 @@ async def download_resumable(
                 )
                 send_update_log(
                     f"MaaFW update package downloaded: {outcome.size} bytes"
+                )
+                # 正常路径也要有 ``downloaded`` 事件（原来只有缓存命中才发）：
+                # 宿主靠它知道「下载已结束、事务马上开始」——最后一个 chunk 到
+                # 事务发出 plan_validated 之间还有 sha256 与项目指纹那几十秒，
+                # 这段里点停止已经停不住下载线程之后的事了，文案不能再说
+                # 「下次续传」。
+                emit(
+                    {
+                        "stage": "downloaded",
+                        "status": "completed",
+                        "downloaded_bytes": outcome.size,
+                        "resumed_from_bytes": outcome.resumed_from,
+                        "total_bytes": outcome.total_bytes,
+                        "cache_hit": False,
+                        "operation_id": store.operation_id,
+                    }
                 )
                 return outcome
             except _RestartFromZero:
@@ -353,6 +403,11 @@ async def download_resumable(
                 )
                 _atomic_json_write(metadata_path, metadata)
                 continue
+            except UpdateDownloadCancelled:
+                # 必须排在 ``except Exception`` 之前：取消是用户的决定，
+                # 当成网络错误重试就是「点了停止还在下」。
+                record_cancelled()
+                raise
             except Exception as exc:
                 last_error = exc
                 existing = partial_path.stat().st_size if partial_path.is_file() else 0
@@ -365,6 +420,9 @@ async def download_resumable(
                 if attempt >= RETRY_COUNT:
                     break
                 await asyncio.sleep(RETRY_DELAY)
+                if cancelled():
+                    record_cancelled()
+                    raise UpdateDownloadCancelled(CANCELLED_MESSAGE) from exc
         message = redact_text(last_error or "download failed")
         store.update(
             "failed",
@@ -387,7 +445,10 @@ async def _download_attempt(
     operation: UpdateOperationStore,
     proxy: httpx.Proxy | None,
     progress: Callable[[dict[str, Any]], None],
+    cancel_event: threading.Event | None = None,
 ) -> DownloadOutcome:
+    if cancel_event is not None and cancel_event.is_set():
+        raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
     existing = partial_path.stat().st_size if partial_path.is_file() else 0
     resume_start = existing
     metadata["resumedFromBytes"] = resume_start
@@ -555,6 +616,19 @@ async def _download_attempt(
                                 "operation_id": operation.operation_id,
                             }
                         )
+                        if cancel_event is not None and cancel_event.is_set():
+                            # 先把这一刻的字节数落盘再抛，否则 ``.partial`` 的
+                            # 大小和元数据里的 downloadedBytes 对不上，下次续传
+                            # 的 Range 就从错误的位置要起。
+                            await handle.flush()
+                            metadata["downloadedBytes"] = downloaded
+                            await asyncio.to_thread(
+                                _write_checkpoint,
+                                partial_path,
+                                metadata_path,
+                                metadata,
+                            )
+                            raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
                 _sync_file(partial_path)
                 metadata["downloadedBytes"] = downloaded
                 _atomic_json_write(metadata_path, metadata)
@@ -648,6 +722,8 @@ def _optional_int(value: Any) -> int | None:
 
 
 __all__ = [
+    "CANCELLED_MESSAGE",
     "DownloadOutcome",
+    "UpdateDownloadCancelled",
     "download_resumable",
 ]
