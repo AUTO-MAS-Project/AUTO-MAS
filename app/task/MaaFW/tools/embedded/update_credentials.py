@@ -31,7 +31,13 @@
 全局那两项（``Update.MirrorChyanCDK`` / ``Update.Channel``）服务的是 MAS 自身的
 更新，和脚本本体的版本档位不是一回事，串在一起只会让人猜自己在用哪个。
 
-任何日志都不得出现 CDK 明文，打码用 :func:`describe_cdk`。
+**唯一带全局兜底的是代理**（``Update.ProxyAddress``，见
+:func:`resolve_update_proxy_url`）：它回答的是「这台机器连不连得上」，而不是
+「这个脚本用哪个档」——多数人全局填一份就够，个别项目的源在别的网络才需要
+单独指。所以留空跟随全局，填了只走自己的。
+
+任何日志都不得出现 CDK 明文，打码用 :func:`describe_cdk`；代理地址可能带
+``user:pw@``，同样不得进日志，只用 :func:`describe_proxy` 说来自哪一层。
 """
 
 from __future__ import annotations
@@ -103,6 +109,42 @@ def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
     return DEFAULT_AUTO_UPDATE_MODE
 
 
+def _script_proxy_url(script_config: Any) -> str | None:
+    """脚本自己填的代理地址，归一成带协议的字符串；没填回 None。"""
+
+    # ``app.core.config`` 会拉起整份全局配置，接缝层按需导入即可，
+    # 也避免和 ``app.models.config`` 的加载顺序纠缠。
+    from app.core.config import normalize_proxy_address
+
+    return normalize_proxy_address(_read_text(script_config, "Update", "ProxyAddress"))
+
+
+def resolve_update_proxy_url(script_config: Any) -> str | None:
+    """这个脚本更新时要用的代理地址：脚本级优先，留空跟随全局，都空回 None。
+
+    返回的是带协议、保留 ``user:pw@`` 的字符串（``httpx.Proxy`` 会把凭据剥到
+    ``.auth``，``str(proxy.url)`` 会丢），调用方自己按需要造 ``httpx.Proxy``
+    或写进子进程环境变量。
+
+    **不要改用 ``Config.proxy``**：那个属性每次访问都往日志写一行
+    「使用代理: <地址>」，地址里可能有账号密码。
+    """
+
+    from app.core.config import Config
+
+    return _script_proxy_url(script_config) or Config.proxy_url
+
+
+def describe_proxy(script_config: Any) -> str:
+    """给日志用的代理描述：只说来自哪一层，地址一个字符都不露。"""
+
+    from app.core.config import Config
+
+    if _script_proxy_url(script_config):
+        return "脚本级"
+    return "全局" if Config.proxy_url else "未配置"
+
+
 def describe_cdk(credentials: MaaFWUpdateCredentials) -> str:
     """给日志用的 CDK 描述：只说有没有，一个字符都不露。
 
@@ -124,6 +166,8 @@ __all__ = [
     "UpdateSource",
     "MaaFWUpdateCredentials",
     "describe_cdk",
+    "describe_proxy",
     "resolve_auto_update_mode",
     "resolve_update_credentials",
+    "resolve_update_proxy_url",
 ]
