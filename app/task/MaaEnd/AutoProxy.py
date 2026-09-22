@@ -1920,7 +1920,14 @@ class AutoProxyTask(TaskExecuteBase):
             self.retryable = False
         elif any(
             message in log
-            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+            # MXU 现行文案为「没有可执行的任务」，与旧文案并列；不用公共前缀，
+            # 避免误命中「没有可执行路径点」「没有可执行的子任务」等运行期文案
+            for message in (
+                "没有可以启动的任务",
+                "没有启用的任务",
+                "没有可执行任务",
+                "没有可执行的任务",
+            )
         ):
             self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
             self.retryable = False
