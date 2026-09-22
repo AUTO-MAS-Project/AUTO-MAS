@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 把回收池里的一条槽快照恢复到该槽号（或指定的其他空闲槽号）
+ * 把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）
  */
 export type ZzzOdRecycleRestoreIn = {
     /**
@@ -19,12 +19,12 @@ export type ZzzOdRecycleRestoreIn = {
      */
     ts: string;
     /**
-     * 恢复到的目标槽号；留空表示恢复回原槽号
+     * 恢复给该用户的绑定槽（现有用户 uid）
      */
-    targetSlot?: (number | null);
+    targetUser?: (string | null);
     /**
-     * 目标槽被占用时是否确认覆盖
+     * 新建一个用户并把内容恢复到它的槽（用户名称）
      */
-    force?: boolean;
+    newUserName?: (string | null);
 };
 

@@ -10,7 +10,6 @@ import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
 import type { ZzzOdInstanceActiveIn } from '../models/ZzzOdInstanceActiveIn';
 import type { ZzzOdInstanceAddIn } from '../models/ZzzOdInstanceAddIn';
-import type { ZzzOdInstanceDeleteIn } from '../models/ZzzOdInstanceDeleteIn';
 import type { ZzzOdInstanceFlagIn } from '../models/ZzzOdInstanceFlagIn';
 import type { ZzzOdInstanceForceLoginIn } from '../models/ZzzOdInstanceForceLoginIn';
 import type { ZzzOdInstanceRenameIn } from '../models/ZzzOdInstanceRenameIn';
@@ -19,12 +18,7 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
-import type { ZzzOdRecycleClearIn } from '../models/ZzzOdRecycleClearIn';
-import type { ZzzOdRecycleClearOut } from '../models/ZzzOdRecycleClearOut';
 import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
-import type { ZzzOdRecycleRestoreIn } from '../models/ZzzOdRecycleRestoreIn';
-import type { ZzzOdSlotCleanIn } from '../models/ZzzOdSlotCleanIn';
-import type { ZzzOdSlotCleanOut } from '../models/ZzzOdSlotCleanOut';
 import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
@@ -176,26 +170,6 @@ export class ZzzOdService {
         });
     }
     /**
-     * 删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）
-     * 删除注册表条目与实例目录，返回更新后的实例列表。
-     * @param requestBody
-     * @returns ZzzOdInstancesOut Successful Response
-     * @throws ApiError
-     */
-    public static deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost(
-        requestBody: ZzzOdInstanceDeleteIn,
-    ): CancelablePromise<ZzzOdInstancesOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/instances/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
      * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
      *
@@ -220,26 +194,6 @@ export class ZzzOdService {
         });
     }
     /**
-     * 清理无主实例槽（先归档进回收池再删目录）
-     * 原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。
-     * @param requestBody
-     * @returns ZzzOdSlotCleanOut Successful Response
-     * @throws ApiError
-     */
-    public static cleanZzzodSlotsApiApiScriptsZzzodSlotsCleanPost(
-        requestBody: ZzzOdSlotCleanIn,
-    ): CancelablePromise<ZzzOdSlotCleanOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/slots/clean',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
      * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
      * @param scriptId
@@ -255,48 +209,6 @@ export class ZzzOdService {
             query: {
                 'scriptId': scriptId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 清空实例槽回收池（删除后不可找回，不碰配置恢复池）
-     * 只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。
-     * @param requestBody
-     * @returns ZzzOdRecycleClearOut Successful Response
-     * @throws ApiError
-     */
-    public static clearZzzodRecycleApiApiScriptsZzzodRecycleClearPost(
-        requestBody: ZzzOdRecycleClearIn,
-    ): CancelablePromise<ZzzOdRecycleClearOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/recycle/clear',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 把回收池里的槽快照恢复到该槽号（覆盖性操作，先存底）
-     * 目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。
-     *
-     * ``targetSlot`` 可指定恢复到其他空闲槽号（原槽被占用时的替代路径）。
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost(
-        requestBody: ZzzOdRecycleRestoreIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/recycle/restore',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

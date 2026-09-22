@@ -11,6 +11,10 @@ export type ZzzOdSlotOwnerOut = {
      */
     scriptId: string;
     /**
+     * 用户ID（恢复槽时用它指认目标用户）
+     */
+    userId: string;
+    /**
      * 所属脚本名称
      */
     scriptName: string;

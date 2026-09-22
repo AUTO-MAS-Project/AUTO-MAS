@@ -1896,10 +1896,10 @@ export class Service {
         });
     }
     /**
-     * 把回收池里的槽快照恢复到该槽号（覆盖性操作，先存底）
-     * 目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。
-     *
-     * ``targetSlot`` 可指定恢复到其他空闲槽号（原槽被占用时的替代路径）。
+     * 把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）
+     * 恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+     * ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+     * MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
