@@ -622,6 +622,22 @@ async def _download_attempt(
                     hint = content.decode("utf-8", errors="replace").strip()
                     raise RuntimeError(f"HTTP {response.status_code}: {hint[:300]}")
 
+                # 大小不对就在这里认输，**必须排在下面的验证器比对之前**：
+                # 断点是带 etag 的，而回错误页的镜像通常根本不发 etag，先走到
+                # ETag 分支就会判成 _RestartFromZero 把断点删掉——本该被否掉的
+                # 镜像反而把已下好的几百兆冲了。直连不传 expected_total，行为不变。
+                _reject_unexpected_total(
+                    (
+                        _parse_content_range(
+                            str(response.headers.get("content-range") or "")
+                        )
+                        or (0, 0, None)
+                    )[2]
+                    if response.status_code == 206
+                    else _content_length(response),
+                    expected_total,
+                )
+
                 response_etag = str(response.headers.get("etag") or "").strip() or None
                 response_modified = (
                     str(response.headers.get("last-modified") or "").strip() or None
@@ -653,9 +669,6 @@ async def _download_attempt(
                     transfer_resume_start = resume_start
                 else:
                     total = _content_length(response)
-                    # 大小不对就在动断点之前认输：镜像回一个带 200 的 HTML 错误
-                    # 页时，先 unlink 再发现不对，已经下好的几百兆就没了。
-                    _reject_unexpected_total(total, expected_total)
                     if existing:
                         existing = 0
                         partial_path.unlink(missing_ok=True)
