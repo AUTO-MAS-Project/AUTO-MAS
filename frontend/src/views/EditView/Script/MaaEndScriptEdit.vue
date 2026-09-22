@@ -171,7 +171,6 @@
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? 8 : 12">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
-                :extra="t('edit.maaEndSetResolutionHint')"
               >
                 <a-select
                   v-model:value="maaEndConfig.Game.SetResolution"
@@ -196,7 +195,6 @@
             <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="8">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
-                :extra="t('edit.maaEndRestoreResolutionHint')"
               >
                 <a-select
                   v-model:value="maaEndConfig.Game.RestoreResolution"
