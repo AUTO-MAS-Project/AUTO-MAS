@@ -90,31 +90,35 @@ def config_root_key(config_path: str | Path) -> str:
     return hashlib.sha1(norm.encode("utf-8")).hexdigest()[:12]
 
 
+def timestamp_sort_key(name: str) -> tuple[str, int]:
+    """归档时间戳目录名的排序键：``(基础时间戳, 同秒顺延序号)``。
+
+    目录名形态 ``YYYYMMDD-HHMMSS`` 或 ``YYYYMMDD-HHMMSS-N``（同秒顺延）。
+    末段为非 6 位纯数字时视为顺延序号、按数值参与排序：直接按字符串倒序会
+    让 ``-10`` 沉到 ``-9`` 之后（同秒归档超过 9 次时 ``times[0]`` 不再是
+    最新那份）。跨模块复用（ZzzOd 回收池条目排序）。
+    """
+
+    base, _, serial = name.rpartition("-")
+    if serial.isdigit() and len(serial) != 6:
+        return (base, int(serial))
+    return (name, 0)
+
+
 def list_times(root: Path) -> list[str]:
     """返回 ``root`` 下的归档时间戳，时间倒序（目录名即时间戳）。
 
     只接受本模块生成的时间戳目录名（``_TS_PATTERN``）——池内与时间戳目录
     同级可能存在语义不同的子目录（如 ZzzOd 回收池槽桶内的 ``mas-backups``
     备份池快照），混进列表会让去重恒失效、保留清理误裁真实快照。
-    排序键按 ``(基础时间戳, 同秒顺延序号)`` 解析——同秒目录名带 ``-N``
-    后缀，直接按字符串倒序会让 ``-10`` 排到 ``-9`` 之前（同秒归档超过
-    9 次时 ``times[0]`` 不再是最新那份）。
+    排序键见 :func:`timestamp_sort_key`。
     """
 
     if not root.is_dir():
         return []
-
-    def sort_key(name: str) -> tuple[str, int]:
-        # 目录名：YYYYMMDD-HHMMSS 或 YYYYMMDD-HHMMSS-N（同秒顺延）；
-        # 末段为非 6 位纯数字时视为顺延序号，按数值参与排序
-        base, _, serial = name.rpartition("-")
-        if serial.isdigit() and len(serial) != 6:
-            return (base, int(serial))
-        return (name, 0)
-
     return sorted(
         (p.name for p in root.iterdir() if p.is_dir() and _TS_PATTERN.match(p.name)),
-        key=sort_key,
+        key=timestamp_sort_key,
         reverse=True,
     )
 

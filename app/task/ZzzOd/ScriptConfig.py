@@ -138,7 +138,12 @@ class ScriptConfigTask(TaskExecuteBase):
             used = collect_used_slot_idxs(
                 self.root_path, exclude_uids={self._target_uid}
             )
-            slot = await ensure_user_slot(self.root_path, self.cur_user_config, used)
+            slot = await ensure_user_slot(
+                self.root_path,
+                self.cur_user_config,
+                used,
+                script_id=self.script_info.script_id,
+            )
             self._session_slot = slot
             write_instance_view(
                 self.root_path,

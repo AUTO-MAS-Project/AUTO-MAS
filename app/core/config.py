@@ -1431,7 +1431,7 @@ class AppConfig(GlobalConfig):
 
         槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
         「槽目录数为什么和用户数对不上」只能靠这份对照表看清：``kind`` 与
-        ``hasDir`` 一起看——绑定但没跑过的用户是「mas 且无目录」。
+        ``has_dir`` 一起看——绑定但没跑过的用户是「mas 且无目录」。
 
         Raises:
             ConfigCorruptedError: 一条龙注册表不可读（原生名单缺失，不能把
@@ -1473,12 +1473,16 @@ class AppConfig(GlobalConfig):
         """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
 
         与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
-        被任一 ZzzOd 用户绑定的槽不动）。直控用户显式发起即可，不受「直控
-        零写入」约束——那条约束管的是 MAS 在运行期间自行写安装目录。
+        被任一 ZzzOd 用户绑定的槽不动），但范围更宽、且失败会抛出：手动清理
+        不受「只收 MAS 分配过的号」的台账限制（来路不明的残留正是用户要清的
+        对象），注册表缺失/损坏也直接报错，界面才能说明「为什么没清」。
+        直控用户显式发起即可，不受「直控零写入」约束——那条约束管的是 MAS
+        在运行期间自行写安装目录。
 
         Raises:
             RuntimeError: 有同安装的 ZzzOd 脚本正在运行（在跑用户的绑定号
                 可能未持久化，清理会误收其槽）。
+            ValueError: 一条龙注册表不存在或不可读（无从判定无主槽）。
         """
 
         from app.task.ZzzOd.AutoProxy import recycle_unbound_slots
@@ -1486,7 +1490,7 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
         self._ensure_zzzod_install_unlocked(root)
-        return recycle_unbound_slots(root)
+        return recycle_unbound_slots(root, only_allocated=False, swallow=False)
 
     def get_zzzod_recycle(self, script_id: str) -> list[dict]:
         """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
@@ -1509,38 +1513,54 @@ class AppConfig(GlobalConfig):
         return clear_recycle_pool(self._zzzod_root(script_config))
 
     def restore_zzzod_recycle(
-        self, script_id: str, slot_idx: int, ts: str, *, force: bool = False
+        self,
+        script_id: str,
+        slot_idx: int,
+        ts: str,
+        *,
+        target_slot: int | None = None,
+        force: bool = False,
     ) -> None:
-        """把回收池里的一条槽快照恢复到该槽号（恢复前自动存底当前内容）。
+        """把回收池里的一条槽快照恢复到目标槽号（恢复前自动存底当前内容）。
 
-        恢复是覆盖性操作：目标槽被原生实例或任一 ZzzOd 用户占用时拒绝；
-        ``force=True`` 表示用户已确认覆盖（仍先存底，误恢复可找回）。
+        默认恢复回原槽号；``target_slot`` 给出其他槽号即「换个空闲号复活」
+        （原槽被占用时的替代路径）。恢复是覆盖性操作：目标槽被原生实例或
+        任一 ZzzOd 用户占用时拒绝；``force=True`` 表示用户已确认覆盖（仍先
+        存底，误恢复可找回）。
 
         Raises:
             RuntimeError: 有同安装的 ZzzOd 脚本正在运行（恢复向安装目录写
                 ``config/NN``，可能与在跑任务竞态）。
-            ValueError: 槽被占用且未确认覆盖，或回收条目不存在/内容为空。
+            ValueError: 目标槽号非法、目标槽被占用且未确认覆盖，或回收条目
+                不存在/内容为空。
         """
 
+        from app.task.ZzzOd.AutoProxy import forget_allocated_slot
         from app.task.ZzzOd.tools import restore_recycle_slot
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
+        dest = int(slot_idx) if target_slot is None else int(target_slot)
+        if dest <= 0:
+            raise ValueError(f"目标槽号 {dest} 非法")
         self._ensure_zzzod_install_unlocked(root)
         # 无用户上下文：任何绑定都算占用（回收池跨脚本，恢复目标不属于某个用户）
         try:
-            occupant = self._zzzod_slot_occupant(root, script_id, None, slot_idx)
+            occupant = self._zzzod_slot_occupant(root, script_id, None, dest)
         except ConfigCorruptedError:
             if not force:
                 raise
             occupant = None
         if occupant is not None and not force:
             raise ValueError(
-                f"槽 {slot_idx:02d} 当前被「{occupant}」占用，恢复会覆盖其内容，"
+                f"槽 {dest:02d} 当前被「{occupant}」占用，恢复会覆盖其内容，"
                 "请先处理占用后再试"
             )
-        restore_recycle_slot(root, slot_idx, ts)
-        logger.info(f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到快照 {ts}")
+        restore_recycle_slot(root, slot_idx, ts, target_slot=target_slot)
+        # 恢复出的槽是用户显式要留的内容：移出台账，免得下一次运行前的自动回收
+        # 又把它当无主残留收走（手动清理不受台账限制，仍可清）
+        forget_allocated_slot(root, dest)
+        logger.info(f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到槽 {dest:02d} 快照 {ts}")
 
     def _zzzod_user(
         self, script_id: str, user_id: str
@@ -1702,7 +1722,7 @@ class AppConfig(GlobalConfig):
 
             _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
             used = collect_used_slot_idxs(root, exclude_uids={uid})
-            slot = await ensure_user_slot(root, user_cfg, used)
+            slot = await ensure_user_slot(root, user_cfg, used, script_id=script_id)
 
         current = read_app_config(root, slot, app_id) if slot > 0 else {}
         patch: dict = {}
@@ -1850,7 +1870,7 @@ class AppConfig(GlobalConfig):
 
             _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
             used = collect_used_slot_idxs(root, exclude_uids={uid})
-            slot = await ensure_user_slot(root, user_cfg, used)
+            slot = await ensure_user_slot(root, user_cfg, used, script_id=script_id)
 
         saved = write_team_list(
             instance_dir(self._zzzod_script_root(script_id), slot), teams
@@ -2106,7 +2126,10 @@ class AppConfig(GlobalConfig):
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         if slot <= 0:
             slot = await ensure_user_slot(
-                root, user_cfg, collect_used_slot_idxs(root, exclude_uids={uid})
+                root,
+                user_cfg,
+                collect_used_slot_idxs(root, exclude_uids={uid}),
+                script_id=script_id,
             )
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)

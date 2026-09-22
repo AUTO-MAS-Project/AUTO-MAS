@@ -3270,7 +3270,10 @@ async def clear_zzzod_recycle_api(
 async def restore_zzzod_recycle_api(
     body: ZzzOdRecycleRestoreIn = Body(...),
 ) -> OutBase:
-    """目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。"""
+    """目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。
+
+    ``targetSlot`` 可指定恢复到其他空闲槽号（原槽被占用时的替代路径）。
+    """
 
     try:
         # 恢复要先存底再整目录替换，是阻塞 IO，放线程里跑
@@ -3279,12 +3282,13 @@ async def restore_zzzod_recycle_api(
             body.scriptId,
             body.slot,
             body.ts,
+            target_slot=body.targetSlot,
             force=body.force,
         )
         return OutBase(
             code=200,
             status="success",
-            message=f"槽 {body.slot:02d} 已恢复到快照 {body.ts}",
+            message=f"槽 {body.targetSlot or body.slot:02d} 已恢复到快照 {body.ts}",
         )
     except Exception as e:
         logger.opt(exception=True).warning(

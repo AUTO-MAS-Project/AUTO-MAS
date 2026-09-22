@@ -54,6 +54,7 @@ from app.utils.config_archive import (
     get_backup_dir,
     list_times,
     restore_dir,
+    timestamp_sort_key,
 )
 from app.utils.io import ConfigCorruptedError, force_rmtree, read_dict_file
 
@@ -558,7 +559,9 @@ def list_slot_idxs(root: Path) -> list[int]:
     )
 
 
-def list_orphan_slots(root: Path, bound_idxs: set[int]) -> list[int]:
+def list_orphan_slots(
+    root: Path, bound_idxs: set[int], *, allocated_idxs: set[int] | None = None
+) -> list[int]:
     """盘上既不在原生注册表、也没有 MAS 用户绑定的槽（升序）。
 
     这类槽是「MAS 分配过、用户或脚本已删除」的残留：一条龙注册表里没有它，
@@ -566,12 +569,26 @@ def list_orphan_slots(root: Path, bound_idxs: set[int]) -> list[int]:
     （``find_free_instance_idx`` 把盘上目录也当占用），新用户只能往后排。
     ``bound_idxs`` 必须含全部 ZzzOd 用户（含本次要注入/会话的），否则会把
     正在用的槽当孤儿回收，槽里的配队等随即丢失。
+
+    ``allocated_idxs`` 给出「MAS 分配过的槽号台账」时只收台账内的号：一条龙
+    原生流程是「先建目录后写注册表」，用户在原生 GUI 新建实例的瞬间盘上目录
+    已存在、注册表尚未落盘，单看盘上目录会把它误判成残留删掉。``None`` 表示
+    不设限（手动清理这类用户显式发起的动作）。
+
+    Raises:
+        ConfigCorruptedError: 注册表不可读——原生名单缺失，不能把原生实例
+            误标成孤儿。
     """
 
     native = native_slot_idxs(root)
     bound = {int(i) for i in bound_idxs}
+    allowed = None if allocated_idxs is None else {int(i) for i in allocated_idxs}
     return [
-        idx for idx in list_slot_idxs(root) if idx not in native and idx not in bound
+        idx
+        for idx in list_slot_idxs(root)
+        if idx not in native
+        and idx not in bound
+        and (allowed is None or idx in allowed)
     ]
 
 
@@ -604,18 +621,65 @@ def recycle_slot(root: Path, slot_idx: int, *, reason: str) -> bool:
     return True
 
 
-def recycle_orphan_slots(root: Path, bound_idxs: set[int]) -> list[int]:
+def archive_taken_slot(root: Path, slot_idx: int, *, reason: str) -> bool:
+    """槽号被一条龙原生实例抢走后，把残留内容存底进回收池（**不删目录**）。
+
+    一条龙的「新增实例」只按自己的注册表找最小空号，看不见不在注册表里的
+    MAS 槽，所以会把 MAS 槽的号当成空号拿去用。号被抢走后 ``config/NN`` 已经
+    是那条原生实例的配置目录——删掉会毁掉用户的原生实例，故只归档不删。
+    这样 MAS 侧残留（配队等）仍可从回收池找回，而不是永远卡在原生实例目录里
+    （该号已进原生注册表，不再是「孤儿」，自动回收不会再碰它）。
+
+    Returns:
+        是否真的产生了新快照（目录不存在、内容与池内最近一份一致而跳过、
+        或归档失败时为 ``False``）。
+    """
+
+    slot_dir = instance_dir(root, slot_idx)
+    if not slot_dir.is_dir():
+        return False
+    try:
+        archived = archive_dir(slot_dir, recycle_backup_root(root, slot_idx))
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"槽 {slot_idx:02d} 的残留内容归档失败（{reason}）: {e}"
+        )
+        return False
+    if archived is not None:
+        logger.info(f"槽 {slot_idx:02d} 的残留内容已存底进回收池（{reason}）")
+    return archived is not None
+
+
+def recycle_orphan_slots(
+    root: Path,
+    bound_idxs: set[int],
+    *,
+    allocated_idxs: set[int] | None = None,
+    swallow: bool = True,
+) -> list[int]:
     """回收全部孤儿槽，返回实际删掉的槽下标。
 
     拿不到权威的原生名单时整体放弃（注册表缺失或损坏），宁可不收。
+    ``allocated_idxs`` 见 :func:`list_orphan_slots`。
+    ``swallow=True``（自动路径）：放弃时只告警并返回空列表，不阻断运行/会话；
+    ``swallow=False``（手动清理）：把原因抛给调用方，界面才能显示「为什么没
+    收」而不是恒显示「已回收 0 个」。
+
+    Raises:
+        ValueError: 注册表缺失且 ``swallow=False``。
+        ConfigCorruptedError: 注册表不可读且 ``swallow=False``。
     """
 
     if not _has_native_registry(root):
+        if not swallow:
+            raise ValueError("一条龙注册表不存在，无法判定无主槽")
         logger.warning("一条龙注册表不存在，跳过孤儿槽回收")
         return []
     try:
-        orphans = list_orphan_slots(root, bound_idxs)
+        orphans = list_orphan_slots(root, bound_idxs, allocated_idxs=allocated_idxs)
     except ConfigCorruptedError as e:
+        if not swallow:
+            raise
         logger.warning(f"一条龙注册表不可读，跳过孤儿槽回收: {e}")
         return []
     return [idx for idx in orphans if recycle_slot(root, idx, reason="未绑定任何用户")]
@@ -745,29 +809,38 @@ def list_recycle_entries(root: Path) -> list[dict]:
             _recycle_entry(slot, "mas", slot_dir / "mas-backups" / ts)
             for ts in list_times(slot_dir / "mas-backups")
         )
-    return sorted(entries, key=lambda item: (item["ts"], item["slot"]), reverse=True)
+    return sorted(
+        entries,
+        key=lambda item: (timestamp_sort_key(item["ts"]), item["slot"]),
+        reverse=True,
+    )
 
 
-def restore_recycle_slot(root: Path, slot_idx: int, ts: str) -> None:
-    """把回收池里的槽目录快照恢复到 ``config/{slot:02d}``（先存底当前内容）。
+def restore_recycle_slot(
+    root: Path, slot_idx: int, ts: str, *, target_slot: int | None = None
+) -> None:
+    """把回收池里的槽目录快照恢复到 ``config/{目标槽:02d}``（先存底当前内容）。
 
+    ``target_slot`` 留空表示恢复回原槽号；给出其他槽号即「换个空闲号复活」
+    （原槽被原生实例或 MAS 用户占着时的替代路径，快照内容原样落到新号）。
     恢复是覆盖性操作，占用守卫由调用方负责（槽被原生实例或 MAS 用户占用时
-    需用户确认）。当前槽内容先按同一套归档进回收池——误恢复可找回。
+    需用户确认）。目标槽当前内容先按同一套归档进回收池——误恢复可找回。
 
     Raises:
-        ValueError: 回收条目不存在或内容为空。
+        ValueError: 回收条目不存在或内容为空，或恢复前存底失败。
     """
 
-    store_root = recycle_backup_root(root, slot_idx)
-    slot_dir = instance_dir(root, slot_idx)
+    dest_idx = int(slot_idx) if target_slot is None else int(target_slot)
+    source_store = recycle_backup_root(root, slot_idx)
+    slot_dir = instance_dir(root, dest_idx)
     if slot_dir.is_dir():
         try:
             # force=True：存底不裁剪现存条目——否则恢复最旧一份时，本次存底
             # 会把保留池挤满、恰好裁掉正要恢复的那条，restore_dir 报不存在
-            archive_dir(slot_dir, store_root, force=True)
+            archive_dir(slot_dir, recycle_backup_root(root, dest_idx), force=True)
         except Exception as e:
             raise ValueError(f"恢复前存底失败，已中止: {e}") from e
-    restore_dir(store_root, ts, slot_dir)
+    restore_dir(source_store, ts, slot_dir)
 
 
 def clear_recycle_pool(root: Path) -> int:

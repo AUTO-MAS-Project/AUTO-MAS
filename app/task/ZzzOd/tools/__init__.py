@@ -29,6 +29,7 @@ from .backup_archive import (
     archive_mas_backup,
     archive_mas_config_backup,
     archive_onedragon_backup,
+    archive_taken_slot,
     clear_recycle_pool,
     collect_mas_files,
     collect_mas_user_info,
@@ -83,6 +84,7 @@ from .notify import push_notification
 from .zzz_od_config import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
+    MAS_SLOT_BASE,
     RUN_STATUS_FAILED,
     RUN_STATUS_NOT_RUN,
     RUN_STATUS_RUNNING,
@@ -131,6 +133,7 @@ from .zzz_od_config import (
 __all__ = [
     "INSTANCE_RUN_ALL",
     "INSTANCE_RUN_CURRENT",
+    "MAS_SLOT_BASE",
     "RUN_STATUS_FAILED",
     "RUN_STATUS_NOT_RUN",
     "RUN_STATUS_RUNNING",
@@ -143,6 +146,7 @@ __all__ = [
     "archive_mas_backup",
     "archive_mas_config_backup",
     "archive_onedragon_backup",
+    "archive_taken_slot",
     "auto_battle_options",
     "backup_instance",
     "clear_recycle_pool",
