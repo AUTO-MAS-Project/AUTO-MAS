@@ -371,6 +371,22 @@ async def download_resumable(
                 send_update_log(
                     f"MaaFW update package downloaded: {outcome.size} bytes"
                 )
+                # 正常路径也要有 ``downloaded`` 事件（原来只有缓存命中才发）：
+                # 宿主靠它知道「下载已结束、事务马上开始」——最后一个 chunk 到
+                # 事务发出 plan_validated 之间还有 sha256 与项目指纹那几十秒，
+                # 这段里点停止已经停不住下载线程之后的事了，文案不能再说
+                # 「下次续传」。
+                emit(
+                    {
+                        "stage": "downloaded",
+                        "status": "completed",
+                        "downloaded_bytes": outcome.size,
+                        "resumed_from_bytes": outcome.resumed_from,
+                        "total_bytes": outcome.total_bytes,
+                        "cache_hit": False,
+                        "operation_id": store.operation_id,
+                    }
+                )
                 return outcome
             except _RestartFromZero:
                 partial_path.unlink(missing_ok=True)

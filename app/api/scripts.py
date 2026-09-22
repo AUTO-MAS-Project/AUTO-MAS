@@ -1264,6 +1264,10 @@ async def update_maafw_project(
     # user:pw，不进日志，也不走 ``Config.proxy``（它每次访问都记一行地址）。
     proxy_url = resolve_update_proxy_url(script_config)
     proxy = _maafw_httpx_proxy(proxy_url)
+    if proxy_url and proxy is None:
+        # 地址填错：下载已按直连，预检的 uv / pip 也整条直连，别把一个
+        # httpx 都不认的串再塞进子进程环境变量。
+        proxy_url = ""
     # CDK 值绝不进日志：只记录「有没有」。
     _maafw_update_logger.info(
         f"MFW 项目更新({payload.action}): script={payload.scriptId} "

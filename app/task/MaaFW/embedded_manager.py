@@ -515,7 +515,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             logger.warning(
                 f"MFW 项目更新代理地址无效（{type(exc).__name__}），本次直连"
             )
-            return None, None
+            # 字符串给空串而不是 None：None 在 ``_prepare_project_environment_sync``
+            # 里的意思是「没解析过，沿用全局」，那会变成下载直连、装依赖却走
+            # 全局代理——同一份配置两种行为。填错就整条直连。
+            return "", None
 
     def _build_update_progress_reporter(
         self, send_log: Callable[[str], None]
@@ -568,9 +571,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         stage = self._update_stage
         if stage in (None, "checking"):
             return "已中止更新检查", _UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS
-        if stage == "downloading":
-            downloaded = (self._update_downloaded or 0) / _BYTES_PER_MB
-            total = self._update_total
+        downloaded_bytes = self._update_downloaded or 0
+        total = self._update_total
+        if stage == "downloading" and not (total and downloaded_bytes >= total):
+            downloaded = downloaded_bytes / _BYTES_PER_MB
             done = (
                 f"已下载 {downloaded:.1f} / {total / _BYTES_PER_MB:.1f} MB"
                 if total
@@ -579,6 +583,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return (
                 f"已中止更新下载：{done}，下次运行从断点续传",
                 _UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS,
+            )
+        if stage == "downloaded" or stage == "downloading":
+            # 字节已收齐（正在校验 sha256）或 ``downloaded`` 已到：事务线程
+            # 随时会起、起了就停不下来，直到预检那一步拿到令牌再回滚。这段
+            # 里再说「下次续传」就是生产上那次「提示与后台不一致」的翻版。
+            return (
+                "更新包已下载完成，正在中止更新事务（可能回滚），请勿关闭",
+                _UPDATE_CANCEL_GRACE_SECONDS,
             )
         return "正在回滚更新，请勿关闭", _UPDATE_CANCEL_GRACE_SECONDS
 
