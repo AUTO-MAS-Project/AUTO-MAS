@@ -8,7 +8,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 from urllib.parse import quote
 
 import httpx
@@ -340,6 +340,7 @@ async def update_maafw_project_if_needed(
     project_lock_already_held: bool = False,
     project_lock_timeout: float | None = None,
     cancel_event: threading.Event | None = None,
+    github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
 ) -> MaaFWProjectUpdateResult:
     """检查并按需应用项目更新。
 
@@ -352,6 +353,9 @@ async def update_maafw_project_if_needed(
     ``cancel_event``：用户停止任务时置位，下载会在一个 chunk 内停下并抛
     ``cancelled=True`` 的 :class:`MaaFWProjectUpdateError`；apply 线程一旦起来
     就只能让它自己回滚完，所以取消只在下载与起线程之前生效。
+    ``github_mirror_urls``：下载地址 → ``(名字, 加速地址)`` 列表，只对 GitHub
+    源生效。镜像清单与开关都在宿主侧（``tools/embedded/update_mirrors.py``），
+    核心包只管按顺序试。
     """
 
     send_update_log = send_log or (lambda _: None)
@@ -580,6 +584,7 @@ async def update_maafw_project_if_needed(
             project_lock_already_held=project_lock_already_held,
             project_lock_timeout=project_lock_timeout,
             cancel_event=cancel_event,
+            github_mirror_urls=github_mirror_urls,
         )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -959,11 +964,24 @@ async def apply_maafw_project_update(
     project_lock_already_held: bool = False,
     project_lock_timeout: float | None = None,
     cancel_event: threading.Event | None = None,
+    github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
 ) -> dict[str, Any]:
     send_update_log = send_log or (lambda _: None)
     download_url = str(candidate.download_url or "").strip()
     if not download_url:
         raise MaaFWProjectUpdateError("update provider did not return a download URL")
+
+    # 加速镜像只对 GitHub 源有意义：Mirror 酱发的是一次性签名地址，套前缀
+    # 只会把签名打坏。拿不到清单不是错误，直连照跑。
+    alternates: Sequence[tuple[str, str]] = ()
+    if github_mirror_urls is not None and str(
+        candidate.source or ""
+    ).strip().casefold().startswith("github"):
+        try:
+            alternates = tuple(github_mirror_urls(download_url))
+        except Exception:
+            logger.warning("MaaFW 更新镜像清单获取失败，改为直连", exc_info=True)
+            alternates = ()
 
     root = project_path.resolve()
     if cancel_event is not None and cancel_event.is_set():
@@ -1003,6 +1021,8 @@ async def apply_maafw_project_update(
             send_log=send_update_log,
             progress=progress,
             cancel_event=cancel_event,
+            alternates=alternates,
+            expected_size=candidate.size,
         )
         operation.update(
             "downloaded",
