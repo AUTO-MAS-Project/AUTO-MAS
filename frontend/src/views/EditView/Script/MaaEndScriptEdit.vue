@@ -168,7 +168,7 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="maaEndConfig.Game.SetResolution ? 8 : 12">
+            <a-col :span="12">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
                 :extra="t('edit.maaEndSetResolutionHint')"
@@ -182,31 +182,20 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="maaEndConfig.Game.SetResolution" :span="8">
-              <a-form-item :label="t('edit.maaEndResolutionDisplayType')">
-                <a-select
-                  v-model:value="maaEndConfig.Game.GameSettingDisplayType"
-                  size="large"
-                  :options="displayTypeOptions"
-                  :disabled="isSaving"
-                  @change="handleChange('Game', 'GameSettingDisplayType', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col v-if="maaEndConfig.Game.SetResolution" :span="8">
-              <a-form-item :label="t('edit.maaEndSetResolutionValue')">
-                <a-select
-                  v-model:value="maaEndConfig.Game.GameSettingResolution"
-                  size="large"
-                  :options="gameResolutionOptions"
-                  :disabled="isSaving"
-                  @change="handleChange('Game', 'GameSettingResolution', $event)"
-                />
-              </a-form-item>
-            </a-col>
           </a-row>
 
           <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
+            <a-col :span="12">
+              <a-form-item :label="t('edit.maaEndResolutionDisplayType')">
+                <a-select
+                  v-model:value="maaEndConfig.Game.RestoreDisplayType"
+                  size="large"
+                  :options="displayTypeOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'RestoreDisplayType', $event)"
+                />
+              </a-form-item>
+            </a-col>
             <a-col :span="12">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
@@ -218,17 +207,6 @@
                   :options="restoreResolutionOptions"
                   :disabled="isSaving"
                   @change="handleChange('Game', 'RestoreResolution', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col v-if="maaEndConfig.Game.RestoreResolution !== 'Off'" :span="12">
-              <a-form-item :label="t('edit.maaEndResolutionDisplayType')">
-                <a-select
-                  v-model:value="maaEndConfig.Game.RestoreDisplayType"
-                  size="large"
-                  :options="displayTypeOptions"
-                  :disabled="isSaving"
-                  @change="handleChange('Game', 'RestoreDisplayType', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -615,34 +593,16 @@ const displayTypeOptions = computed(() => [
   { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
 ])
 
-const gameResolutionOptions = computed(() => [
-  ...(originalResolution.value
-    ? [
-        {
-          value: 'Original',
-          label: t('edit.maaEndResolutionOriginal', {
-            resolution: originalResolution.value,
-          }),
-        },
-      ]
-    : []),
-  { value: '1280x720', label: '1280 × 720' },
-  { value: '1920x1080', label: '1920 × 1080' },
-  { value: '2560x1440', label: '2560 × 1440' },
-])
-
 const restoreResolutionOptions = computed(() => [
   { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
-  ...(originalResolution.value
-    ? [
-        {
-          value: 'Original',
-          label: t('edit.maaEndResolutionOriginal', {
-            resolution: originalResolution.value,
-          }),
-        },
-      ]
-    : []),
+  {
+    value: 'Original',
+    label: originalResolution.value
+      ? t('edit.maaEndResolutionOriginal', {
+          resolution: originalResolution.value,
+        })
+      : t('edit.maaEndResolutionRestoreOriginal'),
+  },
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
@@ -841,6 +801,12 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
   const protocol = controllerProtocols.value[value]
   if (!protocol) return
 
+  const resetOriginalGameResolution =
+    protocol !== 'Win32' && maaEndConfig.Game.GameSettingResolution === 'Original'
+  if (resetOriginalGameResolution) {
+    maaEndConfig.Game.GameSettingResolution = '1920x1080'
+  }
+
   const gamePayload =
     protocol === 'Adb'
       ? {
@@ -855,6 +821,11 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
           EmulatorIndex: '',
         }
 
+  const payload = {
+    ...gamePayload,
+    ...(resetOriginalGameResolution ? { GameSettingResolution: '1920x1080' } : {}),
+  }
+
   if (protocol !== 'Adb') {
     clearEmulatorDeviceOptions()
     maaEndConfig.Game.EmulatorId = ''
@@ -867,15 +838,18 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
   }
 
   // 一次写回多个 Game 字段（含本地未同步的 WaitTime），成功后整份拉回保持一致
-  await enqueue(async () => {
-    const success = await updateScript(scriptId, { Game: gamePayload })
+  const success = await enqueue(async () => {
+    const success = await updateScript(scriptId, { Game: payload })
     if (success) {
       await refreshScript()
     }
+    return success
   })
 
   if (protocol === 'Adb') {
     await loadEmulatorOptions()
+  } else if (protocol === 'Win32' && success) {
+    await loadMaaEndOptions()
   }
 }
 

@@ -494,13 +494,14 @@ export default {
     maaEndSetResolution: '起動時に解像度を設定',
     maaEndSetResolutionHint:
       '既定ではオフです。オンにすると、最初のゲーム起動前に MaaEnd の解像度設定プレタスクを実行します。',
-    maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
+    maaEndRestoreResolution: 'ゲーム終了時に設定を復元',
     maaEndRestoreResolutionHint:
-      '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+      '最後のステージ終了時に MaaEnd が表示モードと解像度を復元します。実行後にゲームを終了する場合のみ有効です。',
     maaEndSetResolutionValue: '起動時の解像度',
     maaEndResolutionDisplayType: '表示モード',
     maaEndResolutionWindow: 'ウィンドウ',
     maaEndResolutionOriginal: '元の解像度（{resolution}）',
+    maaEndResolutionRestoreOriginal: '元に戻す',
     maaEndResolutionWidth: '幅',
     maaEndResolutionHeight: '高さ',
     maaEndResolutionUnchanged: '変更しない',
