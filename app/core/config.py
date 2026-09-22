@@ -1505,12 +1505,18 @@ class AppConfig(GlobalConfig):
 
         只删 recycle 池（被删用户/脚本留下的存底）；``onedragon`` 原生池与
         mas 配置恢复池在别的子树，不受影响。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行——运行路径会向回收池
+                归档存底（注入前回收、撞号存底），并发清空会互相踩。
         """
 
         from app.task.ZzzOd.tools import clear_recycle_pool
 
         script_config = self._zzzod_script_config(script_id)
-        return clear_recycle_pool(self._zzzod_root(script_config))
+        root = self._zzzod_root(script_config)
+        self._ensure_zzzod_install_unlocked(root)
+        return clear_recycle_pool(root)
 
     async def restore_zzzod_recycle(
         self,

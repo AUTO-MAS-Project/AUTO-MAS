@@ -493,7 +493,7 @@ class ZzzOdSlotOut(BaseModel):
     """实例槽总览行（原生实例 / MAS 绑定槽 / 无主残留）"""
 
     idx: int = Field(..., description="槽下标（config/{idx:02d}）")
-    kind: str = Field(
+    kind: Literal["native", "mas", "orphan"] = Field(
         ...,
         description="槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）",
     )
@@ -524,7 +524,7 @@ class ZzzOdRecycleEntryOut(BaseModel):
     """回收池条目（槽内容或该槽 MAS 备份池的一份快照）"""
 
     slot: int = Field(..., description="槽下标")
-    kind: str = Field(
+    kind: Literal["slot", "mas"] = Field(
         ..., description="条目类别（slot=槽目录快照 / mas=MAS 备份池快照）"
     )
     ts: str = Field(..., description="快照时间戳（归档目录名）")
