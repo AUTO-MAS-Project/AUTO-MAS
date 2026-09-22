@@ -68,6 +68,7 @@ from app.utils.paths import SOURCE_ROOT
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .project_path import release_project_path, try_reserve_project_path
+from .update_credentials import resolve_update_proxy_url
 
 logger = get_logger("MaaFW 插件自动代理")
 
@@ -1211,7 +1212,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             loop.call_soon_threadsafe(self._append_log, message)
 
         prepare_cancel_event = threading.Event()
-        proxy_url = Config.proxy_url
+        # 与运行前更新 / 预检同一份解析：脚本级 Update.ProxyAddress 优先，留空跟随
+        # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
+        proxy_url = resolve_update_proxy_url(self.script_config)
 
         def _prepare_environment_with_proxy() -> MaaFWRunnerEnvironment:
             # 代理作用域按线程登记，要在 to_thread 的目标函数体内进入：池的 uv /

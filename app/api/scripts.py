@@ -59,6 +59,7 @@ from app.task.MaaFW.tools.embedded.game_package import (
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
+    resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.update_progress import (
     MaaFWUpdateProgressTracker,
@@ -241,6 +242,25 @@ _maafw_env_logger = get_logger("MFW 运行环境")
 # 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
 # 跟着等几分钟。自动路径不限时。
 _MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
+
+
+def _maafw_httpx_proxy(proxy_url: str | None) -> Any:
+    """代理地址字符串 → ``httpx.Proxy``；没配或填错回 None（本次直连）。
+
+    地址里可能有账号密码，报错时也只说类型，不回显地址。
+    """
+
+    if not proxy_url:
+        return None
+    import httpx
+
+    try:
+        return httpx.Proxy(proxy_url)
+    except Exception as exc:  # noqa: BLE001 - 代理填错不该让整次更新 500
+        _maafw_update_logger.warning(
+            f"MFW 项目更新代理地址无效（{type(exc).__name__}），本次直连"
+        )
+        return None
 
 
 def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
@@ -1240,7 +1260,14 @@ async def update_maafw_project(
 
     current_version = str(interface.version or "")
     source_config = _maafw_update_source_config(script_config)
-    proxy = Config.proxy
+    # 代理按脚本级解析（留空跟随全局），与运行前自动更新同一口径；地址可能带
+    # user:pw，不进日志，也不走 ``Config.proxy``（它每次访问都记一行地址）。
+    proxy_url = resolve_update_proxy_url(script_config)
+    proxy = _maafw_httpx_proxy(proxy_url)
+    if proxy_url and proxy is None:
+        # 地址填错：下载已按直连，预检的 uv / pip 也整条直连，别把一个
+        # httpx 都不认的串再塞进子进程环境变量。
+        proxy_url = ""
     # CDK 值绝不进日志：只记录「有没有」。
     _maafw_update_logger.info(
         f"MFW 项目更新({payload.action}): script={payload.scriptId} "
@@ -1360,6 +1387,7 @@ async def update_maafw_project(
     # 手动更新后跑不起来和自动更新是同一种坏：提交前同样真建一次运行环境，
     # 建不出来就回滚（预检失败也写备忘，但手动路径不读备忘——它就是强制重试）。
     # 这几个模块会拉起 runtime_pool 与 agent_env，只在真要用时导入。
+    import functools
     import threading
 
     from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
@@ -1384,7 +1412,12 @@ async def update_maafw_project(
     # 不把 report_progress 交给环境准备：它的收尾事件 completed / failed 会被
     # 进度跟踪器当成更新终态，而事务此时还在 post_validating。
     post_validate = build_precheck_validator(
-        prepare=MaaFWEmbeddedManager._prepare_project_environment_sync,
+        # 预检里的 uv / pip 子进程也走脚本级代理；用 partial 绑上去，
+        # ``PrepareProjectEnvironment`` 的签名不变。
+        prepare=functools.partial(
+            MaaFWEmbeddedManager._prepare_project_environment_sync,
+            proxy_url=proxy_url,
+        ),
         cancel_event=threading.Event(),
         send_log=send_update_log,
         agent_env_root=precheck_agent_root(route.root),
@@ -1660,7 +1693,15 @@ async def prepare_maafw_agent_env(
         route = await asyncio.to_thread(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
         )
+        # 这个端点按请求里的 path 定位项目、不经脚本配置（见 MaaFW/AGENTS.md），
+        # 所以代理只在 scriptId 能解析到一份 MFW 脚本配置时才按脚本级取；
+        # 编辑页新建项目还没有脚本时落回全局。
         proxy_url = Config.proxy_url
+        if progress_id:
+            try:
+                proxy_url = resolve_update_proxy_url(_maafw_script_config(progress_id))
+            except (KeyError, ValueError, TypeError):
+                pass
 
         def _prepare_with_proxy() -> dict[str, Any]:
             # 代理作用域按线程登记，必须在 to_thread 的目标函数体内进入，
