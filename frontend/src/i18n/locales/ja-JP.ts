@@ -3487,6 +3487,11 @@ export default {
       proxyTip:
         'プロキシを使っていて接続に問題がある場合は、ここにプロキシアドレスを設定してください。全体に適用されます。',
       proxyPlaceholder: 'プロキシアドレスを入力してください',
+      githubMirror: 'GitHub ダウンロードミラー',
+      githubMirrorTip:
+        'MFW スクリプトが GitHub Releases から更新パッケージを取得するときだけ有効です。自動では gh-proxy 系ミラーを順に試し、すべて失敗すると直接接続に戻ります。オフでは常に直接接続します。sha256 ダイジェストのない資産はミラーを使いません',
+      githubMirrorAuto: '自動（ミラー優先、失敗時は直接接続）',
+      githubMirrorOff: 'オフ（GitHub に直接接続）',
       cdk: 'MirrorChyan CDK',
       cdkIntro:
         'MirrorChyan CDK は Mirror ソースから高速ダウンロードするための認証情報です。取得はこちら：',

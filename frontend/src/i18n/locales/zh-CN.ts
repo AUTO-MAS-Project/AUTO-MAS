@@ -3814,6 +3814,11 @@ export default {
       proxy: '网络代理地址',
       proxyTip: '使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效',
       proxyPlaceholder: '请输入网络代理地址',
+      githubMirror: 'GitHub 加速镜像',
+      githubMirrorTip:
+        '只影响 MFW 脚本从 GitHub Release 下载项目更新包：自动时依次尝试 gh-proxy 等镜像，全部失败回退直连；关闭则只直连。没有 sha256 摘要的资产不走镜像',
+      githubMirrorAuto: '自动（镜像优先，失败回退直连）',
+      githubMirrorOff: '关闭（只直连 GitHub）',
       cdk: 'Mirror酱 CDK',
       cdkIntro: 'Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往',
       cdkSite: 'Mirror酱官网',
