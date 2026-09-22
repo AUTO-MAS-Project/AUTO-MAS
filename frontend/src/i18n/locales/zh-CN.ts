@@ -2082,8 +2082,7 @@ export default {
       '槽目录是 MAS 分配在一条龙安装目录里的实例目录，一条龙的注册表与界面都看不到它。这里显示每个槽的归属与占用：绑定但没跑过的用户只有槽号、没有目录；无主残留是没有用户认领的旧槽，删用户/删脚本与运行前会自动回收，也可手动清理。',
     zzzodSlotsRefresh: '刷新',
     zzzodSlotsClean: '清理无主槽',
-    zzzodSlotsCleanConfirm:
-      '将回收 {count} 个无主槽（内容先归档到回收池，可恢复）；确认清理？',
+    zzzodSlotsCleanConfirm: '将回收 {count} 个无主槽（内容先归档到回收池，可恢复）；确认清理？',
     zzzodSlotsCleanDone: '已回收 {count} 个无主槽',
     zzzodSlotsCleanNone: '没有可清理的无主槽',
     zzzodSlotsCleanFailed: '清理无主槽失败',
@@ -2133,8 +2132,7 @@ export default {
     zzzodRecycleRestoreConfirmEmpty: '槽 {slot} 当前没有内容，用这份快照创建它？',
     zzzodRecycleRestoreDone: '槽 {slot} 已恢复',
     zzzodRecycleRestoreFailed: '恢复槽内容失败',
-    zzzodRecycleRestoreConflict:
-      '槽 {slot} 当前被「{occupant}」占用，不能直接恢复。请选择去处：',
+    zzzodRecycleRestoreConflict: '槽 {slot} 当前被「{occupant}」占用，不能直接恢复。请选择去处：',
     zzzodRecycleRestoreForceHint: '强制覆盖槽 {slot}（当前内容先归档存底，可再找回）',
     zzzodRecycleRestoreOtherHint: '恢复到其他空闲槽号',
     zzzodRecycleRestoreOtherPlaceholder: '选择目标槽号',
