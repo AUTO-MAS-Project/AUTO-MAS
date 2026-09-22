@@ -1539,11 +1539,14 @@ class AppConfig(GlobalConfig):
             RuntimeError: 有同安装的 ZzzOd 脚本正在运行，或本脚本配置已锁定
                 （恢复会写 ``config/NN`` 与用户绑定号，可能与在跑任务竞态）。
             ValueError: 恢复目标非法（两个都给/都不给、新用户名为空、指定用户
-                不属于该脚本），或回收条目不存在/内容为空。
+                不属于该脚本），或回收条目不存在/内容为空。条目问题先于建用户
+                判定，恢复中失败也会把刚建的用户撤掉，不留半成品。
         """
 
         from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
         from app.task.ZzzOd.tools import restore_recycle_slot
+        from app.task.ZzzOd.tools.backup_archive import recycle_backup_root
+        from app.utils.config_archive import get_backup_dir
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
@@ -1552,26 +1555,44 @@ class AppConfig(GlobalConfig):
             raise RuntimeError("脚本正在运行, 请结束后再试")
         if bool(target_user) == bool(new_user_name):
             raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
+        # 先验明快照在场再动手：建用户、写绑定都是持久化的，等写完才发现
+        # 条目不对就留下一个没内容的半成品用户
+        if get_backup_dir(recycle_backup_root(root, slot_idx), ts) is None:
+            raise ValueError(f"备份不存在: {ts}")
 
-        if new_user_name is not None:
-            name = str(new_user_name).strip()
-            if not name:
-                raise ValueError("新用户名称不能为空")
-            # 与「添加用户」同一入口（含持久化）；锁定时它自己会拒绝
-            uid, user_cfg = await self.add_user(script_id)
-            await user_cfg.set("Info", "Name", name)
-        else:
-            _, _, user_cfg, uid = self._zzzod_user(script_id, str(target_user))
-            name = str(user_cfg.get("Info", "Name") or "")
+        created_uid: uuid.UUID | None = None
+        try:
+            if new_user_name is not None:
+                name = str(new_user_name).strip()
+                if not name:
+                    raise ValueError("新用户名称不能为空")
+                # 与「添加用户」同一入口（含持久化）；锁定时它自己会拒绝
+                uid, user_cfg = await self.add_user(script_id)
+                created_uid = uid
+                await user_cfg.set("Info", "Name", name)
+            else:
+                _, _, user_cfg, uid = self._zzzod_user(script_id, str(target_user))
+                name = str(user_cfg.get("Info", "Name") or "")
 
-        used = collect_used_slot_idxs(root, exclude_uids={uid})
-        dest = await ensure_user_slot(
-            root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
-        )
-        # 存底 + 整目录替换是阻塞 IO（拷贝槽目录），放线程里跑
-        await asyncio.to_thread(
-            restore_recycle_slot, root, slot_idx, ts, target_slot=dest
-        )
+            used = collect_used_slot_idxs(root, exclude_uids={uid})
+            dest = await ensure_user_slot(
+                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+            )
+            # 存底 + 整目录替换是阻塞 IO（拷贝槽目录），放线程里跑
+            await asyncio.to_thread(
+                restore_recycle_slot, root, slot_idx, ts, target_slot=dest
+            )
+        except Exception:
+            # 恢复中失败把刚建的用户撤掉：留着它会是个没内容的半成品用户；
+            # 它的槽随后因归属消失被自动回收（内容已在回收池存底，可再恢复）
+            if created_uid is not None:
+                try:
+                    await script_config.UserData.remove(created_uid)
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"恢复失败后撤回新建用户失败（请手动删除）: {e}"
+                    )
+            raise
         logger.info(
             f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到用户「{name}」的槽 "
             f"{dest:02d} 快照 {ts}"

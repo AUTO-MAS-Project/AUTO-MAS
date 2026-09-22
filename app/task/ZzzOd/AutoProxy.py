@@ -298,7 +298,9 @@ def _allocated_slots(root: Path) -> dict[int, str | None]:
         return {
             int(i): None
             for i in slots
-            if isinstance(i, int) and not isinstance(i, bool) and int(i) > 0
+            if isinstance(i, int)
+            and not isinstance(i, bool)
+            and 0 < int(i) <= MAS_SLOT_MAX
         }
     if not isinstance(slots, dict):
         return {}
@@ -308,7 +310,9 @@ def _allocated_slots(root: Path) -> dict[int, str | None]:
             slot = int(key)
         except (TypeError, ValueError):
             continue
-        if slot <= 0:
+        # 超出 MAS_SLOT_MAX 的号不是 MAS 槽（脏值）：写进 Info.SlotIdx 会被
+        # RangeValidator 静默夹到上限，槽目录名与绑定号错位，一律当没有
+        if slot <= 0 or slot > MAS_SLOT_MAX:
             continue
         # 归属必须是字符串：混进 bool/数字按未知处理，不让脏值决定保留与否
         ledger[slot] = value if isinstance(value, str) and value else None
@@ -340,7 +344,7 @@ def _record_allocated_slot(root: Path, slot_idx: int, owner: str | None = None) 
     """
 
     slot = int(slot_idx)
-    if slot <= 0:
+    if slot <= 0 or slot > MAS_SLOT_MAX:
         return
     owner = str(owner) if owner else None
     slots = _allocated_slots(root)
@@ -353,9 +357,10 @@ def _record_allocated_slot(root: Path, slot_idx: int, owner: str | None = None) 
 def forget_allocated_slot(root: Path, slot_idx: int) -> None:
     """把槽号移出台账（该号不再参与自动回收；幂等）。
 
-    恢复快照会把内容重新物化到 ``config/NN``——那正是「有目录、无绑定、不在
-    原生注册表」的孤儿形态，但它是用户显式要保留的内容，不该在下一次运行前
-    被自动回收又收走一遍。手动清理不受台账限制，仍可清掉它。
+    删除用户/脚本回收掉槽目录后调用：台账只记「MAS 手上还在用」的号，目录都
+    没了就不该再占着。恢复快照走的是另一条路——它把内容恢复给某个用户并记上
+    归属（见 :func:`app.core.config.AppConfig.restore_zzzod_recycle`），不用
+    本函数。手动清理不受台账限制。
     """
 
     slot = int(slot_idx)
