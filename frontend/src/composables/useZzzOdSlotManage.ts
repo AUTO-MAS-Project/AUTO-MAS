@@ -198,6 +198,8 @@ export function useZzzOdSlotManage(scriptId: () => string) {
       }
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
+      // 抛异常也要让用户看见（与返回 !success 的分支同口径），不能只进日志
+      message.error(t('edit.zzzodRecycleOpenFailed'))
     }
   }
 
