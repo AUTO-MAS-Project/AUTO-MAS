@@ -290,7 +290,13 @@ def _allocated_slot_idxs(root: Path) -> set[int]:
     slots = raw.get("slots") if isinstance(raw, dict) else None
     if not isinstance(slots, list):
         return set()
-    return {int(i) for i in slots if isinstance(i, int) and int(i) > 0}
+    # 排除 bool：``isinstance(True, int)`` 为真，台账里混进 ``true`` 会变成槽 1；
+    # 这份集合是「可自动回收」的白名单，判定必须严进
+    return {
+        int(i)
+        for i in slots
+        if isinstance(i, int) and not isinstance(i, bool) and int(i) > 0
+    }
 
 
 def _save_allocated_slots(root: Path, slots: set[int]) -> None:

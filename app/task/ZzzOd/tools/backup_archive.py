@@ -833,9 +833,12 @@ def restore_recycle_slot(
 
     dest_idx = int(slot_idx) if target_slot is None else int(target_slot)
     source_store = recycle_backup_root(root, slot_idx)
+    # 类别判定走 get_backup_dir（内建时间戳格式校验）：ts 来自请求，裸拼路径
+    # 会让 ``../``、绝对路径（Windows 下绝对路径会顶掉前缀）去探到池外目录，
+    # 误判成备份池快照而把真实原因（条目不存在）盖掉
     if (
         get_backup_dir(source_store, ts) is None
-        and (source_store / "mas-backups" / str(ts)).is_dir()
+        and get_backup_dir(source_store / "mas-backups", ts) is not None
     ):
         # 同桶里还挂着该槽的 MAS 备份池快照（{slot}/mas-backups/{ts}）：它只
         # 能查看不能恢复，直接说清楚，别让用户对着「备份不存在」猜
