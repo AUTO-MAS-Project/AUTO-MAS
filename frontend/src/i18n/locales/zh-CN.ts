@@ -2101,6 +2101,8 @@ export default {
     zzzodSlotOwnerModeUser: '用户配置',
     zzzodSlotOwnerModeDirect: '直控',
     zzzodSlotNativeConflict: 'MAS 绑定冲突',
+    zzzodSlotOwnerItem: '{user}（{script}·{mode}）',
+    zzzodSlotOwnerJoiner: '、',
     zzzodSlotNativeConflictHint:
       '该槽号已被一条龙原生实例占用（一条龙新增实例时不扫盘，会把 MAS 槽的号当成空号）。MAS 用户下次运行会自动改绑到高位空闲槽，原槽里的 MAS 内容届时会存底进回收池，可从回收池找回。',
     zzzodSlotHasDir: '有',

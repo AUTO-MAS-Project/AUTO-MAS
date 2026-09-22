@@ -2217,6 +2217,8 @@ export default {
     zzzodSlotOwnerModeUser: 'user config',
     zzzodSlotOwnerModeDirect: 'direct control',
     zzzodSlotNativeConflict: 'MAS binding conflict',
+    zzzodSlotOwnerItem: '{user} ({script} · {mode})',
+    zzzodSlotOwnerJoiner: ', ',
     zzzodSlotNativeConflictHint:
       'This slot number has been taken by a native OneDragon instance (adding an instance there does not scan the disk, so MAS slots look free). The MAS user is rebound to a free high slot on the next run; the leftover MAS content is archived into the recycle pool first and can be recovered from there.',
     zzzodSlotHasDir: 'Yes',

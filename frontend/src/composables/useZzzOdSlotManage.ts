@@ -1,6 +1,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
+import { formatBytes } from '@/utils/byteFormat'
 import { Service, type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
 
 /**
@@ -82,19 +83,18 @@ export function useZzzOdSlotManage(scriptId: () => string) {
   const slotOwnerText = (slot: ZzzOdSlotOut) =>
     slot.owners?.length
       ? slot.owners
-          .map(item => `${item.userName}（${item.scriptName}·${slotOwnerModeLabel(item.mode)}）`)
-          .join('、')
+          .map(item =>
+            t('edit.zzzodSlotOwnerItem', {
+              user: item.userName,
+              script: item.scriptName,
+              mode: slotOwnerModeLabel(item.mode),
+            })
+          )
+          .join(t('edit.zzzodSlotOwnerJoiner'))
       : '—'
 
   const recycleKindLabel = (kind: string) =>
     kind === 'mas' ? t('edit.zzzodRecycleKindMas') : t('edit.zzzodRecycleKindSlot')
-
-  const formatSlotSize = (size: number) =>
-    size >= 1024 * 1024
-      ? `${(size / 1024 / 1024).toFixed(1)} MB`
-      : size >= 1024
-        ? `${(size / 1024).toFixed(1)} KB`
-        : `${size} B`
 
   /** 归档时间戳（目录名 20260921-225131，同秒顺延为 20260921-225131-1）→
    *  2026-09-21 22:51:31（带同秒序号时末尾拼 .N） */
@@ -226,7 +226,7 @@ export function useZzzOdSlotManage(scriptId: () => string) {
       title: t('edit.zzzodRecycleClear'),
       content: t('edit.zzzodRecycleClearConfirm', {
         count: recycleRows.value.length,
-        size: formatSlotSize(totalSize),
+        size: formatBytes(totalSize),
       }),
       okText: t('edit.zzzodRecycleClear'),
       okButtonProps: { danger: true },
@@ -307,7 +307,7 @@ export function useZzzOdSlotManage(scriptId: () => string) {
       if (resp.code !== 200) {
         throw new Error(resp.message || t('edit.zzzodRecycleRestoreFailed'))
       }
-      message.success(resp.message || t('edit.zzzodRecycleRestoreDone'))
+      message.success(t('edit.zzzodRecycleRestoreDone'))
       return true
     } catch (e) {
       message.error(e instanceof Error ? e.message : t('edit.zzzodRecycleRestoreFailed'))
@@ -369,7 +369,7 @@ export function useZzzOdSlotManage(scriptId: () => string) {
     slotNativeConflict,
     slotOwnerText,
     recycleKindLabel,
-    formatSlotSize,
+    formatBytes,
     formatArchiveTs,
     loadSlotView,
     handlePanelChange,

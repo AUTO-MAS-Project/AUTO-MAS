@@ -64,7 +64,7 @@
                   {{ record.has_dir ? t('edit.zzzodSlotHasDir') : t('edit.zzzodSlotNoDir') }}
                 </template>
                 <template v-else-if="column.key === 'size'">
-                  {{ formatSlotSize(record.size) }}
+                  {{ formatBytes(record.size) }}
                 </template>
               </template>
             </a-table>
@@ -108,7 +108,7 @@
                   {{ record.files }}
                 </template>
                 <template v-else-if="column.key === 'size'">
-                  {{ formatSlotSize(record.size) }}
+                  {{ formatBytes(record.size) }}
                 </template>
                 <template v-else-if="column.key === 'ops'">
                   <a-space :size="4">
@@ -138,6 +138,9 @@
       v-model:open="restoreTarget.open"
       :title="t('edit.zzzodRecycleRestore')"
       :confirm-loading="restoring"
+      :closable="!restoring"
+      :mask-closable="!restoring"
+      :keyboard="!restoring"
       :ok-text="t('edit.zzzodRecycleRestore')"
       @ok="submitRestore"
     >
@@ -207,7 +210,7 @@ const {
   slotNativeConflict,
   slotOwnerText,
   recycleKindLabel,
-  formatSlotSize,
+  formatBytes,
   formatArchiveTs,
   loadSlotView,
   handlePanelChange,
