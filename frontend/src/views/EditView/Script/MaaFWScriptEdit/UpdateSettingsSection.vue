@@ -64,10 +64,25 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.cdkTip')">
+            <!-- 说明全在问号里：悬停看文案，点问号直接去 Mirror 酱取 CDK；输入框下面不再放解释行，
+                 只在「选了 Mirror 酱却没填」时冒一行警告 -->
+            <a-tooltip>
+              <template #title>
+                {{ t('edit.cdkTip') }}
+                <a :href="MIRRORCHYAN_CDK_URL" class="tooltip-link" @click="handleExternalLink">{{
+                  t('edit.cdkGetLink')
+                }}</a>
+              </template>
               <span class="form-label">
                 {{ t('edit.mirrorchyanCdk') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                <a
+                  :href="MIRRORCHYAN_CDK_URL"
+                  class="help-link"
+                  :aria-label="t('edit.cdkGetLink')"
+                  @click.stop="handleExternalLink"
+                >
+                  <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                </a>
               </span>
             </a-tooltip>
           </template>
@@ -79,11 +94,8 @@
             autocomplete="off"
             @blur="emit('change', 'Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)"
           />
-          <div class="form-hint" :class="{ 'form-hint--warning': isCdkMissingForMirror }">
-            {{ t('edit.cdkHint') }}
-            <a :href="MIRRORCHYAN_CDK_URL" class="form-hint-link" @click="handleExternalLink">{{
-              t('edit.cdkGetLink')
-            }}</a>
+          <div v-if="isCdkMissingForMirror" class="form-hint form-hint--warning">
+            {{ t('edit.cdkMissingForMirror') }}
           </div>
           <div v-if="cdkPrefilled" class="form-hint">{{ t('edit.cdkPrefilledFromGlobal') }}</div>
         </a-form-item>
@@ -106,7 +118,6 @@
             autocomplete="off"
             @blur="emit('change', 'Update', 'ProxyAddress', maafwConfig.Update.ProxyAddress)"
           />
-          <div class="form-hint">{{ t('edit.proxyAddressHint') }}</div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -431,14 +442,18 @@ watch(
   color: var(--ant-color-warning);
 }
 
-.form-hint-link {
-  margin-left: 4px;
-  color: var(--ant-color-primary);
-  text-decoration: underline;
+/* 问号本身就是去 Mirror 酱的入口：样式与旁边的问号一致，只多一个手型 */
+.help-link {
+  display: inline-flex;
+  color: inherit;
+  cursor: pointer;
 }
 
-.form-hint-link:hover {
-  color: var(--ant-color-primary-hover);
+/* 提示气泡是深底白字，链接不能用主色（看不见），下划线就够 */
+.tooltip-link {
+  margin-left: 4px;
+  color: inherit;
+  text-decoration: underline;
 }
 
 .update-config-row {

@@ -1368,16 +1368,14 @@ export default {
       'Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：无需配置，直接从项目的 GitHub Release 下载',
     updateChannel: '更新通道',
     cdkTip:
-      '默认填入 MAS 更新设置里的 CDK，可单独改成本脚本专用的；选择 Mirror 酱作为更新源时必须填写',
+      '默认填入 MAS 更新设置里的 CDK，可单独改成本脚本专用的；选择 Mirror 酱作为更新源时必须填写。点击问号前往 Mirror 酱获取：',
     cdkPlaceholder: '请输入 Mirror 酱 CDK',
-    cdkHint: '选择 Mirror 酱作为更新源时必须填写；可在 Mirror 酱官网获取',
     cdkGetLink: '获取 Mirror 酱 CDK',
     cdkMissingForMirror: '已选择 Mirror 酱作为更新源，但未填写 CDK，无法从 Mirror 酱下载更新',
     proxyAddress: '代理地址',
-    proxyAddressTip: '只对这个项目生效的网络代理；留空则跟随 MAS 设置里的全局网络代理',
+    proxyAddressTip:
+      '只对这个项目生效的网络代理。留空跟随全局设置（设置 → 其他 → 网络代理）；填写后此项目的更新下载与运行环境安装只走这里的代理',
     proxyAddressPlaceholder: '如 127.0.0.1:7890，留空跟随全局',
-    proxyAddressHint:
-      '留空跟随全局设置（设置 → 其他 → 网络代理）；填写后此项目的更新下载与运行环境安装只走这里的代理',
     updateResultVersion: '最新版本',
     updateResultSource: '下载来源',
     cdkPrefilledFromGlobal: '已自动填入 MAS 更新设置中的 CDK，可直接使用或改成本脚本专用的',

@@ -1328,16 +1328,14 @@ export default {
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
-      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です',
+      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です。「?」をクリックすると MirrorChyan で取得できます：',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
     proxyAddress: 'プロキシアドレス',
     proxyAddressTip:
-      'このプロジェクトだけに適用されるネットワークプロキシです。空欄にすると MAS 設定の全体プロキシに従います',
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
     proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
-    proxyAddressHint:
-      '空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
     notDeclared: '未宣言',
     updateProcess: '更新の進行',
     updateProcessPlaceholder:

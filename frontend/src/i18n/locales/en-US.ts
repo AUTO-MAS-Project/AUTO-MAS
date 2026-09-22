@@ -1437,18 +1437,15 @@ export default {
       'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
     updateChannel: 'Update channel',
     cdkTip:
-      'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source',
+      'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source. Click the question mark to get one on MirrorChyan:',
     cdkPlaceholder: 'Enter the MirrorChyan CDK',
-    cdkHint: 'Required when MirrorChyan is the update source; get one on the MirrorChyan site',
     cdkGetLink: 'Get a MirrorChyan CDK',
     cdkMissingForMirror:
       'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
     proxyAddress: 'Proxy address',
     proxyAddressTip:
-      'Network proxy used by this project only; leave it empty to follow the global network proxy in MAS settings',
+      'Network proxy used by this project only. Leave it empty to follow the global setting (Settings → Other → Network proxy); once set, update downloads and runtime environment installs for this project go through this proxy only',
     proxyAddressPlaceholder: 'e.g. 127.0.0.1:7890, empty follows the global proxy',
-    proxyAddressHint:
-      'Leave empty to follow the global setting (Settings → Other → Network proxy); once set, update downloads and runtime environment installs for this project go through this proxy only',
     updateResultVersion: 'Latest version',
     updateResultSource: 'Download source',
     cdkPrefilledFromGlobal:
