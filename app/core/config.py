@@ -1512,55 +1512,71 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         return clear_recycle_pool(self._zzzod_root(script_config))
 
-    def restore_zzzod_recycle(
+    async def restore_zzzod_recycle(
         self,
         script_id: str,
         slot_idx: int,
         ts: str,
         *,
-        target_slot: int | None = None,
-        force: bool = False,
-    ) -> None:
-        """把回收池里的一条槽快照恢复到目标槽号（恢复前自动存底当前内容）。
+        target_user: str | None = None,
+        new_user_name: str | None = None,
+    ) -> tuple[int, str]:
+        """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）。
 
-        默认恢复回原槽号；``target_slot`` 给出其他槽号即「换个空闲号复活」
-        （原槽被占用时的替代路径）。恢复是覆盖性操作：目标槽被原生实例或
-        任一 ZzzOd 用户占用时拒绝；``force=True`` 表示用户已确认覆盖（仍先
-        存底，误恢复可找回）。
+        恢复的落点是**用户的绑定槽**，而不是某个裸槽号：只把内容物化到
+        ``config/NN`` 而不建立绑定的恢复没有出口——MAS 下次运行不会认领它，
+        用户拿不到内容（想取出文件用回收池的「查看」直接复制）。
+
+        ``target_user`` 指定现有用户 uid；``new_user_name`` 新建一个用户并把
+        内容恢复到它的槽（名字即该值）。二者必须且只能给一个。目标用户尚无
+        绑定槽时按常规分配（含认领它上次没跑完的槽）；已有绑定槽时覆盖其内容
+        ——恢复前自动存底，误恢复可从回收池找回。
+
+        Returns:
+            ``(目标槽号, 用户名)``。
 
         Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行（恢复向安装目录写
-                ``config/NN``，可能与在跑任务竞态）。
-            ValueError: 目标槽号非法、目标槽被占用且未确认覆盖，或回收条目
-                不存在/内容为空。
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行，或本脚本配置已锁定
+                （恢复会写 ``config/NN`` 与用户绑定号，可能与在跑任务竞态）。
+            ValueError: 恢复目标非法（两个都给/都不给、新用户名为空、指定用户
+                不属于该脚本），或回收条目不存在/内容为空。
         """
 
-        from app.task.ZzzOd.AutoProxy import forget_allocated_slot
-        from app.task.ZzzOd.tools import MAS_SLOT_MAX, restore_recycle_slot
+        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
+        from app.task.ZzzOd.tools import restore_recycle_slot
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
-        dest = int(slot_idx) if target_slot is None else int(target_slot)
-        if dest <= 0 or dest > MAS_SLOT_MAX:
-            raise ValueError(f"目标槽号 {dest} 非法")
         self._ensure_zzzod_install_unlocked(root)
-        # 无用户上下文：任何绑定都算占用（回收池跨脚本，恢复目标不属于某个用户）
-        try:
-            occupant = self._zzzod_slot_occupant(root, script_id, None, dest)
-        except ConfigCorruptedError:
-            if not force:
-                raise
-            occupant = None
-        if occupant is not None and not force:
-            raise ValueError(
-                f"槽 {dest:02d} 当前被「{occupant}」占用，恢复会覆盖其内容，"
-                "请先处理占用后再试"
-            )
-        restore_recycle_slot(root, slot_idx, ts, target_slot=target_slot)
-        # 恢复出的槽是用户显式要留的内容：移出台账，免得下一次运行前的自动回收
-        # 又把它当无主残留收走（手动清理不受台账限制，仍可清）
-        forget_allocated_slot(root, dest)
-        logger.info(f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到槽 {dest:02d} 快照 {ts}")
+        if script_config.is_locked:
+            raise RuntimeError("脚本正在运行, 请结束后再试")
+        if bool(target_user) == bool(new_user_name):
+            raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
+
+        if new_user_name is not None:
+            name = str(new_user_name).strip()
+            if not name:
+                raise ValueError("新用户名称不能为空")
+            # 与「添加用户」同一入口（含持久化）；锁定时它自己会拒绝
+            uid, user_cfg = await self.add_user(script_id)
+            await user_cfg.set("Info", "Name", name)
+        else:
+            _, _, user_cfg, uid = self._zzzod_user(script_id, str(target_user))
+            name = str(user_cfg.get("Info", "Name") or "")
+
+        used = collect_used_slot_idxs(root, exclude_uids={uid})
+        dest = await ensure_user_slot(
+            root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+        )
+        # 存底 + 整目录替换是阻塞 IO（拷贝槽目录），放线程里跑
+        await asyncio.to_thread(
+            restore_recycle_slot, root, slot_idx, ts, target_slot=dest
+        )
+        logger.info(
+            f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到用户「{name}」的槽 "
+            f"{dest:02d} 快照 {ts}"
+        )
+        return dest, name
 
     def _zzzod_user(
         self, script_id: str, user_id: str

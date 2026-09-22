@@ -86,6 +86,7 @@ from .tools import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
     MAS_SLOT_BASE,
+    MAS_SLOT_MAX,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCESS,
@@ -506,7 +507,9 @@ async def ensure_user_slot(
         slot = (
             reclaimed
             if reclaimed is not None
-            else find_free_instance_idx(root, used_idxs, base=MAS_SLOT_BASE)
+            else find_free_instance_idx(
+                root, used_idxs, base=MAS_SLOT_BASE, limit=MAS_SLOT_MAX
+            )
         )
         if taken:
             user_name = str(user_config.get("Info", "Name") or "未知用户")
@@ -580,6 +583,7 @@ def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
             owners.setdefault(bound, []).append(
                 {
                     "scriptId": str(script_uid),
+                    "userId": str(uid),
                     "scriptName": script_name,
                     "userName": str(cfg.get("Info", "Name") or ""),
                     "mode": str(cfg.get("Info", "Mode") or "用户"),

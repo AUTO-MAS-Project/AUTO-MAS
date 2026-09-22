@@ -483,6 +483,7 @@ class ZzzOdSlotOwnerOut(BaseModel):
     """实例槽的 MAS 归属（哪个脚本的哪个用户占着这个号）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="用户ID（恢复槽时用它指认目标用户）")
     scriptName: str = Field(..., description="所属脚本名称")
     userName: str = Field(..., description="用户名称")
     mode: str = Field(..., description="该用户的配置来源（脚本/用户/直控）")
@@ -547,15 +548,17 @@ class ZzzOdRecycleClearOut(OutBase):
 
 
 class ZzzOdRecycleRestoreIn(BaseModel):
-    """把回收池里的一条槽快照恢复到该槽号（或指定的其他空闲槽号）"""
+    """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
     slot: int = Field(..., description="快照所属槽下标（回收条目的槽号）")
     ts: str = Field(..., description="快照时间戳")
-    targetSlot: int | None = Field(
-        default=None, description="恢复到的目标槽号；留空表示恢复回原槽号"
+    targetUser: str | None = Field(
+        default=None, description="恢复给该用户的绑定槽（现有用户 uid）"
     )
-    force: bool = Field(default=False, description="目标槽被占用时是否确认覆盖")
+    newUserName: str | None = Field(
+        default=None, description="新建一个用户并把内容恢复到它的槽（用户名称）"
+    )
 
 
 class ZzzOdCatalogItemOut(BaseModel):

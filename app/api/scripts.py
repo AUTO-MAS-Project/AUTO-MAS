@@ -3263,32 +3263,30 @@ async def clear_zzzod_recycle_api(
 @router.post(
     "/zzzod/recycle/restore",
     tags=["Delete"],
-    summary="把回收池里的槽快照恢复到该槽号（覆盖性操作，先存底）",
+    summary="把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）",
     response_model=OutBase,
     status_code=200,
 )
 async def restore_zzzod_recycle_api(
     body: ZzzOdRecycleRestoreIn = Body(...),
 ) -> OutBase:
-    """目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。
-
-    ``targetSlot`` 可指定恢复到其他空闲槽号（原槽被占用时的替代路径）。
+    """恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+    ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+    MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
     """
 
     try:
-        # 恢复要先存底再整目录替换，是阻塞 IO，放线程里跑
-        await asyncio.to_thread(
-            Config.restore_zzzod_recycle,
+        slot, user_name = await Config.restore_zzzod_recycle(
             body.scriptId,
             body.slot,
             body.ts,
-            target_slot=body.targetSlot,
-            force=body.force,
+            target_user=body.targetUser,
+            new_user_name=body.newUserName,
         )
         return OutBase(
             code=200,
             status="success",
-            message=f"槽 {body.targetSlot or body.slot:02d} 已恢复到快照 {body.ts}",
+            message=f"已恢复到用户「{user_name}」的槽 {slot:02d}（快照 {body.ts}）",
         )
     except Exception as e:
         logger.opt(exception=True).warning(

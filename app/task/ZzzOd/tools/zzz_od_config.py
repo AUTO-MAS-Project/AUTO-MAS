@@ -255,7 +255,11 @@ MAS_SLOT_MAX = 9999
 
 
 def find_free_instance_idx(
-    root: Path, used_idxs: set[int] | None = None, *, base: int = 1
+    root: Path,
+    used_idxs: set[int] | None = None,
+    *,
+    base: int = 1,
+    limit: int | None = None,
 ) -> int:
     """返回不小于 ``base`` 的最小空闲实例 idx。
 
@@ -267,6 +271,13 @@ def find_free_instance_idx(
 
     ``base=1`` 对齐 zzz-od ``create_new_instance`` 的最小正整数规则（原生实例
     用）；MAS 用户槽传 :data:`MAS_SLOT_BASE`，退到高位段避开一条龙的找号范围。
+
+    ``limit`` 给出上限时，超出即报错而不是返回越界号：MAS 槽号要写进
+    ``Info.SlotIdx``，越过 :data:`MAS_SLOT_MAX` 会被 ``RangeValidator`` 静默
+    夹到上限，槽目录名与绑定号错位。原生实例不传（一条龙自身对 idx 无上限）。
+
+    Raises:
+        ValueError: 号段已用满（``limit`` 内找不到空号）。
     """
 
     used: set[int] = set()
@@ -282,6 +293,8 @@ def find_free_instance_idx(
     idx = max(1, int(base))
     while idx in used:
         idx += 1
+    if limit is not None and idx > int(limit):
+        raise ValueError(f"实例槽号段已用满（{base}~{limit}）")
     return idx
 
 
