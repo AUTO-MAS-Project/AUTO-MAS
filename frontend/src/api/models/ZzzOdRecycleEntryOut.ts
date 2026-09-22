@@ -13,7 +13,7 @@ export type ZzzOdRecycleEntryOut = {
     /**
      * 条目类别（slot=槽目录快照 / mas=MAS 备份池快照）
      */
-    kind: string;
+    kind: ZzzOdRecycleEntryOut.kind;
     /**
      * 快照时间戳（归档目录名）
      */
@@ -31,4 +31,13 @@ export type ZzzOdRecycleEntryOut = {
      */
     path: string;
 };
+export namespace ZzzOdRecycleEntryOut {
+    /**
+     * 条目类别（slot=槽目录快照 / mas=MAS 备份池快照）
+     */
+    export enum kind {
+        SLOT = 'slot',
+        MAS = 'mas',
+    }
+}
 

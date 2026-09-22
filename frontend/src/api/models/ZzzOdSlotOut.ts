@@ -14,7 +14,7 @@ export type ZzzOdSlotOut = {
     /**
      * 槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）
      */
-    kind: string;
+    kind: ZzzOdSlotOut.kind;
     /**
      * 盘上是否已有该槽目录（只配了用户没跑过的槽没有目录）
      */
@@ -28,4 +28,14 @@ export type ZzzOdSlotOut = {
      */
     owners?: Array<ZzzOdSlotOwnerOut>;
 };
+export namespace ZzzOdSlotOut {
+    /**
+     * 槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）
+     */
+    export enum kind {
+        NATIVE = 'native',
+        MAS = 'mas',
+        ORPHAN = 'orphan',
+    }
+}
 
