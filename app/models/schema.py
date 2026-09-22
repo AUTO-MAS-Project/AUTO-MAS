@@ -479,6 +479,88 @@ class ZzzOdInstanceDeleteIn(BaseModel):
     instanceIdx: int = Field(..., description="目标实例下标")
 
 
+class ZzzOdSlotOwnerOut(BaseModel):
+    """实例槽的 MAS 归属（哪个脚本的哪个用户占着这个号）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="用户ID（恢复槽时用它指认目标用户）")
+    scriptName: str = Field(..., description="所属脚本名称")
+    userName: str = Field(..., description="用户名称")
+    mode: str = Field(..., description="该用户的配置来源（脚本/用户/直控）")
+
+
+class ZzzOdSlotOut(BaseModel):
+    """实例槽总览行（原生实例 / MAS 绑定槽 / 无主残留）"""
+
+    idx: int = Field(..., description="槽下标（config/{idx:02d}）")
+    kind: Literal["native", "mas", "orphan"] = Field(
+        ...,
+        description="槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）",
+    )
+    has_dir: bool = Field(
+        ..., description="盘上是否已有该槽目录（只配了用户没跑过的槽没有目录）"
+    )
+    size: int = Field(default=0, description="槽目录占用字节数（无目录为 0）")
+    owners: List[ZzzOdSlotOwnerOut] = Field(
+        default_factory=list, description="绑定该槽的 MAS 用户（可为多个脚本）"
+    )
+
+
+class ZzzOdSlotsOut(OutBase):
+    data: List[ZzzOdSlotOut] = Field(..., description="实例槽总览")
+
+
+class ZzzOdSlotCleanIn(BaseModel):
+    """手动清理无主实例槽（先归档进回收池再删目录）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ZzzOdSlotCleanOut(OutBase):
+    data: List[int] = Field(..., description="实际回收的槽下标")
+
+
+class ZzzOdRecycleEntryOut(BaseModel):
+    """回收池条目（槽内容或该槽 MAS 备份池的一份快照）"""
+
+    slot: int = Field(..., description="槽下标")
+    kind: Literal["slot", "mas"] = Field(
+        ..., description="条目类别（slot=槽目录快照 / mas=MAS 备份池快照）"
+    )
+    ts: str = Field(..., description="快照时间戳（归档目录名）")
+    files: int = Field(..., description="快照内文件数")
+    size: int = Field(..., description="快照占用字节数")
+    path: str = Field(..., description="归档目录的绝对路径（可在文件管理器打开）")
+
+
+class ZzzOdRecycleOut(OutBase):
+    data: List[ZzzOdRecycleEntryOut] = Field(..., description="回收池条目")
+
+
+class ZzzOdRecycleClearIn(BaseModel):
+    """清空实例槽回收池（只清 recycle 池，不碰配置恢复池）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ZzzOdRecycleClearOut(OutBase):
+    data: int = Field(..., description="删除的条目数")
+
+
+class ZzzOdRecycleRestoreIn(BaseModel):
+    """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    slot: int = Field(..., description="快照所属槽下标（回收条目的槽号）")
+    ts: str = Field(..., description="快照时间戳")
+    targetUser: str | None = Field(
+        default=None, description="恢复给该用户的绑定槽（现有用户 uid）"
+    )
+    newUserName: str | None = Field(
+        default=None, description="新建一个用户并把内容恢复到它的槽（用户名称）"
+    )
+
+
 class ZzzOdCatalogItemOut(BaseModel):
     """一条龙任务目录项（静态解析应用注册信息）"""
 
@@ -2020,7 +2102,7 @@ class ZzzOdUserConfig_Info(BaseModel):
     )
     SlotIdx: Optional[int] = Field(
         default=None,
-        description="绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配并持久注册 MAS-{用户名} 实例）",
+        description="绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配，取 1001 起的高位段以避开一条龙原生实例的升序找号；槽目录 config/{idx:02d} 持久保留，注册表只在运行/会话窗口以合成视图出现）",
     )
     LauncherMode: Optional[Literal["自动", "原始", "集成"]] = Field(
         default=None,

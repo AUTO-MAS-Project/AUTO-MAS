@@ -3143,7 +3143,7 @@ async def set_zzzod_instance_run_mode_api(
 
 @router.post(
     "/zzzod/instances/delete",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
@@ -3166,6 +3166,182 @@ async def delete_zzzod_instance_api(
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
+        )
+
+
+@router.get(
+    "/zzzod/slots",
+    tags=["ZZZ-OD"],
+    summary="获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）",
+    response_model=ZzzOdSlotsOut,
+    status_code=200,
+)
+async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
+    """槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+
+    这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+    与定位无主残留。
+    """
+
+    try:
+        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
+        data = [
+            ZzzOdSlotOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_slots, scriptId)
+        ]
+        return ZzzOdSlotsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个实例槽",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_slots_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdSlotsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/slots/clean",
+    tags=["Delete"],
+    summary="清理无主实例槽（先归档进回收池再删目录）",
+    response_model=ZzzOdSlotCleanOut,
+    status_code=200,
+)
+async def clean_zzzod_slots_api(
+    body: ZzzOdSlotCleanIn = Body(...),
+) -> ZzzOdSlotCleanOut:
+    """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
+
+    try:
+        # 清理要整目录拷贝 + 删目录，是阻塞 IO，放线程里跑
+        removed = await asyncio.to_thread(Config.clean_zzzod_slots, body.scriptId)
+        return ZzzOdSlotCleanOut(
+            code=200,
+            status="success",
+            message=f"已回收 {len(removed)} 个实例槽",
+            data=removed,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clean_zzzod_slots_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdSlotCleanOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/zzzod/recycle",
+    tags=["ZZZ-OD"],
+    summary="获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）",
+    response_model=ZzzOdRecycleOut,
+    status_code=200,
+)
+async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
+    """槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。"""
+
+    try:
+        data = [
+            ZzzOdRecycleEntryOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_recycle, scriptId)
+        ]
+        return ZzzOdRecycleOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 条回收记录",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/recycle/clear",
+    tags=["Delete"],
+    summary="清空实例槽回收池（删除后不可找回，不碰配置恢复池）",
+    response_model=ZzzOdRecycleClearOut,
+    status_code=200,
+)
+async def clear_zzzod_recycle_api(
+    body: ZzzOdRecycleClearIn = Body(...),
+) -> ZzzOdRecycleClearOut:
+    """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
+
+    try:
+        # 整棵目录删除是阻塞 IO，放线程里跑
+        count = await asyncio.to_thread(Config.clear_zzzod_recycle, body.scriptId)
+        return ZzzOdRecycleClearOut(
+            code=200,
+            status="success",
+            message=f"已清空回收池（{count} 条）",
+            data=count,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clear_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleClearOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=0,
+        )
+
+
+@router.post(
+    "/zzzod/recycle/restore",
+    tags=["Delete"],
+    summary="把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def restore_zzzod_recycle_api(
+    body: ZzzOdRecycleRestoreIn = Body(...),
+) -> OutBase:
+    """恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+    ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+    MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+    """
+
+    try:
+        slot, user_name = await Config.restore_zzzod_recycle(
+            body.scriptId,
+            body.slot,
+            body.ts,
+            target_user=body.targetUser,
+            new_user_name=body.newUserName,
+        )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已恢复到用户「{user_name}」的槽 {slot:02d}（快照 {body.ts}）",
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"restore_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
 
 
