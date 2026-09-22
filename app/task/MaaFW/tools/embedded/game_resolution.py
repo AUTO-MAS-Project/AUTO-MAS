@@ -71,6 +71,44 @@ def parse_resolution_option(value: object) -> tuple[int, int] | None:
     return RESOLUTION_PRESETS.get(str(value or "").strip())
 
 
+def read_unity_resolution(
+    exe_path: Path,
+    registry_module: Any | None = None,
+) -> tuple[int, int] | None:
+    """读取 Unity 播放器当前保存的分辨率。
+
+    路径和键名沿用 :class:`UnityGameResolutionOverride` 的注册表实现；这里只做只读
+    查询，不申请写权限，也不会创建或修改任何键。无法反查 Unity 路径、运行在非
+    Windows 系统、注册表键/值不存在或值不是正整数时返回 ``None``。
+    """
+
+    registry_path = resolve_unity_registry_path(exe_path)
+    registry = registry_module if registry_module is not None else _winreg
+    if registry_path is None or registry is None:
+        return None
+
+    try:
+        with registry.OpenKey(
+            registry.HKEY_CURRENT_USER,
+            registry_path,
+            0,
+            registry.KEY_QUERY_VALUE,
+        ) as key:
+            width, _ = registry.QueryValueEx(key, _WIDTH_VALUE)
+            height, _ = registry.QueryValueEx(key, _HEIGHT_VALUE)
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return None
+
+    try:
+        width = int(width)
+        height = int(height)
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
 def _target_values(width: int, height: int) -> tuple[tuple[str, int], ...]:
     return (
         (_WIDTH_VALUE, width),
@@ -280,5 +318,6 @@ __all__ = [
     "RESOLUTION_PRESETS",
     "UnityGameResolutionOverride",
     "parse_resolution_option",
+    "read_unity_resolution",
     "resolve_unity_registry_path",
 ]

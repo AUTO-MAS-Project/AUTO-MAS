@@ -23,6 +23,10 @@ export type MaaEndOptionsOut = {
      */
     autoCollectGroups?: Array<MaaEndAutoCollectGroup>;
     /**
+     * 从游戏 Unity 注册表读取的原始分辨率
+     */
+    originalResolution?: (string | null);
+    /**
      * MaaEnd 控制器选项
      */
     controllers: Array<ComboBoxItem>;

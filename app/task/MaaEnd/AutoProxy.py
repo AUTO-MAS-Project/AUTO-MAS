@@ -313,6 +313,9 @@ class AutoProxyTask(TaskExecuteBase):
             tuple[tuple, list[dict[str, object]] | None] | None
         ) = None
         self.first_run_mode: str | None = None
+        # 启动预任务和结束恢复共用同一份启动前注册表分辨率，避免游戏设置预任务
+        # 改写注册表后再读取到临时值。
+        self.original_game_resolution: tuple[int, int] | None = None
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
@@ -1384,10 +1387,9 @@ class AutoProxyTask(TaskExecuteBase):
             return None
         required_options = (
             "CloseGamePCApplyGameSetting",
+            "CloseGamePCGameSettingDisplayType",
             "CloseGamePCGameSettingResolution",
         )
-        if resolution == "Fullscreen":
-            required_options += ("CloseGamePCGameSettingDisplayType",)
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
@@ -1413,23 +1415,33 @@ class AutoProxyTask(TaskExecuteBase):
             str(self.script_config.get("Game", "ControllerType"))
         ] = True
         tasks.append(close_task)
-        if resolution == "Custom":
+        display_type = str(
+            self.script_config.get("Game", "RestoreDisplayType") or "Window"
+        )
+        if display_type not in {"Window", "Fullscreen"}:
+            display_type = "Window"
+        if resolution == "Fullscreen":
+            # 旧配置把显示模式和分辨率合并成一个值，保持旧语义。
+            display_type = "Fullscreen"
+            width, height = "1920", "1080"
+        elif resolution == "Original":
+            original = self._read_original_game_resolution()
+            if original is None:
+                raise ValueError(
+                    "无法读取启动前的终末地注册表分辨率，请先运行一次游戏或改用固定分辨率"
+                )
+            width, height = (str(value) for value in original)
+        elif resolution == "Custom":
             width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
             height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
-        elif resolution == "Fullscreen":
-            width, height = "1920", "1080"
         else:
             width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
-        if resolution == "Fullscreen":
-            values["CloseGamePCGameSettingDisplayType"] = {
-                "type": "select",
-                "caseName": "Fullscreen",
-            }
-        else:
-            # 固定或自定义分辨率沿用 MaaEnd 默认的窗口模式，避免残留旧的全屏选项。
-            values.pop("CloseGamePCGameSettingDisplayType", None)
+        values["CloseGamePCGameSettingDisplayType"] = {
+            "type": "select",
+            "caseName": display_type,
+        }
         values["CloseGamePCGameSettingResolution"] = {
             "type": "input",
             "values": {
@@ -1438,6 +1450,20 @@ class AutoProxyTask(TaskExecuteBase):
             },
         }
         return close_task
+
+    def _read_original_game_resolution(self) -> tuple[int, int] | None:
+        """读取并缓存本轮启动前的 Unity 分辨率。"""
+
+        if self.original_game_resolution is not None:
+            return self.original_game_resolution
+
+        from app.task.MaaFW.tools.embedded.game_resolution import read_unity_resolution
+
+        game_path = str(self.script_config.get("Game", "Path") or "").strip()
+        if not game_path:
+            return None
+        self.original_game_resolution = read_unity_resolution(Path(game_path))
+        return self.original_game_resolution
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
@@ -1561,7 +1587,7 @@ class AutoProxyTask(TaskExecuteBase):
                 or not has_later_mode
                 and self.script_config.get("Game", "CloseOnFinish")
             )
-            _place_managed_task(
+            game_setting_task = _place_managed_task(
                 maaend_tasks,
                 task_name=_MAAEND_GAME_SETTING_PRETASK,
                 task_id="automas-gamesetting",
@@ -1572,6 +1598,40 @@ class AutoProxyTask(TaskExecuteBase):
                 ),
                 first=True,
             )
+            game_setting_values = game_setting_task.setdefault("optionValues", {})
+            if not isinstance(game_setting_values, dict):
+                game_setting_values = {}
+                game_setting_task["optionValues"] = game_setting_values
+            if bool(self.script_config.get("Game", "SetResolution")):
+                display_type = str(
+                    self.script_config.get("Game", "GameSettingDisplayType") or "Window"
+                )
+                if display_type not in {"Window", "Fullscreen"}:
+                    display_type = "Window"
+                resolution = str(
+                    self.script_config.get("Game", "GameSettingResolution")
+                    or "1920x1080"
+                )
+                if resolution == "Original":
+                    original = self._read_original_game_resolution()
+                    if original is None:
+                        raise ValueError(
+                            "无法读取终末地原始注册表分辨率，请先运行一次游戏或改用固定分辨率"
+                        )
+                    resolution = f"{original[0]}x{original[1]}"
+                game_setting_values["GameSettingDisplayType"] = {
+                    "type": "select",
+                    "caseName": display_type,
+                }
+                game_setting_values["GameSettingResolution"] = {
+                    "type": "select",
+                    "caseName": resolution,
+                }
+            else:
+                # 复用用户已有的托管任务条目时，清掉旧的注入值，避免关闭开关后
+                # MaaEnd 仍沿用上一次的显示设置。
+                game_setting_values.pop("GameSettingDisplayType", None)
+                game_setting_values.pop("GameSettingResolution", None)
             _place_managed_task(
                 maaend_tasks,
                 task_name=_MAAEND_CLOSE_GAME_TASK,

@@ -1629,12 +1629,33 @@ class MaaEndConfig(ConfigBase):
         self.Game_SetResolution = ConfigItem(
             "Game", "SetResolution", False, BoolValidator()
         )
+        ## MaaEnd 启动游戏时的显示模式，与具体分辨率独立配置
+        self.Game_GameSettingDisplayType = ConfigItem(
+            "Game",
+            "GameSettingDisplayType",
+            "Window",
+            OptionsValidator(["Window", "Fullscreen"]),
+        )
+        ## MaaEnd 启动游戏时的分辨率；Original 复用 Unity 注册表读取结果
+        self.Game_GameSettingResolution = ConfigItem(
+            "Game",
+            "GameSettingResolution",
+            "1920x1080",
+            OptionsValidator(["Original", "1280x720", "1920x1080", "2560x1440"]),
+        )
         ## 结束后是否关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
-        ## 关闭游戏时恢复分辨率或显示模式；关闭时完全沿用原生设置
+        ## 关闭游戏时恢复的显示模式，与具体分辨率独立配置
+        self.Game_RestoreDisplayType = ConfigItem(
+            "Game",
+            "RestoreDisplayType",
+            "Window",
+            OptionsValidator(["Window", "Fullscreen"]),
+        )
+        ## 关闭游戏时恢复分辨率；Original 复用启动前读取的 Unity 注册表值
         self.Game_RestoreResolution = ConfigItem(
             "Game",
             "RestoreResolution",
@@ -1642,9 +1663,11 @@ class MaaEndConfig(ConfigBase):
             OptionsValidator(
                 [
                     "Off",
+                    "Original",
                     "1920x1080",
                     "2560x1440",
                     "3840x2160",
+                    # 兼容旧版把显示模式和分辨率合并存储的配置；运行时会转换。
                     "Fullscreen",
                     "Custom",
                 ]

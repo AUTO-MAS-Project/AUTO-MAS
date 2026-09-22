@@ -514,6 +514,10 @@ export default {
     maaEndRestoreResolution: 'Restore resolution when closing the game',
     maaEndRestoreResolutionHint:
       'MaaEnd restores it at the end of the last stage for the next launch; it only applies when the game is closed after the run.',
+    maaEndSetResolutionValue: 'Launch resolution',
+    maaEndResolutionDisplayType: 'Display mode',
+    maaEndResolutionWindow: 'Window',
+    maaEndResolutionOriginal: 'Original resolution ({resolution})',
     maaEndResolutionWidth: 'Width',
     maaEndResolutionHeight: 'Height',
     maaEndResolutionUnchanged: 'Do not change',

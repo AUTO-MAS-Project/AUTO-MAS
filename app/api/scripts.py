@@ -585,6 +585,7 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
                 MaaEndAutoCollectGroup(**item)
                 for item in data.get("autoCollectGroups", [])
             ],
+            originalResolution=data.get("originalResolution"),
             controllers=[ComboBoxItem(**item) for item in data["controllers"]],
             controllerTypes=data["controllerTypes"],
             essenceLocations=[

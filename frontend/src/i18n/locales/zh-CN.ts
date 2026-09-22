@@ -493,6 +493,10 @@ export default {
     maaEndRestoreResolution: '关闭游戏时恢复分辨率',
     maaEndRestoreResolutionHint:
       '由 MaaEnd 在最后一个执行阶段恢复，供下次启动游戏使用；仅结束后关闭游戏时生效。',
+    maaEndSetResolutionValue: '启动分辨率',
+    maaEndResolutionDisplayType: '显示模式',
+    maaEndResolutionWindow: '窗口',
+    maaEndResolutionOriginal: '原始分辨率（{resolution}）',
     maaEndResolutionWidth: '宽度',
     maaEndResolutionHeight: '高度',
     maaEndResolutionUnchanged: '不修改',

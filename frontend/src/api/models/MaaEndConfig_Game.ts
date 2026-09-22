@@ -32,13 +32,25 @@ export type MaaEndConfig_Game = {
      */
     SetResolution?: (boolean | null);
     /**
+     * 启动游戏时的显示模式
+     */
+    GameSettingDisplayType?: ('Window' | 'Fullscreen' | null);
+    /**
+     * 启动游戏时的分辨率，Original 表示读取注册表
+     */
+    GameSettingResolution?: ('Original' | '1280x720' | '1920x1080' | '2560x1440' | null);
+    /**
      * 结束后关闭游戏
      */
     CloseOnFinish?: (boolean | null);
     /**
-     * 关闭游戏时恢复的分辨率或显示模式，Off 表示不修改
+     * 关闭游戏时恢复的显示模式
      */
-    RestoreResolution?: ('Off' | '1920x1080' | '2560x1440' | '3840x2160' | 'Fullscreen' | 'Custom' | null);
+    RestoreDisplayType?: ('Window' | 'Fullscreen' | null);
+    /**
+     * 关闭游戏时恢复的分辨率，Off 表示不修改
+     */
+    RestoreResolution?: ('Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Fullscreen' | 'Custom' | null);
     /**
      * 自定义恢复分辨率宽度
      */

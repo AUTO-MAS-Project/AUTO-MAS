@@ -497,6 +497,10 @@ export default {
     maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
     maaEndRestoreResolutionHint:
       '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+    maaEndSetResolutionValue: '起動時の解像度',
+    maaEndResolutionDisplayType: '表示モード',
+    maaEndResolutionWindow: 'ウィンドウ',
+    maaEndResolutionOriginal: '元の解像度（{resolution}）',
     maaEndResolutionWidth: '幅',
     maaEndResolutionHeight: '高さ',
     maaEndResolutionUnchanged: '変更しない',

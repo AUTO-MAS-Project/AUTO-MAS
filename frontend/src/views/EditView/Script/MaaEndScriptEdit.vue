@@ -168,7 +168,7 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="maaEndConfig.Game.CloseOnFinish ? 12 : 24">
+            <a-col :span="maaEndConfig.Game.SetResolution ? 8 : 12">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
                 :extra="t('edit.maaEndSetResolutionHint')"
@@ -182,7 +182,32 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="12">
+            <a-col v-if="maaEndConfig.Game.SetResolution" :span="8">
+              <a-form-item :label="t('edit.maaEndResolutionDisplayType')">
+                <a-select
+                  v-model:value="maaEndConfig.Game.GameSettingDisplayType"
+                  size="large"
+                  :options="displayTypeOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'GameSettingDisplayType', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="maaEndConfig.Game.SetResolution" :span="8">
+              <a-form-item :label="t('edit.maaEndSetResolutionValue')">
+                <a-select
+                  v-model:value="maaEndConfig.Game.GameSettingResolution"
+                  size="large"
+                  :options="gameResolutionOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'GameSettingResolution', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
+            <a-col :span="12">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
                 :extra="t('edit.maaEndRestoreResolutionHint')"
@@ -195,7 +220,20 @@
                   @change="handleChange('Game', 'RestoreResolution', $event)"
                 />
               </a-form-item>
-              <a-row v-if="maaEndConfig.Game.RestoreResolution === 'Custom'" :gutter="24">
+            </a-col>
+            <a-col v-if="maaEndConfig.Game.RestoreResolution !== 'Off'" :span="12">
+              <a-form-item :label="t('edit.maaEndResolutionDisplayType')">
+                <a-select
+                  v-model:value="maaEndConfig.Game.RestoreDisplayType"
+                  size="large"
+                  :options="displayTypeOptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'RestoreDisplayType', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="maaEndConfig.Game.RestoreResolution === 'Custom'" :span="24">
+              <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item :label="t('edit.maaEndResolutionWidth')">
                     <a-input-number
@@ -560,20 +598,58 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     EmulatorId: '',
     EmulatorIndex: '',
     SetResolution: false,
+    GameSettingDisplayType: 'Window',
+    GameSettingResolution: '1920x1080',
     CloseOnFinish: true,
     RestoreResolution: 'Off',
+    RestoreDisplayType: 'Window',
     RestoreResolutionWidth: 1920,
     RestoreResolutionHeight: 1080,
   },
 })
 
+const originalResolution = ref<string | null>(null)
+
+const displayTypeOptions = computed(() => [
+  { value: 'Window', label: t('edit.maaEndResolutionWindow') },
+  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
+])
+
+const gameResolutionOptions = computed(() => [
+  ...(originalResolution.value
+    ? [
+        {
+          value: 'Original',
+          label: t('edit.maaEndResolutionOriginal', {
+            resolution: originalResolution.value,
+          }),
+        },
+      ]
+    : []),
+  { value: '1280x720', label: '1280 × 720' },
+  { value: '1920x1080', label: '1920 × 1080' },
+  { value: '2560x1440', label: '2560 × 1440' },
+])
+
 const restoreResolutionOptions = computed(() => [
   { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
+  ...(originalResolution.value
+    ? [
+        {
+          value: 'Original',
+          label: t('edit.maaEndResolutionOriginal', {
+            resolution: originalResolution.value,
+          }),
+        },
+      ]
+    : []),
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
-  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
   { value: 'Custom', label: t('edit.maaEndResolutionCustom') },
+  ...(maaEndConfig.Game.RestoreResolution === 'Fullscreen'
+    ? [{ value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') }]
+    : []),
 ])
 
 const rules = {
@@ -669,6 +745,20 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   if (config.Game?.SetResolution == null) {
     maaEndConfig.Game.SetResolution = false
   }
+  if (config.Game?.GameSettingDisplayType == null) {
+    maaEndConfig.Game.GameSettingDisplayType = 'Window'
+  }
+  if (config.Game?.GameSettingResolution == null) {
+    maaEndConfig.Game.GameSettingResolution = '1920x1080'
+  }
+  if (config.Game?.RestoreDisplayType == null) {
+    maaEndConfig.Game.RestoreDisplayType =
+      config.Game?.RestoreResolution === 'Fullscreen' ? 'Fullscreen' : 'Window'
+  }
+  if (config.Game?.RestoreResolution === 'Fullscreen') {
+    // 旧版本将全屏模式与 1920×1080 合并为一个选项，载入时拆成两个字段。
+    maaEndConfig.Game.RestoreResolution = '1920x1080'
+  }
   if (maaEndConfig.Run.AccountSwitchMethod === 'MAS') showMasAccountSwitchWarning()
 }
 
@@ -699,6 +789,7 @@ const loadMaaEndOptions = async () => {
 
     controllerOptions.value = response.controllers
     controllerProtocols.value = response.controllerTypes
+    originalResolution.value = response.originalResolution ?? null
 
     if (!maaEndConfig.Game.ControllerType) {
       const defaultController =
@@ -768,9 +859,11 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     clearEmulatorDeviceOptions()
     maaEndConfig.Game.EmulatorId = ''
     maaEndConfig.Game.EmulatorIndex = ''
+    if (protocol !== 'Win32') originalResolution.value = null
   } else {
     maaEndConfig.Game.Path = ''
     maaEndConfig.Game.Arguments = ''
+    originalResolution.value = null
   }
 
   // 一次写回多个 Game 字段（含本地未同步的 WaitTime），成功后整份拉回保持一致
@@ -828,6 +921,7 @@ const selectGamePath = async () => {
   }
   maaEndConfig.Game.Path = path
   await handleChange('Game', 'Path', path)
+  await loadMaaEndOptions()
 }
 
 const cleanupConfigSession = () => {
