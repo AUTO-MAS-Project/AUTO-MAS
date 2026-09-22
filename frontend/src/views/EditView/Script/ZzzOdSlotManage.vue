@@ -133,42 +133,50 @@
       </a-collapse-panel>
     </a-collapse>
 
-    <!-- 原槽被占用：强制覆盖（覆盖前自动存底）或换到其他空闲槽号 -->
+    <!-- 恢复落到某个用户的绑定槽：只物化到裸槽号的恢复没有出口，MAS 不会认领它 -->
     <a-modal
-      v-model:open="restoreConflict.open"
+      v-model:open="restoreTarget.open"
       :title="t('edit.zzzodRecycleRestore')"
       :confirm-loading="restoring"
       :ok-text="t('edit.zzzodRecycleRestore')"
-      :ok-button-props="{ danger: restoreConflict.mode === 'force' }"
-      @ok="submitRestoreConflict"
+      @ok="submitRestore"
     >
-      <a-typography-paragraph type="warning">
+      <a-typography-paragraph type="secondary">
         {{
-          t('edit.zzzodRecycleRestoreConflict', {
-            slot: String(restoreConflict.entry?.slot ?? 0).padStart(2, '0'),
-            occupant: restoreConflict.entry ? slotOccupantText(restoreConflict.entry.slot) : '',
+          t('edit.zzzodRecycleRestoreTargetHint', {
+            slot: String(restoreTarget.entry?.slot ?? 0).padStart(2, '0'),
+            ts: restoreTarget.entry ? formatArchiveTs(restoreTarget.entry.ts) : '',
           })
         }}
       </a-typography-paragraph>
-      <a-radio-group v-model:value="restoreConflict.mode" class="restore-mode">
-        <a-radio value="force">
-          {{
-            t('edit.zzzodRecycleRestoreForceHint', {
-              slot: String(restoreConflict.entry?.slot ?? 0).padStart(2, '0'),
-            })
-          }}
-        </a-radio>
-        <a-radio value="other" :disabled="!freeSlotOptions.length">
-          {{ t('edit.zzzodRecycleRestoreOtherHint') }}
-        </a-radio>
+      <a-radio-group v-model:value="restoreTarget.mode" class="restore-mode">
+        <a-radio value="existing">{{ t('edit.zzzodRecycleRestoreToUser') }}</a-radio>
+        <a-radio value="new">{{ t('edit.zzzodRecycleRestoreToNewUser') }}</a-radio>
       </a-radio-group>
       <a-select
-        v-if="restoreConflict.mode === 'other'"
-        v-model:value="restoreConflict.targetSlot"
+        v-if="restoreTarget.mode === 'existing'"
+        v-model:value="restoreTarget.userId"
         class="restore-mode-target"
-        :options="freeSlotOptions"
-        :placeholder="t('edit.zzzodRecycleRestoreOtherPlaceholder')"
+        show-search
+        option-filter-prop="label"
+        :loading="usersLoading"
+        :options="userOptions"
+        :placeholder="t('edit.zzzodRecycleRestoreUserPlaceholder')"
       />
+      <a-input
+        v-else
+        v-model:value="restoreTarget.newUserName"
+        class="restore-mode-target"
+        :maxlength="32"
+        :placeholder="t('edit.zzzodRecycleRestoreNewUserName')"
+      />
+      <a-typography-text v-if="restoreTargetSlot" type="warning" class="restore-target-hint">
+        {{
+          t('edit.zzzodRecycleRestoreOverwriteHint', {
+            slot: String(restoreTargetSlot).padStart(2, '0'),
+          })
+        }}
+      </a-typography-text>
     </a-modal>
   </div>
 </template>
@@ -198,7 +206,6 @@ const {
   slotKindColor,
   slotNativeConflict,
   slotOwnerText,
-  slotOccupantText,
   recycleKindLabel,
   formatSlotSize,
   formatArchiveTs,
@@ -208,9 +215,11 @@ const {
   openRecycleFolder,
   confirmClearRecycle,
   restoring,
-  restoreConflict,
-  freeSlotOptions,
-  submitRestoreConflict,
+  restoreTarget,
+  restoreTargetSlot,
+  userOptions,
+  usersLoading,
+  submitRestore,
   confirmRestoreRecycle,
 } = useZzzOdSlotManage(() => props.scriptId)
 </script>
@@ -285,5 +294,11 @@ const {
 .restore-mode-target {
   width: 100%;
   margin-top: 8px;
+}
+
+.restore-target-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
 }
 </style>

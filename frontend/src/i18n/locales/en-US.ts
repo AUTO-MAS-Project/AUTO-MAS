@@ -2231,7 +2231,7 @@ export default {
     zzzodRecycleKindSlot: 'Slot content',
     zzzodRecycleKindMas: 'Backup pool',
     zzzodRecycleHint:
-      'Slot contents left by deleted users/scripts and by manual cleaning are archived here (grouped by slot, shared across scripts). To roll back a config while the user still exists, use Config restore on the user page.',
+      'Slot contents left by deleted users/scripts and by manual cleaning are archived here (grouped by slot, shared across scripts). Restore puts a snapshot back into a user bound slot (or a newly created user); to roll back a config while the user still exists, use Config restore on the user page.',
     zzzodRecycleEmpty: 'The recycle pool is empty',
     zzzodRecycleRestore: 'Restore',
     zzzodRecycleOpen: 'Open',
@@ -2241,21 +2241,20 @@ export default {
       'Delete all {count} record(s) ({size} total) in the recycle pool? Restore history is cleared too and cannot be recovered.',
     zzzodRecycleClearDone: 'Recycle pool cleared ({count} record(s))',
     zzzodRecycleClearFailed: 'Could not clear the recycle pool',
-    zzzodRecycleRestoreConfirmOccupied:
-      'Slot {slot} is held by "{occupant}"; restoring overwrites its content. The next step lets you force the overwrite or pick another free slot.',
-    zzzodRecycleRestoreConfirmOverwrite:
-      'Slot {slot} already has content ({size}, unowned leftovers). Restoring replaces it; the current content is archived first and can be recovered from the recycle pool.',
-    zzzodRecycleRestoreConfirmEmpty: 'Slot {slot} is empty. Create it from this snapshot?',
-    zzzodRecycleRestoreDone: 'Slot {slot} restored',
+    zzzodRecycleRestoreConfirm:
+      'Restore this snapshot (slot {slot}) into a user slot? If the target user already has a bound slot, its current content is archived first.',
+    zzzodRecycleRestoreTargetHint: 'Snapshot: slot {slot} · {ts}',
+    zzzodRecycleRestoreToUser: 'Restore into an existing user',
+    zzzodRecycleRestoreToNewUser: 'Create a new user',
+    zzzodRecycleRestoreUserPlaceholder: 'Pick a user',
+    zzzodRecycleRestoreNewUserName: 'New user name',
+    zzzodRecycleRestoreNewUserNameDefault: 'Restored user',
+    zzzodRecycleRestoreOverwriteHint:
+      'This user currently uses slot {slot}; restoring replaces its content (archived first, recoverable from the recycle pool).',
+    zzzodRecycleRestoreUserRequired: 'Pick a target user first',
+    zzzodRecycleRestoreNameRequired: 'Enter a name for the new user',
+    zzzodRecycleRestoreDone: 'Restored',
     zzzodRecycleRestoreFailed: 'Could not restore the slot content',
-    zzzodRecycleRestoreConflict:
-      'Slot {slot} is currently held by "{occupant}" and cannot be restored in place. Choose where to restore it:',
-    zzzodRecycleRestoreForceHint:
-      'Overwrite slot {slot} (current content is archived first and can be recovered)',
-    zzzodRecycleRestoreOtherHint: 'Restore into another free slot',
-    zzzodRecycleRestoreOtherPlaceholder: 'Pick a target slot',
-    zzzodRecycleRestoreEmptySlot: 'empty',
-    zzzodRecycleRestoreOtherRequired: 'Pick a free slot first',
     zzzodGameRegion: 'Game region',
     zzzodGameRegionHint:
       'The region of this account; regions differ in client and daily reset time',

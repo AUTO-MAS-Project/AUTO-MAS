@@ -3,17 +3,15 @@ import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import { Service, type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
 
-/** MAS 槽号段起点（需与 app/task/ZzzOd/tools/zzz_od_config.py 的 MAS_SLOT_BASE 保持同步）：
- *  恢复快照的候选目标只在这个号段里挑——低号段是一条龙「升序找最小空号」的地盘 */
-const MAS_SLOT_BASE = 1001
-
 /**
  * 实例槽管理（脚本设置页的实例槽 / 回收池两张表与恢复流程）。
  *
  * 槽目录是 MAS 分配在一条龙安装目录里的 ``config/{idx:02d}``，一条龙注册表与
  * GUI 都看不到；这份对照表用于看清「槽目录数与用户数对不上」（绑定但没跑过的槽
- * 没有目录），回收池则是被删用户/脚本留下的槽内容与备份池快照（可恢复到原槽号
- * 或其他空闲槽号）。表格、清理与恢复弹窗的状态与动作都收在这里，组件只负责渲染。
+ * 没有目录），回收池则是被删用户/脚本留下的槽内容与备份池快照。恢复的落点是
+ * **某个用户的绑定槽**（现有用户或新建用户）——只物化内容而不建立绑定的恢复
+ * 没有出口，MAS 下次运行不会认领它。表格、清理与恢复弹窗的状态与动作都收在
+ * 这里，组件只负责渲染。
  */
 export function useZzzOdSlotManage(scriptId: () => string) {
   const { t } = useI18n()
@@ -238,38 +236,78 @@ export function useZzzOdSlotManage(scriptId: () => string) {
 
   const restoring = ref(false)
 
-  /** 目标槽是否被原生实例或 MAS 用户占用（与后端守卫同口径：孤儿槽视为空闲） */
-  const slotOccupied = (idx: number) => {
-    const row = slots.value.find(item => item.idx === idx)
-    return Boolean(row && row.kind !== 'orphan')
+  /** 恢复目标：某个现有用户（落到它的绑定槽）或新建一个用户 */
+  const restoreTarget = reactive({
+    open: false,
+    entry: null as ZzzOdRecycleEntryOut | null,
+    mode: 'existing' as 'existing' | 'new',
+    userId: undefined as string | undefined,
+    newUserName: '',
+  })
+
+  /** 当前脚本的用户（恢复目标候选）。恢复必须落到某个用户的绑定槽：
+   *  只把内容物化到裸槽号的恢复没有出口，MAS 不会认领它 */
+  const userOptions = ref<Array<{ value: string; label: string }>>([])
+  const usersLoading = ref(false)
+
+  const loadUsers = async () => {
+    usersLoading.value = true
+    try {
+      const resp = await Service.getUserApiScriptsUserGetPost({
+        scriptId: scriptId(),
+      })
+      if (resp.code !== 200) {
+        throw new Error(resp.message || t('edit.zzzodSlotsLoadFailed'))
+      }
+      userOptions.value = resp.index.map(item => {
+        const cfg = resp.data[item.uid] as { Info?: { Name?: string } } | undefined
+        return { value: item.uid, label: cfg?.Info?.Name || item.uid }
+      })
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e))
+      message.error(e instanceof Error ? e.message : t('edit.zzzodSlotsLoadFailed'))
+    } finally {
+      usersLoading.value = false
+    }
   }
 
-  /** 占用者描述（原生实例或绑定该槽的用户），用于冲突提示点名 */
-  const slotOccupantText = (idx: number) => {
-    const row = slots.value.find(item => item.idx === idx)
-    if (!row) return ''
-    return row.kind === 'native' ? t('edit.zzzodSlotKindNative') : slotOwnerText(row)
+  /** 选中用户当前的绑定槽号（0 = 还没有绑定槽，恢复会新建一个） */
+  const restoreTargetSlot = computed(() => {
+    if (restoreTarget.mode !== 'existing' || !restoreTarget.userId) return 0
+    const row = slots.value.find(item =>
+      item.owners?.some(owner => owner.userId === restoreTarget.userId)
+    )
+    return row?.idx ?? 0
+  })
+
+  /** 打开恢复弹窗（用户列表按需加载） */
+  const openRestoreDialog = async (entry: ZzzOdRecycleEntryOut) => {
+    restoreTarget.entry = entry
+    restoreTarget.mode = 'existing'
+    restoreTarget.userId = undefined
+    restoreTarget.newUserName = t('edit.zzzodRecycleRestoreNewUserNameDefault')
+    restoreTarget.open = true
+    await loadUsers()
   }
 
-  /** 恢复槽快照到目标槽号（覆盖性操作：后端先存底当前内容再替换） */
+  /** 恢复槽快照给目标用户（覆盖性操作：后端先存底目标槽当前内容再替换） */
   const restoreRecycle = async (
     entry: ZzzOdRecycleEntryOut,
-    options: { targetSlot?: number; force?: boolean } = {}
+    options: { targetUser?: string; newUserName?: string }
   ) => {
     restoring.value = true
-    const dest = options.targetSlot ?? entry.slot
     try {
       const resp = await Service.restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost({
         scriptId: scriptId(),
         slot: entry.slot,
         ts: entry.ts,
-        targetSlot: options.targetSlot,
-        force: options.force,
+        targetUser: options.targetUser,
+        newUserName: options.newUserName,
       })
       if (resp.code !== 200) {
         throw new Error(resp.message || t('edit.zzzodRecycleRestoreFailed'))
       }
-      message.success(t('edit.zzzodRecycleRestoreDone', { slot: String(dest).padStart(2, '0') }))
+      message.success(resp.message || t('edit.zzzodRecycleRestoreDone'))
       return true
     } catch (e) {
       message.error(e instanceof Error ? e.message : t('edit.zzzodRecycleRestoreFailed'))
@@ -282,98 +320,36 @@ export function useZzzOdSlotManage(scriptId: () => string) {
     }
   }
 
-  /** 原槽被占用时的两个去处：强制覆盖（先存底）或换到其他空闲槽号 */
-  const restoreConflict = reactive({
-    open: false,
-    entry: null as ZzzOdRecycleEntryOut | null,
-    mode: 'force' as 'force' | 'other',
-    targetSlot: undefined as number | undefined,
-  })
-
-  const freeSlotOptions = computed(() => {
-    const occupied = new Set(
-      slots.value.filter(item => item.kind !== 'orphan').map(item => item.idx)
-    )
-    // 可复用的无主残留 + 几个新空号，都只取 MAS 号段：低号段是一条龙
-    // 「升序找最小空号」的地盘，把快照恢复进去迟早会被它抢走覆盖
-    const free = new Set(
-      slots.value
-        .filter(item => item.kind === 'orphan' && item.idx >= MAS_SLOT_BASE)
-        .map(item => item.idx)
-    )
-    let next = Math.max(MAS_SLOT_BASE, ...slots.value.map(item => item.idx + 1))
-    while (free.size < 4) {
-      if (!occupied.has(next)) free.add(next)
-      next += 1
-    }
-    return [...free]
-      .sort((a, b) => a - b)
-      .map(idx => {
-        const row = slots.value.find(item => item.idx === idx)
-        const label = String(idx).padStart(2, '0')
-        return {
-          value: idx,
-          label: row
-            ? `${label}（${t('edit.zzzodSlotKindOrphan')}·${formatSlotSize(row.size ?? 0)}）`
-            : `${label}（${t('edit.zzzodRecycleRestoreEmptySlot')}）`,
-        }
-      })
-  })
-
-  const submitRestoreConflict = async () => {
-    const entry = restoreConflict.entry
+  const submitRestore = async () => {
+    const entry = restoreTarget.entry
     if (!entry) return
-    const targetSlot = restoreConflict.mode === 'other' ? restoreConflict.targetSlot : undefined
-    if (restoreConflict.mode === 'other' && !targetSlot) {
-      message.warning(t('edit.zzzodRecycleRestoreOtherRequired'))
+    if (restoreTarget.mode === 'existing') {
+      if (!restoreTarget.userId) {
+        message.warning(t('edit.zzzodRecycleRestoreUserRequired'))
+        return
+      }
+      const done = await restoreRecycle(entry, { targetUser: restoreTarget.userId })
+      if (done) restoreTarget.open = false
       return
     }
-    const done = await restoreRecycle(entry, {
-      targetSlot,
-      force: restoreConflict.mode === 'force',
-    })
-    if (done) restoreConflict.open = false
-  }
-
-  /** 恢复确认文案按目标槽现场分三态：被占用 / 有内容（无主残留）/ 空槽。
-   *  无主残留按设计视为空闲（可被恢复重新认领），但覆盖它仍是替换性操作，
-   *  必须把「这里现在有东西」说清楚，不能与「空槽新建」混为一谈 */
-  const restoreConfirmContent = (slotIdx: number) => {
-    const slot = String(slotIdx).padStart(2, '0')
-    if (slotOccupied(slotIdx)) {
-      return t('edit.zzzodRecycleRestoreConfirmOccupied', {
-        slot,
-        occupant: slotOccupantText(slotIdx),
-      })
+    const name = restoreTarget.newUserName.trim()
+    if (!name) {
+      message.warning(t('edit.zzzodRecycleRestoreNameRequired'))
+      return
     }
-    const row = slots.value.find(item => item.idx === slotIdx)
-    return row
-      ? t('edit.zzzodRecycleRestoreConfirmOverwrite', {
-          slot,
-          size: formatSlotSize(row.size ?? 0),
-        })
-      : t('edit.zzzodRecycleRestoreConfirmEmpty', { slot })
+    const done = await restoreRecycle(entry, { newUserName: name })
+    if (done) restoreTarget.open = false
   }
 
-  /** 恢复槽快照是覆盖性操作，需二次确认；原槽被占用时改为选择去处 */
+  /** 恢复是覆盖性操作（目标用户已有绑定槽时替换其内容），需二次确认 */
   const confirmRestoreRecycle = (entry: ZzzOdRecycleEntryOut) => {
-    const occupied = slotOccupied(entry.slot)
-    const overwrites = !occupied && slots.value.some(item => item.idx === entry.slot)
     Modal.confirm({
       title: t('edit.zzzodRecycleRestore'),
-      content: restoreConfirmContent(entry.slot),
+      content: t('edit.zzzodRecycleRestoreConfirm', {
+        slot: String(entry.slot).padStart(2, '0'),
+      }),
       okText: t('edit.zzzodRecycleRestore'),
-      okButtonProps: { danger: overwrites },
-      onOk: async () => {
-        if (!occupied) {
-          await restoreRecycle(entry)
-          return
-        }
-        restoreConflict.entry = entry
-        restoreConflict.mode = 'force'
-        restoreConflict.targetSlot = undefined
-        restoreConflict.open = true
-      },
+      onOk: () => openRestoreDialog(entry),
     })
   }
 
@@ -392,7 +368,6 @@ export function useZzzOdSlotManage(scriptId: () => string) {
     slotKindColor,
     slotNativeConflict,
     slotOwnerText,
-    slotOccupantText,
     recycleKindLabel,
     formatSlotSize,
     formatArchiveTs,
@@ -402,9 +377,11 @@ export function useZzzOdSlotManage(scriptId: () => string) {
     openRecycleFolder,
     confirmClearRecycle,
     restoring,
-    restoreConflict,
-    freeSlotOptions,
-    submitRestoreConflict,
+    restoreTarget,
+    restoreTargetSlot,
+    userOptions,
+    usersLoading,
+    submitRestore,
     confirmRestoreRecycle,
   }
 }
