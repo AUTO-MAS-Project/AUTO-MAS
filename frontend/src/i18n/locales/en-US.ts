@@ -3965,6 +3965,11 @@ export default {
       proxyTip:
         'If you use a proxy and run into connection problems, set the proxy address here. It applies everywhere.',
       proxyPlaceholder: 'Enter the proxy address',
+      githubMirror: 'GitHub download mirror',
+      githubMirrorTip:
+        'Only affects MFW scripts downloading project update packages from GitHub Releases: Auto tries gh-proxy mirrors in turn and falls back to a direct connection when all fail; Off always connects directly. Assets without a sha256 digest never use a mirror',
+      githubMirrorAuto: 'Auto (mirrors first, direct on failure)',
+      githubMirrorOff: 'Off (direct GitHub only)',
       cdk: 'MirrorChyan CDK',
       cdkIntro:
         'The MirrorChyan CDK unlocks high-speed downloads from the Mirror source. Get one at',
