@@ -2281,13 +2281,15 @@ class AppConfig(GlobalConfig):
 
         槽的 MAS 备份池一并回收：mas 池按（脚本, 槽）分桶、没有用户维度，
         槽号分给新用户后留在原位会串到别人名下（见
-        :func:`app.task.ZzzOd.tools.recycle_mas_backups`）。
+        :func:`app.task.ZzzOd.tools.recycle_mas_backups`）。槽目录收走后该号
+        同时移出分配台账（台账只记「当前由 MAS 持有」的号）。
 
         ``exclude_same_script``：删脚本时传 True——整个脚本都在移除，同脚本
         用户间的相互占用不挡回收（否则共享同一槽的两个用户会双双跳过，
         mas 池随后被 data/{script_id} 整删且未经归档，恢复历史丢失）。
         """
 
+        from app.task.ZzzOd.AutoProxy import forget_allocated_slot
         from app.task.ZzzOd.tools import recycle_mas_backups, recycle_slot
 
         try:
@@ -2309,7 +2311,11 @@ class AppConfig(GlobalConfig):
         reason = f"{action} {name}".strip()
         # 归档 + 删目录是阻塞 IO（拷贝槽目录），放线程里跑
         try:
-            await asyncio.to_thread(recycle_slot, root, slot, reason=reason)
+            if await asyncio.to_thread(recycle_slot, root, slot, reason=reason):
+                # 目录已收走，该号移出台账（与恢复路径同口径：台账只记「当前由
+                # MAS 持有」的号；留着它，将来同号目录再出现会被自动回收当残留
+                # 收走）。回收失败时目录还在，台账保留，仍受自动回收管辖
+                forget_allocated_slot(root, slot)
             await asyncio.to_thread(
                 recycle_mas_backups, root, script_id, slot, reason=reason
             )

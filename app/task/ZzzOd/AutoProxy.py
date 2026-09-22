@@ -28,7 +28,9 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 自己的注册表里找最小空号、**不扫盘**，而 MAS 槽刻意不进注册表，低号段随时会
 被它抢走并覆盖。绑定号已经被原生实例占走时走**撞号兜底**——残留内容先存底
 进回收池、该槽的 MAS 备份池跟着改绑到新号，目录本身不动（已归原生实例）。
-自动回收另受**槽分配台账**约束（只收 MAS 自己分配过的号），手动清理不受限。
+自动回收另受**槽分配台账**约束（只收 MAS 自己分配过的号），手动清理不受限；
+同安装另有 ZzzOd 脚本在跑时整体跳过（它在用槽的绑定号要到 ``final_task`` 才
+回写，此时回收会拆掉它的现场）。
 
 - 用户态 + 「多实例切换」（脚本级下拉，不推荐）：把全部启用用户的配置
   注入各自绑定槽（备份 → 注入并清运行记录），随后
@@ -479,8 +481,36 @@ def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
     return owners
 
 
+def running_zzzod_scripts(
+    root: Path, exclude_script_id: str | None = None
+) -> list[str]:
+    """指向同一份安装、且正在运行/开会话的 ZzzOd 脚本名（``exclude_script_id`` 排除自己）。
+
+    槽目录跨脚本共享同一份安装，而运行/会话期用的是**独立用户配置副本**
+    （manager ``prepare`` 提取、``final_task`` 才回写），在跑脚本的在用槽在
+    持久配置里查不到绑定——别的脚本此时回收孤儿槽会把它们当残留收走，拆掉
+    正在跑的现场。自动回收据此跳过本轮（见 :func:`recycle_unbound_slots`）。
+    """
+
+    key = config_root_key(root)
+    running: list[str] = []
+    for script_uid, script_config in Config.ScriptConfig.items():
+        if not isinstance(script_config, ZzzOdConfig) or not script_config.is_locked:
+            continue
+        if exclude_script_id and str(script_uid) == str(exclude_script_id):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if script_root and config_root_key(script_root) == key:
+            running.append(str(script_config.get("Info", "Name") or script_uid))
+    return running
+
+
 def recycle_unbound_slots(
-    root: Path, *, only_allocated: bool = True, swallow: bool = True
+    root: Path,
+    *,
+    only_allocated: bool = True,
+    swallow: bool = True,
+    exclude_script_id: str | None = None,
 ) -> list[int]:
     """回收盘上无人绑定的实例槽（运行/会话前自动回收与手动清理共用）。
 
@@ -488,6 +518,8 @@ def recycle_unbound_slots(
     它们正在用的槽当孤儿回收，槽里的配队等随即丢失。在 ``ensure_user_slot``
     之前调用时，腾出的号本轮即可复用。直控态不自动调用——直控是纯原生裸跑，
     MAS 不往安装目录里删东西；手动清理是用户显式发起的动作，不受此限。
+    同安装另有 ZzzOd 脚本在跑时整体跳过：它在用槽的绑定号尚未回写，收了会
+    拆掉它的现场（残留交手动清理兜底）。
 
     Args:
         root: 一条龙安装目录。
@@ -496,6 +528,8 @@ def recycle_unbound_slots(
             的残留一起收。
         swallow: 默认失败只告警，不阻断运行/会话；手动清理传 ``False``，
             让注册表缺失/损坏等原因抛到界面。
+        exclude_script_id: 调用方自己的脚本 ID——自动路径的调用方本身处于
+            锁定态，判定同安装在跑脚本时必须排除自己。
 
     Returns:
         实际回收的槽下标。
@@ -503,8 +537,19 @@ def recycle_unbound_slots(
     Raises:
         ValueError: 注册表缺失且 ``swallow=False``。
         ConfigCorruptedError: 注册表不可读且 ``swallow=False``。
+        RuntimeError: 同安装有别的 ZzzOd 脚本在跑且 ``swallow=False``。
     """
 
+    running = running_zzzod_scripts(root, exclude_script_id)
+    if running:
+        message = (
+            f"同安装的「{'、'.join(running)}」正在运行，本轮跳过无主槽回收"
+            "（其在用槽的绑定号尚未回写，收了会拆掉在跑的现场）"
+        )
+        if not swallow:
+            raise RuntimeError(message)
+        logger.warning(message)
+        return []
     allocated = _allocated_slot_idxs(root) if only_allocated else None
     try:
         removed = recycle_orphan_slots(
@@ -841,7 +886,11 @@ class AutoProxyTask(TaskExecuteBase):
         # config/NN 是「分配过、用户/脚本已删」的残留——GUI 看不见也删不掉，
         # 不收就永久占号。放在 ensure_user_slot 之前：腾出的号本轮即可复用；
         # 原生配置快照已归档在前，回收后仍可找回（整目录拷贝+删除，线程里跑）
-        await asyncio.to_thread(recycle_unbound_slots, self.script_root_path)
+        await asyncio.to_thread(
+            recycle_unbound_slots,
+            self.script_root_path,
+            exclude_script_id=self.script_info.script_id,
+        )
         used_idxs = collect_used_slot_idxs(
             self.script_root_path,
             exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users},

@@ -134,7 +134,11 @@ class ScriptConfigTask(TaskExecuteBase):
             # 查看会话（只读预览历史备份）跳过：用户只是看，不该在安装目录里
             # 产生删除副作用（整目录拷贝+删除，线程里跑）
             if not self.view_only:
-                await asyncio.to_thread(recycle_unbound_slots, self.root_path)
+                await asyncio.to_thread(
+                    recycle_unbound_slots,
+                    self.root_path,
+                    exclude_script_id=self.script_info.script_id,
+                )
             used = collect_used_slot_idxs(
                 self.root_path, exclude_uids={self._target_uid}
             )

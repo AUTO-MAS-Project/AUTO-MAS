@@ -827,11 +827,21 @@ def restore_recycle_slot(
     需用户确认）。目标槽当前内容先按同一套归档进回收池——误恢复可找回。
 
     Raises:
-        ValueError: 回收条目不存在或内容为空，或恢复前存底失败。
+        ValueError: 回收条目不存在或内容为空、该条目是只能查看的备份池快照，
+            或恢复前存底失败。
     """
 
     dest_idx = int(slot_idx) if target_slot is None else int(target_slot)
     source_store = recycle_backup_root(root, slot_idx)
+    if (
+        get_backup_dir(source_store, ts) is None
+        and (source_store / "mas-backups" / str(ts)).is_dir()
+    ):
+        # 同桶里还挂着该槽的 MAS 备份池快照（{slot}/mas-backups/{ts}）：它只
+        # 能查看不能恢复，直接说清楚，别让用户对着「备份不存在」猜
+        raise ValueError(
+            f"{ts} 是该槽 MAS 备份池的快照，不是槽内容快照，无法恢复到实例槽"
+        )
     slot_dir = instance_dir(root, dest_idx)
     if slot_dir.is_dir():
         try:
