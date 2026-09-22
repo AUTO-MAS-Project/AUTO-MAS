@@ -82,6 +82,21 @@ def _megabytes(value: float | int | None) -> str:
     return f"{(value or 0) / (1024 * 1024):.1f}"
 
 
+def _format_eta(seconds: float) -> str:
+    """剩余秒数 → 「1 分 46 秒」这类中文时长。
+
+    一律向下取整：``round`` 会把 59.6 说成「60 秒」、3599.7 说成「60 分」，
+    看着像坏了。
+    """
+
+    total = int(seconds)
+    if total < 60:
+        return f"{total} 秒"
+    if total < 3600:
+        return f"{total // 60} 分 {total % 60} 秒"
+    return f"{total // 3600} 小时 {(total % 3600) // 60} 分"
+
+
 def normalize_package_kind(raw_value: Any) -> str | None:
     """把核心包的 ``full`` / ``delta`` 归一成对外的 ``full`` / ``incremental``。"""
 
@@ -375,6 +390,13 @@ class MaaFWUpdateTaskLogTranslator:
             details.append(f"已下载 {_megabytes(downloaded)} MB")
         if data.speedBytesPerSec:
             details.append(f"{_megabytes(data.speedBytesPerSec)} MB/s")
+            # 0% 那行还没有速度，自然也没有 ETA；总大小未知时同理。359MB 的包
+            # 「还要多久」比「现在多少 MB/s」更是用户真正想问的那个问题。
+            if total and total > downloaded:
+                details.append(
+                    "预计剩余 "
+                    + _format_eta((total - downloaded) / data.speedBytesPerSec)
+                )
         return sanitize_log_message(f"{head}（{'，'.join(details)}）")
 
     # ------------------------------------------------------------------ 覆盖

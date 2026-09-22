@@ -28,8 +28,14 @@ from .state import (
 
 CHUNK_SIZE = 64 * 1024
 MAX_REDIRECTS = 10
-RETRY_COUNT = 3
-RETRY_DELAY = 1.0
+# 直连的尝试次数与退避。GitHub CDN 在国内抽风是成片的，3 次 × 1s 常常整片
+# 落在同一个坏窗口里；而续传是免费的——重试从断点接着下，等久一点的代价只是
+# 等，不是重下。指数退避覆盖到 40s 上下，足够跨过多数瞬时故障。
+# 第 n 次尝试失败后等 ``RETRY_DELAYS[n-1]``，超出长度取最后一个。
+RETRY_COUNT = 5
+RETRY_DELAYS = (1.0, 3.0, 9.0, 27.0)
+# 退避期间看取消的间隔：睡满 27s 再看一眼，用户点的停止就要等半分钟才生效。
+CANCEL_POLL_SECONDS = 0.5
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 CANCELLED_MESSAGE = "MaaFW update package download cancelled"
 DEFAULT_TIMEOUT = httpx.Timeout(30.0)
@@ -505,19 +511,28 @@ async def download_resumable(
                 )
                 if attempt >= RETRY_COUNT:
                     break
-                await asyncio.sleep(RETRY_DELAY)
-                if cancelled():
+                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS)) - 1]
+                if not await _sleep_unless_cancelled(delay, cancelled):
                     record_cancelled()
                     raise UpdateDownloadCancelled(CANCELLED_MESSAGE) from exc
         message = redact_text(last_error or "download failed")
-        store.update(
-            "failed",
-            downloadedBytes=partial_path.stat().st_size
-            if partial_path.is_file()
-            else 0,
-            error=message[:500],
+        kept = partial_path.stat().st_size if partial_path.is_file() else 0
+        store.update("failed", downloadedBytes=kept, error=message[:500])
+        detail = (
+            f"MaaFW update package download failed after {RETRY_COUNT} attempts: "
+            f"{message}"
         )
-        raise RuntimeError(f"MaaFW update package download failed: {message}")
+        if kept > 0:
+            # 断点是留着的，下次运行接着下——不说这一句，用户看到「失败」就会
+            # 以为这几百兆白下了，转头去删缓存目录。
+            known_total = expected_size or _optional_int(metadata.get("totalBytes"))
+            progress_text = (
+                f"已下载 {_megabytes(kept)} / {_megabytes(known_total)} MB"
+                if known_total
+                else f"已下载 {_megabytes(kept)} MB"
+            )
+            detail += f"（{progress_text} 已保留，下次运行续传）"
+        raise RuntimeError(detail)
 
 
 async def _download_attempt(
@@ -803,6 +818,29 @@ def _sync_file(path: Path) -> None:
             os.fsync(handle.fileno())
     except OSError:
         pass
+
+
+async def _sleep_unless_cancelled(delay: float, cancelled: Callable[[], bool]) -> bool:
+    """退避等待；被取消返回 ``False``，正常等满返回 ``True``。
+
+    切成 :data:`CANCEL_POLL_SECONDS` 一段是为了「点了停止立刻停」：整段睡完
+    再看标志，最后那次退避要让用户等 27 秒才有反应。
+    """
+
+    waited = 0.0
+    while waited < delay:
+        if cancelled():
+            return False
+        step = min(CANCEL_POLL_SECONDS, delay - waited)
+        await asyncio.sleep(step)
+        waited += step
+    return not cancelled()
+
+
+def _megabytes(value: float | int | None) -> str:
+    """字节数 → 一位小数的 MB 数字（不带单位，由调用方拼）。"""
+
+    return f"{(value or 0) / (1024 * 1024):.1f}"
 
 
 def _reject_unexpected_total(total: int | None, expected_total: int | None) -> None:
