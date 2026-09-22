@@ -75,6 +75,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 下载源 / CDK / 渠道 / 时机**只看脚本级 `Update.*`，不做全局兜底**
   （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。
+- **唯一带全局兜底的是代理**：脚本级 `Update.ProxyAddress` 留空跟随全局（设置 → 其他 →
+  网络代理），填了只走自己的，同时管更新包下载与运行环境安装（池的 uv / pip、agent venv）。
+  解析走 `resolve_update_proxy_url`，日志里只能出现 `describe_proxy` 的「脚本级 / 全局 /
+  未配置」——地址可能带 `user:pw@`。别改用 `Config.proxy`：那个属性每次访问都往日志写一行
+  「使用代理: <地址>」。
 - 项目指纹在本地算（`project_update/contracts.py: project_fingerprint`），只用来防"计划与落地
   之间树被改动"，发布方不参与；差量包的基线校验用的是 MAS 自己上次落地记下的清单
   （`apply.py: _validate_plan_base`）。`.mas-update` / `.mas-update-cache` 是更新器的保留目录，
