@@ -511,7 +511,8 @@ export default {
     maaEndSetResolution: 'Set resolution on launch',
     maaEndSetResolutionHint:
       'Off by default. When enabled, MaaEnd runs its resolution-setting pretask before the first game launch.',
-    maaEndRestoreResolution: 'Restore settings when closing the game',
+    maaEndRestoreDisplayType: 'Display mode when closing the game',
+    maaEndRestoreResolution: 'Restore resolution when closing the game',
     maaEndRestoreResolutionHint:
       'MaaEnd restores the display mode and resolution at the end of the last stage for the next launch; it only applies when the game is closed after the run.',
     maaEndSetResolutionValue: 'Launch resolution',
