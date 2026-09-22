@@ -24,6 +24,10 @@ export type MaaFWConfig_Update = {
      */
     MirrorChyanCDK?: (string | null);
     /**
+     * 脚本级网络代理，更新包下载与运行环境安装走它；留空跟随全局 Update.ProxyAddress
+     */
+    ProxyAddress?: (string | null);
+    /**
      * [已废弃] GitHub 仓库覆盖，改为从 interface.json 推导
      */
     GitHubRepo?: (string | null);

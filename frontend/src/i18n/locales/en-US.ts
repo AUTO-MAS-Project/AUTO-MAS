@@ -1255,7 +1255,6 @@ export default {
       'Required; an empty value disables the rule. Matched against the whole log line as a Python regex',
     requiredEmptyValueDisables4:
       'Required; an empty value disables the rule. Regex used to filter lines',
-    updateNow: 'Update now',
     treatRunAsTimed2: 'Treat the run as timed out when the SRC log has not changed for this long',
     treatAnnihilationRunAs:
       'Treat the annihilation run as timed out when the MAA log has not changed for this long',
@@ -1444,6 +1443,12 @@ export default {
     cdkGetLink: 'Get a MirrorChyan CDK',
     cdkMissingForMirror:
       'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
+    proxyAddress: 'Proxy address',
+    proxyAddressTip:
+      'Network proxy used by this project only; leave it empty to follow the global network proxy in MAS settings',
+    proxyAddressPlaceholder: 'e.g. 127.0.0.1:7890, empty follows the global proxy',
+    proxyAddressHint:
+      'Leave empty to follow the global setting (Settings → Other → Network proxy); once set, update downloads and runtime environment installs for this project go through this proxy only',
     updateResultVersion: 'Latest version',
     updateResultSource: 'Download source',
     cdkPrefilledFromGlobal:

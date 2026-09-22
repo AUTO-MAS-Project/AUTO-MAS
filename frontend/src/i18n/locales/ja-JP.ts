@@ -1156,7 +1156,6 @@ export default {
       '必須。空にするとこのルールは無効になります。Python の正規表現でログ 1 行全体に照合します',
     requiredEmptyValueDisables4:
       '必須。空にするとこのルールは無効になります。行を絞り込むための正規表現です',
-    updateNow: '今すぐ更新',
     treatRunAsTimed2:
       '代行タスク実行中、SRC のログがこの時間だけ変化しなければタイムアウトとみなします',
     treatAnnihilationRunAs:
@@ -1333,6 +1332,12 @@ export default {
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
+    proxyAddress: 'プロキシアドレス',
+    proxyAddressTip:
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄にすると MAS 設定の全体プロキシに従います',
+    proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
+    proxyAddressHint:
+      '空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
     notDeclared: '未宣言',
     updateProcess: '更新の進行',
     updateProcessPlaceholder:
