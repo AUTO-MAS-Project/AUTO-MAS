@@ -3620,6 +3620,10 @@ class MaaFWConfig_Update(BaseModel):
     MirrorChyanCDK: Optional[str] = Field(
         default=None, description="Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填"
     )
+    ProxyAddress: Optional[str] = Field(
+        default=None,
+        description="脚本级网络代理，更新包下载与运行环境安装走它；留空跟随全局 Update.ProxyAddress",
+    )
     GitHubRepo: Optional[str] = Field(
         default=None, description="[已废弃] GitHub 仓库覆盖，改为从 interface.json 推导"
     )
