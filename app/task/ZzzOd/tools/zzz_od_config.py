@@ -246,6 +246,13 @@ MAS_SLOT_BASE = 1001
 一条龙自己新增实例的口径一致（它在注册表里，不会被抢）。
 """
 
+MAS_SLOT_MAX = 9999
+"""MAS 用户槽的槽号上限（与用户配置 ``Info.SlotIdx`` 的 ``RangeValidator`` 一致）。
+
+越过上限的号会与绑定号校验范围脱节：``SlotIdx`` 被静默夹到上限、槽目录名却是
+原值，读写错位。回收池恢复的 ``targetSlot`` 同样受此约束。
+"""
+
 
 def find_free_instance_idx(
     root: Path, used_idxs: set[int] | None = None, *, base: int = 1

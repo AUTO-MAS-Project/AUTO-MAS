@@ -1536,12 +1536,12 @@ class AppConfig(GlobalConfig):
         """
 
         from app.task.ZzzOd.AutoProxy import forget_allocated_slot
-        from app.task.ZzzOd.tools import restore_recycle_slot
+        from app.task.ZzzOd.tools import MAS_SLOT_MAX, restore_recycle_slot
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
         dest = int(slot_idx) if target_slot is None else int(target_slot)
-        if dest <= 0:
+        if dest <= 0 or dest > MAS_SLOT_MAX:
             raise ValueError(f"目标槽号 {dest} 非法")
         self._ensure_zzzod_install_unlocked(root)
         # 无用户上下文：任何绑定都算占用（回收池跨脚本，恢复目标不属于某个用户）

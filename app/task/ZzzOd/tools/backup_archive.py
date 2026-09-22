@@ -696,11 +696,18 @@ def recycle_mas_backups(
     而不是直接删：不丢历史，仍可从回收池找回。
 
     Returns:
-        是否真的删掉了原池（池不存在、被跳过或归档失败时为 ``False``）。
+        是否真的删掉了原池（池不存在、注册表缺失被跳过或归档失败时为 ``False``）。
     """
 
     pool = mas_backup_root(script_id, slot_idx)
     if not pool.is_dir():
+        return False
+    if not _has_native_registry(root):
+        # 与 recycle_slot 同一守卫：注册表缺失时槽目录都没敢收，池也不能搬——
+        # 否则槽原样留着、它的「配置恢复」历史却已被搬走，两条口径不一致
+        logger.warning(
+            f"一条龙注册表不存在，跳过槽 {slot_idx:02d} 的 MAS 备份池回收（{reason}）"
+        )
         return False
     dest_root = recycle_backup_root(root, slot_idx) / "mas-backups"
     try:
