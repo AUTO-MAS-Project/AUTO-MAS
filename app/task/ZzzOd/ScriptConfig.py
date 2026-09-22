@@ -147,6 +147,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.cur_user_config,
                 used,
                 script_id=self.script_info.script_id,
+                owner_uid=str(self._target_uid) if self._target_uid else None,
             )
             self._session_slot = slot
             write_instance_view(

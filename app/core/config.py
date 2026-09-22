@@ -1722,7 +1722,9 @@ class AppConfig(GlobalConfig):
 
             _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
             used = collect_used_slot_idxs(root, exclude_uids={uid})
-            slot = await ensure_user_slot(root, user_cfg, used, script_id=script_id)
+            slot = await ensure_user_slot(
+                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+            )
 
         current = read_app_config(root, slot, app_id) if slot > 0 else {}
         patch: dict = {}
@@ -1870,7 +1872,9 @@ class AppConfig(GlobalConfig):
 
             _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
             used = collect_used_slot_idxs(root, exclude_uids={uid})
-            slot = await ensure_user_slot(root, user_cfg, used, script_id=script_id)
+            slot = await ensure_user_slot(
+                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+            )
 
         saved = write_team_list(
             instance_dir(self._zzzod_script_root(script_id), slot), teams
@@ -2130,6 +2134,7 @@ class AppConfig(GlobalConfig):
                 user_cfg,
                 collect_used_slot_idxs(root, exclude_uids={uid}),
                 script_id=script_id,
+                owner_uid=str(uid),
             )
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)

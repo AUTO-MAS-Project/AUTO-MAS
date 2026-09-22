@@ -28,7 +28,7 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 自己的注册表里找最小空号、**不扫盘**，而 MAS 槽刻意不进注册表，低号段随时会
 被它抢走并覆盖。绑定号已经被原生实例占走时走**撞号兜底**——残留内容先存底
 进回收池、该槽的 MAS 备份池跟着改绑到新号，目录本身不动（已归原生实例）。
-自动回收另受**槽分配台账**约束（只收 MAS 自己分配过的号），手动清理不受限；
+自动回收另受**槽分配台账**约束（只收归属用户已不存在的号），手动清理不受限；
 同安装另有 ZzzOd 脚本在跑时整体跳过（它在用槽的绑定号要到 ``final_task`` 才
 回写，此时回收会拆掉它的现场）。
 
@@ -270,58 +270,82 @@ def _allocated_ledger_path(root: Path) -> Path:
     )
 
 
-def _allocated_slot_idxs(root: Path) -> set[int]:
-    """MAS 在本安装分配/绑定过的实例槽下标（台账）。
+def _allocated_slots(root: Path) -> dict[int, str | None]:
+    """MAS 在本安装分配/绑定过的实例槽 → 归属用户 uid（台账）。
 
-    台账是「这个号是 MAS 分的」的凭据，自动回收只收台账内的号：一条龙原生
-    流程是「先建目录后写注册表」，用户在原生 GUI 新建实例的瞬间盘上已有目录、
-    注册表尚未落盘，只看盘上目录会把它当残留删掉。台账缺失或损坏时返回空集
-    ——自动回收退化为不收（残留由手动清理兜底），不会反向误删原生目录。
+    台账是「这个号是 MAS 分的、归谁」的凭据，自动回收只收台账内 owner 已
+    不存在的号：一条龙原生流程是「先建目录后写注册表」，用户在原生 GUI 新建
+    实例的瞬间盘上已有目录、注册表尚未落盘，只看盘上目录会把它当残留删掉。
+    台账缺失或损坏时返回空字典——自动回收退化为不收（残留由手动清理兜底），
+    不会反向误删原生目录。
+
+    owner 为 ``None`` 表示归属未知（旧格式台账，或调用方没给用户 uid）；
+    这类号同样按「保留」处理，理由见 :func:`_recyclable_allocated_idxs`。
     """
 
     path = _allocated_ledger_path(root)
     if not path.is_file():
-        return set()
+        return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
         logger.warning(f"槽分配台账不可读，本次按未分配处理: {e}")
-        return set()
+        return {}
     slots = raw.get("slots") if isinstance(raw, dict) else None
-    if not isinstance(slots, list):
-        return set()
-    # 排除 bool：``isinstance(True, int)`` 为真，台账里混进 ``true`` 会变成槽 1；
-    # 这份集合是「可自动回收」的白名单，判定必须严进
-    return {
-        int(i)
-        for i in slots
-        if isinstance(i, int) and not isinstance(i, bool) and int(i) > 0
-    }
+    if isinstance(slots, list):
+        # 旧格式（只有号、没有归属）：读成 owner 未知，下次写盘时升级
+        return {
+            int(i): None
+            for i in slots
+            if isinstance(i, int) and not isinstance(i, bool) and int(i) > 0
+        }
+    if not isinstance(slots, dict):
+        return {}
+    ledger: dict[int, str | None] = {}
+    for key, value in slots.items():
+        try:
+            slot = int(key)
+        except (TypeError, ValueError):
+            continue
+        if slot <= 0:
+            continue
+        # 归属必须是字符串：混进 bool/数字按未知处理，不让脏值决定保留与否
+        ledger[slot] = value if isinstance(value, str) and value else None
+    return ledger
 
 
-def _save_allocated_slots(root: Path, slots: set[int]) -> None:
+def _save_allocated_slots(root: Path, slots: dict[int, str | None]) -> None:
     """落盘槽分配台账（写失败只告警：只影响后续自动回收范围，不该让运行失败）。"""
 
     path = _allocated_ledger_path(root)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps({"slots": sorted(slots)}, ensure_ascii=False), encoding="utf-8"
+            json.dumps(
+                {"slots": {str(k): v for k, v in sorted(slots.items())}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
         )
     except OSError as e:
         logger.warning(f"槽分配台账写入失败（不影响本次运行）: {e}")
 
 
-def _record_allocated_slot(root: Path, slot_idx: int) -> None:
-    """把 MAS 分配/绑定的槽号记进台账（幂等；已在台账内不重复写盘）。"""
+def _record_allocated_slot(root: Path, slot_idx: int, owner: str | None = None) -> None:
+    """把 MAS 分配/绑定的槽号与归属用户记进台账（幂等；无变化不写盘）。
+
+    归属用于区分「用户还在、只是绑定号没回写」与「用户已删」两种无主形态，
+    见 :func:`_recyclable_allocated_idxs`。
+    """
 
     slot = int(slot_idx)
     if slot <= 0:
         return
-    slots = _allocated_slot_idxs(root)
-    if slot in slots:
+    owner = str(owner) if owner else None
+    slots = _allocated_slots(root)
+    if slot in slots and slots[slot] == owner:
         return
-    slots.add(slot)
+    slots[slot] = owner
     _save_allocated_slots(root, slots)
 
 
@@ -336,11 +360,42 @@ def forget_allocated_slot(root: Path, slot_idx: int) -> None:
     slot = int(slot_idx)
     if slot <= 0:
         return
-    slots = _allocated_slot_idxs(root)
+    slots = _allocated_slots(root)
     if slot not in slots:
         return
-    slots.discard(slot)
+    del slots[slot]
     _save_allocated_slots(root, slots)
+
+
+def _owner_alive(root: Path, owner: str) -> bool:
+    """归属用户是否仍存在于指向同一份安装的任一 ZzzOd 脚本（按 uid 比对）。"""
+
+    key = config_root_key(root)
+    for script_config in Config.ScriptConfig.values():
+        if not isinstance(script_config, ZzzOdConfig):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if not script_root or config_root_key(script_root) != key:
+            continue
+        if any(str(uid) == owner for uid in script_config.UserData):
+            return True
+    return False
+
+
+def _recyclable_allocated_idxs(root: Path) -> set[int]:
+    """自动回收可收的台账号：归属用户已不存在的号。
+
+    归属仍存在的号一律保留。运行/会话期用的是独立用户配置副本、绑定号要到
+    ``final_task`` 才回写，崩溃或强杀会让槽呈「有目录、有台账、持久绑定查不到」
+    的形态——只按持久绑定判定会把它当残留收走，而槽里还有用户在原生 GUI 里
+    维护的配队。归属未知（``None``）同样保留：无法证明它无主时宁可不收。
+    """
+
+    return {
+        slot
+        for slot, owner in _allocated_slots(root).items()
+        if owner is not None and not _owner_alive(root, owner)
+    }
 
 
 def _follow_mas_backups(script_id: str, old_slot: int, new_slot: int) -> None:
@@ -368,20 +423,54 @@ def _follow_mas_backups(script_id: str, old_slot: int, new_slot: int) -> None:
         )
 
 
+def _reclaim_own_slot(
+    root: Path,
+    owner_uid: str | None,
+    native_idxs: set[int],
+    used_idxs: set[int],
+) -> int | None:
+    """绑定号缺失时，认领回台账里属于本用户的高位段槽（中断现场恢复）。
+
+    上次运行/会话被崩溃、断电或强杀打断时，绑定号只写在运行期副本里、没回写
+    持久配置，用户下次运行会被当成「未分配」另拿一个新号——上一个槽里他在原生
+    GUI 维护的配队就再也回不来了。这里优先认领台账里归本用户、且当前没被原生
+    实例或其他用户占用的号（盘上有目录的优先，那里才有上次的配队），让配队
+    跟着人走。没有任何候选时返回 ``None``，由调用方按常规分配新号。
+    """
+
+    if not owner_uid:
+        return None
+    owner = str(owner_uid)
+    candidates = [
+        slot
+        for slot, slot_owner in _allocated_slots(root).items()
+        if slot_owner == owner and slot not in native_idxs and slot not in used_idxs
+    ]
+    if not candidates:
+        return None
+    # 盘上有目录的优先（上次的配队在那里）；同为有目录时取号更大的那个——
+    # 改绑只会往更大的号走，最大的最接近用户最后一次实际使用的槽
+    with_dir = [slot for slot in candidates if instance_dir(root, slot).is_dir()]
+    return max(with_dir or candidates)
+
+
 async def ensure_user_slot(
     root: Path,
     user_config: ZzzOdUserConfig,
     used_idxs: set[int],
     *,
     script_id: str | None = None,
+    owner_uid: str | None = None,
 ) -> int:
     """解析/分配用户的绑定实例槽（纯分配，不触碰注册表——注册表由合成视图提供）。
 
     绑定下标存于用户配置 ``Info.SlotIdx``：有效 = 不与原生实例、其他 MAS
-    用户已绑定槽冲突；无效则分配最小空闲 idx（全局查重）并把绑定落回用户
-    配置。槽目录持久保留（配队等复杂配置），注册表只在运行/会话窗口内以
-    合成视图出现。分配结果记进槽分配台账（含沿用旧绑定——一次运行即可把
-    存量用户的绑定补进台账），供自动回收判定「这个号是 MAS 分的」。
+    用户已绑定槽冲突；无效则优先认领台账里属于本用户的高位段槽（见
+    :func:`_reclaim_own_slot`，用于上次没跑完的中断现场），没有则分配最小
+    空闲 idx（全局查重）并把绑定落回用户配置。槽目录持久保留（配队等复杂
+    配置），注册表只在运行/会话窗口内以合成视图出现。分配结果连同归属用户
+    记进槽分配台账（含沿用旧绑定——一次运行即可把存量用户的绑定补进台账），
+    供自动回收判定「这个号是 MAS 分的、还归不归活着的用户」。
 
     新槽从 :data:`MAS_SLOT_BASE` 起分配——一条龙的「新增实例」只按自己的
     注册表找最小空号、看不见 MAS 槽，低号段随时可能被抢，退到高位段让它
@@ -394,6 +483,7 @@ async def ensure_user_slot(
         user_config: 用户配置对象（绑定号读写在 ``Info.SlotIdx``）。
         used_idxs: 本次批量已分配的槽号集合，就地更新。
         script_id: 所属脚本 ID，仅用于搬迁该脚本的 MAS 备份池；缺省跳过。
+        owner_uid: 用户 uid，写进台账作为该槽的归属；缺省则归属未知。
     """
 
     bound = int(user_config.get("Info", "SlotIdx") or -1)
@@ -406,7 +496,18 @@ async def ensure_user_slot(
         slot = bound
     else:
         taken = bound > 0 and bound in native_idxs
-        slot = find_free_instance_idx(root, used_idxs, base=MAS_SLOT_BASE)
+        # 绑定号缺失（首跑，或上次崩溃没回写）时先认领自己名下的旧槽；
+        # 被原生实例抢走是「绑定号还在」的另一回事，走下面的撞号兜底
+        reclaimed = (
+            None
+            if taken
+            else _reclaim_own_slot(root, owner_uid, native_idxs, used_idxs)
+        )
+        slot = (
+            reclaimed
+            if reclaimed is not None
+            else find_free_instance_idx(root, used_idxs, base=MAS_SLOT_BASE)
+        )
         if taken:
             user_name = str(user_config.get("Info", "Name") or "未知用户")
             archive_taken_slot(
@@ -419,7 +520,7 @@ async def ensure_user_slot(
     used_idxs.add(slot)
     if slot != bound:
         await user_config.set("Info", "SlotIdx", slot)
-    _record_allocated_slot(root, slot)
+    _record_allocated_slot(root, slot, owner_uid)
     return slot
 
 
@@ -529,9 +630,9 @@ def recycle_unbound_slots(
 
     Args:
         root: 一条龙安装目录。
-        only_allocated: 自动路径默认只收台账里 MAS 自己分配过的号（见
-            :func:`_allocated_slot_idxs`）；手动清理传 ``False`` 连来路不明
-            的残留一起收。
+        only_allocated: 自动路径默认只收台账里归属用户已不存在的号（见
+            :func:`_recyclable_allocated_idxs`）；手动清理传 ``False`` 连来路
+            不明的残留一起收。
         swallow: 默认失败只告警，不阻断运行/会话；手动清理传 ``False``，
             让注册表缺失/损坏等原因抛到界面。
         exclude_script_id: 调用方自己的脚本 ID——自动路径的调用方本身处于
@@ -556,7 +657,7 @@ def recycle_unbound_slots(
             raise RuntimeError(message)
         logger.warning(message)
         return []
-    allocated = _allocated_slot_idxs(root) if only_allocated else None
+    allocated = _recyclable_allocated_idxs(root) if only_allocated else None
     try:
         removed = recycle_orphan_slots(
             root,
@@ -908,6 +1009,7 @@ class AutoProxyTask(TaskExecuteBase):
                 cfg,
                 used_idxs,
                 script_id=self.script_info.script_id,
+                owner_uid=user_item.user_id,
             )
             backup_dir = backup_base / f"{slot:02d}"
             if instance_dir(self.script_root_path, slot).is_dir():
