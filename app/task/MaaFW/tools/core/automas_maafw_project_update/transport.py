@@ -431,6 +431,9 @@ async def download_resumable(
             if cancelled():
                 record_cancelled()
                 raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
+            # 开始就说在用哪个源：几百兆要下几分钟，事后再说等于没说。
+            # 失败会紧跟一行「不可用」，两行连着看就是完整的一次尝试。
+            send_update_log(f"下载源：{mirror_name}")
             try:
                 outcome = await _download_attempt(
                     partial_path=partial_path,
@@ -463,7 +466,6 @@ async def download_resumable(
                     f"镜像 {mirror_name} 不可用（{_reason(exc)}），改试下一个"
                 )
                 continue
-            send_update_log(f"下载源：{mirror_name}")
             return finish(outcome, attempt=1)
 
         if candidates:
@@ -487,10 +489,6 @@ async def download_resumable(
                     progress=emit,
                     cancel_event=cancel_event,
                 )
-                if candidates:
-                    # 走到这里说明镜像全挂了；只有「本来打算走镜像」时才值得
-                    # 说一句源，Mirror 酱那条路的日志维持原样。
-                    send_update_log("下载源：GitHub 直连")
                 return finish(outcome, attempt=attempt)
             except _RestartFromZero:
                 metadata = restart_from_zero()
