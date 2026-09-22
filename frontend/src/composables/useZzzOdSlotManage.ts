@@ -27,6 +27,13 @@ export function useZzzOdSlotManage(scriptId: () => string) {
   const recycleRows = ref<Array<ZzzOdRecycleEntryOut & { key: string }>>([])
   const recycleLoading = ref(false)
 
+  /** 任一破坏性操作进行中：清理 / 清空回收池 / 恢复互斥。
+   *  三者都动安装目录与回收池，并发会互相拆台（最坏是恢复进行中清空回收池，
+   *  把刚存底的目标槽原内容一并删掉），故统一置灰而不是各锁各的 */
+  const slotActionBusy = computed(
+    () => slotsLoading.value || recycleLoading.value || restoring.value
+  )
+
   const slotColumns = computed(() => [
     { title: t('edit.zzzodSlotColIdx'), key: 'idx', width: 72 },
     { title: t('edit.zzzodSlotColKind'), key: 'kind', width: 210 },
@@ -266,8 +273,10 @@ export function useZzzOdSlotManage(scriptId: () => string) {
       message.error(e instanceof Error ? e.message : t('edit.zzzodRecycleRestoreFailed'))
       return false
     } finally {
-      restoring.value = false
+      // 先刷新再复位：复位过早会让弹窗在两次 GET 期间解除 loading，
+      // 用户再点一次 OK 就是重复提交覆盖性恢复
       await loadSlotView()
+      restoring.value = false
     }
   }
 
@@ -373,6 +382,7 @@ export function useZzzOdSlotManage(scriptId: () => string) {
     slotsLoading,
     recycleRows,
     recycleLoading,
+    slotActionBusy,
     slotColumns,
     recycleColumns,
     recycleTabLabel,

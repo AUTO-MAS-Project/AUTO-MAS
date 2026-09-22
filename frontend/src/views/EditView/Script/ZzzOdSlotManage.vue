@@ -17,7 +17,13 @@
               <template #icon><ReloadOutlined /></template>
               {{ t('edit.zzzodSlotsRefresh') }}
             </a-button>
-            <a-button size="small" danger :loading="slotsLoading" @click="confirmCleanOrphanSlots">
+            <a-button
+              size="small"
+              danger
+              :loading="slotsLoading"
+              :disabled="slotActionBusy"
+              @click="confirmCleanOrphanSlots"
+            >
               <template #icon><ClearOutlined /></template>
               {{ t('edit.zzzodSlotsClean') }}
             </a-button>
@@ -72,7 +78,7 @@
                 size="small"
                 danger
                 :loading="recycleLoading"
-                :disabled="!recycleRows.length"
+                :disabled="!recycleRows.length || slotActionBusy"
                 @click="confirmClearRecycle"
               >
                 <template #icon><ClearOutlined /></template>
@@ -113,6 +119,7 @@
                       v-if="record.kind === 'slot'"
                       size="small"
                       type="link"
+                      :disabled="slotActionBusy"
                       @click="confirmRestoreRecycle(record)"
                     >
                       {{ t('edit.zzzodRecycleRestore') }}
@@ -183,6 +190,7 @@ const {
   slotsLoading,
   recycleRows,
   recycleLoading,
+  slotActionBusy,
   slotColumns,
   recycleColumns,
   recycleTabLabel,
