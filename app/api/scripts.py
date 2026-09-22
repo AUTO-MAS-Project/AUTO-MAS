@@ -1404,6 +1404,9 @@ async def update_maafw_project(
     from app.task.MaaFW.tools.embedded.runtime_route import (
         runtime_pool_route_from_service,
     )
+    from app.task.MaaFW.tools.embedded.update_mirrors import (
+        github_release_mirror_urls,
+    )
 
     route = await asyncio.to_thread(
         lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
@@ -1445,6 +1448,8 @@ async def update_maafw_project(
             post_validate=post_validate,
             # 同步 HTTP 请求不该跟着另一次自动更新 / 预检等几分钟。
             project_lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
+            # 手动更新与运行前自动更新用同一套加速镜像，否则「手动快、自动慢」。
+            github_mirror_urls=github_release_mirror_urls,
         )
     except MaaFWProjectUpdateError as exc:
         if exc.project_lock_busy:

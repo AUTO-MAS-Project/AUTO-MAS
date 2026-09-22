@@ -1322,6 +1322,13 @@ class GlobalConfig_Update(BaseModel):
         default=None, description="更新渠道: 稳定版, 测试版"
     )
     ProxyAddress: Optional[str] = Field(default=None, description="网络代理地址")
+    GitHubMirror: Optional[Literal["Auto", "Off"]] = Field(
+        default=None,
+        description=(
+            "MFW 项目包从 GitHub Release 下载时的加速镜像: "
+            "Auto 依次试镜像并在全部失败后回退直连, Off 只直连"
+        ),
+    )
     MirrorChyanCDK: Optional[str] = Field(default=None, description="Mirror酱CDK")
 
 

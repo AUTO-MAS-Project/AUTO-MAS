@@ -11,7 +11,7 @@ import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from urllib.parse import urljoin, urlsplit
 
 import aiofiles
@@ -32,6 +32,10 @@ RETRY_COUNT = 3
 RETRY_DELAY = 1.0
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 CANCELLED_MESSAGE = "MaaFW update package download cancelled"
+DEFAULT_TIMEOUT = httpx.Timeout(30.0)
+# 备选源每个只试一次，所以连不上要早点认输——默认的 30s 连接超时乘以四个
+# 镜像就是两分钟白等。读超时仍是 30s：镜像连上了但慢，那是下载本身的事。
+ALTERNATE_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 
 class UpdateDownloadCancelled(RuntimeError):
@@ -199,12 +203,23 @@ async def download_resumable(
     send_log: Callable[[str], None] | None = None,
     progress: Callable[[dict[str, Any]], None] | None = None,
     cancel_event: threading.Event | None = None,
+    alternates: Sequence[tuple[str, str]] = (),
+    expected_size: int | None = None,
 ) -> DownloadOutcome:
     """Download an artifact with Range/validator-aware checkpointing.
 
     ``cancel_event`` 置位后抛 :class:`UpdateDownloadCancelled`：每写完一个
     chunk 检查一次，所以「多久停下来」取决于还有没有字节在到达——整条连接
     卡死时要等 httpx 的读超时才会观察到。
+
+    ``alternates`` 是 ``(名字, 地址)`` 的备选源（加速镜像），**先于
+    ``download_url`` 逐个尝试，每个只试一次**，全部失败才回到直连并走既有的
+    重试。核心包不认识「镜像」这个概念，清单由调用方给。
+
+    经第三方转发的字节必须能校验：**没有 ``expected_sha256`` 时 ``alternates``
+    整个忽略**，否则一个被改过的包会被当成正常更新落地。``expected_size``
+    （发布方元数据里的资产大小）用来在下载开始前就否掉「回了一个 HTML 错误
+    页却带 200」的镜像，直连不做这个比对。
     """
 
     validated_url = _validate_url(download_url)
@@ -340,6 +355,114 @@ async def download_resumable(
                 totalBytes=_optional_int(metadata.get("totalBytes")),
             )
 
+        def restart_from_zero() -> dict[str, Any]:
+            """验证器变了：丢掉断点重来，并交回刷新后的元数据。
+
+            ``_download_attempt`` 是就地改传进去的那份 dict 的，所以这里必须
+            重新读盘并让调用方**重新绑定** ``metadata``，否则下一次尝试带着
+            已经作废的 etag / downloadedBytes 去要 Range。
+            """
+
+            partial_path.unlink(missing_ok=True)
+            fresh = _read_json(metadata_path)
+            fresh.update(
+                {
+                    "downloadedBytes": 0,
+                    "resumedFromBytes": 0,
+                    "etag": None,
+                    "lastModified": None,
+                    "complete": False,
+                    "completePath": None,
+                }
+            )
+            _atomic_json_write(metadata_path, fresh)
+            return fresh
+
+        def finish(outcome: DownloadOutcome, *, attempt: int) -> DownloadOutcome:
+            """下载成功的收尾；备选源与直连共用一份，别写成两处。"""
+
+            store.update(
+                "verified",
+                downloadedBytes=outcome.size,
+                totalBytes=outcome.total_bytes,
+                sha256=outcome.sha256,
+                etag=outcome.etag,
+                lastModified=outcome.last_modified,
+                supportsResume=outcome.range_supported,
+                attempt=attempt,
+            )
+            send_update_log(f"MaaFW update package downloaded: {outcome.size} bytes")
+            # 正常路径也要有 ``downloaded`` 事件（原来只有缓存命中才发）：
+            # 宿主靠它知道「下载已结束、事务马上开始」——最后一个 chunk 到
+            # 事务发出 plan_validated 之间还有 sha256 与项目指纹那几十秒，
+            # 这段里点停止已经停不住下载线程之后的事了，文案不能再说
+            # 「下次续传」。
+            emit(
+                {
+                    "stage": "downloaded",
+                    "status": "completed",
+                    "downloaded_bytes": outcome.size,
+                    "resumed_from_bytes": outcome.resumed_from,
+                    "total_bytes": outcome.total_bytes,
+                    "cache_hit": False,
+                    "operation_id": store.operation_id,
+                }
+            )
+            return outcome
+
+        # 备选源（加速镜像）先试。它们只有在能对 sha256 时才安全：镜像是第三方
+        # 转发，没有摘要就没有任何办法确认收到的是发布方那个包。
+        candidates: list[tuple[str, str]] = [
+            (str(name or "").strip() or "备选源", str(url or "").strip())
+            for name, url in (alternates or ())
+            if str(url or "").strip()
+        ]
+        if candidates and not expected:
+            send_update_log("资产无 sha256 摘要，不走镜像")
+            candidates = []
+
+        for mirror_name, mirror_url in candidates:
+            if cancelled():
+                record_cancelled()
+                raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
+            try:
+                outcome = await _download_attempt(
+                    partial_path=partial_path,
+                    metadata_path=metadata_path,
+                    metadata=metadata,
+                    download_url=_validate_url(mirror_url),
+                    expected_sha256=expected,
+                    max_bytes=max_bytes,
+                    operation=store,
+                    proxy=proxy,
+                    progress=emit,
+                    cancel_event=cancel_event,
+                    timeout=ALTERNATE_TIMEOUT,
+                    expected_total=expected_size
+                    or _optional_int(metadata.get("totalBytes")),
+                )
+            except UpdateDownloadCancelled:
+                # 和直连一样排在 ``except Exception`` 之前：用户点的停止不是
+                # 「这个镜像不行」，不能换下一个继续下。
+                record_cancelled()
+                raise
+            except _RestartFromZero as exc:
+                metadata = restart_from_zero()
+                send_update_log(
+                    f"镜像 {mirror_name} 不可用（{_reason(exc)}），改试下一个"
+                )
+                continue
+            except Exception as exc:
+                send_update_log(
+                    f"镜像 {mirror_name} 不可用（{_reason(exc)}），改试下一个"
+                )
+                continue
+            send_update_log(f"下载源：{mirror_name}")
+            return finish(outcome, attempt=1)
+
+        if candidates:
+            send_update_log("全部镜像不可用，改为直连 GitHub")
+
         last_error: Exception | None = None
         for attempt in range(1, RETRY_COUNT + 1):
             if cancelled():
@@ -358,50 +481,13 @@ async def download_resumable(
                     progress=emit,
                     cancel_event=cancel_event,
                 )
-                store.update(
-                    "verified",
-                    downloadedBytes=outcome.size,
-                    totalBytes=outcome.total_bytes,
-                    sha256=outcome.sha256,
-                    etag=outcome.etag,
-                    lastModified=outcome.last_modified,
-                    supportsResume=outcome.range_supported,
-                    attempt=attempt,
-                )
-                send_update_log(
-                    f"MaaFW update package downloaded: {outcome.size} bytes"
-                )
-                # 正常路径也要有 ``downloaded`` 事件（原来只有缓存命中才发）：
-                # 宿主靠它知道「下载已结束、事务马上开始」——最后一个 chunk 到
-                # 事务发出 plan_validated 之间还有 sha256 与项目指纹那几十秒，
-                # 这段里点停止已经停不住下载线程之后的事了，文案不能再说
-                # 「下次续传」。
-                emit(
-                    {
-                        "stage": "downloaded",
-                        "status": "completed",
-                        "downloaded_bytes": outcome.size,
-                        "resumed_from_bytes": outcome.resumed_from,
-                        "total_bytes": outcome.total_bytes,
-                        "cache_hit": False,
-                        "operation_id": store.operation_id,
-                    }
-                )
-                return outcome
+                if candidates:
+                    # 走到这里说明镜像全挂了；只有「本来打算走镜像」时才值得
+                    # 说一句源，Mirror 酱那条路的日志维持原样。
+                    send_update_log("下载源：GitHub 直连")
+                return finish(outcome, attempt=attempt)
             except _RestartFromZero:
-                partial_path.unlink(missing_ok=True)
-                metadata = _read_json(metadata_path)
-                metadata.update(
-                    {
-                        "downloadedBytes": 0,
-                        "resumedFromBytes": 0,
-                        "etag": None,
-                        "lastModified": None,
-                        "complete": False,
-                        "completePath": None,
-                    }
-                )
-                _atomic_json_write(metadata_path, metadata)
+                metadata = restart_from_zero()
                 continue
             except UpdateDownloadCancelled:
                 # 必须排在 ``except Exception`` 之前：取消是用户的决定，
@@ -446,6 +532,8 @@ async def _download_attempt(
     proxy: httpx.Proxy | None,
     progress: Callable[[dict[str, Any]], None],
     cancel_event: threading.Event | None = None,
+    timeout: httpx.Timeout = DEFAULT_TIMEOUT,
+    expected_total: int | None = None,
 ) -> DownloadOutcome:
     if cancel_event is not None and cancel_event.is_set():
         raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
@@ -465,7 +553,7 @@ async def _download_attempt(
 
     current_url = download_url
     async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=False, timeout=30.0
+        proxy=proxy, follow_redirects=False, timeout=timeout
     ) as client:
         for redirect_count in range(MAX_REDIRECTS + 1):
             async with client.stream("GET", current_url, headers=headers) as response:
@@ -544,11 +632,15 @@ async def _download_attempt(
                     _start, end, total = content_range
                     if total is None:
                         total = existing + (end - _start + 1)
+                    _reject_unexpected_total(total, expected_total)
                     mode = "ab"
                     range_supported = True
                     transfer_resume_start = resume_start
                 else:
                     total = _content_length(response)
+                    # 大小不对就在动断点之前认输：镜像回一个带 200 的 HTML 错误
+                    # 页时，先 unlink 再发现不对，已经下好的几百兆就没了。
+                    _reject_unexpected_total(total, expected_total)
                     if existing:
                         existing = 0
                         partial_path.unlink(missing_ok=True)
@@ -711,6 +803,29 @@ def _sync_file(path: Path) -> None:
             os.fsync(handle.fileno())
     except OSError:
         pass
+
+
+def _reject_unexpected_total(total: int | None, expected_total: int | None) -> None:
+    """备选源声明的总长与已知大小对不上就当它不可用。
+
+    只在调用方给了 ``expected_total`` 时生效（目前只有镜像走这条）。服务端
+    没给 Content-Length 时 ``total`` 是 None——那不算矛盾，交给最后的 sha256
+    校验兜底。
+    """
+
+    if expected_total is None or total is None or total == expected_total:
+        return
+    raise RuntimeError(f"包大小不符: {total} != {expected_total}")
+
+
+def _reason(exc: BaseException) -> str:
+    """异常 → 能进日志的一句话原因。
+
+    httpx 的超时类异常 ``str()`` 常常是空串，只剩「不可用（）」这种看不出
+    所以然的行，所以空了就退回类名。
+    """
+
+    return redact_text(exc).strip()[:200] or type(exc).__name__
 
 
 def _optional_int(value: Any) -> int | None:

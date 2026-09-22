@@ -621,6 +621,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             precheck_agent_root,
         )
         from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
+        from app.task.MaaFW.tools.embedded.update_mirrors import (
+            github_release_mirror_urls,
+        )
 
         send_log = self._threadsafe_update_log()
         kwargs: dict[str, Any] = {
@@ -635,6 +638,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "progress": self._build_update_progress_reporter(send_log),
             # 下载与预检共用同一个令牌：用户点停止，下载在一个 chunk 内停下。
             "cancel_event": update_cancel,
+            # GitHub 源先走加速镜像（全局 Update.GitHubMirror），全挂了回直连。
+            "github_mirror_urls": github_release_mirror_urls,
         }
         interface_model = await asyncio.to_thread(
             self._load_interface_model, project_path
