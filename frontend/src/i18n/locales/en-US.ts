@@ -2213,6 +2213,12 @@ export default {
     zzzodSlotKindNative: 'Native instance',
     zzzodSlotKindMas: 'MAS bound',
     zzzodSlotKindOrphan: 'Unowned',
+    zzzodSlotOwnerModeScript: 'script config',
+    zzzodSlotOwnerModeUser: 'user config',
+    zzzodSlotOwnerModeDirect: 'direct control',
+    zzzodSlotNativeConflict: 'MAS binding conflict',
+    zzzodSlotNativeConflictHint:
+      'This slot number has been taken by a native OneDragon instance (adding an instance there does not scan the disk, so MAS slots look free). The MAS user is rebound to a free high slot on the next run; the leftover MAS content is archived into the recycle pool first and can be recovered from there.',
     zzzodSlotHasDir: 'Yes',
     zzzodSlotNoDir: 'No',
     zzzodSlotEmpty: 'No instance slot',
@@ -2235,10 +2241,21 @@ export default {
       'Delete all {count} record(s) ({size} total) in the recycle pool? Restore history is cleared too and cannot be recovered.',
     zzzodRecycleClearDone: 'Recycle pool cleared ({count} record(s))',
     zzzodRecycleClearFailed: 'Could not clear the recycle pool',
-    zzzodRecycleRestoreConfirm:
-      'Overwrite slot {slot} with this snapshot? The current content is archived first; slots held by a native instance or a user are rejected.',
+    zzzodRecycleRestoreConfirmOccupied:
+      'Slot {slot} is held by "{occupant}"; restoring overwrites its content. The next step lets you force the overwrite or pick another free slot.',
+    zzzodRecycleRestoreConfirmOverwrite:
+      'Slot {slot} already has content ({size}, unowned leftovers). Restoring replaces it; the current content is archived first and can be recovered from the recycle pool.',
+    zzzodRecycleRestoreConfirmEmpty: 'Slot {slot} is empty. Create it from this snapshot?',
     zzzodRecycleRestoreDone: 'Slot {slot} restored',
     zzzodRecycleRestoreFailed: 'Could not restore the slot content',
+    zzzodRecycleRestoreConflict:
+      'Slot {slot} is currently held by "{occupant}" and cannot be restored in place. Choose where to restore it:',
+    zzzodRecycleRestoreForceHint:
+      'Overwrite slot {slot} (current content is archived first and can be recovered)',
+    zzzodRecycleRestoreOtherHint: 'Restore into another free slot',
+    zzzodRecycleRestoreOtherPlaceholder: 'Pick a target slot',
+    zzzodRecycleRestoreEmptySlot: 'empty',
+    zzzodRecycleRestoreOtherRequired: 'Pick a free slot first',
     zzzodGameRegion: 'Game region',
     zzzodGameRegionHint:
       'The region of this account; regions differ in client and daily reset time',

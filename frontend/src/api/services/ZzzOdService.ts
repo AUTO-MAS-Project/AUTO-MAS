@@ -283,6 +283,8 @@ export class ZzzOdService {
     /**
      * 把回收池里的槽快照恢复到该槽号（覆盖性操作，先存底）
      * 目标槽被原生实例或任一 ZzzOd 用户占用时拒绝，除非 ``force`` 已确认覆盖。
+     *
+     * ``targetSlot`` 可指定恢复到其他空闲槽号（原槽被占用时的替代路径）。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

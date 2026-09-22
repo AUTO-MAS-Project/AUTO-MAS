@@ -2098,6 +2098,12 @@ export default {
     zzzodSlotKindNative: '原生实例',
     zzzodSlotKindMas: 'MAS 绑定',
     zzzodSlotKindOrphan: '无主残留',
+    zzzodSlotOwnerModeScript: '脚本配置',
+    zzzodSlotOwnerModeUser: '用户配置',
+    zzzodSlotOwnerModeDirect: '直控',
+    zzzodSlotNativeConflict: 'MAS 绑定冲突',
+    zzzodSlotNativeConflictHint:
+      '该槽号已被一条龙原生实例占用（一条龙新增实例时不扫盘，会把 MAS 槽的号当成空号）。MAS 用户下次运行会自动改绑到高位空闲槽，原槽里的 MAS 内容届时会存底进回收池，可从回收池找回。',
     zzzodSlotHasDir: '有',
     zzzodSlotNoDir: '无',
     zzzodSlotEmpty: '没有实例槽',
@@ -2120,10 +2126,20 @@ export default {
       '将删除回收池全部 {count} 条记录（共 {size}），恢复历史一并清空且不可找回；确认清空？',
     zzzodRecycleClearDone: '回收池已清空（{count} 条）',
     zzzodRecycleClearFailed: '清空回收池失败',
-    zzzodRecycleRestoreConfirm:
-      '用这份快照覆盖槽 {slot} 的内容？当前内容会先归档存底；该槽被原生实例或用户占用时会被拒绝。',
+    zzzodRecycleRestoreConfirmOccupied:
+      '槽 {slot} 当前被「{occupant}」占用，恢复会覆盖其内容；下一步可选择强制覆盖或换到其他空闲槽号。',
+    zzzodRecycleRestoreConfirmOverwrite:
+      '槽 {slot} 当前有内容（{size}，无主残留），恢复会替换它；替换前会先归档存底，可从回收池找回。',
+    zzzodRecycleRestoreConfirmEmpty: '槽 {slot} 当前没有内容，用这份快照创建它？',
     zzzodRecycleRestoreDone: '槽 {slot} 已恢复',
     zzzodRecycleRestoreFailed: '恢复槽内容失败',
+    zzzodRecycleRestoreConflict:
+      '槽 {slot} 当前被「{occupant}」占用，不能直接恢复。请选择去处：',
+    zzzodRecycleRestoreForceHint: '强制覆盖槽 {slot}（当前内容先归档存底，可再找回）',
+    zzzodRecycleRestoreOtherHint: '恢复到其他空闲槽号',
+    zzzodRecycleRestoreOtherPlaceholder: '选择目标槽号',
+    zzzodRecycleRestoreEmptySlot: '空槽',
+    zzzodRecycleRestoreOtherRequired: '请先选择一个空闲槽号',
     zzzodGameRegion: '游戏区服',
     zzzodGameRegionHint: '账号所在的区服；不同区服的游戏客户端与刷新时间不同',
     zzzodRegionCn: '国服',
