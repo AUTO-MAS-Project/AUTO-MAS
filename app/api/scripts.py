@@ -3097,7 +3097,7 @@ async def set_zzzod_instance_run_mode_api(
 
 @router.post(
     "/zzzod/instances/delete",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
@@ -3163,7 +3163,7 @@ async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
 
 @router.post(
     "/zzzod/slots/clean",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="清理无主实例槽（先归档进回收池再删目录）",
     response_model=ZzzOdSlotCleanOut,
     status_code=200,
@@ -3229,7 +3229,7 @@ async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
 
 @router.post(
     "/zzzod/recycle/clear",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="清空实例槽回收池（删除后不可找回，不碰配置恢复池）",
     response_model=ZzzOdRecycleClearOut,
     status_code=200,
@@ -3262,7 +3262,7 @@ async def clear_zzzod_recycle_api(
 
 @router.post(
     "/zzzod/recycle/restore",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="把回收池里的槽快照恢复到该槽号（覆盖性操作，先存底）",
     response_model=OutBase,
     status_code=200,
