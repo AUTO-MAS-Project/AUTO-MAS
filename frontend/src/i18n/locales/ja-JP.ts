@@ -1441,7 +1441,7 @@ export default {
     enterNumber: '数値を入力してください',
     enterWholeNumber: '整数を入力してください',
     ungrouped: '未分類',
-    maafwPasswordSaved: '設定済みです。新しい値を入力すると置き換わります',
+    maafwPasswordSaved: '設定済み・入力で置換',
     maafwPasswordClear: 'クリア',
     maafwCheckboxCountRange: '{min}〜{max} 個を選択してください',
     maafwCheckboxCountExact: '{count} 個を選択してください',
