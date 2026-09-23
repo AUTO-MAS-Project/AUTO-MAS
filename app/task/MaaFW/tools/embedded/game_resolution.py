@@ -143,7 +143,11 @@ def read_unity_display_type(
                     continue
                 if mode in valid_values:
                     if name == _FULLSCREEN_MODE_VALUE:
-                        return "Window" if mode == _FULLSCREEN_MODE_WINDOWED else "Fullscreen"
+                        return (
+                            "Window"
+                            if mode == _FULLSCREEN_MODE_WINDOWED
+                            else "Fullscreen"
+                        )
                     return "Fullscreen" if mode == 1 else "Window"
     except (FileNotFoundError, OSError, TypeError, ValueError):
         return None

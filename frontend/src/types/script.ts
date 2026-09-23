@@ -185,13 +185,7 @@ export interface MaaEndScriptConfig {
     SetResolution: boolean
     CloseOnFinish: boolean
     RestoreDisplayType: 'Window' | 'Fullscreen'
-    RestoreResolution:
-      | 'Off'
-      | 'Original'
-      | '1920x1080'
-      | '2560x1440'
-      | '3840x2160'
-      | 'Custom'
+    RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
   }
