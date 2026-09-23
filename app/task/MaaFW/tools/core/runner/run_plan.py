@@ -76,10 +76,13 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 #   hotkey 都已实现；未做的只有「应」级的界面行为：resource.hash 不匹配时的提示
 #   （v2.6.0）、setting 设置分区的渲染（v2.8.0）。
 # - v2.9.0–v2.9.2：telemetry 协议写明「并非所有 Client 都会支持」，不上报即合规。
-# - v2.10.0–v2.10.2：password 输入的掩码与加密存储（v2.10.0）、checkbox 的
-#   min_count / max_count（v2.10.1）已实现，welcome 数组（v2.10.2）已能解析；
-#   声明版本是否随之提升另行决定，这里仍停在 v2.9.2。
-PI_INTERFACE_VERSION = "v2.9.2"
+# - v2.10.0：password 输入——「必须」级的三条都已做到：界面掩码、配置加密存储
+#   （option_secrets）、不把原文写进日志（原生日志复制 / worker 输出 / 失败摘录处替换）。
+# - v2.10.1：checkbox 的 min_count / max_count——界面限制勾选数，运行前不满足就报错。
+# - v2.10.2：welcome 字符串数组——能解析、投影带上每一条；「按数组顺序展示」是「应」级
+#   的界面行为，与 v2.6.0 / v2.8.0 那两条一样不妨碍声明（单字符串的 welcome 也从未展示）。
+# 所以声明 v2.10.2（协议版本表截至 2026-09-08 的最新版本）。
+PI_INTERFACE_VERSION = "v2.10.2"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
