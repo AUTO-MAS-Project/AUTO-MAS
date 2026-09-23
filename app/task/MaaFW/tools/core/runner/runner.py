@@ -18,6 +18,7 @@
 
 
 import ctypes
+import errno
 import hashlib
 import html
 import inspect
@@ -314,6 +315,34 @@ def _positive_int_pair(value: Any) -> tuple[int, int] | None:
     if first is None or second is None:
         return None
     return first, second
+
+
+#: CreateProcess 被应用控制策略（智能应用控制 / WDAC）拒绝时的 Windows 错误码。
+_WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED = 4551
+
+
+def _agent_spawn_error_hint(exc: OSError) -> str | None:
+    """起 agent 子进程失败时给用户的说明（照 MXU ``agent_spawn_hint_tag``）；其余返回 None。
+
+    原始 OSError 只有一句「系统找不到指定的文件」，用户分不清是项目坏了还是被拦了。
+    """
+
+    code = getattr(exc, "winerror", None)
+    if code is None and exc.errno == errno.ENOENT:
+        code = 2
+    if code == 2:
+        return (
+            "找不到 Agent 程序文件，常见原因是被杀毒软件隔离或删除；请检查杀毒软件的"
+            "隔离区并把项目目录加入信任，确认无误后在脚本页重新导入项目"
+        )
+    if code == 3:
+        return "Agent 程序所在的路径不存在，项目文件可能不完整；请在脚本页重新导入项目"
+    if code == _WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED:
+        return (
+            "Agent 程序被 Windows 的应用控制策略（智能应用控制）拦截；请在"
+            "「Windows 安全中心 → 应用和浏览器控制 → 智能应用控制」中关闭该功能后重试"
+        )
+    return None
 
 
 def _supported_win32_method(enum_cls: Any, value: int, *, combinable: bool) -> bool:
@@ -1442,14 +1471,22 @@ class MaaFWRunner:
             self.send_log(
                 f"启动 Agent 子进程: {Path(command[0]).name} (cwd={agent_plan.cwd})"
             )
-            process = subprocess.Popen(
-                command,
-                cwd=agent_plan.cwd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                creationflags=creationflags,
-            )
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=agent_plan.cwd,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    creationflags=creationflags,
+                )
+            except OSError as exc:
+                hint = _agent_spawn_error_hint(exc)
+                if hint is None:
+                    raise
+                raise RuntimeError(
+                    f"启动 Agent 子进程失败（{command[0]}）：{hint}。原始错误: {exc}"
+                ) from exc
             self.agent_clients.append(agent_client)
             self.agent_processes.append(process)
             self._start_agent_output_reader(process, Path(command[0]).name)
